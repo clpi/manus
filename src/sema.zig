@@ -224,13 +224,18 @@ pub const ConceptInfo = struct {
 /// a second *scope* of the same record, not a second answer.
 pub const AliasRegistry = struct {
     map: std.StringHashMapUnmanaged(*const ast.AliasDef) = .empty,
+    /// Exact parser descriptor node -> its declared semantic home. This is an
+    /// O(1) lift index; canonical subject roles never recover the home by name.
+    records: std.AutoHashMapUnmanaged(*const ast.TypeExpr.RecordType, *const ast.AliasDef) = .empty,
 
     pub fn deinit(self: *AliasRegistry, alloc: Allocator) void {
         self.map.deinit(alloc);
+        self.records.deinit(alloc);
     }
 
     pub fn clearRetainingCapacity(self: *AliasRegistry) void {
         self.map.clearRetainingCapacity();
+        self.records.clearRetainingCapacity();
     }
 
     pub fn get(self: *const AliasRegistry, name: []const u8) ?*const ast.AliasDef {
@@ -241,8 +246,13 @@ pub const AliasRegistry = struct {
         return self.map.contains(name);
     }
 
+    pub fn getRecord(self: *const AliasRegistry, record: *const ast.TypeExpr.RecordType) ?*const ast.AliasDef {
+        return self.records.get(record);
+    }
+
     pub fn put(self: *AliasRegistry, alloc: Allocator, name: []const u8, def: *const ast.AliasDef) Allocator.Error!void {
         try self.map.put(alloc, name, def);
+        if (def.target) |target| if (target == .record) try self.records.put(alloc, target.record, def);
     }
 
     pub fn count(self: *const AliasRegistry) u32 {
@@ -250,7 +260,10 @@ pub const AliasRegistry = struct {
     }
 
     pub fn clone(self: *const AliasRegistry, alloc: Allocator) Allocator.Error!AliasRegistry {
-        return .{ .map = try self.map.clone(alloc) };
+        var copy = AliasRegistry{ .map = try self.map.clone(alloc) };
+        errdefer copy.map.deinit(alloc);
+        copy.records = try self.records.clone(alloc);
+        return copy;
     }
 
     /// THE derivation. Every top-level `alias_def` statement of `mod` becomes
@@ -260,6 +273,9 @@ pub const AliasRegistry = struct {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .alias_def) continue;
             try self.map.put(alloc, stmt.alias_def.name, &stmt.alias_def);
+            if (stmt.alias_def.target) |target| {
+                if (target == .record) try self.records.put(alloc, target.record, &stmt.alias_def);
+            }
             try noteNominal(alloc, &stmt.alias_def);
         }
     }
@@ -401,6 +417,28 @@ pub const ApplicationFact = struct {
     home: ?[]const u8 = null,
 };
 
+/// Checked subject of one relation declaration. `home` is exact declaration
+/// provenance, not a source spelling lookup available to consumers.
+pub const RelationSubjectFact = struct {
+    relation: *const ast.FuncDecl,
+    home: *const ast.AliasDef,
+    descriptor: RT,
+};
+
+/// One grammar-produced ambient-subject occurrence after semantic resolution.
+pub const AmbientSubjectFact = struct {
+    expression: *const Expr,
+    relation: *const ast.FuncDecl,
+};
+
+/// Bare identity resolved as a projection of the ambient subject.
+pub const SubjectProjectionFact = struct {
+    expression: *const Expr,
+    relation: *const ast.FuncDecl,
+    field: u16,
+    descriptor: RT,
+};
+
 /// One home reachable from the module being checked, and the module that home
 /// IS. `home` is the dotted home path derived from the resolved file path by
 /// `home_resolve.homeOfPath` — the same derivation the symbol law uses, so a
@@ -512,6 +550,9 @@ pub const Sema = struct {
     home_loader: ?HomeLoader = null,
     /// Authoritative callable resolution retained per checked application.
     applications: std.AutoHashMapUnmanaged(*const Expr, ApplicationFact) = .empty,
+    relation_subjects: std.AutoHashMapUnmanaged(*const ast.FuncDecl, RelationSubjectFact) = .empty,
+    ambient_subjects: std.AutoHashMapUnmanaged(*const Expr, AmbientSubjectFact) = .empty,
+    subject_projections: std.ArrayListUnmanaged(SubjectProjectionFact) = .empty,
     /// Top-level type aliases, used by semantic type resolution. Shares one
     /// type, one derivation and one decision procedure with CodeGen's registry
     /// — see `AliasRegistry`.
@@ -551,6 +592,8 @@ pub const Sema = struct {
     hints_enabled: bool = false,
     info_enabled: bool = false,
     current_ret: RT,
+    current_relation: ?*const ast.FuncDecl = null,
+    current_subject: ?RelationSubjectFact = null,
     /// §8 B-12 — the contract being checked declared a FAILURE
     /// alternative (`: u64 | error`), so what it returns is the correlated
     /// pack `(value, nil) | (nil, error)`. A `nil` in the VALUE position is
@@ -824,6 +867,18 @@ pub const Sema = struct {
     /// unresolved or dynamic; consumers must not replace it with name lookup.
     pub fn applicationFact(self: *const Sema, expr: *const Expr) ?ApplicationFact {
         return self.applications.get(expr);
+    }
+
+    pub fn relationSubjectFact(self: *const Sema, relation: *const ast.FuncDecl) ?RelationSubjectFact {
+        return self.relation_subjects.get(relation);
+    }
+
+    pub fn ambientSubjectFact(self: *const Sema, expression: *const Expr) ?AmbientSubjectFact {
+        return self.ambient_subjects.get(expression);
+    }
+
+    pub fn subjectProjectionFacts(self: *const Sema) []const SubjectProjectionFact {
+        return self.subject_projections.items;
     }
 
     /// The home a spelling names, asking the host at most once per spelling.
@@ -1167,6 +1222,9 @@ pub const Sema = struct {
         while (fh_it.next()) |entry| self.alloc.free(entry.key_ptr.*);
         self.foreign_homes.deinit(self.alloc);
         self.applications.deinit(self.alloc);
+        self.relation_subjects.deinit(self.alloc);
+        self.ambient_subjects.deinit(self.alloc);
+        self.subject_projections.deinit(self.alloc);
         self.alias_defs.deinit(self.alloc);
         self.generic_func_arities.deinit(self.alloc);
         self.test_entries.deinit(self.alloc);
@@ -2200,6 +2258,9 @@ pub const Sema = struct {
         self.generic_func_arities.clearRetainingCapacity();
         self.callable_defs.clearRetainingCapacity();
         self.applications.clearRetainingCapacity();
+        self.relation_subjects.clearRetainingCapacity();
+        self.ambient_subjects.clearRetainingCapacity();
+        self.subject_projections.clearRetainingCapacity();
         // import foreign declarations from @c.import / @cinclude headers first.
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .cinclude) {
@@ -3929,6 +3990,40 @@ pub const Sema = struct {
                 return .any;
             },
             .name => |n| {
+                if (n.role == .subject) {
+                    const subject = self.current_subject orelse {
+                        self.err(n.loc, "ambient subject is unavailable outside a subject home", .{});
+                        return .any;
+                    };
+                    const relation = self.current_relation orelse {
+                        self.err(n.loc, "ambient subject has no enclosing relation", .{});
+                        return .any;
+                    };
+                    try self.ambient_subjects.put(self.alloc, expr, .{
+                        .expression = expr,
+                        .relation = relation,
+                    });
+                    return subject.descriptor;
+                }
+                if (self.current_subject) |subject| {
+                    if (try self.subjectField(subject, n.ident)) |field| {
+                        if (self.scope.lookup(n.ident) != null) {
+                            self.err(n.loc, "'{s}' is both a lexical binding and an ambient-subject projection here", .{n.ident});
+                            return .any;
+                        }
+                        const relation = self.current_relation orelse {
+                            self.err(n.loc, "ambient subject projection has no enclosing relation", .{});
+                            return .any;
+                        };
+                        try self.subject_projections.append(self.alloc, .{
+                            .expression = expr,
+                            .relation = relation,
+                            .field = field.index,
+                            .descriptor = field.descriptor,
+                        });
+                        return field.descriptor;
+                    }
+                }
                 if (self.scope.lookup(n.ident)) |sym| {
                     // Emit deprecation warning if symbol is @deprecated (Requirement 18.7)
                     if (sym.deprecated_msg) |msg| {
@@ -5322,7 +5417,31 @@ pub const Sema = struct {
 
     fn check_func_decl(self: *Sema, fd: *ast.FuncDecl) SemaError!void {
         const fb = &fd.func;
-        self.seed_method_self_param_type(fd);
+        var subject_fact: ?RelationSubjectFact = null;
+        if (fd.subject) |source| {
+            const home = switch (source) {
+                .descriptor => |descriptor_node| self.alias_defs.getRecord(descriptor_node) orelse {
+                    self.err(fd.loc, "subject role does not resolve to its descriptor home", .{});
+                    return;
+                },
+                .qualified => |home_name| self.alias_defs.get(home_name) orelse {
+                    self.err(fd.loc, "subject home '{s}' is not a descriptor", .{home_name});
+                    return;
+                },
+            };
+            const descriptor = try self.resolve_type(.{ .named = home.name });
+            if (descriptor != .@"struct") {
+                self.err(fd.loc, "subject home '{s}' does not establish a record descriptor", .{home.name});
+                return;
+            }
+            const fact = RelationSubjectFact{
+                .relation = fd,
+                .home = home,
+                .descriptor = descriptor,
+            };
+            try self.relation_subjects.put(self.alloc, fd, fact);
+            subject_fact = fact;
+        }
         const has_vararg = fb.vararg or fb.vararg_name != null;
         var all_typed = true;
         for (fb.params) |*p| {
@@ -5392,8 +5511,8 @@ pub const Sema = struct {
             self.err(fd.loc, "unknown or misplaced attribute '@{s}'", .{bad});
         }
 
-        if (fd.path.len >= 2 and fd.method) {
-            const table_name = fd.path[0];
+        if ((fd.path.len >= 2 and fd.method) or subject_fact != null) {
+            const table_name = if (subject_fact) |subject| subject.home.name else fd.path[0];
             const method_name = fd.path[fd.path.len - 1];
             const gop = try self.table_methods.getOrPut(self.alloc, table_name);
             if (!gop.found_existing) gop.value_ptr.* = .empty;
@@ -5444,25 +5563,35 @@ pub const Sema = struct {
         const prev_nopanic = self.current_nopanic;
         const prev_func_name = self.current_func_name;
         const prev_type_params = self.current_func_type_params;
+        const prev_relation = self.current_relation;
+        const prev_subject = self.current_subject;
         self.current_ret = if (fb.ret_fallible) (self.resolve_type(fb.ret_type) catch .any) else ret_t;
         self.current_ret_fallible = fb.ret_fallible;
         // Check if this function has the @nopanic attribute
         self.current_nopanic = has_nopanic_attr(fd.attributes);
         self.current_func_name = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
         self.current_func_type_params = fb.type_params;
+        self.current_relation = fd;
+        self.current_subject = subject_fact;
         defer {
             self.current_ret = prev_ret;
             self.current_ret_fallible = prev_fallible;
             self.current_nopanic = prev_nopanic;
             self.current_func_name = prev_func_name;
             self.current_func_type_params = prev_type_params;
+            self.current_relation = prev_relation;
+            self.current_subject = prev_subject;
         }
         for (fb.params) |*p| {
             if (p.default_val) |default_val| _ = try self.check_expr(default_val);
         }
         try self.scope.push();
-        for (fb.params, param_types) |*p, pt|
+        for (fb.params, param_types) |*p, pt| {
+            if (subject_fact != null and std.mem.eql(u8, p.name, "self")) {
+                self.err(p.loc, "'self' cannot be an operand of a subject relation; the subject is implicit", .{});
+            }
             try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
+        }
         try self.define_vararg_rest(fb);
         try self.check_block_with_implicit_return(&fb.body, true);
         self.scope.pop();
@@ -6627,6 +6756,42 @@ pub const Sema = struct {
     }
 
     /// Field type from a descriptor alias (`Vec: @{ x: i32 }`) for static member access.
+    const SubjectField = struct {
+        index: u16,
+        descriptor: RT,
+    };
+
+    /// The descriptor home is the sole producer of the subject's member
+    /// coordinate.  The source spelling is used only while resolving that
+    /// coordinate; graph publication retains the ordinal and descriptor so no
+    /// downstream consumer has to recover identity from the word again.
+    fn subjectField(self: *Sema, subject: RelationSubjectFact, field_name: []const u8) SemaError!?SubjectField {
+        for (subject.home.fields, 0..) |f, index| {
+            if (!std.mem.eql(u8, f.name, field_name)) continue;
+            return .{
+                .index = std.math.cast(u16, index) orelse {
+                    self.err(f.loc, "subject descriptor has too many fields", .{});
+                    return null;
+                },
+                .descriptor = try self.resolve_type(f.typ),
+            };
+        }
+        if (subject.home.target) |target| switch (target) {
+            .record => |rec| for (rec.fields, 0..) |f, index| {
+                if (!std.mem.eql(u8, f.name, field_name)) continue;
+                return .{
+                    .index = std.math.cast(u16, index) orelse {
+                        self.err(f.loc, "subject descriptor has too many fields", .{});
+                        return null;
+                    },
+                    .descriptor = try self.resolve_type(f.typ),
+                };
+            },
+            else => {},
+        };
+        return null;
+    }
+
     fn field_type_of_alias(self: *Sema, alias_name: []const u8, field_name: []const u8) SemaError!?RT {
         const ad = self.alias_defs.get(alias_name) orelse return null;
         for (ad.fields) |f| {
@@ -12263,18 +12428,6 @@ pub const Sema = struct {
         };
     }
 
-    /// §3 — colon methods get implicit `self: Receiver` when the descriptor exists.
-    fn seed_method_self_param_type(self: *Sema, fd: *ast.FuncDecl) void {
-        const fb = &fd.func;
-        if (!fd.method or fd.path.len < 2 or fb.params.len == 0) return;
-        const receiver = fd.path[0];
-        if (!std.mem.eql(u8, fb.params[0].name, "self")) return;
-        if (fb.params[0].typ != .inferred) return;
-        if (self.alias_defs.contains(receiver)) {
-            fb.params[0].typ = .{ .named = receiver };
-        }
-    }
-
     fn try_specialize_native_func(self: *Sema, fb: *ast.FuncBody, self_name: ?[]const u8, method_receiver: ?[]const u8) SemaError!void {
         var infer = NativeInfer{
             .sema = self,
@@ -13155,11 +13308,11 @@ test "sema: untyped function with dynamic body stays untyped" {
     try testing.expect(!fd.func.is_typed);
 }
 
-test "sema: Pass23 colon method assign infers native str signature" {
+test "sema: subject relation has no receiver operand and infers its true operand" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const src = "Person:greet = (other) \"Hey \" .. other";
+    const src = "Person: { name: str, greet = (other) \"Hey {other}\" }";
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
     p.idol_mode = true;
@@ -13167,18 +13320,19 @@ test "sema: Pass23 colon method assign infers native str signature" {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
-    const fd = mod.body.stmts[0].func_decl;
+    const fd = &mod.body.stmts[0].func_decl;
     try testing.expect(fd.func.is_typed);
+    try testing.expectEqual(@as(usize, 1), fd.func.params.len);
     try testing.expectEqualStrings("str", fd.func.params[0].typ.named);
-    try testing.expectEqualStrings("str", fd.func.params[1].typ.named);
     try testing.expectEqualStrings("str", fd.func.ret_type.named);
+    try testing.expectEqualStrings("Person", s.relationSubjectFact(fd).?.home.name);
 }
 
 test "sema: Pass23 string interpolation infers str return" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const src = "Person:greet = (other) \"Hey {other}\"";
+    const src = "Person: { name: str, greet = (other) \"Hey {other}\" }";
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
     p.idol_mode = true;
@@ -13191,11 +13345,11 @@ test "sema: Pass23 string interpolation infers str return" {
     try testing.expectEqualStrings("str", fd.func.ret_type.named);
 }
 
-test "sema: Pass23 colon method compound field assign with descriptor" {
+test "sema: bare subject field is an exact projection rather than self spelling" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const src = "Vec: @{ x: i32 }\nVec:xplus = (amt): i32\n    self.x += amt\nend";
+    const src = "Vec: { x: i32, xplus = (amt: i32): i32 x + amt }";
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
     p.idol_mode = true;
@@ -13203,11 +13357,13 @@ test "sema: Pass23 colon method compound field assign with descriptor" {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
-    const fd = mod.body.stmts[1].func_decl;
+    const fd = mod.body.stmts[0].func_decl;
     try testing.expect(fd.func.is_typed);
-    try testing.expectEqualStrings("Vec", fd.func.params[0].typ.named);
-    try testing.expectEqualStrings("i32", fd.func.params[1].typ.named);
+    try testing.expectEqual(@as(usize, 1), fd.func.params.len);
+    try testing.expectEqualStrings("i32", fd.func.params[0].typ.named);
     try testing.expectEqualStrings("i32", fd.func.ret_type.named);
+    try testing.expectEqual(@as(usize, 1), s.subjectProjectionFacts().len);
+    try testing.expectEqual(@as(u16, 0), s.subjectProjectionFacts()[0].field);
 }
 
 test "sema: untyped function can be specialized to native" {

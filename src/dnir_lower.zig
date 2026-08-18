@@ -1835,6 +1835,9 @@ pub const LowerCtx = struct {
     /// function. The identity and contents stay graph-owned; this map only
     /// avoids emitting a second address materialization for another access.
     aggregate_bases: std.AutoHashMapUnmanaged(semantic_graph.id, u32) = .empty,
+    /// Exact subject-member entity to its already-resident incoming ABI slot.
+    /// This is a realization index over graph identities, never a name map.
+    subject_slots: std.AutoHashMapUnmanaged(semantic_graph.id, u32) = .empty,
     /// Static element count of a positional table, keyed by its `.len` slot, so
     /// `t[i]` with a non-constant `i` knows how many slots to select over.
     table_lens: std.AutoHashMapUnmanaged(u32, i64) = .empty,
@@ -1903,6 +1906,7 @@ pub const LowerCtx = struct {
         self.narrow_slots.deinit(self.alloc);
         self.ptr_slots.deinit(self.alloc);
         self.aggregate_bases.deinit(self.alloc);
+        self.subject_slots.deinit(self.alloc);
         self.table_lens.deinit(self.alloc);
         var ct = self.const_tables.iterator();
         while (ct.next()) |e| {
@@ -2035,6 +2039,31 @@ fn lowerFunction(
     // registers — the same shape records already have as locals — so it consumes
     // one slot per field and shifts the slots of every later parameter.
     var param_slot_cursor: u32 = 0;
+    var subject_record: ?dnir.RecordDesc = null;
+    if (id) |relation| {
+        if (graph.relationSubject(relation)) |_| {
+            const shape = graph.relationSubjectShape(relation) orelse
+                return invalidGraphFacts(diagnostic, @src(), "relation-subject-abi");
+            const rec = recordForSemanticShape(records, shape) orelse
+                return invalidGraphFacts(diagnostic, @src(), "relation-subject-abi");
+            if (rec.fields.len == 0 or rec.fields.len > max_reg_record_fields)
+                return invalidGraphFacts(diagnostic, @src(), "relation-subject-abi");
+            for (rec.kinds) |kind| {
+                if (kind == .f64) return invalidGraphFacts(diagnostic, @src(), "relation-subject-abi");
+            }
+            const members = try graph.membersOf(shape, alloc);
+            defer alloc.free(members);
+            if (members.len != rec.fields.len)
+                return invalidGraphFacts(diagnostic, @src(), "relation-subject-abi");
+            for (members) |member| {
+                try ctx.subject_slots.putNoClobber(alloc, member, param_slot_cursor);
+                param_slot_cursor += 1;
+            }
+            subject_record = rec;
+        } else if (graph.relationHasSubjectProjection(relation)) {
+            return invalidGraphFacts(diagnostic, @src(), "relation-subject-abi");
+        }
+    }
     // A relation-edge / projection variant (`subject(tail) = (code)`, mangled to
     // `subject__tail`) receives the projection level (`tail`) as an implicit
     // slot-0 parameter. It occupies a real slot, so the flat-frame test below and
@@ -2216,6 +2245,19 @@ fn lowerFunction(
     var params: std.ArrayList(dnir.Param) = .empty;
     defer params.deinit(alloc);
     errdefer for (params.items) |param| deinitParam(alloc, param);
+    if (subject_record) |rec| {
+        const rec_name = try alloc.dupe(u8, rec.name);
+        const param_name = try alloc.dupe(u8, "");
+        params.append(alloc, .{
+            .name = param_name,
+            .ty = .any,
+            .record = rec_name,
+        }) catch |err| {
+            alloc.free(param_name);
+            alloc.free(rec_name);
+            return err;
+        };
+    }
     if (fd.path.len == 1) {
         if (relationEdgeLevel(fd.path[0])) |level| {
             if (blockMentionsIdent(&fd.func.body, level)) {
@@ -4565,6 +4607,13 @@ fn recordForApplicationResult(
     return null;
 }
 
+fn recordForSemanticShape(records: []const dnir.RecordDesc, shape: semantic_graph.id) ?dnir.RecordDesc {
+    for (records) |record| {
+        if (record.semantic_shape == shape) return record;
+    }
+    return null;
+}
+
 fn checkedRecordResultSupported(record: dnir.RecordDesc) bool {
     return record.fields.len > 0 and record.fields.len <= max_record_fields;
 }
@@ -4687,7 +4736,7 @@ const TableUse = enum {
 };
 
 fn worseUse(a: TableUse, b: TableUse) TableUse {
-    return if (@intFromEnum(b) > @intFromEnum(a)) b else a;
+    return if (@backingInt(b) > @backingInt(a)) b else a;
 }
 
 /// `k` as a compile-time integer, for an index expression. Literals only — a
@@ -5046,7 +5095,7 @@ fn noteStrTable(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!
         if (fld != .positional) return;
         if (!exprIsStr(ctx, fld.positional)) return;
     }
-    if (@intFromEnum(tableUseInBlock(body, name, table)) > @intFromEnum(TableUse.dyn_read)) return;
+    if (@backingInt(tableUseInBlock(body, name, table)) > @backingInt(TableUse.dyn_read)) return;
     const key = try ctx.alloc.dupe(u8, name);
     errdefer ctx.alloc.free(key);
     try ctx.str_tables.put(ctx.alloc, key, {});
@@ -5065,7 +5114,7 @@ fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const as
     if (table.* != .table) return bail(ctx.diagnostic, @src());
     try noteStrTable(ctx, name, table);
     const use = try noteConstTable(ctx, name, table);
-    if (@intFromEnum(use) <= @intFromEnum(TableUse.const_read)) {
+    if (@backingInt(use) <= @backingInt(TableUse.const_read)) {
         // DETERMINED, and read only at compile-time indices: the table itself is
         // not a thing this function needs. Bind the length (still a foldable
         // constant, so `#t` costs nothing) and emit no elements at all — every
@@ -6096,6 +6145,18 @@ fn lowerExprCons(
             // non-empty only inside one collection relation's body, and inside
             // it the name means the element and nothing else.
             if (ctx.fused_literals.get(n.ident)) |element| break :blk dnir.Value{ .i64 = element };
+            if (ctx.graph.subjectProjection(expr)) |projection| {
+                const relation = ctx.function orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "subject-projection-relation");
+                if (projection.relation != relation or
+                    ctx.graph.relationSubject(relation) != projection.subject)
+                {
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "subject-projection-relation");
+                }
+                const slot = ctx.subject_slots.get(projection.member) orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "subject-projection-member");
+                break :blk dnir.Value{ .local = slot };
+            }
             if (ctx.locals.get(n.ident)) |slot| break :blk dnir.Value{ .local = slot };
             // A WRITTEN module-scope binding is READ FROM ITS STORAGE, never
             // folded. `ctx.locals` still wins: a parameter or local of the same
@@ -6345,7 +6406,8 @@ fn publishedDescriptor(
 }
 
 const CheckedScalarOperand = struct {
-    expression: *Expr,
+    value: semantic_graph.id,
+    expression: ?*Expr,
     descriptor: types.ResolvedType,
 };
 
@@ -6452,12 +6514,18 @@ fn checkedScalarOperand(
         .table_type => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
         else => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
     }
+    if (ctx.function) |relation| {
+        if (ctx.graph.relationSubject(relation) == value) {
+            return .{ .value = value, .expression = null, .descriptor = descriptor };
+        }
+    }
     const raw = node.ast_ref orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-provenance");
     const expression: *Expr = @ptrCast(@alignCast(raw));
     if (expression.* == .table) {
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
     }
     return .{
+        .value = value,
         .expression = expression,
         .descriptor = descriptor,
     };
@@ -6544,6 +6612,27 @@ fn evaluateCheckedScalarOperands(
     var fp_count: usize = 0;
     var count: usize = 0;
     for (operands) |operand| {
+        if (ctx.function) |relation| {
+            if (ctx.graph.relationSubject(relation) == operand.value) {
+                const shape = ctx.graph.relationSubjectShape(relation) orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                const rec = recordForSemanticShape(ctx.records, shape) orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                const members = try ctx.graph.membersOf(shape, ctx.alloc);
+                defer ctx.alloc.free(members);
+                if (members.len != rec.fields.len or count + members.len > max_reg_record_fields)
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                for (members) |member| {
+                    const slot = ctx.subject_slots.get(member) orelse
+                        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                    values[count] = .{ .local = slot };
+                    count += 1;
+                }
+                continue;
+            }
+        }
+        const expression = operand.expression orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-provenance");
         // ONE SEMANTIC VALUE, A CONSUMER-DIRECTED REALIZATION. A record operand
         // is not materialized into an aggregate and it is not given an address:
         // this consumer wants scalar fields in registers, so the fields are what
@@ -6557,7 +6646,7 @@ fn evaluateCheckedScalarOperands(
         // DESCRIPTOR ORDER IS THE CONTRACT, and it is the same order the callee
         // homes its parameter from (`rec.fields`, one register each). The two
         // ends read the same list, which is why they cannot drift.
-        if (operandRecordStorage(ctx, operand.expression)) |rec| {
+        if (operandRecordStorage(ctx, expression)) |rec| {
             // THE REGISTER FILE IS THE BOUND, and it is the same bound the
             // CALLEE applies when it homes the parameter (`functionEligible`
             // refuses a record parameter past `max_reg_record_fields`, because
@@ -6566,7 +6655,7 @@ fn evaluateCheckedScalarOperands(
             // refuse from being staged by the caller as if it fit.
             if (count + rec.fields.len <= max_reg_record_fields) {
                 for (rec.fields) |fname| {
-                    const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ operand.expression.name.ident, fname });
+                    const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ expression.name.ident, fname });
                     defer ctx.alloc.free(key);
                     const slot = ctx.locals.get(key) orelse
                         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
@@ -6593,13 +6682,13 @@ fn evaluateCheckedScalarOperands(
         // matters: it is a homogeneous float aggregate with a different ABI.
         // Falling through would stage the record's own slot, which holds no
         // value.
-        if (operandNamesRecord(ctx, operand.expression)) {
+        if (operandNamesRecord(ctx, expression)) {
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
         }
         if (count >= values.len) {
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
         }
-        values[count] = try lowerExprCons(ctx, operand.expression, .single);
+        values[count] = try lowerExprCons(ctx, expression, .single);
         if (operand.descriptor == .f64) fp_count += 1;
         count += 1;
     }
@@ -6659,7 +6748,8 @@ fn lowerCheckedPackCall(
     const first_ty = try checkedGpPackResultType(ctx, results[0]);
     const direct_gp = operands.len == 1 and staged.count == 1 and
         operands[0].descriptor == .i64 and first_ty == .i64 and
-        checkedOperandAdmitsDirectGp(ctx, operands[0].expression);
+        operands[0].expression != null and
+        checkedOperandAdmitsDirectGp(ctx, operands[0].expression.?);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
     if (!direct_gp) try stageCheckedScalarOperands(ctx, values[0..staged.count], staged.floating);
 
@@ -6739,7 +6829,8 @@ fn lowerCheckedScalarCall(
         staged.count == 1 and
         operands[0].descriptor == .i64 and
         descriptor == .i64 and
-        checkedOperandAdmitsDirectGp(ctx, operands[0].expression);
+        operands[0].expression != null and
+        checkedOperandAdmitsDirectGp(ctx, operands[0].expression.?);
     // A record operand is STAGED AS ITS FIELDS by `evaluateCheckedScalarOperands`
     // above, which refuses by name anything it could not expand. The loop that
     // stood here refused EVERY record equally — including the ones the argument
@@ -10602,6 +10693,144 @@ test "dnir_lower: checked subject call retains semantic facts" {
     graph.application_facts.items[row] = saved;
 }
 
+test "dnir_lower: implicit subject is graph-owned and absent from operand packs" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\point: {
+        \\    x: i64
+        \\    y: i64
+        \\    sum = (): i64
+        \\        if x == 0
+        \\            return :sum()
+        \\        end
+        \\        x + y
+        \\    end
+        \\}
+        \\main: i64 = ()
+        \\    p: point = { x = 19, y = 23 }
+        \\    p:sum()
+    ;
+    var lexer = Lexer.init(source, "subject-zero.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module_ast = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module_ast);
+    var sum_declarations: usize = 0;
+    for (module_ast.body.stmts) |statement| {
+        if (statement != .func_decl or statement.func_decl.path.len != 1) continue;
+        if (std.mem.eql(u8, statement.func_decl.path[0], "sum")) sum_declarations += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), sum_declarations);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+
+    const sum_decl = blk: {
+        for (module_ast.body.stmts) |*statement| {
+            if (statement.* != .func_decl) continue;
+            if (std.mem.eql(u8, statement.func_decl.path[0], "sum")) break :blk &statement.func_decl;
+        }
+        return error.TestExpectedEqual;
+    };
+    try std.testing.expectEqual(@as(usize, 0), sum_decl.func.params.len);
+    try std.testing.expectEqualStrings("point", checked.relationSubjectFact(sum_decl).?.home.name);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module_ast, &checked, "subject-zero.id");
+    const sum = graph.origin.get(@intFromPtr(sum_decl)) orelse return error.TestExpectedEqual;
+    const subject = graph.relationSubject(sum) orelse return error.TestExpectedEqual;
+    const subject_shape = graph.relationSubjectShape(sum) orelse return error.TestExpectedEqual;
+    try std.testing.expect(subject != subject_shape);
+    try std.testing.expect(graph.hasTableDescriptorFacts(subject_shape));
+    try std.testing.expectEqual(@as(usize, 2), graph.applications().len);
+    var ambient_applications: usize = 0;
+    for (graph.applications()) |application| {
+        try std.testing.expectEqual(@as(usize, 0), graph.applicationArguments(application.application).?.len);
+        const applied_subject = graph.applicationSubject(application.application) orelse
+            return error.TestExpectedEqual;
+        if (graph.applicationCaller(application.application) == sum) {
+            ambient_applications += 1;
+            try std.testing.expectEqual(subject, applied_subject);
+        } else {
+            try std.testing.expect(applied_subject != subject);
+            try std.testing.expect(graph.get(applied_subject).?.descriptor.? == .@"struct");
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), ambient_applications);
+    var snapshot: std.ArrayListUnmanaged(u8) = .empty;
+    defer snapshot.deinit(alloc);
+    try graph.writeJson(alloc, "subject-zero.id", &snapshot, null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot.items, "\"version\":7") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot.items, "\"relation_subjects\":[{") != null);
+    try std.testing.expect(std.mem.indexOf(u8, snapshot.items, "\"subject_projections\":[{") != null);
+
+    const clean = try lowerModuleWithGraph(alloc, &module_ast, &graph);
+    defer dnir.deinitModule(alloc, clean);
+    var clean_instructions: usize = 0;
+    var call_subject_slots: usize = 0;
+    for (clean.functions) |function| {
+        for (function.blocks) |block| {
+            clean_instructions += block.instrs.len;
+            for (block.instrs) |instruction| {
+                if (instruction.op == .mov_arg) call_subject_slots += 1;
+            }
+        }
+        if (std.mem.endsWith(u8, function.name, "__sum")) {
+            try std.testing.expectEqual(@as(usize, 1), function.params.len);
+            try std.testing.expect(function.params[0].record != null);
+            try std.testing.expectEqualStrings("", function.params[0].name);
+            const rec = recordForSemanticShape(clean.records, subject_shape) orelse
+                return error.TestExpectedEqual;
+            try std.testing.expectEqual(@as(usize, 2), rec.fields.len);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 4), call_subject_slots);
+
+    // Destructive absence control: a projection fact with its relation-subject
+    // producer deleted must refuse, never degrade to spelling or operand zero.
+    try std.testing.expect(graph.relation_subjects.remove(sum));
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraph(alloc, &module_ast, &graph),
+    );
+    try graph.relation_subjects.putNoClobber(alloc, sum, subject);
+
+    // Destructive controls.  Once graph closure exists, neither the source
+    // member spelling nor the parser's descriptor-role node may affect realization.
+    // The lowering query is keyed by the exact occurrence and exact graph ids.
+    const projection = @constCast(checked.subjectProjectionFacts()[0].expression);
+    projection.name.ident = "spelling-poison";
+    var poisoned_roles: usize = 0;
+    for (graph.applications()) |application| {
+        const raw = graph.get(application.application).?.ast_ref orelse continue;
+        const expression: *const ast.Expr = @ptrCast(@alignCast(raw));
+        const source_fact = checked.applicationFact(expression) orelse continue;
+        const source_subject = @constCast(source_fact.subject orelse continue);
+        if (source_subject.* != .name or source_subject.name.role != .subject) continue;
+        source_subject.name.ident = "role-spelling-poison";
+        poisoned_roles += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), poisoned_roles);
+    var role_poison = ast.TypeExpr.RecordType{ .fields = &.{} };
+    @constCast(sum_decl).subject = .{ .descriptor = &role_poison };
+    const poisoned = try lowerModuleWithGraph(alloc, &module_ast, &graph);
+    defer dnir.deinitModule(alloc, poisoned);
+    var poisoned_instructions: usize = 0;
+    for (poisoned.functions) |function| for (function.blocks) |block| {
+        poisoned_instructions += block.instrs.len;
+    };
+    try std.testing.expectEqual(clean_instructions, poisoned_instructions);
+    try std.testing.expectEqualDeep(clean.functions, poisoned.functions);
+}
+
 test "dnir_lower: applications share relation without sharing occurrence id" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -11286,24 +11515,6 @@ test "dnir_lower: dot static member exports module.method" {
         try std.testing.expect(f.ret == .i64);
     }
     try std.testing.expect(saw);
-}
-
-test "dnir_lower: colon method compound field assign exports Type.method" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src = "Vec: @{ x: i32 }\nVec:xplus = (amt): i32\n    self.x += amt\nend";
-    var lex = @import("lexer.zig").Lexer.init(src, "method.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.idol_mode = true;
-    var mod = try parser.parse_module();
-    var sema = @import("sema.zig").Sema.init(alloc);
-    try sema.check_module(&mod);
-    try std.testing.expectEqual(@as(u32, 0), sema.errors);
-    const m = try lowerModule(alloc, &mod);
-    try std.testing.expectEqual(@as(usize, 1), m.functions.len);
-    try std.testing.expectEqualStrings("Vec.xplus", m.functions[0].name);
-    try std.testing.expect(m.functions[0].ret == .i32);
 }
 
 test "dnir_lower: trailing compound field assign returns updated field slot" {

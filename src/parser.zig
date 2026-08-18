@@ -120,15 +120,15 @@ pub const Parser = struct {
     /// context: `f((l) .pos)` reads `.pos` against `l`, not against whatever
     /// `f` will map over.
     ///
-    /// `subject` is METHOD SCOPE: the enclosing function's FIRST parameter,
-    /// which §0.6 already makes the receiver — "declare at the trie, CALL AT
-    /// THE VALUE... holding the first argument means holding the receiver". It
-    /// is saved and restored around each body so nesting cannot leak a
-    /// receiver outward.
+    /// Grammar recognition only: the current relation body was declared inside
+    /// a subject home. No name is attached here and no operand is manufactured.
+    /// `subject_next` is consumed by exactly one `parse_func_body`, so nested
+    /// closures do not inherit an ambient subject accidentally.
     call_arg_depth: u32 = 0,
-    subject: ?[]const u8 = null,
-    /// Nesting inside a DESCRIPTOR body, where the first parameter of a slot
-    /// function is emphatically NOT the receiver — the enclosing descriptor is.
+    subject: bool = false,
+    subject_next: bool = false,
+    /// Nesting inside a DESCRIPTOR body, where operand zero is emphatically NOT
+    /// the subject — the enclosing descriptor is.
     /// §20's own golden `shc/lex.id` is the proof and the reason this counter
     /// exists:
     ///
@@ -137,11 +137,9 @@ pub const Parser = struct {
     ///         here = () span{ .pos, .pos }
     ///         skip = (p) while b = :peek() and p(b) .pos += 1
     ///
-    /// `here` has no parameter at all, and `skip`'s first parameter is the
-    /// PREDICATE. Taking either as the subject would silently rewrite `.pos`
-    /// into `p.pos` and `:peek()` into `p:peek()` — a wrong value dressed as a
-    /// fix for wrong values. Inside a descriptor body the subject stays unset
-    /// and the leading `.` keeps exactly the reading it has today.
+    /// `here` has no operand at all, and `skip`'s first operand is the
+    /// PREDICATE. Taking either as the subject would silently rewrite the graph
+    /// application. The dedicated grammar role keeps both operand packs exact.
     descriptor_body_depth: u32 = 0,
     /// GAP-16 — nesting inside a `@`-directive argument list, where a string
     /// literal is DATA handed to the compiler rather than runtime source text.
@@ -217,6 +215,9 @@ pub const Parser = struct {
     /// its HOME as its name (§0.1: the qualifier moves to a HOME —
     /// `token.kind`). Null outside a named descriptor body.
     descriptor_home: ?[]const u8 = null,
+    /// Exact record node currently being populated. A descriptor relation
+    /// retains this grammar role instead of reconstructing its home by name.
+    descriptor_record: ?*ast.TypeExpr.RecordType = null,
 
     /// `"<home>\x00<field>"` -> the minted enum name of an inline case-set, so
     /// `token.kind.eof` reaches the cases the descriptor body declared.
@@ -1140,9 +1141,9 @@ pub const Parser = struct {
     ///         format(sink) = (out) out:write("…")
     ///     }
     ///
-    /// The slot is an EDGE homed on the descriptor, so it is hoisted as an
-    /// ordinary function whose first parameter is the receiver typed by that
-    /// descriptor. That spelling already dispatches both ways: `format(sink)(t)`
+    /// The slot is an EDGE homed on the descriptor, so it is hoisted with an
+    /// exact subject role beside its true operand pack. That spelling dispatches
+    /// both ways: `format(sink)(t)`
     /// through the relation-edge map, and — for an UNLEVELLED slot — the
     /// receiver face `t:width(3)`, which codegen projects onto a free function
     /// (gap[025], landed 2026-08-07). A LEVELLED receiver face `t:format(sink)`
@@ -1171,28 +1172,25 @@ pub const Parser = struct {
         }
         _ = try self.expect(.assign);
 
-        const home = self.descriptor_home orelse {
+        _ = self.descriptor_home orelse {
             term.locErr(loc, "relation slot '{s}' needs a named descriptor to be homed on", .{name});
             return ParseError.UnexpectedToken;
         };
-        var fb = try self.parse_func_body(loc);
-        // The receiver is the first parameter, typed by its home — the shape a
-        // receiver face and an operation-first call BOTH lower to.
-        var params: std.ArrayList(ast.FuncParam) = .empty;
-        try params.append(self.alloc, .{
-            .name = "self",
-            .typ = .{ .named = home },
-            .default_val = null,
-            .loc = loc,
-        });
-        try params.appendSlice(self.alloc, fb.params);
-        fb.params = try params.toOwnedSlice(self.alloc);
+        const descriptor = self.descriptor_record orelse {
+            term.locErr(loc, "relation slot '{s}' has no descriptor role", .{name});
+            return ParseError.UnexpectedToken;
+        };
+        const outer_next = self.subject_next;
+        self.subject_next = true;
+        defer self.subject_next = outer_next;
+        const fb = try self.parse_func_body(loc);
 
         const fpath = try self.alloc.alloc([]const u8, 1);
         fpath[0] = sym;
         try self.pending_hoists.append(self.alloc, .{ .func_decl = .{
             .loc = loc,
             .path = fpath,
+            .subject = .{ .descriptor = descriptor },
             .method = false,
             .is_local = false,
             .func = fb,
@@ -1527,6 +1525,11 @@ pub const Parser = struct {
             .lbrace => {
                 // Inline record-type literal: { name: T, name2: T2, ... }
                 _ = try self.adv(); // consume '{'
+                const rt = try self.alloc.create(ast.TypeExpr.RecordType);
+                rt.* = .{ .fields = &.{} };
+                const saved_record = self.descriptor_record;
+                self.descriptor_record = rt;
+                defer self.descriptor_record = saved_record;
                 var fields: std.ArrayList(ast.RecordField) = .empty;
                 if (!(try self.check(.rbrace))) {
                     while (true) {
@@ -1559,8 +1562,7 @@ pub const Parser = struct {
                     }
                 }
                 _ = try self.expect(.rbrace);
-                const rt = try self.alloc.create(ast.TypeExpr.RecordType);
-                rt.* = .{ .fields = try fields.toOwnedSlice(self.alloc) };
+                rt.fields = try fields.toOwnedSlice(self.alloc);
                 rt.layout = try self.parse_layout_refinements();
                 return .{ .record = rt };
             },
@@ -3420,17 +3422,13 @@ pub const Parser = struct {
             ret_fallible = self.union_alternative_seen;
         }
 
-        // §2 METHOD SCOPE begins here: inside this body a leading `.` walks
-        // from the FIRST parameter, which §0.6 already makes the receiver.
-        // Saved and restored so a nested body cannot leak its receiver outward,
-        // and `call_arg_depth` resets because a body is a fresh statement
-        // context — `f((l) .pos)` is `l.pos`, not a lens over `f`'s data.
+        // Subject scope comes from the declaration's grammar home, never from
+        // operand zero. Consume the one-shot role now; a nested closure starts
+        // with no subject unless its own declaration supplies one.
         const outer_subject = self.subject;
         const outer_call_arg_depth = self.call_arg_depth;
-        self.subject = if (self.descriptor_body_depth == 0 and params.items.len > 0)
-            params.items[0].name
-        else
-            null;
+        self.subject = self.subject_next;
+        self.subject_next = false;
         self.call_arg_depth = 0;
         defer {
             self.subject = outer_subject;
@@ -4859,20 +4857,6 @@ pub const Parser = struct {
         return ast.Pattern{ .array_destr = try patterns.toOwnedSlice(self.alloc) };
     }
 
-    /// §3 — prepend implicit `self` for colon method assignments when absent.
-    fn ensure_implicit_self_param(self: *Parser, fb: *ast.FuncBody) !void {
-        if (fb.params.len > 0 and std.mem.eql(u8, fb.params[0].name, "self")) return;
-        var params: std.ArrayList(ast.FuncParam) = .empty;
-        try params.append(self.alloc, .{
-            .name = "self",
-            .typ = .inferred,
-            .default_val = null,
-            .loc = fb.loc,
-        });
-        try params.appendSlice(self.alloc, fb.params);
-        fb.params = try params.toOwnedSlice(self.alloc);
-    }
-
     /// Single-line function bodies use `parse_expr` unless the body begins with assignment syntax.
     fn func_body_should_use_expr_stmt(self: *Parser) ParseError!bool {
         const tok = try self.pk();
@@ -4960,11 +4944,15 @@ pub const Parser = struct {
             self.lex.restoreState(saved);
             return null;
         }
-        var fb = try self.parse_func_body(loc);
-        if (method) try self.ensure_implicit_self_param(&fb);
+        const outer_next = self.subject_next;
+        if (method) self.subject_next = true;
+        defer self.subject_next = outer_next;
+        const fb = try self.parse_func_body(loc);
+        const subject: ?ast.SubjectRole = if (method) .{ .qualified = path.items[0] } else null;
         return ast.Stmt{ .func_decl = .{
             .loc = loc,
             .path = try path.toOwnedSlice(self.alloc),
+            .subject = subject,
             .method = method,
             .is_local = false,
             .func = fb,
@@ -6250,19 +6238,18 @@ pub const Parser = struct {
                 return ParseError.UnexpectedToken;
             },
             .at => blk: {
-                // §2, the @ DYAD — **bare `@` NAMES** the anchor. §20's lexer
-                // hands it to a callable it retrieved from a table:
+                // Legacy bare-`@` anchor compatibility. It still hands the
+                // ambient subject to a callable retrieved from a table:
                 // `if r = read[b] return r(@)`. The anchor of a slot body is
-                // its receiver, which `parse_descriptor_slot` already binds as
-                // the first parameter, so naming it is the whole lowering —
-                // no new node, and nothing downstream re-derives a stance.
+                // its subject, which `parse_descriptor_slot` already publishes
+                // as a grammar role beside the operand pack.
                 //
                 // Recognised only where there is NOTHING for `@` to name (an
                 // argument-list closer), so every prefix spelling still
                 // reaches the macro path with its bytes untouched.
                 if (try self.at_is_bare_anchor()) {
                     const l = (try self.adv()).loc;
-                    break :blk self.new_expr(.{ .name = .{ .loc = l, .ident = "self" } });
+                    break :blk self.new_expr(.{ .name = .{ .loc = l, .ident = "", .role = .subject } });
                 }
                 break :blk self.parse_macro_call_expr();
             },
@@ -6428,27 +6415,6 @@ pub const Parser = struct {
     /// both positions there is no anchor to walk from, so it is a diagnostic
     /// rather than a silent lens.
     fn parse_field_projection(self: *Parser) ParseError!*ast.Expr {
-        if (self.call_arg_depth == 0 and self.subject != null) {
-            const subject = self.subject.?;
-            const dot_tok = try self.adv();
-            const first_field = try self.expect_name_like();
-            var walk = try self.new_expr(.{ .field = .{
-                .loc = dot_tok.loc,
-                .obj = try self.new_expr(.{ .name = .{ .loc = dot_tok.loc, .ident = subject } }),
-                .field = first_field,
-            } });
-            while ((try self.pk()).kind == .dot) {
-                const chain_dot = try self.adv();
-                const chain_field = try self.expect_name_like();
-                walk = try self.new_expr(.{ .field = .{
-                    .loc = chain_dot.loc,
-                    .obj = walk,
-                    .field = chain_field,
-                } });
-            }
-            return walk;
-        }
-
         const dot_tok = try self.adv(); // consume the leading `.`
         const first_field = try self.expect_name_like();
 
@@ -6511,8 +6477,8 @@ pub const Parser = struct {
     /// never takes an argument group; INVOKE always does" — so the open
     /// question was never IS-vs-INVOKE here. It was WHICH SUBJECT, and that is
     /// the same POSITION question `parse_field_projection` answers. In METHOD
-    /// SCOPE the ambient subject is the enclosing function's first parameter,
-    /// so `:peek()` is `l:peek()`. In ARGUMENT POSITION there is no ambient
+    /// SCOPE the ambient subject is the enclosing relation's subject fact. In
+    /// ARGUMENT POSITION there is no ambient
     /// subject yet — the subject is each element — so it stays the sibling
     /// reference `(__proj_v) __proj_v:method()` that `items:each(:close)`
     /// wants.
@@ -6540,16 +6506,25 @@ pub const Parser = struct {
             args = try arg_list.toOwnedSlice(self.alloc);
         }
 
-        // METHOD SCOPE: the ambient subject is the receiver, so this is an
-        // ordinary sibling invoke on it — not a reference to be applied later.
-        if (self.call_arg_depth == 0 and self.subject != null) {
-            const subject = self.subject.?;
-            return self.new_expr(.{ .method_call = .{
-                .loc = colon_tok.loc,
-                .obj = try self.new_expr(.{ .name = .{ .loc = colon_tok.loc, .ident = subject } }),
-                .method = method_name,
-                .args = args,
-            } });
+        // SUBJECT SCOPE: the grammar emits a role, not a receiver name or an
+        // operand. Sema resolves that role to the enclosing subject fact.
+        if (self.call_arg_depth == 0 and self.subject) {
+            return self.new_expr(.{
+                .method_call = .{
+                    .loc = colon_tok.loc,
+                    .obj = try self.new_expr(.{
+                        .name = .{
+                            .loc = colon_tok.loc,
+                            // Deliberate spelling poison: only the grammar role may
+                            // reach semantic resolution.
+                            .ident = "",
+                            .role = .subject,
+                        },
+                    }),
+                    .method = method_name,
+                    .args = args,
+                },
+            });
         }
 
         const call_expr = try self.new_expr(.{
@@ -9735,20 +9710,26 @@ test "parse: named result demand is not a receiver assignment" {
     try testing.expectEqualStrings("meaning", stmt.func_decl.func.ret_type.named);
 }
 
-test "parse: Pass23 colon method assign with implicit self" {
+test "parse: descriptor relation has a subject role and only true operands" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const mod = try parseSource(
-        \\Person:greet = (other) "Hey " .. other
+        \\Person: {
+        \\    name: str
+        \\    greet = (other) "Hey {other}"
+        \\}
     , &arena);
     const fd = mod.body.stmts[0].func_decl;
-    try testing.expect(fd.method);
-    try testing.expectEqual(@as(usize, 2), fd.path.len);
-    try testing.expectEqualStrings("Person", fd.path[0]);
-    try testing.expectEqualStrings("greet", fd.path[1]);
-    try testing.expectEqual(@as(usize, 2), fd.func.params.len);
-    try testing.expectEqualStrings("self", fd.func.params[0].name);
-    try testing.expectEqualStrings("other", fd.func.params[1].name);
+    try testing.expect(!fd.method);
+    try testing.expectEqual(@as(usize, 1), fd.path.len);
+    try testing.expectEqualStrings("greet", fd.path[0]);
+    try testing.expect(fd.subject.? == .descriptor);
+    const descriptor = fd.subject.?.descriptor;
+    try testing.expect(mod.body.stmts[1] == .alias_def);
+    try testing.expect(mod.body.stmts[1].alias_def.target.? == .record);
+    try testing.expectEqual(descriptor, mod.body.stmts[1].alias_def.target.?.record);
+    try testing.expectEqual(@as(usize, 1), fd.func.params.len);
+    try testing.expectEqualStrings("other", fd.func.params[0].name);
 }
 
 test "parse: Pass23 dot static member assign func" {

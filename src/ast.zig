@@ -498,6 +498,22 @@ pub const Quote = enum {
     host,
 };
 
+/// Grammar/source role of a name-shaped expression. `subject` is deliberately
+/// not a spelling: semantic analysis must resolve it against the enclosing
+/// subject home before graph publication.
+pub const NameRole = enum {
+    binding,
+    subject,
+};
+
+/// Grammar-produced source role of a relation's implicit subject. Canonical
+/// descriptor relations retain the exact descriptor node, not its spelling.
+/// `qualified` is the legacy `Home:edge = ...` compatibility face only.
+pub const SubjectRole = union(enum) {
+    descriptor: *const TypeExpr.RecordType,
+    qualified: []const u8,
+};
+
 pub const Expr = union(enum) {
     nil: Loc,
     true_lit: Loc,
@@ -508,7 +524,7 @@ pub const Expr = union(enum) {
     /// producer identity (GAP-145); `.host` is not a source quote.
     quoted: struct { loc: Loc, val: []const u8, quote: Quote = .host },
     vararg: Loc,
-    name: struct { loc: Loc, ident: []const u8 },
+    name: struct { loc: Loc, ident: []const u8, role: NameRole = .binding },
     index: struct { loc: Loc, obj: *Expr, key: *Expr },
     /// `a.b` and `a@b` build the SAME node — the value of `b` at `a` — so the
     /// AST could not tell them apart and the formatter rewrote every `p@x` into
@@ -706,6 +722,9 @@ pub const ElseIf = struct {
 pub const FuncDecl = struct {
     loc: Loc,
     path: [][]const u8,
+    /// Source-role provenance only. Sema publishes the exact subject fact and
+    /// realization never reads this parser node.
+    subject: ?SubjectRole = null,
     method: bool,
     is_local: bool,
     func: FuncBody,

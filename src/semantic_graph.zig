@@ -800,6 +800,16 @@ pub const ApplicationFact = struct {
     applied: Card = .unknown,
 };
 
+/// Exact projection of one ambient-subject member occurrence.  `occurrence`
+/// exists only to key the source projection consumed during transitional AST
+/// walking; relation, subject, and member are the authoritative identities.
+pub const SubjectProjectionFact = struct {
+    occurrence: id,
+    relation: id,
+    subject: id,
+    member: id,
+};
+
 /// One injected world, keyed by the exact id of its graph entity.
 ///
 /// A WORLD IS A VALUE, so it needs no new `NodeKind` — `ast.Expr.semantic_scope`
@@ -911,6 +921,11 @@ pub const SemanticGraph = struct {
     /// lowering O(applications x edges).
     out_edges: std.AutoHashMapUnmanaged(id, std.ArrayListUnmanaged(u32)) = .empty,
     application_facts: std.ArrayListUnmanaged(ApplicationFact) = .empty,
+    relation_subjects: std.AutoHashMapUnmanaged(id, id) = .empty,
+    subject_projections: std.ArrayListUnmanaged(SubjectProjectionFact) = .empty,
+    subject_projection_rows: std.AutoHashMapUnmanaged(usize, u32) = .empty,
+    /// Physical O(1) coverage index derived at the subject-projection write.
+    subject_projection_relations: std.AutoHashMapUnmanaged(id, void) = .empty,
     pack_facts: std.ArrayListUnmanaged(PackFact) = .empty,
     pack_values: std.ArrayListUnmanaged(id) = .empty,
     pack_demands: std.ArrayListUnmanaged(PackMemberDemand) = .empty,
@@ -936,6 +951,9 @@ pub const SemanticGraph = struct {
     /// Func id assigned at addNode from the declaration pointer. Lookup is this
     /// index, not a later walk of `ast_ref` slots.
     origin: std.AutoHashMapUnmanaged(usize, id) = .empty,
+    /// Alias declaration pointer -> descriptor entity. Physical lift index;
+    /// semantic identity remains the graph id it returns.
+    descriptor_origin: std.AutoHashMapUnmanaged(usize, id) = .empty,
     /// §18 — PLACE, IN THE GRAPH.
     ///
     /// The graph MUST represent place: identity, determinacy, extent, mutation,
@@ -990,6 +1008,10 @@ pub const SemanticGraph = struct {
             self.out_edges.deinit(self.alloc);
         }
         self.application_facts.deinit(self.alloc);
+        self.relation_subjects.deinit(self.alloc);
+        self.subject_projections.deinit(self.alloc);
+        self.subject_projection_rows.deinit(self.alloc);
+        self.subject_projection_relations.deinit(self.alloc);
         self.pack_facts.deinit(self.alloc);
         self.pack_values.deinit(self.alloc);
         self.pack_demands.deinit(self.alloc);
@@ -1010,6 +1032,7 @@ pub const SemanticGraph = struct {
         self.home_apps.deinit(self.alloc);
         self.descriptor_refs.deinit(self.alloc);
         self.origin.deinit(self.alloc);
+        self.descriptor_origin.deinit(self.alloc);
         if (self.places) |*census| census.deinit();
         for (self.bodies.items) |*body| {
             body.places.deinit();
@@ -1947,6 +1970,64 @@ pub const SemanticGraph = struct {
         return self.origin.get(@intFromPtr(raw));
     }
 
+    fn findAliasShape(self: *const SemanticGraph, target: *const ast.AliasDef) ?id {
+        const raw: *const anyopaque = @ptrCast(target);
+        const shape = self.descriptor_origin.get(@intFromPtr(raw)) orelse return null;
+        const node = self.get(shape) orelse return null;
+        if (node.ast_ref != raw or !self.hasTableDescriptorFacts(shape)) return null;
+        return shape;
+    }
+
+    fn publishSubjectFacts(self: *SemanticGraph, checked: *const sema.Sema, file: []const u8) !void {
+        const relation_limit = self.nodes.items.len;
+        var index: usize = 0;
+        while (index < relation_limit) : (index += 1) {
+            if (!self.callable(@intCast(index))) continue;
+            const node = self.nodes.items[index];
+            const raw = node.ast_ref orelse continue;
+            const relation_decl: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
+            const source = checked.relationSubjectFact(relation_decl) orelse continue;
+            const shape = self.findAliasShape(source.home) orelse return error.MissingRelationSubject;
+            const relation: id = @intCast(index);
+            const subject = try self.addChild(relation, .{
+                .kind = .value,
+                .span = node.span,
+                .descriptor = source.descriptor,
+                .stage = .sema,
+            });
+            try self.addEdge(.{ .from = subject, .to = shape, .kind = .descriptor });
+            const gop = try self.relation_subjects.getOrPut(self.alloc, relation);
+            if (gop.found_existing) return error.DuplicateRelationSubject;
+            gop.value_ptr.* = subject;
+        }
+
+        for (checked.subjectProjectionFacts()) |source| {
+            const relation = self.findFuncDecl(source.relation) orelse return error.MissingRelationSubject;
+            const subject = self.relation_subjects.get(relation) orelse return error.MissingRelationSubject;
+            const shape = self.relationSubjectShape(relation) orelse return error.MissingRelationSubject;
+            const members = try self.membersOf(shape, self.alloc);
+            defer self.alloc.free(members);
+            if (source.field >= members.len) return error.InvalidSubjectProjection;
+            const occurrence = try self.addChild(relation, .{
+                .kind = .value,
+                .span = .{ .file = file, .start = source.expression.loc().line, .end = source.expression.loc().col },
+                .descriptor = source.descriptor,
+                .stage = .sema,
+                .ast_ref = @ptrCast(@constCast(source.expression)),
+            });
+            const row = std.math.cast(u32, self.subject_projections.items.len) orelse
+                return error.SubjectProjectionCapacityExceeded;
+            try self.subject_projections.append(self.alloc, .{
+                .occurrence = occurrence,
+                .relation = relation,
+                .subject = subject,
+                .member = members[source.field],
+            });
+            try self.subject_projection_rows.putNoClobber(self.alloc, @intFromPtr(source.expression), row);
+            try self.subject_projection_relations.put(self.alloc, relation, {});
+        }
+    }
+
     /// A name-facing projection is diagnostic/tooling input, never identity.
     /// Ambiguity refuses instead of selecting the first matching graph entity.
     fn findUniqueByNameOfKind(self: *const SemanticGraph, name: []const u8, kind: NodeKind) ?id {
@@ -2339,6 +2420,39 @@ pub const SemanticGraph = struct {
         return entity;
     }
 
+    pub fn relationSubject(self: *const SemanticGraph, relation: id) ?id {
+        const subject = self.relation_subjects.get(relation) orelse return null;
+        const node = self.get(subject) orelse return null;
+        if (!self.callable(relation) or node.descriptor == null) return null;
+        return subject;
+    }
+
+    pub fn relationSubjectShape(self: *const SemanticGraph, relation: id) ?id {
+        const subject = self.relationSubject(relation) orelse return null;
+        var shape: ?id = null;
+        for (self.outEdges(subject)) |edge_index| {
+            const edge = self.edges.items[edge_index];
+            if (edge.from != subject or edge.kind != .descriptor) continue;
+            if (!self.hasTableDescriptorFacts(edge.to) or shape != null) return null;
+            shape = edge.to;
+        }
+        return shape;
+    }
+
+    pub fn relationHasSubjectProjection(self: *const SemanticGraph, relation: id) bool {
+        return self.subject_projection_relations.contains(relation);
+    }
+
+    pub fn subjectProjection(self: *const SemanticGraph, expression: *const ast.Expr) ?SubjectProjectionFact {
+        const row = self.subject_projection_rows.get(@intFromPtr(expression)) orelse return null;
+        if (row >= self.subject_projections.items.len) return null;
+        const fact = self.subject_projections.items[row];
+        const node = self.get(fact.occurrence) orelse return null;
+        if (node.ast_ref != @as(?*anyopaque, @ptrCast(@constCast(expression)))) return null;
+        if (self.relationSubject(fact.relation) != fact.subject) return null;
+        return fact;
+    }
+
     /// Result descriptor retained on one exact function entity.
     pub fn functionResultDescriptor(self: *const SemanticGraph, function: id) ?types.ResolvedType {
         const node = self.get(function) orelse return null;
@@ -2515,6 +2629,7 @@ pub const SemanticGraph = struct {
                 .descriptor_state = state,
                 .ast_ref = @ptrCast(ad),
             });
+            try self.descriptor_origin.putNoClobber(self.alloc, @intFromPtr(ad), shape_id_node);
             try self.publishDescriptorRefEdges(shape_id_node, rt);
             try self.publishTableShapeMembers(shape_id_node, alias_span, rt);
             try self.attachTableShapeTransforms(parent, alias_span, rt, shape_id orelse 0);
@@ -3847,6 +3962,7 @@ pub const SemanticGraph = struct {
             } else |_| {}
         }
         const module = try self.liftModuleWithCalls(mod, file);
+        try self.publishSubjectFacts(checked, file);
 
         const candidate_limit = self.application_candidates.bit_length;
         var candidate: usize = 0;
@@ -3879,10 +3995,18 @@ pub const SemanticGraph = struct {
 
             var subject_value: ?id = null;
             if (fact.subject) |subject| {
-                const descriptor = checked.exprDescriptor(subject) orelse
-                    return error.MissingApplicationDescriptor;
-                subject_value = try self.addApplicationValue(call_id, subject, file, descriptor);
-                try self.noteOrigin(subject_value.?, subject, caller);
+                if (checked.ambientSubjectFact(subject)) |ambient| {
+                    const ambient_relation = self.findFuncDecl(ambient.relation) orelse
+                        return error.MissingRelationSubject;
+                    if (ambient_relation != caller) return error.InvalidRelationSubject;
+                    subject_value = self.relation_subjects.get(caller) orelse
+                        return error.MissingRelationSubject;
+                } else {
+                    const descriptor = checked.exprDescriptor(subject) orelse
+                        return error.MissingApplicationDescriptor;
+                    subject_value = try self.addApplicationValue(call_id, subject, file, descriptor);
+                    try self.noteOrigin(subject_value.?, subject, caller);
+                }
             }
             const arguments = try self.alloc.alloc(id, fact.arguments.len);
             defer self.alloc.free(arguments);
@@ -5252,7 +5376,13 @@ pub const SemanticGraph = struct {
         // version 6: `aggregates` and `exact_i64`. Version 5 serialized neither
         // aggregate member identity nor exact scalar content, so a self-hosted
         // consumer could not reproduce the fact closure used by realization.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":6,\"file\":\"");
+        //
+        // version 7: relation subjects and subject-member projections. A v6
+        // snapshot could serialize an application subject, but not the
+        // subject VALUE incoming to a relation nor the exact member identities
+        // its body projected, so a host-independent realizer could not replay
+        // SELF-ZERO without consulting AST spelling.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":7,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         if (source_hash) |h| {
@@ -5377,6 +5507,35 @@ pub const SemanticGraph = struct {
             if (edge.kind == .descriptor_ref and edge.inline_ref) {
                 try out.appendSlice(alloc, ",\"inline_ref\":true");
             }
+            try out.append(alloc, '}');
+        }
+        try out.appendSlice(alloc, "],\"relation_subjects\":[");
+        var first_relation_subject = true;
+        for (self.nodes.items, 0..) |_, index| {
+            const relation: id = @intCast(index);
+            const subject = self.relationSubject(relation) orelse continue;
+            const shape = self.relationSubjectShape(relation) orelse return error.InvalidRelationSubject;
+            if (!first_relation_subject) try out.append(alloc, ',');
+            first_relation_subject = false;
+            try out.appendSlice(alloc, "{\"relation\":");
+            try appendJsonInt(out, alloc, relation);
+            try out.appendSlice(alloc, ",\"subject\":");
+            try appendJsonInt(out, alloc, subject);
+            try out.appendSlice(alloc, ",\"descriptor\":");
+            try appendJsonInt(out, alloc, shape);
+            try out.append(alloc, '}');
+        }
+        try out.appendSlice(alloc, "],\"subject_projections\":[");
+        for (self.subject_projections.items, 0..) |fact, index| {
+            if (index > 0) try out.append(alloc, ',');
+            try out.appendSlice(alloc, "{\"occurrence\":");
+            try appendJsonInt(out, alloc, fact.occurrence);
+            try out.appendSlice(alloc, ",\"relation\":");
+            try appendJsonInt(out, alloc, fact.relation);
+            try out.appendSlice(alloc, ",\"subject\":");
+            try appendJsonInt(out, alloc, fact.subject);
+            try out.appendSlice(alloc, ",\"member\":");
+            try appendJsonInt(out, alloc, fact.member);
             try out.append(alloc, '}');
         }
         try out.appendSlice(alloc, "],\"applications\":[");
@@ -6054,7 +6213,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 6), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 7), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
 
