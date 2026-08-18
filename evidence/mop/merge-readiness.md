@@ -36,3 +36,11 @@ subjects on clean trees.
 - Recommended order: merge their line first (semantic substance), then
   re-apply this line's tooling deltas (renames + census + H4) on top,
   re-running compound-census baseline after the merge tree settles.
+
+## Post-merge window (added after checking overlap)
+
+Their line touches main.zig, native_backend.zig, home_resolve.zig,
+build.zig — the C-ABI duo-symbol rename (duo_lexer_*, duo_keyword_classify,
+duo_lexer_host_stride) is therefore DEFERRED to immediately after the
+merge: claims are empty and files clean on both sides, so the rename gets
+one conflict-free window right after their merge lands.
