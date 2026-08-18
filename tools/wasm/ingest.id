@@ -14,10 +14,10 @@ ulebval: i64 = (s: str, i: i64)
   p: i64 = i
   hit: bool = true
   while hit
-    x: i64 = s:byte(p)
+    x: i64 = byteat(s, p)
     r = r + (x - (x / 128) * 128) * pow2(k)
     p = p + 1
-    hit = x >= 128 and p <= s:len()
+    hit = x >= 128 and p <= bytecount(s)
     k = k + 7
   r
 
@@ -25,9 +25,9 @@ ulebafter: i64 = (s: str, i: i64)
   p: i64 = i
   hit: bool = true
   while hit
-    x: i64 = s:byte(p)
+    x: i64 = byteat(s, p)
     p = p + 1
-    hit = x >= 128 and p <= s:len()
+    hit = x >= 128 and p <= bytecount(s)
   p
 
 pow2: i64 = (k: i64)
@@ -48,30 +48,49 @@ emit: i64 = (key: str, val: str)
   stdout:write(fact(key, "\"" .. val .. "\"") .. "\n")
   0
 
+hexdigit: i64 = (c: i64)
+  if c >= 48 and c <= 57
+    c - 48
+  else
+    if c >= 97 and c <= 102
+      c - 87
+    else
+      0
+
+# DECLARED TRANSPORT (until H9 lands a bytes face): the module is hex
+# text; bytes are read IN PLACE (hex pair -> value). O(1) per access,
+# zero materialization. The binary face replaces this accessor alone.
+
+byteat: i64 = (s: str, n: i64)
+  hexdigit(s:byte(2 * n - 1)) * 16 + hexdigit(s:byte(2 * n))
+
+bytecount: i64 = (s: str)
+  s:len() / 2
+
 main: i64 = ()
-  path: str = args(2)
+  path: str = args(1)
   if path == ""
-    stdout:write("usage: idol run tools/wasm/ingest.id -- <module.wasm>\n")
+    stdout:write("usage: idol run tools/wasm/ingest.id -- <module.wasm.hex>\n")
     return 1
   src: str = path:read()
   if src:len() < 8
     stdout:write("error: too short for a module\n")
     return 1
-  b0: i64 = src:byte(1)
-  b1: i64 = src:byte(2)
-  b2: i64 = src:byte(3)
-  b3: i64 = src:byte(4)
+  b0: i64 = byteat(src, 1)
+  b1: i64 = byteat(src, 2)
+  b2: i64 = byteat(src, 3)
+  b3: i64 = byteat(src, 4)
   if b0 != 0 or b1 != 97 or b2 != 115 or b3 != 109
     stdout:write("error: not a wasm module\n")
     return 1
-  v: i64 = src:byte(5) + src:byte(6) * 256 + src:byte(7) * 65536 + src:byte(8) * 16777216
-  _ = emit("module.magic", "wasm")
-  _ = emit("module.version", num(v))
+  v: i64 = byteat(src, 5) + byteat(src, 6) * 256 + byteat(src, 7) * 65536 + byteat(src, 8) * 16777216
+  emit("module.magic", "wasm")
+  emit("module.version", num(v))
   # section census: each section is one fact line (id, byte size)
   i: i64 = 9
   walk: bool = true
-  while walk and i + 1 < src:len()
-    sid: i64 = src:byte(i)
+  while walk and i + 1 < bytecount(src)
+    sid: i64 = byteat(src, i)
     size: i64 = ulebval(src, i + 1)
     after: i64 = ulebafter(src, i + 1)
     _ = emit("section." .. num(sid), num(size))

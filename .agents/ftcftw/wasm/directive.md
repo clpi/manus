@@ -123,6 +123,19 @@ functions), double-quoted escapes are not unescaped (single-quoted byte
 literals), for-in over dynamic args needs an unpublished
 gen-for-dynamic-iter fact (positional args(2) instead).
 
+UPDATE: the ingest now RUNS END TO END over a DECLARED hex transport
+(in-place pair reads, O(1) per byte, zero materialization) — real
+fib.wasm bytes -> idol -> fact lines: magic, version, and the full
+section census with byte sizes. The binary face (H9) later replaces the
+byteat accessor alone; no fact line changes.
+
+Idiom lessons paid (fleet-relevant, measured): args() is 1-based over
+CLI args (args(1) = first arg; args(2) past the end is NULL and
+propagates SILENTLY through ==, :len, and :byte guards — guard with an
+explicit range check); `_ = call()` discard-bindings are a no-op shape
+(call directly as a statement); loop-built str concatenation segfaults
+on ~73k iterations (read in place instead).
+
 MEASURED BLOCKER (H9): binary-safe ingress. `path:read()` on a .wasm
 file yields an EMPTY str — the current read face is text-only and the
 wasm magic (\0asm) does not survive. The canonical ingest is therefore
