@@ -65,6 +65,16 @@ diagctrl() {
 
 diagctrl tools/reduce/fixtures/crash/ctrl.id
 
+# arg-form face-equivalence: MUST pass once the compiler fix lands;
+# until then documents the defect (currently FAILS by design)
+out="$("$IDOL" run tools/reduce/fixtures/graph/argface.id 2>&1 || true)"
+if printf '%s' "$out" | grep -q "EQUIVALENT"; then
+  echo "PASS  graph/argface.id (face-equivalent)"
+else
+  echo "FAIL  graph/argface.id — arg-form defect still present (see argform.defect.md)" >&2
+  fails=$((fails + 1))
+fi
+
 if [ "$fails" -ne 0 ]; then
   echo "tools/reduce/verify: FAIL ($fails)" >&2
   exit 1

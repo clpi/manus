@@ -331,3 +331,19 @@ must stay green with `missing: parse_expr` and never revert to the
 crash. Post-merge pass order: merge -> tools/reduce/verify ->
 census/compound --record -> parity (adopt fail-closed) -> ABI rename
 window -> bridge census re-run.
+
+## H10 — arg-form face-equivalence (causal test now load-bearing)
+
+The audit's demand is implemented: tools/reduce/fixtures/graph/
+argface.id asserts at runtime that the same semantic application
+(same subject, relation, operand pack, demand) produces IDENTICAL
+machine behavior from both source faces. Current state:
+
+  chain=6 argform=0 FACE-DIVERGENCE
+
+The test is wired into tools/reduce/verify and currently FAILS —
+correctly, by design: the suite is RED until the compiler fix lands,
+then turns GREEN with zero changes to the test. This is the causal
+equivalence assertion the review specified: the compiler fails the
+suite if either face lowers differently. Owner: compiler lane
+(dnir_lower argument passing). Priority: outranks Wasm breadth.
