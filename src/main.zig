@@ -4843,6 +4843,11 @@ fn do_compile(
                     var direct_graph = semantic_graph.SemanticGraph.init(alloc);
                     defer direct_graph.deinit();
                     _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+                    const direct_candidate = if (native_scalar_candidate) true else blk: {
+                        native_scalar_precheck.graph = &direct_graph;
+                        defer native_scalar_precheck.graph = null;
+                        break :blk native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
+                    };
                     // TIER-0: an unobserved computation must not execute. The proof
                     // obligation is stated in `demand.zig`; nothing is removed unless
                     // all five parts of it are discharged. Applied at ALL THREE direct
@@ -4916,7 +4921,7 @@ fn do_compile(
                     // is lawful for a foreign reader too.
                     _ = try loop_closure.applyToModule(alloc, &ps.mod);
                     var native_diagnostic: native_backend.Diagnostic = .{};
-                    if (!(native_scalar_candidate and !too_many_modules)) {
+                    if (!(direct_candidate and !too_many_modules)) {
                         // THESE TWO FACTS ARE INDEPENDENT AND USED TO BE SPLICED
                         // INTO ONE SENTENCE THAT READ AS CAUSAL.
                         //
@@ -4959,7 +4964,7 @@ fn do_compile(
                             native_diagnostic.remember("native-scalar-precheck");
                         }
                     }
-                    const artifact_result = if (native_scalar_candidate and !too_many_modules)
+                    const artifact_result = if (direct_candidate and !too_many_modules)
                         native_backend.emitObjectForExecutableWithGraphLineageObserved(alloc, &ps.mod, entry, &direct_graph, &native_diagnostic)
                     else
                         @as(@TypeOf(native_backend.emitObjectForExecutableWithGraphLineageObserved(alloc, &ps.mod, entry, &direct_graph, &native_diagnostic)), error.UnsupportedProgram);
