@@ -296,7 +296,19 @@ standing configuration.
   branch's history.
 
 
-## H8 — keyed-table-export fact publication unblocks TWO admission paths
+## H8 (corrected) — module-table REPRESENTATION gates wasm + LSP admission
+
+`zig build wasm-test` fails closed at `module_materializes_table` in
+codegen.zig: a module exporting a table built by keyed writes has no
+native-scalar representation (producer drops the writes; the consumer
+flattens `m.x` to undefined symbols). This is the REPRESENTATION
+decision, not a missing published fact — my first H8 framing repeated
+the exact false-splice main.zig:4920 documents (three historical false
+findings from that comma). The engine's real first blocker is req's own
+unresolved applications. Owner: realization lane; the reconcile branch
+is landing table semantics (src/table_apply.zig). Wart oracle BUILT at
+the frozen rev (ca2b0b9c, ReleaseFast) — the perf rail has both oracles
+pinned; the engine number waits on admission.
 
 Measured: `zig build wasm-test` fails closed at
 `idol compile tools/wasm/src/engine.id --backend=direct` ->
