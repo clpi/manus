@@ -5,11 +5,11 @@ repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 codex_home="${CODEX_HOME:-$HOME/.codex}"
 devin_home="${DEVIN_HOME:-$HOME/.config/devin}"
 claude_home="${CLAUDE_HOME:-$HOME/.claude}"
-opencode_home="${OPENCODE_HOME:-$HOME/.opencode}"
+opencode_home="${OPENCODE_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}"
 
 install_skill() {
   name="$1"
-  src="$repo/.devin/skills/$name"
+  src="$repo/.pi/skills/$name"
   dst_dir="$2/skills/$name"
 
   if [ ! -f "$src/SKILL.md" ]; then
@@ -38,7 +38,7 @@ if [ -d "$legacy_dst" ] || [ -f "$legacy_dst/SKILL.md" ]; then
   cat >"$legacy_dst/SKILL.md" <<'EOF'
 ---
 name: idol-development
-description: RETIRED — use idol-dev instead. Historical alias for Idol development in clpi/duo.
+description: RETIRED — use idol-dev instead. Historical alias for Idol development.
 ---
 
 # Retired
@@ -48,7 +48,7 @@ Idol (`idol`, `.id`) work in the active development repository.
 
 Read `AGENTS.md`, then `docs/spec/constitution.md`, `CLAUDE.md`, and
 `docs/spec/source.md`. Run `./tools/node/dev/orient` and claim paths through
-`idol_dev_claim_acquire` before editing.
+`tools/node/dev/claim` before editing.
 EOF
   echo "retired $legacy_dst (redirect stub installed)"
 fi
@@ -59,7 +59,7 @@ if [ -d "$legacy_devin_dst" ] || [ -f "$legacy_devin_dst/SKILL.md" ]; then
   cat >"$legacy_devin_dst/SKILL.md" <<'EOF'
 ---
 name: idol-development
-description: RETIRED — use idol-dev instead. Historical alias for Idol development in clpi/duo.
+description: RETIRED — use idol-dev instead. Historical alias for Idol development.
 ---
 
 # Retired

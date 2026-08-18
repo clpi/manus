@@ -33,7 +33,7 @@
 //!   gatecap(cmd)                      → command capture (host ingress only)
 //!   print(v)                          → host stdout egress (one node with
 //!                                       `stdout:write`; recognized everywhere)
-//!   to(str)(integral)                 → demanded conversion (infer when unique)
+//!   to(T)(x)                          → demanded conversion (infer when unique)
 //!
 //! Ordinary module calls like `observe(41)` are NOT bootstrap. Checked lowering
 //! must consume graph application/relation/target ids — never callee spelling.
@@ -302,9 +302,24 @@ fn callApplication(expr: *const Expr) bool {
     switch (c.func.*) {
         .name => |n| {
             if (std.mem.eql(u8, n.ident, "gatecap") and c.args.len == 1) return true;
-            if (toStrIntegral(expr)) return true;
             return false;
         },
+        // `to(str)(n)` — A CALL WHOSE CALLEE IS A CALL, which is the whole
+        // reason this arm has to exist separately. `curriedTo` asks
+        // `c.func.* != .call` and was called from the `.name` arm above, where
+        // `c.func.*` IS `.name` by construction — so the predicate could not
+        // return true from any input and the face was NEVER recognized.
+        //
+        // The lowering it gates was never the missing part: `dnir_lower`
+        // carries `lowerToStr` in full, malloc + snprintf with the value staged
+        // on the VARIADIC TAIL, and a comment explaining which operand shapes
+        // it refuses rather than mis-lowers. Nothing could reach it, because
+        // `firstUnresolvedApplicationExcludingBootstrap` runs BEFORE lowering
+        // and refused the whole module first. Measured across the tracked `.id`
+        // of this tree: 598 occurrences of `to(str)(` in 143 files, every one
+        // of them answering DNB011 `unresolved-application-facts` in front of a
+        // realization that was already written.
+        .call => return curriedTo(expr),
         // FOREIGN-ONLY: namespace-first spellings retired from canonical Idol.
         // Delete each arm when graph + DNIR consume the exact relation/target id.
         .field => |f| {
@@ -360,14 +375,29 @@ fn callApplication(expr: *const Expr) bool {
     }
 }
 
-fn toStrIntegral(expr: *const Expr) bool {
+/// `to(T)(x)` — the CURRIED spelling of the conversion `x:to(T)` and
+/// `to(x, T)` already wear. All three name one edge, so all three have to
+/// reach the one conversion table; `dnir_lower.lowerSubjectTo` is that table
+/// and refuses by target and by subject class, which is where a conversion
+/// that cannot be performed belongs.
+///
+/// `str` KEEPS ITS SYNTACTIC OPERAND TEST and the other targets do not, and
+/// that asymmetry is deliberate rather than an oversight. `to(str)(n)` lowers
+/// through `snprintf` with a `"%lld"` this emitter ASSUMES — a wrong operand
+/// class there PRINTS AN ADDRESS instead of refusing, measured — so it is
+/// admitted only for operands whose integrality is visible in the syntax. The
+/// text-consuming targets have no such hazard: their lowering asks the type
+/// tracker (`exprIsStr`) and refuses `unsupported-conversion` on anything else.
+fn curriedTo(expr: *const Expr) bool {
     const c = expr.call;
     if (c.args.len != 1) return false;
     if (c.func.* != .call) return false;
     const inner = c.func.call;
     if (inner.func.* != .name or !std.mem.eql(u8, inner.func.name.ident, "to")) return false;
     if (inner.args.len != 1 or inner.args[0].* != .name) return false;
-    if (!std.mem.eql(u8, inner.args[0].name.ident, "str")) return false;
+    const target = inner.args[0].name.ident;
+    if (std.mem.eql(u8, target, "i64") or std.mem.eql(u8, target, "f64")) return true;
+    if (!std.mem.eql(u8, target, "str")) return false;
     return switch (c.args[0].*) {
         .int_lit, .true_lit, .false_lit => true,
         .unop => |u| u.op == .len,

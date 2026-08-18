@@ -30,10 +30,10 @@ names do not create another identity. Encoding, normalization, segmentation,
 comparison, search, and conversion qualifications belong in descriptor and law
 facts rather than relation-name variants.
 
-Square brackets remain only for a genuinely computed projection. A statically
-known identity uses a named projection. Neither source face determines whether
-realization uses an offset, view, scan, table, SIMD operation, foreign routine,
-or no runtime work.
+Ordinary application supplies a genuinely computed projection: `text(key)`.
+A statically known identity uses named projection. Neither source face
+determines whether realization uses an offset, view, scan, table, SIMD
+operation, foreign routine, or no runtime work.
 
 Positions, ranges, and iteration units must remain explicit semantic facts when
 observable. A byte offset, scalar position, and grapheme position are not

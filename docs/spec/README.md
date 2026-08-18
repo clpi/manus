@@ -14,7 +14,8 @@ documentation, not executable source or a canonical implementation example.
 
 - `grammar.md` — source roles, delimiter law, parser boundary, authority pipeline.
 - `source.md` — source/home/package/world closure; no native module or admission syntax.
-- `host.md` — host boundary, root values, endpoints, process/shell homes.
+- `host.md` — host boundary, root values, endpoints, shell interpretation law,
+  and independent process authority.
 - `world.md` — world/home invocation; no `io.method()` or `std.os` namespaces.
 - `cost.md` projects the cost model.
 - `soundness.md` projects soundness obligations.

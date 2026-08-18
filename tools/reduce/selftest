@@ -1,0 +1,72 @@
+#!/bin/sh
+# idol-reduce selftests — the five proofs required by the brief.
+# Each test prints PASS/FAIL; exit non-zero on any failure.
+set -eu
+repo="$(cd "$(dirname "$0")/../.." && pwd)"
+R="./tools/reduce/idol-reduce"
+IDOL="${IDOL_REDUCE_BIN:-$repo/zig-out/bin/idol}"
+export IDOL
+work="$(mktemp -d "${TMPDIR:-/tmp}/idol-reduce-selftest.XXXXXX")"
+trap 'rm -rf "$work"' EXIT
+fails=0
+
+t() { if [ "$1" = 0 ]; then echo "PASS $2"; else echo "FAIL $2" >&2; fails=$((fails + 1)); fi; }
+
+# 1. an exact first diagnostic reduces (F3b family, known 6-line theorem)
+cat >"$work/f3.id" <<'EOF'
+# padding comment one
+# padding comment two
+global g: str = ""
+set: i64 = ()
+  g = "x"
+  0
+g:len()
+EOF
+rc=0; "$R" "$work/f3.id" -p '"$IDOL" compile "$1" --emit obj -o /tmp/irs.o 2>&1 | grep -q "global-init-not-constant:g"' -o "$work/f3.min" >/dev/null 2>&1 || rc=$?
+t $rc "exact-diagnostic reduces (6+2 -> 4)"
+rc=0; grep -q 'g = "x"' "$work/f3.min" 2>/dev/null || rc=$?
+t $rc "reduced fixture keeps the semantic lever"
+
+# 2. a crash reduces (compiler internal error, padded real crasher)
+crash="$work/crash.id"
+cp /tmp/idol-mop/f5_parser_reduced.id "$crash" 2>/dev/null || {
+  echo "SKIP crash reduces (no f5 fixture on this machine)" >&2
+}
+if [ -f "$crash" ]; then
+  for i in $(seq 1 40); do echo "# pad $i" >>"$crash"; done
+  "$R" "$crash" -p '"$IDOL" compile "$1" --emit obj -o /tmp/irs.o 2>&1 | grep -q "InvalidAggregateFact"' -o "$work/crash.min" >/dev/null 2>&1
+  t $? "crash reduces (27+40 pads -> 27)"
+fi
+
+# 3. a wrong answer reduces (output mismatch against an oracle expectation)
+cat >"$work/wa.id" <<'EOF'
+# padding
+stdout:write("8")
+EOF
+# wrong-answer class: the oracle expects 6; the program prints 8. The
+# predicate pins the WRONG output exactly, so the blank floor (no output)
+# correctly fails it and the admission control holds.
+rc=0; "$R" "$work/wa.id" -p '[ "$("$IDOL" run "$1" 2>/dev/null)" = "8" ]' -o "$work/wa.min" >/dev/null 2>&1 || rc=$?
+t $rc "wrong-answer reduces (strips padding, keeps mismatch)"
+rc=0; grep -q '"8"' "$work/wa.min" 2>/dev/null || rc=$?
+t $rc "reduced wrong-answer keeps the wrong output"
+
+# 4. a deliberately broken (always-true) predicate is rejected
+if "$R" "$work/wa.id" -p 'true' >/dev/null 2>&1; then
+  t 1 "broken always-true predicate rejected"
+else
+  t 0 "broken always-true predicate rejected"
+fi
+
+# 5. restoration: the original still fails after reduction ran (admission
+#    proved predicate(original); re-verify the untouched original now)
+rc=0; "$IDOL" compile "$work/f3.id" --emit obj -o /tmp/irs.o 2>&1 | grep -q "global-init-not-constant:g" || rc=$?
+if [ "$rc" -ne 0 ]; then "$IDOL" compile "$work/f3.id" --emit obj -o /tmp/irs.o 2>&1 | tail -3 >&2; fi
+t $rc "original still fails after reduction (restoration control)"
+
+rm -f /tmp/irs.o
+if [ "$fails" -ne 0 ]; then
+  echo "selftest: FAIL ($fails)" >&2
+  exit 1
+fi
+echo "selftest: PASS"

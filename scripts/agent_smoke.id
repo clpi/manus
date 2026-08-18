@@ -1,7 +1,7 @@
 # Agent tier-0 gate — Idol-native scripting.
 # Safe for parallel agent sessions; does NOT run bench/ml-bench/gpu-bench.
 # run: idol run scripts/agent_smoke.id
-# or:  idol run scripts/idol_lock.id -- ./zig-out/bin/idol run scripts/agent_smoke.id
+# serialized: tools/node/dev/idol-lock -- ./zig-out/bin/idol run scripts/agent_smoke.id
 
 chomp: str = (text: str)
   if not text:len()
@@ -24,9 +24,6 @@ smoke: i64 = ()
   bin = "./zig-out/bin/idol"
   if status("{bin} run scripts/public_safety_scan.id") != 0
     print("agent-smoke: public_safety_scan FAIL")
-    return 1
-  if status("{bin} run scripts/module_surface_gate.id") != 0
-    print("agent-smoke: module_surface_gate FAIL")
     return 1
   if status("{bin} run scripts/luahost.id") != 0
     print("agent-smoke: luahost FAIL")

@@ -1610,6 +1610,9 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+    var history = semantic_graph.History.init(alloc);
+    defer history.deinit();
+    _ = try history.register(&graph, .{});
 
     var snap = try knowledge_snapshot.buildFromModule(alloc, &ps.sem, &graph, src_path);
     defer snap.deinit(alloc);
@@ -1656,7 +1659,7 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     const stdout = std.Io.File.stdout();
     var buf: [16384]u8 = undefined;
     var fw: std.Io.File.Writer = .init(stdout, io, &buf);
-    try fw.interface.print("{{\"schema\":\"duo-explain-v0\",\"file\":\"", .{});
+    try fw.interface.print("{{\"schema\":\"idol-explain-v1\",\"file\":\"", .{});
     for (src_path) |c| {
         switch (c) {
             '"', '\\' => try fw.interface.print("\\{c}", .{c}),
@@ -3397,7 +3400,6 @@ fn machineTargetForBackend(target: []const u8) []const u8 {
 ///     hoisted into a program that never asked to run them.
 ///
 /// Intra-module calls need one rewrite: inside the module, `count()` calls
-
 /// Does every module-scope name the spliced declarations READ come across with
 /// them? The call closure picks the functions and a literal test picks the
 /// bindings; this is the check that makes those two answer together, so a
@@ -3928,6 +3930,7 @@ fn boot(symbol: []const u8) ?[]const u8 {
         std.mem.eql(u8, symbol, "idol_process_capture"))
         return "idol_io_runtime.o";
     if (std.mem.eql(u8, symbol, "duo_str_sub") or
+        std.mem.eql(u8, symbol, "duo_str_to_f64") or
         std.mem.eql(u8, symbol, "duo_str_to_i64") or
         std.mem.eql(u8, symbol, "idol_str_at") or
         std.mem.eql(u8, symbol, "idol_str_find") or
@@ -4060,7 +4063,6 @@ fn reportDirectBackendError(
     }
     _ = io;
 }
-
 
 /// law.md §40 build cache. A byte-identical source compiled by a byte-identical
 /// compiler under identical settings yields a byte-identical artifact, so reuse
@@ -4308,7 +4310,7 @@ fn hashSourceQuotient(h: *std.crypto.hash.sha2.Sha256, src: []const u8, path: []
             rank += 1;
             last_line = t.loc.line;
         }
-        const kind_code: u16 = @intFromEnum(t.kind);
+        const kind_code: u16 = @backingInt(t.kind);
         const text_len: u32 = @intCast(t.text.len);
         h.update(std.mem.asBytes(&kind_code));
         h.update(std.mem.asBytes(&rank));
@@ -4803,11 +4805,10 @@ fn do_compile(
                     // classifier", and that refused the one cross-module shape
                     // the direct backend was BUILT for: a module exporting C
                     // symbols, called through a `bl` with a relocation.
-                    // `examples/duo_emit_machine_code.id` is that shape, and
-                    // `zig build direct-module-link` — the gate whose entire
-                    // job is to prove it — could not pass at all from the
-                    // moment gap[023] landed until now, because `std.emit` is
-                    // one object and one is already over the ceiling.
+                    // The historical machine-emission fixture had that shape,
+                    // but its proof depended on generated C and guessed
+                    // temporary object names. It was deleted rather than kept
+                    // as false direct-native evidence.
                     //
                     // The hazard gap[023] actually measured is narrower: a
                     // linked module object that CALLS THE RUNTIME (`lua_require`

@@ -792,12 +792,14 @@ Long-term place-producing application may support:
     x(k) = value
 when `x(k)` resolves to a place.
 
-## XXX. BRACKET-NARROW
+## XXX. BRACKET-ZERO
 
-`[]` is not the default canonical lookup syntax.
-Retain it only where it expresses a genuinely independent computed
-projection/place distinction or foreign compatibility.
-Do not preserve brackets merely from Lua history.
+Canonical Idol does not use `[]` for ordinary access, including when the key is
+computed. Use `table(key)`; whether the application yields a value or place is
+resolved from demand and facts rather than punctuation. A foreign source law may
+recognize foreign bracket syntax only inside that law-qualified source
+projection. The spelling remains source provenance and never becomes Idol
+grammar or semantic authority.
 
 ## XXXI. HAS-ZERO
 

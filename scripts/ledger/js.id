@@ -39,10 +39,10 @@ lines: any = (text: str)
   out
 
 vscode: bool = (root: str, path: str)
-  path == "ext/vscode-duo/extension.js" and status("cd '{root}' && ./zig-out/bin/idol run scripts/vscodeproj.id") == 0
+  path == "ext/vscode-idol/extension.js" and status("cd '{root}' && ./zig-out/bin/idol run scripts/vscodeproj.id") == 0
 
 tree: bool = (root: str, path: str)
-  path == "ext/tree-sitter-duo/grammar.js" and status("cd '{root}' && env TSEMIT_CHECK=1 ./zig-out/bin/idol run scripts/treesitter_emit.id") == 0
+  path == "ext/tree-sitter-idol/grammar.js" and status("cd '{root}' && env TSEMIT_CHECK=1 ./zig-out/bin/idol run scripts/treesitter_emit.id") == 0
 
 main: i64 = ()
   root = cap("git rev-parse --show-toplevel 2>/dev/null")

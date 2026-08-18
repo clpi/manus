@@ -38,6 +38,7 @@ extern "c" fn strlen(s: [*:0]const u8) usize;
 extern "c" fn strstr(hay: [*:0]const u8, needle: [*:0]const u8) ?[*:0]const u8;
 extern "c" fn memcpy(dst: *anyopaque, src: *const anyopaque, n: usize) *anyopaque;
 extern "c" fn strtoll(s: [*:0]const u8, end: *?[*:0]const u8, base: c_int) c_longlong;
+extern "c" fn strtod(s: [*:0]const u8, end: *?[*:0]const u8) f64;
 extern "c" fn abort() noreturn;
 extern "c" fn write(fd: c_int, buf: *const anyopaque, n: usize) isize;
 extern "c" fn __error() *c_int; // Darwin errno location
@@ -144,6 +145,40 @@ export fn duo_str_to_i64(s: ?[*:0]const u8) callconv(.c) i64 {
     if (e[q] != 0) strFatal("to(i64): trailing text after number");
     if (__error().* == ERANGE) strFatal("to(i64): out of range");
     return @intCast(v);
+}
+
+/// `to(f64)(s)` — the other half of a conversion table that had only its
+/// integer edge. Written against `duo_str_to_i64` line for line, deliberately:
+/// the two are the same edge at two widths, and a caller must not have to know
+/// which one it is using to know what a malformed numeral does.
+///
+/// `strtod` IS CALLED, NOT REIMPLEMENTED, for the reason this file's header
+/// gives about `strtoll` — its accept boundary IS the observable behaviour of
+/// the conversion, and hand-porting it is how a port silently changes an
+/// answer. The ONE place Lua's numeral grammar is narrower is guarded here
+/// instead: `strtod` reads `inf`, `infinity` and `nan`, and Lua's `tonumber`
+/// does not, so a numeral must start with a digit or a decimal point after an
+/// optional sign. That is the same test `codegen.zig` emits for `tonumber`, so
+/// both backends refuse the same strings.
+export fn duo_str_to_f64(s: ?[*:0]const u8) callconv(.c) f64 {
+    const str = s orelse strFatal("to(f64): no string");
+    var p: usize = 0;
+    while (str[p] == ' ' or str[p] == '\t' or str[p] == '\n' or str[p] == '\r') p += 1;
+    var body = p;
+    if (str[body] == '+' or str[body] == '-') body += 1;
+    const lead = str[body];
+    if (!((lead >= '0' and lead <= '9') or lead == '.')) strFatal("to(f64): not a number");
+    var endp: ?[*:0]const u8 = null;
+    __error().* = 0;
+    const start: [*:0]const u8 = @ptrCast(str + p);
+    const v = strtod(start, &endp);
+    const e = endp orelse strFatal("to(f64): not a number");
+    if (@intFromPtr(e) == @intFromPtr(start)) strFatal("to(f64): not a number");
+    var q: usize = 0;
+    while (e[q] == ' ' or e[q] == '\t' or e[q] == '\n' or e[q] == '\r') q += 1;
+    if (e[q] != 0) strFatal("to(f64): trailing text after number");
+    if (__error().* == ERANGE) strFatal("to(f64): out of range");
+    return v;
 }
 
 // ── exported: plain substring search ────────────────────────────────────────

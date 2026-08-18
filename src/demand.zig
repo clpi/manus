@@ -2671,7 +2671,6 @@ test "demand: empty function body analyses to nothing dead" {
     try std.testing.expectEqual(@as(u32, 0), n);
 }
 
-
 // --- W: the file-scope tail ------------------------------------------------
 
 test "demand: W — a file-scope tail's dead loop dies when the world is closed" {

@@ -1374,7 +1374,7 @@ pub const CodeGen = struct {
     /// `call to undeclared function 'lua_file_write_method'`, because such a
     /// module is native-scalar and never emits the lua prelude that declares
     /// it. `io.stdout:write(x)` compiled, so the gap was EXACTLY the projected
-    /// spelling — and `tools/lsp/gate.id` and `tools/mcp/gate.id` build
+    /// spelling — and the since-retired in-tree LSP/MCP gates then built
     /// themselves with `--backend=c`.
     ///
     /// IT IS NOT `print`. `io.write` appended no newline and neither does
@@ -3889,14 +3889,16 @@ pub const CodeGen = struct {
                         return self.nofit(@src());
                     }
                     const ret_ty = contract_ret(&fd.func);
-                    if (ret_ty != .inferred and !self.type_expr_is_native_scalar(ret_ty)) {
+                    if (ret_ty != .inferred and !self.type_expr_is_native_scalar(ret_ty) and
+                        !self.type_expr_is_native_result_pack(ret_ty))
+                    {
                         // The tag has to name what the PREDICATE saw, not what
                         // the source spells. `contract_ret` answers `.inferred`
                         // for a fallible contract, so `scan(b: i64): i64 | error`
                         // reported "ret-type:i64" — a type that is perfectly
                         // native — and sent a reader to the wrong line. What
-                        // disqualifies it is the result pack, which has no
-                        // native ABI yet.
+                        // disqualifies it is the correlated success/error
+                        // alternative, not an ordinary fixed GP result pack.
                         if (fd.func.ret_fallible) {
                             self.nativeDiagFailFmt("ret-pack:{s}|error", .{typeLabel(fd.func.ret_type)});
                         } else {
@@ -5752,6 +5754,29 @@ pub const CodeGen = struct {
         return rt.is_numeric() or rt == .bool or rt == .str or rt == .void or
             rt == .array or rt == .@"struct" or rt == .enum_type or
             (rt == .table_type and rt.table_type.storage_class != .dynamic) or rt == .pointer;
+    }
+
+    fn type_expr_is_native_result_pack(self: *CodeGen, type_expr: ast.TypeExpr) bool {
+        if (type_expr != .tuple or type_expr.tuple.len == 0 or type_expr.tuple.len > 8) return false;
+        for (type_expr.tuple) |item| {
+            const rt = self.resolve_type(item);
+            switch (rt) {
+                .i8,
+                .i16,
+                .i32,
+                .i64,
+                .u8,
+                .u16,
+                .u32,
+                .u64,
+                .bool,
+                .str,
+                .pointer,
+                => {},
+                else => return false,
+            }
+        }
+        return true;
     }
 
     fn module_has_cinclude(self: *CodeGen, mod: *const ast.Module) bool {

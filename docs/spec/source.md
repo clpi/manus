@@ -51,6 +51,60 @@ Source organization projects onto those existing semantics.
 
 Nothing else is required.
 
+## Source law and grammar
+
+Keep five boundaries distinct:
+
+```text
+source       bytes, span, origin, provenance
+law          interpretation of those bytes and resulting values
+grammar      the one compiler authority's projection of source law
+world        bindings, semantic context, laws in reach, authority, stage, target
+graph        resolved identities and facts
+realization  physical execution
+```
+
+The ordering is:
+
+```text
+recognize(source, source law) -> syntax provenance
+resolve(syntax, world, source law) -> semantic facts
+project(semantic facts, demand) -> specialization
+realize(semantic facts, demand, target) -> physical execution
+```
+
+Exactly one source law owns every source position. Canonical `.id` ingress uses
+Idol law. An admitted `.lua`, `.c`, `.sh`, or `.wasm` partition may use its
+exact foreign law. The suffix or provider participates only at ingress and
+remains provenance afterward. Never union grammars, try multiple parsers and
+pick one that accepts, switch on command-looking text, or activate syntax
+because a world or authority is reachable.
+
+There is one grammar authority, not one grammar implementation per foreign
+system. It projects the selected source law into token identity, roles,
+precedence, compatibility, and structural recognition. Parser, formatter,
+Tree-sitter, LSP, MCP, documentation, and canonicalization consume generated
+projections from that owner.
+
+Do not create semantic `dialect`, `sourceworld`, `grammarworld`, `foreignmode`,
+`bashmode`, or foreign syntax-node identities. Origin, law, span, and provenance
+qualify ordinary identities in the one graph. Foreign meaning that has no
+witnessed native equivalent remains an exact foreign semantic identity; it is
+not forced into fake native vocabulary.
+
+Source law and world are independent. Bash law may be recognized by an IDE
+with no process authority. Process authority may exist while the surrounding
+source remains Idol. Shell is command interpretation law; Bash is one foreign
+source and semantic lawset; process is a world capability. None implies either
+of the others.
+
+`thing@world` is recognized Idol syntax before semantic interjection and never
+means “parse the unread bytes of thing with another grammar.” Whole-file
+ingress is the first foreign-source boundary. If inline polyglot source is
+admitted later, one neutral source-capture face must delimit an unparsed span
+before its law is selected. That capture does not execute, import, grant
+authority, or change world, and its punctuation is not yet frozen.
+
 ## File
 
 A canonical `.id` file is a source partition.
@@ -62,7 +116,7 @@ When a file supplies one naturally named table/home, its stem projects that ordi
 Given:
 
 ```text
-app/
+main/
   main.id
   parser.id
   lexer.id
@@ -71,7 +125,7 @@ app/
 the semantic topology is approximately:
 
 ```text
-app
+@
   main
   parser
   lexer
@@ -409,7 +463,8 @@ preserves semantic identity — chain relations directly. Retain a named
 intermediate only when the name contributes semantic information the chain does
 not (multiple consumers, or human-clarity place identity).
 
-MCP: `duo_agent_session_start` returns `infer_one` on all agent servers.
+Agent coordination is outside source law. Live claims use
+`tools/node/dev/claim`; exact gap files own obligations.
 
 ## Projection
 
@@ -420,7 +475,7 @@ observable through its ordinary law.
 
 Canonical named projection remains `user.name`.
 
-Canonical computed projection remains `table[key]` where grammar permits.
+Canonical computed projection is ordinary application: `table(key)`.
 
 A package table behaves exactly like any other table.
 
@@ -696,11 +751,14 @@ new compound semantic filenames = 0
 ```
 
 `gate/path.id` enforces LAW-ONE path names on staged paths and the tracked tree.
-`gate/idiom.id` remains a lexical migration preflight on added lines only;
-it must not be reported as semantic canonicality. Closure, namespace, length,
-cast, world, and relation identity verdicts belong to production parse → resolve
-→ graph → obligation query (`GAP-124`, `scripts/canon.id`). Delete idiomgate
-semantic substring detectors as each graph obligation executes on staged diffs.
+`gate/idiom.id` is intended as a lexical migration preflight on added lines only;
+it must not be reported as semantic canonicality. Today direct execution of the
+gate is blocked by DNB001 `concat`; use its law as migration guidance and a
+static added-line scan only as explicitly nonsemantic pressure. Closure,
+namespace, length, cast, world, and relation identity verdicts belong to
+production parse → resolve → graph → obligation query (`GAP-124`,
+`scripts/canon.id`). Delete lexical semantic-substring detectors as each graph
+obligation executes on staged diffs.
 
 ## FTCFTW
 

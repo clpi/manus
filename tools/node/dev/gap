@@ -1,0 +1,107 @@
+#!/bin/sh
+# Atomic gap-number reservations shared by every linked worktree.
+set -eu
+
+repo=$(unset CDPATH; cd -- "$(dirname -- "$0")/../../.." && pwd)
+common=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
+  || { printf '%s\n' 'gap: repository has no Git common directory' >&2; exit 1; }
+ledger=${IDOL_GAP_LEDGER:-$common/idol-gapalloc}
+gaps=${IDOL_GAPS_DIR:-$repo/gaps}
+
+fail() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+pad() {
+  printf '%03d\n' "$1"
+}
+
+number() {
+  name=$1
+  case $name in
+    GAP-[0-9]*) value=${name#GAP-} ;;
+    *) return 1 ;;
+  esac
+  value=$(printf '%s\n' "$value" | sed -n 's/^\([0-9][0-9]*\).*/\1/p')
+  [ -n "$value" ] || return 1
+  case $value in *[!0-9]*) return 1 ;; esac
+  value=$(printf '%s\n' "$value" | sed 's/^0*//')
+  [ -n "$value" ] || value=0
+  printf '%s\n' "$value"
+}
+
+high() {
+  high_value=0
+
+  history=$(git -C "$repo" log --all --name-only --pretty=format: -- gaps/ 2>/dev/null \
+    | sed -n 's#^gaps/GAP-\([0-9][0-9]*\).*#\1#p' \
+    | sort -n | tail -1)
+  case ${history:-} in
+    ''|*[!0-9]*) ;;
+    *) [ "$history" -le "$high_value" ] || high_value=$history ;;
+  esac
+
+  for path in "$gaps"/GAP-* "$ledger"/GAP-*; do
+    [ -e "$path" ] || continue
+    value=$(number "${path##*/}") || continue
+    [ "$value" -le "$high_value" ] || high_value=$value
+  done
+  printf '%s\n' "$high_value"
+}
+
+facts() {
+  current=$(high)
+  printf 'ledger=%s\n' "$ledger"
+  printf 'high=%s\n' "$current"
+  printf 'next=%s\n' "$((current + 1))"
+}
+
+reserve() {
+  mkdir -p -- "$ledger"
+  candidate=$(($(high) + 1))
+  tries=0
+  while [ "$tries" -lt 512 ]; do
+    id=GAP-$(pad "$candidate")
+    if mkdir -- "$ledger/$id" 2>/dev/null; then
+      if [ ! -e "$gaps/$id.md" ]; then
+        printf 'reserved=%s\n' "$id"
+        printf 'number=%s\n' "$candidate"
+        printf 'ledger=%s\n' "$ledger"
+        return
+      fi
+    fi
+    candidate=$((candidate + 1))
+    tries=$((tries + 1))
+  done
+  fail 'gap: no free number in 512 attempts'
+}
+
+selftest() {
+  testroot=$(mktemp -d "${TMPDIR:-/tmp}/idol-gap.XXXXXX")
+  trap 'rm -rf "$testroot"' EXIT HUP INT TERM
+  mkdir -p "$testroot/gaps" "$testroot/ledger"
+  : >"$testroot/gaps/GAP-007.md"
+  mkdir "$testroot/ledger/GAP-009"
+
+  IDOL_GAPS_DIR=$testroot/gaps IDOL_GAP_LEDGER=$testroot/ledger "$0" reserve >"$testroot/left" &
+  left=$!
+  IDOL_GAPS_DIR=$testroot/gaps IDOL_GAP_LEDGER=$testroot/ledger "$0" reserve >"$testroot/right" &
+  right=$!
+  wait "$left"
+  wait "$right"
+
+  first=$(sed -n 's/^number=\([0-9][0-9]*\)$/\1/p' "$testroot/left")
+  second=$(sed -n 's/^number=\([0-9][0-9]*\)$/\1/p' "$testroot/right")
+  [ -n "$first" ] && [ -n "$second" ] || fail 'gap: reservation control produced no number'
+  [ "$first" != "$second" ] || fail 'gap: concurrent reservations collided'
+  [ "$first" -gt 9 ] && [ "$second" -gt 9 ] || fail 'gap: reservation ignored existing state'
+  printf 'gap: shared atomic reservation controls pass\n'
+}
+
+case ${1:-facts} in
+  facts) [ "$#" -eq 1 ] || fail 'usage: gap facts'; facts ;;
+  reserve) [ "$#" -eq 1 ] || fail 'usage: gap reserve'; reserve ;;
+  selftest) [ "$#" -eq 1 ] || fail 'usage: gap selftest'; selftest ;;
+  *) fail 'usage: gap [facts|reserve|selftest]' ;;
+esac

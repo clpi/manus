@@ -6,9 +6,8 @@ const sema = @import("sema.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const types = @import("types.zig");
-const semantic_fingerprint = @import("semantic_fingerprint.zig");
 
-pub const SCHEMA_VERSION = "knowledge-snapshot-v0";
+pub const SCHEMA_VERSION = "knowledge-snapshot-v1";
 
 /// Compiler phase when the snapshot was taken.
 pub const Phase = enum(u8) {
@@ -52,7 +51,9 @@ pub const EntityKind = enum(u8) {
 };
 
 pub const EntitySnapshot = struct {
-    entity_id: []const u8,
+    /// Exact identity in the registered graph incarnation. `name` below is a
+    /// human projection and cannot recover this reference.
+    entity: semantic_graph.EntityRef,
     name: []const u8,
     kind: EntityKind,
     phase: Phase,
@@ -62,10 +63,8 @@ pub const EntitySnapshot = struct {
     why: ?[]const u8 = null,
     representation: ?[]const u8 = null,
     effects: ?[]const u8 = null,
-    fingerprint: ?u64 = null,
 
     pub fn deinit(self: *EntitySnapshot, alloc: std.mem.Allocator) void {
-        alloc.free(self.entity_id);
         alloc.free(self.name);
         if (self.why) |w| alloc.free(w);
         if (self.representation) |r| alloc.free(r);
@@ -75,6 +74,7 @@ pub const EntitySnapshot = struct {
 
 pub const ModuleSnapshots = struct {
     file: []const u8,
+    incarnation: semantic_graph.incarnation,
     entities: []EntitySnapshot,
 
     pub fn deinit(self: *ModuleSnapshots, alloc: std.mem.Allocator) void {
@@ -83,29 +83,6 @@ pub const ModuleSnapshots = struct {
         alloc.free(self.file);
     }
 };
-
-fn entityId(alloc: std.mem.Allocator, kind: EntityKind, name: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(alloc, "duo:{s}:{s}", .{ kind.name(), name });
-}
-
-fn fingerprintForEntity(
-    entity_id: []const u8,
-    storage_class: ?types.StorageClass,
-    shape_id: ?u64,
-    knowledge: semantic_algebra.KnowledgeLevel,
-) u64 {
-    const sc_str: ?[]const u8 = if (storage_class) |sc| types.storageClassName(sc) else null;
-    var shape_buf: [24]u8 = undefined;
-    const shape_str: ?[]const u8 = if (shape_id) |sid| std.fmt.bufPrint(&shape_buf, "{d}", .{sid}) catch null else null;
-    var kn_buf: [24]u8 = undefined;
-    const kn_str = std.fmt.bufPrint(&kn_buf, "{s}", .{knowledge.name()}) catch "unknown";
-    return semantic_fingerprint.compute(.{
-        .entity_id = entity_id,
-        .descriptor_deps = sc_str,
-        .effects = kn_str,
-        .constants = shape_str,
-    });
-}
 
 fn appendRecordFromGraph(
     alloc: std.mem.Allocator,
@@ -116,12 +93,10 @@ fn appendRecordFromGraph(
 ) !void {
     const node = graph.tableShapeEntity(record) orelse return;
     const name = node.name orelse return;
-    const eid = try entityId(alloc, .record, name);
-    errdefer alloc.free(eid);
     const why = if (node.why) |w| try alloc.dupe(u8, w) else null;
     errdefer if (why) |w| alloc.free(w);
     try out.append(alloc, .{
-        .entity_id = eid,
+        .entity = try graph.entityRef(record),
         .name = try alloc.dupe(u8, name),
         .kind = .record,
         .phase = phase,
@@ -131,7 +106,6 @@ fn appendRecordFromGraph(
         .why = why,
         .representation = if (node.storage_class) |sc| try alloc.dupe(u8, types.storageClassName(sc)) else null,
         .effects = null,
-        .fingerprint = fingerprintForEntity(eid, node.storage_class, node.shape_id, if (node.storage_class) |sc| semantic_algebra.KnowledgeLevel.fromStorageClass(sc) else .stable),
     });
 }
 
@@ -142,6 +116,7 @@ pub fn buildFromModule(
     graph: *const semantic_graph.SemanticGraph,
     file: []const u8,
 ) !ModuleSnapshots {
+    const incarnation = graph.incarnation_coordinate orelse return error.GraphNotRegistered;
     var entities: std.ArrayListUnmanaged(EntitySnapshot) = .empty;
     errdefer {
         for (entities.items) |*e| e.deinit(alloc);
@@ -152,18 +127,15 @@ pub fn buildFromModule(
         if (!semantic_graph.SemanticGraph.atModuleScope(graph, &node)) continue;
         if (graph.callable(@intCast(i))) {
             const fname = node.name orelse continue;
-            const eid = try entityId(alloc, .function, fname);
-            errdefer alloc.free(eid);
             const kn = semantic.symbolKnowledge(fname);
             try entities.append(alloc, .{
-                .entity_id = eid,
+                .entity = try graph.entityRef(@intCast(i)),
                 .name = try alloc.dupe(u8, fname),
                 .kind = .function,
                 .phase = .after_sema,
                 .knowledge = kn,
                 .representation = if (kn == .native) try alloc.dupe(u8, "native") else try alloc.dupe(u8, "dynamic"),
                 .effects = null,
-                .fingerprint = fingerprintForEntity(eid, null, null, kn),
             });
             continue;
         }
@@ -174,6 +146,7 @@ pub fn buildFromModule(
 
     return .{
         .file = try alloc.dupe(u8, file),
+        .incarnation = incarnation,
         .entities = try entities.toOwnedSlice(alloc),
     };
 }
@@ -186,17 +159,18 @@ fn jsonEscape(w: *std.Io.Writer, s: []const u8) !void {
 }
 
 pub fn writeJson(snap: *const ModuleSnapshots, w: *std.Io.Writer) !void {
-    try w.print(
-        "{{\"schema\":\"{s}\",\"file\":\"",
-        .{SCHEMA_VERSION},
-    );
+    try w.print("{{\"schema\":\"{s}\",\"incarnation\":{d},\"file\":\"", .{
+        SCHEMA_VERSION,
+        snap.incarnation,
+    });
     try jsonEscape(w, snap.file);
     try w.print("\",\"entity_count\":{d},\"entities\":[", .{snap.entities.len});
     for (snap.entities, 0..) |ent, i| {
         if (i > 0) try w.print(",", .{});
-        try w.print("{{\"entity_id\":\"", .{});
-        try jsonEscape(w, ent.entity_id);
-        try w.print("\",\"name\":\"", .{});
+        try w.print(
+            "{{\"entity\":{{\"incarnation\":{d},\"coordinate\":{d}}},\"name\":\"",
+            .{ ent.entity.incarnation, ent.entity.entity },
+        );
         try jsonEscape(w, ent.name);
         try w.print(
             "\",\"kind\":\"{s}\",\"phase\":\"{s}\",\"knowledge\":\"{s}\"",
@@ -217,9 +191,6 @@ pub fn writeJson(snap: *const ModuleSnapshots, w: *std.Io.Writer) !void {
             try w.print(",\"representation\":\"", .{});
             try jsonEscape(w, rep);
             try w.print("\"", .{});
-        }
-        if (ent.fingerprint) |fp| {
-            try w.print(",\"fingerprint\":\"{x}\"", .{fp});
         }
         try w.print("}}", .{});
     }
@@ -262,6 +233,9 @@ test "knowledge_snapshot: native Point record from graph lift" {
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
     _ = try graph.liftModuleWithCalls(&mod, "point.id");
+    var history = semantic_graph.History.init(alloc);
+    defer history.deinit();
+    const incarnation = try history.register(&graph, .{});
 
     var snap = try buildFromModule(alloc, &semantic, &graph, "point.id");
     defer snap.deinit(alloc);
@@ -276,6 +250,8 @@ test "knowledge_snapshot: native Point record from graph lift" {
     try std.testing.expectEqual(EntityKind.record, point.kind);
     try std.testing.expectEqual(Phase.after_graph_lift, point.phase);
     try std.testing.expect(point.shape_id != null);
+    try std.testing.expectEqual(incarnation, point.entity.incarnation);
+    try std.testing.expectEqualStrings("Point", graph.get(point.entity.entity).?.name.?);
 
     const distance = blk: {
         for (snap.entities) |ent| {
@@ -284,4 +260,26 @@ test "knowledge_snapshot: native Point record from graph lift" {
         break :blk null;
     } orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(EntityKind.function, distance.kind);
+    try std.testing.expectEqual(incarnation, distance.entity.incarnation);
+
+    var json: std.Io.Writer.Allocating = .init(alloc);
+    defer json.deinit();
+    try writeJson(&snap, &json.writer);
+    try std.testing.expect(std.mem.indexOf(u8, json.written(), "\"entity\":{\"incarnation\":") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json.written(), "\"entity_id\":") == null);
+    try std.testing.expect(std.mem.indexOf(u8, json.written(), "\"fingerprint\":") == null);
+}
+
+test "knowledge_snapshot: refuses unregistered graph identity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try std.testing.expectError(
+        error.GraphNotRegistered,
+        buildFromModule(alloc, &semantic, &graph, "unregistered.id"),
+    );
 }

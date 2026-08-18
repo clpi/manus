@@ -1,10 +1,14 @@
-# Idol MCP Bootstrap
+# Idol MCP Bootstrap Transport
 
-These servers are physical compatibility transports for current repository
-coordination, evidence, and semantic projections. The `duo-*` server names and
-historical `.id` source are bootstrap identities. Current `.id` entrypoints
-still carry compatibility transport; their suffix alone is not canonicality or
-self-host evidence.
+`tools/mcp/native.id` is the narrow project MCP compatibility transport. Its
+live surface is discovered from `tools/list` and gated by
+`tools/node/dev/mcp-gate`. It still parses protocol text with bootstrap string
+operations, including six live retired `..` uses, so it is not the canonical
+interpolation segment pack, is not a graph-owned semantic projection, and is
+not canonical source to copy. It reports repository status, HEAD, and
+orientation; it does not own claims, builds, benchmarks, gap allocation,
+language semantics, or editor navigation. Do not use this transport as evidence
+that formatting or MCP responses already preserve graph identities.
 
 Start at [`AGENTS.md`](../../AGENTS.md). Configure the servers through
 [`.agents/AGENT_INTEGRATION.md`](../../.agents/AGENT_INTEGRATION.md), discover
@@ -21,10 +25,11 @@ Run the exact serialized MCP gate after changes:
 
 ```bash
 repo="$(git rev-parse --show-toplevel)"
-"$repo/zig-out/bin/idol" run "$repo/scripts/idol_lock.id" -- zig build mcp-gate
+"$repo/tools/node/dev/idol-lock" -- "$repo/tools/node/dev/mcp-gate"
 ```
 
-The gate must prove handshake, schema/value agreement, truthful session state,
-claim exclusion, and current routing. `GAP-146` keeps inner child-build outcome
-propagation incomplete, so inspect inner output as well as wrapper status. A
-server starting or listing tools is not sufficient evidence.
+The gate proves framing, handshake, the exact three-tool roster, and returned
+values. Claims use `tools/node/dev/claim`, gap reservations use
+`tools/node/dev/gap reserve`, and serialized work uses
+`tools/node/dev/idol-lock`.
+Those commands are bootstrap coordination transport, not language law.

@@ -1,16 +1,9 @@
-[language-server.id-lsp]
-command = "duo-lsp"
+[language-server.idol-lsp]
+command = "idol-lsp"
 
 [[language]]
-name = "duo"
+name = "idol"
 scope = "source.id"
-file-types = ["duo"]
-roots = ["build.id"]
-comment-token = "--"
-injection-regex = "duo"
-indent = { tab-width = 4, unit = "    " }
-language-servers = ["duo-lsp"]
-
-[[grammar]]
-name = "duo"
-source = { path = "../tree-sitter-duo" }
+file-types = ["id"]
+comment-token = "#"
+language-servers = ["idol-lsp"]

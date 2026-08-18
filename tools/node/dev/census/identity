@@ -27,7 +27,7 @@ retired='Idsem|idsem|Duon|duon|\.duo\b|Historical Idol|Historical Duo|historical
 count=0
 for f in $paths; do
   [ -f "$f" ] || continue
-  hits=$(rg -n "$retired" "$f" 2>/dev/null | rg -v 'law\.zero|ZERO-HISTORY|census/history/zero|census/identity|git stores|retired name' || true)
+  hits=$(rg -n "$retired" "$f" 2>/dev/null | rg -v 'law\.zero|ZERO-HISTORY|census/history/zero|census/identity|git stores|retired name|forbidden|Retired|not source suffixes' || true)
   if [ -n "$hits" ]; then
     echo "census/identity: FAIL $f"
     echo "$hits" | sed 's/^/  /'

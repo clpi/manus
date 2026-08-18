@@ -1,0 +1,49 @@
+#!/bin/sh
+# evidence/rotate — verifier rotation (V-B): falsify live gates through
+# perturbation. Every rotation proves, for one guard:
+#   the gate passes undamaged
+#   the guard's pattern matched the expected count before and after
+#   the damage changed the file (no-ops are rejected)
+#   the gate FAILED on the damaged file
+#   restoration is byte-exact and the gate passes again
+# All of that is evidence/perturb; this driver just names the rotations.
+#
+# usage: tools/evidence/rotate [name ...]   (default: all)
+
+set -eu
+repo="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$repo"
+
+rotations="mcp-gate-id-extraction config-freshness"
+[ $# -gt 0 ] && rotations="$*"
+
+fails=0
+for name in $rotations; do
+  case "$name" in
+    mcp-gate-id-extraction)
+      # Damage the native server's id-at-end extraction (drop the -1 so the
+      # closing brace rides into the echoed id) — the MCP gate's member-order
+      # tolerance control must fire.
+      ./tools/evidence/perturb tools/mcp/native.id 'taillen - 1' 1 0 \
+        's/taillen - 1/taillen/' ./tools/node/dev/mcp-gate >&2 || fails=$((fails + 1))
+      ;;
+    config-freshness)
+      # Corrupt the projection's sibling-server cwd (unique occurrence) —
+      # generate-configs --check must detect the stale artifact.
+      ./tools/evidence/perturb .opencode/opencode.json \
+        'idol-native",' 2 0 \
+        's|/idol-native|/idol-native-damaged|' \
+        ./tools/node/dev/generate-configs --check >&2 || fails=$((fails + 1))
+      ;;
+    *)
+      echo "evidence/rotate: unknown rotation: $name" >&2
+      fails=$((fails + 1))
+      ;;
+  esac
+done
+
+if [ "$fails" -ne 0 ]; then
+  echo "evidence/rotate: FAIL ($fails)" >&2
+  exit 1
+fi
+echo "evidence/rotate: PASS"

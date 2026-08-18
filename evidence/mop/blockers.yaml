@@ -1,0 +1,144 @@
+# MOP-A/B — compiler-B self-host blocker matrix
+# base: clpi/idol @ 3b80e8b2a4228182a6fbcd7c4b959d7549e0c717
+# compiler: zig-out/bin/idol sha256 ee08e5531d3361f9...
+# metric: `idol compile <unit> --emit obj` (exe emission adds process-entry
+# requirements that are not blockers for library units; see notes)
+# all 19 units pass `idol check` with zero errors.
+
+version: 1
+base_sha: 3b80e8b2a4228182a6fbcd7c4b959d7549e0c717
+compiler_sha256_prefix: ee08e5531d3361f9
+units_total: 19
+units_obj_clean:
+  - application.id
+  - fmt.id
+  - host.id        # obj clean; exe link fails — see family F6
+  - macho.id
+  - profile.id
+  - reader.id
+  - record.id
+  - rewrite.id
+  - symbol.id
+  - token.id
+units_blocked: 9
+families:
+
+  - id: F1
+    missing_fact: unresolved-application-facts
+    refusal: DNB011 / SemanticFactsInvalid
+    bail_site: native_backend.zig:7909 emitArm64ModuleWithGraph
+    producer: graph
+    consumer: native realization
+    first_hits:
+      - { unit: lexer.id,      application: 484, relation: write_f64 }
+      - { unit: emit_c.id,     application: 22,  relation: "-" }
+      - { unit: arm64check.id, application: 9,   relation: open }
+    minimal_fixture: tools/reduce/fixtures/f1_unresolved_app_facts.id   # 7 lines
+    negative_control: tools/reduce/fixtures/f1_neg.id                    # write_i64 COMPILES
+    theorem: >
+      mem.ptr_from_addr(i64, a) followed by mem.write_f64(buf, off, v)
+      refuses with unresolved-application-facts from the graph producer;
+      the same shape with write_i64 compiles. The missing fact is specific
+      to the f64 foreign application, not to foreign mem writes generally.
+    owner_lane: 3
+
+  - id: F2
+    missing_fact: application-operand-abi
+    refusal: DNB011 / SemanticFactsInvalid
+    bail_site: dnir_lower.zig:6095 checkedScalarOperand
+    producer: graph
+    consumer: native realization
+    first_hits:
+      - { unit: graph.id, application: 34, relation: has }
+      - { unit: bind.id,  application: 24, relation: has }
+    minimal_fixture: null    # see handoffs.md — reducer needed
+    owner_lane: 3
+    note: >
+      The verbatim `has` body plus conditional call-site shapes tried so far
+      compile clean; the refusal depends on remaining graph.id/bind.id
+      context. Requires `idol reduce` (OpenCode Pickle Mission A).
+
+  - id: F3a
+    missing_fact: "<global-name>"          # bare module-global read
+    refusal: DNB001 / UnsupportedProgram
+    bail_site: dnir_lower.zig lowerModuleFromGraph (~971)
+    producer: dnir lower
+    consumer: native realization
+    first_hits:
+      - { unit: token_view.id, application: unknown, relation: "-" }
+    minimal_fixture: tools/reduce/fixtures/f3_neg.id    # module-global read, never written
+    owner_lane: 4
+    theorem: >
+      A module-global read in a demanded position refuses with the bare
+      global name as the missing fact.
+
+  - id: F3b
+    missing_fact: "global-init-not-constant:<global-name>"
+    refusal: DNB001 / UnsupportedProgram
+    bail_site: dnir_lower.zig:1010 lowerModuleFromGraph
+    producer: dnir lower
+    consumer: native realization
+    first_hits:
+      - { unit: comptime.id, application: 113, relation: _at, global: _src }
+      - { unit: arm64.id,    application: 254, relation: encode_orr_reg, global: _asm }
+    minimal_fixture: tools/reduce/fixtures/f3_global_init_not_constant.id   # 8 lines
+    negative_control: tools/reduce/fixtures/f3_neg.id  # never-written variant reports F3a instead
+    theorem: >
+      global g: str = "" plus a runtime write g = "x" and a read refuses
+      with global-init-not-constant:g; the never-written variant refuses
+      with the bare name instead. Two distinct missing facts.
+    owner_lane: 4
+
+  - id: F4
+    missing_fact: view
+    refusal: DNB001 / UnsupportedProgram
+    bail_site: dnir_lower.zig:971 lowerModuleFromGraph
+    producer: dnir lower
+    consumer: native realization
+    first_hits:
+      - { unit: token_view.id, application: unknown }
+    minimal_fixture: tools/reduce/fixtures/f4b_tokenview_slice.id   # 30-line slice reproduces
+    owner_lane: 4
+    related: >
+      A hand-built array-bearing pack identity refuses with
+      application-result-abi instead (tools/reduce/fixtures/f4_view.id) — the ABI family
+      on the result side; see F2 for the operand side.
+
+  - id: F4R
+    missing_fact: application-result-abi
+    refusal: DNB011
+    producer: graph
+    first_hits:
+      - { unit: "(synthetic)", application: 9, relation: id }
+    minimal_fixture: tools/reduce/fixtures/f4_view.id   # 9 lines
+    owner_lane: 3
+
+  - id: F5
+    missing_fact: InvalidAggregateFact   # compiler defect, not a clean refusal
+    crash_site: semantic_graph.zig:3945 publishApplicationResultAggregate
+    via: liftModuleWithCheckedCalls (semantic_graph.zig:4345)
+    first_hits:
+      - { unit: parser.id }
+    minimal_fixture: null    # 1792 lines; requires reducer
+    owner_lane: 3
+    note: >
+      Raw Zig stack trace leaks into the diagnostic — the compiler returns
+      an internal error instead of a classified refusal. Also a diagnostics
+      defect: internal traces must not be user-facing.
+
+  - id: F6
+    missing_fact: "_idol_compiler_host__duo_lexer_host_stride (undefined symbol)"
+    stage: exe link (obj emission clean)
+    first_hits:
+      - { unit: host.id }
+    owner_lane: 4
+    note: >
+      The host bridge object references the retired-ABI-named symbol
+      duo_lexer_host_stride; the native link does not provide it. Intersects
+      the pending C-symbol rename in the compiler lane.
+
+notes:
+  - exe-emission "no process" errors on 14 library units are NOT blockers;
+    object emission is the correct metric for non-entry units.
+  - mask analysis (MOP-C) pending: requires patched compiler copies under
+    /tmp; method recorded in handoffs.md.

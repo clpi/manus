@@ -1,0 +1,303 @@
+#!/bin/sh
+# Atomic file-path claims shared by every linked worktree.
+set -eu
+
+repo=$(unset CDPATH; cd -- "$(dirname -- "$0")/../../.." && pwd)
+common=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+claims=${IDOL_CLAIM_ROOT:-${common:-$repo/.agents/session}/idol-claims}
+ttl=${IDOL_CLAIM_TTL:-14400}
+guard=$claims/.guard
+candidate=$claims/.guard.$$
+
+fail() {
+  printf '%s\n' "$*" >&2
+  exit 64
+}
+
+unlock() {
+  if [ -r "$guard" ]; then
+    read -r held <"$guard" || held=
+    [ "$held" = "$$" ] && rm -f -- "$guard"
+  fi
+  rm -f -- "$candidate" 2>/dev/null || true
+}
+
+lock() {
+  mkdir -p -- "$claims"
+  printf '%s\n' "$$" >"$candidate"
+  tries=0
+  while ! ln -- "$candidate" "$guard" 2>/dev/null; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 1000 ] || fail 'claim: timed out waiting for claim guard'
+    sleep 0.01
+  done
+  rm -f -- "$candidate"
+  trap unlock EXIT HUP INT TERM
+  if [ -n "${IDOL_CLAIM_HOLD:-}" ]; then
+    sleep "$IDOL_CLAIM_HOLD"
+  fi
+}
+
+recover() {
+  [ -e "$guard" ] || fail 'claim: no stuck claim guard'
+  [ -f "$guard" ] || fail 'claim: invalid claim guard; inspect before removing'
+  read -r held <"$guard" || fail 'claim: unreadable claim guard owner'
+  case $held in
+    ''|*[!0-9]*) fail 'claim: invalid claim guard owner' ;;
+  esac
+  if kill -0 "$held" 2>/dev/null; then
+    fail "claim: guard owner $held is still live"
+  fi
+  rm -f -- "$guard"
+  printf '{"recovered":true,"owner":%s}\n' "$held"
+}
+
+valid_atom() {
+  case $1 in
+    ''|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+}
+
+normalize_path() {
+  value=$1
+  while [ "${value#./}" != "$value" ]; do value=${value#./}; done
+  case $value in
+    ''|/*|*'~'*|*'//'*|*[!A-Za-z0-9._/-]*) return 1 ;;
+  esac
+  rest=$value
+  while [ -n "$rest" ]; do
+    case $rest in
+      */*) segment=${rest%%/*}; rest=${rest#*/} ;;
+      *) segment=$rest; rest= ;;
+    esac
+    case $segment in ''|.|..) return 1 ;; esac
+    valid_atom "$segment" || return 1
+  done
+  printf '%s\n' "$value"
+}
+
+key_of() {
+  printf '%s' "$1" | tr / '~'
+}
+
+path_of() {
+  printf '%s' "$1" | tr '~' /
+}
+
+meta() {
+  [ -r "$claims/$1/owner" ] || return 1
+  IFS="$(printf '\t')" read -r meta_owner meta_at meta_work <"$claims/$1/owner" || return 1
+  [ -n "$meta_owner" ] && [ -n "$meta_at" ]
+}
+
+live() {
+  meta "$1" || return 1
+  now=$(date +%s)
+  [ $((now - meta_at)) -lt "$ttl" ]
+}
+
+overlaps() {
+  left=$1
+  right=$2
+  [ "$left" = "$right" ] || [ "${right#"$left"/}" != "$right" ] || [ "${left#"$right"/}" != "$left" ]
+}
+
+write_meta() {
+  now=$(date +%s)
+  printf '%s\t%s\t%s\n' "$2" "$now" "$3" >"$claims/$1/owner.next"
+  mv -- "$claims/$1/owner.next" "$claims/$1/owner"
+}
+
+drop() {
+  target=$claims/$1
+  [ -d "$target" ] || return 0
+  [ -f "$target/owner" ] && rm -f -- "$target/owner"
+  [ -f "$target/owner.next" ] && rm -f -- "$target/owner.next"
+  rmdir -- "$target"
+}
+
+clean_incomplete() {
+  for dir in "$claims"/*; do
+    [ -d "$dir" ] || continue
+    scan_key=${dir##*/}
+    meta "$scan_key" && continue
+    scan_path=$(path_of "$scan_key")
+    drop "$scan_key" || fail "claim: incomplete claim could not be recovered: $scan_path"
+    printf 'claim: recovered incomplete claim %s\n' "$scan_path" >&2
+  done
+}
+
+list() {
+  lock
+  clean_incomplete
+  first=1
+  count=0
+  printf '{"claims":['
+  for dir in "$claims"/*; do
+    [ -d "$dir" ] || continue
+    key=${dir##*/}
+    meta "$key" || continue
+    now=$(date +%s)
+    age=$((now - meta_at))
+    is_live=false
+    [ "$age" -lt "$ttl" ] && is_live=true
+    [ "$first" -eq 1 ] || printf ','
+    first=0
+    count=$((count + 1))
+    printf '{"path":"%s","owner":"%s","work":"%s","age":%s,"live":%s}' \
+      "$(path_of "$key")" "$meta_owner" "$meta_work" "$age" "$is_live"
+  done
+  printf '],"count":%s,"ttl":%s}\n' "$count" "$ttl"
+}
+
+acquire() {
+  owner=$1
+  path=$2
+  work=${3:-}
+  valid_atom "$owner" || fail 'claim: invalid owner'
+  [ -z "$work" ] || valid_atom "$work" || fail 'claim: invalid work item'
+  path=$(normalize_path "$path") || fail 'claim: invalid repository-relative path'
+  key=$(key_of "$path")
+  lock
+  clean_incomplete
+
+  created=false
+  if mkdir -- "$claims/$key" 2>/dev/null; then
+    created=true
+  else
+    if meta "$key" && [ "$meta_owner" = "$owner" ]; then
+      write_meta "$key" "$owner" "$work"
+      printf '{"granted":true,"path":"%s","owner":"%s","reentrant":true}\n' "$path" "$owner"
+      return
+    fi
+    if meta "$key" && ! live "$key"; then
+      drop "$key"
+      if mkdir -- "$claims/$key" 2>/dev/null; then
+        created=true
+      fi
+    fi
+  fi
+
+  if [ "$created" != true ]; then
+    held=unknown
+    meta "$key" && held=$meta_owner
+    printf '{"granted":false,"path":"%s","held_by":"%s","reason":"file already claimed"}\n' "$path" "$held"
+    return 2
+  fi
+  write_meta "$key" "$owner" "$work"
+
+  for dir in "$claims"/*; do
+    [ -d "$dir" ] || continue
+    other=${dir##*/}
+    [ "$other" = "$key" ] && continue
+    other_path=$(path_of "$other")
+    if overlaps "$path" "$other_path" && live "$other"; then
+      held=$meta_owner
+      drop "$key"
+      printf '{"granted":false,"path":"%s","overlaps":"%s","held_by":"%s","reason":"overlapping claim"}\n' \
+        "$path" "$other_path" "$held"
+      return 2
+    fi
+  done
+  printf '{"granted":true,"path":"%s","owner":"%s","work":"%s","ttl":%s}\n' \
+    "$path" "$owner" "$work" "$ttl"
+}
+
+release() {
+  owner=$1
+  path=$(normalize_path "$2") || fail 'claim: invalid repository-relative path'
+  valid_atom "$owner" || fail 'claim: invalid owner'
+  key=$(key_of "$path")
+  lock
+  clean_incomplete
+  if ! meta "$key"; then
+    printf '{"released":false,"path":"%s","reason":"no such claim"}\n' "$path"
+    return 2
+  fi
+  if [ "$meta_owner" != "$owner" ]; then
+    printf '{"released":false,"path":"%s","held_by":"%s","reason":"not the holder"}\n' "$path" "$meta_owner"
+    return 2
+  fi
+  if drop "$key"; then
+    printf '{"released":true,"path":"%s"}\n' "$path"
+  else
+    printf '{"released":false,"path":"%s","reason":"release did not clear the claim"}\n' "$path"
+    return 2
+  fi
+}
+
+selftest() {
+  testroot=$(mktemp -d "${TMPDIR:-/tmp}/idol-claim.XXXXXX")
+  trap 'rm -rf "$testroot"' EXIT INT TERM
+  IDOL_CLAIM_ROOT=$testroot "$0" acquire alpha src/semantic_graph.zig graph >"$testroot/a"
+  IDOL_CLAIM_ROOT=$testroot "$0" acquire gamma docs/spec/law.md docs >"$testroot/disjoint"
+  IDOL_CLAIM_ROOT=$testroot "$0" list >"$testroot/disjoint-list"
+  grep -q '"count":2' "$testroot/disjoint-list"
+  IDOL_CLAIM_ROOT=$testroot "$0" release gamma docs/spec/law.md >"$testroot/disjoint-release"
+  if IDOL_CLAIM_ROOT=$testroot "$0" acquire beta src graph >"$testroot/b"; then false; else [ "$?" -eq 2 ]; fi
+  if IDOL_CLAIM_ROOT=$testroot "$0" release beta src/semantic_graph.zig >"$testroot/c"; then false; else [ "$?" -eq 2 ]; fi
+  IDOL_CLAIM_ROOT=$testroot "$0" release alpha src/semantic_graph.zig >"$testroot/d"
+  IDOL_CLAIM_ROOT=$testroot "$0" acquire left src/main.zig race >"$testroot/left" &
+  leftpid=$!
+  IDOL_CLAIM_ROOT=$testroot "$0" acquire right src/main.zig race >"$testroot/right" &
+  rightpid=$!
+  leftstatus=0
+  rightstatus=0
+  wait "$leftpid" || leftstatus=$?
+  wait "$rightpid" || rightstatus=$?
+  [ "$leftstatus" -eq 0 ] && [ "$rightstatus" -eq 2 ] ||
+    { [ "$leftstatus" -eq 2 ] && [ "$rightstatus" -eq 0 ]; }
+  grep -q '"granted":true' "$testroot/a"
+  grep -q '"granted":true' "$testroot/disjoint"
+  grep -q '"released":true' "$testroot/disjoint-release"
+  grep -q '"granted":false' "$testroot/b"
+  grep -q '"released":false' "$testroot/c"
+  grep -q '"released":true' "$testroot/d"
+  [ "$(grep -h -c '"granted":true' "$testroot/left" "$testroot/right" | awk '{ n += $1 } END { print n + 0 }')" -eq 1 ]
+  [ "$(grep -h -c '"granted":false' "$testroot/left" "$testroot/right" | awk '{ n += $1 } END { print n + 0 }')" -eq 1 ]
+  if grep -q '"granted":true' "$testroot/left"; then
+    IDOL_CLAIM_ROOT=$testroot "$0" release left src/main.zig >/dev/null
+  else
+    IDOL_CLAIM_ROOT=$testroot "$0" release right src/main.zig >/dev/null
+  fi
+  : >"$testroot/.guard"
+  IDOL_CLAIM_ROOT=$testroot "$0" acquire guarded src/parser.zig race >"$testroot/guarded" &
+  guardpid=$!
+  sleep 0.05
+  kill -0 "$guardpid"
+  [ -f "$testroot/.guard" ]
+  rm -f "$testroot/.guard"
+  wait "$guardpid"
+  grep -q '"granted":true' "$testroot/guarded"
+  if IDOL_CLAIM_ROOT=$testroot "$0" acquire wildcard 'src/*.zig' race >"$testroot/wildcard" 2>&1; then
+    false
+  fi
+  grep -q 'invalid repository-relative path' "$testroot/wildcard"
+  mkdir "$testroot/src~incomplete.zig"
+  : >"$testroot/src~incomplete.zig/owner.next"
+  IDOL_CLAIM_ROOT=$testroot "$0" list >"$testroot/incomplete" 2>"$testroot/incomplete.err"
+  [ ! -d "$testroot/src~incomplete.zig" ]
+  grep -q 'recovered incomplete claim src/incomplete.zig' "$testroot/incomplete.err"
+  IDOL_CLAIM_ROOT=$testroot IDOL_CLAIM_HOLD=30 "$0" list >"$testroot/killed" &
+  killedpid=$!
+  tries=0
+  while [ ! -s "$testroot/.guard" ]; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 100 ]
+    sleep 0.01
+  done
+  kill -9 "$killedpid"
+  wait "$killedpid" 2>/dev/null || true
+  IDOL_CLAIM_ROOT=$testroot "$0" recover >"$testroot/recovered"
+  grep -q '"recovered":true' "$testroot/recovered"
+  printf 'claim: atomic overlap and owner controls pass\n'
+}
+
+case ${1:-list} in
+  list) [ "$#" -eq 1 ] || fail 'usage: claim list'; list ;;
+  acquire) [ "$#" -ge 3 ] && [ "$#" -le 4 ] || fail 'usage: claim acquire OWNER FILE [WORK]'; acquire "$2" "$3" "${4:-}" ;;
+  release) [ "$#" -eq 3 ] || fail 'usage: claim release OWNER FILE'; release "$2" "$3" ;;
+  recover) [ "$#" -eq 1 ] || fail 'usage: claim recover'; recover ;;
+  selftest) [ "$#" -eq 1 ] || fail 'usage: claim selftest'; selftest ;;
+  *) fail 'usage: claim [list|acquire OWNER FILE [WORK]|release OWNER FILE|recover|selftest]' ;;
+esac

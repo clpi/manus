@@ -6,7 +6,7 @@ Law remains `docs/spec/constitution.md` (C0, including §67). Executed frontier:
 `WORKSTREAM_DEBT_REGISTER.md`.
 
 **Live HEAD / dirty / holders:** not recorded here (`law.control.derived`).
-Use `git rev-parse HEAD`, `git status`, `.agents/session/claims/`, and
+Use `git rev-parse HEAD`, `git status`, `tools/node/dev/claim list`, and
 `tools/node/dev/orient`.
 **Evidence subject vs revision:** bind every metric to the measured subject
 and the evidence revision separately (`law.evidence.subject`). Catalog
@@ -103,10 +103,11 @@ round. `dd3371e5` and later “finalize alignment” commits are not closure.
 (2) `cited` exempted all of `gate/`. `gate/build.id` is no longer a
 detector home. Detectors exist for those forms.
 
-`idol run gate/idiom.id` over a non-empty diff currently SIGKILLs
-(IMPLEMENTATION-BLOCKED). Do not restore hook execution until that scan
-is stable. Check-pass is not a scan. Do not land another alignment
-commit that reintroduces the blocked forms.
+`idol run gate/idiom.id` over a non-empty diff currently refuses at DNB001
+`concat` (IMPLEMENTATION-BLOCKED). Its law remains migration guidance; a static
+added-line scan is only nonsemantic pressure. Do not restore hook execution
+until the executable scan is stable. Check-pass is not a scan. Do not land
+another alignment commit that reintroduces the blocked forms.
 
 **Critical path (not naming, not reports):**
 
@@ -222,8 +223,8 @@ injection/projection composition.
 
 Latest migrations still contain canonical-corpus violations including:
 
-- `count[x + 1]`, `cells[1]`, `src[i]`, `flag[i]` — ordinary access should
-  trend to `x(key)`
+- retired bracket access in corpus — ordinary access should converge on
+  `count(x + 1)`, `cells(1)`, `src(i)`, and `flag(i)`
 - explicit inferable `i:to(str)`
 - one-use temporaries
 - plural bindings: `rows`, `lines`, `words`, `chars`
@@ -559,8 +560,7 @@ Cursor also holds census MAIN-ZERO.
 **Not recorded here** (`law.control.derived`, CONTROL-PLANE-DERIVED-ZERO).
 Obtain live lane holders, locks, HEAD, and dirty state from:
 
-- `scripts/ledger/claim.id` or MCP `idol_dev_claim_files`
-- `.agents/session/claims/`
+- `tools/node/dev/claim list`
 - `evidence/HEAD.txt` via `tools/node/dev/orient`
 
 Lane labels elsewhere in this file name durable *roles*, not active locks.

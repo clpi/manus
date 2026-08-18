@@ -4,12 +4,14 @@ set -u
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$repo" || exit 1
 
+repository="$repo/tools/node/dev/repository"
+development="$("$repository" development)"
+release="$("$repository" release)"
+
 fail=0
-warn=0
 
 ok() { printf 'ok %s\n' "$1"; }
 bad() { printf 'FAIL %s\n' "$1" >&2; fail=$((fail + 1)); }
-note() { printf 'WARN %s\n' "$1" >&2; warn=$((warn + 1)); }
 
 cleanup_root_artifacts() {
   find "$repo" -maxdepth 1 -type f \( -name '*.out' -o -name '*.profraw' -o -name 'test_*.c' -o -name 'test_*.wasm' \) -exec rm {} \;
@@ -18,7 +20,11 @@ cleanup_root_artifacts() {
 trap cleanup_root_artifacts EXIT
 
 need_cmd() {
-  command -v "$1" >/dev/null 2>&1 && ok "$1 on PATH" || bad "$1 missing from PATH"
+  if command -v "$1" >/dev/null 2>&1; then
+    ok "$1 on PATH"
+  else
+    bad "$1 missing from PATH"
+  fi
 }
 
 want_version() {
@@ -80,13 +86,15 @@ else
   bad "wrong repository root"
 fi
 
-origin_url="$(git remote get-url origin 2>/dev/null || true)"
-if printf '%s' "$origin_url" | grep -Eq '(^git@github.com:clpi/duo(.git)?$|^https://github.com/clpi/duo(.git)?$)'; then
-  ok "active development repository is clpi/duo"
-elif printf '%s' "$origin_url" | grep -Eq '(^git@github.com:idollang/idol(.git)?$|^https://github.com/idollang/idol(.git)?$)'; then
-  bad "release repository checkout; active development remains in clpi/duo"
+if repository_result="$("$repository" check 2>&1)"; then
+  ok "$repository_result"
 else
-  bad "origin is not the admitted clpi/duo development repository"
+  bad "$repository_result"
+fi
+if repository_control="$("$repository" selftest 2>&1)"; then
+  ok "$repository_control"
+else
+  bad "$repository_control"
 fi
 
 if [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)" = "main" ]; then
@@ -134,12 +142,6 @@ else
   fi
 fi
 
-if git status --short | grep -E '^[ MADRCU?!]{1,2} ext/duo-lsp$' >/dev/null 2>&1; then
-  bad "ext/duo-lsp submodule is not admitted"
-else
-  ok "ext/duo-lsp submodule admitted"
-fi
-
 cleanup_root_artifacts
 
 root_artifacts="$(find "$repo" -maxdepth 1 -type f \( -name '*.out' -o -name '*.profraw' -o -name 'test_*.c' -o -name 'test_*.wasm' \) -print | head -1)"
@@ -152,33 +154,50 @@ fi
 "$repo/tools/node/dev/generate-configs" --check || bad "generated MCP projections are missing or stale"
 "$repo/tools/node/dev/generate-harness" --check || bad "generated harness orientation is missing or stale"
 "$repo/tools/node/dev/install-skills" || bad "idol-dev skill installation failed"
-if [ -f "${CODEX_HOME:-$HOME/.codex}/skills/idol-dev/SKILL.md" ]; then
-  ok "Codex skill idol-dev installed"
-else
-  bad "Codex skill idol-dev missing after install-skills"
-fi
-if grep -q '^name: idol-dev' "${CODEX_HOME:-$HOME/.codex}/skills/idol-dev/SKILL.md" 2>/dev/null; then
-  ok "Codex skill idol-dev names idol-dev"
-else
-  bad "Codex skill idol-dev has wrong skill name"
-fi
+for skill in idol-dev idol; do
+  source_skill="$repo/.pi/skills/$skill/SKILL.md"
+  installed_skill="${CODEX_HOME:-$HOME/.codex}/skills/$skill/SKILL.md"
+  if git check-ignore -q "$source_skill"; then
+    bad "canonical skill source is ignored: $source_skill"
+  else
+    ok "canonical skill source is visible: $skill"
+  fi
+  if [ -f "$installed_skill" ]; then
+    ok "Codex skill $skill installed"
+  else
+    bad "Codex skill $skill missing after install-skills"
+  fi
+  if grep -q "^name: $skill" "$installed_skill" 2>/dev/null; then
+    ok "Codex skill $skill names $skill"
+  else
+    bad "Codex skill $skill has wrong skill name"
+  fi
+  if cmp -s "$source_skill" "$installed_skill"; then
+    ok "Codex skill $skill matches canonical source"
+  else
+    bad "Codex skill $skill differs from canonical source"
+  fi
+done
 
-for name in idol-bench idol-lsp zls; do
+for name in $(jq -r '.servers[] | select(.enabled == true) | .name' "$repo/tools/node/dev/mcp.manifest.json"); do
+  required=$(jq -r --arg name "$name" '.servers[] | select(.name == $name) | (.required // false)' "$repo/tools/node/dev/mcp.manifest.json")
   if codex mcp get "$name" >/dev/null 2>&1; then
     ok "Codex has MCP server $name"
-  elif [ "$name" = "idol-bench" ] && codex mcp get duo-bench >/dev/null 2>&1; then
-    ok "Codex has MCP server duo-bench (legacy  -  run tools/node/dev/generate-configs)"
-  elif [ "$name" = "idol-lsp" ] && codex mcp get duo-lsp >/dev/null 2>&1; then
-    ok "Codex has MCP server duo-lsp (legacy  -  run tools/node/dev/generate-configs)"
+  elif [ "$required" = false ]; then
+    ok "Codex optional MCP server unavailable: $name"
   else
     bad "Codex missing MCP server $name"
   fi
 done
 
-if [ -f "$repo/.cursor/mcp.json" ] && jq -e '((.mcpServers["idol-bench"] or .mcpServers["duo-bench"]) and (.mcpServers["idol-lsp"] or .mcpServers["duo-lsp"]) and .mcpServers.zls)' "$repo/.cursor/mcp.json" >/dev/null 2>&1; then
-  ok "Cursor project MCP config has all three servers"
+cursor_expected="$(jq -r '[.servers[] | select(.enabled == true) | .name] | join(" ")' "$repo/tools/node/dev/mcp.manifest.json")"
+if [ -f "$repo/.cursor/mcp.json" ] && jq -e --arg expected "$cursor_expected" '
+    ($expected | split(" ")) as $names |
+    [ $names[] as $n | select(.mcpServers[$n] == null) ] | length == 0
+  ' "$repo/.cursor/mcp.json" >/dev/null 2>&1; then
+  ok "Cursor project MCP config has every manifest-enabled server"
 else
-  bad "Cursor project MCP config missing required servers"
+  bad "Cursor project MCP config missing manifest-enabled servers"
 fi
 
 if [ -f "$repo/.cursor/rules/00-authority.mdc" ] && grep -q 'AGENTS.md' "$repo/.cursor/rules/00-authority.mdc" && grep -q 'docs/spec/constitution.md' "$repo/.cursor/rules/00-authority.mdc"; then
@@ -201,7 +220,11 @@ else
   bad "Cursor indexing exclusions missing"
 fi
 
-if "$repo/tools/node/dev/orient" >/tmp/idol-orient.out 2>&1 && grep -q '^project: Idol$' /tmp/idol-orient.out && grep -q '^authority:' /tmp/idol-orient.out; then
+if "$repo/tools/node/dev/orient" >/tmp/idol-orient.out 2>&1 \
+  && grep -q '^project: Idol$' /tmp/idol-orient.out \
+  && grep -Fq "devrepository: $development" /tmp/idol-orient.out \
+  && grep -Fq "releaserepository: $release" /tmp/idol-orient.out \
+  && grep -q '^authority:' /tmp/idol-orient.out; then
   ok "orientation command reports current repository facts"
 else
   bad "orientation command failed"
@@ -243,31 +266,20 @@ else
 fi
 
 if cursor agent mcp list >/tmp/idol-cursor-mcp.out 2>&1; then
-  mcp_serve_blocked=0
-  if ! "$duo" check "$repo/tools/mcp/bench.id" >/dev/null 2>&1; then
-    mcp_serve_blocked=1
-  fi
   missing_cursor_mcp=0
-  for name in idol-bench idol-lsp zls; do
-    if [ "$mcp_serve_blocked" -eq 1 ]; then
-      ok "Cursor MCP server deferred: $name (IMPLEMENTATION-BLOCKED C embed)"
-    elif grep -q "^$name: ready" /tmp/idol-cursor-mcp.out; then
+  for name in $(jq -r '.servers[] | select(.enabled == true) | .name' "$repo/tools/node/dev/mcp.manifest.json"); do
+    required=$(jq -r --arg name "$name" '.servers[] | select(.name == $name) | (.required // false)' "$repo/tools/node/dev/mcp.manifest.json")
+    if grep -q "^$name: ready" /tmp/idol-cursor-mcp.out; then
       ok "Cursor MCP server ready: $name"
-    elif [ "$name" = "idol-bench" ] && grep -q "^duo-bench: ready" /tmp/idol-cursor-mcp.out; then
-      ok "Cursor MCP server ready: duo-bench (legacy  -  run tools/node/dev/generate-configs)"
-    elif [ "$name" = "idol-lsp" ] && grep -q "^duo-lsp: ready" /tmp/idol-cursor-mcp.out; then
-      ok "Cursor MCP server ready: duo-lsp (legacy  -  run tools/node/dev/generate-configs)"
+    elif [ "$required" = false ]; then
+      ok "Cursor optional MCP server unavailable: $name"
     else
-      if "$repo/tools/node/dev/mcp-gate" >/dev/null 2>&1; then
-        ok "Cursor MCP server tier-0 deferred: $name (serve IMPLEMENTATION-BLOCKED)"
-      else
       bad "Cursor MCP server is not ready: $name"
       missing_cursor_mcp=1
-      fi
     fi
   done
   if [ "$missing_cursor_mcp" -eq 0 ]; then
-    ok "Cursor MCP required servers approved"
+    ok "Cursor required MCP servers approved"
   fi
 else
   bad "Cursor MCP server list failed"
@@ -299,9 +311,9 @@ run_gate() {
   fi
 }
 
-run_gate "identity projection census" "$repo/tools/node/dev/identitycensus"
+run_gate "identity projection census" "$repo/tools/node/dev/census/identity"
 run_gate "corpus tag census" "$repo/tools/node/dev/corpuscensus"
-run_gate "zero-history census" "$repo/tools/node/dev/zerohistorycensus"
+run_gate "zero-history census" "$repo/tools/node/dev/census/history/zero"
 run_gate "convergence census" "$repo/tools/node/dev/convergencecensus"
 run_gate "projection debt census" "$repo/tools/node/dev/projectioncensus"
 run_gate "foreign licence census" "$repo/tools/node/dev/foreigncensus"
@@ -318,23 +330,19 @@ if [ "$skip_gates" != "1" ]; then
   run_gate "mcp-gate" "$lock" -- zig build mcp-gate
   run_gate "repo hygiene gate" "$repo/tools/node/dev/repo-hygiene"
   if [ "$full_gates" = "1" ]; then
-    run_gate "lsp-gate" "$lock" -- zig build lsp-gate
     run_gate "semantic architecture gate" "$lock" -- zig build semantic-architecture
     run_gate "unit gate" "$lock" -- zig build unit-test --summary all
   else
-    ok "lsp-gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  IMPLEMENTATION-BLOCKED C embed / exit-128 hints)"
     ok "semantic architecture gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  gate/architecture.id C embed debt)"
-    ok "unit gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  33 known Zig test failures at HEAD)"
+    ok "unit gate deferred (set IDOL_DOCTOR_FULL_GATES=1  -  verify the current aggregate debt live)"
   fi
 fi
 
 if [ "$fail" -eq 0 ]; then
   cleanup_root_artifacts
-  printf 'idol doctor: PASS'
-  [ "$warn" -gt 0 ] && printf ' (%s warning(s))' "$warn"
-  printf '\n'
+  printf 'idol doctor: PASS\n'
   exit 0
 fi
 
-printf 'idol doctor: FAIL (%s failure(s), %s warning(s))\n' "$fail" "$warn" >&2
+printf 'idol doctor: FAIL (%s failure(s))\n' "$fail" >&2
 exit 1

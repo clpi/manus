@@ -28,13 +28,13 @@ if command -v mise >/dev/null 2>&1; then
   mise install
 fi
 
-for tool in jq git gh rg codex cursor tree-sitter wasmtime wasmer zls; do
+for tool in jq git gh rg codex cursor opencode tree-sitter wasmtime wasmer zls; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     brew install "$tool" || true
   fi
 done
 
-git submodule update --init --recursive ext/duo-lsp ext/duo.el
+git submodule update --init --recursive
 
 cleanup_root_artifacts
 
@@ -46,7 +46,7 @@ zig build --summary all
 
 "$repo/tools/node/dev/cursor-auth"
 
-for server in idol-bench idol-lsp zls; do
+for server in $(jq -r '.servers[] | select(.enabled == true) | .name' "$repo/tools/node/dev/mcp.manifest.json"); do
   cursor agent mcp enable "$server"
 done
 

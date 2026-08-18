@@ -53,7 +53,7 @@ any wasm module at all.**
 
     cd benchmarks/wasm_rt/conform
     WARD=/tmp/idol_wasm_engine/ward python3 spec_conformance.py \
-        --suite /Users/clp/x/wart/third_party/testsuite
+        --suite <wart-root>/third_party/testsuite
 
     .wast converted      : 159  (wast2json refused 98)
 

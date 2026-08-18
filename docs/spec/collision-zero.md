@@ -85,7 +85,6 @@ src/transform_engine.zig
 tools/wasm/src/engine.id
 src/semantic_context.zig
 lib/context.id
-tools/mcp/zls/bridge.id
 src/lexer_bridge.zig
 src/duo_keyword_bridge.zig
 src/c_frontend.zig

@@ -1,0 +1,29 @@
+# F4 — 30-line slice of token_view.id; still refuses with missing: view
+# compiler.token_view
+# Immutable observation over a production token pack (GAP-134 prerequisite).
+
+pack: { kinds: []i64, lines: []i64, cols: []i64, texts: []str, count: i64 }
+
+view: pack = (pack: pack)
+  pack
+
+len: i64 = (pack: pack)
+  pack.count
+
+kindat: i64 = (pack: pack, index: i64)
+  if index < 1 or index > pack.count
+    token.KINDEOF
+  else
+    pack.kinds(index)
+
+peek: i64 = (pack: pack, index: i64)
+  kindat(pack, index)
+
+canbeginexpr: bool = (pack: pack, index: i64)
+  token.grammarrole.rolebeginexpr(kindat(pack, index))
+
+roleprecedence: i64 = (pack: pack, index: i64)
+  token.grammarrole.roleprecedence(kindat(pack, index))
+
+rolecompatonly: bool = (pack: pack, index: i64)
+  token.grammarrole.rolecompatonly(kindat(pack, index))

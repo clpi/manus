@@ -34,9 +34,10 @@ establishes those graph facts.
 
 Current delimiter roles remain:
 
-- `()` ordinary application and grouping;
+- `()` ordinary application and grouping, including computed and ordinal
+  retrieval;
 - `{}` structured packs, descriptor application, and descriptor homes;
-- `[]` genuinely computed projection;
+- `[]` retired; brackets do not select another semantic operation;
 - `.` statically named projection after an explicit subject;
 - `:` admitted descriptor, subject, and home roles;
 - `@` the current-world accessor: bare `@` the current-world value, `@member`
@@ -49,10 +50,12 @@ Parser acceptance never authorizes a backend fallback.
 
 ## Current implementation boundary
 
-The tracked parser and tooling still contain handwritten role decisions and
-string-shaped classification. They are duplicate-authority and SOURCE-ZERO
-debt. Existing highlight corpora may serve as differential evidence, but they
-cannot establish the canonical role set.
+The tracked parser and Tree-sitter grammar still contain handwritten role
+decisions and string-shaped classification. They are duplicate-authority and
+SOURCE-ZERO debt. The duplicate in-tree LSP/highlighter and its corpora were
+deleted on 2026-08-17; they are historical evidence only and must not be ported.
+Durable semantic tokens wait for graph-owned source spans and generated grammar
+roles in the sibling `idol-native` LSP.
 
 Closure requires one authority edit to regenerate every consumer, production
 use of the immutable token view, an adversarial control that changes the

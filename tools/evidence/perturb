@@ -1,0 +1,77 @@
+#!/bin/sh
+# evidence/perturb — prove a damage control actually damages its target.
+#
+# A perturbation is real only when ALL of these hold:
+#   1. the pattern matched the expected count BEFORE the change
+#   2. the change applied (file hash changed)
+#   3. the pattern matched the expected count AFTER the change
+#   4. the guarded behavior changed (the check command's exit flipped
+#      according to --expect after|before)
+#   5. restoration is byte-exact (restored hash equals original hash)
+# A no-op perturbation FAILS this helper. (Pickle Mission C.)
+#
+# usage: evidence/perturb <file> <regex> <before-count> <after-count> \
+#          <sed-expr> <check-command...>
+#   regex      — pattern whose match count is verified
+#   sed-expr   — the mutation applied via sed -E -e
+#   check      — command whose exit status must be NONZERO after damage
+#                and ZERO before damage (the damage control itself)
+
+set -eu
+
+file="$1"; pattern="$2"; before="$3"; after="$4"; sedexpr="$5"; shift 5
+[ -r "$file" ] || { echo "evidence/perturb: unreadable file: $file" >&2; exit 2; }
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/idol-perturb.XXXXXX")"
+trap 'rm -rf "$work"' EXIT
+cp "$file" "$work/original"
+
+count_matches() { grep -cE "$pattern" "$1" 2>/dev/null || true; }
+
+# 1. before-count
+n="$(count_matches "$file")"
+if [ "$n" != "$before" ]; then
+  echo "evidence/perturb: FAIL expected $before matches of /$pattern/ before, found $n" >&2
+  exit 1
+fi
+
+# 2. behavior before damage
+if ! "$@" >/dev/null 2>&1; then
+  echo "evidence/perturb: FAIL check command did not pass on the undamaged file" >&2
+  exit 1
+fi
+
+# 3. apply the mutation; it must change the file
+orig_h="$(shasum -a 256 "$file" | awk '{print $1}')"
+sed -E -e "$sedexpr" "$work/original" >"$file"
+new_h="$(shasum -a 256 "$file" | awk '{print $1}')"
+if [ "$new_h" = "$orig_h" ]; then
+  cp "$work/original" "$file"
+  echo "evidence/perturb: FAIL no-op mutation rejected (file unchanged)" >&2
+  exit 1
+fi
+
+# 4. after-count
+n="$(count_matches "$file")"
+if [ "$n" != "$after" ]; then
+  cp "$work/original" "$file"
+  echo "evidence/perturb: FAIL expected $after matches after damage, found $n" >&2
+  exit 1
+fi
+
+# 5. the damage control must fire (check command must now fail)
+if "$@" >/dev/null 2>&1; then
+  cp "$work/original" "$file"
+  echo "evidence/perturb: FAIL damage control did not fire (check passed on damaged file)" >&2
+  exit 1
+fi
+
+# 6. restoration is byte-exact
+cp "$work/original" "$file"
+rest_h="$(shasum -a 256 "$file" | awk '{print $1}')"
+if [ "$rest_h" != "$orig_h" ]; then
+  echo "evidence/perturb: FAIL restoration not byte-exact" >&2
+  exit 1
+fi
+
+echo "evidence/perturb: PASS $before->$after matches, damage fired, restoration exact"

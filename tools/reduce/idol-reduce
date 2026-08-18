@@ -1,0 +1,168 @@
+#!/bin/sh
+# idol-reduce — minimize an .id program while an external predicate holds.
+#
+# CONTRACT (Pickle Mission A)
+#   idol-reduce <input.id> -p '<predicate shell text>'
+#   The predicate runs as:  sh -c "<predicate>" reduce-sh <candidate-path>
+#   i.e. "$1" inside the predicate text is the candidate file.
+#   Predicate exit 0 = the failure-of-interest is PRESENT in the candidate.
+#
+#   The reducer refuses to start unless:
+#     predicate(original) holds, and
+#     predicate(blank floor) does not hold
+#   so an always-true (broken) predicate is rejected before any reduction.
+#
+#   Every accepted candidate keeps the predicate — a candidate that fails
+#   differently (predicate text is the caller's exact-match grep) is simply
+#   rejected. Reduction never accepts a different earlier failure.
+#
+# PASSES
+#   1. ddmin over lines (chunk deletion, 2..n splits)
+#   2. per-line simplification (numeric literal -> 0, string literal -> "")
+#
+# OUTPUT
+#   reduced program on stdout (or -o file), report on stderr,
+#   exit 0 iff a strict reduction was found and controls passed.
+
+set -eu
+
+IDOL="${IDOL_REDUCE_BIN:-${IDOL_BIN:-$(dirname "$0")/../../zig-out/bin/idol}}"
+input=""
+predicate=""
+output=""
+work="$(mktemp -d "${TMPDIR:-/tmp}/idol-reduce.XXXXXX")"
+trap 'rm -rf "$work"' EXIT
+
+usage() {
+  echo 'usage: idol-reduce <input.id> -p "<predicate using \$1>" [-o out.id]' >&2
+  exit 2
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p) predicate="$2"; shift 2 ;;
+    -o) output="$2"; shift 2 ;;
+    -*) usage ;;
+    *) [ -z "$input" ] && input="$1" || usage; shift ;;
+  esac
+done
+[ -n "$input" ] && [ -n "$predicate" ] || usage
+[ -r "$input" ] || { echo "idol-reduce: unreadable input: $input" >&2; exit 2; }
+
+pred() {
+  # pred <file> -> exit 0 iff failure-of-interest present
+  sh -c "$predicate" reduce-sh "$1" >/dev/null 2>&1
+}
+
+cache_dir="$work/cache"
+mkdir -p "$cache_dir"
+pred_cached() {
+  _h="$(shasum -a 256 "$1" | cut -c1-32)"
+  _f="$cache_dir/$_h"
+  if [ -e "$_f" ]; then
+    [ "$(cat "$_f")" = 0 ]
+  else
+    if pred "$1"; then echo 0 >"$_f"; true; else echo 1 >"$_f"; false; fi
+  fi
+}
+
+# --- admission controls -----------------------------------------------------
+if ! pred_cached "$input"; then
+  echo "idol-reduce: predicate does not hold on the original — nothing to reduce" >&2
+  exit 1
+fi
+: >"$work/floor.id"
+if pred_cached "$work/floor.id"; then
+  echo "idol-reduce: predicate holds on a blank floor — broken (always-true) predicate rejected" >&2
+  exit 1
+fi
+
+cp "$input" "$work/cur.id"
+orig_lines=$(grep -c "" "$work/cur.id")
+
+# --- pass 1: ddmin over lines ------------------------------------------------
+ddmin() {
+  total=$(grep -c "" "$work/cur.id")
+  n=2
+  while [ "$total" -gt 1 ]; do
+    chunk_size=$(( (total + n - 1) / n ))
+    hit=0
+    i=0
+    while [ "$i" -lt "$n" ]; do
+      start=$((i * chunk_size + 1))
+      end=$((start + chunk_size - 1))
+      if [ "$end" -gt "$total" ]; then end=$total; fi
+      if [ "$start" -le "$end" ]; then
+        cp "$work/cur.id" "$work/prev.id"
+        # emit all lines except start..end (explicit ranges; 1,0p is a
+        # degenerate no-op range on some seds and would fake a deletion)
+        : >"$work/cand.id"
+        if [ "$start" -gt 1 ]; then
+          sed -n "1,$((start - 1))p" "$work/prev.id" >>"$work/cand.id"
+        fi
+        if [ "$end" -lt "$total" ]; then
+          sed -n "$((end + 1)),\$p" "$work/prev.id" >>"$work/cand.id"
+        fi
+        if [ -s "$work/cand.id" ] && pred_cached "$work/cand.id"; then
+          nt=$(grep -c "" "$work/cand.id")
+          if [ "$nt" -lt "$total" ]; then
+            cp "$work/cand.id" "$work/cur.id"
+            total=$nt
+            hit=1
+            break
+          fi
+        fi
+      fi
+      i=$((i + 1))
+    done
+    if [ "$hit" -eq 1 ]; then
+      if [ "$n" -gt 2 ]; then n=$((n - 1)); fi
+    else
+      if [ "$n" -ge "$total" ]; then break; fi
+      n=$(( total < n * 2 ? total : n * 2 ))
+    fi
+  done
+}
+ddmin
+
+# --- pass 2: per-line simplification (numeric literal -> 0) ------------------
+i=1
+total=$(grep -c "" "$work/cur.id")
+while [ "$i" -le "$total" ]; do
+  line="$(sed -n "${i}p" "$work/cur.id")"
+  case "$line" in
+    '#'*|'') i=$((i + 1)); continue ;;
+  esac
+  # numeric literal -> 0
+  simplified="$(printf '%s\n' "$line" | sed -E 's/([=(+*,<>] ?)-?[1-9][0-9]*/\10/g')"
+  if [ "$simplified" != "$line" ]; then
+    sed -n "1,$((i - 1))p" "$work/cur.id" >"$work/cand.id"
+    printf '%s\n' "$simplified" >>"$work/cand.id"
+    sed -n "$((i + 1)),\$p" "$work/cur.id" >>"$work/cand.id"
+    if [ -s "$work/cand.id" ] && pred_cached "$work/cand.id"; then
+      cp "$work/cand.id" "$work/cur.id"
+      total=$(grep -c "" "$work/cur.id")
+      continue
+    fi
+  fi
+  i=$((i + 1))
+done
+
+# --- controls ----------------------------------------------------------------
+final_lines=$(grep -c "" "$work/cur.id")
+if [ "$final_lines" -ge "$orig_lines" ]; then
+  echo "idol-reduce: no strict reduction found ($orig_lines lines)" >&2
+  exit 1
+fi
+# restoration: original still fails (admission proved it); reduced still fails
+if ! pred_cached "$work/cur.id"; then
+  echo "idol-reduce: internal error — reduced candidate lost the predicate" >&2
+  exit 1
+fi
+
+if [ -n "$output" ]; then
+  cp "$work/cur.id" "$output"
+else
+  cat "$work/cur.id"
+fi
+echo "idol-reduce: $orig_lines -> $final_lines lines; predicate stable; floor control held" >&2

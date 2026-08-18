@@ -3,7 +3,7 @@ set -eu
 
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 manifest="${IDOL_MCP_MANIFEST:-$repo/tools/node/dev/mcp.manifest.json}"
-idol="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-${DUO_BIN:-$repo/zig-out/bin/idol}}}"
+idol="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-$repo/zig-out/bin/idol}}"
 work="$(mktemp -d "${TMPDIR:-/tmp}/idol-mcp-gate.XXXXXX")"
 fails=0
 stream_server_pid=""
@@ -78,7 +78,7 @@ start_stream() {
   executable="$1"
   base="$2"
   mkfifo "$base.in" "$base.out"
-  (cd "$repo" && exec env IDOL_ROOT="$repo" DUO_ROOT="$repo" IDOL_BIN="$idol" DUO_BIN="$idol" \
+  (cd "$repo" && exec env IDOL_ROOT="$repo" IDOL_BIN="$idol" \
     "$executable" <"$base.in" >"$base.out" 2>"$base.err") &
   stream_server_pid=$!
   exec 9>"$base.in"
@@ -197,7 +197,7 @@ else
     >"$work/request.json"
 
   rc=0
-  (cd "$repo" && IDOL_ROOT="$repo" DUO_ROOT="$repo" IDOL_BIN="$idol" DUO_BIN="$idol" \
+  (cd "$repo" && IDOL_ROOT="$repo" IDOL_BIN="$idol" \
     "$idol" run "$repo/$entry" <"$work/request.json" >"$work/response.json" 2>"$work/server.err") || rc=$?
   if [ "$rc" -ne 0 ]; then
     report fail "native idol process" "exited $rc"
@@ -212,6 +212,19 @@ else
   else
     report fail "native idol initialize/list/handlers by request id" "invalid, missing, duplicate, or wrong response"
     cat "$work/response.json" >&2
+  fi
+
+  # opencode's MCP client serializes request members alphabetically, putting
+  # "id" last with no trailing comma; the id extractor must handle that shape.
+  printf '%s\n' '{"method":"tools/call","params":{"name":"head","arguments":{}},"jsonrpc":"2.0","id":6}' >"$work/idlast.json"
+  rc=0
+  (cd "$repo" && IDOL_ROOT="$repo" IDOL_BIN="$idol" \
+    "$idol" run "$repo/$entry" <"$work/idlast.json" >"$work/idlast-response.json" 2>"$work/idlast.err") || rc=$?
+  if [ "$rc" -eq 0 ] && jq -e --arg head "$head" '.jsonrpc == "2.0" and .id == 6 and (has("error") | not) and .result.content[0].type == "text" and ((.result.content[0].text | sub("\\n$"; "")) == $head)' "$work/idlast-response.json" >/dev/null 2>&1; then
+    report ok "member-order tolerance: id serialized last round-trips" ""
+  else
+    report fail "member-order tolerance: id serialized last round-trips" "missing, unparseable, or wrong response"
+    cat "$work/idlast-response.json" >&2
   fi
 
   tr -d '\n' <"$work/response.json" >"$work/adjacent-response.json"

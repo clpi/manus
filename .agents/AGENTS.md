@@ -9,7 +9,7 @@ Use [`AGENT_CANONICAL.md`](AGENT_CANONICAL.md) for stable paths,
 [`AGENT_INTEGRATION.md`](AGENT_INTEGRATION.md) for bootstrap MCP transport.
 Read the current production frontier from [`docs/bootstrap.md`](../docs/bootstrap.md)
 and obligations from the exact current `gaps/GAP-*.md` files. Read live
-ownership through `duo_dev_claim_files` rather than copying claims here.
+ownership through `tools/node/dev/claim list` rather than copying claims here.
 
 The current language and project are Idol (`idol`, `idollang/idol`), with
 canonical `.id` source. Reaching the earliest executed SHC authority frontier is

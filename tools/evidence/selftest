@@ -1,0 +1,56 @@
+#!/bin/sh
+# evidence helpers selftest — Mission C/D proofs.
+set -eu
+repo="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$repo"
+fails=0
+t() { if [ "$1" = 0 ]; then echo "PASS $2"; else echo "FAIL $2" >&2; fails=$((fails + 1)); fi; }
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/idol-evidence-selftest.XXXXXX")"
+trap 'rm -rf "$work"' EXIT
+
+# --- subject: records real inner exit, command, and stable hashes --------
+cat >"$work/prog.id" <<'EOF'
+0
+EOF
+rc=0
+./tools/evidence/subject -o "$work/s.json" -- "$repo/zig-out/bin/idol" run "$work/prog.id" >/dev/null 2>&1 || rc=$?
+t $rc "subject passes through the inner exit status (0 for a clean run)"
+jq -e --arg c "exit 0 program" '.inner_exit == 0 and .command != "" and (.stdout.sha256 | test("^[0-9a-f]{64}$")) and (.commit | test("^[0-9a-f]{40}$|^uncommitted$"))' "$work/s.json" >/dev/null
+t $? "subject JSON carries commit, command, stdout hash"
+
+rc=0
+./tools/evidence/subject -o "$work/s2.json" -- sh -c 'exit 7' >/dev/null 2>&1 || rc=$?
+[ "$rc" = 7 ]
+t $? "subject records a failing inner exit verbatim (7)"
+
+# --- perturb: a real damage control passes, a no-op is rejected ----------
+cat >"$work/gate.sh" <<EOF
+#!/bin/sh
+grep -q 'FRAGILE-MARKER' '$work/target.txt'
+EOF
+chmod +x "$work/gate.sh"
+printf 'line one\nFRAGILE-MARKER here\nline three\n' >"$work/target.txt"
+
+rc=0; ./tools/evidence/perturb "$work/target.txt" 'FRAGILE-MARKER' 1 0 's/FRAGILE-MARKER/DAMAGED/' "$work/gate.sh" >/dev/null || rc=$?
+t $rc "perturb passes: 1->0 matches, gate flips red, restoration exact"
+
+printf 'line one\nFRAGILE-MARKER here\nline three\n' >"$work/target.txt"
+if ./tools/evidence/perturb "$work/target.txt" 'FRAGILE-MARKER' 1 1 's/NOMATCH/x/' "$work/gate.sh" >/dev/null 2>&1; then
+  t 1 "perturb rejects a no-op mutation"
+else
+  t 0 "perturb rejects a no-op mutation"
+fi
+
+printf 'line one\nFRAGILE-MARKER here\nline three\n' >"$work/target.txt"
+if ./tools/evidence/perturb "$work/target.txt" 'FRAGILE-MARKER' 2 1 's/FRAGILE-MARKER/DAMAGED/' "$work/gate.sh" >/dev/null 2>&1; then
+  t 1 "perturb rejects a wrong before-count"
+else
+  t 0 "perturb rejects a wrong before-count"
+fi
+
+if [ "$fails" -ne 0 ]; then
+  echo "evidence selftest: FAIL ($fails)" >&2
+  exit 1
+fi
+echo "evidence selftest: PASS"

@@ -1,0 +1,8 @@
+# F1 — unresolved-application-facts (typed host pointer + f64 foreign write)
+# Theorem: refuses with unresolved-application-facts from the graph producer;
+# f1_neg.id (write_i64 instead) compiles — the fact is f64-application-specific.
+w: i64 = (out: i64)
+  buf = mem.ptr_from_addr(i64, out)
+  mem.write_f64(buf, 8, 1.5)
+  0
+0

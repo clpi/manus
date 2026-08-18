@@ -8,8 +8,9 @@ not a compiler subsystem, and not semantic source.
 Authority and workflow law live where C0 says they live:
 
 ```
-AGENTS.md -> docs/spec/constitution.md -> CLAUDE.md -> docs/spec/source.md
-         -> docs/spec/AUTHORITY.md -> docs/bootstrap.md
+docs/spec/law.md -> AGENTS.md -> docs/spec/canonical.md -> docs/spec/agent.md
+         -> docs/spec/constitution.md -> CLAUDE.md -> docs/spec/source.md
+         -> docs/spec/host.md -> docs/spec/AUTHORITY.md -> docs/bootstrap.md
          -> .agents/AGENT_CANONICAL.md / AGENT_COORDINATION.md
 ```
 
@@ -21,8 +22,9 @@ file is right and this projection must be repaired.
 | Path | Purpose |
 | --- | --- |
 | `settings.json` | Project-local pi settings (compaction retention, npm via mise). |
-| `skills/idol-dev/` | Pi-local mirror of the canonical Idol development-loop skill in `.devin/skills/idol-dev/`. Install into Codex and Devin with `./tools/node/dev/install-skills`. |
-| `extensions/idol-mcp.ts` | Bridges the three project MCP servers (`idol-bench`, `idol-lsp`, `zls`) into pi tools, since pi has no native MCP and the Idol coordination workflow (claims, gaps, serialized builds) is MCP-based. |
+| `skills/idol-dev/` | Canonical Idol development-loop skill source. Install it into agent homes with `./tools/node/dev/install-skills`. |
+| `skills/idol/` | Canonical Idol authority-projection skill source. Install it into agent homes with `./tools/node/dev/install-skills`. |
+| `extensions/idol-mcp.ts` | Projects the manifest-owned `idol` and `idol-native` servers into pi tools. Compiler/LSP facts come from `idol-native`; claims and locked builds stay explicit repository commands. |
 
 ## What this projection does NOT do
 
@@ -32,9 +34,9 @@ file is right and this projection must be repaired.
   servers.
 - It does not bypass the gates. `skills/idol-dev` wraps `gate/idiom.id`
   and `gate/architecture.id`; it never suppresses a finding.
-- It does not replace claim coordination. Claim acquire/release is forwarded to
-  the `idol-bench` MCP server (`idol_dev_claim_acquire` / `duo_dev_claim_acquire` aliases), the same authority
-  Cursor and Codex use.
+- It does not replace claim coordination. Claim acquire/release remains the
+  explicit `tools/node/dev/claim` command; MCP does not mint a second transport
+  meaning for it.
 
 ## Trust
 
@@ -45,7 +47,5 @@ extension executes the `idol` binary with your permissions; review
 
 ## Committing this directory
 
-Whether to commit `.pi/` is a project decision. It is a new tree addition and,
-under this repository's claim discipline, should be claimed before a shared
-commit. Machine-local pi state (caches, compiled MCP binaries) should stay
-ignored — add `.pi/.cache/` to a local ignore if you compile MCP servers here.
+The skill sources, settings, and MCP bridge are tracked tooling projections.
+Machine-local pi state (caches and compiled MCP binaries) stays ignored.

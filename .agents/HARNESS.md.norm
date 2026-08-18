@@ -455,7 +455,7 @@ composition is inferable from use.
 
 - **FROM-ZERO** — `to` is the one conversion relation; `from` normalizes to same edge
 - **STD-ZERO / LIB-ZERO** — no canonical `std.*` or `lib.*` traversal; fix reachability
-- **WORLD-ONE** — worlds grant authority, not intent; prefer `stdin:read()`, `args[1]`, `stdout:write()`
+- **WORLD-ONE** — worlds grant authority, not intent; prefer `stdin:read()`, `args(1)`, `stdout:write()`
 - **SHELL-NOT-WORLD** — shell is law; process world authorizes run
 - **HOME-PROJECTION** — hierarchy is reachability, not `compiler.parser.parse`
 - Protocol constraints are relation projections (`source: read`), not adjective traits
@@ -1031,8 +1031,8 @@ Mandatory for every agent:
 4. **Generated harness** — stable law projection in `.agents/HARNESS.md`;
    session envelope in `.agents/session/ENVELOPE.md` is ephemeral and never
    committed.
-5. **Verification** — run `./tools/node/dev/zerohistorycensus` and
-   `./tools/node/dev/identitycensus` before claiming purge complete.
+5. **Verification** — run `./tools/node/dev/census/history/zero` and
+   `./tools/node/dev/census/identity` before claiming purge complete.
 
 Text census discovers debt; semantic gates convict equivalent architecture under
 different spelling (`law.gate.convergence`).

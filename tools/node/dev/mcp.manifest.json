@@ -32,41 +32,20 @@
       "enabled": true,
       "required": true,
       "startup_timeout_sec": 60,
-      "tool_timeout_sec": 1800,
-      "purpose": "native sentinel-free MCP server (idol run, no --backend=c): status, head, orient"
+      "tool_timeout_sec": 1800
     },
     {
-      "name": "idol-bench",
-      "entry": "tools/mcp/bench.id",
-      "provenance": "bootstrap-compatibility",
-      "backend": "c",
-      "enabled": false,
+      "name": "idol-native",
+      "sibling": "idol-native",
+      "entry": "tools/mcp/server.id",
+      "bin": "bin/idol",
+      "provenance": "native",
+      "backend": "native",
+      "enabled": true,
       "required": false,
       "startup_timeout_sec": 60,
       "tool_timeout_sec": 1800,
-      "purpose": "claims, gaps, serialized gates, and performance evidence \u2014 DISABLED: source predates the C-backend retirement and does not compile under any live backend; revive by migrating to native, then restore required"
-    },
-    {
-      "name": "idol-lsp",
-      "entry": "tools/mcp/lsp.id",
-      "provenance": "bootstrap-compatibility",
-      "backend": "c",
-      "enabled": false,
-      "required": false,
-      "startup_timeout_sec": 60,
-      "tool_timeout_sec": 1800,
-      "purpose": "diagnostics and language intelligence \u2014 DISABLED: source predates the C-backend retirement and does not compile under any live backend; revive by migrating to native, then restore required"
-    },
-    {
-      "name": "zls",
-      "entry": "tools/mcp/zls.id",
-      "provenance": "bootstrap-compatibility",
-      "backend": "c",
-      "enabled": false,
-      "required": false,
-      "startup_timeout_sec": 60,
-      "tool_timeout_sec": 1800,
-      "purpose": "Zig bootstrap navigation through zls \u2014 DISABLED: source predates the C-backend retirement and does not compile under any live backend; revive by migrating to native, then restore required"
+      "purpose": "native semantic-graph server from the idol-native benchmark checkout (sibling directory): check, symbols, graph, run, gates, orient, sim, explain, fmt, asm"
     }
   ]
 }

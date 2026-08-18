@@ -40,11 +40,11 @@ else
   echo "census/convergence: pass duo_lock retired"
 fi
 
-if ! [ -f scripts/idol_lock.id ]; then
-  echo "census/convergence: FAIL scripts/idol_lock.id missing"
+if ! [ -x tools/node/dev/idol-lock ]; then
+  echo "census/convergence: FAIL tools/node/dev/idol-lock missing or not executable"
   fail=$((fail + 1))
 else
-  echo "census/convergence: pass idol_lock present"
+  echo "census/convergence: pass idol-lock present"
 fi
 
 if [ -f src/native_req_support.zig ]; then

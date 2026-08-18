@@ -1,17 +1,17 @@
 # Idol release readiness ledger
 
 This is a release-gating checklist, not semantic law and not live project status.
-Active development stays in **`clpi/duo`**. **`idollang/idol`** remains untouched
+Active development stays in **`clpi/idol`**. **`idollang/idol`** remains untouched
 until every blocker below is closed and explicit release authorization is recorded.
 
 ## Repository separation
 
 | Requirement | Status |
 |---|---|
-| Development remote remains `clpi/duo` during concurrent work | **open** — current origin |
+| A configured development remote names `clpi/idol` during concurrent work | **required** — verified from the manifest and live remotes by `tools/node/dev/repository check` |
 | Release repo `idollang/idol` receives no development commits | **open** — do not push dev work there |
 | Release migration runbook exists as a dedicated future operation | **open** |
-| `tools/node/dev/doctor` admits only `clpi/duo` development checkouts | **met** — release checkout fails closed |
+| `tools/node/dev/doctor` admits only a checkout with the configured development repository | **met** — release identity cannot satisfy the development check |
 
 ## Authority and orientation
 
@@ -27,7 +27,7 @@ until every blocker below is closed and explicit release authorization is record
 
 | Requirement | Status |
 |---|---|
-| Update-face law owned by C0, projected by `AGENTS.md`; candidate gate at `gate/idiom.id` | **met** — candidate finding, not semantic proof |
+| Update-face law owned by C0, projected by `AGENTS.md`; lexical implementation at `gate/idiom.id` | **blocked** — direct run refuses at DNB001 `concat`; static scans are not semantic proof |
 | Graph-owned canonicalizer for update-face equivalence | **blocked** — `GAP-145`, `GAP-134`, `GAP-124` |
 | Pre-commit / semantic gates pass on release candidate tree | **open** — requires clean aggregate run at candidate HEAD |
 | Canonicality split enforced: new debt = 0 vs existing corpus debt tracked separately | **in progress** — see `docs/METRICS.md` |
@@ -37,7 +37,7 @@ until every blocker below is closed and explicit release authorization is record
 
 | Requirement | Status |
 |---|---|
-| Open P0 census trustworthy (`GAP-131`) | **open** |
+| Exact-gap P0 census trustworthy (`GAP-131`) | **met** — retired MCP census deleted; `orient` derives `activep0` from exact gap headers |
 | Executed self-host frontier meets release bar in `docs/bootstrap.md` | **open** |
 | Production graph facts consumed without source-text reconstruction | **open** — Codex/Poolside lanes |
 | FTCFTW evidence bundle for release candidate | **open** |
@@ -82,7 +82,7 @@ Status and closure evidence live in the gaps and bootstrap ledger, not here.
 | **Cursor** | Coordination, release-readiness ledger, node dev admission routers only |
 | **Devin** | Lexical identity → grammar-role SHC prerequisite (`GAP-145` → `GAP-134` input) |
 | **Poolside** | Realization / machine / FTCFTW |
-| **AGY** | Adversarial audit / `GAP-131` evidence truth |
+| **AGY** | Adversarial audit / evidence truth |
 | **Codex** | Semantic graph producer (when active) |
 
 Claim exact paths before write. No broad cleanup. No release migration.
@@ -91,7 +91,7 @@ Claim exact paths before write. No broad cleanup. No release migration.
 
 | Check | Status |
 |---|---|
-| `tools/node/dev/orient` | **met** — reports Idol / `clpi/duo` / untouched `idollang/idol` |
+| `tools/node/dev/orient` | **met** — derives `clpi/idol`, `idollang/idol`, and the authority order from the tracked manifest |
 | `tools/node/dev/doctor` | **fail** — see blockers below |
 | Single MCP manifest | **met** — `tools/node/dev/mcp.manifest.json` only |
 | Cursor rules as routers | **met** — 9 scoped `.mdc`, all under 50 lines except always-on (21 lines) |

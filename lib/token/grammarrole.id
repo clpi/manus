@@ -1,9 +1,10 @@
--- GENERATED from src/grammar_role_gen.zig — do not edit by hand.
--- Regenerate: duo token-tables emit
--- Canonical grammar-role facts: src/grammar_roles.zig
+# GENERATED from src/grammar_role_gen.zig — do not edit by hand.
+# Regenerate: idol token-tables emit
+# Bootstrap grammar-role projection: src/grammar_roles.zig
 
 grammar = req("std.compiler.token")
 
+ROLEIDENTITYCOUNT = 113
 ROLECOUNT = 114
 KINDEOF = 109
 BEGINEXPR = {
@@ -120,7 +121,7 @@ BEGINEXPR = {
   0,
   0,
   0,
-  0
+  0,
 }
 prefix = {
   0,
@@ -236,7 +237,7 @@ prefix = {
   0,
   0,
   0,
-  0
+  0,
 }
 postfix = {
   0,
@@ -352,7 +353,7 @@ postfix = {
   0,
   0,
   0,
-  0
+  0,
 }
 parameter = {
   0,
@@ -468,7 +469,7 @@ parameter = {
   0,
   0,
   0,
-  0
+  0,
 }
 LITERALKIND = {
   0,
@@ -584,7 +585,7 @@ LITERALKIND = {
   0,
   0,
   0,
-  0
+  0,
 }
 quoted = {
   0,
@@ -700,7 +701,7 @@ quoted = {
   0,
   0,
   0,
-  0
+  0,
 }
 projection = {
   0,
@@ -816,7 +817,7 @@ projection = {
   0,
   0,
   0,
-  0
+  0,
 }
 BODYSTART = {
   1,
@@ -824,9 +825,9 @@ BODYSTART = {
   1,
   0,
   0,
-  0,
-  0,
-  0,
+  1,
+  1,
+  1,
   0,
   0,
   0,
@@ -843,25 +844,9 @@ BODYSTART = {
   1,
   0,
   0,
-  0,
-  0,
   1,
   0,
   1,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
   0,
   1,
   0,
@@ -871,27 +856,6 @@ BODYSTART = {
   0,
   0,
   0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  1,
-  0,
-  0,
-  0,
-  1,
-  0,
-  0,
-  1,
-  0,
-  0,
-  0,
-  0,
-  1,
-  0,
-  1,
   0,
   0,
   0,
@@ -914,6 +878,43 @@ BODYSTART = {
   0,
   0,
   0,
+  1,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
   0,
   0,
   0,
@@ -932,7 +933,7 @@ BODYSTART = {
   0,
   0,
   0,
-  0
+  0,
 }
 descriptor = {
   0,
@@ -1048,7 +1049,7 @@ descriptor = {
   0,
   0,
   0,
-  0
+  0,
 }
 pattern = {
   1,
@@ -1164,7 +1165,7 @@ pattern = {
   0,
   0,
   0,
-  0
+  0,
 }
 COMPATONLY = {
   0,
@@ -1174,10 +1175,10 @@ COMPATONLY = {
   1,
   0,
   0,
+  1,
   0,
-  0,
-  0,
-  0,
+  1,
+  1,
   1,
   0,
   1,
@@ -1192,7 +1193,7 @@ COMPATONLY = {
   1,
   0,
   0,
-  0,
+  1,
   1,
   0,
   0,
@@ -1212,19 +1213,6 @@ COMPATONLY = {
   0,
   0,
   0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  1,
   0,
   0,
   0,
@@ -1250,6 +1238,19 @@ COMPATONLY = {
   0,
   0,
   0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
   0,
   1,
   1,
@@ -1280,7 +1281,7 @@ COMPATONLY = {
   0,
   0,
   1,
-  1
+  1,
 }
 precedence = {
   0,
@@ -1396,7 +1397,7 @@ precedence = {
   0,
   0,
   0,
-  0
+  0,
 }
 assoc = {
   0,
@@ -1512,7 +1513,7 @@ assoc = {
   0,
   0,
   0,
-  0
+  0,
 }
 
 rolebeginexpr: bool = (kind: i64)

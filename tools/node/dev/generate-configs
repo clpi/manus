@@ -2,8 +2,16 @@
 set -eu
 
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
+# Emit the stable spelling when this clone also lives under the ~/x symlink.
+xlink="$(readlink "$HOME/x" 2>/dev/null || true)"
+if [ -n "$xlink" ]; then
+  case "$repo" in
+    "$xlink"/*) repo="$HOME/x/${repo#"$xlink"/}" ;;
+  esac
+fi
+parent="$(dirname "$repo")"
 manifest="$repo/tools/node/dev/mcp.manifest.json"
-duo="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-${DUO_BIN:-$repo/zig-out/bin/idol}}}"
+idol="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-$repo/zig-out/bin/idol}}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "generate-configs: jq is required" >&2
@@ -22,19 +30,36 @@ if ! jq -e '
   exit 1
 fi
 
-if [ ! -x "$duo" ]; then
-  echo "generate-configs: missing compiler artifact: $duo" >&2
+if [ ! -x "$idol" ]; then
+  echo "generate-configs: missing compiler artifact: $idol" >&2
   exit 1
 fi
 
+# name <tab> root <tab> bin <tab> entry <tab> backend <tab> enabled <tab> required <tab> startup_sec <tab> tool_sec
+# A server with a "sibling" field resolves against the sibling checkout of the
+# canonical clone (for example the idol-native benchmark repository); every
+# other server resolves against this repository. "bin" selects the server's
+# launcher binary inside its root (default zig-out/bin/idol).
+servers_tsv="$(jq -r --arg repo "$repo" --arg parent "$parent" --arg mainbin "$idol" '
+  .servers[] |
+  (if .sibling then ($parent + "/" + .sibling) else $repo end) as $root |
+  (if .sibling then ($root + "/" + (.bin // "bin/idol")) else $mainbin end) as $bin |
+  [.name, $root, $bin, .entry, .backend, .enabled, .required, .startup_timeout_sec, .tool_timeout_sec] | @tsv
+' "$manifest")"
+
 missing=0
 tab="$(printf '\t')"
-while IFS="$tab" read -r name entry; do
-  [ -f "$repo/$entry" ] && continue
-  echo "generate-configs: missing $name entry: $repo/$entry" >&2
-  missing=1
+while IFS="$tab" read -r name root bin entry backend enabled required startup tool; do
+  [ -f "$root/$entry" ] || {
+    echo "generate-configs: missing $name entry: $root/$entry" >&2
+    missing=1
+  }
+  if [ "$enabled" = true ] && [ ! -x "$bin" ]; then
+    echo "generate-configs: missing $name launcher: $bin" >&2
+    missing=1
+  fi
 done <<EOF
-$(jq -r '.servers[] | [.name, .entry] | @tsv' "$manifest")
+$servers_tsv
 EOF
 if [ "$missing" -ne 0 ]; then
   exit 1
@@ -43,49 +68,71 @@ fi
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/idol-mcp.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
-mkdir -p "$repo/.codex" "$repo/.cursor"
+mkdir -p "$repo/.codex" "$repo/.cursor" "$repo/.opencode/skills"
 
 codex_out="$tmp/codex.toml"
 cursor_out="$tmp/cursor.json"
+opencode_out="$tmp/opencode.json"
 
 {
   echo "# Generated from tools/node/dev/mcp.manifest.json. Do not edit by hand."
-  jq -r --arg repo "$repo" --arg duo "$duo" '
-    .servers[] |
-    "[mcp_servers." + .name + "]\n" +
-    "command = " + ($duo|@json) + "\n" +
-    "args = [\"run\", \"--backend=" + .backend + "\", " + (($repo + "/" + .entry)|@json) + "]\n" +
-    "cwd = " + ($repo|@json) + "\n" +
-    "startup_timeout_sec = " + (.startup_timeout_sec|tostring) + "\n" +
-    "tool_timeout_sec = " + (.tool_timeout_sec|tostring) + "\n" +
-    "enabled = " + (.enabled|tostring) + "\n" +
-    "required = " + (.required|tostring) + "\n\n" +
-    "[mcp_servers." + .name + ".env]\n" +
-    "IDOL_ROOT = " + ($repo|@json) + "\n" +
-    "IDOL_BIN = " + ($duo|@json) + "\n" +
-    "DUO_ROOT = " + ($repo|@json) + "\n" +
-    "DUO_BIN = " + ($duo|@json) + "\n"
-  ' "$manifest"
+  while IFS="$tab" read -r name root bin entry backend enabled required startup tool; do
+    printf '[mcp_servers.%s]\n' "$name"
+    printf 'command = "%s"\n' "$bin"
+    printf 'args = ["run", "--backend=%s", "%s"]\n' "$backend" "$root/$entry"
+    printf 'cwd = "%s"\n' "$root"
+    printf 'startup_timeout_sec = %s\n' "$startup"
+    printf 'tool_timeout_sec = %s\n' "$tool"
+    printf 'enabled = %s\n' "$enabled"
+    printf 'required = %s\n\n' "$required"
+    printf '[mcp_servers.%s.env]\n' "$name"
+    printf 'IDOL_ROOT = "%s"\n' "$root"
+    printf 'IDOL_BIN = "%s"\n\n' "$bin"
+  done <<EOF
+$servers_tsv
+EOF
 } > "$codex_out"
 
-jq --arg repo "$repo" --arg duo "$duo" '
+jq --arg repo "$repo" --arg parent "$parent" '
   {
     mcpServers: (
-      .servers
-      | map(select(.enabled))
-      | map({
+      [.servers[] | select(.enabled) |
+        (if .sibling then ($parent + "/" + .sibling) else $repo end) as $root |
+        (if .sibling then ($root + "/" + (.bin // "bin/idol")) else ($root + "/zig-out/bin/idol") end) as $bin |
+        {
           key: .name,
           value: {
-            command: $duo,
-            args: ["run", ("--backend=" + .backend), ($repo + "/" + .entry)],
-            cwd: $repo,
-            env: { IDOL_ROOT: $repo, IDOL_BIN: $duo, DUO_ROOT: $repo, DUO_BIN: $duo }
+            command: $bin,
+            args: ["run", ("--backend=" + .backend), ($root + "/" + .entry)],
+            cwd: $root,
+            env: { IDOL_ROOT: $root, IDOL_BIN: $bin }
           }
-        })
-      | from_entries
+        }] | from_entries
     )
   }
 ' "$manifest" > "$cursor_out"
+
+jq --arg repo "$repo" --arg parent "$parent" '
+  {
+    "$schema": "https://opencode.ai/config.json",
+    mcp: (
+      [.servers[] | select(.enabled) |
+        (if .sibling then ($parent + "/" + .sibling) else $repo end) as $root |
+        (if .sibling then ($root + "/" + (.bin // "bin/idol")) else ($root + "/zig-out/bin/idol") end) as $bin |
+        {
+          key: .name,
+          value: {
+            type: "local",
+            command: [$bin, "run", ("--backend=" + .backend), ($root + "/" + .entry)],
+            cwd: $root,
+            environment: { IDOL_ROOT: $root, IDOL_BIN: $bin },
+            enabled: true,
+            timeout: (.startup_timeout_sec * 1000)
+          }
+        }] | from_entries
+    )
+  }
+' "$manifest" > "$opencode_out"
 
 if [ "${1:-}" = "--check" ]; then
   cmp -s "$codex_out" "$repo/.codex/mcp.generated.toml" || {
@@ -96,19 +143,26 @@ if [ "${1:-}" = "--check" ]; then
     echo "generate-configs: stale .cursor/mcp.json" >&2
     exit 1
   }
+  cmp -s "$opencode_out" "$repo/.opencode/opencode.json" || {
+    echo "generate-configs: stale .opencode/opencode.json" >&2
+    exit 1
+  }
   exit 0
 fi
 
 cp "$codex_out" "$repo/.codex/mcp.generated.toml"
 cp "$cursor_out" "$repo/.cursor/mcp.json"
+cp "$opencode_out" "$repo/.opencode/opencode.json"
 
+# Codex user config: one managed block; sections for retired servers are
+# dropped by name so regeneration is idempotent.
 codex_home="${CODEX_HOME:-$HOME/.codex}"
 codex_config="$codex_home/config.toml"
 mkdir -p "$codex_home"
 touch "$codex_config"
 
 clean="$tmp/config.toml"
-managed_servers="$(jq -r '.servers[].name' "$manifest" | tr '\n' ' ')duo-bench duo-lsp"
+managed_servers="$(jq -r '.servers[].name' "$manifest" | tr '\n' ' ')"
 awk -v managed_servers="$managed_servers" '
   BEGIN {
     count = split(managed_servers, names, /[[:space:]]+/)
@@ -143,6 +197,42 @@ awk -v managed_servers="$managed_servers" '
   printf "# END IDOL MCP\n"
 } > "$codex_config"
 
+opencode_home="${OPENCODE_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}"
+opencode_config="$opencode_home/opencode.jsonc"
+mkdir -p "$opencode_home"
+if [ -f "$opencode_config" ]; then
+  merged="$tmp/opencode.global.json"
+  jq --arg managed "$(jq -r '[.servers[].name] | join(",")' "$manifest")" \
+     --slurpfile proj "$opencode_out" '
+    ($managed | split(",")) as $mn |
+    .mcp = ((.mcp // {})
+      | with_entries(select((.key as $k | $mn | index($k)) | not))
+      ) + $proj[0].mcp
+  ' "$opencode_config" > "$merged"
+  mv "$merged" "$opencode_config"
+else
+  cp "$opencode_out" "$opencode_config"
+fi
+
+# OpenCode discovers in-project skills under .opencode/skills/*/SKILL.md; the
+# canonical skill sources live in .pi/skills, so project them as symlinks.
+for name in idol idol-dev; do
+  [ -f "$repo/.pi/skills/$name/SKILL.md" ] || continue
+  ln -sfn "../../.pi/skills/$name" "$repo/.opencode/skills/$name"
+done
+
+# OpenCode global skills live at ~/.config/opencode/skills/<name>/SKILL.md;
+# sync the canonical skill sources there so opencode sees them everywhere.
+opencode_skills="$opencode_home/skills"
+mkdir -p "$opencode_skills"
+for name in idol idol-dev; do
+  [ -f "$repo/.pi/skills/$name/SKILL.md" ] || continue
+  rm -rf "$opencode_skills/$name"
+  cp -R "$repo/.pi/skills/$name" "$opencode_skills/$name"
+done
 echo "generated .codex/mcp.generated.toml"
 echo "generated .cursor/mcp.json"
+echo "generated .opencode/opencode.json"
 echo "updated $codex_config"
+echo "updated $opencode_config"
+echo "synced $opencode_skills"

@@ -1,0 +1,8 @@
+# F4R — application-result-abi (array-bearing pack identity, result side)
+pk: { ks: []i64, n: i64 }
+mk: pk = ()
+  r: pk = { n = 2 }
+  r
+id: pk = (p: pk)
+  p
+id(mk())

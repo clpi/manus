@@ -11,15 +11,21 @@ freely admitted — it is the Idol source extension. Only tracked *noncanonical*
 `.id` content (host-shaped patterns, namespace dispatch, duplicate authority) is
 SOURCE-ZERO debt, migrated by repairing the pattern; the `.id` file itself is
 not debt. Physical `duo` executable or tool prefixes are bootstrap aliases and
-deletion targets, not a second current language. The current in-tree compiler, LSP, and MCP implementation paths live
-in this repository; do not route agents to historical companion checkouts or
-mistake those paths for canonical source.
+deletion targets, not a second current language. The compiler and bootstrap MCP
+transport live here. Durable `.id` language intelligence lives in the sibling
+`idol-native` checkout and consumes that compiler's graph; the duplicate
+in-tree LSP/highlighter was deleted rather than ported.
+
+Semantic tokens are not reconstructed by a raw scanner. They remain unavailable
+until the compiler publishes graph-owned source spans and the one grammar
+authority publishes its generated role projection. Do not restore the deleted
+taxonomy, legend generator, or highlight corpus as an interim implementation.
 
 Tooling projects graph-owned identity, facts, demand, worlds, provenance, and
 realization. It must not invent a vocabulary or recover semantic truth from
 package paths, formatted text, hashes, or source punctuation. Static identity
-uses named projection; `[]` communicates a genuinely computed key and does not
-select a physical representation.
+uses named projection; a genuinely computed key uses ordinary application
+`table(key)` and does not select a physical representation.
 
 Tool protocols may require booleans, but those are transport renderings rather
 than semantic owners. Tooling preserves graph cases, unknowns, descriptor and
@@ -31,10 +37,10 @@ distribution, `std.script` is frozen debt, and another universal root is not a
 replacement. Implementation location is provenance; relations own meaning,
 subjects orient application, and worlds grant authority.
 
-Use `duo_agent_session_start`, `duo_dev_claim_files`,
-`duo_dev_claim_acquire`, and `duo_agent_gaps_update` according to the router,
-and serialize heavy commands through its locked-build route. Derive volatile
-tool availability and project status from the exact current tree instead of
-copying counts into documentation. Fail closed when authority conflicts, state
-is incomplete, semantic vocabulary is missing, or a required fact is owned
-elsewhere.
+Use `tools/node/dev/claim list` and `tools/node/dev/claim acquire` according to
+the router; edit exact `gaps/GAP-*.md` records and reserve new numbers with
+`tools/node/dev/gap reserve`. Serialize heavy commands through
+`tools/node/dev/idol-lock`. Derive volatile tool availability and project status
+from the exact current tree instead of copying counts into documentation. Fail
+closed when authority conflicts, state is incomplete, semantic vocabulary is
+missing, or a required fact is owned elsewhere.

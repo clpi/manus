@@ -13,18 +13,18 @@ SOURCE-ZERO migration debt, migrated by repairing the pattern; the `.id` file
 itself is not debt. Historical names remain only when their exact provenance is
 the topic.
 
-At session start, call `duo_agent_session_start`, inspect the dirty tree,
-`duo_dev_claim_files`, and live `gaps/GAP-*.md`, then claim exact paths through
-`duo_dev_claim_acquire` before editing. Update numbered obligations through
-`duo_agent_gaps_update`; do not create a second coordination buffer. Serialize
-heavy commands through the current lock route documented by the canonical
-router.
+At session start, inspect the dirty tree, `tools/node/dev/claim list`, and live
+`gaps/GAP-*.md`, then claim exact paths through `tools/node/dev/claim acquire`
+before editing. Edit the exact gap authority and reserve new numbers through
+`tools/node/dev/gap reserve`; do not create a second coordination buffer.
+Serialize heavy commands through `tools/node/dev/idol-lock`.
 
 Canonical Idol has no standard semantic namespace. `std` is migration
 distribution, `std.script` is frozen debt, and another universal root is not a
 replacement. Relations own meaning, possessed values supply subjects, and
-worlds supply authority. Static identity uses named projection; `[]` means the
-key is genuinely computed.
+worlds supply authority. Static identity uses named projection; computed and
+ordinal retrieval are ordinary application (`table(key)`, `row(1)`). Brackets
+are retired and do not carry a distinct semantic role.
 
 PREDICATE-ZERO is part of admission. Preserve semantic facts, cases,
 refinements, capabilities, demands, unknowns, and transitions directly. Do not

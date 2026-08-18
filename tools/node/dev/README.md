@@ -10,12 +10,12 @@ Required on a fresh supported macOS machine:
 - `./tools/node/dev/setup`
 
 The setup command builds the compiler from source, generates project-local
-Codex and Cursor MCP projections from `mcp.manifest.json`, updates Codex user
-MCP config from that projection, verifies Cursor Agent headless auth and
-launches `cursor agent login` when the supported login flow is required,
-approves the required project MCP servers for Cursor Agent, probes all three
-required MCP servers through real JSON-RPC initialize requests, and runs the
-admission doctor.
+Codex, Cursor, and OpenCode MCP projections from `mcp.manifest.json`, updates
+the Codex and OpenCode user MCP configs from those projections, syncs the
+agent skills, verifies Cursor Agent headless auth and launches
+`cursor agent login` when the supported login flow is required, approves the
+enabled project MCP servers for Cursor Agent, probes every enabled MCP server
+through real JSON-RPC initialize requests, and runs the admission doctor.
 
 `./tools/node/dev/doctor` is the pre-agent admission check. It rejects stale
 compiler artifacts, wrong tool versions, missing generated projections, missing
@@ -44,7 +44,7 @@ admitted benchmark/foreign-lawset surfaces.
 | `zig` | Fresh compiler build and Zig unit tests | pinned in `.tool-versions`; `doctor`; `zig build --summary all`; `zig build unit-test` |
 | `git` | checkout state, submodules, freshness and hygiene checks | `doctor`; setup submodule update |
 | `jq` | canonical MCP manifest projection and checks | `generate-configs`; `probe-mcp`; `doctor` |
-| `zls` | required Zig navigation MCP server | pinned in `.tool-versions`; `probe-mcp`; `mcp-gate`; `doctor` |
+| `zls` | Zig editor navigation (the zls MCP server stays disabled in the manifest) | pinned in `.tool-versions`; `doctor` |
 | `codex` | Codex fresh-session and MCP admission | pinned by `doctor`; generated `~/.codex/config.toml`; `codex doctor`; `codex mcp get` |
 | `cursor`, `cursor-agent` | Cursor Agent admission and project MCP/rules projection | pinned by `doctor`; `.cursor/rules/00-authority.mdc`; scoped rule set; `.cursor/mcp.json`; `cursor agent --help`; `cursor agent mcp list` |
 | `tree-sitter` | editor grammar projection gates | `doctor`; reachable through `tree-sitter-coverage` and projection gates |
@@ -76,23 +76,53 @@ from a production gate or an admitted setup/admission check.
 ## MCP projection contract
 
 `tools/node/dev/mcp.manifest.json` is the single canonical MCP manifest. It
-declares the three required project servers: `idol-bench`, `idol-lsp`, and `zls`.
-`tools/node/dev/generate-configs` projects it into:
+declares the enabled project servers:
+
+- `idol` — required; repository status/head/orient (`tools/mcp/native.id`,
+  native backend, `idol run`).
+- `idol-native` — semantic-graph server from the sibling `idol-native`
+  checkout: `check`, `symbols`, `graph`, `run`, `gates`, `orient`, `sim`,
+  `explain`, `fmt`, `asm` (`tools/mcp/server.id` on that tree's `bin/idol`).
+
+The retired pre-rename transports (`idol-bench`, `idol-lsp`, `zls`) were
+removed: their legacy-syntax sources predated the C-backend retirement and
+never compiled under a live backend. Exact file claims use
+`tools/node/dev/claim`; gap numbers use `tools/node/dev/gap`; locked work uses
+`tools/node/dev/idol-lock`; language
+intelligence comes from `idol-native` (MCP + language server); Zig navigation
+uses the editor's own zls directly. These commands preserve the useful
+coordination contracts without making a text dispatcher semantic authority.
+
+`tools/node/dev/generate-configs` projects the manifest into:
 
 - `.codex/mcp.generated.toml` for local inspection;
 - a marked block in `~/.codex/config.toml` for Codex;
-- `.cursor/mcp.json` for Cursor.
+- `.cursor/mcp.json` for Cursor;
+- `.opencode/opencode.json` for OpenCode (project config);
+- the managed `mcp` entries of `~/.config/opencode/opencode.jsonc` (all other
+  user keys are preserved);
+- `.opencode/skills/{idol,idol-dev}` symlinks into `.pi/skills`, plus the
+  same skills synced to `~/.config/opencode/skills` for global discovery.
 
-`tools/node/dev/install-skills` installs the **`idol-dev`** skill into
-`~/.codex/skills/idol-dev` and retires any existing `idol-development` stub.
-Run it after clone or when agent onboarding drifts.
+Claude Code is wired at user scope in `~/.claude.json` `mcpServers` (same
+servers, `sh -c` cd-wrappers because Claude has no cwd field). pi loads the
+same manifest through `.pi/extensions/idol-mcp.ts`. Editors that want `.id`
+language intelligence use the idol-native LSP:
+`sh /path/to/idol-native/tools/lsp/launch.sh` with `IDOL_BIN` pointing at
+that tree's `bin/idol`.
+
+`tools/node/dev/install-skills` installs the **`idol-dev`** and **`idol`**
+skills into `~/.codex/skills` and `~/.config/devin/skills` and retires any
+existing `idol-development` stub. OpenCode skill installation is owned by
+`generate-configs` (paths above). Run after clone or when agent onboarding
+drifts.
 
 The generated files contain absolute machine paths and are ignored. Regenerate
-them on each machine; never copy them from another host.
+them on each machine; never copy them from another host. When the clone lives
+under the `~/x` symlink, the generator emits the stable symlink spelling.
 
-Cursor Agent must also approve each generated project server. `setup` performs
-that approval with `cursor agent mcp enable` for `idol-bench`, `idol-lsp`, and
-`zls`; `doctor` requires `cursor agent mcp list` to report all three as ready.
-That is still not enough for admission: `doctor` also starts a fresh headless
-Cursor Agent session from the repository root and requires it to orient through
-`AGENTS.md` to `docs/spec/constitution.md`.
+Cursor Agent must also approve each enabled project server. `setup` performs
+that approval with `cursor agent mcp enable` for every manifest-enabled
+server. That is still not enough for admission: `doctor` also starts a fresh
+headless Cursor Agent session from the repository root and requires it to
+orient through `AGENTS.md` to `docs/spec/constitution.md`.

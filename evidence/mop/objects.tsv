@@ -1,0 +1,20 @@
+unit	obj_exit	first_refusal
+application.id	0	none
+arm64.id	1	error: direct backend: DNB001 application: 254 relation: encode_orr_reg missing: global-init-not-constant:_asm consumer: native re
+arm64check.id	1	error: direct backend: DNB011 application: 9 relation: open missing: unresolved-application-facts consumer: native realization pro
+bind.id	1	error: direct backend: DNB011 application: 24 relation: has missing: application-operand-abi consumer: native realization producer
+comptime.id	1	error: direct backend: DNB001 application: 113 relation: _at missing: global-init-not-constant:_src consumer: native realization p
+emit_c.id	1	error: direct backend: DNB011 application: 22 missing: unresolved-application-facts consumer: native realization producer: graph
+fmt.id	0	none
+graph.id	1	error: direct backend: DNB011 application: 34 relation: has missing: application-operand-abi consumer: native realization producer
+host.id	0	none
+lexer.id	1	error: direct backend: DNB011 application: 484 relation: write_f64 missing: unresolved-application-facts consumer: native realizat
+macho.id	0	none
+parser.id	1	error: InvalidAggregateFact
+profile.id	0	none
+reader.id	0	none
+record.id	0	none
+rewrite.id	0	none
+symbol.id	0	none
+token.id	0	none
+token_view.id	1	error: direct backend: DNB001 application: unknown missing: view consumer: native realization producer: dnir lower
