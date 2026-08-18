@@ -1,0 +1,182 @@
+#!/bin/sh
+set -eu
+
+LC_ALL=C
+export LC_ALL
+
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/../../../.." && pwd -P)
+artifact="$root/tools/node/dev/lexer/artifact"
+cc=${CC-cc}
+base=${TMPDIR:-/tmp}
+case "$base" in
+    /*) ;;
+    *) base=$(CDPATH='' cd -- "$base" && pwd -P) ;;
+esac
+work=$(mktemp -d "$base/idol-lexer-artifact-test.XXXXXX")
+cleanup() {
+    rm -rf -- "$work"
+}
+trap cleanup EXIT HUP INT TERM
+
+good="$work/good.c"
+different="$work/different.c"
+changed="$work/changed.c"
+bad="$work/bad.c"
+arbitrary="$work/arbitrary.c"
+alias="$work/alias.c"
+outside="$work/outside.c"
+kind="$work/kind.c"
+fake="$work/idol"
+
+printf '%s\n' \
+    '#include <stdint.h>' \
+    '#include <string.h>' \
+    'int64_t recordslots(void) { return 8; }' \
+    'int64_t fieldkind(void) { return 3; }' \
+    'int64_t fieldline(void) { return 6; }' \
+    'int64_t fieldcol(void) { return 1; }' \
+    'int64_t fieldint(void) { return 4; }' \
+    'int64_t fieldoff(void) { return 0; }' \
+    'int64_t fieldlen(void) { return 5; }' \
+    'int64_t fieldfloat(void) { return 2; }' \
+    'const char *kindname(int64_t i) {' \
+    '    if (i == 10) return "name";' \
+    '    if (i == 11) return "assign";' \
+    '    if (i == 12) return "int_lit";' \
+    '    if (i == 13) return "eof";' \
+    '    return "";' \
+    '}' \
+    'int64_t duo_lexer_tokenize_full(const char *src, const char *file, int64_t family, int64_t out, int64_t cap, int64_t txt, int64_t txtcap) {' \
+    '    (void)txt; (void)txtcap;' \
+    '    if (strcmp(src, "x = 1\n") != 0 || strcmp(file, "probe.id") != 0 || family != 1 || cap < 4 || out == 0) return -9;' \
+    '    int64_t *records = (int64_t *)(uintptr_t)out;' \
+    '    static const int64_t kinds[4] = {10, 11, 12, 13};' \
+    '    static const int64_t lines[4] = {1, 1, 1, 2};' \
+    '    static const int64_t cols[4] = {1, 3, 5, 1};' \
+    '    static const int64_t ints[4] = {0, 0, 1, 0};' \
+    '    static const int64_t offsets[4] = {0, 2, 4, 6};' \
+    '    static const int64_t lengths[4] = {1, 1, 1, 0};' \
+    '    for (int64_t i = 0; i < 4; ++i) {' \
+    '        records[i * 8 + fieldkind()] = kinds[i];' \
+    '        records[i * 8 + fieldline()] = lines[i];' \
+    '        records[i * 8 + fieldcol()] = cols[i];' \
+    '        records[i * 8 + fieldint()] = ints[i];' \
+    '        records[i * 8 + fieldoff()] = offsets[i];' \
+    '        records[i * 8 + fieldlen()] = lengths[i];' \
+    '        records[i * 8 + fieldfloat()] = 0;' \
+    '        records[i * 8 + 7] = 100 + i;' \
+    '    }' \
+    '    return 4;' \
+    '}' \
+    'int main(void) { return 0; }' > "$good"
+
+cp "$good" "$different"
+printf '%s\n' '/* harmless byte poison */' >> "$different"
+sed 's/100 + i/200 + i/' "$good" > "$changed"
+sed 's/{10, 11, 12, 13}/{10, 10, 10, 10}/' "$good" > "$arbitrary"
+sed 's/fieldline(void) { return 6; }/fieldline(void) { return 3; }/' "$good" > "$alias"
+sed 's/fieldfloat(void) { return 2; }/fieldfloat(void) { return 8; }/' "$good" > "$outside"
+sed 's/return "name"/return "wrong"/' "$good" > "$kind"
+sed 's/return 4;/return 3;/' "$good" > "$bad"
+
+# These expansions belong to the generated fake compiler, not this control.
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/bin/sh' \
+    'set -eu' \
+    'test "$#" -eq 3' \
+    'test "$1" = dump-c' \
+    'test "$2" = lib/compiler/lexer.id' \
+    'test "$3" = --lib' \
+    'cat "$FAKE_OUTPUT"' > "$fake"
+chmod +x "$fake"
+
+IDOL="$fake" FAKE_OUTPUT="$good" TRACKED="$good" CC="$cc" "$artifact" \
+    > "$work/positive.log" 2>&1
+
+if IDOL="$fake" FAKE_OUTPUT="$different" TRACKED="$good" CC="$cc" "$artifact" \
+    > "$work/byte.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — byte poison was accepted' >&2
+    exit 1
+fi
+grep -q 'byte mismatch' "$work/byte.log"
+
+if IDOL="$fake" FAKE_OUTPUT="$changed" TRACKED="$good" CC="$cc" "$artifact" \
+    > "$work/records.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — token-record poison was accepted' >&2
+    exit 1
+fi
+grep -q 'token records differ' "$work/records.log"
+
+if IDOL="$fake" FAKE_OUTPUT="$arbitrary" TRACKED="$arbitrary" CC="$cc" "$artifact" \
+    > "$work/arbitrary.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — arbitrary four-record stream was accepted' >&2
+    exit 1
+fi
+grep -q 'token 1 kind is name, expected assign' "$work/arbitrary.log"
+
+if IDOL="$fake" FAKE_OUTPUT="$alias" TRACKED="$alias" CC="$cc" "$artifact" \
+    > "$work/alias.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — aliased record fields were accepted' >&2
+    exit 1
+fi
+grep -q 'record fields are not unique in-range positions' "$work/alias.log"
+
+if IDOL="$fake" FAKE_OUTPUT="$outside" TRACKED="$outside" CC="$cc" "$artifact" \
+    > "$work/outside.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — out-of-range record field was accepted' >&2
+    exit 1
+fi
+grep -q 'record fields are not unique in-range positions' "$work/outside.log"
+
+if IDOL="$fake" FAKE_OUTPUT="$kind" TRACKED="$kind" CC="$cc" "$artifact" \
+    > "$work/kind.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — kind-name poison was accepted' >&2
+    exit 1
+fi
+grep -q 'token 0 kind is wrong, expected name' "$work/kind.log"
+
+if IDOL="$fake" FAKE_OUTPUT="$bad" TRACKED="$bad" CC="$cc" "$artifact" \
+    > "$work/abi.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — semantic ABI poison was accepted' >&2
+    exit 1
+fi
+grep -q 'semantic probe failed' "$work/abi.log"
+
+: > "$work/empty.c"
+if IDOL="$fake" FAKE_OUTPUT="$good" TRACKED="$work/empty.c" CC="$cc" "$artifact" \
+    > "$work/empty.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — empty tracked artifact was accepted' >&2
+    exit 1
+fi
+grep -q 'absent or empty' "$work/empty.log"
+
+if IDOL="$fake" FAKE_OUTPUT="$work/empty.c" TRACKED="$good" CC="$cc" "$artifact" \
+    > "$work/generated.log" 2>&1
+then
+    printf '%s\n' 'lexer artifact test: FAIL — empty generated artifact was accepted' >&2
+    exit 1
+fi
+grep -q 'produced zero bytes' "$work/generated.log"
+
+mkdir "$work/caller" "$work/caller/rel"
+cp "$fake" "$work/caller/idol"
+(
+    cd "$work/caller"
+    TMPDIR=rel IDOL=./idol FAKE_OUTPUT="$good" TRACKED="$good" CC="$cc" "$artifact" \
+        > "$work/relative.log" 2>&1
+)
+if find "$work/caller/rel" ! -path "$work/caller/rel" -print | grep -q .; then
+    printf '%s\n' 'lexer artifact test: FAIL — relative TMPDIR leaked work' >&2
+    exit 1
+fi
+
+printf '%s\n' 'lexer artifact control: PASS'
