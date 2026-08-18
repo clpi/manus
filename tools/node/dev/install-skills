@@ -6,6 +6,9 @@ codex_home="${CODEX_HOME:-$HOME/.codex}"
 devin_home="${DEVIN_HOME:-$HOME/.config/devin}"
 claude_home="${CLAUDE_HOME:-$HOME/.claude}"
 opencode_home="${OPENCODE_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}"
+cursor_home="${CURSOR_HOME:-$HOME/.cursor}"
+poolside_home="${POOLSIDE_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/poolside}"
+agy_home="${AGY_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/agy}"
 
 install_skill() {
   name="$1"
@@ -31,6 +34,12 @@ install_skill idol-dev "$claude_home" || true
 install_skill idol "$claude_home" || true
 install_skill idol-dev "$opencode_home" || true
 install_skill idol "$opencode_home" || true
+install_skill idol-dev "$cursor_home" || true
+install_skill idol "$cursor_home" || true
+install_skill idol-dev "$poolside_home" || true
+install_skill idol "$poolside_home" || true
+install_skill idol-dev "$agy_home" || true
+install_skill idol "$agy_home" || true
 
 legacy_dst="$codex_home/skills/idol-development"
 if [ -d "$legacy_dst" ] || [ -f "$legacy_dst/SKILL.md" ]; then
