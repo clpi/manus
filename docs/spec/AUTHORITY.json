@@ -1,0 +1,82 @@
+{
+  "schema": "idol.authority.v1",
+  "authority": {
+    "repository": "clpi/idol",
+    "branch": "main",
+    "sole_semantic_authority": true,
+    "compact_law": {
+      "path": "docs/spec/law.md",
+      "blob": "201b78015e8f463798e50b2e180dc61cda45fcd1"
+    },
+    "long_form_law": {
+      "path": "docs/spec/constitution.md",
+      "blob": "086ff9e1dcbf4bd50bea83b44668849461a839fd",
+      "role": "structured expansion and law-id owner; compact law wins on drift"
+    },
+    "source_projection": {
+      "path": "docs/spec/source.md",
+      "blob": "cd6474d63367ef970c8583883ac059f819453602",
+      "authoritative": false
+    }
+  },
+  "identity": {
+    "name": "Idol",
+    "binary": "idol",
+    "source_suffix": ".id",
+    "superseded_current_names": ["Duo", "Duon", "Idsem"]
+  },
+  "delimiters": {
+    "application": "()",
+    "computed_projection": "[]",
+    "structured_pack": "{}",
+    "static_projection": ".",
+    "subject_relation": ":",
+    "world": "@"
+  },
+  "semantic_invariants": {
+    "one_graph": true,
+    "one_identity_per_semantic_thing": true,
+    "one_authoritative_producer_per_fact": true,
+    "value_is_place": false,
+    "binding_is_place": false,
+    "home_is_world": false,
+    "path_is_identity": false,
+    "dnir_is_semantic_authority": false,
+    "syntax_shape_may_decide_lowering_meaning": false,
+    "facts_are_reconstructed_downstream": false
+  },
+  "native_projection": {
+    "repository": "clpi/idol-native",
+    "role": "native/self-host/target realization and evidence",
+    "may_mint_semantic_law": false,
+    "local_law_is_authority": false
+  },
+  "research": {
+    "pass_2": {
+      "path": "research/archive/pass-2",
+      "archive_sha256": "e66fe6cd2470eb7ce73a82ed0f758b84044715c4a8102e55e95b61435e32ed78",
+      "files": 25,
+      "duplicate_inputs_preserved": true,
+      "superseded_identity_recommendations_preserved_as_history": true
+    },
+    "lineage_merges": [
+      "63e3337e018cf464a95d794f365e4e12d6a08135",
+      "197ce4bca4e6aeab13235646be589902590cb0f2",
+      "dd5375d901cddb81f22002b0c86973b036a1b02e"
+    ],
+    "active_implementation_requires_current_reconciliation": true
+  },
+  "performance": {
+    "objective": "FTCFTW Pareto dominance or proven physical optimum",
+    "exact_head_evidence_required": true,
+    "algorithmic_win_closes_codegen_debt": false,
+    "non_performance_change_may_claim_improvement": false,
+    "current_consolidation_evidence": "UNMEASURED"
+  },
+  "ephemeral_authority_forbidden": [
+    ".agents/SESSION_STATE.md",
+    "chat/session prompts",
+    "branch-local status prose",
+    "stale evidence summaries"
+  ]
+}

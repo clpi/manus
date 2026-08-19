@@ -1,184 +1,128 @@
 #!/bin/sh
-# STANDALONE CROSS-REPOSITORY GATE: it checks compiler authority together with
-# the sibling native surface. It remains directly runnable when either checkout
-# is tested alone; the native aggregate may invoke it only when both are present.
+# Idol authority convergence gate.
 #
-# gate/authority.sh — reject contradictions between law, execution, and human
-# projections. The checked set is deliberately small: these are the authority
-# artifacts and consumers that block the next architecture injection.
-#
-# Exit 0 = every checked artifact is classified and agrees with the current law.
-# Non-zero = the contradiction count. The final line reports files examined.
-
+# Checks durable authority/projection invariants only. Exit 0 is not compiler,
+# self-host, or performance acceptance evidence.
 set -u
 
 ROOT=${AUTHORITY_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
+CONSTITUTION="$ROOT/docs/spec/constitution.md"
+LAW="$ROOT/docs/spec/law.md"
 SOURCE="$ROOT/docs/spec/source.md"
-CONVERGE="$ROOT/../idol-native/gate/converge.sh"
-SUBJECT_HOME="$ROOT/src/subject_home.zig"
-LAUNCH_ROLE="$ROOT/src/launch_role.zig"
-MAIN="$ROOT/src/main.zig"
-SEMA="$ROOT/src/sema.zig"
-GRAPH="$ROOT/src/semantic_graph.zig"
-RELEASE="$ROOT/.agents/RELEASE_READINESS.md"
+AUTHORITY_JSON="$ROOT/docs/spec/AUTHORITY.json"
+RESEARCH_MANIFEST="$ROOT/research/archive/pass-2/manifest.json"
+RESEARCH_ARCHIVE="$ROOT/research/archive/pass-2/pass-2-source.tar.gz"
+NATIVE=${IDOL_NATIVE_ROOT:-"$ROOT/../idol-native"}
 
 violations=0
 examined=0
 
-# `primary|state` is the classification, not a second semantic law. The state
-# is allowed to be stale only while the corresponding contradiction is red.
-CLASSIFICATIONS='source|semantic-authority|current;converge|executed-implementation-authority|current;subject-home|semantic-authority|current;launch-role|transitional-bridge|current;main|executed-implementation-authority|current;sema|executed-implementation-authority|current;semantic-graph|executed-implementation-authority|current;release-readiness|human-projection|current'
-
 bad() {
     violations=$((violations + 1))
-    printf 'FAIL %s\n' "$*"
+    printf 'authority gate: FAIL %s\n' "$*"
 }
 
-check_file() {
+require_file() {
     path=$1
     label=$2
     if [ ! -r "$path" ]; then
-        bad "$label is missing or unreadable: $path"
+        bad "$label missing or unreadable: $path"
         return 1
     fi
     examined=$((examined + 1))
     return 0
 }
 
-check_classifications() {
-    seen=0
-    old_ifs=$IFS
-    IFS=';'
-    for row in $CLASSIFICATIONS; do
-        [ -n "$row" ] || continue
-        IFS='|'
-        set -- $row
-        if [ "$#" -ne 3 ]; then
-            bad "malformed classification row: $row"
-            continue
-        fi
-        case "$2" in
-            semantic-authority|executed-implementation-authority|transitional-bridge|human-projection|historical-evidence|stale-contradiction) ;;
-            *) bad "unknown primary authority class '$2' for $1" ;;
-        esac
-        case "$3" in
-            current|stale-contradiction) ;;
-            *) bad "unknown authority state '$3' for $1" ;;
-        esac
-        seen=$((seen + 1))
-        printf 'CLASS %s %s %s\n' "$1" "$2" "$3"
-        IFS=';'
-    done
-    IFS=$old_ifs
-    [ "$seen" -gt 0 ] || bad 'authority classification is empty'
+contains() {
+    path=$1
+    text=$2
+    label=$3
+    grep -Fq "$text" "$path" || bad "$label"
 }
 
-check_classifications
-check_file "$SOURCE" source
-check_file "$CONVERGE" converge
-check_file "$SUBJECT_HOME" subject-home
-check_file "$LAUNCH_ROLE" launch-role
-check_file "$MAIN" main
-check_file "$SEMA" sema
-check_file "$GRAPH" semantic-graph
-check_file "$RELEASE" release-readiness
+rejects() {
+    path=$1
+    text=$2
+    label=$3
+    if grep -Fq "$text" "$path"; then bad "$label"; fi
+}
 
-# C0 §7/§51: runtime computed projection is ordinary application. A document
-# may mention the retired face as history, but it must not call it canonical.
-if [ -r "$SOURCE" ] && grep -Fq 'Canonical computed projection remains `table[key]`' "$SOURCE"; then
-    bad 'source law canonizes table[key], while C0 canonizes table(key)'
-fi
-if [ -r "$SOURCE" ] && ! grep -Fq 'Canonical computed projection is ordinary application: `table(key)`.' "$SOURCE"; then
-    bad 'source projection no longer carries the canonical table(key) ruling'
-fi
+require_file "$CONSTITUTION" constitution
+require_file "$LAW" compact-law
+require_file "$SOURCE" source-projection
+require_file "$AUTHORITY_JSON" authority-manifest
+require_file "$RESEARCH_MANIFEST" pass2-manifest
+require_file "$RESEARCH_ARCHIVE" pass2-archive
 
-# The supreme source law fixes physical `main/` as the source-root convention.
-# `app/` in the projection is not merely a different example: it teaches a
-# second root topology while claiming to project the same filesystem algebra.
-if [ -r "$SOURCE" ] && grep -Fq 'app/' "$SOURCE" \
-    && grep -Fq '  main.id' "$SOURCE"; then
-    bad 'source projection teaches an app/main.id root beside the ruled main/ root'
-fi
-if [ -r "$SOURCE" ] && ! grep -Fq 'main/' "$SOURCE"; then
-    bad 'source projection no longer carries the physical main/ root convention'
+if [ -r "$CONSTITUTION" ]; then
+    contains "$CONSTITUTION" '# Idol constitution' 'constitution identity is not Idol'
+    contains "$CONSTITUTION" 'names = { "Idol", "idol" }' 'constitution current-name set drifted'
 fi
 
-# Source/home law does not require a src/ directory above a source file. This
-# check names the executable gate that still imposes that topology.
-if [ -r "$CONVERGE" ] && grep -Fq 'mkdir -p "$WORK/src"' "$CONVERGE"; then
-    bad 'converge gate manufactures a src/ project root contrary to source law'
+if [ -r "$LAW" ]; then
+    contains "$LAW" '# Idol — supreme language, semantic-graph, compiler, and performance law' 'compact law identity/title drifted'
+    contains "$LAW" '`()` is ordinary application.' 'law no longer fixes parentheses as application'
+    contains "$LAW" '`[]` is computed/indexed projection.' 'law no longer fixes brackets as projection'
+    contains "$LAW" '`{}` carries structured pack/table/descriptor structure.' 'law no longer fixes braces as structure'
+    rejects "$LAW" 'A runtime key uses application: `table(key)`' 'compact law contains retired call-shaped indexing'
 fi
 
-# World authority comes from launcher witnesses; filesystem structure may be
-# provenance or launch-role input, but it must not grant the testing world.
-if [ -r "$SUBJECT_HOME" ] && grep -Fq '.home = .testing' "$SUBJECT_HOME" \
-    && grep -Fq '.directory = "test"' "$SUBJECT_HOME" \
-    && grep -Fq '.stem_suffix = "_test.id"' "$SUBJECT_HOME"; then
-    bad 'subject_home grants testing authority from test paths and file names'
+if [ -r "$SOURCE" ]; then
+    contains "$SOURCE" 'This file is a **non-authoritative projection**' 'source guide claims or obscures authority'
+    contains "$SOURCE" 'Canonical computed projection is indexed projection: `table[key]`.' 'source guide no longer carries bracket projection law'
+    contains "$SOURCE" 'Parentheses remain ordinary relation application.' 'source guide no longer separates call from projection'
+    rejects "$SOURCE" 'Canonical computed projection is ordinary application: `table(key)`.' 'retired call-shaped indexing is active'
 fi
-if [ -r "$SUBJECT_HOME" ]; then
-    grep -Fq '.injection = .witnessed' "$SUBJECT_HOME" \
-        || bad 'testing world no longer requires an explicit witness'
-    if grep -Eq 'by_structure|pub const Structure|fileInhabits' "$SUBJECT_HOME"; then
-        bad 'subject_home has regained a filesystem-to-world authority path'
+
+if [ -r "$AUTHORITY_JSON" ]; then
+    contains "$AUTHORITY_JSON" '"name": "Idol"' 'authority manifest identity is not Idol'
+    contains "$AUTHORITY_JSON" '"binary": "idol"' 'authority manifest binary drifted'
+    contains "$AUTHORITY_JSON" '"source_suffix": ".id"' 'authority manifest suffix drifted'
+    contains "$AUTHORITY_JSON" '"repository": "clpi/idol"' 'authority manifest repository drifted'
+    contains "$AUTHORITY_JSON" '"sole_semantic_authority": true' 'authority manifest allows a second semantic authority'
+    contains "$AUTHORITY_JSON" '"application": "()"' 'authority manifest application delimiter drifted'
+    contains "$AUTHORITY_JSON" '"computed_projection": "[]"' 'authority manifest projection delimiter drifted'
+fi
+
+if [ -e "$ROOT/.agents/SESSION_STATE.md" ]; then
+    bad '.agents/SESSION_STATE.md is ephemeral state masquerading as durable authority'
+fi
+
+archive_sha='e66fe6cd2470eb7ce73a82ed0f758b84044715c4a8102e55e95b61435e32ed78'
+if [ -r "$RESEARCH_MANIFEST" ]; then
+    contains "$RESEARCH_MANIFEST" "$archive_sha" 'Pass 2 manifest archive digest drifted'
+    contains "$RESEARCH_MANIFEST" '"files": [' 'Pass 2 manifest lost its file census'
+    contains "$RESEARCH_MANIFEST" '"superseded-identity-ruling"' 'superseded Idsem research disposition disappeared'
+fi
+if [ -r "$RESEARCH_ARCHIVE" ]; then
+    actual=''
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "$RESEARCH_ARCHIVE" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 "$RESEARCH_ARCHIVE" | awk '{print $1}')
+    fi
+    if [ -n "$actual" ] && [ "$actual" != "$archive_sha" ]; then
+        bad "Pass 2 archive digest mismatch: $actual"
     fi
 fi
 
-# Source structure may select a launch ROLE. Only the launcher may turn that
-# role into exact world identities; sema and graph consumers receive the set.
-if [ -r "$LAUNCH_ROLE" ]; then
-    grep -Fq 'pub fn forSource(path: []const u8) Role' "$LAUNCH_ROLE" \
-        || bad 'launch-role classifier is missing'
-fi
-if [ -r "$MAIN" ]; then
-    grep -Fq 'launch_role.forSource(src_path)' "$MAIN" \
-        || bad 'launcher no longer classifies source provenance once at ingress'
-    grep -Fq 'sem.worlds = launchWorlds(src_path);' "$MAIN" \
-        || bad 'launcher worlds no longer reach semantic checking'
-    grep -Fq 'const worlds = launchWorlds(src_path);' "$MAIN" \
-        || bad 'build cache no longer hashes the launcher world set'
-fi
-if [ -r "$SEMA" ]; then
-    grep -Fq 'worlds: subject_home.WorldSet' "$SEMA" \
-        || bad 'sema no longer carries exact launcher worlds'
-    if grep -Eq 'subject_home\.[A-Za-z0-9_]+\(self\.source_path' "$SEMA"; then
-        bad 'sema reconstructs world authority from source provenance'
-    fi
-fi
-if [ -r "$GRAPH" ]; then
-    grep -Fq 'self.launch_worlds = checked.worlds;' "$GRAPH" \
-        || bad 'semantic graph no longer consumes checked launcher worlds'
-    if grep -Eq 'subject_home\.[A-Za-z0-9_]+\([^)]*module_path' "$GRAPH"; then
-        bad 'semantic graph reconstructs world authority from module provenance'
+# Optional sibling check. Native is a realization/evidence projection and may
+# never mint a second language law.
+if [ -d "$NATIVE" ]; then
+    NATIVE_AUTHORITY="$NATIVE/docs/spec/AUTHORITY.json"
+    require_file "$NATIVE_AUTHORITY" native-authority-projection
+    if [ -r "$NATIVE_AUTHORITY" ]; then
+        contains "$NATIVE_AUTHORITY" '"repository": "clpi/idol"' 'native repository does not project clpi/idol authority'
+        contains "$NATIVE_AUTHORITY" '"local_law_is_authority": false' 'native repository claims independent semantic law'
+        contains "$NATIVE_AUTHORITY" '"name": "Idol"' 'native repository current identity drifted'
     fi
 fi
 
-# Release identity comes from repository configuration, not the checkout
-# directory's basename. The live `origin`, orient, doctor, and generated harness
-# all agree that clpi/duo remains the development repository. Detect drift in
-# either direction instead of treating `/x/idol` as evidence of a migration.
-if [ -r "$RELEASE" ]; then
-    origin=$(git -C "$ROOT" remote get-url origin 2>/dev/null || true)
-    case "$origin" in
-        *clpi/duo*)
-            grep -Fq 'Active development stays in **`clpi/duo`**' "$RELEASE" \
-                || bad 'release readiness no longer matches the clpi/duo development origin'
-            ;;
-        *)
-            grep -Fq 'Active development stays in **`clpi/duo`**' "$RELEASE" \
-                && bad 'release readiness declares clpi/duo without a matching development origin'
-            ;;
-    esac
-fi
-
-if [ "$examined" -eq 0 ]; then
-    printf 'authority gate: FAIL (0 file(s)) no authority artifacts examined\n'
-    exit 1
-fi
+if [ "$examined" -eq 0 ]; then bad 'no authority artifacts examined'; fi
 
 if [ "$violations" -eq 0 ]; then
-    printf 'authority gate: PASS (%s file(s))\n' "$examined"
+    printf 'authority gate: PASS (%s file(s)); authority convergence only\n' "$examined"
 else
-    printf 'authority gate: FAIL (%s file(s))\n' "$examined"
+    printf 'authority gate: FAIL (%s violation(s), %s file(s))\n' "$violations" "$examined"
 fi
 exit "$violations"

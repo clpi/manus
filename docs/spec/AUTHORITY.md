@@ -1,67 +1,39 @@
-# Authority and migration
+# Idol authority
 
-`docs/spec/constitution.md` is the sole living semantic-law authority for
-**Idol** (`idol`, `.id`, `idollang/idol`). Branding, command identity, and
-semantic law are one language identity. No pass document, summary, plan,
-implementation, fixture, corpus pattern, or agent instruction competes with C0.
+`clpi/idol` `main` is the sole living semantic authority for Idol.
 
-The constitution uses a documentation extension because it is structured law
-data, not executable source. Its Idol-shaped declarations are not an
-implementation pattern library. Canonical implementation uses `.id`; `GAP-145`
-separately owns the missing lexical identities and generated grammar roles.
+## Order
 
-## Projections
+1. `docs/spec/law.md` — supreme compact law.
+2. `docs/spec/constitution.md` — structured expansion and stable `law.*` identity owner.
+3. Generated or human projections (`source.md`, `agent.md`, `canonical.md`, gates, LSP/MCP/docs) — consumers that must agree; never competing law.
+4. Implementation and evidence — must consume exact graph facts and prove behavior/performance.
+5. Research/history — preserved source and ancestry; inactive until reconciled.
 
-- `CLAUDE.md` is the operative projection.
-- `docs/spec/grammar.md` is the grammar projection.
-- `docs/spec/corpus.md` classifies source families for gates.
-- `docs/spec/source.md` is the source/home/package/world closure projection
-  (defers to C0 §67 Idol algebra closure for home, subject, world, protocol,
-  witness, injection, union, standard reachability, and census law).
-- `docs/spec/host.md` is the host boundary, capability, and shell-home projection.
-- `AGENTS.md` is workflow, mechanical preflight, and Idol durable root
-  orientation (projection, not C0).
-- `docs/AGENT_ALIGNMENT.md` is the current priority compass.
-- `docs/bootstrap.md` is the executed compiler-authority ledger.
-- `docs/METRICS.md` is the progress metrics dashboard and audit scorecard.
-- `.agents/AGENT_CANONICAL.md` is the stable path router.
-- `.agents/AGENT_COORDINATION.md` maps implementation ownership and gates.
+Where the compact law and constitution differ, the compact law is the current owner ruling and the constitution must be repaired without minting an amendment subsystem. Where a projection differs from either, the projection is wrong.
 
-These files explain, route, classify, or report. They do not add semantic law.
-If one disagrees with the constitution, repair the projection.
+## Current closure
 
-## Current state
+- identity: **Idol** / `idol` / `.id`;
+- `()` ordinary application;
+- `[]` computed/indexed projection;
+- `{}` structured pack/table/descriptor structure;
+- `.` one static projection;
+- `:` subject relation/constraint face;
+- `@` current-world access/injection/qualification;
+- one semantic graph, one id per semantic thing, one producer per authoritative fact;
+- DNIR and backends are physical realization, never semantic authority;
+- demand/observation remove work before representation choice;
+- FTCFTW requires exact-head Pareto evidence or a proven physical optimum.
 
-Do not treat a volatile count or pass/fail claim in this file as durable
-authority. Refresh it from:
+## Repository split
 
-- `git rev-parse HEAD`, `git status`, and recent commits for the exact tree;
-- `tools/node/dev/claim list` for live ownership;
-- `gaps/GAP-0NN.md` for open obligations;
-- `docs/bootstrap.md`, verified against production dispatch, for the current
-  self-host frontier; and
-- the exact serialized gate output for current evidence.
+`clpi/idol-native` is the native/self-host/target realization and evidence projection. It may retain machine-specific research, controls, and implementation, but it may not establish a second language identity, delimiter law, graph ontology, optimizer law, or evidence truth.
 
-`GAP-131` is closed: the retired MCP session census was deleted and
-`tools/node/dev/orient` now derives `activep0` from exact gap headers. Inspect
-every matching `gaps/GAP-*.md` record directly; the observed count is orientation
-evidence, not a second or durable status authority. Reserve new numbers only
-through `tools/node/dev/gap reserve`.
+## Research
 
-## Current tree only
+The complete supplied Pass 2 corpus is directly present at `research/archive/pass-2/`. All formerly divergent Git branch histories found in the 2026-08-19 census are direct ancestors of `main` through the lineage commits recorded in `research/branches/manifest.json`. Stale trees were not bulk-activated; their exact commits, controls, gaps, measurements, and non-results remain available for current-law integration.
 
-Git history is the sole historical archive. Active projections and open gaps
-describe current Idol only (`law.zero.history`). Do not treat pass-number
-documents, retired brand names, or obsolete architecture narratives as binding
-current work.
+## No session authority
 
-## Conflict protocol
-
-1. Cite the exact constitutional fact and the conflicting projection.
-2. Stop the affected implementation branch; do not choose whichever text is
-   easier to implement.
-3. Repair the narrowest projection or record the missing authoritative fact.
-4. If the constitution itself lacks the needed irreducible fact, report
-   `SEMANTIC-VOCABULARY-BLOCKED` rather than inventing local vocabulary.
-5. Verify the repair through the production path and the current serialized
-   aggregate. Historical success is not evidence.
+Chat prompts, ad hoc personal questions, agent session state, branch-local pickup notes, and dated status summaries never become language law. Kira’s ordinary ad hoc questions are unrelated to Idol unless the user explicitly connects a question to the project.
