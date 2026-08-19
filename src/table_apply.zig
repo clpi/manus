@@ -167,6 +167,13 @@ fn collectExpr(names: *BoundNames, expr: *const ast.Expr) void {
                 collectExpr(names, value.val);
             },
         },
+        .list_comp => |x| {
+            if (x.key_name) |name| names.add(name);
+            names.add(x.value_name);
+            collectExpr(names, x.iter);
+            if (x.filter) |filter| collectExpr(names, filter);
+            collectExpr(names, x.value);
+        },
         .match_expr => |x| {
             collectExpr(names, x.scrutinee);
             for (x.arms) |arm| {
@@ -176,7 +183,10 @@ fn collectExpr(names: *BoundNames, expr: *const ast.Expr) void {
             }
         },
         .func_expr => |x| {
-            for (x.params) |param| names.add(param.name);
+            for (x.params) |param| {
+                names.add(param.name);
+                if (param.default_val) |default| collectExpr(names, default);
+            }
             collectBlock(names, &x.body);
         },
         else => {},
@@ -251,7 +261,10 @@ fn collectStmt(names: *BoundNames, statement: *const ast.Stmt) void {
         },
         .func_decl => |decl| {
             if (decl.path.len > 0) names.add(decl.path[0]);
-            for (decl.func.params) |param| names.add(param.name);
+            for (decl.func.params) |param| {
+                names.add(param.name);
+                if (param.default_val) |default| collectExpr(names, default);
+            }
             collectBlock(names, &decl.func.body);
         },
         .ret => |result| for (result.vals) |value| collectExpr(names, value),
@@ -330,10 +343,20 @@ fn normalizeExpr(alloc: std.mem.Allocator, expr: *ast.Expr, names: *const BoundN
             .positional => |value| normalizeExpr(alloc, value, names),
             .spread => |value| normalizeExpr(alloc, value, names),
         },
-        .func_expr => |function| normalizeBlock(alloc, &function.body, names),
+        .list_comp => |comprehension| {
+            normalizeExpr(alloc, comprehension.iter, names);
+            if (comprehension.filter) |filter| normalizeExpr(alloc, filter, names);
+            normalizeExpr(alloc, comprehension.value, names);
+        },
+        .func_expr => |function| {
+            for (function.params) |param| if (param.default_val) |default| {
+                normalizeExpr(alloc, default, names);
+            };
+            normalizeBlock(alloc, &function.body, names);
+        },
         .match_expr => |match| {
             normalizeExpr(alloc, match.scrutinee, names);
-            for (match.arms) |arm| {
+            for (match.arms) |*arm| {
                 if (arm.guard) |guard| normalizeExpr(alloc, guard, names);
                 normalizeBlock(alloc, &arm.body, names);
             }
@@ -434,7 +457,12 @@ fn normalizeStmt(alloc: std.mem.Allocator, statement: *ast.Stmt, names: *const B
             for (loop.iters) |iter| normalizeExpr(alloc, iter, names);
             normalizeBlock(alloc, &loop.body, names);
         },
-        .func_decl => |*decl| normalizeBlock(alloc, &decl.func.body, names),
+        .func_decl => |*decl| {
+            for (decl.func.params) |param| if (param.default_val) |default| {
+                normalizeExpr(alloc, default, names);
+            };
+            normalizeBlock(alloc, &decl.func.body, names);
+        },
         .ret => |result| for (result.vals) |value| normalizeExpr(alloc, value, names),
         else => {},
     }
