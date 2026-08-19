@@ -32,6 +32,44 @@ or, with a reason:
 `TEACHING-STATUS` must appear in the first four lines. A missing status is a
 corpus-status finding until the file is classified.
 
+## Derived defaults (tier 2)
+
+The executed ingress manifest (`docs/spec/corpus.md`, owned by
+`lib/compiler/lexer.id` `sourceentry*`) classifies the `examples/` partition
+and stops there. Teaching status for the rest of the tree is DERIVED from the
+prefix defaults below — same first-match-wins walk, specific before general.
+These are TEACHING statuses only: they are not ingress roles, they grant no
+source law, and a per-file `## TEACHING-STATUS:` header always overrides
+them. Per SOURCE-INFER-ONE, a header that restates its derived default is
+debt; write headers only where the finer fact disagrees.
+
+```text
+canonical   gate/subject.id
+canonical   lib/compiler/
+fixture     tools/reduce/fixtures/
+fixture     tests/
+migration   lib/
+scenery     gate/
+scenery     scripts/
+scenery     tools/
+scenery     benchmarks/
+scenery     explore/
+scenery     probe.id
+scenery     tmp_peek_test.id
+```
+
+`lib/compiler/` is the executed self-host producer (canonical Idol);
+`lib/` otherwise is migration distribution — frozen std debt, do not extend;
+runners, gates, censuses, and harnesses are scenery; reducers' and plugin
+test corpora are fixtures.
+
+KNOWN GAP (for the GAP-145 owner): the ingress manifest's 39 rows leave 471
+tracked `.id` files unmatched, so `scripts/audit100.id`'s no-silent-default
+census would FAIL today if it could run (it is DNB001-blocked repo-wide).
+Teaching status does not repair that; only new `sourceentry` rows do, and
+those change source-law admission — an ingress decision, not a
+classification one.
+
 ## What is not a status
 
 - `historical` — git stores history, the active tree does not
@@ -41,6 +79,9 @@ corpus-status finding until the file is classified.
 
 ## Enforcement
 
-`gate/corpus-status.sh` scans `examples/`, `gate/`, `lib/`, `scripts/`,
-`tools/**/*.id` and reports the count and identity of unclassified `.id` files.
-The gate's total is pinned in the runner, not in prose.
+`gate/corpus-status.sh` classifies every tracked `.id` file by three tiers —
+per-file header override, ingress manifest (mapped: compatibility→compat,
+generated→scenery, negative→fixture), derived defaults above — validates
+header status words, and fails on any unclassifiable file. Totals and the
+status distribution print on every run; the totals live in the runner, not
+in prose.
