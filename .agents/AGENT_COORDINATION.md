@@ -178,12 +178,16 @@ by-value proof on this branch:
 
 Wall chain remaining, with reproduction (build zig-out first):
 
-    gate/idiom.id RUNS END-TO-END as of e754b890 — every DNB001 wall on the
-    direct path is cleared (mod-global storage, lawful \{\} braces, declared-
-    owns-tail, published-is-not-bootstrap, has-answers-bool). What prints now
-    is the gate's OWN control-calibration rows failing (dot/sigil/bin-idol/
-    std-rename) — latent self-test debt that was invisible while the gate was
-    DNB001-dark; that work belongs to the gate's owner, not the compiler.
+    gate/idiom.id is FULLY OPERATIONAL as of a5d4d0d3 — every DNB001 wall
+    cleared (mod-global storage, lawful \{\} braces, declared-owns-tail,
+    published-is-not-bootstrap, has-answers-bool) and all five rotted control
+    rows recalibrated (boundface for dot(io)/dot(os), commentline inversion,
+    binidol predicate, the vacuous std-process control, += faces). Controls
+    pass; planted-bad diff exits 1 with findings; clean diff exits 0. The
+    branch's own .id diff preflights to 10 findings, ALL pre-existing corpus
+    naming debt (native_differential directory, numeric canon/gNN taxonomy —
+    law.path.name vs the corpus's established convention): recorded debt for
+    the corpus owners, not silently renamed.
     tailface_declared_relation.id stays in unsupported/ as the published-vs-
     bootstrap classifier history; it compiles and answers call-ok now.
     audit100 remains behind the scripting family (dynamic tables, os.env,
