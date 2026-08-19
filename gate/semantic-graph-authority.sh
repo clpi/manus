@@ -9,6 +9,8 @@ set -u
 ROOT=${SEMANTIC_GRAPH_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
 TABLE="$ROOT/src/table_apply.zig"
 PLACE="$ROOT/src/place.zig"
+ESCAPE="$ROOT/src/escape.zig"
+TABLE_FACTS="$ROOT/src/table_facts.zig"
 CURSOR="$ROOT/src/source_cursor.zig"
 LOWER="$ROOT/src/dnir_lower.zig"
 GRAPH="$ROOT/src/semantic_graph.zig"
@@ -59,7 +61,7 @@ finding() {
     fi
 }
 
-for path in "$TABLE" "$PLACE" "$CURSOR" "$LOWER" "$GRAPH" "$BOOTSTRAP" "$AST" "$GAP"; do
+for path in "$TABLE" "$PLACE" "$ESCAPE" "$TABLE_FACTS" "$CURSOR" "$LOWER" "$GRAPH" "$BOOTSTRAP" "$AST" "$GAP"; do
     need "$path"
 done
 
@@ -94,6 +96,29 @@ if [ -r "$PLACE" ]; then
         'place call/index negative control disappeared'
     has "$PLACE" 'scalar values, parameters and homes are not places' \
         'rejected place-ontology control disappeared'
+fi
+
+if [ -r "$ESCAPE" ]; then
+    lacks "$ESCAPE" 'pub fn canStackAllocate' \
+        'dead Symbol escape authority returned'
+    lacks "$ESCAPE" 'pub fn shouldPruneArc' \
+        'dead Symbol ARC-pruning authority returned'
+    lacks "$ESCAPE" 'pub fn typeNeedsArc' \
+        'duplicate type/ARC classifier returned to escape analysis'
+    lacks "$ESCAPE" 't(k)` after `table_apply`' \
+        'retired call-shaped indexing premise returned to escape analysis'
+    has "$ESCAPE" 'bracket projection does not escape aggregate' \
+        'aggregate bracket-projection control disappeared'
+    has "$ESCAPE" 'ordinary application of aggregate is not indexed access' \
+        'aggregate call/index negative control disappeared'
+fi
+
+if [ -r "$TABLE_FACTS" ]; then
+    # Functional classification is already `.index`-only, but the test harness
+    # still carries historical call-shaped examples. Keep this visible until
+    # those fixtures and the inert table_apply API are deleted together.
+    finding "$TABLE_FACTS" 'what turns `t(k)` into the `.index` node' \
+        'table-facts test harness still assumes retired call-to-index normalization'
 fi
 
 if [ -r "$CURSOR" ]; then
