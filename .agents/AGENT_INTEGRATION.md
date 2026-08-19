@@ -1,4 +1,4 @@
-# Idol agent integration
+# Idsem agent integration
 
 This is a durable client setup guide. It contains no language law, live claims,
 tool census, or current gate status.

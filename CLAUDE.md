@@ -1,4 +1,4 @@
-# Idol operative projection
+# Idsem operative projection
 
 `docs/spec/law.md` is the SUPREME one-page law and is authoritative over every
 document. `docs/spec/constitution.md` (C0) is its structured long-form expansion
@@ -11,7 +11,7 @@ The constitution is structured law documentation, not executable source or a
 pattern library. Canonical implementation remains `.id`; `GAP-145` records the
 separate unclosed lexical and grammar projection.
 
-## The decomposition (read before writing Idol)
+## The decomposition (read before writing Idsem)
 
 > **A name is a SUBJECT and an EDGE.** The edge is the relation; the subject is
 > the value the relation is about. You write `subject:edge(rest)`.
@@ -37,14 +37,14 @@ Every rule this project recorded as an assertion has decayed — a sibling
 
 ## Identity
 
-**Idol** is the language and project identity (`idol`, `.id`). Its sole semantic
-law is `docs/spec/constitution.md` — including §67 Idol algebra closure
+**Idsem** is the language and project identity (`idol`, `.id`). Its sole semantic
+law is `docs/spec/constitution.md` — including §67 Idsem algebra closure
 (home, subject, world, protocol, witness, injection, union, standard reachability,
 shell/run/outcome, binding census, completion metrics). Do not mint artificial
 secondary language namespaces for graph, value, or relation. No independent algebra
 prompt is authority.
 
-The language and project ship as Idol (`idol`, `.id`, repository `idollang/idol`).
+The language and project ship as Idsem (`idol`, `.id`, repository `idollang/idol`).
 No production `idol` compiler binary exists yet. The priority is the earliest
 executed SHC authority frontier: bounded bootstrap bridges — including new Zig
 where it is the fastest path to the next transfer — are admitted and preferred
@@ -53,7 +53,7 @@ over stalling, each with a known deletion condition (`law.bridge.death`,
 semantic authority, or a new foreign semantic kingdom — never as bootstrap
 scaffolding.
 
-**No `std` anywhere** in Idol source, agents, gates, or teaching examples.
+**No `std` anywhere** in Idsem source, agents, gates, or teaching examples.
 There is no `std` table, prelude, or namespace. Use layout-projected homes and
 worlds (`fs`, `json`, `os`, `io`, …) with subject-first relations. Never
 `std.*`. **`proc` and `ir` are not source vocabulary** — DNIR is realization
@@ -93,7 +93,7 @@ Use `audit`, `head`, `bare`, and `scan(diff)(…)` / `scan(path)(…)` per
 
 ### Home, world, and protocol algebra
 
-Authoritative law: `docs/spec/constitution.md` §67 Idol algebra closure
+Authoritative law: `docs/spec/constitution.md` §67 Idsem algebra closure
 (`law.home.context` through `law.algebra.absolute`; adversarial controls in
 `law.gate.protocol` and `law.gate.algebra`). Session prompts are not authority.
 
@@ -141,7 +141,7 @@ DNIR is a compact migration encoding for realization scheduling. It may add
 physical facts but may not rename graph meaning or recover meaning from source
 text, a callee name, a hash, or an opcode.
 
-Idol and Lua are distinct lawsets hosted by one compiler. Foreign law and
+Idsem and Lua are distinct lawsets hosted by one compiler. Foreign law and
 provenance remain explicit until equivalence is proven; proven equivalents use
 the same graph, demand, and realization machinery. Wasm is an imported lawset,
 not a permanent second optimizer or virtual-machine ontology.
@@ -156,7 +156,7 @@ the owner boundary instead of writing admission ceremony in source.
 
 ## Host boundary
 
-Idol source sees semantic values — not host OS APIs (`docs/spec/host.md`,
+Idsem source sees semantic values — not host OS APIs (`docs/spec/host.md`,
 `GAP-154`). Arguments, environment, input, output, error, and cwd are
 root/home-projected values supplied by the launcher. Process execution uses
 structured command values under a process world — not `popen`, opaque shell
@@ -169,7 +169,7 @@ only at classified bootstrap ingress/egress with deletion gates.
 
 ## Source
 
-Canonical source uses `.id`. New canonical `.id` is admitted — it is the Idol
+Canonical source uses `.id`. New canonical `.id` is admitted — it is the Idsem
 source extension. New `.duo` / `.duon` / `.idsem` is forbidden. New foreign
 SEMANTIC AUTHORITY and new permanent foreign subsystems are forbidden; existing
 Zig, C, Lua, shell, and Python are bootstrap or compatibility debt. A new bounded
@@ -318,7 +318,7 @@ delta budgets (`law.delta.budget`), producer→consumer scheduling
 
 **Anti-drift (mandatory):** current repo source is not canonical proof
 (`law.source.not.proof`); fix semantic classes not specimens (`law.repair.class`);
-projection pack is first-class, not curry (`law.projection.pack`); Idol is current
+projection pack is first-class, not curry (`law.projection.pack`); Idsem is current
 identity only (`law.identity.projection`).
 
 ### Projection (PROJECTION-ONE)
@@ -335,7 +335,7 @@ Identifiers are lowercase single words without underscores or casing-based
 distinctions. Subject-applicable work starts from the held subject. Do not port
 host save/restore observation, source-category flags, helper predicates,
 sentinel states, visitor taxonomies, string dispatch, or bridge temporaries
-into Idol.
+into Idsem.
 
 ### Update of place
 
@@ -379,7 +379,7 @@ lexical identities
 -> machine-readable grammar authority
 -> generated grammar roles
 -> immutable token view
--> executed Idol parser recognition
+-> executed Idsem parser recognition
 -> binding and scope
 -> graph and application authority
 -> demand
@@ -390,7 +390,7 @@ lexical identities
 ```
 
 An `.id` file counts only when it executes in the production path and replaces
-an exact host decision. Every transfer states the host owner before, the Idol
+an exact host decision. Every transfer states the host owner before, the Idsem
 owner after, and the next host-owned boundary. Do not build a bootstrap AST,
 identity service, graph, grammar registry, IR, or error model beside the
 production owner.

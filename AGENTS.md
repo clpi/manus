@@ -41,7 +41,7 @@ Four consequences worth having in hand before you write anything:
    are KEPT and never relitigated by a printer; `void` is INFERRED, never
    written; `end`, `then`, `elseif` and `fun` are Lua vestigials.
 
-**Read the executable version of this section before writing Idol:**
+**Read the executable version of this section before writing Idsem:**
 
     cd ../idol-native && ./bin/idol run gate/subject.id    # agreement count IS the exit
 
@@ -70,7 +70,7 @@ it.
 Reach for a **world relation over a directive** wherever one exists; the
 directive namespace is retired, not expanded. `@comp.*`, `@meta.*`,
 `@compiler.*`, `@emit`, `@pipeline`, every `@c.*`, `@host.*`, `@runtime.*` and
-any other compiler/namespace `@` form are not lawful Idol source. The compiler
+any other compiler/namespace `@` form are not lawful Idsem source. The compiler
 may retire such spellings internally, but a new source spelling in any of these
 namespaces is invalid. Enforcement is `gate/idiom.id` and `gate/dialect.sh`;
 get live counts by running them, not from this file.
@@ -89,13 +89,13 @@ reason; neither substitutes for the other.
 
 ## Authority
 
-`docs/spec/law.md` is the **SUPREME one-page law** of Idol. It is authoritative
+`docs/spec/law.md` is the **SUPREME one-page law** of Idsem. It is authoritative
 over every other document and supersedes any stale projection wherever they
 diverge; where C0 or any projection below conflicts with `docs/spec/law.md`, that
 text is corrected to match `docs/spec/law.md`. Read it first.
 
 The language law otherwise has one structured home. Read these files before
-editing Idol (`.id`), in this order:
+editing Idsem (`.id`), in this order:
 
 0. `docs/spec/law.md` — **SUPREME one-page law**: final language + semantic +
  compiler law; authoritative over every document below.
@@ -106,7 +106,7 @@ editing Idol (`.id`), in this order:
    interpretation (sections I–CXLIX); supersedes partial prompts; **not C0**.
 3. `docs/spec/constitution.md` — C0, the sole semantic authority. It is
    structured law documentation, not executable source or a source template.
-   **Idol algebra closure:** §67 (`law.semantic.universe` … `law.algebra.absolute`;
+   **Idsem algebra closure:** §67 (`law.semantic.universe` … `law.algebra.absolute`;
    adversarial controls in `law.gate.protocol`, `law.gate.algebra`,
    `law.gate.infer`, and `law.gate.convergence`). **Convergence closure:**
    `law.bridge.death`, `law.fallback.zero`, `law.fact.producer.one`,
@@ -128,7 +128,7 @@ editing Idol (`.id`), in this order:
    `law.infer.one` — write only facts not uniquely recoverable; query resolver
    before adding `:to(T)`. Re-pasted session prompts titled "algebra closure"
    are void; §67 is sole authority. **No `std` anywhere** in new canonical source,
-   gates, agents, or teaching examples. The language is **Idol** only.
+   gates, agents, or teaching examples. The language is **Idsem** only.
 4. `CLAUDE.md` — short operative projection of C0; routes to `docs/spec/agent.md`.
 5. `docs/spec/AUTHORITY.md`, `docs/bootstrap.md`, `docs/spec/source.md`,
    `docs/spec/host.md`, `docs/spec/convergence-contract.md` (blocking execution
@@ -139,17 +139,17 @@ editing Idol (`.id`), in this order:
 This file is only the agent workflow and mechanical preflight. It is not a
 second language specification. If it conflicts with C0 or `CLAUDE.md`, stop,
 report the conflict, and repair this projection. Git history is the sole
-historical archive; the active tree is current Idol only (`law.zero.history`).
+historical archive; the active tree is current Idsem only (`law.zero.history`).
 
-The language and project identity is **Idol** (`idol`, `.id`, repository `idollang/idol`).
+The language and project identity is **Idsem** (`idol`, `.id`, repository `idollang/idol`).
 Active development remains in this repository until release-readiness authorization;
 see `.agents/RELEASE_READINESS.md`. Cursor routers live in `.cursor/rules/`;
 executable canonicality lives under **`gate/`** (home hierarchy — not scattered
 `scripts/*gate*` paths).
 
-## Idol harness orientation
+## Idsem harness orientation
 
-Harnesses must **reason in Idol**, not as conventional coding agents with Idol
+Harnesses must **reason in Idsem**, not as conventional coding agents with Idsem
 syntax pasted onto output. This section is workflow routing only; harness
 reasoning law lives elsewhere.
 
@@ -184,8 +184,8 @@ renames an abstraction (`std.*` → `process.*`, `req` → local binding), rejec
 
 ## Monoglot boundary
 
-The destination is an Idol compiler, standard vocabulary, build, tools, gates,
-and documentation projections implemented in Idol.
+The destination is an Idsem compiler, standard vocabulary, build, tools, gates,
+and documentation projections implemented in Idsem.
 
 **No `std` anywhere** in new canonical source — not a namespace, table, prelude,
 or migration alias. Vocabulary reaches through layout/home/world projection
@@ -195,22 +195,22 @@ filesystem bootstrap provenance until renamed (GAP-157); it is not authority.
 Every canonicality result has one of four states: `canonical`, `migratable`,
 `vocabularyblocked`, `invalid`. Do not invent vocabulary to silence a gate.
 
-New canonical `.id` is admitted — it is the Idol source extension. The priority
+New canonical `.id` is admitted — it is the Idsem source extension. The priority
 is the earliest executed SHC authority frontier (`law.bootstrap.velocity`): a
 bounded foreign bridge — including new Zig — is admitted and preferred over
 stalling when it is the fastest path to the next executed transfer and carries a
-`law.bridge.death` deletion witness (host owner before, Idol owner after, next
+`law.bridge.death` deletion witness (host owner before, Idsem owner after, next
 host boundary). What stays forbidden is a new *permanent* foreign subsystem,
 foreign SEMANTIC AUTHORITY, and a foreign semantic kingdom beside the graph.
 Keep the bridge local, preserve native performance, regenerate (never hand-fork)
-generated artifacts, and move the authority into Idol as soon as the compiler can
+generated artifacts, and move the authority into Idsem as soon as the compiler can
 express it. Do not block on a monoglot ideal the native compiler cannot yet
 express — record `IMPLEMENTATION-BLOCKED` and add the smallest unblocking bridge
 rather than idling.
 
 Never route a typed or compile-time value through a boxed compatibility value.
 The semantic value and its native realization remain distinct; compatibility
-front ends do not own Idol meaning.
+front ends do not own Idsem meaning.
 
 Presumptively noncanonical shapes whenever written or touched:
 
@@ -282,7 +282,7 @@ Explicit anti-drift law classes:
   equals the checkout HEAD.
 - **DIFFERENTIAL-ORACLE-BOUNDED** (`law.oracle.bounded`) — a host differential
   oracle is valid only for the legacy-equivalent subset and must carry a concrete
-  deletion condition. When Idol law intentionally diverges, the oracle must not
+  deletion condition. When Idsem law intentionally diverges, the oracle must not
   veto the new behavior.
 
 After parsing, describe meaning in semantic terms. Parser terms such as
@@ -348,7 +348,7 @@ literal/comment role downstream from token text.
 
 ## Update face
 
-Canonical Idol prefers `place op= value` only when a witnessed equivalence
+Canonical Idsem prefers `place op= value` only when a witnessed equivalence
 proves it preserves the expanded update's observations. Normalization keeps the
 base relation together with the exact place and update facts; it does not mint
 `addassign`, another compound relation, or a `++` ontology. An admitted compound
@@ -366,7 +366,7 @@ by `GAP-145`, `GAP-134`, and `GAP-124`.
 Today direct execution over a non-empty diff refuses at DNB001 `concat`.
 Until that implementation gap closes, use a static added-line scan only as
 explicitly nonsemantic migration pressure; do not report it as an executable
-Idol gate or a semantic verdict. The intended serialized command, once direct
+Idsem gate or a semantic verdict. The intended serialized command, once direct
 execution is repaired, is:
 
     repo="$(git rev-parse --show-toplevel)"
@@ -401,7 +401,7 @@ scope facts at the owner boundary instead.
 Read `docs/spec/host.md` before any work touching arguments, environment,
 process, pipe, shell, transport, endpoints, cwd, PATH, or backend selection.
 
-Idol source does not call host OS APIs as semantics. **`environment` is not a
+Idsem source does not call host OS APIs as semantics. **`environment` is not a
 thing** — use `os.env` table under `os` world. **`args`** is `os.args(n)`, not
 `os.args()`. **I/O** uses `io:read` / `io:write`, not `io.read` / `io.write`.
 Do not add `std.*`, `proc.*`, or `ir.*` to new source.
@@ -563,7 +563,7 @@ Length is subject-first: `value:len()` — never `size(x)`, `len(x)`, `rawlen(x)
 `string.len(x)`, or `std.string.len(x)` in new canonical source.
 Legacy suffix result annotations (`name(): descriptor`) are migratable debt only.
 
-Before writing a nontrivial Idol expression, answer:
+Before writing a nontrivial Idsem expression, answer:
 
 1. What value is the semantic subject?
 2. What relation is requested?
@@ -610,7 +610,7 @@ another owner.
    `tools/node/dev/gap reserve`; do not create a second tracker or hand-allocate
    a number.
 4. Serialize builds and benchmarks through `tools/node/dev/idol-lock`. Until a
-   world-backed Idol coordinator is admitted, do not teach a `std.script` or
+   world-backed Idsem coordinator is admitted, do not teach a `std.script` or
    MCP text wrapper as canonical authority. A concurrent benchmark is not
    evidence.
 5. Commit only explicit owned pathspecs. Inspect the staged diff and the final
@@ -634,14 +634,14 @@ or algorithm family.
 
 - Do not migrate development to `idollang/idol`; use the development repository reported by `tools/node/dev/repository` until explicit release-readiness authorization.
 - Only create git commits when explicitly requested by the user.
-- Do not implement or hand-edit lexical or tokenizer logic outside the Idol lexer source path (`lib/compiler/lexer.id`, `lib/compiler/token.id`).
+- Do not implement or hand-edit lexical or tokenizer logic outside the Idsem lexer source path (`lib/compiler/lexer.id`, `lib/compiler/token.id`).
 - INFER-ONE / SOURCE-INFER-ONE / FACT-COMPOSITION-INFER-ONE / INTERMEDIATE-ZERO: no source spelling restates uniquely recoverable facts (subject, operands, demand, constraints, world/effect, stage, provenance, control-flow); projection/injection/capture/protocol/world satisfaction normally have zero source syntax; no canonical `value:to()` rung; no single-use bridge bindings; `@` only for anchors — never `@{...}` world/import/dependency lists; `IMPLEMENTATION-BLOCKED` not workaround canonization. Relation projection is not curry — declare `to(str) = (value)`, invoke `value:to(str)`; operation-first `to(str)(value)` is migratable debt. projection/injection/interjection are three uses of ordinary world/table semantics (select a fact / derive a world with added facts / evaluate a subtree under it), not new subsystems — no inject, scope, context, provider, registry, or dependency framework.
 - Do not defer, stop, or idle-block mid-task; "you are never blocked" — drive durable end-to-end fixes toward SHC/FTCFTW and either resolve or record `IMPLEMENTATION-BLOCKED` rather than stalling. Zig is admissible as a bootstrap bridge where genuinely needed to reach SHC fastest; aggressively reconcile and delete ALL stale rules, prose, legacy code, and non-canonical edge/binding usage across the whole repo rather than preserving it. FTCFTW is an open-ended, proof-driven Pareto-dominance contract against the best known implementation plus the semantic/physical lower bound (not a scalar score, not merely "faster than C") — strictly improve every cost dimension where physically possible, equal the proven lower bound otherwise, and never lose without naming the exact tradeoff or unresolved fact. Realization is a semantic-to-physical optimizer over the whole machine/OS/hardware/workload stack, not code generation (`law.physical.open` PHYSICAL-SPACE-OPEN: representation/encoding, algorithm/data structure, precision, layout, instruction selection, scheduling, ABI, OS interface/syscall, concurrency, hardware placement, specialization, persistence, distribution, energy — future strategies admitted by the same rule); preserve ONLY what semantics make observable, since every accidental observable is a permanent optimization barrier (`law.observation.minimum` OBSERVATION-MINIMUM). FTCFTW is the whole frontier `R(S,W,T,E,P)` — every physically lawful realization preserving the required observations — not a checklist (`law.optimization.space` OPTIMIZATION-SPACE-COMPLETE, `docs/spec/law.md` §107); a candidate is admitted iff it preserves demanded observations under the current world, satisfies authority/effect/resource constraints, is verifiable, and improves the chosen Pareto frontier; every individual optimization is an instance discovered inside `R` on the frontier axes — never a new constitutional mechanism. Square-zero foundation: `law.observation.one` (OBSERVATION-ONE + BOUNDARY-ONE + physical-nonexistence `none`), `law.equivalence.observation`, `law.demand.derivative`, `law.relation.property`, `law.change.delta`, `law.uncertainty.algebra`, `law.optimizer.economy` (§104–§106). REALIZATION-CONTRACT (`law.realization.contract`, §108) corrects the premise further: FTCFTW is not compiler optimization but optimal verified realization under semantics/information/physics/economics/uncertainty over the full tuple `R(S,O,W,D,K,E,H,P,F,B)` — *whether any computation occurs at all* is a candidate strategy (lawful nonexecution: cached/theorem/materialized/world-fact answers, demand elimination, observer elimination). Lower bounds are information/communication/I-O/circuit/work-vs-span/physical-law, not instruction counts; architecture (process/thread/service/shard/boundary erasure+introduction) is realization; meta-cost is lifecycle-global (a 1 ns win costing 10 h to find for a once-run program is a loss). The ~24 axes: identity, observation, law, knowledge, uncertainty, demand, change, equivalence, information, work, communication, representation, architecture, placement, schedule, boundary, failure, resource, search, verification, evidence, cost, adaptation, meta-cost — all extensible.
 - Gate `.id` helpers: boundary curry `len(path)(min)`, `audit(path)(pattern)`, `hit(path)(pattern)`; subject-first `path:flag(q)(no, code, pat, law, fix)`; one word per binding (decompose mashed compounds like `denyrows`/`gatehome`); multiline subject-first `path:read()` chains; stdin via `stdin:read()`; `idol run`/`idol check` only — no C, Lua, LLVM, or V realization may admit or prove a direct gate. The explicit graph-backed C source realizer remains orthogonal.
 - LAW-ONE paths and bindings: one lowercase word per segment — no snake_case or mashed compounds; decompose through hierarchy (`semantic/graph.id`, not `semantic_graph.id`).
-- Prefix `!` is canonical negation — never `if not`, `and not`, or `(not` in Idol source (gate detector prose may still quote those strings).
+- Prefix `!` is canonical negation — never `if not`, `and not`, or `(not` in Idsem source (gate detector prose may still quote those strings).
 - Do not decide canonicality with string-detector or substring architecture (`codens`, `luahash`, `layout`, `has(...)` admission patterns); route through production lexer → parser → graph → obligations (`GAP-124`).
-- Harness must reason in Idol (pre-task reduction, semantic diff, deletion order), not as a conventional coding agent; read `docs/spec/harness-projection.md` and `.agents/HARNESS.md` before choosing work; audit seams for BRIDGE-DEATH, UNKNOWN-ONE, OWNERSHIP-ZERO, and PROFILE-EVIDENCE before introducing bridges or helpers.
+- Harness must reason in Idsem (pre-task reduction, semantic diff, deletion order), not as a conventional coding agent; read `docs/spec/harness-projection.md` and `.agents/HARNESS.md` before choosing work; audit seams for BRIDGE-DEATH, UNKNOWN-ONE, OWNERSHIP-ZERO, and PROFILE-EVIDENCE before introducing bridges or helpers.
 - Use `"{}"` text composition, not `..`; nested `{expr:to(str)}` inside string literals does not interpolate — build dynamic needles at expression level; `using`/`using(x)` forbidden — `use(x)` only; do not refactor `scripts/grammarconvergence.id` without explicit approval.
 - No `std.*`, `table.*`, `string.*`, or `math.*` namespace dispatch — subject-first edges only (`text:match`, `xs:keys`); reject `callable`/`*able`/codec/encoding protocol identities and lexical-substitution migrations; prove semantic reduction (DELETE/DECOMPOSE before rename), not respelling; never `==` against bool/nil/0/1/true/false or other sentinels; `environment` is not a thing — use `os.env(k)`, `os.args(n)`, `io:read`/`io:write`. No `match`/`case`/`switch`/pattern-object subsystem — control flow is refinement `if` (subject evaluated exactly once; branch heads are constraints on the already-evaluated subject; multi-arm refinement is unordered with no first-match/most-specific/declaration-order/trait precedence; nested `if` expresses order). Express every design from the small irreducible basis (id, fact, binding, value, table, descriptor, world, home, projection, application, relation, able, pack, place, refinement, demand, effect, witness, stage, provenance, transformation, realization) and reject match/pattern/trait/interface/module/namespace/import/service/context/result/option/future/promise/async/stream/iterator/macro/unsafe/capability/reflection unless irreducibility is proven.
 
@@ -658,4 +658,4 @@ or algorithm family.
 - `scripts/census/foreign.id` persists repo/work paths via `/tmp/idol-foreign-*` shell indirection across `gatecap` calls until cross-call binding corruption is fixed.
 - Migration law sources live under `gate/` (`idiom.id`, `path.id`, `host.id`, `architecture.id`, `census.id`, `admission.id`) — executable status, including the `idiom.id` blocker, is stated above; legacy `scripts/*gate.id` are debt; host boundary law is `docs/spec/host.md` (host firewall until `GAP-154`). Compound-word (LAW-ONE) vocabulary and logic already live in `gate/path.id` (`words` string plus `known()`/`sep()`/`mash()`/`tail()`) and `gate/idiom.id` (`words` plus `compound()`) — reuse them; enforce no compounds across the whole repo, decomposing each to existing edges/nodes, to hierarchy, or to elimination.
 - Serialize heavy commands through `tools/node/dev/idol-lock` (shell mutex); MCP manifest servers are **`idol`** (raw-text bootstrap status/head/orient transport) and **`idol-native`** (sibling checkout: check/symbols/graph/run/gates/orient/sim/explain/fmt/asm) per `tools/node/dev/mcp.manifest.json` — the retired pre-rename transports were removed, not disabled; integration gate `zig build mcp-gate` → `./tools/node/dev/mcp-gate`.
-- Compiled Idol bootstrap quirks: `string.match` with `\t` patterns returns nil (use `string.find` + `string.char(9)`); `"\n"` may be literal backslash-n (use `string.char(10)` for line splits); file-scope `os.env(k)` may be empty at module init (defer env reads to runtime/bootstrap ingress).
+- Compiled Idsem bootstrap quirks: `string.match` with `\t` patterns returns nil (use `string.find` + `string.char(9)`); `"\n"` may be literal backslash-n (use `string.char(10)` for line splits); file-scope `os.env(k)` may be empty at module init (defer env reads to runtime/bootstrap ingress).

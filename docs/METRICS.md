@@ -1,4 +1,4 @@
-# Idol progress metrics
+# Idsem progress metrics
 
 This file is a **human audit projection** of how progress is measured. It is not
 semantic law and not a substitute for executed gate output. Percentage-like
@@ -16,7 +16,7 @@ are **subordinate diagnostics**. Report these three first:
 
 ### 1. Executed authority frontier
 
-Earliest → latest **production stage actually owned by Idol** on the path:
+Earliest → latest **production stage actually owned by Idsem** on the path:
 
 ```text
 source ingress → lexer → lexical identity → grammar → parser → binding →
@@ -100,7 +100,7 @@ Normalized assessment — not claimed repository counters.
 |---|---|---|---|---|
 | Language/semantic closure | settle syntax/features | one semantic authority + closed source law | ~90% design / lower implementation | ↑↑ |
 | Naming convergence | lowercase/no snake/camel | one meaning → one native word; qualifiers → facts | strong ratchet, corpus incomplete | ↑↑ |
-| Canonical source | `.id` only | Idol command + `.id` suffix; constitution is semantic law | current | ↑↑ |
+| Canonical source | `.id` only | Idsem command + `.id` suffix; constitution is semantic law | current | ↑↑ |
 | Canonicality gate quality | lexical grep / convention | fail-closed positive controls + semantic classifications | strong for **changed** lines | ↑↑ |
 | Canonical corpus debt | inferred from green gate | entire existing corpus satisfies current law | far from zero | ↑, lagging |
 | Semantic application authority | schema / call metadata | exact graph relation/subject/argument/result facts | substantial progress | ↑↑↑ |
@@ -123,7 +123,7 @@ Normalized assessment — not claimed repository counters.
 
 ## Identity (current)
 
-Project identity: **Idol** (`idol`, `.id`, repository `idollang/idol`).
+Project identity: **Idsem** (`idol`, `.id`, repository `idollang/idol`).
 Constitution §67 is sole semantic algebra authority. Git owns historical archive.
 
 ## What improved (objective inflections)

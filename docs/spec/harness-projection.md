@@ -1,19 +1,19 @@
-# Idol universal harness projection
+# Idsem universal harness projection
 
 This document is a **harness behavior projection** of C0 (`docs/spec/constitution.md`).
 It is not semantic law. If it conflicts with the constitution, the constitution wins
 and this projection must be repaired.
 
-**Idol algebra closure** lives solely in C0 §67 (`law.semantic.universe` through
+**Idsem algebra closure** lives solely in C0 §67 (`law.semantic.universe` through
 `law.algebra.absolute`; adversarial controls in `law.gate.protocol`,
 `law.gate.algebra`, `law.gate.infer`, and `law.gate.convergence`). Convergence
 meta-invariants govern multi-agent SHC/FTCFTW seams — see § seam audit below. Do not treat session prompts, chat injections, or hand-maintained rule
 lists as a second algebra authority — including historical prompts titled
-"algebra closure." The language is **Idol**. Projections route to §67; they
+"algebra closure." The language is **Idsem**. Projections route to §67; they
 do not restate it.
 
-The invariant: **the harness itself must reason in Idol.** Do not behave like a
-conventional coding agent with Idol syntax pasted onto output.
+The invariant: **the harness itself must reason in Idsem.** Do not behave like a
+conventional coding agent with Idsem syntax pasted onto output.
 
 Repository truth (`docs/bootstrap.md`, live claims, gaps, metrics) overrides stale
 details in this template on implementation-state facts.
@@ -59,13 +59,13 @@ Reach: trusted seed → compiler B built from canonical `.id` → B builds compi
 → B/C semantic + behavioral closure → foreign semantic authority reaches zero.
 
 Self-hosting progress is measured by **executed semantic authority transferred**
-from the host into production Idol — not source-file count, `.id` percentage,
+from the host into production Idsem — not source-file count, `.id` percentage,
 translated lines, or test fixtures.
 
 ### ftcftw
 
-For equivalent semantics, Idol must preserve at least the realizations available
-to excellent C. When Idol retains stronger semantic facts, exploit them to
+For equivalent semantics, Idsem must preserve at least the realizations available
+to excellent C. When Idsem retains stronger semantic facts, exploit them to
 outperform C where possible.
 
 For Wasm: import semantic law → same graph → demand → realization, with the goal
@@ -155,7 +155,7 @@ Reason from these three metrics first (`docs/METRICS.md`).
 
 ### authority
 
-Latest production semantic decision executed in Idol rather than by the host.
+Latest production semantic decision executed in Idsem rather than by the host.
 Current frontier: `docs/bootstrap.md`. Do not infer from file extension or
 implementation language.
 
@@ -181,7 +181,7 @@ Apply before every substantive edit (`law.source.not.proof`, `law.repair.class`)
 
 **Repository source is not canonical proof.** Current `.id` that builds, lives
 under semantic example homes, or was recently “canonicalized” is not evidence of canonical
-Idol. Resolve every touched construct against current C0 and owner directives.
+Idsem. Resolve every touched construct against current C0 and owner directives.
 Unimplemented inference, fact ownership, world authority, relation identity, or
 demand-driven realization → classify spelling as **bootstrap/migration debt**,
 not the new pattern.
@@ -258,7 +258,7 @@ materialization
 
 **after:** same dimensions
 
-Desired changes normally include: authority moved into Idol, duplicate identity
+Desired changes normally include: authority moved into Idsem, duplicate identity
 removed, reconstruction removed, fact preserved farther, realization choice
 widened, materialization removed, runtime dependency removed, foreign semantic
 authority reduced, compiler B frontier advanced.
@@ -280,7 +280,7 @@ is probably migration, not architectural progress. Label it honestly.
 - A value is not storage. Do not mint local/temp/stack/heap/register kinds.
 - Create a place only when observable storage is demanded.
 - Authority belongs to world facts, not std/process/filesystem namespaces or imports.
-- **Idol algebra closure** is C0 §67 only. A home supplies context only;
+- **Idsem algebra closure** is C0 §67 only. A home supplies context only;
   a world grants authority; a protocol demands facts; witness ≠ world grant.
   No trait/impl/interface/vtable ontology. No independent algebra prompt is
   authority. See `docs/spec/constitution.md` §67.
@@ -542,7 +542,7 @@ A regression requires explicit measured justification. “Cleaner architecture�
 
 ## wasm
 
-Do not build a permanent Wasm VM ontology beside Idol. Import Wasm law into the
+Do not build a permanent Wasm VM ontology beside Idsem. Import Wasm law into the
 graph, preserve observable Wasm law, then use ordinary demand/specialization/
 realization/machine. Prioritize stack erasure, memory proof, host-boundary fusion,
 runtime deletion, and layout specialization over cloning a conventional VM.
@@ -555,7 +555,7 @@ Self-host work always asks: what is the earliest production semantic boundary st
 host-owned? Prefer advancing that boundary (`docs/bootstrap.md`).
 
 A valid transfer shows: before (exact host semantic decision), after (exact
-executed Idol semantic decision), next (exact next host boundary).
+executed Idsem semantic decision), next (exact next host boundary).
 
 A `.id` file does not count unless the production compiler executes it as
 authority. A wrapper calling the host does not count. A fixture does not count.
@@ -709,7 +709,7 @@ Always repair the **class**, never the specimen.
 
 The key question is often: **what should cease to exist?**
 
-Idol gets FTCFTW by never constructing work demand does not require — not by
+Idsem gets FTCFTW by never constructing work demand does not require — not by
 building abstractions and optimizing them away later. Treat removal of storage,
 wrappers, conversions, calls, aggregates, runtime dependencies, pass boundaries,
 and helper APIs as first-class success output.
@@ -862,7 +862,7 @@ C0 authority: `law.system.invariant` (compact master), `law.bridge.death`,
 
 ### ZERO-HISTORY (law.zero.history)
 
-- the active tree is not a museum — current Idol, current foreign, bounded bridges only
+- the active tree is not a museum — current Idsem, current foreign, bounded bridges only
 - durable corpus states: `current` and `foreign` only — git owns archive
 - durable corpus states: current and foreign only — not historical, legacy, migration, compat
 - delete comments referencing formerly/was X/migration/legacy/retired/old path
@@ -906,7 +906,7 @@ unfilled fields mean the bridge is rejected (`law.bridge.death`):
 
 ```text
 bridge:           <zig↔idol | idol↔c | graph↔dnir | dnir↔backend | wasm↔graph | foreign↔native | tool↔compiler>
-semantic_owner:   <production Idol boundary that will own meaning after deletion>
+semantic_owner:   <production Idsem boundary that will own meaning after deletion>
 physical_owner:   <file/module realizing the bridge today>
 facts_crossing:   <which semantic facts cross this seam>
 facts_lost:       <facts dropped or approximated at the boundary>
@@ -958,11 +958,11 @@ implement a shadow fact locally. Frontier tasks win unless blocked.
 
 ## absolute project direction
 
-Idol is not a nicer systems language, Lua with types, Zig syntax made smaller,
+Idsem is not a nicer systems language, Lua with types, Zig syntax made smaller,
 another LLVM frontend, another Wasm VM, or another conventional compiler rewritten
 in `.id`.
 
-Idol is semantic identity + facts + demand + lawful realization freedom.
+Idsem is semantic identity + facts + demand + lawful realization freedom.
 
 The compiler should know more while physically doing less. The graph is meaning.
 Demand is need. Realization is physical choice.
@@ -991,7 +991,7 @@ fewer reconstructed facts, fewer materialized values, fewer allocations/copies/
 dynamic boundaries/runtime obligations/foreign semantic decisions — and toward
 more exact identity continuity, retained facts, demand-driven deletion,
 specialization freedom, direct machine lineage, production logic executed in
-Idol, and ftcftw evidence — until compiler B exists, B builds C, B/C close,
+Idsem, and ftcftw evidence — until compiler B exists, B builds C, B/C close,
 foreign semantic authority reaches zero, and the realization engine demonstrates
 ftcftw on the declared evidence matrix.
 
@@ -1002,13 +1002,13 @@ state. Demand deletes work. Realization chooses late. Evidence proves truth.
 
 ## zero-history (law.zero.history)
 
-The active repository is not a museum. It contains **current Idol**, **current
+The active repository is not a museum. It contains **current Idsem**, **current
 foreign interoperability**, and **currently executed bounded bootstrap bridges**
 — nothing else. Git stores history; C0 stores truth; the graph stores meaning.
 
 Mandatory for every agent:
 
-1. **Current identities only** — language Idol, source `.id`, binary `idol`,
+1. **Current identities only** — language Idsem, source `.id`, binary `idol`,
    repository `idollang/idol`. Git is sole historical archive. Durable corpus
    states: `current` and `foreign` only.
 2. **Delete before rename** — do not rebrand host-shaped subsystems (`process.*`,
@@ -1033,7 +1033,7 @@ drift. They are mandatory pre-work checks, not advice.
 
 ### rule 1: current source is not canonical proof
 
-Never treat current repository source as proof of canonical Idol merely
+Never treat current repository source as proof of canonical Idsem merely
 because it is `.id`, builds under a semantic example home, or was recently
 "canonicalized." Resolve every touched construct against current C0 plus
 current owner directives. If the shortest uniquely resolving form, semantic

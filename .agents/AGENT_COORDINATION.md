@@ -1,4 +1,4 @@
-# Idol agent coordination
+# Idsem agent coordination
 
 This file is a durable ownership and gate map. It is not language law, a live
 control plane, or a current-status ledger. Any line likely to drift belongs in
@@ -36,7 +36,7 @@ before editing.** Lane labels here are not locks.
 | # | Lane | Owns |
 |---|---|---|
 | 1 | Ingress + lexical SHC | source-family, GAP-145, token schema/magic/ordinals, bridge copies, oracle bound |
-| 2 | Grammar + parser SHC | GAP-134, roles, immutable token view, Idol parser |
+| 2 | Grammar + parser SHC | GAP-134, roles, immutable token view, Idsem parser |
 | 3 | Resolver + graph | exact binding, ontology, application facts, world/effect/witness, lineage |
 | 4 | Demand + realization choice | demand, **REPRESENTATION-ONE**, specialize-budget, ABI, tail, numeric/range |
 | 5 | Memory + effects | guard/deopt, alloc/region, alias/lifetime, copy/tag, bounds, string/table/layout, fusion/SIMD, concurrency, coroutine, metamethod |

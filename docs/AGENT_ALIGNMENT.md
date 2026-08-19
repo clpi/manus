@@ -1,7 +1,7 @@
 # Agent Alignment Compass
 
 This file is a short priority router. It is not language law and must not grow
-into a second specification. Start at `AGENTS.md` (Idol durable orientation +
+into a second specification. Start at `AGENTS.md` (Idsem durable orientation +
 mechanical preflight); it routes to the sole law, this priority projection,
 the current production ledger, and live ownership.
 The constitution is structured law documentation, not an implementation
@@ -13,7 +13,7 @@ Report these before file counts or keyword metrics (`docs/METRICS.md`):
 
 Full debt inventory and workstream order: `.agents/TECH_DEBT_WORKSTREAM.md`.
 
-1. **Executed authority frontier** — production stages actually Idol-owned
+1. **Executed authority frontier** — production stages actually Idsem-owned
    (`docs/bootstrap.md` ledger).
 2. **Semantic reconstruction debt** — downstream decisions still re-deriving
    meaning from text/AST/opcode/host shape after resolution.
@@ -29,22 +29,22 @@ Move monotonically to:
 
 ```text
 current canonical `.id` source
--> Idol-owned semantic identities and facts
+-> Idsem-owned semantic identities and facts
 -> compiler B through the honest existing backend
 -> B compiles C from the identical compiler source
 -> B/C semantic and behavioral equivalence
--> progressively Idol-owned realization and backend
--> Idol Wasm faster than Wasmtime on equivalent semantics
+-> progressively Idsem-owned realization and backend
+-> Idsem Wasm faster than Wasmtime on equivalent semantics
 ```
 
-The destination is 100% self-hosted canonical Idol: public command identity
+The destination is 100% self-hosted canonical Idsem: public command identity
 `idol`, source suffix `.id`, and repository identity `idollang/idol`. A `.id`
 filename does not transfer authority. Generated projections, epoch-1 syntax,
 C-backed proofs, and wrappers over host owners remain bootstrap debt until
-executed Idol replacements land.
+executed Idsem replacements land.
 
-Idol and Lua are distinct lawsets hosted by one compiler. Idol is not a Lua
-superset, and Lua compatibility may not define Idol semantics or architecture.
+Idsem and Lua are distinct lawsets hosted by one compiler. Idsem is not a Lua
+superset, and Lua compatibility may not define Idsem semantics or architecture.
 
 ## Current phase
 
@@ -58,16 +58,16 @@ evidence, not lasting gap authority.
 The work now is the minimum closed semantic kernel, compiler B, bootstrap
 closure, and proof. Do not start another pass,
 invent another semantic taxonomy, add surface syntax, or strengthen a bootstrap
-subsystem that the constitution requires Idol to replace.
+subsystem that the constitution requires Idsem to replace.
 
 **Next inflection is not corpus rename.** Post-`dc07e5d7` history is dominated
 by `canonical: finalize … alignment` commits. That class of work does not move
 executed authority. Current compass: `.agents/TECH_DEBT_WORKSTREAM.md`.
 
-1. Close GAP-145 lexical identities on the already-Idol `tokenize()` route.
+1. Close GAP-145 lexical identities on the already-Idsem `tokenize()` route.
    Host `tokenizeHost` is differential-only. Suffix/path ingress remains host.
 2. Then grammar-role authority + immutable token view (`GAP-134`) and the first
-   Idol parser recognition.
+   Idsem parser recognition.
 3. Preserve exact graph ids (zero rediscovery); delete physical cost from
    graph → demand → realization; prove FTCFTW with revision-bound damage
    controls.
@@ -75,7 +75,7 @@ executed authority. Current compass: `.agents/TECH_DEBT_WORKSTREAM.md`.
    SHC frontier.
 
 Horizontal ports are useful only when they remove a dependency. They are not
-self-hosting progress unless semantic and production authority move into Idol.
+self-hosting progress unless semantic and production authority move into Idsem.
 
 ## New Zig: bounded bootstrap bridges only (`law.bootstrap.velocity`)
 
@@ -87,21 +87,21 @@ authority beside the graph.
 
 A new or edited Zig bridge is admissible when all of these hold:
 
-1. It advances the executed authority frontier — or passes existing Idol-owned
+1. It advances the executed authority frontier — or passes existing Idsem-owned
    authority into the current production path — rather than minting a parallel
    semantic owner.
 2. No decision is reconstructed from syntax, text, names, or backend shape.
-3. It carries a `law.bridge.death` deletion witness: host owner before, Idol
+3. It carries a `law.bridge.death` deletion witness: host owner before, Idsem
    owner after, and the next host-owned boundary.
-4. Generated artifacts are regenerated from their Idol owner, never hand-forked.
+4. Generated artifacts are regenerated from their Idsem owner, never hand-forked.
 
-Prefer implementing the missing authority in Idol; but do not idle on the
+Prefer implementing the missing authority in Idsem; but do not idle on the
 monoglot ideal when the native compiler cannot yet express a stage — mark
 `IMPLEMENTATION-BLOCKED` and add the smallest bridge that unlocks the next
 executed transfer.
 Running the existing Zig bootstrap and its gates is validation, not permission
 to expand it. Retain old host implementations as differential oracles until the
-Idol replacement is proven, then delete them.
+Idsem replacement is proven, then delete them.
 
 ## Compiler-B Queue
 
@@ -135,7 +135,7 @@ Every capability report keeps these facts separate:
 
 ```text
 canonical source
-Idol semantic owner
+Idsem semantic owner
 direct execution
 production dispatch
 oracle identity

@@ -1,4 +1,4 @@
-# Idol durable project orientation (deprecated)
+# Idsem durable project orientation (deprecated)
 
 Read **`.agents/HARNESS.md`** — the sole revision-bound harness boot payload.
 

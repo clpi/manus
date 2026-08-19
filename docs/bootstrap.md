@@ -1,4 +1,4 @@
-# Idol bootstrap contract
+# Idsem bootstrap contract
 
 No executable compiler-B/C evidence producer exists yet. The seed remains the
 host compiler; it does not obtain bootstrap authority from a project-owned
@@ -28,10 +28,10 @@ Do not let later passes re-decide boxing/stack/register/heap.
 **S0 (active):** the pinned Zig seed produces the host compiler.
 
 A production host-built `idol` executable exists. No compiler B built from
-canonical Idol compiler source exists. Host `idol check` / `idol run` are
+canonical Idsem compiler source exists. Host `idol check` / `idol run` are
 not self-host proof.
 
-The production front end nevertheless has one executed Idol-owned boundary:
+The production front end nevertheless has one executed Idsem-owned boundary:
 the executed production file
 `lib/compiler/lexer.id` owns token-kind production, token content,
 and exact source spans. Its `.id` suffix is not evidence of canonical source or
@@ -57,13 +57,13 @@ embed or optimization path; deleting those higher-level fallbacks requires the
 corresponding realization owner to distinguish physical refusal from semantic
 failure.
 
-Source ingress classification is now executed Idol authority. The producer owns
+Source ingress classification is now executed Idsem authority. The producer owns
 physical forms, corpus roles, longest-match admission, unlisted fallback, law,
 and provenance through `sourceform*`, `sourceentry*`, and `sourcefact*`. Zig
 normalizes a physical file to one repo-relative provenance spelling, calls the
 producer once, and binds returned names to the temporary host ABI; it owns no
 role roster or role→law mapping.
-Production lexing now goes through the Idol lexer
+Production lexing now goes through the Idsem lexer
 (`tokenize()`); host `tokenizeHost()` is differential-only. The identity
 blocker is `GAP-145` remaining consumers (Tree-sitter and source-law collapse)
 before parser SHC. Physical producer slot 3 remains
@@ -79,7 +79,7 @@ the frontier.
 The transfer must also preserve PREDICATE-ZERO. Parser and resolver output
 retain cases, refinements, descriptor and world facts, unknowns, demands, and
 transitions directly. It must not reproduce host `has`, `is`, `can`, `exists`,
-sentinel, or query-then-mutate helpers as Idol semantic architecture.
+sentinel, or query-then-mutate helpers as Idsem semantic architecture.
 
 ## Production authority ledger
 
@@ -87,16 +87,16 @@ sentinel, or query-then-mutate helpers as Idol semantic architecture.
 | --- | --- | --- |
 | Source ingress | IDOL OWNED, HOST FS/ABI BRIDGE | `lib/compiler/lexer.id` executes physical-form and corpus-role admission and returns exact law/provenance. `src/lexer_bridge.zig` only resolves physical provenance to the producer's repo-relative spelling and binds producer names to temporary host enums. The roster is a deletion bridge until launch/provider ingress supplies explicit law facts. |
 | Lexer producer | IDOL OWNED | `lib/compiler/lexer.id` owns token-kind, content, and span production and fails closed. Canonical lexical-law closure remains `GAP-145`. |
-| Canonical `.id` lex route | IDOL OWNED | `src/lexer_dispatch.zig` `route()` calls `tokenize()` for every source. Host `tokenizeHost()` is differential-only (legacy-equivalent subset; must not veto intentional Idol divergence; `law.bridge.death`). Generated `src/lexer_tokenize.c` is from current `lib/compiler/lexer.id` via `dump-c --lib`. Every lexer export takes family as an operand (`law.family.one`); `new()` does not read suffix bytes. Production compile, fmt, and embed call the `sourceFacts` bridge once, then `Lexer.initFacts`; the law/provenance answer is executed Idol output. `route()`, parse, sema, and token-view consume `lex.family`. `Lexer.init` is a test convenience. |
+| Canonical `.id` lex route | IDOL OWNED | `src/lexer_dispatch.zig` `route()` calls `tokenize()` for every source. Host `tokenizeHost()` is differential-only (legacy-equivalent subset; must not veto intentional Idsem divergence; `law.bridge.death`). Generated `src/lexer_tokenize.c` is from current `lib/compiler/lexer.id` via `dump-c --lib`. Every lexer export takes family as an operand (`law.family.one`); `new()` does not read suffix bytes. Production compile, fmt, and embed call the `sourceFacts` bridge once, then `Lexer.initFacts`; the law/provenance answer is executed Idsem output. `route()`, parse, sema, and token-view consume `lex.family`. `Lexer.init` is a test convenience. |
 | Lexer ABI schema | HOST OWNED (bridge) | `RECORD_SLOTS` / `lexErrorFromCode` / `tokenKindFromOrdinal` deleted. Consumer queries `recordslots()` / `field*()` / `rejectionname()` / `kindname()` / `kindcount()`; `bindKindSchema` binds ordinals once. `bindKindSchema` is a deletion-gated bridge (`law.bridge.death`): endpoint is token-role-id, not producer-name → runtime bind → host enum. Remaining: host `TokenKind` enum, `duo_lexer_*` / `useDuoTokens` names (`law.schema.one`, `law.magic.zero`, GAP-107). |
 | Lexical identity | IDOL OWNED, GAP-145 OPEN | Text/bytes/compat/long, `#` comment, shebang, `--` / `--[[` comments, and reserved backtick cross `tokenize()`. Long-text delimiter level is `int_val`; parser no longer scans `[[`. Producer, host-token, and AST `string_lit` identities are deleted; physical slot 3 is unpublished. AST `.quoted` retains exact quote provenance without a text/bytes taxonomy. Tree-sitter and semantic quote/source-law consumers remain. Do not start parser SHC. |
 | Token/span | IDOL OWNED | Exact token content spans are projected through the generated-C physical bridge; the host retains a temporary parser representation. |
-| Grammar projection | HOST OWNED, GAP-134 OPEN | `src/grammar_roles.zig` is the **current transitional** role table (host executable). Destination: one Idol grammar-fact owner → generated Zig/C tables + `grammar.md` + Tree-sitter. `grammar_roles.zig` and `lib/token/grammarrole.id` are bridges (`law.bridge.death`). Pratt consumes roles; parser `BinOp` map remains reconstruction debt. Do not add `grammar.id` until it *replaces* the Zig table as the one executable owner. |
+| Grammar projection | HOST OWNED, GAP-134 OPEN | `src/grammar_roles.zig` is the **current transitional** role table (host executable). Destination: one Idsem grammar-fact owner → generated Zig/C tables + `grammar.md` + Tree-sitter. `grammar_roles.zig` and `lib/token/grammarrole.id` are bridges (`law.bridge.death`). Pratt consumes roles; parser `BinOp` map remains reconstruction debt. Do not add `grammar.id` until it *replaces* the Zig table as the one executable owner. |
 | Parser recognition | HOST OWNED | `src/parser.zig` still decides expressions, bindings, and source structure. `parse_module` installs the producer pack when missing (`route()`); header recognition is one `headerSignal` over that pack. Host save/scan/restore snapshot walk is deleted. Not parser SHC. |
 | Binding/scope | HOST OWNED | Production binding and scope construction remain in the host parser and semantic producer. |
 | Semantic construction | HOST OWNED | The graph work is an improving host implementation, not executed compiler-B source. |
 | Relation/application resolution | HOST OWNED | Production resolution remains host-executed; exact graph application authority is still under integration. |
-| Demand | HOST OWNED | No executed Idol compiler demand stage exists. |
+| Demand | HOST OWNED | No executed Idsem compiler demand stage exists. |
 | Lowering/realization | HOST OWNED | Host lowering and realization select the artifact path. |
 | Machine selection | HOST OWNED | Host code selects direct native or generated-C realization. |
 | Object emission | HOST OWNED | The native object emitter is host implementation and production lineage is incomplete. |
@@ -105,13 +105,13 @@ sentinel, or query-then-mutate helpers as Idol semantic architecture.
 
 For the fail-closed lexer transfer:
 
-- **BEFORE:** a storage failure returned success without installing the Idol
+- **BEFORE:** a storage failure returned success without installing the Idsem
   token pack, so the next parser read silently resumed the host scanner.
 - **AFTER:** the same failure propagates, partial route storage is released, and
   no host token stream is accepted by that route.
 - **NEXT:** `GAP-145` remaining is Tree-sitter `grammar.json` and semantic
   consumers that collapse quote/source-law distinctions. Source-form and
-  corpus-home admission now execute in Idol; filesystem normalization and host
+  corpus-home admission now execute in Idsem; filesystem normalization and host
   enum binding remain explicit bootstrap bridges. Do not start parser SHC. `GAP-134` remaining is closing
   grammar.md as the generatable owner. Header recognition is one
   `headerSignal` over the producer pack (snapshot walk deleted); Pratt
@@ -119,7 +119,7 @@ For the fail-closed lexer transfer:
   Replace the temporary host enum/name ABI only after compiler B consumes the
   same source-law contract directly.
 
-Canonical source ingress recognizes `.id` as Idol. New canonical `.id` is
+Canonical source ingress recognizes `.id` as Idsem. New canonical `.id` is
 admitted. Retired `.duo` / `.duon` / `.idsem` are not source suffixes.
 `.lua` remains foreign compatibility input. Tracked noncanonical `.id`
 content remains SOURCE-ZERO debt and must reach zero; the `.id` extension
@@ -174,8 +174,8 @@ GRAPH-SOVEREIGNTY. Partial: caller-indexed `home_apps` adjacency;
 `nested` reverse index for scope/contains; `descriptor_refs` for recursion walks.
 
 Generated `src/lexer_tokenize.c` plus host `Token` rematerialization is a
-**physical** bridge. Semantic authority is Idol `tokenize()`; compile-time
-FTCFTW still needs Idol lexer → immutable token view → Idol parser without
+**physical** bridge. Semantic authority is Idsem `tokenize()`; compile-time
+FTCFTW still needs Idsem lexer → immutable token view → Idsem parser without
 generated-C call, oversized records, or host token copies. `lib/` remains
 retired filesystem provenance (GAP-157), not a semantic namespace.
 
@@ -191,7 +191,7 @@ bail.
 | Stage | Input | Output | Proof |
 | --- | --- | --- | --- |
 | **S0** | Zig + repo source | Host-built `idol` binary (not compiler B) | Remeasured CI/unit/bench at the revision — not assumed from local ledgers |
-| **S1 / B** | S0 + canonical Idol compiler source | First Idol-built compiler | Exact graph facts, witnessed correspondence, and behavior vs the seed oracle |
+| **S1 / B** | S0 + canonical Idsem compiler source | First Idsem-built compiler | Exact graph facts, witnessed correspondence, and behavior vs the seed oracle |
 | **S2 / C** | B + identical source | Self-built compiler | Semantic, diagnostic, and behavioral parity with B |
 | **S3** | C + identical source | Fixed-point candidate | Artifact comparison and reproducibility bundle |
 
@@ -202,7 +202,7 @@ The seed must be:
 - Pinned and checksummed
 - Archived and reproducibly obtainable
 - Minimal enough to audit
-- Clearly separated from canonical Idol compiler source
+- Clearly separated from canonical Idsem compiler source
 - Used for bootstrap only — not semantic authority after S2
 
 ## Stage comparisons (always required)
@@ -233,8 +233,8 @@ their complete graph and diagnostic facts.
 
 ## Bootstrap subset
 
-The minimum Idol subset required to compile the next stage is a staged
-capability level of canonical Idol, not a permanent second language.
+The minimum Idsem subset required to compile the next stage is a staged
+capability level of canonical Idsem, not a permanent second language.
 
 The compiler-critical basis is required capabilities and facts, not named
 container kingdoms:
@@ -297,14 +297,14 @@ Do not add a bootstrap verifier beside the production graph. The remaining
 tracked application inventory is migration evidence only; its demanded facts
 must move into executed `.id` with production perturbation and differential
 proof before that source is deleted. A future bootstrap projection derives its
-evidence from the executed Idol compiler graph rather than making a host build
+evidence from the executed Idsem compiler graph rather than making a host build
 step authoritative.
 
 ## Prohibited claims
 
-- "Self-hosted" when Idol code exists but is not on the production compile path
+- "Self-hosted" when Idsem code exists but is not on the production compile path
 - Silent fallback. A pinned trusted-seed C/native backend may remain only as
-  foreign physical realization with zero Idol semantic authority; it does not
+  foreign physical realization with zero Idsem semantic authority; it does not
   prove backend sovereignty or authorize new host implementation.
 - Undocumented bootstrap binaries or unpinned dependencies
 - A B/C comparison built from different compiler source

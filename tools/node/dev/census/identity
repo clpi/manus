@@ -23,11 +23,11 @@ docs/spec/AUTHORITY.md
 .cursor/rules/50-mcp-lsp.mdc
 "
 
-retired='Idsem|idsem|Duon|duon|\.duo\b|Historical Idol|Historical Duo|historical Idol/Duo'
+retired='\bIdol\b|IdolCost|Duon|duon|\.duo\b|Historical Duo|historical Idol/Duo'
 count=0
 for f in $paths; do
   [ -f "$f" ] || continue
-  hits=$(rg -n "$retired" "$f" 2>/dev/null | rg -v 'law\.zero|ZERO-HISTORY|census/history/zero|census/identity|git stores|retired name|forbidden|Retired|not source suffixes' || true)
+  hits=$(rg -n "$retired" "$f" 2>/dev/null | rg -v 'law\.zero|ZERO-HISTORY|census/history/zero|census/identity|git stores|retired name|former name Idol|historical Git provenance|bootstrap-bridge|forbidden|Retired|not source suffixes|bin/idol|idollang/idol|idol-lock|idol-cache|idol run|tools/node/dev' || true)
   if [ -n "$hits" ]; then
     echo "census/identity: FAIL $f"
     echo "$hits" | sed 's/^/  /'

@@ -1,8 +1,10 @@
-# Idol
+# Idsem
 
-Idol is the language and project: public command identity `idol`, canonical
-source suffix `.id`, and repository identity `idollang/idol`. It is built
-around one durable semantic identity space:
+Idsem is the language and project: public command identity `idsem`, canonical
+source suffix `.id`. The executable is still spelled `bin/idol` and the
+repository remote `idollang/idol` — bootstrap-bridge host identifiers retained
+until their own deletion gates; the former name Idol is historical Git
+provenance, not current identity. One durable semantic identity space:
 
 ```text
 source/import -> graph -> demand -> realization -> machine
@@ -14,7 +16,7 @@ bridges may remain only while executed with known deletion conditions
 
 ## Current State
 
-The repository is at bootstrap stage S0. The production Idol lexer owns the
+The repository is at bootstrap stage S0. The production Idsem lexer owns the
 legacy token-kind/content/span projection; canonical lexical identities remain
 open in `GAP-145`. Parser recognition is still host-owned: no compiler B or
 production `idol` binary exists. The exact current ownership,
@@ -33,7 +35,7 @@ The path to the first compiler B is:
 lexical identity
 -> generated grammar roles
 -> immutable token view
--> executed Idol parser recognition
+-> executed Idsem parser recognition
 -> binding and scope
 -> graph and application
 -> demand
@@ -44,7 +46,7 @@ lexical identity
 
 ## Source
 
-Canonical Idol is deliberately compact while its semantic graph remains
+Canonical Idsem is deliberately compact while its semantic graph remains
 compositional:
 
 ```id
