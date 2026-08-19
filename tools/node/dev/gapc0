@@ -1,15 +1,22 @@
 #!/bin/sh
 # gapc0 — research-GAP C0 alignment census.
 #
-# Every gaps/GAP-*.md numbered >= 175 must carry a complete "## C0 alignment"
-# block (schema: gaps/RESEARCH-SPINE.md) whose kind, registry, and source
-# syntax deltas are literally 0. A missing block, a missing field, an empty
-# field, or a nonzero delta is one violation each. A research note that needs
-# a new kind/registry/syntax is a constitutional amendment request, not a GAP,
-# and it fails here until C0 itself is amended.
+# Every gaps/GAP-*.md numbered >= 175, plus gaps/RESEARCH-SPINE.md, must carry
+# a complete "## C0 alignment" block (schema: gaps/RESEARCH-SPINE.md) whose
+# kind, registry, and source syntax deltas are literally 0. A missing block, a
+# missing field, an empty field, or a nonzero delta is one violation each. A
+# research note that needs a new kind/registry/syntax is a constitutional
+# amendment request, not a GAP, and it fails here until C0 itself is amended.
 #
-# Exit code = violation count. checked == 0 is itself a failure (exit 2): a
-# census that examined no files has not passed.
+# Also enforced: the research GAP set avoids the two retired spellings — the
+# receiver parameter (retired by the receiver-zero law) and the open type
+# (never made explicit) — in prose as in code, and the redundant solution
+# selector spelling for the witness quotient is deleted in favour of `exists`
+# (a second spelling for one quotient is a plurality defect). The two
+# spellings survive only inside the pattern below and in scanner fixtures
+# (audit100/GAP-071), which are that law's own test data and are exempt from
+# their own census, the same way audit100 excludes its patterns.
+#
 set -eu
 
 repo=$(unset CDPATH; cd -- "$(dirname -- "$0")/../../.." && pwd)
@@ -29,20 +36,20 @@ number() {
 viol=0
 checked=0
 
-for f in "$gaps"/GAP-*.md; do
-  [ -f "$f" ] || continue
-  n=$(number "${f##*/}")
-  [ -n "$n" ] || continue
-  [ "$n" -ge 175 ] || continue
-  checked=$((checked + 1))
+report() {
+  printf '%s: %s\n' "$1" "$2"
+  viol=$((viol + 1))
+}
+
+check_file() {
+  f=$1
+  base=${f##*/}
 
   if ! grep -q '^## C0 alignment$' "$f"; then
-    printf '%s: missing C0 alignment block\n' "${f##*/}"
-    viol=$((viol + 1))
-    continue
+    report "$base" "missing C0 alignment block"
+    return
   fi
 
-  # The block is the tail from the heading; delta fields are exact-zero.
   block=$(sed -n '/^## C0 alignment$/,$p' "$f")
 
   for fld in \
@@ -64,19 +71,40 @@ for f in "$gaps"/GAP-*.md; do
     case $fld in
       "kind delta"|"registry delta"|"source syntax delta")
         printf '%s\n' "$block" | grep -q -- "^- \*\*$fld:\*\* 0$" || {
-          printf '%s: field [%s] missing or not exactly 0\n' "${f##*/}" "$fld"
-          viol=$((viol + 1))
+          report "$base" "field [$fld] missing or not exactly 0"
         }
         ;;
       *)
         printf '%s\n' "$block" | grep -q -- "^- \*\*$fld:\*\* ..*" || {
-          printf '%s: field [%s] missing or empty\n' "${f##*/}" "$fld"
-          viol=$((viol + 1))
+          report "$base" "field [$fld] missing or empty"
         }
         ;;
     esac
   done
+
+  if grep -nqE '(^|[^A-Za-z0-9_])(self|any)([^A-Za-z0-9_]|$)' "$f"; then
+    report "$base" "standalone self/any token present"
+  fi
+}
+
+for f in "$gaps"/GAP-*.md; do
+  [ -f "$f" ] || continue
+  n=$(number "${f##*/}")
+  [ -n "$n" ] || continue
+  [ "$n" -ge 175 ] || continue
+  checked=$((checked + 1))
+  check_file "$f"
 done
+
+spine="$gaps/RESEARCH-SPINE.md"
+if [ -f "$spine" ]; then
+  checked=$((checked + 1))
+  if grep -qE '(^|[^A-Za-z0-9_])(self|any)([^A-Za-z0-9_]|$)' "$spine"; then
+    report "RESEARCH-SPINE.md" "standalone self/any token present"
+  fi
+else
+  report "RESEARCH-SPINE.md" "schema home missing"
+fi
 
 [ "$checked" -gt 0 ] || {
   printf '%s\n' "gapc0: examined 0 research GAPs — the census did not run" >&2

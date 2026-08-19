@@ -22,6 +22,38 @@ solver / rule / future / pattern / continuation subsystem?"* It is:
 > Which **existing** semantic identities and facts already express the
 > underlying meaning, and which **physical mechanism** realizes it?
 
+## Structural mapping
+
+Research capability must not become a new subsystem; it becomes facts over
+existing semantic owners (converged from docs/research-gap-admission.md, which
+this spine replaces — one admission program, one census):
+
+| Research capability | Do not introduce | Idol-native semantic owner | Physical/optimization consequence |
+| --- | --- | --- | --- |
+| abstract interpretation | analysis framework as semantic subsystem | facts qualifying id, produced by relation, justified by witness/trust/provenance | common refinement engine |
+| range/congruence/shape/alias | separate analysis ontologies | descriptor/relation/value facts | specialization, bounds deletion, layout |
+| information order | Information kind | demand + descriptor facts + witness | compute only distinguishable information |
+| observer quotient | observer object hierarchy | demand facts describing required distinction | legal quotient-specific reductions |
+| change/delta | reactive subsystem | derivative/change facts on relation | incremental compile, AD, streaming |
+| persistent equivalence | second semantic graph | witnessed relation between existing ids | e-graph/search/validation index |
+| lower-bound knowledge | optimizer metadata ontology | witness + provenance qualifying realization/problem | distance-to-floor optimization |
+| value of information | profiling subsystem | demand, trust, witness, realization facts | decide whether learning a fact pays |
+| runtime guard | JIT-specific concept | conditional witness under an effectful relation | specialized realization + invalidation |
+| foreign-language support | separate compiler IR | origin/law/provenance + ordinary semantic ids | foreign code enters same semantic universe |
+| FFI | wrapper/API kingdom | representation relation + witness | zero-copy/delete adapter |
+| context | new Context kind | facts on world / relevant ids | stage/target/revision/place specialization |
+| solver | Solver semantic kind | realization of an obligation/relation | SAT/SMT/interval/direct code interchangeable |
+| CHR rule | new Rule language | ordinary relations that publish/refine facts | fixed-point inference |
+| optimizer space | semantic Space object | derived world / graph incarnation / projection | speculative search without mutating authority |
+| determinacy | Future/Promise objects | fact on semantic id | dependency/wakeup realization |
+| mode | mode types | facts on relation slots | forward/backward/dataflow execution |
+| solution cardinality | iterator/generator ontology | relation/application cardinality facts | first/all/count/exists change algorithm |
+| pattern | Pattern type system | ordinary relation with search/capture/update facts | DFA/NFA/parser/query/rewrite realizations |
+| continuation | continuation object kingdom | semantic id + relation/lifetime/effect facts | branch/frame/state machine/persistent cont |
+| recovery | exception hierarchy | obligation + available recovery relations | inline restart/result/unwind/trap |
+| concurrency | Task/Actor/Future kingdoms | causality/effect/world relations | schedule/queue/network/direct call |
+| hardware target | target-specific language subsystem | world/capability/realization | CPU/GPU/FPGA/CHERI etc. |
+
 The canonical rewordings this test has already produced:
 
 | retired research wording | Idol-native wording |
@@ -143,5 +175,5 @@ this graph is stated.
 Research GAPs are meanings awaiting owners that already exist. The bootstrap
 frontier (S0: executed lexer boundary; parser and later stages host-owned) is
 the path that makes them real; 200 specified capabilities around a compiler
-that does not self-host its parser is the wrong success metric, and this spine
+that does not compile its own parser is the wrong success metric, and this spine
 exists so none of them forks the semantic universe while that path is walked.
