@@ -365,6 +365,21 @@ fn stmtsAssignName(stmts: []const ast.Stmt, name: []const u8) bool {
 }
 
 fn typeOfGlobal(t: ast.TypeExpr, init: ?*const Expr) RT {
+    // THE FULL WIDTH TABLE, not the shared `resolveType` shortcut: a declared
+    // width is a property of the PLACE (gate/narrow.sh), and the shortcut
+    // erases i8/i16/u8/u16/u32 to `.any` — which `typeOfGlobal` then defaulted
+    // to `.i64`, so `g: i8 = 0` registered as a full-width global and the
+    // narrow-width store refusal never fired. Measured: GLOBAL g ty=i64 for a
+    // declared i8.
+    if (t == .named) {
+        const n = t.named;
+        if (std.mem.eql(u8, n, "i8")) return .i8;
+        if (std.mem.eql(u8, n, "i16")) return .i16;
+        if (std.mem.eql(u8, n, "i32")) return .i32;
+        if (std.mem.eql(u8, n, "u8")) return .u8;
+        if (std.mem.eql(u8, n, "u16")) return .u16;
+        if (std.mem.eql(u8, n, "u32")) return .u32;
+    }
     const declared = resolveType(t);
     if (declared != .any) return declared;
     const e = init orelse return .i64;
@@ -864,6 +879,29 @@ fn lowerModuleFromGraph(
     // than either the old folding or the new storage alone.
     var module_globals = try collectModuleGlobals(alloc, mod);
     defer module_globals.deinit(alloc);
+    {
+        // A DECLARED WIDTH IS A PROPERTY OF THE PLACE and applies at EVERY
+        // WRITE (gate/narrow.sh). The `__DATA,__bss` word behind a written
+        // module global is a full i64 slot and the store path does not yet
+        // mask to the declared width, so a written global narrower than the
+        // word would accept out-of-width values silently. Those stay REFUSED
+        // with the refusal narrow.sh pins as OWED (`mod-global-written:`),
+        // while full-width written globals keep the storage that landed with
+        // g066/g108. Deleting this check admits 36 oracle rows that answer
+        // wrong — measured when the guard was first removed.
+        var it = module_globals.types.iterator();
+        while (it.next()) |entry| {
+            switch (entry.value_ptr.*) {
+                .i8, .i16, .i32, .u8, .u16, .u32 => {
+                    var name_buf: [64]u8 = undefined;
+                    const note = std.fmt.bufPrint(&name_buf, "mod-global-written:{s}", .{entry.key_ptr.*}) catch
+                        "mod-global-written:<name>";
+                    return bailWith(diagnostic, @src(), note);
+                },
+                else => {},
+            }
+        }
+    }
     var module_consts = try collectModuleConsts(alloc, mod);
     defer module_consts.deinit(alloc);
     {
