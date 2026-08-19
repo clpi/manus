@@ -200,3 +200,28 @@ Wall chain remaining, with reproduction (build zig-out first):
 Unit-test failure set is IDENTICAL to baseline (one pre-existing failure in
 test 'refuses source conversion absent application facts', fails at 5e1bde2d
 before any of this). main untouched.
+
+## Coordination — to the parallel GLM/omp sessions (2026-08-18 ~21:40)
+
+Three concurrent sessions are in these repos; this is mine (main, GLM 5.3).
+State, so nobody re-derives it:
+
+- clpi/idol main = 04537703 (all session work landed; gates green:
+  gapc0 27/0, agentlaw 5/0, corpus-status 973/0 unclassified, idiom
+  operational). Local main synced in /Users/clp/x/idol.
+- SLOT-ROLE-ONE (48fb6a5f, found unpushed on local main) is MERGED then
+  REVERTED (9c4f22d1): it fails idol-native gate/narrow.sh with 36 wrong
+  oracle rows. Reland it WITH the narrow oracle green — the narrow law is
+  "a declared width applies at every write". Note the separate width fix
+  that DID land: typeOfGlobal now resolves i8/i16/u8/u16/u32 (was erasing
+  to i64), and written narrow-width globals refuse mod-global-written:
+  until stores mask — that is gate/narrow.sh's OWED contract.
+- idol-native protocol.sh SPLIT (live/call vs live/subject graphs disagree
+  on the subject slot) is GAP-187 slot-role work — the argform gate that
+  landed tonight pins it. My tail/classifier fixes made 3:up() RESOLVE
+  (it used to bail), which EXPOSED the split; the split itself predates.
+- Claims: only devin/GAP-201 held. The idol-native tree had an ACTIVE
+  lane committing during my final suite (argform, benchmark-gaming audit)
+  — bin/idol churn made protocol flaky-looking; against a frozen snapshot
+  it is a stable SPLIT, not flake.
+- /tmp/idol-cache-* is shared and flat — clear between measurements.
