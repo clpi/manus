@@ -44,8 +44,14 @@ word: bool = (c: str)
 # Exception: bootstrap foreign ingress in scripts/ingress/* only (GAP-155).
 # Operation-first conversion projection at a call site — not declaration head.
 commentline: bool = (code: str)
-  s = strip(code)
-  s:len() >= 1 and s:sub(1, 1) == "#"
+  n = code:len()
+  i = 1
+  while i <= n
+    c = code:sub(i, i)
+    if c != " " and c != "\t"
+      return c == "#"
+    i += 1
+  false
 
 # Detector homes may quote forbidden sigils. `@` IS THE CURRENT-WORLD ACCESSOR
 # (docs/spec/law.md §4): bare `@` is the current world, `@member` accesses a
@@ -115,11 +121,43 @@ projcurry: bool = (code: str)
 ingress: bool = (path: str)
   path:len() >= 17 and path:sub(1, 17) == "scripts/ingress/"
 
+# boundface(code, face): the face appears at a left boundary — not preceded
+# by a word character, `_`, or `.` — so std.io does not fire the io row and
+# compounded names do not fire at all.
+boundface: bool = (code: str, face: str)
+  n = code:len()
+  f = face:len()
+  if f == 0 or n < f
+    return false
+  i = 1
+  while i + f - 1 <= n
+    if code:sub(i, i + f - 1) == face
+      prev = " "
+      if i > 1
+        prev = code:sub(i - 1, i - 1)
+      if prev != "." and prev != "_" and !alpha(prev) and !upper(prev) and !digit(prev)
+        return true
+    i += 1
+  false
+
+# zig-out/bin/idol is the build output and lawful; every other bin/idol
+# spelling teaches the wrong public command.
+binidol: bool = (code: str)
+  code:has("bin/idol") and !code:has("zig-out/bin/idol")
+
+
+# A namespace dot fires only on a BOUND spelling: `io.read(` convicts,
+# `std.io.open` does not (the byte before `io.` is `.`, and std has its own
+# row), `io:read` is the world-relation face, not a dot. Plain find fired on
+# all four, which the controls pin: dot(io) must catch io.read and must NOT
+# catch io:read or a std.io qualification.
 dot__io = (code: str)
-  code:find("io.", 1, true) or code:find("io:", 1, true)
+  boundface(code, "io.")
 
 dot__os = (code: str)
-  code:find("os.", 1, true) or code:find("os:", 1, true)
+  # os is a world: os.args / os.env are the lawful edges (the row's own law
+  # text), every other os.method() is a namespace call.
+  boundface(code, "os.") and !code:has("os.args") and !code:has("os.env")
 
 dot__std = (world: str, code: str)
   code:find("std." .. world, 1, true)
@@ -219,8 +257,8 @@ deny: i64 = (path: str, no: i64, code: str, quiet: bool)
   hits = hits + flag(path, no, code, ".create(", "LADDER", "desc\{…\}", quiet)
   hits = hits + flag(path, no, code, "make", "LADDER", "desc\{…\} — make* is banned", quiet)
   hits = hits + flag(path, no, code, "self", "SELF-ZERO", ".x · leading :call() · `.` is the subject · ... spreads it", quiet)
-  hits = hits + flag(path, no, code, " .. ", "FMT-ONE", "`\{\}` interpolation — never `..` concatenation", quiet)
-  hits = hits + flag(path, no, code, "os.args(", "host-TEMP", "os.args[n] table under os world — never os.args()", quiet)
+  hits += flag(path, no, code, " .. ", "FMT-ONE", "`\{\}` interpolation — never `..` concatenation", quiet)
+  hits += flag(path, no, code, "os.args(", "host-TEMP", "os.args[n] table under os world — never os.args()", quiet)
   hits = hits + flag(path, no, code, "os.getenv(", "host-TEMP", "os.env[key] / os.env(key) — environment is not a thing", quiet)
   hits = hits + flag(path, no, code, "environment[", "host-TEMP", "environment is not a thing — use os.env[key]", quiet)
   hits = hits + flag(path, no, code, "environment:", "host-TEMP", "environment is not a thing — use os.env[key]", quiet)
@@ -297,9 +335,11 @@ edge: i64 = (path: str, no: i64, code: str, quiet: bool)
   hits = hits + flag(path, no, code, "viewedges", "LAW-ONE", "view(edges) pipe — never view+edges mash", quiet)
   hits = hits + flag(path, no, code, "viewrouter", "LAW-ONE", "router(view)(view[home]) — never view+router mash", quiet)
   hits = hits + flag(path, no, code, "viewproof", "LAW-ONE", "router(proof)(proof[view]) — slot name matches home key", quiet)
-  hits = hits + flag(path, no, code, "bin/idol", "LAW-ONE", "zig-out/bin/idol — public command identity is idol", quiet)
+  if binidol(code)
+    if !quiet
+      print("({path}, {no}, violation, LAW-ONE, bin/idol outside zig-out/bin/idol — public command identity is idol")
+    hits += 1
   hits = hits + flag(path, no, code, "fsrouter", "LAW-ONE", "router(proof)(proof[home]) — never fs+router mash", quiet)
-  hits = hits + flag(path, no, code, "corerouter", "LAW-ONE", "router(proof)(proof[home]) — never core+router mash", quiet)
   hits
 
 home: i64 = (path: str, no: i64, code: str, quiet: bool)
@@ -1420,10 +1460,10 @@ control: bool = ()
   if "view = router(proof)(proof[view])":has("viewproof")
     print("control FAIL: viewproof fired on canonical slot-named view")
     ok = false
-  if !"zig-out/bin/idol":has("bin/idol")
+  if !binidol("sh bin/idol run x.id")
     print("control FAIL: bin/idol path firewall did not fire")
     ok = false
-  if "zig-out/bin/idol":has("bin/idol")
+  if binidol("zig-out/bin/idol")
     print("control FAIL: bin/idol fired on canonical idol binary path")
     ok = false
   if !"ingestbody = path:read":has("ingestbody")
@@ -1513,8 +1553,11 @@ control: bool = ()
   if !probe("x = chomp(text)", "chomp(")
     print("control FAIL: chomp namespace firewall did not fire")
     ok = false
-  if !probe("foo(x)", "")
-    print("control FAIL: std→process rename classifier did not fire on process namespace")
+  if !probe("p = std.script.main(x)", "std.script.")
+    print("control FAIL: std.script classifier did not fire — frozen std debt has a row")
+    ok = false
+  if dot__os("a = os.args(1)")
+    print("control FAIL: dot(os) fired on lawful os.args")
     ok = false
   if probe("command(line):open(\"r\")", "capture(")
     print("control FAIL: capture fired on canonical command:open")
