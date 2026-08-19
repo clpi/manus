@@ -1,0 +1,63 @@
+name: Prune redundant branches
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove every non-main branch is already in main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*' --prune
+          mapfile -t branches < <(
+            git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin \
+              | grep -v '^HEAD$' \
+              | grep -v '^main$' \
+              | sort -u
+          )
+          bad=0
+          for branch in "${branches[@]}"; do
+            if ! git merge-base --is-ancestor "refs/remotes/origin/$branch" HEAD; then
+              echo "NOT-REACHABLE $branch"
+              bad=1
+            fi
+          done
+          if (( bad != 0 )); then
+            echo 'Refusing to prune: at least one branch is not reachable from main.' >&2
+            exit 1
+          fi
+          printf '%s\n' "${branches[@]}" > /tmp/redundant-branches
+          echo "PROVED ${#branches[@]} redundant branch refs"
+
+      - name: Delete proven-redundant branch refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r branch; do
+            [ -n "$branch" ] || continue
+            echo "DELETE $branch"
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}"
+          done < /tmp/redundant-branches
+
+      - name: Remove this one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/prune-redundant-branches.yml
+          git commit -m 'Remove completed one-shot branch-prune workflow'
+          git push origin HEAD:main
