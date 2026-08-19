@@ -19,6 +19,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Authority and semantic-graph regression gates
+        run: |
+          sh gate/authority.sh
+          sh gate/semantic-graph-authority.sh
+
       - name: Install Zig (pinned)
         uses: mlugg/setup-zig@v2
         with:
@@ -100,7 +105,7 @@ jobs:
           wart_provenance="$wart_bin.provenance"
           "$wart_bin" --version
           printf 'revision=%s\nzig_version=%s\nbuild=%s\nhost=%s\nbinary_sha256=%s\n' \
-            ca2b0b9c0fb8c397987be2b4475fd1ccfe4d150b \
+            ca2b0b9c0fb8c397987be2b4475fd1ccfeaea4754 \
             "$(zig version)" \
             'zig build -Drelease=true' \
             "$(uname -sm)" \
