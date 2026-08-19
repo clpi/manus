@@ -7142,4 +7142,69 @@ filesystem.projection = law{
     }
     fails = "treating a child file as a static module or using dot projection for a relation on the parent subject"
 }
+
+subject.zero = law{
+    id    = "law.subject.zero"
+    kind  = .invariant
+    holds = .subject
+    binds = {
+        "an application already records its exact subject as a graph fact",
+        "no lexical binding or compiler generated name mints self this receiver current instance or object merely to restate that subject",
+        "a lexical binding is lawful only when it denotes an independently meaningful value under its genuine domain name",
+    }
+    fails = "synthetic subject binding restates the application subject"
+}
+
+any.descriptor.zero = law{
+    id    = "law.any.descriptor.zero"
+    kind  = .invariant
+    holds = .descriptor
+    binds = {
+        "any is a lawful existential relation",
+        "any is not a canonical source descriptor for unknown or incomplete compiler knowledge",
+        "unknown remains a compiler fact and is not spelled as any",
+        "explicit any descriptors are vocabularyblocked except in compatibility fixtures negative controls and foreign law source for the generic boxed boundary",
+    }
+    fails = "any used as a source unknown descriptor"
+}
+
+result.zero = law{
+    id    = "law.result.zero"
+    kind  = .invariant
+    holds = .result
+    binds = {
+        "a computation with no demanded result does not produce a void value or descriptor",
+        "the result demand or empty result pack records no value produced",
+        "void in C or foreign source is foreign law provenance not an Idol descriptor",
+        "unit Unit none and NoResult are not parallel zero result ontologies",
+    }
+    fails = "void or parallel zero result ontology appears in Idol source or graph"
+}
+
+text.byte = law{
+    id    = "law.text.byte"
+    kind  = .invariant
+    holds = .distinction
+    binds = {
+        "text and arbitrary byte sequences are semantically distinct",
+        "plurality does not create a descriptor identity named bytes",
+        "byte may be an irreducible element descriptor if its semantics prove irreducible",
+        "a byte sequence is a value with element descriptor byte and shape cardinality and layout facts",
+        "text carries textual or encoding law that an arbitrary byte sequence does not",
+    }
+    fails = "a parallel bytes descriptor or collapsed text binary identity"
+}
+
+canonicality = law{
+    id    = "law.canonicality"
+    kind  = .invariant
+    holds = .role
+    binds = {
+        "every source spelling has one canonicality status under a semantic role and source law",
+        "statuses are canonical accepted compatibility migration only foreign fixture only implementation only and vocabularyblocked",
+        "agents gates formatters and LSP consume a role aware canonicality projection",
+        "git history and repository frequency are not language law",
+    }
+    fails = "word blacklist or repository frequency replaces role aware canonicality"
+}
 ```

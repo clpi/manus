@@ -69,9 +69,9 @@ it.
 
 Reach for a **world relation over a directive** wherever one exists; the
 directive namespace is retired, not expanded. `@comp.*`, `@meta.*`,
-`@compiler.*`, `@emit`, `@pipeline`, every `@c.*`, `@host`, `@runtime` and any
-other compiler/namespace `@` form are not lawful Idol source. The compiler may
-retire such spellings internally, but a new source spelling in any of these
+`@compiler.*`, `@emit`, `@pipeline`, every `@c.*`, `@host.*`, `@runtime.*` and
+any other compiler/namespace `@` form are not lawful Idol source. The compiler
+may retire such spellings internally, but a new source spelling in any of these
 namespaces is invalid. Enforcement is `gate/idiom.id` and `gate/dialect.sh`;
 get live counts by running them, not from this file.
 

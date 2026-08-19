@@ -2296,46 +2296,6 @@ nondominated physical realization over an intentionally unbounded realization
 space, with every remaining cost causally attributable and every optimality gap
 measurable.*
 
-## 111. VOID is not a source descriptor
-
-`void` is not a canonical Idol source descriptor. An absent or zero-valued
-result is expressed through result-demand/empty-pack facts and ordinary
-application. `void` in C or other foreign source spans is foreign-law provenance;
-`void` as an Idol descriptor is `vocabularyblocked`.
-
-## 112. SELF-ZERO
-
-No Idol source or graph mechanism mints a synthetic `self` binding to restate the
-application subject. An application already records its exact subject as a graph
-fact. A relation body may use or project that subject fact; it may not introduce
-a universal receiver variable named `self`. If a lexical value has an independent
-domain identity, it is bound under that genuine name.
-
-## 113. ANY
-
-`any` is a lawful existential relation: `xs:any(p)` asks the question directly.
-`any` is not a canonical unconstrained descriptor in Idol source. An explicit
-`any` descriptor is noncanonical; omit it and record the incompleteness as a
-fact, a `vocabularyblocked` status, or a classified fixture/foreign role.
-Compatibility fixtures, negative controls, and foreign-law source may retain
-`any` under their own law classification.
-
-## 114. BYTES
-
-A sequence of byte-like values is a value plus element descriptor, shape,
-cardinality, stride, and layout facts. It is not an irreducible `bytes`
-descriptor unless the constitution explicitly amends one. The text/bytes
-distinction is a classification of values and descriptors, not a default plural
-identity.
-
-## 115. CANONICALITY
-
-Every source spelling has exactly one canonicality status under a semantic role
-and a source law. The admissible statuses are: `canonical`, `accepted-compatibility`,
-`migration-only`, `foreign`, `fixture-only`, `implementation-only`, and `invalid`.
-Agents, gates, and LSP tools must consume a role-aware canonicality projection
-rather than a word blacklist.
-
 ## Master test
 
 Before adding ANY source spelling, identity, graph field, edge, runtime object,
@@ -2357,6 +2317,52 @@ compiler subsystem or physical cost, ask:
 14. What unresolved semantic possibility requires its runtime cost?
 
 If there is no good answer: DELETE IT.
+
+## 111. SUBJECT-ZERO
+
+An application already records its exact subject as a graph fact. A relation
+body, lexical binding, or compiler-generated name may not mint a synthetic
+`self`, `this`, `receiver`, `current`, `instance`, or `object` merely to restate
+that subject. A lexical binding is lawful only when it denotes an independently
+meaningful value under its genuine domain name. The application subject fact is
+authoritative.
+
+## 112. ANY-DESCRIPTOR-ZERO
+
+`any` is a lawful existential relation: `xs:any(p)` asks the existence question
+directly. `any` is not a canonical source descriptor for unknown or incomplete
+compiler knowledge. Unknown remains a compiler fact; it is not a language value
+and it is not spelled as `any`. Explicit `any` descriptors are
+`vocabularyblocked` except in compatibility fixtures, negative controls, and
+foreign-law source whose subject is specifically the generic/boxed boundary.
+
+## 113. RESULT-ZERO
+
+A computation that produces no demanded result does not produce a value named
+`void` and does not require a descriptor named `void`. The result demand or
+empty result pack records that no value is produced. `void` in C or other
+foreign source spans is foreign-law provenance; `void` as an Idol descriptor is
+invalid. `unit`, `Unit`, `none`, and `NoResult` are likewise not parallel
+zero-result ontologies.
+
+## 114. TEXT/BYTE-SEQUENCE
+
+Text and arbitrary byte sequences are semantically distinct, but plurality does
+not create a descriptor identity named `bytes`. `byte` may be an irreducible
+element descriptor if its semantics prove irreducible. A byte sequence is a
+value whose element descriptor is `byte` and whose shape, cardinality, and
+layout facts describe the sequence. Text carries textual/encoding law that an
+arbitrary byte sequence does not. Quoted source-law distinction is preserved in
+the provenance, not by a parallel `bytes` descriptor kingdom.
+
+## 115. CANONICALITY
+
+Every source spelling has exactly one canonicality status under a semantic role
+and a source law. The admissible statuses are: `canonical`, `accepted-compatibility`,
+`migration-only`, `foreign`, `fixture-only`, `implementation-only`, and
+`vocabularyblocked`. Agents, gates, formatters, and LSP tools must consume a
+role-aware canonicality projection rather than a word blacklist. Git history and
+repository frequency are not language law.
 
 ## Final architectural sentence
 
