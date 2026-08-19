@@ -1324,3 +1324,174 @@ test "callTransformId roundtrip and eligibility" {
     try std.testing.expect(!callTransformEligible(.@"inline", indirect_site, indirect));
     try std.testing.expect(!callTransformEligible(.specialize, indirect_site, indirect));
 }
+
+/// GAP-104: a realized lowering candidate with a §47 cost vector. A candidate is
+/// lawful or not independent of whether it dominates the C-equivalent floor.
+pub const LowerCandidate = struct {
+    id: []const u8,
+    cost: CostVector = .{},
+    baseline: bool = false,
+    legal: bool = false,
+};
+
+/// §47 plan selection. Baseline is unconditional; replacement is chosen only
+/// when it dominates on the active objective's frontier with no missing facts
+/// and the evidence is strong enough to unseat the floor.
+pub const LowerPlan = struct {
+    alloc: std.mem.Allocator,
+    candidates: []const LowerCandidate,
+    objective: Objective = .balanced,
+
+    pub const Selection = struct {
+        choice: []const u8,
+        retained: []const []const u8,
+        decided_by: ?CostDimension,
+        compared: u8,
+        missing: u8,
+        unseats: bool,
+    };
+
+    pub fn selectAgainstFloor(self: LowerPlan) !Selection {
+        const base = for (self.candidates) |c| {
+            if (c.baseline) break c;
+        } else return .{
+            .choice = "",
+            .retained = &.{},
+            .decided_by = null,
+            .compared = 0,
+            .missing = 0,
+            .unseats = false,
+        };
+
+        const base_id = base.id;
+        const relevant = self.objective.dimensions();
+
+        var retained: std.ArrayListUnmanaged([]const u8) = .empty;
+        try retained.append(self.alloc, base_id);
+
+        var choice: ?[]const u8 = null;
+        var unseats = false;
+        var compared: u8 = 0;
+        var missing: u8 = 0;
+        var decided_by: ?CostDimension = null;
+
+        for (self.candidates) |c| {
+            if (c.baseline or !c.legal) continue;
+            const v = c.cost.compare(base.cost, relevant);
+            if (v.relation == .dominates and v.missing == 0 and v.evidence.unseatsBaseline()) {
+                if (!unseats or choice == null or c.cost.compare(candidateById(self.candidates, choice.?).cost, relevant).relation == .dominates) {
+                    choice = c.id;
+                    unseats = true;
+                    compared = v.compared;
+                    missing = v.missing;
+                    decided_by = v.decided_by;
+                }
+            }
+            // A lawful non-dominating or incomparable candidate is retained as a
+            // historical champion / competitor; the floor is never removed.
+            if (c.legal) {
+                try retained.append(self.alloc, c.id);
+            }
+        }
+
+        if (choice == null) {
+            compared = 0;
+            missing = @intCast(relevant.len);
+        }
+
+        return .{
+            .choice = choice orelse base_id,
+            .retained = try retained.toOwnedSlice(self.alloc),
+            .decided_by = decided_by,
+            .compared = compared,
+            .missing = missing,
+            .unseats = unseats,
+        };
+    }
+
+    fn candidateById(candidates: []const LowerCandidate, id: []const u8) LowerCandidate {
+        for (candidates) |c| {
+            if (std.mem.eql(u8, c.id, id)) return c;
+        }
+        unreachable;
+    }
+};
+
+/// GAP-104 monotonicity check: adding a fact to a candidate set must not remove
+/// a previously lawful candidate. Returns the set of missing candidate ids in
+/// `after` relative to `before`, or null if monotone. Caller owns the returned
+/// slice using `alloc`.
+pub fn monotoneAgainst(alloc: std.mem.Allocator, before: []const []const u8, after: []const []const u8) !?[]const []const u8 {
+    var missing: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (before) |b| {
+        var found = false;
+        for (after) |a| {
+            if (std.mem.eql(u8, b, a)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) try missing.append(alloc, b);
+    }
+    if (missing.items.len == 0) {
+        return null;
+    }
+    return try missing.toOwnedSlice(alloc);
+}
+
+test "lowerPlan: floor retained when no cost facts dominate" {
+    const candidates = &[_]LowerCandidate{
+        .{ .id = "lower.cequiv", .baseline = true, .legal = true },
+        .{ .id = "lower.native", .legal = true },
+    };
+    const plan = LowerPlan{ .alloc = std.testing.allocator, .candidates = candidates };
+    const s = try plan.selectAgainstFloor();
+    try std.testing.expectEqualStrings("lower.cequiv", s.choice);
+    try std.testing.expect(!s.unseats);
+    try std.testing.expectEqual(@as(u8, 12), s.missing);
+    std.testing.allocator.free(s.retained);
+}
+
+test "lowerPlan: measured dominance on the latency frontier unseats floor" {
+    var native = CostVector.neutral();
+    native.setFact(.latency, 0.9, .measured);
+    native.setFact(.tail_latency, 0.9, .measured);
+    var cequiv = CostVector.neutral();
+    cequiv.setFact(.latency, 1.9, .measured);
+    cequiv.setFact(.tail_latency, 1.9, .measured);
+    const candidates = &[_]LowerCandidate{
+        .{ .id = "lower.cequiv", .cost = cequiv, .baseline = true, .legal = true },
+        .{ .id = "lower.native", .cost = native, .legal = true },
+    };
+    const plan = LowerPlan{ .alloc = std.testing.allocator, .candidates = candidates, .objective = .latency };
+    const s = try plan.selectAgainstFloor();
+    try std.testing.expectEqualStrings("lower.native", s.choice);
+    try std.testing.expect(s.unseats);
+    try std.testing.expectEqual(CostDimension.latency, s.decided_by.?);
+    std.testing.allocator.free(s.retained);
+}
+
+test "lowerPlan: estimate cannot unseat the floor" {
+    var native = CostVector.neutral();
+    native.setFact(.latency, 0.9, .estimated);
+    var cequiv = CostVector.neutral();
+    cequiv.setFact(.latency, 1.9, .measured);
+    const candidates = &[_]LowerCandidate{
+        .{ .id = "lower.cequiv", .cost = cequiv, .baseline = true, .legal = true },
+        .{ .id = "lower.native", .cost = native, .legal = true },
+    };
+    const plan = LowerPlan{ .alloc = std.testing.allocator, .candidates = candidates, .objective = .latency };
+    const s = try plan.selectAgainstFloor();
+    try std.testing.expect(!s.unseats);
+    try std.testing.expectEqualStrings("lower.cequiv", s.choice);
+    std.testing.allocator.free(s.retained);
+}
+
+test "monotoneAgainst: a shrunk set is reported" {
+    const before = &[_][]const u8{ "lower.cequiv", "lower.native" };
+    const after = &[_][]const u8{ "lower.cequiv" };
+    const missing = try monotoneAgainst(std.testing.allocator, before, after);
+    try std.testing.expect(missing != null);
+    try std.testing.expectEqualStrings("lower.native", missing.?[0]);
+    if (missing) |m| std.testing.allocator.free(m);
+}
