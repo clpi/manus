@@ -9670,11 +9670,9 @@ test "dnir_lower: pointer descriptors cross checked applications" {
         if (std.mem.eql(u8, name, "pass")) pass_application = fact.application;
     }
     const application = pass_application orelse return error.TestExpectedEqual;
-    // SLOT-ROLE-ONE: `pass(first)` promotes `first` to the subject slot, so the
-    // pointer travels as the subject, not an ordinary operand.
-    const subject = graph.applicationSubject(application) orelse return error.TestExpectedEqual;
-    try std.testing.expectEqual(@as(usize, 0), graph.applicationArguments(application).?.len);
-    graph.nodes.items[subject].descriptor = .nil;
+    const arguments = graph.applicationArguments(application) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 1), arguments.len);
+    graph.nodes.items[arguments[0]].descriptor = .nil;
     diagnostic.reset();
     try std.testing.expectError(
         error.GraphFactsInvalid,
@@ -10730,8 +10728,7 @@ test "dnir_lower: checked ordinary calls consume graph facts" {
             }
             applications[count] = instruction.application.?;
             values[count] = instruction.value.?;
-            // SLOT-ROLE-ONE: `observe(41)` promotes `41` to the subject slot.
-            try std.testing.expect(instruction.subject != null);
+            try std.testing.expectEqual(@as(?semantic_graph.id, null), instruction.subject);
             try std.testing.expectEqual(types.ResolvedType.i64, instruction.ty);
             const expected: i64 = if (count == 0) 41 else 42;
             try std.testing.expect(std.meta.eql(dnir.Value{ .i64 = expected }, instruction.lhs));
@@ -10895,8 +10892,7 @@ test "dnir_lower: checked multi-operand call retains ABI staging" {
                 found = true;
                 try std.testing.expect(instruction.relation != null);
                 try std.testing.expect(instruction.value != null);
-                // SLOT-ROLE-ONE: `add(20, 22)` promotes `20` to the subject slot.
-                try std.testing.expect(instruction.subject != null);
+                try std.testing.expectEqual(@as(?semantic_graph.id, null), instruction.subject);
                 try std.testing.expectEqual(dnir.Value.void, instruction.lhs);
                 try std.testing.expect(instruction.realization_start.? < instruction_index);
             }
@@ -10997,8 +10993,7 @@ test "dnir_lower: checked f64 call derives ABI staging from descriptors" {
             if (instruction.application != null) {
                 call_index = instruction_index;
                 try std.testing.expectEqual(types.ResolvedType.f64, instruction.ty);
-                // SLOT-ROLE-ONE: `add(1.5, 2.5)` promotes `1.5` to the subject slot.
-                try std.testing.expect(instruction.subject != null);
+                try std.testing.expectEqual(@as(?semantic_graph.id, null), instruction.subject);
                 try std.testing.expect(instruction.realization_start.? < instruction_index);
             }
             instruction_index += 1;

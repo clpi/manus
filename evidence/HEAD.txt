@@ -1,5 +1,5 @@
-HEAD: b9c38e6e86ae63fc2ed2b48db6e1cbbbd604ed89
-Date: 2026-08-18T20:16:47-07:00
-Dirty: 5
-Branch: HEAD
+HEAD: cad1a55f0e4d45b614f0ca8ecdffc100d3ae933f
+Date: 2026-08-18T14:42:29-07:00
+Dirty: 1
+Branch: devin/semantic-20260818
 Derived: tools/node/dev/orient (law.control.derived — do not hand-edit)
