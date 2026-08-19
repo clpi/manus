@@ -144,3 +144,17 @@ binary (`mod-global-written`, `concat`), so both script gates are unrunnable
 repo-wide; audit100 row-8 control parity was verified by running the row-8
 regex directly over the rendered probe strings (deny 1, decline 0, before and
 after).
+
+## Handoff — canonical closure (codex/canonical-closure-20260818 @ 3afd79d6)
+
+Vocabulary closure is ruled in law.md 111-115 and C0 (user commits 72170e6a,
+e7aa01f4); this branch adds the mechanical complement: role-aware gapc0
+(receiver/open-type/void roles, canonical `xs:any(p)`/`:any` faces pass),
+gate/agentlaw.sh over agent-instruction blocks (no @-directive
+recommendation, no follow-existing-patterns guidance, no open-type/void
+teaching without a ban), the GAP-145 bytes ruling (element + shape facts, no
+bytes descriptor kingdom), and the corpus teaching-status mapping. All gates
+green with planted-defect negatives; main untouched per instruction. Open
+work: gate/corpus-status.sh reports 964 .id files awaiting TEACHING-STATUS
+headers (classification lane), and audit100/idiom remain DNB001-blocked
+repo-wide.
