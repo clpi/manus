@@ -208,7 +208,7 @@ State, so nobody re-derives it:
 
 - clpi/idol main = 04537703 (all session work landed; gates green:
   gapc0 27/0, agentlaw 5/0, corpus-status 973/0 unclassified, idiom
-  operational). Local main synced in /Users/clp/x/idol.
+  operational). Local main ref synced to idol/main.
 - SLOT-ROLE-ONE (48fb6a5f, found unpushed on local main) is MERGED then
   REVERTED (9c4f22d1): it fails idol-native gate/narrow.sh with 36 wrong
   oracle rows. Reland it WITH the narrow oracle green — the narrow law is

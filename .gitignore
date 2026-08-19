@@ -160,3 +160,4 @@ scripts/_*.id
 /ext/tree-sitter-idol/src/parser.c
 /ext/tree-sitter-idol/src/node-types.json
 /ext/tree-sitter-idol/src/tree_sitter/
+bin/idol
