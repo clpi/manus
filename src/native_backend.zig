@@ -10053,8 +10053,10 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
         try applicationResult(&graph, applications[0], &diagnostic),
         try applicationResult(&graph, applications[1], &diagnostic),
     ));
-    try std.testing.expectEqual(@as(?semantic_graph.id, null), graph.applicationSubject(applications[0].application));
-    try std.testing.expectEqual(@as(?semantic_graph.id, null), graph.applicationSubject(applications[1].application));
+    // SLOT-ROLE-ONE: `observe(41)` promotes `41` to the subject slot, so the
+    // subject is present (not null) for both applications.
+    try std.testing.expect(graph.applicationSubject(applications[0].application) != null);
+    try std.testing.expect(graph.applicationSubject(applications[1].application) != null);
 
     const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
     try validateDnirApplications(alloc, module, &graph, &diagnostic);
@@ -10070,8 +10072,9 @@ test "native backend: checked ordinary call reaches regions and machine lineage"
         try std.testing.expect(std.meta.eql(output.lineage[0].relation, output.lineage[1].relation));
         try std.testing.expect(!std.meta.eql(output.lineage[0].application, output.lineage[1].application));
         try std.testing.expect(!std.meta.eql(output.lineage[0].value, output.lineage[1].value));
-        try std.testing.expectEqual(@as(?semantic_graph.id, null), output.lineage[0].subject);
-        try std.testing.expectEqual(@as(?semantic_graph.id, null), output.lineage[1].subject);
+        // SLOT-ROLE-ONE: the subject is present in the machine lineage.
+        try std.testing.expect(output.lineage[0].subject != null);
+        try std.testing.expect(output.lineage[1].subject != null);
         try std.testing.expect(output.lineage[0].descriptor.eql(.i64));
         try std.testing.expect(output.lineage[1].descriptor.eql(.i64));
         for (output.lineage) |lineage| {

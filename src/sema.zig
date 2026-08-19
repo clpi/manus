@@ -1075,6 +1075,29 @@ pub const Sema = struct {
         });
     }
 
+    /// SLOT-ROLE-ONE. A relation's subject slot is its first parameter
+    /// (`constitution.md` `parenone`: "subject identification is semantic not
+    /// permanently first parameter"; `parser.zig` makes `params[0]` the method
+    /// scope's receiver). The operand-first face `hex(b)` must therefore
+    /// promote its first argument to the subject role, so `hex(b)` and
+    /// `b:hex()` publish the SAME subject/operand facts — the defect
+    /// `evidence/mop/wasm/argform.defect.md` names, where source syntax still
+    /// decided subject/operand roles.
+    ///
+    /// Returns `(subject, arguments)` with `arguments[0]` promoted to subject
+    /// iff the relation declares a subject slot (≥1 param) and the call
+    /// supplies an argument to fill it. A zero-param relation has no subject
+    /// slot, so its operand-first face keeps every argument as an operand.
+    fn subjectSlotArgs(
+        target: *const ast.FuncDecl,
+        arguments: []const *Expr,
+    ) struct { subject: ?*const Expr, arguments: []const *Expr } {
+        if (target.func.params.len > 0 and arguments.len > 0) {
+            return .{ .subject = arguments[0], .arguments = arguments[1..] };
+        }
+        return .{ .subject = null, .arguments = arguments };
+    }
+
     /// L1 — true when binding is a req module assumed frozen after load.
     pub fn moduleSealed(self: *const Sema, name: []const u8) bool {
         return self.module_sealed.contains(name);
@@ -4503,7 +4526,8 @@ pub const Sema = struct {
                 if (c.func.* == .name) {
                     if (self.callable_defs.get(c.func.name.ident)) |target| {
                         if (target) |resolved| {
-                            try self.recordApplication(expr, resolved, null, c.args, result);
+                            const slots = subjectSlotArgs(resolved, c.args);
+                            try self.recordApplication(expr, resolved, slots.subject, slots.arguments, result);
                         }
                     }
                 }
@@ -4522,7 +4546,8 @@ pub const Sema = struct {
                 // exactly the way it is for a same-home relation.
                 if (foreign_callee) |foreign| {
                     const declared = types.resolve(foreign.decl.func.ret_type, null, self.alloc) catch RT.any;
-                    try self.recordApplicationInHome(expr, foreign.decl, null, c.args, declared, foreign.home.home);
+                    const slots = subjectSlotArgs(foreign.decl, c.args);
+                    try self.recordApplicationInHome(expr, foreign.decl, slots.subject, slots.arguments, declared, foreign.home.home);
                     return declared;
                 }
                 return result;
