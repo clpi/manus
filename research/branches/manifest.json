@@ -1,63 +1,67 @@
 {
-  "schema": "idol.research.branch-lineage.v1",
+  "schema": "idol.research.branch-lineage.v2",
   "census_date": "2026-08-19",
   "repository": "clpi/idol",
-  "method": "Every branch was compared to canonical main. Heads with commits not already reachable were attached as additional parents to no-tree-change merge commits. Branch similarity never substituted for ancestry; duplicate head SHAs are recorded as aliases.",
-  "tree_admission": "No divergent branch tree was bulk-admitted. Active code remains the then-current main tree plus explicit later authority fixes. Each retained commit requires current-law reconciliation and exact-head evidence before active implementation admission.",
+  "canonical_branch": "main",
+  "method": "Every visible divergent branch was compared to canonical main. Heads with commits not already reachable were attached as additional parents to no-tree-change merge commits. Similarity never substituted for ancestry. A retained branch is research provenance, not an alternate current tree.",
+  "tree_admission": "No divergent tree is bulk-admitted. Current law plus explicit main commits decide the active implementation. Every retained mechanism needs current graph identities, a named consumer, controls, lineage and exact-head evidence before activation.",
   "lineage_merges": [
-    {
-      "sha": "63e3337e018cf464a95d794f365e4e12d6a08135",
-      "category": "current-language research and repair",
-      "tree_change": false
-    },
-    {
-      "sha": "197ce4bca4e6aeab13235646be589902590cb0f2",
-      "category": "archived semantic and performance research",
-      "tree_change": false
-    },
-    {
-      "sha": "dd5375d901cddb81f22002b0c86973b036a1b02e",
-      "category": "legacy-surface research retained without legacy activation",
-      "tree_change": false
-    }
+    {"sha":"63e3337e018cf464a95d794f365e4e12d6a08135","category":"current-language research and repair","tree_change":false},
+    {"sha":"197ce4bca4e6aeab13235646be589902590cb0f2","category":"semantic/performance research and measured debt","tree_change":false},
+    {"sha":"dd5375d901cddb81f22002b0c86973b036a1b02e","category":"legacy-surface research preserved without activation","tree_change":false}
   ],
+  "disposition_kinds": {
+    "absorbed": "Current main contains the intended mechanism or deletion under current Idol law; branch remains provenance only.",
+    "partial_gap": "Useful facts/controls/mechanism survive, but the branch implementation is not current-law complete; named gap owns the rest.",
+    "control_evidence": "Keep measurements, counterexamples, refusals and falsifiers; do not activate the branch implementation solely from the result.",
+    "historical_rejected_surface": "Research is preserved, but its language/ontology/source surface is superseded and must never be reactivated wholesale."
+  },
   "heads": [
-    {"branch":"codex/canonical-integration-20260818","sha":"44e54670fdb49c4c75c94c91f226e4758cf35180","category":"authority-integration"},
-    {"branch":"codex/delete-session-state-20260818","sha":"2cb001cd024ae5aaf379a7cacdc9eed4eab5f25e","category":"duplicate-authority-deletion"},
-    {"branch":"codex/gap-104-20260818","sha":"5b79be67d2301a35dd590f2e0514a495526b43d8","category":"gap-control"},
-    {"branch":"codex/grammar-authority-integration-20260818","sha":"a2e5784730d3a9626cf9243009ed12d16b0965b9","category":"grammar-authority"},
-    {"branch":"codex/grammar-parity-meta-20260818","sha":"df8194d4b16c9662fa4e8c7e49945fc5ab48cddd","category":"grammar-parity"},
-    {"branch":"codex/latest-canonical-20260818","sha":"b05ae46eae34a3cb59d7bab013828128de84341a","category":"grammar-lexer-gap-family"},
-    {"branch":"codex/lexer-host-retirement-20260817","sha":"76748dd6198842ceeeac80d2c1a5698f73c2f29d","category":"host-lexer-retirement"},
-    {"branch":"codex/lexer-regen-ratchet-20260817","sha":"0d7929dd485b534b4812c82025ecdd60cb58e9bd","category":"generated-lexer-regeneration"},
-    {"branch":"codex/lexer-regen-ratchet-review-20260818","sha":"deda60b19e9692f485fc09db0c37cee068edb6ff","category":"generated-lexer-review"},
-    {"branch":"codex/next-semantic-slice","sha":"ede8910194c7f257ecef7f67eab41c76317c2d2e","category":"semantic-graph-and-gaps"},
-    {"branch":"codex/parser-token-view-20260818","sha":"f63640ecf599ff75d54040aec3b93f48ae6463d4","category":"parser-token-view"},
-    {"branch":"codex/path-write-vertical-20260818","sha":"a77baa1ab99272dd80e374354f18ab16b3452dd6","category":"path-place-write"},
-    {"branch":"codex/self-zero-production-20260818","sha":"f85edec516ff721bfa90d8bb721f011cab389b00","category":"implicit-subject-self-zero"},
-    {"branch":"codex/self-zero-size-final","sha":"918beae417353adaabb079ec8a9edff58bbf2877","category":"implicit-subject-size-control"},
-    {"branch":"codex/treesitter-role-consumer-20260818","sha":"ac23d67a578f59ad0e148f817569b0d66d95d18d","category":"grammar-role-consumer"},
-    {"branch":"codex/wasm-bridge-open-world-repair-20260818","sha":"9d828758c988d0f61b338f2661cd527f0840c187","category":"wasm-open-world-bridge"},
-    {"branch":"codex/wasm-observer-elision-20260817","sha":"afca42d287bb24bced2dac6abd9fb51b141368c3","category":"wasm-observer-demand"},
-    {"branch":"slot-role-graph-facts","sha":"5e8cb7365829ff7e393e3275083c1d426b7b4efa","category":"slot-role-graph-facts"},
+    {"branch":"codex/canonical-integration-20260818","sha":"44e54670fdb49c4c75c94c91f226e4758cf35180","category":"authority-integration","disposition":"absorbed","current_owner":"docs/spec/law.md + docs/spec/constitution.md + docs/spec/AUTHORITY.json"},
+    {"branch":"codex/delete-session-state-20260818","sha":"2cb001cd024ae5aaf379a7cacdc9eed4eab5f25e","category":"duplicate-authority-deletion","disposition":"absorbed","current_owner":"Git history; active session-state authority deleted"},
+    {"branch":"codex/gap-104-20260818","sha":"5b79be67d2301a35dd590f2e0514a495526b43d8","category":"gap-control","disposition":"control_evidence","current_owner":"durable gaps and executable controls"},
+    {"branch":"codex/grammar-authority-integration-20260818","sha":"a2e5784730d3a9626cf9243009ed12d16b0965b9","category":"grammar-authority","disposition":"partial_gap","current_owner":"grammar authority / SHC frontier","remaining":"one generated grammar-role owner and native parser consumption"},
+    {"branch":"codex/grammar-parity-meta-20260818","sha":"df8194d4b16c9662fa4e8c7e49945fc5ab48cddd","category":"grammar-parity","disposition":"control_evidence","current_owner":"grammar parity controls"},
+    {"branch":"codex/latest-canonical-20260818","sha":"b05ae46eae34a3cb59d7bab013828128de84341a","category":"grammar-lexer-gap-family","disposition":"partial_gap","current_owner":"lexer/grammar SHC frontier","remaining":"host parser/grammar authority transfer"},
+    {"branch":"codex/lexer-host-retirement-20260817","sha":"76748dd6198842ceeeac80d2c1a5698f73c2f29d","category":"host-lexer-retirement","disposition":"partial_gap","current_owner":"native lexer boundary","remaining":"remove host rematerialization after exact token-view consumers transfer"},
+    {"branch":"codex/lexer-regen-ratchet-20260817","sha":"0d7929dd485b534b4812c82025ecdd60cb58e9bd","category":"generated-lexer-regeneration","disposition":"control_evidence","current_owner":"generated lexer parity/asymptotic controls"},
+    {"branch":"codex/lexer-regen-ratchet-review-20260818","sha":"deda60b19e9692f485fc09db0c37cee068edb6ff","category":"generated-lexer-review","disposition":"control_evidence","current_owner":"generated lexer parity/asymptotic controls"},
+    {"branch":"codex/next-semantic-slice","sha":"ede8910194c7f257ecef7f67eab41c76317c2d2e","category":"semantic-graph-and-gaps","disposition":"partial_gap","current_owner":"GAP-201","remaining":"subject/application identity must be graph-semantic; do not fossilize param[0] as universal subject law"},
+    {"branch":"codex/parser-token-view-20260818","sha":"f63640ecf599ff75d54040aec3b93f48ae6463d4","category":"parser-token-view","disposition":"partial_gap","current_owner":"SHC parser/token-view frontier","remaining":"native immutable token view must replace host parser projection"},
+    {"branch":"codex/path-write-vertical-20260818","sha":"a77baa1ab99272dd80e374354f18ab16b3452dd6","category":"path-place-write","disposition":"partial_gap","current_owner":"GAP-201 exact access/place ids","remaining":"root/subplace/write identity graph-owned; path is provenance only"},
+    {"branch":"codex/self-zero-production-20260818","sha":"f85edec516ff721bfa90d8bb721f011cab389b00","category":"implicit-subject-self-zero","disposition":"control_evidence","current_owner":"subject/inference controls","remaining":"admit only where graph facts uniquely reconstruct subject"},
+    {"branch":"codex/self-zero-size-final","sha":"918beae417353adaabb079ec8a9edff58bbf2877","category":"implicit-subject-size-control","disposition":"control_evidence","current_owner":"subject/inference controls"},
+    {"branch":"codex/treesitter-role-consumer-20260818","sha":"ac23d67a578f59ad0e148f817569b0d66d95d18d","category":"grammar-role-consumer","disposition":"partial_gap","current_owner":"one grammar-role projection","remaining":"Tree-sitter/LSP/parser consume generated roles by construction"},
+    {"branch":"codex/wasm-bridge-open-world-repair-20260818","sha":"9d828758c988d0f61b338f2661cd527f0840c187","category":"wasm-open-world-bridge","disposition":"partial_gap","current_owner":"Wasm foreign-law + realization frontier","remaining":"Wasm imports/exports enter one graph; canonical ABI remains boundary law"},
+    {"branch":"codex/wasm-observer-elision-20260817","sha":"afca42d287bb24bced2dac6abd9fb51b141368c3","category":"wasm-observer-demand","disposition":"control_evidence","current_owner":"observer/demand + Wasm evidence","remaining":"per-entity observer virtualization before broad elision"},
+    {"branch":"slot-role-graph-facts","sha":"5e8cb7365829ff7e393e3275083c1d426b7b4efa","category":"slot-role-graph-facts","disposition":"partial_gap","current_owner":"GAP-201 application facts","remaining":"subject role must be semantic relation fact, not source slot convention"},
 
-    {"branch":"mbp-archive/codex/application-outcome","sha":"b5c1c7146287de91c0e12b8f7a4e9e8508c48f71","category":"application-result-member"},
-    {"branch":"mbp-archive/codex/result-member-demand-integrate","sha":"b5c1c7146287de91c0e12b8f7a4e9e8508c48f71","category":"application-result-member","alias_of":"mbp-archive/codex/application-outcome"},
-    {"branch":"mbp-archive/codex/c-law-projection-fix","sha":"448bfcf3b929ba6d6c1069bba55e2d267e2f2f4c","category":"foreign-c-law-projection"},
-    {"branch":"mbp-archive/codex/cache-home-fix","sha":"acb4536d7cbe09a961e968b33f52b05b68a3fe53","category":"cache-home-provenance"},
-    {"branch":"mbp-archive/codex/default-capability-census","sha":"c644863a158bfa6cdb556eab9951e22d1ab68b0e","category":"default-capability-controls"},
-    {"branch":"mbp-archive/codex/home-parent-fix","sha":"6f4801d30942d16cd519f89a3067a960b1e43ad7","category":"home-resolution"},
-    {"branch":"mbp-archive/codex/module-aggregate-fullslice","sha":"eeea8abbd3f5b465a41cb2b9f8061916497b3ed5","category":"module-aggregate-place-realization"},
-    {"branch":"mbp-archive/codex/next-semantic-slice-20260818","sha":"39234a35d0b487191dbc81290a6e3d366b6db70f","category":"semantic-graph-and-gaps"},
-    {"branch":"mbp-archive/codex/result-member-demand","sha":"473d5bebaab4b9e39b58d010ec14bd4cf9d87efa","category":"result-member-demand"},
-    {"branch":"mbp-archive/codex/unit-graph-facts-expectation","sha":"43f404d0fde3d658f247d8b072720563e29da657","category":"graph-fact-refusal-control"},
-    {"branch":"mbp-archive/worktree-agent-a088a4253eb6a6c26","sha":"d806f5663bb9fb6e509786cafbff8bca07530ca5","category":"dnir-research-consumer-unproven"},
-    {"branch":"mbp-archive/worktree-perf-losing-rows","sha":"3dc96a9b0c7a81f76ea7ff4e99b681f897dc623c","category":"performance-loss-causality"},
+    {"branch":"mbp-archive/codex/application-outcome","sha":"b5c1c7146287de91c0e12b8f7a4e9e8508c48f71","category":"application-result-member","disposition":"partial_gap","current_owner":"GAP-201 result-pack/application facts","remaining":"exact occurrence/result-member demand carried graph-to-machine"},
+    {"branch":"mbp-archive/codex/result-member-demand-integrate","sha":"b5c1c7146287de91c0e12b8f7a4e9e8508c48f71","category":"application-result-member","disposition":"partial_gap","alias_of":"mbp-archive/codex/application-outcome","current_owner":"GAP-201 result-pack/application facts"},
+    {"branch":"mbp-archive/codex/c-law-projection-fix","sha":"448bfcf3b929ba6d6c1069bba55e2d267e2f2f4c","category":"foreign-c-law-projection","disposition":"partial_gap","current_owner":"foreign graph lawset/ABI boundary","remaining":"C law facts graph-owned; C ABI physical only at boundary"},
+    {"branch":"mbp-archive/codex/cache-home-fix","sha":"acb4536d7cbe09a961e968b33f52b05b68a3fe53","category":"cache-home-provenance","disposition":"partial_gap","current_owner":"cache artifact dependency contract + home provenance","remaining":"cache key derives exact semantic dependency closure; path never identity"},
+    {"branch":"mbp-archive/codex/default-capability-census","sha":"c644863a158bfa6cdb556eab9951e22d1ab68b0e","category":"default-capability-controls","disposition":"control_evidence","current_owner":"world/authority negative controls","remaining":"authority from world+witness, never default registry"},
+    {"branch":"mbp-archive/codex/home-parent-fix","sha":"6f4801d30942d16cd519f89a3067a960b1e43ad7","category":"home-resolution","disposition":"partial_gap","current_owner":"home/reach graph facts","remaining":"filesystem/path supplies ingress provenance only after exact resolution"},
+    {"branch":"mbp-archive/codex/module-aggregate-fullslice","sha":"eeea8abbd3f5b465a41cb2b9f8061916497b3ed5","category":"module-aggregate-place-realization","disposition":"partial_gap","current_owner":"aggregate-only place producer + GAP-201","remaining":"exact graph access/subplace identity replaces name/AST joins"},
+    {"branch":"mbp-archive/codex/next-semantic-slice-20260818","sha":"39234a35d0b487191dbc81290a6e3d366b6db70f","category":"semantic-graph-and-gaps","disposition":"partial_gap","current_owner":"GAP-201"},
+    {"branch":"mbp-archive/codex/result-member-demand","sha":"473d5bebaab4b9e39b58d010ec14bd4cf9d87efa","category":"result-member-demand","disposition":"partial_gap","current_owner":"GAP-201 demand/result packs","remaining":"unused result members delete work before materialization"},
+    {"branch":"mbp-archive/codex/unit-graph-facts-expectation","sha":"43f404d0fde3d658f247d8b072720563e29da657","category":"graph-fact-refusal-control","disposition":"control_evidence","current_owner":"graph fact refusal/ablation controls"},
+    {"branch":"mbp-archive/worktree-agent-a088a4253eb6a6c26","sha":"d806f5663bb9fb6e509786cafbff8bca07530ca5","category":"dnir-research-consumer-unproven","disposition":"control_evidence","current_owner":"GAP-201 physical-only DNIR","remaining":"consumer-zero research may not become production authority"},
+    {"branch":"mbp-archive/worktree-perf-losing-rows","sha":"3dc96a9b0c7a81f76ea7ff4e99b681f897dc623c","category":"performance-loss-causality","disposition":"control_evidence","current_owner":"FTCFTW loss ledger","remaining":"same-algorithm losses stay visible beside algorithmic wins"},
 
-    {"branch":"mbp-archive/worktree-agent-a3e43a721419bf110","sha":"8c294814042461526960090ed308f855b417f9e2","category":"legacy-duo-constant-branch-research","legacy_surface":true},
-    {"branch":"mbp-archive/worktree-agent-a64f1d0f2e26f5539","sha":"9f9fed415f83a2411c2872a2d525b1a1aa985e52","category":"legacy-duo-application-proof-research","legacy_surface":true},
-    {"branch":"mbp-archive/worktree-pass81-family-registry","sha":"c9c94066f7d45493832020ab08a44a364a1f51b2","category":"legacy-vocabulary-family-research","legacy_surface":true}
+    {"branch":"mbp-archive/worktree-agent-a3e43a721419bf110","sha":"8c294814042461526960090ed308f855b417f9e2","category":"legacy-duo-constant-branch-research","disposition":"historical_rejected_surface","legacy_surface":true,"retained":"constant-branch algorithms, controls and measurements","rejected":"Duo identity/source surface and any non-graph semantic taxonomy"},
+    {"branch":"mbp-archive/worktree-agent-a64f1d0f2e26f5539","sha":"9f9fed415f83a2411c2872a2d525b1a1aa985e52","category":"legacy-duo-application-proof-research","disposition":"historical_rejected_surface","legacy_surface":true,"retained":"application proof/counterexample research","rejected":"Duo identity, call-shaped indexing and source-derived semantic ownership"},
+    {"branch":"mbp-archive/worktree-pass81-family-registry","sha":"c9c94066f7d45493832020ab08a44a364a1f51b2","category":"legacy-vocabulary-family-research","disposition":"historical_rejected_surface","legacy_surface":true,"retained":"vocabulary/convergence measurements","rejected":"parallel family/registry semantic authority"}
   ],
+  "performance_research": {
+    "observation_relative_quotienting": {"disposition":"partial_gap","owner":"GAP-201 transformation lineage + demand/observation","historical_result":"large constructed wins; ordinary-corpus applicability measured near zero at the research boundary"},
+    "recursive_induced_demand": {"disposition":"partial_gap","owner":"graph relation/application SCC demand","historical_result":"large constructed wins; no broad ordinary-corpus prevalence established"},
+    "guarded_order_statistic_termination": {"disposition":"partial_gap","owner":"graph range/law/demand transformation","historical_result":"constructed algorithmic win substantially exceeded Clang; same-algorithm Idol codegen debt remained"},
+    "observer_virtualization": {"disposition":"partial_gap","owner":"per-entity observation demand","historical_result":"compile-wide observer policy measured large avoidable tax"},
+    "cache_and_concurrent_artifact_soundness": {"disposition":"partial_gap","owner":"artifact semantic dependency closure","historical_result":"observer omission and same-basename temp collisions produced unsound cache/artifact behavior"},
+    "generated_lexer_length": {"disposition":"absorbed","owner":"src/source_cursor.zig O(1) byte length + regeneration controls","historical_result":"repeated strlen was measured quadratic; current host cursor uses exact slice length"},
+    "machine_codegen_losses": {"disposition":"control_evidence","owner":"FTCFTW exact loss ledger","historical_result":"algorithmic wins do not erase register/spill/ABI/instruction-selection losses"}
+  },
   "census_result": {
     "divergent_head_aliases": 34,
     "unique_divergent_head_shas": 33,
@@ -65,10 +69,11 @@
     "idol_native_non_main_branches_ahead_of_repaired_main": 0
   },
   "admission_rules": [
-    "Current compact law and constitution determine meaning; branch prose does not.",
-    "Legacy .duo, module/std, call-shaped indexing, path/name/AST authority, and stale evidence are never reactivated by ancestry.",
-    "Controls, counterexamples, measurements, non-results, and unimplemented gaps remain binding research inputs.",
-    "Performance mechanisms require exact-head observation-equivalent Pareto evidence.",
-    "Where no performance mechanism is activated, active implementation must not regress the strongest executable baseline."
+    "Current Idol compact law and constitution determine meaning; branch prose does not.",
+    "Legacy .duo, Idsem-current, module/std, call-shaped indexing, path/name/AST authority and stale evidence are never reactivated by ancestry.",
+    "Controls, counterexamples, measurements, refusals, non-results and unimplemented gaps remain binding research inputs.",
+    "Performance mechanisms require exact-head observation-equivalent Pareto evidence before current claims.",
+    "Where no performance mechanism is activated, active implementation must preserve the strongest executable baseline.",
+    "A branch ref is disposable after its head is reachable from main and its disposition is represented here; Git ancestry, not the ref name, preserves research."
   ]
 }
