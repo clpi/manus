@@ -6196,7 +6196,11 @@ test "semantic_graph: if-condition application is published" {
     const fact = graph.applications()[0];
     const stored = graph.application(fact.application) orelse return error.TestExpectedEqual;
     try std.testing.expectEqualStrings("w", graph.get(graph.applicationRelation(stored.application).?).?.name.?);
-    try std.testing.expectEqual(@as(usize, 1), graph.applicationArguments(fact.application).?.len);
+    // SLOT-ROLE-ONE: `w("x")` promotes its first argument to the subject slot
+    // (the relation's first parameter), so the argument pack is empty and the
+    // subject is present.
+    try std.testing.expect(graph.applicationSubject(fact.application) != null);
+    try std.testing.expectEqual(@as(usize, 0), graph.applicationArguments(fact.application).?.len);
 }
 
 test "semantic_graph: moduleFunctionEmitOrder callees before callers" {
@@ -6853,7 +6857,10 @@ test "semantic_graph: checked occurrences keep distinct packed ranges" {
     try std.testing.expect(facts[0].operand_pack != facts[1].operand_pack);
     try std.testing.expect(facts[0].result_pack != facts[1].result_pack);
     for (facts) |fact| {
-        try std.testing.expectEqual(@as(usize, 2), graph.applicationArguments(fact.application).?.len);
+        // SLOT-ROLE-ONE: `sum(1, 2)` promotes `1` to the subject slot, leaving
+        // one ordinary operand (`2`).
+        try std.testing.expectEqual(@as(usize, 1), graph.applicationArguments(fact.application).?.len);
+        try std.testing.expect(graph.applicationSubject(fact.application) != null);
         try std.testing.expectEqual(@as(usize, 1), graph.applicationResults(fact.application).?.len);
         try std.testing.expect(graph.application(fact.application) != null);
     }
@@ -6870,7 +6877,9 @@ test "semantic_graph: checked occurrences keep distinct packed ranges" {
         try std.testing.expectEqual(@as(i64, @intCast(fact.application)), object.get("application").?.integer);
         try std.testing.expectEqual(@as(i64, @intCast(graph.applicationRelation(fact.application).?)), object.get("relation").?.integer);
         try std.testing.expectEqual(@as(i64, @intCast(graph.applicationCaller(fact.application).?)), object.get("caller").?.integer);
-        try std.testing.expect(object.get("subject") == null);
+        // SLOT-ROLE-ONE: `sum(1, 2)` promotes `1` to the subject slot, so the
+        // JSON projection carries a subject, not null.
+        try std.testing.expect(object.get("subject") != null);
         try std.testing.expectEqual(types.ReturnConsumption.single, graph.applicationDemand(fact.application).?);
         try std.testing.expectEqualStrings("single", object.get("demand").?.string);
         try std.testing.expect(object.get("descriptor") == null);
@@ -7248,7 +7257,11 @@ test "semantic_graph: checked application publishes binding to relation and para
     try std.testing.expectEqual(inner, g.applicationRelation(occurrence).?);
     try std.testing.expectEqual(outer, g.applicationCaller(occurrence).?);
     const arguments = g.applicationArguments(occurrence) orelse return error.TestExpectedEqual;
-    try std.testing.expectEqual(@as(usize, 1), arguments.len);
+    // SLOT-ROLE-ONE: `inner(n)` promotes `n` to the subject slot, so the
+    // argument pack is empty and the subject carries the value bound to the
+    // parameter.
+    try std.testing.expectEqual(@as(usize, 0), arguments.len);
+    const subject = g.applicationSubject(occurrence) orelse return error.TestExpectedEqual;
     var param: ?id = null;
     for (g.edges.items) |edge| {
         if (edge.from != outer or edge.kind != .contains) continue;
@@ -7260,7 +7273,7 @@ test "semantic_graph: checked application publishes binding to relation and para
     defer param_users.deinit(alloc);
     try g.usersOf(param_id, &param_users);
     try std.testing.expectEqual(@as(usize, 1), param_users.items.len);
-    try std.testing.expectEqual(arguments[0], param_users.items[0]);
+    try std.testing.expectEqual(subject, param_users.items[0]);
 }
 
 test "semantic_graph: identity lookup survives a param that shadows a function name" {
