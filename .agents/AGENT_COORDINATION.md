@@ -178,16 +178,16 @@ by-value proof on this branch:
 
 Wall chain remaining, with reproduction (build zig-out first):
 
-    ./zig-out/bin/idol run gate/idiom.id < any.diff
-      → application-realization-count. WALLS MOVED since (c442c8ee): the
-        declared-owns-tail fix resolved idiom's own tail relation through the
-        checked call, and the six-line repro
-        examples/native_differential/unsupported/tailface_declared_relation.id
-        isolates what remains: method-face applications resolve in the
-        occurrence map and realize exactly once with lineage, but the lift
-        never registers them in graph.applications(), so the validator counts
-        expected=0 against seen=1 (measured: seen=1 expected=0 unrealized=0).
-        Fix: enumerate ':'-face applications in the lift (graph lane 3).
+    gate/idiom.id RUNS END-TO-END as of e754b890 — every DNB001 wall on the
+    direct path is cleared (mod-global storage, lawful \{\} braces, declared-
+    owns-tail, published-is-not-bootstrap, has-answers-bool). What prints now
+    is the gate's OWN control-calibration rows failing (dot/sigil/bin-idol/
+    std-rename) — latent self-test debt that was invisible while the gate was
+    DNB001-dark; that work belongs to the gate's owner, not the compiler.
+    tailface_declared_relation.id stays in unsupported/ as the published-vs-
+    bootstrap classifier history; it compiles and answers call-ok now.
+    audit100 remains behind the scripting family (dynamic tables, os.env,
+    capture) — a capability set, not a wall; do not annotate around it.
     AUDIT100paths=/tmp/x.list ./zig-out/bin/idol run scripts/audit100.id
       → DNB001 native-scalar precheck — ret-type:any
         (return-type inference, sema lane; do NOT annotate the script around
