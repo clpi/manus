@@ -1,0 +1,188 @@
+{
+  "schema": "idol.research.archive.v1",
+  "identity": {
+    "project": "Idol",
+    "source_suffix": ".id"
+  },
+  "authority": "Historical source archive only. Current authority is clpi/idol main under docs/spec/constitution.md and docs/spec/law.md.",
+  "archive": "idol-pass-2-research-corpus.tar.gz",
+  "archive_sha256": "e66fe6cd2470eb7ce73a82ed0f758b84044715c4a8102e55e95b61435e32ed78",
+  "archive_bytes": 88492,
+  "files": [
+    {
+      "name": "2.19-Semantic Reconciliation (all).txt",
+      "bytes": 17496,
+      "sha256": "821e49a187cd858b9eee2b480d068840db575c9f7700f463b0f1438c455d12ba",
+      "status": "active-semantic-convergence-source",
+      "note": "One semantic graph / one identity / one vocabulary principles are retained; repository law remains authoritative."
+    },
+    {
+      "name": "2.30-Primitive Decomposition.txt",
+      "bytes": 11266,
+      "sha256": "b7ad47170e0f52f47eea23c2b17f4a1491434f5c1a81b76c1508fab25fdfa842",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.10-DNIR reconciliation.txt",
+      "bytes": 13258,
+      "sha256": "9a8e017f3cb27d99c620db91f598a0ba350000d33584d62354848dbe8b346e52",
+      "status": "active-dnir-deletion-program-source",
+      "note": "DNIR may encode physical realization but must not become a competing semantic ontology."
+    },
+    {
+      "name": "Pass 2.11-Goals.txt",
+      "bytes": 13258,
+      "sha256": "9a8e017f3cb27d99c620db91f598a0ba350000d33584d62354848dbe8b346e52",
+      "status": "active-dnir-deletion-program-source",
+      "note": "DNIR may encode physical realization but must not become a competing semantic ontology."
+    },
+    {
+      "name": "Pass 2.12-Codex 1.txt",
+      "bytes": 5235,
+      "sha256": "cec6d8476f6ca5afda3898d6350192926fa55dd2259eb734c536f44853a75dbd",
+      "status": "active-dnir-deletion-program-source",
+      "note": "DNIR may encode physical realization but must not become a competing semantic ontology."
+    },
+    {
+      "name": "Pass 2.13-Codex 2.txt",
+      "bytes": 5565,
+      "sha256": "04d690c8ca68380cd60fd512107d2f749299859eee22ca94e586aba2d4bbbb37",
+      "status": "active-dnir-deletion-program-source",
+      "note": "DNIR may encode physical realization but must not become a competing semantic ontology."
+    },
+    {
+      "name": "Pass 2.14-Codex 3.txt",
+      "bytes": 5086,
+      "sha256": "993c5bfe9e1024c8f891a7bc7df8c32c48c8d611a0615ad4d7bc05c039a76af5",
+      "status": "active-dnir-deletion-program-source",
+      "note": "DNIR may encode physical realization but must not become a competing semantic ontology."
+    },
+    {
+      "name": "Pass 2.15-Duon Living Spec.txt",
+      "bytes": 23898,
+      "sha256": "e2beb5a58b77d359ca79b10c67da348acd3f4c95bc81c68fa86214b4fc77bbc4",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.16-Living Spec Codex 1.txt",
+      "bytes": 9302,
+      "sha256": "9c3457c8889b48b4f83f4f9cccf977b83f41c4174d53f613eee0d472f78975c3",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.17-Duon Living Spec Codex 2.txt",
+      "bytes": 5110,
+      "sha256": "013a7c22fa47ef74e7c8968ae9b24d1b97f3128fa5919a38218483f432254071",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.18-Duon Living Spec Codex 3.txt",
+      "bytes": 13169,
+      "sha256": "c4298e9910ac72de8df25e041dba8102950726040634de06473d8a7d498e5f56",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.20-Audit Codex 1.txt",
+      "bytes": 7679,
+      "sha256": "f13421b1a96749694b5f91d99705c5936b3d05a5eac08c5aa41d68d9614bcaec",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.21-Audit Codex 2.txt",
+      "bytes": 7559,
+      "sha256": "2dbd11a1bcbffe9b49bef5a440f8da85c4dc730ff8dda5dd58d9e61de54ac505",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.22-Audit Codex 3.txt",
+      "bytes": 7466,
+      "sha256": "953f3087fe92d9d414c670d748567cc2284c5c5c93364a14a918d4e221ad6d11",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.23-Grammar Audit.txt",
+      "bytes": 8076,
+      "sha256": "83f5b0428d6a88d061edf07b546da3d2458aa3dab99b1aa20d17e2b078de5251",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.24-Grammar Authority.txt",
+      "bytes": 8309,
+      "sha256": "6275e6babedb7c1698d8bc7bba7f4c3cd9932144b001bb84ec16bfbfb0c997cc",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.25-Comments & Strings Convergence.txt",
+      "bytes": 20200,
+      "sha256": "ff61633fc3cc87786ad757d1b628dbe28c9e298c31aaa877c5e0e7f899473b8f",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.26-Semantic Unification.txt",
+      "bytes": 3836,
+      "sha256": "9fe5eff8ac025e382d64588590d6e42125d2399f35035cb04e1e8917a6a72b9b",
+      "status": "active-semantic-convergence-source",
+      "note": "One semantic graph / one identity / one vocabulary principles are retained; repository law remains authoritative."
+    },
+    {
+      "name": "Pass 2.27-Vocabulary Closure.txt",
+      "bytes": 9765,
+      "sha256": "51dab9f2d4b1c5fb1addf7e1a3bf5107c4940180da4b535435687c19eb2a4714",
+      "status": "active-semantic-convergence-source",
+      "note": "One semantic graph / one identity / one vocabulary principles are retained; repository law remains authoritative."
+    },
+    {
+      "name": "Pass 2.28-Idsem Naming Convergence.txt",
+      "bytes": 17670,
+      "sha256": "051fde0b81fdcefe2a49226fa16d05a0f82e59db1b88867faac052aed5e68208",
+      "status": "superseded-identity-ruling",
+      "note": "Idsem rename recommendation is superseded by the owner ruling that the language is Idol; non-identity research remains historical input."
+    },
+    {
+      "name": "Pass 2.29-FTCFTW.txt",
+      "bytes": 13310,
+      "sha256": "29241384247a4212f79958c040938788a6cd92a0c2239eae4c04a392026b8dc5",
+      "status": "active-performance-program-source",
+      "note": "FTCFTW principles are retained as implementation obligations; measurements require exact-subject evidence."
+    },
+    {
+      "name": "Pass 2.31-Delimiter Closure.txt",
+      "bytes": 8626,
+      "sha256": "b70f093e0363f9178724d9a5812c4d05a9d1b01d0abff277e29de04f09aba20c",
+      "status": "active-law-source",
+      "note": "Delimiter closure aligns with current Idol law: () application, [] computed projection, {} structured pack."
+    },
+    {
+      "name": "Pass 2.7-Semantic Embedding frontier.txt",
+      "bytes": 13530,
+      "sha256": "6f46d1100c13b3ca5f13f9f93d33a6b4fc9707579750f3ef67ee5fb0da3256b8",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.8-Semantic Spine.txt",
+      "bytes": 16128,
+      "sha256": "8f183d2386f2de62d6782928644f3e02635012ed7be76ca201071c2a64cf5dfe",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    },
+    {
+      "name": "Pass 2.9-canonicalizing.txt",
+      "bytes": 8814,
+      "sha256": "b3de2e096aa9349f1eb8b1d56107ce54efcfebbddaf5a72f7ffa21c5e8297822",
+      "status": "historical-input",
+      "note": "Preserved verbatim; reconcile through current law and implementation evidence."
+    }
+  ]
+}
