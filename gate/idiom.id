@@ -219,7 +219,7 @@ deny: i64 = (path: str, no: i64, code: str, quiet: bool)
   hits = hits + flag(path, no, code, ".create(", "LADDER", "desc\{…\}", quiet)
   hits = hits + flag(path, no, code, "make", "LADDER", "desc\{…\} — make* is banned", quiet)
   hits = hits + flag(path, no, code, "self", "SELF-ZERO", ".x · leading :call() · `.` is the subject · ... spreads it", quiet)
-  hits = hits + flag(path, no, code, " .. ", "FMT-ONE", "`{{}}` interpolation — never `..` concatenation", quiet)
+  hits = hits + flag(path, no, code, " .. ", "FMT-ONE", "`\{\}` interpolation — never `..` concatenation", quiet)
   hits = hits + flag(path, no, code, "os.args(", "host-TEMP", "os.args[n] table under os world — never os.args()", quiet)
   hits = hits + flag(path, no, code, "os.getenv(", "host-TEMP", "os.env[key] / os.env(key) — environment is not a thing", quiet)
   hits = hits + flag(path, no, code, "environment[", "host-TEMP", "environment is not a thing — use os.env[key]", quiet)
@@ -906,7 +906,7 @@ lex: i64 = (path: str, no: i64, code: str, line: str, quiet: bool)
     hits = hits + 1
   if bridge(line)
     if !quiet
-      print("{path}:{no}  concat  [FMT-ONE]  `{{}}` interpolation — never `..` concatenation")
+      print("{path}:{no}  concat  [FMT-ONE]  `\{\}` interpolation — never `..` concatenation")
     hits = hits + 1
   if expand(code)
     if !quiet

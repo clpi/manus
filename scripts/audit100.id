@@ -388,7 +388,7 @@ main: i64 = ()
   note = {
     "underscore inside an identifier",
     "uppercase identifier in bind/call/field position",
-    "uppercase name in DECLARATION position (Point: @{{…}})",
+    "uppercase name in DECLARATION position (Point: @\{…\})",
     "_ prefix on a name",
     "companion *_kind / *_type",
     "get_ / set_ / compute_",
@@ -401,7 +401,7 @@ main: i64 = ()
     "foreign declaration keyword",
     "-> => ?. ?: |>",
     "Lua library call",
-    "M = {{}} module wrapper",
+    "M = \{\} module wrapper",
     ".. beside a string literal",
     "end on a one-line block",
     "trailing return <expr>",
