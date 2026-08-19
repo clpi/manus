@@ -47,7 +47,7 @@ this spine replaces — one admission program, one census):
 | optimizer space | semantic Space object | derived world / graph incarnation / projection | speculative search without mutating authority |
 | determinacy | Future/Promise objects | fact on semantic id | dependency/wakeup realization |
 | mode | mode types | facts on relation slots | forward/backward/dataflow execution |
-| solution cardinality | iterator/generator ontology | relation/application cardinality facts | first/all/count/exists change algorithm |
+| solution cardinality | iterator/generator ontology | relation/application cardinality facts | first/all/any/count change algorithm |
 | pattern | Pattern type system | ordinary relation with search/capture/update facts | DFA/NFA/parser/query/rewrite realizations |
 | continuation | continuation object kingdom | semantic id + relation/lifetime/effect facts | branch/frame/state machine/persistent cont |
 | recovery | exception hierarchy | obligation + available recovery relations | inline restart/result/unwind/trap |

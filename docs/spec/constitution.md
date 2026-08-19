@@ -3588,6 +3588,7 @@ findingstate = law{
         "migratable means equivalence is witnessed and canonicalization may rewrite",
         "vocabularyblocked means the required relation world case or law is absent and must be admitted before source repair",
         "invalid means the program contradicts language law",
+        "these four finding states are the diagnostic projection of the role statuses in law.canonicality: role canonical is state canonical, migration only and accepted compatibility surface as migratable, vocabularyblocked maps directly, invalid roles are state invalid, and fixture foreign and implementation roles produce no canonicality finding",
         "every canonicality finding has exactly one state and no gate invents vocabulary to change it",
     }
 }

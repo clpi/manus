@@ -133,9 +133,12 @@ branch-local success.
 One admission program survives: `gaps/RESEARCH-SPINE.md` (schema, structural
 map, dependency DAG, horizons). Enforcer: `tools/node/dev/gapc0`, exposed as
 `sh gate/researchgap.sh`; it fails closed on a missing/incomplete zero-delta
-C0 block or a retired spelling in the research GAP set. Every GAP ≥ 175
-carries its block; `docs/research-gap-admission.md` was a same-day duplicate
-and is deleted with its map absorbed. Blockers found and left for their lanes:
+C0 block or on a role violation of law.md 111-115 in the research GAP set
+(parameter-position receiver binding, annotation-position open type or void
+descriptor — the existential relation faces `xs:any(p)` and `:any` are
+canonical and pass). Every GAP ≥ 175 carries its block;
+`docs/research-gap-admission.md` was a same-day duplicate and is deleted with
+its map absorbed. Blockers found and left for their lanes:
 `scripts/audit100.id` and `gate/idiom.id` are refused DNB001 by every current
 binary (`mod-global-written`, `concat`), so both script gates are unrunnable
 repo-wide; audit100 row-8 control parity was verified by running the row-8

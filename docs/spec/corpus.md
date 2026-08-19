@@ -72,6 +72,15 @@ negative and foreign rows retain their corpus role while source form selects
 the admitted law. Unlisted source uses the producer's physical-form projection.
 No role grants a world, authority, runtime, or realization.
 
+Each row is also a TEACHING STATUS under `law.canonicality`
+(docs/spec/law.md §115): `canonical` rows are the only canonical examples an
+agent may learn Idol from; `compatibility` is accepted-compatibility,
+`foreign` is foreign-law material, `generated` is implementation-only, and
+`negative` rows are fixture-only — intentionally-invalid controls whose
+spellings exist to be refused, never patterns to follow. An agent treating a
+negative or compatibility row as a canonical example is a canonicality
+violation, and repository frequency has weight zero in language-law inference.
+
 The roster remains a deletion bridge. It disappears as project-controlled
 compatibility and unclassified corpus debt reaches zero and source ingress can
 receive an explicit law fact directly from its launcher/provider.

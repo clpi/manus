@@ -1,5 +1,5 @@
 #!/bin/sh
-# gapc0 — research-GAP C0 alignment census.
+# gapc0 — research-GAP C0 alignment census (role-aware).
 #
 # Every gaps/GAP-*.md numbered >= 175, plus gaps/RESEARCH-SPINE.md, must carry
 # a complete "## C0 alignment" block (schema: gaps/RESEARCH-SPINE.md) whose
@@ -8,15 +8,21 @@
 # research note that needs a new kind/registry/syntax is a constitutional
 # amendment request, not a GAP, and it fails here until C0 itself is amended.
 #
-# Also enforced: the research GAP set avoids the two retired spellings — the
-# receiver parameter (retired by the receiver-zero law) and the open type
-# (never made explicit) — in prose as in code, and the redundant solution
-# selector spelling for the witness quotient is deleted in favour of `exists`
-# (a second spelling for one quotient is a plurality defect). The two
-# spellings survive only inside the pattern below and in scanner fixtures
-# (audit100/GAP-071), which are that law's own test data and are exempt from
-# their own census, the same way audit100 excludes its patterns.
+# Role checks (law.md 111-115): canonicality belongs to (spelling, role, law),
+# never to a word blacklist. Mechanically decided roles only —
+#   law.subject.zero (111): no parameter-position receiver binding
+#     (self/this/receiver/current/instance/object in a parameter list shape);
+#   law.any.descriptor.zero (112): no annotation-position open type
+#     (": any" in descriptor position; the existential relation face
+#     xs:any(p) is canonical and passes);
+#   law.result.zero (113): no annotation-position void descriptor.
+# English quantifiers, backticked citations, hyphenated project vocabulary,
+# and law ids are not these roles and pass. Scanner fixtures (audit100,
+# GAP-071) are the law's own test data and are outside this census, the same
+# way audit100 excludes its own patterns.
 #
+# Exit code = violation count. checked == 0 is itself a failure (exit 2): a
+# census that examined no files has not passed.
 set -eu
 
 repo=$(unset CDPATH; cd -- "$(dirname -- "$0")/../../.." && pwd)
@@ -39,6 +45,31 @@ checked=0
 report() {
   printf '%s: %s\n' "$1" "$2"
   viol=$((viol + 1))
+}
+
+# law.subject.zero: receiver spelling in a parameter-list shape:
+# "(self," "(self: ..." ", this)" — the synthetic-subject role.
+subj_pat='[(,][[:space:]]*(self|this|receiver|current|instance|object)([[:space:]]*[,)]|[[:space:]]*:)'
+
+# law.any.descriptor.zero / law.result.zero: open type or void in
+# annotation position — the flag class is the type-position tail (closer,
+# comma, equals, or end of line). The relation faces xs:any(p) and the
+# quoted selector `:any` end in "(" or a citation mark and pass.
+anno_any_pat=':[[:space:]]*any([[:space:]]*[,)=]|[[:space:]]*$)'
+anno_void_pat=':[[:space:]]*void([[:space:]]*[,)=]|[[:space:]]*$)'
+
+role_check() {
+  f=$1
+  base=${f##*/}
+  if grep -qE "$subj_pat" "$f"; then
+    report "$base" "parameter-position receiver binding (law.subject.zero)"
+  fi
+  if grep -qE "$anno_any_pat" "$f"; then
+    report "$base" "annotation-position open type (law.any.descriptor.zero)"
+  fi
+  if grep -qE "$anno_void_pat" "$f"; then
+    report "$base" "annotation-position void descriptor (law.result.zero)"
+  fi
 }
 
 check_file() {
@@ -82,26 +113,26 @@ check_file() {
     esac
   done
 
-  if grep -nqE '(^|[^A-Za-z0-9_])(self|any)([^A-Za-z0-9_]|$)' "$f"; then
-    report "$base" "standalone self/any token present"
-  fi
+  role_check "$f"
 }
 
 for f in "$gaps"/GAP-*.md; do
   [ -f "$f" ] || continue
   n=$(number "${f##*/}")
   [ -n "$n" ] || continue
-  [ "$n" -ge 175 ] || continue
-  checked=$((checked + 1))
-  check_file "$f"
+  if [ "$n" -ge 175 ]; then
+    checked=$((checked + 1))
+    check_file "$f"
+  elif [ "$n" -ge 170 ]; then
+    checked=$((checked + 1))
+    role_check "$f"
+  fi
 done
 
 spine="$gaps/RESEARCH-SPINE.md"
 if [ -f "$spine" ]; then
   checked=$((checked + 1))
-  if grep -qE '(^|[^A-Za-z0-9_])(self|any)([^A-Za-z0-9_]|$)' "$spine"; then
-    report "RESEARCH-SPINE.md" "standalone self/any token present"
-  fi
+  role_check "$spine"
 else
   report "RESEARCH-SPINE.md" "schema home missing"
 fi
