@@ -4352,8 +4352,15 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
                 break :blk true;
             if (std.mem.eql(u8, mc.method, "sub") and mc.args.len >= 1 and mc.args.len <= 2)
                 break :blk exprIsStr(ctx, mc.obj);
+            // `has` answers a BOOL, never text. This arm used to answer
+            // `exprIsStr(mc.obj)` — copied from `sub` two arms up, where the
+            // subject IS the result type — which made `print(s:has(n))`
+            // classify the boolean as text, lower through `puts` with the
+            // raw 0/1 as the format pointer, and SEGFAULT before any output
+            // (measured: exit 139, no stdout, `ok compile` both). Bool prints
+            // take the `%lld` path like every other integral answer.
             if (std.mem.eql(u8, mc.method, "has") and mc.args.len == 1)
-                break :blk exprIsStr(ctx, mc.obj);
+                break :blk false;
             break :blk false;
         },
         else => false,
