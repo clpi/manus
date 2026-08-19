@@ -1,100 +1,40 @@
-//! Escape analysis.
+//! Conservative escape facts for aggregate-place realization.
 //!
-//! TWO LAYERS LIVE HERE, and they are not equally trustworthy. Read this before
-//! wiring either one into a decision that removes storage.
+//! This file has one job: decide whether a positional table binding is used only
+//! through modeled projections/extent reads or whether the aggregate value can
+//! escape its binding. It deliberately works in the pessimistic direction:
+//! every unmodeled construct escapes until a graph-owned fact proves otherwise.
 //!
-//! LAYER 1 — the Symbol queries (`canStackAllocate`, `shouldPruneArc`). These
-//! consume escape status fields that sema is *supposed* to populate. Measured
-//! against the tree rather than against the comment that used to sit here:
+//! The former Symbol-field layer (`canStackAllocate`, `shouldPruneArc`,
+//! `typeNeedsArc`) was deleted. It had no production consumers, `address_taken`
+//! had no producer, and its apparent "non-escape" answer omitted return/argument/
+//! storage escape routes. Keeping it beside the conservative table analysis was
+//! a second, weaker semantic authority with no execution value.
 //!
-//!   * `Symbol.escapes` and `Symbol.captured_by_closure` have exactly ONE write
-//!     site in the whole compiler — `sema.zig:3900-3901`, inside closure-upvalue
-//!     collection. A binding escapes, as far as this compiler is concerned, only
-//!     by being captured by a nested function.
-//!   * `Symbol.address_taken` has NO write site at all. `grep -rn address_taken
-//!     src/` finds the declaration, this file, and nothing else. It is read here
-//!     and is always `false`.
-//!   * `canStackAllocate`, `shouldPruneArc` and `typeNeedsArc` have NO
-//!     production call sites. Every caller is a test in this file. `main.zig`
-//!     imports this module and never names a member of it; it reaches into
-//!     `sem.escape_names` directly instead.
+//! Delimiter law is exact here:
+//!   * `t[k]` is computed/indexed projection and does not by itself escape `t`;
+//!   * `t(k)` is ordinary application, so using `t` as the callee consumes the
+//!     aggregate and therefore escapes this bounded analysis;
+//!   * `t:len()` and compatibility `#t` observe extent without requiring storage.
 //!
-//! So LAYER 1 reduces to `!is_global and !captured_by_closure`. It says nothing
-//! about a value that is RETURNED, PASSED to a relation, or STORED into
-//! something that outlives the frame. Do not read a `true` from it as "this
-//! value does not escape" — read it as "this value is not a global and is not
-//! closed over". Anything that removes storage on the strength of it is unsound
-//! today, and would stay unsound until `address_taken` acquires a producer.
-//!
-//! LAYER 2 — `positionalTableEscapes`, below. Sound by construction, because it
-//! is stated in the opposite polarity: it enumerates the ways a name can be
-//! mentioned WITHOUT escaping, and treats every other mention, and every syntax
-//! it does not model, as an escape. A construct added to the language later is
-//! an escape until someone deliberately teaches this function otherwise. That is
-//! the polarity a storage-elimination decision needs, and it is why the table
-//! work in `table_facts.zig` uses this and not layer 1.
+//! This is still a bootstrap AST analysis. Exact graph place/access identities,
+//! alias/lifetime facts and transformation lineage supersede it under GAP-201.
 
 const std = @import("std");
 const ast = @import("ast.zig");
-const Symbol = @import("sema.zig").Symbol;
-const RT = @import("types.zig").ResolvedType;
-
-// ---------------------------------------------------------------------------
-// LAYER 1 — Symbol-field queries. See the caveat at the top of this file.
-// ---------------------------------------------------------------------------
-
-/// `!is_global and !captured_by_closure and !address_taken`, and nothing more.
-///
-/// NOT a non-escape proof. `address_taken` has no producer, so the third clause
-/// is dead, and no clause covers returning or passing the value. Kept because it
-/// is the only stated form of the intended lattice; it must not be used to
-/// justify deleting storage until sema populates the fields it reads.
-pub fn canStackAllocate(sym: *const Symbol) bool {
-    if (sym.is_global) return false;
-    if (sym.escapes) return false;
-    if (sym.captured_by_closure) return false;
-    if (sym.address_taken) return false;
-    return true;
-}
-
-/// ARC retain/release can be pruned for variables that never escape.
-/// Same caveat as `canStackAllocate`: "never escapes" here means "not global and
-/// not closed over".
-pub fn shouldPruneArc(sym: *const Symbol) bool {
-    if (sym.is_global) return false;
-    if (sym.escapes) return false;
-    if (sym.captured_by_closure) return false;
-    return true;
-}
-
-/// Check if a type needs ARC management (ownership tracking).
-/// This mirrors arc.needsArc and codegen.codegen_needs_arc.
-pub fn typeNeedsArc(rt: RT) bool {
-    return switch (rt) {
-        .str, .array, .pointer, .func, .@"struct" => true,
-        .result, .option, .channel, .instantiated, .generic_param => true,
-        else => false,
-    };
-}
-
-// ---------------------------------------------------------------------------
-// LAYER 2 — syntactic escape of a positional-table binding.
-// ---------------------------------------------------------------------------
 
 /// Why a name was judged to escape. `.none` is the only value that licenses
-/// removing the table's storage.
+/// removing the aggregate's storage in consumers that also satisfy their other
+/// legality facts.
 pub const Reason = enum {
-    /// No mention of the name outside an access or a length read.
+    /// No mention outside a modeled projection/extent read and the single bind.
     none,
-    /// The name appeared somewhere that needs the aggregate itself: a call
-    /// argument, a returned value, a tail expression, an operand of an
-    /// arithmetic or comparison node, a loop iterable, …
+    /// The aggregate itself is consumed: call/callee/argument, return, operand,
+    /// loop iterable, tail value, or another modeled whole-value use.
     aggregate_use,
-    /// The whole binding was reassigned (`t = …`) after it was bound.
+    /// The whole binding was assigned more than once.
     rebound,
-    /// The body contains a construct this analysis does not model. Fail-closed:
-    /// the construct might mention the name in a way that escapes, so it is
-    /// treated as though it does.
+    /// The body contains syntax this bounded analysis does not model.
     unmodelled_construct,
 };
 
@@ -106,24 +46,12 @@ pub const Escape = struct {
     }
 };
 
-/// Walk state. Separate from the public `Escape` because it carries one thing
-/// the answer does not: how many times the body BINDS the name.
-///
-/// THE BINDING IS NOT A REBIND. `t = (1, 2, 3)` is the statement that brings the
-/// table into existence; reading it as `.rebound` marks every table in the
-/// language as escaping and eliminates nothing — which is sound, and vacuous,
-/// and was the state this file was in. So binds are COUNTED and judged at the
-/// end: exactly one is the binding site, two or more is a rebind. Counting
-/// rather than position-matching keeps the answer independent of where in the
-/// body the binding sits, and needs no second parameter naming it.
 const Walk = struct {
     reason: Reason = .none,
     binds: u32 = 0,
 
-    fn raise(self: *Walk, r: Reason) void {
-        // First reason wins; `unmodelled_construct` is the least informative and
-        // never displaces a concrete one.
-        if (self.reason == .none) self.reason = r;
+    fn raise(self: *Walk, reason: Reason) void {
+        if (self.reason == .none) self.reason = reason;
     }
 
     fn bind(self: *Walk) void {
@@ -131,289 +59,257 @@ const Walk = struct {
     }
 };
 
-/// Does `name` — bound in this body to a positional table — ever get used as an
-/// aggregate, rather than merely accessed?
+/// Does `name`, bound in `body` to an aggregate, ever escape the narrow set of
+/// modeled place operations?
 ///
-/// THE POLARITY IS THE POINT. There are exactly four non-escaping mentions of a
-/// table name in the modelled surface:
+/// Non-escaping mentions are intentionally few:
 ///
-///   1. the `.obj` of an `.index` node — `t(k)` after `table_apply` has
-///      canonicalized it, or `t[k]`;
-///   2. the receiver of `:len()` — which folds to the literal width and never
-///      touches storage;
-///   3. the operand of `#` (`unop.len`), the same face in the compatibility
-///      lexer family; and
-///   4. the SINGLE binding of the name. A second one is `.rebound`.
+/// 1. the object of an `.index` node (`t[k]`);
+/// 2. the receiver of `t:len()`;
+/// 3. compatibility `#t`;
+/// 4. the single binding site.
 ///
-/// Everything else escapes, including every syntax not enumerated in the
-/// switches below. Adding a language construct therefore *loses* eliminations
-/// until someone models it, which is the safe direction to be wrong in. The
-/// inverse framing — enumerate the escape routes — silently gains unsound
-/// eliminations every time the language grows, which is how a representation
-/// decision starts returning wrong answers.
-///
-/// `table_apply.normalizeModule` MUST have run before this: it is what turns the
-/// canonical application face `t(k)` into an `.index` node. Called on a raw parse
-/// this function reports `aggregate_use` for every accessed table — conservative,
-/// so still sound, but it eliminates nothing.
+/// Everything else escapes. In particular, a `.call` whose callee is `t` is not
+/// an index and is never exempted. Adding syntax therefore loses eliminations
+/// until explicitly modeled, which is the safe direction for storage deletion.
 pub fn positionalTableEscapes(body: *const ast.Block, name: []const u8) Escape {
-    var w: Walk = .{};
-    walkBlock(body, name, &w);
-    // One binding is the binding site. Two is a rebind, and the second value is
-    // not knowable from the first literal. Raised last so a concrete escape
-    // route found during the walk still names itself first.
-    if (w.binds > 1) w.raise(.rebound);
-    return .{ .reason = w.reason };
+    var walk: Walk = .{};
+    walkBlock(body, name, &walk);
+    if (walk.binds > 1) walk.raise(.rebound);
+    return .{ .reason = walk.reason };
 }
 
 fn isName(expr: *const ast.Expr, name: []const u8) bool {
     return expr.* == .name and std.mem.eql(u8, expr.name.ident, name);
 }
 
-/// `t:len()` — the extent face, zero arguments. Shared with `table_facts`, which
-/// must agree with this walk about which mentions are length reads: one walk
-/// calling a mention exempt while the other calls it an access is the
-/// disagreement class that produces a slot map the access site cannot address.
+/// `t:len()` — the current extent face. Shared with `table_facts`; these
+/// analyses must agree about extent reads or they can select a representation
+/// the access site cannot realize.
 pub fn isLengthFace(method: []const u8, arg_count: usize) bool {
     return arg_count == 0 and std.mem.eql(u8, method, "len");
 }
 
-/// Visit an expression in a position that does NOT tolerate the aggregate.
-fn walkExpr(expr: *const ast.Expr, name: []const u8, e: *Walk) void {
+fn walkExpr(expr: *const ast.Expr, name: []const u8, walk: *Walk) void {
     if (isName(expr, name)) {
-        e.raise(.aggregate_use);
+        walk.raise(.aggregate_use);
         return;
     }
-    walkInner(expr, name, e);
+    walkInner(expr, name, walk);
 }
 
-/// Visit the sub-expressions of `expr`, applying the two exemptions.
-fn walkInner(expr: *const ast.Expr, name: []const u8, e: *Walk) void {
+fn walkInner(expr: *const ast.Expr, name: []const u8, walk: *Walk) void {
     switch (expr.*) {
-        // Leaves that cannot mention a name.
         .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => {},
         .name => {},
 
-        // EXEMPTION 1 — `t(k)` / `t[k]`. The object may be the table; the key
-        // may not be (an index expression that reads the table as a whole is an
-        // aggregate use, e.g. `t(t)` — nonsense, but it must not be exempted).
-        .index => |ix| {
-            if (!isName(ix.obj, name)) walkExpr(ix.obj, name, e);
-            walkExpr(ix.key, name, e);
+        // Canonical computed projection. The object may be the aggregate; the
+        // key may not consume the aggregate as a whole (`t[t]` still escapes).
+        .index => |index| {
+            if (!isName(index.obj, name)) walkExpr(index.obj, name, walk);
+            walkExpr(index.key, name, walk);
         },
 
-        // EXEMPTION 2 — `#t`, the compatibility-family spelling of the length.
-        // Every other unary operator wants the value.
-        .unop => |u| {
-            if (u.op == .len and isName(u.operand, name)) return;
-            walkExpr(u.operand, name, e);
+        // Compatibility extent face. In canonical `.id`, `#` is a comment, but
+        // compatibility law can still produce this AST node.
+        .unop => |unary| {
+            if (unary.op == .len and isName(unary.operand, name)) return;
+            walkExpr(unary.operand, name, walk);
         },
 
-        .field => |f| walkExpr(f.obj, name, e),
-        .binop => |b| {
-            walkExpr(b.lhs, name, e);
-            walkExpr(b.rhs, name, e);
+        .field => |field| walkExpr(field.obj, name, walk),
+        .binop => |binary| {
+            walkExpr(binary.lhs, name, walk);
+            walkExpr(binary.rhs, name, walk);
         },
-        .call => |c| {
-            walkExpr(c.func, name, e);
-            for (c.args) |a| walkExpr(a, name, e);
+        // Ordinary application. There is intentionally no table-index special
+        // case here: `t(k)` consumes `t` as a callable value.
+        .call => |call| {
+            walkExpr(call.func, name, walk);
+            for (call.args) |arg| walkExpr(arg, name, walk);
         },
-        // EXEMPTION 3 — `t:len()`, which is how the length is spelled in .id.
-        // `#` is a COMMENT in the canon lexer family (lexer.zig:828), so
-        // exemption 2 above is unreachable from a .id source; without this one
-        // the only length face the language actually has reads as an aggregate
-        // use and every table that asks its own extent stays materialized.
-        .method_call => |mc| {
-            if (isLengthFace(mc.method, mc.args.len) and isName(mc.obj, name)) return;
-            walkExpr(mc.obj, name, e);
-            for (mc.args) |a| walkExpr(a, name, e);
+        .method_call => |call| {
+            if (isLengthFace(call.method, call.args.len) and isName(call.obj, name)) return;
+            walkExpr(call.obj, name, walk);
+            for (call.args) |arg| walkExpr(arg, name, walk);
         },
-        .table => |t| for (t.fields) |fld| switch (fld) {
-            .indexed => |x| {
-                walkExpr(x.key, name, e);
-                walkExpr(x.val, name, e);
+        .table => |table| for (table.fields) |field| switch (field) {
+            .indexed => |value| {
+                walkExpr(value.key, name, walk);
+                walkExpr(value.val, name, walk);
             },
-            .named => |x| walkExpr(x.val, name, e),
-            .positional => |p| walkExpr(p, name, e),
-            .spread => |s| walkExpr(s, name, e),
-            .semantic => |s| walkExpr(s.val, name, e),
+            .named => |value| walkExpr(value.val, name, walk),
+            .positional => |value| walkExpr(value, name, walk),
+            .spread => |value| walkExpr(value, name, walk),
+            .semantic => |value| walkExpr(value.val, name, walk),
         },
-        .sequence => |s| for (s.exprs) |x| walkExpr(x, name, e),
-        .range => |r| {
-            walkExpr(r.start, name, e);
-            walkExpr(r.end, name, e);
-            if (r.step) |s| walkExpr(s, name, e);
+        .sequence => |sequence| for (sequence.exprs) |value| walkExpr(value, name, walk),
+        .range => |range| {
+            walkExpr(range.start, name, walk);
+            walkExpr(range.end, name, walk);
+            if (range.step) |step| walkExpr(step, name, walk);
         },
-        .contains_expr => |c| {
-            walkExpr(c.lhs, name, e);
-            walkExpr(c.rhs, name, e);
+        .contains_expr => |contains| {
+            walkExpr(contains.lhs, name, walk);
+            walkExpr(contains.rhs, name, walk);
         },
-        .try_expr => |t| walkExpr(t.operand, name, e),
-        .unwrap_expr => |u| walkExpr(u.operand, name, e),
-        .await_expr => |a| walkExpr(a.operand, name, e),
-        .if_expr => |ie| {
-            walkExpr(ie.cond, name, e);
-            walkExpr(ie.then_expr, name, e);
-            walkExpr(ie.else_expr, name, e);
+        .try_expr => |value| walkExpr(value.operand, name, walk),
+        .unwrap_expr => |value| walkExpr(value.operand, name, walk),
+        .await_expr => |value| walkExpr(value.operand, name, walk),
+        .if_expr => |conditional| {
+            walkExpr(conditional.cond, name, walk);
+            walkExpr(conditional.then_expr, name, walk);
+            walkExpr(conditional.else_expr, name, walk);
         },
 
-        // Everything else — `func_expr`, `list_comp`, `match_expr`, quotation,
-        // macro calls, the semantic faces. Fail closed.
-        else => e.raise(.unmodelled_construct),
+        // Function/list/match/quotation/macro and any future syntax are unknown
+        // to this bounded analysis, therefore fail closed.
+        else => walk.raise(.unmodelled_construct),
     }
 }
 
-fn walkAssignTarget(target: *const ast.Expr, name: []const u8, e: *Walk) void {
-    // `t(k) = v` writes an element; `t = v` replaces the binding.
+fn walkAssignTarget(target: *const ast.Expr, name: []const u8, walk: *Walk) void {
+    // `t[k] = v` mutates one projected place; `t = v` binds/rebinds the whole.
     if (target.* == .index) {
-        const ix = target.index;
-        if (!isName(ix.obj, name)) walkExpr(ix.obj, name, e);
-        walkExpr(ix.key, name, e);
+        const index = target.index;
+        if (!isName(index.obj, name)) walkExpr(index.obj, name, walk);
+        walkExpr(index.key, name, walk);
         return;
     }
     if (isName(target, name)) {
-        // `t = (…)` is how a table is BOUND in .id — the parser gives an
-        // `.assign`, not a declaration. Count it; `positionalTableEscapes`
-        // decides at the end whether it was the binding or a rebind.
-        e.bind();
+        walk.bind();
         return;
     }
-    walkExpr(target, name, e);
+    walkExpr(target, name, walk);
 }
 
-fn walkBlock(block: *const ast.Block, name: []const u8, e: *Walk) void {
-    for (block.stmts) |*st| walkStmt(st, name, e);
-    if (block.tail_expr) |t| walkExpr(t, name, e);
+fn walkBlock(block: *const ast.Block, name: []const u8, walk: *Walk) void {
+    for (block.stmts) |*statement| walkStmt(statement, name, walk);
+    if (block.tail_expr) |tail| walkExpr(tail, name, walk);
 }
 
-fn walkStmt(st: *const ast.Stmt, name: []const u8, e: *Walk) void {
-    switch (st.*) {
-        .local_decl => |d| {
-            for (d.names) |n| if (std.mem.eql(u8, n.ident, name)) e.bind();
-            for (d.inits) |i| walkExpr(i, name, e);
+fn walkStmt(statement: *const ast.Stmt, name: []const u8, walk: *Walk) void {
+    switch (statement.*) {
+        .local_decl => |declaration| {
+            for (declaration.names) |local| if (std.mem.eql(u8, local.ident, name)) walk.bind();
+            for (declaration.inits) |init| walkExpr(init, name, walk);
         },
-        .global_decl => |d| {
-            for (d.names) |n| if (std.mem.eql(u8, n.ident, name)) e.bind();
-            for (d.inits) |i| walkExpr(i, name, e);
+        .global_decl => |declaration| {
+            for (declaration.names) |local| if (std.mem.eql(u8, local.ident, name)) walk.bind();
+            for (declaration.inits) |init| walkExpr(init, name, walk);
         },
-        .const_decl => |d| {
-            if (std.mem.eql(u8, d.ident, name)) e.bind();
-            walkExpr(d.val, name, e);
+        .const_decl => |declaration| {
+            if (std.mem.eql(u8, declaration.ident, name)) walk.bind();
+            walkExpr(declaration.val, name, walk);
         },
-        .assign => |a| {
-            for (a.targets) |t| walkAssignTarget(t, name, e);
-            for (a.values) |v| walkExpr(v, name, e);
+        .assign => |assignment| {
+            for (assignment.targets) |target| walkAssignTarget(target, name, walk);
+            for (assignment.values) |value| walkExpr(value, name, walk);
         },
-        .call_stmt => |c| walkExpr(c.expr, name, e),
-        .expr_stmt => |x| walkExpr(x.expr, name, e),
-        .do_block => |b| walkBlock(&b.body, name, e),
-        .while_loop => |w| {
-            walkExpr(w.cond, name, e);
-            walkBlock(&w.body, name, e);
+        .call_stmt => |call| walkExpr(call.expr, name, walk),
+        .expr_stmt => |expression| walkExpr(expression.expr, name, walk),
+        .do_block => |block| walkBlock(&block.body, name, walk),
+        .while_loop => |loop| {
+            walkExpr(loop.cond, name, walk);
+            walkBlock(&loop.body, name, walk);
         },
-        .repeat_loop => |r| {
-            walkBlock(&r.body, name, e);
-            walkExpr(r.cond, name, e);
+        .repeat_loop => |loop| {
+            walkBlock(&loop.body, name, walk);
+            walkExpr(loop.cond, name, walk);
         },
-        .if_stmt => |f| {
-            if (f.binding) |b| walkExpr(b.expr, name, e);
-            walkExpr(f.cond, name, e);
-            walkBlock(&f.then, name, e);
-            for (f.elseifs) |ei| {
-                walkExpr(ei.cond, name, e);
-                walkBlock(&ei.body, name, e);
+        .if_stmt => |conditional| {
+            if (conditional.binding) |binding| walkExpr(binding.expr, name, walk);
+            walkExpr(conditional.cond, name, walk);
+            walkBlock(&conditional.then, name, walk);
+            for (conditional.elseifs) |alternative| {
+                walkExpr(alternative.cond, name, walk);
+                walkBlock(&alternative.body, name, walk);
             }
-            if (f.else_body) |eb| walkBlock(&eb, name, e);
+            if (conditional.else_body) |body| walkBlock(&body, name, walk);
         },
-        .num_for => |f| {
-            if (std.mem.eql(u8, f.var_name, name)) e.raise(.rebound);
-            walkExpr(f.start, name, e);
-            walkExpr(f.stop, name, e);
-            if (f.step) |s| walkExpr(s, name, e);
-            walkBlock(&f.body, name, e);
+        .num_for => |loop| {
+            if (std.mem.eql(u8, loop.var_name, name)) walk.raise(.rebound);
+            walkExpr(loop.start, name, walk);
+            walkExpr(loop.stop, name, walk);
+            if (loop.step) |step| walkExpr(step, name, walk);
+            walkBlock(&loop.body, name, walk);
         },
-        .gen_for => |f| {
-            for (f.vars) |v| if (std.mem.eql(u8, v, name)) e.raise(.rebound);
-            // The iterable wants the aggregate: `for x in t` reads the whole
-            // table, so it is an escape and is NOT exempted here.
-            for (f.iters) |i| walkExpr(i, name, e);
-            walkBlock(&f.body, name, e);
+        .gen_for => |loop| {
+            for (loop.vars) |variable| if (std.mem.eql(u8, variable, name)) walk.raise(.rebound);
+            for (loop.iters) |iter| walkExpr(iter, name, walk);
+            walkBlock(&loop.body, name, walk);
         },
-        // `return t` hands the aggregate to the caller.
-        .ret => |r| for (r.vals) |v| walkExpr(v, name, e),
+        .ret => |result| for (result.vals) |value| walkExpr(value, name, walk),
         .brk, .cont, .goto_stmt, .label_stmt => {},
-
-        // Nested function declarations can capture; match/try/defer bodies and
-        // the definition forms are not modelled. Fail closed.
-        else => e.raise(.unmodelled_construct),
+        else => walk.raise(.unmodelled_construct),
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+const Lexer = @import("lexer.zig").Lexer;
+const Parser = @import("parser.zig").Parser;
 
-test "escape: non-escaping local can be stack allocated" {
-    var sym = Symbol{
-        .typ = .void,
-        .is_const = false,
-    };
-    try std.testing.expect(canStackAllocate(&sym));
-    try std.testing.expect(shouldPruneArc(&sym));
+fn parseMainBody(alloc: std.mem.Allocator, source: []const u8) !*const ast.Block {
+    const owned = try alloc.dupe(u8, source);
+    var lexer = Lexer.init(owned, "escape_test.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    const module = try parser.parse_module();
+    for (module.body.stmts) |*statement| {
+        if (statement.* == .func_decl and statement.func_decl.path.len == 1 and
+            std.mem.eql(u8, statement.func_decl.path[0], "main"))
+        {
+            return &statement.func_decl.func.body;
+        }
+    }
+    return error.TestExpectedEqual;
 }
 
-test "escape: global cannot be stack allocated" {
-    var sym = Symbol{
-        .typ = .void,
-        .is_const = false,
-        .is_global = true,
-    };
-    try std.testing.expect(!canStackAllocate(&sym));
-    try std.testing.expect(!shouldPruneArc(&sym));
+test "escape: bracket projection does not escape aggregate" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const body = try parseMainBody(arena.allocator(),
+        \\main: i64 = ()
+        \\    t = (10, 20, 30)
+        \\    t[2]
+        \\
+    );
+    try std.testing.expectEqual(Reason.none, positionalTableEscapes(body, "t").reason);
 }
 
-test "escape: captured local cannot be stack allocated" {
-    var sym = Symbol{
-        .typ = .void,
-        .is_const = false,
-        .captured_by_closure = true,
-        .escapes = true,
-    };
-    try std.testing.expect(!canStackAllocate(&sym));
-    try std.testing.expect(!shouldPruneArc(&sym));
+test "escape: ordinary application of aggregate is not indexed access" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const body = try parseMainBody(arena.allocator(),
+        \\main: i64 = ()
+        \\    t = (10, 20, 30)
+        \\    t(2)
+        \\
+    );
+    try std.testing.expectEqual(Reason.aggregate_use, positionalTableEscapes(body, "t").reason);
 }
 
-test "escape: address-taken local cannot be stack allocated" {
-    var sym = Symbol{
-        .typ = .void,
-        .is_const = false,
-        .address_taken = true,
-    };
-    try std.testing.expect(!canStackAllocate(&sym));
-    // address_taken doesn't affect ARC pruning — the value might not escape
-    try std.testing.expect(shouldPruneArc(&sym));
+test "escape: passing aggregate escapes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const body = try parseMainBody(arena.allocator(),
+        \\main: i64 = ()
+        \\    t = (10, 20, 30)
+        \\    sink(t)
+        \\    0
+        \\
+    );
+    try std.testing.expectEqual(Reason.aggregate_use, positionalTableEscapes(body, "t").reason);
 }
 
-test "escape: typeNeedsArc for owned types" {
-    try std.testing.expect(typeNeedsArc(.str));
-    try std.testing.expect(!typeNeedsArc(.i32));
-    try std.testing.expect(!typeNeedsArc(.f64));
-    try std.testing.expect(!typeNeedsArc(.bool));
-    try std.testing.expect(!typeNeedsArc(.void));
-}
-
-// LAYER 1 IS NOT A NON-ESCAPE PROOF. This test exists so that the next person
-// to consider wiring `canStackAllocate` into a storage-removal decision meets
-// the counterexample first: a symbol that is returned, passed to an unknown
-// relation, or otherwise handed out still answers `true`, because nothing in
-// the pipeline ever writes `escapes` for those routes and `address_taken` has
-// no producer at all.
-test "escape: canStackAllocate answers true for a symbol with no producer for its escape facts" {
-    var returned = Symbol{ .typ = .void, .is_const = false };
-    // Exactly what a returned or argument-passed local looks like coming out of
-    // sema today: every escape field still at its default.
-    try std.testing.expect(!returned.escapes);
-    try std.testing.expect(!returned.address_taken);
-    try std.testing.expect(!returned.captured_by_closure);
-    try std.testing.expect(canStackAllocate(&returned));
+test "escape: second whole binding is a rebind" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const body = try parseMainBody(arena.allocator(),
+        \\main: i64 = ()
+        \\    t = (10, 20, 30)
+        \\    t = (40, 50, 60)
+        \\    t[1]
+        \\
+    );
+    try std.testing.expectEqual(Reason.rebound, positionalTableEscapes(body, "t").reason);
 }
