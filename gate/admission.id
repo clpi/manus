@@ -1,3 +1,4 @@
+## TEACHING-STATUS: canonical
 # gate/admission — semantic-admission firewall for canonical native operations.
 #
 # Every ADDED canonical line operation must classify as exactly one of:

@@ -1,3 +1,4 @@
+## TEACHING-STATUS: canonical
 # gate/build — named step only. Not a second idiom runner.
 #
 # Scan:  git diff -U0 -- '*.id' | idol run gate/idiom.id
