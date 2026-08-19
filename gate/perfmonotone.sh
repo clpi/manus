@@ -14,7 +14,7 @@ set -u
 cd "$(dirname "$0")/.." || exit 2
 
 PROG=docs/perf-monotone-program.md
-WANT_MATRIX=15
+WANT_MATRIX=207
 WANT_CONTRACT=16
 FINDINGS=0
 

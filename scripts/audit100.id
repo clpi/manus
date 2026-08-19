@@ -1230,13 +1230,13 @@ main: i64 = ()
   # doing real work: `self: any` is a typed parameter, `self:peek()` is an
   # invoke, and one space decides it.
   sp: i64 = 8
-  spat: i64 = probe(pat(sp), "    scale = (self, k) @{ubrace} .x * k {ubraceclose}")
+  spat: i64 = probe(pat(sp), "    scale = (self, k) {ubrace} .x * k {ubraceclose}")
   sbare: i64 = probe(pat(sp), "    len = (self): i64")
   styped: i64 = probe(pat(sp), "    fh.close = (self: any) nil")
   ssecond: i64 = probe(pat(sp), "    write = (fh, self) nil")
   swalk: i64 = probe(pat(sp), "    n = self.pos + 1")
   sinvoke: i64 = probe(pat(sp), "    n = self:peek() + 1")
-  scanon: i64 = probe(pat(sp), "    scale = (k) @{ubrace} .x * k {ubraceclose}")
+  scanon: i64 = probe(pat(sp), "    scale = (k) {ubrace} .x * k {ubraceclose}")
   sword: i64 = probe(pat(sp), "    myself = (herself, itself) nil")
   if spat == 0 or sbare == 0 or styped == 0 or ssecond == 0
     print("audit100: FAIL — the self row does not see a parameter named self (bare {spat}, sole {sbare}, typed {styped}, second {ssecond}); it would read 0 and pass")

@@ -455,7 +455,7 @@ pattern: {
 }
 
 selfzero.pattern = pattern{
-    canon      = "scale = (k) @{ x * k, y * k }"
+    canon      = "scale = (k) { x * k, y * k }"
     denied     = "scale = (self, k) …"
     graph      = "scale(point, k)"
     lowering   = "param 0 is the subject; the surface names no receiver"
@@ -1944,7 +1944,7 @@ subtract.proves = {
 # Leading-dot fields and bare dot are retirement debt; leading colon remains
 # the admitted ambient-subject application face.
 #
-#   scale = (k) @{ x * k, y * k }
+#   scale = (k) { x * k, y * k }
 #
 # Which collides with a local binding named `x`, so obligation 2 —
 # DETERMINISTIC RESOLUTION — is the one that decides this form, and it is not
@@ -1969,11 +1969,11 @@ subtract.free = { "case in construction", "argument lens", "inferred case" }
 #
 # So this is the SELF-ZERO form:
 #
-#   point:scale = (k) @{ x * k, y * k }
+#   point:scale = (k) { x * k, y * k }
 #
 # and this is not:
 #
-#   point:scale = (k) @{ .x * k, .y * k }
+#   point:scale = (k) { .x * k, .y * k }
 
 selfzero = law{
     id    = "law.selfzero"

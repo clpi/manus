@@ -1,0 +1,87 @@
+#!/bin/sh
+# gapc0 — research-GAP C0 alignment census.
+#
+# Every gaps/GAP-*.md numbered >= 175 must carry a complete "## C0 alignment"
+# block (schema: gaps/RESEARCH-SPINE.md) whose kind, registry, and source
+# syntax deltas are literally 0. A missing block, a missing field, an empty
+# field, or a nonzero delta is one violation each. A research note that needs
+# a new kind/registry/syntax is a constitutional amendment request, not a GAP,
+# and it fails here until C0 itself is amended.
+#
+# Exit code = violation count. checked == 0 is itself a failure (exit 2): a
+# census that examined no files has not passed.
+set -eu
+
+repo=$(unset CDPATH; cd -- "$(dirname -- "$0")/../../.." && pwd)
+gaps=${IDOL_GAPS_DIR:-$repo/gaps}
+
+fail() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+[ -d "$gaps" ] || fail "gapc0: no gaps directory at $gaps"
+
+number() {
+  printf '%s' "$1" | sed -n 's/^GAP-0*\([0-9][0-9]*\)\.md$/\1/p'
+}
+
+viol=0
+checked=0
+
+for f in "$gaps"/GAP-*.md; do
+  [ -f "$f" ] || continue
+  n=$(number "${f##*/}")
+  [ -n "$n" ] || continue
+  [ "$n" -ge 175 ] || continue
+  checked=$((checked + 1))
+
+  if ! grep -q '^## C0 alignment$' "$f"; then
+    printf '%s: missing C0 alignment block\n' "${f##*/}"
+    viol=$((viol + 1))
+    continue
+  fi
+
+  # The block is the tail from the heading; delta fields are exact-zero.
+  block=$(sed -n '/^## C0 alignment$/,$p' "$f")
+
+  for fld in \
+    "constitutional owners" \
+    "kind delta" \
+    "registry delta" \
+    "source syntax delta" \
+    "semantic invariant" \
+    "physical mechanism" \
+    "prerequisites" \
+    "foreign implication" \
+    "world implication" \
+    "projection implication" \
+    "demand implication" \
+    "realization implication" \
+    "evidence" \
+    "deletion witness"
+  do
+    case $fld in
+      "kind delta"|"registry delta"|"source syntax delta")
+        printf '%s\n' "$block" | grep -q -- "^- \*\*$fld:\*\* 0$" || {
+          printf '%s: field [%s] missing or not exactly 0\n' "${f##*/}" "$fld"
+          viol=$((viol + 1))
+        }
+        ;;
+      *)
+        printf '%s\n' "$block" | grep -q -- "^- \*\*$fld:\*\* ..*" || {
+          printf '%s: field [%s] missing or empty\n' "${f##*/}" "$fld"
+          viol=$((viol + 1))
+        }
+        ;;
+    esac
+  done
+done
+
+[ "$checked" -gt 0 ] || {
+  printf '%s\n' "gapc0: examined 0 research GAPs — the census did not run" >&2
+  exit 2
+}
+
+printf '%s\n' "gapc0: $checked research GAPs checked, $viol violations"
+exit "$viol"
