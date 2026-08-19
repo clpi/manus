@@ -98,6 +98,23 @@ pub fn build(b: *std.Build) void {
     addDirectRuntimeObjects(b, exe.root_module);
     b.installArtifact(exe);
 
+    // `zig build grammar-role` — regenerate lib/token/grammarrole.id, the
+    // generated grammar authority scripts/grammarconvergence.id consumes.
+    // This wiring is what makes src/emit_grammar_role.zig reachable from a
+    // build entry point (gate/orphan.sh), instead of a hand-run `zig run`.
+    const grammar_role_exe = b.addExecutable(.{
+        .name = "emit_grammar_role",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/emit_grammar_role.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const grammar_role_run = b.addRunArtifact(grammar_role_exe);
+    grammar_role_run.setCwd(b.path("."));
+    const grammar_role_step = b.step("grammar-role", "Regenerate lib/token/grammarrole.id");
+    grammar_role_step.dependOn(&grammar_role_run.step);
+
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (@hasDecl(std.Build.Step.Run, "addPassthruArgs")) {

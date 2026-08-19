@@ -103,4 +103,8 @@ test {
     _ = @import("quotient_synth.zig");
     _ = @import("obseq.zig");
     _ = @import("loop_closure.zig");
+    // `floor_derive.zig` carries the HPLS §106 floor-ladder deriver and its
+    // own tests; importing it here makes it reachable from a build entry
+    // point (the orphan gate) and runs its tests on every build.
+    _ = @import("floor_derive.zig");
 }

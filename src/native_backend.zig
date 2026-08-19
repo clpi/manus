@@ -11332,13 +11332,28 @@ test "native backend refuses source conversion absent application facts and reta
     sem.idol_mode = true;
     try sem.check_module(&mod);
 
-    try expectCheckedTestSemanticFailure(
-        alloc,
-        &mod,
-        &sem,
-        "unresolved-application-facts",
-        null,
-    );
+    // SLOT-ROLE-ONE (8534db8d) made the curried conversion RESOLVE: the first
+    // operand occupies the subject slot, the application facts publish, and
+    // `to(str)(42)` emits instead of refusing. This test had pinned the OLD
+    // refusal ("unresolved-application-facts"); the reland's idol-native
+    // suite (80/80) and the differential battery (0 answer diffs) are the
+    // authority for the capability change. Pinned now: resolution succeeds
+    // and assembly emits with graph lineage observed.
+    {
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        try liftCheckedTestGraph(&mod, &sem, &graph);
+        var resolved: Diagnostic = .{};
+        const emitted = try emitAssemblyWithGraphLineageObserved(
+            alloc,
+            &mod,
+            "native-asm",
+            &graph,
+            &resolved,
+        );
+        defer emitted.deinit(alloc);
+        try std.testing.expect(emitted.asm_text.len > 0);
+    }
 
     const instructions = [_]dnir.Instr{
         .{ .op = .alloc_slots, .result = 0, .lhs = .{ .i64 = 3 } },
