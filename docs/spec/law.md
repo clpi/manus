@@ -1,6 +1,6 @@
-# Idsem — final one-page language + semantic + compiler law
+# Idol — final one-page language + semantic + compiler law
 
-This is the **supreme one-page law** of Idsem. It is authoritative and supersedes
+This is the **supreme one-page law** of Idol. It is authoritative and supersedes
 any stale projection wherever they diverge. `docs/spec/constitution.md` (C0)
 remains the structured long-form expansion of this law and the home of the
 `law.*` identities that gates and code reference; where C0, `docs/spec/agent.md`,
@@ -12,12 +12,8 @@ never authority above this page.
 
 ## Purpose
 
-Idsem is Lua progressively specialized into native execution. The project's
-former name Idol is historical Git provenance, not current identity; host
-executables, remotes, and ABI spellings (`bin/idol`, `idollang/idol`) are
-bootstrap-bridge identifiers retained until their own deletion gates.
+Idol is Lua progressively specialized into native execution.
 
-The specialization chain:
     ordinary Lua meaning
     → inferred facts
     → guarded specialization
@@ -63,7 +59,7 @@ elsewhere compensates for an open loss (§100).
   dimensions of that frontier, not afterthoughts.
 - faster Wasm than Wasmtime across target workloads on every measured phase.
 
-SHC: every production semantic decision eventually produced by Idsem itself.
+SHC: every production semantic decision eventually produced by Idol itself.
 
 ## 1. Fundamental law
 
@@ -146,7 +142,7 @@ The ordering is exact:
 Exactly one source law owns every source position. Never union grammars, try
 several parsers and choose one that accepts, infer a grammar from command-like
 text, or activate syntax because a world or authority is reachable. Canonical
-`.id` ingress selects Idsem source law; other admitted source partitions may
+`.id` ingress selects Idol source law; other admitted source partitions may
 select Lua, C, Bash, Wasm, or another exact law. A suffix or path may participate
 at ingress and remains provenance afterward; it is never reconstructed as
 semantic authority.
@@ -159,7 +155,7 @@ not permanent `BashPipelineNode`, `LuaMethodCall`, `CForStatement`, or
 equivalent remains an exact foreign semantic identity in the same id universe.
 
 Source law never grants authority or selects realization. A tool may recognize
-Bash with zero process authority. Process authority may be present while Idsem
+Bash with zero process authority. Process authority may be present while Idol
 grammar remains unchanged. Shell is command interpretation law; Bash is one
 foreign source and semantic lawset; process is a world capability. They are
 independent facts even when a launcher supplies them together.
@@ -438,12 +434,6 @@ compiler proves both denote the same member they may converge to one semantic
 identity, but `.` is never computed — a runtime key always uses `table[key]`.
 Ordinal access `row[1]` is likewise computed projection; no `at` or `get`
 unless `at` is an independently meaningful domain relation.
-
-Cost falls monotonically with knowledge (§26): dynamic table + dynamic key →
-generic lookup; known shape + known-domain key → specialized dispatch/offset;
-known shape + exact key → direct field offset; sealed table + exact demanded
-field → scalar replacement; constant → no table at runtime. The source form is
-identical throughout.
 
 ## 8. Colon
 
@@ -777,7 +767,7 @@ One semantic pack model. Physical packs materialize only if demanded. Multiple
 returns may become registers, independent scalars, or an ABI aggregate only at a
 necessary boundary.
 
-Internal Idsem ABI may specialize beyond the generic external C ABI. Foreign ABI
+Internal Idol ABI may specialize beyond the generic external C ABI. Foreign ABI
 only at an actual foreign boundary. No tuple object by default.
 
 ## 32. Range / bounds / numeric facts
@@ -803,7 +793,7 @@ One iteration relation. No mandatory iterator object. Semantic chains
 (map, filter, each, reduction) may fuse into one physical loop when facts permit.
 No intermediate table merely because source is high-level.
 
-FTCFTW requires high-level Idsem to meet or beat handwritten loop realizations.
+FTCFTW requires high-level Idol to meet or beat handwritten loop realizations.
 
 ## 35. Hardware
 
@@ -857,7 +847,7 @@ kingdoms.
 
 ## 40. Compile time
 
-Compile-time execution uses ordinary Idsem semantics under world/stage facts. No
+Compile-time execution uses ordinary Idol semantics under world/stage facts. No
 separate compile-time language.
 
 Staged results retain exact dependencies. Cache by semantic dependencies, not
@@ -881,7 +871,7 @@ interop capability and does not select the C backend.
 Every backend refusal names application id, missing fact, expected producer,
 consumer/cause. Crashes: P0, target 0.
 
-Idsem never lowers away semantic information merely because a conventional
+Idol never lowers away semantic information merely because a conventional
 compiler phase no longer knows how to represent it. Semantic identity persists
 to the final machine decision; representation is chosen once, as late as
 profitable, from exact demand, effects, alias, shape, world, and target. There
@@ -906,7 +896,7 @@ central claims each bind a named law:
 9. Application-level linking and incrementality — no module or file grain after ingestion (`law.link.semantic`).
 10. Verified realization search — aggressive local machine rewrites carry a translation-validation witness (`law.realization.valid`).
 11. Causal cost accounting — every physical cost names the unresolved semantic fact requiring it (§26; `law.cost.explain`).
-12. Semantic lower-bound evidence — measure against the semantic minimum, the best C/Fortran/LLVM result, and the current Idsem result (`law.lower.bound`).
+12. Semantic lower-bound evidence — measure against the semantic minimum, the best C/Fortran/LLVM result, and the current Idol result (`law.lower.bound`).
 
 No machine or lowering stage may ask whether a value was a function, a table, a
 callee spelling, or an AST node — it consumes the resolved application facts
@@ -944,7 +934,7 @@ reachability through object/link selection.
 
 Foreign representation exists only at the boundary:
 
-    Idsem semantic value
+    Idol semantic value
     → required ABI projection
     → foreign application
     → result projection
@@ -973,7 +963,7 @@ impossibility. Do not use regex as final semantic authority.
 
 ## 48. Graph sovereignty
 
-The final semantic graph must contain Idsem ids/facts; not mirror host AST
+The final semantic graph must contain Idol ids/facts; not mirror host AST
 ontology; not depend on host tags for semantic validity; not recover meaning
 through AST pointers; not store target realization candidates in the semantic
 core; not store freeform prose as facts; not conflate unknown and absent; not
@@ -1004,10 +994,10 @@ Self-hosting is EXECUTED SEMANTIC AUTHORITY TRANSFER. Not `.id` percentage.
 Target chain: source family → lexical identity → grammar roles → parser facts →
 binding/resolution → graph → demand → realization → machine → object/link.
 
-Each transferred producer: new Idsem authority executes; old host semantic
+Each transferred producer: new Idol authority executes; old host semantic
 producer disabled/sabotaged; no fallback.
 
-Compiler B: seed builds canonical Idsem compiler source. Compiler C: B builds the
+Compiler B: seed builds canonical Idol compiler source. Compiler C: B builds the
 same source. Acceptance requires semantic/diagnostic/behavioral correspondence.
 
 Reaching the earliest executed SHC frontier is the priority. A bounded foreign
@@ -1019,7 +1009,7 @@ as semantic authority, or as a new foreign semantic kingdom beside the graph —
 never as bootstrap scaffolding toward the next native owner. Do not block on the
 monoglot ideal where the native compiler cannot yet express a stage: mark
 `IMPLEMENTATION-BLOCKED` and add the smallest unblocking bridge rather than idle.
-Generated bridge artifacts are regenerated from their Idsem owner, never
+Generated bridge artifacts are regenerated from their Idol owner, never
 hand-forked.
 
 ## 51. Final source surface
@@ -1062,7 +1052,7 @@ collapse the entire world algebra: no runtime world allocation, table merge,
 hash, lookup, closure environment, or protocol dictionary unless an independent
 unresolved semantic reason requires it.
 
-Everything else should be inferred where unique. The ideal Idsem program
+Everything else should be inferred where unique. The ideal Idol program
 increasingly reads like the problem, while the graph contains everything the
 machine needs.
 
@@ -1307,7 +1297,7 @@ reason (§26 FTCFTW cost law).
     @k = v            mutate a world member place
     able(r)           explicit requirement boundary, normally inferred
 
-SOURCE-INFER-ONE compresses further. Ordinary Idsem mostly reads `sale.quote(100)`
+SOURCE-INFER-ONE compresses further. Ordinary Idol mostly reads `sale.quote(100)`
 while the graph understands the exact quote id, current world, ambient tax/fee
 projections, inferred constraints, demand, and target/witness facts. The
 programmer reaches for `@`, `@member`, `@{}`, `thing@world`, and `able(...)` only when
@@ -1449,7 +1439,7 @@ compiler mode.
 
 ## 63. No undefined behavior
 
-Idsem requires no semantic undefined behavior to optimize aggressively.
+Idol requires no semantic undefined behavior to optimize aggressively.
 Optimization comes from exact alias, world, shape, demand, range, descriptor,
 application, effect, and lifetime facts. Unknown behavior remains unknown; proven
 facts enable optimization. (Agent-generated software depends on this.)
@@ -1492,7 +1482,7 @@ rollback tricks. Whether `@` may be rebound, and concurrency visibility, follow
 
 ## 68. Compile-time generation and hygiene by id
 
-Compile-time execution uses ordinary Idsem semantics under world/stage facts (§40)
+Compile-time execution uses ordinary Idol semantics under world/stage facts (§40)
 — no separate compile-time language and no macro hygiene subsystem. Generated
 facts reference exact semantic ids, so hygiene follows from identity + provenance
 + world, never token renaming. Generation should produce descriptors, tables,
@@ -1573,7 +1563,7 @@ second generic system.
 
 ## 79. Tail calls
 
-Tail position is a semantic/demand fact. Idsem preserves proper tail-call
+Tail position is a semantic/demand fact. Idol preserves proper tail-call
 semantics (Lua heritage); direct native honors them where required. Recursive
 state machines depend on it.
 
@@ -1650,7 +1640,7 @@ answers "why isn't this the theoretical minimum?" This is an MCP primitive.
 
 FTCFTW compares against three, not one: semantic lower bound (minimum memory
 traffic, allocations, dynamic dispatch, passes, required branches/sync), C
-baseline, and Idsem actual. The lower bound proves when further optimization is
+baseline, and Idol actual. The lower bound proves when further optimization is
 physically impossible and prevents benchmark gaming.
 
 ## 91. Compile-time FTCFTW
@@ -1716,7 +1706,7 @@ compiler know more, not the syntax know more.
 ## 98. FTCFTW-DOMINANCE
 
 For every program, target, world, workload, policy, and observable semantics
-under comparison, Idsem searches for the least-cost lawful realization. Against
+under comparison, Idol searches for the least-cost lawful realization. Against
 the strongest semantically equivalent external implementation it must strictly
 improve every cost dimension where improvement is physically possible, equal the
 proven lower bound where improvement is impossible, and never lose without naming
@@ -1725,13 +1715,13 @@ the exact tradeoff or unresolved fact responsible.
 The opponent is `BEST KNOWN IMPLEMENTATION + SEMANTIC/PHYSICAL LOWER BOUND`, not
 one compiler. Objectives genuinely conflict (throughput ↔ size, specialization ↔
 compile time, prefetch ↔ memory traffic/energy), so FTCFTW is a Pareto-dominance
-requirement, never a scalar score: Idsem's achievable frontier must dominate the
+requirement, never a scalar score: Idol's achievable frontier must dominate the
 comparison frontier everywhere the semantics permit.
 
 Target policy is an explicit build-world fact (§74) — same semantic program, no
 source change — expressed as an objective under budgets: minimize latency under
 100 KiB; minimize size under latency ≤ X; minimize compile time under runtime ≤
-X; minimize energy under throughput ≥ X. Idsem finds the best lawful realization
+X; minimize energy under throughput ≥ X. Idol finds the best lawful realization
 for that policy.
 
 The canonical acceptance inequality, for each comparable workload P, target T,
@@ -1740,7 +1730,7 @@ world W, policy Q, competitor set C:
     IdolCost(P,T,W,Q) Pareto-dominates BestKnownCost(C,P,T,W,Q)
 
 unless the competing point is already on a proven semantic/physical lower bound,
-in which case Idsem must reach the same bound. Failure sets FTCFTW status OPEN;
+in which case Idol must reach the same bound. Failure sets FTCFTW status OPEN;
 no rhetorical exception.
 
 FTCFTW spans the whole lifecycle, not only inner loops: edit, incremental
@@ -1748,7 +1738,7 @@ analysis, compile, link, load, relocation, startup, warmup, first result, steady
 state, tail latency, footprint, shutdown, distribution — and for Wasm also
 download bytes, decode, validate, compile, instantiate, initialize, first call,
 steady state, RSS. A binary 2% faster that compiles 30× slower and is 5× larger
-is not dominance. The Idsem compiler obeys this same contract on itself
+is not dominance. The Idol compiler obeys this same contract on itself
 (self-hosting makes it recursively testable).
 
 ## 99. OPTIMIZATION-OPEN
@@ -1809,12 +1799,12 @@ is a compiler defect.
 
 Competitors and hardware are continuous discovery systems: compile equivalent
 source under the strongest competitor configuration, measure, inspect machine
-behavior, map any competitor advantage back to an Idsem semantic opportunity, and
+behavior, map any competitor advantage back to an Idol semantic opportunity, and
 add a regression oracle; and directly explore verified realizations on the actual
 target to discover wins no compared compiler generates (idioms, unrolling,
 prefetch, vector width, alignment, addressing, branchless forms, cache blocking).
 
-A benchmark is CLOSED only when Idsem either dominates every compared
+A benchmark is CLOSED only when Idol either dominates every compared
 implementation or reaches a proven lower bound. No benchmark win elsewhere and no
 geometric mean compensates for an open loss: if 99 benchmarks win and one loses
 where improvement is possible, FTCFTW remains OPEN for that case. This makes the
@@ -1834,7 +1824,7 @@ source.
 
 The same `table` semantics may realize as hash table, sorted vector, B-tree,
 direct array, perfect hash, trie, bitmap, bitset, struct, SoA, scalarized
-registers, or nothing (§14 shapes, §25 representation). Idsem compiles semantic
+registers, or nothing (§14 shapes, §25 representation). Idol compiles semantic
 data structures, not programmer-selected physical containers.
 
 Realization is demand-directed (§24): `text:parse(json)` feeding only
@@ -1858,7 +1848,7 @@ program's semantic observations — not merely machine representation and code
 generation. The FTCFTW optimizer is a semantic-to-physical realization optimizer,
 not a code optimizer. No compiler phase, backend convention, runtime abstraction,
 ABI, operating-system interface, data structure, algorithm, device, or currently
-known optimization defines the boundary of Idsem's realization space.
+known optimization defines the boundary of Idol's realization space.
 
 A physical strategy is admissible when: semantic observations are preserved;
 authority/effect constraints are satisfied; target/world constraints admit it;
@@ -1902,7 +1892,7 @@ allocation identity, table layout, iteration order, exact scheduling,
 intermediate strings, physical representation, device, or storage tier, then
 each is a realization choice, not a constraint (C0 `law.observation.minimum`).
 
-FTCFTW power is proportional to how carefully Idsem defines what is and is not
+FTCFTW power is proportional to how carefully Idol defines what is and is not
 observable: every accidental observable is a permanent optimization barrier.
 Defining the exact observation model — the behavior realizations must preserve —
 is the highest-leverage remaining language-design work. An observable that is
@@ -2107,10 +2097,10 @@ every optimization carries an explicit break-even execution count.
 
 **Meta-rule.** Individual optimization ideas — and every one of the ~200 discussed
 frontier classes — are instances discovered *inside* `R`, not additions to the
-constitution. Idsem chooses the cheapest verified physical way to satisfy a
+constitution. Idol chooses the cheapest verified physical way to satisfy a
 semantic observation contract; execution, algorithm, architecture, storage,
 distribution, and even whether computation occurs at all are candidate strategies,
-admissible whenever the four-part admission rule holds. This is how Idsem claims
+admissible whenever the four-part admission rule holds. This is how Idol claims
 every identified *and unidentified future* optimization by construction rather
 than by an ever-growing checklist (C0 `law.optimization.space`).
 
@@ -2120,7 +2110,7 @@ than by an ever-growing checklist (C0 `law.optimization.space`).
 already assumes computation must occur and that a compiler is choosing how to
 *execute a program*. The square-zero premise is larger. FTCFTW is not compiler
 optimization; it is **optimal verified realization under semantics, information,
-physics, economics, and uncertainty**. Idsem chooses the cheapest verified
+physics, economics, and uncertainty**. Idol chooses the cheapest verified
 physical way to satisfy a semantic observation contract — and execution,
 algorithm, architecture, storage, distribution, and *whether any computation
 occurs at all* are merely candidate strategies (§189-class lawful nonexecution).
@@ -2195,7 +2185,7 @@ and hardware targets all remain **extensible**: a future architecture, memory
 technology, OS interface, algorithm, optimization theorem, cost dimension, or
 observation must enrich existing identities without minting a parallel compiler
 world, and no named ontology may permanently narrow `R` (§102, §99). The premise
-in one line: *Idsem satisfies a semantic observation contract at the cheapest
+in one line: *Idol satisfies a semantic observation contract at the cheapest
 verified physical point — computation is one candidate strategy among many, and
 sometimes the answer is to compute nothing* (C0 `law.realization.contract`).
 
@@ -2295,7 +2285,7 @@ exact quantitative definition of remaining FTCFTW debt, and "no faster found" is
 kept distinct from "proven none faster exists" (§51/§52-class, C0
 `law.realization.universe`).
 
-**The fundamental statement.** *Idsem specifies meaning and demanded observation,
+**The fundamental statement.** *Idol specifies meaning and demanded observation,
 not execution. Every property not required by that contract remains an open
 optimization variable. FTCFTW is the continuous search for the verified
 nondominated physical realization over an intentionally unbounded realization
@@ -2377,7 +2367,7 @@ observations; everything else — control flow, algorithms, data structures,
 memory, code, operating-system interaction, hardware placement, and compiler
 strategy — is realization space and may disappear, transform, migrate, or be
 synthesized whenever verified equivalence permits a cheaper physical outcome.
-Idsem is a world-relative Lua semantic graph where ordinary table projection,
+Idol is a world-relative Lua semantic graph where ordinary table projection,
 subject-oriented relations, one universal application algebra, mostly inferred
 `able(...)` constraints, exact demand, and representation-polymorphic realization
 allow minimal source to specialize all the way into minimal native machine work.

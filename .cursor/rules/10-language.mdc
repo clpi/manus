@@ -7,7 +7,7 @@ globs: ["*.id", "docs/spec/**", "CLAUDE.md", "AGENTS.md", "gate/**"]
 Use `AGENTS.md`, `docs/spec/constitution.md`, `docs/spec/source.md`,
 `CLAUDE.md`, `docs/spec/grammar.md`, and `docs/spec/corpus.md`.
 
-Canonical source is `.id`. Current language is **Idsem** (`idol`). C0 owns
+Canonical source is `.id`. Current language is **Idol** (`idol`). C0 owns
 `law.update.face`; `AGENTS.md` projects it, and `gate/idiom.id` exposes
 candidate pressure pending the graph witness. Do not use examples or
 historical files as language law.

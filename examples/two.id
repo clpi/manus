@@ -1,0 +1,11 @@
+add: i64 = (a: i64, b: i64)
+    a + b
+
+mul: i64 = (a: i64, b: i64)
+    a * b
+
+main: i64 = ()
+    x: i64 = add(3, 4)
+    y: i64 = mul(5, 6)
+    stdout:write("{x} {y}\n")
+    0

@@ -1,0 +1,228 @@
+# Differential correctness oracle: the engine vs wasmtime.
+#
+# Duo replacement for bench/verify.sh (bash + an embedded Python `norm`).
+#
+# This exists because "the engine produced a result" is NOT coverage. A first pass at
+# this harness counted any non-sentinel result as a pass and reported 8/18; a
+# differential check against wasmtime showed 2 of those were plain wrong and one
+# was an f64 the reporting path truncates. Only wasmtime agreement counts.
+#
+#   duo run bench/verify.id
+#   DUO_WASM_ENGINE=jit duo run bench/verify.id
+
+numeric(s: str): bool
+    if s == "" return false end
+    s:match("^%-?%d+%.?%d*$") != nil
+end
+
+# wasmtime prints i32 signed, the engine prints it unsigned. Same 32-bit value, so
+# integral results fold to unsigned 32-bit before comparison.
+#
+# Non-integral values are an f64 and are compared as DOUBLES, not as text:
+# wasmtime and the engine print different digit counts for the same value
+# (4.436463668243931 vs 4.4364636682439311), which read as a DIFF and hid real
+# passes.
+_norm(s: str): str
+    t = std.script.chomp(s)
+    if not numeric(t)
+        return t
+    end
+    f: f64 = to(f64)(t)
+    i: i64 = to(i64)(f)
+    if to(f64)(i) == f
+        # Integral: fold to unsigned 32-bit.
+        #
+        # The wrap-to-positive is load-bearing. Duo's `%` is C-style TRUNCATED,
+        # so it keeps the sign of the dividend, while the Python original this
+        # replaces used a FLOORED `%` that never returns negative. Without the
+        # correction, wasmtime's -1009008024 and the engine's 3285959272 # the same
+        # 32-bit value # read as a DIFF, and hash2b and wart_arithmetic_bench
+        # dropped out of the passing set.
+        u = i % 4294967296
+        if u < 0
+            u += 4294967296
+        end
+        return u:to(str)
+    end
+    # Non-integral: normalise through one f64 round trip so both sides print
+    # with the same precision.
+    f:to(str)
+end
+
+# A module whose real answer is what it PRINTS (via fd_write) is compared on
+# its emitted bytes, not on the numeric result of a void _start. Strip the engine's
+# own protocol lines to recover just the module's output.
+#
+# Omitting this cost 4 of 42 passes when I first converted the harness: the
+# WASI/wasix modules report their result as text, and comparing them against a
+# numeric `result=` field read as a DIFF. Caught by differencing this harness
+# against the shell one it replaces, which is the only check that would have.
+_emitted(raw: str): str
+    out = ""
+    for _i, line in raw:split("\n")
+        keep = true
+        if line:match("^engine=") != nil keep = false end
+        if line:match("^result=") != nil keep = false end
+        if line:match("^seconds=") != nil keep = false end
+        if keep
+            out = out .. line
+        end
+    end
+    out:trim()
+end
+
+_field(raw: str, key: str): str
+    m = raw:match("\n" .. key .. "=([^\n]*)")
+    if m == nil
+        m = raw:match("^" .. key .. "=([^\n]*)")
+    end
+    if m == nil
+        return ""
+    end
+    std.script.chomp(m)
+end
+
+_pad(s: str, w: i64): str
+    out = s
+    while out:len() < w
+        out = out .. " "
+    end
+    out
+end
+
+_row(name: str, ref: str, got: str, eng: str, verdict: str): void
+    print(_pad(name, 30) .. " " .. _pad(ref, 20) .. " " .. _pad(got, 20) .. " "
+        .. _pad(eng, 10) .. " " .. verdict)
+end
+
+_rule(): void
+    line = ""
+    i = 1
+    while i <= 96
+        line = line .. "-"
+        i += 1
+    end
+    print(line)
+end
+
+main(): i64
+    binary = std.script.getenv("DUO_WASM_BIN", "/tmp/duowasm")
+    wasmtime = std.script.getenv("WASMTIME", "wasmtime")
+    engine = std.script.getenv("DUO_WASM_ENGINE", "interp")
+    root = std.script.chomp(std.script.capture("pwd"))
+
+    pass = 0
+    fail = 0
+    skip = 0
+    voids = 0
+    jitn = 0
+
+    _row("MODULE", "WASMTIME", "WARD", "ENGINE", "VERDICT")
+    _rule()
+
+    for _i, m in std.script.fs_glob("bench/*.wasm")
+        name = std.script.path_stem(m)
+
+        # Pick the export wasmtime can actually invoke, judged by EXIT STATUS
+        # rather than by output: a void `(func)` export runs fine and prints
+        # nothing, and keying off output alone both skipped those and misnamed
+        # the export in the error text (it reported the last candidate tried,
+        # not the real one).
+        want = ""
+        ref = ""
+        for _j, cand in {"run", "_start", "benchmark"}
+            if want == ""
+                if std.script.status(wasmtime .. " --invoke " .. cand .. " " .. m) == 0
+                    want = cand
+                    ref = std.script.chomp(std.script.capture(
+                        wasmtime .. " --invoke " .. cand .. " " .. m .. " 2>/dev/null | tail -1"))
+                end
+            end
+        end
+        if want == ""
+            want = "_start"
+        end
+
+        # DUO_WASM_ENGINE selects the engine under test. It defaults to `interp`
+        # because that is the path every module takes; run with
+        # DUO_WASM_ENGINE=jit to difference the JIT against the same oracle. The
+        # JIT silently FALLS BACK to the interpreter when it cannot compile a
+        # body, so agreement alone does not prove the JIT ran # the ENGINE
+        # column reports what actually executed.
+        raw = std.script.capture("DUO_WASM_MODULE=" .. root .. "/" .. m
+            .. " DUO_WASM_INVOKE=" .. want .. " DUO_WASM_ENGINE=" .. engine
+            .. " timeout 120 " .. binary .. " 2>/dev/null")
+        eng = _field(raw, "engine")
+        if eng == "jit-arm64"
+            jitn += 1
+        end
+        got = _field(raw, "result")
+        if eng == ""
+            eng = "?"
+        end
+        # Text-answer modules: prefer the emitted bytes over the numeric field.
+        if not numeric(ref)
+            em = _emitted(raw)
+            if em != ""
+                got = em
+            end
+        end
+
+        if ref == ""
+            # wasmtime invoked it successfully but it yields no observable
+            # value # a void `(func)` export that neither returns nor prints.
+            # There is nothing to difference, so the only honest check is that
+            # the engine also runs it to completion instead of bailing (-1). Counted
+            # separately from a real PASS, because "didn't trap" is much weaker
+            # evidence than "matched the oracle".
+            if got != "" and got != "-1"
+                _row(name, "<void>", got, eng, "OK(void)")
+            voids += 1
+            else
+                shown = got
+                if shown == "" shown = "none" end
+                _row(name, "<void>", shown, eng, "SKIP")
+                skip += 1
+            end
+        elseif got == "" or got == "-1"
+            shown = got
+            if shown == "" shown = "none" end
+            _row(name, ref, shown, eng, "UNSUPPORTED")
+            fail += 1
+        elseif _norm(ref) == _norm(got)
+            _row(name, ref, got, eng, "PASS")
+            pass += 1
+        else
+            _row(name, ref, got, eng, "*** DIFF ***")
+            fail += 1
+        end
+    end
+
+    _rule()
+    print("the engine agrees with wasmtime on " .. pass:to(str) .. " module(s); "
+        .. fail:to(str) .. " unsupported-or-wrong; "
+        .. voids:to(str) .. " void-export completed; "
+        .. skip:to(str) .. " skipped")
+
+    # JIT COVERAGE FLOOR. A JIT that stops compiling falls back to the
+    # interpreter and still produces correct answers, so a purely
+    # correctness-based gate stays fully green while the JIT is dead. That
+    # happened during this work: an operand-stack accounting bug disabled JIT
+    # compilation for every float module and the corpus still read 42/42. Only
+    # under DUO_WASM_ENGINE=jit is the floor meaningful; the default interp run
+    # legitimately compiles nothing.
+    if engine == "jit"
+        floor: i64 = to(i64)(std.script.getenv("JIT_FLOOR", "34"))
+        print("jit-compiled: " .. jitn:to(str) .. " module(s) (floor " .. floor:to(str) .. ")")
+        if jitn < floor
+            print("*** JIT COVERAGE REGRESSION: " .. jitn:to(str) .. " < " .. floor:to(str)
+                .. " -- the JIT is silently falling back ***")
+            return 1
+        end
+    end
+
+    if fail != 0
+        return 1
+    end
+    0
+end

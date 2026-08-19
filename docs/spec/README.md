@@ -1,6 +1,6 @@
-# Idsem Specification Router
+# Idol Specification Router
 
-Idsem language law has one home:
+Idol language law has one home:
 
 ```text
 docs/spec/constitution.md
@@ -34,4 +34,4 @@ Do not add another architecture document or precedence layer. A genuinely new
 irreducible rule belongs in the constitution through its admitted change
 process; measurements and current status belong in `docs/METRICS.md` and open
 `gaps/GAP-*.md` obligations only. Git stores history; active projections describe
-current Idsem only (`law.zero.history`).
+current Idol only (`law.zero.history`).

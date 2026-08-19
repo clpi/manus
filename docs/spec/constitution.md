@@ -1,14 +1,12 @@
-# Idsem constitution
+# Idol constitution
 
-This is the sole living semantic law of Idsem. `CLAUDE.md`, `docs/spec/*.md`,
-agent routers, tests, tools, and implementation are projections and may not
-contradict it. Git history is the sole historical archive; the former project
-name Idsem is historical provenance, and host identifiers (`bin/idol`,
-`idollang/idol`) are bootstrap bridges with their own deletion gates.
+This is the sole living semantic law. `CLAUDE.md`, `docs/spec/*.md`, agent
+routers, tests, tools, and implementation are projections and may not contradict
+it. Git history is the sole historical archive.
 
 The fenced body is structured law notation retained while `GAP-145` closes the
 canonical lexical and generated-role boundary. It is not executable canonical
-source, not a source template, and its `#` notation must not be copied into
+Idol, not a source template, and its `#` notation must not be copied into
 `.id`. The current law lives in the facts; the notation is a documentation
 projection until the whole file can move truthfully to `constitution.id`.
 
@@ -144,10 +142,10 @@ language = @{
     epoch = 3
 }
 
-# Current identity — never list Idsem in language.history.
+# Current identity — never list Idol in language.history.
 # ZERO-HISTORY: no language.history table. Git is the sole historical archive.
 language.current = @{
-    names = { "Idsem", "idol" }
+    names = { "Idol", "idol" }
     file  = ".id"
     binary = "idol"
     repository = "idollang/idol"
@@ -296,8 +294,8 @@ syntax.block = @{
 
 # ═══ §5b · path and home names ═════════════════════════════════════════════
 #
-# A project-owned filename or directory that projects an Idsem binding or home
-# obeys the SAME name law as Idsem source. There is no separate filename
+# A project-owned filename or directory that projects an Idol binding or home
+# obeys the SAME name law as Idol source. There is no separate filename
 # convention. The stem is the semantic table or home name; the path projects
 # it. Physical path is provenance after resolution; it must not mint a second
 # semantic identity.
@@ -352,14 +350,14 @@ call.face = @{
 # assignment face; there is no setter ontology. The resolver decides whether an
 # application yields a value, a place, or another applicable value; there is no
 # "get first / call first / table first" precedence, and incomparable applications
-# are an ambiguity error. Canonical Idsem has no `[]`; a foreign source law may
+# are an ambiguity error. Canonical Idol has no `[]`; a foreign source law may
 # recognize its own bracket form only inside that law-qualified source
 # projection. `:get`/`get(t,k)` are noncanonical.
 access = @{
     ordinary = .application    # table(key) — one application algebra, §6
     place    = .assignment     # table(key) = value — no setter kingdom
     precede  = false           # no get/call/table-first precedence; ambiguity errors
-    bracket  = .foreign        # source provenance only; never canonical Idsem access
+    bracket  = .foreign        # source provenance only; never canonical Idol access
 }
 
 # `docs/spec/law.md` §9: `able(...)` is the ONE explicit protocol/requirement
@@ -395,13 +393,13 @@ failure = @{
 # ═══ §7 · lua is hosted, not assimilated ═══════════════════════════════════
 #
 # Language origin is not merely metadata. A Lua table lookup and an
-# Idsem sealed-shape field lookup can have identical graph SHAPE and different
+# Idol sealed-shape field lookup can have identical graph SHAPE and different
 # semantic LAW. If origin were only provenance, an optimizer could prove a
-# fact using Idsem laws over a Lua node.
+# fact using Idol laws over a Lua node.
 #
 # So: the SUBSTRATE is shared, the LAWSET is not. Lua shares shapes,
 # specialization, representation selection and witnesses without becoming
-# almost-Idsem.
+# almost-Idol.
 
 lua = @{
     host   = .hosted
@@ -825,7 +823,7 @@ rewrite: {
 # ═══ §31 · frontends ═══════════════════════════════════════════════════════
 #
 # A foreign language lifts to the SUBSTRATE directly. Routing it through a
-# Idsem AST first would assimilate its semantics on the way in, which is §7.
+# Idol AST first would assimilate its semantics on the way in, which is §7.
 
 frontends = @{
     native = { "idol" }
@@ -837,7 +835,7 @@ lifting = law{
     id    = "law.lifting"
     kind  = .invariant
     holds = .direct
-    fails = "a foreign language wearing Idsem's ast"
+    fails = "a foreign language wearing Idol's ast"
 }
 
 # ═══ §32 · a call across a boundary ════════════════════════════════════════
@@ -879,11 +877,11 @@ differential = law{
 # The structured documentation keeps one rule per string so every obligation
 # remains independently reviewable. This notation is not canonical source.
 agent.first = {
-    "Do not design Idsem. Idsem is already designed.",
+    "Do not design Idol. Idol is already designed.",
     "Identity is id; facts qualify it and no layer exposes a node kind edge or typed identity vocabulary.",
     "Discover the semantic owner, instantiate its canonical archetype, preserve its graph laws, prove the realization.",
     "If the constitution cannot express the change, STOP and record a constitutional gap. Never create a competing mechanism.",
-    "Foreign languages are not Idsem with strange syntax.",
+    "Foreign languages are not Idol with strange syntax.",
     "Preserve their lawsets exactly; share representations and optimizations only where witnessed equivalence permits.",
     "Audit and correct useful old or unmerged work against current main before deleting its legacy carrier.",
     "Push each bounded admitted repair promptly so concurrent agents audit public revisions rather than private state.",
@@ -915,7 +913,7 @@ layers = {
 
 # ═══ §36 · THE COMPILER'S OWN ARCHITECTURE IS IDOL-SHAPED ══════════════════
 #
-# The compiler should not merely COMPILE Idsem this way. A host helper that
+# The compiler should not merely COMPILE Idol this way. A host helper that
 # owns a recoverable semantic distinction is evidence that the architecture
 # has not internalized its own language.
 
@@ -962,8 +960,8 @@ hostprojection = law{
     kind  = .invariant
     holds = .projection
     binds = {
-        "the bootstrap may look unlike Idsem ONLY where the host requires it",
-        "every such api NAMES the Idsem relation it projects",
+        "the bootstrap may look unlike Idol ONLY where the host requires it",
+        "every such api NAMES the Idol relation it projects",
         "it carries authority false, its semantic owner, and its deletion gate",
     }
     fails = "a host abstraction made permanent because it was convenient in zig"
@@ -990,12 +988,12 @@ edit.canon = { "edit = world(graph)(g)", "parent:add(child)" }  # graph is AUTHO
 # effect, capability, lifetime, origin, trust, provenance, representation,
 # realization — is a semantic FAMILY OF FACTS, not a separate graph object
 # class. The graph must not look like an OO graph database implemented in Zig;
-# it is Idsem's relation calculus made persistent.
+# it is Idol's relation calculus made persistent.
 primitives = { "value", "relation", "fact", "world", "demand", "witness" }
 
 # TRUST IS A LEVEL ON A FACT, never a mechanism standing beside one. The line
 # above already names trust a FAMILY OF FACTS; these are its levels, in the
-# ordinary Idsem sense that `read(number)` is a level — no new object class, no
+# ordinary Idol sense that `read(number)` is a level — no new object class, no
 # new surface.
 #
 # An assertion must be recorded, attributable and invalidatable. An unlabelled
@@ -1133,9 +1131,9 @@ cycle = law{
 
 # The wasm engine is one very large file BECAUSE compiler defects punish
 # decomposition. An agent reading it could conclude giant modules are idiomatic
-# high-performance Idsem. THEY ARE NOT. Every such workaround is a gap with a
+# high-performance Idol. THEY ARE NOT. Every such workaround is a gap with a
 # removal fixture, and the engine is the primary language-design fuzzer: each
-# ugly thing it needs is either inherent wasm complexity or an Idsem defect, and
+# ugly thing it needs is either inherent wasm complexity or an Idol defect, and
 # it gets adjudicated as exactly one of the two.
 workaround = law{
     id    = "law.wasm.workaround"
@@ -1147,7 +1145,7 @@ workaround = law{
         "a compiler limitation never becomes runtime architecture",
         "agent context must say the monolith is a defect, not a pattern",
     }
-    fails = "an agent learning bad Idsem from the best evidence Idsem has"
+    fails = "an agent learning bad Idol from the best evidence Idol has"
 }
 
 # Fastest AND smallest AND most featureful are conflicting dimensions, so the
@@ -1161,7 +1159,7 @@ matrix = @{
                 "exceptions", "tail calls", "memory64", "multi memory", "reftypes",
                 "component", "wit", "embedding", "aot", "jit arch" }
     quality = { "conformance", "differential", "fuzzing", "determinism", "diagnostics", "provenance", "sandbox" }
-    proof   = { "percent canonical Idsem", "foreign loc", "workarounds", "native realization", "boxing", "allocation", "binary to source" }
+    proof   = { "percent canonical Idol", "foreign loc", "workarounds", "native realization", "boxing", "allocation", "binary to source" }
 }
 
 release = law{
@@ -1201,9 +1199,9 @@ package = law{
 
 # ═══ §37 · ORIENTATION. Semantic expressibility is not canonicality. ═══════
 #
-# Idsem source may be semantically correct and still noncanonical. Orientation,
+# Idol source may be semantically correct and still noncanonical. Orientation,
 # compaction and idiom are LAW, not taste — and the compiler, formatter,
-# agents, std, the self-hosted compiler, Idsem Wasm, the docs and every piece of
+# agents, std, the self-hosted compiler, Idol Wasm, the docs and every piece of
 # architectural pseudocode obey the same one.
 
 # Declare from the relation. Work from the value. The two faces are different
@@ -1261,7 +1259,7 @@ physical = law{
 
 # Ambient is earned, not assumed: a thing is ambient ONLY where exactly one
 # valid contextual value exists. Otherwise it DIAGNOSES. No hidden global
-# compiler graph — the dynamic global environment is a lua fact, not an Idsem one,
+# compiler graph — the dynamic global environment is a lua fact, not an Idol one,
 # and it may not return as architecture.
 ambient = law{
     id    = "law.ambient.one"
@@ -1313,9 +1311,9 @@ role = law{
 # DOCUMENTATION IS CORPUS. A code block in a normative document is a canonical
 # corpus member and compiles under the same gate, because an architect writing
 # `to(str)(x)` in a design note teaches every later agent the wrong idiom. A
-# block is Idsem, dnir, foreign or CONCEPTUAL — and if an idea cannot yet be
+# block is Idol, dnir, foreign or CONCEPTUAL — and if an idea cannot yet be
 # expressed canonically it is marked conceptual and filed as a gap. Never invent
-# near-Idsem. Prose is lintable too: say "add fact" and "resolve relation", never
+# near-Idol. Prose is lintable too: say "add fact" and "resolve relation", never
 # "call addnode" or "the registry owns".
 doc = law{
     id    = "law.doc.corpus"
@@ -1323,8 +1321,8 @@ doc = law{
     holds = .canonical
     binds = {
         "normative code blocks obey every canonical gate",
-        "a block is Idsem dnir foreign or conceptual — never rough pseudocode",
-        "architecture prose uses Idsem concepts so its wording is lintable",
+        "a block is Idol dnir foreign or conceptual — never rough pseudocode",
+        "architecture prose uses Idol concepts so its wording is lintable",
     }
     fails = "a specification teaching an idiom its own gate would reject"
 }
@@ -1347,7 +1345,7 @@ sourcenotproof = law{
     kind  = .invariant
     holds = .absolute
     binds = {
-        "current repository source is not proof of canonical Idsem merely because it is id or builds",
+        "current repository source is not proof of canonical Idol merely because it is id or builds",
         "resolve every touched construct against current C0 plus current owner directives",
         "if shortest uniquely resolving form semantic fact ownership world authority relation identity or demand driven realization is not yet implemented classify existing spelling as bootstrap debt not the new pattern",
         "current fixtures disagreeing with C0 are wrong — never preserve fixture behavior against constitution",
@@ -1386,7 +1384,7 @@ identityprojection = law{
     kind  = .protocol
     holds = .current
     binds = {
-        "current language identity is Idsem idol only — per law.zero.history git is the sole historical archive",
+        "current language identity is Idol idol only — per law.zero.history git is the sole historical archive",
         "current agent projection documents must not use retired project or language names as live identity",
         "gate target current projection count of retired names as identity outside foreign provenance equals zero",
         "retired names are not preserved in the active tree",
@@ -1424,7 +1422,7 @@ distribution = law{
 
 # The orthogonal facts that a conventional standard-library namespace blurs.
 #
-#   meaning    ordinary Idsem descriptors, relations, values and laws —
+#   meaning    ordinary Idol descriptors, relations, values and laws —
 #              relation, table, callable, failure, basic numerics and
 #              sequences, reflection. Always present. No import, no prefix.
 #   vocabulary standardized relation and descriptor IDENTITIES that are NOT
@@ -1508,7 +1506,7 @@ layout.gate = law{
 
 # ═══ §37c · host boundary (GAP-154) ════════════════════════════════════════
 #
-# Idsem source sees semantic values. Host OS APIs are ingress/egress realization
+# Idol source sees semantic values. Host OS APIs are ingress/egress realization
 # only. Renaming os.args → core.args without decomposition is forbidden.
 
 host = law{
@@ -1516,7 +1514,7 @@ host = law{
     kind  = .invariant
     holds = .boundary
     binds = {
-        "Idsem source does not call host operating system APIs as semantics",
+        "Idol source does not call host operating system APIs as semantics",
         "args and env are ordinary tables under os world accessed as os.args(n) and os.env(k)",
         "environment is not a thing",
         "io read and write use io:read and io:write not io.read or io.write",
@@ -1539,7 +1537,7 @@ shell = law{
         "a launcher may independently supply exact command provider reach process filesystem and environment authority and endpoints according to policy",
         "shell interpretation grants none of those facts",
         "bare external command resolution requires an exact reached command provider and execution independently requires process authority",
-        "Idsem lexical and ordinary home bindings resolve before command provider projection",
+        "Idol lexical and ordinary home bindings resolve before command provider projection",
         "shell interpretation never changes source law grammar parser AST or compiler semantics",
         "raw shell text is an explicit opaque boundary and never fallback for an unresolved structured command",
     }
@@ -1565,7 +1563,7 @@ host.gate = law{
     binds = {
         "new canonical os.args os.getenv popen io.popen os.execute host argv and host getenv lookup are zero",
         "new canonical generic io proc ir process runtime system std core and environment namespace authority are zero",
-        "no std namespace table prelude or spelling anywhere in Idsem source",
+        "no std namespace table prelude or spelling anywhere in Idol source",
         "std proc and ir are not things — vocabulary is layout and world projection only",
         "new shell string execution and backend string semantic switches in canonical source are zero",
         "docs/spec/host.md is the operative host boundary projection",
@@ -1644,7 +1642,7 @@ features = law{
 
 # ═══ §38 · THE PERFORMANCE CONSTITUTION ════════════════════════════════════
 #
-# NORTH STAR: Idsem source states MAXIMUM SEMANTICS; the compiler emits MINIMUM
+# NORTH STAR: Idol source states MAXIMUM SEMANTICS; the compiler emits MINIMUM
 # MACHINERY.
 #
 # Performance, binary size, compile time, memory and specialization cost are
@@ -1808,9 +1806,9 @@ perf.ratios = {
 
 # ═══ §39 · THE PRIME DIRECTIVE (what every agent receives first) ════════════
 #
-# You are MODIFYING Idsem. You are not designing a conventional compiler in Zig
+# You are MODIFYING Idol. You are not designing a conventional compiler in Zig
 # and you are not inventing language architecture. The job is to move the
-# repository MONOTONICALLY toward 100% self-hosted canonical Idsem with zero
+# repository MONOTONICALLY toward 100% self-hosted canonical Idol with zero
 # competing semantic mechanisms.
 #
 # THE CORE QUESTION, asked before adding anything:
@@ -1857,7 +1855,7 @@ delta.zero = {
 #   orientation, syntax or subsystem?
 #
 #   IF YES, DO NOT STOP. Find and enforce the missing constitutional invariant
-#   so there is only ONE reasonable Idsem-native direction.
+#   so there is only ONE reasonable Idol-native direction.
 #
 # Restated as the rule it generalizes: any architectural mistake an agent can
 # make TWICE is a missing machine-enforced invariant. The constitution evolves
@@ -1875,7 +1873,7 @@ final.test = law{
 }
 
 # THE OBJECTIVE, stated so it is not mistaken for code quality: not merely code
-# that works, but a repository in which non-Idsem architecture becomes
+# that works, but a repository in which non-Idol architecture becomes
 # IMPOSSIBLE TO WRITE, IMPOSSIBLE TO TEACH, IMPOSSIBLE TO MERGE, and
 # UNNECESSARY TO REPRESENT.
 objective = law{
@@ -2051,7 +2049,7 @@ subtract.resolved = "leading dot retires; bare dot is invalid; leading colon rem
 
 # ═══ §42 · SURFACE SUBTRACTION — the rules that keep it from becoming golf ══
 #
-# Canonical Idsem encodes ONLY distinctions the compiler cannot
+# Canonical Idol encodes ONLY distinctions the compiler cannot
 # recover from the explicit subject, the ambient subject, expected descriptor,
 # relation identity, operand descriptors, demand, lexical scope, or
 # world/lawset context. Syntax restating recoverable information is debt.
@@ -2117,7 +2115,7 @@ locality.lattice = {
 }
 
 # WHAT IS NOT COMPACTED, stated so subtraction does not become point-free code.
-# Idsem does not delete syntax merely because the graph can technically infer
+# Idol does not delete syntax merely because the graph can technically infer
 # meaning. These carry irreducible or high-value HUMAN information:
 keep = {
     "x.y", "x:f()", ":f() under self-zero",
@@ -2219,7 +2217,7 @@ apply = law{
     kind  = .invariant
     holds = .one
     binds = {
-        "Idsem has ONE semantic application architecture",
+        "Idol has ONE semantic application architecture",
         "parentheses are the ordinary callable source face",
         "braces are the structured pack and descriptor application source face",
         "descriptor application and ordinary call converge after resolution where facts permit",
@@ -2388,29 +2386,29 @@ nominal = law{
 # ═══ §47 · C-DOMINANCE — C is a CANDIDATE, not the ceiling ═════════════════
 #
 # THE HONEST QUALIFICATION FIRST, because the goal as usually stated cannot be
-# met: no compiler can guarantee that EVERY Idsem program beats EVERY
+# met: no compiler can guarantee that EVERY Idol program beats EVERY
 # hand-written C program on every machine and every metric. A human can write
 # assembly, exploit undocumented behaviour, or choose a workload built to
 # defeat one optimizer.
 #
 # What IS achievable, and is strictly stronger than benchmarking:
 #
-#   For every Idsem program whose semantics are no stronger than an equivalent
+#   For every Idol program whose semantics are no stronger than an equivalent
 #   C program, the compiler must be able to produce machine code NO WORSE than
 #   the best C realization in its candidate set — while exploiting semantic
 #   facts unavailable to C where they exist.
 #
 # THE MECHANISM. C stops being the ceiling and becomes ONE CANDIDATE
-# REALIZATION. For any semantic fragment the compiler holds several: Idsem
+# REALIZATION. For any semantic fragment the compiler holds several: Idol
 # native lowering, a C-equivalent scalar lowering, simd, an intrinsic, a
 # generated sequence, a library call, a profile-guided version. It costs them
-# and picks. If Idsem-native is worse, IT PICKS THE C-EQUIVALENT ONE.
+# and picks. If Idol-native is worse, IT PICKS THE C-EQUIVALENT ONE.
 #
-#   Idsem semantic information   >=  C semantic information
+#   Idol semantic information   >=  C semantic information
 #   candidate set              includes the C-equivalent realization
 #   chosen                     = min cost over candidates
 #
-# Idsem cannot lose, because it keeps the fallback. That is monotonicity rather
+# Idol cannot lose, because it keeps the fallback. That is monotonicity rather
 # than optimism, and it is why this is architecture and not a benchmark claim.
 
 cfloor = law{
@@ -2419,7 +2417,7 @@ cfloor = law{
     holds = .candidate
     binds = {
         "wherever a C-equivalent realization exists it is a BASELINE CANDIDATE",
-        "native Idsem must MEET OR BEAT that baseline before replacing it",
+        "native Idol must MEET OR BEAT that baseline before replacing it",
         "C is a candidate, never the optimization ceiling",
     }
     fails = "a native lowering that ships because it is native"
@@ -2464,14 +2462,14 @@ cost.dimensions = {
 
 # THREE THINGS C DOES THAT IDOL MUST BEAT BY CONSTRUCTION, not by tuning:
 #
-#   ALIASING             C optimizes poorly without `restrict`. Idsem derives
+#   ALIASING             C optimizes poorly without `restrict`. Idol derives
 #                        alias facts, so NO USER-WRITTEN EQUIVALENT OF
 #                        `restrict` appears in ordinary code.
 #   SEPARATE COMPILATION C loses whole-program facts at translation-unit
 #                        boundaries. Packages retain graph fragments and
 #                        specialize across them — whole-program knowledge
 #                        WITHOUT whole-program rebuild cost.
-#   ABI FREEZING         C APIs commit to physical representation early. An Idsem
+#   ABI FREEZING         C APIs commit to physical representation early. An Idol
 #                        interface commits to MEANING; the machine abi is
 #                        chosen at realization.
 beats = { "aliasing", "separate compilation", "abi freezing" }
@@ -2533,7 +2531,7 @@ classes.become = "ordinary facts on the edge"
 cost.objective = { latency, throughput, size, energy, startup, balanced }
 
 # WHY a candidate can BEAT the c floor rather than merely match it. Each row is
-# information C discards at the source level and Idsem retains as an ordinary
+# information C discards at the source level and Idol retains as an ordinary
 # fact.
 edge.over = {
     { fact = "descriptor identity", c = "double", idol = "meters, probability, sorted vector, nonzero scalar — can change the ALGORITHM" },
@@ -2569,8 +2567,8 @@ world = law{
     fails = "call sites migrated into capability-first orientation"
 }
 
-# OBSERVE-MIN. The deepest reason Idsem can beat C, and it is not instruction
-# selection: C freezes representation and ABI at the source, Idsem keeps them as
+# OBSERVE-MIN. The deepest reason Idol can beat C, and it is not instruction
+# selection: C freezes representation and ABI at the source, Idol keeps them as
 # degrees of freedom until demand forces the choice.
 observe = law{
     id    = "law.observe.min"
@@ -2612,7 +2610,7 @@ epoch = law{
         "every relation declares which facts its traversal INVALIDATES",
         "a fact carries forward until an invalidating relation kills it",
     }
-    why   = "c optimizers usually cannot prove a condition survives a call or an aliasing boundary. Idsem can because the graph says which relations can falsify it and that makes compilation cheaper as well as the output faster."
+    why   = "c optimizers usually cannot prove a condition survives a call or an aliasing boundary. Idol can because the graph says which relations can falsify it and that makes compilation cheaper as well as the output faster."
 }
 
 # Physical width follows the proven STATE SPACE, not the declared type. A value
@@ -2793,7 +2791,7 @@ ubzero = law{
     kind  = .invariant
     holds = .same
     binds = {
-        "Idsem requires no semantic undefined behavior to optimize; optimization comes from exact alias world shape demand range descriptor application effect and lifetime facts",
+        "Idol requires no semantic undefined behavior to optimize; optimization comes from exact alias world shape demand range descriptor application effect and lifetime facts",
         "ordinary integer arithmetic has no C-style undefined behavior and numeric law is fully defined before any FTCFTW claim",
         "unknown behavior remains unknown; proven facts enable optimization",
     }
@@ -2812,12 +2810,12 @@ forcing = law{
     holds = .pressure
     binds = {
         "compiler self-host forces parse, sema, graph, lowering, encoding",
-        "Idsem Wasm forces jit cfg register allocation memory and performance",
+        "Idol Wasm forces jit cfg register allocation memory and performance",
         "lsp, mcp, formatter, package and build force persistent ids, witnessed cross-incarnation correspondence, diagnostics and incremental computation",
         "a capability unnecessary to ALL THREE is not pre-release p0",
     }
     why   = "capability built to satisfy a checklist is speculative scaffolding. Capability built under pressure from a real workload is load-bearing on the day it lands."
-    keep  = "any capability Idsem Wasm needs should normally become a GENERAL compiler primitive — never ward-only infrastructure"
+    keep  = "any capability Idol Wasm needs should normally become a GENERAL compiler primitive — never ward-only infrastructure"
 }
 
 # The claim to make, and the one to refuse. "Faster than C across the board
@@ -2826,7 +2824,7 @@ forcing = law{
 # program on every cpu. The defensible construction is already law
 # (law.c.floor, law.perf.floor, law.perf.dominance) and reads:
 #
-#   the c-equivalent realization is RETAINED whenever lawful · Idsem may add
+#   the c-equivalent realization is RETAINED whenever lawful · Idol may add
 #   STRICTLY STRONGER candidates from additional semantic facts · the public
 #   supported corpus demonstrates RELIABLE dominance, adversarial workloads
 #   retained
@@ -2916,13 +2914,13 @@ demand = law{
 
 # The clarification that keeps monoglot from eating the product. Deleting
 # foreign SEMANTIC AUTHORITY is the goal; deleting foreign INTEGRATION would
-# make Idsem less useful the day it became self-hosted.
+# make Idol less useful the day it became self-hosted.
 foreign = law{
     id    = "law.foreign.integration"
     kind  = .invariant
     holds = .kept
     binds = {
-        "100% self-hosting must not reduce Idsem's usefulness to non-Idsem projects",
+        "100% self-hosting must not reduce Idol's usefulness to non-Idol projects",
         "first-class lawsets and projections stay for lua, c, rust, python, wasm, abi and schema formats, source asts, build systems and package systems",
         "cross-language transformation uses the SAME graph, provenance, laws and witnesses as native transformation",
     }
@@ -3083,7 +3081,7 @@ ircompact = law{
     kind  = .invariant
     holds = .separate
     binds = {
-        "READABLE dnir uses canonical Idsem naming and composition",
+        "READABLE dnir uses canonical Idol naming and composition",
         "INTERNAL dnir uses compact interned ids and representation-selected storage",
         "readable syntax NEVER dictates compiler memory layout",
     }
@@ -3180,7 +3178,7 @@ reprladder = law{
 }
 
 # If realized ir is ordinary graph data, the self-hosted compiler transforms it
-# with ordinary Idsem — no separate pattern language, which is a whole subsystem
+# with ordinary Idol — no separate pattern language, which is a whole subsystem
 # SHC does not then have to write.
 irdata = law{
     id    = "law.ir.data"
@@ -4040,7 +4038,7 @@ authorityinvariant = law{
 # binding census, and completion metrics. Fully reconciled here — not an
 # independent prompt, harness injection, chat paste, or parallel rule list.
 # Historical prompts titled "algebra closure" are void where they duplicate or
-# conflict with this section. The language is **Idsem** (`idol`, `.id`).
+# conflict with this section. The language is **Idol** (`idol`, `.id`).
 #
 # Repository authority overrides stale implementation details. Every native surface
 # reduces to the semantic universe below or proves an irreducible distinction
@@ -4301,7 +4299,7 @@ schemaone = law{
     holds = .one
     binds = {
         "SCHEMA-ONE one producer per record law — host RECORD_SLOTS and positional field decode are a second schema",
-        "Idsem lexer to magic array of seven i64 to Zig slot meanings is reconstruction — the producer projects the record the consumer reads that projection",
+        "Idol lexer to magic array of seven i64 to Zig slot meanings is reconstruction — the producer projects the record the consumer reads that projection",
         "prefer an immutable semantic token view whose fields are carried directly so the host does not rematerialize tokens",
         "duo_lexer_tokenize_full duo_lexer_error_line and useDuoTokens are bridge-death names not permanent production symbols",
         "deletion condition is producer-projected record plus rejection-id plus token-role-id with no host slot map",
@@ -4365,10 +4363,10 @@ oraclebound = law{
     holds = .bound
     binds = {
         "a differential oracle covers the legacy-equivalent subset only",
-        "Idsem law is the constitution and the canonical lexer — when Idsem intentionally diverges the host scanner must not veto the new behavior",
+        "Idol law is the constitution and the canonical lexer — when Idol intentionally diverges the host scanner must not veto the new behavior",
         "tokenizeHost remains differential-only and deletable under law.bridge.death — it must not become de facto semantic authority because every change is required to match it",
     }
-    fails = "host differential vetoing intentional Idsem lexical law or surviving as undeletable authority"
+    fails = "host differential vetoing intentional Idol lexical law or surviving as undeletable authority"
 }
 
 familyone = law{
@@ -4571,8 +4569,8 @@ lowerbound = law{
     kind  = .invariant
     holds = .evidence
     binds = {
-        "LOWER-BOUND every FTCFTW benchmark reports three layers — the semantic minimum the physics requires the best equivalent native c fortran or llvm result and the current Idsem result — superiority is claimed only against that honest triple",
-        "an opportunity-class claim is admissible now that Idsem is architected to preserve facts a conventional lowering pipeline reconstructs while a measured-win claim requires current-subject evidence under law.evidence.subject",
+        "LOWER-BOUND every FTCFTW benchmark reports three layers — the semantic minimum the physics requires the best equivalent native c fortran or llvm result and the current Idol result — superiority is claimed only against that honest triple",
+        "an opportunity-class claim is admissible now that Idol is architected to preserve facts a conventional lowering pipeline reconstructs while a measured-win claim requires current-subject evidence under law.evidence.subject",
         "benchmarks compare compiler choices not language names — an optimized c an lto c a fortran-grade array compiler and a hand-tuned baseline are the honest opponents",
         "law.profile.evidence and law.evidence.subject still bind — index or contract presence is not a performance result",
         "the semantic minimum is not an instruction count it is drawn from the applicable lower bound family information theoretic bits that must be learned moved distinguished or emitted communication information crossing a boundary i o and memory hierarchy cache and external memory transfers and rounds circuit depth size and critical path parallel work and span and ultimately physical law speed of light memory latency and thermodynamic energy — closure states which family and which of proven semantic architectural measured machine or best known external bound was reached",
@@ -4601,11 +4599,11 @@ grammarone = law{
     holds = .one
     binds = {
         "GRAMMAR-ONE exactly one executable grammar-fact owner",
-        "the one grammar owner projects facts qualified by source law — Idsem Lua C Bash Wasm and later laws never become independent grammar authorities",
-        "canonical Idsem grammar facts are one law-qualified projection — generated Zig or C tables are a bridge projection — grammar.md and Tree-sitter are human or editor projections from that owner",
+        "the one grammar owner projects facts qualified by source law — Idol Lua C Bash Wasm and later laws never become independent grammar authorities",
+        "canonical Idol grammar facts are one law-qualified projection — generated Zig or C tables are a bridge projection — grammar.md and Tree-sitter are human or editor projections from that owner",
         "exactly one source law owns each source position — no grammar union try-parser command-looking switch suffix reconstruction or world-selected syntax",
         "forbidden parallel owners include C0 prose grammar.id grammar_roles.zig grammarrole.id grammar.md and Tree-sitter each claiming to own recognition",
-        "a host grammar_roles.zig table is transitional and has a deletion condition once Idsem owns the facts",
+        "a host grammar_roles.zig table is transitional and has a deletion condition once Idol owns the facts",
         "parser-local BinOp maps spelling lists and category switches are reconstruction debt — token identity yields grammar-role facts and the parser observes them",
         "Tree-sitter LSP MCP and formatter consume the same facts or generated projections they do not retain independent grammar or semantic classification",
     }
@@ -4701,7 +4699,7 @@ graphsovereignty = law{
     kind  = .invariant
     holds = .spine
     binds = {
-        "GRAPH-SOVEREIGNTY the graph schema contains only Idsem semantic ids and facts plus explicitly physical derived indexes",
+        "GRAPH-SOVEREIGNTY the graph schema contains only Idol semantic ids and facts plus explicitly physical derived indexes",
         "AST sema host ResolvedType StorageClass transform_engine and target hardware must project into or consume the graph — never define its ontology",
         "the milestone after GAP-145 and GAP-134 is a true semantic spine not a host-shaped nullable mirror",
     }
@@ -5628,7 +5626,7 @@ specializealgebra = law{
         "if exact ambiguity remains fail as AMBIGUOUS",
         "never use import order file order declaration order package priority or last definition wins as semantic tie breakers",
         "one mechanism serves protocol like generic specialization hardware specialization descriptor specialization compile time value specialization world specialization and shape specialization",
-        "this is Idsem coherence rule replacing orphan rules and impl registries",
+        "this is Idol coherence rule replacing orphan rules and impl registries",
     }
     fails = "coherence by declaration order or global impl registry instead of fact specificity"
 }
@@ -6586,7 +6584,7 @@ gateconvergence = law{
         "unrelated declaration changing prior unique resolution rejected monotonicity control",
         "utility migration cannot satisfy shc milestone gate",
         "concept delta and physical delta reported on material changes",
-        "current projection Idsem idol as live identity outside history blocks rejected",
+        "current projection Idol idol as live identity outside history blocks rejected",
         "repository source treated as canonical proof without C0 resolution rejected",
         "specimen repair without class impossibility proof rejected",
         "positive controls preserve one producer unknown state negative facts effect algebra observable order profile guard assumption lineage semantic invalidation b to c semantic comparison trusted base shrink representation audit identity projection and source not proof",
@@ -6635,8 +6633,8 @@ absolutelaw = law{
 semanticblock = @{
     gap = 124
     state = .vocabularyblocked
-    why = "the current staged text census is a migration ratchet; authoritative world subject vocabulary sentinel and control gates require graph queries in self hosted Idsem"
-    unlock = "gap 121 module initialization then graph fact access from Idsem compiler modules"
+    why = "the current staged text census is a migration ratchet; authoritative world subject vocabulary sentinel and control gates require graph queries in self hosted Idol"
+    unlock = "gap 121 module initialization then graph fact access from Idol compiler modules"
 }
 
 literal = {}
@@ -6663,7 +6661,7 @@ literal.bytes = law{
         "one byte remains a byte sequence of cardinality one and may scalarize only under proved byte demand",
         "text byte codepoint scalar grapheme and character remain distinct descriptors and facts",
         "raw source characters encode as source utf8 bytes; byte escapes are byte oriented and unicode escapes are rejected until separately admitted",
-        "foreign lua single quoted text remains in the explicit lua importer and never enters native Idsem lexical recognition",
+        "foreign lua single quoted text remains in the explicit lua importer and never enters native Idol lexical recognition",
     }
 }
 
@@ -6674,7 +6672,7 @@ comment = law{
     binds = {
         "hash begins the one canonical line comment and has no canonical length reading",
         "length is the subject oriented len relation with an explicit axis when it is not uniquely recoverable",
-        "lua dash comments and lua long comments remain foreign lua input and are never native Idsem comment forms",
+        "lua dash comments and lua long comments remain foreign lua input and are never native Idol comment forms",
         "repeated hash lines are the canonical multiline comment face; no block comment syntax is admitted",
         "hash bang is allowed only at byte zero as script launch provenance and grants no semantic authority",
         "removing comments changes no graph fact except source trivia provenance",
@@ -6782,7 +6780,7 @@ ftcftw = law{
     holds = .measured
     binds = {
         "equivalent native semantics retain at least c equivalent runtime compile startup memory binary incremental and realization outcomes",
-        "an Idsem win uses retained semantic knowledge and transferable realization rather than fixed answers inputs seeds counts or benchmark specific recognition",
+        "an Idol win uses retained semantic knowledge and transferable realization rather than fixed answers inputs seeds counts or benchmark specific recognition",
         "wasm evidence separately measures decode import compile instantiate startup steady execution memory runtime footprint artifact size and end to end latency",
         "wasm enters the shared graph with its exact lawset and never creates a permanent virtual machine semantic kingdom",
         "a throughput win cannot hide worse cold start compiler work memory runtime obligation or artifact footprint",
@@ -7101,11 +7099,11 @@ zerohistory = law{
     kind  = .invariant
     holds = .current
     binds = {
-        "ZERO-HISTORY the active repository is not a museum — it contains current Idsem current foreign interoperability and currently executed bounded bootstrap bridges and nothing else — git stores history current semantic law stores truth the graph stores meaning demand stores necessity realization stores physics",
-        "canonical identity language Idsem source .id binary idol repository idollang/idol — delete current-tree references to former project or language names except when inspecting git history outside committed source",
+        "ZERO-HISTORY the active repository is not a museum — it contains current Idol current foreign interoperability and currently executed bounded bootstrap bridges and nothing else — git stores history current semantic law stores truth the graph stores meaning demand stores necessity realization stores physics",
+        "canonical identity language Idol source .id binary idol repository idollang/idol — delete current-tree references to former project or language names except when inspecting git history outside committed source",
         "no retired name source form module system pass taxonomy compatibility layer historical fixture migration document old edge vocabulary old identity wrapper or host shaped semantic subsystem receives permanent residence merely because deleting it would lose provenance — provenance already exists in git",
         "durable corpus states are current and foreign only — historical legacy migration compat deprecated old and pass number archive are not durable states and git owns those histories",
-        "do not maintain language.history — the active tree represents current Idsem only",
+        "do not maintain language.history — the active tree represents current Idol only",
         "do not preserve old environment variable prefixes exported symbol prefixes package names artifact names or executable aliases",
         "delete comments of the form formerly historical was X migration legacy retired in old path previously unless the statement is required to operate a current external compatibility boundary",
         "every gap is either an open current obligation or resolved and deleted — an open gap contains only current missing fact evidence owner acceptance proof and deletion condition — no chronological archive no retired names no obsolete implementation narrative no pass references",

@@ -1,0 +1,268 @@
+# the engine SIMD (v128) — pure Duo, one executor over one descriptor table.
+#
+# A v128 is two i64 halves. Every wasm SIMD lane op has the same shape: walk the
+# lanes, apply a kernel, reassemble. So there is exactly ONE executor here and
+# one kernel per domain; a descriptor row says how to read the lanes (width,
+# signed, float) and which kernel to run. ~110 opcodes come from ~20 generated
+# rows, and adding a shape is a row rather than a function.
+#
+# `global` is required on a module-level `req`: without it the name is invisible
+# in the embedded module's generated C ("use of undeclared identifier"). std.bit
+# supplies IEEE bit reinterpretation, the one primitive float lanes need — it
+# lives in the stdlib so the engine itself stays free of C.
+bitm = bit
+
+I8  = 8
+I16 = 16
+I32 = 32
+I64 = 64
+
+# ── lane access ───────────────────────────────────────────────────────
+# Lane i of width w sits at bit offset i*w, in `lo` below 64 and `hi` above.
+# Widths divide 64 evenly, so a lane never straddles the halves.
+
+lane_get: i64 = (v: any, w: i64, i: i64)
+  off: i64 = i * w
+  half: i64 = v.lo
+  if off >= 64
+    half = v.hi
+    off -= 64
+  end
+  if w == 64 return half end
+  # A bare `1` is a 32-bit literal, so `1 << 32` is undefined and yields 0,
+  # silently zeroing the mask. Bind an i64 first.
+  one: i64 = 1
+  return (half >> off) & ((one << w) - 1)
+end
+
+lane_put: any = (v: any, w: i64, i: i64, x: i64)
+  off: i64 = i * w
+  if off < 64
+    if w == 64 return { lo = x, hi = v.hi } end
+    one: i64 = 1
+    m: i64 = (one << w) - 1
+    return { lo = (v.lo & (~(m << off))) | ((x & m) << off), hi = v.hi }
+  end
+  off -= 64
+  if w == 64 return { lo = v.lo, hi = x } end
+  one2: i64 = 1
+  m2: i64 = (one2 << w) - 1
+  return { lo = v.lo, hi = (v.hi & (~(m2 << off))) | ((x & m2) << off) }
+end
+
+# The second `if` is nested deliberately: two top-level ifs in a function with
+# exactly two integer parameters match the compiler's Ackermann pattern
+# detector, which replaces the whole body with __ack_impl. Fixed in current duo;
+# duo_old still has it.
+sign_extend: i64 = (x: i64, w: i64)
+  if w ~= 64
+    one: i64 = 1
+    if (x & (one << (w - 1))) ~= 0 return x - (one << w) end
+  end
+  return x
+end
+
+sign_wrap: i64 = (x: i64, w: i64)
+  if w == 64 return x end
+  one: i64 = 1
+  return x & ((one << w) - 1)
+end
+
+bits_to_f: f64 = (b: i64, w: i64)
+  if w == 32 return bitm.f32_from_bits(b) end
+  return bitm.f64_from_bits(b)
+end
+
+f_to_bits: i64 = (x: f64, w: i64)
+  if w == 32 return bitm.f32_to_bits(x) end
+  return bitm.f64_to_bits(x)
+end
+
+# ── descriptor table, generated from opcode-block regularity ──────────
+# wasm lays each lane shape out as a contiguous block in a fixed order, so the
+# table is a fold over that structure rather than a literal list.
+#
+# Row fields: w = lane width, k = kernel name, n = arity (1 or 2),
+#             sg = signed lanes, fl = float lanes, c = produces a lane mask
+
+OPS = {}
+
+# integer compares: 10 per shape (eq ne lt_s lt_u gt_s gt_u le_s le_u ge_s ge_u)
+icmp_k = { "eq", "ne", "lt", "lt", "gt", "gt", "le", "le", "ge", "ge" }
+icmp_s = { true, true, true, false, true, false, true, false, true, false }
+for sh in { { w = I8, b = 35 }, { w = I16, b = 45 }, { w = I32, b = 55 } }
+  ci: i64 = 1
+  while ci <= 10
+    OPS[sh.b + ci - 1] = { w = sh.w, k = icmp_k[ci], n = 2, sg = icmp_s[ci], fl = false, c = true }
+    ci += 1
+  end
+end
+
+# float compares: 6 per shape (eq ne lt gt le ge)
+fcmp_k = { "eq", "ne", "lt", "gt", "le", "ge" }
+for sh in { { w = I32, b = 65 }, { w = I64, b = 71 } }
+  fi: i64 = 1
+  while fi <= 6
+    OPS[sh.b + fi - 1] = { w = sh.w, k = fcmp_k[fi], n = 2, sg = true, fl = true, c = true }
+    fi += 1
+  end
+end
+
+# integer arith: add/sub share a +3 stride; mul only where wasm defines it
+for sh in { { w = I8, a = 110, m = 0 }, { w = I16, a = 142, m = 149 },
+            { w = I32, a = 174, m = 181 }, { w = I64, a = 206, m = 213 } }
+  OPS[sh.a]     = { w = sh.w, k = "add", n = 2, sg = true, fl = false, c = false }
+  OPS[sh.a + 3] = { w = sh.w, k = "sub", n = 2, sg = true, fl = false, c = false }
+  if sh.m ~= 0
+    OPS[sh.m] = { w = sh.w, k = "mul", n = 2, sg = true, fl = false, c = false }
+  end
+end
+
+# integer unary
+for sh in { { w = I8, ab = 96, ng = 97 }, { w = I16, ab = 128, ng = 129 },
+            { w = I32, ab = 160, ng = 161 }, { w = I64, ab = 0, ng = 193 } }
+  OPS[sh.ng] = { w = sh.w, k = "neg", n = 1, sg = true, fl = false, c = false }
+  if sh.ab ~= 0
+    OPS[sh.ab] = { w = sh.w, k = "abs", n = 1, sg = true, fl = false, c = false }
+  end
+end
+
+# float arith: 8 contiguous per shape (add sub mul div min max pmin pmax)
+fbin_k = { "add", "sub", "mul", "div", "min", "max", "pmin", "pmax" }
+for sh in { { w = I32, b = 228 }, { w = I64, b = 240 } }
+  bi: i64 = 1
+  while bi <= 8
+    OPS[sh.b + bi - 1] = { w = sh.w, k = fbin_k[bi], n = 2, sg = true, fl = true, c = false }
+    bi += 1
+  end
+end
+
+# float unary: abs and neg at the shape base, sqrt at base+3
+for sh in { { w = I32, b = 224 }, { w = I64, b = 236 } }
+  OPS[sh.b]     = { w = sh.w, k = "abs",  n = 1, sg = true, fl = true, c = false }
+  OPS[sh.b + 1] = { w = sh.w, k = "neg",  n = 1, sg = true, fl = true, c = false }
+  OPS[sh.b + 3] = { w = sh.w, k = "sqrt", n = 1, sg = true, fl = true, c = false }
+end
+
+# ── kernels ───────────────────────────────────────────────────────────
+
+int_k: i64 = (k: str, x: i64, y: i64)
+  if k == "add" return x + y end
+  if k == "sub" return x - y end
+  if k == "mul" return x * y end
+  if k == "neg" return 0 - x end
+  if x < 0 return 0 - x end
+  return x
+end
+
+# wasm min/max are not C's: NaN propagates; pmin/pmax are asymmetric by spec.
+flt_k: f64 = (k: str, x: f64, y: f64)
+  if k == "add" return x + y end
+  if k == "sub" return x - y end
+  if k == "mul" return x * y end
+  if k == "div" return x / y end
+  if k == "neg" return 0.0 - x end
+  if k == "sqrt" return x:sqrt() end
+  if k == "pmin"
+    if y < x return y end
+    return x
+  end
+  if k == "pmax"
+    if x < y return y end
+    return x
+  end
+  if k == "abs"
+    if x < 0.0 return 0.0 - x end
+    return x
+  end
+  if x ~= x return x end
+  if y ~= y return y end
+  if k == "min"
+    if y < x return y end
+    return x
+  end
+  if x < y return y end
+  return x
+end
+
+cmp_ok: bool = (k: str, x: f64, y: f64)
+  if k == "eq" return x == y end
+  if k == "ne" return x ~= y end
+  if k == "lt" return x < y end
+  if k == "gt" return x > y end
+  if k == "le" return x <= y end
+  return x >= y
+end
+
+# ── the one executor ──────────────────────────────────────────────────
+# Unary rows ignore `b`. Compare rows write an all-ones / all-zero lane mask.
+
+run: any = (spec: any, a: any, b: any)
+  w: i64 = spec.w
+  n: i64 = 128 // w
+  ones: i64 = sign_wrap(0 - 1, w)
+  out = { lo = 0, hi = 0 }
+  i: i64 = 0
+  while i < n
+    rx: i64 = lane_get(a, w, i)
+    ry: i64 = 0
+    if spec.n == 2 ry = lane_get(b, w, i) end
+    v: i64 = 0
+    if spec.fl
+      fx: f64 = bits_to_f(rx, w)
+      fy: f64 = bits_to_f(ry, w)
+      if spec.c
+        if cmp_ok(spec.k, fx, fy) v = ones end
+      else
+        v = f_to_bits(flt_k(spec.k, fx, fy), w)
+      end
+    else
+      ix: i64 = rx
+      iy: i64 = ry
+      if spec.sg
+        ix = sign_extend(ix, w)
+        iy = sign_extend(iy, w)
+      end
+      if spec.c
+        if cmp_ok(spec.k, ix + 0.0, iy + 0.0) v = ones end
+      else
+        v = sign_wrap(int_k(spec.k, ix, iy), w)
+      end
+    end
+    out = lane_put(out, w, i, v)
+    i += 1
+  end
+  return out
+end
+
+# Bitwise ops span all 128 bits, so they skip the lane walk entirely.
+run_bitwise: any = (sub: i64, a: any, b: any)
+  if sub == 78 return { lo = a.lo & b.lo,    hi = a.hi & b.hi } end
+  if sub == 79 return { lo = a.lo & (~b.lo), hi = a.hi & (~b.hi) } end
+  if sub == 80 return { lo = a.lo | b.lo,    hi = a.hi | b.hi } end
+  return { lo = a.lo ~ b.lo, hi = a.hi ~ b.hi }
+end
+
+run_not: any = (a: any)
+  return { lo = ~a.lo, hi = ~a.hi }
+end
+
+run_bitselect: any = (a: any, b: any, m: any)
+  return { lo = (a.lo & m.lo) | (b.lo & (~m.lo)),
+           hi = (a.hi & m.hi) | (b.hi & (~m.hi)) }
+end
+
+run_splat: any = (w: i64, x: i64)
+  n: i64 = 128 // w
+  out = { lo = 0, hi = 0 }
+  i: i64 = 0
+  while i < n
+    out = lane_put(out, w, i, sign_wrap(x, w))
+    i += 1
+  end
+  return out
+end
+
+{ lane_get = lane_get, lane_put = lane_put, sign_extend = sign_extend,
+  run = run, run_bitwise = run_bitwise, run_not = run_not,
+  run_bitselect = run_bitselect, run_splat = run_splat, OPS = OPS }

@@ -1,0 +1,7 @@
+menu: str = (key: str, label: str)
+    "  [{key}] {label}\n"
+
+main: i64 = ()
+    q: str = "q":menu("quit")
+    stdout:write("{q}\n")
+    0

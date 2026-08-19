@@ -1,0 +1,12 @@
+repeat: str = (s: str, n: i64)
+    bar: str = ""
+    i: i64 = 0
+    while i < n
+        bar = "{bar}{s}"
+        i += 1
+    bar
+
+main: i64 = ()
+    b: str = repeat("-", 10)
+    stdout:write("[{b}]\n")
+    0

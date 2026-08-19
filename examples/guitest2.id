@@ -1,0 +1,19 @@
+menu: str = (key: str, label: str)
+    "  [{key}] {label}\n"
+
+listfiles: str = (path: str)
+    cmd: str = "ls -1 {path} 2>&1 | head -20"
+    gatecap(cmd)
+
+main: i64 = ()
+    path: str = os.env("HOME")
+    q: str = "q":menu("quit")
+    l: str = "l":menu("list files")
+    stdout:write("{q}{l}\n")
+
+    fibout: str = gatecap("awk 'BEGIN{a=0;b=1;for(i=1;i<=10;i++){print \"fib(\"i\")=\"a;t=a+b;a=b;b=t}}'")
+    stdout:write("{fibout}\n")
+
+    files: str = path:listfiles()
+    stdout:write("{files}\n")
+    0

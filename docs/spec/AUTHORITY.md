@@ -1,12 +1,12 @@
 # Authority and migration
 
 `docs/spec/constitution.md` is the sole living semantic-law authority for
-**Idsem** (`idol`, `.id`, `idollang/idol`). Branding, command identity, and
+**Idol** (`idol`, `.id`, `idollang/idol`). Branding, command identity, and
 semantic law are one language identity. No pass document, summary, plan,
 implementation, fixture, corpus pattern, or agent instruction competes with C0.
 
 The constitution uses a documentation extension because it is structured law
-data, not executable source. Its Idsem-shaped declarations are not an
+data, not executable source. Its Idol-shaped declarations are not an
 implementation pattern library. Canonical implementation uses `.id`; `GAP-145`
 separately owns the missing lexical identities and generated grammar roles.
 
@@ -16,10 +16,10 @@ separately owns the missing lexical identities and generated grammar roles.
 - `docs/spec/grammar.md` is the grammar projection.
 - `docs/spec/corpus.md` classifies source families for gates.
 - `docs/spec/source.md` is the source/home/package/world closure projection
-  (defers to C0 §67 Idsem algebra closure for home, subject, world, protocol,
+  (defers to C0 §67 Idol algebra closure for home, subject, world, protocol,
   witness, injection, union, standard reachability, and census law).
 - `docs/spec/host.md` is the host boundary, capability, and shell-home projection.
-- `AGENTS.md` is workflow, mechanical preflight, and Idsem durable root
+- `AGENTS.md` is workflow, mechanical preflight, and Idol durable root
   orientation (projection, not C0).
 - `docs/AGENT_ALIGNMENT.md` is the current priority compass.
 - `docs/bootstrap.md` is the executed compiler-authority ledger.
@@ -51,7 +51,7 @@ through `tools/node/dev/gap reserve`.
 ## Current tree only
 
 Git history is the sole historical archive. Active projections and open gaps
-describe current Idsem only (`law.zero.history`). Do not treat pass-number
+describe current Idol only (`law.zero.history`). Do not treat pass-number
 documents, retired brand names, or obsolete architecture narratives as binding
 current work.
 

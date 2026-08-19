@@ -1,6 +1,6 @@
-# Idsem agent router
+# Idol agent router
 
-`AGENTS.md` is the repository entry point — including **Idsem harness
+`AGENTS.md` is the repository entry point — including **Idol harness
 orientation** (harness routing, not C0). This file is its stable path
 router; it contains no language law and no volatile project status.
 
@@ -9,11 +9,11 @@ router; it contains no language law and no volatile project status.
 | Purpose | Path |
 |---|---|
 | Sole semantic law | `docs/spec/constitution.md` |
-| Idsem algebra closure (C0 §67) | `docs/spec/constitution.md` §67 · `law.gate.protocol` · `law.gate.algebra` · `law.gate.infer` · `law.gate.convergence` |
+| Idol algebra closure (C0 §67) | `docs/spec/constitution.md` §67 · `law.gate.protocol` · `law.gate.algebra` · `law.gate.infer` · `law.gate.convergence` |
 | Convergence meta-invariants (SHC seams) | C0 §67 · `law.bridge.death` … `law.gate.convergence` · harness § seam audit |
 | Harness reasoning (stable template) | `docs/spec/harness-projection.md` |
 | Harness boot payload (generated) | `.agents/HARNESS.md` |
-| Durable root orientation | `AGENTS.md` § Idsem harness orientation |
+| Durable root orientation | `AGENTS.md` § Idol harness orientation |
 | Source/home/package/world closure | `docs/spec/source.md` |
 | Host boundary / shell / capability closure | `docs/spec/host.md` |
 | Operative projection | `CLAUDE.md` |
@@ -53,7 +53,7 @@ historical corpus file is an authority.
    The lock wrapper is coordination transport, not semantic authority.
 7. Commit only explicit owned paths and release only your own claims.
 
-The language identity is **Idsem** (`idol`, `.id`, repository `idollang/idol`).
+The language identity is **Idol** (`idol`, `.id`, repository `idollang/idol`).
 Semantic law lives in `docs/spec/constitution.md` (C0). Do not migrate to the
 release repository until `.agents/RELEASE_READINESS.md` authorizes release.
 The claim wrapper remains bootstrap transport until the graph-owned
