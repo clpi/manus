@@ -1,5 +1,5 @@
-HEAD: 3a17ee43f0fba8e5c3423f2d9535c31ae5b7e2eb
-Date: 2026-08-18T15:23:42-07:00
-Dirty: 27
+HEAD: dab815ea8a094ab23eb325ce09e07f1c209e9171
+Date: 2026-08-18T20:13:05-07:00
+Dirty: 32
 Branch: codex/next-semantic-slice
 Derived: tools/node/dev/orient (law.control.derived — do not hand-edit)
