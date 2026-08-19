@@ -3889,16 +3889,34 @@ pub const SemanticGraph = struct {
             else
                 .void;
 
+            // SLOT ROLE: the graph records the CANONICAL face. A name is a
+            // subject and an edge, so an operand-first application's first
+            // operand occupies the relation's subject slot — the surface face
+            // (`up(3)` versus `3:up()`) is provenance (kept by noteOrigin),
+            // never a different fact set. Before this, `up(3)` recorded
+            // app(args=1, subject=no) while `3:up()` recorded
+            // app(args=0, subject=yes): one relation, two disagreeing graph
+            // authority edges — the split gate/protocol.sh pins as a SPLIT.
+            // Marshaling already unifies: checkedScalarOperands walks subject
+            // then arguments, so both faces emit identically.
+            var first_argument: usize = 0;
             var subject_value: ?id = null;
             if (fact.subject) |subject| {
                 const descriptor = checked.exprDescriptor(subject) orelse
                     return error.MissingApplicationDescriptor;
                 subject_value = try self.addApplicationValue(call_id, subject, file, descriptor);
                 try self.noteOrigin(subject_value.?, subject, caller);
+            } else if (fact.arguments.len >= 1) {
+                const promoted = fact.arguments[0];
+                const descriptor = checked.exprDescriptor(promoted) orelse
+                    return error.MissingApplicationDescriptor;
+                subject_value = try self.addApplicationValue(call_id, promoted, file, descriptor);
+                try self.noteOrigin(subject_value.?, promoted, caller);
+                first_argument = 1;
             }
-            const arguments = try self.alloc.alloc(id, fact.arguments.len);
+            const arguments = try self.alloc.alloc(id, fact.arguments.len - first_argument);
             defer self.alloc.free(arguments);
-            for (fact.arguments, 0..) |argument, i| {
+            for (fact.arguments[first_argument..], 0..) |argument, i| {
                 const descriptor = checked.exprDescriptor(argument) orelse
                     return error.MissingApplicationDescriptor;
                 arguments[i] = try self.addApplicationValue(call_id, argument, file, descriptor);
