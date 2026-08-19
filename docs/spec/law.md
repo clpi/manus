@@ -2296,6 +2296,46 @@ nondominated physical realization over an intentionally unbounded realization
 space, with every remaining cost causally attributable and every optimality gap
 measurable.*
 
+## 111. VOID is not a source descriptor
+
+`void` is not a canonical Idol source descriptor. An absent or zero-valued
+result is expressed through result-demand/empty-pack facts and ordinary
+application. `void` in C or other foreign source spans is foreign-law provenance;
+`void` as an Idol descriptor is `vocabularyblocked`.
+
+## 112. SELF-ZERO
+
+No Idol source or graph mechanism mints a synthetic `self` binding to restate the
+application subject. An application already records its exact subject as a graph
+fact. A relation body may use or project that subject fact; it may not introduce
+a universal receiver variable named `self`. If a lexical value has an independent
+domain identity, it is bound under that genuine name.
+
+## 113. ANY
+
+`any` is a lawful existential relation: `xs:any(p)` asks the question directly.
+`any` is not a canonical unconstrained descriptor in Idol source. An explicit
+`any` descriptor is noncanonical; omit it and record the incompleteness as a
+fact, a `vocabularyblocked` status, or a classified fixture/foreign role.
+Compatibility fixtures, negative controls, and foreign-law source may retain
+`any` under their own law classification.
+
+## 114. BYTES
+
+A sequence of byte-like values is a value plus element descriptor, shape,
+cardinality, stride, and layout facts. It is not an irreducible `bytes`
+descriptor unless the constitution explicitly amends one. The text/bytes
+distinction is a classification of values and descriptors, not a default plural
+identity.
+
+## 115. CANONICALITY
+
+Every source spelling has exactly one canonicality status under a semantic role
+and a source law. The admissible statuses are: `canonical`, `accepted-compatibility`,
+`migration-only`, `foreign`, `fixture-only`, `implementation-only`, and `invalid`.
+Agents, gates, and LSP tools must consume a role-aware canonicality projection
+rather than a word blacklist.
+
 ## Master test
 
 Before adding ANY source spelling, identity, graph field, edge, runtime object,

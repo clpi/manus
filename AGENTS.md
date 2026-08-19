@@ -68,16 +68,12 @@ it.
 ### Metaprogramming — accurate, not encouraging
 
 Reach for a **world relation over a directive** wherever one exists; the
-directive namespace is under active retirement, not expansion. Where a directive
-is unavoidable the canonical spelling is **`@comp.*`** —
-`src/parser.zig:warnDeprecatedAtQualified` names it as the replacement for
-`@meta.*`, `@compiler.*`, `@emit`, `@pipeline` and every `@c.*`, and the
-compiler's own diagnostic is the authority. This is not cosmetic: `@c.emit` and
-`@comp.c.emit` are one hook, three call sites compared against the short
-spelling only, and thirty-seven sites in `lib/` therefore did NOTHING — every
-raw-memory primitive was a no-op and `sleep()` slept zero, and all of it passed
-`idol check`. `@ffi` and `@comp.ffi` are DIFFERENT operations. Enforcement is
-`gate/dialect.sh`; get live counts by running it, not from this file.
+directive namespace is retired, not expanded. `@comp.*`, `@meta.*`,
+`@compiler.*`, `@emit`, `@pipeline`, every `@c.*`, `@host`, `@runtime` and any
+other compiler/namespace `@` form are not lawful Idol source. The compiler may
+retire such spellings internally, but a new source spelling in any of these
+namespaces is invalid. Enforcement is `gate/idiom.id` and `gate/dialect.sh`;
+get live counts by running them, not from this file.
 
 ### Performance — decisions, not hints
 
