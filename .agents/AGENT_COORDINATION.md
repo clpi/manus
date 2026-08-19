@@ -171,9 +171,10 @@ by-value proof on this branch:
    `\{\}`; both gates' display strings were parsed as pack holes and refused
    by the concat planner. Fixed in gate/idiom.id (3 sites) and
    scripts/audit100.id (2 sites).
-3. idol_str_concat export added to src/idol_str_runtime.zig + the boot symbol
-   list (uncommitted — drop it or finish it; nothing calls it yet after the
-   brace fix routed around the need).
+3. An idol_str_concat runtime export was drafted for the concat lane and
+   DELETED: after the brace fix routed around the pack-hole parse, it had zero
+   consumers, and a fact with no consumer is deleted, not shelved. Re-add it
+   the day a lawful pack-in-text rendering needs it.
 
 Wall chain remaining, with reproduction (build zig-out first):
 
