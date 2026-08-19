@@ -128,7 +128,7 @@ When lane A needs a fact owned by lane B:
 Claim semantic boundaries as well as paths. Integration state outranks
 branch-local success.
 
-## Handoff — research admission surface (main 5c7124f6, 2026-08-18)
+## Handoff — research admission surface (main bbc54486, 2026-08-18)
 
 One admission program survives: `gaps/RESEARCH-SPINE.md` (schema, structural
 map, dependency DAG, horizons). Enforcer: `tools/node/dev/gapc0`, exposed as

@@ -1,3 +1,4 @@
+## TEACHING-STATUS: canonical
 main: i64 = ()
   body = stdin:read()
   c = body:sub(1, 1)

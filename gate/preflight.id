@@ -1,3 +1,4 @@
+## TEACHING-STATUS: canonical
 # gate/preflight.id — DEPRECATED. Commit admission is .githooks/pre-commit (shell orchestrator).
 #
 # Idol scan gates run on the direct backend only. Git/process orchestration stays

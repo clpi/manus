@@ -1,3 +1,4 @@
+## TEACHING-STATUS: canonical
 # gate/bootstrap — direct-native capture helpers for gate scripts (GAP-155 ingress).
 #
 # gatecap(shellline) and os.execute(shellline) lower to idol_process_capture /
