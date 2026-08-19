@@ -158,3 +158,34 @@ green with planted-defect negatives; main untouched per instruction. Open
 work: gate/corpus-status.sh reports 964 .id files awaiting TEACHING-STATUS
 headers (classification lane), and audit100/idiom remain DNB001-blocked
 repo-wide.
+
+## Handoff — script-gate unblocking (codex/canonical-closure-20260818 @ feda71ee)
+
+The repo's script gates were dark on DNB001. Three walls moved, each with
+by-value proof on this branch:
+
+1. mod-global-written RETIRED (4cb1fd1c): the bss globals map answers, the
+   stale scalar-precheck refusal is deleted, g066/g108 promoted into the
+   differential corpus proper agreeing with the C column (6 5 / exit 6, 8 8).
+2. The `{{}}` class (feda71ee): `{{` is a PACK HOLE by law, literal braces are
+   `\{\}`; both gates' display strings were parsed as pack holes and refused
+   by the concat planner. Fixed in gate/idiom.id (3 sites) and
+   scripts/audit100.id (2 sites).
+3. idol_str_concat export added to src/idol_str_runtime.zig + the boot symbol
+   list (uncommitted — drop it or finish it; nothing calls it yet after the
+   brace fix routed around the need).
+
+Wall chain remaining, with reproduction (build zig-out first):
+
+    ./zig-out/bin/idol run gate/idiom.id < any.diff
+      → SemanticFactsInvalid, validateDnirApplications native_backend.zig:7704
+        missing-application-lineage (a module-local .call_direct lowered
+        without application facts — graph/DNIR lineage lane)
+    AUDIT100paths=/tmp/x.list ./zig-out/bin/idol run scripts/audit100.id
+      → DNB001 native-scalar precheck — ret-type:any
+        (return-type inference, sema lane; do NOT annotate the script around
+        it — inference is the canonical face, IMPLEMENTATION-BLOCKED is honest)
+
+Unit-test failure set is IDENTICAL to baseline (one pre-existing failure in
+test 'refuses source conversion absent application facts', fails at 5e1bde2d
+before any of this). main untouched.
