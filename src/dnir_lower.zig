@@ -7442,6 +7442,21 @@ fn lowerSubjectCall(
             return lowerSubjectFind(ctx, expr, consumption);
         }
         if (std.mem.eql(u8, mc.method, "tail") and mc.args.len == 0 and exprIsStr(ctx, mc.obj)) {
+            // IT NEVER TAKES THE NAME — the rule `lowerCollectionRelation`
+            // follows for `any` and `worldSubject` for `stdout`: if the graph
+            // resolved this application to a declared relation, that
+            // declaration owns the call. Measured on gate/idiom.id: its own
+            // `tail` relation was stolen here by the builtin's bare
+            // `call_direct "tail"` — no lineage, and the callee would collide
+            // with the module's mangled symbol at link. The declared case
+            // takes the checked call with the ORIGINAL occurrence, because the
+            // generic fall-through synthesizes a fresh expr the occurrence map
+            // has never seen.
+            if (ctx.occurrences.get(expr)) |occurrence| {
+                if (ctx.graph.applicationRelation(occurrence.application) != null) {
+                    return lowerCheckedScalarCall(ctx, occurrence, consumption);
+                }
+            }
             return lowerSubjectTail(ctx, expr, consumption);
         }
         if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and ctx.graph.bootstrapApplicationExpr(expr)) {

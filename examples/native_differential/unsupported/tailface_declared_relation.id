@@ -1,0 +1,18 @@
+# gap: SUBJECT-FACE APPLICATION ENUMERATION. A declared relation invoked
+# subject-first (`s:tail()` where `tail` is declared in this module) resolves
+# in the occurrence map (relation, target, lineage all answer), lowers through
+# the checked call, and realizes its application exactly once -- but the lift
+# does not register method-face applications in graph.applications(), so
+# validateDnirApplications counts expected=0 against seen=1 and refuses with
+# application-realization-count. Repro for the graph lane: the numbers are
+# seen=1 expected=0 unrealized=0. The builtin-tail theft this exposed is
+# already fixed (dnir_lower: the declared relation owns the call).
+tail: bool = (s: str)
+  s == "x"
+
+main: i64 = ()
+  if "abc":tail()
+    print("wrong")
+  else
+    print("call-ok")
+  0
