@@ -33,6 +33,9 @@
 # Promote both files into the corpus proper the day the native profile gives a
 # written file-scope binding real storage. The C column already prints `8 8`.
 
+# PROMOTED 2026-08-18: same retirement; direct prints 8 8, agreeing with C.
+# Now a must-agree row.
+
 total = 5
 
 show: i64 = ()

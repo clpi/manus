@@ -827,9 +827,11 @@ const Arm64Compiler = struct {
     ///     g066  for i = 1,3 / total = total + i   direct 0 5 (exit 0)   c 6 5 (exit 6)
     ///     g108  main writes 8, show() reads       direct 8 5            c 8 8
     ///
-    /// Exit 0 both times, `ok compile` both times, no diagnostic. `codegen.zig`'s
-    /// `mod-global-written:` precheck exists ONLY to refuse that miscompile, and
-    /// it is load-bearing until this map is what answers the read.
+    /// Exit 0 both times, `ok compile` both times, no diagnostic. The
+    /// `mod-global-written:` precheck refused that miscompile while this map
+    /// could not answer; the map now answers every read, so the precheck is
+    /// DELETED (2026-08-18) and both fixtures are promoted into the differential
+    /// corpus proper with the C column's answers.
     ///
     /// `__DATA,__bss` and not `__TEXT,__const`: the whole point is that it is
     /// WRITABLE. Zerofill costs no file bytes, and a non-zero initializer is not

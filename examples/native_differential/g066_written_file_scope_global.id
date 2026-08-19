@@ -34,6 +34,11 @@
 # written file-scope binding real storage. The C column is already correct and
 # prints `6 5`.
 
+# PROMOTED 2026-08-18: the direct backend now gives a written file-scope
+# binding one `__DATA,__bss` word (`ModuleGlobals` -> `internGlobal`), the
+# `mod-global-written:` guard is deleted, and this program prints 6 5 with
+# exit 6 on direct — agreeing with the C column. It is now a must-agree row.
+
 total: i64 = 0
 count: i64 = 5
 

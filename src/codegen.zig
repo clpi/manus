@@ -3818,25 +3818,15 @@ pub const CodeGen = struct {
             return self.nofit(@src());
         }
 
-        // gap[066] follow-on. A file-scope binding that a FUNCTION WRITES needs
-        // real storage the native-scalar profile does not give it: every
-        // function body treats the name as its own register-resident local, so
-        // the write lands nowhere the next read can see.
-        //
-        // Measured before this guard: `g: i64 = 0` with `g += i` in a loop
-        // printed 3 where C printed 6, and `g += 1` printed 0 where C
-        // printed 3 — g's READ folded to the initializer while the write was
-        // discarded. Not a bail, not a diagnostic: a running program with a
-        // confident wrong number, which is the worst class there is.
-        //
-        // A read-only file-scope binding is still fine — folding its
-        // initializer is correct when nothing can change it — so this refuses
-        // only the written case, and DNB001 sends it to the C backend, which
-        // now mangles the symbol consistently and answers correctly.
-        if (self.module_top_level_written_binding(mod)) |written| {
-            self.nativeDiagFailFmt("mod-global-written:{s}", .{written});
-            return self.nofit(@src());
-        }
+        // gap[066]/gap[108] CLOSED 2026-08-18: a file-scope binding a function
+        // writes now has real storage on the direct path — `ModuleGlobals` in
+        // `dnir_lower.zig` interns one `__DATA,__bss` word per name and emits
+        // the initializers as entry-prologue stores, and `native_backend.zig`'s
+        // `globals` map answers every read. The `mod-global-written:` refusal
+        // below was the honest guard while the write landed nowhere; the storage
+        // landed, so the guard is deleted and both fixtures are promoted into
+        // the differential corpus proper (proof: g066 prints 6 5 / exits 6,
+        // g108 prints 8 8, both agreeing with the C column).
 
         for (mod.body.stmts) |*stmt| {
             switch (stmt.*) {
@@ -3951,41 +3941,6 @@ pub const CodeGen = struct {
             if (!self.native_scalar_funcs.contains(fd.path[0])) return false;
         }
         return true;
-    }
-
-    /// gap[066] follow-on. The name of the first file-scope binding that some
-    /// module function ASSIGNS, or null when every file-scope binding is
-    /// read-only from the functions' point of view. Names the binding so the
-    /// DNB tag can say which one, rather than "outside the subset".
-    fn module_top_level_written_binding(self: *CodeGen, mod: *const ast.Module) ?[]const u8 {
-        for (mod.body.stmts) |*stmt| {
-            switch (stmt.*) {
-                .local_decl => |*ld| for (ld.names) |lname| {
-                    if (self.module_functions_assign_name(mod, lname.ident)) return lname.ident;
-                },
-                .global_decl => |*gd| for (gd.names) |lname| {
-                    if (self.module_functions_assign_name(mod, lname.ident)) return lname.ident;
-                },
-                // gap[108]. An UNTYPED file-scope binding — `total = 5`, no
-                // `: i64` — does not parse as a declaration at all. There is no
-                // `local`/`var` keyword in idol, so the parser hands module
-                // scope an `.assign`, exactly as it does for `total = 8` inside
-                // a function. The two decl arms above therefore saw nothing,
-                // the guard did not fire, and the program ran natively with a
-                // wrong number: measured at this commit, `total = 5` read 5 in
-                // a second function after `main` wrote 8, where C read 8.
-                //
-                // `promote_module_captured_locals` already treats module-scope
-                // `.assign` as a binding site, which is the proof this arm was
-                // an omission and not a decision.
-                .assign => |*as| for (as.targets) |target| {
-                    if (target.* != .name) continue;
-                    if (self.module_functions_assign_name(mod, target.name.ident)) return target.name.ident;
-                },
-                else => {},
-            }
-        }
-        return null;
     }
 
     fn module_top_level_is_native(self: *CodeGen, mod: *const ast.Module) bool {

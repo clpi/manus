@@ -294,10 +294,12 @@ const OccurrenceBridge = struct {
 /// answer: measured on `examples/native_differential/unsupported/`, `total` read
 /// 0 where C read 6, and 5 where C read 8, with exit 0 and no diagnostic.
 ///
-/// THE SET IS EXACTLY `codegen.zig`'s `module_top_level_written_binding`, arm
-/// for arm, and that is a requirement rather than a convenience: that predicate
-/// is what refuses these programs today, so anything it names and this does not
-/// would be admitted with the old folding and answer wrongly again.
+/// The set used to be kept arm-for-arm with `codegen.zig`'s
+/// `module_top_level_written_binding`, because that predicate refused these
+/// programs while this type had no storage behind it. The storage landed and
+/// the refusal is deleted (2026-08-18), so THIS type is now the sole owner of
+/// the written-binding set: a name it registers gets a `__bss` word and
+/// prologue-store initializer, and every read answers through the map.
 const ModuleGlobals = struct {
     /// Name -> the DNIR type its word holds.
     types: std.StringHashMapUnmanaged(RT) = .empty,
