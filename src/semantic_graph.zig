@@ -1857,6 +1857,18 @@ pub const SemanticGraph = struct {
     }
 
     pub fn isBootstrapApplicationNode(self: *const SemanticGraph, entity: id) bool {
+        // A PUBLISHED APPLICATION IS NOT BOOTSTRAP — by this type's own
+        // three-column definition, bootstrap means "the graph identified
+        // NOTHING". When `publishApplication` ran for this node the graph
+        // identified the relation, and the spelling classifier below must not
+        // answer over it: a module that declares its own `tail` and calls it
+        // subject-first is PUBLISHED (lowering realizes it with lineage,
+        // validateDnirApplications counts it in `seen`) while the classifier
+        // still called it bootstrap by name and excluded it from `expected` —
+        // seen=1, expected=0, a refusal manufactured by the classifier alone.
+        // Same rule as `lowerCollectionRelation`'s `any`: the declaration owns
+        // the name.
+        if (self.application(entity) != null) return false;
         const node = self.get(entity) orelse return false;
         const raw = node.ast_ref orelse return false;
         const expr: *const ast.Expr = @ptrCast(@alignCast(raw));
