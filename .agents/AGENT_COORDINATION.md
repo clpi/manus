@@ -179,9 +179,15 @@ by-value proof on this branch:
 Wall chain remaining, with reproduction (build zig-out first):
 
     ./zig-out/bin/idol run gate/idiom.id < any.diff
-      → SemanticFactsInvalid, validateDnirApplications native_backend.zig:7704
-        missing-application-lineage (a module-local .call_direct lowered
-        without application facts — graph/DNIR lineage lane)
+      → application-realization-count. WALLS MOVED since (c442c8ee): the
+        declared-owns-tail fix resolved idiom's own tail relation through the
+        checked call, and the six-line repro
+        examples/native_differential/unsupported/tailface_declared_relation.id
+        isolates what remains: method-face applications resolve in the
+        occurrence map and realize exactly once with lineage, but the lift
+        never registers them in graph.applications(), so the validator counts
+        expected=0 against seen=1 (measured: seen=1 expected=0 unrealized=0).
+        Fix: enumerate ':'-face applications in the lift (graph lane 3).
     AUDIT100paths=/tmp/x.list ./zig-out/bin/idol run scripts/audit100.id
       → DNB001 native-scalar precheck — ret-type:any
         (return-type inference, sema lane; do NOT annotate the script around
