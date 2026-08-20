@@ -491,14 +491,12 @@ fn collectModuleConsts(
                 name = cd.ident;
                 val = cd.val;
             },
-            // A sealed case-set IS a set of module-level constants: `colour.red`
-            // is 0, `colour.green` is 1. Registering them here is what makes a
-            // case-set VALUE lower at all. Without it `colour.green` fell
-            // through to the stack-field path and bailed DNB007 — "fp stack slot
-            // 'colour.green' has no register" — which was true and beside the
-            // point: it has no stack slot because it is a constant, not because
-            // it is missing. The dotted spelling was already the lookup key for
-            // module constants, so nothing new is needed to READ them.
+            .global_decl => |gd| {
+                if (gd.names.len == 1 and gd.inits.len == 1) {
+                    name = gd.names[0].ident;
+                    val = gd.inits[0];
+                }
+            },
             .enum_def => |ed| {
                 for (ed.variants, 0..) |v, i| {
                     const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ ed.name, v.name });
