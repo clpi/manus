@@ -64,6 +64,7 @@ if [ -r "$CONSTITUTION" ]; then
     contains "$CONSTITUTION" 'never `table(key)`' 'constitution access section no longer rejects call-shaped indexing'
     contains "$CONSTITUTION" 'names = { "Idol", "idol" }' 'constitution current-name set drifted'
     rejects "$CONSTITUTION" 'This is the sole living semantic law' 'constitution claims independent supreme authority'
+    rejects "$CONSTITUTION" 'holds = .sole' 'constitution authority law still claims sole hold instead of expansion'
     rejects "$CONSTITUTION" '[] is legacy' 'constitution marks brackets as legacy compatibility'
     rejects "$CONSTITUTION" 'table access is table(key)' 'constitution revives call-shaped table access'
 fi

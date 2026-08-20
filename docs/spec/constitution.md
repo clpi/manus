@@ -58,7 +58,7 @@ authority = @{}
 authority.constitution = law{
     id    = "law.authority"
     kind  = .invariant
-    holds = .sole
+    holds = .expansion
     binds = {
         "docs/spec/law.md is the sole supreme compact law",
         "this document is the structured long-form expansion and law-id owner only",
