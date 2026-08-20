@@ -5,10 +5,11 @@ so major compiler/research families stay **visible** and can be expressed in the
 one semantic graph when admissible.
 
 Sections **I–XXXVIII** below use **thematic grouping** for navigation. Sections
-**XXXIX–XLV**, the **FTCFTW-ranked priorities**, and **universal optimization
-architecture** align with the master **687-item frontier census** (nothing important
-may remain invisible). When adding a family, assign it a stable item number in
-that master sequence and record it here.
+**XXXIX–XLVII**, the **FTCFTW-ranked priorities**, and **universal optimization
+architecture** align with the master **763-item frontier census** (687 first-pass
++ 76 third-pass "strangeness" items — nothing important may remain invisible).
+When adding a family, assign it a stable item number in that master sequence and
+record it here.
 
 ## Unifying criterion
 
@@ -770,6 +771,85 @@ foreign adaptation
 ```
 
 are one family of graph queries — the largest unexplored moat still available to Idol.
+
+---
+
+## XLVI. Second-pass emphasis (112-item research injection)
+
+The numbered research injection (supercompilation through verified secure
+compilation) is **anchored here**, not in a parallel document. Use this table
+when auditing coverage — every item must map to an existing section or gain a
+new numbered entry in the master 687-item sequence.
+
+| Items | Theme | Primary sections |
+|---|---|---|
+| 1–8 | Supercompilation, interaction nets, relational execution, search, synthesis, proof-producing opt, plugin extensibility | § II–VIII |
+| 9–12 | Kernel/unikernel, compiler↔kernel, syscall fusion, storage topology | § IX–XII |
+| 13–15 | Communication complexity, pebble games, recompute/store duality | § XIV–XV |
+| 16–20 | Semantic & observation-relative memo, cross-program cache, minimal sufficient semantics, auto-discovery, information-flow | § XVI, § I |
+| 21–24 | Logical relations, bisimulation, trace quotienting | § I, § XVII |
+| 25–29 | Temporal logic, automata minimization, symbolic automata, parser derivatives, hybrid parser selection | § XVIII–XIX |
+| 30–31 | Decision-tree & entropy-optimal dispatch | § XIX (explicit realization choice) |
+| 32–34 | Succinct & learned structures (candidates only) | § XX |
+| 35–42 | Learned compilation, meta-learning, multi-objective Bayes, regret/robust/online/amortized/potential | § XXI |
+| 43–50 | Adaptive representations, device memory, zero-copy through kernel | § XXII–XXIII |
+| 51–59 | Placement, energy/thermal/wear/reliability, approximate hardware | § XXIII |
+| 60 | Fault-injection-derived optimization validation | § XXIII (reliability witness) |
+| 61–72 | Observer virtualization, any-time/deadline/proof-budget compilation | § XXIV |
+| 73–82 | Trusted core, semantic linking, hot replacement, migration, serialization | § XXV |
+| 83–87 | Boundary contraction, composition-driven opt, cancellation, adjoint pairs | § XXVI |
+| 88–92 | Law induction/mining/specialization, proof-directed & algebraic demand | § I, § XXVI |
+| 93–97 | Error/nondeterminism/fairness/determinism/reproducibility algebra | § XXVII |
+| 98–112 | Resource types, topology, privacy, crypto/MPC/enclave, verified secure compilation | § XXVIII |
+
+**Underweighted families now explicit:** supercompilation as the generic
+information-propagation engine (not a named pass); relational **solving modes**
+over one relation identity; observation-relative equivalence (`≡_demand`);
+trusted-core certificates for untrusted optimizers; boundary contraction as the
+generic pattern behind parser+consumer and encode∘decode elimination; minimal
+sufficient semantics as a universal FTCFTW principle (§ I items 5–6).
+
+**Master architecture (12 dimensions):** identity · facts · observations ·
+demand · laws · change · correspondence · search · proof · cost · world ·
+realization — with **directionality as solving mode**, not second relation
+identity. The moat is making composition, projection, injection, demand,
+change, equivalence, and realization selection **interoperable algebras** over
+the same identities (see § Architectural moat).
+
+---
+
+## XLVII. Third-pass emphasis (76-item "strangeness" frontier)
+
+After recognizable compiler categories are mapped, the remaining frontier is
+**information Idol still does not model** and **physical work that becomes
+removable once it is**. Items **688–763** in the master sequence anchor here;
+thematic bodies live in **§ XXIX–XXXVIII** (not a parallel ontology).
+
+| Items | Theme | Primary sections |
+|---|---|---|
+| 688–694 | Anti-unification, semantic factoring, specialization economics, clone merge, outlining, granularity | § XXIX–XXXII |
+| 695–702 | Dimensions, shape/tensor contraction, sparse structure, zeros, symmetry, group quotient | § XXXIII |
+| 703–709 | Predicate abstraction, CEGAR, precision tiers, lazy refinement, state reduction, canonical reps | § XXXIV |
+| 710–712 | Compiler self-query planning, analysis fusion, analysis sharing | § XXXIV |
+| 713–718 | Negative knowledge, exclusion sets, contradiction, unsat cores, minimal diagnostics/refusals | § XXXV |
+| 719–724 | Minimal guards, sharing, implication, ordering, sealing, proof-directed removal | § XXXVI |
+| 725–729 | Multiversion lattice, subsumption, cluster synthesis, migration | § XXXI |
+| 730–737 | Dynamic patching, hot relocation, representation migration, phase/freeze/init separation | § XXXVI |
+| 738–745 | Ephemeral facts, fact/proof/provenance liveness, cold storage, recompute, compile-time hierarchy | § XXXVII |
+| 746–755 | Layout autotuning, target-specific Compiler B, self-specialization, feature DCE, staging, snapshots, shared pages | § XXXVII |
+| 756–763 | Deterministic parallel eval, correspondence/id split, canonical serialization, Merkle acceleration, proof-carrying distribution, untrusted farms, optimization marketplace, vendor providers | § XXXVIII |
+
+**Guiding axis (repeat until irreducible):**
+
+```text
+generalize ↑   — anti-unification, factoring, outlining, re-generalization
+specialize ↓   — demand, profile, world seal, guarded multiversion
+```
+
+**FTCFTW hooks:** code-size dominance needs **re-generalization** (688–690), not
+only specialization; compile-time memory needs **factoring + liveness** (689,
+738–745); agent repair needs **minimal explanations/refusals** (717–718); untrusted
+scale needs **proof-carrying workers** (761–762) without Merkle identity (759).
 
 ---
 

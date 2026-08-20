@@ -99,10 +99,10 @@ unresolved: i64 = (src: str, file: str, family: i64, report: bool)
       if nxt.kind == token.KIND_LPAREN and kind != token.KIND_DOT and kind != token.KIND_COLON
         binds = true
       # `span: { ... }` is a descriptor DECLARATION and binds the name.
-      # FF-22 retired `type X = { ... }` in favour of this shape axis
-      # form, and migrating lib/std to it made every such name unresolved
-      # until the binder learned the new spelling — the ratchet caught it
-      # in the same commit.
+      # Retired declaration spellings: `type X = { … }`, `type X = T`, and
+      # `(typedecl … (type …))` alias projections (GAP-049 / law descriptor
+      # axis). Canonical module-scope descriptors bind on `Name: { … }` at
+      # column 1; nominal scalars await `Name: T` (gap[097]).
       if nxt.kind == token.KIND_COLON and t.loc.col == 1
         binds = true
       # `n: i64 = 5` — a typed local binding, at any indentation. The

@@ -117,6 +117,13 @@ else
     ok 'NO-BACKEND-TYPE-GUESS: exprIsStr removed from lowering'
 fi
 
+# RETIRED-TYPE-ALIAS-PROJECTION — lib/compiler parser must not emit typedecl/(type …)
+PARSER="$ROOT/lib/compiler/parser.id"
+require_file "$PARSER" parser.id
+grep_file "$PARSER" 'return "(typedecl' 'RETIRED-TYPE-ALIAS-PROJECTION: typedecl emission forbidden in lib/compiler/parser.id'
+grep_file "$PARSER" '" (type " .. proj_type' 'RETIRED-TYPE-ALIAS-PROJECTION: (type …) wrapper forbidden in lib/compiler/parser.id'
+grep_file "$ROOT/lib/compiler/lexer.id" 'word(start, n, "alias") return 51' 'RETIRED-TYPE-ALIAS-PROJECTION: alias keyword forbidden in lib/compiler/lexer.id'
+
 # MONOLITH-PROBE-ONLY
 if [ -r "$MONOLITH" ]; then
     examined=$((examined + 1))

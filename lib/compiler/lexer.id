@@ -160,7 +160,7 @@ lookup: i64 = (self: lexer, start: i64, stop: i64)
         if self:word(start, n, "true") return 26
         if self:word(start, n, "void") return 42
     elseif n == 5
-        if self:word(start, n, "alias") return 51
+        # Retired keyword `alias` — ordinary identifier under current law.
         if self:word(start, n, "async") return 48
         if self:word(start, n, "await") return 49
         if self:word(start, n, "break") return 5

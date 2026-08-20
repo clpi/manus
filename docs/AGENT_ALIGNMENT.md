@@ -52,8 +52,10 @@ Hard constraints from that injection:
 The **optimization frontier census**
 (`docs/history/optimization-frontier-census.md`) is the master “nothing important
 may remain invisible” map — supercompilation, relational solving, trusted-core
-certificates, boundary contraction, semantic linking, and related families. Route
-new research there before inventing parallel subsystems.
+certificates, boundary contraction, semantic linking, and related families.
+See **§ XLVII** (items 688–763) for the third-pass "strangeness" frontier —
+anti-unification, factoring, liveness, guards, compiler self-realization, and
+untrusted optimization. Route new research there before inventing parallel subsystems.
 
 ## One target
 

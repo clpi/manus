@@ -89,4 +89,23 @@ if ! (CDPATH='' cd -- "$ROOT" && "$IDOL" check "$FMT2") >"$LOG" 2>&1; then
 fi
 probe_ok 'FORMAT-FIXPOINT'
 
+# CHECK-NOT-DIRECT-ADMISSION: sema-only check must not be mistaken for direct reach.
+DIRECT_PROBE=$ROOT/examples/call_index_assign.id
+[ -f "$DIRECT_PROBE" ] || fail "missing probe: $DIRECT_PROBE"
+if ! (CDPATH='' cd -- "$ROOT" && "$IDOL" check "$DIRECT_PROBE") >"$LOG" 2>&1; then
+    cat "$LOG" >&2
+    fail 'CHECK-NOT-DIRECT-ADMISSION: call_index_assign.id must pass idol check (sema path)'
+fi
+set +e
+(CDPATH='' cd -- "$ROOT" && "$IDOL" run "$DIRECT_PROBE") >"$LOG" 2>&1
+RUN_RC=$?
+set -e
+if [ "$RUN_RC" -eq 0 ]; then
+    cat "$LOG" >&2
+    fail 'CHECK-NOT-DIRECT-ADMISSION: call_index_assign.id must refuse direct run (not exit 0)'
+fi
+grep -Eiq 'DNB001|UnsupportedProgram|direct backend' "$LOG" \
+    || fail 'CHECK-NOT-DIRECT-ADMISSION: direct refusal did not name DNB/direct backend'
+probe_ok 'CHECK-NOT-DIRECT-ADMISSION'
+
 printf 'architecture-companion gate: PASS\n'

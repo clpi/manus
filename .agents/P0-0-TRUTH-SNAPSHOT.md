@@ -9,7 +9,7 @@ Compare against prior audit anchors: `idol` **7ae7dc2d**, `idol-native` **63c874
 
 | Field | Value |
 |---|---|
-| **HEAD** | `f0318d1d6e3a82329132e300e4fa7e6d4e762686` |
+| **HEAD** | `31b4a3a28d49f37be74399a1aef2d0474ebf55d9` |
 | **branch** | `fix/dnir-sibling-record-export` (no upstream) |
 | **local `main`** | `9b84d2e9fe54479e00a9d86ab46207f57ea24165` |
 | **`idol/main` remote** | `332945610881f01201177bf1320586ec72435571` |
@@ -17,6 +17,7 @@ Compare against prior audit anchors: `idol` **7ae7dc2d**, `idol-native` **63c874
 | **worktrees** | single: `/Volumes/d 1/x/idol` |
 | **stashes** | 6 |
 | **active claims** | run `tools/node/dev/claim list` (not copied here) |
+| **compiler build** | `zig build` **PASS** (session) |
 | **`bin/idol`** | symlink → `out/bin/idol` · `zig-out/bin/idol` 7.5MB Aug 20 03:26 |
 | **evidence `HEAD.txt`** | **STALE** `aff3d0fe…` — must refresh on next evidence commit |
 | **last aggregate subject** | not run this session (`gate/all.sh` absent in tree) |
@@ -35,13 +36,17 @@ Compare against prior audit anchors: `idol` **7ae7dc2d**, `idol-native` **63c874
 - `docs/projections/` (new)
 - `out/bin/` build artifact tree
 
-### Gates this session
+### Gates this session (post architecture redress)
 
 | Gate | Result |
 |---|---|
-| `gate/authority.sh` | **PASS** |
-| `gate/architecture-negative.sh` | **FAIL 1** — `expandableRecordForName` still in `dnir_lower.zig` (known debt) |
+| `gate/authority.sh` | run before push |
+| `gate/architecture-negative.sh` | **PASS** (23 checks; WARN debt: `recordFieldsPresent`, `exprIsStr`) |
+| `gate/architecture-companion.sh` | **PASS** — AMBIGUITY-FAILS, GRAPH-ARG-EXACT, FORMAT-FIXPOINT, CHECK-NOT-DIRECT-ADMISSION |
+| `gate/gap-111-subject-first.sh` | **PASS** — `iter.map(xs, twice)` explicit form |
 | `gate/selfhost.sh` | **missing** from tree (stale references in agent docs) |
+
+**Local HEAD note:** sema subject-first uses order-independent home scan + ambiguity (no conformance→home registry). Graph lift enforces `verifyCheckedApplicationOperandPacks`; DNIR trusts packs (`filterCallArgumentOperands` / `filterRecordAssignOperands` / `expandableRecordForName` removed). **`idol check` ≠ direct admission** — sema-only today; companion probe documents the split until structured outcomes close it.
 
 ## `/Volumes/d 1/x/idol-native`
 
@@ -61,7 +66,7 @@ Compare against prior audit anchors: `idol` **7ae7dc2d**, `idol-native` **63c874
 
 | Check | Status |
 |---|---|
-| `gate/authority.sh` with paired idol | **FAIL** — sibling HEAD `f0318d1d…` ≠ pin `9b84d2e9…` |
+| `gate/authority.sh` with paired idol | **FAIL** — sibling HEAD `31b4a3a2…` ≠ pin `9b84d2e9…` |
 | Role | evidence / gate / differential consumer of Idol authority — **not** parallel language |
 
 ## Redress required before merge/push

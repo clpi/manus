@@ -29,8 +29,8 @@ Successful traversal of today's pipeline is **not** progress. The goal is to
 
 | ID | Intent | Enforcement | Status |
 |---|---|---|---|
-| **GRAPH-FACT-TRUST** | Lowering may not filter authoritative application facts | `verifyCheckedApplicationOperandPacks` in graph lift; no AST recovery in DNIR | **partial** — `filterCheckedCallOperands` gone; `filterCallArgumentOperands` / `filterRecordAssignOperands` remain |
-| **GRAPH-ARG-EXACT** | Application operand packs = exactly resolved operands | Graph lift validation + `examples/bind_save_state.id` companion | **partial** |
+| **GRAPH-FACT-TRUST** | Lowering may not filter authoritative application facts | `verifyCheckedApplicationOperandPacks` in graph lift; no AST operand recovery in DNIR | **enforced** — static ban on `filter*Operands` / `callValueForApplication` |
+| **GRAPH-ARG-EXACT** | Application operand packs = exactly resolved operands | Graph lift validation + `examples/bind_save_state.id` companion | **enforced** (lift); direct lowering still separate |
 | **NO-DNIR-AST-FILTER** | Supported-path lowering must not recover call operands from AST | Static ban on `filterCheckedCallOperands` / `callValueForApplication` | **enforced** |
 | **NO-NAME-RECORD-INFERENCE** | Record/ABI selection must not depend on `"name.field"` local keys | Static ban on `expandableRecordForName` | **enforced** — graph operand lookup; field slots still debt |
 | **NO-RECORD-HISTORY-INFERENCE** | Same semantic structured value must not depend on prior field explosion | Static ban on `recordFieldsPresent` | **debt** — fails until pack facts authoritative |
@@ -48,6 +48,8 @@ Successful traversal of today's pipeline is **not** progress. The goal is to
 | **RESULT-NO-EFFECT** | Result unused + proven pure → application may disappear | Demand/effect separation | **planned** |
 | **VOID-IS-EMPTY-PACK** | No semantic "void function" kingdom — empty result pack | Realization chooses control edge | **planned** |
 | **FORMAT-FIXPOINT** | canonical → fmt → parse/resolve → fmt fixed point; no retired faces | Companion: `idol fmt` must not emit `fun`/`end`/`then` | **enforced** (companion on `examples/bind_concat.id`) |
+| **RETIRED-TYPE-ALIAS-PROJECTION** | No `typedecl`, `(type …)` wrappers, or `alias` keyword in lib/compiler | Static ban in `gate/architecture-negative.sh` | **enforced** |
+| **CHECK-NOT-DIRECT-ADMISSION** | `idol check` success must not imply direct-native reach | Companion: sema-green probe may still refuse at `idol run` | **enforced (probe)** — documents debt until check includes direct path |
 | **MODULE-TOPOLOGY** | Physical path perturbation after ingress → graph identity unchanged | Companion + negative control doc | **planned** |
 | **MONOLITH-PROBE-ONLY** | `lib/compiler/monolith.id` is capability probe, not compiler B | Header marker + agent mandate | **enforced** |
 | **B-USES-REAL-COMPOSITION** | Monolith symbol count does not satisfy compiler-B acceptance | Agent mandate; real homes/bindings/worlds required | **enforced (doc)** |

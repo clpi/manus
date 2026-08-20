@@ -1155,7 +1155,7 @@ proj_decl: str = (lx: lexer)
     s = "(" .. kw.text .. " " .. n.text
     if lexer.peek(lx).kind == token.KIND_COLON
         _c = lexer.next(lx)
-        s = s .. " (type " .. proj_type(lx) .. ")"
+        s = s .. " " .. proj_type(lx)
     if lexer.peek(lx).kind == token.KIND_ASSIGN
         _a = lexer.next(lx)
         s = s .. " " .. proj_expr(lx)
@@ -1799,32 +1799,10 @@ proj_stmt: str = (lx: lexer)
         return proj_repeat(lx)
     if t.kind == token.KIND_CONCEPT
         return proj_concept(lx)
-    # `type X = { ... }` — the same descriptor body as `X: { ... }`, under the
-    # older spelling lib/compiler/lexer.id and ward still use.
-    #
-    # Matched by SPELLING, not token kind: there is no KIND_TYPE. My first
-    # version compared `t.kind` against the non-existent `token.KIND_TYPE`,
-    # which is nil, and the branch then fired for every statement — including
-    # `span: { ... }`, breaking a case that had worked for hours.
-    if t.text == "type" and peek2(lx).kind == token.KIND_NAME
-        _t = lexer.next(lx)
-        n = lexer.next(lx)
-        if !is_member_name(n)
-            markerr(lx)
-            return "(typedecl (error))"
-        if lexer.peek(lx).kind != token.KIND_ASSIGN
-            markerr(lx)
-            return "(typedecl (error))"
-        _a = lexer.next(lx)
-        if lexer.peek(lx).kind == token.KIND_AT
-            _at = lexer.next(lx)
-        # Two shapes: a descriptor body, or a plain ALIAS (`type StableId = i64`).
-        # Requiring a brace rejected the alias form and cost a lib/std file — the
-        # coverage ratchet failed the build, which is exactly what it is for.
-        if lexer.peek(lx).kind != token.KIND_LBRACE
-            return "(typedecl " .. n.text .. " (type " .. proj_type(lx) .. "))"
-        _lb = lexer.next(lx)
-        return "(typedecl " .. n.text .. " " .. proj_desc_body(lx) .. ")"
+    # Retired: statement-initial `type X = …` and `(typedecl … (type …))` alias
+    # projections (GAP-049; law.md descriptor axis). `type` is an ordinary name;
+    # descriptors declare as `Name: { … }` or nominal `Name: T` once parser hole
+    # gap[097] closes. Do not reintroduce typedecl or `(type …)` wrappers here.
     if t.kind == token.KIND_DO
         _d = lexer.next(lx)
         body = proj_block(lx)
@@ -1876,7 +1854,7 @@ proj_stmt: str = (lx: lexer)
             ty = proj_type(lx)
             if lexer.peek(lx).kind == token.KIND_ASSIGN
                 _a = lexer.next(lx)
-                return "(bind " .. t.text .. " (type " .. ty .. ") " .. proj_expr(lx) .. ")"
+                return "(bind " .. t.text .. " " .. ty .. " " .. proj_expr(lx) .. ")"
             lexer.restore_state(lx, bst)
             # tail_pack, not a bare proj_expr. This is the rewind path, taken
             # when NAME `:` turned out to be a receiver face rather than a

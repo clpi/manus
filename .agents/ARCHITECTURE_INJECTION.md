@@ -131,8 +131,53 @@ Same semantics; different deployment realization. Syscall elimination/fusion,
 storage topology, network protocol choice, and NUMA/device placement are ordinary
 physical domains — not new source APIs.
 
+
+## Tonight's priority injection (supersedes fixture-chasing)
+
+Read this before any code change. A **passing fixture is not the objective.**
+
+**Never repair a downstream consumer when its upstream authoritative fact is wrong.**
+If lowering needs to filter, reinterpret, recover, or correct graph facts, stop and
+move the missing fact upstream.
+
+| Anti-pattern | Required response |
+|---|---|
+| `filterCheckedCallOperands` / AST call recovery in DNIR | Fix `graph.application.arguments` producer; DNIR must trust the pack |
+| Hard-coded home priority (`iter` before `table`) | Exact descriptor/world/relation facts, or **ambiguous** — never first-match |
+| `expandableRecordForName` / local-name record inference | Structured value id + descriptor + field facts from the graph |
+| Shaping canonical `.id` for immature direct lowering | Fix realization unless source violates current law |
+| Expanding `lib/compiler/monolith.id` toward compiler B | Probe only — B must exercise real home/module composition |
+| Self-host score green without authority gain | Name the semantic fact gained, not merely the DNB removed |
+
+**Commit review question (mandatory before push):**
+
+> If I deleted all source spelling, AST shape, filesystem names, and host-local
+> variable names after resolution, would my change still know enough to make this
+> decision?
+
+If **no**, the change is almost certainly at the wrong layer.
+
+**Scoreboard discipline:** treat `gate/selfhost.sh` as a coarse probe with two
+dimensions — physical reach **and** semantic authority quality. Never copy counts
+from static reports; use executable ledgers only.
+
+**Focused experiment ≠ aggregate evidence.** A gate success on a dirty tree is not
+proof of incarnation closure.
+
+**Central overnight rule (mandatory):** every time a blocker disappears, ask what
+authority you added. If the answer is "the backend now recognizes another
+source/AST/storage pattern," the architecture got worse. If the answer is "the
+graph now knows an exact fact earlier and downstream code became simpler," you
+are moving toward Idol. Pipeline traversal success is not progress; removing the
+need for pipeline stages is.
+
+See `docs/architecture-negative-controls.md` for the full systemic-misunderstanding
+catalog and companion gate IDs.
+
 ## Where to look next
 
+- **Negative controls:** `docs/architecture-negative-controls.md` · `gate/architecture-negative.sh` · `gate/architecture-companion.sh`
+- **Canonical source debt:** `docs/projections/canonical-source-debt.md`
 - **Capability map:** `docs/history/optimization-frontier-census.md`
 - **Priority compass:** `docs/AGENT_ALIGNMENT.md`
 - **Open obligations:** exact current `gaps/GAP-*.md` files
