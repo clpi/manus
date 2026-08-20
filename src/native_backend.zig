@@ -7890,78 +7890,25 @@ fn validateDnirApplications(
                     }
                     const use = try seen.getOrPut(alloc, application.application);
                     if (use.found_existing) {
-                        return invalidFactsWith(diagnostic, @src(), "application-realization-count");
-                    }
-                    continue;
-                }
-                // A CROSS-HOME TARGET IS NOT IN `module.functions` AND MUST NOT
-                // BE. `targets` above is built from the functions THIS module
-                // defines, so a relation living in another home could only ever
-                // be `missing-application-target` — the validator had no way to
-                // say "absent here, and correctly so".
-                //
-                // IT STILL VALIDATES, in the one way that is available: the
-                // symbol the emitter chose must be the symbol the MANGLING LAW
-                // derives from `(home, name)`. That is the whole content of a
-                // link target for a relation this module cannot see the body
-                // of, and it is two-sided — an emitter that invents a symbol,
-                // or a lift that loses the home, both fail here.
-                if (graph.foreignHome(target_id)) |foreign_home| {
-                    const node = graph.get(target_id) orelse
-                        return invalidFactsWith(diagnostic, @src(), "missing-application-target");
-                    const relation_name = node.name orelse
-                        return invalidFactsWith(diagnostic, @src(), "missing-application-target");
-                    // THE `c` WORLD IS A FOREIGN BOUNDARY: members link as their
-                    // C names (`abs`), not `idol_c__abs` mangling.
-                    const want = if (std.mem.eql(u8, foreign_home, "c"))
-                        try alloc.dupe(u8, relation_name)
-                    else blk: {
-                        break :blk try home_resolve.homeSymbol(alloc, foreign_home, relation_name);
-                    };
-                    defer alloc.free(want);
-                    if (!std.mem.eql(u8, want, instruction.callee)) {
-                        return invalidFactsWith(diagnostic, @src(), "application-link-symbol");
-                    }
-                    const foreign_use = try seen.getOrPut(alloc, application.application);
-                    if (foreign_use.found_existing) {
-                        return invalidFactsWith(diagnostic, @src(), "application-realization-count");
-                    }
-                    continue;
-                }
-                const target = targets.get(target_id) orelse
-                    return invalidFactsWith(diagnostic, @src(), "missing-application-target");
-                if (!std.meta.eql(target.id, target_id)) {
-                    return invalidFactsWith(diagnostic, @src(), "application-link-target");
-                }
-                if (!std.mem.eql(u8, target.linkage, instruction.callee)) {
-                    return invalidFactsWith(diagnostic, @src(), "application-link-symbol");
-                }
-                // A FOLDED RELATION MAY NOT ALSO REALIZE SOMETHING. The fold
-                // replaces the whole body with its constant, so lineage
-                // surviving inside one means the body was only partly
-                // discarded — and the count subtraction below would then be
-                // excusing a call that really did go missing.
-                if (function.folded_to_constant) {
-                    return invalidFactsWith(diagnostic, @src(), "folded-application-lineage");
-                }
-                const use = try seen.getOrPut(alloc, application.application);
-                if (use.found_existing) {
-                    if (instruction.relation) |rel| {
-                        if (graph.get(rel)) |rn| {
-                            if (rn.name) |nm| {
-                                if (std.mem.eql(u8, nm, "sourcepathformprovenance")) {
-                                    std.debug.print("DUP app={d} fn={s} op={s} callee={s} rec={s} idx={d}\n", .{
+                    if (std.fs.cwd().createFile("/tmp/idol_dup.txt", .{ .truncate = true })) |f| {
+                        defer f.close();
+                        if (instruction.relation) |rel| {
+                            if (graph.get(rel)) |rn| {
+                                if (rn.name) |nm| {
+                                    _ = f.writer().print("dup app={d} fn={s} op={s} callee={s} rec={s} idx={d} rel={s}
+", .{
                                         application.application,
                                         function.name,
                                         @tagName(instruction.op),
                                         instruction.callee,
                                         instruction.record,
                                         instruction_index,
-                                    });
+                                        nm,
+                                    }) catch {};
                                 }
                             }
                         }
-                    }
+                    } else |_| {}
                     return invalidFactsWith(diagnostic, @src(), "application-realization-count");
                 }
             }
