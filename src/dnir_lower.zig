@@ -4854,20 +4854,13 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
                         return;
                     }
                 }
+                if (try tryAssignRecordCallFromExportMap(ctx, name, value)) return;
                 try checkedScalarResult(ctx.diagnostic, descriptor);
             }
+            if (try tryAssignRecordCallFromExportMap(ctx, name, value)) return;
         }
     }
-    if (!ctx.require_graph_facts and value.* == .call) {
-        const callee = try qualifiedCallExportName(ctx.alloc, value.*);
-        defer if (callee) |c| ctx.alloc.free(c);
-        if (callee) |export_name| {
-            if (ctx.func_record_returns.get(export_name)) |rec_name| {
-                try lowerRecordCallAssign(ctx, name, export_name, value.call.args, rec_name);
-                return;
-            }
-        }
-    }
+    if (try tryAssignRecordCallFromExportMap(ctx, name, value)) return;
     if (value.* == .table) {
         if (tableIsPositional(value)) {
             try lowerPositionalTableAssign(ctx, name, value);
@@ -5197,6 +5190,20 @@ fn lowerCheckedRecordCallAssign(
             .i64 => {},
         };
     }
+}
+
+
+fn tryAssignRecordCallFromExportMap(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) Error!bool {
+    if (value.* != .call) return false;
+    const callee = try qualifiedCallExportName(ctx.alloc, value.*);
+    defer if (callee) |c| ctx.alloc.free(c);
+    if (callee) |export_name| {
+        if (ctx.func_record_returns.get(export_name)) |rec_name| {
+            try lowerRecordCallAssign(ctx, name, export_name, value.call.args, rec_name);
+            return true;
+        }
+    }
+    return false;
 }
 
 fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, args: []const *ast.Expr, rec_name: []const u8) Error!void {
