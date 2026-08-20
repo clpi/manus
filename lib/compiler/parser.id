@@ -336,6 +336,203 @@ peek2: token = (lx: lexer)
     lexer.restore_state(lx, st)
     t
 
+# GAP-134 callable/header slice — Idol-side recognizer aligned with
+# `src/parser.zig` `headerSignal` / `scan_func_header_signal`. Observation
+# over the lexer stream; no host token_view required.
+is_infix_kind: bool = (k: i64)
+    token.grammarrole.roleassoc(k) != 0
+
+can_start_body_kind: bool = (k: i64)
+    token.grammarrole.rolebodystart(k)
+
+is_descriptor_kind: bool = (k: i64)
+    token.grammarrole.roledescriptor(k) or is_type_kind(k)
+
+# Cursor on `:`. True when `: name (` is a method/face call, not a type slot.
+colon_is_method_call_lx: bool = (lx: lexer)
+    if lexer.peek(lx).kind != token.KIND_COLON
+        return false
+    st = lexer.save_state(lx)
+    _c = lexer.next(lx)
+    m = lexer.peek(lx)
+    p2 = peek2(lx)
+    is_ty = m.kind == token.KIND_NAME or is_descriptor_kind(m.kind)
+    is_call = p2.kind == token.KIND_LPAREN
+    lexer.restore_state(lx, st)
+    is_ty and is_call
+
+# Cursor on `(`. `offside_col` 0 disables layout discrimination for the
+# single-name `(a)` shape; otherwise it is the statement-line opener column.
+# `prev_before_lp` is the token kind immediately before this `(`, or EOF when
+# unknown — used to exclude `if (flag)` / `while (flag)` condition groups.
+header_signal_lx: bool = (lx: lexer, allow_untyped_comma: bool, offside_col: i64, prev_before_lp: i64)
+    if lexer.peek(lx).kind != token.KIND_LPAREN
+        return false
+    st = lexer.save_state(lx)
+    lp = lexer.next(lx)
+    if lexer.peek(lx).kind == token.KIND_LPAREN
+        lexer.restore_state(lx, st)
+        return false
+    depth = 1
+    bracket_depth = 0
+    brace_depth = 0
+    typed_or_vararg = false
+    has_comma = false
+    depth1_tokens = 0
+    depth1_names = 0
+    inner_tokens = 0
+    has_literal_arg = false
+    has_table_literal_arg = false
+    has_infix_operator = false
+    rparen_line = 0
+    prev_kind = token.KIND_EOF
+    while depth > 0
+        t = lexer.next(lx)
+        if t.kind == token.KIND_EOF
+            lexer.restore_state(lx, st)
+            return false
+        if depth == 1 and bracket_depth == 0 and brace_depth == 0 and token.grammarrole.roleliteral(t.kind)
+            has_literal_arg = true
+        if t.kind == token.KIND_DOTS
+            typed_or_vararg = true
+        if t.kind == token.KIND_COMMA and depth == 1
+            if prev_kind == token.KIND_EOF
+                lexer.restore_state(lx, st)
+                return false
+            has_comma = true
+        if t.kind == token.KIND_COLON and depth == 1 and bracket_depth == 0 and brace_depth == 0 and prev_kind == token.KIND_NAME
+            if !colon_is_method_call_lx(lx)
+                typed_or_vararg = true
+        if t.kind == token.KIND_FUN or t.kind == token.KIND_FUNCTION
+            if depth == 1 and bracket_depth == 0 and brace_depth == 0 and !typed_or_vararg
+                lexer.restore_state(lx, st)
+                return false
+        if t.kind == token.KIND_LPAREN
+            depth += 1
+        elseif t.kind == token.KIND_RPAREN
+            depth -= 1
+            if depth == 0
+                rparen_line = t.loc.line
+        elseif t.kind == token.KIND_LBRACKET
+            bracket_depth += 1
+        elseif t.kind == token.KIND_RBRACKET
+            if bracket_depth > 0
+                bracket_depth -= 1
+        elseif t.kind == token.KIND_LBRACE
+            if depth == 1 and bracket_depth == 0 and brace_depth == 0
+                has_table_literal_arg = true
+            brace_depth += 1
+        elseif t.kind == token.KIND_RBRACE
+            if brace_depth > 0
+                brace_depth -= 1
+        if depth == 1 and bracket_depth == 0 and brace_depth == 0 and t.kind != token.KIND_LPAREN and t.kind != token.KIND_RPAREN
+            depth1_tokens += 1
+            if t.kind == token.KIND_NAME
+                depth1_names += 1
+            if is_infix_kind(t.kind)
+                has_infix_operator = true
+        if depth > 0
+            inner_tokens += 1
+        prev_kind = t.kind
+    after = lexer.peek(lx)
+    if has_literal_arg and !typed_or_vararg
+        lexer.restore_state(lx, st)
+        return false
+    if has_infix_operator and !typed_or_vararg
+        lexer.restore_state(lx, st)
+        return false
+    if has_table_literal_arg and !typed_or_vararg
+        lexer.restore_state(lx, st)
+        return false
+    if after.kind == token.KIND_COLON
+        ty = lexer.peek(lx)
+        ty2 = peek2(lx)
+        if (ty.kind == token.KIND_NAME or is_descriptor_kind(ty.kind)) and ty2.kind != token.KIND_LPAREN
+            lexer.restore_state(lx, st)
+            return true
+    if typed_or_vararg or after.kind == token.KIND_ARROW or after.kind == token.KIND_ASSIGN
+        lexer.restore_state(lx, st)
+        return true
+    if allow_untyped_comma and has_comma
+        if after.kind == token.KIND_EOF
+            lexer.restore_state(lx, st)
+            return false
+        if after.kind == token.KIND_COLON
+            ty = lexer.peek(lx)
+            ty2 = peek2(lx)
+            if ty.kind != token.KIND_NAME and !is_descriptor_kind(ty.kind)
+                lexer.restore_state(lx, st)
+                return false
+            if ty2.kind == token.KIND_LPAREN
+                lexer.restore_state(lx, st)
+                return false
+            lexer.restore_state(lx, st)
+            return true
+        if is_infix_kind(after.kind) or after.kind == token.KIND_DOT
+            lexer.restore_state(lx, st)
+            return false
+        lexer.restore_state(lx, st)
+        return true
+    if after.kind == token.KIND_COLON
+        ty = lexer.peek(lx)
+        ty2 = peek2(lx)
+        if ty.kind != token.KIND_NAME and !is_descriptor_kind(ty.kind)
+            lexer.restore_state(lx, st)
+            return false
+        if ty2.kind == token.KIND_LPAREN
+            lexer.restore_state(lx, st)
+            return false
+        lexer.restore_state(lx, st)
+        return true
+    if is_infix_kind(after.kind) or after.kind == token.KIND_COMMA
+        lexer.restore_state(lx, st)
+        return false
+    if depth1_tokens == 1 and depth1_names == 1 and !typed_or_vararg and !has_comma
+        if !allow_untyped_comma
+            lexer.restore_state(lx, st)
+            return false
+        if after.loc.line != rparen_line
+            if inner_tokens != 1
+                lexer.restore_state(lx, st)
+                return false
+            if offside_col == 0
+                lexer.restore_state(lx, st)
+                return false
+            if after.loc.col <= offside_col
+                lexer.restore_state(lx, st)
+                return false
+            if prev_before_lp == token.KIND_IF or prev_before_lp == token.KIND_ELSEIF or prev_before_lp == token.KIND_ELSE or prev_before_lp == token.KIND_WHILE or prev_before_lp == token.KIND_UNTIL or prev_before_lp == token.KIND_FOR or prev_before_lp == token.KIND_MATCH
+                lexer.restore_state(lx, st)
+                return false
+    if !allow_untyped_comma and !typed_or_vararg
+        lexer.restore_state(lx, st)
+        return false
+    if depth1_tokens == 0 and !allow_untyped_comma
+        lexer.restore_state(lx, st)
+        return false
+    if can_start_body_kind(after.kind)
+        lexer.restore_state(lx, st)
+        return true
+    lexer.restore_state(lx, st)
+    false
+
+# Bare declaration path: NAME '(' ... — cursor on NAME.
+statement_header_signal_lx: bool = (lx: lexer, name: token, allow_untyped_comma: bool)
+    st = lexer.save_state(lx)
+    _n = lexer.next(lx)
+    if lexer.peek(lx).kind != token.KIND_LPAREN
+        lexer.restore_state(lx, st)
+        return false
+    _lp = lexer.next(lx)
+    found = header_signal_lx(lx, allow_untyped_comma, name.loc.col, token.KIND_EOF)
+    lexer.restore_state(lx, st)
+    found
+
+# Expression-position parenthesised header: cursor on '('.
+paren_header_signal_lx: bool = (lx: lexer, allow_untyped_comma: bool, prev_before_lp: i64)
+    lp = lexer.peek(lx)
+    header_signal_lx(lx, allow_untyped_comma, lp.loc.col, prev_before_lp)
+
 # Join two projection fragments with a space, omitting empty fragments so no
 # trailing-space artifacts leak into the sexpr.
 join: str = (a: str, b: str)
@@ -357,48 +554,9 @@ quote: str = (s: str)
 # annotation inside the group, or a `:` immediately after the closing paren.
 # `(a + b) * c` has neither and stays an expression.
 is_lambda_head: bool = (lx: lexer)
-    st = lexer.save_state(lx)
-    _lp = lexer.next(lx)
-    depth = 1
-    at_slot_start = true
-    found = false
-    while depth > 0
-        t = lexer.next(lx)
-        if t.kind == token.KIND_EOF break
-        if t.kind == token.KIND_LPAREN
-            depth += 1
-            at_slot_start = false
-        elseif t.kind == token.KIND_RPAREN
-            depth -= 1
-            at_slot_start = false
-        elseif t.kind == token.KIND_COMMA and depth == 1
-            at_slot_start = true
-        elseif t.kind == token.KIND_NAME and depth == 1 and at_slot_start
-            if lexer.peek(lx).kind == token.KIND_COLON
-                # gap[028]: `:` here is a parameter annotation ONLY if it is not
-                # a RECEIVER FACE. `(t:byte(2) == 120)` is an ordinary
-                # parenthesised expression, and reading its `:` as an
-                # annotation made the whole group a lambda head — so every
-                # receiver face inside parentheses failed to parse, while the
-                # host parser accepted it. Same discrimination the host makes
-                # in colon_is_method_call: `: name (` is a call, not a shape.
-                inner = lexer.save_state(lx)
-                _c = lexer.next(lx)
-                m = lexer.next(lx)
-                is_face = m.kind == token.KIND_NAME and lexer.peek(lx).kind == token.KIND_LPAREN
-                lexer.restore_state(lx, inner)
-                if !is_face
-                    found = true
-                    break
-            at_slot_start = false
-        else
-            at_slot_start = false
-    if !found and depth == 0
-        rk = lexer.peek(lx).kind
-        if rk == token.KIND_COLON or rk == token.KIND_ARROW
-            found = true
-    lexer.restore_state(lx, st)
-    found
+    # Typed/untyped-annotation signals only — not the full header recognizer.
+    # Keeps `(a, b)` in the bare-lambda arm separate from `(x: t): r`.
+    paren_header_signal_lx(lx, false, token.KIND_EOF)
 
 # The unannotated value-form: `() f(1)` and `(a, b) a < b`.
 #
@@ -1751,7 +1909,7 @@ proj_stmt: str = (lx: lexer)
             # (gap[029]).
             return tail_pack(lx, proj_expr(lx))
         if t2.kind == token.KIND_LPAREN
-            if params_have_colon(lx)
+            if statement_header_signal_lx(lx, t, false)
                 return proj_fun_decl(lx, t)
             return tail_pack(lx, proj_expr(lx))
         if is_assign_kind(t2.kind)
