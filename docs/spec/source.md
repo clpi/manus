@@ -1,9 +1,8 @@
 # Idol source, home, reach, and world projection
 
-This file is a **non-authoritative projection** of `docs/spec/constitution.md` and
-`docs/spec/law.md`. It exists to orient source-layout and resolution work. It may
-never override the constitution, mint semantic vocabulary, or become an
-independent grammar/module/package law.
+This file is a **non-authoritative projection** of `docs/spec/law.md` (supreme compact
+law) and `docs/spec/constitution.md` (structured expansion). It exists to orient source-layout and resolution work. It may never override the compact law or constitution, mint semantic vocabulary, or
+become an independent grammar/module/package law.
 
 The exhaustive predecessor is preserved in Git history through
 `a2986997a12857d10bd76c9e8eb1efff772eee17` and the research ancestry merges on

@@ -54,9 +54,24 @@ require_file "$AUTHORITY_JSON" authority-manifest
 require_file "$RESEARCH_MANIFEST" pass2-manifest
 require_file "$RESEARCH_ARCHIVE" pass2-archive
 
+GAP134="$ROOT/gaps/GAP-134.md"
+
 if [ -r "$CONSTITUTION" ]; then
-    contains "$CONSTITUTION" '# Idol constitution' 'constitution identity is not Idol'
+    contains "$CONSTITUTION" '# Idol constitution projection' 'constitution no longer declares itself a projection of compact law'
+    contains "$CONSTITUTION" 'sole supreme compact law' 'constitution no longer subordinates to compact law'
+    contains "$CONSTITUTION" 'the compact law wins' 'constitution lost compact-law-wins-on-drift ruling'
+    contains "$CONSTITUTION" 'Computed or indexed aggregate access is projection — `table[key]`' 'constitution access section lost bracket projection law'
+    contains "$CONSTITUTION" 'never `table(key)`' 'constitution access section no longer rejects call-shaped indexing'
     contains "$CONSTITUTION" 'names = { "Idol", "idol" }' 'constitution current-name set drifted'
+    rejects "$CONSTITUTION" 'This is the sole living semantic law' 'constitution claims independent supreme authority'
+    rejects "$CONSTITUTION" '[] is legacy' 'constitution marks brackets as legacy compatibility'
+    rejects "$CONSTITUTION" 'table access is table(key)' 'constitution revives call-shaped table access'
+fi
+
+if [ -r "$GAP134" ]; then
+    examined=$((examined + 1))
+    rejects "$GAP134" 'SUPREME one-page law' 'GAP-134 carries duplicate supreme-law authority'
+    rejects "$GAP134" 'Supreme-law surface obligations' 'GAP-134 carries a second normative constitution section'
 fi
 
 if [ -r "$LAW" ]; then
@@ -84,11 +99,19 @@ if [ -r "$AUTHORITY_JSON" ]; then
     contains "$AUTHORITY_JSON" '"computed_projection": "[]"' 'authority manifest projection delimiter drifted'
 fi
 
+AUTHORITY_MD="$ROOT/docs/spec/AUTHORITY.md"
+if [ -r "$AUTHORITY_MD" ]; then
+    examined=$((examined + 1))
+    contains "$AUTHORITY_MD" 'docs/spec/law.md' 'AUTHORITY.md no longer names compact law'
+    contains "$AUTHORITY_MD" 'supreme compact law' 'AUTHORITY.md no longer ranks compact law supreme'
+    contains "$AUTHORITY_MD" 'compact law is the current owner ruling' 'AUTHORITY.md lost compact-law-wins ruling'
+fi
+
 if [ -e "$ROOT/.agents/SESSION_STATE.md" ]; then
     bad '.agents/SESSION_STATE.md is ephemeral state masquerading as durable authority'
 fi
 
-archive_sha='e66fe6cd2470eb7ce73a82ed0f758b84044715c4a8102e55e95b61435e32ed78'
+archive_sha='0ac4b3a198a45f51ec6e3f3387977ecf9e964663ce6652dca499da4e99e9f139'
 if [ -r "$RESEARCH_MANIFEST" ]; then
     contains "$RESEARCH_MANIFEST" "$archive_sha" 'Pass 2 manifest archive digest drifted'
     contains "$RESEARCH_MANIFEST" '"files": [' 'Pass 2 manifest lost its file census'

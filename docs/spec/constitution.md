@@ -1,8 +1,14 @@
-# Idol constitution
+# Idol constitution projection
 
-This is the sole living semantic law. `CLAUDE.md`, `docs/spec/*.md`, agent
-routers, tests, tools, and implementation are projections and may not contradict
-it. Git history is the sole historical archive.
+`docs/spec/law.md` is the **sole supreme compact law**. This file is its
+structured long-form expansion, stable `law.*` identity owner, and documentation
+bridge — not a competing authority. When this file and the compact law differ,
+the compact law wins and this projection must be repaired without minting an
+amendment subsystem.
+
+`CLAUDE.md`, other `docs/spec/*.md` pages, agent routers, tests, tools, and
+implementation are further projections and may not contradict either authority
+tier. Git history is the sole historical archive.
 
 The fenced body is structured law notation retained while `GAP-145` closes the
 canonical lexical and generated-role boundary. It is not executable canonical
@@ -54,12 +60,14 @@ authority.constitution = law{
     kind  = .invariant
     holds = .sole
     binds = {
-        "this document is the one living semantic law",
-        "every generated projection and implementation must trace its rule to this law",
+        "docs/spec/law.md is the sole supreme compact law",
+        "this document is the structured long-form expansion and law-id owner only",
+        "when compact law and this projection differ the compact law wins and this file is repaired",
+        "every generated projection and implementation must trace its rule to the compact law through this expansion",
         "no implementation projection pass document router corpus or tool encodes an independent rule",
         "machine consumption remains blocked until canonical constitution id and generated projections replace the documentation bridge",
     }
-    fails = "two encodings of one rule is two languages"
+    fails = "two encodings of one rule is two languages or a second supreme authority beside law.md"
 }
 
 # The structural goal. Note it is an OBJECTIVE, not an invariant: it states
@@ -79,17 +87,18 @@ correctness = law{
 level: { rank: i64, name: str, role: str }
 
 stack = {
-    level{ 0, "constitution", "the source of truth" },
-    level{ 1, "grammar", "constraints derived from C0" },
-    level{ 2, "verification", "corpus, diagnostics, roles, agent context" },
-    level{ 3, "implementation", "execution" },
+    level{ 0, "compact_law", "docs/spec/law.md — supreme compact law" },
+    level{ 1, "constitution", "structured expansion of compact law" },
+    level{ 2, "grammar", "constraints derived from C0" },
+    level{ 3, "verification", "corpus, diagnostics, roles, agent context" },
+    level{ 4, "implementation", "execution" },
 }
 
 descent = law{
     id    = "law.descent"
     kind  = .invariant
     holds = .downward
-    binds = { "C0 to C3 only", "no upward dependency" }
+    binds = { "C0 to C4 only", "no upward dependency" }
     fails = "an implementation that teaches the constitution is a fork"
 }
 
@@ -114,8 +123,9 @@ coherence = law{
 # be repaired rather than treated as another authority.
 
 precedence = {
-    "directive",       # the owner, verbatim, until reconciled here
-    "constitution",    # the sole living repository law
+    "directive",       # the owner, verbatim, until reconciled into law.md
+    "compact_law",     # docs/spec/law.md — supreme executable wording
+    "constitution",    # structured long-form expansion of compact law
     "projection",      # grammar, corpus, context and workflow views
     "implementation",  # what happens to be implemented
 }
@@ -125,8 +135,8 @@ owner = law{
     kind  = .invariant
     holds = .directive
     binds = {
-        "a current explicit owner directive is reconciled into this constitution before implementation continues",
-        "this constitution is the sole living semantic law inside the repository",
+        "a current explicit owner directive is reconciled into docs/spec/law.md before implementation continues",
+        "docs/spec/law.md is the sole supreme compact law and this constitution is its structured expansion only",
         "pass documents summaries projections corpus patterns and implementation are never parallel law",
     }
     fails = "leaving a current directive beside contradictory repository law or treating historical pass text as authority"
@@ -355,7 +365,7 @@ call.face = @{
 # law-qualified source projection as provenance. `:get`/`get(t,k)` are
 # noncanonical.
 access = @{
-    application = .application  # table(key) — one application algebra, never indexing
+    application = .application  # f(x) — ordinary application; never aggregate indexing via ()
     projection  = .indexing     # table[key] — computed aggregate projection
     place       = .assignment   # table[key] = value — no setter kingdom
     precede     = false         # no get/call/table-first precedence; ambiguity errors

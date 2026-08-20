@@ -78,10 +78,18 @@ if [ -x "$repo/tools/node/dev/hostcensus" ]; then
   fi
 fi
 mkdir -p "$repo/evidence"
+tree_state=clean
+if [ "$dirty" != "0" ]; then
+  tree_state="dirty ($dirty entries)"
+fi
 {
   echo "HEAD: $(git rev-parse HEAD 2>/dev/null || echo unknown)"
   echo "Date: $(date -Iseconds 2>/dev/null || date)"
-  echo "Dirty: $dirty"
   echo "Branch: $branch"
+  echo "Tree: $tree_state"
+  echo "Integration: present"
+  echo "Measurement: absent"
+  echo "Compiler_B: absent"
+  echo "Performance_admission: denied"
   echo "Derived: tools/node/dev/orient (law.control.derived — do not hand-edit)"
 } >"$repo/evidence/HEAD.txt"
