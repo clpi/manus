@@ -14,6 +14,9 @@ the ignored `.agents/session/` state or in evidence from an exact run.
 | Live claims and leases | shared Git-common-dir claim locks, accessed through `tools/node/dev/claim` |
 | Open obligations | exact `gaps/GAP-0NN.md` records; `orient` derives the P0 census |
 | Performance evidence | `docs/performance.md` |
+| Agent architecture orientation | `.agents/ARCHITECTURE_INJECTION.md` (not law) |
+| Optimization frontier census | `docs/history/optimization-frontier-census.md` (research map) |
+| P0-0 local truth snapshot | `.agents/P0-0-TRUTH-SNAPSHOT.md` (refresh before edit waves) |
 | Source-family classification | `docs/spec/corpus.md` |
 | Source/home/package/world closure | `docs/spec/source.md` |
 | Historical changes | Git history |

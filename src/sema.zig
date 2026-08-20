@@ -1068,64 +1068,66 @@ pub const Sema = struct {
         return .{ .home = entry, .decl = found orelse return null };
     }
 
-    /// @debt AMBIGUITY-FAILS — home list order must not decide semantics. When
-    /// more than one reachable home declares the same relation spelling, sema
-    /// must refuse until descriptor/world facts distinguish them — never pick
-    /// `iter` before `table` by array order.
-    fn subjectFirstForeignHomeCandidates(conf: subject_home.Conformance) []const []const u8 {
-        return switch (conf) {
-            .sequence => &[_][]const u8{ "iter", "table" },
-            .text => &[_][]const u8{ "string" },
-            .numeric => &[_][]const u8{ "math" },
-            .stream => &[_][]const u8{},
-            .unknown => &[_][]const u8{},
+    /// Reachable foreign module homes consulted for subject-first cross-home
+    /// lookup. Sorted alphabetically so collection order is never semantic.
+    const foreign_module_homes = [_][]const u8{
+        "c", "iter", "math", "meta", "os", "result", "string", "table", "testing",
+    };
+
+    fn collectForeignRelationsInHomes(
+        self: *Sema,
+        homes: []const []const u8,
+        method: []const u8,
+        matches: *std.ArrayListUnmanaged(ForeignRelation),
+    ) SemaError!void {
+        for (homes) |spelling| {
+            if (self.foreignRelationInHome(spelling, method)) |rel| {
+                try matches.append(self.alloc, rel);
+            }
+        }
+    }
+
+    fn resolveUniqueForeignRelations(
+        self: *Sema,
+        loc: ast.Loc,
+        method: []const u8,
+        matches: []const ForeignRelation,
+    ) SemaError!?ForeignRelation {
+        return switch (matches.len) {
+            0 => null,
+            1 => matches[0],
+            else => blk: {
+                self.err(
+                    loc,
+                    "ambiguous subject-first relation '{s}': {d} admissible declarations with no distinguishing descriptor/world facts",
+                    .{ method, matches.len },
+                );
+                break :blk null;
+            },
         };
     }
 
-    fn foreignRelationFirstInHomes(
-        self: *Sema,
-        loc: ast.Loc,
-        conf: subject_home.Conformance,
-        method: []const u8,
-    ) ?ForeignRelation {
-        var first: ?ForeignRelation = null;
-        var first_home: []const u8 = "";
-        for (subjectFirstForeignHomeCandidates(conf)) |spelling| {
-            if (self.foreignRelationInHome(spelling, method)) |rel| {
-                if (first != null) {
-                    self.err(
-                        loc,
-                        "ambiguous subject-first relation '{s}': declared in homes '{s}' and '{s}'; resolve through exact descriptor/world facts or disambiguate the spelling — home order must not decide semantics",
-                        .{ method, first_home, spelling },
-                    );
-                    return null;
-                }
-                first = rel;
-                first_home = spelling;
-            }
-        }
-        return first;
-    }
-
     /// SUBJECT-FIRST CROSS-HOME. `xs:map(f)` is the same application as
-    /// `iter.map(xs, f)`; the operand-first face already reached foreign homes
-    /// through `foreignRelation`, but the canonical face did not. This closes
-    /// GAP-111's measured hole without duplicating every `lib/iter.id` relation
-    /// into the builtin sequence roster.
+    /// `iter.map(xs, f)` when exactly one admissible declaration exists.
     fn subjectFirstForeignRelation(
         self: *Sema,
         loc: ast.Loc,
         obj: *const ast.Expr,
         method: []const u8,
         ot: RT,
-    ) ?ForeignRelation {
+    ) SemaError!?ForeignRelation {
         if (self.home_loader == null) return null;
-        const conf = self.subjectConformance(obj, ot);
-        if (conf != .unknown) return self.foreignRelationFirstInHomes(loc, conf, method);
-        for ([_]subject_home.Conformance{ .text, .numeric, .sequence, .stream }) |p| {
-            if (self.foreignRelationFirstInHomes(loc, p, method)) |rel| return rel;
+        var matches: std.ArrayListUnmanaged(ForeignRelation) = .empty;
+        defer matches.deinit(self.alloc);
+
+        if (self.subjectHome(obj, method, ot)) |home| {
+            const spelling = subject_home.homeName(home);
+            try self.collectForeignRelationsInHomes(&[_][]const u8{spelling}, method, &matches);
+            return self.resolveUniqueForeignRelations(loc, method, matches.items);
         }
-        return null;
+
+        try self.collectForeignRelationsInHomes(&foreign_module_homes, method, &matches);
+        return self.resolveUniqueForeignRelations(loc, method, matches.items);
     }
 
 
@@ -4726,7 +4728,7 @@ pub const Sema = struct {
                     return .any;
                 }
 
-                if (self.subjectFirstForeignRelation(mc.loc, mc.obj, mc.method, ot)) |foreign| {
+                if (try self.subjectFirstForeignRelation(mc.loc, mc.obj, mc.method, ot)) |foreign| {
                     const declared = try self.resolve_type(contract_ret_expr(&foreign.decl.func));
                     try self.recordApplicationInHome(
                         expr,

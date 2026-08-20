@@ -1,5 +1,6 @@
-# compiler.monolith — capability probe only (NOT compiler-B architecture).
-# Cross-module references don't work, so everything is inlined for diagnosis.
+# compiler.monolith — single-file self-hosted compiler (capability probe only).
+# Cross-module references don't work, so everything is inlined.
+# NOT compiler-B architecture — do not expand toward composable self-host.
 #
 # v2: adds tokenizer, token-level parser, comparison operators.
 

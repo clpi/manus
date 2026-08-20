@@ -5349,15 +5349,46 @@ pub const CodeGen = struct {
         return self.expr_is_native_scalar(expr);
     }
 
+
+    const FixedArrayIndex = struct {
+        obj: *const ast.Expr,
+        key: *const ast.Expr,
+    };
+
+    /// Fixed-array computed projection uses `[]` only. `()` remains application.
+    fn fixed_array_index(self: *CodeGen, e: *const ast.Expr) ?FixedArrayIndex {
+        const pair: FixedArrayIndex = switch (e.*) {
+            .index => |idx| .{ .obj = idx.obj, .key = idx.key },
+            else => return null,
+        };
+        const container = self.expr_type(pair.obj);
+        if (container != .array) return null;
+        if (container.array.size == null) return null;
+        const elem = self.indexed_element_type(container) orelse return null;
+        if (!elem.is_numeric() and elem != .bool) return null;
+        if (!self.expr_is_native_scalar(pair.key)) return null;
+        return pair;
+    }
+
+
+    fn native_index_access(self: *CodeGen, expr: *const ast.Expr, require_lvalue_obj: bool) bool {
+        const pair: struct { obj: *const ast.Expr, key: *const ast.Expr } = switch (expr.*) {
+            .index => |idx| .{ .obj = idx.obj, .key = idx.key },
+            else => return false,
+        };
+        if (self.fixed_array_index(expr)) |_| return true;
+        if (pair.obj.* != .name) return false;
+        if (require_lvalue_obj and !self.precheck_name_is_bound(pair.obj.name.ident)) return false;
+        if (!require_lvalue_obj and !self.expr_is_native_scalar(pair.obj)) return false;
+        return self.expr_is_native_scalar(pair.key);
+    }
+
     fn lvalue_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
+        if (self.native_index_access(expr, true)) return true;
         return switch (expr.*) {
             .name => true,
             .index => |idx| self.expr_is_native_scalar(idx.obj) and self.expr_is_native_scalar(idx.key),
             .field => |field| self.expr_is_native_scalar(field.obj),
-            // `t(k) = …` is the call-form fixed-array index assign edge; DNIR lowers
-            // it through `lowerIndexAssignTarget`, so the precheck must admit it.
-            .call => |c| c.args.len == 1 and c.func.* == .name and
-                self.expr_is_native_scalar(c.func) and self.expr_is_native_scalar(c.args[0]),
             else => false,
         };
     }
@@ -5456,6 +5487,7 @@ pub const CodeGen = struct {
                 break :blk false;
             },
             .call => |call| blk: {
+                if (self.native_index_access(expr, false)) break :blk true;
                 if (self.req_call_expr_is_native_direct(expr)) break :blk true;
                 if (call.func.* == .field) {
                     const f = call.func.field;
@@ -7937,6 +7969,7 @@ pub const CodeGen = struct {
             }
         }
     }
+
 
     pub fn populate_record_aliases(self: *CodeGen, mod: *ast.Module) E!void {
         for (mod.body.stmts) |*stmt| {

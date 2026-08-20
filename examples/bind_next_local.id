@@ -1,0 +1,4 @@
+main: i64 = ()
+  lx: lexer = lexer.new("x", "f.id", 0)
+  t = lexer.next(lx)
+  0

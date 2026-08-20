@@ -1,0 +1,5 @@
+add: str = (set: str, name: str)
+  set .. name .. "|"
+
+main: i64 = ()
+  add("|a|", "b"):len()

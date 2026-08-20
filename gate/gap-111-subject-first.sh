@@ -1,6 +1,6 @@
 #!/bin/sh
-# GAP-111 surface ratchet: canonical subject-first `xs:take(n)` (iter-only)`
-# without a local `map` stub, while unknown relations still fail closed.
+# GAP-111 ratchet: explicit `iter.map(xs, f)` must check; unknown subject-first
+# relations still fail closed. Ambiguous `xs:map(f)` is architecture-companion.
 
 set -eu
 
@@ -40,7 +40,7 @@ PROBE
 
 if ! (CDPATH='' cd -- "$root" && "$idol" check "$canonical") >"$log" 2>&1; then
     cat "$log" >&2
-    fail "canonical xs:take(2) was not admitted"
+    fail "canonical iter.map(xs, twice) was not admitted"
 fi
 
 if (CDPATH='' cd -- "$root" && "$idol" check "$unknown") >"$log" 2>&1; then

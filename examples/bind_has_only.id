@@ -1,0 +1,24 @@
+has: bool = (set: str, name: str)
+  hay = set
+  needle = "|" .. name .. "|"
+  hn: i64 = hay:len()
+  nn: i64 = needle:len()
+  i: i64 = 1
+  while i + nn - 1 <= hn
+    j: i64 = 0
+    hit = true
+    while j < nn
+      if hay:byte(i + j) != needle:byte(j + 1)
+        hit = false
+        j = nn
+      j = j + 1
+    if hit
+      return true
+    i = i + 1
+  false
+
+main: i64 = ()
+  if has("|a|", "a")
+    0
+  else
+    1

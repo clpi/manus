@@ -1,0 +1,6 @@
+# Negative probe: arr(i) on a fixed array is application, not [] projection.
+# This program must refuse or fail — it must not exit 42 via call-form indexing.
+main: i64 = ()
+  arr = {0, 0, 0, 0}
+  arr(2) = 42
+  arr(2)

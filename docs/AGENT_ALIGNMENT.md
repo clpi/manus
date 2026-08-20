@@ -115,6 +115,8 @@ sibling wrapper in idol-native.
 
 Report these before file counts or keyword metrics (`docs/METRICS.md`):
 
+**P0-0 truth (mandatory before edits):** `.agents/P0-0-TRUTH-SNAPSHOT.md` — refresh when HEAD, pin, or gate surface changes.
+
 Full debt inventory and workstream order: `.agents/TECH_DEBT_WORKSTREAM.md`.
 
 1. **Executed authority frontier** — production stages actually Idol-owned
@@ -126,6 +128,38 @@ Full debt inventory and workstream order: `.agents/TECH_DEBT_WORKSTREAM.md`.
 
 Canonicality splits permanently: **new debt introduced = 0** (gates on changed
 lines) vs **existing corpus debt** (historical ledgers; substantial).
+
+## Architectural mandate (agent orientation)
+
+Read `.agents/ARCHITECTURE_INJECTION.md` before design or implementation work.
+It is **not law** — it orients agents on Idol as an information-propagation system
+and on the extended optimization state:
+
+`identity · facts · observations · demand · laws · change · correspondence ·
+search · proof · cost · world · realization`
+
+Hard constraints from that injection:
+
+- **Tonight's priority:** read the "Tonight's priority injection" section in
+  `.agents/ARCHITECTURE_INJECTION.md` before any fix.
+- **Architecture-negative controls:** `docs/architecture-negative-controls.md`
+  and `gate/architecture-negative.sh` / `gate/architecture-companion.sh` — run
+  before claiming semantic progress; a passing fixture is not the objective.
+- **Canonical source debt:** `docs/projections/canonical-source-debt.md` — three
+  states (canonical / migratable / debt) for every `lib/compiler/**` construct.
+- DNIR must not silently drop semantic facts recoverable from the graph.
+- Sema must not route meaning by hard-coded relation names.
+- Canonical source must not be weakened for immature backends.
+- New capabilities belong in the one graph unless irreducibility is proved.
+- External plugins may propose candidates and witnesses, not relation meaning.
+
+The **optimization frontier census**
+(`docs/history/optimization-frontier-census.md`) is the master “nothing important
+may remain invisible” map — supercompilation, relational solving, trusted-core
+certificates, boundary contraction, semantic linking, and related families.
+See **§ XLVII** (items 688–763) for the third-pass "strangeness" frontier —
+anti-unification, factoring, liveness, guards, compiler self-realization, and
+untrusted optimization. Route new research there before inventing parallel subsystems.
 
 ## One target
 

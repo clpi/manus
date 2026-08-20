@@ -338,66 +338,6 @@ pub const SourceQuoteFact = struct {
     quote: ast.Quote,
 };
 
-/// Supercompilation policy facts on a RELATION entity (GAP-202, family 1).
-/// These are ordinary facts qualifying semantic identity: they determine how
-/// the supercompiler unfolds/folds a relation region, NOT a new computation
-/// model. kind delta = 0; no new NodeKind or EdgeKind.
-pub const SupercompilePolicy = struct {
-    /// Maximum unfold depth before generalization. 0 = no supercompilation.
-    max_unfold: u16 = 0,
-    /// Generalization threshold: if the fold graph exceeds this many nodes,
-    /// generalize before folding (homeomorphic-embedding whistle).
-    generalize_at: u16 = 0,
-    /// Whistle policy for triggering generalization and folding.
-    whistle: WhistlePolicy = .none,
-    /// Memoization: key on full identity (default) or demanded sub-facts.
-    memo_key: MemoKey = .identity,
-    /// Whether deforestation is permitted as an automatic consequence
-    /// of unfolding+folding (not a named pass).
-    deforest: bool = false,
-};
-
-pub const WhistlePolicy = enum {
-    /// No supercompilation whistle; unfold until max_unfold, then stop.
-    none,
-    /// Generalize when homeomorphic embedding detects recurrence.
-    embedding,
-    /// Generalize based on fold-graph size threshold.
-    size,
-    /// Combine embedding + size triggers.
-    both,
-};
-
-pub const MemoKey = enum {
-    /// Memoize by full relation id + full input identity.
-    identity,
-    /// Memoize by relation id + only demanded (observed) input facts.
-    /// This is demand-aware supercompilation: two states are equivalent
-    /// under the current observer rather than under full value equality.
-    demanded,
-};
-
-/// A supercompilation fold point: a relation occurrence that has been
-/// folded (merged with a generalization). Keyed by the occurrence id.
-pub const SupercompileFold = struct {
-    /// The relation occurrence that was folded.
-    occurrence: id,
-    /// The fold depth at which generalization occurred.
-    depth: u16,
-    /// Generalization applied (serialized form for cross-incarnation).
-    generalization: []const u8,
-};
-
-/// Shared redex identity fact (GAP-202, family 2: optimal graph reduction).
-/// Records that two or more application occurrences denote the same
-/// b-redex, so reduction work can be shared (Lamping-style).
-pub const SharedRedex = struct {
-    /// The canonical redex identity (hash of semantic equivalence class).
-    redex: u64,
-    /// Canonical application occurrence for this redex.
-    canonical: id,
-};
-
 pub const PackFill = enum { nil };
 
 /// One binding adjustment from a produced source pack to an ordered target
@@ -992,15 +932,6 @@ pub const SemanticGraph = struct {
     exact_i64_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
     source_quote_facts: std.ArrayListUnmanaged(SourceQuoteFact) = .empty,
     source_quote_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
-    /// Supercompilation policy per relation entity (GAP-202, family 1).
-    supercompile_policies: std.ArrayListUnmanaged(SupercompilePolicy) = .empty,
-    supercompile_policy_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
-    /// Supercompilation fold points per relation occurrence (GAP-202, family 1).
-    supercompile_folds: std.ArrayListUnmanaged(SupercompileFold) = .empty,
-    supercompile_fold_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
-    /// Shared redex identity facts (GAP-202, family 2: optimal graph reduction).
-    shared_redexes: std.ArrayListUnmanaged(SharedRedex) = .empty,
-    shared_redex_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
     owned_descriptors: std.ArrayListUnmanaged(*types.ResolvedType) = .empty,
     aggregate_access_relation: ?id = null,
     application_rows: std.ArrayListUnmanaged(u32) = .empty,
@@ -1082,12 +1013,6 @@ pub const SemanticGraph = struct {
         self.exact_i64_rows.deinit(self.alloc);
         self.source_quote_facts.deinit(self.alloc);
         self.source_quote_rows.deinit(self.alloc);
-        self.supercompile_policies.deinit(self.alloc);
-        self.supercompile_policy_rows.deinit(self.alloc);
-        self.supercompile_folds.deinit(self.alloc);
-        self.supercompile_fold_rows.deinit(self.alloc);
-        self.shared_redexes.deinit(self.alloc);
-        self.shared_redex_rows.deinit(self.alloc);
         for (self.owned_descriptors.items) |descriptor| self.alloc.destroy(descriptor);
         self.owned_descriptors.deinit(self.alloc);
         self.application_rows.deinit(self.alloc);
@@ -1673,59 +1598,6 @@ pub const SemanticGraph = struct {
         try self.source_quote_facts.append(self.alloc, .{ .value = value, .quote = quote });
         errdefer _ = self.source_quote_facts.pop();
         try self.source_quote_rows.putNoClobber(self.alloc, value, row);
-    }
-
-    /// Supercompilation policy for a relation entity (GAP-202, family 1).
-    /// Returns null if no policy is set (default: no supercompilation).
-    pub fn supercompilePolicy(self: *const SemanticGraph, relation_id: id) ?SupercompilePolicy {
-        const row = self.supercompile_policy_rows.get(relation_id) orelse return null;
-        if (row >= self.supercompile_policies.items.len) return null;
-        return self.supercompile_policies.items[row];
-    }
-
-    /// Publish or update a supercompilation policy for a relation.
-    fn publishSupercompilePolicy(self: *SemanticGraph, relation_id: id, policy: SupercompilePolicy) !void {
-        if (self.supercompile_policy_rows.contains(relation_id)) {
-            const row = self.supercompile_policy_rows.get(relation_id).?;
-            self.supercompile_policies.items[row] = policy;
-            return;
-        }
-        const row = try coordinateForLength(self.supercompile_policies.items.len);
-        try self.supercompile_policies.append(self.alloc, policy);
-        errdefer _ = self.supercompile_policies.pop();
-        try self.supercompile_policy_rows.putNoClobber(self.alloc, relation_id, row);
-    }
-
-    /// Supercompilation fold point for a relation occurrence (GAP-202, family 1).
-    pub fn supercompileFold(self: *const SemanticGraph, occurrence: id) ?SupercompileFold {
-        const row = self.supercompile_fold_rows.get(occurrence) orelse return null;
-        if (row >= self.supercompile_folds.items.len) return null;
-        return self.supercompile_folds.items[row];
-    }
-
-    /// Publish a supercompilation fold point.
-    fn publishSupercompileFold(self: *SemanticGraph, occurrence: id, fold: SupercompileFold) !void {
-        if (self.supercompile_fold_rows.contains(occurrence)) return error.DuplicateSupercompileFold;
-        const row = try coordinateForLength(self.supercompile_folds.items.len);
-        try self.supercompile_folds.append(self.alloc, fold);
-        errdefer _ = self.supercompile_folds.pop();
-        try self.supercompile_fold_rows.putNoClobber(self.alloc, occurrence, row);
-    }
-
-    /// Shared redex identity for an application occurrence (GAP-202, family 2).
-    pub fn sharedRedex(self: *const SemanticGraph, occurrence: id) ?SharedRedex {
-        const row = self.shared_redex_rows.get(occurrence) orelse return null;
-        if (row >= self.shared_redexes.items.len) return null;
-        return self.shared_redexes.items[row];
-    }
-
-    /// Publish shared redex identity for an application occurrence.
-    fn publishSharedRedex(self: *SemanticGraph, occurrence: id, redex: SharedRedex) !void {
-        if (self.shared_redex_rows.contains(occurrence)) return error.DuplicateSharedRedex;
-        const row = try coordinateForLength(self.shared_redexes.items.len);
-        try self.shared_redexes.append(self.alloc, redex);
-        errdefer _ = self.shared_redexes.pop();
-        try self.shared_redex_rows.putNoClobber(self.alloc, occurrence, row);
     }
 
     pub fn packEffect(self: *const SemanticGraph, pack_id: id) Card {
@@ -3301,11 +3173,7 @@ pub const SemanticGraph = struct {
                 try self.liftExprsFromExpr(b.rhs, file, parent, .single);
             },
             .call => |c| {
-                if (aggregateIndexSite(expr)) |_| {
-                    try self.liftAggregateAccess(expr, file, parent, consumption);
-                } else {
-                    try self.liftCallFromExpr(expr, file, parent, consumption);
-                }
+                try self.liftCallFromExpr(expr, file, parent, consumption);
                 try self.liftExprsFromExpr(c.func, file, parent, .single);
                 for (c.args) |arg| try self.liftExprsFromExpr(arg, file, parent, .single);
             },
@@ -3318,7 +3186,7 @@ pub const SemanticGraph = struct {
             .index => |ix| {
                 try self.liftExprsFromExpr(ix.obj, file, parent, .single);
                 try self.liftExprsFromExpr(ix.key, file, parent, .single);
-                try self.liftAggregateAccess(expr, file, parent, consumption);
+                _ = try self.liftAggregateAccess(expr, file, parent, consumption);
             },
             .field => |f| try self.liftExprsFromExpr(f.obj, file, parent, .single),
             .table => |t| {
@@ -3383,6 +3251,11 @@ pub const SemanticGraph = struct {
         parent: id,
         consumption: types.ReturnConsumption,
     ) !void {
+        if (try self.liftAggregateAccess(expr, file, parent, consumption)) return;
+        if (aggregateIndexSite(expr)) |site| {
+            if (!self.isBootstrapApplicationExpr(expr) and self.aggregateForExpr(site.obj, parent) != null)
+                return;
+        }
         const base = types.inferCallShape(expr) orelse return;
         const shape = types.callShapeWithConsumption(base, consumption);
         const call_loc = expr.loc();
@@ -3521,10 +3394,8 @@ pub const SemanticGraph = struct {
     fn aggregateIndexSite(expr: *const ast.Expr) ?AggregateIndexSite {
         return switch (expr.*) {
             .index => |ix| .{ .obj = ix.obj, .key = ix.key },
-            .call => |c| blk: {
-                if (c.args.len != 1 or c.func.* != .name) return null;
-                break :blk .{ .obj = c.func, .key = c.args[0] };
-            },
+            // `()` is application; `[]` is computed projection. Legacy call-form
+            // indexing belongs in ingress compatibility migration, not here.
             else => null,
         };
     }
@@ -3535,9 +3406,10 @@ pub const SemanticGraph = struct {
         file: []const u8,
         parent: id,
         consumption: types.ReturnConsumption,
-    ) !void {
-        const site = aggregateIndexSite(expr) orelse return;
-        const subject = self.aggregateForExpr(site.obj, parent) orelse return;
+    ) !bool {
+        const site = aggregateIndexSite(expr) orelse return false;
+        if (self.isBootstrapApplicationExpr(expr)) return false;
+        const subject = self.aggregateForExpr(site.obj, parent) orelse return false;
         const subject_node = self.get(subject) orelse return error.InvalidAggregateFact;
         const descriptor = subject_node.descriptor orelse return error.InvalidAggregateFact;
         if (descriptor != .array) return error.InvalidAggregateFact;
@@ -3547,7 +3419,7 @@ pub const SemanticGraph = struct {
         // that family is migrated with its mutable cases; publishing an
         // application that no graph consumer can yet realize would turn new
         // semantic knowledge into a capability regression.
-        if (result_descriptor != .array and self.aggregateProducer(subject) == null) return;
+        if (result_descriptor != .array and self.aggregateProducer(subject) == null) return false;
         const aggregate_fact = self.aggregate(subject) orelse return error.InvalidAggregateFact;
         const loc = expr.loc();
         const occurrence = try self.addChild(parent, .{
@@ -3608,6 +3480,7 @@ pub const SemanticGraph = struct {
             &.{key},
             &.{result},
         );
+        return true;
     }
 
     /// Lift module fully including call sites (Phase 1 complete lift).
@@ -4011,6 +3884,37 @@ pub const SemanticGraph = struct {
         };
     }
 
+
+    fn verifyCheckedApplicationOperandPacks(
+        self: *const SemanticGraph,
+        checked: *const sema.Sema,
+    ) !void {
+        for (self.application_facts.items) |fact| {
+            const application_node = self.get(fact.application) orelse return error.InvalidApplicationFact;
+            const raw = application_node.ast_ref orelse continue;
+            const expr: *const Expr = @ptrCast(@alignCast(raw));
+            const sema_fact = checked.applicationFact(expr) orelse continue;
+            const graph_args = self.applicationArguments(fact.application) orelse
+                return error.ApplicationArgumentPackInexact;
+            if (graph_args.len != sema_fact.arguments.len)
+                return error.ApplicationArgumentPackInexact;
+            for (graph_args, sema_fact.arguments) |value_id, argument_expr| {
+                const projected = self.valueExpression(value_id) orelse
+                    return error.ApplicationArgumentPackInexact;
+                if (projected != argument_expr) return error.ApplicationArgumentPackInexact;
+            }
+            if (sema_fact.subject) |subject_expr| {
+                const graph_subject = self.applicationSubject(fact.application) orelse
+                    return error.ApplicationArgumentPackInexact;
+                const projected_subject = self.valueExpression(graph_subject) orelse
+                    return error.ApplicationArgumentPackInexact;
+                if (projected_subject != subject_expr) return error.ApplicationArgumentPackInexact;
+            } else if (self.applicationSubject(fact.application) != null) {
+                return error.ApplicationArgumentPackInexact;
+            }
+        }
+    }
+
     /// Publish identities and descriptors that survived semantic checking.
     /// Absence of a checked fact stays unresolved rather than falling back to
     /// name matching.
@@ -4114,6 +4018,7 @@ pub const SemanticGraph = struct {
         // has nothing to do with what they do — a measurement changing because
         // it was measured.
         try self.publishApplicationWorlds(file);
+        try self.verifyCheckedApplicationOperandPacks(checked);
         return module;
     }
 

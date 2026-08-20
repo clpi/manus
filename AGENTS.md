@@ -138,6 +138,10 @@ editing Idol (`.id`), in this order:
    contract), and the relevant projection in `docs/spec/`.
 6. `.agents/AGENT_CANONICAL.md` and `.agents/AGENT_COORDINATION.md` — routing,
    ownership, and current obligations.
+7. `.agents/ARCHITECTURE_INJECTION.md` — agent orientation on information
+   propagation and interoperable graph algebras (not law).
+8. `docs/history/optimization-frontier-census.md` — research capability map;
+   consult before new optimizer subsystems or IRs.
 
 This file is only the agent workflow and mechanical preflight. It is not a
 second language specification. If it conflicts with C0 or `CLAUDE.md`, stop,

@@ -545,333 +545,12 @@ fn collectModuleConsts(
     return out;
 }
 
-fn mergeAliasModuleConsts(
-    alloc: std.mem.Allocator,
-    alias: []const u8,
-    foreign: *const ModuleConsts,
-    out: *ModuleConsts,
-) Error!void {
-    var it = foreign.ints.iterator();
-    while (it.next()) |entry| {
-        const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ alias, entry.key_ptr.* });
-        try out.ints.put(alloc, key, entry.value_ptr.*);
-    }
-    var sit = foreign.strs.iterator();
-    while (sit.next()) |entry| {
-        const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ alias, entry.key_ptr.* });
-        try out.strs.put(alloc, key, entry.value_ptr.*);
-    }
-}
 
-fn loadSiblingModuleConsts(
-    alloc: std.mem.Allocator,
-    from_file: []const u8,
-    alias: []const u8,
-) Error!?ModuleConsts {
-    const dir = std.fs.path.dirname(from_file) orelse return null;
-    const path = std.fmt.allocPrint(alloc, "{s}{c}{s}.id", .{ dir, std.fs.path.sep, alias }) catch return null;
-    defer alloc.free(path);
-    var threaded = std.Io.Threaded.init(alloc, .{});
-    const src = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), threaded.io(), path, alloc, .unlimited) catch return null;
-    defer alloc.free(src);
-    const facts = @import("lexer_bridge.zig").sourceFacts(path);
-    var lex = @import("lexer.zig").Lexer.initFacts(src, path, facts);
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.idol_mode = lex.family == @import("lexer_bridge.zig").family_canon;
-    const parsed = parser.parse_module() catch return null;
-    return collectModuleConsts(alloc, &parsed) catch return null;
-}
-
-fn exprCollectModuleFieldAliases(
+fn qualifiedExportNameFromExpr(
     alloc: std.mem.Allocator,
     expr: *const ast.Expr,
-    seen: *std.StringHashMapUnmanaged(void),
-) Error!void {
-    switch (expr.*) {
-        .field => |f| {
-            if (f.obj.* == .name) {
-                const alias = f.obj.name.ident;
-                if (!seen.contains(alias)) {
-                    const key = try alloc.dupe(u8, alias);
-                    try seen.put(alloc, key, {});
-                }
-            }
-            try exprCollectModuleFieldAliases(alloc, f.obj, seen);
-        },
-        .index => |x| {
-            try exprCollectModuleFieldAliases(alloc, x.obj, seen);
-            try exprCollectModuleFieldAliases(alloc, x.key, seen);
-        },
-        .call => |c| {
-            try exprCollectModuleFieldAliases(alloc, c.func, seen);
-            for (c.args) |a| try exprCollectModuleFieldAliases(alloc, a, seen);
-        },
-        .method_call => |m| {
-            try exprCollectModuleFieldAliases(alloc, m.obj, seen);
-            for (m.args) |a| try exprCollectModuleFieldAliases(alloc, a, seen);
-        },
-        .binop => |b| {
-            try exprCollectModuleFieldAliases(alloc, b.lhs, seen);
-            try exprCollectModuleFieldAliases(alloc, b.rhs, seen);
-        },
-        .unop => |u| try exprCollectModuleFieldAliases(alloc, u.operand, seen),
-        .if_expr => |ie| {
-            try exprCollectModuleFieldAliases(alloc, ie.cond, seen);
-            try exprCollectModuleFieldAliases(alloc, ie.then_expr, seen);
-            try exprCollectModuleFieldAliases(alloc, ie.else_expr, seen);
-        },
-        .try_expr => |x| try exprCollectModuleFieldAliases(alloc, x.operand, seen),
-        .unwrap_expr => |x| try exprCollectModuleFieldAliases(alloc, x.operand, seen),
-        .await_expr => |x| try exprCollectModuleFieldAliases(alloc, x.operand, seen),
-        .contains_expr => |x| {
-            try exprCollectModuleFieldAliases(alloc, x.lhs, seen);
-            try exprCollectModuleFieldAliases(alloc, x.rhs, seen);
-        },
-        .sequence => |s| {
-            for (s.exprs) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
-        },
-        .range => |r| {
-            try exprCollectModuleFieldAliases(alloc, r.start, seen);
-            try exprCollectModuleFieldAliases(alloc, r.end, seen);
-            if (r.step) |st| try exprCollectModuleFieldAliases(alloc, st, seen);
-        },
-        .func_expr => |f| try blockCollectModuleFieldAliases(alloc, &f.body, seen),
-        .table => |t| {
-            for (t.fields) |fld| {
-                const val = switch (fld) {
-                    .named => |x| x.val,
-                    .spread => |x| x,
-                    else => continue,
-                };
-                try exprCollectModuleFieldAliases(alloc, val, seen);
-            }
-        },
-        else => {},
-    }
-}
-
-fn stmtCollectModuleFieldAliases(
-    alloc: std.mem.Allocator,
-    stmt: *const ast.Stmt,
-    seen: *std.StringHashMapUnmanaged(void),
-) Error!void {
-    switch (stmt.*) {
-        .local_decl => |d| {
-            for (d.inits) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
-        },
-        .const_decl => |d| try exprCollectModuleFieldAliases(alloc, d.val, seen),
-        .global_decl => |d| {
-            for (d.inits) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
-        },
-        .assign => |a| {
-            for (a.targets) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
-            for (a.values) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
-        },
-        .call_stmt => |c| try exprCollectModuleFieldAliases(alloc, c.expr, seen),
-        .expr_stmt => |c| try exprCollectModuleFieldAliases(alloc, c.expr, seen),
-        .do_block => |d| try blockCollectModuleFieldAliases(alloc, &d.body, seen),
-        .while_loop => |w| {
-            try exprCollectModuleFieldAliases(alloc, w.cond, seen);
-            try blockCollectModuleFieldAliases(alloc, &w.body, seen);
-        },
-        .repeat_loop => |r| {
-            try blockCollectModuleFieldAliases(alloc, &r.body, seen);
-            try exprCollectModuleFieldAliases(alloc, r.cond, seen);
-        },
-        .if_stmt => |f| {
-            if (f.binding) |b| try exprCollectModuleFieldAliases(alloc, b.expr, seen);
-            try exprCollectModuleFieldAliases(alloc, f.cond, seen);
-            try blockCollectModuleFieldAliases(alloc, &f.then, seen);
-            for (f.elseifs) |ei| {
-                try exprCollectModuleFieldAliases(alloc, ei.cond, seen);
-                try blockCollectModuleFieldAliases(alloc, &ei.body, seen);
-            }
-            if (f.else_body) |eb| try blockCollectModuleFieldAliases(alloc, &eb, seen);
-        },
-        .num_for => |n| {
-            try exprCollectModuleFieldAliases(alloc, n.start, seen);
-            try exprCollectModuleFieldAliases(alloc, n.stop, seen);
-            if (n.step) |st| try exprCollectModuleFieldAliases(alloc, st, seen);
-            try blockCollectModuleFieldAliases(alloc, &n.body, seen);
-        },
-        .gen_for => |g| {
-            for (g.iters) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
-            try blockCollectModuleFieldAliases(alloc, &g.body, seen);
-        },
-        .ret => |r| {
-            for (r.vals) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
-        },
-        .func_decl => |fd| {
-            for (fd.func.params) |param| {
-                if (param.default_val) |dv| try exprCollectModuleFieldAliases(alloc, dv, seen);
-            }
-            try blockCollectModuleFieldAliases(alloc, &fd.func.body, seen);
-        },
-        .alias_def => |ad| {
-            for (ad.methods) |m| {
-                try blockCollectModuleFieldAliases(alloc, &m.func.body, seen);
-            }
-        },
-        else => {},
-    }
-}
-
-fn blockCollectModuleFieldAliases(
-    alloc: std.mem.Allocator,
-    block: *const ast.Block,
-    seen: *std.StringHashMapUnmanaged(void),
-) Error!void {
-    for (block.stmts) |*stmt| try stmtCollectModuleFieldAliases(alloc, stmt, seen);
-    if (block.tail_expr) |t| try exprCollectModuleFieldAliases(alloc, t, seen);
-}
-
-fn mergeForeignModuleConstsForFields(
-    alloc: std.mem.Allocator,
-    mod: *const ast.Module,
-    compiling_path: []const u8,
-    out: *ModuleConsts,
-) Error!void {
-    var seen: std.StringHashMapUnmanaged(void) = .empty;
-    defer {
-        var it = seen.keyIterator();
-        while (it.next()) |key| alloc.free(key.*);
-        seen.deinit(alloc);
-    }
-    try blockCollectModuleFieldAliases(alloc, &mod.body, &seen);
-    var it = seen.keyIterator();
-    while (it.next()) |alias| {
-        if (out.ints.contains(alias.*)) continue;
-        var foreign = (try loadSiblingModuleConsts(alloc, compiling_path, alias.*)) orelse continue;
-        defer foreign.deinit(alloc);
-        try mergeAliasModuleConsts(alloc, alias.*, &foreign, out);
-    }
-}
-
-fn siblingModulePath(
-    alloc: std.mem.Allocator,
-    from_file: []const u8,
-    alias: []const u8,
 ) Error!?[]const u8 {
-    const dir = std.fs.path.dirname(from_file) orelse return null;
-    return try std.fmt.allocPrint(alloc, "{s}{c}{s}.id", .{ dir, std.fs.path.sep, alias });
-}
-
-fn parseSiblingModule(
-    alloc: std.mem.Allocator,
-    from_file: []const u8,
-    alias: []const u8,
-) Error!?ast.Module {
-    const path = (try siblingModulePath(alloc, from_file, alias)) orelse return null;
-    defer alloc.free(path);
-    var threaded = std.Io.Threaded.init(alloc, .{});
-    const src = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), threaded.io(), path, alloc, .unlimited) catch return null;
-    defer alloc.free(src);
-    const facts = @import("lexer_bridge.zig").sourceFacts(path);
-    var lex = @import("lexer.zig").Lexer.initFacts(src, path, facts);
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
-    parser.idol_mode = lex.family == @import("lexer_bridge.zig").family_canon;
-    return parser.parse_module() catch null;
-}
-
-fn recordNamedIndex(records: []const dnir.RecordDesc, name: []const u8) ?usize {
-    for (records, 0..) |record, i| {
-        if (std.mem.eql(u8, record.name, name)) return i;
-    }
-    return null;
-}
-
-fn siblingRecordReturnExportName(
-    alloc: std.mem.Allocator,
-    alias: []const u8,
-    fd: *const ast.FuncDecl,
-) Error![]const u8 {
-    const leaf = if (fd.method and fd.path.len >= 2)
-        fd.path[0]
-    else
-        fd.path[fd.path.len - 1];
-    return try std.fmt.allocPrint(alloc, "{s}.{s}", .{ alias, leaf });
-}
-
-fn mergeForeignModuleRecordsForFields(
-    alloc: std.mem.Allocator,
-    mod: *const ast.Module,
-    compiling_path: []const u8,
-    records: *std.ArrayList(dnir.RecordDesc),
-) Error!void {
-    var seen: std.StringHashMapUnmanaged(void) = .empty;
-    defer {
-        var it = seen.keyIterator();
-        while (it.next()) |key| alloc.free(key.*);
-        seen.deinit(alloc);
-    }
-    try blockCollectModuleFieldAliases(alloc, &mod.body, &seen);
-    var it = seen.keyIterator();
-    while (it.next()) |alias| {
-        const sibling = (try parseSiblingModule(alloc, compiling_path, alias.*)) orelse continue;
-        var sibling_graph = semantic_graph.SemanticGraph.init(alloc);
-        defer sibling_graph.deinit();
-        const sibling_path = (try siblingModulePath(alloc, compiling_path, alias.*)) orelse continue;
-        defer alloc.free(sibling_path);
-        _ = sibling_graph.liftModuleWithCalls(&sibling, sibling_path) catch continue;
-        var scratch: std.ArrayList(dnir.RecordDesc) = .empty;
-        try collectRecordsFromGraph(alloc, &scratch, &sibling_graph);
-        for (scratch.items) |record| {
-            if (recordNamedIndex(records.items, record.name)) |idx| {
-                if (record.fields.len > records.items[idx].fields.len) {
-                    deinitRecord(alloc, records.items[idx]);
-                    records.items[idx] = record;
-                } else {
-                    deinitRecord(alloc, record);
-                }
-                continue;
-            }
-            try records.append(alloc, record);
-        }
-        scratch.deinit(alloc);
-    }
-}
-
-fn mergeForeignModuleRecordReturns(
-    alloc: std.mem.Allocator,
-    mod: *const ast.Module,
-    compiling_path: []const u8,
-    records: []const dnir.RecordDesc,
-    out: *std.StringHashMapUnmanaged([]const u8),
-) Error!void {
-    var seen: std.StringHashMapUnmanaged(void) = .empty;
-    defer {
-        var it = seen.keyIterator();
-        while (it.next()) |key| alloc.free(key.*);
-        seen.deinit(alloc);
-    }
-    try blockCollectModuleFieldAliases(alloc, &mod.body, &seen);
-    var it = seen.keyIterator();
-    while (it.next()) |alias| {
-        const sibling = (try parseSiblingModule(alloc, compiling_path, alias.*)) orelse continue;
-        for (sibling.body.stmts) |*stmt| {
-            if (stmt.* != .func_decl) continue;
-            const fd = &stmt.func_decl;
-            if (!shouldIncludeFuncDecl(fd)) continue;
-            const rec = findRecordName(records, fd.func.ret_type) orelse continue;
-            const export_name = try siblingRecordReturnExportName(alloc, alias.*, fd);
-            defer alloc.free(export_name);
-            if (out.contains(export_name)) continue;
-            const key = try alloc.dupe(u8, export_name);
-            const value = try alloc.dupe(u8, rec.name);
-            out.put(alloc, key, value) catch |err| {
-                alloc.free(key);
-                alloc.free(value);
-                return err;
-            };
-        }
-    }
-}
-
-fn qualifiedCallExportName(
-    alloc: std.mem.Allocator,
-    call: ast.Expr,
-) Error!?[]const u8 {
-    return switch (call) {
+    return switch (expr.*) {
         .call => |c| switch (c.func.*) {
             .name => |n| try alloc.dupe(u8, n.ident),
             .field => |f| {
@@ -880,10 +559,21 @@ fn qualifiedCallExportName(
             },
             else => null,
         },
+        .method_call => |m| {
+            if (m.obj.* != .name) return null;
+            return try std.fmt.allocPrint(alloc, "{s}.{s}", .{ m.obj.name.ident, m.method });
+        },
         else => null,
     };
 }
 
+fn recordExportMapAssignable(ctx: *const LowerCtx, value: *const ast.Expr) bool {
+    if (ctx.require_graph_facts) return false;
+    const export_name = qualifiedExportNameFromExpr(ctx.alloc, value) catch return false;
+    defer if (export_name) |n| ctx.alloc.free(n);
+    if (export_name) |n| return ctx.func_record_returns.contains(n);
+    return false;
+}
 
 pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.Module {
     var diagnostic: Diagnostic = .{};
@@ -1252,20 +942,12 @@ fn lowerModuleFromGraph(
             if (module_consts.strs.fetchRemove(name.*)) |e| alloc.free(e.key);
         }
     }
-    const compiling_path = if (graph.module_path) |p|
-        if (std.mem.indexOf(u8, p, "<") != null) mod.file else p
-    else
-        mod.file;
-    try mergeForeignModuleConstsForFields(alloc, mod, compiling_path, &module_consts);
-
     var records: std.ArrayList(dnir.RecordDesc) = .empty;
     errdefer {
         for (records.items) |record| deinitRecord(alloc, record);
         records.deinit(alloc);
     }
     try collectRecordsFromGraph(alloc, &records, graph);
-    try mergeForeignModuleRecordsForFields(alloc, mod, compiling_path, &records);
-
     var relation_edges = try collectRelationEdges(alloc, mod);
     defer {
         var edge_it = relation_edges.iterator();
@@ -1393,12 +1075,12 @@ fn lowerModuleFromGraph(
         const fd = &stmt.func_decl;
         if (!shouldIncludeFuncDecl(fd)) continue;
         if (!functionEligible(fd, records.items, mod)) continue;
-        const rec = findRecordName(records.items, fd.func.ret_type) orelse continue;
+        const rec_name = recordReturnNameForDecl(records.items, fd) orelse continue;
         const export_name = try funcExportName(alloc, self_home, fd);
         defer alloc.free(export_name);
         if (func_record_returns.contains(export_name)) continue;
         const key = try alloc.dupe(u8, export_name);
-        const value = alloc.dupe(u8, rec.name) catch |err| {
+        const value = alloc.dupe(u8, rec_name) catch |err| {
             alloc.free(key);
             return err;
         };
@@ -1408,8 +1090,6 @@ fn lowerModuleFromGraph(
             return err;
         };
     }
-    try mergeForeignModuleRecordReturns(alloc, mod, compiling_path, records.items, &func_record_returns);
-
     var skipped: ?[]const u8 = null;
     defer if (skipped) |name| alloc.free(name);
     for (mod.body.stmts) |*stmt| {
@@ -2155,6 +1835,16 @@ fn collectRecordsFromGraph(
             return err;
         };
     }
+}
+
+/// Colon-method declarations park result type in `path[1]` while ret stays inferred.
+fn recordReturnNameForDecl(records: []const dnir.RecordDesc, fd: *const ast.FuncDecl) ?[]const u8 {
+    if (findRecordName(records, fd.func.ret_type)) |rec| return rec.name;
+    if (fd.method and fd.path.len >= 2 and fd.func.ret_type == .inferred) {
+        const parked: ast.TypeExpr = .{ .named = fd.path[1] };
+        if (findRecordName(records, parked)) |rec| return rec.name;
+    }
+    return null;
 }
 
 fn findRecordName(recs: []const dnir.RecordDesc, t: ast.TypeExpr) ?dnir.RecordDesc {
@@ -4793,7 +4483,7 @@ fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) 
 }
 
 fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) Error!void {
-    if (applicationNeedsGraphOccurrence(ctx, value)) {
+    if (applicationNeedsGraphOccurrence(ctx, value) and !recordExportMapAssignable(ctx, value)) {
         return refuseMissingApplication(ctx, @src(), value);
     }
     // `Alias = req "std.compiler.token"` binds a module at compile time; the
@@ -5017,127 +4707,14 @@ fn linkageForTarget(ctx: *LowerCtx, target: semantic_graph.id) Error![]const u8 
 }
 
 
-fn callArgs(call_value: *const Expr) ?[]const *Expr {
-    return switch (call_value.*) {
-        .call => |c| c.args,
-        .method_call => |mc| mc.args,
-        else => null,
-    };
-}
-
-fn exprInCallArgs(expr: *const Expr, call_value: *const Expr) bool {
-    const args = callArgs(call_value) orelse return false;
-    for (args) |arg| {
-        if (arg == expr) return true;
-    }
-    return false;
-}
-
-fn nameInCallArgs(ident: []const u8, call_value: *const Expr) bool {
-    const args = callArgs(call_value) orelse return false;
-    for (args) |arg| {
-        if (arg.* == .name and std.mem.eql(u8, arg.name.ident, ident)) return true;
-    }
-    return false;
-}
-
-fn operandInCallArgs(op: CheckedScalarOperand, call_value: *const Expr) bool {
-    if (op.expression.* == .name) return nameInCallArgs(op.expression.name.ident, call_value);
-    return exprInCallArgs(op.expression, call_value);
-}
-
-fn filterCallArgumentOperands(
-    call_value: *const Expr,
-    operands: []const CheckedScalarOperand,
-    storage: *[max_direct_scalar_args]CheckedScalarOperand,
-) []const CheckedScalarOperand {
-    var count: usize = 0;
-    for (operands) |op| {
-        if (!operandInCallArgs(op, call_value)) continue;
-        storage[count] = op;
-        count += 1;
-    }
-    return storage[0..count];
-}
-
-fn callValueForApplication(
-    ctx: *const LowerCtx,
-    application: *const semantic_graph.ApplicationFact,
-) ?*const Expr {
-    const node = ctx.graph.get(application.application) orelse return null;
-    const raw = node.ast_ref orelse return null;
-    const expr: *const Expr = @ptrCast(@alignCast(raw));
-    return switch (expr.*) {
-        .call, .method_call => expr,
-        else => null,
-    };
-}
-
-/// Keep graph-projected operands that the source call actually passes. The
-/// semantic graph may attach nearby bindings (e.g. `st = lexer.save_state(lx)`)
-/// to an application argument pack even when they are not call arguments.
-fn filterCheckedCallOperands(
-    call_value: *const Expr,
-    operands: []const CheckedScalarOperand,
-    storage: *[max_direct_scalar_args]CheckedScalarOperand,
-) []const CheckedScalarOperand {
-    return switch (call_value.*) {
-        .call => filterCallArgumentOperands(call_value, operands, storage),
-        .method_call => |mc| blk: {
-            var count: usize = 0;
-            for (operands) |op| {
-                if (op.expression == mc.obj) {
-                    storage[count] = op;
-                    count += 1;
-                    continue;
-                }
-                if (operandInCallArgs(op, call_value)) {
-                    storage[count] = op;
-                    count += 1;
-                }
-            }
-            break :blk storage[0..count];
-        },
-        else => operands,
-    };
-}
-
-
-/// Drop graph-projected subjects/operands that are not part of a record
-/// constructor call's scalar ABI (`scan: lexer = lexer.new(...)`, etc.).
-fn filterRecordAssignOperands(
-    ctx: *LowerCtx,
-    name: []const u8,
-    operands: []const CheckedScalarOperand,
-    storage: *[max_direct_scalar_args]CheckedScalarOperand,
-) []const CheckedScalarOperand {
-    var count: usize = 0;
-    for (operands) |op| {
-        if (op.expression.* == .name) {
-            const ident = op.expression.name.ident;
-            if (std.mem.eql(u8, ident, name)) continue;
-            var resident: bool = false;
-            for (ctx.records) |rec| {
-                if (recordFieldsPresent(ctx, ident, rec)) {
-                    resident = true;
-                    break;
-                }
-            }
-            if (resident) continue;
-        }
-        storage[count] = op;
-        count += 1;
-    }
-    return storage[0..count];
-}
-
 fn lowerCheckedRecordCallAssign(
     ctx: *LowerCtx,
     name: []const u8,
     application: *const semantic_graph.ApplicationFact,
     record: dnir.RecordDesc,
-    call_value: *const Expr,
+    _call_value: *const Expr,
 ) Error!void {
+    _ = _call_value;
     bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
     const relation = try applicationRelation(ctx, application);
     const target = try applicationTarget(ctx, application);
@@ -5153,11 +4730,7 @@ fn lowerCheckedRecordCallAssign(
     };
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     // Graph projection subject is the assignee, not a callee operand.
-    const raw_operands = try checkedScalarOperands(ctx, application, &operand_storage, false);
-    var filtered_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    const dropped = filterRecordAssignOperands(ctx, name, raw_operands, &filtered_storage);
-    var arg_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    const operands = filterCallArgumentOperands(call_value, dropped, &arg_storage);
+    const operands = try checkedScalarOperands(ctx, application, &operand_storage, false);
     var values: [max_direct_scalar_args]dnir.Value = undefined;
     const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
@@ -5204,16 +4777,17 @@ fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, a
 }
 
 fn tryAssignRecordCallFromExportMap(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) Error!bool {
-    if (value.* != .call) return false;
-    const callee = try qualifiedCallExportName(ctx.alloc, value.*);
-    defer if (callee) |c| ctx.alloc.free(c);
-    if (callee) |export_name| {
-        if (ctx.func_record_returns.get(export_name)) |rec_name| {
-            try lowerRecordCallAssign(ctx, name, export_name, value.call.args, rec_name);
-            return true;
-        }
-    }
-    return false;
+    if (ctx.require_graph_facts) return false;
+    const export_name = try qualifiedExportNameFromExpr(ctx.alloc, value) orelse return false;
+    defer ctx.alloc.free(export_name);
+    const rec_name = ctx.func_record_returns.get(export_name) orelse return false;
+    const args = switch (value.*) {
+        .call => |c| c.args,
+        .method_call => |m| m.args,
+        else => return false,
+    };
+    try lowerRecordCallAssign(ctx, name, export_name, args, rec_name);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -6915,6 +6489,7 @@ fn publishedDescriptor(
 }
 
 const CheckedScalarOperand = struct {
+    value: semantic_graph.id,
     expression: *Expr,
     descriptor: types.ResolvedType,
 };
@@ -6962,26 +6537,27 @@ fn homogeneousF64Record(rec: dnir.RecordDesc) bool {
     return true;
 }
 
-/// Record operands whose fields are resident as `name.field` locals and may
-/// cross in registers. Homogeneous f64 aggregates use a different ABI and are
-/// excluded here and refused by `operandNamesRecord` instead.
-fn expandableRecordForName(ctx: *LowerCtx, name: []const u8) ?dnir.RecordDesc {
-    var best: ?dnir.RecordDesc = null;
-    for (ctx.records) |rec| {
-        if (rec.fields.len == 0 or rec.fields.len > max_reg_record_fields) continue;
-        if (homogeneousF64Record(rec)) continue;
-        if (!recordFieldsPresent(ctx, name, rec)) continue;
-        if (best) |prev| {
-            if (rec.fields.len <= prev.fields.len) continue;
+/// Record operand selected from graph-published descriptor/shape facts.
+fn recordForGraphOperand(ctx: *const LowerCtx, value: semantic_graph.id) ?dnir.RecordDesc {
+    if (ctx.graph.descriptorShape(value, 0)) |shape| {
+        for (ctx.records) |rec| {
+            if (rec.semantic_shape == shape and !homogeneousF64Record(rec) and
+                rec.fields.len > 0 and rec.fields.len <= max_reg_record_fields and
+                checkedRecordResultSupported(rec))
+            {
+                return rec;
+            }
         }
-        best = rec;
     }
-    return best;
+    const node = ctx.graph.get(value) orelse return null;
+    const descriptor = node.descriptor orelse return null;
+    const rec = recordForDescriptor(ctx.records, descriptor) orelse return null;
+    if (homogeneousF64Record(rec) or rec.fields.len > max_reg_record_fields) return null;
+    return rec;
 }
 
-fn operandRecordStorage(ctx: *LowerCtx, expr: *const Expr) ?dnir.RecordDesc {
-    if (expr.* != .name) return null;
-    return expandableRecordForName(ctx, expr.name.ident);
+fn operandRecordStorage(ctx: *LowerCtx, operand: CheckedScalarOperand) ?dnir.RecordDesc {
+    return recordForGraphOperand(ctx, operand.value);
 }
 
 /// Does this operand name a record AT ALL — including one whose fields the
@@ -6998,7 +6574,6 @@ fn operandRecordStorage(ctx: *LowerCtx, expr: *const Expr) ?dnir.RecordDesc {
 /// what happened when this predicate was deleted rather than narrowed.
 fn operandNamesRecord(ctx: *LowerCtx, expr: *const Expr) bool {
     if (expr.* != .name) return false;
-    if (expandableRecordForName(ctx, expr.name.ident) != null) return false;
     for (ctx.records) |rec| {
         if (!homogeneousF64Record(rec)) continue;
         if (recordFieldsPresent(ctx, expr.name.ident, rec)) return true;
@@ -7074,6 +6649,7 @@ fn checkedScalarOperand(
         else => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
     }
     return .{
+        .value = value,
         .expression = expression,
         .descriptor = effective,
     };
@@ -7176,7 +6752,7 @@ fn evaluateCheckedScalarOperands(
         // DESCRIPTOR ORDER IS THE CONTRACT, and it is the same order the callee
         // homes its parameter from (`rec.fields`, one register each). The two
         // ends read the same list, which is why they cannot drift.
-        if (operandRecordStorage(ctx, operand.expression)) |rec| {
+        if (operandRecordStorage(ctx, operand)) |rec| {
             // THE REGISTER FILE IS THE BOUND, and it is the same bound the
             // CALLEE applies when it homes the parameter (`functionEligible`
             // refuses a record parameter past `max_reg_record_fields`, because
@@ -7205,20 +6781,7 @@ fn evaluateCheckedScalarOperands(
         // locals, so it lands here — refused, with the operand law named.
         if (operand.descriptor == .@"struct") {
             if (operand.expression.* == .name) {
-                if (expandableRecordForName(ctx, operand.expression.name.ident)) |rec| {
-                if (count + rec.fields.len <= max_reg_record_fields) {
-                    for (rec.fields) |fname| {
-                        const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ operand.expression.name.ident, fname });
-                        defer ctx.alloc.free(key);
-                        const slot = ctx.locals.get(key) orelse
-                            return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                        values[count] = .{ .local = slot };
-                        count += 1;
-                    }
-                    continue;
-                }
-            }
-            }
+}
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
         }
         // AND A RECORD THE ARGUMENT REGISTERS CANNOT CARRY IS STILL REFUSED BY
@@ -7288,11 +6851,7 @@ fn lowerCheckedPackCall(
 
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const raw_operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
-    var filtered_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    const operands = if (callValueForApplication(ctx, application)) |call_value|
-        filterCheckedCallOperands(call_value, raw_operands, &filtered_storage)
-    else
-        raw_operands;
+    const operands = raw_operands;
     var values: [max_direct_scalar_args]dnir.Value = undefined;
     const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const first_ty = try checkedGpPackResultType(ctx, results[0]);
@@ -7363,11 +6922,7 @@ fn lowerCheckedScalarCall(
 
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const raw_operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
-    var filtered_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    const operands = if (callValueForApplication(ctx, application)) |call_value|
-        filterCheckedCallOperands(call_value, raw_operands, &filtered_storage)
-    else
-        raw_operands;
+    const operands = raw_operands;
     var values: [max_direct_scalar_args]dnir.Value = undefined;
     const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
@@ -8799,7 +8354,9 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const 
 /// means passing its fields in consecutive argument slots, the same convention
 /// the f64 kernel path already uses.
 fn scalarRecordForName(ctx: *LowerCtx, name: []const u8) ?dnir.RecordDesc {
-    return expandableRecordForName(ctx, name);
+    _ = ctx;
+    _ = name;
+    return null;
 }
 
 fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const u8) Error!dnir.Value {

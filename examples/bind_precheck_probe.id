@@ -1,0 +1,9 @@
+has: bool = (set: str, name: str)
+  hay = set
+  needle = "|" .. name .. "|"
+  if hay:byte(1) == 124
+    return true
+  false
+
+main: i64 = ()
+  has("|a|", "a")
