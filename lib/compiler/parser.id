@@ -571,6 +571,7 @@ is_bare_lambda_head: bool = (lx: lexer)
     commas = 0
     plain = true
     empty = false
+    rparen_line = 0
     if lexer.peek(lx).kind == token.KIND_RPAREN
         empty = true
     depth = 1
@@ -581,6 +582,8 @@ is_bare_lambda_head: bool = (lx: lexer)
             break
         if t.kind == token.KIND_RPAREN
             depth -= 1
+            if depth == 0
+                rparen_line = t.loc.line
         elseif t.kind == token.KIND_LPAREN
             depth += 1
             plain = false
@@ -590,39 +593,16 @@ is_bare_lambda_head: bool = (lx: lexer)
             commas += 1
         else
             plain = false
+    offside_single = false
+    if plain and names == 1 and commas == 0 and !empty and lx.stmt_col != 0
+        after = lexer.peek(lx)
+        if after.kind != token.KIND_EOF and after.loc.line != rparen_line and after.loc.col > lx.stmt_col
+            offside_single = true
     lexer.restore_state(lx, st)
     if empty
         return true
-    # gap[046] / OPEN, and left open ON PURPOSE rather than guessed at. The
-    # single-name group `(a)` is the one shape this test cannot decide, and the
-    # two-oracle differential proves it MATTERS: `duo fmt` renders
-    # `f = fun(a) a end` — a row this repo's own corpus proof pins — as
-    #
-    #     f = (a)
-    #       a
-    #     end
-    #
-    # so P2 CANONICAL CLOSURE fails: the self-hosted parser cannot read what
-    # the production formatter just wrote.
-    #
-    # Layout is the discriminator, as everywhere else in this file, but not the
-    # layout available HERE. The body of a lambda is indented past the
-    # STATEMENT that opens it, not past its own `(` — in `f = (a)` the paren
-    # sits at column 5 and the body at column 3 — so the comparison needs the
-    # enclosing statement's base column, and proj_* is deliberately
-    # token-only: it never reads `lx.src` and takes no base column parameter.
-    # Two repairs that do NOT work, both measured:
-    #   * comparing against `(`'s own column: never fires for the shape above,
-    #     and can misfire on a group continued onto the next line.
-    #   * speculating a lambda and rewinding on failure (the idiom this file
-    #     uses for `n: i64 = 5` vs `obj:m(1,2)`): the wrong reading SUCCEEDS —
-    #     inside `g(): any / x = (a) / y = 2 / end`, `y = 2` parses as a body
-    #     and `end` closes it, so the speculation swallows the rest of the
-    #     function and reports clean.
-    # The real repair is to thread the statement base column through the
-    # expression chain, which is a signature change across proj_*, not a
-    # predicate tweak. Pinned as a P2 row in
-    # a parser two-oracle differential fixture so it stays measured.
+    if offside_single
+        return true
     plain and commas > 0 and names == commas + 1
 
 # Is the parenthesised group after the name a PARAMETER LIST (a declaration)
@@ -1795,6 +1775,7 @@ proj_concept: str = (lx: lexer)
 
 proj_stmt: str = (lx: lexer)
     t = lexer.peek(lx)
+    lx.stmt_col = t.loc.col
     if t.kind == token.KIND_EOF
         return ""
     if t.kind == token.KIND_END or t.kind == token.KIND_ELSE or t.kind == token.KIND_ELSEIF

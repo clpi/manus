@@ -50,7 +50,10 @@ lexer: {
     peeked_token: token,
     has_error: bool,
     error_loc: loc,
-    error_code: i64
+    error_code: i64,
+    # Column of the statement currently being projected. Expression-level layout
+    # rules (bare `(a)` lambda heads) compare against this, not the `(` column.
+    stmt_col: i64
 }
 
 new: lexer = (src: str, file: str, family: i64)
@@ -71,6 +74,7 @@ new: lexer = (src: str, file: str, family: i64)
         has_error = false,
         error_loc = dummy_loc,
         error_code = 0,
+        stmt_col = 0,
     }
 
 cur_loc: loc = (self: lexer)
