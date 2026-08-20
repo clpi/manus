@@ -20,8 +20,6 @@
 # a transformation is discovered without reading this file, which is what
 # "the compiler is data" has to mean at the smallest scale.
 
-global C = compiler.comptime
-
 # The registry. One row per transformation; adding one is a table entry, not a
 # new pass and !a new call site in a driver.
 names: str = ()
@@ -43,7 +41,7 @@ _is_expr_byte: bool = (c: i64)
 # Scans for a maximal run of expression bytes that (a) is not adjacent to an
 # identifier character, so `x2 + 1` is never treated as an expression starting
 # inside a name and `f(1 + 2)` is not mistaken for a parenthesised constant,
-# and (b) `C.foldable` accepts. Each candidate is replaced by
+# and (b) `compiler.comptime.foldable` accepts. Each candidate is replaced by
 # its value ONLY when the replacement folds to the same number — the rewrite's
 # own legality proof, checked per site rather than argued once.
 _fold_once: str = (src: str)
@@ -123,10 +121,10 @@ _fold_once: str = (src: str)
           tail_ok = true
         if tail_ok and e > i
           cand = src:sub(i, e)
-          if C.foldable(cand)
-            v: i64 = C.fold(cand)
+          if compiler.comptime.foldable(cand)
+            v: i64 = compiler.comptime.fold(cand)
             rep = v:to(str)
-            if C.foldable(rep) and C.fold(rep) == v
+            if compiler.comptime.foldable(rep) and compiler.comptime.fold(rep) == v
               out = out .. rep
               i = e + 1
               folded = true
