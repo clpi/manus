@@ -300,8 +300,14 @@ _at2: i64 = ()
   _src2:byte(_p2)
 
 _ws2 = ()
-  while _p2 <= _src2:len() and (_at2() == 32 or _at2() == 9)
-    _p2 = _p2 + 1
+  while _p2 <= _src2:len()
+    c = _at2()
+    if c == 32
+      _p2 = _p2 + 1
+    if c == 9
+      _p2 = _p2 + 1
+    if c != 32 and c != 9
+      return
 
 _eat2: bool = (a: i64)
   _ws2()
@@ -323,12 +329,23 @@ _g_prim: i64 = ()
     _emit("neg x" .. r2:to(str) .. ", x" .. r2:to(str))
     return r2
   v: i64 = 0
-  if not (_at2() >= 48 and _at2() <= 57)
+  c0 = _at2()
+  if c0 < 48
     _bad2 = true
     return _reg
-  while _p2 <= _src2:len() and _at2() >= 48 and _at2() <= 57
-    v = v * 10 + _at2() - 48
-    _p2 = _p2 + 1
+  if c0 > 57
+    _bad2 = true
+    return _reg
+  more: i64 = 1
+  while more == 1 and _p2 <= _src2:len()
+    c = _at2()
+    if c < 48
+      more = 0
+    if c > 57
+      more = 0
+    if more == 1
+      v = v * 10 + c - 48
+      _p2 = _p2 + 1
   d: i64 = _reg
   _reg = _reg + 1
   if _reg > 15

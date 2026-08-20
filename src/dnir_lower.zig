@@ -402,7 +402,10 @@ fn collectModuleGlobals(alloc: std.mem.Allocator, mod: *const ast.Module) Error!
                 try out.order.append(alloc, .{ .name = n.ident, .init = init });
             },
             .global_decl => |gd| for (gd.names, 0..) |n, i| {
-                if (!moduleFunctionsAssignName(mod, n.ident)) continue;
+                // Explicit `global` declarations always get module storage.
+                // Function-body assigns to the same name are `store_global`, not
+                // a reason to drop the binding — asm_for resetting `_p2` must
+                // not erase `global _p2` from the map other functions read.
                 const init: ?*const Expr = if (i < gd.inits.len) gd.inits[i] else null;
                 try out.types.put(alloc, n.ident, typeOfGlobal(n.typ, init));
                 try out.order.append(alloc, .{ .name = n.ident, .init = init });
