@@ -36,6 +36,33 @@ spelling, AST shape, filesystem names, and host-local variable names after
 resolution, would my new code still know enough to make this decision? If the
 answer is no, the change is almost certainly landing at the wrong layer.
 
+
+## Architectural negative controls (2026-08-20 inventory)
+
+Static ratchets: `sh gate/architecture-negative.sh`. Behavioral companions:
+`sh gate/architecture-companion.sh`.
+
+| Control | Intent |
+|---|---|
+| **GRAPH-ARG-EXACT** | Graph application arguments == resolved operands; no DNIR AST filter |
+| **RESOLUTION-ORDER-INDEPENDENT** | Reordering reachable homes must not change selected relation |
+| **AMBIGUITY-FAILS** | Two equally admissible relations → explicit ambiguity, never first-wins |
+| **NO-DNIR-AST-FILTER** | Supported lowering must not call `filterCheckedCallOperands` (goal: 0) |
+| **NO-NAME-RECORD-INFERENCE** | Record/ABI from value+descriptor facts, not `name.field` locals |
+| **NO-HOME-SEMANTIC-PRIORITY** | Filesystem home is provenance, not dispatch order |
+| **GRAPH-ONLY-LOWERING** | Supported path must not recover meaning from AST after graph resolution |
+
+**Self-host score discipline:** each green module names semantic authority gained
+(physical reach + authority quality). Never copy counts from static scoreboard
+markdown — run `gate/selfhost.sh` only.
+
+**bind.id destination:** binding occurrence ids + scope/home facts, not textual
+name-token scanning. A green bind module is not graph-native resolution.
+
+**Source-shape rule:** before changing compiler `.id` for direct-backend limits,
+answer whether source violates law or backend lacks lawful capability. Do not
+shape canonical source into whatever immature DNIR can lower today.
+
 Executable negative controls: `sh gate/architecture-negative.sh` (idol) and the
 sibling wrapper in idol-native.
 

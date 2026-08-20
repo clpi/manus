@@ -5074,9 +5074,9 @@ fn callValueForApplication(
     };
 }
 
-/// Keep graph-projected operands that the source call actually passes. The
-/// semantic graph may attach nearby bindings (e.g. `st = lexer.save_state(lx)`)
-/// to an application argument pack even when they are not call arguments.
+/// @debt GRAPH-ARG-EXACT — DNIR must not recover operands from AST when the
+/// graph application pack is wrong. Fix the graph producer so exported arguments
+/// match resolved semantic operands exactly; then delete this filter (goal: 0).
 fn filterCheckedCallOperands(
     call_value: *const Expr,
     operands: []const CheckedScalarOperand,

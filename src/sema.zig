@@ -1068,10 +1068,10 @@ pub const Sema = struct {
         return .{ .home = entry, .decl = found orelse return null };
     }
 
-    /// Homes consulted for a subject-first cross-home lookup, in priority order.
-    /// When the same relation name exists in more than one home — `map` is in
-    /// both `iter` and `table` — the first home that declares it wins, which
-    /// makes `xs:map(f)` resolve through `iter.map` rather than `table.map`.
+    /// @debt AMBIGUITY-FAILS — home list order must not decide semantics. When
+    /// more than one reachable home declares the same relation spelling, sema
+    /// must refuse until descriptor/world facts distinguish them — never pick
+    /// `iter` before `table` by array order.
     fn subjectFirstForeignHomeCandidates(conf: subject_home.Conformance) []const []const u8 {
         return switch (conf) {
             .sequence => &[_][]const u8{ "iter", "table" },
@@ -1084,13 +1084,27 @@ pub const Sema = struct {
 
     fn foreignRelationFirstInHomes(
         self: *Sema,
+        loc: ast.Loc,
         conf: subject_home.Conformance,
         method: []const u8,
     ) ?ForeignRelation {
+        var first: ?ForeignRelation = null;
+        var first_home: []const u8 = "";
         for (subjectFirstForeignHomeCandidates(conf)) |spelling| {
-            if (self.foreignRelationInHome(spelling, method)) |rel| return rel;
+            if (self.foreignRelationInHome(spelling, method)) |rel| {
+                if (first != null) {
+                    self.err(
+                        loc,
+                        "ambiguous subject-first relation '{s}': declared in homes '{s}' and '{s}'; resolve through exact descriptor/world facts or disambiguate the spelling — home order must not decide semantics",
+                        .{ method, first_home, spelling },
+                    );
+                    return null;
+                }
+                first = rel;
+                first_home = spelling;
+            }
         }
-        return null;
+        return first;
     }
 
     /// SUBJECT-FIRST CROSS-HOME. `xs:map(f)` is the same application as
@@ -1100,15 +1114,16 @@ pub const Sema = struct {
     /// into the builtin sequence roster.
     fn subjectFirstForeignRelation(
         self: *Sema,
+        loc: ast.Loc,
         obj: *const ast.Expr,
         method: []const u8,
         ot: RT,
     ) ?ForeignRelation {
         if (self.home_loader == null) return null;
         const conf = self.subjectConformance(obj, ot);
-        if (conf != .unknown) return self.foreignRelationFirstInHomes(conf, method);
+        if (conf != .unknown) return self.foreignRelationFirstInHomes(loc, conf, method);
         for ([_]subject_home.Conformance{ .text, .numeric, .sequence, .stream }) |p| {
-            if (self.foreignRelationFirstInHomes(p, method)) |rel| return rel;
+            if (self.foreignRelationFirstInHomes(loc, p, method)) |rel| return rel;
         }
         return null;
     }
@@ -4711,7 +4726,7 @@ pub const Sema = struct {
                     return .any;
                 }
 
-                if (self.subjectFirstForeignRelation(mc.obj, mc.method, ot)) |foreign| {
+                if (self.subjectFirstForeignRelation(mc.loc, mc.obj, mc.method, ot)) |foreign| {
                     const declared = try self.resolve_type(contract_ret_expr(&foreign.decl.func));
                     try self.recordApplicationInHome(
                         expr,

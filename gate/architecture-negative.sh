@@ -44,6 +44,16 @@ require_present() {
     fi
 }
 
+require_absent() {
+    SEEN=$((SEEN + 1))
+    n=$(count_in "$2" "$3")
+    if [ "$n" -gt 0 ]; then
+        bad "$1: found $n forbidden match(es) in $2"
+    else
+        ok "$1"
+    fi
+}
+
 printf 'architecture-negative gate: mandate + debt ratchets\n\n'
 
 require_present \
@@ -55,6 +65,21 @@ require_present \
     REVIEW-QUESTION \
     docs/AGENT_ALIGNMENT.md \
     'Review question (required before every commit)'
+
+require_present \
+    DEBT-GRAPH-ARG-FILTER-LABELED \
+    src/dnir_lower.zig \
+    '@debt GRAPH-ARG-EXACT'
+
+require_present \
+    DEBT-AMBIGUITY-LABELED \
+    src/sema.zig \
+    '@debt AMBIGUITY-FAILS'
+
+require_absent \
+    NO-FIRST-WINS-SEMANTICS \
+    src/sema.zig \
+    'first home that declares it wins'
 
 require_max \
     NO-DNIR-AST-FILTER \
@@ -71,8 +96,8 @@ require_max \
 require_max \
     NO-HOME-PRIORITY-DISPATCH \
     src/sema.zig \
-    'subjectFirstForeignHomeCandidates|first home that declares it wins' \
-    3
+    'fn subjectFirstForeignHomeCandidates' \
+    1
 
 require_max \
     CONFORMANCE-ENUM-SCOPE \
@@ -91,6 +116,16 @@ if [ -f ../idol-native/docs/self-hosting-scoreboard.md ]; then
         ok 'SCOREBOARD-HISTORICAL-LABEL'
     else
         bad 'SCOREBOARD-HISTORICAL-LABEL: idol-native scoreboard missing classification banner'
+    fi
+fi
+
+if [ -x gate/architecture-companion.sh ]; then
+    SEEN=$((SEEN + 1))
+    if sh gate/architecture-companion.sh >/tmp/arch-companion.log 2>&1; then
+        ok 'ARCHITECTURE-COMPANION'
+    else
+        bad 'ARCHITECTURE-COMPANION: see /tmp/arch-companion.log'
+        sed 's/^/    /' /tmp/arch-companion.log >&2
     fi
 fi
 
