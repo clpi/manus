@@ -347,6 +347,7 @@ fn callApplication(expr: *const Expr) bool {
                 // DESCRIPTOR, not a value, so it is never lowered.
                 if (std.mem.eql(u8, f.field, "write_byte") and c.args.len == 3) return true;
                 if (std.mem.eql(u8, f.field, "write_i64") and c.args.len == 3) return true;
+                if (std.mem.eql(u8, f.field, "write_f64") and c.args.len == 3) return true;
                 if (std.mem.eql(u8, f.field, "ptr_from_addr") and c.args.len == 2) return true;
             }
             if (std.mem.eql(u8, home, "os")) {

@@ -11,7 +11,7 @@ len: i64 = (pack: pack)
 
 kindat: i64 = (pack: pack, index: i64)
   if index < 1 or index > pack.count
-    token.KINDEOF
+    token.KIND_EOF
   else
     pack.kinds(index)
 

@@ -3991,10 +3991,19 @@ const Arm64Compiler = struct {
                     const rec = self.cur_func_ret_record orelse return self.refuse(@src());
                     if (vals.len != rec.field_names.len) return self.refuse(@src());
                     for (vals, 0..) |v, i| {
-                        const src = try self.evalDnirValue(temps, v);
                         const off: u16 = @intCast(i * 8);
-                        try self.emitStrBaseImm(src, buf, off);
-                        if (!Arm64Compiler.regIsPinned(pinned, src)) self.releaseReg(src);
+                        switch (rec.field_kinds[i]) {
+                            .f64 => {
+                                const d = try self.evalDnirValueFp(temps, v);
+                                try self.emitStrBaseImmFp(d, buf, off);
+                                self.releaseFpReg(d);
+                            },
+                            .i64, .str => {
+                                const src = try self.evalDnirValueBits(temps, v);
+                                try self.emitStrBaseImm(src, buf, off);
+                                if (!Arm64Compiler.regIsPinned(pinned, src)) self.releaseReg(src);
+                            },
+                        }
                     }
                 } else {
                     // Returning a record is a PARALLEL move into x0..x7, not a
@@ -4344,7 +4353,7 @@ const Arm64Compiler = struct {
                         try self.emitLdrBaseImm(dst, base, off);
                         if (ins.result) |t| try temps.put(self.alloc, t, dst);
                     } else {
-                        const val = try self.evalDnirValue(temps, ins.third);
+                        const val = try self.evalDnirValueBits(temps, ins.third);
                         try self.emitStrBaseImm(val, base, off);
                         self.releaseDnirTemp(pinned, ins.third, val);
                     }
@@ -4363,7 +4372,7 @@ const Arm64Compiler = struct {
                     try self.emitLdrScaled(dst, base, biased);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
                 } else {
-                    const val = try self.evalDnirValue(temps, ins.third);
+                    const val = try self.evalDnirValueBits(temps, ins.third);
                     try self.emitStrScaled(val, base, biased);
                     self.releaseDnirTemp(pinned, ins.third, val);
                 }
@@ -6239,6 +6248,16 @@ const Arm64Compiler = struct {
         );
     }
 
+    fn emitStrBaseImmFp(self: *Arm64Compiler, dreg: u5, base: u5, offset: u16) Error!void {
+        if (offset % 8 != 0 or offset / 8 > 4095) return self.refuse(@src());
+        try self.ensureRegLive(base);
+        try self.emitFmt(
+            0xfd000000 | ((@as(u32, offset) / 8) << 10) | (@as(u32, base) << 5) | @as(u32, dreg),
+            "str d{d}, [x{d}, #{d}]",
+            .{ dreg, base, offset },
+        );
+    }
+
     /// `ldr xd, [xbase, #imm]` — the read half of `emitStrBaseImm`, same
     /// unsigned-offset form. Used when a table subscript's index is known at
     /// compile time: `base + (k - 1) * 8` is then a constant and needs no
@@ -7844,6 +7863,21 @@ fn validateDnirApplications(
                     }
                 } else {
                     if (descriptor == .@"struct" or descriptor == .table_type) {
+                        if (instruction.relation) |rel| {
+                            if (graph.get(rel)) |rn| {
+                                if (rn.name) |nm| {
+                                    if (std.mem.eql(u8, nm, "proj_program_lx")) {
+                                        std.debug.print("SHAPE app={d} fn={s} desc={s} rec={s} idx={d}\n", .{
+                                            application.application,
+                                            function.name,
+                                            @tagName(descriptor),
+                                            instruction.record,
+                                            instruction_index,
+                                        });
+                                    }
+                                }
+                            }
+                        }
                         return invalidFactsWith(diagnostic, @src(), "application-result-shape");
                     }
                     if (instruction.record.len != 0) {
@@ -7911,7 +7945,25 @@ fn validateDnirApplications(
                     return invalidFactsWith(diagnostic, @src(), "folded-application-lineage");
                 }
                 const use = try seen.getOrPut(alloc, application.application);
-                if (use.found_existing) return invalidFactsWith(diagnostic, @src(), "application-realization-count");
+                if (use.found_existing) {
+                    if (instruction.relation) |rel| {
+                        if (graph.get(rel)) |rn| {
+                            if (rn.name) |nm| {
+                                if (std.mem.eql(u8, nm, "sourcepathformprovenance")) {
+                                    std.debug.print("DUP app={d} fn={s} op={s} callee={s} rec={s} idx={d}\n", .{
+                                        application.application,
+                                        function.name,
+                                        @tagName(instruction.op),
+                                        instruction.callee,
+                                        instruction.record,
+                                        instruction_index,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    return invalidFactsWith(diagnostic, @src(), "application-realization-count");
+                }
             }
         }
     }
