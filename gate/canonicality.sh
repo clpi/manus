@@ -29,11 +29,11 @@ check_law_section() {
     fi
 }
 
-check_law_section '## 111. SUBJECT-ZERO'
-check_law_section '## 112. ANY-DESCRIPTOR-ZERO'
-check_law_section '## 113. RESULT-ZERO'
-check_law_section '## 114. TEXT/BYTE-SEQUENCE'
-check_law_section '## 115. CANONICALITY'
+check_law_section '## 5. Delimiter and face closure'
+check_law_section '`[]` is computed/indexed projection.'
+check_law_section '`()` is ordinary application.'
+check_law_section 'sole supreme compact law'
+check_law_section 'this file wins'
 
 # C0 law identities
 for lid in 'law.subject.zero' 'law.any.descriptor.zero' 'law.result.zero' 'law.text.byte' 'law.canonicality'; do

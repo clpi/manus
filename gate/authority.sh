@@ -132,6 +132,15 @@ if [ -r "$AUTHORITY_JSON" ] && command -v git >/dev/null 2>&1; then
         actual_con=$(git -C "$ROOT" hash-object "$CONSTITUTION")
         [ "$actual_con" = "$CON_BLOB" ] || bad "constitution.md blob drift (manifest $CON_BLOB got $actual_con)"
     fi
+    SRC_BLOB=$(
+        sed -n '/"source_projection": {/,/^    }/p' "$AUTHORITY_JSON" \
+            | sed -n 's/^[[:space:]]*"blob": "\([^"]*\)".*/\1/p' \
+            | head -1
+    )
+    if [ -n "$SRC_BLOB" ] && [ -r "$SOURCE" ]; then
+        actual_src=$(git -C "$ROOT" hash-object "$SOURCE")
+        [ "$actual_src" = "$SRC_BLOB" ] || bad "source.md blob drift (manifest $SRC_BLOB got $actual_src)"
+    fi
 fi
 
 if [ -e "$ROOT/.agents/SESSION_STATE.md" ]; then
