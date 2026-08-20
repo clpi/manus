@@ -10,7 +10,7 @@
     },
     "long_form_law": {
       "path": "docs/spec/constitution.md",
-      "blob": "09218d549f3442d68876038ff7c6ffe1db0ddc7b",
+      "blob": "7406246f170602414d620a01b042ae98768a40b6",
       "role": "structured expansion and law-id owner; compact law wins on drift"
     },
     "source_projection": {

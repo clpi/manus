@@ -1,14 +1,16 @@
 # Idol Specification Router
 
-Idol language law has one home:
+Idol language law has one supreme owner and one structured expansion:
 
 ```text
-docs/spec/constitution.md
+docs/spec/law.md            — supreme compact law
+docs/spec/constitution.md   — structured expansion and stable law.* identity owner
 ```
 
 No pass document, summary, epoch stamp, source corpus, implementation, test, or
-generated artifact is a second law. The constitution is structured law
-documentation, not executable source or a canonical implementation example.
+generated artifact is a second law. When compact law and constitution differ,
+`law.md` wins and the constitution is repaired. Both are documentation
+projections, not executable source or canonical implementation examples.
 
 ## Projections
 
@@ -24,9 +26,9 @@ documentation, not executable source or a canonical implementation example.
 - `METRICS.md` — progress dashboard; three dominant metrics; audit scorecard (not C0).
 - `corpus.md` classifies source provenance for canonicality gates.
 
-These files may organize or explain constitutional facts. They do not override
-the constitution. A contradiction is a projection defect: stop, report it, and
-repair the projection rather than choosing a convenient answer.
+These files may organize or explain law facts. They do not override `law.md` or
+contradict the constitution expansion. A contradiction is a projection defect:
+stop, report it, and repair the projection rather than choosing a convenient answer.
 
 ## Current tree
 

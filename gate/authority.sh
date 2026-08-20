@@ -108,6 +108,32 @@ if [ -r "$AUTHORITY_MD" ]; then
     contains "$AUTHORITY_MD" 'compact law is the current owner ruling' 'AUTHORITY.md lost compact-law-wins ruling'
 fi
 
+
+README="$ROOT/docs/spec/README.md"
+if [ -r "$README" ]; then
+    examined=$((examined + 1))
+    contains "$README" 'docs/spec/law.md' 'spec router no longer names compact law'
+    contains "$README" 'supreme compact law' 'spec router no longer ranks compact law supreme'
+    rejects "$README" 'Idol language law has one home:' 'spec router still claims constitution is the sole law home'
+fi
+
+if [ -r "$AUTHORITY_JSON" ] && command -v git >/dev/null 2>&1; then
+    LAW_BLOB=$(
+        sed -n '/"compact_law": {/,/"long_form_law": {/p' "$AUTHORITY_JSON"             | sed -n 's/^[[:space:]]*"blob": "\([^"]*\)".*/\1/p'             | head -1
+    )
+    CON_BLOB=$(
+        sed -n '/"long_form_law": {/,/"source_projection": {/p' "$AUTHORITY_JSON"             | sed -n 's/^[[:space:]]*"blob": "\([^"]*\)".*/\1/p'             | head -1
+    )
+    if [ -n "$LAW_BLOB" ] && [ -r "$LAW" ]; then
+        actual_law=$(git -C "$ROOT" hash-object "$LAW")
+        [ "$actual_law" = "$LAW_BLOB" ] || bad "law.md blob drift (manifest $LAW_BLOB got $actual_law)"
+    fi
+    if [ -n "$CON_BLOB" ] && [ -r "$CONSTITUTION" ]; then
+        actual_con=$(git -C "$ROOT" hash-object "$CONSTITUTION")
+        [ "$actual_con" = "$CON_BLOB" ] || bad "constitution.md blob drift (manifest $CON_BLOB got $actual_con)"
+    fi
+fi
+
 if [ -e "$ROOT/.agents/SESSION_STATE.md" ]; then
     bad '.agents/SESSION_STATE.md is ephemeral state masquerading as durable authority'
 fi
