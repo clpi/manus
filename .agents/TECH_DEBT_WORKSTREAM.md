@@ -1,7 +1,8 @@
 # Idol — current tech debt + FTCFTW workstream one-pager
 
 This is the **current workstream / debt compass**. It is not semantic law.
-Law remains `docs/spec/constitution.md` (C0, including §67). Executed frontier:
+Supreme compact law is `docs/spec/law.md`; structured expansion is
+`docs/spec/constitution.md` (C0, including §67). Executed frontier:
 `docs/bootstrap.md`. Metrics: `docs/METRICS.md`. Measurable checkboxes:
 `WORKSTREAM_DEBT_REGISTER.md`.
 
@@ -261,7 +262,7 @@ Applies to: `to`; relation selection; static projection; subject; descriptor
 target; capture; world witness; protocol witness; projection/injection algebra.
 
 Examples: `env["HOME"]` not `os.env["HOME"]` when uniquely admitted; `f(x)` not
-`f:call(x)`; `x(key)` not `x:get(key)`; `consume(value)` not
+`f:call(x)`; `x[key]` not `x(key)` or `x:get(key)` for computed projection; `consume(value)` not
 `consume(value:to(target))` when target is demanded uniquely.
 
 Human-meaning exception: `source:read()` may remain because `source()` obscures

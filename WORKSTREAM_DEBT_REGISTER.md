@@ -1,8 +1,9 @@
 # WORKSTREAM DEBT REGISTER
 
 PROJECTION — not authority. Authority chain:
-- Semantic law: `docs/spec/constitution.md`
-- Executed frontier: `docs/bootstrap.md`
+- Supreme compact law: `docs/spec/law.md`
+- Structured expansion: `docs/spec/constitution.md`
+- Executed frontier: `docs/bootstrap.md` 
 - Metric interpretation: `docs/METRICS.md`
 - Realization architecture: `docs/spec/realization.md`
 - Measurements: `evidence/EVIDENCE_BUNDLE.md`
@@ -186,7 +187,7 @@ Measurable acceptance criteria:
 
 - [x] `canonical.md` / `agent.md` / HARNESS match current ruling (keep aligned)
 - [ ] SOURCE-INFER-ONE applied globally in corpus (not just docs)
-- [ ] `x(key)` replaces `:get(` / `[key]` for ordinary access
+- [ ] `x[key]` replaces call-shaped / `:get(` indexing for computed projection
 - [ ] Intermediate-zero: no avoidable `tmp`/`result`/`checked`/`current`/`next`
 - [ ] Whole-corpus gate exists and fails closed (reject; do not rewrite as SHC)
 

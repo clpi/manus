@@ -50,7 +50,7 @@ Delimiter identity is permanent and non-overloaded:
 {}  structured pack, table, descriptor structure
 .   named/static projection
 :   subject-oriented relation or constraint face
-@   compiler-visible semantic interjection
+@   current-world access, injection, and qualification (law.md §5)
 ```
 
 Canonical computed projection is indexed projection: `table[key]`.

@@ -1,8 +1,9 @@
 # Idol grammar projection
 
-The sole language law is [`docs/spec/constitution.md`](constitution.md). This
-page is a human projection of closed source-face decisions; it is not a second
-grammar authority and must not be used to hand-build parser tables.
+The supreme compact law is [`docs/spec/law.md`](law.md); [`docs/spec/constitution.md`](constitution.md)
+is its structured expansion. This page is a human projection of closed
+source-face decisions; it is not a grammar authority and must not be used to
+hand-build parser tables.
 
 The repository does not yet contain the complete machine-readable grammar that
 the production parser, formatter, canonicalizer, Tree-sitter, LSP, MCP, tests,
@@ -33,8 +34,8 @@ The lexer identifies delimiters, the grammar assigns roles, the parser consumes
 roles, and resolution assigns meaning. Punctuation contributes no semantic
 identity or physical representation choice after normalization.
 
-- `()` is ordinary application and grouping, including computed-key access:
-  `f(a, b)`, `values(i)`;
+- `()` is ordinary application and grouping only — never aggregate indexing:
+  `f(a, b)`, `(x + y)`; computed projection is `[]`, e.g. `values[i]`;
 - `{}` bounds structured packs, descriptor application, and descriptor homes;
 - `.` is only statically named projection after an explicit subject:
   `user.name`; leading `.name` and bare `.` are noncanonical;

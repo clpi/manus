@@ -105,8 +105,10 @@ editing Idol (`.id`), in this order:
    **before repository code**; do not infer law from Git frequency.
 2. `docs/spec/agent.md` — **sole new-agent bootstrap**: readable constitutional
    interpretation (sections I–CXLIX); supersedes partial prompts; **not C0**.
-3. `docs/spec/constitution.md` — C0, the sole semantic authority. It is
-   structured law documentation, not executable source or a source template.
+3. `docs/spec/constitution.md` — C0, the structured long-form expansion and
+   `law.*` identity owner of the supreme compact law. It is structured law
+   documentation, not executable source, not a source template, and not a
+   competing authority when it diverges from `docs/spec/law.md`.
    **Idol algebra closure:** §67 (`law.semantic.universe` … `law.algebra.absolute`;
    adversarial controls in `law.gate.protocol`, `law.gate.algebra`,
    `law.gate.infer`, and `law.gate.convergence`). **Convergence closure:**
@@ -190,7 +192,8 @@ and documentation projections implemented in Idol.
 
 **No `std` anywhere** in new canonical source — not a namespace, table, prelude,
 or migration alias. Vocabulary reaches through layout/home/world projection
-(`path:read()`, `json:encode`, `os.env[k]`, `io:read`). The `lib/std/` tree is
+(`path:read()`, `json:encode`, `env[k]`, `args[i]`; `os.env[k]` only when scope
+is contested). The `lib/std/` tree is
 filesystem bootstrap provenance until renamed (GAP-157); it is not authority.
 
 Every canonicality result has one of four states: `canonical`, `migratable`,
