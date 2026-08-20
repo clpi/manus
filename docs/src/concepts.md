@@ -32,8 +32,9 @@ branch, and mutation plumbing.
 ## Source and realization
 
 Source faces provide compact recognition and provenance, then erase into graph
-facts. A statically known field uses named projection; a genuinely computed key
-uses ordinary application `table(key)`. Neither face chooses storage or dispatch.
+facts. A statically known field uses named projection; a genuinely computed
+aggregate key uses indexed projection `table[key]`. Parentheses remain ordinary
+application. No face chooses storage or dispatch.
 
 Descriptor knowledge must preserve realization freedom. It may permit
 specialization, devirtualization, scalarization, fusion, or complete erasure,

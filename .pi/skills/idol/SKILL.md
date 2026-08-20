@@ -62,9 +62,9 @@ x = value
 x: descriptor = value
 add = (a, b) a + b
 value:validate():normalize()
-env("HOME")
-arg(1)
-table(key)
+env["HOME"]
+arg[1]
+table[key]
 source:read()
 stdout:write(text)
 ```

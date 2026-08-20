@@ -123,7 +123,7 @@ Layout law: no `req`, `import`, `module`, `use(`, `using(`, `inject`, or `admit`
 Reachability is scope and home projection only.
 
 Host law (`docs/spec/world.md`, `GAP-154`, `GAP-157`): **no `std` anywhere**.
-Use `os.args(n)`, `os.env(k)`, `io:read`, `io:write`. Never `std.*`,
+Use `os.args[n]`, `os.env[k]`, `io:read`, `io:write`. Never `std.*`,
 `os.getenv`, `environment[...]`, or `io.read`/`io.write`.
 
 ## 6. Semantic-first correctness

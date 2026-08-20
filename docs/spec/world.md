@@ -181,7 +181,7 @@ machine program can collapse the whole chain to a known `tax` relation, a known
   world, global-registry, library, or default-namespace fallback.
 - A world cannot hold two incomparable static definitions for one member and
   silently choose — explicit disambiguation is required.
-- `.` is never computed; a runtime key uses application `table(key)`.
+- `.` is never computed; a runtime aggregate key uses projection `table[key]`.
 - `able` is an inferred boundary constraint, not a world member — never inject it
   as a fact.
 - Only a valid witness satisfies authority; a label, boolean, or string cannot
@@ -251,8 +251,8 @@ os.open(path)
 When unique world context projects these values, prefer direct use:
 
 ```id
-args(1)
-env("KEY")
+args[1]
+env["KEY"]
 stdout:write(text)
 clock:now()
 stdin:read()
@@ -261,8 +261,8 @@ stdin:read()
 over organizational spellings:
 
 ```id
-os.args(1)
-os.env("KEY")
+os.args[1]
+os.env["KEY"]
 io:write(text)
 ```
 

@@ -1,5 +1,5 @@
-HEAD: b9c38e6e86ae63fc2ed2b48db6e1cbbbd604ed89
-Date: 2026-08-18T20:16:47-07:00
+HEAD: 602c76891336bb94b3491d40e39618663838add5
+Date: 2026-08-19T23:24:20-07:00
 Dirty: 5
-Branch: HEAD
+Branch: main
 Derived: tools/node/dev/orient (law.control.derived — do not hand-edit)

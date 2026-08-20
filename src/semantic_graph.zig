@@ -4030,6 +4030,23 @@ pub const SemanticGraph = struct {
             } else .none;
             try self.draws.append(self.alloc, .{ .application = row.application, .world = card });
         }
+
+        // AUTHORITY for foreign-world applications. The effect pass above wrote
+        // `.none` for effect-free relations, but a call through the `c` world is
+        // a foreign call — it is AUTHORIZED by the world, not effect-free. This
+        // closes the gap that kept `c.abs(0-7)` blocked without the graph-facts
+        // waiver: the world node exists now, so `authority = .one(c_world)` can
+        // be written.
+        for (self.worlds.items) |world_fact| {
+            if (world_fact.home != .c) continue;
+            for (drawn.items) |row| {
+                if (row.home != .c) continue;
+                for (self.application_facts.items) |*fact| {
+                    if (fact.application != row.application) continue;
+                    fact.authority = .{ .one = world_fact.world };
+                }
+            }
+        }
     }
 
     fn worldMemberNamed(self: *const SemanticGraph, start: usize, name: []const u8) bool {

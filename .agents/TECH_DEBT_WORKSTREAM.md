@@ -223,8 +223,9 @@ injection/projection composition.
 
 Latest migrations still contain canonical-corpus violations including:
 
-- retired bracket access in corpus — ordinary access should converge on
-  `count(x + 1)`, `cells(1)`, `src(i)`, and `flag(i)`
+- call-shaped aggregate access — computed projection must converge on
+  `count[x + 1]`, `cells[1]`, `src[i]`, and `flag[i]`, while `value(args)`
+  remains ordinary application
 - explicit inferable `i:to(str)`
 - one-use temporaries
 - plural bindings: `rows`, `lines`, `words`, `chars`
@@ -259,7 +260,7 @@ IF GRAPH CAN KNOW IT UNIQUELY, SOURCE SHOULD NOT SPELL IT.
 Applies to: `to`; relation selection; static projection; subject; descriptor
 target; capture; world witness; protocol witness; projection/injection algebra.
 
-Examples: `env("HOME")` not `os.env("HOME")` when uniquely admitted; `f(x)` not
+Examples: `env["HOME"]` not `os.env["HOME"]` when uniquely admitted; `f(x)` not
 `f:call(x)`; `x(key)` not `x:get(key)`; `consume(value)` not
 `consume(value:to(target))` when target is demanded uniquely.
 

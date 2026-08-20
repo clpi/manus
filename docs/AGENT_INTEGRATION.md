@@ -23,8 +23,8 @@ Canonical Idol has no standard semantic namespace. `std` is migration
 distribution, `std.script` is frozen debt, and another universal root is not a
 replacement. Relations own meaning, possessed values supply subjects, and
 worlds supply authority. Static identity uses named projection; computed and
-ordinal retrieval are ordinary application (`table(key)`, `row(1)`). Brackets
-are retired and do not carry a distinct semantic role.
+ordinal aggregate retrieval use indexed projection (`table[key]`, `row[1]`).
+Parentheses remain ordinary application and never table indexing.
 
 PREDICATE-ZERO is part of admission. Preserve semantic facts, cases,
 refinements, capabilities, demands, unknowns, and transitions directly. Do not

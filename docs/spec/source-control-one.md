@@ -80,8 +80,8 @@ not secretly conjoin the truthiness test.
 
 **Safety law.** A bare-name head binding must be FRESH in the surrounding
 lexical scope, and heads may not hide observable place mutation. Reject
-`if(x = other())` when `x` already exists, and reject `if(table(key) = value)`,
-`if(@state = value)`, `if(obj.field = value)`, `while(table(key) = next())`.
+`if(x = other())` when `x` already exists, and reject `if(table[key] = value)`,
+`if(@state = value)`, `if(obj.field = value)`, `while(table[key] = next())`.
 
 **Scope.** A head binding lives in the remainder of that head plus that
 alternative's body — not in later alternatives, not after the construct. So
@@ -211,7 +211,7 @@ Where the meaning is really search, prefer the relation: break-on-first-truth is
     then / do / end      ->  nothing (grammar already bounds the body)
     else if              ->  else(cond)
     for x in xs          ->  for(xs) (x)
-    table[key]           ->  table(key)          (place demand: table(key) = v)
+    table[key]         ->  canonical computed projection (same face; parentheses remain ordinary application)
     string.find(s, p)    ->  s:find(p)
     type/struct/class/enum/concept/trait/interface/impl -> descriptors, able(...)
     module/namespace/import/require -> filesystem-originated static homes, . and @

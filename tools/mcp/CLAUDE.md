@@ -5,7 +5,7 @@
 Use layout-projected homes and worlds:
 
 ```id
-root = os.env("IDOL_ROOT")
+root = os.env["IDOL_ROOT"]
 content = path:read()
 encoded = value:encode(json)
 mcp:register_tool(...)

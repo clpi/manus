@@ -341,7 +341,7 @@ of graph facts.
 satisfaction, world satisfaction, descriptor refinement, and target selection
 are graph facts. Do not require source syntax when uniquely derivable. Explicit
 world/protocol/injection declarations normally do not exist. Example:
-`stdout:write(env("HOME"))` — not `@{ os.env io.stdout }` merely because the
+`stdout:write(env["HOME"])` — not `@{ os.env io.stdout }` merely because the
 graph needs those facts.
 
 **Source-density order:**
@@ -363,8 +363,8 @@ checking whether the resolver already supplies a unique bridge or direct
 satisfaction. Forbidden: `value:to()` — there is no canonical empty-projection
 rung. Forbidden: single-use bridge bindings between chained relations when direct
 chaining preserves identity. Forbidden: `f:call(x)` or `table:get(key)` when
-application conveys the relation. Forbidden: `os.env("HOME")` when
-`env("HOME")` is uniquely resolved and human-obvious. Forbidden: `@{...}`
+application conveys the relation. Forbidden: `os.env["HOME"]` when
+`env["HOME"]` is uniquely resolved and human-obvious. Forbidden: `@{...}`
 dependency/world lists when use already determines the dependency.
 
 Required workflow:

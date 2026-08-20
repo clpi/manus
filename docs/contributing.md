@@ -12,9 +12,10 @@ Existing foreign code is seed or compatibility debt and may change only under
 the narrow bridge rules in `AGENTS.md`.
 
 Canonical source exposes the strongest known fact with the least ceremony.
-Use named projection and structured fields for static identity; use ordinary
-application `table(key)` when the key is genuinely computed. Do not translate host namespaces,
-sentinels, staging variables, storage choices, or parser categories into Idol.
+Use named projection and structured fields for static identity; use indexed
+projection `table[key]` when an aggregate key is genuinely computed. Parentheses
+remain ordinary application. Do not translate host namespaces, sentinels,
+staging variables, storage choices, or parser categories into Idol.
 Do not encode cases, descriptor/world facts, demand, refinements, or transitions
 as `has`, `is`, `can`, `exists`, or other boolean helpers. Subject correction
 alone does not make a weak predicate canonical. Preserve unknown, absent,

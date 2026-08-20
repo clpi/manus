@@ -256,15 +256,15 @@ Per LXXXII. BRIDGE-DEATH in docs/spec/agent.md: A temporary physical bridge requ
 **Responsibility:** Environment table helpers.
 
 **Exact Facts Carried:**
-- `os.env(name)` calls
+- `os.env[name]` projection
 
-**Semantic Authority:** BORDERLINE — uses `os.env(name)` pattern but this projects to `os` world table.
+**Semantic Authority:** BORDERLINE — uses `os.env[name]` projection but this projects to `os` world table.
 
 **Replacement Owner:** Keep as projection helper, but ensure world facts are clear
 
 **Deletion Prerequisite:** None if using `os.env["key"]` pattern
 
-**Positive Control:** `os.env(name)` returns table value
+**Positive Control:** `os.env[name]` returns table value
 
 **Negative Control:** Ensure no `os.getenv()` calls
 

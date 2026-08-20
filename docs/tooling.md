@@ -24,8 +24,9 @@ taxonomy, legend generator, or highlight corpus as an interim implementation.
 Tooling projects graph-owned identity, facts, demand, worlds, provenance, and
 realization. It must not invent a vocabulary or recover semantic truth from
 package paths, formatted text, hashes, or source punctuation. Static identity
-uses named projection; a genuinely computed key uses ordinary application
-`table(key)` and does not select a physical representation.
+uses named projection; a genuinely computed aggregate key uses indexed
+projection `table[key]`. Parentheses remain ordinary application. Neither face
+selects a physical representation.
 
 Tool protocols may require booleans, but those are transport renderings rather
 than semantic owners. Tooling preserves graph cases, unknowns, descriptor and

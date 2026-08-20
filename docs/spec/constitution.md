@@ -344,20 +344,22 @@ call.face = @{
 # curry. to(str) = (value) does not produce a callable; value:to(str) supplies the
 # subject. f(a)(b) is two applications only when f(a) is actually callable.
 
-# `docs/spec/law.md` §6–§7: ONE application algebra. Ordinary table access is
-# application — `table(key)` — never `table[key]`, `table:get(key)`, or
-# `get(table, key)`. When application yields a place, `table(key) = value` is the
-# assignment face; there is no setter ontology. The resolver decides whether an
-# application yields a value, a place, or another applicable value; there is no
-# "get first / call first / table first" precedence, and incomparable applications
-# are an ambiguity error. Canonical Idol has no `[]`; a foreign source law may
-# recognize its own bracket form only inside that law-qualified source
-# projection. `:get`/`get(t,k)` are noncanonical.
+# `docs/spec/law.md` §5 and §9: ONE application algebra — `()` is ordinary
+# application. Computed or indexed aggregate access is projection — `table[key]`
+# — never `table(key)`, `table:get(key)`, or `get(table, key)`. When projection
+# yields a place, `table[key] = value` is the assignment face; there is no
+# setter ontology. Application and projection resolve from applied-value
+# identity and facts; there is no "get first / call first / table first"
+# precedence, and incomparable candidates are an ambiguity error. A foreign
+# source law may recognize its own bracket/call indexing only inside that
+# law-qualified source projection as provenance. `:get`/`get(t,k)` are
+# noncanonical.
 access = @{
-    ordinary = .application    # table(key) — one application algebra, §6
-    place    = .assignment     # table(key) = value — no setter kingdom
-    precede  = false           # no get/call/table-first precedence; ambiguity errors
-    bracket  = .foreign        # source provenance only; never canonical Idol access
+    application = .application  # table(key) — one application algebra, never indexing
+    projection  = .indexing     # table[key] — computed aggregate projection
+    place       = .assignment   # table[key] = value — no setter kingdom
+    precede     = false         # no get/call/table-first precedence; ambiguity errors
+    compat      = .foreign      # foreign-law provenance only; never canonical Idol access
 }
 
 # `docs/spec/law.md` §9: `able(...)` is the ONE explicit protocol/requirement
@@ -1515,7 +1517,7 @@ host = law{
     holds = .boundary
     binds = {
         "Idol source does not call host operating system APIs as semantics",
-        "args and env are ordinary tables under os world accessed as os.args(n) and os.env(k)",
+        "args and env are ordinary tables under os world accessed as os.args[n] and os.env[k]",
         "environment is not a thing",
         "io read and write use io:read and io:write not io.read or io.write",
         "environment observation requires environment value facts and compatible world authority",
@@ -2165,10 +2167,10 @@ grammar.owed = "remove bare dot primary; preserve postfix named projection; gene
 #
 # Source faces preserve useful human distinctions while semantic meaning
 # converges immediately after resolution. One application architecture does
-# not imply one delimiter. Parentheses carry ordinary callable operands;
-# braces carry structured packs, descriptor homes and descriptor application;
-# parentheses carry every ordinary application, including computed keys and
-# ordinal access. Brackets are retired. No source face selects a physical aggregate.
+# not imply one delimiter. Parentheses carry ordinary callable operands and
+# grouping; braces carry structured packs, descriptor homes and descriptor
+# application; brackets carry computed or indexed projection. Parentheses
+# never mean aggregate indexing. No source face selects a physical aggregate.
 
 brace = law{
     id    = "law.brace"
@@ -3566,7 +3568,7 @@ conventionzero = law{
     binds = {
         "a weaker conventional pattern is noncanonical when an existing relation level descriptor world demand place proof or structured value preserves its observations",
         "statically known field identity uses named projection or named structured content rather than computed key syntax",
-        "a genuinely computed key remains ordinary application table(key)",
+        "a genuinely computed aggregate key remains computed projection table[key]",
         "subject first relation expected descriptor direct composition semantic case and explicit world fact each beat an equally readable weaker face",
         "a semantic fact case relation transition refinement demand world effect shape or identity is never duplicated as a boolean helper",
         "true false unknown absent not applicable and unresolved remain distinct wherever the semantic domain admits them",
@@ -4132,22 +4134,22 @@ application.one = law{
     kind  = .invariant
     holds = .one
     binds = {
-        "APPLICATION-ONE every value(args) is one application algebra — no function-call table-lookup accessor indexing method-call generic-call protocol-call or builtin-call kingdom; f(x) table(key) descriptor(value) world(key) closure(x) foreign(x) all begin as one question given applied value operand pack current world and result demand what exact lawful application exists",
+        "APPLICATION-ONE every value(args) is one application algebra — no function-call table-lookup accessor indexing method-call generic-call protocol-call or builtin-call kingdom; f(x) descriptor(value) world(value) closure(x) foreign(x) all begin as one question given applied value operand pack current world and result demand what exact lawful application exists; computed aggregate access table[key] is projection and never application",
         "resolution MAY use only applied value identity operand identities and facts operand pack shape result demand descriptor facts table shape relation facts current world authority and witness facts stage control-flow refinements known metatable facts and target-independent semantic facts",
         "resolution MUST NOT use callee spelling file path source category ast node kind looks-like-a-function looks-like-a-table declaration order fallback priority nearest namespace or registry order",
         "resolution output is exactly one application fact — application id applied identity relation id only when semantically meaningful subject id only when semantically oriented operand pack result pack descriptor constraints effect authority requirement witness stage demand provenance — realization chooses physical behavior only afterward",
         "resolution ladder collects exact facts enumerates lawful applications eliminates impossible candidates projects implied relation descriptor conversion able witness world-fact result-pack and stage then publishes exactly one candidate rejects zero and fails AMBIGUITY on more than one incomparable candidate before any realization",
         "ambiguity is fail-closed — never resolve by first or nearest declaration most-recently-injected function-before-table table-before-relation or more-specific unless specificity is mathematically defined",
-        "table(key) is ordinary access — read versus write is chosen by demand not a different operation x = table(key) demands a value table(key) = value demands a place with no setter ontology and no get set or call relation invented merely for uniformity",
-        "static . and application () assert different author knowledge and stay distinct source faces user.name is one statically known structural projection user(\"name\") is application with key operand — . is never computed a runtime key uses table(key) and ordinal row(1) is ordinary application with no [] at or get unless at is an independently meaningful domain relation",
+        "table[key] is computed projection — read versus write is chosen by demand not a different operation x = table[key] demands a value table[key] = value demands a place with no setter ontology and no get set relation invented merely for uniformity; application table(key) applies the value and never indexes it",
+        "static . application () and projection [] assert different author knowledge and stay distinct source faces user.name is one statically known structural projection user[key] is computed projection — . is never computed a runtime aggregate key uses table[key] and ordinal row[1] is projection not application",
         "colon is source subject orientation only — after resolution it is still an application with subject relation and operands never a methodcall or membercall graph kind",
         "currying is not automatic add(1)(2) is ordinary chained application whose first application yields a callable — partial application specializes only where the relation or application descriptor admits it or a known callable value returns another applicable value",
         "metatable and __call resolve ONCE — the resolver publishes the exact lawful application and the backend never runs try-function-else-table-else-__call priority code sealed metatable gives dynamic dispatch zero and a still-dynamic metatable keeps runtime dispatch because semantic alternatives remain",
         "operators and conversion are application sugar a + b resolves to the arithmetic relation application and value:to(str) is explicit relation application only when the target is not inferable — grammar owns punctuation precedence the resolver owns meaning and lowering consumes the complete resolved application never reconstructing a fact from spelling ast host types or table/function category",
         "cost falls monotonically with knowledge dynamic table and key to generic lookup known shape and exact key to direct field offset sealed table and exact demanded field to scalar replacement constant to no table at runtime — the source form is identical throughout",
     }
-    canon = { "f(x)", "table(key)", "table(key) = value", "user.name", "add(1)(2)", "text:find(pattern)", "a + b" }
-    deny  = { "table[key]", "table:get(key)", "get(table, key)", "table:set(key, value)", "f:call(x)", "MethodCall", "member_call", "CoercionKind", "function-before-table precedence" }
+    canon = { "f(x)", "table[key]", "table[key] = value", "user.name", "add(1)(2)", "text:find(pattern)", "a + b" }
+    deny  = { "table(key) as aggregate indexing", "table:get(key)", "get(table, key)", "table:set(key, value)", "f:call(x)", "MethodCall", "member_call", "CoercionKind", "function-before-table precedence" }
     fails = "a table-call function-call accessor method-call indexing or conversion kingdom; precedence or fallback resolution; automatic currying; or lowering that reconstructs facts from spelling ast host types or category"
 }
 
@@ -4273,7 +4275,7 @@ catalogzero = law{
         "json is a format or descriptor not an authority-bearing world",
         "do not rename a catalog to preserve it — seq to sequence keeps the architecture",
         "examples of deleted second authorities: seq relation catalog semantic/io semantic/fs encoding catalog builtin catalog directive catalog producer relation ledger",
-        "get and set are not registered relations unless a domain independently has those verbs — ordinary access is table(key) and table(key) = value",
+        "get and set are not registered relations unless a domain independently has those verbs — computed aggregate access is table[key] and table[key] = value",
         "from is deleted when it only reverses to — conversion orients on source",
         "derive compose project realize are not user relations merely because the compiler uses those words internally",
     }
@@ -5686,8 +5688,8 @@ inferone = law{
         "resolver algorithm for each demanded slot — (1) direct satisfaction (2) exactly one direct bridge relation (3) infer projection when relation named but projection missing (4) world witness or diagnose (5) failure obligations consumed (6) ambiguity requires explicit source",
         "inference priority order — direct semantic satisfaction then exact descriptor or refinement then exact relation projection then unique direct bridge then unique world witness then realization — never conversion before satisfaction",
         "syntax priority for authors and canonicalizer — omit inferred relation then omit inferred projection then subject orientation then true operands only then genuine curry only then world explicit only when ambiguity requires it",
-        "do not spell relation wrappers that add no semantic choice — f(x) not f:call(x) and table(key) not table:get(key) when application already conveys the relation",
-        "do not spell static qualification when an unqualified binding is uniquely resolved and human-obvious — env(HOME) preferred over os.env(HOME) — keep qualification only when it disambiguates actual semantic identity",
+        "do not spell relation wrappers that add no semantic choice — f(x) not f:call(x) and table[key] not table:get(key) when projection already conveys the relation",
+        "do not spell static qualification when an unqualified binding is uniquely resolved and human-obvious — env[HOME] preferred over os.env[HOME] — keep qualification only when it disambiguates actual semantic identity",
         "projection is explicit in the GRAPH not necessarily SOURCE — injection is explicit in the GRAPH not necessarily SOURCE — protocol witness is explicit in the GRAPH not necessarily SOURCE — world witness is explicit in the GRAPH not necessarily SOURCE — closure capture is explicit in the GRAPH never manually declared when resolver can derive it",
         "no source inject interject use-world capability declaration or @{...} dependency world list when use already determines the dependency",
         "human clarity is the only secondary guard — if compiler inference is unique but omission would make the operation genuinely unclear to a human retain the irreducible meaningful relation — source:read() may remain because source() is semantically opaque to a human",
@@ -5712,7 +5714,7 @@ inferone = law{
         "f(value:to(i64)) when parameter slot already exactly demands i64 and bridge is unique",
         "x: str = value:to(str) when unique conversion proof exists",
         "f:call(x) or table:get(key) when application already conveys the relation",
-        "os.env(HOME) or qualified path when unqualified binding is uniquely resolved and human-obvious",
+        "os.env[HOME] or qualified path when unqualified binding is uniquely resolved and human-obvious",
         "checked = value:validate() checked:normalize() — naming an intermediate used once when value:validate():normalize() preserves identity",
         "bulk regex deletion of to without graph identity proof",
         "multiple bridge steps for one demanded slot",
@@ -6180,12 +6182,12 @@ indexprojection = law{
     kind  = .invariant
     holds = .static
     binds = {
-        "ordinary access is application table(key)",
-        "do not use table(\"field\") when static field identity exists and use table.field instead",
-        "a genuinely dynamic key remains an ordinary application operand",
-        "application syntax does not force table realization",
+        "computed aggregate access is projection table[key] — never application table(key)",
+        "do not use table[\"field\"] when static field identity exists and use table.field instead",
+        "a genuinely dynamic aggregate key remains a computed projection operand",
+        "projection syntax does not force table realization",
     }
-    fails = "bracket access or literal-string application when named projection exposes static identity"
+    fails = "literal-string bracket access when named projection exposes static identity or application standing in for aggregate indexing"
 }
 
 worldvaluefield = law{

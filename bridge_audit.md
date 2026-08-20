@@ -16,8 +16,8 @@ For every effectful canonical relation, derive exact authority requirement in se
 
 | Relation | Subject | World | Authority Requirement | Graph Fact |
 |----------|---------|-------|----------------------|------------|
-| `env("HOME")` | `env` | `os` | `os.env` table fact under `os` world | `os:env(id)(key)` application |
-| `args(1)` | `args` | `os` | `os.args` table fact under `os` world | `os:args(n)` application |
+| `env["HOME"]` | `env` | `os` | `os.env` table fact under `os` world | computed projection |
+| `args[1]` | `args` | `os` | `os.args` table fact under `os` world | computed projection |
 | `stdin:read()` | `stdin` | `io` | `io.stdin` endpoint fact | `io.stdin:read()` application |
 | `stdout:write(text)` | `stdout` | `io` | `io.stdout` endpoint fact | `io.stdout:write(text)` application |
 | `stderr:write(text)` | `stderr` | `io` | `io.stderr` endpoint fact | `io.stderr:write(text)` application |

@@ -76,22 +76,22 @@ point: {
 
 An ordinary callable uses parentheses. A descriptor applies to structured
 content with braces. A statically known field or key uses a named projection or
-structured label. A computed key is an ordinary operand to application; it does
-not introduce an indexing syntax or semantic kingdom:
+structured label. A computed aggregate key is a computed projection; it does
+not introduce an indexing-application or semantic kingdom:
 
 ```id
 user.name
-table(key)
+table[key]
 
 {
     name = value
 }
 ```
 
-Canonical Idol does not use `[]`, including for a dynamic key. A foreign source
-law may recognize its own bracket form inside that law's grammar projection,
-but the source form remains provenance and cannot become canonical Idol syntax
-or semantic authority.
+Parentheses remain ordinary application and never aggregate indexing; a foreign
+source law may recognize its own bracket or call indexing inside that law's
+grammar projection, but the source form remains provenance and cannot become
+canonical Idol application semantics.
 
 None of these faces implies a table, record, object, allocation, place, nested
 container, hash lookup, boxing, or dispatch.

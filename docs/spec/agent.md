@@ -175,7 +175,7 @@ Do not create wrapper ontologies:
     some
 for ordinary lookup/search absence.
 Example:
-    home = env("HOME")
+    home = env["HOME"]
 may produce:
     text | nil
 Missing:
@@ -673,10 +673,10 @@ is canonical only if:
     y is genuinely a static projected callable/accessor VALUE
     x is not the semantic subject of relation y
 Example allowed:
-    env("HOME")
+    env["HOME"]
 if `env` is uniquely reachable and human-obvious.
 Keep static qualification only when it disambiguates actual semantic identity:
-    os.env("HOME")
+    os.env["HOME"]
 Example forbidden:
     gate.idiom(diff)
 when gate is the subject.
@@ -752,9 +752,9 @@ Relation-name elision requires BOTH:
     human obviousness
 Good:
     f(x)
-    env("HOME")
-    args(1)
-    row(column)
+    env["HOME"]
+    args[1]
+    row[column]
 because the application/access intent is obvious.
 Normally prefer explicit:
     source:read()
@@ -773,33 +773,29 @@ Syntax density must not reduce semantic clarity.
 
 ## XXIX. ACCESS-ONE
 
-Canonical ordinary access:
-    env("HOME")
-    args(1)
-    table(key)
-    row(column)
-Do not canonically use:
+Canonical computed projection:
     env["HOME"]
     args[1]
     table[key]
-when normal application/access semantics suffice.
-Do not use:
+    row[column]
+These are computed/indexed projections — not ordinary application. Aggregate lookup uses `env["HOME"]`, `args[1]`, `table[key]`, `row[column]` and never application. `env("HOME")`, `args(1)`, `table(key)`, and `row(column)` are ordinary application only when the subject is genuinely callable. Do not use:
     x:get(k)
     x:set(k,v)
     x:call(...)
-These duplicate application/place semantics.
-Long-term place-producing application may support:
-    x(k) = value
-when `x(k)` resolves to a place.
+These duplicate projection/application semantics.
+Long-term place-producing projection may support:
+    x[k] = value
+when `x[k]` resolves to a place.
 
-## XXX. BRACKET-ZERO
+## XXX. PROJECTION-AND-APPLICATION-ONE
 
-Canonical Idol does not use `[]` for ordinary access, including when the key is
-computed. Use `table(key)`; whether the application yields a value or place is
-resolved from demand and facts rather than punctuation. A foreign source law may
-recognize foreign bracket syntax only inside that law-qualified source
-projection. The spelling remains source provenance and never becomes Idol
-grammar or semantic authority.
+Computed aggregate access uses brackets `table[key]` — computed projection.
+Application `table(key)` applies the value; it never indexes. Whether the
+projection yields a value or place is resolved from demand and facts rather
+than punctuation. A foreign source law may recognize foreign bracket or
+parenthesis indexing only inside that law-qualified source projection. The
+spelling remains source provenance and never becomes Idol grammar or semantic
+authority.
 
 ## XXXI. HAS-ZERO
 
@@ -814,7 +810,7 @@ when ordinary lookup/search already returns value-or-nil.
 Bad:
     if table:has(key)
 Prefer:
-    value = table(key)
+    value = table[key]
     if value
         ...
 Bad:
@@ -859,7 +855,7 @@ compiler-unique but human-ambiguous: retain the irreducible meaningful relation
 
 FACT-COMPOSITION-INFER-ONE: projection, injection, capture, protocol/world
 satisfaction, and target selection are graph facts — normally zero source syntax.
-Usage derives dependencies (`stdout:write(env("HOME"))`, not `@{ os.env
+Usage derives dependencies (`stdout:write(env["HOME"])`, not `@{ os.env
 io.stdout }`).
 
 Case A — satisfaction:
@@ -1111,12 +1107,12 @@ A platform may provide an ordinary world-role table:
         cwd
 These semantic values are supplied by execution ingress/realization.
 Canonical ambient access:
-    env("HOME")
-    args(1)
+    env["HOME"]
+    args[1]
 when uniquely reachable and human-obvious.
 Explicit static projection only when qualification disambiguates:
-    os.env("HOME")
-    os.args(1)
+    os.env["HOME"]
+    os.args[1]
 `env` and `args` are accessors.
 Do not implement them in canonical Idol source using:
     getenv
@@ -1166,7 +1162,7 @@ semantics). If Idol source eventually expresses it, use ordinary table
 construction — not a world DSL.
 
 Explicit qualification in source remains valid when ambiguity must be avoided:
-    mock.env("HOME")
+    mock.env["HOME"]
 
 ## XLV. ESSENTIAL MODEL
 
@@ -1185,7 +1181,7 @@ Everything else is compiler bookkeeping.
 
 Example source:
 
-    home = env("HOME")
+    home = env["HOME"]
     text = path:read()
     stdout:write(text)
 
@@ -1308,13 +1304,13 @@ Origin/authority lineage is preserved in graph witnesses; no CombinedWorld objec
 ## L. World Ambiguity
 
 If two observably distinct witnesses could satisfy the same authority demand,
-unqualified `env("HOME")` is **ambiguous** — fail.
+unqualified `env["HOME"]` is **ambiguous** — fail.
 
 Never choose by declaration order, nearest declaration, test preference, default
 world, path, or namespace priority. Select explicitly:
 
 ```id
-mock.env("HOME")
+mock.env["HOME"]
 ```
 
 or supply a unique execution configuration. Rejecting OS/IO is witness omission at
@@ -2790,8 +2786,8 @@ Compact function:
 Tail-return body:
     normalize = (value) value:validate():normalize()
 Accessor:
-    home = env("HOME")
-    first = args(1)
+    home = env["HOME"]
+    first = args[1]
 Meaningful relation:
     stdout:write(source:read())
 Search + nil refinement:
@@ -2805,7 +2801,7 @@ that conversion is actually the intended semantic operation.
 Conversion explicit when necessary:
     count = text:to(i64)
 Static projection followed by accessor:
-    home = mock.os.env("HOME")
+    home = mock.os.env["HOME"]
 Parent relation from child file:
     gate:idiom(diff)
 No:

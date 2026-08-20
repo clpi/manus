@@ -72,14 +72,16 @@ normalize = (value) value:validate():normalize()
 
 **Subject relation:** `x:y(...)`
 
-**Application / ordinary access:** `x(...)`
+**Application:** `x(...)` — ordinary relation application and grouping
 
-**Canonical lookup:**
+**Computed projection:** `x[key]`
+
+**Canonical aggregate lookup:**
 
 ```id
-table(key)
-env("HOME")
-args(1)
+table[key]
+env["HOME"]
+args[1]
 ```
 
 **Meaningful relation verbs remain:**
@@ -119,20 +121,21 @@ Canonical Idol **must not introduce:**
   compiler/host/runtime/emit directive namespace, and never `@.member` or
   `@:member` — `@` already accesses, so `@.` and `@:` are INVALID
 
-**Ordinary access must not be:**
+**Aggregate access must not be:**
 
-- `x:get(k)`, `x:set(k,v)`, `x[k]`
+- `x:get(k)`, `x:set(k,v)`, `get(x, k)`, `set(x, k, v)` — computed projection is
+  `x[k]`, and its place face is `x[k] = v`
 
 **Ordinary application must not be:**
 
-- `f:call(x)`, `f.call(x)`
+- `f:call(x)`, `f.call(x)`, `table(key)` standing in for aggregate indexing
 
 **Presence must not be reboxed as:** `has`, `contains`, `exists`, `present`
 
 **Use instead:**
 
 ```id
-value = x(key)
+value = x[key]
 position = text:find(pattern)
 # then nil/value refinement
 ```
@@ -151,10 +154,12 @@ One application algebra owns:
 There are **not** separate semantic kingdoms for: function call, method call,
 table call, accessor call, protocol call, builtin call, generic call.
 
-A table may admit application. `table(key)` does **not** secretly mean
-`table:get(key)`. Resolver determines application semantics.
-
-If application yields a place: `table(key) = value` — no separate setter ontology.
+A table may admit application when the applied value is genuinely callable.
+`table(key)` does **not** mean aggregate indexing and does **not** secretly mean
+`table:get(key)`. Aggregate access is computed projection `table[key]`; its
+read/write face is selected by demand: `table[key] = value` — no separate
+setter ontology. The resolver determines application semantics from facts, never
+from call shape.
 
 ---
 
@@ -715,13 +720,10 @@ Source syntax is a **disambiguation surface**, not a transcript of graph facts.
 
 **Relation/method inference:** hierarchy is `no relation spelling` → `explicit
 relation only when necessary`. `source:read()` stays explicit because
-`source()` is human-ambiguous — `read` carries useful intent. `env("HOME")` is
-better than `env:get("HOME")`. `f(x)` not `f:call(x)`.
+`source()` is human-ambiguous — `read` carries useful intent. `env["HOME"]` is better than `env:get("HOME")`. `f(x)` not `f:call(x)`.
 
 **Projection inference:** do not write a projection merely because the compiler
-internally has a projection edge. Keep `os.env("HOME")` only when it
-disambiguates two different env values; when exactly one env is admitted and
-obvious, `env("HOME")` is canonical. Progression: fully inferred → smallest
+internally has a projection edge. Keep `os.env["HOME"]` only when it disambiguates two different env values; when exactly one env is admitted and obvious, `env["HOME"]` is canonical. Progression: fully inferred → smallest
 static projection required for uniqueness. Never fully-qualified-everything by
 default.
 
@@ -735,7 +737,7 @@ intermediate only when the name contributes semantic information the chain does
 not (multiple consumers, or human-clarity place identity).
 
 Do not spell relation wrappers that add no semantic choice: `f(x)`, not
-`f:call(x)`; `table(key)`, not `table:get(key)`.
+`f:call(x)`; `table[key]`, not `table:get(key)`.
 
 **Human clarity guard:** if compiler inference is unique but omission would make
 the operation genuinely unclear to a human, retain the irreducible meaningful
@@ -786,7 +788,7 @@ Do not write:
 merely because the graph needs those facts. Usage derives dependencies:
 
 ```id
-stdout:write(env("HOME"))
+stdout:write(env["HOME"])
 ```
 
 The graph can contain projection, world requirement, witness, application,
@@ -856,7 +858,7 @@ Users normally do **not** write explicit world declarations. `@{ k=v }` is
 world derivation by injection (`thing@{ k=v }` interjection), not an import,
 dependency list, or universe-construction ceremony. Graph injection normally
 has **zero** source syntax — usage derives exact world/protocol dependencies
-(`stdout:write(env("HOME"))`, not an explicit `@{ os.env io.stdout }` block).
+(`stdout:write(env["HOME"])`, not an explicit `@{ os.env io.stdout }` block).
 Explicit `@{ k=v }` injection exists only when fact composition is not uniquely
 inferable from use.
 

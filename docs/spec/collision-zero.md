@@ -48,7 +48,7 @@ application:
 "scripts/proof/bit.id":read()
 audit("scripts/proof/bit.id")("@view")
 args(1)
-env("KEY")
+env["KEY"]
 ```
 
 Never teach or write `semantic[ingest]`, `proof[view]`, `home[slot]`, or

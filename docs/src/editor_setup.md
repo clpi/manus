@@ -30,10 +30,11 @@ exact current frontier before claiming formatter, highlighter, parser, or LSP
 coverage. File association, diagnostics, and document symbols are useful editor
 projections; they are not evidence of grammar or semantic ownership.
 
-Canonical tooling must preserve the delimiter law: computed access is ordinary
-application, such as `table(key)`, while statically known identity uses named
-projection or a structured label. Source faces remain provenance after
-resolution and never select physical representation.
+Canonical tooling must preserve the delimiter law: computed aggregate access
+uses indexed projection, such as `table[key]`, while statically known identity
+uses named projection or a structured label. Parentheses remain ordinary
+application. Source faces remain provenance after resolution and never select
+physical representation.
 
 Tooling suggestions must also preserve PREDICATE-ZERO. They expose semantic
 facts, cases, refinements, unknowns, and transitions rather than generating

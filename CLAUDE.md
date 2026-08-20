@@ -188,10 +188,10 @@ value:len()  length relation
 `            reserved; never implicit process execution
 
 ()           ordinary application and grouping
+[]           computed or indexed projection
 {}           structured packs, descriptor application, and bounded homes
 .            statically named projection
 :            admitted descriptor, subject, and home faces by grammar role
-```
 
 Lua long strings/comments, dash comments, hash length, and historical
 single-quoted text are compatibility forms only. Parser grammar decisions use
@@ -199,11 +199,12 @@ lexer token identity and generated grammar roles, never token-text spelling
 lists. `GAP-145` records the unclosed lexical implementation boundary.
 
 Use the smallest source face that exposes the strongest fact already known.
-Computed and indexed access remains ordinary application: `table(key)` and
-`row(1)`. Prefer `value.name` to `value("name")` and `{ name = value }` to a
-structured field whose known name is reconstructed through a string. Do not
-preserve dot, application, or table syntax as semantic operation kinds, and do
-not let any source face choose physical representation.
+Computed or indexed aggregate access uses projection: `table[key]` and
+`row[1]`. Ordinary `value(args)` remains application and never table indexing.
+Prefer `value.name` to `value["name"]` and `{ name = value }` to a structured
+field whose known name is reconstructed through a string. Do not preserve dot,
+bracket, application, or table syntax as semantic operation kinds, and do not
+let any source face choose physical representation.
 
 Canonical callable result demand is on the binding:
 
@@ -283,7 +284,7 @@ There is no canonical `value:to()` rung.
 
 **FACT-COMPOSITION-INFER-ONE:** projection, injection, capture, protocol/world
 satisfaction are graph facts — normally zero source syntax. Usage derives
-dependencies (`stdout:write(env("HOME"))`, not `@{ os.env io.stdout }`).
+dependencies (`stdout:write(env["HOME"])`, not `@{ os.env io.stdout }`).
 
 **Source-density order:** omit redundant binding → relation → projection →
 conversion → world/protocol composition → retain minimum for uniqueness + human

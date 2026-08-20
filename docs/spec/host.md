@@ -43,12 +43,12 @@ bootstrap or realization provenance only — delete or push outward, never exten
 Renaming host spellings without semantic decomposition is forbidden:
 
 ```text
-os.args()        → os.args(n)   (ordinary application to the table under os world)
-os.getenv(k)     → os.env(k) / os.env(k) =
+os.args()        → os.args[n]   (computed projection on the table under os world)
+os.getenv(k)     → os.env[k] / os.env[k] =
 io.read()        → stdin:read() / path:read()  (read relation on subject)
 io.write(x)      → sink:write(x)  (write relation on subject)
 io.popen(cmd)    → structured command + process world
-environment[k]   → os.env(k)    (environment is not a thing)
+environment[k]   → os.env[k]    (environment is not a thing)
 ```
 
 when the same host model remains underneath.
@@ -71,8 +71,8 @@ cwd
 root singletons and not an `environment` entity. Access:
 
 ```id
-os.args(1)
-os.env("KEY")
+os.args[1]
+os.env["KEY"]
 ```
 
 ordinary anchored homes such as:
@@ -114,8 +114,8 @@ command = args(1)    # bare value without an os namespace when argv is meant
 Canonical:
 
 ```id
-command = os.args(1)
-target = os.args(2)
+command = os.args[1]
+target = os.args[2]
 ```
 
 Launcher ingress:
@@ -130,7 +130,7 @@ source.
 ## Environment (`os.env`)
 
 `environment` is **not a thing**. Environment is the ordinary `env` table under
-the `os` world — index, call, and assign like any table field.
+the `os` world — project, read, and assign like any table field.
 
 Wrong:
 
@@ -142,9 +142,9 @@ mode = environment["IDOLTREE"]
 Canonical:
 
 ```id
-mode = os.env("IDOLTREE")
-os.env("KEY") = value
-os.env(key) = value
+mode = os.env["IDOLTREE"]
+os.env["KEY"] = value
+os.env[key] = value
 ```
 
 Foreign `getenv` / `environ` / `GetEnvironmentVariable` are bootstrap ingress
@@ -352,8 +352,8 @@ Do not reach for host APIs.
 ## Absolute closure
 
 ```text
-There is no native os.args()    — use os.args(n) under os world
-There is no native os.getenv   — use os.env(k); environment is not a thing
+There is no native os.args()    — use os.args[n] under os world
+There is no native os.getenv   — use os.env[k]; environment is not a thing
 There is no native io.read     — use stdin:read() / path:read(); never readable adjective
 There is no native popen       — commands are structured values under process authority
 There is no stdin-only architecture — input/output/error are endpoint values

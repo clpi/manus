@@ -30,16 +30,17 @@ Four consequences worth having in hand before you write anything:
    and `:size` / `:length` do not occur. What survives is thousands of names that
    glue a subject onto the front of an edge. Decompose to `subject:edge`.
 3. **An injected world adds REACH and never takes a NAME.** `os` is
-   default-injected, so `env(k)` and `arg(i)` are canonical and the anchored
-   `os.env(k)` only disambiguates a contested scope. A local, parameter, or
+   default-injected, so `env[k]` and `arg[i]` are canonical and the anchored
+   `os.env[k]` only disambiguates a contested scope. A local, parameter, or
    declared relation spelled `env` MUST WIN — this was violated and silently
    returned a descriptor address.
 4. **LAW-16: one irreducible lowercase word, singular.** `arg`, not `args`. The
-   subject of `write` is the STREAM (`stdout:write(x)`, never `io.write`); `a[i]`
-   canonicalises to `a(i)` because access IS application; control words are
-   ordinary bindings (`return x` is `return(x)`); parentheses the author wrote
-   are KEPT and never relitigated by a printer; `void` is INFERRED, never
-   written; `end`, `then`, `elseif` and `fun` are Lua vestigials.
+   subject of `write` is the STREAM (`stdout:write(x)`, never `io.write`); a
+   computed aggregate key uses `a[i]`, while `a(i)` remains ordinary
+   application; control words are ordinary bindings (`return x` is
+   `return(x)`); parentheses the author wrote are KEPT and never relitigated by
+   a printer; `void` is INFERRED, never written; `end`, `then`, `elseif` and
+   `fun` are Lua vestigials.
 
 **Read the executable version of this section before writing Idol:**
 
@@ -189,7 +190,7 @@ and documentation projections implemented in Idol.
 
 **No `std` anywhere** in new canonical source — not a namespace, table, prelude,
 or migration alias. Vocabulary reaches through layout/home/world projection
-(`path:read()`, `json:encode`, `os.env(k)`, `io:read`). The `lib/std/` tree is
+(`path:read()`, `json:encode`, `os.env[k]`, `io:read`). The `lib/std/` tree is
 filesystem bootstrap provenance until renamed (GAP-157); it is not authority.
 
 Every canonicality result has one of four states: `canonical`, `migratable`,
@@ -236,7 +237,7 @@ Presumptively noncanonical shapes whenever written or touched:
 - import, admission, or loader syntax (`req`, `require`, `import`, `module`,
   `namespace`, `include`, `use(`, `inject`, `admit`, privileged `*bind`) —
   reachability is scope and home projection only;
-- a literal key applied through `table(key)` when admitted named projection or
+- a literal key applied through `table[key]` when admitted named projection or
   a structured field exposes the same identity directly;
 - an adjective protocol or trait kingdom (`readable`, `writable`, `iterable`,
   `source: readable`, `trait`, `impl`, `@implements`, `concept`) — relation
@@ -402,7 +403,7 @@ Read `docs/spec/host.md` before any work touching arguments, environment,
 process, pipe, shell, transport, endpoints, cwd, PATH, or backend selection.
 
 Idol source does not call host OS APIs as semantics. **`environment` is not a
-thing** — use `os.env` table under `os` world. **`args`** is `os.args(n)`, not
+thing** — use `os.env` table under `os` world. **`args`** is `os.args[n]`, not
 `os.args()`. **I/O** uses `io:read` / `io:write`, not `io.read` / `io.write`.
 Do not add `std.*`, `proc.*`, or `ir.*` to new source.
 
@@ -582,8 +583,8 @@ Before writing a nontrivial Idol expression, answer:
 
 Prefer the representation that preserves the most semantic information and the
 largest lawful realization set with the least source ceremony. Static identity
-looks static; computed identity uses ordinary application `table(key)`; neither
-face chooses representation.
+uses `value.member`; computed aggregate projection uses `value[key]`; ordinary
+application uses `value(args)`. No face chooses representation.
 
 ## Concurrent lanes
 
@@ -643,7 +644,7 @@ or algorithm family.
 - Do not decide canonicality with string-detector or substring architecture (`codens`, `luahash`, `layout`, `has(...)` admission patterns); route through production lexer → parser → graph → obligations (`GAP-124`).
 - Harness must reason in Idol (pre-task reduction, semantic diff, deletion order), not as a conventional coding agent; read `docs/spec/harness-projection.md` and `.agents/HARNESS.md` before choosing work; audit seams for BRIDGE-DEATH, UNKNOWN-ONE, OWNERSHIP-ZERO, and PROFILE-EVIDENCE before introducing bridges or helpers.
 - Use `"{}"` text composition, not `..`; nested `{expr:to(str)}` inside string literals does not interpolate — build dynamic needles at expression level; `using`/`using(x)` forbidden — `use(x)` only; do not refactor `scripts/grammarconvergence.id` without explicit approval.
-- No `std.*`, `table.*`, `string.*`, or `math.*` namespace dispatch — subject-first edges only (`text:match`, `xs:keys`); reject `callable`/`*able`/codec/encoding protocol identities and lexical-substitution migrations; prove semantic reduction (DELETE/DECOMPOSE before rename), not respelling; never `==` against bool/nil/0/1/true/false or other sentinels; `environment` is not a thing — use `os.env(k)`, `os.args(n)`, `io:read`/`io:write`. No `match`/`case`/`switch`/pattern-object subsystem — control flow is refinement `if` (subject evaluated exactly once; branch heads are constraints on the already-evaluated subject; multi-arm refinement is unordered with no first-match/most-specific/declaration-order/trait precedence; nested `if` expresses order). Express every design from the small irreducible basis (id, fact, binding, value, table, descriptor, world, home, projection, application, relation, able, pack, place, refinement, demand, effect, witness, stage, provenance, transformation, realization) and reject match/pattern/trait/interface/module/namespace/import/service/context/result/option/future/promise/async/stream/iterator/macro/unsafe/capability/reflection unless irreducibility is proven.
+- No `std.*`, `table.*`, `string.*`, or `math.*` namespace dispatch — subject-first edges only (`text:match`, `xs:keys`); reject `callable`/`*able`/codec/encoding protocol identities and lexical-substitution migrations; prove semantic reduction (DELETE/DECOMPOSE before rename), not respelling; never `==` against bool/nil/0/1/true/false or other sentinels; `environment` is not a thing — use `os.env[k]`, `os.args[n]`, `io:read`/`io:write`. No `match`/`case`/`switch`/pattern-object subsystem — control flow is refinement `if` (subject evaluated exactly once; branch heads are constraints on the already-evaluated subject; multi-arm refinement is unordered with no first-match/most-specific/declaration-order/trait precedence; nested `if` expresses order). Express every design from the small irreducible basis (id, fact, binding, value, table, descriptor, world, home, projection, application, relation, able, pack, place, refinement, demand, effect, witness, stage, provenance, transformation, realization) and reject match/pattern/trait/interface/module/namespace/import/service/context/result/option/future/promise/async/stream/iterator/macro/unsafe/capability/reflection unless irreducibility is proven.
 
 ## Learned Workspace Facts
 
@@ -658,4 +659,4 @@ or algorithm family.
 - `scripts/census/foreign.id` persists repo/work paths via `/tmp/idol-foreign-*` shell indirection across `gatecap` calls until cross-call binding corruption is fixed.
 - Migration law sources live under `gate/` (`idiom.id`, `path.id`, `host.id`, `architecture.id`, `census.id`, `admission.id`) — executable status, including the `idiom.id` blocker, is stated above; legacy `scripts/*gate.id` are debt; host boundary law is `docs/spec/host.md` (host firewall until `GAP-154`). Compound-word (LAW-ONE) vocabulary and logic already live in `gate/path.id` (`words` string plus `known()`/`sep()`/`mash()`/`tail()`) and `gate/idiom.id` (`words` plus `compound()`) — reuse them; enforce no compounds across the whole repo, decomposing each to existing edges/nodes, to hierarchy, or to elimination.
 - Serialize heavy commands through `tools/node/dev/idol-lock` (shell mutex); MCP manifest servers are **`idol`** (raw-text bootstrap status/head/orient transport) and **`idol-native`** (sibling checkout: check/symbols/graph/run/gates/orient/sim/explain/fmt/asm) per `tools/node/dev/mcp.manifest.json` — the retired pre-rename transports were removed, not disabled; integration gate `zig build mcp-gate` → `./tools/node/dev/mcp-gate`.
-- Compiled Idol bootstrap quirks: `string.match` with `\t` patterns returns nil (use `string.find` + `string.char(9)`); `"\n"` may be literal backslash-n (use `string.char(10)` for line splits); file-scope `os.env(k)` may be empty at module init (defer env reads to runtime/bootstrap ingress).
+- Compiled Idol bootstrap quirks: `string.match` with `\t` patterns returns nil (use `string.find` + `string.char(9)`); `"\n"` may be literal backslash-n (use `string.char(10)` for line splits); file-scope `os.env[k]` may be empty at module init (defer env reads to runtime/bootstrap ingress).
