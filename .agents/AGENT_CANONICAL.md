@@ -23,6 +23,8 @@ router; it contains no language law and no volatile project status.
 | Executed compiler frontier | `docs/bootstrap.md` |
 | Progress metrics dashboard | `docs/METRICS.md` |
 | Priority compass | `docs/AGENT_ALIGNMENT.md` |
+| Architecture injection (agent orientation) | `.agents/ARCHITECTURE_INJECTION.md` |
+| Optimization frontier census (research map) | `docs/history/optimization-frontier-census.md` |
 | Tech debt + FTCFTW workstream | `.agents/TECH_DEBT_WORKSTREAM.md` |
 | Ownership and gates | `.agents/AGENT_COORDINATION.md` |
 | Release readiness ledger | `.agents/RELEASE_READINESS.md` |
@@ -37,8 +39,10 @@ historical corpus file is an authority.
 ## Session start
 
 1. Read `AGENTS.md` (orientation + mechanical preflight), the constitution,
-   `CLAUDE.md`, `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the
-   scope-specific authority.
+   `CLAUDE.md`, `.agents/ARCHITECTURE_INJECTION.md`, `docs/AGENT_ALIGNMENT.md`,
+   `docs/bootstrap.md`, and the scope-specific authority. Consult
+   `docs/history/optimization-frontier-census.md` before proposing new optimizer
+   subsystems or IRs.
 2. Run `tools/node/dev/orient` and inspect its exact authority/frontier output.
 3. Inspect `git status --short --branch`, current HEAD, recent commits,
    `tools/node/dev/claim list`, every current `gaps/GAP-*.md`, and `git stash list`.

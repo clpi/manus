@@ -23,6 +23,29 @@ Full debt inventory and workstream order: `.agents/TECH_DEBT_WORKSTREAM.md`.
 Canonicality splits permanently: **new debt introduced = 0** (gates on changed
 lines) vs **existing corpus debt** (historical ledgers; substantial).
 
+## Architectural mandate (agent orientation)
+
+Read `.agents/ARCHITECTURE_INJECTION.md` before design or implementation work.
+It is **not law** — it orients agents on Idol as an information-propagation system
+and on the extended optimization state:
+
+`identity · facts · observations · demand · laws · change · correspondence ·
+search · proof · cost · world · realization`
+
+Hard constraints from that injection:
+
+- DNIR must not silently drop semantic facts recoverable from the graph.
+- Sema must not route meaning by hard-coded relation names.
+- Canonical source must not be weakened for immature backends.
+- New capabilities belong in the one graph unless irreducibility is proved.
+- External plugins may propose candidates and witnesses, not relation meaning.
+
+The **optimization frontier census**
+(`docs/history/optimization-frontier-census.md`) is the master “nothing important
+may remain invisible” map — supercompilation, relational solving, trusted-core
+certificates, boundary contraction, semantic linking, and related families. Route
+new research there before inventing parallel subsystems.
+
 ## One target
 
 Move monotonically to:
