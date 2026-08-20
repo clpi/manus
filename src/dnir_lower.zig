@@ -545,6 +545,208 @@ fn collectModuleConsts(
     return out;
 }
 
+fn mergeAliasModuleConsts(
+    alloc: std.mem.Allocator,
+    alias: []const u8,
+    foreign: *const ModuleConsts,
+    out: *ModuleConsts,
+) Error!void {
+    var it = foreign.ints.iterator();
+    while (it.next()) |entry| {
+        const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ alias, entry.key_ptr.* });
+        try out.ints.put(alloc, key, entry.value_ptr.*);
+    }
+    var sit = foreign.strs.iterator();
+    while (sit.next()) |entry| {
+        const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ alias, entry.key_ptr.* });
+        try out.strs.put(alloc, key, entry.value_ptr.*);
+    }
+}
+
+fn loadSiblingModuleConsts(
+    alloc: std.mem.Allocator,
+    from_file: []const u8,
+    alias: []const u8,
+) Error!?ModuleConsts {
+    const dir = std.fs.path.dirname(from_file) orelse return null;
+    const path = std.fmt.allocPrint(alloc, "{s}{c}{s}.id", .{ dir, std.fs.path.sep, alias }) catch return null;
+    defer alloc.free(path);
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    const src = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), threaded.io(), path, alloc, .unlimited) catch return null;
+    defer alloc.free(src);
+    const facts = @import("lexer_bridge.zig").sourceFacts(path);
+    var lex = @import("lexer.zig").Lexer.initFacts(src, path, facts);
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = lex.family == @import("lexer_bridge.zig").family_canon;
+    const parsed = parser.parse_module() catch return null;
+    return collectModuleConsts(alloc, &parsed) catch return null;
+}
+
+fn exprCollectModuleFieldAliases(
+    alloc: std.mem.Allocator,
+    expr: *const ast.Expr,
+    seen: *std.StringHashMapUnmanaged(void),
+) Error!void {
+    switch (expr.*) {
+        .field => |f| {
+            if (f.obj.* == .name) {
+                const alias = f.obj.name.ident;
+                if (!seen.contains(alias)) {
+                    const key = try alloc.dupe(u8, alias);
+                    try seen.put(alloc, key, {});
+                }
+            }
+            try exprCollectModuleFieldAliases(alloc, f.obj, seen);
+        },
+        .index => |x| {
+            try exprCollectModuleFieldAliases(alloc, x.obj, seen);
+            try exprCollectModuleFieldAliases(alloc, x.key, seen);
+        },
+        .call => |c| {
+            try exprCollectModuleFieldAliases(alloc, c.func, seen);
+            for (c.args) |a| try exprCollectModuleFieldAliases(alloc, a, seen);
+        },
+        .method_call => |m| {
+            try exprCollectModuleFieldAliases(alloc, m.obj, seen);
+            for (m.args) |a| try exprCollectModuleFieldAliases(alloc, a, seen);
+        },
+        .binop => |b| {
+            try exprCollectModuleFieldAliases(alloc, b.lhs, seen);
+            try exprCollectModuleFieldAliases(alloc, b.rhs, seen);
+        },
+        .unop => |u| try exprCollectModuleFieldAliases(alloc, u.operand, seen),
+        .if_expr => |ie| {
+            try exprCollectModuleFieldAliases(alloc, ie.cond, seen);
+            try exprCollectModuleFieldAliases(alloc, ie.then_expr, seen);
+            try exprCollectModuleFieldAliases(alloc, ie.else_expr, seen);
+        },
+        .try_expr => |x| try exprCollectModuleFieldAliases(alloc, x.operand, seen),
+        .unwrap_expr => |x| try exprCollectModuleFieldAliases(alloc, x.operand, seen),
+        .await_expr => |x| try exprCollectModuleFieldAliases(alloc, x.operand, seen),
+        .contains_expr => |x| {
+            try exprCollectModuleFieldAliases(alloc, x.lhs, seen);
+            try exprCollectModuleFieldAliases(alloc, x.rhs, seen);
+        },
+        .sequence => |s| {
+            for (s.exprs) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
+        },
+        .range => |r| {
+            try exprCollectModuleFieldAliases(alloc, r.start, seen);
+            try exprCollectModuleFieldAliases(alloc, r.end, seen);
+            if (r.step) |st| try exprCollectModuleFieldAliases(alloc, st, seen);
+        },
+        .func_expr => |f| try blockCollectModuleFieldAliases(alloc, &f.body, seen),
+        .table => |t| {
+            for (t.fields) |fld| {
+                const val = switch (fld) {
+                    .named => |x| x.val,
+                    .spread => |x| x,
+                    else => continue,
+                };
+                try exprCollectModuleFieldAliases(alloc, val, seen);
+            }
+        },
+        else => {},
+    }
+}
+
+fn stmtCollectModuleFieldAliases(
+    alloc: std.mem.Allocator,
+    stmt: *const ast.Stmt,
+    seen: *std.StringHashMapUnmanaged(void),
+) Error!void {
+    switch (stmt.*) {
+        .local_decl => |d| {
+            for (d.inits) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
+        },
+        .const_decl => |d| try exprCollectModuleFieldAliases(alloc, d.val, seen),
+        .global_decl => |d| {
+            for (d.inits) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
+        },
+        .assign => |a| {
+            for (a.targets) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
+            for (a.values) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
+        },
+        .call_stmt => |c| try exprCollectModuleFieldAliases(alloc, c.expr, seen),
+        .expr_stmt => |c| try exprCollectModuleFieldAliases(alloc, c.expr, seen),
+        .do_block => |d| try blockCollectModuleFieldAliases(alloc, &d.body, seen),
+        .while_loop => |w| {
+            try exprCollectModuleFieldAliases(alloc, w.cond, seen);
+            try blockCollectModuleFieldAliases(alloc, &w.body, seen);
+        },
+        .repeat_loop => |r| {
+            try blockCollectModuleFieldAliases(alloc, &r.body, seen);
+            try exprCollectModuleFieldAliases(alloc, r.cond, seen);
+        },
+        .if_stmt => |f| {
+            if (f.binding) |b| try exprCollectModuleFieldAliases(alloc, b.expr, seen);
+            try exprCollectModuleFieldAliases(alloc, f.cond, seen);
+            try blockCollectModuleFieldAliases(alloc, &f.then, seen);
+            for (f.elseifs) |ei| {
+                try exprCollectModuleFieldAliases(alloc, ei.cond, seen);
+                try blockCollectModuleFieldAliases(alloc, &ei.body, seen);
+            }
+            if (f.else_body) |eb| try blockCollectModuleFieldAliases(alloc, &eb, seen);
+        },
+        .num_for => |n| {
+            try exprCollectModuleFieldAliases(alloc, n.start, seen);
+            try exprCollectModuleFieldAliases(alloc, n.stop, seen);
+            if (n.step) |st| try exprCollectModuleFieldAliases(alloc, st, seen);
+            try blockCollectModuleFieldAliases(alloc, &n.body, seen);
+        },
+        .gen_for => |g| {
+            for (g.iters) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
+            try blockCollectModuleFieldAliases(alloc, &g.body, seen);
+        },
+        .ret => |r| {
+            for (r.vals) |e| try exprCollectModuleFieldAliases(alloc, e, seen);
+        },
+        .func_decl => |fd| {
+            for (fd.func.params) |param| {
+                if (param.default_val) |dv| try exprCollectModuleFieldAliases(alloc, dv, seen);
+            }
+            try blockCollectModuleFieldAliases(alloc, &fd.func.body, seen);
+        },
+        .alias_def => |ad| {
+            for (ad.methods) |m| {
+                try blockCollectModuleFieldAliases(alloc, &m.func.body, seen);
+            }
+        },
+        else => {},
+    }
+}
+
+fn blockCollectModuleFieldAliases(
+    alloc: std.mem.Allocator,
+    block: *const ast.Block,
+    seen: *std.StringHashMapUnmanaged(void),
+) Error!void {
+    for (block.stmts) |*stmt| try stmtCollectModuleFieldAliases(alloc, stmt, seen);
+    if (block.tail_expr) |t| try exprCollectModuleFieldAliases(alloc, t, seen);
+}
+
+fn mergeForeignModuleConstsForFields(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    compiling_path: []const u8,
+    out: *ModuleConsts,
+) Error!void {
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    defer {
+        var it = seen.keyIterator();
+        while (it.next()) |key| alloc.free(key.*);
+        seen.deinit(alloc);
+    }
+    try blockCollectModuleFieldAliases(alloc, &mod.body, &seen);
+    var it = seen.keyIterator();
+    while (it.next()) |alias| {
+        if (out.ints.contains(alias.*)) continue;
+        var foreign = (try loadSiblingModuleConsts(alloc, compiling_path, alias.*)) orelse continue;
+        defer foreign.deinit(alloc);
+        try mergeAliasModuleConsts(alloc, alias.*, &foreign, out);
+    }
+}
+
 pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.Module {
     var diagnostic: Diagnostic = .{};
     return lowerModuleObserved(alloc, mod, &diagnostic);
@@ -558,7 +760,7 @@ pub fn lowerModuleObserved(
     diagnostic.reset();
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    _ = graph.liftModuleWithCalls(mod, "<dnir>") catch return error.OutOfMemory;
+    _ = graph.liftModuleWithCalls(mod, mod.file) catch return error.OutOfMemory;
     var occurrences = try OccurrenceBridge.init(alloc, &graph, diagnostic);
     defer occurrences.deinit();
     const module = try lowerModuleFromGraph(alloc, mod, &graph, &occurrences, diagnostic, false);
@@ -912,6 +1114,11 @@ fn lowerModuleFromGraph(
             if (module_consts.strs.fetchRemove(name.*)) |e| alloc.free(e.key);
         }
     }
+    const compiling_path = if (graph.module_path) |p|
+        if (std.mem.indexOf(u8, p, "<") != null) mod.file else p
+    else
+        mod.file;
+    try mergeForeignModuleConstsForFields(alloc, mod, compiling_path, &module_consts);
 
     var records: std.ArrayList(dnir.RecordDesc) = .empty;
     errdefer {
