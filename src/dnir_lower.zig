@@ -4359,10 +4359,13 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             if (osMemberOf(expr)) |m| {
                 if (m.face == .value and m.result == .str) break :blk true;
             }
+            if (checkedScalarFieldProjection(ctx, expr)) |ty| break :blk ty == .str;
             if (f.obj.* != .name) break :blk false;
             var buf: [512]u8 = undefined;
             const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ f.obj.name.ident, f.field }) catch break :blk false;
-            break :blk ctx.module_consts.strs.contains(key);
+            if (ctx.module_consts.strs.contains(key)) break :blk true;
+            if (ctx.locals.get(key)) |slot| break :blk ctx.str_slots.contains(slot);
+            break :blk false;
         },
         // The expression-if produces text only when BOTH arms do. One str arm
         // and one integer arm is a slot whose type depends on the branch taken,
@@ -4830,12 +4833,17 @@ fn lowerCheckedRecordCallAssign(
         .ty = descriptor,
     });
     try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = record.name, .field = name });
-    for (record.fields) |fname| {
+    for (record.fields, 0..) |fname, fi| {
         const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
         defer ctx.alloc.free(fk);
         if (ctx.locals.contains(fk)) continue;
         const fslot = ctx.freshTemp();
         try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), fslot);
+        if (fi < record.kinds.len) switch (record.kinds[fi]) {
+            .str => try ctx.str_slots.put(ctx.alloc, fslot, {}),
+            .f64 => try ctx.f64_slots.put(ctx.alloc, fslot, {}),
+            .i64 => {},
+        };
     }
 }
 
@@ -6589,9 +6597,34 @@ fn checkedOperandAdmitsDirectGp(ctx: *const LowerCtx, expr: *const Expr) bool {
 /// here would be a second opinion about the same fact, and the two ends of a
 /// call disagreeing about how many registers a record occupies is a wrong
 /// ANSWER rather than a refusal — both sides still compile.
+fn homogeneousF64Record(rec: dnir.RecordDesc) bool {
+    if (rec.fields.len == 0 or rec.kinds.len != rec.fields.len) return false;
+    for (rec.kinds) |k| {
+        if (k != .f64) return false;
+    }
+    return true;
+}
+
+/// Record operands whose fields are resident as `name.field` locals and may
+/// cross in registers. Homogeneous f64 aggregates use a different ABI and are
+/// excluded here and refused by `operandNamesRecord` instead.
+fn expandableRecordForName(ctx: *LowerCtx, name: []const u8) ?dnir.RecordDesc {
+    var best: ?dnir.RecordDesc = null;
+    for (ctx.records) |rec| {
+        if (rec.fields.len == 0 or rec.fields.len > max_reg_record_fields) continue;
+        if (homogeneousF64Record(rec)) continue;
+        if (!recordFieldsPresent(ctx, name, rec)) continue;
+        if (best) |prev| {
+            if (rec.fields.len <= prev.fields.len) continue;
+        }
+        best = rec;
+    }
+    return best;
+}
+
 fn operandRecordStorage(ctx: *LowerCtx, expr: *const Expr) ?dnir.RecordDesc {
     if (expr.* != .name) return null;
-    return scalarRecordForName(ctx, expr.name.ident);
+    return expandableRecordForName(ctx, expr.name.ident);
 }
 
 /// Does this operand name a record AT ALL — including one whose fields the
@@ -6608,7 +6641,9 @@ fn operandRecordStorage(ctx: *LowerCtx, expr: *const Expr) ?dnir.RecordDesc {
 /// what happened when this predicate was deleted rather than narrowed.
 fn operandNamesRecord(ctx: *LowerCtx, expr: *const Expr) bool {
     if (expr.* != .name) return false;
+    if (expandableRecordForName(ctx, expr.name.ident) != null) return false;
     for (ctx.records) |rec| {
+        if (!homogeneousF64Record(rec)) continue;
         if (recordFieldsPresent(ctx, expr.name.ident, rec)) return true;
     }
     return false;
@@ -6812,7 +6847,21 @@ fn evaluateCheckedScalarOperands(
         // (`take(mk(1))`) has a backend record region rather than exploded
         // locals, so it lands here — refused, with the operand law named.
         if (operand.descriptor == .@"struct") {
-            std.debug.print("eval struct operand\n", .{});
+            if (operand.expression.* == .name) {
+                if (expandableRecordForName(ctx, operand.expression.name.ident)) |rec| {
+                if (count + rec.fields.len <= max_reg_record_fields) {
+                    for (rec.fields) |fname| {
+                        const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ operand.expression.name.ident, fname });
+                        defer ctx.alloc.free(key);
+                        const slot = ctx.locals.get(key) orelse
+                            return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                        values[count] = .{ .local = slot };
+                        count += 1;
+                    }
+                    continue;
+                }
+            }
+            }
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
         }
         // AND A RECORD THE ARGUMENT REGISTERS CANNOT CARRY IS STILL REFUSED BY
@@ -6822,7 +6871,6 @@ fn evaluateCheckedScalarOperands(
         // Falling through would stage the record's own slot, which holds no
         // value.
         if (operandNamesRecord(ctx, operand.expression)) {
-            if (operand.expression.* == .name) std.debug.print("namesRecord {s}\n", .{operand.expression.name.ident});
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
         }
         if (count >= values.len) {
@@ -6957,7 +7005,12 @@ fn lowerCheckedScalarCall(
     try checkedScalarResult(ctx.diagnostic, descriptor);
 
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
+    const raw_operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
+    var filtered_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
+    const operands = if (callValueForApplication(ctx, application)) |call_value|
+        filterCheckedCallOperands(call_value, raw_operands, &filtered_storage)
+    else
+        raw_operands;
     var values: [max_direct_scalar_args]dnir.Value = undefined;
     const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
@@ -8389,17 +8442,7 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const 
 /// means passing its fields in consecutive argument slots, the same convention
 /// the f64 kernel path already uses.
 fn scalarRecordForName(ctx: *LowerCtx, name: []const u8) ?dnir.RecordDesc {
-    for (ctx.records) |rec| {
-        if (rec.fields.len == 0) continue;
-        var all_scalar = true;
-        for (rec.kinds) |k| {
-            if (k == .f64) all_scalar = false;
-        }
-        if (!all_scalar) continue;
-        if (!recordFieldsPresent(ctx, name, rec)) continue;
-        return rec;
-    }
-    return null;
+    return expandableRecordForName(ctx, name);
 }
 
 fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const u8) Error!dnir.Value {
