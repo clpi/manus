@@ -8009,7 +8009,7 @@ pub const CodeGen = struct {
         }
     }
 
-    fn populate_foreign_aliases(self: *CodeGen) E!void {
+    pub fn populate_foreign_aliases(self: *CodeGen) E!void {
         const map = self.foreign_records orelse return;
         var it = map.iterator();
         while (it.next()) |entry| {

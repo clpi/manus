@@ -840,6 +840,7 @@ pub const Sema = struct {
         self.foreign_homes.put(self.alloc, key, answer) catch {
             self.alloc.free(key);
         };
+        if (answer) |entry| self.registerForeignModuleDescriptors(entry.module);
         return answer;
     }
 
@@ -2556,6 +2557,115 @@ pub const Sema = struct {
         module.functions = .empty;
         module.deinit(self.alloc);
     }
+
+    /// Publish descriptor blocks from a loaded Idol foreign home into
+    /// `foreign_records`, so native precheck and codegen share the same
+    /// table-type facts as C-header imports.
+    fn registerForeignModuleDescriptors(self: *Sema, mod: *const ast.Module) void {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .alias_def) continue;
+            const ad = &stmt.alias_def;
+            if (ad.type_params != null) continue;
+            if (types.nominalRepr(ad.name) != null) continue;
+            if (self.foreign_records.contains(ad.name)) continue;
+
+            var rt = self.foreignAliasRecordType(ad) catch continue;
+            const name = self.alloc.dupe(u8, ad.name) catch {
+                releaseForeignRecordRt(self.alloc, &rt);
+                continue;
+            };
+            const gop = self.foreign_records.getOrPut(self.alloc, name) catch {
+                self.alloc.free(name);
+                releaseForeignRecordRt(self.alloc, &rt);
+                continue;
+            };
+            if (gop.found_existing) {
+                self.alloc.free(name);
+                releaseForeignRecordRt(self.alloc, &rt);
+            } else {
+                gop.key_ptr.* = name;
+                gop.value_ptr.* = rt;
+            }
+        }
+    }
+
+    fn foreignAliasRecordType(self: *Sema, ad: *const ast.AliasDef) !RT {
+        const fields = try self.mergedForeignAliasFields(ad);
+        defer self.alloc.free(fields);
+        const owned_fields = try self.alloc.dupe(types.FieldType, fields);
+
+        var rt = RT{
+            .table_type = .{
+                .fields = owned_fields,
+                .is_packed = false,
+                .align_n = null,
+                .ffi_name = null,
+            },
+        };
+        if (ad.target) |target| {
+            switch (target) {
+                .record => |rec| types.applyLayout(&rt, types.layoutFromAttrs(rec.layout, ad.attributes)),
+                else => types.applyTableShapeAttrs(&rt, ad.attributes),
+            }
+        } else {
+            types.applyTableShapeAttrs(&rt, ad.attributes);
+        }
+        return rt;
+    }
+
+    fn mergedForeignAliasFields(self: *Sema, ad: *const ast.AliasDef) ![]types.FieldType {
+        var merged: std.ArrayList(types.FieldType) = .empty;
+        errdefer merged.deinit(self.alloc);
+
+        if (ad.parent) |parent_name| {
+            if (self.foreign_records.get(parent_name)) |parent_rt| {
+                if (parent_rt == .table_type) {
+                    try merged.appendSlice(self.alloc, parent_rt.table_type.fields);
+                }
+            }
+        }
+        for (ad.extra_parents) |extra_name| {
+            if (self.foreign_records.get(extra_name)) |extra_rt| {
+                if (extra_rt == .table_type) {
+                    try merged.appendSlice(self.alloc, extra_rt.table_type.fields);
+                }
+            }
+        }
+
+        if (ad.target) |target| {
+            switch (target) {
+                .record => |rec| {
+                    for (rec.fields) |field| {
+                        const field_typ = try self.resolve_type(field.typ);
+                        try self.appendOrOverrideForeignField(&merged, field.name, field_typ);
+                    }
+                },
+                else => {},
+            }
+        } else {
+            for (ad.fields) |field| {
+                const field_typ = try self.resolve_type(field.typ);
+                try self.appendOrOverrideForeignField(&merged, field.name, field_typ);
+            }
+        }
+        return try merged.toOwnedSlice(self.alloc);
+    }
+
+    fn appendOrOverrideForeignField(
+        self: *Sema,
+        merged: *std.ArrayList(types.FieldType),
+        name: []const u8,
+        field_typ: RT,
+    ) !void {
+        for (merged.items) |*existing| {
+            if (std.mem.eql(u8, existing.name, name)) {
+                existing.typ = field_typ;
+                return;
+            }
+        }
+        try merged.append(self.alloc, .{ .name = name, .typ = field_typ });
+    }
+
 
     fn seed_globals(self: *Sema) void {
         const names = seedGlobalNames();
@@ -4731,7 +4841,7 @@ pub const Sema = struct {
                 // declaration is the authority for its own return type in
                 // exactly the way it is for a same-home relation.
                 if (foreign_callee) |foreign| {
-                    const declared = types.resolve(foreign.decl.func.ret_type, null, self.alloc) catch RT.any;
+                    const declared = try self.resolve_type(contract_ret_expr(&foreign.decl.func));
                     const slots = subjectSlotArgs(foreign.decl, c.args);
                     try self.recordApplicationInHome(expr, foreign.decl, slots.subject, slots.arguments, declared, foreign.home.home);
                     return declared;

@@ -4648,8 +4648,10 @@ fn do_compile(
     native_scalar_precheck.test_mode = test_mode;
     native_scalar_precheck.bench_mode = bench_mode;
     native_scalar_precheck.bench_backend = global_bench_backend;
+    native_scalar_precheck.foreign_records = &ps.sem.foreign_records;
     native_scalar_precheck.populate_alias_defs(&ps.mod) catch {};
     native_scalar_precheck.populate_record_aliases(&ps.mod) catch {};
+    native_scalar_precheck.populate_foreign_aliases() catch {};
     native_scalar_precheck.populate_enum_defs(&ps.mod) catch {};
     native_scalar_precheck.populate_func_bodies(&ps.mod) catch {};
     var link_refusal: usize = 0;
