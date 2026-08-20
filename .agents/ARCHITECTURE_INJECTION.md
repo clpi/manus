@@ -58,6 +58,14 @@ computation, automatic differentiation, program synthesis, hardware synthesis,
 distributed placement, and foreign adaptation become **different queries over the
 same graph**, not separate semantic kingdoms.
 
+## Diagnostic and refusal shape (target)
+
+Failures should surface **explanation-minimal** missing or conflicting facts —
+not cascades of parser/backend symptoms. Optimization refusals likewise: the
+smallest fact blocking realization R (`alias(x,y) unknown`, not forty downstream
+reasons). Negative knowledge, exclusion sets, and contradiction as unreachable
+region are first-class graph facts (see census § XXXV).
+
 ## Hard rules for agents
 
 1. **Do not filter semantic facts at DNIR.** DNIR is a realization artifact;
@@ -95,6 +103,11 @@ observe region
 Homeomorphic embedding, memoized configurations, constructor specialization,
 deforestation-as-consequence, interprocedural fusion, and demand-aware
 equivalence are **one engine**, not named passes.
+
+The same engine admits a **generalize ↔ specialize** axis (anti-unification upward,
+specialization downward) and **semantic factoring** — store `common skeleton +
+varying facts` instead of N expanded copies. Re-generalization is a first-class
+response to specialization explosion and code-size FTCFTW, not an afterthought.
 
 ## Relational solving (target shape)
 

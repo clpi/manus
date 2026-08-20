@@ -17,6 +17,11 @@ closure, demand, witnessed transformations, candidate realization economics.
 The remaining work is expanding the fact/law/candidate universe until the
 optimization surface is **open-ended** rather than manually enumerated.
 
+Guiding question for each family:
+
+**what information about a computation does Idol still not model, and what
+physical work becomes removable once that information is available?**
+
 ## Universal optimization state
 
 See `.agents/ARCHITECTURE_INJECTION.md` for agent orientation. Census entries
@@ -312,6 +317,226 @@ distributed partitioning; distributed fusion; compute-vs-data migration; edge/se
 split. Privacy, differential privacy, crypto/MPC/homomorphic/enclave realization
 when world requires. Verified secure compilation extends refinement to
 noninterference/capability laws.
+
+---
+
+---
+
+## XXIX. Generalize ↔ specialize (anti-unification axis)
+
+The complement of specialization is not merely “don’t specialize.” Given several
+relations sharing structure, discover the **least general generalization**: common
+semantic skeleton plus varying facts.
+
+| Capability | Graph expression |
+|---|---|
+| Anti-unification / LGG | correspondence + fact deltas over shared skeleton |
+| Automatic generic discovery | generalize ↑ then specialize ↓ as fundamental ops |
+| Shared specialization | one skeleton, many fact patches |
+| Common machine-code extraction | identical demanded behavior after quotient |
+| Descriptor abstraction | factor repeated descriptor shape |
+| Optimizer-rule generalization | law candidates from specialized instances |
+| Cross-package semantic deduplication | correspondence across compilation units |
+| Re-generalization for code size | undo specialization explosion when economics flip |
+
+Engine axis:
+
+```text
+generalize ↑
+  semantic identity + facts
+specialize ↓
+```
+
+Pairs with supercompilation (§ II) and semantic factoring (§ XXX).
+
+---
+
+## XXX. Semantic factoring & minimum-description state
+
+Search for smallest factorization of repeated semantic structure:
+
+```text
+common meaning + small varying facts
+```
+
+instead of storing N independently expanded copies. Optimization objective:
+
+**minimize description length of retained semantic state while preserving every
+useful distinction.**
+
+Applies to: instantiated generics, specialized relations, target/world variants,
+parser states, descriptor families, machine variants, proof objects, compiler
+analysis states. Material compile-time memory win when paired with fact liveness
+(§ XXXVII).
+
+---
+
+## XXXI. Specialization economics & semantic clone control
+
+Specialization itself obeys realization economics — not an inlining threshold:
+
+```text
+specialize · share · outline · generalize · merge · discard
+```
+
+Trade runtime gain, code size, I-cache, compile work, profile frequency, future
+reuse.
+
+| Capability | Graph expression |
+|---|---|
+| Explosion control | cost facts + re-generalization triggers |
+| Semantic clone merging | merge equivalent demanded behavior before machine code |
+| Semantic outlining | inverse of inlining — extract shared subregion when size/cache wins |
+| Version lattice | partial order of versions by required facts |
+| Version subsumption | delete dominated versions |
+| Cluster synthesis | profile-driven version creation |
+| Version migration | correspondence retains specialization across revisions |
+| Semantic multiversioning | versions = meaningful fact sets; ISA is just another fact |
+
+---
+
+## XXXII. Granularity as a physical degree of freedom
+
+Granularity is not only SIMD width. A computation may realize per element, vector,
+cache line, page, batch, task, process, or machine — jointly optimized with
+representation and placement.
+
+| Pattern | Graph expression |
+|---|---|
+| Granularity algebra | realization fact over batch grain |
+| Conversion elimination | contract `granularity A → convert → B` across boundaries |
+| Database morsels / network packets / GPU blocks | same abstraction, different domains |
+
+Generalizes fusion/fission (§ XXVI) with an explicit grain axis.
+
+---
+
+## XXXIII. Dimensional, shape, tensor, and sparse facts (without tensor kingdom)
+
+Dimensions and shape are **facts**, not a permanent Tensor semantic identity.
+
+| Capability | Graph expression |
+|---|---|
+| Unit/dimension semantics | length, time, mass, bytes, cycles, joules as facts |
+| Impossible comparisons rejected | contradiction / unreachable region |
+| Scale elimination & conversion motion | law-guided rewrite |
+| Symbolic shape analysis | stride, alignment, tile, SIMD width, GPU map, footprint |
+| Shape polymorphism | sequence/table descriptor + dimensional facts |
+| Contraction planning | ordering, matmul lowering, transpose elimination, layout, tiling, fusion, device, precision — XLA/TVM ideas without tensor IR |
+| Sparse structure family | pattern, density, block, sorted index, symmetry, banded |
+| Sparse realizations | dense, CSR, CSC, COO, bitmap, block, implicit, procedural |
+| Structural zeros | proven zero/default/identity → physical absence |
+| Symmetry exploitation | store/compute equivalence-class representatives only |
+| Group-action quotienting | quotient state space when group action preserves observations |
+
+---
+
+## XXXIV. Abstraction, precision, and compiler self-query
+
+Analysis precision becomes a **resource** chosen by expected optimization gain.
+
+| Capability | Graph expression |
+|---|---|
+| Predicate abstraction | track only predicates sufficient for demand |
+| CEGAR | refine only relevant distinctions when coarse abstraction fails |
+| Lazy precision | unknown → range → finite → exact on consumer demand |
+| Precision tiers | cheap/coarse · medium · exact/expensive as cost facts |
+| State-space reduction | invariants eliminate impossible states before search |
+| Abstract-state minimization | merge states with identical downstream facts |
+| Canonical representatives | equivalent states → same cache/search key |
+| Semantic query planning | optimize compiler’s own graph queries (order, index, join, batch) |
+| Analysis fusion | fuse traversals when cheaper than independent scans |
+| Analysis sharing | one range producer for all consumers |
+
+Compiler analysis explosion is itself optimizable graph state (pairs with § XXX).
+
+---
+
+## XXXV. Negative knowledge, contradiction, and minimal explanations
+
+Positive facts dominate today; **negative and contradictory facts** are equally
+first-class.
+
+| Fact class | Graph expression |
+|---|---|
+| Negative knowledge | cannot alias, cannot trap, cannot be NaN, world excludes X |
+| Exclusion sets | `target ∈ {A,B,C,D}` minus learned exclusions, not collapse to unknown |
+| Contradiction | unreachable semantic region → delete code / shrink search |
+| Unsat core | minimal conflicting fact set for diagnostics and agent repair |
+| Explanation-minimal diagnostics | smallest missing/conflicting fact set explaining failure |
+| Optimization refusal minimization | minimal fact blocking realization R (`idol why-not` built-in) |
+
+Truth lattice extends beyond unknown/absent/exact:
+
+```text
+unknown · absent · possible · exact · contradictory
+```
+
+---
+
+## XXXVI. Guards, profiles, and dynamic patching
+
+Runtime guards are synthesized artifacts subject to the same economics as code.
+
+| Capability | Graph expression |
+|---|---|
+| Minimal guard synthesis | smallest runtime check sufficient for optimization |
+| Guard sharing | hoist common guard; downstream consumes refinement |
+| Guard implication | emit B only when A does not already imply B |
+| Guard ordering | decision-tree synthesis by cost, failure rate, downstream gain |
+| Profile/world sealing | guards disappear when deployment facts establish them |
+| Proof-directed guard removal | incremental proof invalidates guard realization only |
+| Dynamic semantic patching | new fact patches one machine region, not whole compile |
+| Hot-code / hot-data relocation | layout change without identity/provenance change |
+| Runtime representation migration | inline vector → hash → frozen table when phase changes |
+| Phase detection | construction · mutation · steady read · shutdown |
+| Freeze-point inference | immutability triggers representation transition |
+| Init/runtime separation | initialization machinery absent from steady state |
+| Destructive initialization | reuse construction memory for final state |
+
+---
+
+## XXXVII. Compiler-graph lifetimes & physical realization of Compiler B
+
+The compiler graph itself needs lifetime and placement optimization.
+
+| Capability | Graph expression |
+|---|---|
+| Ephemeral semantic facts | scratch proofs, indexes, candidate sets evicted after last consumer |
+| Fact liveness | which facts have future consumers? (analogous to value liveness) |
+| Proof liveness | retain witnesses only for demanded validation/diagnostics/reuse |
+| Provenance liveness | full provenance externalized or compressed in release builds |
+| Semantic cold storage | rarely queried facts → compressed / on-disk |
+| Store vs recompute | same trade as compiled programs, applied to compiler state |
+| Compile-time memory hierarchy | hot / RAM / compressed / persistent / recomputable tiers |
+| Semantic prefetching | predict next fact columns during traversal |
+| Layout autotuning | column order, packing, index form, chunk size for compiler workloads |
+| Target-specific compiler realization | different physical graph layout per host while same semantics |
+| Self-specializing Compiler B | fixed grammar/world/target/policy removes generic machinery |
+| Compiler feature DCE | reachability builds compiler variants (Idol→ARM64 release only) |
+| Compiler staging | precompute grammar tables, law closures, target facts, standard proofs |
+| Snapshot image / zero-deserialization startup | mmap pre-resolved immutable semantic pages |
+| Shared semantic pages | copy-on-write / fork-friendly immutable compiler libraries |
+| Daemon as realization | cold exe · mmap snapshot · persistent daemon · distributed service |
+
+---
+
+## XXXVIII. Determinism, distribution, and untrusted optimization
+
+Separate **semantic correspondence** from **physical coordinate**.
+
+| Capability | Graph expression |
+|---|---|
+| Deterministic parallel evaluation | independent fact production, deterministic evidence where demanded |
+| IDs without hash identity | dense resident ids may differ; correspondence stays exact |
+| Canonical semantic serialization | evidence/caching order independent of id allocation |
+| Merkle acceleration | hash identifies candidate unchanged regions; verify exact facts |
+| Proof-carrying distributed compilation | worker returns region + subject + witness + closure |
+| Untrusted build farm | coordinator validates; heterogeneous workers safe |
+| Optimization marketplace | external provider proposes candidate + proof + cost; core validates |
+| Hardware vendor semantic providers | vendor supplies lawful realization candidates without source intrinsics |
+
+ONE-ID law preserved: hashes accelerate search; they do not become semantic identity.
 
 ---
 
