@@ -1,6 +1,9 @@
 FTCFTW coverage ledger — the actual backlog (GAP-172 FTC-017 / K6 / K5)
 =======================================================================
 
+Human index of the 79-family / 875-row external census (section → law → GAP →
+status): docs/history/optimization-frontier-census.md (supplements 688–799, 800–875)
+
 This is the search-space coverage graph made concrete: for every semantic
 optimization opportunity, does a CANDIDATE PROVIDER, a VERIFIER, a TARGET model,
 and a BENCHMARK exist? An opportunity with ZERO candidate providers is FTCFTW

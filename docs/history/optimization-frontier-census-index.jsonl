@@ -1,0 +1,875 @@
+{"id": "1", "section": "I", "section_name": "P0 foundations", "title": "General relation-law algebra, not only ad hoc optimizer predicates", "graph": "C", "status": "partial", "census_rank": "2"}
+{"id": "2", "section": "I", "section_name": "P0 foundations", "title": "Relations between relations", "graph": "C", "status": "partial", "census_rank": "2"}
+{"id": "3", "section": "I", "section_name": "P0 foundations", "title": "Galois-connection / abstraction-refinement machinery", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "4", "section": "I", "section_name": "P0 foundations", "title": "General monotone fixpoint engine", "graph": "C", "status": "partial", "census_rank": "4"}
+{"id": "5", "section": "I", "section_name": "P0 foundations", "title": "Refinement as a first-class transformation law", "graph": "C", "status": "partial", "census_rank": "6"}
+{"id": "6", "section": "I", "section_name": "P0 foundations", "title": "Exact semantic correspondence across incarnations", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "7", "section": "I", "section_name": "P0 foundations", "title": "Complete observation algebra", "graph": "C", "status": "partial", "census_rank": "1"}
+{"id": "8", "section": "I", "section_name": "P0 foundations", "title": "Complete demand algebra", "graph": "C", "status": "partial", "census_rank": "1"}
+{"id": "9", "section": "I", "section_name": "P0 foundations", "title": "Change / derivative algebra", "graph": "C", "status": "partial", "census_rank": "5"}
+{"id": "10", "section": "I", "section_name": "P0 foundations", "title": "Proof object economy", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "11", "section": "II", "section_name": "Partial evaluation, staging and Futamura", "title": "Interpreter specialization as a general compiler mechanism", "graph": "D", "status": "law", "census_rank": "8"}
+{"id": "12", "section": "II", "section_name": "Partial evaluation, staging and Futamura", "title": "Second Futamura projection for compiler generation", "graph": "D", "status": "law", "census_rank": ""}
+{"id": "13", "section": "II", "section_name": "Partial evaluation, staging and Futamura", "title": "Third Futamura projection / compiler-generator capability", "graph": "D", "status": "law", "census_rank": ""}
+{"id": "14", "section": "II", "section_name": "Partial evaluation, staging and Futamura", "title": "Binding-time analysis as graph facts", "graph": "D", "status": "law", "census_rank": ""}
+{"id": "15", "section": "II", "section_name": "Partial evaluation, staging and Futamura", "title": "Multi-stage residualization", "graph": "D", "status": "law", "census_rank": ""}
+{"id": "16", "section": "II", "section_name": "Partial evaluation, staging and Futamura", "title": "Cross-stage persistence with exact provenance", "graph": "D", "status": "law", "census_rank": ""}
+{"id": "17", "section": "II", "section_name": "Partial evaluation, staging and Futamura", "title": "Staged interpreter collapse", "graph": "D", "status": "law", "census_rank": ""}
+{"id": "18", "section": "II", "section_name": "Partial evaluation, staging and Futamura", "title": "Runtime specialization without permanent JIT architecture", "graph": "D", "status": "law", "census_rank": ""}
+{"id": "19", "section": "II", "section_name": "Partial evaluation, staging and Futamura", "title": "Self-specializing compiler components", "graph": "D", "status": "law", "census_rank": ""}
+{"id": "20", "section": "II", "section_name": "Partial evaluation, staging and Futamura", "title": "Stage-polymorphic standard relations", "graph": "D", "status": "law", "census_rank": ""}
+{"id": "21", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Sparse equivalence classes attached to semantic ids", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "22", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Conditional rewrite laws", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "23", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Typed/lawset-aware equality saturation", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "24", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Demand-directed saturation", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "25", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Cost-aware saturation scheduling", "graph": "C", "status": "protocol", "census_rank": "7"}
+{"id": "26", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Persistent equivalence knowledge across builds", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "27", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Cross-relation rewrite synthesis", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "28", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Bidirectional rewrite orientation", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "29", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Equivalence modulo representation", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "30", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Equivalence modulo world/effect constraints", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "31", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Higher-order equivalence", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "32", "section": "III", "section_name": "Equality saturation, term rewriting and theorem-guided search", "title": "Rewrite-law provenance and trust", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "33", "section": "IV", "section_name": "Superoptimization and synthesis", "title": "Instruction superoptimization", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "34", "section": "IV", "section_name": "Superoptimization and synthesis", "title": "Semantic-region superoptimization", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "35", "section": "IV", "section_name": "Superoptimization and synthesis", "title": "CEGIS / counterexample-guided synthesis", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "36", "section": "IV", "section_name": "Superoptimization and synthesis", "title": "SMT-backed synthesis", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "37", "section": "IV", "section_name": "Superoptimization and synthesis", "title": "Sketch-guided synthesis", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "38", "section": "IV", "section_name": "Superoptimization and synthesis", "title": "Program-by-example optimization", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "39", "section": "IV", "section_name": "Superoptimization and synthesis", "title": "Agent-generated optimization candidates", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "40", "section": "IV", "section_name": "Superoptimization and synthesis", "title": "Competitor-binary mining", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "41", "section": "IV", "section_name": "Superoptimization and synthesis", "title": "Rule generalization", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "42", "section": "IV", "section_name": "Superoptimization and synthesis", "title": "Search across algorithm families, not just instruction families", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "43", "section": "IV", "section_name": "Superoptimization and synthesis", "title": "Offline synthesis databases per target", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "44", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Translation validation for every important transformation", "graph": "C", "status": "partial", "census_rank": "12"}
+{"id": "45", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Translation validation for final graph-region → machine region", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "46", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Target instruction formal semantics", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "47", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Memory-model formal semantics", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "48", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "ABI refinement validation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "49", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Foreign-boundary refinement validation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "50", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Proof-carrying machine fragments", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "51", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Proof-carrying cache entries", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "52", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Proof-carrying profile specialization", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "53", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Proof-carrying JIT patches", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "54", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Proof-carrying agent-generated code", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "55", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Differential semantic execution as fallback proof technique", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "56", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Randomized / fuzz refinement controls where formal proof is unavailable", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "57", "section": "V", "section_name": "Verified compilation / proof-carrying compilation", "title": "Proof minimization and replay", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "58", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Affine relation detection from graph relations", "graph": "D", "status": "research", "census_rank": "9"}
+{"id": "59", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Iteration-domain sets", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "60", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Access relations", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "61", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Dependence polyhedra", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "62", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Loop interchange", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "63", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Loop tiling/blocking", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "64", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Loop fusion/fission/distribution", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "65", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Loop skewing when cost model justifies it", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "66", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Loop reversal", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "67", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Strip mining", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "68", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Loop coalescing", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "69", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Software pipelining", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "70", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Wavefront parallelization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "71", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Automatic prefetch scheduling", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "72", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "DMA scheduling for accelerators", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "73", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Memory-layout transformations derived from access geometry", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "74", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Affine index linearization/delinearization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "75", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Dependence-guided parallel execution", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "76", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Piecewise/quasi-affine extension", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "77", "section": "VI", "section_name": "Polyhedral and affine compilation", "title": "Presburger reasoning where useful", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "78", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Semantic computation vs physical schedule separation", "graph": "D", "status": "partial", "census_rank": "11"}
+{"id": "79", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Schedule search as realization search", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "80", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Loop ordering/tile sizes/unroll/vector widths as realization facts", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "81", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Thread/block mapping search", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "82", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "GPU occupancy-aware schedule search", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "83", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Cache hierarchy-aware tiling", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "84", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "NUMA-aware placement", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "85", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Prefetch distance tuning", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "86", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Parallel grain-size tuning", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "87", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Persistent tuning database", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "88", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Cross-program reuse of schedule knowledge", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "89", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Cross-device transfer learning for schedule cost models", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "90", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Zero-search rule-based baseline + selective search for hot regions", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "91", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Profile-guided re-tuning", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "92", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Runtime schedule migration for long-running systems", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "93", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Autotuned memory layout", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "94", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Autotuned compression/encoding selection", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "95", "section": "VII", "section_name": "DSL-style schedule separation and autotuning", "title": "Autotuned foreign-call batching", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "96", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Semantic region → synthesized hardware pipeline", "graph": "D", "status": "research", "census_rank": "16"}
+{"id": "97", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Latency/throughput/resource constraints as demand", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "98", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Bitwidth minimization using exact range/known-bits facts", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "99", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Pipeline initiation-interval optimization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "100", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Register retiming", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "101", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Streaming dataflow realization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "102", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "On-chip memory banking", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "103", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "BRAM/URAM/local memory inference", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "104", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "ROM inference", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "105", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Shift-register recognition", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "106", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Operator sharing vs duplication", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "107", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Area vs latency vs energy Pareto choice", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "108", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Custom instruction synthesis", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "109", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "FPGA partial reconfiguration realization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "110", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "ASIC specialization candidate generation", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "111", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Near-memory / processing-in-memory placement", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "112", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "FPGA/GPU/CPU heterogeneous partitioning from one graph", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "113", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Network-on-chip communication cost modeling", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "114", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Clock-domain / synchronization realization facts", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "115", "section": "VIII", "section_name": "Hardware synthesis / CIRCT / HLS", "title": "Approximate hardware realization where demand permits bounded error", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "116", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "General dataflow interpretation of dependency graph", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "117", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Actor fusion", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "118", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Producer-consumer fusion", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "119", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Streaming buffer minimization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "120", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Pipeline depth selection", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "121", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Backpressure semantics", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "122", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Bounded-buffer inference", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "123", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Static scheduling of synchronous dataflow", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "124", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Dynamic scheduling only where statically unavoidable", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "125", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Batching vs streaming realization choice", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "126", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Buffer reuse across nonoverlapping lifetimes", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "127", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Cross-stage stream fusion", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "128", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Network/distributed stream partitioning", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "129", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Zero-copy sink/source chaining", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "130", "section": "IX", "section_name": "Dataflow / streaming / graph execution", "title": "Incremental stream computation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "131", "section": "X", "section_name": "Database/query compiler territory", "title": "Query-style relation ordering", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "132", "section": "X", "section_name": "Database/query compiler territory", "title": "Join-order optimization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "133", "section": "X", "section_name": "Database/query compiler territory", "title": "Join algorithm selection: hash, sort-merge, nested loop, index lookup", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "134", "section": "X", "section_name": "Database/query compiler territory", "title": "Predicate pushdown", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "135", "section": "X", "section_name": "Database/query compiler territory", "title": "Projection pushdown", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "136", "section": "X", "section_name": "Database/query compiler territory", "title": "Late materialization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "137", "section": "X", "section_name": "Database/query compiler territory", "title": "Vectorized execution", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "138", "section": "X", "section_name": "Database/query compiler territory", "title": "Compiled query execution", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "139", "section": "X", "section_name": "Database/query compiler territory", "title": "Morsel-driven parallelism", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "140", "section": "X", "section_name": "Database/query compiler territory", "title": "Adaptive joins", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "141", "section": "X", "section_name": "Database/query compiler territory", "title": "Cardinality estimation as uncertainty facts", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "142", "section": "X", "section_name": "Database/query compiler territory", "title": "Statistics propagation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "143", "section": "X", "section_name": "Database/query compiler territory", "title": "Cost-based plan enumeration", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "144", "section": "X", "section_name": "Database/query compiler territory", "title": "Runtime reoptimization when estimates fail", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "145", "section": "X", "section_name": "Database/query compiler territory", "title": "Index synthesis", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "146", "section": "X", "section_name": "Database/query compiler territory", "title": "Perfect hash synthesis", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "147", "section": "X", "section_name": "Database/query compiler territory", "title": "Bloom-filter insertion", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "148", "section": "X", "section_name": "Database/query compiler territory", "title": "Materialized-view reuse", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "149", "section": "X", "section_name": "Database/query compiler territory", "title": "Incremental view maintenance", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "150", "section": "X", "section_name": "Database/query compiler territory", "title": "Column vs row representation selection", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "151", "section": "X", "section_name": "Database/query compiler territory", "title": "Compression encoding selection", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "152", "section": "X", "section_name": "Database/query compiler territory", "title": "Predicate/vector fusion", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "153", "section": "X", "section_name": "Database/query compiler territory", "title": "Compilation tiers tuned to query lifetime", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "154", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Demand-driven semantic queries", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "155", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Memoized graph fact queries", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "156", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Fine-grained dependency tracking", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "157", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Dynamic dependency discovery", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "158", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Minimal invalidation", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "159", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Self-adjusting evaluation", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "160", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Change propagation through arbitrary relations", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "161", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Incremental parser state", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "162", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Incremental semantic graph", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "163", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Incremental specialization", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "164", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Incremental machine-region regeneration", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "165", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Incremental linker/object section regeneration", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "166", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Incremental optimization proof reuse", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "167", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Cross-process persistent query cache", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "168", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Distributed semantic cache", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "169", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Speculative parallel query execution", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "170", "section": "XI", "section_name": "Incremental and self-adjusting computation", "title": "Priority scheduling based on user-visible demand", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "171", "section": "XII", "section_name": "Sea-of-Nodes / control-data unification", "title": "Control dependency represented as ordinary semantic dependency where possible", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "172", "section": "XII", "section_name": "Sea-of-Nodes / control-data unification", "title": "Global value numbering from identity + facts", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "173", "section": "XII", "section_name": "Sea-of-Nodes / control-data unification", "title": "Dominance as derived physical/control fact, not fundamental semantics", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "174", "section": "XII", "section_name": "Sea-of-Nodes / control-data unification", "title": "Control elimination when data/guard facts make it unnecessary", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "175", "section": "XII", "section_name": "Sea-of-Nodes / control-data unification", "title": "Schedule late from partially ordered dependencies", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "176", "section": "XII", "section_name": "Sea-of-Nodes / control-data unification", "title": "Pinned vs movable effects", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "177", "section": "XII", "section_name": "Sea-of-Nodes / control-data unification", "title": "Global common-subexpression elimination across control regions", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "178", "section": "XII", "section_name": "Sea-of-Nodes / control-data unification", "title": "Memory dependence integration without separate MemorySSA ontology", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "179", "section": "XII", "section_name": "Sea-of-Nodes / control-data unification", "title": "Late block formation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "180", "section": "XII", "section_name": "Sea-of-Nodes / control-data unification", "title": "Late instruction scheduling", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "181", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Virtual objects that never materialize", "graph": "D", "status": "partial", "census_rank": "13"}
+{"id": "182", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Partial escape analysis", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "183", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Object scalar replacement across calls", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "184", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Virtual closure environments", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "185", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Virtual result packs", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "186", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Virtual iterators", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "187", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Virtual errors/outcomes", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "188", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Virtual string builders", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "189", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Virtual world/capability contexts", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "190", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Virtual coroutine frames", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "191", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Deoptimization reconstruction recipes", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "192", "section": "XIII", "section_name": "Escape analysis and virtualization à la Graal/Truffle", "title": "Debugger reconstruction without retaining physical objects", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "193", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Guarded shape specialization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "194", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Guarded relation-target specialization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "195", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Guarded value/range specialization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "196", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Guarded world sealing", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "197", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Guarded effect assumptions", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "198", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Polymorphic inline caches", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "199", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Megamorphic fallback only when needed", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "200", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "On-stack replacement", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "201", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Deoptimization metadata generated from semantic provenance", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "202", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Speculation budgets", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "203", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Speculation profitability models", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "204", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Speculation invalidation through exact dependencies", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "205", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Cross-run speculation persistence", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "206", "section": "XIV", "section_name": "Speculative specialization / deoptimization", "title": "Tierless speculative AOT/JIT continuum", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "207", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Edge/application execution frequency", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "208", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Value profiles", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "209", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Relation-target profiles", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "210", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Shape profiles", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "211", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Allocation profiles", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "212", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Memory locality profiles", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "213", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Branch probability", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "214", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Path profiles", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "215", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Hardware counter profiles", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "216", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Cache miss profiles", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "217", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Energy/thermal profiles", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "218", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Latency tail profiles", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "219", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Online profile decay", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "220", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Per-world profile separation", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "221", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Profile-guided code layout", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "222", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Profile-guided data layout", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "223", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Profile-guided specialization", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "224", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Profile-guided optimization-budget allocation", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "225", "section": "XV", "section_name": "Profile-guided and feedback-directed optimization", "title": "Profile evidence never changes semantic meaning", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "226", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "BOLT-like basic-block layout", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "227", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Function reordering", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "228", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Hot/cold splitting", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "229", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Identical code folding", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "230", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Constant merging", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "231", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Section ordering", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "232", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Relocation reduction", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "233", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Startup page minimization", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "234", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "I-cache packing", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "235", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Branch-distance optimization", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "236", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Thunk elimination", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "237", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "PLT/GOT bypass where sealed", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "238", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Direct call relaxation", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "239", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Link-time dead stripping from semantic reachability", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "240", "section": "XVI", "section_name": "Post-link / binary optimization", "title": "Semantic-aware post-link optimization preserving lineage back to graph ids", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "241", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Exact reachable relation closure", "graph": "C", "status": "partial", "census_rank": "15"}
+{"id": "242", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Runtime library DCE", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "243", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Dynamic lookup elimination", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "244", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Metatable elimination", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "245", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Reflection elimination or partial retention", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "246", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Scheduler elimination", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "247", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "GC elimination", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "248", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Exception runtime elimination", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "249", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Allocator elimination", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "250", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Foreign adapter elimination", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "251", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Module system elimination after ingress", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "252", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Constant world folding", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "253", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Cross-package inlining", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "254", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Whole-program shape sealing", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "255", "section": "XVII", "section_name": "Whole-program and closed-world optimization", "title": "Whole-program ownership/lifetime inference", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "256", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Arbitrary precision exact constants retained until demand", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "257", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Known-bits analysis", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "258", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Range-selected machine width", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "259", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Overflow-law propagation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "260", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Signed/unsigned operation convergence where laws coincide", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "261", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Mixed precision", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "262", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Error-bound propagation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "263", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Floating-point reassociation under explicit lawsets", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "264", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Interval arithmetic", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "265", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Affine arithmetic", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "266", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Stochastic rounding", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "267", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Posit/bfloat/fp8 target realization where demanded", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "268", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Fast-math as granular facts, never one unsafe switch", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "269", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Polynomial approximation synthesis", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "270", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Range-reduced transcendental specialization", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "271", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "FMA formation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "272", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Reciprocal approximation + refinement", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "273", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Vector math library substitution", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "274", "section": "XVIII", "section_name": "Numerical computing beyond primitive-zero", "title": "Exact algebraic simplification before rounding commitment", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "275", "section": "XIX", "section_name": "Automatic differentiation and semantic derivatives", "title": "Forward-mode AD", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "276", "section": "XIX", "section_name": "Automatic differentiation and semantic derivatives", "title": "Reverse-mode AD", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "277", "section": "XIX", "section_name": "Automatic differentiation and semantic derivatives", "title": "Mixed-mode AD", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "278", "section": "XIX", "section_name": "Automatic differentiation and semantic derivatives", "title": "Higher derivatives", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "279", "section": "XIX", "section_name": "Automatic differentiation and semantic derivatives", "title": "Sparse Jacobian/Hessian structure", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "280", "section": "XIX", "section_name": "Automatic differentiation and semantic derivatives", "title": "Checkpointing vs recomputation choice", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "281", "section": "XIX", "section_name": "Automatic differentiation and semantic derivatives", "title": "Activity analysis as demand", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "282", "section": "XIX", "section_name": "Automatic differentiation and semantic derivatives", "title": "Differentiability laws as relation facts", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "283", "section": "XIX", "section_name": "Automatic differentiation and semantic derivatives", "title": "Custom derivative relation laws", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "284", "section": "XIX", "section_name": "Automatic differentiation and semantic derivatives", "title": "Derivative optimization through same graph", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "285", "section": "XIX", "section_name": "Automatic differentiation and semantic derivatives", "title": "Incremental change algebra and calculus unified where possible", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "286", "section": "XX", "section_name": "Probabilistic / approximate computing", "title": "Probabilistic values/distributions as semantic domains where actually demanded", "graph": "B", "status": "law", "census_rank": ""}
+{"id": "287", "section": "XX", "section_name": "Probabilistic / approximate computing", "title": "Expectation/moment demand", "graph": "B", "status": "law", "census_rank": ""}
+{"id": "288", "section": "XX", "section_name": "Probabilistic / approximate computing", "title": "Approximate inference selection", "graph": "B", "status": "law", "census_rank": ""}
+{"id": "289", "section": "XX", "section_name": "Probabilistic / approximate computing", "title": "Sampling strategy realization", "graph": "B", "status": "law", "census_rank": ""}
+{"id": "290", "section": "XX", "section_name": "Probabilistic / approximate computing", "title": "Accuracy-cost Pareto realization", "graph": "B", "status": "law", "census_rank": ""}
+{"id": "291", "section": "XX", "section_name": "Probabilistic / approximate computing", "title": "Confidence interval propagation", "graph": "B", "status": "law", "census_rank": ""}
+{"id": "292", "section": "XX", "section_name": "Probabilistic / approximate computing", "title": "Approximate memoization", "graph": "B", "status": "law", "census_rank": ""}
+{"id": "293", "section": "XX", "section_name": "Probabilistic / approximate computing", "title": "Probabilistic profiling / uncertain cost models", "graph": "B", "status": "law", "census_rank": ""}
+{"id": "294", "section": "XX", "section_name": "Probabilistic / approximate computing", "title": "Error-tolerant computation elimination", "graph": "B", "status": "law", "census_rank": ""}
+{"id": "295", "section": "XX", "section_name": "Probabilistic / approximate computing", "title": "Approximate storage/compression", "graph": "B", "status": "law", "census_rank": ""}
+{"id": "296", "section": "XX", "section_name": "Probabilistic / approximate computing", "title": "Monte-Carlo vs analytic realization selection", "graph": "B", "status": "law", "census_rank": ""}
+{"id": "297", "section": "XXI", "section_name": "Reversible computing / information theory", "title": "Track information destruction explicitly", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "298", "section": "XXI", "section_name": "Reversible computing / information theory", "title": "Invertible relation facts", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "299", "section": "XXI", "section_name": "Reversible computing / information theory", "title": "Reversible realization where energy/security/rollback demand rewards it", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "300", "section": "XXI", "section_name": "Reversible computing / information theory", "title": "Recompute vs store from invertibility", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "301", "section": "XXI", "section_name": "Reversible computing / information theory", "title": "Minimal sufficient state for recovery", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "302", "section": "XXI", "section_name": "Reversible computing / information theory", "title": "Entropy/information-content-driven representation", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "303", "section": "XXI", "section_name": "Reversible computing / information theory", "title": "Lossless compression selected from proven distributions/structure", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "304", "section": "XXI", "section_name": "Reversible computing / information theory", "title": "Lower bounds from information theory", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "305", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "Authority derivation graph", "graph": "C", "status": "partial", "census_rank": "18"}
+{"id": "306", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "Monotonic authority attenuation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "307", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "Capability bounds as semantic facts", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "308", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "Permission sets", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "309", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "Sealed/opaque authority", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "310", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "Delegation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "311", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "Revocation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "312", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "Temporal authority", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "313", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "World-local capabilities", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "314", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "Proof of authority carried to machine access", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "315", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "Hardware CHERI realization where target provides it", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "316", "section": "XXII", "section_name": "Capability machines and authority algebra", "title": "Software capability erasure when static proof makes runtime checks unnecessary", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "317", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Injection as fact extension, not dependency-container lookup", "graph": "C", "status": "partial", "census_rank": "19"}
+{"id": "318", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Projection as fact restriction / view", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "319", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Interjection as scoped replacement/override of a fact", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "320", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "World composition", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "321", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "World intersection", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "322", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "World difference", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "323", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "World refinement", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "324", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "World sealing", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "325", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "World morphisms between compatible fact domains", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "326", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Injection commutativity rules", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "327", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Injection shadowing/conflict rules", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "328", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Idempotent injections where facts match", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "329", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Monotone injection of authority", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "330", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Nonmonotone override explicitly distinguished from extension", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "331", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Injection provenance", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "332", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Injection lifetime/stage", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "333", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Injection dependencies", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "334", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Injected fact specialization", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "335", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "World parameter elimination when injected fact is statically known", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "336", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "World difference as minimal environment required by a relation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "337", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Automatic environment minimization", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "338", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Capability inference from required effects", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "339", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Inverse injection queries: what facts must be supplied to make this application valid?", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "340", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Partial world solving", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "341", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Cross-world equivalence", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "342", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "World quotienting", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "343", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Injection fusion", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "344", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "Injection hoisting/sinking according to lifetime and demand", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "345", "section": "XXIII", "section_name": "Injection algebra / context algebra", "title": "World caching by exact fact closure", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "346", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "Lens-like get/update laws", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "347", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "Prisms for variant/case projection", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "348", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "Traversals for structured multi-focus projection", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "349", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "Bidirectional transformations", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "350", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "Update propagation from projection back to source", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "351", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "View maintenance", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "352", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "Projection fusion", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "353", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "Projection commutation", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "354", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "Projection inversion where lawful", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "355", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "Projection-demand analysis", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "356", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "Automatic materialized view synthesis", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "357", "section": "XXIV", "section_name": "Optics / lenses / bidirectional transformations", "title": "Minimal update propagation", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "358", "section": "XXV", "section_name": "Semiring / provenance algebra", "title": "Multiple provenance modes over the same graph", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "359", "section": "XXV", "section_name": "Semiring / provenance algebra", "title": "Why-provenance", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "360", "section": "XXV", "section_name": "Semiring / provenance algebra", "title": "Where-provenance", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "361", "section": "XXV", "section_name": "Semiring / provenance algebra", "title": "How-provenance", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "362", "section": "XXV", "section_name": "Semiring / provenance algebra", "title": "Weighted provenance", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "363", "section": "XXV", "section_name": "Semiring / provenance algebra", "title": "Trust/confidence provenance", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "364", "section": "XXV", "section_name": "Semiring / provenance algebra", "title": "Cost provenance", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "365", "section": "XXV", "section_name": "Semiring / provenance algebra", "title": "Transformation provenance", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "366", "section": "XXV", "section_name": "Semiring / provenance algebra", "title": "Source→machine provenance composition", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "367", "section": "XXV", "section_name": "Semiring / provenance algebra", "title": "Incremental provenance update", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "368", "section": "XXV", "section_name": "Semiring / provenance algebra", "title": "Proof provenance", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "369", "section": "XXVI", "section_name": "Constraint solving as a universal backend", "title": "SAT/SMT for legality", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "370", "section": "XXVI", "section_name": "Constraint solving as a universal backend", "title": "ILP for schedule/resource optimization", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "371", "section": "XXVI", "section_name": "Constraint solving as a universal backend", "title": "Constraint programming for layout/placement", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "372", "section": "XXVI", "section_name": "Constraint solving as a universal backend", "title": "MaxSAT for weighted realization selection", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "373", "section": "XXVI", "section_name": "Constraint solving as a universal backend", "title": "Symbolic execution", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "374", "section": "XXVI", "section_name": "Constraint solving as a universal backend", "title": "Abstract interpretation", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "375", "section": "XXVI", "section_name": "Constraint solving as a universal backend", "title": "Polyhedral solvers", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "376", "section": "XXVI", "section_name": "Constraint solving as a universal backend", "title": "E-graph search", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "377", "section": "XXVI", "section_name": "Constraint solving as a universal backend", "title": "Superoptimizer search", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "378", "section": "XXVI", "section_name": "Constraint solving as a universal backend", "title": "Agent search", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "379", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "CPU big.LITTLE placement", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "380", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "NUMA placement", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "381", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "CPU/GPU partition", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "382", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "CPU/NPU partition", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "383", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "FPGA offload", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "384", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "Distributed-node placement", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "385", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "Memory-tier placement: registers/cache/HBM/DRAM/NVRAM/remote", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "386", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "Data transfer minimization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "387", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "Kernel fusion across devices", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "388", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "Asynchronous overlap", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "389", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "Device occupancy modeling", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "390", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "Energy-aware scheduling", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "391", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "Thermal-aware scheduling", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "392", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "Deadline-aware scheduling", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "393", "section": "XXVII", "section_name": "Scheduling and placement across heterogeneous hardware", "title": "Cost/price-aware cloud scheduling", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "394", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "Cache-oblivious algorithm candidate generation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "395", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "Cache-aware tiling", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "396", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "TLB-aware layout", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "397", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "Page-color / hugepage-aware placement where useful", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "398", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "Prefetch generation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "399", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "Software-managed cache/scratchpad mapping", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "400", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "Hot/cold field splitting", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "401", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "Pointer compression", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "402", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "Object clustering", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "403", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "Structure splitting", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "404", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "AoS ↔ SoA ↔ AoSoA selection", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "405", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "Compressed indexes", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "406", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "NUMA replication vs migration", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "407", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "Read-mostly duplication", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "408", "section": "XXVIII", "section_name": "Cache/memory hierarchy specialization", "title": "False-sharing avoidance", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "409", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Dependence-based automatic parallelism", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "410", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Effect commutativity", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "411", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Lock elision", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "412", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Lock coarsening/fission", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "413", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Transactional realization", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "414", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Atomic-width narrowing", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "415", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Memory-order weakening to minimum demanded order", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "416", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Ownership-transfer synchronization elimination", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "417", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Task fusion", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "418", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Task granularity tuning", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "419", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Work stealing vs static partition", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "420", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Deterministic execution when demanded", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "421", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Race-freedom proof as realization freedom", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "422", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Parallel reduction associativity derived from relation law", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "423", "section": "XXIX", "section_name": "Concurrency / parallel semantics", "title": "Speculative parallelism with rollback", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "424", "section": "XXX", "section_name": "Coroutine / async / continuation specialization", "title": "Continuation demand", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "425", "section": "XXX", "section_name": "Coroutine / async / continuation specialization", "title": "State-machine minimization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "426", "section": "XXX", "section_name": "Coroutine / async / continuation specialization", "title": "Frame field liveness", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "427", "section": "XXX", "section_name": "Coroutine / async / continuation specialization", "title": "Frame scalar replacement", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "428", "section": "XXX", "section_name": "Coroutine / async / continuation specialization", "title": "Nonescaping coroutine stack realization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "429", "section": "XXX", "section_name": "Coroutine / async / continuation specialization", "title": "Coroutine fusion", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "430", "section": "XXX", "section_name": "Coroutine / async / continuation specialization", "title": "Scheduler removal when execution order sealed", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "431", "section": "XXX", "section_name": "Coroutine / async / continuation specialization", "title": "Direct callback conversion", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "432", "section": "XXX", "section_name": "Coroutine / async / continuation specialization", "title": "Tail continuation reuse", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "433", "section": "XXX", "section_name": "Coroutine / async / continuation specialization", "title": "Async state compression", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "434", "section": "XXX", "section_name": "Coroutine / async / continuation specialization", "title": "Cross-await rematerialization vs storage", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "435", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "GC necessity derived from lifetime facts", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "436", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Region inference", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "437", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Arena inference", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "438", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Stack promotion", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "439", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Reference counting elimination", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "440", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "RC batching", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "441", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Cycle tracking only where possible cycles exist", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "442", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Generational placement from lifetime predictions", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "443", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Tracing scope specialization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "444", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Barrier elimination", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "445", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Pointer map minimization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "446", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Custom allocator synthesis", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "447", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Object pooling where beneficial", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "448", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Allocation sinking", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "449", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Allocation hoisting", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "450", "section": "XXXI", "section_name": "Memory management / GC specialization", "title": "Allocation removal via recomputation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "451", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Rope vs flat vs view vs static literal selection", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "452", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Substring views", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "453", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Parser fusion with consumer", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "454", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Validation fusion with parse", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "455", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Parse only demanded fields", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "456", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Lazy decoding", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "457", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Direct formatting to sink", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "458", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Serializer fusion", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "459", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Zero-copy field access", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "460", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "SIMD lexing/scanning", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "461", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Perfect-hash keyword recognition", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "462", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Finite automata compilation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "463", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Parser specialization to known grammar", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "464", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Protocol parser hardware/vector acceleration", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "465", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Schema-aware elision of defaults", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "466", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Encoding selection", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "467", "section": "XXXII", "section_name": "Strings / parsing / serialization", "title": "Compressed-domain operations without decompression", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "468", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Affine recurrence solving", "graph": "C", "status": "measured", "census_rank": "10"}
+{"id": "469", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Polynomial recurrence solving", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "470", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Linear recurrence with constant coefficients", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "471", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Matrix recurrence / exponentiation", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "472", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Finite-state recurrence quotienting", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "473", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Modular/congruence recurrence", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "474", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Monotone fixed-point shortcutting", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "475", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Absorbing-state early termination", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "476", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Idempotent convergence detection", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "477", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Periodic-state detection", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "478", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Closed-form summations", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "479", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Generating-function candidate synthesis", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "480", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Symbolic loop bounds", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "481", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Induction-variable elimination", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "482", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Strength reduction", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "483", "section": "XXXIII", "section_name": "Symbolic / recurrence / algorithmic closed-form optimization", "title": "Algorithm substitution from recognized semantics", "graph": "C", "status": "measured", "census_rank": ""}
+{"id": "484", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Sort vs select/top-k", "graph": "D", "status": "partial", "census_rank": "10"}
+{"id": "485", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Linear scan vs hash/index", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "486", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Hash vs tree vs sorted vector", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "487", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Dense vs sparse matrix", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "488", "section": "XXXIV", "section_name": "Algorithm selection", "title": "FFT vs direct convolution", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "489", "section": "XXXIV", "section_name": "Algorithm selection", "title": "FFT algorithm/factorization selection", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "490", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Strassen-like matrix multiplication where worthwhile", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "491", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Graph algorithm variants selected by density/topology", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "492", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Dynamic programming vs closed form", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "493", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Memoization vs recomputation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "494", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Streaming vs batch", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "495", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Exact vs approximate", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "496", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Precompute vs runtime compute", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "497", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Lookup table vs arithmetic", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "498", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Static perfect hash vs generic hash", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "499", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Specialized parser/table-driven parser", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "500", "section": "XXXIV", "section_name": "Algorithm selection", "title": "Vendor library vs generated kernel vs synthesized kernel", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "501", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Latency/throughput/uop cost", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "502", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Port pressure", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "503", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Macro/micro fusion", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "504", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Instruction encoding size", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "505", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Decode width", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "506", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "uop-cache residency", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "507", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Register renaming pressure", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "508", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "ROB pressure", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "509", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Load/store queue pressure", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "510", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Branch predictor behavior", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "511", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Memory-level parallelism", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "512", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Store forwarding", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "513", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Partial-register hazards", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "514", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Address-generation-unit pressure", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "515", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "SIMD lane utilization", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "516", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Instruction alignment", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "517", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Code/data prefetch", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "518", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Target-specific idiom formation", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "519", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Cross-instruction superoptimization", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "520", "section": "XXXV", "section_name": "Machine instruction and microarchitecture modeling", "title": "Machine cost calibration from measured hardware instead of static tables only", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "521", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Constant-time demand", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "522", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Oblivious memory access demand", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "523", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Speculation-safe realization", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "524", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Bounds-check elimination only with proof", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "525", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Control-flow integrity", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "526", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Pointer authentication", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "527", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "CHERI capability realization", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "528", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Memory tagging", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "529", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Secret/public information-flow facts", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "530", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Side-channel observation model", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "531", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Zeroization demand", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "532", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Secure erasure proof", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "533", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Sandbox boundary realization", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "534", "section": "XXXVI", "section_name": "Security-sensitive realization", "title": "Least-authority world derivation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "535", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "Relation placement across machines", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "536", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "RPC elimination when co-located", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "537", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "RPC batching", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "538", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "Serialization elimination with shared representation", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "539", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "Data locality placement", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "540", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "Replication vs remote access", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "541", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "Consistency-model demand", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "542", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "Fault-tolerance demand", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "543", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "Retry/idempotence law use", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "544", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "Distributed incremental computation", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "545", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "Remote accelerator scheduling", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "546", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "Edge/cloud split selection", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "547", "section": "XXXVII", "section_name": "Distributed and remote computation", "title": "Network cost included in realization economics", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "548", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Per-region AOT/JIT selection", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "549", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Baseline fast compiler", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "550", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Optimizing compiler only for valuable regions", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "551", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Profile-triggered recompilation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "552", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Code cache management", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "553", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Version eviction", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "554", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Multiversioning", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "555", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Guarded deoptimization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "556", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Ahead-of-time speculative variants", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "557", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Persistent compiled artifacts across runs", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "558", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Cross-machine/fleet specialization caches", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "559", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Install-time specialization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "560", "section": "XXXVIII", "section_name": "JIT/AOT continuum", "title": "Startup-time specialization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "561", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Compiler query evaluation only on demand", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "562", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Lazy graph facts", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "563", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Compact immutable data structures", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "564", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "No generic allocation per fact", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "565", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Parallel independent graph-region processing", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "566", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Work stealing in compiler", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "567", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Persistent analysis state", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "568", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Incremental semantic graph", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "569", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Precompiled grammar/standard law tables", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "570", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Fast baseline realization path", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "571", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Selective expensive optimization", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "572", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Optimization value-of-information", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "573", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Cached proof results", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "574", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Compiler self-profiling", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "575", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Compiler layout/branch optimization because compiler B itself is a hot workload", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "576", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Build-server persistence without semantic stale-state risks", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "577", "section": "XXXIX", "section_name": "Compiler compile-time architecture itself", "title": "Distributed compilation by exact graph subdependency", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "578", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Stable semantic ids exposed to agents", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "579", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Graph-diff instead of textual diff", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "580", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Semantic patching", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "581", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Fact-level code review", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "582", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Agent queries over unresolved facts", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "583", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Agent-generated candidate transformations", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "584", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Automatic law discovery suggestions", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "585", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Counterexample generation", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "586", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Automatic benchmark generation", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "587", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Semantic provenance explanations", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "588", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "why / why not realization explanations", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "589", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Agent checks for duplicated ontology", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "590", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Agent checks for fact loss", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "591", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Agent checks for premature materialization", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "592", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Agent decomposition of compound vocabulary", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "593", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Automatic SHC ownership-boundary detection", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "594", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Automatic optimization-debt ranking from physical measurements", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "595", "section": "XL", "section_name": "Agent-native compiler capabilities", "title": "Agents operate on semantic graph/MCP, not grep/text where avoidable", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "596", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Effect-polymorphic relations without explicit effect-system ceremony", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "597", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Descriptor refinement through ordinary facts", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "598", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Dependent facts / value-dependent descriptors where inferable", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "599", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Refinement contracts without separate type syntax", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "600", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Higher-kinded relation composition only if expressible through descriptor/pack laws rather than new syntax", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "601", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Linear/affine ownership facts without a Rust-like borrow-checker surface", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "602", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Uniqueness facts", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "603", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Capability/authority inference", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "604", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Stage inference", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "605", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "World inference", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "606", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Automatic relation projection/injection", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "607", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Bidirectional pattern/relation inversion", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "608", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Logic programming / relation solving as an ordinary relation capability", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "609", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Constraint relations", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "610", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Nondeterministic relation semantics where required", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "611", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Search as realization, not language construct", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "612", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Probabilistic relation lawsets", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "613", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Reactive/incremental relation lawsets", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "614", "section": "XLI", "section_name": "Language-level expressiveness still worth exploring", "title": "Distributed relation lawsets", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "615", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Composition f ∘ g", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "616", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Identity relation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "617", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Partial relations", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "618", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Total relations", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "619", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Inverse relation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "620", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Left/right inverse facts", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "621", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Kernel/equivalence induced by relation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "622", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Image/preimage", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "623", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Restriction by descriptor/world/demand", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "624", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Relation union/intersection where meaningful", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "625", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Relation product over packs", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "626", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Currying/uncurrying as pack projections", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "627", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Associative composition", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "628", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Functorial mapping over structure", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "629", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Homomorphism facts", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "630", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Natural transformation-like compatibility between descriptor families, if useful without importing category-theory syntax", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "631", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Monoidal composition for independent effects/data", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "632", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Semiring-like combination for weighted/search relations", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "633", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Fixed points", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "634", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Least/greatest fixpoint lawsets", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "635", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Transitive closure", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "636", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Reachability as derived relation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "637", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Adjoint-like relationships where useful for optimization", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "638", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Differentiation/change relation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "639", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Refinement ordering between relations", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "640", "section": "XLII", "section_name": "Relation algebra specifically", "title": "Equivalence classes of relations under demanded observations", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "641", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Projection composition", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "642", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Projection idempotence", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "643", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Projection commutation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "644", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Projection subsumption", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "645", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Demand-induced projection", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "646", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Injection composition", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "647", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Injection compatibility", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "648", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Injection conflict detection", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "649", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Injection monotonicity", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "650", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Injection override/interjection distinction", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "651", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Interjection scoping", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "652", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Interjection rollback semantics", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "653", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "World extension law", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "654", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "World restriction law", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "655", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "World quotient under observation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "656", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Minimal sufficient world", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "657", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "World dependency closure", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "658", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Automatic injected-fact propagation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "659", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Dead injected-fact elimination", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "660", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Injection specialization / static erase", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "661", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Cross-world relation transport", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "662", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Witness transport across compatible worlds", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "663", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Authority attenuation under projection", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "664", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Capability derivation under injection", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "665", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "World merge with exact conflict semantics", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "666", "section": "XLIII", "section_name": "Injection / projection / interjection algebra specifically", "title": "Injection cache reuse via exact dependency closure", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "667", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Information-theoretic lower bounds", "graph": "E", "status": "partial", "census_rank": "20"}
+{"id": "668", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Decision-tree lower bounds", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "669", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Comparison complexity", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "670", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Communication complexity", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "671", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "I/O complexity / external-memory lower bounds", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "672", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Cache-oblivious lower bounds", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "673", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Work/span parallel lower bounds", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "674", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Circuit depth/area lower bounds", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "675", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Streaming-memory lower bounds", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "676", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "State-complexity lower bounds", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "677", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Automata minimization", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "678", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Kolmogorov-style compression intuition where computable proxies exist", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "679", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Lower bounds from algebraic decision trees", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "680", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Graph algorithm conditional lower bounds", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "681", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Bit complexity vs word-RAM complexity distinctions", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "682", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Energy lower bounds / data movement as dominant physical cost", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "683", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Landauer-style irreversibility considerations as theoretical limits", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "684", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Communication avoidance as first-class optimization target", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "685", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Memory traffic lower bound", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "686", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Minimal observation sufficient statistic", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "687", "section": "XLIV", "section_name": "Lower-bound / theoretical-computing frontier", "title": "Prove OPTIMAL rather than endlessly trying to beat an impossible floor", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "688", "section": "XLVI", "section_name": "Supercompilation & optimal reduction", "title": "Supercompilation / fold-unfold / generalized partial computation", "graph": "D", "status": "research", "census_rank": "8"}
+{"id": "689", "section": "XLVI", "section_name": "Supercompilation & optimal reduction", "title": "Optimal graph reduction / interaction nets", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "690", "section": "XLVII", "section_name": "Relational solving & search taxonomy", "title": "Relational execution / running semantics backward", "graph": "B", "status": "research", "census_rank": "19"}
+{"id": "691", "section": "XLVII", "section_name": "Relational solving & search taxonomy", "title": "Search completeness as a semantic property", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "692", "section": "XLVIII", "section_name": "Deductive synthesis & trusted extensibility", "title": "Deductive synthesis / proof-directed program construction", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "693", "section": "XLVIII", "section_name": "Deductive synthesis & trusted extensibility", "title": "Proof-producing optimization extensions, eBPF-style", "graph": "C", "status": "protocol", "census_rank": "12"}
+{"id": "694", "section": "XLVIII", "section_name": "Deductive synthesis & trusted extensibility", "title": "Compiler extension without enlarging semantic authority", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "695", "section": "XLIX", "section_name": "Kernel, OS & syscall boundary", "title": "Kernel / OS specialization and unikernel-style elimination", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "696", "section": "XLIX", "section_name": "Kernel, OS & syscall boundary", "title": "Compiler ↔ kernel cooperation", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "697", "section": "XLIX", "section_name": "Kernel, OS & syscall boundary", "title": "Syscall elimination and syscall fusion", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "698", "section": "L", "section_name": "Storage & network topology", "title": "Storage-aware compilation", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "699", "section": "L", "section_name": "Storage & network topology", "title": "Network protocol and topology realization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "700", "section": "LI", "section_name": "Communication & movement complexity", "title": "Communication complexity as optimizer guidance", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "701", "section": "LI", "section_name": "Communication & movement complexity", "title": "Red/blue pebble / data-movement complexity", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "702", "section": "LII", "section_name": "Recompute/store & memoization algebras", "title": "Recompute/store as a universal duality", "graph": "B", "status": "protocol", "census_rank": ""}
+{"id": "703", "section": "LII", "section_name": "Recompute/store & memoization algebras", "title": "Semantic memoization", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "704", "section": "LII", "section_name": "Recompute/store & memoization algebras", "title": "Observation-relative memoization", "graph": "B", "status": "partial", "census_rank": "17"}
+{"id": "705", "section": "LII", "section_name": "Recompute/store & memoization algebras", "title": "Semantic caching across different programs", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "706", "section": "LIII", "section_name": "Minimal sufficient semantics", "title": "Minimal sufficient semantics / sufficient statistics", "graph": "B", "status": "partial", "census_rank": "1"}
+{"id": "707", "section": "LIII", "section_name": "Minimal sufficient semantics", "title": "Automatic discovery of semantic sufficient statistics", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "708", "section": "LIII", "section_name": "Minimal sufficient semantics", "title": "Information-flow sensitivity as optimization", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "709", "section": "LIV", "section_name": "Equivalence machinery beyond expressions", "title": "Logical relations as equivalence machinery", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "710", "section": "LIV", "section_name": "Equivalence machinery beyond expressions", "title": "Bisimulation for stateful/reactive equivalence", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "711", "section": "LIV", "section_name": "Equivalence machinery beyond expressions", "title": "Trace quotienting", "graph": "A", "status": "research", "census_rank": ""}
+{"id": "712", "section": "LV", "section_name": "Temporal logic & automata", "title": "Temporal logic as demand/law", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "713", "section": "LV", "section_name": "Temporal logic & automata", "title": "Protocol/state-machine minimization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "714", "section": "LV", "section_name": "Temporal logic & automata", "title": "Symbolic automaton synthesis", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "715", "section": "LVI", "section_name": "Parsing realization diversity", "title": "Parser derivatives / derivative-based parsing", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "716", "section": "LVI", "section_name": "Parsing realization diversity", "title": "Parsing expression / automata hybrid selection", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "717", "section": "LVII", "section_name": "Dispatch & succinct structures", "title": "Decision-tree synthesis for semantic dispatch", "graph": "D", "status": "research", "census_rank": "10"}
+{"id": "718", "section": "LVII", "section_name": "Dispatch & succinct structures", "title": "Entropy-optimal dispatch", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "719", "section": "LVII", "section_name": "Dispatch & succinct structures", "title": "Succinct data structures", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "720", "section": "LVII", "section_name": "Dispatch & succinct structures", "title": "Learned data structures as candidates", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "721", "section": "LVII", "section_name": "Dispatch & succinct structures", "title": "Learned compilation without learned correctness", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "722", "section": "LVIII", "section_name": "Learned & uncertain optimization", "title": "Meta-learning across compilation history", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "723", "section": "LVIII", "section_name": "Learned & uncertain optimization", "title": "Multi-objective Bayesian optimization", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "724", "section": "LVIII", "section_name": "Learned & uncertain optimization", "title": "Regret-minimizing compilation", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "725", "section": "LVIII", "section_name": "Learned & uncertain optimization", "title": "Robust optimization under uncertain profiles", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "726", "section": "LIX", "section_name": "Online, amortized & adaptive representations", "title": "Online algorithm realization", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "727", "section": "LIX", "section_name": "Online, amortized & adaptive representations", "title": "Competitive-ratio facts", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "728", "section": "LIX", "section_name": "Online, amortized & adaptive representations", "title": "Amortized analysis as compiler knowledge", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "729", "section": "LIX", "section_name": "Online, amortized & adaptive representations", "title": "Potential-function synthesis", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "730", "section": "LIX", "section_name": "Online, amortized & adaptive representations", "title": "Cache-adaptive structures", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "731", "section": "LIX", "section_name": "Online, amortized & adaptive representations", "title": "Self-tuning representations", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "732", "section": "LIX", "section_name": "Online, amortized & adaptive representations", "title": "Representation hysteresis", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "733", "section": "LIX", "section_name": "Online, amortized & adaptive representations", "title": "Persistent / purely functional representation candidates", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "734", "section": "LX", "section_name": "Ownership & heterogeneous placement", "title": "Linear/uniqueness information for destructive update", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "735", "section": "LX", "section_name": "Ownership & heterogeneous placement", "title": "Region polymorphism", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "736", "section": "LX", "section_name": "Ownership & heterogeneous placement", "title": "Ownership-transfer optimization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "737", "section": "LX", "section_name": "Ownership & heterogeneous placement", "title": "Zero-copy through the kernel", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "738", "section": "LX", "section_name": "Ownership & heterogeneous placement", "title": "Device memory as ordinary place realization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "739", "section": "LX", "section_name": "Ownership & heterogeneous placement", "title": "Communication avoiding transformations", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "740", "section": "LX", "section_name": "Ownership & heterogeneous placement", "title": "Replication as realization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "741", "section": "LX", "section_name": "Ownership & heterogeneous placement", "title": "Code specialization for data location", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "742", "section": "LXI", "section_name": "Energy, reliability & debug reconstruction", "title": "Energy as an explicit demanded resource", "graph": "A", "status": "research", "census_rank": ""}
+{"id": "743", "section": "LXI", "section_name": "Energy, reliability & debug reconstruction", "title": "Thermal constraints", "graph": "A", "status": "research", "census_rank": ""}
+{"id": "744", "section": "LXI", "section_name": "Energy, reliability & debug reconstruction", "title": "Wear/endurance constraints", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "745", "section": "LXI", "section_name": "Energy, reliability & debug reconstruction", "title": "Reliability / fault tolerance as realization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "746", "section": "LXI", "section_name": "Energy, reliability & debug reconstruction", "title": "Approximate hardware / voltage scaling", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "747", "section": "LXI", "section_name": "Energy, reliability & debug reconstruction", "title": "Fault-injection-derived optimization validation", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "748", "section": "LXI", "section_name": "Energy, reliability & debug reconstruction", "title": "Reversible debugging as semantic reconstruction", "graph": "B", "status": "partial", "census_rank": ""}
+{"id": "749", "section": "LXII", "section_name": "Toolchain observation & any-time compilation", "title": "Observer virtualization should extend to the entire toolchain", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "750", "section": "LXII", "section_name": "Toolchain observation & any-time compilation", "title": "Semantic breakpoints", "graph": "A", "status": "research", "census_rank": ""}
+{"id": "751", "section": "LXII", "section_name": "Toolchain observation & any-time compilation", "title": "Semantic profiling", "graph": "A", "status": "research", "census_rank": ""}
+{"id": "752", "section": "LXII", "section_name": "Toolchain observation & any-time compilation", "title": "Cross-version profile correspondence", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "753", "section": "LXII", "section_name": "Toolchain observation & any-time compilation", "title": "Profile synthesis from static laws", "graph": "A", "status": "research", "census_rank": ""}
+{"id": "754", "section": "LXII", "section_name": "Toolchain observation & any-time compilation", "title": "Compile-time hotness estimation", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "755", "section": "LXII", "section_name": "Toolchain observation & any-time compilation", "title": "Semantic diff-driven compilation priority", "graph": "E", "status": "protocol", "census_rank": ""}
+{"id": "756", "section": "LXII", "section_name": "Toolchain observation & any-time compilation", "title": "Deadline-aware compiler scheduling", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "757", "section": "LXII", "section_name": "Toolchain observation & any-time compilation", "title": "Any-time compilation", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "758", "section": "LXII", "section_name": "Toolchain observation & any-time compilation", "title": "Proof-budgeted compilation", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "759", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Trusted-core minimization", "graph": "C", "status": "research", "census_rank": "6"}
+{"id": "760", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Proof-carrying foreign libraries", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "761", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Semantic package ecosystem", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "762", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "ABI-less whole-program composition", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "763", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Semantic linking", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "764", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Semantic dynamic linking", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "765", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Hot replacement by semantic compatibility", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "766", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "State migration synthesis", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "767", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Semantic serialization versioning", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "768", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Compiler-generated compatibility shims", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "769", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Formalized no-op boundary", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "770", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Boundary contraction as a general transformation", "graph": "C", "status": "partial", "census_rank": "6"}
+{"id": "771", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Composition-driven whole-system optimization", "graph": "D", "status": "partial", "census_rank": "6"}
+{"id": "772", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Cancellation laws across boundaries", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "773", "section": "LXIII", "section_name": "Trusted core & semantic linking", "title": "Adjoint/inverse-pair exploitation", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "774", "section": "LXIV", "section_name": "Law & demand algebra extensions", "title": "Law induction from implementations", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "775", "section": "LXIV", "section_name": "Law & demand algebra extensions", "title": "Automatic theorem mining", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "776", "section": "LXIV", "section_name": "Law & demand algebra extensions", "title": "Dynamic law discovery under sealed domains", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "777", "section": "LXIV", "section_name": "Law & demand algebra extensions", "title": "Law specialization itself", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "778", "section": "LXIV", "section_name": "Law & demand algebra extensions", "title": "Proof-directed demand propagation", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "779", "section": "LXIV", "section_name": "Law & demand algebra extensions", "title": "Algebraic demand synthesis", "graph": "B", "status": "partial", "census_rank": "1"}
+{"id": "780", "section": "LXV", "section_name": "Errors, fairness, resources & topology", "title": "Algebra of errors/failure", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "781", "section": "LXV", "section_name": "Errors, fairness, resources & topology", "title": "Algebra of nondeterminism", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "782", "section": "LXV", "section_name": "Errors, fairness, resources & topology", "title": "Fairness as explicit observation", "graph": "A", "status": "law", "census_rank": ""}
+{"id": "783", "section": "LXV", "section_name": "Errors, fairness, resources & topology", "title": "Determinism as a selectable law", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "784", "section": "LXV", "section_name": "Errors, fairness, resources & topology", "title": "Reproducibility as a realization constraint", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "785", "section": "LXV", "section_name": "Errors, fairness, resources & topology", "title": "Semantic resource types without type-system ceremony", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "786", "section": "LXV", "section_name": "Errors, fairness, resources & topology", "title": "Temporal lifetime algebra", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "787", "section": "LXV", "section_name": "Errors, fairness, resources & topology", "title": "Spatial relationship facts", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "788", "section": "LXV", "section_name": "Errors, fairness, resources & topology", "title": "Topology-aware world algebra", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "789", "section": "LXV", "section_name": "Errors, fairness, resources & topology", "title": "Compiler-generated topology abstractions", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "790", "section": "LXVI", "section_name": "Distributed & edge realization", "title": "Automatic distributed partitioning from dependency cuts", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "791", "section": "LXVI", "section_name": "Distributed & edge realization", "title": "Distributed fusion", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "792", "section": "LXVI", "section_name": "Distributed & edge realization", "title": "Compute migration vs data migration choice", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "793", "section": "LXVI", "section_name": "Distributed & edge realization", "title": "Edge/server/client split as realization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "794", "section": "LXVII", "section_name": "Privacy, crypto & secure compilation", "title": "Privacy as world/demand fact", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "795", "section": "LXVII", "section_name": "Privacy, crypto & secure compilation", "title": "Differential privacy optimization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "796", "section": "LXVII", "section_name": "Privacy, crypto & secure compilation", "title": "Cryptographic realization selection", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "797", "section": "LXVII", "section_name": "Privacy, crypto & secure compilation", "title": "Homomorphic / MPC realization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "798", "section": "LXVII", "section_name": "Privacy, crypto & secure compilation", "title": "Enclave realization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "799", "section": "LXVII", "section_name": "Privacy, crypto & secure compilation", "title": "Verified secure compilation", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "800", "section": "LXVIII", "section_name": "Generalization & semantic factoring", "title": "Anti-unification and automatic semantic generalization", "graph": "C", "status": "research", "census_rank": "3"}
+{"id": "801", "section": "LXVIII", "section_name": "Generalization & semantic factoring", "title": "Semantic factoring / minimum-description compiler state", "graph": "C", "status": "research", "census_rank": "2"}
+{"id": "802", "section": "LXVIII", "section_name": "Generalization & semantic factoring", "title": "Specialization explosion control through semantic factoring", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "803", "section": "LXVIII", "section_name": "Generalization & semantic factoring", "title": "Semantic clone merging", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "804", "section": "LXVIII", "section_name": "Generalization & semantic factoring", "title": "Semantic outlining", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "805", "section": "LXIX", "section_name": "Granularity algebra", "title": "Algebra of granularity", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "806", "section": "LXIX", "section_name": "Granularity algebra", "title": "Granularity conversion elimination", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "807", "section": "LXX", "section_name": "Dimensional & shape semantics", "title": "Dimensional/unit semantics", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "808", "section": "LXX", "section_name": "Dimensional & shape semantics", "title": "Symbolic dimensional analysis for hardware", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "809", "section": "LXX", "section_name": "Dimensional & shape semantics", "title": "Shape polymorphism without tensor ontology", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "810", "section": "LXX", "section_name": "Dimensional & shape semantics", "title": "Tensor contraction planning", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "811", "section": "LXX", "section_name": "Dimensional & shape semantics", "title": "Sparse computation algebra", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "812", "section": "LXX", "section_name": "Dimensional & shape semantics", "title": "Structural zeros as non-values", "graph": "B", "status": "partial", "census_rank": ""}
+{"id": "813", "section": "LXXI", "section_name": "Symmetry & group quotienting", "title": "Symmetry exploitation", "graph": "A", "status": "research", "census_rank": ""}
+{"id": "814", "section": "LXXI", "section_name": "Symmetry & group quotienting", "title": "Group-action quotienting", "graph": "A", "status": "research", "census_rank": ""}
+{"id": "815", "section": "LXXI", "section_name": "Symmetry & group quotienting", "title": "Canonical representative synthesis", "graph": "C", "status": "research", "census_rank": "8"}
+{"id": "816", "section": "LXXII", "section_name": "Abstraction & adjustable precision", "title": "State-space reduction from invariants", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "817", "section": "LXXII", "section_name": "Abstraction & adjustable precision", "title": "Abstract-state minimization", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "818", "section": "LXXII", "section_name": "Abstraction & adjustable precision", "title": "Predicate abstraction", "graph": "B", "status": "research", "census_rank": ""}
+{"id": "819", "section": "LXXII", "section_name": "Abstraction & adjustable precision", "title": "Counterexample-guided abstraction refinement", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "820", "section": "LXXII", "section_name": "Abstraction & adjustable precision", "title": "Precision as a compiler resource", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "821", "section": "LXXII", "section_name": "Abstraction & adjustable precision", "title": "Lazy precision refinement", "graph": "B", "status": "partial", "census_rank": ""}
+{"id": "822", "section": "LXXIII", "section_name": "Compiler self-query optimization", "title": "Semantic query planning for the compiler itself", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "823", "section": "LXXIII", "section_name": "Compiler self-query optimization", "title": "Analysis fusion", "graph": "E", "status": "partial", "census_rank": "6"}
+{"id": "824", "section": "LXXIII", "section_name": "Compiler self-query optimization", "title": "Analysis sharing across optimizations", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "825", "section": "LXXIV", "section_name": "Negative knowledge & contradiction", "title": "Semantic negative knowledge", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "826", "section": "LXXIV", "section_name": "Negative knowledge & contradiction", "title": "Exclusion sets", "graph": "C", "status": "partial", "census_rank": "5"}
+{"id": "827", "section": "LXXIV", "section_name": "Negative knowledge & contradiction", "title": "Contradiction as a first-class result", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "828", "section": "LXXIV", "section_name": "Negative knowledge & contradiction", "title": "Unsatisfiable-core extraction", "graph": "C", "status": "protocol", "census_rank": "5"}
+{"id": "829", "section": "LXXIV", "section_name": "Negative knowledge & contradiction", "title": "Explanation-minimal compilation diagnostics", "graph": "A", "status": "partial", "census_rank": ""}
+{"id": "830", "section": "LXXIV", "section_name": "Negative knowledge & contradiction", "title": "Optimization refusal minimization", "graph": "D", "status": "partial", "census_rank": "4"}
+{"id": "831", "section": "LXXV", "section_name": "Guard synthesis & optimization", "title": "Minimal guard synthesis", "graph": "D", "status": "partial", "census_rank": "4"}
+{"id": "832", "section": "LXXV", "section_name": "Guard synthesis & optimization", "title": "Guard sharing", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "833", "section": "LXXV", "section_name": "Guard synthesis & optimization", "title": "Guard implication", "graph": "C", "status": "partial", "census_rank": ""}
+{"id": "834", "section": "LXXV", "section_name": "Guard synthesis & optimization", "title": "Guard ordering optimization", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "835", "section": "LXXV", "section_name": "Guard synthesis & optimization", "title": "Guard elimination from profile/world sealing", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "836", "section": "LXXV", "section_name": "Guard synthesis & optimization", "title": "Proof-directed guard removal", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "837", "section": "LXXVI", "section_name": "Semantic multiversioning", "title": "Semantic multiversioning", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "838", "section": "LXXVI", "section_name": "Semantic multiversioning", "title": "Version lattice", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "839", "section": "LXXVI", "section_name": "Semantic multiversioning", "title": "Version subsumption", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "840", "section": "LXXVI", "section_name": "Semantic multiversioning", "title": "Version synthesis from observed fact clusters", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "841", "section": "LXXVI", "section_name": "Semantic multiversioning", "title": "Version migration across program revisions", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "842", "section": "LXXVI", "section_name": "Semantic multiversioning", "title": "Dynamic semantic patching", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "843", "section": "LXXVII", "section_name": "Runtime phase & representation migration", "title": "Hot-code relocation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "844", "section": "LXXVII", "section_name": "Runtime phase & representation migration", "title": "Hot-data relocation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "845", "section": "LXXVII", "section_name": "Runtime phase & representation migration", "title": "Runtime representation migration", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "846", "section": "LXXVII", "section_name": "Runtime phase & representation migration", "title": "Phase detection", "graph": "A", "status": "research", "census_rank": ""}
+{"id": "847", "section": "LXXVII", "section_name": "Runtime phase & representation migration", "title": "Freeze-point inference", "graph": "C", "status": "research", "census_rank": ""}
+{"id": "848", "section": "LXXVII", "section_name": "Runtime phase & representation migration", "title": "Initialization/runtime phase separation", "graph": "D", "status": "partial", "census_rank": ""}
+{"id": "849", "section": "LXXVII", "section_name": "Runtime phase & representation migration", "title": "Destructive initialization", "graph": "D", "status": "research", "census_rank": ""}
+{"id": "850", "section": "LXXVIII", "section_name": "Fact liveness & compiler memory", "title": "Ephemeral semantic facts", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "851", "section": "LXXVIII", "section_name": "Fact liveness & compiler memory", "title": "Fact liveness", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "852", "section": "LXXVIII", "section_name": "Fact liveness & compiler memory", "title": "Proof liveness", "graph": "E", "status": "partial", "census_rank": "7"}
+{"id": "853", "section": "LXXVIII", "section_name": "Fact liveness & compiler memory", "title": "Provenance liveness", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "854", "section": "LXXVIII", "section_name": "Fact liveness & compiler memory", "title": "Semantic cold storage", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "855", "section": "LXXVIII", "section_name": "Fact liveness & compiler memory", "title": "Fact recomputation versus retention", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "856", "section": "LXXVIII", "section_name": "Fact liveness & compiler memory", "title": "Compile-time memory hierarchy", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "857", "section": "LXXVIII", "section_name": "Fact liveness & compiler memory", "title": "Semantic prefetching", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "858", "section": "LXXIX", "section_name": "Compiler self-realization", "title": "Layout autotuning for the compiler graph", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "859", "section": "LXXIX", "section_name": "Compiler self-realization", "title": "Target-specific compiler realization", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "860", "section": "LXXIX", "section_name": "Compiler self-realization", "title": "Self-specializing compiler B", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "861", "section": "LXXIX", "section_name": "Compiler self-realization", "title": "Compiler feature DCE", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "862", "section": "LXXIX", "section_name": "Compiler self-realization", "title": "Compiler staging", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "863", "section": "LXXIX", "section_name": "Compiler self-realization", "title": "Compiler snapshot image", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "864", "section": "LXXIX", "section_name": "Compiler self-realization", "title": "Zero-deserialization compiler startup", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "865", "section": "LXXIX", "section_name": "Compiler self-realization", "title": "Shared compiler semantic pages", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "866", "section": "LXXIX", "section_name": "Compiler self-realization", "title": "Persistent compiler daemon as merely another realization", "graph": "E", "status": "partial", "census_rank": ""}
+{"id": "867", "section": "LXXIX", "section_name": "Compiler self-realization", "title": "Fork-friendly compiler state", "graph": "E", "status": "research", "census_rank": ""}
+{"id": "868", "section": "LXXX", "section_name": "Distributed & untrusted compilation", "title": "Deterministic parallel semantic evaluation", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "869", "section": "LXXX", "section_name": "Distributed & untrusted compilation", "title": "Deterministic IDs without hash identity", "graph": "C", "status": "law", "census_rank": ""}
+{"id": "870", "section": "LXXX", "section_name": "Distributed & untrusted compilation", "title": "Canonical serialization of semantic graph", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "871", "section": "LXXX", "section_name": "Distributed & untrusted compilation", "title": "Merkle acceleration without Merkle identity", "graph": "C", "status": "protocol", "census_rank": ""}
+{"id": "872", "section": "LXXX", "section_name": "Distributed & untrusted compilation", "title": "Proof-carrying distributed compilation", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "873", "section": "LXXX", "section_name": "Distributed & untrusted compilation", "title": "Untrusted build farm", "graph": "D", "status": "protocol", "census_rank": "9"}
+{"id": "874", "section": "LXXX", "section_name": "Distributed & untrusted compilation", "title": "Optimization marketplace", "graph": "D", "status": "protocol", "census_rank": ""}
+{"id": "875", "section": "LXXX", "section_name": "Distributed & untrusted compilation", "title": "Hardware vendor semantic providers", "graph": "D", "status": "protocol", "census_rank": ""}
