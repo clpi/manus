@@ -3640,7 +3640,223 @@ pub const SemanticGraph = struct {
             if (node.kind == .table_shape or node.kind == .enum_shape) node.foreign_home = resolved.home;
         }
         try self.attachMemberDescriptorShapes(foreign);
+        try self.liftForeignModuleConstants(foreign, resolved.module, resolved.path);
         return foreign;
+    }
+
+    fn liftForeignModuleConstants(
+        self: *SemanticGraph,
+        foreign_module: id,
+        mod: *const ast.Module,
+        file: []const u8,
+    ) !void {
+        for (mod.body.stmts) |*stmt| {
+            var ident: ?[]const u8 = null;
+            var val: ?*const Expr = null;
+            switch (stmt.*) {
+                .assign => |as| {
+                    if (as.targets.len == 1 and as.values.len == 1 and as.targets[0].* == .name) {
+                        ident = as.targets[0].name.ident;
+                        val = as.values[0];
+                    }
+                },
+                .local_decl => |ld| {
+                    if (ld.names.len == 1 and ld.inits.len == 1) {
+                        ident = ld.names[0].ident;
+                        val = ld.inits[0];
+                    }
+                },
+                .const_decl => |cd| {
+                    ident = cd.ident;
+                    val = cd.val;
+                },
+                .global_decl => |gd| {
+                    if (gd.names.len == 1 and gd.inits.len == 1) {
+                        ident = gd.names[0].ident;
+                        val = gd.inits[0];
+                    }
+                },
+                else => {},
+            }
+            if (ident) |name| {
+                if (val) |expr| {
+                    if (checkedIntLiteral(expr)) |content| {
+                        const value = try self.addChild(foreign_module, .{
+                            .kind = .value,
+                            .span = .{ .file = file, .start = expr.loc().line, .end = expr.loc().col },
+                            .name = name,
+                            .descriptor = .i64,
+                            .knowledge = .at_comptime,
+                            .stage = .sema,
+                            .ast_ref = @ptrCast(@constCast(expr)),
+                        });
+                        try self.publishExactI64(value, content);
+                    }
+                }
+            }
+        }
+    }
+
+    fn checkedIntLiteral(expr: *const Expr) ?i64 {
+        return switch (expr.*) {
+            .int_lit => |i| i.val,
+            .unop => |u| blk: {
+                if (u.op != .neg or u.operand.* != .int_lit) break :blk null;
+                break :blk -u.operand.int_lit.val;
+            },
+            else => null,
+        };
+    }
+
+    fn liftForeignConstantFieldSites(
+        self: *SemanticGraph,
+        checked: *const sema.Sema,
+        block: *const ast.Block,
+        file: []const u8,
+        parent: id,
+    ) anyerror!void {
+        for (block.stmts) |*stmt| {
+            switch (stmt.*) {
+                .func_decl => |*fd| {
+                    const func_id = self.findFuncDecl(fd) orelse continue;
+                    try self.liftForeignConstantFieldSites(checked, &fd.func.body, file, func_id);
+                },
+                .if_stmt => |*i| {
+                    try self.liftForeignConstantFieldSitesInExpr(checked, i.cond, file, parent);
+                    try self.liftForeignConstantFieldSites(checked, &i.then, file, parent);
+                    for (i.elseifs) |*ei| {
+                        try self.liftForeignConstantFieldSitesInExpr(checked, ei.cond, file, parent);
+                        try self.liftForeignConstantFieldSites(checked, &ei.body, file, parent);
+                    }
+                    if (i.else_body) |*eb| try self.liftForeignConstantFieldSites(checked, eb, file, parent);
+                },
+                .while_loop => |*w| {
+                    try self.liftForeignConstantFieldSitesInExpr(checked, w.cond, file, parent);
+                    try self.liftForeignConstantFieldSites(checked, &w.body, file, parent);
+                },
+                .repeat_loop => |*r| {
+                    try self.liftForeignConstantFieldSitesInExpr(checked, r.cond, file, parent);
+                    try self.liftForeignConstantFieldSites(checked, &r.body, file, parent);
+                },
+                .num_for => |*f| {
+                    try self.liftForeignConstantFieldSitesInExpr(checked, f.start, file, parent);
+                    try self.liftForeignConstantFieldSitesInExpr(checked, f.stop, file, parent);
+                    if (f.step) |step| try self.liftForeignConstantFieldSitesInExpr(checked, step, file, parent);
+                    try self.liftForeignConstantFieldSites(checked, &f.body, file, parent);
+                },
+                .gen_for => |*f| {
+                    for (f.iters) |iter| try self.liftForeignConstantFieldSitesInExpr(checked, iter, file, parent);
+                    try self.liftForeignConstantFieldSites(checked, &f.body, file, parent);
+                },
+                .local_decl => |ld| for (ld.inits) |init_expr| try self.liftForeignConstantFieldSitesInExpr(checked, init_expr, file, parent),
+                .global_decl => |gd| for (gd.inits) |init_expr| try self.liftForeignConstantFieldSitesInExpr(checked, init_expr, file, parent),
+                .assign => |as| for (as.values) |val| try self.liftForeignConstantFieldSitesInExpr(checked, val, file, parent),
+                .ret => |rs| for (rs.vals) |val| try self.liftForeignConstantFieldSitesInExpr(checked, val, file, parent),
+                .expr_stmt => |es| try self.liftForeignConstantFieldSitesInExpr(checked, es.expr, file, parent),
+                .call_stmt => |cs| try self.liftForeignConstantFieldSitesInExpr(checked, cs.expr, file, parent),
+                else => {},
+            }
+        }
+    }
+
+    fn liftForeignConstantFieldSitesInExpr(
+        self: *SemanticGraph,
+        checked: *const sema.Sema,
+        expr: *const Expr,
+        file: []const u8,
+        parent: id,
+    ) anyerror!void {
+        if (expr.* == .field) {
+            if (checked.foreignModuleIntConstant(expr)) |content| {
+                if (self.findValueByAstRef(expr)) |_| {} else {
+                    const loc = expr.loc();
+                    const value = try self.addChild(parent, .{
+                        .kind = .value,
+                        .span = .{ .file = file, .start = loc.line, .end = loc.col },
+                        .descriptor = .i64,
+                        .knowledge = .at_comptime,
+                        .stage = .sema,
+                        .ast_ref = @ptrCast(@constCast(expr)),
+                    });
+                    try self.publishExactI64(value, content);
+                }
+            }
+        }
+        switch (expr.*) {
+            .binop => |b| {
+                try self.liftForeignConstantFieldSitesInExpr(checked, b.lhs, file, parent);
+                try self.liftForeignConstantFieldSitesInExpr(checked, b.rhs, file, parent);
+            },
+            .call => |c| {
+                try self.liftForeignConstantFieldSitesInExpr(checked, c.func, file, parent);
+                for (c.args) |arg| try self.liftForeignConstantFieldSitesInExpr(checked, arg, file, parent);
+            },
+            .method_call => |mc| {
+                try self.liftForeignConstantFieldSitesInExpr(checked, mc.obj, file, parent);
+                for (mc.args) |arg| try self.liftForeignConstantFieldSitesInExpr(checked, arg, file, parent);
+            },
+            .unop => |u| try self.liftForeignConstantFieldSitesInExpr(checked, u.operand, file, parent),
+            .index => |ix| {
+                try self.liftForeignConstantFieldSitesInExpr(checked, ix.obj, file, parent);
+                try self.liftForeignConstantFieldSitesInExpr(checked, ix.key, file, parent);
+            },
+            .field => |f| try self.liftForeignConstantFieldSitesInExpr(checked, f.obj, file, parent),
+            .table => |t| {
+                for (t.fields) |field| switch (field) {
+                    .indexed => |idx| {
+                        try self.liftForeignConstantFieldSitesInExpr(checked, idx.key, file, parent);
+                        try self.liftForeignConstantFieldSitesInExpr(checked, idx.val, file, parent);
+                    },
+                    .named => |nmd| try self.liftForeignConstantFieldSitesInExpr(checked, nmd.val, file, parent),
+                    .positional => |val| try self.liftForeignConstantFieldSitesInExpr(checked, val, file, parent),
+                    .spread => |src| try self.liftForeignConstantFieldSitesInExpr(checked, src, file, parent),
+                    .semantic => |sem| try self.liftForeignConstantFieldSitesInExpr(checked, sem.val, file, parent),
+                };
+            },
+            .if_expr => |ie| {
+                try self.liftForeignConstantFieldSitesInExpr(checked, ie.cond, file, parent);
+                try self.liftForeignConstantFieldSitesInExpr(checked, ie.then_expr, file, parent);
+                try self.liftForeignConstantFieldSitesInExpr(checked, ie.else_expr, file, parent);
+            },
+            .try_expr => |t| try self.liftForeignConstantFieldSitesInExpr(checked, t.operand, file, parent),
+            .unwrap_expr => |u| try self.liftForeignConstantFieldSitesInExpr(checked, u.operand, file, parent),
+            .await_expr => |a| try self.liftForeignConstantFieldSitesInExpr(checked, a.operand, file, parent),
+            .contains_expr => |c| {
+                try self.liftForeignConstantFieldSitesInExpr(checked, c.lhs, file, parent);
+                try self.liftForeignConstantFieldSitesInExpr(checked, c.rhs, file, parent);
+            },
+            .quote => |q| try self.liftForeignConstantFieldSitesInExpr(checked, q.expr, file, parent),
+            .unquote => |q| try self.liftForeignConstantFieldSitesInExpr(checked, q.expr, file, parent),
+            .sequence => |s| for (s.exprs) |item| try self.liftForeignConstantFieldSitesInExpr(checked, item, file, parent),
+            .range => |r| {
+                try self.liftForeignConstantFieldSitesInExpr(checked, r.start, file, parent);
+                try self.liftForeignConstantFieldSitesInExpr(checked, r.end, file, parent);
+                if (r.step) |step| try self.liftForeignConstantFieldSitesInExpr(checked, step, file, parent);
+            },
+            .list_comp => |lc| {
+                try self.liftForeignConstantFieldSitesInExpr(checked, lc.value, file, parent);
+                try self.liftForeignConstantFieldSitesInExpr(checked, lc.iter, file, parent);
+                if (lc.filter) |filter| try self.liftForeignConstantFieldSitesInExpr(checked, filter, file, parent);
+            },
+            .macro_call => |m| for (m.args) |arg| try self.liftForeignConstantFieldSitesInExpr(checked, arg, file, parent),
+            .match_expr => |m| {
+                try self.liftForeignConstantFieldSitesInExpr(checked, m.scrutinee, file, parent);
+                for (m.arms) |*arm| {
+                    if (arm.guard) |guard| try self.liftForeignConstantFieldSitesInExpr(checked, guard, file, parent);
+                    try self.liftForeignConstantFieldSites(checked, &arm.body, file, parent);
+                }
+            },
+            else => {},
+        }
+    }
+
+    fn findValueByAstRef(self: *const SemanticGraph, expr: *const Expr) ?id {
+        const raw: *const anyopaque = @ptrCast(@constCast(expr));
+        for (self.nodes.items, 0..) |node, i| {
+            if (node.kind != .value) continue;
+            if (node.ast_ref == raw) return @intCast(i);
+        }
+        return null;
     }
 
     fn liftForeignRelation(
@@ -4009,6 +4225,7 @@ pub const SemanticGraph = struct {
             try self.publishApplicationProjections(call_id);
         }
         try self.publishBindingAdjustmentsInBlock(checked, file, &mod.body);
+        try self.liftForeignConstantFieldSites(checked, &mod.body, file, module);
         try self.liftCaptureEdges(mod);
         try self.publishApplicationEffects(mod);
         // AFTER the effect fixpoint, deliberately. That pass blocks a relation

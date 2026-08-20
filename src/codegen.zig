@@ -277,6 +277,8 @@ pub const CodeGen = struct {
     load_chunk: bool = false,
     lib_mode: bool = false,
     idol_mode: bool = false,
+    /// When set, foreign module constant field reads may fold in native precheck.
+    checked_sema: ?*const sema.Sema = null,
     native_scalar_mode: bool = false,
     /// First native-scalar refusal for this generator. Formatted evidence is
     /// copied here so concurrent or nested generators cannot alias it.
@@ -25179,7 +25181,11 @@ pub const CodeGen = struct {
     fn expr_is_req_module_const_field(self: *CodeGen, e: *const ast.Expr) bool {
         if (e.* != .field) return false;
         if (e.field.obj.* != .name) return false;
-        return self.req_module_bindings.contains(e.field.obj.name.ident);
+        if (self.req_module_bindings.contains(e.field.obj.name.ident)) return true;
+        if (self.checked_sema) |sem| {
+            if (sem.foreignModuleIntConstant(e) != null) return true;
+        }
+        return false;
     }
 
     fn expr_is_native_record_field(self: *CodeGen, e: *const ast.Expr) bool {

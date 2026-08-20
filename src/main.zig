@@ -4644,6 +4644,7 @@ fn do_compile(
     native_scalar_precheck.load_chunk = load_chunk;
     native_scalar_precheck.lib_mode = lib_mode;
     native_scalar_precheck.idol_mode = ps.sem.idol_mode;
+    native_scalar_precheck.checked_sema = &ps.sem;
     native_scalar_precheck.test_mode = test_mode;
     native_scalar_precheck.bench_mode = bench_mode;
     native_scalar_precheck.bench_backend = global_bench_backend;

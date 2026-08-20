@@ -140,6 +140,35 @@ grep_file "$PARSER" 'return "\(typedecl' 'RETIRED-TYPE-ALIAS-PROJECTION: typedec
 grep_file "$PARSER" '" \(type " .. proj_type' 'RETIRED-TYPE-ALIAS-PROJECTION: (type …) wrapper forbidden in lib/compiler/parser.id'
 grep_file "$ROOT/lib/compiler/lexer.id" 'word(start, n, "alias") return 51' 'RETIRED-TYPE-ALIAS-PROJECTION: alias keyword forbidden in lib/compiler/lexer.id'
 
+
+# POST-RESOLUTION-PATH-ZERO — cross-home constants belong in sema/graph, not DNIR IO
+examined=$((examined + 1))
+if grep -Fq 'pub fn foreignModuleIntConstant' "$SEMA" && grep -Fq 'fn peekForeignHome' "$SEMA"; then
+    ok 'POST-RESOLUTION-PATH-ZERO: sema publishes foreign module constant lookup'
+else
+    bad 'POST-RESOLUTION-PATH-ZERO: sema must expose foreignModuleIntConstant without DNIR filesystem lookup'
+fi
+examined=$((examined + 1))
+if grep -Fq 'fn liftForeignConstantFieldSites' "$ROOT/src/semantic_graph.zig" && grep -Fq 'fn liftForeignModuleConstants' "$ROOT/src/semantic_graph.zig"; then
+    ok 'POST-RESOLUTION-PATH-ZERO: graph lifts foreign module constants'
+else
+    bad 'POST-RESOLUTION-PATH-ZERO: graph must publish foreign constant value facts'
+fi
+examined=$((examined + 1))
+if grep -Fq 'fn exactValue' "$DNIR" && grep -Fq 'by_exact_value' "$DNIR" && grep -Fq 'ctx.occurrences.exactValue' "$DNIR"; then
+    ok 'POST-RESOLUTION-PATH-ZERO: DNIR consumes graph exact value bridge'
+else
+    bad 'POST-RESOLUTION-PATH-ZERO: DNIR must lower foreign constants from graph exactI64'
+fi
+
+# LINKAGE-DOES-NOT-DEFINE-MEANING — export names must not drive graph-required semantics
+examined=$((examined + 1))
+if grep -Fq 'if (ctx.require_graph_facts) return false;' "$DNIR" && grep -Fq 'recordExportMapAssignable' "$DNIR"; then
+    ok 'LINKAGE-DOES-NOT-DEFINE-MEANING: export-map record inference guarded on graph-required paths'
+else
+    bad 'LINKAGE-DOES-NOT-DEFINE-MEANING: export map must not define semantics when require_graph_facts'
+fi
+
 # MONOLITH-PROBE-ONLY
 if [ -r "$MONOLITH" ]; then
     examined=$((examined + 1))

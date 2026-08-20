@@ -843,6 +843,12 @@ pub const Sema = struct {
         return answer;
     }
 
+    fn peekForeignHome(self: *const Sema, spelling: []const u8) ?ForeignHome {
+        if (self.foreign_homes.get(spelling)) |cached| return cached;
+        const loader = self.home_loader orelse return null;
+        return loader.load(loader.ctx, spelling);
+    }
+
     /// The already-resolved home with this semantic home identity. This never
     /// invokes the loader and never treats a source spelling as authority: an
     /// application fact has already retained `ForeignHome.home`, and graph
@@ -1043,6 +1049,83 @@ pub const Sema = struct {
             found = fd;
         }
         return .{ .home = entry, .decl = found orelse return null };
+    }
+
+    fn intLiteralFromModuleConst(expr: *const Expr) ?i64 {
+        return switch (expr.*) {
+            .int_lit => |i| i.val,
+            .unop => |u| blk: {
+                if (u.op != .neg or u.operand.* != .int_lit) break :blk null;
+                break :blk -u.operand.int_lit.val;
+            },
+            else => null,
+        };
+    }
+
+    fn moduleScopeIntConstant(mod: *const ast.Module, name: []const u8) ?i64 {
+        for (mod.body.stmts) |*stmt| {
+            var ident: ?[]const u8 = null;
+            var val: ?*const Expr = null;
+            switch (stmt.*) {
+                .assign => |as| {
+                    if (as.targets.len == 1 and as.values.len == 1 and as.targets[0].* == .name) {
+                        ident = as.targets[0].name.ident;
+                        val = as.values[0];
+                    }
+                },
+                .local_decl => |ld| {
+                    if (ld.names.len == 1 and ld.inits.len == 1) {
+                        ident = ld.names[0].ident;
+                        val = ld.inits[0];
+                    }
+                },
+                .const_decl => |cd| {
+                    ident = cd.ident;
+                    val = cd.val;
+                },
+                .global_decl => |gd| {
+                    if (gd.names.len == 1 and gd.inits.len == 1) {
+                        ident = gd.names[0].ident;
+                        val = gd.inits[0];
+                    }
+                },
+                else => {},
+            }
+            if (ident) |n| {
+                if (!std.mem.eql(u8, n, name)) continue;
+                if (val) |v| return intLiteralFromModuleConst(v);
+            }
+        }
+        return null;
+    }
+
+    fn foreignHomeSpellingForRoot(self: *const Sema, root: []const u8, buf: *[512]u8) ?[]const u8 {
+        if (self.home_loader == null) return null;
+        if (self.scope.lookup(root) != null) return null;
+        if (self.module_globals.contains(root)) return null;
+        if (self.home_aliases.get(root)) |target| {
+            if (target.len > buf.len) return null;
+            @memcpy(buf[0..target.len], target);
+            return buf[0..target.len];
+        }
+        if (self.peekForeignHome(root)) |entry| {
+            if (entry.home.len > buf.len) return null;
+            @memcpy(buf[0..entry.home.len], entry.home);
+            return buf[0..entry.home.len];
+        }
+        return null;
+    }
+
+    /// Exact integer constant from a foreign module field read (`token.KIND_EOF`).
+    /// Resolution stays in sema/graph; lowering must not re-open sibling files.
+    pub fn foreignModuleIntConstant(self: *const Sema, expr: *const Expr) ?i64 {
+        if (expr.* != .field) return null;
+        const fld = expr.field;
+        if (fld.obj.* != .name) return null;
+        var buf: [512]u8 = undefined;
+        const home_spelling = self.foreignHomeSpellingForRoot(fld.obj.name.ident, &buf) orelse return null;
+        const entry = self.resolvedHome(home_spelling) orelse self.peekForeignHome(home_spelling) orelse return null;
+        return moduleScopeIntConstant(entry.module, fld.field);
     }
 
     /// The relation `method` declared at top level in a reachable foreign home.
