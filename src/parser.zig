@@ -3222,7 +3222,7 @@ pub const Parser = struct {
         const lparen = try self.pk();
         if (lparen.kind != .lparen) return false;
         try self.ensureProducerPack();
-        const view = token_view.fromTokens(self.lex.duo_tokens.?);
+        const view = token_view.fromLexer(self.lex) orelse return false;
         // DERIVED FROM THE TOKEN STREAM, not from a tracked field: this runs
         // inside speculative scans that rewind the lexer, and `line_opener`
         // reads the same producer pack `headerSignal` is about to walk, so it
