@@ -3186,7 +3186,7 @@ pub const SemanticGraph = struct {
             .index => |ix| {
                 try self.liftExprsFromExpr(ix.obj, file, parent, .single);
                 try self.liftExprsFromExpr(ix.key, file, parent, .single);
-                try self.liftAggregateAccess(expr, file, parent, consumption);
+                _ = try self.liftAggregateAccess(expr, file, parent, consumption);
             },
             .field => |f| try self.liftExprsFromExpr(f.obj, file, parent, .single),
             .table => |t| {
@@ -3251,6 +3251,11 @@ pub const SemanticGraph = struct {
         parent: id,
         consumption: types.ReturnConsumption,
     ) !void {
+        if (try self.liftAggregateAccess(expr, file, parent, consumption)) return;
+        if (aggregateIndexSite(expr)) |site| {
+            if (!self.isBootstrapApplicationExpr(expr) and self.aggregateForExpr(site.obj, parent) != null)
+                return;
+        }
         const base = types.inferCallShape(expr) orelse return;
         const shape = types.callShapeWithConsumption(base, consumption);
         const call_loc = expr.loc();
@@ -3381,15 +3386,33 @@ pub const SemanticGraph = struct {
         });
     }
 
+    const AggregateIndexSite = struct {
+        obj: *const ast.Expr,
+        key: *const ast.Expr,
+    };
+
+    fn aggregateIndexSite(expr: *const ast.Expr) ?AggregateIndexSite {
+        return switch (expr.*) {
+            .index => |ix| .{ .obj = ix.obj, .key = ix.key },
+            .call => |c| blk: {
+                if (c.args.len != 1) return null;
+                if (c.func.* != .name) return null;
+                break :blk .{ .obj = c.func, .key = c.args[0] };
+            },
+            else => null,
+        };
+    }
+
     fn liftAggregateAccess(
         self: *SemanticGraph,
         expr: *const ast.Expr,
         file: []const u8,
         parent: id,
         consumption: types.ReturnConsumption,
-    ) !void {
-        if (expr.* != .index) return;
-        const subject = self.aggregateForExpr(expr.index.obj, parent) orelse return;
+    ) !bool {
+        const site = aggregateIndexSite(expr) orelse return false;
+        if (self.isBootstrapApplicationExpr(expr)) return false;
+        const subject = self.aggregateForExpr(site.obj, parent) orelse return false;
         const subject_node = self.get(subject) orelse return error.InvalidAggregateFact;
         const descriptor = subject_node.descriptor orelse return error.InvalidAggregateFact;
         if (descriptor != .array) return error.InvalidAggregateFact;
@@ -3399,7 +3422,7 @@ pub const SemanticGraph = struct {
         // that family is migrated with its mutable cases; publishing an
         // application that no graph consumer can yet realize would turn new
         // semantic knowledge into a capability regression.
-        if (result_descriptor != .array and self.aggregateProducer(subject) == null) return;
+        if (result_descriptor != .array and self.aggregateProducer(subject) == null) return false;
         const aggregate_fact = self.aggregate(subject) orelse return error.InvalidAggregateFact;
         const loc = expr.loc();
         const occurrence = try self.addChild(parent, .{
@@ -3413,18 +3436,18 @@ pub const SemanticGraph = struct {
         });
         try self.markApplicationCandidate(occurrence);
 
-        const key = try self.addApplicationValue(occurrence, expr.index.key, file, .i64);
-        try self.noteOrigin(key, expr.index.key, parent);
+        const key = try self.addApplicationValue(occurrence, site.key, file, .i64);
+        try self.noteOrigin(key, site.key, parent);
         var selected: ?id = null;
         if (self.exactI64(key)) |constant_key| {
             const members = self.aggregateMembers(subject) orelse return error.InvalidAggregateFact;
             if (constant_key >= 1 and constant_key <= @as(i64, @intCast(members.len))) {
                 selected = members[@intCast(constant_key - 1)];
             }
-        } else if (expr.index.key.* == .int_lit) {
-            try self.publishExactI64(key, expr.index.key.int_lit.val);
+        } else if (site.key.* == .int_lit) {
+            try self.publishExactI64(key, site.key.int_lit.val);
             const members = self.aggregateMembers(subject) orelse return error.InvalidAggregateFact;
-            const constant_key = expr.index.key.int_lit.val;
+            const constant_key = site.key.int_lit.val;
             if (constant_key >= 1 and constant_key <= @as(i64, @intCast(members.len))) {
                 selected = members[@intCast(constant_key - 1)];
             }
@@ -3460,6 +3483,7 @@ pub const SemanticGraph = struct {
             &.{key},
             &.{result},
         );
+        return true;
     }
 
     /// Lift module fully including call sites (Phase 1 complete lift).
