@@ -7,6 +7,39 @@ the current production ledger, and live ownership.
 The constitution is structured law documentation, not an implementation
 example.
 
+## Architectural mandate (2026-08-20 — supersedes fixture-chasing)
+
+**A passing fixture is not the objective.** Never repair a downstream consumer
+when its upstream authoritative fact is wrong.
+
+- **DNIR may not filter, reinterpret, recover, or correct semantic graph facts.**
+  If `graph.application.arguments` contains non-arguments, fix the producer —
+  do not sanitize in lowering.
+- **Sema may not choose relations by hard-coded home names, home priority, or
+  first textual match.** Filesystem/home placement is provenance/topology, not
+  semantic dispatch.
+- **If multiple compatible relations exist,** resolve through exact
+  descriptor/world/relation facts or diagnose ambiguity — never `iter` before
+  `table` by array order.
+- **Never alter canonical compiler source merely to fit an immature direct
+  backend** unless the source itself violates current law.
+- **`lib/compiler/monolith.id` is a capability probe, not compiler-B
+  architecture.**
+- **Every self-host green must name the semantic authority gained**, not merely
+  the DNB removed.
+- **Every new workaround must delete or move authority upstream** rather than
+  increase backend intelligence about source syntax, names, AST shape, or local
+  storage.
+
+**Review question (required before every commit):** If I deleted all source
+spelling, AST shape, filesystem names, and host-local variable names after
+resolution, would my new code still know enough to make this decision? If the
+answer is no, the change is almost certainly landing at the wrong layer.
+
+Executable negative controls: `sh gate/architecture-negative.sh` (idol) and the
+sibling wrapper in idol-native.
+
+
 ## Dominant dashboard
 
 Report these before file counts or keyword metrics (`docs/METRICS.md`):
