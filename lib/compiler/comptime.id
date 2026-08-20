@@ -44,8 +44,16 @@ _at: i64 = ()
   _src:byte(_pos)
 
 _skip_ws = ()
-  while _pos <= _src:len() and (_at() == 32 or _at() == 9 or _at() == 10)
-    _pos = _pos + 1
+  while _pos <= _src:len()
+    c = _at()
+    if c == 32
+      _pos = _pos + 1
+    if c == 9
+      _pos = _pos + 1
+    if c == 10
+      _pos = _pos + 1
+    if c != 32 and c != 9 and c != 10
+      return
 
 _is_digit: bool = (c: i64)
   c >= 48 and c <= 57
@@ -90,17 +98,36 @@ _number: i64 = ()
     if n2 == 120 or n2 == 88
       _pos = _pos + 2
       v: i64 = 0
-      while _pos <= _src:len() and _hex_val(_at()) >= 0
-        v = v * 16 + _hex_val(_at())
-        _pos = _pos + 1
+      more: i64 = 1
+      while more == 1 and _pos <= _src:len()
+        hv = _hex_val(_at())
+        if hv < 0
+          more = 0
+        if more == 1
+          v = v * 16 + hv
+          _pos = _pos + 1
       return v
   if not _is_digit(_at())
     _bad = true
     return 0
   v2: i64 = 0
-  while _pos <= _src:len() and _is_digit(_at())
-    v2 = v2 * 10 + _at() - 48
-    _pos = _pos + 1
+  c0 = _at()
+  if c0 < 48
+    _bad = true
+    return 0
+  if c0 > 57
+    _bad = true
+    return 0
+  more2: i64 = 1
+  while more2 == 1 and _pos <= _src:len()
+    c = _at()
+    if c < 48
+      more2 = 0
+    if c > 57
+      more2 = 0
+    if more2 == 1
+      v2 = v2 * 10 + c - 48
+      _pos = _pos + 1
   v2
 
 _prim: i64 = ()
