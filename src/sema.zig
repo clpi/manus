@@ -1045,6 +1045,75 @@ pub const Sema = struct {
         return .{ .home = entry, .decl = found orelse return null };
     }
 
+    /// The relation `method` declared at top level in a reachable foreign home.
+    /// Unlike `foreignRelation`, the home spelling is known directly — the
+    /// subject-first face already picked the subject; this asks which home's
+    /// declaration answers, not which home a dotted callee names.
+    fn foreignRelationInHome(
+        self: *Sema,
+        home_spelling: []const u8,
+        method: []const u8,
+    ) ?ForeignRelation {
+        if (self.home_loader == null) return null;
+        const entry = self.homeNamed(home_spelling) orelse return null;
+        var found: ?*const ast.FuncDecl = null;
+        for (entry.module.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len != 1 or fd.method or fd.is_local) continue;
+            if (!std.mem.eql(u8, fd.path[0], method)) continue;
+            if (found != null) return null;
+            found = fd;
+        }
+        return .{ .home = entry, .decl = found orelse return null };
+    }
+
+    /// Homes consulted for a subject-first cross-home lookup, in priority order.
+    /// When the same relation name exists in more than one home — `map` is in
+    /// both `iter` and `table` — the first home that declares it wins, which
+    /// makes `xs:map(f)` resolve through `iter.map` rather than `table.map`.
+    fn subjectFirstForeignHomeCandidates(conf: subject_home.Conformance) []const []const u8 {
+        return switch (conf) {
+            .sequence => &[_][]const u8{ "iter", "table" },
+            .text => &[_][]const u8{ "string" },
+            .numeric => &[_][]const u8{ "math" },
+            .stream => &[_][]const u8{},
+            .unknown => &[_][]const u8{},
+        };
+    }
+
+    fn foreignRelationFirstInHomes(
+        self: *Sema,
+        conf: subject_home.Conformance,
+        method: []const u8,
+    ) ?ForeignRelation {
+        for (subjectFirstForeignHomeCandidates(conf)) |spelling| {
+            if (self.foreignRelationInHome(spelling, method)) |rel| return rel;
+        }
+        return null;
+    }
+
+    /// SUBJECT-FIRST CROSS-HOME. `xs:map(f)` is the same application as
+    /// `iter.map(xs, f)`; the operand-first face already reached foreign homes
+    /// through `foreignRelation`, but the canonical face did not. This closes
+    /// GAP-111's measured hole without duplicating every `lib/iter.id` relation
+    /// into the builtin sequence roster.
+    fn subjectFirstForeignRelation(
+        self: *Sema,
+        obj: *const ast.Expr,
+        method: []const u8,
+        ot: RT,
+    ) ?ForeignRelation {
+        if (self.home_loader == null) return null;
+        const conf = self.subjectConformance(obj, ot);
+        if (conf != .unknown) return self.foreignRelationFirstInHomes(conf, method);
+        for ([_]subject_home.Conformance{ .text, .numeric, .sequence, .stream }) |p| {
+            if (self.foreignRelationFirstInHomes(p, method)) |rel| return rel;
+        }
+        return null;
+    }
+
+
     fn recordApplication(
         self: *Sema,
         expr: *const Expr,
@@ -4640,6 +4709,19 @@ pub const Sema = struct {
                         }
                     }
                     return .any;
+                }
+
+                if (self.subjectFirstForeignRelation(mc.obj, mc.method, ot)) |foreign| {
+                    const declared = try self.resolve_type(contract_ret_expr(&foreign.decl.func));
+                    try self.recordApplicationInHome(
+                        expr,
+                        foreign.decl,
+                        mc.obj,
+                        mc.args,
+                        declared,
+                        foreign.home.home,
+                    );
+                    return declared;
                 }
                 self.err(
                     mc.loc,
