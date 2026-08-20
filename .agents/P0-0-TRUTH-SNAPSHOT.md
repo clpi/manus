@@ -9,8 +9,8 @@ Compare against prior audit anchors: user baseline `idol` **33b36031**, `idol-na
 
 | Component | Value |
 |---|---|
-| **Idol HEAD** | pending commit on `059d1f7b` lineage (graph cross-home constants) |
-| **Idol-native HEAD** | `7e88eb4c7cfa68b98d552392538b498c8384f785` (repin after idol push) |
+| **Idol HEAD** | `1036c7cfa9684ee3af3c623df0a46ab58e9c214b` |
+| **Idol-native HEAD** | `ab0094d` (repin to `1036c7cf`) |
 | **Law blob** | `201b78015e8f463798e50b2e180dc61cda45fcd1` |
 | **Constitution blob** | `7406246f170602414d620a01b042ae98768a40b6` |
 | **Source projection blob** | `aa4a0eb37260546a3cf4f1eec3bf99a7f19b974a` |
@@ -22,9 +22,9 @@ If any component changes mid-run: **NOT A MEASUREMENT**.
 
 | Field | Value |
 |---|---|
-| **HEAD (pre-commit)** | `059d1f7b7eae50893097eacf47b8bb0fd43bbdae` |
-| **branch** | `main` (1 commit ahead of origin before this wave) |
-| **merge note** | P0 rollback `e4a7dc05` + mandate merge `073a60a7` + arch gate hardening `059d1f7b` |
+| **HEAD** | `1036c7cfa9684ee3af3c623df0a46ab58e9c214b` |
+| **branch** | `main` (pushed) |
+| **merge note** | P0 rollback `e4a7dc05` + mandate merge `073a60a7` + arch gate hardening `059d1f7b` + graph cross-home constants `1036c7cf` |
 
 ### P0 architectural rollback — verified (user audit items 1–3)
 
@@ -59,12 +59,12 @@ If any component changes mid-run: **NOT A MEASUREMENT**.
 
 | Field | Value |
 |---|---|
-| **HEAD** | `7e88eb4c7cfa68b98d552392538b498c8384f785` |
-| **pinned Idol authority** | `059d1f7b7eae50893097eacf47b8bb0fd43bbdae` (repin required after idol push) |
+| **HEAD** | `ab0094d` |
+| **pinned Idol authority** | `1036c7cfa9684ee3af3c623df0a46ab58e9c214b` |
 
 ## Open frontiers
 
 - **GRAPH-ARG-EXACT producer** — graph operand pack still wrong at source; DNIR filters removed
-- **bind.id self-host** — passes precheck outside `lib/compiler/` path; under `lib/compiler/` precheck still hits `local-decl-init` (path/home interaction); graph stage needs `lexer.new` application facts
+- **bind.id self-host** — `idol check` passes; direct compile still fails `local-decl-init` at native-scalar precheck under `lib/compiler/`
 - Behavioral companions: GRAPH-ONLY-REALIZATION, HOME-MOVE, ZERO-TEXT-SEMANTICS
 - Decompose `subject_home.Conformance` enum into descriptor/world facts
