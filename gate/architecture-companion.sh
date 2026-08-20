@@ -23,6 +23,7 @@ printf 'architecture-companion gate: behavioral debt checks\n\n'
 
 run gap-111-subject-first sh gate/gap-111-subject-first.sh
 run gap-111-map-ambiguity sh gate/gap-111-map-ambiguity.sh
+run delimiter-projection-law sh gate/delimiter-projection-law.sh
 
 printf '\narchitecture-companion gate: %d failure(s)\n' "$FAILED"
 exit "$FAILED"

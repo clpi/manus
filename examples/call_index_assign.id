@@ -1,5 +1,0 @@
-# Minimal gate: demagix call-form fixed-array index assign/read (arr(2) == arr[2]).
-main: i64 = ()
-  arr = {0, 0, 0, 0}
-  arr(2) = 42
-  arr(2)

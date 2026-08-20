@@ -120,6 +120,34 @@ require_present     PIPELINE-REDUCTION-GOAL     docs/AGENT_ALIGNMENT.md     'rem
 
 require_max     NO-DNIR-SECOND-TYPECHECK     src/dnir_lower.zig     'fn exprIsStr|exprIsStr\('     40
 
+require_max \
+    NO-SOURCE-IO-BELOW-GRAPH \
+    src/dnir_lower.zig \
+    'loadSiblingModuleConsts|parseSiblingModule|mergeForeignModuleConstsForFields|mergeForeignModuleRecordsForFields|mergeForeignModuleRecordReturns|mergeAliasModuleConsts|exprCollectModuleFieldAliases|blockCollectModuleFieldAliases|siblingModulePath|siblingRecordReturnExportName' \
+    0
+
+require_max \
+    CALL-AS-INDEX-FORBIDDEN \
+    src/dnir_lower.zig \
+    'shouldLowerAsArrayIndex|arrayIndexSite' \
+    0
+
+require_max \
+    CALL-AS-INDEX-FORBIDDEN-GRAPH \
+    src/semantic_graph.zig \
+    'aggregateIndexSite|shouldLowerAsArrayIndex' \
+    0
+
+require_present \
+    GRAPH-RECORD-RETURN-BARRIER \
+    src/dnir_lower.zig \
+    'if (ctx.require_graph_facts) return false;'
+
+require_absent \
+    CALL-INDEX-GATE-REMOVED \
+    gate/call-index-assign.sh \
+    'call-index-assign'
+
 if [ -x gate/architecture-roadmap.sh ]; then
     SEEN=$((SEEN + 1))
     if sh gate/architecture-roadmap.sh >/dev/null 2>&1; then
