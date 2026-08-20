@@ -962,9 +962,12 @@ fn lowerModuleFromGraph(
         // `_field` and collided with every other home naming a relation
         // `field`. That arm is the DEFINER side of the law, and it is what this
         // change lands.
-        const export_name = if (graph.foreignHome(entity_id)) |h|
-            try home_resolve.homeSymbol(alloc, h, fd.path[0])
-        else
+        const export_name = if (graph.foreignHome(entity_id)) |h| blk: {
+            // THE `c` WORLD IS A FOREIGN BOUNDARY: roster members link as their
+            // C names (`abs`), not `idol_c__abs` mangling.
+            if (std.mem.eql(u8, h, "c")) break :blk try alloc.dupe(u8, fd.path[0]);
+            break :blk try home_resolve.homeSymbol(alloc, h, fd.path[0]);
+        } else
             try funcExportName(alloc, self_home, fd);
         errdefer alloc.free(export_name);
         const slot = try entity_linkage.getOrPut(alloc, entity_id);
@@ -8617,7 +8620,8 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             // corpus files call `c.abs` or `c.labs`, but 168 bind a name `c`,
             // so the collision was one `abs` away and the comment claiming
             // shadowing worked would have been the only thing implementing it.
-            if (std.mem.eql(u8, f.obj.name.ident, "c") and c.args.len == 1 and
+            if (!ctx.require_graph_facts and
+                std.mem.eql(u8, f.obj.name.ident, "c") and c.args.len == 1 and
                 subject_home.isCMember(f.field) and ctx.locals.get("c") == null)
             {
                 const arg = try lowerExpr(ctx, c.args[0]);

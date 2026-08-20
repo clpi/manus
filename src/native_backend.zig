@@ -7871,8 +7871,13 @@ fn validateDnirApplications(
                         return invalidFactsWith(diagnostic, @src(), "missing-application-target");
                     const relation_name = node.name orelse
                         return invalidFactsWith(diagnostic, @src(), "missing-application-target");
-                    const want = home_resolve.homeSymbol(alloc, foreign_home, relation_name) catch
-                        return invalidFactsWith(diagnostic, @src(), "application-link-symbol");
+                    // THE `c` WORLD IS A FOREIGN BOUNDARY: members link as their
+                    // C names (`abs`), not `idol_c__abs` mangling.
+                    const want = if (std.mem.eql(u8, foreign_home, "c"))
+                        try alloc.dupe(u8, relation_name)
+                    else blk: {
+                        break :blk try home_resolve.homeSymbol(alloc, foreign_home, relation_name);
+                    };
                     defer alloc.free(want);
                     if (!std.mem.eql(u8, want, instruction.callee)) {
                         return invalidFactsWith(diagnostic, @src(), "application-link-symbol");

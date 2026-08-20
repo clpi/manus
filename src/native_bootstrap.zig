@@ -369,9 +369,6 @@ fn callApplication(expr: *const Expr) bool {
                     std.mem.eql(u8, f.field, "floor") or
                     std.mem.eql(u8, f.field, "ceil");
             }
-            if (std.mem.eql(u8, home, "c") and c.args.len == 1) {
-                return subject_home.isCMember(f.field);
-            }
             return false;
         },
         else => return false,
