@@ -7863,21 +7863,6 @@ fn validateDnirApplications(
                     }
                 } else {
                     if (descriptor == .@"struct" or descriptor == .table_type) {
-                        if (instruction.relation) |rel| {
-                            if (graph.get(rel)) |rn| {
-                                if (rn.name) |nm| {
-                                    if (std.mem.eql(u8, nm, "proj_program_lx")) {
-                                        std.debug.print("SHAPE app={d} fn={s} desc={s} rec={s} idx={d}\n", .{
-                                            application.application,
-                                            function.name,
-                                            @tagName(descriptor),
-                                            instruction.record,
-                                            instruction_index,
-                                        });
-                                    }
-                                }
-                            }
-                        }
                         return invalidFactsWith(diagnostic, @src(), "application-result-shape");
                     }
                     if (instruction.record.len != 0) {
@@ -7889,28 +7874,8 @@ fn validateDnirApplications(
                         return invalidFactsWith(diagnostic, @src(), "folded-application-lineage");
                     }
                     const use = try seen.getOrPut(alloc, application.application);
-                    if (use.found_existing) {
-                    if (std.fs.cwd().createFile("/tmp/idol_dup.txt", .{ .truncate = true })) |f| {
-                        defer f.close();
-                        if (instruction.relation) |rel| {
-                            if (graph.get(rel)) |rn| {
-                                if (rn.name) |nm| {
-                                    _ = f.writer().print("dup app={d} fn={s} op={s} callee={s} rec={s} idx={d} rel={s}
-", .{
-                                        application.application,
-                                        function.name,
-                                        @tagName(instruction.op),
-                                        instruction.callee,
-                                        instruction.record,
-                                        instruction_index,
-                                        nm,
-                                    }) catch {};
+                    if (use.found_existing) return invalidFactsWith(diagnostic, @src(), "application-realization-count");
                                 }
-                            }
-                        }
-                    } else |_| {}
-                    return invalidFactsWith(diagnostic, @src(), "application-realization-count");
-                }
             }
         }
     }
