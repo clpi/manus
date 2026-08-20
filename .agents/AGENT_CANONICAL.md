@@ -8,7 +8,9 @@ router; it contains no language law and no volatile project status.
 
 | Purpose | Path |
 |---|---|
-| Sole semantic law | `docs/spec/constitution.md` |
+| Supreme compact law | `docs/spec/law.md` |
+| Structured expansion and `law.*` owner | `docs/spec/constitution.md` |
+| Architecture orientation (read before code) | `.agents/ARCHITECTURE_INJECTION.md` |
 | Idol algebra closure (C0 §67) | `docs/spec/constitution.md` §67 · `law.gate.protocol` · `law.gate.algebra` · `law.gate.infer` · `law.gate.convergence` |
 | Convergence meta-invariants (SHC seams) | C0 §67 · `law.bridge.death` … `law.gate.convergence` · harness § seam audit |
 | Harness reasoning (stable template) | `docs/spec/harness-projection.md` |
@@ -30,15 +32,16 @@ router; it contains no language law and no volatile project status.
 | Performance evidence | `docs/performance.md` |
 | Open obligations | exact current `gaps/GAP-*.md` files |
 
-The constitution is structured law documentation, not executable source or a
-pattern library. Canonical implementation uses `.id`. No pass document or
-historical corpus file is an authority.
+The compact law wins on drift; the constitution is structured law documentation,
+not executable source or a pattern library. Canonical implementation uses `.id`.
+No pass document or historical corpus file is an authority.
 
 ## Session start
 
-1. Read `AGENTS.md` (orientation + mechanical preflight), the constitution,
-   `CLAUDE.md`, `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the
-   scope-specific authority.
+1. Read `.agents/ARCHITECTURE_INJECTION.md`, `AGENTS.md` (orientation +
+   mechanical preflight), `docs/spec/law.md`, the constitution, `CLAUDE.md`,
+   `docs/AGENT_ALIGNMENT.md`, `docs/bootstrap.md`, and the scope-specific
+   authority.
 2. Run `tools/node/dev/orient` and inspect its exact authority/frontier output.
 3. Inspect `git status --short --branch`, current HEAD, recent commits,
    `tools/node/dev/claim list`, every current `gaps/GAP-*.md`, and `git stash list`.
@@ -54,8 +57,9 @@ historical corpus file is an authority.
 7. Commit only explicit owned paths and release only your own claims.
 
 The language identity is **Idol** (`idol`, `.id`, repository `idollang/idol`).
-Semantic law lives in `docs/spec/constitution.md` (C0). Do not migrate to the
-release repository until `.agents/RELEASE_READINESS.md` authorizes release.
+Supreme compact law lives in `docs/spec/law.md`; structured expansion and
+`law.*` identities live in `docs/spec/constitution.md` (C0). Do not migrate to
+the release repository until `.agents/RELEASE_READINESS.md` authorizes release.
 The claim wrapper remains bootstrap transport until the graph-owned
 coordination world closes. It is not language semantics and is not duplicated
 inside MCP.

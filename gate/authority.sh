@@ -117,6 +117,37 @@ if [ -r "$README" ]; then
     rejects "$README" 'Idol language law has one home:' 'spec router still claims constitution is the sole law home'
 fi
 
+AGENT_CANONICAL="$ROOT/.agents/AGENT_CANONICAL.md"
+if [ -r "$AGENT_CANONICAL" ]; then
+    examined=$((examined + 1))
+    contains "$AGENT_CANONICAL" 'docs/spec/law.md' 'agent router no longer names compact law'
+    contains "$AGENT_CANONICAL" 'Supreme compact law' 'agent router no longer ranks compact law supreme'
+    rejects "$AGENT_CANONICAL" 'Sole semantic law | `docs/spec/constitution.md`' 'agent router still claims constitution is sole semantic law'
+fi
+
+AGENTS_SCOPE="$ROOT/.agents/AGENTS.md"
+if [ -r "$AGENTS_SCOPE" ]; then
+    examined=$((examined + 1))
+    contains "$AGENTS_SCOPE" 'docs/spec/law.md' 'agent scope no longer names compact law'
+    contains "$AGENTS_SCOPE" 'supreme compact law' 'agent scope no longer ranks compact law supreme'
+    rejects "$AGENTS_SCOPE" 'is the sole semantic law' 'agent scope still claims constitution is sole semantic law'
+fi
+
+AGENT_COORD="$ROOT/.agents/AGENT_COORDINATION.md"
+if [ -r "$AGENT_COORD" ]; then
+    examined=$((examined + 1))
+    contains "$AGENT_COORD" 'docs/spec/law.md' 'agent coordination no longer names compact law'
+    rejects "$AGENT_COORD" 'Semantic law | `docs/spec/constitution.md` only' 'agent coordination still claims constitution is sole semantic law'
+fi
+
+ARCH_INJ="$ROOT/.agents/ARCHITECTURE_INJECTION.md"
+if [ -r "$ARCH_INJ" ]; then
+    examined=$((examined + 1))
+    contains "$ARCH_INJ" 'observations → identities + facts → demand → lawful realization space → minimum physical work' 'architecture injection lost core pipeline model'
+    contains "$ARCH_INJ" 'Preserve the strongest fact already known' 'architecture injection lost strongest-fact law'
+    contains "$ARCH_INJ" 'Do not port the host compiler' 'architecture injection lost short-form mandate'
+fi
+
 if [ -r "$AUTHORITY_JSON" ] && command -v git >/dev/null 2>&1; then
     LAW_BLOB=$(
         sed -n '/"compact_law": {/,/"long_form_law": {/p' "$AUTHORITY_JSON"             | sed -n 's/^[[:space:]]*"blob": "\([^"]*\)".*/\1/p'             | head -1

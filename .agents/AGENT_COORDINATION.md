@@ -8,7 +8,8 @@ the ignored `.agents/session/` state or in evidence from an exact run.
 
 | Purpose | Owner |
 |---|---|
-| Semantic law | `docs/spec/constitution.md` only |
+| Supreme compact law | `docs/spec/law.md` |
+| Structured expansion / `law.*` owner | `docs/spec/constitution.md` |
 | Executed compiler frontier | `docs/bootstrap.md`, verified against production dispatch |
 | Live claims and leases | shared Git-common-dir claim locks, accessed through `tools/node/dev/claim` |
 | Open obligations | exact `gaps/GAP-0NN.md` records; `orient` derives the P0 census |
