@@ -331,9 +331,15 @@ fn homeFromDir(
 /// home: `lib/compiler/lexer.id` and a project-root `compiler/lexer.id` are the
 /// same home reached two ways, and they must mangle alike.
 pub fn homeOfPath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]const u8 {
-    try rejectParentUnderflow(native_path_type, path);
+    // Sibling imports from another checkout often arrive as `../home/file.id`.
+    // Lexical `..` rejection before `realpath` makes those bytes unliftable even
+    // though the filesystem resolves them to the same home identity.
+    if (!hasParentComponent(native_path_type, path)) {
+        try rejectParentUnderflow(native_path_type, path);
+    }
     const canonical = try canonicalHomePath(alloc, io, path);
     defer alloc.free(canonical);
+    try rejectParentUnderflow(native_path_type, canonical);
     const stem = std.fs.path.stem(canonical);
     var dir = std.fs.path.dirname(canonical) orelse "";
     // THE HOME MAY NOT CONTAIN THE FILESYSTEM. Compiling

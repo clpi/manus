@@ -965,6 +965,25 @@ pub const Sema = struct {
         return buf[0..len];
     }
 
+
+    /// Whether a module-level relation declaration answers to `name`.
+    ///
+    /// Idol admits two canonical top-level spellings:
+    ///   `name = (…)`              → path `[name]`
+    ///   `name: Ret = (…)`         → path `[name, Ret]`, method=true
+    ///
+    /// Cross-home lookup must accept both; requiring `path.len == 1` and
+    /// `!method` made every `lexer.new`-style sibling relation invisible to
+    /// `ApplicationFact` publication and left direct lowering at DNB011.
+    fn moduleLevelRelationNamed(_: *const Sema, fd: *const ast.FuncDecl, name: []const u8) bool {
+        if (fd.is_local) return false;
+        if (fd.path.len == 0) return false;
+        if (!std.mem.eql(u8, fd.path[0], name)) return false;
+        if (fd.path.len == 1 and !fd.method) return true;
+        if (fd.method and fd.path.len >= 2) return true;
+        return false;
+    }
+
     /// The relation a dotted callee names in a reachable foreign home.
     ///
     /// Null keeps the site unresolved rather than guessing — the same contract
@@ -1043,8 +1062,7 @@ pub const Sema = struct {
         for (entry.module.body.stmts) |*stmt| {
             if (stmt.* != .func_decl) continue;
             const fd = &stmt.func_decl;
-            if (fd.path.len != 1 or fd.method or fd.is_local) continue;
-            if (!std.mem.eql(u8, fd.path[0], wanted)) continue;
+            if (!self.moduleLevelRelationNamed(fd, wanted)) continue;
             if (found != null) return null;
             found = fd;
         }
@@ -1143,8 +1161,7 @@ pub const Sema = struct {
         for (entry.module.body.stmts) |*stmt| {
             if (stmt.* != .func_decl) continue;
             const fd = &stmt.func_decl;
-            if (fd.path.len != 1 or fd.method or fd.is_local) continue;
-            if (!std.mem.eql(u8, fd.path[0], method)) continue;
+            if (!self.moduleLevelRelationNamed(fd, method)) continue;
             if (found != null) return null;
             found = fd;
         }

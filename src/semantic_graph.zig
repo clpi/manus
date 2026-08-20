@@ -3868,7 +3868,7 @@ pub const SemanticGraph = struct {
     ) !id {
         const home = fact.home orelse return error.MissingSemanticDeclaration;
         const fd = fact.target;
-        if (fd.path.len != 1) return error.MissingSemanticDeclaration;
+        if (fd.path.len == 0) return error.MissingSemanticDeclaration;
         const foreign = try self.liftForeignHome(module, checked, home);
         const func_id = try self.addChild(foreign, .{
             .kind = .func,
