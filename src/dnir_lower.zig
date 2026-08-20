@@ -747,6 +747,138 @@ fn mergeForeignModuleConstsForFields(
     }
 }
 
+fn hasRecordNamed(records: []const dnir.RecordDesc, name: []const u8) bool {
+    for (records) |record| {
+        if (std.mem.eql(u8, record.name, name)) return true;
+    }
+    return false;
+}
+
+fn siblingModulePath(
+    alloc: std.mem.Allocator,
+    from_file: []const u8,
+    alias: []const u8,
+) Error!?[]const u8 {
+    const dir = std.fs.path.dirname(from_file) orelse return null;
+    return try std.fmt.allocPrint(alloc, "{s}{c}{s}.id", .{ dir, std.fs.path.sep, alias });
+}
+
+fn parseSiblingModule(
+    alloc: std.mem.Allocator,
+    from_file: []const u8,
+    alias: []const u8,
+) Error!?ast.Module {
+    const path = (try siblingModulePath(alloc, from_file, alias)) orelse return null;
+    defer alloc.free(path);
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    const src = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), threaded.io(), path, alloc, .unlimited) catch return null;
+    defer alloc.free(src);
+    const facts = @import("lexer_bridge.zig").sourceFacts(path);
+    var lex = @import("lexer.zig").Lexer.initFacts(src, path, facts);
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = lex.family == @import("lexer_bridge.zig").family_canon;
+    return parser.parse_module() catch null;
+}
+
+/// The callee string `lowerCall` emits for `alias.fn(...)` — not the
+/// home-mangled export of the defining module.
+fn siblingRecordReturnExportName(
+    alloc: std.mem.Allocator,
+    alias: []const u8,
+    fd: *const ast.FuncDecl,
+) Error![]const u8 {
+    const leaf = fd.path[fd.path.len - 1];
+    return try std.fmt.allocPrint(alloc, "{s}.{s}", .{ alias, leaf });
+}
+
+fn mergeForeignModuleRecordsForFields(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    compiling_path: []const u8,
+    records: *std.ArrayList(dnir.RecordDesc),
+) Error!void {
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    defer {
+        var it = seen.keyIterator();
+        while (it.next()) |key| alloc.free(key.*);
+        seen.deinit(alloc);
+    }
+    try blockCollectModuleFieldAliases(alloc, &mod.body, &seen);
+    var it = seen.keyIterator();
+    while (it.next()) |alias| {
+        const sibling = (try parseSiblingModule(alloc, compiling_path, alias.*)) orelse continue;
+        var sibling_graph = semantic_graph.SemanticGraph.init(alloc);
+        defer sibling_graph.deinit();
+        const sibling_path = (try siblingModulePath(alloc, compiling_path, alias.*)) orelse continue;
+        defer alloc.free(sibling_path);
+        _ = sibling_graph.liftModuleWithCalls(&sibling, sibling_path) catch continue;
+        var scratch: std.ArrayList(dnir.RecordDesc) = .empty;
+        try collectRecordsFromGraph(alloc, &scratch, &sibling_graph);
+        for (scratch.items) |record| {
+            if (hasRecordNamed(records.items, record.name)) {
+                deinitRecord(alloc, record);
+                continue;
+            }
+            try records.append(alloc, record);
+        }
+        scratch.deinit(alloc);
+    }
+}
+
+fn mergeForeignModuleRecordReturns(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    compiling_path: []const u8,
+    records: []const dnir.RecordDesc,
+    out: *std.StringHashMapUnmanaged([]const u8),
+) Error!void {
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    defer {
+        var it = seen.keyIterator();
+        while (it.next()) |key| alloc.free(key.*);
+        seen.deinit(alloc);
+    }
+    try blockCollectModuleFieldAliases(alloc, &mod.body, &seen);
+    var it = seen.keyIterator();
+    while (it.next()) |alias| {
+        const sibling = (try parseSiblingModule(alloc, compiling_path, alias.*)) orelse continue;
+        for (sibling.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (!shouldIncludeFuncDecl(fd)) continue;
+            const rec = findRecordName(records, fd.func.ret_type) orelse continue;
+            const export_name = try siblingRecordReturnExportName(alloc, alias.*, fd);
+            defer alloc.free(export_name);
+            if (out.contains(export_name)) continue;
+            const key = try alloc.dupe(u8, export_name);
+            const value = try alloc.dupe(u8, rec.name);
+            out.put(alloc, key, value) catch |err| {
+                alloc.free(key);
+                alloc.free(value);
+                return err;
+            };
+        }
+    }
+}
+
+fn qualifiedCallExportName(
+    alloc: std.mem.Allocator,
+    call: ast.Expr,
+) Error!?[]const u8 {
+    return switch (call) {
+        .call => |c| switch (c.func.*) {
+            .name => |n| try alloc.dupe(u8, n.ident),
+            .field => |f| {
+                if (f.obj.* != .name) return null;
+                return try std.fmt.allocPrint(alloc, "{s}.{s}", .{ f.obj.name.ident, f.field });
+            },
+            else => null,
+        },
+        else => null,
+    };
+}
+
+
 pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.Module {
     var diagnostic: Diagnostic = .{};
     return lowerModuleObserved(alloc, mod, &diagnostic);
@@ -1126,6 +1258,7 @@ fn lowerModuleFromGraph(
         records.deinit(alloc);
     }
     try collectRecordsFromGraph(alloc, &records, graph);
+    try mergeForeignModuleRecordsForFields(alloc, mod, compiling_path, &records);
 
     var relation_edges = try collectRelationEdges(alloc, mod);
     defer {
@@ -1269,6 +1402,7 @@ fn lowerModuleFromGraph(
             return err;
         };
     }
+    try mergeForeignModuleRecordReturns(alloc, mod, compiling_path, records.items, &func_record_returns);
 
     var skipped: ?[]const u8 = null;
     defer if (skipped) |name| alloc.free(name);
@@ -2883,6 +3017,7 @@ fn effect(expr: *const ast.Expr) bool {
 fn tryEmitSelfTail(ctx: *LowerCtx, expr: *const ast.Expr) Error!bool {
     if (ctx.self_name.len == 0) return false;
     if (expr.* != .call) return false;
+    if (shouldLowerAsArrayIndex(ctx, expr)) return false;
     // A checked application cannot become a branch until the semantic graph
     // supplies a transform id and witness. Let ordinary checked-call
     // lowering retain the application instead of authorizing a rewrite from
@@ -3317,6 +3452,11 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 // no arm for at all.
                 if (envPlaceKey(ctx, target)) |key| {
                     try lowerEnvStore(ctx, key, value);
+                    continue;
+                }
+                if (shouldLowerAsArrayIndex(ctx, target)) {
+                    const site = arrayIndexSite(target).?;
+                    try lowerIndexAssignTarget(ctx, site.obj, site.key, value);
                     continue;
                 }
                 switch (target.*) {
@@ -4648,6 +4788,7 @@ fn holds(ctx: *const LowerCtx, v: dnir.Value) bool {
 fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
     if (!ctx.require_graph_facts) return false;
     if (expr.* != .call and expr.* != .method_call) return false;
+    if (shouldLowerAsArrayIndex(ctx, expr)) return false;
     if (ctx.occurrences.get(expr) != null) return false;
     return !ctx.graph.bootstrapApplicationExpr(expr);
 }
@@ -4717,10 +4858,14 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
             }
         }
     }
-    if (!ctx.require_graph_facts and value.* == .call and value.call.func.* == .name) {
-        if (ctx.func_record_returns.get(value.call.func.name.ident)) |rec_name| {
-            try lowerRecordCallAssign(ctx, name, value.call.func.name.ident, value.call.args, rec_name);
-            return;
+    if (!ctx.require_graph_facts and value.* == .call) {
+        const callee = try qualifiedCallExportName(ctx.alloc, value.*);
+        defer if (callee) |c| ctx.alloc.free(c);
+        if (callee) |export_name| {
+            if (ctx.func_record_returns.get(export_name)) |rec_name| {
+                try lowerRecordCallAssign(ctx, name, export_name, value.call.args, rec_name);
+                return;
+            }
         }
     }
     if (value.* == .table) {
@@ -6470,6 +6615,91 @@ fn lowerAggregateAccess(
     return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-result");
 }
 
+fn lowerPositionalIndexExpr(
+    ctx: *LowerCtx,
+    expr: *const ast.Expr,
+    obj: *const ast.Expr,
+    key: *const ast.Expr,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    return blk: {
+            if (argv(obj)) {
+                try ensureExtern(ctx, "os", "args", "idol_os_arg");
+                const i = try lowerExpr(ctx, key);
+                const ty = osResult("args");
+                if (consumption == .discard) {
+                    try ctx.emit(.{ .op = .call_extern, .callee = "idol_os_arg", .lhs = i, .ty = ty });
+                    break :blk .void;
+                }
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_arg", .lhs = i, .ty = ty });
+                break :blk .{ .temp = t };
+            }
+            if (env(obj)) {
+                try ensureExtern(ctx, "os", "env", "getenv");
+                const k = try lowerExpr(ctx, key);
+                const ty = osResult("env");
+                if (consumption == .discard) {
+                    try ctx.emit(.{ .op = .call_extern, .callee = "getenv", .lhs = k, .ty = ty });
+                    break :blk .void;
+                }
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "getenv", .lhs = k, .ty = ty });
+                break :blk .{ .temp = t };
+            }
+            // `t[2]` on a positional table resolves to the element's own local,
+            // so a constant index costs nothing at runtime. A non-constant index
+            // needs a base pointer and computed offset — the native table
+            // milestone — and is refused rather than mis-lowered.
+            // §2: `s[i]` IS the byte, 0-based — there is no string
+            // library, only a string descriptor. This is the CANONICAL byte
+            // access, and it did not lower while the deny-listed
+            // `string.byte(s, i)` did. Sixth instance of that pattern this
+            // session, after string.byte, s:byte, @{…}, mem and math.
+            //
+            // The index is emitted as `i + 1` because the backend's byte load
+            // computes `base + (idx - 1)` for string.byte's 1-based convention.
+            // Normalizing here keeps ONE origin in the backend rather than
+            // giving it a second — the same decision the byte STORE required,
+            // where two origins on one opcode would be a wrong address.
+            // A DETERMINED table read at a compile-time index is its element,
+            // whatever the table's extent and whatever realization the rest of
+            // the function forced on it. Checked first, so the answer does not
+            // depend on which of the three storage paths below would have run.
+            if (try constTableRead(ctx, expr)) |v| break :blk v;
+            if (exprIsStr(ctx, obj)) {
+                const sbase = try lowerExpr(ctx, obj);
+                const raw = try lowerExpr(ctx, key);
+                const one = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .result = one, .binop = .add, .lhs = raw, .rhs = .{ .i64 = 1 } });
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .load_index, .result = t, .lhs = sbase, .rhs = .{ .temp = one } });
+                break :blk dnir.Value{ .temp = t };
+            }
+            if (obj.* != .name) return bail(ctx.diagnostic, @src());
+            // A memory-backed table indexes for real: one scaled load, constant
+            // or not. This is the path that makes a shared token array work.
+            if (ptrSlotOf(ctx, obj)) |base| {
+                const idx = try guardedTableIndex(ctx, obj.name.ident, key);
+                const t = ctx.freshTemp();
+                try ctx.emit(.{
+                    .op = .load_index,
+                    .ty = .i64,
+                    .result = t,
+                    .lhs = .{ .local = base },
+                    .rhs = idx,
+                });
+                break :blk dnir.Value{ .temp = t };
+            }
+            const n = intLiteralStep(key) orelse
+                break :blk try lowerDynamicIndex(ctx, obj.name.ident, key);
+            const slot_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ obj.name.ident, n });
+            defer ctx.alloc.free(slot_key);
+            const slot = ctx.locals.get(slot_key) orelse return bail(ctx.diagnostic, @src());
+            break :blk dnir.Value{ .local = slot };
+    };
+}
+
 fn lowerExprCons(
     ctx: *LowerCtx,
     expr: *const Expr,
@@ -6601,83 +6831,15 @@ fn lowerExprCons(
             }
             return bailWith(ctx.diagnostic, @src(), @tagName(u.op));
         },
-        .index => |ix| blk: {
-            if (argv(ix.obj)) {
-                try ensureExtern(ctx, "os", "args", "idol_os_arg");
-                const i = try lowerExpr(ctx, ix.key);
-                const ty = osResult("args");
-                if (consumption == .discard) {
-                    try ctx.emit(.{ .op = .call_extern, .callee = "idol_os_arg", .lhs = i, .ty = ty });
-                    break :blk .void;
-                }
-                const t = ctx.freshTemp();
-                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_arg", .lhs = i, .ty = ty });
-                break :blk .{ .temp = t };
+        .index => |ix| try lowerPositionalIndexExpr(ctx, expr, ix.obj, ix.key, consumption),
+        .call => blk: {
+            if (shouldLowerAsArrayIndex(ctx, expr)) {
+                const site = arrayIndexSite(expr).?;
+                break :blk try lowerPositionalIndexExpr(ctx, expr, site.obj, site.key, consumption);
             }
-            if (env(ix.obj)) {
-                try ensureExtern(ctx, "os", "env", "getenv");
-                const k = try lowerExpr(ctx, ix.key);
-                const ty = osResult("env");
-                if (consumption == .discard) {
-                    try ctx.emit(.{ .op = .call_extern, .callee = "getenv", .lhs = k, .ty = ty });
-                    break :blk .void;
-                }
-                const t = ctx.freshTemp();
-                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "getenv", .lhs = k, .ty = ty });
-                break :blk .{ .temp = t };
-            }
-            // `t[2]` on a positional table resolves to the element's own local,
-            // so a constant index costs nothing at runtime. A non-constant index
-            // needs a base pointer and computed offset — the native table
-            // milestone — and is refused rather than mis-lowered.
-            // §2: `s[i]` IS the byte, 0-based — there is no string
-            // library, only a string descriptor. This is the CANONICAL byte
-            // access, and it did not lower while the deny-listed
-            // `string.byte(s, i)` did. Sixth instance of that pattern this
-            // session, after string.byte, s:byte, @{…}, mem and math.
-            //
-            // The index is emitted as `i + 1` because the backend's byte load
-            // computes `base + (idx - 1)` for string.byte's 1-based convention.
-            // Normalizing here keeps ONE origin in the backend rather than
-            // giving it a second — the same decision the byte STORE required,
-            // where two origins on one opcode would be a wrong address.
-            // A DETERMINED table read at a compile-time index is its element,
-            // whatever the table's extent and whatever realization the rest of
-            // the function forced on it. Checked first, so the answer does not
-            // depend on which of the three storage paths below would have run.
-            if (try constTableRead(ctx, expr)) |v| break :blk v;
-            if (exprIsStr(ctx, ix.obj)) {
-                const sbase = try lowerExpr(ctx, ix.obj);
-                const raw = try lowerExpr(ctx, ix.key);
-                const one = ctx.freshTemp();
-                try ctx.emit(.{ .op = .binop, .result = one, .binop = .add, .lhs = raw, .rhs = .{ .i64 = 1 } });
-                const t = ctx.freshTemp();
-                try ctx.emit(.{ .op = .load_index, .result = t, .lhs = sbase, .rhs = .{ .temp = one } });
-                break :blk dnir.Value{ .temp = t };
-            }
-            if (ix.obj.* != .name) return bail(ctx.diagnostic, @src());
-            // A memory-backed table indexes for real: one scaled load, constant
-            // or not. This is the path that makes a shared token array work.
-            if (ptrSlotOf(ctx, ix.obj)) |base| {
-                const idx = try guardedTableIndex(ctx, ix.obj.name.ident, ix.key);
-                const t = ctx.freshTemp();
-                try ctx.emit(.{
-                    .op = .load_index,
-                    .ty = .i64,
-                    .result = t,
-                    .lhs = .{ .local = base },
-                    .rhs = idx,
-                });
-                break :blk dnir.Value{ .temp = t };
-            }
-            const n = intLiteralStep(ix.key) orelse
-                break :blk try lowerDynamicIndex(ctx, ix.obj.name.ident, ix.key);
-            const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ ix.obj.name.ident, n });
-            defer ctx.alloc.free(key);
-            const slot = ctx.locals.get(key) orelse return bail(ctx.diagnostic, @src());
-            break :blk dnir.Value{ .local = slot };
+            break :blk try lowerCall(ctx, expr, consumption);
         },
-        .call => try lowerCall(ctx, expr, consumption),
+
         .method_call => try lowerSubjectCall(ctx, expr, consumption),
         .field => try lowerField(ctx, expr),
         .macro_call => |mc| {
@@ -7323,6 +7485,43 @@ fn env(expr: *const ast.Expr) bool {
 /// hypothetical: `a[i]` canonicalizes to `a(i)`, so `env(k) = v` is also exactly
 /// how a positional table named `env` is written to, and without the check a
 /// local table store would be silently rewritten into a `setenv` call.
+
+const ArrayIndexSite = struct {
+    obj: *const ast.Expr,
+    key: *const ast.Expr,
+};
+
+/// Demagix canonicalizes `a[i]` to `a(i)` for fixed positional arrays. Treat
+/// that call form as the same index edge on read and assign without converting
+/// every post-sema application into a projection.
+fn arrayIndexSite(expr: *const ast.Expr) ?ArrayIndexSite {
+    return switch (expr.*) {
+        .index => |ix| .{ .obj = ix.obj, .key = ix.key },
+        .call => |c| blk: {
+            if (c.args.len != 1) return null;
+            if (c.func.* != .name) return null;
+            break :blk .{ .obj = c.func, .key = c.args[0] };
+        },
+        else => null,
+    };
+}
+
+fn shouldLowerAsArrayIndex(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
+    if (envPlaceKey(ctx, expr) != null) return false;
+    const site = arrayIndexSite(expr) orelse return false;
+    if (site.obj.* != .name) return false;
+    const name = site.obj.name.ident;
+    if (argv(site.obj) or env(site.obj)) return false;
+    // Demagix registers `a(i)` as a bootstrap application even when `a` is a
+    // bound positional table or fixed array — index/store wins over that face.
+    if (ctx.locals.contains(name)) return true;
+    if (ctx.occurrences.get(expr)) |_| {
+        if (ctx.require_graph_facts and ctx.graph.bootstrapApplicationExpr(expr))
+            return false;
+    }
+    return true;
+}
+
 fn envPlaceKey(ctx: *const LowerCtx, expr: *const ast.Expr) ?*const ast.Expr {
     switch (expr.*) {
         .index => |ix| {
