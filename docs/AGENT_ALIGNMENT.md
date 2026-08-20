@@ -11,6 +11,8 @@ example.
 
 Report these before file counts or keyword metrics (`docs/METRICS.md`):
 
+**P0-0 truth (mandatory before edits):** `.agents/P0-0-TRUTH-SNAPSHOT.md` — refresh when HEAD, pin, or gate surface changes.
+
 Full debt inventory and workstream order: `.agents/TECH_DEBT_WORKSTREAM.md`.
 
 1. **Executed authority frontier** — production stages actually Idol-owned
@@ -34,6 +36,13 @@ search · proof · cost · world · realization`
 
 Hard constraints from that injection:
 
+- **Tonight's priority:** read the "Tonight's priority injection" section in
+  `.agents/ARCHITECTURE_INJECTION.md` before any fix.
+- **Architecture-negative controls:** `docs/architecture-negative-controls.md`
+  and `gate/architecture-negative.sh` / `gate/architecture-companion.sh` — run
+  before claiming semantic progress; a passing fixture is not the objective.
+- **Canonical source debt:** `docs/projections/canonical-source-debt.md` — three
+  states (canonical / migratable / debt) for every `lib/compiler/**` construct.
 - DNIR must not silently drop semantic facts recoverable from the graph.
 - Sema must not route meaning by hard-coded relation names.
 - Canonical source must not be weakened for immature backends.

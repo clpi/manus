@@ -4,6 +4,12 @@
 so major compiler/research families stay **visible** and can be expressed in the
 one semantic graph when admissible.
 
+Sections **I–XXXVIII** below use **thematic grouping** for navigation. Sections
+**XXXIX–XLV**, the **FTCFTW-ranked priorities**, and **universal optimization
+architecture** align with the master **687-item frontier census** (nothing important
+may remain invisible). When adding a family, assign it a stable item number in
+that master sequence and record it here.
+
 ## Unifying criterion
 
 Any optimization or capability belongs in the one semantic graph when it can be
@@ -537,6 +543,213 @@ Separate **semantic correspondence** from **physical coordinate**.
 | Hardware vendor semantic providers | vendor supplies lawful realization candidates without source intrinsics |
 
 ONE-ID law preserved: hashes accelerate search; they do not become semantic identity.
+
+---
+
+## XXXIX. Compiler compile-time architecture itself
+
+Umbra-style insight: representation and backend can be designed for **both**
+minimal compile latency and strong runtime results — applied to Compiler B itself.
+
+| # | Capability | Graph expression |
+|---|---|---|
+| 561 | Query evaluation on demand | compile only facts demanded by current obligation |
+| 562 | Lazy graph facts | materialize columns when first queried |
+| 563 | Compact immutable structures | no generic allocation per fact |
+| 564 | Parallel independent regions | work-steal over disjoint graph regions |
+| 565 | Persistent analysis state | incremental invalidation across edits |
+| 566 | Precompiled grammar/law tables | staging of standard closures |
+| 567 | Fast baseline realization | expensive search only for hot regions |
+| 568 | Value-of-information optimization | budget facts gate search depth |
+| 569 | Cached proof results | witness reuse with dependency closure |
+| 570 | Compiler self-profiling | profile feeds compiler realization |
+| 571 | Compiler layout optimization | Compiler B is a hot workload |
+| 572 | Build-server persistence | no semantic stale-state without proof |
+| 573 | Distributed compilation | exact graph subdependency shards |
+
+---
+
+## XL. Agent-native compiler capabilities
+
+Mostly novel; fits Idol better than conventional compilers.
+
+| # | Capability | Graph expression |
+|---|---|---|
+| 578 | Stable semantic ids for agents | MCP/graph queries, not grep |
+| 579 | Graph-diff not textual diff | correspondence-aware change |
+| 580 | Semantic patching | patch facts/relations, not bytes |
+| 581 | Fact-level review | obligations attach to missing facts |
+| 582 | Unresolved-fact queries | agents ask what is unknown |
+| 583 | Agent candidate transformations | propose only; admission validates |
+| 584 | Law discovery suggestions | mined laws as candidates + proof |
+| 585 | Counterexample generation | refinement failures as first-class |
+| 586 | Benchmark generation | observation-demand driven |
+| 587 | Semantic provenance explanations | why / why-not realization |
+| 588 | Duplicated-ontology detection | agent checks for second languages |
+| 589 | Fact-loss detection | upstream vs downstream responsibility |
+| 590 | Premature-materialization detection | demand-before-commit audit |
+| 591 | Compound-vocabulary decomposition | SHC boundary suggestions |
+| 592 | Optimization-debt ranking | physical measurement → debt rows |
+| 593 | Agent operates on graph/MCP | text is projection only |
+
+---
+
+## XLI. Language-level expressiveness still worth exploring
+
+| # | Capability | Graph expression |
+|---|---|---|
+| 596 | Effect-polymorphic relations | effects as facts, not ceremony |
+| 597 | Descriptor refinement | ordinary facts, not new syntax |
+| 598 | Dependent facts | value-dependent descriptors when inferable |
+| 599 | Refinement contracts | laws without separate type syntax |
+| 600 | Higher-kinded composition | pack/descriptor laws only if irreducible |
+| 601 | Linear/affine ownership | uniqueness facts, not borrow surface |
+| 602 | Capability inference | world/authority closure |
+| 603 | Stage inference | binding-time as lattice facts |
+| 604 | World inference | minimal sufficient world |
+| 605 | Automatic projection/injection | inverse queries on relations |
+| 606 | Logic/constraint relations | solving as relation mode |
+| 607 | Nondeterministic semantics | enumerated realizations |
+| 608 | Search as realization | not a language construct |
+| 609 | Probabilistic lawsets | distributions as demanded domains |
+| 610 | Reactive/incremental lawsets | change algebra hooks |
+| 611 | Distributed lawsets | placement as world facts |
+
+---
+
+## XLII. Relation algebra specifically
+
+Formalize composition facts without importing category-theory syntax.
+
+| # | Law / construct | Graph expression |
+|---|---|---|
+| 615 | Composition f ∘ g | relation composition facts |
+| 616 | Identity relation | unit for composition |
+| 617–618 | Partial/total relations | partiality as fact |
+| 619–620 | Inverse / one-sided inverse | backward mode support |
+| 621 | Kernel/equivalence | quotient observations |
+| 622 | Image/preimage | demand propagation |
+| 623 | Restriction | descriptor/world/demand slice |
+| 624–625 | Union/intersection/product | where meaningful |
+| 626 | Currying/uncurrying | pack projections |
+| 627–628 | Associativity / functorial map | generic rewrite legality |
+| 629 | Homomorphism | cross-representation laws |
+| 630 | Natural-transformation compatibility | descriptor-family laws |
+| 631 | Monoidal composition | independent effect/data |
+| 632 | Semiring combination | weighted/search relations |
+| 633–635 | Fixpoints / reachability | monotone engine |
+| 636–637 | Adjoint-like pairs | abstraction/refinement |
+| 638 | Change/differentiation relation | pairs with § IX |
+| 639–640 | Refinement / equivalence under demand | candidate admission |
+
+---
+
+## XLIII. Injection / projection / interjection algebra specifically
+
+Underdeveloped relative to potential — could replace DI/module/target machinery.
+
+| # | Capability | Graph expression |
+|---|---|---|
+| 641–643 | Projection composition/idempotence/commutation | view algebra |
+| 644–645 | Subsumption / demand-induced projection | minimal sufficient view |
+| 646–648 | Injection composition/compatibility/conflict | world extension |
+| 649–650 | Monotonicity / override vs extension | interjection distinguished |
+| 651–653 | Interjection scope/rollback | scoped replacement |
+| 654–657 | World extension/restriction/quotient/minimal | world calculus |
+| 658–660 | Injection propagation / dead-fact elimination | specialization |
+| 661–662 | Cross-world transport / witness transport | correspondence |
+| 663–664 | Authority attenuation / capability derivation | CHERI-like without objects |
+| 665–666 | World merge / injection cache | exact conflict + reuse |
+
+---
+
+## XLIV. Lower-bound / theoretical-computing frontier
+
+FTCFTW wants **OPTIMAL** where physical lower bound is reached, not endless WIN chasing.
+
+| # | Bound family | Graph expression |
+|---|---|---|
+| 667–671 | Information / decision-tree / comparison / communication / I/O | cost facts block impossible wins |
+| 672–676 | Cache-oblivious / work-span / circuit / streaming / state | realization search pruning |
+| 677–680 | Automata minimization / Kolmogrov proxies / algebraic DT / conditional LB | algorithm selection |
+| 681–682 | Bit vs word-RAM / energy-data-movement | target cost model |
+| 683–685 | Landauer-style irreversibility / comm avoidance / memory traffic | theoretical limits |
+| 686–687 | Minimal sufficient statistic / prove OPTIMAL | admission may claim bound reached |
+
+---
+
+## XLV. Things Idol should explicitly not copy
+
+Take **ideas**, not **architectures**:
+
+| System | Take | Do not copy |
+|---|---|---|
+| CompCert | translation validation, proof discipline | 10+ IR stack |
+| MLIR | affine/polyhedral legality, hardware lowering | dialect proliferation as ontology |
+| egg | sparse equivalence, rewrite provenance | whole compiler as global e-graph |
+| TVM/Halide | schedule search, separation of meaning/schedule | second programmer-facing schedule language unless irreducible |
+| Truffle | Futamura, partial eval, virtualization | AST specialization architecture wholesale |
+| Enzyme | optimize-then-differentiate ordering | separate AD IR kingdom |
+| CHERI | provenance, monotonic authority | capability objects as language world model |
+| Database engines | cost planning, cardinality uncertainty, IVM | query IR as second semantics |
+
+---
+
+## Highest-value still-missed ideas (FTCFTW-ranked)
+
+Compressed priority for ultimate capability, not breadth alone:
+
+1. Full **observation + demand** algebra.
+2. General **relation-law** algebra.
+3. Effect/trap/termination/**authority closure**.
+4. Sparse graph **consequence/fixpoint** engine.
+5. Exact incremental **change/dependency** algebra.
+6. One **candidate/equivalence/refinement** framework.
+7. **Value-of-information**-controlled optimization search.
+8. **Interpreter specialization / Futamura** compiler generation.
+9. **Polyhedral/affine** reasoning as graph facts, not separate IR.
+10. **Algorithm-family** selection (recurrence/closed-form/data-structure).
+11. Automatic **layout/schedule/representation** search (Halide/TVM ideas).
+12. **Translation validation** + target-semantics validation (Alive2 pattern).
+13. **Virtualization/escape** deeper than conventional object escape.
+14. Application-specific **ABI** and interprocedural register realization.
+15. **Whole-program runtime elimination**.
+16. **Hardware synthesis / heterogeneous placement** from same semantics.
+17. **Wasm semantic import** into the same graph.
+18. **Capability/authority algebra** (CHERI-inspired, semantic not object).
+19. **Projection/injection/interjection** expanded into true world calculus.
+20. **Semantic lower-bound derivation** so FTCFTW can prove OPTIMAL.
+
+---
+
+## Universal optimization architecture (target end state)
+
+Optimization itself becomes an ordinary semantic relation over graph facts.
+A candidate optimizer is **not** a privileged pass. A relation/law/provider says:
+
+```text
+given
+    semantic region
+    observations
+    facts
+    target
+    budget
+produce
+    candidate realization
+    witness
+    cost estimate
+```
+
+Then the universal compiler architecture is:
+
+```text
+meaning → facts → observation → demand → laws → candidates → proofs → costs → selection
+```
+
+That subsumes partial evaluation, rewriting, polyhedral optimization, superoptimization,
+autotuning, schedule search, hardware synthesis, database planning, layout selection,
+ABI synthesis, incremental compilation, and agent-generated optimizations — without granting
+any of them a separate semantic kingdom.
 
 ---
 

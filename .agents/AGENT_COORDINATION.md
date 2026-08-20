@@ -15,6 +15,7 @@ the ignored `.agents/session/` state or in evidence from an exact run.
 | Performance evidence | `docs/performance.md` |
 | Agent architecture orientation | `.agents/ARCHITECTURE_INJECTION.md` (not law) |
 | Optimization frontier census | `docs/history/optimization-frontier-census.md` (research map) |
+| P0-0 local truth snapshot | `.agents/P0-0-TRUTH-SNAPSHOT.md` (refresh before edit waves) |
 | Source-family classification | `docs/spec/corpus.md` |
 | Source/home/package/world closure | `docs/spec/source.md` |
 | Historical changes | Git history |
