@@ -347,6 +347,31 @@ GAP-145 → GAP-134 → parser → graph → demand → representation-one → �
 | Guard algebra | 832–837 | minimal speculative guards |
 | Distributed untrusted + marketplace | 873–875 | proof-carrying workers; vendor providers |
 
+## Executable structural-closure queue (live)
+
+Census supplements (688–875) are **indexed and mapped** above; they do not
+override the S0 critical path. Structural closure runs **authority and evidence
+truth first**, then native realization producers, then graph sovereignty:
+
+| queue | slice | census / gap anchor | status @ idol HEAD |
+|---|---|---|---|
+| SC-0 | Supreme law vs projection reconcile | — | closed (P0-0) |
+| SC-1 | `idol-native` AUTHORITY pin + `bin/idol` vendor | exact-head evidence | in progress |
+| SC-2 | Call-form fixed-array index assign/read | demagix `a(i)` edge | closed (`gate/call-index-assign.sh`) |
+| SC-3 | `native.id` dynamic positional index producer | realization §IX | **open** — `lowerDynamicIndex()` missing `{t}.len` |
+| SC-4 | GAP-145 literal identity observers → zero | rows 451–467 | partial (sema/graph; DNIR/Tree-sitter remain) |
+| SC-5 | One grammar-fact owner (GAP-134) | parser SHC | open |
+| SC-6 | Evidence subject rebind + harness env(k) | FTC-016 / P0-2 | open |
+| SC-7 | Graph application identity fail-closed (GAP-137) | rows 615–640 | open |
+
+**Twelve-factor optimization state** (identity → realization plus observations,
+change, correspondence, search, proof, cost, world) is the master indexing
+vocabulary for supplements 688–799 and 800–875 — not twelve subsystems. Highest
+leverage near-term rows: **706/779** (minimal sufficient semantics),
+**688** (supercompilation region protocol), **690** (relational solving modes),
+**759/693** (trusted-core + proof-carrying plugins), **704** (observation-relative
+memoization).
+
 ---
 
 ## Measured instances (census claims with evidence)
