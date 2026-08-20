@@ -1,0 +1,9 @@
+has: bool = (set: str, name: str)
+  hay = set
+  needle = "|" .. name .. "|"
+  false
+
+unresolved: i64 = (src: str, file: str, family: i64, report: bool)
+  lx: lexer = lexer.new(src, file, family)
+  t = lexer.next(lx)
+  0

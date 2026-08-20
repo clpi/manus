@@ -1,0 +1,4 @@
+main: i64 = ()
+  hay = "abc"
+  hn: i64 = hay:len()
+  hn

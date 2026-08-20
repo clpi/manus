@@ -1,0 +1,154 @@
+# SH-06 — binding and scopes, seed.
+#
+# The first thing a binder must be able to say is "this name resolves". This
+# computes that over a file: every NAME in reference position must be bound
+# somewhere — as a declaration, a parameter, a loop variable, an assignment
+# target, or an ambient root.
+#
+# SCOPE: assignment targets the nearest existing binding and
+# otherwise INTRODUCES one locally, and there is no `local`. So a name's
+# binding site is any assignment to it, anywhere in the file — which is why a
+# file-level bound set is the honest v1 shape rather than a shortcut. Nested
+# scoping (shadowing, block lifetime) refines this; it does not replace it.
+#
+# WHAT MAKES IT CHECKABLE. Every file in lib/std compiles, so every name in
+# them resolves under the host compiler. A binder that reports unresolved names
+# on those files is wrong, and the count is the metric — the same shape as
+# SH-04's parser coverage, where the number, not the fixture set, found every
+# real defect.
+#
+# Positions that are NOT references, and why each is excluded:
+#   * after `.` or `:`  — a member name lives in the receiver's namespace, not
+#                          this scope (`t.kind`, `a:match(p)`)
+#   * after `@`         — a directive path (`@comp.c.export`)
+#   * a table key       — `{ kind = 1 }` binds a field, not a name
+#   * a declaration or parameter name — those are binding sites
+
+# GAP: these two stay on the graveyard `req` spelling because it brings the
+# module's TYPE names into scope and the ambient root binding does not —
+# `lx: lexer` fails with "unknown type name 'duo_Lexer'". Everything else in
+# this file uses ambient roots. Measured, not assumed.
+
+# Membership over a "|a|b|" set. str is `sub` and `len`, so this is spelled
+# out rather than borrowed.
+has: bool = (set: str, name: str)
+  hay = set
+  needle = "|" .. name .. "|"
+  hn: i64 = hay:len()
+  nn: i64 = needle:len()
+  i: i64 = 1
+  while i + nn - 1 <= hn
+    j: i64 = 0
+    hit = true
+    while j < nn
+      if hay:byte(i + j) != needle:byte(j + 1)
+        hit = false
+        j = nn
+      j = j + 1
+    if hit
+      return true
+    i = i + 1
+  false
+
+add: str = (set: str, name: str)
+  if has(set, name)
+    return set
+  set .. name .. "|"
+
+# Ambient roots and the runtime surface. These are bound by the world, not by
+# the file, so a file that mentions them is not unresolved.
+ambient = "|io|os|fs|json|process|string|table|math|coroutine|mem|req|print|error|assert|type|tostring|tonumber|pairs|ipairs|next|select|rawlen|rawget|rawset|pcall|xpcall|setmetatable|getmetatable|require|to|from|len|arg|true|false|nil|self|debug|package|utf8|load|dofile|loadstring|unpack|collectgarbage|_G|_VERSION|"
+
+# Names this file binds, and names it references but never binds.
+# Returns the unresolved count; `report` prints each.
+unresolved: i64 = (src: str, file: str, family: i64, report: bool)
+  lx: lexer = lexer.new(src, file, family)
+  bound = ambient
+  refs = "|"
+  kind: i64 = 0
+  # A first scan over a fresh lexer collects bindings; a second collects references.
+  # Two passes because a name may be used before the line that binds it —
+  # mutual recursion between top-level declarations is the normal case.
+  while true
+    t = lexer.next(lx)
+    if t.kind == token.KIND_EOF
+      break
+    if t.kind == token.KIND_NAME
+      nxt = lexer.peek(lx)
+      binds = false
+      if nxt.kind == token.KIND_ASSIGN
+        binds = true
+      # Multiple assignment binds every name on the left:
+      # `ok, result = pcall(f)`. Walk the comma list and accept it only
+      # if it actually reaches `=`, so a call argument list is not
+      # mistaken for a binding site.
+      if nxt.kind == token.KIND_COMMA
+        st = lexer.save_state(lx)
+        walking = true
+        while walking
+          walking = false
+          a = lexer.next(lx)
+          if a.kind == token.KIND_COMMA
+            b = lexer.next(lx)
+            if b.kind == token.KIND_NAME
+              if lexer.peek(lx).kind == token.KIND_ASSIGN
+                binds = true
+              else(lexer.peek(lx).kind == token.KIND_COMMA)
+                walking = true
+        lexer.restore_state(lx, st)
+      if nxt.kind == token.KIND_LPAREN and kind != token.KIND_DOT and kind != token.KIND_COLON
+        binds = true
+      # `span: { ... }` is a descriptor DECLARATION and binds the name.
+      # Retired declaration spellings: `type X = { … }`, `type X = T`, and
+      # `(typedecl … (type …))` alias projections (GAP-049 / law descriptor
+      # axis). Canonical module-scope descriptors bind on `Name: { … }` at
+      # column 1; nominal scalars await `Name: T` (gap[097]).
+      if nxt.kind == token.KIND_COLON and t.loc.col == 1
+        binds = true
+      # `n: i64 = 5` — a typed local binding, at any indentation. The
+      # column-1 rule above only covers descriptor declarations, so every
+      # typed local read as unresolved. Distinguished from a method call
+      # (`obj:m()`) by looking past the type for the `=`, which is the
+      # same discriminator proj_stmt uses.
+      if nxt.kind == token.KIND_COLON and t.loc.col != 1
+        cst = lexer.save_state(lx)
+        c = lexer.next(lx)
+        ty = lexer.next(lx)
+        if ty.kind == token.KIND_NAME or ty.kind >= token.KIND_I8 and ty.kind <= token.KIND_STR
+          if lexer.peek(lx).kind == token.KIND_ASSIGN
+            binds = true
+        lexer.restore_state(lx, cst)
+      # `spawn(fn: any, ...args)` — a NAMED vararg parameter binds too.
+      if kind == token.KIND_DOTS
+        binds = true
+      if kind == token.KIND_FUN or kind == token.KIND_FUNCTION or kind == token.KIND_FOR
+        binds = true
+      # `concept Allocator ... end` declares the protocol's name.
+      if kind == token.KIND_CONCEPT
+        binds = true
+      if kind == token.KIND_LPAREN or kind == token.KIND_COMMA
+        binds = true
+      if binds
+        bound = add(bound, t.text)
+    kind = t.kind
+
+  lx2: lexer = lexer.new(src, file, family)
+  kind = 0
+  count: i64 = 0
+  prev_kind: i64 = 0
+  while true
+    t = lexer.next(lx2)
+    if t.kind == token.KIND_EOF
+      break
+    if t.kind == token.KIND_NAME
+      skip = kind == token.KIND_DOT or kind == token.KIND_COLON or prev_kind == token.KIND_AT
+      if !skip
+        nxt = lexer.peek(lx2)
+        if nxt.kind != token.KIND_ASSIGN and !has(bound, t.text) and !has(refs, t.text)
+          refs = add(refs, t.text)
+          count = count + 1
+          if report
+            print("  unresolved " .. file .. ": " .. t.text)
+    kind = t.kind
+    prev_kind = t.kind
+  count

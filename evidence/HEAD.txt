@@ -1,1 +1,9 @@
-aff3d0fe57ec0c7720df790fa3122f9dcda42287
+HEAD: ec4b79fa7ed3a9ffb912dba25af008105498dd74
+Date: 2026-08-20T02:32:13-07:00
+Branch: main
+Tree: dirty (24 entries)
+Integration: present
+Measurement: absent
+Compiler_B: absent
+Performance_admission: denied
+Derived: tools/node/dev/orient (law.control.derived — do not hand-edit)

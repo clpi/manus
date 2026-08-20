@@ -1,0 +1,6 @@
+main: i64 = ()
+  walking = false
+  if walking
+    0
+  else(true)
+    1

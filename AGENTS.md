@@ -623,7 +623,9 @@ another owner.
    evidence.
 5. Commit only explicit owned pathspecs. Inspect the staged diff and the final
    commit before pushing. Never absorb, revert, format, or hide another agent's
-   work.
+   work. Before committing, answer the architectural review question in
+   `docs/AGENT_ALIGNMENT.md` § Architectural mandate and run
+   `sh gate/architecture-negative.sh` when touching sema, graph, or DNIR.
 6. Release only claims owned by the current session and leave a durable handoff
    with commands, outcomes, blockers, and remaining debt.
 

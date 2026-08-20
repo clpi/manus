@@ -1,8 +1,11 @@
 # Idol Agent Scope
 
 Root [`AGENTS.md`](../AGENTS.md) is the repository entry point.
-[`docs/spec/constitution.md`](../docs/spec/constitution.md) is the sole
-semantic law. This file adds no law and no live status.
+[`docs/spec/law.md`](../docs/spec/law.md) is the supreme compact law;
+[`docs/spec/constitution.md`](../docs/spec/constitution.md) is its structured
+long-form expansion and `law.*` identity owner only. Read
+[`.agents/ARCHITECTURE_INJECTION.md`](ARCHITECTURE_INJECTION.md) before
+touching code. This file adds no law and no live status.
 
 Use [`AGENT_CANONICAL.md`](AGENT_CANONICAL.md) for stable paths,
 [`AGENT_COORDINATION.md`](AGENT_COORDINATION.md) for ownership protocol, and
@@ -28,5 +31,5 @@ authority transfer.
 Do not treat this directory as a semantic registry. `std` is migration
 distribution, `std.script` is frozen debt, and neither an agent document nor a
 package path grants a world or owns a relation. If any scoped instruction
-conflicts with root routing or the constitution, stop and repair the scoped
+conflicts with root routing or the compact law, stop and repair the scoped
 projection.

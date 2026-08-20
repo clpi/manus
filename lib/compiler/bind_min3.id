@@ -1,0 +1,20 @@
+unresolved: i64 = (src: str, file: str, family: i64, report: bool)
+  lx: lexer = lexer.new(src, file, family)
+  kind: i64 = 0
+  while true
+    t = lexer.next(lx)
+    if t.kind == token.KIND_EOF
+      break
+    if t.kind == token.KIND_NAME
+      nxt = lexer.peek(lx)
+      if nxt.kind == token.KIND_COMMA
+        st = lexer.save_state(lx)
+        walking = true
+        while walking
+          walking = false
+          a = lexer.next(lx)
+          if a.kind == token.KIND_COMMA
+            b = lexer.next(lx)
+        lexer.restore_state(lx, st)
+    kind = t.kind
+  0

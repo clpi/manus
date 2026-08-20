@@ -1,0 +1,21 @@
+has: bool = (set: str, name: str)
+  set:len() > 0
+
+add: str = (set: str, name: str)
+  set .. name .. "|"
+
+ambient = "|io|print|true|false|"
+
+unresolved: i64 = (src: str, file: str, family: i64, report: bool)
+  lx: lexer = lexer.new(src, file, family)
+  bound = ambient
+  refs = "|"
+  kind: i64 = 0
+  while true
+    t = lexer.next(lx)
+    if t.kind == 0
+      break
+    kind = t.kind
+
+main: i64 = ()
+  unresolved("x", "f.id", 0, false)

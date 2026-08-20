@@ -7,6 +7,110 @@ the current production ledger, and live ownership.
 The constitution is structured law documentation, not an implementation
 example.
 
+## Architectural mandate (2026-08-20 — supersedes fixture-chasing)
+
+**A passing fixture is not the objective.** Never repair a downstream consumer
+when its upstream authoritative fact is wrong.
+
+- **DNIR may not filter, reinterpret, recover, or correct semantic graph facts.**
+  If `graph.application.arguments` contains non-arguments, fix the producer —
+  do not sanitize in lowering.
+- **Sema may not choose relations by hard-coded home names, home priority, or
+  first textual match.** Filesystem/home placement is provenance/topology, not
+  semantic dispatch.
+- **If multiple compatible relations exist,** resolve through exact
+  descriptor/world/relation facts or diagnose ambiguity — never `iter` before
+  `table` by array order.
+- **Never alter canonical compiler source merely to fit an immature direct
+  backend** unless the source itself violates current law.
+- **`lib/compiler/monolith.id` is a capability probe, not compiler-B
+  architecture.**
+- **Every self-host green must name the semantic authority gained**, not merely
+  the DNB removed.
+- **Every new workaround must delete or move authority upstream** rather than
+  increase backend intelligence about source syntax, names, AST shape, or local
+  storage.
+
+**Review question (required before every commit):** If I deleted all source
+spelling, AST shape, filesystem names, and host-local variable names after
+resolution, would my new code still know enough to make this decision? If the
+answer is no, the change is almost certainly landing at the wrong layer.
+
+
+## Architectural negative controls (2026-08-20 inventory)
+
+Static ratchets: `sh gate/architecture-negative.sh`. Behavioral companions:
+`sh gate/architecture-companion.sh`.
+
+| Control | Intent |
+|---|---|
+| **GRAPH-ARG-EXACT** | Graph application arguments == resolved operands; no DNIR AST filter |
+| **RESOLUTION-ORDER-INDEPENDENT** | Reordering reachable homes must not change selected relation |
+| **AMBIGUITY-FAILS** | Two equally admissible relations → explicit ambiguity, never first-wins |
+| **NO-DNIR-AST-FILTER** | Supported lowering must not call `filterCheckedCallOperands` (goal: 0) |
+| **NO-NAME-RECORD-INFERENCE** | Record/ABI from value+descriptor facts, not `name.field` locals |
+| **NO-HOME-SEMANTIC-PRIORITY** | Filesystem home is provenance, not dispatch order |
+| **GRAPH-ONLY-LOWERING** | Supported path must not recover meaning from AST after graph resolution |
+
+**Self-host score discipline:** each green module names semantic authority gained
+(physical reach + authority quality). Never copy counts from static scoreboard
+markdown — run `gate/selfhost.sh` only.
+
+**bind.id destination:** binding occurrence ids + scope/home facts, not textual
+name-token scanning. A green bind module is not graph-native resolution.
+
+**Source-shape rule:** before changing compiler `.id` for direct-backend limits,
+answer whether source violates law or backend lacks lawful capability. Do not
+shape canonical source into whatever immature DNIR can lower today.
+
+
+## Systemic misunderstandings (2026-08-20 — supersedes pipeline-chasing)
+
+**Goal:** remove the need for large parts of today's compiler pipeline — not merely
+traverse it successfully.
+
+| # | Misunderstanding | Corrective law |
+|---|---|---|
+| 1 | Module composition "solved" by imports/req | Topology at ingress → home ids + binding facts → filesystem disappears |
+| 2 | Self-host corpus is a language-law oracle | Classify: canonical / compatibility / bootstrap-debt / probe |
+| 3 | Formatter owns syntax doctrine | One canonical projection → fmt → source fixed point |
+| 4 | bind.id green = graph-native resolver | Destination: occurrence ids + scope facts, not name grep |
+| 5 | Home enumeration order resolves ambiguity | Order may affect cost, never meaning |
+| 6 | iter/table/string/math proto-classes | Capabilities from composed facts, not home registry |
+| 7 | Conformance enum as semantic identity | Decompose sequence/text/numeric into fact bundles first |
+| 8 | Globals as four backend cases | Demand/observability facts → realization candidates |
+| 9 | Unused result ⇒ no application | Separate result demand vs effect/completion demand |
+| 10 | void as backend kingdom | Empty result pack; machine chooses control edge |
+| 11 | concat as missing opcode | Classify demanded representation; often no string |
+| 12 | str = C pointer semantically | text/bytes/encoding/cardinality facts; pointer is realization |
+| 13 | Quote facts lost before DNIR | Preserve or make unnecessary at every boundary |
+| 14 | DNIR reads AST categories | Supported path consumes graph value/application/pack facts |
+| 15 | DNIR as second type checker | Descriptor facts arrive from graph, not exprIsStr heuristics |
+| 16 | recordFieldsPresent uses lowering history | Semantic pack invariant under representation polymorphism |
+| 17 | ABI limits imply semantic invalidity | Limits filter realization candidates only |
+| 18 | DNB bail = language limitation | Taxonomy: invalid / incomplete / realization-unavailable |
+| 19 | exit 0 on idol check = valid | Structured outcome graph; no fail-open trust |
+| 20 | Text diagnostics for agents | Structured: entity, fact, producer, category |
+| 21 | Shell gates as second ontology | Native A–E projections of one graph, not parallel meaning |
+| 22 | idol-native decides semantics | **idol-native may measure and falsify. idol owns meaning.** |
+| 23 | Static scoreboard counts | HISTORICAL EVIDENCE only; live from `gate/selfhost.sh` |
+| 24 | Monolith SHC progress | Capability probe only; B requires real composition |
+| 25 | More subject-first methods before resolution law | Generic ambiguity/order law before filter/take/… expansion |
+| 26 | Sequence basis undermined by `any` | Work backward from `xs:map(f):take(n)` contraction facts |
+| 27 | Chain syntax as aesthetics | Must expose graph composition + demand propagation |
+| 28 | Intermediate-zero as golf | Information density; legitimate named intermediates remain |
+| 29 | Accidental host names in bind.id | Replace with relations over token/binding facts over time |
+| 30 | Bootstrap bridges become permanent | Every bridge: owner, replacement, deletion condition |
+
+**Central overnight rule:** when a blocker disappears, name the **authority gained**.
+If the answer is "backend recognizes another AST/storage pattern," architecture got
+worse. Full manifest: `docs/architecture-negative-controls.md`.
+
+
+Executable negative controls: `sh gate/architecture-negative.sh` (idol) and the
+sibling wrapper in idol-native.
+
+
 ## Dominant dashboard
 
 Report these before file counts or keyword metrics (`docs/METRICS.md`):

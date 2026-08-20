@@ -1,0 +1,41 @@
+has: bool = (set: str, name: str)
+  true
+
+add: str = (set: str, name: str)
+  set .. name .. "|"
+
+ambient = "|io|print|true|false|"
+
+unresolved: i64 = (src: str, file: str, family: i64, report: bool)
+  lx: lexer = lexer.new(src, file, family)
+  bound = ambient
+  refs = "|"
+  kind: i64 = 0
+  while true
+    t = lexer.next(lx)
+    if t.kind == token.KIND_EOF
+      break
+    if t.kind == token.KIND_NAME
+      nxt = lexer.peek(lx)
+      binds = false
+      if nxt.kind == token.KIND_COMMA
+        st = lexer.save_state(lx)
+        walking = true
+        while walking
+          walking = false
+          a = lexer.next(lx)
+          if a.kind == token.KIND_COMMA
+            b = lexer.next(lx)
+            if b.kind == token.KIND_NAME
+              if lexer.peek(lx).kind == token.KIND_ASSIGN
+                binds = true
+              else(lexer.peek(lx).kind == token.KIND_COMMA)
+                walking = true
+        lexer.restore_state(lx, st)
+      if binds
+        bound = add(bound, t.text)
+    kind = t.kind
+  0
+
+main: i64 = ()
+  unresolved("x", "f.id", 0, false)
