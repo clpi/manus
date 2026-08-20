@@ -67,6 +67,9 @@ grep_file "$DNIR" 'fn parseSiblingModule' 'NO-SOURCE-IO-BELOW-GRAPH: parseSiblin
 grep_file "$DNIR" 'mergeForeignModuleConstsForFields' 'NO-SOURCE-IO-BELOW-GRAPH: mergeForeignModuleConstsForFields forbidden in dnir_lower'
 grep_file "$DNIR" 'mergeForeignModuleRecordsForFields' 'NO-SOURCE-IO-BELOW-GRAPH: mergeForeignModuleRecordsForFields forbidden in dnir_lower'
 grep_file "$DNIR" 'mergeForeignModuleRecordReturns' 'NO-SOURCE-IO-BELOW-GRAPH: mergeForeignModuleRecordReturns forbidden in dnir_lower'
+grep_file "$DNIR" 'readFileAlloc' 'NO-SOURCE-IO-BELOW-GRAPH: readFileAlloc forbidden in dnir_lower'
+grep_file "$DNIR" 'readFile\(' 'NO-SOURCE-IO-BELOW-GRAPH: readFile forbidden in dnir_lower'
+grep_file "$DNIR" 'parseFile\(' 'NO-SOURCE-IO-BELOW-GRAPH: parseFile forbidden in dnir_lower'
 
 # DELIMITER-CLOSURE — graph must not treat () as [] projection
 grep_file "$ROOT/src/semantic_graph.zig" 'break :blk .{ .obj = c.func, .key = c.args[0] };' 'DELIMITER-CLOSURE: aggregateIndexSite must not accept .call'
@@ -100,6 +103,19 @@ fi
 grep_file "$SEMA" 'first home that declares it wins' 'NO-HOME-SEMANTIC-PRIORITY: first-wins home ordering forbidden'
 grep_file "$SEMA" 'subjectFirstForeignHomesForConformance' 'NO-HOME-SEMANTIC-PRIORITY: conformance→home registry forbidden'
 grep_file "$SEMA" 'subjectFirstForeignHomeCandidates' 'NO-HOME-SEMANTIC-PRIORITY: ordered home candidate registry forbidden'
+# RESOLUTION-PERMUTATION — home enumeration order must not be semantic law
+examined=$((examined + 1))
+if grep -Fq 'Sorted alphabetically so collection order is never semantic' "$SEMA"; then
+    ok 'RESOLUTION-PERMUTATION: foreign_module_homes documents order independence'
+else
+    bad 'RESOLUTION-PERMUTATION: foreign_module_homes must document order independence'
+fi
+examined=$((examined + 1))
+if grep -Fq 'RESOLUTION-PERMUTATION resolveUniqueForeignRelations does not first-win' "$SEMA"; then
+    ok 'RESOLUTION-PERMUTATION: unit test must guard non-first-wins resolution'
+else
+    bad 'RESOLUTION-PERMUTATION: unit test must guard non-first-wins resolution'
+fi
 
 # GRAPH-ARG-EXACT producer hook must exist
 examined=$((examined + 1))

@@ -12,14 +12,12 @@ cat <<'EOF'
 architecture-roadmap: planned behavioral gates (not yet blocking)
 
   GRAPH-ONLY-REALIZATION     poison AST after graph closure; supported path emits
-  RESOLUTION-PERMUTATION     reorder home enumeration; semantics unchanged
   HOME-MOVE                  move relation file; semantic application unchanged
   MODULE-TOPOLOGY            perturb filesystem layout after ingress; ids stable
   REPRESENTATION-HISTORY       exploded locals vs aggregate; same realization set
   ZERO-TEXT-SEMANTICS        rename locals post-resolution; machine unchanged
   EFFECT-NO-RESULT           unused result + required effect; call remains
   RESULT-NO-EFFECT           unused result + pure; call may disappear
-  FORMAT-FIXPOINT            canonical → fmt → parse → fmt; no retired syntax
 
 Manifest: docs/architecture-negative-controls.md
 Static/debt gates: sh gate/architecture-negative.sh

@@ -15800,3 +15800,13 @@ test "sema: a user relation named `write` wins, and is not refused" {
     const s = try checkSource(alloc, src, "probe.id");
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
+test "sema: RESOLUTION-PERMUTATION resolveUniqueForeignRelations does not first-win" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var s = Sema.init(alloc);
+    const loc = ast.Loc{ .file = "test.id", .line = 1, .col = 1 };
+
+    try testing.expect(try s.resolveUniqueForeignRelations(loc, "nosuch", &.{}) == null);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}

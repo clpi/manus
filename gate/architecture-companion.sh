@@ -49,7 +49,7 @@ fi
 
 grep -Eiq 'ambiguous|ambig' "$LOG" \
     || fail 'AMBIGUITY-FAILS: refusal did not name ambiguity'
-probe_ok 'AMBIGUITY-FAILS'
+probe_ok 'AMBIGUITY-FAILS RESOLUTION-AMBIGUITY'
 
 # GRAPH-ARG-EXACT: nearby binding must not break save/restore call shape.
 SAVE=$ROOT/examples/bind_save_state.id
@@ -107,5 +107,16 @@ fi
 grep -Eiq 'DNB001|UnsupportedProgram|direct backend' "$LOG" \
     || fail 'CHECK-NOT-DIRECT-ADMISSION: direct refusal did not name DNB/direct backend'
 probe_ok 'CHECK-NOT-DIRECT-ADMISSION'
+
+# RESOLUTION-PERMUTATION — static gate requires sorted foreign_module_homes + unit test.
+if ! sh "$ROOT/gate/architecture-negative.sh" >"$LOG" 2>&1; then
+    cat "$LOG" >&2
+    fail 'RESOLUTION-PERMUTATION: architecture-negative RESOLUTION-PERMUTATION checks failed'
+fi
+grep -Fq 'RESOLUTION-PERMUTATION: foreign_module_homes documents order independence' "$LOG" \
+    || fail 'RESOLUTION-PERMUTATION: static order-independence check missing from negative gate'
+grep -Fq 'RESOLUTION-PERMUTATION: unit test must guard non-first-wins resolution' "$LOG" \
+    || fail 'RESOLUTION-PERMUTATION: unit-test guard missing from negative gate'
+probe_ok 'RESOLUTION-PERMUTATION'
 
 printf 'architecture-companion gate: PASS\n'
