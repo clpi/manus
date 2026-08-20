@@ -1470,7 +1470,7 @@ pub const SemanticGraph = struct {
             &body.places
         else
             return null;
-        return census.at(site);
+        return &census.places.items[site];
     }
 
     /// The unique aggregate value bound to one exact graph place.

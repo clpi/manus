@@ -254,7 +254,9 @@ pub const Census = struct {
 
     pub fn countOfShape(self: *const Census, shape: Shape) usize {
         var n: usize = 0;
-        for (self.places.items) |p| if (p.shape == shape) n += 1;
+        for (self.places.items) |*p| {
+            if (p.shape == shape) n += 1;
+        }
         return n;
     }
 
@@ -630,7 +632,11 @@ fn writeTarget(ctx: *Ctx, target: *const ast.Expr, point: u32) anyerror!void {
 
 fn readExpr(ctx: *Ctx, e: *const ast.Expr) anyerror!void {
     switch (e.*) {
-        .name => |n| if (ctx.lookup(n.ident)) |p| p.facts.escape = .unknown,
+        .name => |n| {
+            if (ctx.lookup(n.ident)) |p| {
+                @constCast(p).facts.escape = .unknown;
+            }
+        },
         .index => |ix| {
             if (ix.obj.* == .name) if (ctx.lookup(ix.obj.name.ident)) |p| {
                 const constant = intLit(ix.key) != null;
@@ -694,7 +700,7 @@ fn readExpr(ctx: *Ctx, e: *const ast.Expr) anyerror!void {
             .spread => |v| try readExpr(ctx, v),
             .semantic => |v| try readExpr(ctx, v.val),
         },
-        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg => {},
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => {},
         else => try markAllUnknown(ctx),
     }
 }

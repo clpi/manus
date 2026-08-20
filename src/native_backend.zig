@@ -11344,7 +11344,7 @@ test "native backend refuses source conversion absent application facts and reta
         defer graph.deinit();
         try liftCheckedTestGraph(&mod, &sem, &graph);
         var resolved: Diagnostic = .{};
-        const emitted = try emitAssemblyWithGraphLineageObserved(
+        var emitted = try emitAssemblyWithGraphLineageObserved(
             alloc,
             &mod,
             "native-asm",
@@ -11352,7 +11352,7 @@ test "native backend refuses source conversion absent application facts and reta
             &resolved,
         );
         defer emitted.deinit(alloc);
-        try std.testing.expect(emitted.asm_text.len > 0);
+        try std.testing.expect(emitted.assembly.len > 0);
     }
 
     const instructions = [_]dnir.Instr{

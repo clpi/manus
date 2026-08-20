@@ -152,7 +152,9 @@ pub const Decisions = struct {
 
     pub fn eliminated(self: *const Decisions) u32 {
         var count: u32 = 0;
-        for (self.reps) |representation| if (representation == .absent) count += 1;
+        for (self.reps) |representation| {
+            if (representation == .absent) count += 1;
+        }
         return count;
     }
 };
