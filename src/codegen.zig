@@ -2958,10 +2958,10 @@ pub const CodeGen = struct {
         if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "string")) return null;
         return self.string_builtin_result_type(f.field, args);
     }
-
     fn string_method_result_type(self: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
         const obj_ty = self.expr_type(obj);
-        const strish = obj_ty == .str or obj.* == .quoted or obj.* == .name;
+        const strish = obj_ty == .str or obj.* == .quoted or obj.* == .name or
+            (obj.* == .field and self.expr_type(obj) == .str);
         if (!strish) return null;
         if (std.mem.eql(u8, method, "len")) return .i64;
         if (std.mem.eql(u8, method, "trim") and args.len == 0) return .str;
