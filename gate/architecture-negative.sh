@@ -105,6 +105,30 @@ require_max \
     'pub const Conformance = enum' \
     1
 
+
+require_present     CONTROLS-MANIFEST     docs/architecture-negative-controls.md     'GRAPH-FACT-TRUST'
+
+require_present     COMPILER-SOURCE-DEBT     docs/history/compiler-source-debt-projection.md     'bootstrap-debt'
+
+require_present     CENTRAL-AUTHORITY-RULE     docs/architecture-negative-controls.md     'what authority you added'
+
+require_present     ENUMERATION-ORDER-LAW     docs/AGENT_ALIGNMENT.md     'Order may affect cost, never meaning'
+
+require_present     IDOL-NATIVE-MEASURE-ONLY     docs/AGENT_ALIGNMENT.md     'idol-native may measure and falsify. idol owns meaning'
+
+require_present     PIPELINE-REDUCTION-GOAL     docs/AGENT_ALIGNMENT.md     'remove the need for large parts of today'
+
+require_max     NO-DNIR-SECOND-TYPECHECK     src/dnir_lower.zig     'fn exprIsStr|exprIsStr\('     40
+
+if [ -x gate/architecture-roadmap.sh ]; then
+    SEEN=$((SEEN + 1))
+    if sh gate/architecture-roadmap.sh >/dev/null 2>&1; then
+        ok 'ARCHITECTURE-ROADMAP'
+    else
+        bad 'ARCHITECTURE-ROADMAP: gate/architecture-roadmap.sh failed'
+    fi
+fi
+
 require_present \
     MONOLITH-PROBE-LABELED \
     lib/compiler/monolith.id \
