@@ -1187,6 +1187,11 @@ fn lowerModuleFromGraph(
         const init = g.init orelse continue;
         const ty = module_globals.types.get(g.name) orelse continue;
         const value = constGlobalInit(init, ty) orelse {
+            // String-typed globals with string-literal initializers cannot be
+            // published as a compile-time constant word (the address is a
+            // link-time fact). Skip the initializer: the global gets zero
+            // storage and the string is materialized at the read site.
+            if (ty == .str and init.* == .quoted) continue;
             var buf: [96]u8 = undefined;
             const note = std.fmt.bufPrint(&buf, "global-init-not-constant:{s}", .{g.name}) catch
                 "global-init-not-constant";
