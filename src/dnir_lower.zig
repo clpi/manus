@@ -5810,6 +5810,56 @@ fn lowerInlineRecordArg(ctx: *LowerCtx, table: *const ast.Expr, rec_name: []cons
     return .{ .temp = rec_slot };
 }
 
+
+fn recordLocalDesc(ctx: *LowerCtx, name: []const u8) ?dnir.RecordDesc {
+    for (ctx.records) |rec| {
+        if (rec.fields.len == 0) continue;
+        if (!recordFieldsPresent(ctx, name, rec)) continue;
+        return rec;
+    }
+    return null;
+}
+
+fn materializeRecordBase(ctx: *LowerCtx, name: []const u8) Error!u32 {
+    if (ctx.locals.get(name)) |s| {
+        if (ctx.ptr_slots.contains(s)) return s;
+    }
+    const rec = recordLocalDesc(ctx, name) orelse return bail(ctx.diagnostic, @src());
+    const count: i64 = @intCast(rec.fields.len);
+    const base = ctx.freshTemp();
+    try ctx.emit(.{ .op = .alloc_slots, .result = base, .lhs = .{ .i64 = count } });
+    for (rec.fields, rec.kinds, 0..) |fname, kind, i| {
+        const t = ctx.freshTemp();
+        try ctx.emit(.{
+            .op = .load_field,
+            .result = t,
+            .req_alias = name,
+            .field = fname,
+        });
+        const ty: RT = switch (kind) {
+            .str => .str,
+            .f64 => .f64,
+            .i64 => .any,
+        };
+        try ctx.emit(.{
+            .op = .store_index,
+            .ty = ty,
+            .lhs = .{ .temp = base },
+            .rhs = .{ .i64 = @intCast(i + 1) },
+            .third = .{ .temp = t },
+        });
+    }
+    try ctx.ptr_slots.put(ctx.alloc, base, {});
+    try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), base);
+    return base;
+}
+
+fn lowerOpaqueRecordLocalArg(ctx: *LowerCtx, expr: *const ast.Expr) Error!?dnir.Value {
+    if (expr.* != .name) return null;
+    if (recordLocalDesc(ctx, expr.name.ident) == null) return null;
+    return .{ .local = try materializeRecordBase(ctx, expr.name.ident) };
+}
+
 fn recordFieldsPresent(ctx: *LowerCtx, name: []const u8, rec: dnir.RecordDesc) bool {
     if (rec.fields.len == 0) return false;
     for (rec.fields) |fname| {
@@ -6660,7 +6710,15 @@ fn checkedScalarOperand(
                 return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
             }
         },
-        .table_type => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
+        .table_type => {
+            // A local table binding (`lx: lexer = …`) crosses home as one opaque
+            // pointer operand — same treatment struct locals already get above.
+            if (expression.* == .name and ctx.locals.get(expression.name.ident) != null) {
+                effective = .any;
+            } else {
+                return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+            }
+        },
         else => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
     }
     return .{
@@ -6810,6 +6868,11 @@ fn evaluateCheckedScalarOperands(
         }
         if (count >= values.len) {
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+        }
+        if (try lowerOpaqueRecordLocalArg(ctx, operand.expression)) |materialized| {
+            values[count] = materialized;
+            count += 1;
+            continue;
         }
         values[count] = try lowerExprCons(ctx, operand.expression, .single);
         if (operand.descriptor == .f64) fp_count += 1;
@@ -8336,6 +8399,12 @@ fn emitScalarCallArgs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const 
                 count += 1;
                 continue;
             }
+            if (recordLocalDesc(ctx, arg.name.ident)) |_| {
+                if (count >= 8) return bail(ctx.diagnostic, @src());
+                values[count] = .{ .local = try materializeRecordBase(ctx, arg.name.ident) };
+                count += 1;
+                continue;
+            }
         }
         if (count >= max_direct_scalar_args) return bail(ctx.diagnostic, @src());
         values[count] = try lowerExpr(ctx, arg);
@@ -8405,6 +8474,7 @@ fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const u8) E
         if (arg.* == .name and nameIsPositionalTable(ctx, arg.name.ident)) {
             return .{ .local = try materializeTableSlots(ctx, arg.name.ident) };
         }
+        if (try lowerOpaqueRecordLocalArg(ctx, arg)) |materialized| return materialized;
         return try lowerExpr(ctx, arg);
     }
     try emitScalarCallArgs(ctx, args, callee);

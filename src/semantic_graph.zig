@@ -6,7 +6,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const native_bootstrap = @import("native_bootstrap.zig");
-const home_resolve = @import("home_resolve.zig");
+const home_resolve_mod = @import("home_resolve.zig");
 const Expr = ast.Expr;
 const sema = @import("sema.zig");
 const types = @import("types.zig");
@@ -898,7 +898,7 @@ pub const SemanticGraph = struct {
     /// eighteen `lib/compiler` modules into one image was impossible
     /// independent of every sema question in front of it.
     ///
-    /// Derived here, once, from the module path by `home_resolve.homeOfPath` —
+    /// Derived here, once, from the module path by `home_resolve_mod.homeOfPath` —
     /// the SAME derivation `sema` runs for a foreign home — so a definer and a
     /// caller cannot land on two spellings of one home.
     home: ?[]const u8 = null,
@@ -2147,10 +2147,17 @@ pub const SemanticGraph = struct {
         position: u16,
         scope: id,
         descriptor: types.ResolvedType,
+        type_name: ?[]const u8,
     ) !void {
-        const shape = switch (descriptor) {
-            .@"struct" => |s| self.resolveInHome(scope, s.name, .table_shape),
-            else => null,
+        const shape = blk: {
+            switch (descriptor) {
+                .@"struct" => |s| break :blk self.resolveInHome(scope, s.name, .table_shape),
+                .table_type => {
+                    if (type_name) |name| break :blk self.resolveInHome(scope, name, .table_shape);
+                    break :blk null;
+                },
+                else => break :blk null,
+            }
         } orelse return;
         for (self.edges.items) |edge| {
             if (edge.from == entity and edge.kind == .descriptor and edge.position == position) {
@@ -2173,7 +2180,7 @@ pub const SemanticGraph = struct {
             defer self.alloc.free(members);
             for (members) |member| {
                 const descriptor = (self.get(member) orelse continue).descriptor orelse continue;
-                try self.addDescriptorShapeEdge(member, 0, home, descriptor);
+                try self.addDescriptorShapeEdge(member, 0, home, descriptor, null);
             }
         }
     }
@@ -2183,7 +2190,15 @@ pub const SemanticGraph = struct {
             const node = self.get(relation) orelse continue;
             if (node.kind != .func) continue;
             const descriptor = node.result_descriptor orelse continue;
-            try self.addDescriptorShapeEdge(relation, 0, home, descriptor);
+            var type_name: ?[]const u8 = null;
+            if (node.ast_ref) |raw| {
+                const fd: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
+                type_name = switch (fd.func.ret_type) {
+                    .named => |n| n,
+                    else => null,
+                };
+            }
+            try self.addDescriptorShapeEdge(relation, 0, home, descriptor, type_name);
         }
     }
 
@@ -3757,6 +3772,10 @@ pub const SemanticGraph = struct {
                 else => {},
             }
         }
+        // Single-line Idol bodies store the implicit return in tail_expr, not stmts.
+        if (block.tail_expr) |tail| {
+            try self.liftForeignConstantFieldSitesInExpr(checked, tail, file, parent);
+        }
     }
 
     fn liftForeignConstantFieldSitesInExpr(
@@ -3768,7 +3787,15 @@ pub const SemanticGraph = struct {
     ) anyerror!void {
         if (expr.* == .field) {
             if (checked.foreignModuleIntConstant(expr)) |content| {
-                if (self.findValueByAstRef(expr)) |_| {} else {
+                if (self.findValueByAstRef(expr)) |existing| {
+                    if (self.exactI64(existing) == null) {
+                        const node = self.get(existing) orelse return;
+                        if (node.descriptor == null or node.descriptor.? != .i64) {
+                            self.nodes.items[existing].descriptor = .i64;
+                        }
+                        try self.publishExactI64(existing, content);
+                    }
+                } else {
                     const loc = expr.loc();
                     const value = try self.addChild(parent, .{
                         .kind = .value,
@@ -3885,7 +3912,11 @@ pub const SemanticGraph = struct {
                 .name = param.name,
             });
         }
-        try self.addDescriptorShapeEdge(func_id, 0, foreign, self.nodes.items[func_id].result_descriptor.?);
+        const foreign_type_name = switch (fd.func.ret_type) {
+            .named => |n| n,
+            else => null,
+        };
+        try self.addDescriptorShapeEdge(func_id, 0, foreign, self.nodes.items[func_id].result_descriptor.?, foreign_type_name);
         return func_id;
     }
 
@@ -4155,7 +4186,7 @@ pub const SemanticGraph = struct {
         {
             var threaded = std.Io.Threaded.init(self.alloc, .{});
             defer threaded.deinit();
-            if (home_resolve.homeOfPath(self.alloc, threaded.io(), file)) |h| {
+            if (home_resolve_mod.homeOfPath(self.alloc, threaded.io(), file)) |h| {
                 if (self.home) |old| self.alloc.free(old);
                 self.home = h;
             } else |_| {}
@@ -4190,7 +4221,6 @@ pub const SemanticGraph = struct {
                 result_descriptors[0]
             else
                 .void;
-
             var subject_value: ?id = null;
             if (fact.subject) |subject| {
                 const descriptor = checked.exprDescriptor(subject) orelse
@@ -4211,7 +4241,11 @@ pub const SemanticGraph = struct {
             for (result_descriptors, 0..) |descriptor, i| {
                 results[i] = try self.addApplicationValue(call_id, expr, file, descriptor);
                 const relation_home = self.homeOf(relation) orelse return error.MissingSemanticDeclaration;
-                try self.addDescriptorShapeEdge(results[i], 0, relation_home, descriptor);
+                const result_type_name = switch (fact.target.func.ret_type) {
+                    .named => |n| n,
+                    else => null,
+                };
+                try self.addDescriptorShapeEdge(results[i], 0, relation_home, descriptor, result_type_name);
             }
             try self.publishApplication(
                 call_id,
@@ -8299,3 +8333,66 @@ test "semantic_graph: lifted quoted literals publish source quote facts" {
     try std.testing.expect(saw_bytes);
 }
 
+test "semantic_graph: cross-home tail constant publishes exactI64" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var threaded = std.Io.Threaded.init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const io_iface = threaded.io();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const from = "examples/cross_home_constant.id";
+    const src =
+        \\main: i64 = ()
+        \\    token.KIND_EOF
+    ;
+    var lex = Lexer.init(src, from);
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    checked.source_path = try alloc.dupe(u8, from);
+    const TestLoader = struct {
+        alloc: std.mem.Allocator,
+        io: std.Io,
+        from: []const u8,
+        fn load(raw: *anyopaque, alias: []const u8) ?sema.ForeignHome {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            const source = home_resolve_mod.resolve(
+                self.alloc,
+                self.io,
+                .{ .from = self.from, .stdlib_root = "lib/compiler" },
+                alias,
+            ) orelse return null;
+            if (std.mem.eql(u8, source.path, self.from)) return null;
+            const file_src = std.Io.Dir.cwd().readFileAlloc(self.io, source.path, self.alloc, .unlimited) catch return null;
+            var file_lex = Lexer.init(file_src, source.path);
+            var file_parser = Parser.init(&file_lex, self.alloc);
+            file_parser.idol_mode = true;
+            const file_mod = self.alloc.create(ast.Module) catch return null;
+            file_mod.* = file_parser.parse_module() catch return null;
+            const home = home_resolve_mod.homeOfPath(self.alloc, self.io, source.path) catch return null;
+            return .{ .home = home, .path = source.path, .module = file_mod };
+        }
+    };
+    var loader_ctx: TestLoader = .{ .alloc = alloc, .io = io_iface, .from = from };
+    checked.home_loader = .{ .ctx = &loader_ctx, .load = TestLoader.load };
+    try checked.check_module(&mod);
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, from);
+    const tail = mod.body.stmts[0].func_decl.func.body.tail_expr orelse return error.TestExpectedEqual;
+    try std.testing.expect(tail.* == .field);
+    try std.testing.expectEqual(@as(i64, 109), checked.foreignModuleIntConstant(tail).?);
+    const raw: *const anyopaque = @ptrCast(@constCast(tail));
+    var saw = false;
+    for (graph.nodes.items, 0..) |node, i| {
+        if (node.kind != .value or node.ast_ref != raw) continue;
+        try std.testing.expectEqual(@as(i64, 109), graph.exactI64(@intCast(i)).?);
+        saw = true;
+    }
+    try std.testing.expect(saw);
+}

@@ -2395,10 +2395,16 @@ const Arm64Compiler = struct {
                 if (ins.op != .store_local) continue;
                 const slot = ins.result orelse continue;
                 if (ins.ty == .f64 or self.valueIsFp(ins.lhs)) continue;
-                if (ins.application == null and !self.value_free_at.contains(slot)) switch (ins.lhs) {
-                    .i64 => continue,
-                    else => {},
-                };
+                // In a calling body, every unread local still needs a frame home
+                // because a later read may arrive through aggregate access on a
+                // table/record binding — skipping dead-looking i64 stores left
+                // high slot numbers with no home and eval refused at `local 30`.
+                if (!body_has_call) {
+                    if (ins.application == null and !self.value_free_at.contains(slot)) switch (ins.lhs) {
+                        .i64 => continue,
+                        else => {},
+                    };
+                }
                 if (homed_slots.contains(slot) or self.gp_stack_locals.contains(slot)) continue;
                 if (slot > 4094) return error.RegisterExhausted;
                 try self.gp_stack_locals.put(self.alloc, slot, @intCast(slot * 8));
@@ -4664,9 +4670,6 @@ const Arm64Compiler = struct {
                 break :blk r;
             },
             .local => |slot| {
-                if (self.gp_stack_locals.get(slot)) |off| {
-                    return try self.loadGpStackLocal(off);
-                }
                 if (self.eval_pinned) |p| {
                     if (p.get(slot)) |r| {
                         return try self.ensureRegLiveRemap(temps, r);
@@ -4674,6 +4677,9 @@ const Arm64Compiler = struct {
                 }
                 if (temps.get(slot)) |r| {
                     return try self.ensureRegLiveRemap(temps, r);
+                }
+                if (self.gp_stack_locals.get(slot)) |off| {
+                    return try self.loadGpStackLocal(off);
                 }
                 return self.undefinedAt(@src(), "local", slot);
             },
