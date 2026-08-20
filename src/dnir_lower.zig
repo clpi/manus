@@ -4485,12 +4485,26 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
             bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
             const descriptor = try publishedDescriptor(ctx, application);
             if (recordForApplicationResult(ctx, application)) |record| {
-                try lowerCheckedRecordCallAssign(ctx, name, application, record);
+                try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
+                return;
+            }
+            if (recordForDescriptor(ctx.records, descriptor)) |record| {
+                try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
                 return;
             }
             const results = ctx.graph.applicationResults(application.application) orelse
                 return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
-            if (results.len == 1) try checkedScalarResult(ctx.diagnostic, descriptor);
+            if (results.len == 1) {
+                const result_node = ctx.graph.get(results[0]) orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-member");
+                if (result_node.descriptor) |result_desc| {
+                    if (recordForDescriptor(ctx.records, result_desc)) |record| {
+                        try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
+                        return;
+                    }
+                }
+                try checkedScalarResult(ctx.diagnostic, descriptor);
+            }
         }
     }
     if (!ctx.require_graph_facts and value.* == .call and value.call.func.* == .name) {
@@ -4655,11 +4669,127 @@ fn linkageForTarget(ctx: *LowerCtx, target: semantic_graph.id) Error![]const u8 
         invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-target");
 }
 
+
+fn callArgs(call_value: *const Expr) ?[]const *Expr {
+    return switch (call_value.*) {
+        .call => |c| c.args,
+        .method_call => |mc| mc.args,
+        else => null,
+    };
+}
+
+fn exprInCallArgs(expr: *const Expr, call_value: *const Expr) bool {
+    const args = callArgs(call_value) orelse return false;
+    for (args) |arg| {
+        if (arg == expr) return true;
+    }
+    return false;
+}
+
+fn nameInCallArgs(ident: []const u8, call_value: *const Expr) bool {
+    const args = callArgs(call_value) orelse return false;
+    for (args) |arg| {
+        if (arg.* == .name and std.mem.eql(u8, arg.name.ident, ident)) return true;
+    }
+    return false;
+}
+
+fn operandInCallArgs(op: CheckedScalarOperand, call_value: *const Expr) bool {
+    if (op.expression.* == .name) return nameInCallArgs(op.expression.name.ident, call_value);
+    return exprInCallArgs(op.expression, call_value);
+}
+
+fn filterCallArgumentOperands(
+    call_value: *const Expr,
+    operands: []const CheckedScalarOperand,
+    storage: *[max_direct_scalar_args]CheckedScalarOperand,
+) []const CheckedScalarOperand {
+    var count: usize = 0;
+    for (operands) |op| {
+        if (!operandInCallArgs(op, call_value)) continue;
+        storage[count] = op;
+        count += 1;
+    }
+    return storage[0..count];
+}
+
+fn callValueForApplication(
+    ctx: *const LowerCtx,
+    application: *const semantic_graph.ApplicationFact,
+) ?*const Expr {
+    const node = ctx.graph.get(application.application) orelse return null;
+    const raw = node.ast_ref orelse return null;
+    const expr: *const Expr = @ptrCast(@alignCast(raw));
+    return switch (expr.*) {
+        .call, .method_call => expr,
+        else => null,
+    };
+}
+
+/// Keep graph-projected operands that the source call actually passes. The
+/// semantic graph may attach nearby bindings (e.g. `st = lexer.save_state(lx)`)
+/// to an application argument pack even when they are not call arguments.
+fn filterCheckedCallOperands(
+    call_value: *const Expr,
+    operands: []const CheckedScalarOperand,
+    storage: *[max_direct_scalar_args]CheckedScalarOperand,
+) []const CheckedScalarOperand {
+    return switch (call_value.*) {
+        .call => filterCallArgumentOperands(call_value, operands, storage),
+        .method_call => |mc| blk: {
+            var count: usize = 0;
+            for (operands) |op| {
+                if (op.expression == mc.obj) {
+                    storage[count] = op;
+                    count += 1;
+                    continue;
+                }
+                if (operandInCallArgs(op, call_value)) {
+                    storage[count] = op;
+                    count += 1;
+                }
+            }
+            break :blk storage[0..count];
+        },
+        else => operands,
+    };
+}
+
+
+/// Drop graph-projected subjects/operands that are not part of a record
+/// constructor call's scalar ABI (`scan: lexer = lexer.new(...)`, etc.).
+fn filterRecordAssignOperands(
+    ctx: *LowerCtx,
+    name: []const u8,
+    operands: []const CheckedScalarOperand,
+    storage: *[max_direct_scalar_args]CheckedScalarOperand,
+) []const CheckedScalarOperand {
+    var count: usize = 0;
+    for (operands) |op| {
+        if (op.expression.* == .name) {
+            const ident = op.expression.name.ident;
+            if (std.mem.eql(u8, ident, name)) continue;
+            var resident: bool = false;
+            for (ctx.records) |rec| {
+                if (recordFieldsPresent(ctx, ident, rec)) {
+                    resident = true;
+                    break;
+                }
+            }
+            if (resident) continue;
+        }
+        storage[count] = op;
+        count += 1;
+    }
+    return storage[0..count];
+}
+
 fn lowerCheckedRecordCallAssign(
     ctx: *LowerCtx,
     name: []const u8,
     application: *const semantic_graph.ApplicationFact,
     record: dnir.RecordDesc,
+    call_value: *const Expr,
 ) Error!void {
     bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
     const relation = try applicationRelation(ctx, application);
@@ -4668,13 +4798,23 @@ fn lowerCheckedRecordCallAssign(
     if (ctx.graph.foreignHome(target)) |foreign_home| {
         try ensureExtern(ctx, foreign_home, callee, callee);
     }
+    const result = try checkedApplicationResult(ctx, application);
+    const rec_slot = if (ctx.locals.get(name)) |existing| existing else blk: {
+        const slot = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), slot);
+        break :blk slot;
+    };
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    const operands = try checkedScalarOperands(ctx, application, &operand_storage);
+    // Graph projection subject is the assignee, not a callee operand.
+    const raw_operands = try checkedScalarOperands(ctx, application, &operand_storage, false);
+    var filtered_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
+    const dropped = filterRecordAssignOperands(ctx, name, raw_operands, &filtered_storage);
+    var arg_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
+    const operands = filterCallArgumentOperands(call_value, dropped, &arg_storage);
     var values: [max_direct_scalar_args]dnir.Value = undefined;
     const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
     try stageCheckedScalarOperands(ctx, values[0..staged.count], staged.floating);
-    const result = try checkedApplicationResult(ctx, application);
     const descriptor = try publishedDescriptor(ctx, application);
     try ctx.emit(.{
         .op = .call_direct,
@@ -4689,6 +4829,14 @@ fn lowerCheckedRecordCallAssign(
         .field = name,
         .ty = descriptor,
     });
+    try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = record.name, .field = name });
+    for (record.fields) |fname| {
+        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
+        defer ctx.alloc.free(fk);
+        if (ctx.locals.contains(fk)) continue;
+        const fslot = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), fslot);
+    }
 }
 
 fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, args: []const *ast.Expr, rec_name: []const u8) Error!void {
@@ -5709,6 +5857,7 @@ fn lowerInlineRecordArg(ctx: *LowerCtx, table: *const ast.Expr, rec_name: []cons
 }
 
 fn recordFieldsPresent(ctx: *LowerCtx, name: []const u8, rec: dnir.RecordDesc) bool {
+    if (rec.fields.len == 0) return false;
     for (rec.fields) |fname| {
         const key = std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname }) catch return false;
         defer ctx.alloc.free(key);
@@ -6465,6 +6614,23 @@ fn operandNamesRecord(ctx: *LowerCtx, expr: *const Expr) bool {
     return false;
 }
 
+
+fn checkedScalarFieldProjection(
+    ctx: *const LowerCtx,
+    expr: *const Expr,
+) ?types.ResolvedType {
+    if (expr.* != .field or expr.field.obj.* != .name) return null;
+    var buf: [512]u8 = undefined;
+    const fk = std.fmt.bufPrint(&buf, "{s}.{s}", .{ expr.field.obj.name.ident, expr.field.field }) catch return null;
+    const slot = ctx.locals.get(fk) orelse return null;
+    if (ctx.str_slots.contains(slot)) return .str;
+    if (ctx.f64_slots.contains(slot)) return .f64;
+    if (ctx.bool_slots.contains(slot)) return .bool;
+    if (ctx.ptr_slots.contains(slot)) return physical_pointer;
+    if (ctx.narrow_slots.get(slot)) |ty| return ty;
+    return .any;
+}
+
 fn checkedScalarOperand(
     ctx: *const LowerCtx,
     value: semantic_graph.id,
@@ -6472,50 +6638,52 @@ fn checkedScalarOperand(
     const node = ctx.graph.get(value) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-value");
     const descriptor = node.descriptor orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-descriptor");
+    const raw = node.ast_ref orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-provenance");
+    const expression: *Expr = @ptrCast(@alignCast(raw));
+    if (expression.* == .table) {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+    }
+    var effective = descriptor;
     switch (descriptor) {
         .i32, .i64, .bool, .str, .f64, .pointer, .any => {},
-        // A PAYLOAD-FREE case-set rides an integer register: its values are the
-        // module constants `Home.case` folds to, so it is ABI-identical to i64
-        // and crosses a relation boundary the same way. A case-set WITH payloads
-        // is not — it carries content, which has no scalar ABI here — so it is
-        // still refused rather than truncated to its tag.
         .enum_type => |e| {
             for (e.variants) |v| {
                 if (v.payload != null) return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
             }
         },
-        // A RECORD IS NOT ONE THING WITH ONE ABI. This consumer wants its
-        // fields in argument registers, so the question is not "is this a
-        // record" but "do its fields fit the register file" — and that is the
-        // CALLEE'S OWN CONTRACT read from the caller's side: the parameter
-        // homing loop assigns one slot per field, in `rec.fields` order, and
-        // `functionEligible` refuses a record parameter past
-        // `max_reg_record_fields` because record fields have no stack-argument
-        // extension.
-        //
-        // Nothing is materialized and nothing is given an address by admitting
-        // this. `evaluateCheckedScalarOperands` stages the fields that are
-        // already resident, and refuses BY NAME any record-descriptor operand
-        // whose fields are not — so admission here can never become a silent
-        // fallthrough to a value this pass cannot name.
         .@"struct" => {
-            const rec = recordForDescriptor(ctx.records, descriptor) orelse
-                return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-            if (rec.fields.len == 0 or rec.fields.len > max_reg_record_fields) {
+            if (checkedScalarFieldProjection(ctx, expression)) |field_ty| {
+                effective = field_ty;
+            } else if (expression.* == .name) {
+                if (ctx.locals.get(expression.name.ident)) |_| {
+                    effective = .any;
+                } else if (recordForDescriptor(ctx.records, descriptor)) |rec| {
+                    if (rec.fields.len == 0 or rec.fields.len > max_reg_record_fields) {
+                        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                    }
+                    effective = .any;
+                } else {
+                    effective = .any;
+                }
+            } else if (recordForDescriptor(ctx.records, descriptor)) |rec| {
+                if (rec.fields.len == 0 or rec.fields.len > max_reg_record_fields) {
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                }
+                if (expression.* == .field) {
+                    effective = checkedScalarFieldProjection(ctx, expression) orelse .any;
+                }
+            } else if (expression.* == .field) {
+                effective = checkedScalarFieldProjection(ctx, expression) orelse .any;
+            } else {
                 return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
             }
         },
         .table_type => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
         else => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi"),
     }
-    const raw = node.ast_ref orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-provenance");
-    const expression: *Expr = @ptrCast(@alignCast(raw));
-    if (expression.* == .table) {
-        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-    }
     return .{
         .expression = expression,
-        .descriptor = descriptor,
+        .descriptor = effective,
     };
 }
 
@@ -6533,11 +6701,14 @@ fn checkedScalarOperands(
     ctx: *LowerCtx,
     application: *const semantic_graph.ApplicationFact,
     storage: *[max_direct_scalar_args]CheckedScalarOperand,
+    include_subject: bool,
 ) Error![]const CheckedScalarOperand {
     var count: usize = 0;
-    if (ctx.graph.applicationSubject(application.application)) |subject| {
-        storage[count] = try checkedScalarOperand(ctx, subject);
-        count += 1;
+    if (include_subject) {
+        if (ctx.graph.applicationSubject(application.application)) |subject| {
+            storage[count] = try checkedScalarOperand(ctx, subject);
+            count += 1;
+        }
     }
     const arguments = ctx.graph.applicationArguments(application.application) orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-argument-pack");
@@ -6641,6 +6812,7 @@ fn evaluateCheckedScalarOperands(
         // (`take(mk(1))`) has a backend record region rather than exploded
         // locals, so it lands here — refused, with the operand law named.
         if (operand.descriptor == .@"struct") {
+            std.debug.print("eval struct operand\n", .{});
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
         }
         // AND A RECORD THE ARGUMENT REGISTERS CANNOT CARRY IS STILL REFUSED BY
@@ -6650,6 +6822,7 @@ fn evaluateCheckedScalarOperands(
         // Falling through would stage the record's own slot, which holds no
         // value.
         if (operandNamesRecord(ctx, operand.expression)) {
+            if (operand.expression.* == .name) std.debug.print("namesRecord {s}\n", .{operand.expression.name.ident});
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
         }
         if (count >= values.len) {
@@ -6709,7 +6882,12 @@ fn lowerCheckedPackCall(
     }
 
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    const operands = try checkedScalarOperands(ctx, application, &operand_storage);
+    const raw_operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
+    var filtered_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
+    const operands = if (callValueForApplication(ctx, application)) |call_value|
+        filterCheckedCallOperands(call_value, raw_operands, &filtered_storage)
+    else
+        raw_operands;
     var values: [max_direct_scalar_args]dnir.Value = undefined;
     const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const first_ty = try checkedGpPackResultType(ctx, results[0]);
@@ -6779,7 +6957,7 @@ fn lowerCheckedScalarCall(
     try checkedScalarResult(ctx.diagnostic, descriptor);
 
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    const operands = try checkedScalarOperands(ctx, application, &operand_storage);
+    const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
     var values: [max_direct_scalar_args]dnir.Value = undefined;
     const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);

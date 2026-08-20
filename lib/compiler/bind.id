@@ -141,9 +141,9 @@ while true
     break
   if t.kind == token.KIND_NAME
     skip = kind == token.KIND_DOT or kind == token.KIND_COLON or prev_kind == token.KIND_AT
-    if not skip
+    if !skip
       nxt = lexer.peek(lx2)
-      if nxt.kind != token.KIND_ASSIGN and not has(bound, t.text) and not has(refs, t.text)
+      if nxt.kind != token.KIND_ASSIGN and !has(bound, t.text) and !has(refs, t.text)
         refs = add(refs, t.text)
         count = count + 1
         if report
