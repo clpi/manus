@@ -3394,11 +3394,8 @@ pub const SemanticGraph = struct {
     fn aggregateIndexSite(expr: *const ast.Expr) ?AggregateIndexSite {
         return switch (expr.*) {
             .index => |ix| .{ .obj = ix.obj, .key = ix.key },
-            .call => |c| blk: {
-                if (c.args.len != 1) return null;
-                if (c.func.* != .name) return null;
-                break :blk .{ .obj = c.func, .key = c.args[0] };
-            },
+            // `()` is application; `[]` is computed projection. Legacy call-form
+            // indexing belongs in ingress compatibility migration, not here.
             else => null,
         };
     }
@@ -3887,6 +3884,37 @@ pub const SemanticGraph = struct {
         };
     }
 
+
+    fn verifyCheckedApplicationOperandPacks(
+        self: *const SemanticGraph,
+        checked: *const sema.Sema,
+    ) !void {
+        for (self.application_facts.items) |fact| {
+            const application_node = self.get(fact.application) orelse return error.InvalidApplicationFact;
+            const raw = application_node.ast_ref orelse continue;
+            const expr: *const Expr = @ptrCast(@alignCast(raw));
+            const sema_fact = checked.applicationFact(expr) orelse continue;
+            const graph_args = self.applicationArguments(fact.application) orelse
+                return error.ApplicationArgumentPackInexact;
+            if (graph_args.len != sema_fact.arguments.len)
+                return error.ApplicationArgumentPackInexact;
+            for (graph_args, sema_fact.arguments) |value_id, argument_expr| {
+                const projected = self.valueExpression(value_id) orelse
+                    return error.ApplicationArgumentPackInexact;
+                if (projected != argument_expr) return error.ApplicationArgumentPackInexact;
+            }
+            if (sema_fact.subject) |subject_expr| {
+                const graph_subject = self.applicationSubject(fact.application) orelse
+                    return error.ApplicationArgumentPackInexact;
+                const projected_subject = self.valueExpression(graph_subject) orelse
+                    return error.ApplicationArgumentPackInexact;
+                if (projected_subject != subject_expr) return error.ApplicationArgumentPackInexact;
+            } else if (self.applicationSubject(fact.application) != null) {
+                return error.ApplicationArgumentPackInexact;
+            }
+        }
+    }
+
     /// Publish identities and descriptors that survived semantic checking.
     /// Absence of a checked fact stays unresolved rather than falling back to
     /// name matching.
@@ -3990,6 +4018,7 @@ pub const SemanticGraph = struct {
         // has nothing to do with what they do — a measurement changing because
         // it was measured.
         try self.publishApplicationWorlds(file);
+        try self.verifyCheckedApplicationOperandPacks(checked);
         return module;
     }
 

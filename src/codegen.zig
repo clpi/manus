@@ -5355,20 +5355,10 @@ pub const CodeGen = struct {
         key: *const ast.Expr,
     };
 
-    /// Demagix spells fixed-array projection as `a(i)`; this is the same edge as
-    /// `a[i]` for sized native scalar arrays only — not dynamic tables or calls
-    /// to declared relations.
+    /// Fixed-array computed projection uses `[]` only. `()` remains application.
     fn fixed_array_index(self: *CodeGen, e: *const ast.Expr) ?FixedArrayIndex {
         const pair: FixedArrayIndex = switch (e.*) {
             .index => |idx| .{ .obj = idx.obj, .key = idx.key },
-            .call => |c| blk: {
-                if (c.args.len != 1) return null;
-                if (c.func.* != .name) return null;
-                var tbuf: [256]u8 = undefined;
-                if (self.func_decls.get(c.func.name.ident) != null) return null;
-                if (self.func_decls.get(self.mangled_name(c.func.name.ident, &tbuf)) != null) return null;
-                break :blk .{ .obj = c.func, .key = c.args[0] };
-            },
             else => return null,
         };
         const container = self.expr_type(pair.obj);
@@ -5384,14 +5374,6 @@ pub const CodeGen = struct {
     fn native_index_access(self: *CodeGen, expr: *const ast.Expr, require_lvalue_obj: bool) bool {
         const pair: struct { obj: *const ast.Expr, key: *const ast.Expr } = switch (expr.*) {
             .index => |idx| .{ .obj = idx.obj, .key = idx.key },
-            .call => |c| blk: {
-                if (c.args.len != 1) return false;
-                if (c.func.* != .name) return false;
-                var tbuf: [256]u8 = undefined;
-                if (self.func_decls.get(c.func.name.ident) != null) return false;
-                if (self.func_decls.get(self.mangled_name(c.func.name.ident, &tbuf)) != null) return false;
-                break :blk .{ .obj = c.func, .key = c.args[0] };
-            },
             else => return false,
         };
         if (self.fixed_array_index(expr)) |_| return true;
@@ -7987,6 +7969,7 @@ pub const CodeGen = struct {
             }
         }
     }
+
 
     pub fn populate_record_aliases(self: *CodeGen, mod: *ast.Module) E!void {
         for (mod.body.stmts) |*stmt| {
