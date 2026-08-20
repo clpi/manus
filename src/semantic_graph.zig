@@ -330,6 +330,14 @@ pub const ExactI64 = struct {
     content: i64,
 };
 
+/// Producer quote identity for a lifted literal value (GAP-145). The AST
+/// `.quoted` arm carries provenance; this fact makes it observable on the graph
+/// without collapsing text and bytes to one `.str` descriptor kingdom.
+pub const SourceQuoteFact = struct {
+    value: id,
+    quote: ast.Quote,
+};
+
 pub const PackFill = enum { nil };
 
 /// One binding adjustment from a produced source pack to an ordered target
@@ -922,6 +930,8 @@ pub const SemanticGraph = struct {
     aggregate_origins: std.AutoHashMapUnmanaged(usize, id) = .empty,
     exact_i64_facts: std.ArrayListUnmanaged(ExactI64) = .empty,
     exact_i64_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
+    source_quote_facts: std.ArrayListUnmanaged(SourceQuoteFact) = .empty,
+    source_quote_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
     owned_descriptors: std.ArrayListUnmanaged(*types.ResolvedType) = .empty,
     aggregate_access_relation: ?id = null,
     application_rows: std.ArrayListUnmanaged(u32) = .empty,
@@ -1001,6 +1011,8 @@ pub const SemanticGraph = struct {
         self.aggregate_origins.deinit(self.alloc);
         self.exact_i64_facts.deinit(self.alloc);
         self.exact_i64_rows.deinit(self.alloc);
+        self.source_quote_facts.deinit(self.alloc);
+        self.source_quote_rows.deinit(self.alloc);
         for (self.owned_descriptors.items) |descriptor| self.alloc.destroy(descriptor);
         self.owned_descriptors.deinit(self.alloc);
         self.application_rows.deinit(self.alloc);
@@ -1568,6 +1580,24 @@ pub const SemanticGraph = struct {
         try self.exact_i64_facts.append(self.alloc, .{ .value = value, .content = content });
         errdefer _ = self.exact_i64_facts.pop();
         try self.exact_i64_rows.putNoClobber(self.alloc, value, row);
+    }
+
+    pub fn sourceQuote(self: *const SemanticGraph, value: id) ?ast.Quote {
+        const row = self.source_quote_rows.get(value) orelse return null;
+        if (row >= self.source_quote_facts.items.len) return null;
+        const fact = self.source_quote_facts.items[row];
+        if (fact.value != value or self.get(value) == null) return null;
+        return fact.quote;
+    }
+
+    fn publishSourceQuote(self: *SemanticGraph, value: id, quote: ast.Quote) !void {
+        const node = self.get(value) orelse return error.InvalidSourceQuoteFact;
+        if (node.kind != .value) return error.InvalidSourceQuoteFact;
+        if (self.source_quote_rows.contains(value)) return error.DuplicateSourceQuoteFact;
+        const row = try coordinateForLength(self.source_quote_facts.items.len);
+        try self.source_quote_facts.append(self.alloc, .{ .value = value, .quote = quote });
+        errdefer _ = self.source_quote_facts.pop();
+        try self.source_quote_rows.putNoClobber(self.alloc, value, row);
     }
 
     pub fn packEffect(self: *const SemanticGraph, pack_id: id) Card {
@@ -3456,6 +3486,10 @@ pub const SemanticGraph = struct {
             .ast_ref = @ptrCast(@constCast(expr)),
         });
         try self.publishNameBinding(value, expr, occurrence);
+        switch (expr.*) {
+            .quoted => |lit| try self.publishSourceQuote(value, lit.quote),
+            else => {},
+        }
         return value;
     }
 
@@ -5236,6 +5270,17 @@ pub const SemanticGraph = struct {
             try buf.append(alloc, '}');
         }
         try buf.append(alloc, ']');
+        try buf.appendSlice(alloc, ",\"source_quote\":[");
+        for (self.source_quote_facts.items, 0..) |fact, i| {
+            if (self.sourceQuote(fact.value) == null) return error.InvalidSourceQuoteFact;
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"value\":");
+            try appendJsonInt(buf, alloc, fact.value);
+            try buf.appendSlice(alloc, ",\"quote\":\"");
+            try buf.appendSlice(alloc, @tagName(fact.quote));
+            try buf.appendSlice(alloc, "\"}");
+        }
+        try buf.append(alloc, ']');
     }
 
     fn appendMembersJson(
@@ -5281,7 +5326,9 @@ pub const SemanticGraph = struct {
         // version 6: `aggregates` and `exact_i64`. Version 5 serialized neither
         // aggregate member identity nor exact scalar content, so a self-hosted
         // consumer could not reproduce the fact closure used by realization.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":6,\"file\":\"");
+        // version 7: `source_quote`. Version 6 collapsed every lifted `.quoted`
+        // value to a bare `.str` descriptor with no producer quote identity.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":7,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         if (source_hash) |h| {
@@ -6083,9 +6130,10 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 6), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 7), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
+    try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
 
     // The producer in this slice is positional arrays, but AggregateFact and
     // its interchange are not an array ontology. A record-valued application
@@ -7941,3 +7989,43 @@ test "semantic_graph: correspondence cardinality and entity bounds fail closed" 
     }));
     try std.testing.expectEqual(@as(usize, 0), history.correspondenceCount());
 }
+
+test "semantic_graph: lifted quoted literals publish source quote facts" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const table_apply = @import("table_apply.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\use: str = (text: str, bytes: str)
+        \\    text
+        \\entry: str = ()
+        \\    use("hi", 'b')
+    ;
+    var lex = Lexer.init(source, "quotes.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&mod);
+    table_apply.normalizeModule(alloc, &mod, &checked.type_map);
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "quotes.id");
+    try std.testing.expectEqual(@as(usize, 2), graph.source_quote_facts.items.len);
+    var saw_text = false;
+    var saw_bytes = false;
+    for (graph.source_quote_facts.items) |fact| {
+        switch (fact.quote) {
+            .text => saw_text = true,
+            .bytes => saw_bytes = true,
+            else => {},
+        }
+    }
+    try std.testing.expect(saw_text);
+    try std.testing.expect(saw_bytes);
+}
+
