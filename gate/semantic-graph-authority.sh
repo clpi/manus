@@ -136,6 +136,14 @@ if [ -r "$LOWER" ]; then
         'lowering still reconstructs relation faces from AST provenance'
 fi
 if [ -r "$GRAPH" ]; then
+    has "$GRAPH" 'pub const SourceQuoteFact = struct' \
+        'semantic graph lost GAP-145 source quote fact type'
+    has "$GRAPH" 'pub fn sourceQuote(self: *const SemanticGraph' \
+        'semantic graph lost GAP-145 source quote query API'
+    has "$GRAPH" 'fn publishSourceQuote(self: *SemanticGraph' \
+        'semantic graph lost GAP-145 source quote publish path'
+    has "$GRAPH" '\"source_quote\":[' \
+        'semantic graph JSON export lost source_quote facts'
     finding "$GRAPH" 'ast_ref' \
         'semantic graph still carries Phase-1 AST provenance as a live bridge'
 fi

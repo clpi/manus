@@ -1059,7 +1059,7 @@ A **new canonical** `.id` file may not introduce:
 
 - `main` wrapper, import/module syntax
 - `std`/`lib`/`core` namespace
-- ordinary `[]` lookup, `.get`/`.set`/`.call` access
+- `table(key)` or other `()` standing in for aggregate indexing; `.get`/`.set`/`.call` access
 - `has`/`contains` presence wrapper
 - `*able`/`*ible` protocol name
 - encode/decode subsystem
@@ -1102,7 +1102,7 @@ EDGES RECORD STRUCTURAL ROLES.
 NO SEMANTIC STRING MATCH AFTER RESOLUTION.
 NO SEMANTIC PATH MATCH AFTER RESOLUTION.
 NO `.get` FOR IDOL ORDINARY ACCESS.
-NO `[]` FOR IDOL ORDINARY ACCESS.
+NO `()` FOR AGGREGATE INDEXING — computed projection is `[]` only.
 NO HAS.
 NO *ABLE/*IBLE.
 NO PLURAL-CARDINALITY IDENTITY.
