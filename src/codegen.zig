@@ -2570,7 +2570,7 @@ pub const CodeGen = struct {
             .true_lit, .false_lit => .bool,
             .int_lit => .i64,
             .float_lit => .f64,
-            .quoted => .str,
+            .quoted => |lit| types.quotedLiteralType(lit.quote),
             .func_expr => |fb| self.func_expr_type(fb),
             .if_expr => |ie| blk: {
                 const then_t = self.expr_type(ie.then_expr);
@@ -5232,7 +5232,7 @@ pub const CodeGen = struct {
         }
         return switch (e.*) {
             .int_lit => .i64,
-            .quoted => .str,
+            .quoted => |lit| types.quotedLiteralType(lit.quote),
             // A name already proven in THIS body. One pass, no fixpoint: a name
             // read before it is written answers `.any`, and `.any` is the
             // refusing answer, so the order can only cost coverage.
@@ -10631,7 +10631,7 @@ pub const CodeGen = struct {
         return switch (expr.*) {
             .int_lit => .i64,
             .float_lit => .f64,
-            .quoted => .str,
+            .quoted => |lit| if (ast.quotedLiteralIsByteSequence(lit.quote)) null else .str,
             .unop => |u| switch (u.op) {
                 .neg => switch (u.operand.*) {
                     .int_lit => .i64,

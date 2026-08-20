@@ -347,7 +347,6 @@ pub fn narrowIntOfType(t: ast.TypeExpr) ?ResolvedType {
     if (std.mem.eql(u8, n, "i32")) return .i32;
     return null;
 }
-
 pub const ResolvedType = union(enum) {
     // Primitive native types (map directly to C types)
     i8,
@@ -1104,6 +1103,21 @@ pub const ResolvedType = union(enum) {
         }
     }
 };
+
+
+/// Element storage for the GAP-145 byte-sequence descriptor (`law.text.byte`).
+var quoted_byte_sequence_elem: ResolvedType = .u8;
+
+/// Resolved descriptor for a quoted literal from its producer quote identity.
+/// Text faces remain `.str`; the byte-sequence face is a dynamic `[u8]`-shaped
+/// value, not a collapsed text identity.
+pub fn quotedLiteralType(quote: ast.Quote) ResolvedType {
+    if (ast.quotedLiteralIsByteSequence(quote)) {
+        return .{ .array = .{ .elem = &quoted_byte_sequence_elem, .size = null } };
+    }
+    return .str;
+}
+
 
 pub const c_type_marker_prefix = "__c_type:";
 

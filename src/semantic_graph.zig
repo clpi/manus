@@ -7998,10 +7998,10 @@ test "semantic_graph: lifted quoted literals publish source quote facts" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const source =
-        \\use: str = (text: str, bytes: str)
-        \\    text
+        \\t: str = "hi"
+        \\b = 'b'
         \\entry: str = ()
-        \\    use("hi", 'b')
+        \\    t
     ;
     var lex = Lexer.init(source, "quotes.id");
     var parser = Parser.init(&lex, alloc);

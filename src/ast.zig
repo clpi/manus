@@ -498,6 +498,12 @@ pub const Quote = enum {
     host,
 };
 
+/// True when the producer classified this literal as the byte-sequence face
+/// (`law.literal.bytes`), not a text face.
+pub fn quotedLiteralIsByteSequence(quote: Quote) bool {
+    return quote == .bytes;
+}
+
 pub const Expr = union(enum) {
     nil: Loc,
     true_lit: Loc,

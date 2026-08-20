@@ -1236,7 +1236,7 @@ pub const Sema = struct {
         return switch (e.*) {
             .int_lit => .i64,
             .float_lit => .f64,
-            .quoted => .str,
+            .quoted => |lit| types.quotedLiteralType(lit.quote),
             .true_lit, .false_lit => .bool,
             .nil => .any,
             // Simple binops on integer literals: 0x01 << 4 → i64
@@ -1357,7 +1357,7 @@ pub const Sema = struct {
         return switch (e.*) {
             .int_lit => repr.is_numeric(),
             .float_lit => repr.is_float(),
-            .quoted => repr == .str,
+            .quoted => |lit| repr == .str and !ast.quotedLiteralIsByteSequence(lit.quote),
             .true_lit, .false_lit => repr == .bool,
             // `-3.0` is one literal wearing a sign, not an operation on a value
             // that already has a descriptor.
@@ -3938,7 +3938,7 @@ pub const Sema = struct {
             .true_lit, .false_lit => .bool,
             .int_lit => .i64,
             .float_lit => .f64,
-            .quoted => .str,
+            .quoted => |lit| types.quotedLiteralType(lit.quote),
             .vararg => .any,
             .quote, .unquote, .macro_call => {
                 self.err(expr.loc(), "unexpanded macro expression reached semantic analysis", .{});
@@ -12710,7 +12710,7 @@ pub const Sema = struct {
                 .true_lit, .false_lit => .bool,
                 .int_lit => .i64,
                 .float_lit => .f64,
-                .quoted => .str,
+                .quoted => |lit| types.quotedLiteralType(lit.quote),
                 .name => |n| blk: {
                     if (self.param_index(n.ident)) |pi| {
                         self.unify_param(pi, hint);
