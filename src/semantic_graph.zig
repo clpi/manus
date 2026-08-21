@@ -2154,14 +2154,15 @@ pub const SemanticGraph = struct {
                 },
                 else => break :blk null,
             }
-        } orelse return;
+        } orelse if (type_name) |name| self.resolveTableShape(scope, name) else null;
+        const resolved = shape orelse return;
         for (self.edges.items) |edge| {
             if (edge.from == entity and edge.kind == .descriptor and edge.position == position) {
-                if (edge.to != shape) return error.InvalidDescriptorFact;
+                if (edge.to != resolved) return error.InvalidDescriptorFact;
                 return;
             }
         }
-        try self.addEdge(.{ .from = entity, .to = shape, .kind = .descriptor, .position = position });
+        try self.addEdge(.{ .from = entity, .to = resolved, .kind = .descriptor, .position = position });
     }
 
     /// Bind each field to the exact nested descriptor shape after every alias
@@ -3266,23 +3267,26 @@ pub const SemanticGraph = struct {
     }
 
     pub fn recordParamFieldSliceSite(self: *const SemanticGraph, expr: *const Expr, parent: id) bool {
-        const func_expr: *const Expr = switch (expr.*) {
+        const param_name: []const u8 = switch (expr.*) {
             .call => |c| blk: {
                 if (c.args.len != 1) return false;
-                break :blk c.func;
+                if (c.func.* != .field) return false;
+                const f = c.func.field;
+                if (f.obj.* != .name) return false;
+                break :blk f.obj.name.ident;
             },
             .method_call => |mc| blk: {
                 if (mc.args.len != 1) return false;
-                break :blk mc.obj;
+                if (mc.obj.* != .name) return false;
+                break :blk mc.obj.name.ident;
             },
             else => return false,
         };
-        const f = switch (func_expr.*) {
-            .field => |fld| fld,
+        const field_name: []const u8 = switch (expr.*) {
+            .call => |c| c.func.field.field,
+            .method_call => |mc| mc.method,
             else => return false,
         };
-        if (f.obj.* != .name) return false;
-        const param_name = f.obj.name.ident;
         if (self.resolveInHome(parent, param_name, .param) == null) return false;
         var func_scope: ?id = parent;
         while (func_scope) |scope| {
@@ -3305,7 +3309,7 @@ pub const SemanticGraph = struct {
         }
         const tn = type_name orelse return false;
         const shape = self.resolveTableShape(func_id, tn) orelse return false;
-        return self.tableShapeHasField(shape, f.field);
+        return self.tableShapeHasField(shape, field_name);
     }
 
     fn liftCallFromExpr(
