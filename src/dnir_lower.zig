@@ -2437,145 +2437,6 @@ fn recordFieldPrefixPresent(record: dnir.RecordDesc, prefix: []const u8) bool {
     return false;
 }
 
-fn recordFieldHasNestedFields(record: dnir.RecordDesc, prefix: []const u8) bool {
-    if (prefix.len == 0) return false;
-    var dotted: [512]u8 = undefined;
-    const pat = std.fmt.bufPrint(&dotted, "{s}.", .{prefix}) catch return false;
-    for (record.fields) |name| {
-        if (std.mem.startsWith(u8, name, pat)) return true;
-    }
-    return false;
-}
-
-fn recordDescForOpaqueParam(ctx: *const LowerCtx, opaque_param: OpaqueRecordParam) ?dnir.RecordDesc {
-    for (ctx.records) |rec| {
-        if (std.mem.eql(u8, rec.name, opaque_param.rec_name)) return rec;
-    }
-    return findRecordByNominal(ctx.records, opaque_param.rec_name, ctx.graph);
-}
-
-fn copyOpaqueToFlatPrefixedFields(
-    ctx: *LowerCtx,
-    dest_prefix: []const u8,
-    src: OpaqueRecordParam,
-    prefix: []const u8,
-) Error!void {
-    const src_rec = recordDescForOpaqueParam(ctx, src) orelse return bail(ctx.diagnostic, @src());
-    var prefix_buf: [512]u8 = undefined;
-    const prefix_pat = std.fmt.bufPrint(&prefix_buf, "{s}.", .{prefix}) catch return bail(ctx.diagnostic, @src());
-    for (src_rec.fields, src_rec.kinds) |fname, kind| {
-        if (!std.mem.startsWith(u8, fname, prefix_pat)) continue;
-        const suffix = fname[prefix_pat.len..];
-        const dest_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ dest_prefix, suffix });
-        defer ctx.alloc.free(dest_key);
-        const rt: RT = switch (kind) {
-            .f64 => .f64,
-            .str => .str,
-            .i64 => .any,
-        };
-        const t = ctx.freshTemp();
-        try ctx.emit(.{
-            .op = .load_field,
-            .result = t,
-            .rhs = .{ .local = src.slot },
-            .record = src.rec_name,
-            .field = try ctx.alloc.dupe(u8, fname),
-            .ty = rt,
-        });
-        if (rt == .f64) try ctx.f64_slots.put(ctx.alloc, t, {});
-        if (rt == .str) try ctx.str_slots.put(ctx.alloc, t, {});
-        const v: dnir.Value = .{ .temp = t };
-        if (ctx.locals.get(dest_key)) |dest_slot| {
-            try ctx.emit(.{ .op = .store_local, .result = dest_slot, .lhs = v, .ty = rt });
-        } else {
-            const slot = ctx.freshTemp();
-            try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, dest_key), slot);
-            if (rt == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
-            if (rt == .str) try ctx.str_slots.put(ctx.alloc, slot, {});
-            try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = rt });
-        }
-    }
-    subsumeProducerRefit(ctx);
-}
-
-fn copyFlatToOpaquePrefixedFields(
-    ctx: *LowerCtx,
-    dest: OpaqueRecordParam,
-    src_base: []const u8,
-    prefix: []const u8,
-) Error!void {
-    const dest_rec = recordDescForOpaqueParam(ctx, dest) orelse return bail(ctx.diagnostic, @src());
-    var prefix_buf: [512]u8 = undefined;
-    const prefix_pat = std.fmt.bufPrint(&prefix_buf, "{s}.", .{prefix}) catch return bail(ctx.diagnostic, @src());
-    for (dest_rec.fields, dest_rec.kinds) |fname, kind| {
-        if (!std.mem.startsWith(u8, fname, prefix_pat)) continue;
-        const suffix = fname[prefix_pat.len..];
-        const src_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ src_base, suffix });
-        defer ctx.alloc.free(src_key);
-        const v: dnir.Value = if (ctx.locals.get(src_key)) |slot| .{ .local = slot } else blk: {
-            if (try loadFieldFromOpaquePath(ctx, src_key, null)) |loaded| break :blk loaded;
-            return bail(ctx.diagnostic, @src());
-        };
-        const rt: RT = switch (kind) {
-            .f64 => .f64,
-            .str => .str,
-            .i64 => .any,
-        };
-        try ctx.emit(.{
-            .op = .store_field,
-            .rhs = .{ .local = dest.slot },
-            .record = dest.rec_name,
-            .field = try ctx.alloc.dupe(u8, fname),
-            .lhs = v,
-            .ty = rt,
-        });
-    }
-    subsumeProducerRefit(ctx);
-}
-
-fn storeOpaqueParamScalarField(
-    ctx: *LowerCtx,
-    dest: OpaqueRecordParam,
-    field_name: []const u8,
-    value: dnir.Value,
-    store_ty: RT,
-) Error!void {
-    try ctx.emit(.{
-        .op = .store_field,
-        .rhs = .{ .local = dest.slot },
-        .record = dest.rec_name,
-        .field = try ctx.alloc.dupe(u8, field_name),
-        .lhs = value,
-        .ty = store_ty,
-    });
-    subsumeProducerRefit(ctx);
-}
-
-fn loadOpaqueParamScalarField(
-    ctx: *LowerCtx,
-    src_name: []const u8,
-    src: OpaqueRecordParam,
-    field_name: []const u8,
-) Error!dnir.Value {
-    const rt: RT = switch (recordFieldKindForParam(ctx, src_name, field_name) orelse .i64) {
-        .f64 => .f64,
-        .str => .str,
-        .i64 => .any,
-    };
-    const t = ctx.freshTemp();
-    try ctx.emit(.{
-        .op = .load_field,
-        .result = t,
-        .rhs = .{ .local = src.slot },
-        .record = src.rec_name,
-        .field = try ctx.alloc.dupe(u8, field_name),
-        .ty = rt,
-    });
-    if (rt == .f64) try ctx.f64_slots.put(ctx.alloc, t, {});
-    if (rt == .str) try ctx.str_slots.put(ctx.alloc, t, {});
-    return .{ .temp = t };
-}
-
 fn recordCoversTableFields(record: dnir.RecordDesc, fields: []const types.FieldType) bool {
     if (!checkedRecordResultSupported(record)) return false;
     for (fields) |field| {
@@ -2914,13 +2775,10 @@ fn lowerFunction(
                 param_slot_cursor += 1;
                 continue;
             }
-            // Flatten every record parameter into per-field ABI slots. Nested
-            // record shapes are already descriptor-flattened (`peeked_token.kind`,
-            // etc.); f64 fields use the f64 slot path below. Treating any f64
-            // as "non-scalar" and keeping one opaque param slot broke stack keys
-            // like `self.peeked_token.kind` while the backend still expected
-            // exploded register slots.
-            const all_scalar = rec.fields.len > 0;
+            var all_scalar = rec.fields.len > 0;
+            for (rec.kinds) |k| {
+                if (k == .f64) all_scalar = false;
+            }
             if (all_scalar) {
                 for (rec.fields, 0..) |fname, fi| {
                     const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ par.name, fname });
@@ -3720,76 +3578,34 @@ fn opaqueRecordParam(ctx: *const LowerCtx, obj_name: []const u8) ?OpaqueRecordPa
 
 fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []const u8, value: *const ast.Expr) Error!void {
     if (obj.* != .name) return bail(ctx.diagnostic, @src());
-    const dest_name = obj.name.ident;
-    const dest_opaque = opaqueRecordParam(ctx, dest_name);
     if (value.* == .field and value.field.obj.* == .name and
         std.mem.eql(u8, value.field.field, field_name))
     {
-        const src_name = value.field.obj.name.ident;
-        const src_opaque = opaqueRecordParam(ctx, src_name);
-        if (dest_opaque == null and src_opaque == null and nestedRecordPrefixHasLocals(ctx, src_name)) {
-            const src_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ src_name, field_name });
-            defer ctx.alloc.free(src_key);
-            const dest_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ dest_name, field_name });
-            defer ctx.alloc.free(dest_key);
-            try copyPrefixedLocalsFromRecordRef(ctx, dest_key, src_key);
-            subsumeProducerRefit(ctx);
-            return;
-        }
-        if (dest_opaque != null or src_opaque != null) {
-            const rec = blk: {
-                if (dest_opaque) |d| {
-                    if (recordDescForOpaqueParam(ctx, d)) |r| break :blk r;
-                }
-                if (src_opaque) |s| {
-                    if (recordDescForOpaqueParam(ctx, s)) |r| break :blk r;
-                }
-                if (recordDescForParamName(ctx, dest_name)) |r| break :blk r;
-                if (recordDescForParamName(ctx, src_name)) |r| break :blk r;
-                break :blk null;
-            } orelse return bail(ctx.diagnostic, @src());
-            if (recordFieldHasNestedFields(rec, field_name)) {
-                if (dest_opaque) |dest_o| {
-                    if (src_opaque) |src_o| {
-                        try copyOpaqueRecordNestedFields(ctx, dest_o, .{ .opaque_param = src_o }, field_name);
-                    } else {
-                        try copyOpaqueRecordNestedFields(ctx, dest_o, .{ .local_base = src_name }, field_name);
-                    }
-                } else {
-                    const dest_prefix = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ dest_name, field_name });
-                    defer ctx.alloc.free(dest_prefix);
-                    const src_o = src_opaque orelse return bail(ctx.diagnostic, @src());
-                    try copyOpaqueToFlatPrefixedFields(ctx, dest_prefix, src_o, field_name);
-                }
-                return;
-            }
-            if (dest_opaque) |dest_o| {
-                const v = if (src_opaque) |src_o|
-                    try loadOpaqueParamScalarField(ctx, src_name, src_o, field_name)
-                else
-                    try lowerExprCons(ctx, value, .single);
-                const store_ty: RT = switch (recordFieldKindForParam(ctx, dest_name, field_name) orelse .i64) {
-                    .f64 => .f64,
-                    .str => .str,
-                    .i64 => .any,
-                };
-                try storeOpaqueParamScalarField(ctx, dest_o, field_name, v, store_ty);
-                return;
-            }
-        }
+        const src_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ value.field.obj.name.ident, field_name });
+        defer ctx.alloc.free(src_key);
+        const dest_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ obj.name.ident, field_name });
+        defer ctx.alloc.free(dest_key);
+        try copyPrefixedLocalsFromRecordRef(ctx, dest_key, src_key);
+        subsumeProducerRefit(ctx);
+        return;
     }
-    if (dest_opaque) |dest_o| {
-        const dest_rec = recordDescForOpaqueParam(ctx, dest_o) orelse
-            return bail(ctx.diagnostic, @src());
-        if (recordFieldHasNestedFields(dest_rec, field_name)) {
+    if (opaqueRecordParam(ctx, obj.name.ident)) |dest_opaque| {
+        const dest_rec = blk: {
+            for (ctx.records) |rec| {
+                if (std.mem.eql(u8, rec.name, dest_opaque.rec_name)) break :blk rec;
+            }
+            break :blk findRecordByNominal(ctx.records, dest_opaque.rec_name, ctx.graph) orelse
+                return bail(ctx.diagnostic, @src());
+        };
+        if (recordFieldPrefixPresent(dest_rec, field_name)) {
             if (value.* == .field and value.field.obj.* == .name and
                 std.mem.eql(u8, value.field.field, field_name))
             {
                 const src_name = value.field.obj.name.ident;
                 if (opaqueRecordParam(ctx, src_name)) |src_opaque| {
-                    try copyOpaqueRecordNestedFields(ctx, dest_o, .{ .opaque_param = src_opaque }, field_name);
+                    try copyOpaqueRecordNestedFields(ctx, dest_opaque, .{ .opaque_param = src_opaque }, field_name);
                 } else {
-                    try copyOpaqueRecordNestedFields(ctx, dest_o, .{ .local_base = src_name }, field_name);
+                    try copyOpaqueRecordNestedFields(ctx, dest_opaque, .{ .local_base = src_name }, field_name);
                 }
                 return;
             }
@@ -3798,30 +3614,21 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
                 const suffix = std.fmt.bufPrint(&suffix_buf, ".{s}", .{field_name}) catch return bail(ctx.diagnostic, @src());
                 if (std.mem.endsWith(u8, value.name.ident, suffix)) {
                     const base = value.name.ident[0 .. value.name.ident.len - suffix.len];
-                    try copyOpaqueRecordNestedFields(ctx, dest_o, .{ .local_base = base }, field_name);
+                    try copyOpaqueRecordNestedFields(ctx, dest_opaque, .{ .local_base = base }, field_name);
                     return;
                 }
             }
             const tmp_base = try std.fmt.allocPrint(ctx.alloc, "__opq{d}", .{ctx.freshTemp()});
             defer ctx.alloc.free(tmp_base);
-            if (value.* == .field and value.field.obj.* == .name) {
-                const src_name = value.field.obj.name.ident;
-                if (opaqueRecordParam(ctx, src_name)) |src_o| {
-                    try copyOpaqueToFlatPrefixedFields(ctx, tmp_base, src_o, field_name);
-                } else {
-                    try copyPrefixedLocalsFromRecordRef(ctx, tmp_base, src_name);
-                }
-            } else {
-                try lowerAssignTarget(ctx, tmp_base, value);
-            }
-            try copyOpaqueRecordNestedFields(ctx, dest_o, .{ .local_base = tmp_base }, field_name);
+            try lowerAssignTarget(ctx, tmp_base, value);
+            try copyOpaqueRecordNestedFields(ctx, dest_opaque, .{ .local_base = tmp_base }, field_name);
             return;
         }
         const v = try lowerExprCons(ctx, value, .single);
         const store_ty: RT = if (exprIsF64(ctx, value))
             .f64
         else blk: {
-            if (recordFieldKindForParam(ctx, dest_name, field_name)) |kind| {
+            if (recordFieldKindForParam(ctx, obj.name.ident, field_name)) |kind| {
                 break :blk switch (kind) {
                     .f64 => .f64,
                     .str => .str,
@@ -3830,43 +3637,18 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
             }
             break :blk .any;
         };
-        try storeOpaqueParamScalarField(ctx, dest_o, field_name, v, store_ty);
+        try ctx.emit(.{
+            .op = .store_field,
+            .rhs = .{ .local = dest_opaque.slot },
+            .record = dest_opaque.rec_name,
+            .field = try ctx.alloc.dupe(u8, field_name),
+            .lhs = v,
+            .ty = store_ty,
+        });
+        subsumeProducerRefit(ctx);
         return;
     }
-    if (value.* == .field and value.field.obj.* == .name and
-        std.mem.eql(u8, value.field.field, field_name))
-    {
-        const src_name = value.field.obj.name.ident;
-        if (opaqueRecordParam(ctx, src_name)) |src_o| {
-            const src_rec = recordDescForOpaqueParam(ctx, src_o) orelse return bail(ctx.diagnostic, @src());
-            if (recordFieldHasNestedFields(src_rec, field_name)) {
-                const dest_prefix = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ dest_name, field_name });
-                defer ctx.alloc.free(dest_prefix);
-                try copyOpaqueToFlatPrefixedFields(ctx, dest_prefix, src_o, field_name);
-                return;
-            }
-            const v = try loadOpaqueParamScalarField(ctx, src_name, src_o, field_name);
-            const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ dest_name, field_name });
-            defer ctx.alloc.free(fk);
-            const store_ty: RT = switch (recordFieldKindForParam(ctx, src_name, field_name) orelse .i64) {
-                .f64 => .f64,
-                .str => .str,
-                .i64 => .any,
-            };
-            if (ctx.locals.get(fk)) |slot| {
-                try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = store_ty });
-            } else {
-                const slot = ctx.freshTemp();
-                try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), slot);
-                if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
-                if (store_ty == .str) try ctx.str_slots.put(ctx.alloc, slot, {});
-                try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = store_ty });
-            }
-            subsumeProducerRefit(ctx);
-            return;
-        }
-    }
-    const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ dest_name, field_name });
+    const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ obj.name.ident, field_name });
     defer ctx.alloc.free(fk);
     const v = try lowerExprCons(ctx, value, .single);
     if (ctx.locals.get(fk)) |slot| {
@@ -5524,6 +5306,61 @@ fn paramRecordSliceFieldCall(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
 }
 
 
+fn boundedOperandStageCount(staged: StagedOperands, operands: []const CheckedScalarOperand) usize {
+    return @min(staged.count, operands.len);
+}
+
+fn ensureRecordLocalFieldSlots(ctx: *LowerCtx, name: []const u8, record: dnir.RecordDesc) Error!void {
+    for (record.fields, 0..) |fname, fi| {
+        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
+        defer ctx.alloc.free(fk);
+        if (ctx.locals.contains(fk)) continue;
+        const fslot = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), fslot);
+        if (fi < record.kinds.len) switch (record.kinds[fi]) {
+            .str => try ctx.str_slots.put(ctx.alloc, fslot, {}),
+            .f64 => try ctx.f64_slots.put(ctx.alloc, fslot, {}),
+            .i64 => {},
+        };
+        if (fi < record.widths.len) if (record.widths[fi]) |width| {
+            try ctx.narrow_slots.put(ctx.alloc, fslot, width);
+        };
+    }
+}
+
+fn emitRecordFieldLoadsFromBase(
+    ctx: *LowerCtx,
+    prefix: []const u8,
+    record: dnir.RecordDesc,
+    base: dnir.Value,
+) Error!void {
+    for (record.fields, record.kinds, 0..) |fname, kind, fi| {
+        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ prefix, fname });
+        defer ctx.alloc.free(fk);
+        const fslot = ctx.locals.get(fk) orelse continue;
+        const rt: RT = switch (kind) {
+            .f64 => .f64,
+            .str => .str,
+            .i64 => .any,
+        };
+        const t = ctx.freshTemp();
+        try ctx.emit(.{
+            .op = .load_field,
+            .result = t,
+            .rhs = base,
+            .record = record.name,
+            .field = try ctx.alloc.dupe(u8, fname),
+            .ty = rt,
+        });
+        try ctx.emit(.{ .op = .store_local, .result = fslot, .lhs = .{ .temp = t }, .ty = rt });
+        if (rt == .f64) try ctx.f64_slots.put(ctx.alloc, fslot, {});
+        if (rt == .str) try ctx.str_slots.put(ctx.alloc, fslot, {});
+        if (fi < record.widths.len) if (record.widths[fi]) |width| {
+            try ctx.narrow_slots.put(ctx.alloc, fslot, width);
+        };
+    }
+}
+
 fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
     if (!ctx.require_graph_facts) return false;
     if (expr.* != .call and expr.* != .method_call) return false;
@@ -5600,18 +5437,6 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         }
         try lowerRecordLiteralAssign(ctx, name, value);
         return;
-    }
-    if (value.* == .field and value.field.obj.* == .name) {
-        const src_name = value.field.obj.name.ident;
-        const nested = value.field.field;
-        if (opaqueRecordParam(ctx, src_name)) |src_o| {
-            if (recordDescForOpaqueParam(ctx, src_o)) |rec| {
-                if (recordFieldHasNestedFields(rec, nested)) {
-                    try copyOpaqueToFlatPrefixedFields(ctx, name, src_o, nested);
-                    return;
-                }
-            }
-        }
     }
     const v = try lowerExprCons(ctx, value, .single);
     const f64_store = exprIsF64(ctx, value);
@@ -5869,80 +5694,6 @@ fn lowerCheckedRecordCall(
         };
     }
     return .{ .temp = rec_slot };
-}
-
-
-fn boundedOperandStageCount(staged: StagedOperands, operands: []const CheckedScalarOperand) usize {
-    return @min(staged.count, operands.len);
-}
-
-fn ensureRecordLocalFieldSlots(ctx: *LowerCtx, name: []const u8, record: dnir.RecordDesc) Error!void {
-    for (record.fields, 0..) |fname, fi| {
-        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
-        defer ctx.alloc.free(fk);
-        if (ctx.locals.contains(fk)) continue;
-        const fslot = ctx.freshTemp();
-        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), fslot);
-        if (fi < record.kinds.len) switch (record.kinds[fi]) {
-            .str => try ctx.str_slots.put(ctx.alloc, fslot, {}),
-            .f64 => try ctx.f64_slots.put(ctx.alloc, fslot, {}),
-            .i64 => {},
-        };
-        if (fi < record.widths.len) if (record.widths[fi]) |width| {
-            try ctx.narrow_slots.put(ctx.alloc, fslot, width);
-        };
-    }
-}
-
-fn emitRecordFieldLoadsFromBase(
-    ctx: *LowerCtx,
-    prefix: []const u8,
-    record: dnir.RecordDesc,
-    base: dnir.Value,
-) Error!void {
-    _ = base;
-    for (record.fields, record.kinds, 0..) |fname, kind, fi| {
-        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ prefix, fname });
-        defer ctx.alloc.free(fk);
-        const fslot = ctx.locals.get(fk) orelse continue;
-        const rt: RT = switch (kind) {
-            .f64 => .f64,
-            .str => .str,
-            .i64 => .any,
-        };
-        const t = ctx.freshTemp();
-        try ctx.emit(.{
-            .op = .load_field,
-            .result = t,
-            .req_alias = try ctx.alloc.dupe(u8, prefix),
-            .record = record.name,
-            .field = try ctx.alloc.dupe(u8, fname),
-            .ty = rt,
-        });
-        try ctx.emit(.{
-            .op = .store_local,
-            .result = fslot,
-            .lhs = .{ .temp = t },
-            .record = record.name,
-            .field = fname,
-            .ty = rt,
-        });
-        if (rt == .f64) try ctx.f64_slots.put(ctx.alloc, fslot, {});
-        if (rt == .str) try ctx.str_slots.put(ctx.alloc, fslot, {});
-        if (fi < record.widths.len) if (record.widths[fi]) |width| {
-            try ctx.narrow_slots.put(ctx.alloc, fslot, width);
-        };
-    }
-}
-
-fn nestedRecordPrefixHasLocals(ctx: *const LowerCtx, prefix: []const u8) bool {
-    var buf: [256]u8 = undefined;
-    const pat = std.fmt.bufPrint(&buf, "{s}.", .{prefix}) catch return false;
-    var it = ctx.locals.keyIterator();
-    while (it.next()) |key| {
-        if (std.mem.startsWith(u8, key.*, pat)) return true;
-    }
-    return false;
 }
 
 fn lowerCheckedRecordCallAssign(
@@ -7327,7 +7078,6 @@ fn loadFieldFromOpaquePath(
     const dot = std.mem.indexOfScalar(u8, path, '.') orelse return null;
     const obj_name = path[0..dot];
     const field = path[dot + 1 ..];
-    if (nestedRecordPrefixHasLocals(ctx, path)) return null;
     if (opaqueRecordParam(ctx, obj_name)) |opaque_rec| {
         if (recordFieldKindForParam(ctx, obj_name, field) == null) {
             if (recordDescForParamName(ctx, obj_name)) |rec| {
@@ -10935,13 +10685,6 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         defer ctx.alloc.free(key);
         if (ctx.locals.get(key)) |slot| return .{ .local = slot };
         if (try loadFieldFromOpaquePath(ctx, key, null)) |v| return v;
-        if (opaqueRecordParam(ctx, fld.obj.name.ident)) |op| {
-            if (recordDescForOpaqueParam(ctx, op)) |rec| {
-                if (recordFieldHasNestedFields(rec, fld.field)) {
-                    return bail(ctx.diagnostic, @src());
-                }
-            }
-        }
     }
     if (fld.obj.* == .call or fld.obj.* == .method_call) {
         if (try lowerCallRecordFieldProjection(ctx, fld.obj, fld.field)) |v| return v;
@@ -11946,50 +11689,6 @@ test "dnir_lower: checked aggregate result consumes exact graph shape" {
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
     );
     try std.testing.expectEqualStrings("application-result-abi", diagnostic.note().?);
-}
-
-
-test "dnir_lower: typed record call assign emits field locals" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const source =
-        \\Res: @{ val: i64, pos: i64 }
-        \\parse_expr: Res = (src: str, pos: i64)
-        \\    return { val = 1, pos = pos + 1 }
-        \\parse_factor: Res = (src: str, pos: i64)
-        \\    inner: Res = parse_expr(src, pos)
-        \\    return { val = inner.val, pos = inner.pos }
-    ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "inner-res.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
-    parser.idol_mode = true;
-    var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
-    defer checked.deinit();
-    checked.idol_mode = true;
-    try checked.check_module(&module);
-    var graph = semantic_graph.SemanticGraph.init(alloc);
-    defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "inner-res.id");
-    var diagnostic: Diagnostic = .{};
-    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
-    var saw_call_assign = false;
-    var saw_inner_val_store = false;
-    for (lowered.functions) |f| {
-        if (!std.mem.eql(u8, f.name, "parse_factor")) continue;
-        for (f.blocks) |b| {
-            for (b.instrs) |ins| {
-                if (ins.op == .call_direct and std.mem.eql(u8, ins.field, "inner") and ins.record.len > 0)
-                    saw_call_assign = true;
-                if (ins.op == .store_local and ins.field.len > 0 and std.mem.eql(u8, ins.field, "val")) {
-                    if (ins.record.len > 0) saw_inner_val_store = true;
-                }
-            }
-        }
-    }
-    try std.testing.expect(saw_call_assign);
-    try std.testing.expect(saw_inner_val_store);
 }
 
 test "dnir_lower: no mandatory main — entry function lowers uniformly" {

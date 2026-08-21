@@ -38,7 +38,6 @@ const relation = @import("relation.zig");
 const collection_relation = @import("collection_relation.zig");
 const lexer_bridge = @import("lexer_bridge.zig");
 const home_resolve = @import("home_resolve.zig");
-const host_taint = @import("host_taint.zig");
 
 /// SH-03: an embedded module tokenizes through the SAME lexer the compile
 /// driver uses.
@@ -278,10 +277,6 @@ pub const CodeGen = struct {
     load_chunk: bool = false,
     lib_mode: bool = false,
     idol_mode: bool = false,
-    /// When true (DUO_TAINT_LEDGER), record HOST-TAINTED witnesses for
-    /// codegen/name heuristics while compiling canonical Idol sources.
-    taint_enabled: bool = false,
-    taint: host_taint.Ledger = .{},
     /// When set, foreign module constant field reads may fold in native precheck.
     checked_sema: ?*const sema.Sema = null,
     native_scalar_mode: bool = false,
@@ -631,27 +626,6 @@ pub const CodeGen = struct {
             .table_field_types = table_field_types,
             .concepts = concepts,
         };
-    }
-
-    pub fn deinitTaint(self: *CodeGen) void {
-        self.taint.deinit(self.alloc);
-    }
-
-    pub fn writeTaintLedger(self: *const CodeGen, io: Io, file: std.Io.File) void {
-        var buf: [4096]u8 = undefined;
-        var fw: Io.File.Writer = .init(file, io, &buf);
-        self.taint.writeLedgerLines(&fw.interface) catch {};
-        fw.interface.flush() catch {};
-    }
-
-    fn noteCodegenHostTaint(self: *CodeGen, channel: host_taint.Channel, site: []const u8) void {
-        if (!self.taint_enabled or !self.idol_mode) return;
-        self.taint.record(self.alloc, .{
-            .stage = .codegen,
-            .class = .host_tainted,
-            .channel = channel,
-            .site = site,
-        }) catch {};
     }
 
     fn resetNativeScalarReason(self: *CodeGen) void {
@@ -1313,9 +1287,8 @@ pub const CodeGen = struct {
             std.mem.eql(u8, name, "std");
     }
 
-    fn world_method_result_type(self: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
+    fn world_method_result_type(_: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
         if (obj.* != .name or !is_world_symbol(obj.name.ident)) return null;
-        self.noteCodegenHostTaint(.ast_name, "world_symbol");
         if (std.mem.eql(u8, obj.name.ident, "io")) {
             if (std.mem.eql(u8, method, "write") and args.len == 1) return .void;
         }
@@ -1363,14 +1336,13 @@ pub const CodeGen = struct {
     /// `getenv`/`setenv`/`unsetenv` are plain libc and `<stdlib.h>` is already
     /// unconditional in the prelude, so this needs no new include and no boxed
     /// value in either mode.
-    fn env_projection_key(self: *const CodeGen, e: *const ast.Expr) ?*const ast.Expr {
+    fn env_projection_key(_: *const CodeGen, e: *const ast.Expr) ?*const ast.Expr {
         if (e.* != .index) return null;
         const o = e.index.obj;
         if (o.* != .field) return null;
         if (o.field.obj.* != .name) return null;
         if (!std.mem.eql(u8, o.field.obj.name.ident, "os")) return null;
         if (!std.mem.eql(u8, o.field.field, "env")) return null;
-        @constCast(self).noteCodegenHostTaint(.ast_name, "world_symbol");
         return e.index.key;
     }
 
@@ -1389,10 +1361,9 @@ pub const CodeGen = struct {
     /// Stream-instance relations (`fh:write`, `fh:close`, …) on handles and
     /// other unnarrowed subjects. Standing `stdout`/`stdin` keep their own
     /// recognizers; this covers the corpus's `io.open` handle path.
-    fn stream_method_result_type(self: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
+    fn stream_method_result_type(_: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
         if (!subject_home.streamRelation(method)) return null;
         if (!streamMethodArityOk(method, args.len)) return null;
-        self.noteCodegenHostTaint(.method_string, "stream_method.arity");
         if (obj.* == .name) {
             const id = obj.name.ident;
             if (std.mem.eql(u8, id, "stdout") or std.mem.eql(u8, id, "stderr")) {

@@ -1226,9 +1226,7 @@ pub const SemanticGraph = struct {
     pub fn applicationResultShape(self: *const SemanticGraph, occurrence: id, position: u16) ?id {
         const results = self.applicationResults(occurrence) orelse return null;
         if (position >= results.len) return null;
-        if (self.descriptorShape(results[position], 0)) |shape| return shape;
-        const target = self.applicationTarget(occurrence) orelse return null;
-        return self.descriptorShape(target, 0);
+        return self.descriptorShape(results[position], 0);
     }
 
     /// Enum descriptor homes only.
@@ -4294,21 +4292,11 @@ pub const SemanticGraph = struct {
             for (result_descriptors, 0..) |descriptor, i| {
                 results[i] = try self.addApplicationValue(call_id, expr, file, descriptor);
                 const relation_home = self.homeOf(relation) orelse return error.MissingSemanticDeclaration;
-                const result_type_name = blk: {
-                    const fn_node = self.get(target) orelse break :blk null;
-                    const fn_raw = fn_node.ast_ref orelse break :blk null;
-                    const fd: *const ast.FuncDecl = @ptrCast(@alignCast(fn_raw));
-                    break :blk switch (fd.func.ret_type) {
-                        .named => |n| n,
-                        else => null,
-                    };
+                const result_type_name = switch (fact.target.func.ret_type) {
+                    .named => |n| n,
+                    else => null,
                 };
                 try self.addDescriptorShapeEdge(results[i], 0, relation_home, descriptor, result_type_name);
-                if (self.descriptorShape(results[i], 0) == null) {
-                    if (self.descriptorShape(target, 0)) |shape| {
-                        try self.addEdge(.{ .from = results[i], .to = shape, .kind = .descriptor, .position = 0 });
-                    }
-                }
             }
             try self.publishApplication(
                 call_id,

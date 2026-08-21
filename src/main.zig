@@ -4671,7 +4671,6 @@ fn do_compile(
     native_scalar_precheck.load_chunk = load_chunk;
     native_scalar_precheck.lib_mode = lib_mode;
     native_scalar_precheck.idol_mode = ps.sem.idol_mode;
-    native_scalar_precheck.taint_enabled = taint_ledger_enabled;
     native_scalar_precheck.checked_sema = &ps.sem;
     native_scalar_precheck.test_mode = test_mode;
     native_scalar_precheck.bench_mode = bench_mode;
@@ -4684,7 +4683,6 @@ fn do_compile(
     native_scalar_precheck.populate_func_bodies(&ps.mod) catch {};
     var link_refusal: usize = 0;
     const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
-    if (taint_ledger_enabled) native_scalar_precheck.writeTaintLedger(io, std.Io.File.stderr());
 
     const effective_machine_target: ?[]const u8 = if (wantsMachineLowering(backend_mode, target))
         machineTargetForBackend(target)
@@ -5062,7 +5060,6 @@ fn do_compile(
                             term.buildPhaseDone("compile", total_ms, out_path);
                         }
                         if (!run_after and !(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
-                        if (taint_ledger_enabled) native_diagnostic.writeTaintLedger(io, std.Io.File.stderr());
                         // The direct backend completes and exits HERE, never
                         // reaching the shared tail, so the cache store lives on
                         // this path too. (Placing it only at the tail made the
@@ -5335,7 +5332,6 @@ fn do_compile(
         cg.load_chunk = load_chunk;
         cg.lib_mode = lib_mode;
         cg.idol_mode = ps.sem.idol_mode;
-        cg.taint_enabled = taint_ledger_enabled;
         cg.test_mode = test_mode;
         cg.bench_mode = bench_mode;
         cg.bench_backend = global_bench_backend;
@@ -5354,7 +5350,6 @@ fn do_compile(
         };
         full_native_lowering = cg.usesFullNativeLowering();
         try fw.interface.flush();
-        if (taint_ledger_enabled) cg.writeTaintLedger(io, std.Io.File.stderr());
         transform_engine.dumpProvenanceSummary(io, std.Io.File.stderr());
         break :ml_sidecar cg.ml_kernels_emitted;
     };
@@ -5823,7 +5818,6 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     cg.stdlib_root = compiler_lib_root;
     cg.target = target;
     cg.idol_mode = ps.sem.idol_mode;
-    cg.taint_enabled = taint_ledger_enabled;
     cg.lib_mode = lib_mode;
     cg.foreign_records = &ps.sem.foreign_records;
     cg.foreign_functions = &ps.sem.foreign_functions;
@@ -5836,7 +5830,6 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
         std.process.exit(1);
     };
     try fw.interface.flush();
-    if (taint_ledger_enabled) cg.writeTaintLedger(io, std.Io.File.stderr());
     transform_engine.dumpProvenanceSummary(io, std.Io.File.stderr());
 }
 
