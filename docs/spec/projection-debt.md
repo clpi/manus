@@ -23,7 +23,6 @@ Application record contract: `docs/spec/application-record.md`.
 | inverse face | `:from(` in source | `value:to(target)` (FROM-ZERO) | per-site proof |
 | std lookup | `std.` in canonical source | reachability fix (STD-ZERO) | home + scope |
 | lib lookup | `lib.` in canonical source | same (LIB-ZERO) | home + scope |
-| process namespace | `process.` | `command:run()` + world facts (GAP-159) | MCP bootstrap |
 | adjective protocol | `: readable` etc. | relation projection constraint | graph |
 | codegen reconstruction | literal `"to"` in Zig | relation edge from graph (GAP-082) | Poolside |
 | gate teaching | `gate/idiom.id` `:from(` rule text | keep — law/ratchet text; direct run DNB001-blocked | graph-owned admission |
