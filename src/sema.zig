@@ -401,6 +401,38 @@ pub const ApplicationFact = struct {
     home: ?[]const u8 = null,
 };
 
+/// Knowledge about one semantic obligation. Unknown is deliberately the
+/// default: absence of a producer never becomes permission to realize an
+/// application.
+pub const LawFact = enum {
+    unknown,
+    no,
+    yes,
+};
+
+/// Observable fixed-width integer overflow behavior. Unknown never defaults to
+/// wrapping, trapping, or unchecked machine behavior.
+pub const OverflowLaw = enum {
+    unknown,
+    wrap,
+    trap,
+    unchecked,
+};
+
+/// Normalized scalar relation facts produced after checking proves that both
+/// operands and the result are exact i64 values. Source operator spelling is
+/// recognition input and does not cross this boundary.
+pub const ScalarMultiplyFact = struct {
+    application: *const Expr,
+    owner: ?*const ast.FuncDecl,
+    operands: [2]*const Expr,
+    result: *const Expr,
+    overflow: OverflowLaw,
+    may_trap: LawFact,
+    completes: LawFact,
+    observable_identity: LawFact,
+};
+
 /// One home reachable from the module being checked, and the module that home
 /// IS. `home` is the dotted home path derived from the resolved file path by
 /// `home_resolve.homeOfPath` — the same derivation the symbol law uses, so a
@@ -512,6 +544,10 @@ pub const Sema = struct {
     home_loader: ?HomeLoader = null,
     /// Authoritative callable resolution retained per checked application.
     applications: std.AutoHashMapUnmanaged(*const Expr, ApplicationFact) = .empty,
+    /// Checked scalar multiplication occurrences. Graph lift consumes these
+    /// rows to publish ordinary ApplicationFacts with one exact relation id.
+    scalar_multiplications: std.ArrayListUnmanaged(ScalarMultiplyFact) = .empty,
+    scalar_multiplication_rows: std.AutoHashMapUnmanaged(*const Expr, u32) = .empty,
     /// Top-level type aliases, used by semantic type resolution. Shares one
     /// type, one derivation and one decision procedure with CodeGen's registry
     /// — see `AliasRegistry`.
@@ -564,6 +600,8 @@ pub const Sema = struct {
     idol_mode: bool = false,
     /// When type-checking a named top-level function body, its Duo name (for table field keys).
     current_func_name: ?[]const u8 = null,
+    /// Declaration currently producing semantic facts; null means module scope.
+    current_func_decl: ?*const ast.FuncDecl = null,
     /// Active generic type parameters while checking a generic function body.
     current_func_type_params: ?[]const ast.TypeExpr = null,
     /// When inside an enum_def, alias_def, or concept_def, the name of the type
@@ -824,6 +862,25 @@ pub const Sema = struct {
     /// unresolved or dynamic; consumers must not replace it with name lookup.
     pub fn applicationFact(self: *const Sema, expr: *const Expr) ?ApplicationFact {
         return self.applications.get(expr);
+    }
+
+    /// Normalized scalar i64 multiplication established for this exact
+    /// occurrence. Consumers must not reconstruct this answer from BinOp.
+    pub fn scalarMultiplyFact(self: *const Sema, expr: *const Expr) ?ScalarMultiplyFact {
+        const row = self.scalar_multiplication_rows.get(expr) orelse return null;
+        if (row >= self.scalar_multiplications.items.len) return null;
+        const fact = self.scalar_multiplications.items[row];
+        return if (fact.application == expr) fact else null;
+    }
+
+    pub fn scalarMultiplyCount(self: *const Sema) usize {
+        return self.scalar_multiplications.items.len;
+    }
+
+    pub fn scalarMultiplyAt(self: *const Sema, row: usize) ?ScalarMultiplyFact {
+        if (row >= self.scalar_multiplications.items.len) return null;
+        const fact = self.scalar_multiplications.items[row];
+        return if (self.scalarMultiplyFact(fact.application) != null) fact else null;
     }
 
     /// The home a spelling names, asking the host at most once per spelling.
@@ -1377,6 +1434,8 @@ pub const Sema = struct {
         while (fh_it.next()) |entry| self.alloc.free(entry.key_ptr.*);
         self.foreign_homes.deinit(self.alloc);
         self.applications.deinit(self.alloc);
+        self.scalar_multiplications.deinit(self.alloc);
+        self.scalar_multiplication_rows.deinit(self.alloc);
         self.alias_defs.deinit(self.alloc);
         self.generic_func_arities.deinit(self.alloc);
         self.test_entries.deinit(self.alloc);
@@ -4955,7 +5014,7 @@ pub const Sema = struct {
                 );
                 return .any;
             },
-            .binop => |b| self.check_binop(expr.loc(), b.op, b.lhs, b.rhs),
+            .binop => |b| self.check_binop(expr, b.op, b.lhs, b.rhs),
             .unop => |u| self.check_unop(u.op, u.operand),
             .func_expr => |fb| blk: {
                 fb.closure_id = self.next_closure_id;
@@ -5151,7 +5210,8 @@ pub const Sema = struct {
         term.locHint(loc, "law §62 requires this to be defined and deterministic; it is neither. Write a float divisor ('0.0') if IEEE +/-inf is what you mean, or guard the divisor and let the runtime check report it", .{});
     }
 
-    fn check_binop(self: *Sema, loc: ast.Loc, op: ast.BinOp, lhs: *ast.Expr, rhs: *ast.Expr) SemaError!RT {
+    fn check_binop(self: *Sema, expr: *Expr, op: ast.BinOp, lhs: *ast.Expr, rhs: *ast.Expr) SemaError!RT {
+        const loc = expr.loc();
         // c0 §41 `resolution.rule` — BARE IDENTITY + SEMANTIC DEMAND + AVAILABLE
         // HOMES -> ONE IDENTITY, OR A DIAGNOSTIC. gap[087].
         //
@@ -5194,7 +5254,7 @@ pub const Sema = struct {
             return .any;
         }
 
-        return switch (op) {
+        const result: RT = switch (op) {
             .div, .pow => {
                 if (lt.is_numeric() and rt.is_numeric()) return .f64;
                 return .any;
@@ -5251,6 +5311,28 @@ pub const Sema = struct {
             },
             .pipeline => .any, // pipeline returns whatever the RHS function returns
         };
+        if (op == .mul and lt == .i64 and rt == .i64 and result == .i64) {
+            const fact = ScalarMultiplyFact{
+                .application = expr,
+                .owner = self.current_func_decl,
+                .operands = .{ lhs, rhs },
+                .result = expr,
+                .overflow = .wrap,
+                .may_trap = .no,
+                .completes = .yes,
+                .observable_identity = .no,
+            };
+            const slot = try self.scalar_multiplication_rows.getOrPut(self.alloc, expr);
+            if (slot.found_existing) {
+                self.scalar_multiplications.items[slot.value_ptr.*] = fact;
+            } else {
+                if (self.scalar_multiplications.items.len > std.math.maxInt(u32))
+                    return error.OutOfMemory;
+                slot.value_ptr.* = @intCast(self.scalar_multiplications.items.len);
+                try self.scalar_multiplications.append(self.alloc, fact);
+            }
+        }
+        return result;
     }
 
     fn lua_and_or_value_type_is_native(t: RT) bool {
@@ -5775,18 +5857,21 @@ pub const Sema = struct {
         const prev_fallible = self.current_ret_fallible;
         const prev_nopanic = self.current_nopanic;
         const prev_func_name = self.current_func_name;
+        const prev_func_decl = self.current_func_decl;
         const prev_type_params = self.current_func_type_params;
         self.current_ret = if (fb.ret_fallible) (self.resolve_type(fb.ret_type) catch .any) else ret_t;
         self.current_ret_fallible = fb.ret_fallible;
         // Check if this function has the @nopanic attribute
         self.current_nopanic = has_nopanic_attr(fd.attributes);
         self.current_func_name = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
+        self.current_func_decl = fd;
         self.current_func_type_params = fb.type_params;
         defer {
             self.current_ret = prev_ret;
             self.current_ret_fallible = prev_fallible;
             self.current_nopanic = prev_nopanic;
             self.current_func_name = prev_func_name;
+            self.current_func_decl = prev_func_decl;
             self.current_func_type_params = prev_type_params;
         }
         for (fb.params) |*p| {

@@ -3,7 +3,8 @@ const builtin = @import("builtin");
 const ast = @import("ast.zig");
 const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
-const Sema = @import("sema.zig").Sema;
+const sema = @import("sema.zig");
+const Sema = sema.Sema;
 const dnir = @import("native_ir.zig");
 const c_signatures = @import("c_signatures.zig");
 const native_types = @import("types.zig");
@@ -7768,6 +7769,10 @@ fn validateDnirApplications(
                     return invalidFactsWith(diagnostic, @src(), "application-fact-mismatch");
                 }
                 const aggregate_access = graph.aggregateAccess(application.application) != null;
+                const scalar_multiply = switch (graph.scalarMultiplyRelation()) {
+                    .one => |entity| entity == relation,
+                    .none, .unknown => false,
+                };
                 if (aggregate_access) {
                     try validateAggregateAccessRealization(
                         module,
@@ -7777,6 +7782,40 @@ fn validateDnirApplications(
                         descriptor,
                         diagnostic,
                     );
+                } else if (scalar_multiply) {
+                    const operands = graph.applicationArguments(application.application) orelse
+                        return invalidFactsWith(diagnostic, @src(), "application-operand-pack");
+                    if (!graph.callable(relation) or operands.len != 2 or results.len != 1) {
+                        return invalidFactsWith(diagnostic, @src(), "scalar-multiply-application");
+                    }
+                    for (operands) |value| {
+                        const node = graph.get(value) orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-operand");
+                        const operand_descriptor = node.descriptor orelse
+                            return invalidFactsWith(diagnostic, @src(), "application-operand-descriptor");
+                        if (operand_descriptor != .i64) {
+                            return invalidFactsWith(diagnostic, @src(), "application-operand-descriptor");
+                        }
+                    }
+                    if (graph.applicationOverflow(application.application) != .wrap) {
+                        return invalidFactsWith(diagnostic, @src(), "application-overflow");
+                    }
+                    if (graph.applicationMayTrap(application.application) != .no) {
+                        return invalidFactsWith(diagnostic, @src(), "application-may-trap");
+                    }
+                    if (graph.applicationCompletes(application.application) != .yes) {
+                        return invalidFactsWith(diagnostic, @src(), "application-completion");
+                    }
+                    if (graph.applicationObservableIdentity(application.application) != .no) {
+                        return invalidFactsWith(diagnostic, @src(), "application-observable-identity");
+                    }
+                    if (instruction.op != .binop or instruction.binop != .mul or
+                        instruction.result == null or instruction.lhs == .void or instruction.rhs == .void or
+                        instruction.subject != null or instruction.callee.len != 0 or
+                        instruction.record.len != 0 or instruction.pack_results.len != 0)
+                    {
+                        return invalidFactsWith(diagnostic, @src(), "scalar-multiply-realization");
+                    }
                 } else if (instruction.op != .call_direct) {
                     // A checked call-to-constant or tail-call rewrite needs a
                     // semantic transform witness that the current graph does
@@ -7832,7 +7871,15 @@ fn validateDnirApplications(
                     return invalidFactsWith(diagnostic, @src(), "missing-application-target");
                 const applied = graph.applicationApplied(application.application) orelse
                     return invalidFactsWith(diagnostic, @src(), "missing-application-applied");
-                if (aggregate_access) {
+                if (scalar_multiply) {
+                    if (!std.meta.eql(target_id, relation) or
+                        !std.meta.eql(selected_target, relation) or
+                        !std.meta.eql(applied, relation) or
+                        graph.applicationSubjectCard(application.application) != .none)
+                    {
+                        return invalidFactsWith(diagnostic, @src(), "application-target-mismatch");
+                    }
+                } else if (aggregate_access) {
                     const subject = graph.applicationSubject(application.application) orelse
                         return invalidFactsWith(diagnostic, @src(), "aggregate-access-subject");
                     if (!std.meta.eql(target_id, selected_target) or
@@ -7869,7 +7916,10 @@ fn validateDnirApplications(
                         return invalidFactsWith(diagnostic, @src(), "application-result-abi");
                     }
                 }
-                if (aggregate_access) {
+                // Inlined physical realizations have no linker target. They
+                // still take the same exact-once ApplicationFact accounting
+                // path; only the inapplicable symbol check is skipped.
+                if (aggregate_access or scalar_multiply) {
                     if (function.folded_to_constant) {
                         return invalidFactsWith(diagnostic, @src(), "folded-application-lineage");
                     }
@@ -9309,6 +9359,161 @@ test "native backend: empty application facts do not admit a direct call" {
         validateDnirApplications(alloc, module, &graph, &diagnostic),
     );
     try std.testing.expectEqualStrings("missing-application-lineage", diagnostic.note().?);
+}
+
+test "native backend: graph scalar multiply owns relation laws and machine lineage" {
+    var diagnostic: Diagnostic = .{};
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\scale: i64 = (value: i64)
+        \\    value * 3
+    ;
+    var lexer = Lexer.init(source, "scalar-multiply.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+
+    try std.testing.expectEqual(@as(usize, 1), checked.scalarMultiplyCount());
+    const normalized = checked.scalarMultiplyAt(0).?;
+    try std.testing.expectEqual(sema.OverflowLaw.wrap, normalized.overflow);
+    try std.testing.expectEqual(sema.LawFact.no, normalized.may_trap);
+    try std.testing.expectEqual(sema.LawFact.yes, normalized.completes);
+    try std.testing.expectEqual(sema.LawFact.no, normalized.observable_identity);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&module, &checked, &graph);
+    try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
+    const application = graph.applications()[0];
+    const relation = graph.applicationRelation(application.application).?;
+    const result = try applicationResult(&graph, application, &diagnostic);
+    try std.testing.expectEqual(semantic_graph.Card{ .one = relation }, graph.scalarMultiplyRelation());
+    try std.testing.expectEqual(semantic_graph.Card.none, graph.applicationSubjectCard(application.application));
+    try std.testing.expectEqual(@as(usize, 2), graph.applicationArguments(application.application).?.len);
+    try std.testing.expectEqual(@as(usize, 1), graph.applicationResults(application.application).?.len);
+    try std.testing.expectEqual(sema.OverflowLaw.wrap, graph.applicationOverflow(application.application));
+    try std.testing.expectEqual(sema.LawFact.no, graph.applicationMayTrap(application.application));
+    try std.testing.expectEqual(sema.LawFact.yes, graph.applicationCompletes(application.application));
+    try std.testing.expectEqual(sema.LawFact.no, graph.applicationObservableIdentity(application.application));
+    try std.testing.expect(graph.get(relation).?.name == null);
+
+    // The AST spelling is now provenance only. Sabotaging it after graph
+    // production must not change the selected relation or realization.
+    @constCast(normalized.application).binop.op = .add;
+    var lowering_diagnostic: dnir_lower.Diagnostic = .{};
+    const projected = try dnir_lower.lowerModuleWithGraphObserved(
+        alloc,
+        &module,
+        &graph,
+        &lowering_diagnostic,
+    );
+    defer dnir.deinitModule(alloc, projected);
+
+    var lineaged: ?*dnir.Instr = null;
+    for (@constCast(projected.functions)) |*function| {
+        for (@constCast(function.blocks)) |*block| {
+            for (@constCast(block.instrs)) |*instruction| {
+                if (instruction.application == application.application) {
+                    try std.testing.expect(lineaged == null);
+                    lineaged = instruction;
+                }
+            }
+        }
+    }
+    const instruction = lineaged.?;
+    try std.testing.expectEqual(dnir.Op.binop, instruction.op);
+    try std.testing.expectEqual(dnir.BinOpTag.mul, instruction.binop);
+    try std.testing.expectEqual(relation, instruction.relation.?);
+    try std.testing.expectEqual(application.application, instruction.application.?);
+    try std.testing.expectEqual(result, instruction.value.?);
+    try std.testing.expectEqual(relation, instruction.target.?);
+    try std.testing.expect(instruction.subject == null);
+    try std.testing.expect(instruction.realization_start != null);
+    try validateDnirApplications(alloc, projected, &graph, &diagnostic);
+
+    if (builtin.os.tag == .macos and builtin.cpu.arch == .aarch64) {
+        var output = try emitArm64FromDnir(alloc, projected, null, &diagnostic);
+        defer output.deinit(alloc);
+        try validateMachineLineage(alloc, output, &graph, &diagnostic);
+        try std.testing.expectEqual(@as(usize, 1), output.lineage.len);
+        try std.testing.expectEqual(relation, output.lineage[0].relation);
+        try std.testing.expectEqual(relation, output.lineage[0].target);
+        try std.testing.expectEqual(application.application, output.lineage[0].application);
+        try std.testing.expectEqual(result, output.lineage[0].value);
+        try std.testing.expect(output.lineage[0].subject == null);
+    }
+
+    // Corruption controls prove the validator does not accept a physical tag
+    // or a merely lineaged instruction in place of the exact graph relation.
+    instruction.relation = instruction.application;
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, projected, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-fact-mismatch", diagnostic.note().?);
+
+    instruction.relation = relation;
+    instruction.binop = .add;
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, projected, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("scalar-multiply-realization", diagnostic.note().?);
+}
+
+test "native backend: scalar multiply refuses missing overflow and completion laws" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\scale: i64 = (value: i64)
+        \\    value * 3
+    ;
+    var lexer = Lexer.init(source, "scalar-multiply-missing-law.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(usize, 1), checked.scalarMultiplyCount());
+
+    // Unknown is absence, not permission. The sparse graph contains no row.
+    checked.scalar_multiplications.items[0].overflow = .unknown;
+    var overflow_graph = semantic_graph.SemanticGraph.init(alloc);
+    defer overflow_graph.deinit();
+    try liftCheckedTestGraph(&module, &checked, &overflow_graph);
+    const overflow_application = overflow_graph.applications()[0].application;
+    try std.testing.expectEqual(sema.OverflowLaw.unknown, overflow_graph.applicationOverflow(overflow_application));
+
+    var lowering_diagnostic: dnir_lower.Diagnostic = .{};
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        dnir_lower.lowerModuleWithGraphObserved(alloc, &module, &overflow_graph, &lowering_diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-overflow", lowering_diagnostic.note().?);
+    try std.testing.expectEqual(overflow_application, lowering_diagnostic.application.?);
+
+    checked.scalar_multiplications.items[0].overflow = .wrap;
+    checked.scalar_multiplications.items[0].completes = .unknown;
+    var completion_graph = semantic_graph.SemanticGraph.init(alloc);
+    defer completion_graph.deinit();
+    try liftCheckedTestGraph(&module, &checked, &completion_graph);
+    const completion_application = completion_graph.applications()[0].application;
+    try std.testing.expectEqual(sema.LawFact.unknown, completion_graph.applicationCompletes(completion_application));
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        dnir_lower.lowerModuleWithGraphObserved(alloc, &module, &completion_graph, &lowering_diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-completion", lowering_diagnostic.note().?);
+    try std.testing.expectEqual(completion_application, lowering_diagnostic.application.?);
 }
 
 test "native backend: empty application facts do not admit a foreign call" {
