@@ -293,11 +293,7 @@ const op_i32_ne: u8 = 0x47;
 const op_i32_lt_s: u8 = 0x48;
 const op_i32_lt_u: u8 = 0x49;
 const op_i32_gt_s: u8 = 0x4a;
-const op_i32_gt_u: u8 = 0x4b;
-const op_i32_le_s: u8 = 0x4c;
-const op_i32_le_u: u8 = 0x4d;
 const op_i32_ge_s: u8 = 0x4e;
-const op_i32_ge_u: u8 = 0x4f;
 const op_i64_eqz: u8 = 0x50;
 const op_i64_eq: u8 = 0x51;
 const op_i64_ne: u8 = 0x52;
@@ -306,9 +302,7 @@ const op_i64_lt_u: u8 = 0x54;
 const op_i64_gt_s: u8 = 0x55;
 const op_i64_gt_u: u8 = 0x56;
 const op_i64_le_s: u8 = 0x57;
-const op_i64_le_u: u8 = 0x58;
 const op_i64_ge_s: u8 = 0x59;
-const op_i64_ge_u: u8 = 0x5a;
 const op_f64_eq: u8 = 0x61;
 const op_f64_ne: u8 = 0x62;
 const op_f64_lt: u8 = 0x63;
@@ -730,7 +724,6 @@ pub fn emitWasmModule(
     diagnostic: *Diagnostic,
 ) Error![]u8 {
     var lowering: dnir_lower.Diagnostic = .{};
-    defer lowering.deinit(alloc);
     const lowered = dnir_lower.lowerModuleWithGraphObserved(alloc, mod, graph, &lowering) catch |err| {
         if (err == error.OutOfMemory) return error.OutOfMemory;
         diagnostic.remember(lowering.note() orelse switch (err) {
@@ -740,7 +733,6 @@ pub fn emitWasmModule(
         return error.UnsupportedProgram;
     };
     defer dnir.deinitModule(alloc, lowered);
-    if (std.c.getenv("DUO_TAINT_LEDGER") != null) lowering.printTaintLedger();
     if (!dnir.moduleIsNativeDirectReady(lowered)) {
         diagnostic.remember("graph-direct-not-ready");
         return error.UnsupportedProgram;

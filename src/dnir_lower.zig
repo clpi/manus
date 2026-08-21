@@ -21,7 +21,6 @@ const home_resolve = @import("home_resolve.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
 const table_facts = @import("table_facts.zig");
 const collection_relation = @import("collection_relation.zig");
-const host_taint = @import("host_taint.zig");
 const RT = types.ResolvedType;
 
 // DNIR only needs the machine class of a pointer. Its exact pointee descriptor
@@ -50,12 +49,6 @@ pub const Diagnostic = struct {
     /// Diagnostic projection of the occurrence's relation/method face.
     /// Borrowed from the resident graph or AST; not a second identity.
     relation: ?[]const u8 = null,
-    /// Per-outcome host/bridge taint witnesses for this lowering attempt.
-    taint: host_taint.Ledger = .{},
-
-    pub fn deinit(self: *Diagnostic, alloc: std.mem.Allocator) void {
-        self.taint.deinit(alloc);
-    }
 
     pub fn reset(self: *Diagnostic) void {
         self.site = null;
@@ -69,17 +62,6 @@ pub const Diagnostic = struct {
         return self.note_buffer[0..self.note_len];
     }
 
-    pub fn writeTaintLedger(self: *const Diagnostic, io: std.Io, file: std.Io.File) void {
-        var buf: [4096]u8 = undefined;
-        var fw: std.Io.File.Writer = .init(file, io, &buf);
-        self.taint.writeLedgerLines(&fw.interface) catch {};
-        fw.interface.flush() catch {};
-    }
-
-    pub fn printTaintLedger(self: *const Diagnostic) void {
-        self.taint.printLedgerLines();
-    }
-
     fn record(self: *Diagnostic, site: std.builtin.SourceLocation, detail: ?[]const u8) void {
         self.site = site;
         const text = detail orelse {
@@ -91,22 +73,6 @@ pub const Diagnostic = struct {
         self.note_len = @intCast(len);
     }
 };
-
-fn noteHostTaint(
-    ctx: *LowerCtx,
-    channel: host_taint.Channel,
-    site: []const u8,
-    application: ?semantic_graph.id,
-) void {
-    if (!ctx.require_graph_facts) return;
-    ctx.diagnostic.taint.record(ctx.alloc, .{
-        .stage = .lower,
-        .class = .host_tainted,
-        .channel = channel,
-        .site = site,
-        .application = application,
-    }) catch {};
-}
 
 fn bail(diagnostic: *Diagnostic, site: std.builtin.SourceLocation) Error {
     diagnostic.record(site, null);
@@ -1343,7 +1309,6 @@ pub fn lowerModuleWithGraphObserved(
     graph: *const semantic_graph.SemanticGraph,
     diagnostic: *Diagnostic,
 ) Error!dnir.Module {
-    diagnostic.taint.reset(alloc);
     diagnostic.reset();
     var occurrences = try OccurrenceBridge.init(alloc, graph, diagnostic);
     defer occurrences.deinit();
@@ -1599,15 +1564,6 @@ fn f64AbiParamSlots(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) ?usi
 /// argument register, and there are eight of them (x0..x7). Eight is therefore
 /// the register file, not a conservative cap.
 pub const max_reg_record_fields = 8;
-
-pub fn scalRecordParamSlotCount(field_count: usize) u32 {
-    if (field_count > max_reg_record_fields) return 1;
-    return @intCast(field_count);
-}
-
-pub fn recordUsesOpaquePointer(field_count: usize) bool {
-    return field_count > max_reg_record_fields;
-}
 
 /// Past `max_reg_record_fields` a record return uses the AAPCS64 indirect-result
 /// convention: the CALLER reserves the buffer and passes its address in x8, and
@@ -2027,6 +1983,7 @@ fn collectRecordsFromModuleAliases(
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .alias_def) continue;
         const ad = &stmt.alias_def;
+        if (findRecordName(out.items, .{ .named = ad.name }) != null) continue;
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer {
             for (names.items) |name| alloc.free(name);
@@ -2063,16 +2020,6 @@ fn collectRecordsFromModuleAliases(
         errdefer alloc.free(owned_kinds);
         const owned_widths = try widths.toOwnedSlice(alloc);
         errdefer alloc.free(owned_widths);
-        if (findRecordName(out.items, .{ .named = ad.name })) |existing| {
-            if (owned_fields.len <= existing.fields.len) {
-                for (owned_fields) |name| alloc.free(name);
-                alloc.free(owned_fields);
-                alloc.free(owned_kinds);
-                alloc.free(owned_widths);
-                continue;
-            }
-            removeRecordByExactName(alloc, out, ad.name);
-        }
         const name = try alloc.dupe(u8, ad.name);
         const record: dnir.RecordDesc = .{
             .name = name,
@@ -2164,55 +2111,6 @@ fn findRecordName(recs: []const dnir.RecordDesc, t: ast.TypeExpr) ?dnir.RecordDe
         if (std.mem.eql(u8, r.name, t.named)) return r;
     }
     return null;
-}
-
-
-fn removeRecordByExactName(
-    alloc: std.mem.Allocator,
-    out: *std.ArrayList(dnir.RecordDesc),
-    name: []const u8,
-) void {
-    for (out.items, 0..) |record, i| {
-        if (std.mem.eql(u8, record.name, name)) {
-            deinitRecord(alloc, record);
-            _ = out.orderedRemove(i);
-            return;
-        }
-    }
-}
-
-fn richestRecordForNominal(
-    recs: []const dnir.RecordDesc,
-    graph: *const semantic_graph.SemanticGraph,
-    name: []const u8,
-) ?dnir.RecordDesc {
-    var best: ?dnir.RecordDesc = null;
-    for (recs) |record| {
-        if (!checkedRecordResultSupported(record)) continue;
-        const matches_name = std.mem.eql(u8, record.name, name);
-        const matches_nominal = blk: {
-            const shape = record.semantic_shape orelse break :blk false;
-            const shape_node = graph.tableShapeEntity(shape) orelse break :blk false;
-            break :blk shape_node.name != null and std.mem.eql(u8, shape_node.name.?, name);
-        };
-        if (!matches_name and !matches_nominal) continue;
-        if (best == null or record.fields.len > best.?.fields.len) best = record;
-    }
-    return best;
-}
-
-fn physicalRecordName(ctx: *const LowerCtx, record: dnir.RecordDesc) []const u8 {
-    if (record.semantic_shape) |shape| {
-        if (ctx.graph.tableShapeEntity(shape)) |node| {
-            if (node.name) |nominal| {
-                if (richestRecordForNominal(ctx.records, ctx.graph, nominal)) |rich| {
-                    if (!std.mem.startsWith(u8, rich.name, "$shape.")) return rich.name;
-                }
-                if (findRecordName(ctx.records, .{ .named = nominal })) |by_name| return by_name.name;
-            }
-        }
-    }
-    return record.name;
 }
 
 fn findRecordByNominal(
@@ -2615,16 +2513,6 @@ fn lowerFunction(
         }) |rec| {
             const param_key = try alloc.dupe(u8, par.name);
             try ctx.param_record_types.put(alloc, param_key, rec.name);
-            if (recordUsesOpaquePointer(rec.fields.len)) {
-                const owned = try alloc.dupe(u8, par.name);
-                ctx.locals.put(alloc, owned, param_slot_cursor) catch |err| {
-                    alloc.free(owned);
-                    return err;
-                };
-                try ctx.ptr_slots.put(alloc, param_slot_cursor, {});
-                param_slot_cursor += 1;
-                continue;
-            }
             var all_scalar = rec.fields.len > 0;
             for (rec.kinds) |k| {
                 if (k == .f64) all_scalar = false;
@@ -2663,9 +2551,6 @@ fn lowerFunction(
         // A `ptr` parameter carries the base address of a caller's positional
         // table, so `p[i]` in the body is a scaled load off that register.
         if (typeIsPtr(par.typ)) try ctx.ptr_slots.put(alloc, param_slot_cursor, {});
-        if (ctx.param_record_types.get(par.name) != null) {
-            try ctx.ptr_slots.put(alloc, param_slot_cursor, {});
-        }
         // A parameter's declared width is a declared width like any other. Only
         // `i32` can reach here — `functionEligible` refuses `u8`/`u16`/`u32`
         // parameters outright — but the body's arithmetic must still see it as
@@ -2850,6 +2735,18 @@ fn lowerFunction(
     errdefer if (ret_record_name) |record| alloc.free(record);
     const export_name = try funcExportName(alloc, graph.selfHome(), fd);
     errdefer alloc.free(export_name);
+    if (std.mem.indexOf(u8, export_name, "parse_factor") != null) {
+        for (owned_instrs) |ins| {
+            switch (ins.op) {
+                .call_direct, .init_record, .load_field => std.debug.print(
+                    "PF {s} rec={s} field={s} req={s}\n",
+                    .{ @tagName(ins.op), ins.record, ins.field, ins.req_alias },
+                ),
+                else => {},
+            }
+        }
+    }
+
     return .{
         .name = export_name,
         .ret = resolveType(fd.func.ret_type),
@@ -3292,7 +3189,6 @@ fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
                     }
                 }
             }
-            if (try tryEmitTailAssignStorageReturn(ctx, target, ret_ty)) return true;
         }
         // No storage this pass can name. Re-evaluating would be a miscompile,
         // so the function is declined rather than mis-lowered.
@@ -3343,18 +3239,10 @@ fn tryEmitTailAssignStorageReturn(
                 return true;
             }
         },
-        .field => |f| {
+        .field => {
             if (compoundTargetSlot(ctx, target)) |slot| {
                 try ctx.emit(.{ .op = .ret, .lhs = .{ .local = slot }, .ty = retTy });
                 return true;
-            }
-            if (f.obj.* == .name) {
-                var buf: [512]u8 = undefined;
-                const path = std.fmt.bufPrint(&buf, "{s}.{s}", .{ f.obj.name.ident, f.field }) catch return false;
-                if (try loadFieldFromOpaquePath(ctx, path, null)) |v| {
-                    try ctx.emit(.{ .op = .ret, .lhs = v, .ty = retTy });
-                    return true;
-                }
             }
         },
         else => {},
@@ -3419,40 +3307,8 @@ fn isReqCall(expr: *const ast.Expr) bool {
     return c.args.len == 1 and c.args[0].* == .quoted;
 }
 
-fn opaqueRecordParam(ctx: *const LowerCtx, obj_name: []const u8) ?struct { slot: u32, rec_name: []const u8 } {
-    const rec_name = ctx.param_record_types.get(obj_name) orelse return null;
-    const slot = ctx.locals.get(obj_name) orelse return null;
-    if (!ctx.ptr_slots.contains(slot)) return null;
-    return .{ .slot = slot, .rec_name = rec_name };
-}
-
 fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []const u8, value: *const ast.Expr) Error!void {
     if (obj.* != .name) return bail(ctx.diagnostic, @src());
-    if (opaqueRecordParam(ctx, obj.name.ident)) |opaque_rec| {
-        const v = try lowerExprCons(ctx, value, .single);
-        const store_ty: RT = if (exprIsF64(ctx, value))
-            .f64
-        else blk: {
-            if (recordFieldKindForParam(ctx, obj.name.ident, field_name)) |kind| {
-                break :blk switch (kind) {
-                    .f64 => .f64,
-                    .str => .str,
-                    .i64 => .any,
-                };
-            }
-            break :blk .any;
-        };
-        try ctx.emit(.{
-            .op = .store_field,
-            .rhs = .{ .local = opaque_rec.slot },
-            .record = opaque_rec.rec_name,
-            .field = try ctx.alloc.dupe(u8, field_name),
-            .lhs = v,
-            .ty = store_ty,
-        });
-        subsumeProducerRefit(ctx);
-        return;
-    }
     const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ obj.name.ident, field_name });
     defer ctx.alloc.free(fk);
     const v = try lowerExprCons(ctx, value, .single);
@@ -5070,43 +4926,10 @@ fn holds(ctx: *const LowerCtx, v: dnir.Value) bool {
     };
 }
 
-/// `pack.kinds(i)` on a parameter record is a scaled indexed load, not a graph
-/// application. Skip the occurrence requirement so `lowerCall` can take the
-/// direct `load_index` path without a published application id.
-fn paramRecordSliceFieldCall(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
-    const obj = switch (expr.*) {
-        .call => |c| blk: {
-            if (c.args.len != 1) return false;
-            if (c.func.* != .field) return false;
-            const f = c.func.field;
-            if (f.obj.* != .name) return false;
-            break :blk f.obj.name.ident;
-        },
-        .method_call => |mc| blk: {
-            if (mc.args.len != 1) return false;
-            if (mc.obj.* != .name) return false;
-            break :blk mc.obj.name.ident;
-        },
-        else => return false,
-    };
-    {
-    if (ctx.param_record_types.get(obj) != null) return true;
-    for (ctx.records) |rec| {
-        if (rec.fields.len == 0) continue;
-        for (rec.fields) |fname| {
-            const key = std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ obj, fname }) catch return false;
-            defer ctx.alloc.free(key);
-            if (ctx.locals.get(key) != null) return true;
-        }
-    }
-    return false;
-}
-
 fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
     if (!ctx.require_graph_facts) return false;
     if (expr.* != .call and expr.* != .method_call) return false;
     if (ctx.occurrences.get(expr) != null) return false;
-    if (paramRecordSliceFieldCall(ctx, expr)) return false;
     return !ctx.graph.bootstrapApplicationExpr(expr);
 }
 
@@ -5151,13 +4974,30 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
     if (value.* == .call or value.* == .method_call) {
         if (ctx.occurrences.get(value)) |application| {
             bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
+            const descriptor = try publishedDescriptor(ctx, application);
             if (recordForApplicationResult(ctx, application)) |record| {
                 try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
                 return;
             }
-            const result_desc = try checkedApplicationResultDescriptor(ctx, application);
+            if (recordForDescriptor(ctx.records, descriptor, ctx.graph)) |record| {
+                try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
+                return;
+            }
+            const results = ctx.graph.applicationResults(application.application) orelse
+                return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
+            if (results.len == 1) {
+                const result_node = ctx.graph.get(results[0]) orelse
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-member");
+                if (result_node.descriptor) |result_desc| {
+                    if (recordForDescriptor(ctx.records, result_desc, ctx.graph)) |record| {
+                        try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
+                        return;
+                    }
+                }
+                if (try tryAssignRecordCallFromExportMap(ctx, name, value)) return;
+                try checkedScalarResult(ctx.diagnostic, descriptor);
+            }
             if (try tryAssignRecordCallFromExportMap(ctx, name, value)) return;
-            try checkedScalarResult(ctx.diagnostic, result_desc);
         }
     }
     if (try tryAssignRecordCallFromExportMap(ctx, name, value)) return;
@@ -5242,11 +5082,22 @@ fn recordForDescriptor(
 ) ?dnir.RecordDesc {
     if (descriptor == .@"struct") {
         const want = descriptor.@"struct".name;
-        if (graph) |g| {
-            if (richestRecordForNominal(records, g, want)) |record| return record;
+        for (records) |record| {
+            if (std.mem.eql(u8, record.name, want) and
+                checkedRecordResultSupported(record)) return record;
         }
-        if (findRecordName(records, .{ .named = want })) |record| {
-            if (checkedRecordResultSupported(record)) return record;
+        // Foreign table shapes keep a `$shape.*` record name but the shape
+        // entity's semantic name still reads `token`/`lexer`. Match that so
+        // cross-home record returns reach `lowerCheckedRecordCall`.
+        if (graph) |g| {
+            for (records) |record| {
+                const shape = record.semantic_shape orelse continue;
+                const shape_node = g.get(shape) orelse continue;
+                if (shape_node.name) |n| {
+                    if (std.mem.eql(u8, n, want) and checkedRecordResultSupported(record))
+                        return record;
+                }
+            }
         }
         if (findRecordByNominal(records, want, graph)) |record| return record;
         return null;
@@ -5282,22 +5133,19 @@ fn recordForApplicationResult(
     ctx: *const LowerCtx,
     application: *const semantic_graph.ApplicationFact,
 ) ?dnir.RecordDesc {
-    // Native validation keys record ABI on `applicationResultShape`. Inferring a
-    // record from function return spelling alone emits `.record` without that
-    // witness and dies at `validateDnirApplications` with `application-result-abi`.
     const shape = ctx.graph.applicationResultShape(application.application, 0) orelse return null;
-    var best: ?dnir.RecordDesc = null;
     for (ctx.records) |record| {
-        if (record.semantic_shape == shape and checkedRecordResultSupported(record)) {
-            if (best == null or record.fields.len > best.?.fields.len) best = record;
-        }
+        if (record.semantic_shape == shape and checkedRecordResultSupported(record)) return record;
     }
-    const shape_node = ctx.graph.tableShapeEntity(shape) orelse return best;
-    const shape_name = shape_node.name orelse return best;
-    if (richestRecordForNominal(ctx.records, ctx.graph, shape_name)) |record| {
-        if (best == null or record.fields.len > best.?.fields.len) best = record;
+    const shape_node = ctx.graph.tableShapeEntity(shape) orelse return null;
+    const shape_name = shape_node.name orelse return null;
+    if (findRecordName(ctx.records, .{ .named = shape_name })) |record| {
+        if (checkedRecordResultSupported(record)) return record;
     }
-    return best;
+    if (findRecordByNominal(ctx.records, shape_name, ctx.graph)) |record| {
+        if (checkedRecordResultSupported(record)) return record;
+    }
+    return null;
 }
 
 fn checkedRecordResultSupported(record: dnir.RecordDesc) bool {
@@ -5340,20 +5188,17 @@ fn checkedRecordForApplication(
     ctx: *LowerCtx,
     application: *const semantic_graph.ApplicationFact,
 ) Error!?dnir.RecordDesc {
-    return recordForApplicationResult(ctx, application);
-}
-
-fn checkedApplicationResultDescriptor(
-    ctx: *const LowerCtx,
-    application: *const semantic_graph.ApplicationFact,
-) Error!types.ResolvedType {
-    const results = ctx.graph.applicationResults(application.application) orelse
-        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
-    if (results.len != 1) return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
-    const result_node = ctx.graph.get(results[0]) orelse
-        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-member");
-    return result_node.descriptor orelse
-        invalidGraphFacts(ctx.diagnostic, @src(), "application-result-descriptor");
+    if (recordForApplicationResult(ctx, application)) |record| return record;
+    const descriptor = try publishedDescriptor(ctx, application);
+    if (recordForDescriptor(ctx.records, descriptor, ctx.graph)) |record| return record;
+    const results = ctx.graph.applicationResults(application.application) orelse return null;
+    if (results.len == 1) {
+        const result_node = ctx.graph.get(results[0]) orelse return null;
+        if (result_node.descriptor) |result_desc| {
+            if (recordForDescriptor(ctx.records, result_desc, ctx.graph)) |record| return record;
+        }
+    }
+    return null;
 }
 
 fn lowerCheckedRecordCall(
@@ -5455,7 +5300,6 @@ fn lowerCheckedRecordCallAssign(
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
     try stageCheckedScalarOperands(ctx, operands[0..staged.count], values[0..staged.count]);
     const descriptor = try publishedDescriptor(ctx, application);
-    const emit_record = physicalRecordName(ctx, record);
     try ctx.emit(.{
         .op = .call_direct,
         .relation = relation,
@@ -5465,12 +5309,11 @@ fn lowerCheckedRecordCallAssign(
         .target = target,
         .realization_start = realization_start,
         .callee = callee,
-        .record = emit_record,
+        .record = record.name,
         .field = name,
         .ty = descriptor,
     });
-    try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = emit_record, .field = name });
-    try ctx.param_record_types.put(ctx.alloc, try ctx.alloc.dupe(u8, name), emit_record);
+    try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = record.name, .field = name });
     for (record.fields, 0..) |fname, fi| {
         const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
         defer ctx.alloc.free(fk);
@@ -5495,7 +5338,6 @@ fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, a
     const rec_slot = ctx.freshTemp();
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec_slot);
     try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = rec_name, .field = name });
-    try ctx.param_record_types.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec_name);
 }
 
 fn tryAssignRecordCallFromExportMap(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) Error!bool {
@@ -6808,47 +6650,17 @@ fn recordFieldRootName(expr: *const ast.Expr) ?[]const u8 {
     };
 }
 
-fn loadFieldFromOpaquePath(
-    ctx: *LowerCtx,
-    path: []const u8,
-    application: ?semantic_graph.id,
-) Error!?dnir.Value {
-    if (ctx.locals.get(path)) |slot| return .{ .local = slot };
+fn loadFieldFromOpaquePath(ctx: *LowerCtx, path: []const u8) Error!?dnir.Value {
     const dot = std.mem.indexOfScalar(u8, path, '.') orelse return null;
     const obj_name = path[0..dot];
-    const field = path[dot + 1 ..];
-    if (opaqueRecordParam(ctx, obj_name)) |opaque_rec| {
-        const t = ctx.freshTemp();
-        const rt: RT = switch (recordFieldKindForParam(ctx, obj_name, field) orelse .i64) {
-            .f64 => .f64,
-            .str => .str,
-            .i64 => .any,
-        };
-        try ctx.emit(.{
-            .op = .load_field,
-            .result = t,
-            .rhs = .{ .local = opaque_rec.slot },
-            .record = opaque_rec.rec_name,
-            .field = try ctx.alloc.dupe(u8, field),
-            .ty = rt,
-        });
-        if (rt == .f64) try ctx.f64_slots.put(ctx.alloc, t, {});
-        if (rt == .str) try ctx.str_slots.put(ctx.alloc, t, {});
-        return .{ .temp = t };
-    }
     if (ctx.locals.get(obj_name) == null and ctx.param_record_types.get(obj_name) == null) return null;
-    const rec_name = ctx.param_record_types.get(obj_name) orelse blk: {
-        if (recordLocalDesc(ctx, obj_name)) |rec| break :blk rec.name;
-        break :blk "";
-    };
+    const field = path[dot + 1 ..];
     const t = ctx.freshTemp();
-    noteHostTaint(ctx, .opaque_path, "opaque_path.load_field", application);
     try ctx.emit(.{
         .op = .load_field,
         .result = t,
         .req_alias = try ctx.alloc.dupe(u8, obj_name),
         .field = try ctx.alloc.dupe(u8, field),
-        .record = if (rec_name.len > 0) try ctx.alloc.dupe(u8, rec_name) else "",
     });
     return .{ .temp = t };
 }
@@ -6873,9 +6685,7 @@ fn lowerNestedRecordFromFieldRef(
         const suffix = fname[prefix_pat.len..];
         const local_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ base_path.items, suffix });
         defer ctx.alloc.free(local_key);
-        if (try loadFieldFromOpaquePath(ctx, local_key, null)) |v| {
-            vals[idx] = v;
-        } else if (ctx.locals.get(local_key)) |slot| {
+        if (ctx.locals.get(local_key)) |slot| {
             vals[idx] = .{ .local = slot };
         } else {
             const t = ctx.freshTemp();
@@ -6923,7 +6733,7 @@ fn lowerCallRecordFieldProjection(
     try lowerCheckedRecordCallAssign(ctx, tmp, application, record, call_expr);
     const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ tmp, field_name });
     if (ctx.locals.get(fk)) |slot| return .{ .local = slot };
-    if (try loadFieldFromOpaquePath(ctx, fk, application.application)) |v| return v;
+    if (try loadFieldFromOpaquePath(ctx, fk)) |v| return v;
     return null;
 }
 
@@ -7637,7 +7447,7 @@ fn checkedScalarOperand(
                 if (ctx.locals.get(expression.name.ident)) |_| {
                     effective = .any;
                 } else if (recordForDescriptor(ctx.records, descriptor, ctx.graph)) |rec| {
-                    if (rec.fields.len == 0) {
+                    if (rec.fields.len == 0 or rec.fields.len > max_reg_record_fields) {
                         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
                     }
                     effective = .any;
@@ -7645,7 +7455,7 @@ fn checkedScalarOperand(
                     effective = .any;
                 }
             } else if (recordForDescriptor(ctx.records, descriptor, ctx.graph)) |rec| {
-                if (rec.fields.len == 0) {
+                if (rec.fields.len == 0 or rec.fields.len > max_reg_record_fields) {
                     return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
                 }
                 if (expression.* == .field) {
@@ -7795,19 +7605,6 @@ fn evaluateCheckedScalarOperands(
         // homes its parameter from (`rec.fields`, one register each). The two
         // ends read the same list, which is why they cannot drift.
         if (operandRecordStorage(ctx, operand)) |rec| {
-            if (rec.fields.len > max_reg_record_fields) {
-                if (operand.expression.* != .name) {
-                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                }
-                const slot = ctx.locals.get(operand.expression.name.ident) orelse
-                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                if (!ctx.ptr_slots.contains(slot)) {
-                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                }
-                values[count] = .{ .local = slot };
-                count += 1;
-                continue;
-            }
             // THE REGISTER FILE IS THE BOUND, and it is the same bound the
             // CALLEE applies when it homes the parameter (`functionEligible`
             // refuses a record parameter past `max_reg_record_fields`, because
@@ -9747,9 +9544,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             return lowerCheckedScalarCall(ctx, application, consumption);
         }
     }
-    if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr) and
-        !paramRecordSliceFieldCall(ctx, expr))
-    {
+    if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr)) {
         return refuseMissingApplication(ctx, @src(), expr);
     }
     const c = expr.call;
@@ -10408,7 +10203,7 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ fld.obj.name.ident, fld.field });
         defer ctx.alloc.free(key);
         if (ctx.locals.get(key)) |slot| return .{ .local = slot };
-        if (try loadFieldFromOpaquePath(ctx, key, null)) |v| return v;
+        if (try loadFieldFromOpaquePath(ctx, key)) |v| return v;
     }
     if (fld.obj.* == .call or fld.obj.* == .method_call) {
         if (try lowerCallRecordFieldProjection(ctx, fld.obj, fld.field)) |v| return v;
@@ -10433,10 +10228,10 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         var path: std.ArrayList(u8) = .empty;
         defer path.deinit(ctx.alloc);
         if (try flattenNames(ctx.alloc, expr, &path)) {
-            if (try loadFieldFromOpaquePath(ctx, path.items, null)) |v| return v;
             if (ctx.locals.get(path.items)) |slot| {
                 return .{ .local = slot };
             }
+            if (try loadFieldFromOpaquePath(ctx, path.items)) |v| return v;
         }
         return bail(ctx.diagnostic, @src());
     }
