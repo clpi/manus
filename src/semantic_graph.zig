@@ -15,7 +15,9 @@ const transform_engine = @import("transform_engine.zig");
 const place = @import("place.zig");
 const region = @import("region.zig");
 const subject_home = @import("subject_home.zig");
-pub const id = u32;
+const semantic_identity = @import("semantic_identity.zig");
+pub const id = semantic_identity.id;
+pub const Card = semantic_identity.Card;
 
 pub const State = enum {
     frozen_snapshot,
@@ -744,28 +746,6 @@ const RefAdjacency = struct {
     fn of(self: *const RefAdjacency, from: id) []const DescriptorHit {
         const list = self.map.get(from) orelse return &.{};
         return list.items;
-    }
-};
-
-/// FACT-CARDINALITY-ONE: unknown, known-absent, or one exact id.
-/// `null` is forbidden as a stand-in for any of these (`law.unknown.one`).
-pub const Card = union(enum) {
-    unknown,
-    none,
-    one: id,
-
-    /// The union tag, spelled once. Every projection of a `Card` — JSON,
-    /// diagnostics, any future face — uses THIS, so a consumer that learns the
-    /// three words learns them for the whole tree. Deliberately not `@tagName`
-    /// at each site: `law.unknown.one` forbids `null` standing in for any of
-    /// these, and a hand-written spelling at each site is how one of them
-    /// quietly becomes `null` again.
-    pub fn name(self: Card) []const u8 {
-        return switch (self) {
-            .unknown => "unknown",
-            .none => "none",
-            .one => "one",
-        };
     }
 };
 
