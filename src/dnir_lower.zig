@@ -7072,9 +7072,7 @@ fn lowerExprCons(
             }
             return bailWith(ctx.diagnostic, @src(), n.ident);
         },
-        .binop => |b| if (ctx.occurrences.get(expr)) |application|
-            try lowerScalarMultiply(ctx, application)
-        else if (b.op == .@"and" or b.op == .@"or")
+        .binop => |b| if (b.op == .@"and" or b.op == .@"or")
             try lowerShortCircuit(ctx, b.op, b.lhs, b.rhs)
         else
             try lowerBinop(ctx, b.op, b.lhs, b.rhs),
@@ -9036,62 +9034,6 @@ fn emitDivisorZeroTrap(ctx: *LowerCtx, divisor: dnir.Value) Error!void {
     ctx.instrs.items[bad].branch_target = @intCast(ctx.instrs.items.len);
     try emitTrap(ctx);
     ctx.instrs.items[skip].branch_target = @intCast(ctx.instrs.items.len);
-}
-
-/// Realize the checked scalar multiply relation from graph facts only. The AST
-/// expressions attached to operand values are temporary traversal provenance;
-/// neither their operator nor any spelling selects the relation or its laws.
-fn lowerScalarMultiply(
-    ctx: *LowerCtx,
-    application: *const semantic_graph.ApplicationFact,
-) Error!dnir.Value {
-    bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
-    const relation = try applicationRelation(ctx, application);
-    const expected_relation = switch (ctx.graph.scalarMultiplyRelation()) {
-        .one => |entity| entity,
-        .none, .unknown => return invalidGraphFacts(ctx.diagnostic, @src(), "scalar-multiply-relation"),
-    };
-    if (relation != expected_relation or !ctx.graph.callable(relation) or
-        ctx.graph.applicationApplied(application.application) != relation or
-        ctx.graph.applicationTarget(application.application) != relation or
-        ctx.graph.applicationSubjectCard(application.application) != .none)
-    {
-        return invalidGraphFacts(ctx.diagnostic, @src(), "scalar-multiply-application");
-    }
-    if (ctx.graph.applicationOverflow(application.application) != .wrap)
-        return invalidGraphFacts(ctx.diagnostic, @src(), "application-overflow");
-    if (ctx.graph.applicationMayTrap(application.application) != .no)
-        return invalidGraphFacts(ctx.diagnostic, @src(), "application-may-trap");
-    if (ctx.graph.applicationCompletes(application.application) != .yes)
-        return invalidGraphFacts(ctx.diagnostic, @src(), "application-completion");
-    if (ctx.graph.applicationObservableIdentity(application.application) != .no)
-        return invalidGraphFacts(ctx.diagnostic, @src(), "application-observable-identity");
-
-    var storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    const operands = try checkedScalarOperands(ctx, application, &storage, false);
-    if (operands.len != 2 or operands[0].descriptor != .i64 or operands[1].descriptor != .i64)
-        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-pack");
-    const left = try lowerExpr(ctx, operands[0].expression);
-    const right = try lowerExpr(ctx, operands[1].expression);
-    const start: u32 = @intCast(ctx.instrs.items.len);
-    const temp = ctx.freshTemp();
-    const target = try applicationTarget(ctx, application);
-    const result = try checkedApplicationResult(ctx, application);
-    try ctx.emit(.{
-        .op = .binop,
-        .relation = relation,
-        .application = application.application,
-        .value = result,
-        .subject = null,
-        .target = target,
-        .realization_start = start,
-        .result = temp,
-        .lhs = left,
-        .rhs = right,
-        .binop = .mul,
-        .ty = .i64,
-    });
-    return .{ .temp = temp };
 }
 
 fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
@@ -11984,14 +11926,8 @@ test "dnir_lower: graph pack adjusts one result into several bindings" {
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "one-many-pack.id");
 
-    var application: ?semantic_graph.ApplicationFact = null;
-    for (graph.applications()) |candidate| {
-        if (graph.packAdjustment(candidate.application) == null) continue;
-        if (application != null) return error.TestExpectedEqual;
-        application = candidate;
-    }
-    const adjusted_application = application orelse return error.TestExpectedEqual;
-    const adjustment = graph.packAdjustment(adjusted_application.application) orelse return error.TestExpectedEqual;
+    const application = graph.applications()[0];
+    const adjustment = graph.packAdjustment(application.application) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 1), graph.packMembers(adjustment.source_pack).?.len);
     try std.testing.expectEqual(@as(usize, 2), graph.packMembers(adjustment.target_pack).?.len);
 
@@ -12017,7 +11953,7 @@ test "dnir_lower: graph pack adjusts one result into several bindings" {
     // Negative control: the same source shape is not authority. Removing the
     // graph adjustment must refuse instead of reconstructing Lua pack law from
     // target/value counts in DNIR.
-    try std.testing.expect(graph.adjustment_rows.remove(adjusted_application.application));
+    try std.testing.expect(graph.adjustment_rows.remove(application.application));
     try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraph(alloc, &ast_module, &graph));
 }
 
@@ -12048,14 +11984,8 @@ test "dnir_lower: graph pack adjusts one result into several local declarations"
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&ast_module, &checked, "one-many-local-pack.id");
 
-    var application: ?semantic_graph.ApplicationFact = null;
-    for (graph.applications()) |candidate| {
-        if (graph.packAdjustment(candidate.application) == null) continue;
-        if (application != null) return error.TestExpectedEqual;
-        application = candidate;
-    }
-    const adjusted_application = application orelse return error.TestExpectedEqual;
-    const adjustment = graph.packAdjustment(adjusted_application.application) orelse return error.TestExpectedEqual;
+    const application = graph.applications()[0];
+    const adjustment = graph.packAdjustment(application.application) orelse return error.TestExpectedEqual;
     const targets = graph.packMembers(adjustment.target_pack) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(usize, 2), targets.len);
     for (targets) |target| try std.testing.expectEqual(semantic_graph.NodeKind.local, graph.get(target).?.kind);

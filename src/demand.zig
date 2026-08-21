@@ -2420,10 +2420,7 @@ test "demand: an effect-free leaf still needs a completion proof" {
         \\    7
         \\
     );
-    // The leaf call and its normalized scalar multiply are both ordinary
-    // effect-free applications. Neither is deleted without relation-body
-    // completion closure, which the dead count below keeps pinned at zero.
-    try std.testing.expectEqual(@as(u32, 2), result.effect_free);
+    try std.testing.expectEqual(@as(u32, 1), result.effect_free);
     try std.testing.expectEqual(@as(u32, 0), result.dead);
 }
 

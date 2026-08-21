@@ -914,14 +914,6 @@ pub const SemanticGraph = struct {
     /// lowering O(applications x edges).
     out_edges: std.AutoHashMapUnmanaged(id, std.ArrayListUnmanaged(u32)) = .empty,
     application_facts: std.ArrayListUnmanaged(ApplicationFact) = .empty,
-    /// Exact graph relation selected by checked scalar i64 multiplication.
-    /// This is one identity, not a spelling/opcode registry.
-    scalar_multiply_relation: Card = .unknown,
-    /// Sparse application-law columns. Missing row means unknown.
-    overflow: std.AutoHashMapUnmanaged(id, sema.OverflowLaw) = .empty,
-    may_trap: std.AutoHashMapUnmanaged(id, sema.LawFact) = .empty,
-    completes: std.AutoHashMapUnmanaged(id, sema.LawFact) = .empty,
-    observable_identity: std.AutoHashMapUnmanaged(id, sema.LawFact) = .empty,
     pack_facts: std.ArrayListUnmanaged(PackFact) = .empty,
     pack_values: std.ArrayListUnmanaged(id) = .empty,
     pack_demands: std.ArrayListUnmanaged(PackMemberDemand) = .empty,
@@ -1003,10 +995,6 @@ pub const SemanticGraph = struct {
             self.out_edges.deinit(self.alloc);
         }
         self.application_facts.deinit(self.alloc);
-        self.overflow.deinit(self.alloc);
-        self.may_trap.deinit(self.alloc);
-        self.completes.deinit(self.alloc);
-        self.observable_identity.deinit(self.alloc);
         self.pack_facts.deinit(self.alloc);
         self.pack_values.deinit(self.alloc);
         self.pack_demands.deinit(self.alloc);
@@ -1796,13 +1784,9 @@ pub const SemanticGraph = struct {
         _ = self.bindingRelation(fact.application) orelse return null;
         const caller_node = self.get(caller) orelse return null;
         if (!self.callable(caller) and caller_node.scope != null) return null;
-        switch (self.subjectProjectionCard(fact.application)) {
-            .one => |entity| {
-                const node = self.get(entity) orelse return null;
-                if (node.descriptor == null) return null;
-            },
-            .none => {},
-            .unknown => return null,
+        if (self.uniqueSubjectProjection(fact.application)) |entity| {
+            const node = self.get(entity) orelse return null;
+            if (node.descriptor == null) return null;
         }
         const arguments = self.packMembers(fact.operand_pack) orelse return null;
         const results = self.packMembers(fact.result_pack) orelse return null;
@@ -2333,33 +2317,6 @@ pub const SemanticGraph = struct {
         };
     }
 
-    pub fn applicationMayTrap(self: *const SemanticGraph, occurrence: id) sema.LawFact {
-        _ = self.application(occurrence) orelse return .unknown;
-        return self.may_trap.get(occurrence) orelse .unknown;
-    }
-
-    pub fn applicationOverflow(self: *const SemanticGraph, occurrence: id) sema.OverflowLaw {
-        _ = self.application(occurrence) orelse return .unknown;
-        return self.overflow.get(occurrence) orelse .unknown;
-    }
-
-    pub fn applicationCompletes(self: *const SemanticGraph, occurrence: id) sema.LawFact {
-        _ = self.application(occurrence) orelse return .unknown;
-        return self.completes.get(occurrence) orelse .unknown;
-    }
-
-    pub fn applicationObservableIdentity(self: *const SemanticGraph, occurrence: id) sema.LawFact {
-        _ = self.application(occurrence) orelse return .unknown;
-        return self.observable_identity.get(occurrence) orelse .unknown;
-    }
-
-    /// Exact canonical relation identity for normalized scalar i64 multiply.
-    /// Consumers compare ids; no source/operator spelling or second classifier
-    /// is available downstream.
-    pub fn scalarMultiplyRelation(self: *const SemanticGraph) Card {
-        return self.scalar_multiply_relation;
-    }
-
     fn bindingRelation(self: *const SemanticGraph, occurrence: id) ?id {
         var match: ?id = null;
         for (self.outEdges(occurrence)) |ei| {
@@ -2374,19 +2331,16 @@ pub const SemanticGraph = struct {
         return match;
     }
 
-    fn subjectProjectionCard(self: *const SemanticGraph, occurrence: id) Card {
-        var match: Card = .none;
+    fn uniqueSubjectProjection(self: *const SemanticGraph, occurrence: id) ?id {
+        var match: ?id = null;
         for (self.outEdges(occurrence)) |ei| {
             if (ei >= self.edges.items.len) continue;
             const edge = self.edges.items[ei];
             if (edge.from != occurrence or edge.kind != .projection) continue;
             if (edge.position != application_subject_projection) continue;
             if (self.get(edge.to) == null) continue;
-            switch (match) {
-                .none => match = .{ .one = edge.to },
-                .one => return .unknown,
-                .unknown => return .unknown,
-            }
+            if (match != null) return null;
+            match = edge.to;
         }
         return match;
     }
@@ -2432,21 +2386,10 @@ pub const SemanticGraph = struct {
     /// `application_subject_projection` (`law.application.consumer`).
     /// Checked subject: unique projection at `application_subject_projection`.
     pub fn applicationSubject(self: *const SemanticGraph, occurrence: id) ?id {
-        _ = self.application(occurrence) orelse return null;
-        const entity = switch (self.subjectProjectionCard(occurrence)) {
-            .one => |value| value,
-            .none, .unknown => return null,
-        };
+        const entity = self.uniqueSubjectProjection(occurrence) orelse return null;
         const node = self.get(entity) orelse return null;
         if (node.descriptor == null) return null;
         return entity;
-    }
-
-    /// Exact subject cardinality. Unlike the optional projection above, this
-    /// keeps known absence distinct from malformed/ambiguous facts.
-    pub fn applicationSubjectCard(self: *const SemanticGraph, occurrence: id) Card {
-        _ = self.application(occurrence) orelse return .unknown;
-        return self.subjectProjectionCard(occurrence);
     }
 
     /// Result descriptor retained on one exact function entity.
@@ -3383,98 +3326,6 @@ pub const SemanticGraph = struct {
         return relation;
     }
 
-    fn ensureScalarMultiplyRelation(self: *SemanticGraph, module: id, span: SpanRef) !id {
-        switch (self.scalar_multiply_relation) {
-            .one => |relation| return relation,
-            .none => return error.InvalidApplicationRelation,
-            .unknown => {},
-        }
-        const relation = try self.addChild(module, .{
-            .kind = .relation,
-            .span = span,
-            .result_descriptor = .i64,
-            .knowledge = .stable,
-            .stage = .sema,
-        });
-        self.scalar_multiply_relation = .{ .one = relation };
-        return relation;
-    }
-
-    fn publishApplicationLaw(
-        self: *SemanticGraph,
-        column: *std.AutoHashMapUnmanaged(id, sema.LawFact),
-        occurrence: id,
-        fact: sema.LawFact,
-    ) !void {
-        if (fact == .unknown) return;
-        try column.putNoClobber(self.alloc, occurrence, fact);
-    }
-
-    fn publishOverflowLaw(
-        self: *SemanticGraph,
-        occurrence: id,
-        fact: sema.OverflowLaw,
-    ) !void {
-        if (fact == .unknown) return;
-        try self.overflow.putNoClobber(self.alloc, occurrence, fact);
-    }
-
-    fn liftCheckedScalarMultiplications(
-        self: *SemanticGraph,
-        module: id,
-        checked: *const sema.Sema,
-        file: []const u8,
-    ) !void {
-        var row: usize = 0;
-        while (row < checked.scalarMultiplyCount()) : (row += 1) {
-            const fact = checked.scalarMultiplyAt(row) orelse return error.InvalidApplicationFact;
-            if (fact.result != fact.application or
-                (checked.exprDescriptor(fact.operands[0]) orelse return error.InvalidApplicationFact) != .i64 or
-                (checked.exprDescriptor(fact.operands[1]) orelse return error.InvalidApplicationFact) != .i64 or
-                (checked.exprDescriptor(fact.result) orelse return error.InvalidApplicationFact) != .i64)
-            {
-                return error.InvalidApplicationFact;
-            }
-            const parent = if (fact.owner) |owner|
-                self.findFuncDecl(owner) orelse return error.MissingApplicationCaller
-            else
-                module;
-            const loc = fact.application.loc();
-            const span = SpanRef{ .file = file, .start = loc.line, .end = loc.col };
-            const occurrence = try self.addChild(parent, .{
-                .kind = .call,
-                .span = span,
-                .descriptor = .i64,
-                .demand = .unknown,
-                .knowledge = .stable,
-                .stage = .sema,
-                .ast_ref = @ptrCast(@constCast(fact.application)),
-            });
-            try self.markApplicationCandidate(occurrence);
-            const left = try self.addApplicationValue(occurrence, fact.operands[0], file, .i64);
-            const right = try self.addApplicationValue(occurrence, fact.operands[1], file, .i64);
-            const result = try self.addApplicationValue(occurrence, fact.result, file, .i64);
-            const relation = try self.ensureScalarMultiplyRelation(module, span);
-            try self.publishApplication(
-                occurrence,
-                relation,
-                relation,
-                relation,
-                null,
-                &.{ left, right },
-                &.{result},
-            );
-            try self.publishOverflowLaw(occurrence, fact.overflow);
-            try self.publishApplicationLaw(&self.may_trap, occurrence, fact.may_trap);
-            try self.publishApplicationLaw(&self.completes, occurrence, fact.completes);
-            try self.publishApplicationLaw(
-                &self.observable_identity,
-                occurrence,
-                fact.observable_identity,
-            );
-        }
-    }
-
     fn publishAggregateSkeleton(
         self: *SemanticGraph,
         aggregate_id: id,
@@ -4334,7 +4185,6 @@ pub const SemanticGraph = struct {
             } else |_| {}
         }
         const module = try self.liftModuleWithCalls(mod, file);
-        try self.liftCheckedScalarMultiplications(module, checked, file);
 
         const candidate_limit = self.application_candidates.bit_length;
         var candidate: usize = 0;

@@ -479,28 +479,6 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     @as(u2, @intFromBool(i.value != null));
                 if (fact_count != 0 and fact_count != 3) return false;
                 if ((fact_count == 3) != (i.realization_start != null)) return false;
-                if (i.op == .binop and i.application != null) {
-                    const graph = m.graph orelse return false;
-                    const application = i.application orelse return false;
-                    const relation = i.relation orelse return false;
-                    const expected_relation = switch (graph.scalarMultiplyRelation()) {
-                        .one => |entity| entity,
-                        .none, .unknown => return false,
-                    };
-                    if (relation != expected_relation or !graph.callable(relation) or
-                        graph.applicationRelation(application) != relation or
-                        graph.applicationApplied(application) != relation or
-                        graph.applicationTarget(application) != relation or
-                        graph.applicationSubjectCard(application) != .none or
-                        graph.applicationOverflow(application) != .wrap or
-                        graph.applicationMayTrap(application) != .no or
-                        graph.applicationCompletes(application) != .yes or
-                        graph.applicationObservableIdentity(application) != .no or
-                        i.binop != .mul or i.subject != null or i.target != relation)
-                    {
-                        return false;
-                    }
-                }
                 if (i.op == .call_direct) {
                     if (i.application == null) {
                         if (!calleeIsModuleLocal(m, i.callee)) return false;
