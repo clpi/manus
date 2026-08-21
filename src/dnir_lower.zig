@@ -250,6 +250,7 @@ const OccurrenceBridge = struct {
         for (graph.nodes.items, 0..) |node, coordinate| {
             if (node.kind != .call) continue;
             const application: semantic_graph.id = @intCast(coordinate);
+            if (!graph.isApplicationCandidate(application)) continue;
             if (graph.application(application) == null) {
                 if (graph.isBootstrapApplicationNode(application)) continue;
                 index.unresolved += 1;
@@ -1114,6 +1115,24 @@ fn lowerModuleFromGraph(
             alloc.free(value);
             return err;
         };
+    }
+    // Cross-home callables lifted into the graph share `entity_linkage` but are
+    // not declared in this module's AST body, so the loop above never registers
+    // `lexer.peek` / `lexer.next` record returns for `lib/compiler/parser.id`.
+    var decl_reg_it = declarations.iterator();
+    while (decl_reg_it.next()) |entry| {
+        const fd = entry.key_ptr.*;
+        const entity_id = entry.value_ptr.*;
+        const sym = entity_linkage.get(entity_id) orelse continue;
+        const rec_name = recordNameForCallableEntity(records.items, graph, fd, entity_id) orelse continue;
+        try putRecordReturnMapping(alloc, &func_record_returns, sym, rec_name);
+        if (graph.foreignHome(entity_id)) |foreign_home| {
+            if (fd.path.len > 0) {
+                const qual = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ foreign_home, fd.path[0] });
+                defer alloc.free(qual);
+                try putRecordReturnMapping(alloc, &func_record_returns, qual, rec_name);
+            }
+        }
     }
     var skipped: ?[]const u8 = null;
     defer if (skipped) |name| alloc.free(name);
@@ -4926,9 +4945,21 @@ fn holds(ctx: *const LowerCtx, v: dnir.Value) bool {
     };
 }
 
+
+fn recordParamFieldSliceSite(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
+    if (expr.* != .call) return false;
+    const c = expr.call;
+    if (c.func.* != .field) return false;
+    const f = c.func.field;
+    if (f.obj.* != .name) return false;
+    if (c.args.len != 1) return false;
+    return ctx.param_record_types.get(f.obj.name.ident) != null;
+}
+
 fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
     if (!ctx.require_graph_facts) return false;
     if (expr.* != .call and expr.* != .method_call) return false;
+    if (recordParamFieldSliceSite(ctx, expr)) return false;
     if (ctx.occurrences.get(expr) != null) return false;
     return !ctx.graph.bootstrapApplicationExpr(expr);
 }
@@ -4979,19 +5010,23 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
                 try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
                 return;
             }
-            if (recordForDescriptor(ctx.records, descriptor, ctx.graph)) |record| {
-                try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
-                return;
+            if (applicationHasRecordResultShape(ctx, application)) {
+                if (recordForDescriptor(ctx.records, descriptor, ctx.graph)) |record| {
+                    try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
+                    return;
+                }
             }
             const results = ctx.graph.applicationResults(application.application) orelse
                 return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
             if (results.len == 1) {
                 const result_node = ctx.graph.get(results[0]) orelse
                     return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-member");
-                if (result_node.descriptor) |result_desc| {
-                    if (recordForDescriptor(ctx.records, result_desc, ctx.graph)) |record| {
-                        try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
-                        return;
+                if (applicationHasRecordResultShape(ctx, application)) {
+                    if (result_node.descriptor) |result_desc| {
+                        if (recordForDescriptor(ctx.records, result_desc, ctx.graph)) |record| {
+                            try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
+                            return;
+                        }
                     }
                 }
                 if (try tryAssignRecordCallFromExportMap(ctx, name, value)) return;
@@ -5129,6 +5164,41 @@ fn recordForDescriptor(
     return null;
 }
 
+fn applicationHasRecordResultShape(
+    ctx: *const LowerCtx,
+    application: *const semantic_graph.ApplicationFact,
+) bool {
+    return ctx.graph.applicationResultShape(application.application, 0) != null;
+}
+
+fn recordNameForCallableEntity(
+    records: []const dnir.RecordDesc,
+    graph: *const semantic_graph.SemanticGraph,
+    fd: *const ast.FuncDecl,
+    entity_id: semantic_graph.id,
+) ?[]const u8 {
+    if (recordReturnNameForDecl(records, graph, fd)) |rec_name| return rec_name;
+    const node = graph.get(entity_id) orelse return null;
+    const desc = node.result_descriptor orelse return null;
+    const rec = recordForDescriptor(records, desc, graph) orelse return null;
+    if (!checkedRecordResultSupported(rec)) return null;
+    return rec.name;
+}
+
+fn putRecordReturnMapping(
+    alloc: std.mem.Allocator,
+    map: *std.StringHashMapUnmanaged([]const u8),
+    key: []const u8,
+    rec_name: []const u8,
+) Error!void {
+    if (map.contains(key)) return;
+    const owned_key = try alloc.dupe(u8, key);
+    errdefer alloc.free(owned_key);
+    const owned_value = try alloc.dupe(u8, rec_name);
+    errdefer alloc.free(owned_value);
+    try map.put(alloc, owned_key, owned_value);
+}
+
 fn recordForApplicationResult(
     ctx: *const LowerCtx,
     application: *const semantic_graph.ApplicationFact,
@@ -5189,6 +5259,11 @@ fn checkedRecordForApplication(
     application: *const semantic_graph.ApplicationFact,
 ) Error!?dnir.RecordDesc {
     if (recordForApplicationResult(ctx, application)) |record| return record;
+    // The native validator admits record ABI only when the graph publishes a
+    // result shape. Descriptor-only guesses produced `call_direct` with a
+    // `.record` tag on scalar applications and failed as DNB011
+    // `application-result-abi`.
+    if (!applicationHasRecordResultShape(ctx, application)) return null;
     const descriptor = try publishedDescriptor(ctx, application);
     if (recordForDescriptor(ctx.records, descriptor, ctx.graph)) |record| return record;
     const results = ctx.graph.applicationResults(application.application) orelse return null;
@@ -6732,8 +6807,11 @@ fn lowerCallRecordFieldProjection(
     // Keep `tmp` alive until `internInstrStrings` copies `.field` / `.req_alias`.
     try lowerCheckedRecordCallAssign(ctx, tmp, application, record, call_expr);
     const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ tmp, field_name });
-    if (ctx.locals.get(fk)) |slot| return .{ .local = slot };
+    // Field locals are reserved before `init_record` copies ABI registers into
+    // `fp_stack_slots`; reading them as `.local` skips that path and fails as
+    // DNB007 in `evalDnirValue`.
     if (try loadFieldFromOpaquePath(ctx, fk)) |v| return v;
+    if (ctx.locals.get(fk)) |slot| return .{ .local = slot };
     return null;
 }
 
@@ -9544,7 +9622,10 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             return lowerCheckedScalarCall(ctx, application, consumption);
         }
     }
-    if (ctx.require_graph_facts and !ctx.graph.bootstrapApplicationExpr(expr)) {
+    if (ctx.require_graph_facts and
+        !recordParamFieldSliceSite(ctx, expr) and
+        !ctx.graph.bootstrapApplicationExpr(expr))
+    {
         return refuseMissingApplication(ctx, @src(), expr);
     }
     const c = expr.call;

@@ -2152,7 +2152,7 @@ pub const SemanticGraph = struct {
                     if (type_name) |name| break :blk self.resolveTableShape(scope, name);
                     break :blk null;
                 },
-                else => break :blk null,
+                else => break :blk if (type_name) |name| self.resolveTableShape(scope, name) else null,
             }
         } orelse return;
         for (self.edges.items) |edge| {
@@ -3255,6 +3255,17 @@ pub const SemanticGraph = struct {
         }
     }
 
+    fn recordParamFieldSliceSite(self: *const SemanticGraph, expr: *const ast.Expr, parent: id) bool {
+        if (expr.* != .call) return false;
+        const c = expr.call;
+        if (c.func.* != .field) return false;
+        const f = c.func.field;
+        if (f.obj.* != .name) return false;
+        if (c.args.len != 1) return false;
+        return self.resolveBindingInScope(parent, f.obj.name.ident) != null and
+            self.resolveInHome(parent, f.obj.name.ident, .param) != null;
+    }
+
     fn liftCallFromExpr(
         self: *SemanticGraph,
         expr: *const Expr,
@@ -3281,7 +3292,9 @@ pub const SemanticGraph = struct {
             .demand = consumption,
             .ast_ref = @ptrCast(@constCast(expr)),
         });
-        try self.markApplicationCandidate(occurrence);
+        if (!recordParamFieldSliceSite(self, expr, parent)) {
+            try self.markApplicationCandidate(occurrence);
+        }
     }
 
     fn aggregateNamedInScope(self: *const SemanticGraph, start: id, name: []const u8) ?id {

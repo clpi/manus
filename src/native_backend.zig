@@ -1154,6 +1154,9 @@ const Arm64Compiler = struct {
     }
 
     fn undefinedAt(self: *Arm64Compiler, src: std.builtin.SourceLocation, kind: []const u8, id: u32) Error {
+        if (std.c.getenv("DUO_DNIR_TRACE") != null) {
+            std.debug.print("DNIR undefined {s} {d} in fn {s}\n", .{ kind, id, self.cur_func_name orelse "?" });
+        }
         return recordUndefinedAt(self.diagnostic, src, kind, id);
     }
 
@@ -2460,6 +2463,7 @@ const Arm64Compiler = struct {
 
     fn compileDnirFunction(self: *Arm64Compiler, f: dnir.Function) Error!void {
         self.cur_func_name = f.name;
+        if (std.c.getenv("DUO_DNIR_TRACE") != null) std.debug.print("DNIR fn {s}\n", .{f.name});
         self.fp_locals.clearRetainingCapacity();
         self.fp_temps.clearRetainingCapacity();
         // A staged variadic tail belongs to exactly one call. Carrying a
