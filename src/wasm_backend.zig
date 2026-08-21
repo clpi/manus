@@ -227,6 +227,13 @@ const Buf = struct {
         try self.bytes(&raw);
     }
 
+    fn f32c(self: *Buf, v: f32) Error!void {
+        try self.byte(op_f32_const);
+        var raw: [4]u8 = undefined;
+        std.mem.writeInt(u32, &raw, @bitCast(v), .little);
+        try self.bytes(&raw);
+    }
+
     fn get(self: *Buf, idx: u32) Error!void {
         try self.byte(op_local_get);
         try self.u32v(idx);
@@ -279,11 +286,27 @@ const op_global_get: u8 = 0x23;
 const op_global_set: u8 = 0x24;
 const op_i32_load: u8 = 0x28;
 const op_i64_load: u8 = 0x29;
-const op_i64_load8_u: u8 = 0x31; // 0x30 is load8_S — the sign is the whole difference
+const op_i32_load8_s: u8 = 0x2c;
+const op_i32_load8_u: u8 = 0x2d;
+const op_i32_load16_s: u8 = 0x2e;
+const op_i32_load16_u: u8 = 0x2f;
+const op_i64_load8_s: u8 = 0x30;
+const op_i64_load8_u: u8 = 0x31;
+const op_i64_load16_s: u8 = 0x32;
+const op_i64_load16_u: u8 = 0x33;
+const op_i64_load32_s: u8 = 0x34;
+const op_i64_load32_u: u8 = 0x35;
 const op_i32_store: u8 = 0x36;
 const op_i64_store: u8 = 0x37;
+const op_f32_load: u8 = 0x2a;
+const op_f64_load: u8 = 0x2b;
+const op_f32_store: u8 = 0x38;
+const op_f64_store: u8 = 0x39;
 const op_i32_store8: u8 = 0x3a;
+const op_i32_store16: u8 = 0x3b;
 const op_i64_store8: u8 = 0x3c;
+const op_i64_store16: u8 = 0x3d;
+const op_i64_store32: u8 = 0x3e;
 const op_i32_const: u8 = 0x41;
 const op_i64_const: u8 = 0x42;
 const op_f64_const: u8 = 0x44;
@@ -293,7 +316,11 @@ const op_i32_ne: u8 = 0x47;
 const op_i32_lt_s: u8 = 0x48;
 const op_i32_lt_u: u8 = 0x49;
 const op_i32_gt_s: u8 = 0x4a;
+const op_i32_gt_u: u8 = 0x4b;
+const op_i32_le_s: u8 = 0x4c;
+const op_i32_le_u: u8 = 0x4d;
 const op_i32_ge_s: u8 = 0x4e;
+const op_i32_ge_u: u8 = 0x4f;
 const op_i64_eqz: u8 = 0x50;
 const op_i64_eq: u8 = 0x51;
 const op_i64_ne: u8 = 0x52;
@@ -302,7 +329,9 @@ const op_i64_lt_u: u8 = 0x54;
 const op_i64_gt_s: u8 = 0x55;
 const op_i64_gt_u: u8 = 0x56;
 const op_i64_le_s: u8 = 0x57;
+const op_i64_le_u: u8 = 0x58;
 const op_i64_ge_s: u8 = 0x59;
+const op_i64_ge_u: u8 = 0x5a;
 const op_f64_eq: u8 = 0x61;
 const op_f64_ne: u8 = 0x62;
 const op_f64_lt: u8 = 0x63;
@@ -315,6 +344,10 @@ const op_i32_mul: u8 = 0x6c;
 const op_i32_and: u8 = 0x71;
 const op_i32_or: u8 = 0x72;
 const op_i32_shl: u8 = 0x74;
+const op_i32_shr_s: u8 = 0x75;
+const op_i32_shr_u: u8 = 0x76;
+const op_i32_rotl: u8 = 0x77;
+const op_i32_rotr: u8 = 0x78;
 const op_i64_clz: u8 = 0x79;
 const op_i64_ctz: u8 = 0x7a;
 const op_i64_popcnt: u8 = 0x7b;
@@ -329,7 +362,10 @@ const op_i64_and: u8 = 0x83;
 const op_i64_or: u8 = 0x84;
 const op_i64_xor: u8 = 0x85;
 const op_i64_shl: u8 = 0x86;
+const op_i64_shr_s: u8 = 0x87;
 const op_i64_shr_u: u8 = 0x88;
+const op_i64_rotl: u8 = 0x89;
+const op_i64_rotr: u8 = 0x8a;
 const op_f64_abs: u8 = 0x99;
 const op_f64_neg: u8 = 0x9a;
 const op_f64_ceil: u8 = 0x9b;
@@ -339,12 +375,57 @@ const op_f64_add: u8 = 0xa0;
 const op_f64_sub: u8 = 0xa1;
 const op_f64_mul: u8 = 0xa2;
 const op_f64_div: u8 = 0xa3;
-const op_i32_wrap_i64: u8 = 0xa7;
-const op_i64_extend_i32_s: u8 = 0xac;
-const op_i64_extend_i32_u: u8 = 0xad;
-const op_f64_convert_i64_s: u8 = 0xb9;
+const op_f64_min: u8 = 0xa4;
+const op_f64_max: u8 = 0xa5;
+const op_f64_copysign: u8 = 0xa6;
+const op_f32_abs: u8 = 0x8b;
+const op_f32_neg: u8 = 0x8c;
+const op_f32_ceil: u8 = 0x8d;
+const op_f32_floor: u8 = 0x8e;
+const op_f32_trunc: u8 = 0x8f;
+const op_f32_nearest: u8 = 0x90;
+const op_f32_sqrt: u8 = 0x91;
+const op_f32_add: u8 = 0x92;
+const op_f32_sub: u8 = 0x93;
+const op_f32_mul: u8 = 0x94;
+const op_f32_div: u8 = 0x95;
+const op_f32_min: u8 = 0x96;
+const op_f32_max: u8 = 0x97;
+const op_f32_copysign: u8 = 0x98;
+const op_f32_eq: u8 = 0x5b;
+const op_f32_ne: u8 = 0x5c;
+const op_f32_lt: u8 = 0x5d;
+const op_f32_gt: u8 = 0x5e;
+const op_f32_le: u8 = 0x5f;
+const op_f32_ge: u8 = 0x60;
+const op_f32_const: u8 = 0x43;
+const op_f32_load: u8 = 0x2a;
+const op_f32_store: u8 = 0x38;
+const op_i32_trunc_f32_s: u8 = 0xa8;
+const op_i32_trunc_f32_u: u8 = 0xa9;
+const op_i32_trunc_f64_s: u8 = 0xaa;
+const op_i32_trunc_f64_u: u8 = 0xab;
+const op_i64_trunc_f32_s: u8 = 0xae;
+const op_i64_trunc_f32_u: u8 = 0xaf;
+const op_i64_trunc_f64_s: u8 = 0xb0;
+const op_i64_trunc_f64_u: u8 = 0xb1;
+const op_f32_convert_i32_s: u8 = 0xb2;
+const op_f32_convert_i32_u: u8 = 0xb3;
+const op_f32_convert_i64_s: u8 = 0xb4;
+const op_f32_convert_i64_u: u8 = 0xb5;
+const op_f32_demote_f64: u8 = 0xb6;
+const op_f64_convert_i32_s: u8 = 0xb7;
+const op_f64_convert_i32_u: u8 = 0xb8;
+const op_f64_promote_f32: u8 = 0xbb;
+const op_f32_reinterpret_i32: u8 = 0xbc;
+const op_i32_reinterpret_f32: u8 = 0xbc;
 const op_i64_reinterpret_f64: u8 = 0xbd;
 const op_f64_reinterpret_i64: u8 = 0xbf;
+const op_i32_wrap_i64: u8 = 0xa7;
+const op_f64_convert_i64_s: u8 = 0xb9;
+const op_f64_convert_i64_u: u8 = 0xba;
+const op_i64_extend_i32_s: u8 = 0xac;
+const op_i64_extend_i32_u: u8 = 0xad;
 const op_i64_extend8_s: u8 = 0xc2;
 const op_i64_extend16_s: u8 = 0xc3;
 const op_i64_extend32_s: u8 = 0xc4;
@@ -355,11 +436,12 @@ const vt_f64: u8 = 0x7c;
 /// `blocktype` for a block that neither takes nor returns a value.
 const bt_void: u8 = 0x40;
 
-const SlotType = enum { i64, f64 };
+const SlotType = enum { i64, f32, f64 };
 
 fn slotValType(t: SlotType) u8 {
     return switch (t) {
         .i64 => vt_i64,
+        .f32 => 0x7d,
         .f64 => vt_f64,
     };
 }
@@ -585,8 +667,16 @@ const Emitter = struct {
 fn markF64(e: *Emitter, slot: ?u32, changed: *bool) Error!void {
     const s = slot orelse return;
     const got = try e.slot_ty.getOrPut(e.alloc, s);
-    if (got.found_existing and got.value_ptr.* == .f64) return;
+    if (got.found_existing) return;
     got.value_ptr.* = .f64;
+    changed.* = true;
+}
+
+fn markF32(e: *Emitter, slot: ?u32, changed: *bool) Error!void {
+    const s = slot orelse return;
+    const got = try e.slot_ty.getOrPut(e.alloc, s);
+    if (got.found_existing) return;
+    got.value_ptr.* = .f32;
     changed.* = true;
 }
 
@@ -594,6 +684,13 @@ fn valueIsF64(e: *const Emitter, v: dnir.Value) bool {
     return switch (v) {
         .f64 => true,
         .local, .temp => |s| (e.slot_ty.get(s) orelse .i64) == .f64,
+        else => false,
+    };
+}
+
+fn valueIsF32(e: *const Emitter, v: dnir.Value) bool {
+    return switch (v) {
+        .local, .temp => |s| (e.slot_ty.get(s) orelse .i64) == .f32,
         else => false,
     };
 }
@@ -607,29 +704,35 @@ fn slotTypeOf(e: *const Emitter, slot: u32) SlotType {
 fn computeSlotTypes(e: *Emitter, instrs: []const dnir.Instr, params: []const SlotType) Error!void {
     e.slot_ty.clearRetainingCapacity();
     for (params, 0..) |p, i| {
-        if (p == .f64) try e.slot_ty.put(e.alloc, @intCast(i), .f64);
+        if (p != .i64) try e.slot_ty.put(e.alloc, @intCast(i), p);
     }
     var rounds: u32 = 0;
     while (rounds < 128) : (rounds += 1) {
         var changed = false;
         for (instrs) |ins| {
             switch (ins.op) {
-                .@"const" => if (ins.ty == .f64 or ins.lhs == .f64) try markF64(e, ins.result, &changed),
-                .store_local => if (ins.ty == .f64 or valueIsF64(e, ins.lhs)) {
-                    try markF64(e, ins.result, &changed);
+                .@"const" => {
+                    if (ins.ty == .f64 or ins.lhs == .f64) try markF64(e, ins.result, &changed);
+                    if (ins.ty == .f32 or ins.lhs == .f32) try markF32(e, ins.result, &changed);
                 },
-                .binop => {
-                    // A COMPARISON ANSWERS WITH A BOOLEAN whatever its operands
-                    // are — the exact confusion `native_backend` records at
-                    // gap[058], where an f64 comparison was given an FP
-                    // destination and the branch then read unrelated float state.
-                    if (comparisonOf(ins.binop) != null) continue;
-                    if (ins.ty == .f64 or valueIsF64(e, ins.lhs) or valueIsF64(e, ins.rhs)) {
+                .store_local => {
+                    if (ins.ty == .f64 or valueIsF64(e, ins.lhs)) {
                         try markF64(e, ins.result, &changed);
+                    } else if (ins.ty == .f32 or valueIsF32(e, ins.lhs)) {
+                        try markF32(e, ins.result, &changed);
                     }
                 },
-                .call_direct, .call_extern, .load_global => if (ins.ty == .f64) {
-                    try markF64(e, ins.result, &changed);
+                .binop => {
+                    if (comparisonOf(ins.binop, false) != null) continue;
+                    if (ins.ty == .f64 or valueIsF64(e, ins.lhs) or valueIsF64(e, ins.rhs)) {
+                        try markF64(e, ins.result, &changed);
+                    } else if (ins.ty == .f32 or valueIsF32(e, ins.lhs) or valueIsF32(e, ins.rhs)) {
+                        try markF32(e, ins.result, &changed);
+                    }
+                },
+                .call_direct, .call_extern, .load_global => {
+                    if (ins.ty == .f64) try markF64(e, ins.result, &changed);
+                    if (ins.ty == .f32) try markF32(e, ins.result, &changed);
                 },
                 else => {},
             }
@@ -638,7 +741,18 @@ fn computeSlotTypes(e: *Emitter, instrs: []const dnir.Instr, params: []const Slo
     }
 }
 
-fn comparisonOf(tag: dnir.BinOpTag) ?u8 {
+fn comparisonOf(tag: dnir.BinOpTag, want_i32: bool) ?u8 {
+    if (want_i32) {
+        return switch (tag) {
+            .eq => op_i32_eq,
+            .neq => op_i32_ne,
+            .lt => op_i32_lt_s,
+            .gt => op_i32_gt_s,
+            .leq => op_i32_le_s,
+            .geq => op_i32_ge_s,
+            else => null,
+        };
+    }
     return switch (tag) {
         .eq => op_i64_eq,
         .neq => op_i64_ne,
@@ -662,6 +776,18 @@ fn comparisonOfF64(tag: dnir.BinOpTag) ?u8 {
     };
 }
 
+fn comparisonOfF32(tag: dnir.BinOpTag) ?u8 {
+    return switch (tag) {
+        .eq => op_f32_eq,
+        .neq => op_f32_ne,
+        .lt => op_f32_lt,
+        .gt => op_f32_gt,
+        .leq => op_f32_le,
+        .geq => op_f32_ge,
+        else => null,
+    };
+}
+
 // ---------------------------------------------------------------------------
 // SIGNATURES
 // ---------------------------------------------------------------------------
@@ -679,13 +805,17 @@ fn paramSlotTypes(e: *Emitter, f: dnir.Function) Error![]SlotType {
                 return e.refuse("record-param-unknown");
             var all_scalar = rec.kinds.len > 0;
             for (rec.kinds) |k| {
-                if (k == .f64) all_scalar = false;
+                if (k == .f64 or k == .f32) all_scalar = false;
             }
-            if (!all_scalar) return e.refuse("record-param-f64");
+            if (!all_scalar) return e.refuse("record-param-float");
             for (rec.kinds) |_| try out.append(e.alloc, .i64);
             continue;
         }
-        try out.append(e.alloc, if (p.ty == .f64) .f64 else .i64);
+        try out.append(e.alloc, switch (p.ty) {
+            .f64 => .f64,
+            .f32 => .f32,
+            else => .i64,
+        });
     }
     return out.toOwnedSlice(e.alloc);
 }
@@ -696,7 +826,7 @@ fn returnSlotTypes(e: *Emitter, f: dnir.Function) Error![]SlotType {
         var out: std.ArrayListUnmanaged(SlotType) = .empty;
         errdefer out.deinit(e.alloc);
         for (rec.kinds) |k| {
-            if (k == .f64) return e.refuse("record-return-f64");
+            if (k == .f64 or k == .f32) return e.refuse("record-return-float");
             try out.append(e.alloc, .i64);
         }
         if (out.items.len == 0) return e.refuse("record-return-empty");
@@ -704,7 +834,8 @@ fn returnSlotTypes(e: *Emitter, f: dnir.Function) Error![]SlotType {
     }
     return switch (f.ret) {
         .void, .nil, .never => try e.alloc.dupe(SlotType, &.{}),
-        .f64, .f32 => try e.alloc.dupe(SlotType, &.{.f64}),
+        .f64 => try e.alloc.dupe(SlotType, &.{.f64}),
+        .f32 => try e.alloc.dupe(SlotType, &.{.f32}),
         else => try e.alloc.dupe(SlotType, &.{.i64}),
     };
 }
@@ -1198,17 +1329,11 @@ fn pushValue(e: *Emitter, b: *Buf, v: dnir.Value, want: SlotType) Error!void {
     switch (want) {
         .i64 => switch (v) {
             .i64 => |n| try b.i64c(n),
-            // The AArch64 path materializes an f64 literal's BIT PATTERN into a
-            // general register in exactly this position (`evalDnirValue`), and
-            // `print_value` reads it back the same way.
             .f64 => |x| try b.i64c(@bitCast(x)),
             .str => |s| try b.i64c(@intCast(try e.strings.intern(s))),
             .local, .temp => |s| {
                 if (s >= e.slot_count) return e.refuse("slot-out-of-range");
-                // float -> int is NOT symmetric with the widening below and must
-                // not be added: it truncates silently. `evalDnirValueFp` in the
-                // AArch64 backend says the same at gap[101].
-                if (slotTypeOf(e, s) == .f64) return e.refuse("f64-slot-in-integer-position");
+                if (slotTypeOf(e, s) == .f64 or slotTypeOf(e, s) == .f32) return e.refuse("float-slot-in-integer-position");
                 try b.get(s);
             },
             .void => return e.refuse("void-operand"),
@@ -1216,8 +1341,6 @@ fn pushValue(e: *Emitter, b: *Buf, v: dnir.Value, want: SlotType) Error!void {
         },
         .f64 => switch (v) {
             .f64 => |x| try b.f64c(x),
-            // An integer immediate in a float position is a LOSSLESS WIDENING —
-            // `scvtf` on AArch64, `f64.convert_i64_s` here.
             .i64 => |n| {
                 try b.i64c(n);
                 try b.op(op_f64_convert_i64_s);
@@ -1226,6 +1349,28 @@ fn pushValue(e: *Emitter, b: *Buf, v: dnir.Value, want: SlotType) Error!void {
                 if (s >= e.slot_count) return e.refuse("slot-out-of-range");
                 try b.get(s);
                 if (slotTypeOf(e, s) == .i64) try b.op(op_f64_convert_i64_s);
+            },
+            .str => return e.refuse("str-in-float-position"),
+            .void => return e.refuse("void-operand"),
+            .record => return e.refuse("record-operand"),
+        },
+        .f32 => switch (v) {
+            .f64 => |x| {
+                try b.f64c(x);
+                try b.op(op_f32_demote_f64);
+            },
+            .i64 => |n| {
+                try b.i64c(n);
+                try b.op(op_f32_convert_i64_s);
+            },
+            .local, .temp => |s| {
+                if (s >= e.slot_count) return e.refuse("slot-out-of-range");
+                try b.get(s);
+                switch (slotTypeOf(e, s)) {
+                    .i64 => try b.op(op_f32_convert_i64_s),
+                    .f64 => try b.op(op_f32_demote_f64),
+                    else => {},
+                }
             },
             .str => return e.refuse("str-in-float-position"),
             .void => return e.refuse("void-operand"),
@@ -1346,16 +1491,12 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
             if (e.cur_results.len == 1) {
                 const want = e.cur_results[0];
                 if (ins.lhs == .void) {
-                    // A VALUELESS RETURN OUT OF A VALUE-RETURNING RELATION.
-                    // `os.exit(1)` as a path's last statement lowers to
-                    // `call_extern exit` then `ret .void`, and the AArch64 arm
-                    // answers it with `allocReg()` — an UNDEFINED register whose
-                    // contents cannot be read, because the path is dead. Zero is
-                    // the same nothing, said deterministically.
-                    if (want == .f64) try b.f64c(0) else try b.i64c(0);
+                    if (want == .f64) try b.f64c(0) else if (want == .f32) try b.f32c(0) else try b.i64c(0);
                 } else if (want == .i64) {
                     try pushValue(e, b, ins.lhs, .i64);
                     try emitNarrowFit(b, e.cur_ret);
+                } else if (want == .f32) {
+                    try pushValue(e, b, ins.lhs, .f32);
                 } else {
                     try pushValue(e, b, ins.lhs, .f64);
                 }
@@ -1402,23 +1543,28 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
         .load_index => {
             const t = ins.result orelse return e.refuse("load-index-no-result");
             try emitIndexAddress(e, b, ins);
-            if (ins.ty == .i64) {
-                try b.mem(op_i64_load, 3, 0);
-            } else {
-                // `string.byte(s, i)`: Idol indexes strings from 1, C pointers
-                // from 0, and the byte is zero-extended exactly as `ldrb` does.
-                try b.mem(op_i64_load8_u, 0, 0);
+            switch (ins.ty) {
+                .i64 => try b.mem(op_i64_load, 3, 0),
+                .f64 => try b.mem(op_f64_load, 2, 0),
+                .f32 => try b.mem(op_f32_load, 2, 0),
+                else => try b.mem(op_i64_load8_u, 0, 0),
             }
             try b.set(t);
         },
 
         .store_index => {
             try emitIndexAddress(e, b, ins);
-            try pushValue(e, b, ins.third, .i64);
-            if (ins.ty == .i64) {
-                try b.mem(op_i64_store, 3, 0);
-            } else {
-                try b.mem(op_i64_store8, 0, 0);
+            switch (ins.ty) {
+                .i64 => try pushValue(e, b, ins.third, .i64),
+                .f64 => try pushValue(e, b, ins.third, .f64),
+                .f32 => try pushValue(e, b, ins.third, .f32),
+                else => try pushValue(e, b, ins.third, .i64),
+            }
+            switch (ins.ty) {
+                .i64 => try b.mem(op_i64_store, 3, 0),
+                .f64 => try b.mem(op_f64_store, 2, 0),
+                .f32 => try b.mem(op_f32_store, 2, 0),
+                else => try b.mem(op_i64_store8, 0, 0),
             }
         },
 
@@ -1429,6 +1575,10 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
             try b.i32c(0);
             try b.mem(op_i64_load, 3, globals_base + off);
             if (slotTypeOf(e, t) == .f64) try b.op(op_f64_reinterpret_i64);
+            if (slotTypeOf(e, t) == .f32) {
+                try b.op(op_i32_wrap_i64);
+                try b.op(op_f32_reinterpret_i32);
+            }
             try b.set(t);
         },
 
@@ -1439,6 +1589,10 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
             if (valueIsF64(e, ins.lhs)) {
                 try pushValue(e, b, ins.lhs, .f64);
                 try b.op(op_i64_reinterpret_f64);
+            } else if (valueIsF32(e, ins.lhs)) {
+                try pushValue(e, b, ins.lhs, .f32);
+                try b.op(op_i32_reinterpret_f32);
+                try b.op(op_i64_extend_i32_u);
             } else {
                 try pushValue(e, b, ins.lhs, .i64);
             }
@@ -1539,20 +1693,22 @@ fn emitIndexAddress(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
 fn emitBinop(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
     const t = ins.result orelse return e.refuse("binop-no-result");
     const f64_operands = ins.ty == .f64 or valueIsF64(e, ins.lhs) or valueIsF64(e, ins.rhs);
+    const f32_operands = ins.ty == .f32 or valueIsF32(e, ins.lhs) or valueIsF32(e, ins.rhs);
 
-    if (comparisonOf(ins.binop)) |int_op| {
-        // A COMPARISON ANSWERS 0 OR 1 and is never refitted, whatever the width
-        // of its operands — `emitCompareOrBinop` says the same.
+    if (comparisonOf(ins.binop, false)) |int_op| {
         if (f64_operands) {
             try pushValue(e, b, ins.lhs, .f64);
             try pushValue(e, b, ins.rhs, .f64);
             try b.op(comparisonOfF64(ins.binop).?);
+        } else if (f32_operands) {
+            try pushValue(e, b, ins.lhs, .f32);
+            try pushValue(e, b, ins.rhs, .f32);
+            try b.op(comparisonOfF32(ins.binop).?);
         } else {
             try pushValue(e, b, ins.lhs, .i64);
             try pushValue(e, b, ins.rhs, .i64);
             try b.op(int_op);
         }
-        try b.op(op_i64_extend_i32_u);
         try b.set(t);
         return;
     }
@@ -1566,6 +1722,20 @@ fn emitBinop(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
             .mul => op_f64_mul,
             .div => op_f64_div,
             else => return e.refuse("f64-binop"),
+        });
+        try b.set(t);
+        return;
+    }
+
+    if (f32_operands) {
+        try pushValue(e, b, ins.lhs, .f32);
+        try pushValue(e, b, ins.rhs, .f32);
+        try b.op(switch (ins.binop) {
+            .add => op_f32_add,
+            .sub => op_f32_sub,
+            .mul => op_f32_mul,
+            .div => op_f32_div,
+            else => return e.refuse("f32-binop"),
         });
         try b.set(t);
         return;
@@ -1882,6 +2052,10 @@ fn finishCallResult(e: *Emitter, b: *Buf, ins: dnir.Instr, results: []const Slot
         if (results[0] != want) {
             if (results[0] == .i64 and want == .f64) {
                 try b.op(op_f64_convert_i64_s);
+            } else if (results[0] == .i64 and want == .f32) {
+                try b.op(op_f32_convert_i64_s);
+            } else if (results[0] == .f64 and want == .f32) {
+                try b.op(op_f32_demote_f64);
             } else {
                 return e.refuse("call-result-type");
             }
@@ -1904,7 +2078,8 @@ fn externSignature(callee: []const u8) ?ExternSig {
     const one_i = &[_]SlotType{.i64};
     const two_i = &[_]SlotType{ .i64, .i64 };
     const three_i = &[_]SlotType{ .i64, .i64, .i64 };
-    const one_f = &[_]SlotType{.f64};
+    const one_f64 = &[_]SlotType{.f64};
+    const one_f32 = &[_]SlotType{.f32};
     if (std.mem.eql(u8, callee, "malloc")) return .{ .params = one_i, .result = .i64, .helper = .malloc };
     if (std.mem.eql(u8, callee, "memset")) return .{ .params = three_i, .result = .i64, .helper = .memset };
     if (std.mem.eql(u8, callee, "strlen")) return .{ .params = one_i, .result = .i64, .helper = .strlen };
@@ -1914,10 +2089,14 @@ fn externSignature(callee: []const u8) ?ExternSig {
     if (std.mem.eql(u8, callee, "idol_str_at")) return .{ .params = two_i, .result = .i64, .helper = .str_at };
     if (std.mem.eql(u8, callee, "duo_str_sub")) return .{ .params = three_i, .result = .i64, .helper = .str_sub };
     if (std.mem.eql(u8, callee, "duo_str_to_i64")) return .{ .params = one_i, .result = .i64, .helper = .str_to_i64 };
-    if (std.mem.eql(u8, callee, "sqrt")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_sqrt };
-    if (std.mem.eql(u8, callee, "fabs")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_abs };
-    if (std.mem.eql(u8, callee, "floor")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_floor };
-    if (std.mem.eql(u8, callee, "ceil")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_ceil };
+    if (std.mem.eql(u8, callee, "sqrt")) return .{ .params = one_f64, .result = .f64, .inline_op = op_f64_sqrt };
+    if (std.mem.eql(u8, callee, "fabs")) return .{ .params = one_f64, .result = .f64, .inline_op = op_f64_abs };
+    if (std.mem.eql(u8, callee, "floor")) return .{ .params = one_f64, .result = .f64, .inline_op = op_f64_floor };
+    if (std.mem.eql(u8, callee, "ceil")) return .{ .params = one_f64, .result = .f64, .inline_op = op_f64_ceil };
+    if (std.mem.eql(u8, callee, "fabsf")) return .{ .params = one_f32, .result = .f32, .inline_op = op_f32_abs };
+    if (std.mem.eql(u8, callee, "floorf")) return .{ .params = one_f32, .result = .f32, .inline_op = op_f32_floor };
+    if (std.mem.eql(u8, callee, "ceilf")) return .{ .params = one_f32, .result = .f32, .inline_op = op_f32_ceil };
+    if (std.mem.eql(u8, callee, "sqrtf")) return .{ .params = one_f32, .result = .f32, .inline_op = op_f32_sqrt };
     return null;
 }
 
@@ -2101,27 +2280,19 @@ fn emitStart(e: *Emitter, entry_index: u32, entry_result: ?SlotType) Error![]u8 
     try b.u32v(0); // no locals
     try b.call(entry_index);
     if (entry_result) |r| {
-        // The exit code IS the answer for this subset — every gate on the
-        // surface states its verdict that way — so `main`'s result must reach
-        // `proc_exit` and not be dropped. WASI takes a 32-bit code and the
-        // kernel takes the low 8 bits of it, which is exactly what the AArch64
-        // build's `exit(main())` gets.
         if (r == .f64) {
             try b.op(op_i64_reinterpret_f64);
+        } else if (r == .f32) {
+            try b.op(op_i32_reinterpret_f32);
+            try b.op(op_i64_extend_i32_u);
         }
-        // `& 0xFF` — THE POSIX EXIT CONTRACT, not a convenience. The AArch64
-        // build ends in `exit(main())` and the kernel keeps the LOW EIGHT BITS:
-        // `main` returning 333 exits 77. Handing wasmtime the untruncated 333
-        // did not merely differ from that, it made the module UNRUNNABLE — WASI
-        // rejects any `proc_exit` argument outside [0,126) — so five corpus
-        // programs whose native exit codes are perfectly ordinary (77, 5, 118,
-        // 104) failed to produce an answer at all.
-        try b.i64c(0xff);
-        try b.op(op_i64_and);
         try b.op(op_i32_wrap_i64);
     } else {
-        try b.i32c(0);
+        try b.i64c(0);
     }
+    try b.i64c(0xff);
+    try b.op(op_i64_and);
+    try b.op(op_i32_wrap_i64);
     try b.call(helperIndex(.proc_exit));
     try b.byte(op_unreachable);
     try b.byte(op_end);
