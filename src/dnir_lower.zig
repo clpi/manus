@@ -80,6 +80,41 @@ pub const Diagnostic = struct {
         self.taint.printLedgerLines();
     }
 
+
+    /// Structured missing-fact refusal for agents and gates (`missingApplicationFact`).
+    /// Shape: `application N [relation: R] missing: F consumer: C producer: P`.
+    pub fn formatMissingApplicationFact(self: *const Diagnostic, buf: []u8) []const u8 {
+        const missing = self.note() orelse "unspecified";
+        const consumer = "dnir.lower";
+        const producer = missingFactProducer(missing);
+        if (self.application) |id| {
+            if (self.relation) |rel| {
+                return std.fmt.bufPrint(
+                    buf,
+                    "application {d} relation: {s} missing: {s} consumer: {s} producer: {s}",
+                    .{ id, rel, missing, consumer, producer },
+                ) catch missing;
+            }
+            return std.fmt.bufPrint(
+                buf,
+                "application {d} missing: {s} consumer: {s} producer: {s}",
+                .{ id, missing, consumer, producer },
+            ) catch missing;
+        }
+        if (self.relation) |rel| {
+            return std.fmt.bufPrint(
+                buf,
+                "application unknown relation: {s} missing: {s} consumer: {s} producer: {s}",
+                .{ rel, missing, consumer, producer },
+            ) catch missing;
+        }
+        return std.fmt.bufPrint(
+            buf,
+            "application unknown missing: {s} consumer: {s} producer: {s}",
+            .{ missing, consumer, producer },
+        ) catch missing;
+    }
+
     fn record(self: *Diagnostic, site: std.builtin.SourceLocation, detail: ?[]const u8) void {
         self.site = site;
         const text = detail orelse {
@@ -92,6 +127,16 @@ pub const Diagnostic = struct {
     }
 };
 
+
+fn missingFactProducer(missing: []const u8) []const u8 {
+    if (std.mem.startsWith(u8, missing, "aggregate-")) return "graph.aggregate";
+    if (std.mem.eql(u8, missing, "missing-application-id")) return "graph.occurrenceBridge";
+    if (std.mem.eql(u8, missing, "missing-function-id")) return "graph.functionEntity";
+    if (std.mem.eql(u8, missing, "unresolved-application")) return "sema.resolveApplication";
+    if (std.mem.eql(u8, missing, "function-order-id")) return "graph.functionOrder";
+    return "graph";
+}
+
 fn noteHostTaint(
     ctx: *LowerCtx,
     channel: host_taint.Channel,
@@ -100,6 +145,24 @@ fn noteHostTaint(
 ) void {
     if (!ctx.require_graph_facts) return;
     ctx.diagnostic.taint.record(ctx.alloc, .{
+        .stage = .lower,
+        .class = .host_tainted,
+        .channel = channel,
+        .site = site,
+        .application = application,
+    }) catch {};
+}
+
+fn noteHostTaintDiagnostic(
+    diagnostic: *Diagnostic,
+    alloc: std.mem.Allocator,
+    require_graph_facts: bool,
+    channel: host_taint.Channel,
+    site: []const u8,
+    application: ?semantic_graph.id,
+) void {
+    if (!require_graph_facts) return;
+    diagnostic.taint.record(alloc, .{
         .stage = .lower,
         .class = .host_tainted,
         .channel = channel,
@@ -1285,7 +1348,17 @@ fn lowerModuleFromGraph(
             // A module-home alias (`global A = compiler.arm64`) is a subject
             // binding, not a load-time word. Calls resolve through graph
             // application facts; the initializer has no `__DATA` image.
-            if (globalInitIsSubjectBinding(init)) continue;
+            if (globalInitIsSubjectBinding(init)) {
+                noteHostTaintDiagnostic(
+                    diagnostic,
+                    alloc,
+                    require_graph_facts,
+                    .ast_name,
+                    "global_init.subject_binding",
+                    null,
+                );
+                continue;
+            }
             var buf: [96]u8 = undefined;
             const note = std.fmt.bufPrint(&buf, "global-init-not-constant:{s}", .{g.name}) catch
                 "global-init-not-constant";
@@ -2274,6 +2347,83 @@ fn tableFieldKind(field: types.FieldType) ?dnir.FieldKind {
         .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .bool => .i64,
         else => null,
     };
+}
+
+fn recordDescForParamName(ctx: *const LowerCtx, obj_name: []const u8) ?dnir.RecordDesc {
+    const rec_name = ctx.param_record_types.get(obj_name) orelse return null;
+    for (ctx.records) |rec| {
+        if (std.mem.eql(u8, rec.name, rec_name)) return rec;
+    }
+    return findRecordByNominal(ctx.records, rec_name, ctx.graph);
+}
+
+const OpaqueRecordParam = struct { slot: u32, rec_name: []const u8 };
+
+const OpaqueRecordCopySrc = union(enum) {
+    opaque_param: OpaqueRecordParam,
+    local_base: []const u8,
+};
+
+fn copyOpaqueRecordNestedFields(
+    ctx: *LowerCtx,
+    dest: OpaqueRecordParam,
+    src: OpaqueRecordCopySrc,
+    prefix: []const u8,
+) Error!void {
+    const dest_rec = blk: {
+        for (ctx.records) |rec| {
+            if (std.mem.eql(u8, rec.name, dest.rec_name)) break :blk rec;
+        }
+        break :blk findRecordByNominal(ctx.records, dest.rec_name, ctx.graph) orelse
+            return bail(ctx.diagnostic, @src());
+    };
+    var prefix_buf: [512]u8 = undefined;
+    const prefix_pat = std.fmt.bufPrint(&prefix_buf, "{s}.", .{prefix}) catch return bail(ctx.diagnostic, @src());
+    for (dest_rec.fields, dest_rec.kinds) |fname, kind| {
+        if (!std.mem.startsWith(u8, fname, prefix_pat)) continue;
+        const rt: RT = switch (kind) {
+            .f64 => .f64,
+            .str => .str,
+            .i64 => .any,
+        };
+        const v: dnir.Value = switch (src) {
+            .opaque_param => |src_opaque| blk: {
+                const t = ctx.freshTemp();
+                try ctx.emit(.{
+                    .op = .load_field,
+                    .result = t,
+                    .rhs = .{ .local = src_opaque.slot },
+                    .record = src_opaque.rec_name,
+                    .field = try ctx.alloc.dupe(u8, fname),
+                    .ty = rt,
+                });
+                if (rt == .f64) try ctx.f64_slots.put(ctx.alloc, t, {});
+                if (rt == .str) try ctx.str_slots.put(ctx.alloc, t, {});
+                break :blk .{ .temp = t };
+            },
+            .local_base => |base| blk: {
+                const suffix = fname[prefix_pat.len..];
+                const nested_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ base, fname });
+                defer ctx.alloc.free(nested_key);
+                if (ctx.locals.get(nested_key)) |slot| break :blk .{ .local = slot };
+                const flat_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ base, suffix });
+                defer ctx.alloc.free(flat_key);
+                if (ctx.locals.get(flat_key)) |slot| break :blk .{ .local = slot };
+                if (try loadFieldFromOpaquePath(ctx, nested_key, null)) |loaded| break :blk loaded;
+                if (try loadFieldFromOpaquePath(ctx, flat_key, null)) |loaded| break :blk loaded;
+                return bail(ctx.diagnostic, @src());
+            },
+        };
+        try ctx.emit(.{
+            .op = .store_field,
+            .rhs = .{ .local = dest.slot },
+            .record = dest.rec_name,
+            .field = try ctx.alloc.dupe(u8, fname),
+            .lhs = v,
+            .ty = rt,
+        });
+    }
+    subsumeProducerRefit(ctx);
 }
 
 fn recordFieldPrefixPresent(record: dnir.RecordDesc, prefix: []const u8) bool {
@@ -3419,7 +3569,7 @@ fn isReqCall(expr: *const ast.Expr) bool {
     return c.args.len == 1 and c.args[0].* == .quoted;
 }
 
-fn opaqueRecordParam(ctx: *const LowerCtx, obj_name: []const u8) ?struct { slot: u32, rec_name: []const u8 } {
+fn opaqueRecordParam(ctx: *const LowerCtx, obj_name: []const u8) ?OpaqueRecordParam {
     const rec_name = ctx.param_record_types.get(obj_name) orelse return null;
     const slot = ctx.locals.get(obj_name) orelse return null;
     if (!ctx.ptr_slots.contains(slot)) return null;
@@ -3428,7 +3578,52 @@ fn opaqueRecordParam(ctx: *const LowerCtx, obj_name: []const u8) ?struct { slot:
 
 fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []const u8, value: *const ast.Expr) Error!void {
     if (obj.* != .name) return bail(ctx.diagnostic, @src());
-    if (opaqueRecordParam(ctx, obj.name.ident)) |opaque_rec| {
+    if (value.* == .field and value.field.obj.* == .name and
+        std.mem.eql(u8, value.field.field, field_name))
+    {
+        const src_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ value.field.obj.name.ident, field_name });
+        defer ctx.alloc.free(src_key);
+        const dest_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ obj.name.ident, field_name });
+        defer ctx.alloc.free(dest_key);
+        try copyPrefixedLocalsFromRecordRef(ctx, dest_key, src_key);
+        subsumeProducerRefit(ctx);
+        return;
+    }
+    if (opaqueRecordParam(ctx, obj.name.ident)) |dest_opaque| {
+        const dest_rec = blk: {
+            for (ctx.records) |rec| {
+                if (std.mem.eql(u8, rec.name, dest_opaque.rec_name)) break :blk rec;
+            }
+            break :blk findRecordByNominal(ctx.records, dest_opaque.rec_name, ctx.graph) orelse
+                return bail(ctx.diagnostic, @src());
+        };
+        if (recordFieldPrefixPresent(dest_rec, field_name)) {
+            if (value.* == .field and value.field.obj.* == .name and
+                std.mem.eql(u8, value.field.field, field_name))
+            {
+                const src_name = value.field.obj.name.ident;
+                if (opaqueRecordParam(ctx, src_name)) |src_opaque| {
+                    try copyOpaqueRecordNestedFields(ctx, dest_opaque, .{ .opaque_param = src_opaque }, field_name);
+                } else {
+                    try copyOpaqueRecordNestedFields(ctx, dest_opaque, .{ .local_base = src_name }, field_name);
+                }
+                return;
+            }
+            if (value.* == .name) {
+                var suffix_buf: [512]u8 = undefined;
+                const suffix = std.fmt.bufPrint(&suffix_buf, ".{s}", .{field_name}) catch return bail(ctx.diagnostic, @src());
+                if (std.mem.endsWith(u8, value.name.ident, suffix)) {
+                    const base = value.name.ident[0 .. value.name.ident.len - suffix.len];
+                    try copyOpaqueRecordNestedFields(ctx, dest_opaque, .{ .local_base = base }, field_name);
+                    return;
+                }
+            }
+            const tmp_base = try std.fmt.allocPrint(ctx.alloc, "__opq{d}", .{ctx.freshTemp()});
+            defer ctx.alloc.free(tmp_base);
+            try lowerAssignTarget(ctx, tmp_base, value);
+            try copyOpaqueRecordNestedFields(ctx, dest_opaque, .{ .local_base = tmp_base }, field_name);
+            return;
+        }
         const v = try lowerExprCons(ctx, value, .single);
         const store_ty: RT = if (exprIsF64(ctx, value))
             .f64
@@ -3444,8 +3639,8 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
         };
         try ctx.emit(.{
             .op = .store_field,
-            .rhs = .{ .local = opaque_rec.slot },
-            .record = opaque_rec.rec_name,
+            .rhs = .{ .local = dest_opaque.slot },
+            .record = dest_opaque.rec_name,
             .field = try ctx.alloc.dupe(u8, field_name),
             .lhs = v,
             .ty = store_ty,
@@ -3711,6 +3906,15 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                         break :blk fresh;
                     };
                     try ctx.narrow_slots.put(ctx.alloc, slot, width);
+                }
+                if (blk: {
+                    if (findRecordName(ctx.records, ln.typ)) |rec| break :blk rec;
+                    if (ln.typ == .named) {
+                        if (findRecordByNominal(ctx.records, ln.typ.named, ctx.graph)) |rec| break :blk rec;
+                    }
+                    break :blk null;
+                }) |rec| {
+                    try ensureRecordLocalFieldSlots(ctx, ln.ident, rec);
                 }
                 if (i < ld.inits.len) {
                     if (try skipStaticAggregateBinding(ctx, ln.ident)) continue;
@@ -5089,7 +5293,6 @@ fn paramRecordSliceFieldCall(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
         },
         else => return false,
     };
-    {
     if (ctx.param_record_types.get(obj) != null) return true;
     for (ctx.records) |rec| {
         if (rec.fields.len == 0) continue;
@@ -5100,6 +5303,62 @@ fn paramRecordSliceFieldCall(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
         }
     }
     return false;
+}
+
+
+fn boundedOperandStageCount(staged: StagedOperands, operands: []const CheckedScalarOperand) usize {
+    return @min(staged.count, operands.len);
+}
+
+fn ensureRecordLocalFieldSlots(ctx: *LowerCtx, name: []const u8, record: dnir.RecordDesc) Error!void {
+    for (record.fields, 0..) |fname, fi| {
+        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
+        defer ctx.alloc.free(fk);
+        if (ctx.locals.contains(fk)) continue;
+        const fslot = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), fslot);
+        if (fi < record.kinds.len) switch (record.kinds[fi]) {
+            .str => try ctx.str_slots.put(ctx.alloc, fslot, {}),
+            .f64 => try ctx.f64_slots.put(ctx.alloc, fslot, {}),
+            .i64 => {},
+        };
+        if (fi < record.widths.len) if (record.widths[fi]) |width| {
+            try ctx.narrow_slots.put(ctx.alloc, fslot, width);
+        };
+    }
+}
+
+fn emitRecordFieldLoadsFromBase(
+    ctx: *LowerCtx,
+    prefix: []const u8,
+    record: dnir.RecordDesc,
+    base: dnir.Value,
+) Error!void {
+    for (record.fields, record.kinds, 0..) |fname, kind, fi| {
+        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ prefix, fname });
+        defer ctx.alloc.free(fk);
+        const fslot = ctx.locals.get(fk) orelse continue;
+        const rt: RT = switch (kind) {
+            .f64 => .f64,
+            .str => .str,
+            .i64 => .any,
+        };
+        const t = ctx.freshTemp();
+        try ctx.emit(.{
+            .op = .load_field,
+            .result = t,
+            .rhs = base,
+            .record = record.name,
+            .field = try ctx.alloc.dupe(u8, fname),
+            .ty = rt,
+        });
+        try ctx.emit(.{ .op = .store_local, .result = fslot, .lhs = .{ .temp = t }, .ty = rt });
+        if (rt == .f64) try ctx.f64_slots.put(ctx.alloc, fslot, {});
+        if (rt == .str) try ctx.str_slots.put(ctx.alloc, fslot, {});
+        if (fi < record.widths.len) if (record.widths[fi]) |width| {
+            try ctx.narrow_slots.put(ctx.alloc, fslot, width);
+        };
+    }
 }
 
 fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
@@ -5158,6 +5417,16 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
             const result_desc = try checkedApplicationResultDescriptor(ctx, application);
             if (try tryAssignRecordCallFromExportMap(ctx, name, value)) return;
             try checkedScalarResult(ctx.diagnostic, result_desc);
+            const v = try lowerCheckedScalarCall(ctx, application, .single);
+            if (ctx.locals.get(name)) |slot| {
+                try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = .any });
+            } else {
+                const slot = ctx.freshTemp();
+                try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), slot);
+                try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = .any });
+            }
+            subsumeProducerRefit(ctx);
+            return;
         }
     }
     if (try tryAssignRecordCallFromExportMap(ctx, name, value)) return;
@@ -5375,7 +5644,8 @@ fn lowerCheckedRecordCall(
     var values: [max_direct_scalar_args]dnir.Value = undefined;
     const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
-    try stageCheckedScalarOperands(ctx, operands[0..staged.count], values[0..staged.count]);
+    const stage_n = boundedOperandStageCount(staged, operands);
+    try stageCheckedScalarOperands(ctx, operands[0..stage_n], values[0..stage_n]);
     const descriptor = try publishedDescriptor(ctx, application);
     if (consumption == .discard) {
         try ctx.emit(.{
@@ -5453,7 +5723,8 @@ fn lowerCheckedRecordCallAssign(
     var values: [max_direct_scalar_args]dnir.Value = undefined;
     const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
-    try stageCheckedScalarOperands(ctx, operands[0..staged.count], values[0..staged.count]);
+    const stage_n = boundedOperandStageCount(staged, operands);
+    try stageCheckedScalarOperands(ctx, operands[0..stage_n], values[0..stage_n]);
     const descriptor = try publishedDescriptor(ctx, application);
     const emit_record = physicalRecordName(ctx, record);
     try ctx.emit(.{
@@ -5471,18 +5742,8 @@ fn lowerCheckedRecordCallAssign(
     });
     try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = emit_record, .field = name });
     try ctx.param_record_types.put(ctx.alloc, try ctx.alloc.dupe(u8, name), emit_record);
-    for (record.fields, 0..) |fname, fi| {
-        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
-        defer ctx.alloc.free(fk);
-        if (ctx.locals.contains(fk)) continue;
-        const fslot = ctx.freshTemp();
-        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), fslot);
-        if (fi < record.kinds.len) switch (record.kinds[fi]) {
-            .str => try ctx.str_slots.put(ctx.alloc, fslot, {}),
-            .f64 => try ctx.f64_slots.put(ctx.alloc, fslot, {}),
-            .i64 => {},
-        };
-    }
+    try ensureRecordLocalFieldSlots(ctx, name, record);
+    try emitRecordFieldLoadsFromBase(ctx, name, record, .{ .local = rec_slot });
 }
 
 fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, args: []const *ast.Expr, rec_name: []const u8) Error!void {
@@ -6818,12 +7079,18 @@ fn loadFieldFromOpaquePath(
     const obj_name = path[0..dot];
     const field = path[dot + 1 ..];
     if (opaqueRecordParam(ctx, obj_name)) |opaque_rec| {
+        if (recordFieldKindForParam(ctx, obj_name, field) == null) {
+            if (recordDescForParamName(ctx, obj_name)) |rec| {
+                if (recordFieldPrefixPresent(rec, field)) return null;
+            }
+        }
         const t = ctx.freshTemp();
         const rt: RT = switch (recordFieldKindForParam(ctx, obj_name, field) orelse .i64) {
             .f64 => .f64,
             .str => .str,
             .i64 => .any,
         };
+        noteHostTaint(ctx, .opaque_path, "opaque_path.load_field", application);
         try ctx.emit(.{
             .op = .load_field,
             .result = t,
@@ -7258,6 +7525,7 @@ fn lowerExprCons(
             if (std.mem.eql(u8, n.ident, "io") or std.mem.eql(u8, n.ident, "os") or
                 std.mem.eql(u8, n.ident, "std"))
             {
+                noteHostTaint(ctx, .ast_name, "world_symbol", null);
                 break :blk dnir.Value{ .str = n.ident };
             }
             return bailWith(ctx.diagnostic, @src(), n.ident);
@@ -7433,6 +7701,7 @@ fn lowerExprCons(
 /// shape, not a call to a symbol that exists.
 fn faceAsCall(ctx: *LowerCtx, expr: *const ast.Expr) Error!*const ast.Expr {
     const mc = expr.method_call;
+    noteHostTaint(ctx, .method_string, "faceAsCall.method", null);
     const args = try ctx.alloc.alloc(*ast.Expr, mc.args.len + 1);
     args[0] = mc.obj;
     @memcpy(args[1..], mc.args);
@@ -7925,7 +8194,8 @@ fn lowerCheckedPackCall(
         operands[0].descriptor == .i64 and first_ty == .i64 and
         checkedOperandAdmitsDirectGp(ctx, operands[0].expression);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
-    if (!direct_gp) try stageCheckedScalarOperands(ctx, operands[0..staged.count], values[0..staged.count]);
+    const stage_n = boundedOperandStageCount(staged, operands);
+    if (!direct_gp) try stageCheckedScalarOperands(ctx, operands[0..stage_n], values[0..stage_n]);
 
     const projected = try ctx.alloc.alloc(dnir.PackResult, results.len);
     errdefer ctx.alloc.free(projected);
@@ -8019,7 +8289,8 @@ fn lowerCheckedScalarCall(
     // containing a call spills all GP locals to the stack frame
     // (`planGpStackLocals`, gate_spill_all_locals = body_has_call), so the
     // operand load/reload survives the call's caller-saved clobber.
-    if (!direct_gp) try stageCheckedScalarOperands(ctx, operands[0..staged.count], values[0..staged.count]);
+    const stage_n = boundedOperandStageCount(staged, operands);
+    if (!direct_gp) try stageCheckedScalarOperands(ctx, operands[0..stage_n], values[0..stage_n]);
     const has_result = consumption != .discard and descriptor != .void;
     const result = if (has_result) ctx.freshTemp() else null;
     const value = try checkedApplicationResult(ctx, application);
@@ -8683,6 +8954,10 @@ fn lowerSubjectCall(
             return lowerWrite(ctx, mc.args);
         }
         if (subject_home.streamRelation(mc.method)) {
+            {
+                const app_id: ?semantic_graph.id = if (ctx.occurrences.get(expr)) |occ| occ.application else null;
+                noteHostTaint(ctx, .method_string, "stream_method.arity", app_id);
+            }
             const is_stdout = mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdout");
             if (std.mem.eql(u8, mc.method, "write") and mc.args.len == 1 and !is_stdout) {
                 return lowerStreamWrite(ctx, mc.obj, mc.args[0]);
@@ -9742,6 +10017,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
     if (expr.* != .call) return bail(ctx.diagnostic, @src());
     if (ctx.occurrences.get(expr)) |application| {
         if (ctx.require_graph_facts and
+            !paramRecordSliceFieldCall(ctx, expr) and
             (hostEgressCall(expr) or !ctx.graph.isBootstrapApplicationNode(application.application)))
         {
             return lowerCheckedScalarCall(ctx, application, consumption);
@@ -12812,6 +13088,38 @@ test "dnir_lower: ret_record carries every field in DESCRIPTOR order" {
         }
     }
     try std.testing.expect(saw);
+}
+
+
+
+test "dnir_lower: host taint records method world and subject-binding sites" {
+    var diagnostic: Diagnostic = .{};
+    defer diagnostic.deinit(std.testing.allocator);
+    noteHostTaintDiagnostic(
+        &diagnostic,
+        std.testing.allocator,
+        true,
+        .ast_name,
+        "global_init.subject_binding",
+        null,
+    );
+    try std.testing.expectEqual(
+        @as(u32, 1),
+        diagnostic.taint.count(.lower, .ast_name, .host_tainted),
+    );
+}
+
+test "dnir_lower: formatMissingApplicationFact names application missing consumer producer" {
+    var diagnostic: Diagnostic = .{};
+    diagnostic.application = 382;
+    diagnostic.relation = "write";
+    diagnostic.record(@src(), "result-descriptor");
+    var buf: [256]u8 = undefined;
+    const msg = diagnostic.formatMissingApplicationFact(&buf);
+    try std.testing.expectEqualStrings(
+        "application 382 relation: write missing: result-descriptor consumer: dnir.lower producer: graph",
+        msg,
+    );
 }
 
 test "dnir_lower: a nine-field record return is eligible, a nine-field param is not" {

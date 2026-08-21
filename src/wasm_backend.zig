@@ -279,11 +279,27 @@ const op_global_get: u8 = 0x23;
 const op_global_set: u8 = 0x24;
 const op_i32_load: u8 = 0x28;
 const op_i64_load: u8 = 0x29;
-const op_i64_load8_u: u8 = 0x31; // 0x30 is load8_S — the sign is the whole difference
+const op_i32_load8_s: u8 = 0x2c;
+const op_i32_load8_u: u8 = 0x2d;
+const op_i32_load16_s: u8 = 0x2e;
+const op_i32_load16_u: u8 = 0x2f;
+const op_i64_load8_s: u8 = 0x30;
+const op_i64_load8_u: u8 = 0x31;
+const op_i64_load16_s: u8 = 0x32;
+const op_i64_load16_u: u8 = 0x33;
+const op_i64_load32_s: u8 = 0x34;
+const op_i64_load32_u: u8 = 0x35;
 const op_i32_store: u8 = 0x36;
 const op_i64_store: u8 = 0x37;
+const op_f32_load: u8 = 0x2a;
+const op_f64_load: u8 = 0x2b;
+const op_f32_store: u8 = 0x38;
+const op_f64_store: u8 = 0x39;
 const op_i32_store8: u8 = 0x3a;
+const op_i32_store16: u8 = 0x3b;
 const op_i64_store8: u8 = 0x3c;
+const op_i64_store16: u8 = 0x3d;
+const op_i64_store32: u8 = 0x3e;
 const op_i32_const: u8 = 0x41;
 const op_i64_const: u8 = 0x42;
 const op_f64_const: u8 = 0x44;
@@ -321,6 +337,10 @@ const op_i32_mul: u8 = 0x6c;
 const op_i32_and: u8 = 0x71;
 const op_i32_or: u8 = 0x72;
 const op_i32_shl: u8 = 0x74;
+const op_i32_shr_s: u8 = 0x75;
+const op_i32_shr_u: u8 = 0x76;
+const op_i32_rotl: u8 = 0x77;
+const op_i32_rotr: u8 = 0x78;
 const op_i64_clz: u8 = 0x79;
 const op_i64_ctz: u8 = 0x7a;
 const op_i64_popcnt: u8 = 0x7b;
@@ -335,7 +355,10 @@ const op_i64_and: u8 = 0x83;
 const op_i64_or: u8 = 0x84;
 const op_i64_xor: u8 = 0x85;
 const op_i64_shl: u8 = 0x86;
+const op_i64_shr_s: u8 = 0x87;
 const op_i64_shr_u: u8 = 0x88;
+const op_i64_rotl: u8 = 0x89;
+const op_i64_rotr: u8 = 0x8a;
 const op_f64_abs: u8 = 0x99;
 const op_f64_neg: u8 = 0x9a;
 const op_f64_ceil: u8 = 0x9b;
@@ -345,12 +368,54 @@ const op_f64_add: u8 = 0xa0;
 const op_f64_sub: u8 = 0xa1;
 const op_f64_mul: u8 = 0xa2;
 const op_f64_div: u8 = 0xa3;
+const op_f64_min: u8 = 0xa4;
+const op_f64_max: u8 = 0xa5;
+const op_f64_copysign: u8 = 0xa6;
+const op_f32_abs: u8 = 0x8b;
+const op_f32_neg: u8 = 0x8c;
+const op_f32_ceil: u8 = 0x8d;
+const op_f32_floor: u8 = 0x8e;
+const op_f32_trunc: u8 = 0x8f;
+const op_f32_nearest: u8 = 0x90;
+const op_f32_sqrt: u8 = 0x91;
+const op_f32_add: u8 = 0x92;
+const op_f32_sub: u8 = 0x93;
+const op_f32_mul: u8 = 0x94;
+const op_f32_div: u8 = 0x95;
+const op_f32_min: u8 = 0x96;
+const op_f32_max: u8 = 0x97;
+const op_f32_copysign: u8 = 0x98;
+const op_f32_eq: u8 = 0x5b;
+const op_f32_ne: u8 = 0x5c;
+const op_f32_lt: u8 = 0x5d;
+const op_f32_gt: u8 = 0x5e;
+const op_f32_le: u8 = 0x5f;
+const op_f32_ge: u8 = 0x60;
+const op_f32_const: u8 = 0x43;
+const op_i32_trunc_f32_s: u8 = 0xa8;
+const op_i32_trunc_f32_u: u8 = 0xa9;
+const op_i32_trunc_f64_s: u8 = 0xaa;
+const op_i32_trunc_f64_u: u8 = 0xab;
+const op_i64_trunc_f32_s: u8 = 0xae;
+const op_i64_trunc_f32_u: u8 = 0xaf;
+const op_i64_trunc_f64_s: u8 = 0xb0;
+const op_i64_trunc_f64_u: u8 = 0xb1;
+const op_f32_convert_i32_s: u8 = 0xb2;
+const op_f32_convert_i32_u: u8 = 0xb3;
+const op_f32_convert_i64_s: u8 = 0xb4;
+const op_f32_convert_i64_u: u8 = 0xb5;
+const op_f32_demote_f64: u8 = 0xb6;
+const op_f64_convert_i32_s: u8 = 0xb7;
+const op_f64_convert_i32_u: u8 = 0xb8;
+const op_f64_promote_f32: u8 = 0xbb;
+const op_f32_reinterpret_i32: u8 = 0xbc;
+const op_i32_reinterpret_f32: u8 = 0xbc;
+const op_i64_reinterpret_f64: u8 = 0xbd;
+const op_f64_reinterpret_i64: u8 = 0xbf;
 const op_i32_wrap_i64: u8 = 0xa7;
 const op_i64_extend_i32_s: u8 = 0xac;
 const op_i64_extend_i32_u: u8 = 0xad;
 const op_f64_convert_i64_s: u8 = 0xb9;
-const op_i64_reinterpret_f64: u8 = 0xbd;
-const op_f64_reinterpret_i64: u8 = 0xbf;
 const op_i64_extend8_s: u8 = 0xc2;
 const op_i64_extend16_s: u8 = 0xc3;
 const op_i64_extend32_s: u8 = 0xc4;
@@ -361,11 +426,12 @@ const vt_f64: u8 = 0x7c;
 /// `blocktype` for a block that neither takes nor returns a value.
 const bt_void: u8 = 0x40;
 
-const SlotType = enum { i64, f64 };
+const SlotType = enum { i64, f32, f64 };
 
 fn slotValType(t: SlotType) u8 {
     return switch (t) {
         .i64 => vt_i64,
+        .f32 => 0x7d,
         .f64 => vt_f64,
     };
 }
@@ -591,8 +657,16 @@ const Emitter = struct {
 fn markF64(e: *Emitter, slot: ?u32, changed: *bool) Error!void {
     const s = slot orelse return;
     const got = try e.slot_ty.getOrPut(e.alloc, s);
-    if (got.found_existing and got.value_ptr.* == .f64) return;
+    if (got.found_existing) return;
     got.value_ptr.* = .f64;
+    changed.* = true;
+}
+
+fn markF32(e: *Emitter, slot: ?u32, changed: *bool) Error!void {
+    const s = slot orelse return;
+    const got = try e.slot_ty.getOrPut(e.alloc, s);
+    if (got.found_existing) return;
+    got.value_ptr.* = .f32;
     changed.* = true;
 }
 
@@ -600,6 +674,14 @@ fn valueIsF64(e: *const Emitter, v: dnir.Value) bool {
     return switch (v) {
         .f64 => true,
         .local, .temp => |s| (e.slot_ty.get(s) orelse .i64) == .f64,
+        else => false,
+    };
+}
+
+fn valueIsF32(e: *const Emitter, v: dnir.Value) bool {
+    return switch (v) {
+        .f64 => true, // f64 can be demoted to f32
+        .local, .temp => |s| (e.slot_ty.get(s) orelse .i64) == .f32,
         else => false,
     };
 }
@@ -613,29 +695,35 @@ fn slotTypeOf(e: *const Emitter, slot: u32) SlotType {
 fn computeSlotTypes(e: *Emitter, instrs: []const dnir.Instr, params: []const SlotType) Error!void {
     e.slot_ty.clearRetainingCapacity();
     for (params, 0..) |p, i| {
-        if (p == .f64) try e.slot_ty.put(e.alloc, @intCast(i), .f64);
+        if (p != .i64) try e.slot_ty.put(e.alloc, @intCast(i), p);
     }
     var rounds: u32 = 0;
     while (rounds < 128) : (rounds += 1) {
         var changed = false;
         for (instrs) |ins| {
             switch (ins.op) {
-                .@"const" => if (ins.ty == .f64 or ins.lhs == .f64) try markF64(e, ins.result, &changed),
-                .store_local => if (ins.ty == .f64 or valueIsF64(e, ins.lhs)) {
-                    try markF64(e, ins.result, &changed);
+                .@"const" => {
+                    if (ins.ty == .f64 or ins.lhs == .f64) try markF64(e, ins.result, &changed);
+                    if (ins.ty == .f32 or valueIsF32(e, ins.lhs)) try markF32(e, ins.result, &changed);
                 },
-                .binop => {
-                    // A COMPARISON ANSWERS WITH A BOOLEAN whatever its operands
-                    // are — the exact confusion `native_backend` records at
-                    // gap[058], where an f64 comparison was given an FP
-                    // destination and the branch then read unrelated float state.
-                    if (comparisonOf(ins.binop) != null) continue;
-                    if (ins.ty == .f64 or valueIsF64(e, ins.lhs) or valueIsF64(e, ins.rhs)) {
+                .store_local => {
+                    if (ins.ty == .f64 or valueIsF64(e, ins.lhs)) {
                         try markF64(e, ins.result, &changed);
+                    } else if (ins.ty == .f32 or valueIsF32(e, ins.lhs)) {
+                        try markF32(e, ins.result, &changed);
                     }
                 },
-                .call_direct, .call_extern, .load_global => if (ins.ty == .f64) {
-                    try markF64(e, ins.result, &changed);
+                .binop => {
+                    if (comparisonOf(ins.binop, false) != null) continue;
+                    if (ins.ty == .f64 or valueIsF64(e, ins.lhs) or valueIsF64(e, ins.rhs)) {
+                        try markF64(e, ins.result, &changed);
+                    } else if (ins.ty == .f32 or valueIsF32(e, ins.lhs) or valueIsF32(e, ins.rhs)) {
+                        try markF32(e, ins.result, &changed);
+                    }
+                },
+                .call_direct, .call_extern, .load_global => {
+                    if (ins.ty == .f64) try markF64(e, ins.result, &changed);
+                    if (ins.ty == .f32) try markF32(e, ins.result, &changed);
                 },
                 else => {},
             }
@@ -644,7 +732,18 @@ fn computeSlotTypes(e: *Emitter, instrs: []const dnir.Instr, params: []const Slo
     }
 }
 
-fn comparisonOf(tag: dnir.BinOpTag) ?u8 {
+fn comparisonOf(tag: dnir.BinOpTag, want_i32: bool) ?u8 {
+    if (want_i32) {
+        return switch (tag) {
+            .eq => op_i32_eq,
+            .neq => op_i32_ne,
+            .lt => op_i32_lt_s,
+            .gt => op_i32_gt_s,
+            .leq => op_i32_le_s,
+            .geq => op_i32_ge_s,
+            else => null,
+        };
+    }
     return switch (tag) {
         .eq => op_i64_eq,
         .neq => op_i64_ne,
@@ -664,6 +763,18 @@ fn comparisonOfF64(tag: dnir.BinOpTag) ?u8 {
         .gt => op_f64_gt,
         .leq => op_f64_le,
         .geq => op_f64_ge,
+        else => null,
+    };
+}
+
+fn comparisonOfF32(tag: dnir.BinOpTag) ?u8 {
+    return switch (tag) {
+        .eq => op_f32_eq,
+        .neq => op_f32_ne,
+        .lt => op_f32_lt,
+        .gt => op_f32_gt,
+        .leq => op_f32_le,
+        .geq => op_f32_ge,
         else => null,
     };
 }
@@ -1224,8 +1335,6 @@ fn pushValue(e: *Emitter, b: *Buf, v: dnir.Value, want: SlotType) Error!void {
         },
         .f64 => switch (v) {
             .f64 => |x| try b.f64c(x),
-            // An integer immediate in a float position is a LOSSLESS WIDENING —
-            // `scvtf` on AArch64, `f64.convert_i64_s` here.
             .i64 => |n| {
                 try b.i64c(n);
                 try b.op(op_f64_convert_i64_s);
@@ -1234,6 +1343,28 @@ fn pushValue(e: *Emitter, b: *Buf, v: dnir.Value, want: SlotType) Error!void {
                 if (s >= e.slot_count) return e.refuse("slot-out-of-range");
                 try b.get(s);
                 if (slotTypeOf(e, s) == .i64) try b.op(op_f64_convert_i64_s);
+            },
+            .str => return e.refuse("str-in-float-position"),
+            .void => return e.refuse("void-operand"),
+            .record => return e.refuse("record-operand"),
+        },
+        .f32 => switch (v) {
+            .f64 => |x| {
+                try b.f64c(x);
+                try b.op(op_f32_demote_f64);
+            },
+            .i64 => |n| {
+                try b.i64c(n);
+                try b.op(op_f32_convert_i64_s);
+            },
+            .local, .temp => |s| {
+                if (s >= e.slot_count) return e.refuse("slot-out-of-range");
+                try b.get(s);
+                switch (slotTypeOf(e, s)) {
+                    .i64 => try b.op(op_f32_convert_i64_s),
+                    .f64 => try b.op(op_f32_demote_f64),
+                    else => {},
+                }
             },
             .str => return e.refuse("str-in-float-position"),
             .void => return e.refuse("void-operand"),
@@ -1547,20 +1678,22 @@ fn emitIndexAddress(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
 fn emitBinop(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
     const t = ins.result orelse return e.refuse("binop-no-result");
     const f64_operands = ins.ty == .f64 or valueIsF64(e, ins.lhs) or valueIsF64(e, ins.rhs);
+    const f32_operands = ins.ty == .f32 or valueIsF32(e, ins.lhs) or valueIsF32(e, ins.rhs);
 
-    if (comparisonOf(ins.binop)) |int_op| {
-        // A COMPARISON ANSWERS 0 OR 1 and is never refitted, whatever the width
-        // of its operands — `emitCompareOrBinop` says the same.
+    if (comparisonOf(ins.binop, false)) |int_op| {
         if (f64_operands) {
             try pushValue(e, b, ins.lhs, .f64);
             try pushValue(e, b, ins.rhs, .f64);
             try b.op(comparisonOfF64(ins.binop).?);
+        } else if (f32_operands) {
+            try pushValue(e, b, ins.lhs, .f32);
+            try pushValue(e, b, ins.rhs, .f32);
+            try b.op(comparisonOfF32(ins.binop).?);
         } else {
             try pushValue(e, b, ins.lhs, .i64);
             try pushValue(e, b, ins.rhs, .i64);
             try b.op(int_op);
         }
-        try b.op(op_i64_extend_i32_u);
         try b.set(t);
         return;
     }
@@ -1574,6 +1707,20 @@ fn emitBinop(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
             .mul => op_f64_mul,
             .div => op_f64_div,
             else => return e.refuse("f64-binop"),
+        });
+        try b.set(t);
+        return;
+    }
+
+    if (f32_operands) {
+        try pushValue(e, b, ins.lhs, .f32);
+        try pushValue(e, b, ins.rhs, .f32);
+        try b.op(switch (ins.binop) {
+            .add => op_f32_add,
+            .sub => op_f32_sub,
+            .mul => op_f32_mul,
+            .div => op_f32_div,
+            else => return e.refuse("f32-binop"),
         });
         try b.set(t);
         return;
