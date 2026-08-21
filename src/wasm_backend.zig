@@ -1208,7 +1208,7 @@ fn pushValue(e: *Emitter, b: *Buf, v: dnir.Value, want: SlotType) Error!void {
                 // float -> int is NOT symmetric with the widening below and must
                 // not be added: it truncates silently. `evalDnirValueFp` in the
                 // AArch64 backend says the same at gap[101].
-                if (slotTypeOf(e, s) == .f64 or slotTypeOf(e, s) == .f32) return e.refuse("float-slot-in-integer-position");
+                if (slotTypeOf(e, s) == .f64) return e.refuse("float-slot-in-integer-position");
                 try b.get(s);
             },
             .void => return e.refuse("void-operand"),
