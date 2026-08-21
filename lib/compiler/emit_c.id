@@ -76,7 +76,7 @@ end
 
 # A complete C program that PRINTS the expression's value.
 #
-# Printing rather than exiting with it: `std.script.run` reports success or
+# Printing rather than exiting with it: `script.run` reports success or
 # failure, not the child's raw status, so an exit-code differential silently
 # compared 1 against 14. Standard output also removes the 8-bit ceiling, so the
 # comparison is over the whole i64 range instead of a masked slice of it.
@@ -105,7 +105,7 @@ eval: i64 = (expr: str)
     if prog == ""
         return 0 - 1
     end
-    base = "/tmp/duo_emit_c_" .. to(str)(os.time())
+    base = "/tmp/duo_emit_c"
     src = base .. ".c"
     exe = base .. ".out"
     fh = io.open(src, "w")
@@ -118,12 +118,12 @@ eval: i64 = (expr: str)
     # `ld: library 'System' not found` outside the SDK environment, which made
     # the proof report SKIP rather than fail — exactly the silent-degradation
     # mode the proof's own skip branch exists to make visible.
-    cc = std.script.getenv("DUO_EMIT_CC", "xcrun cc")
-    if std.script.run(cc .. " -O0 -o " .. exe .. " " .. src .. " 2>/dev/null") != 0
+    cc = script.getenv("DUO_EMIT_CC", "xcrun cc")
+    if script.run(cc .. " -O0 -o " .. exe .. " " .. src .. " 2>/dev/null") != 0
         os.remove(src)
         return 0 - 1
     end
-    out = std.script.capture(exe)
+    out = script.capture(exe)
     os.remove(src)
     os.remove(exe)
     to(i64)(out)

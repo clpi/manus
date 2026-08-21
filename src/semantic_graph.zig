@@ -3255,6 +3255,33 @@ pub const SemanticGraph = struct {
         }
     }
 
+    const RecordFieldSliceSite = struct {
+        obj: *const ast.Expr,
+        field: []const u8,
+    };
+
+    fn recordFieldSliceCallSite(expr: *const ast.Expr) ?RecordFieldSliceSite {
+        return switch (expr.*) {
+            .call => |c| switch (c.func.*) {
+                .field => |f| if (c.args.len == 1)
+                    .{ .obj = f.obj, .field = f.field }
+                else
+                    null,
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    /// `pack.kinds(i)` on a parameter record is a scaled indexed load in the
+    /// direct backend, not a published application.
+    fn recordParamFieldSliceSite(self: *const SemanticGraph, parent: id, expr: *const ast.Expr) bool {
+        const site = recordFieldSliceCallSite(expr) orelse return false;
+        if (self.isBootstrapApplicationExpr(expr)) return false;
+        if (site.obj.* != .name) return false;
+        return self.resolveInHome(parent, site.obj.name.ident, .param) != null;
+    }
+
     fn liftCallFromExpr(
         self: *SemanticGraph,
         expr: *const Expr,
@@ -3267,6 +3294,7 @@ pub const SemanticGraph = struct {
             if (!self.isBootstrapApplicationExpr(expr) and self.aggregateForExpr(site.obj, parent) != null)
                 return;
         }
+        if (self.recordParamFieldSliceSite(parent, expr)) return;
         const base = types.inferCallShape(expr) orelse return;
         const shape = types.callShapeWithConsumption(base, consumption);
         const call_loc = expr.loc();
