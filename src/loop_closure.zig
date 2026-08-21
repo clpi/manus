@@ -83,6 +83,7 @@ const ast = @import("ast.zig");
 const recurrence = @import("recurrence.zig");
 const demand_projection = @import("demand_projection.zig");
 const comptime_eval = @import("comptime.zig");
+const demand = @import("demand.zig");
 
 /// Names tracked in the entry environment. `recurrence.Bindings` holds 32 and
 /// there is no point tracking more than it can carry.
@@ -109,6 +110,10 @@ pub const Census = struct {
     /// A closed loop DECLINED because the comptime evaluator already answers
     /// the whole relation (L5).
     declined_to_fold: u32 = 0,
+    /// A closed FILE-SCOPE loop refused because replacing it would need a
+    /// number of stores other than one, and any other number moves a `Stmt`
+    /// whose address the graph already holds (W5).
+    refused_would_move: u32 = 0,
 };
 
 // ── L1: the entry environment ────────────────────────────────────────────────
@@ -380,13 +385,76 @@ const Plan = struct {
     write: [recurrence.max_vars]bool,
 };
 
+/// W — the fifth input of `T: (S,F,D,W,H)`, and the ONE thing this pass cannot
+/// infer. Supplied by the caller that knows the emit kind, exactly as
+/// `demand.Options.world_closed` is, and DEFAULTING TO FALSE so a dylib or an
+/// object -- artifacts that exist to be read from outside -- keep their module
+/// scope untouched unless a caller deliberately says otherwise.
+pub const Options = struct {
+    /// W1. For a native EXECUTABLE the image is the whole world: nothing
+    /// outside it can name a module-level binding, which is what makes the
+    /// FILE-SCOPE TAIL analysable. `demand.zig` states the same obligation for
+    /// the same region and the same caller sets both.
+    world_closed: bool = false,
+};
+
 /// Replace every closable top-level `while` in every relation of `mod` with the
 /// values its live-outs provably hold when it ends.
-///
-/// MODULE SCOPE IS NOT TOUCHED. A file-scope loop writes module-scope bindings
-/// whose initializers `dnir_lower.lowerModuleFromGraph` realizes as loader
-/// state; a rewrite there is a different obligation and is not taken here.
 pub fn applyToModule(alloc: std.mem.Allocator, mod: *ast.Module) !Census {
+    return applyToModuleObserved(alloc, mod, .{});
+}
+
+/// The same, plus the FILE-SCOPE TAIL when `W` admits it.
+///
+/// MODULE SCOPE USED TO BE REFUSED OUTRIGHT, and the refusal inverted the
+/// project's own deliverable in the same way `demand.zig`'s header records for
+/// the same region. MEASURED at b64dc075, the identical statements `s = s + i`
+/// over 10^9 trips with the answer PRINTED, best of eleven:
+///
+///     inside a relation body   0.0037s   the loop is a constant
+///     at module top level      0.3657s   the loop is a loop
+///     clang -O3                0.0031s
+///
+/// 98.8x, from moving the same statements into a function. The engine that
+/// closes the first one is this file; it simply never reached the second,
+/// because `applyToModule` descended into `.func_decl` and nothing else.
+///
+/// THREE OBLIGATIONS ARE ADDED, and none of them is new law -- each is the one
+/// `demand.analyzeModuleBody` already discharges for the same rewrite of the
+/// same statement list:
+///
+///   W1 CLOSED WORLD. `opts.world_closed`. Not inferred here.
+///
+///   W2 NO DEFERRED READER. A module binding mentioned -- read OR written -- by
+///      code this walk cannot place (a relation body, an alias method, a macro,
+///      a `defer`, any closure) is POISONED, so no loop carrying it is closed
+///      and no store to it is touched. The fact comes from
+///      `demand.deferredMentionsBlock`, which is its ONE producer; a second
+///      implementation of "which module bindings escape" is exactly the
+///      disagreement that ships a wrong answer. An unenumerable shape makes
+///      that call answer false and refuses the whole module body.
+///
+///   W5 NO POINTER MOVED. See `Scope.in_place`.
+///
+/// W3 (no export) and W4 (enumerable) are discharged structurally: a
+/// `func_decl` is never rewritten by this pass, and W2's collector answers
+/// false on exactly the shapes W4 refuses.
+///
+/// L4 IS WHAT MAKES THE MODULE REWRITE FIT, and that is not a convenience. W5
+/// admits exactly one statement in the `while`'s slot; a counted loop has TWO
+/// live-outs, the accumulator and the induction variable. It is
+/// `demand_projection.projectionOfName` answering `none` for the induction
+/// variable -- nothing after the loop reads `i` -- that takes two stores down
+/// to one and lets the loop be replaced at all. Without the demand fact this
+/// transform does not fit in its own slot.
+///
+/// AND THE DEMAND ANSWER IS EXACT HERE, WHICH IT IS NOT INSIDE A RELATION. A
+/// module name a relation could read escapes the block walk, so inside a
+/// relation `module_names.has` keeps the store unasked. At module scope every
+/// such name is already POISONED by W2, so a loop that reaches L4 carries only
+/// names whose complete reader set is the rest of the module body -- which is
+/// precisely what `demandAfter` walks.
+pub fn applyToModuleObserved(alloc: std.mem.Allocator, mod: *ast.Module, opts: Options) !Census {
     var census = Census{};
     var module_names: Poison = .{};
     for (mod.body.stmts) |*st| switch (st.*) {
@@ -402,7 +470,74 @@ pub fn applyToModule(alloc: std.mem.Allocator, mod: *ast.Module) !Census {
         if (st.* != .func_decl) continue;
         try applyToFuncBody(alloc, &st.func_decl.func, &module_names, &census);
     }
+    if (opts.world_closed) try applyToModuleBody(alloc, mod, &module_names, &census);
     return census;
+}
+
+/// The file-scope tail, under W1/W2/W5. See `applyToModuleObserved`.
+fn applyToModuleBody(
+    alloc: std.mem.Allocator,
+    mod: *ast.Module,
+    module_names: *const Poison,
+    census: *Census,
+) !void {
+    census.bodies_examined += 1;
+
+    // W2, from its one producer. `false` means a shape whose mentions cannot be
+    // enumerated -- a `@build` directive, a `goto` -- and refuses the body.
+    var escapes = demand.Live.init(alloc);
+    defer escapes.deinit();
+    if (!try demand.deferredMentionsBlock(&escapes, &mod.body)) return;
+
+    var poison: Poison = .{};
+    modulePoison(&mod.body, &escapes, &poison);
+    if (poison.overflowed) return;
+
+    try closeLoopsIn(alloc, &mod.body, &poison, module_names, .{
+        // L5 does not apply: `comptime.foldRelationBody` answers about a
+        // RELATION body and nothing in this tree dispatches it on the module
+        // body. MEASURED at b64dc075 -- a three-trip file-scope loop emits the
+        // loop, where the same loop inside `main: i64 = ()` emits `mov x0, #6`.
+        // Declining here would defer to a mechanism that is not there.
+        .fold_candidate = false,
+        .in_place = true,
+        .module_scope = true,
+    }, census);
+}
+
+/// L2 at module scope, plus W2.
+///
+/// `collectPoison` refuses any body containing a `func_decl` outright, because
+/// inside a RELATION a nested one can capture and rebind and nothing here
+/// models capture. At MODULE scope that refusal would reject every program with
+/// a helper, and it is also unnecessary: `demand.deferredMentionsBlock` has
+/// already collected every module binding such code mentions, so the names that
+/// would have been unsound are poisoned by name instead of by region.
+fn modulePoison(b: *const ast.Block, escapes: *const demand.Live, out: *Poison) void {
+    for (b.stmts) |*st| modulePoisonStmt(st, out);
+    var it = escapes.set.keyIterator();
+    while (it.next()) |k| out.add(k.*);
+}
+
+fn modulePoisonStmt(st: *const ast.Stmt, out: *Poison) void {
+    switch (st.*) {
+        // Its mentions are already in the escape set; its own locals are its
+        // own scope and cannot be a module-scope loop's carried name.
+        .func_decl, .alias_def, .macro_def => {},
+        .while_loop => |w| modulePoison2(&w.body, out),
+        .repeat_loop => |r| modulePoison2(&r.body, out),
+        .do_block => |d| modulePoison2(&d.body, out),
+        .if_stmt => |x| {
+            modulePoison2(&x.then, out);
+            for (x.elseifs) |ei| modulePoison2(&ei.body, out);
+            if (x.else_body) |*eb| modulePoison2(eb, out);
+        },
+        else => poisonStmt(st, out),
+    }
+}
+
+fn modulePoison2(b: *const ast.Block, out: *Poison) void {
+    for (b.stmts) |*st| modulePoisonStmt(st, out);
 }
 
 fn applyToFuncBody(
@@ -417,11 +552,67 @@ fn applyToFuncBody(
     collectPoison(fb, &poison);
     if (poison.overflowed) return;
 
+    try closeLoopsIn(alloc, &fb.body, &poison, module_names, .{
+        // L5's seam is `comptime.foldRelationBody`, which answers about a
+        // RELATION. Only a zero-operand relation can reach its `bodyHasLoop`
+        // dispatch, so only one can be pre-empted by it.
+        .fold_candidate = fb.params.len == 0 and !fb.vararg and fb.vararg_name == null,
+        .in_place = false,
+        .module_scope = false,
+    }, census);
+}
+
+/// What the enclosing region is, for the two obligations that are about the
+/// REGION rather than about the loop. Neither is inferred here: a caller that
+/// knows which region it holds supplies both, exactly as `demand.Options`
+/// carries `world_closed` from the one site that knows the emit kind.
+const Scope = struct {
+    /// L5. True only for a body `comptime.foldRelationBody` could answer whole,
+    /// which is a zero-operand RELATION and never a module body -- no folder in
+    /// this tree dispatches on the module body, so deferring to one there would
+    /// defer to a mechanism that does not exist.
+    fold_candidate: bool,
+    /// W5, AND THE FIRST FORM OF THIS PATCH GOT IT WRONG IN A WAY THAT BUILT.
+    ///
+    /// `semantic_graph` holds the ADDRESS of the `FuncDecl`/`AliasDef`/`EnumDef`
+    /// stored BY VALUE inside three module-scope `Stmt`s, from a lift that
+    /// already happened. The relation path REBUILDS the statement list into a
+    /// fresh allocation, which moves EVERY statement -- not merely those after
+    /// the hole -- so an index floor does not discharge this. MEASURED: with a
+    /// floor and a rebuild, a module whose helper is declared BEFORE a closable
+    /// file-scope loop refused with `DNB011 missing-function-id` at
+    /// `dnir_lower.zig:1230`, which is that dangling `*FuncDecl` arriving.
+    ///
+    /// So the module path does not rebuild. It OVERWRITES the `while` slot with
+    /// the one store demand leaves, one statement for one statement, and a plan
+    /// that would need any other number of stores is refused. Nothing moves, so
+    /// W5 is discharged by the shape of the write rather than by a check.
+    in_place: bool,
+    /// L4's completeness condition. Inside a RELATION a module-scope name is
+    /// readable outside the body, so the body's continuation does not bound it
+    /// and the store is kept. AT MODULE SCOPE the continuation is the rest of
+    /// the module body, and everything else that could read the name is
+    /// deferred code -- whose mentions are ALREADY POISONED by W2, so a loop
+    /// that got this far carries no name any deferred reader can see. The two
+    /// together are the whole program, so `demandAfter` is exact here.
+    module_scope: bool,
+};
+
+fn closeLoopsIn(
+    alloc: std.mem.Allocator,
+    body: *ast.Block,
+    poison: *const Poison,
+    module_names: *const Poison,
+    scope: Scope,
+    census: *Census,
+) !void {
+    const fb_body = body;
+
     var env = Env{};
     var plans: [max_plan]Plan = undefined;
     var nplans: usize = 0;
 
-    for (fb.body.stmts, 0..) |*st, idx| {
+    for (fb_body.stmts, 0..) |*st, idx| {
         switch (st.*) {
             .local_decl => |d| {
                 if (d.names.len != d.inits.len) {
@@ -482,9 +673,11 @@ fn applyToFuncBody(
                 var plan = Plan{ .at = idx, .closed = closed, .write = @splat(true) };
                 for (0..closed.len) |i| {
                     // A module-scope name is readable outside this relation, so
-                    // the continuation of the BODY does not bound it.
-                    if (module_names.has(closed.names[i])) continue;
-                    const d = demandAfter(&fb.body, idx, closed.names[i]);
+                    // the continuation of the BODY does not bound it. AT module
+                    // scope that continuation IS the bound -- see
+                    // `Scope.module_scope`.
+                    if (!scope.module_scope and module_names.has(closed.names[i])) continue;
+                    const d = demandAfter(fb_body, idx, closed.names[i]);
                     if (d == .none) plan.write[i] = false;
                 }
 
@@ -543,12 +736,23 @@ fn applyToFuncBody(
                 // this pass exists for — goes to the graph/effect-closure path
                 // instead, where no `bodyHasLoop` gate exists and deleting the
                 // loop downgrades nothing.
-                if (fb.params.len == 0 and !fb.vararg and fb.vararg_name == null and
-                    comptime_eval.bodyHasNoApplication(&fb.body) and
+                if (scope.fold_candidate and
+                    comptime_eval.bodyHasNoApplication(fb_body) and
                     closed.trips < comptime_eval.fold_step_limit)
                 {
                     census.declined_to_fold += 1;
                     continue;
+                }
+                // W5. One statement for one statement, or nothing.
+                if (scope.in_place) {
+                    var stores: usize = 0;
+                    for (0..closed.len) |i| {
+                        if (plan.write[i]) stores += 1;
+                    }
+                    if (stores != 1) {
+                        census.refused_would_move += 1;
+                        continue;
+                    }
                 }
                 if (nplans == max_plan) continue;
                 plans[nplans] = plan;
@@ -560,6 +764,21 @@ fn applyToFuncBody(
     }
 
     if (nplans == 0) return;
+
+    if (scope.in_place) {
+        // W5. Exactly one store per plan, written over the `while` it replaces.
+        for (plans[0..nplans]) |p| {
+            const loc = fb_body.stmts[p.at].while_loop.loc;
+            for (0..p.closed.len) |j| {
+                if (!p.write[j]) continue;
+                fb_body.stmts[p.at] = try constantAssign(alloc, loc, p.closed.names[j], p.closed.values[j]);
+                census.writes_emitted += 1;
+                break;
+            }
+            census.writes_deleted_by_demand += @intCast(p.closed.len - 1);
+        }
+        return;
+    }
 
     // THE OUTPUT LENGTH IS COMPUTED, NEVER ADJUSTED. An earlier form of this
     // accumulated `+writes` then `-1` per plan, which UNDERFLOWS a usize the
@@ -577,10 +796,10 @@ fn applyToFuncBody(
         census.writes_deleted_by_demand += @intCast(p.closed.len - w);
     }
 
-    const out = try alloc.alloc(ast.Stmt, fb.body.stmts.len - nplans + writes_total);
+    const out = try alloc.alloc(ast.Stmt, fb_body.stmts.len - nplans + writes_total);
     var k: usize = 0;
     var next_plan: usize = 0;
-    for (fb.body.stmts, 0..) |src, i| {
+    for (fb_body.stmts, 0..) |src, i| {
         if (next_plan < nplans and plans[next_plan].at == i) {
             const p = plans[next_plan];
             next_plan += 1;
@@ -595,7 +814,7 @@ fn applyToFuncBody(
         out[k] = src;
         k += 1;
     }
-    fb.body.stmts = out[0..k];
+    fb_body.stmts = out[0..k];
 }
 
 /// `<name> = <int literal>` — ORDINARY AST, the same discipline
@@ -1028,4 +1247,177 @@ test "loop_closure: L5 does NOT decline when the body applies something" {
     while (i <= 1000) : (i += 1) s = s +% i;
     const body = &mod.body.stmts[0].func_decl.func.body;
     try testing.expectEqual(@as(i64, @bitCast(s)), body.stmts[2].assign.values[0].int_lit.val);
+}
+
+// ── MODULE SCOPE (W1/W2/W5) ─────────────────────────────────────────────────
+//
+// Same discipline: every value assertion is DIFFERENTIAL against a brute-force
+// Zig loop in the same ring, and every admission has a REFUSAL twin, because a
+// transform with no refusal twin is one that has not been shown to fail closed.
+
+test "loop_closure: a file-scope loop is closed only when W admits it" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\s: i64 = 0
+        \\i: i64 = 1
+        \\while i <= 1000000
+        \\    s = s + i
+        \\    i = i + 1
+        \\print(s)
+        \\
+    ;
+
+    // W1 FALSE -- the default, and what a dylib or an object gets. The loop is
+    // left exactly where it was.
+    {
+        var mod = try parseModule(alloc, src);
+        const census = try applyToModule(alloc, &mod);
+        try testing.expectEqual(@as(u32, 0), census.loops_closed);
+        try testing.expect(mod.body.stmts[2] == .while_loop);
+    }
+
+    // W1 TRUE -- the executable. One store replaces the loop, and its value is
+    // what a real loop in the same ring produces.
+    {
+        var mod = try parseModule(alloc, src);
+        const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = true });
+        try testing.expectEqual(@as(u32, 1), census.loops_closed);
+        // L4 deleted the induction variable's store: two live-outs, one write.
+        try testing.expectEqual(@as(u32, 1), census.writes_emitted);
+        try testing.expectEqual(@as(u32, 1), census.writes_deleted_by_demand);
+
+        var s: u64 = 0;
+        var i: u64 = 1;
+        while (i <= 1000000) : (i += 1) s = s +% i;
+
+        // W5: ONE statement in the slot the `while` occupied, and the list is
+        // the same length -- nothing moved. `print(s)` is the block's TAIL, so
+        // the statement list is `s`, `i`, and the slot the loop held.
+        try testing.expectEqual(@as(usize, 3), mod.body.stmts.len);
+        const written = mod.body.stmts[2].assign;
+        try testing.expectEqualStrings("s", written.targets[0].name.ident);
+        try testing.expectEqual(@as(i64, @bitCast(s)), written.values[0].int_lit.val);
+    }
+}
+
+// THE FALSE WIN THIS GUARD EXISTS FOR, and it is not hypothetical: without W2
+// the store this pass writes is a top-level integer literal, which
+// `dnir_lower.collectModuleConsts` collects and every relation reading the name
+// then folds to -- REGARDLESS OF WHERE THE CALL SITE SITS. So `print(peek())`
+// BEFORE the loop would start answering with the loop's FINAL value. Lua says
+// 1; the unguarded transform would say 11.
+test "loop_closure: W2 refuses a file-scope loop whose carried name a relation reads" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\s: i64 = 0
+        \\i: i64 = 1
+        \\peek: i64 = ()
+        \\    s + 1
+        \\print(peek())
+        \\while i <= 4
+        \\    s = s + i
+        \\    i = i + 1
+        \\print(s)
+        \\
+    ;
+    var mod = try parseModule(alloc, src);
+    const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = true });
+    try testing.expectEqual(@as(u32, 0), census.loops_closed);
+    try testing.expect(mod.body.stmts[4] == .while_loop);
+}
+
+// W5's REFUSAL TWIN. A relation declared AFTER the loop makes `demandAfter`
+// answer `whole` for every carried name -- `func_decl` is not enumerated, so it
+// fails closed -- which needs TWO stores where the slot holds one.
+test "loop_closure: W5 refuses a file-scope loop that would need two stores" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\s: i64 = 0
+        \\i: i64 = 1
+        \\while i <= 1000
+        \\    s = s + i
+        \\    i = i + 1
+        \\later: i64 = (x: i64)
+        \\    x + 1
+        \\print(s)
+        \\
+    ;
+    var mod = try parseModule(alloc, src);
+    const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = true });
+    try testing.expectEqual(@as(u32, 0), census.loops_closed);
+    try testing.expectEqual(@as(u32, 1), census.refused_would_move);
+    try testing.expect(mod.body.stmts[2] == .while_loop);
+}
+
+// A relation declared BEFORE the loop is NOT an obstacle, and this is the case
+// the first form of the patch broke: it rebuilt the statement list, which moved
+// the `FuncDecl` the graph already addressed, and the program refused with
+// `DNB011 missing-function-id`. The in-place write leaves it where it is.
+test "loop_closure: a relation declared before the loop does not block it" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\help: i64 = (x: i64)
+        \\    x * 3
+        \\s: i64 = 0
+        \\i: i64 = 1
+        \\while i <= 1000
+        \\    s = s + i
+        \\    i = i + 1
+        \\print(s)
+        \\print(help(4))
+        \\
+    ;
+    var mod = try parseModule(alloc, src);
+    const before = mod.body.stmts.len;
+    const decl = &mod.body.stmts[0].func_decl;
+    const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = true });
+    try testing.expectEqual(@as(u32, 1), census.loops_closed);
+    try testing.expectEqual(before, mod.body.stmts.len);
+    // The address the graph holds is still the address of the same declaration.
+    try testing.expectEqual(decl, &mod.body.stmts[0].func_decl);
+
+    var s: u64 = 0;
+    var i: u64 = 1;
+    while (i <= 1000) : (i += 1) s = s +% i;
+    try testing.expectEqual(@as(i64, @bitCast(s)), mod.body.stmts[3].assign.values[0].int_lit.val);
+}
+
+// L2 AT FILE SCOPE. `u8` stores truncate, so the closed form would answer a
+// different machine.
+test "loop_closure: a narrow file-scope declaration refuses" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\s: u8 = 0
+        \\i: i64 = 1
+        \\while i <= 1000
+        \\    s = s + i
+        \\    i = i + 1
+        \\print(s)
+        \\
+    ;
+    var mod = try parseModule(alloc, src);
+    const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = true });
+    try testing.expectEqual(@as(u32, 0), census.loops_closed);
+    // NOT `refused_narrow`, and the difference is worth recording: L2 poisons
+    // the name, which makes the statement walk KILL it out of the entry
+    // environment, so `closeWhile` refuses on an unbound entry value before L2's
+    // own counter is ever reached. The refusal is L1's, by omission -- which is
+    // what this file's header says L1 is for.
+    try testing.expectEqual(@as(u32, 0), census.refused_narrow);
+    try testing.expect(mod.body.stmts[2] == .while_loop);
 }

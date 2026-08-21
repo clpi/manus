@@ -331,15 +331,15 @@ pub const Options = struct {
 /// is sound in the direction that matters: shadowing can only make a name look
 /// live when it is not, which keeps work that could have been deleted. It can
 /// never make a live name look dead.
-const Live = struct {
+pub const Live = struct {
     set: std.StringHashMapUnmanaged(void) = .empty,
     alloc: std.mem.Allocator,
 
-    fn init(alloc: std.mem.Allocator) Live {
+    pub fn init(alloc: std.mem.Allocator) Live {
         return .{ .alloc = alloc };
     }
 
-    fn deinit(self: *Live) void {
+    pub fn deinit(self: *Live) void {
         self.set.deinit(self.alloc);
     }
 
@@ -355,7 +355,7 @@ const Live = struct {
         _ = self.set.remove(name);
     }
 
-    fn has(self: *const Live, name: []const u8) bool {
+    pub fn has(self: *const Live, name: []const u8) bool {
         return self.set.contains(name);
     }
 
@@ -705,7 +705,11 @@ fn patternReads(live: *Live, p: *const ast.Pattern) std.mem.Allocator.Error!void
 /// Returns false the moment it meets a shape whose names it cannot enumerate.
 /// The caller must then refuse the whole module body — an un-enumerated mention
 /// is precisely the reader this pass would fail to see.
-fn deferredMentionsBlock(out: *Live, b: *const ast.Block) std.mem.Allocator.Error!bool {
+/// W2's PRODUCER, and the only one. `src/loop_closure.zig` asks the same
+/// question about the same module body and must get the same answer -- two
+/// implementations of "which module bindings does code this walk cannot order
+/// mention" is exactly the disagreement `demand.zig`'s header names.
+pub fn deferredMentionsBlock(out: *Live, b: *const ast.Block) std.mem.Allocator.Error!bool {
     for (b.stmts) |*s| if (!try deferredMentionsStmt(out, s)) return false;
     if (b.tail_expr) |t| if (!try deferredMentionsExpr(out, t)) return false;
     return true;

@@ -5060,7 +5060,16 @@ fn do_compile(
                     // dylib and asm/obj lifts below, where `obseq` is not: those
                     // exist to be read from outside and a full-width closed form
                     // is lawful for a foreign reader too.
-                    _ = try loop_closure.applyToModule(alloc, &ps.mod);
+                    //
+                    // W REACHES THE LOOP TOO, and this is the site that owns
+                    // it. `demand.prune` above already deletes a file-scope
+                    // dead loop under the same `world_closed` fact; this line
+                    // CLOSES the file-scope loop whose answer is observed.
+                    // Before it, the identical statements measured 0.3657s at
+                    // module scope against 0.0037s inside `main` -- 98.8x for
+                    // the function wrapper, which is HPLS backwards for exactly
+                    // the reason `demand.zig`'s W section states.
+                    _ = try loop_closure.applyToModuleObserved(alloc, &ps.mod, .{ .world_closed = true });
                     var native_diagnostic: native_backend.Diagnostic = .{};
                     if (!(native_scalar_candidate and !too_many_modules)) {
                         // THESE TWO FACTS ARE INDEPENDENT AND USED TO BE SPLICED
