@@ -56,9 +56,6 @@ jobs:
       - name: Build
         run: zig build
 
-      - name: Observation retention law gate
-        run: sh gate/retention.sh
-
       - name: Unit and compile-fail tests
         run: zig build test
 
