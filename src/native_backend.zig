@@ -125,6 +125,10 @@ pub const Diagnostic = struct {
         self.record(@src(), detail);
     }
 
+    pub fn writeTaintLedger(self: *const Diagnostic, io: std.Io, file: std.Io.File) void {
+        self.lowering.writeTaintLedger(io, file);
+    }
+
     pub fn note(self: *const Diagnostic) ?[]const u8 {
         if (self.note_len == 0) return null;
         return self.note_buffer[0..self.note_len];
@@ -1571,7 +1575,12 @@ const Arm64Compiler = struct {
             const plan = self.probeFunctionPlan(f);
             self.callee_save_plan = plan.callee_save;
             self.gp_call_home_budget = plan.home_budget;
-            try self.compileDnirFunction(f);
+            self.compileDnirFunction(f) catch |err| {
+                if (err == error.RegisterExhausted and f.name.len > 0) {
+                    std.debug.print("DNB003 at function: {s}\n", .{f.name});
+                }
+                return err;
+            };
             // The plan was measured, not guessed, so a body that reached outside
             // it means the measurement and the emission disagreed — and the
             // artifact just written would hand the CALLER back a register it
