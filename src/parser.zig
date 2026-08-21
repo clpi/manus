@@ -6332,6 +6332,21 @@ pub const Parser = struct {
     /// e.loc().line` check does the work that matters, keeping a NEW-LINE `@hot`
     /// attribute out (that one is glued on the right too — `@` in column 1,
     /// `hot` in column 2 — so right-adjacency alone would swallow it).
+    /// Is this glued `@` opening a WORLD FACE — `thing@{ … }` interjection or
+    /// `thing@( … )` qualification by expression — rather than the `X@rel`
+    /// anchor? Same gluing rule as the anchor: the opener must sit in the
+    /// column immediately after the sigil, on the same line, so a spaced
+    /// `a @ b` stays matmul and no existing program changes meaning.
+    fn at_is_glued_world_face(self: *Parser, at_tok: Token) ParseError!bool {
+        const saved = self.lex.saveState();
+        defer self.lex.restoreState(saved);
+        _ = try self.adv();
+        const opener = try self.pk();
+        if (opener.kind != .lbrace and opener.kind != .lparen) return false;
+        if (opener.loc.line != at_tok.loc.line) return false;
+        return opener.loc.col == at_tok.loc.col + @as(u32, @intCast(at_tok.text.len));
+    }
+
     fn at_is_glued_anchor(self: *Parser, at_tok: Token) ParseError!bool {
         const saved = self.lex.saveState();
         defer self.lex.restoreState(saved);
@@ -7548,6 +7563,23 @@ pub const Parser = struct {
                     // reachable half of MOVE is retrieval against the anchored
                     // home, and that is what this is.
                     if (tok.loc.line > e.loc().line) break;
+                    // INTERJECTION IS ADMITTED LAW, NOT A MATMUL TYPO.
+                    // `thing@{ k = v }` is the interject face of the world
+                    // algebra (docs/spec/world.md:33, and :64 gives its exact
+                    // reduction `thing@(@{ k = v })`), admitted under
+                    // law.injection.only by the GAP-110 reconciliation of
+                    // 2026-08-13. The anchor below only admits a NAME glued to
+                    // the sigil, so a glued `{` or `(` fell through to matmul
+                    // and died in sema as "matmul over non-tensor operands" —
+                    // whose repair hint is "close the space", advice the
+                    // spec's own example has already taken. Refuse here, where
+                    // the shape is known, and name the missing fact instead of
+                    // blaming the operand types.
+                    if (try self.at_is_glued_world_face(tok)) {
+                        term.locErr(tok.loc, "interjection 'thing@{{ … }}' has no derived-world fact yet", .{});
+                        term.locHint(tok.loc, "docs/spec/world.md admits this face and law.injection.only rules that '@{{ … }}' derives a world, but the graph carries no derived world: WorldFact records home/reach/members with no parent and no fact deltas, so nothing can represent the injection. Qualify against a named world ('thing@world') until the derived-world fact exists", .{});
+                        return ParseError.ExpectedToken;
+                    }
                     if (!try self.at_is_glued_anchor(tok)) break;
                     _ = try self.adv();
                     const rel = try self.expect_name_like();
