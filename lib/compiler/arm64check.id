@@ -33,7 +33,7 @@
 # a global, but is only ever read from `checked` — a different function, which
 # is the shape that measured correct.
 
-global A = std.compiler.arm64
+global A = compiler.arm64
 
 global _asmpath = "/tmp/duo_arm64_check.s"
 global _objpath = "/tmp/duo_arm64_check.o"

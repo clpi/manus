@@ -114,6 +114,29 @@ pub fn receiverLooksStrish(obj: *const Expr) bool {
 /// The roster comes from the world's own declaration, so an edge added there is
 /// recognized here with no edit — the mechanism `subject_home` exists to avoid
 /// duplicating.
+fn streamMethodArityOk(method: []const u8, args_len: usize) bool {
+    if (std.mem.eql(u8, method, "write") or std.mem.eql(u8, method, "put")) return args_len == 1;
+    if (std.mem.eql(u8, method, "close") or std.mem.eql(u8, method, "flush") or
+        std.mem.eql(u8, method, "read") or std.mem.eql(u8, method, "line") or
+        std.mem.eql(u8, method, "lines") or std.mem.eql(u8, method, "all"))
+        return args_len == 0;
+    if (std.mem.eql(u8, method, "bytes")) return args_len == 1;
+    if (std.mem.eql(u8, method, "seek") or std.mem.eql(u8, method, "setvbuf")) return args_len >= 1;
+    return false;
+}
+
+fn streamInstanceApplication(mc: anytype) bool {
+    if (!subject_home.streamRelation(mc.method)) return false;
+    if (!streamMethodArityOk(mc.method, mc.args.len)) return false;
+    if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdout") and
+        std.mem.eql(u8, mc.method, "write"))
+        return true;
+    if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
+        (std.mem.eql(u8, mc.method, "read") or std.mem.eql(u8, mc.method, "line")))
+        return true;
+    return true;
+}
+
 fn testWorldApplication(mc: anytype) bool {
     if (mc.obj.* != .name) return false;
     if (!std.mem.eql(u8, mc.obj.name.ident, "test")) return false;
@@ -123,6 +146,7 @@ fn testWorldApplication(mc: anytype) bool {
 fn methodApplication(expr: *const Expr) bool {
     const mc = expr.method_call;
     if (testWorldApplication(mc)) return true;
+    if (streamInstanceApplication(mc)) return true;
     // COLLECTION-RELATION-ONE. Asked through `collection_relation.shapeOf` and
     // not by re-testing the spelling here, so this reader and the three others
     // cannot drift about which shapes are collection applications.
@@ -302,6 +326,8 @@ fn callApplication(expr: *const Expr) bool {
     switch (c.func.*) {
         .name => |n| {
             if (std.mem.eql(u8, n.ident, "gatecap") and c.args.len == 1) return true;
+            if (std.mem.eql(u8, n.ident, "write") and c.args.len == 2) return true;
+            if (std.mem.eql(u8, n.ident, "close") and c.args.len == 1) return true;
             return false;
         },
         // `to(str)(n)` — A CALL WHOSE CALLEE IS A CALL, which is the whole
@@ -353,7 +379,11 @@ fn callApplication(expr: *const Expr) bool {
             if (std.mem.eql(u8, home, "os")) {
                 if (std.mem.eql(u8, f.field, "exit") and c.args.len == 1) return true;
                 if (std.mem.eql(u8, f.field, "execute") and c.args.len == 1) return true;
+                if (std.mem.eql(u8, f.field, "remove") and c.args.len == 1) return true;
                 if (std.mem.eql(u8, f.field, "env") and c.args.len == 1) return true;
+            }
+            if (std.mem.eql(u8, home, "io")) {
+                if (std.mem.eql(u8, f.field, "open") and c.args.len == 2) return true;
             }
             if (std.mem.eql(u8, home, "string")) {
                 if (std.mem.eql(u8, f.field, "byte") and c.args.len >= 1 and c.args.len <= 2) return true;

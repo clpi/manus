@@ -137,6 +137,8 @@ extern "c" fn getcwd(buf: [*]u8, size: usize) ?[*:0]u8;
 extern "c" fn system(cmd: [*:0]const u8) c_int;
 extern "c" fn popen(cmd: [*:0]const u8, mode: [*:0]const u8) ?*anyopaque;
 extern "c" fn pclose(f: *anyopaque) c_int;
+extern "c" fn fputs(s: [*:0]const u8, stream: *anyopaque) c_int;
+extern "c" fn unlink(path: [*:0]const u8) c_int;
 extern "c" fn _NSGetArgc() *c_int;
 extern "c" fn _NSGetArgv() *[*][*:0]u8;
 extern "c" fn __error() *c_int;
@@ -320,6 +322,32 @@ export fn idol_os_cwd() callconv(.c) ?[*:0]u8 {
         cap *= 2;
         if (cap > (@as(usize, 1) << 20)) return null;
     }
+}
+
+
+export fn idol_io_open(path: ?[*:0]const u8, mode: ?[*:0]const u8) callconv(.c) i64 {
+    const p = path orelse return 0;
+    const m = mode orelse return 0;
+    const f = fopen(p, m) orelse return 0;
+    return @intCast(@intFromPtr(f));
+}
+
+export fn idol_io_write_handle(handle: i64, text: ?[*:0]const u8) callconv(.c) i64 {
+    if (handle == 0) return 1;
+    const f: *anyopaque = @ptrFromInt(@as(usize, @intCast(handle)));
+    const s = text orelse return 1;
+    return if (fputs(s, f) == -1) 1 else 0;
+}
+
+export fn idol_io_close_handle(handle: i64) callconv(.c) i64 {
+    if (handle == 0) return 1;
+    const f: *anyopaque = @ptrFromInt(@as(usize, @intCast(handle)));
+    return if (fclose(f) != 0) 1 else 0;
+}
+
+export fn idol_os_remove(path: ?[*:0]const u8) callconv(.c) i64 {
+    const p = path orelse return 0;
+    return if (unlink(p) == 0) 1 else 0;
 }
 
 export fn idol_os_execute(cmd: ?[*:0]const u8) callconv(.c) i64 {

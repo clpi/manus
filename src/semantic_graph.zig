@@ -2024,6 +2024,15 @@ pub const SemanticGraph = struct {
         return null;
     }
 
+    /// Home-local shape lookup with a published cross-home fallback. Application
+    /// result-shape edges must not be lost when the callee's return type lives in
+    /// another module home (e.g. `peek2: token` calling into `compiler.token`).
+    fn resolveTableShape(self: *const SemanticGraph, scope: id, name: []const u8) ?id {
+        if (self.resolveInHome(scope, name, .table_shape)) |found| return found;
+        return self.findUniqueByNameOfKind(name, .table_shape);
+    }
+
+
     fn publishDescriptorRefEdge(self: *SemanticGraph, from: id, to: id, inline_ref: bool) !void {
         try self.addEdge(.{ .from = from, .to = to, .kind = .descriptor_ref, .inline_ref = inline_ref });
         try self.descriptor_refs.push(self.alloc, from, to, inline_ref);
@@ -2151,9 +2160,9 @@ pub const SemanticGraph = struct {
     ) !void {
         const shape = blk: {
             switch (descriptor) {
-                .@"struct" => |s| break :blk self.resolveInHome(scope, s.name, .table_shape),
+                .@"struct" => |s| break :blk self.resolveTableShape(scope, s.name),
                 .table_type => {
-                    if (type_name) |name| break :blk self.resolveInHome(scope, name, .table_shape);
+                    if (type_name) |name| break :blk self.resolveTableShape(scope, name);
                     break :blk null;
                 },
                 else => break :blk null,

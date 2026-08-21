@@ -1347,6 +1347,38 @@ pub const CodeGen = struct {
     }
 
     /// Host egress: `stdout:write(text)` — never `io:write`. Dual of `stdin:read`.
+    fn streamMethodArityOk(method: []const u8, args_len: usize) bool {
+        if (std.mem.eql(u8, method, "write") or std.mem.eql(u8, method, "put")) return args_len == 1;
+        if (std.mem.eql(u8, method, "close") or std.mem.eql(u8, method, "flush") or
+            std.mem.eql(u8, method, "read") or std.mem.eql(u8, method, "line") or
+            std.mem.eql(u8, method, "lines") or std.mem.eql(u8, method, "all"))
+            return args_len == 0;
+        if (std.mem.eql(u8, method, "bytes")) return args_len == 1;
+        if (std.mem.eql(u8, method, "seek") or std.mem.eql(u8, method, "setvbuf")) return args_len >= 1;
+        return false;
+    }
+
+    /// Stream-instance relations (`fh:write`, `fh:close`, …) on handles and
+    /// other unnarrowed subjects. Standing `stdout`/`stdin` keep their own
+    /// recognizers; this covers the corpus's `io.open` handle path.
+    fn stream_method_result_type(_: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        if (!subject_home.streamRelation(method)) return null;
+        if (!streamMethodArityOk(method, args.len)) return null;
+        if (obj.* == .name) {
+            const id = obj.name.ident;
+            if (std.mem.eql(u8, id, "stdout") or std.mem.eql(u8, id, "stderr")) {
+                if (std.mem.eql(u8, method, "write")) return .void;
+            }
+            if (std.mem.eql(u8, id, "stdin") and
+                (std.mem.eql(u8, method, "read") or std.mem.eql(u8, method, "line")))
+                return .any;
+        }
+        if (std.mem.eql(u8, method, "write") or std.mem.eql(u8, method, "close") or
+            std.mem.eql(u8, method, "flush") or std.mem.eql(u8, method, "put"))
+            return .void;
+        return .any;
+    }
+
     fn egress_method_result_type(_: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
         if (obj.* != .name) return null;
         if (!std.mem.eql(u8, method, "write") or args.len != 1) return null;
@@ -5545,6 +5577,22 @@ pub const CodeGen = struct {
                     {
                         break :blk self.expr_is_native_scalar(call.args[0]);
                     }
+                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "os") and
+                        std.mem.eql(u8, f.field, "execute") and call.args.len == 1)
+                    {
+                        break :blk self.expr_is_native_scalar(call.args[0]);
+                    }
+                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "os") and
+                        std.mem.eql(u8, f.field, "remove") and call.args.len == 1)
+                    {
+                        break :blk self.expr_is_native_scalar(call.args[0]);
+                    }
+                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "io") and
+                        std.mem.eql(u8, f.field, "open") and call.args.len == 2)
+                    {
+                        break :blk self.expr_is_native_scalar(call.args[0]) and
+                            self.expr_is_native_scalar(call.args[1]);
+                    }
                     if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string")) {
                         if (std.mem.eql(u8, f.field, "len") and call.args.len == 1) {
                             break :blk self.expr_is_native_scalar(call.args[0]);
@@ -5621,6 +5669,7 @@ pub const CodeGen = struct {
                 const resolvable = self.string_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.readable_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.egress_method_result_type(mc.method, mc.obj, mc.args) != null or
+                    self.stream_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.world_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.func_decls.get(mc.method) != null or
                     self.relationEdgeFuncDecl(mc.method, mc.args.len) != null or

@@ -463,6 +463,15 @@ fn collectModuleGlobals(alloc: std.mem.Allocator, mod: *const ast.Module) Error!
 /// section. Admitting it would put a link-time-unresolved pointer in a word the
 /// program dereferences — the confident-wrong-number class this whole change is
 /// about. It refuses until the relocation exists.
+
+fn globalInitIsSubjectBinding(init: *const Expr) bool {
+    return switch (init.*) {
+        .name => true,
+        .field => |f| globalInitIsSubjectBinding(f.obj),
+        else => false,
+    };
+}
+
 fn constGlobalInit(init: *const Expr, ty: RT) ?dnir.Value {
     const v = comptime_eval.eval(init) catch return null;
     return switch (v) {
@@ -1239,6 +1248,10 @@ fn lowerModuleFromGraph(
             // link-time fact). Skip the initializer: the global gets zero
             // storage and the string is materialized at the read site.
             if (ty == .str and init.* == .quoted) continue;
+            // A module-home alias (`global A = compiler.arm64`) is a subject
+            // binding, not a load-time word. Calls resolve through graph
+            // application facts; the initializer has no `__DATA` image.
+            if (globalInitIsSubjectBinding(init)) continue;
             var buf: [96]u8 = undefined;
             const note = std.fmt.bufPrint(&buf, "global-init-not-constant:{s}", .{g.name}) catch
                 "global-init-not-constant";
@@ -2722,6 +2735,17 @@ fn lowerFunction(
     errdefer if (ret_record_name) |record| alloc.free(record);
     const export_name = try funcExportName(alloc, graph.selfHome(), fd);
     errdefer alloc.free(export_name);
+    if (std.mem.indexOf(u8, export_name, "parse_factor") != null) {
+        for (owned_instrs) |ins| {
+            switch (ins.op) {
+                .call_direct, .init_record, .load_field => std.debug.print(
+                    "PF {s} rec={s} field={s} req={s}\n",
+                    .{ @tagName(ins.op), ins.record, ins.field, ins.req_alias },
+                ),
+                else => {},
+            }
+        }
+    }
 
     return .{
         .name = export_name,
@@ -3170,9 +3194,77 @@ fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
         // so the function is declined rather than mis-lowered.
         return bail(ctx.diagnostic, @src());
     }
+    if (ctx.occurrences.get(r.expr)) |occ| {
+        if (applicationRealizationEmitted(ctx, occ.application)) {
+            if (try tryEmitTailAssignStorageReturnForApplication(ctx, block, occ.application, ret_ty))
+                return true;
+            if (r.rule == .tail_call and block.stmts.len > 0) {
+                const last = &block.stmts[block.stmts.len - 1];
+                if (last.* == .assign) {
+                    const as = last.assign;
+                    if (as.values.len == 1 and as.values[0] == r.expr) return false;
+                }
+            }
+        }
+    }
     if (try tryEmitSelfTail(ctx, r.expr)) return true;
     try ctx.emit(.{ .op = .ret, .lhs = try lowerExpr(ctx, r.expr), .ty = ret_ty });
     return true;
+}
+
+fn applicationRealizationEmitted(ctx: *const LowerCtx, application: semantic_graph.id) bool {
+    for (ctx.instrs.items) |instr| {
+        if (instr.op != .call_direct) continue;
+        const app = instr.application orelse continue;
+        if (std.meta.eql(app, application)) return true;
+    }
+    return false;
+}
+
+fn tryEmitTailAssignStorageReturn(
+    ctx: *LowerCtx,
+    target: *const ast.Expr,
+    retTy: RT,
+) Error!bool {
+    switch (target.*) {
+        .name => |n| {
+            if (ctx.locals.get(n.ident)) |slot| {
+                try ctx.emit(.{ .op = .ret, .lhs = .{ .local = slot }, .ty = retTy });
+                return true;
+            }
+            if (ctx.module_globals.types.get(n.ident)) |gty| {
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .load_global, .result = t, .field = n.ident, .ty = gty });
+                try ctx.emit(.{ .op = .ret, .lhs = .{ .temp = t }, .ty = if (gty == .f64) .f64 else retTy });
+                return true;
+            }
+        },
+        .field => {
+            if (compoundTargetSlot(ctx, target)) |slot| {
+                try ctx.emit(.{ .op = .ret, .lhs = .{ .local = slot }, .ty = retTy });
+                return true;
+            }
+        },
+        else => {},
+    }
+    return false;
+}
+
+fn tryEmitTailAssignStorageReturnForApplication(
+    ctx: *LowerCtx,
+    block: *const ast.Block,
+    application: semantic_graph.id,
+    retTy: RT,
+) Error!bool {
+    if (block.stmts.len == 0) return false;
+    const last = &block.stmts[block.stmts.len - 1];
+    if (last.* != .assign) return false;
+    const as = last.assign;
+    if (as.values.len != 1 or as.targets.len != 1) return false;
+    const val = as.values[0];
+    const occ = ctx.occurrences.get(val) orelse return false;
+    if (!std.meta.eql(occ.application, application)) return false;
+    return try tryEmitTailAssignStorageReturn(ctx, as.targets[0], retTy);
 }
 
 /// The local slot a compound-assignment target was stored into. Field targets
@@ -6564,7 +6656,12 @@ fn loadFieldFromOpaquePath(ctx: *LowerCtx, path: []const u8) Error!?dnir.Value {
     if (ctx.locals.get(obj_name) == null and ctx.param_record_types.get(obj_name) == null) return null;
     const field = path[dot + 1 ..];
     const t = ctx.freshTemp();
-    try ctx.emit(.{ .op = .load_field, .result = t, .req_alias = obj_name, .field = field });
+    try ctx.emit(.{
+        .op = .load_field,
+        .result = t,
+        .req_alias = try ctx.alloc.dupe(u8, obj_name),
+        .field = try ctx.alloc.dupe(u8, field),
+    });
     return .{ .temp = t };
 }
 
@@ -6600,26 +6697,26 @@ fn lowerNestedRecordFromFieldRef(
 }
 
 fn callFieldSuffixFromExpr(
-    alloc: std.mem.Allocator,
+    ctx: *LowerCtx,
     expr: *const ast.Expr,
 ) Error!?struct { call: *const ast.Expr, suffix: []const u8 } {
     var parts: std.ArrayList([]const u8) = .empty;
-    defer parts.deinit(alloc);
+    defer parts.deinit(ctx.alloc);
     var cur: *const ast.Expr = expr;
     while (cur.* == .field) {
-        try parts.append(alloc, cur.field.field);
+        try parts.append(ctx.alloc, cur.field.field);
         cur = cur.field.obj;
     }
-    if (cur.* != .call or parts.items.len == 0) return null;
+    if (cur.* != .call and cur.* != .method_call or parts.items.len == 0) return null;
     var suffix: std.ArrayList(u8) = .empty;
-    defer suffix.deinit(alloc);
+    defer suffix.deinit(ctx.alloc);
     var i: usize = parts.items.len;
     while (i > 0) {
         i -= 1;
-        if (suffix.items.len > 0) try suffix.append(alloc, '.');
-        try suffix.appendSlice(alloc, parts.items[i]);
+        if (suffix.items.len > 0) try suffix.append(ctx.alloc, '.');
+        try suffix.appendSlice(ctx.alloc, parts.items[i]);
     }
-    return .{ .call = cur, .suffix = try alloc.dupe(u8, suffix.items) };
+    return .{ .call = cur, .suffix = try ctx.alloc.dupe(u8, suffix.items) };
 }
 
 fn lowerCallRecordFieldProjection(
@@ -6632,10 +6729,9 @@ fn lowerCallRecordFieldProjection(
     const record = try checkedRecordForApplication(ctx, application) orelse return null;
     const tmp_slot = ctx.freshTemp();
     const tmp = try std.fmt.allocPrint(ctx.alloc, "__rf{d}", .{tmp_slot});
-    defer ctx.alloc.free(tmp);
+    // Keep `tmp` alive until `internInstrStrings` copies `.field` / `.req_alias`.
     try lowerCheckedRecordCallAssign(ctx, tmp, application, record, call_expr);
     const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ tmp, field_name });
-    defer ctx.alloc.free(fk);
     if (ctx.locals.get(fk)) |slot| return .{ .local = slot };
     if (try loadFieldFromOpaquePath(ctx, fk)) |v| return v;
     return null;
@@ -8383,6 +8479,15 @@ fn lowerSubjectCall(
         {
             return lowerWrite(ctx, mc.args);
         }
+        if (subject_home.streamRelation(mc.method)) {
+            const is_stdout = mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdout");
+            if (std.mem.eql(u8, mc.method, "write") and mc.args.len == 1 and !is_stdout) {
+                return lowerStreamWrite(ctx, mc.obj, mc.args[0]);
+            }
+            if (std.mem.eql(u8, mc.method, "close") and mc.args.len == 0) {
+                return lowerStreamClose(ctx, mc.obj);
+            }
+        }
         if (std.mem.eql(u8, mc.method, "read") and mc.args.len == 0 and exprIsStr(ctx, mc.obj)) {
             return lowerSubjectRead(ctx, expr, consumption);
         }
@@ -9443,6 +9548,12 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         return refuseMissingApplication(ctx, @src(), expr);
     }
     const c = expr.call;
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "write") and c.args.len == 2) {
+        return lowerStreamWrite(ctx, c.args[0], c.args[1]);
+    }
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "close") and c.args.len == 1) {
+        return lowerStreamClose(ctx, c.args[0]);
+    }
     if (try tryLowerRelationEdgeCall(ctx, expr, consumption)) |value| return value;
     const discard = consumption == .discard;
     if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "gatecap") and c.args.len == 1) {
@@ -9688,6 +9799,27 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_execute", .lhs = arg, .ty = .i64 });
                 return .{ .temp = t };
             }
+            if (std.mem.eql(u8, f.obj.name.ident, "io") and
+                std.mem.eql(u8, f.field, "open") and c.args.len == 2)
+            {
+                const path = try lowerExpr(ctx, c.args[0]);
+                const mode = try lowerExpr(ctx, c.args[1]);
+                try ensureExtern(ctx, "io", "open", "idol_io_open");
+                try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = path });
+                try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = mode });
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_io_open", .ty = .i64 });
+                return .{ .temp = t };
+            }
+            if (std.mem.eql(u8, f.obj.name.ident, "os") and
+                std.mem.eql(u8, f.field, "remove") and c.args.len == 1)
+            {
+                const path = try lowerExpr(ctx, c.args[0]);
+                try ensureExtern(ctx, "os", "remove", "idol_os_remove");
+                try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = path });
+                try ctx.emit(.{ .op = .call_extern, .callee = "idol_os_remove", .ty = .i64 });
+                return .void;
+            }
             if (std.mem.eql(u8, f.obj.name.ident, "os") and
                 std.mem.eql(u8, f.field, "exit") and c.args.len == 1)
             {
@@ -9917,6 +10049,24 @@ fn lowerPrint(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
 /// one: `.field = "nonl"` says the ending belongs to the CALLER, and `print`
 /// keeps `puts` untouched. A concat argument takes the same route it always
 /// took, with `newline` false, so the format string carries no `\n` either.
+fn lowerStreamWrite(ctx: *LowerCtx, obj: *const ast.Expr, text: *const ast.Expr) Error!dnir.Value {
+    const handle = try lowerExpr(ctx, obj);
+    const arg = try lowerExpr(ctx, text);
+    try ensureExtern(ctx, "io", "write", "idol_io_write_handle");
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = handle });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = arg });
+    try ctx.emit(.{ .op = .call_extern, .callee = "idol_io_write_handle", .ty = .i64 });
+    return .void;
+}
+
+fn lowerStreamClose(ctx: *LowerCtx, obj: *const ast.Expr) Error!dnir.Value {
+    const handle = try lowerExpr(ctx, obj);
+    try ensureExtern(ctx, "io", "close", "idol_io_close_handle");
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = handle });
+    try ctx.emit(.{ .op = .call_extern, .callee = "idol_io_close_handle", .ty = .i64 });
+    return .void;
+}
+
 fn lowerWrite(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
     if (args.len != 1) return bail(ctx.diagnostic, @src());
     const arg = args[0];
@@ -10027,6 +10177,8 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
             if (ctx.graph.exactI64(value_id)) |mv| return .{ .i64 = mv };
         }
         if (ctx.occurrences.get(expr)) |application| {
+            if (ctx.graph.aggregateAccess(application.application) != null)
+                return lowerAggregateAccess(ctx, application, .single);
             if (ctx.graph.applicationResults(application.application)) |rs| {
                 if (rs.len == 1) {
                     if (ctx.graph.exactI64(rs[0])) |mv| return .{ .i64 = mv };
@@ -10053,9 +10205,9 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         if (ctx.locals.get(key)) |slot| return .{ .local = slot };
         if (try loadFieldFromOpaquePath(ctx, key)) |v| return v;
     }
-    if (fld.obj.* == .call) {
+    if (fld.obj.* == .call or fld.obj.* == .method_call) {
         if (try lowerCallRecordFieldProjection(ctx, fld.obj, fld.field)) |v| return v;
-        if (try callFieldSuffixFromExpr(ctx.alloc, expr)) |cf| {
+        if (try callFieldSuffixFromExpr(ctx, expr)) |cf| {
             if (try lowerCallRecordFieldProjection(ctx, cf.call, cf.suffix)) |v| return v;
         }
         return bail(ctx.diagnostic, @src());
@@ -10070,7 +10222,7 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
     // name. A refusal sends the module to the C backend intact; the alternative
     // is a load from nowhere.
     if (fld.obj.* == .field) {
-        if (try callFieldSuffixFromExpr(ctx.alloc, expr)) |cf| {
+        if (try callFieldSuffixFromExpr(ctx, expr)) |cf| {
             if (try lowerCallRecordFieldProjection(ctx, cf.call, cf.suffix)) |v| return v;
         }
         var path: std.ArrayList(u8) = .empty;

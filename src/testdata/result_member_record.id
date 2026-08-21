@@ -1,0 +1,15 @@
+# expect: 41
+# The observed print keeps the call at runtime. The record is produced after
+# that boundary, and the caller reads only `left`, so `right` needs no home.
+pair: {
+  left: i64
+  right: i64
+}
+
+make: pair = ()
+  print(7)
+  { left = 41, right = 42 }
+
+main: i64 = ()
+  result: pair = make()
+  result.left
