@@ -60,9 +60,9 @@ test "wasm_decode_differential: unknown opcode 0xFF" {
     try std.testing.expect(wasm_semantic_gen.validatorForOpcode(0xFF) == null);
 }
 
-test "wasm_decode_differential: known opcode count is >= 63" {
-    try std.testing.expect(wasm_semantic.knownOpcodeCount() >= 63);
-    try std.testing.expect(wasm_semantic.mvpCount() >= 63);
+test "wasm_decode_differential: known opcode count is 63" {
+    try std.testing.expect(wasm_semantic.knownOpcodeCount() == 63);
+    try std.testing.expect(wasm_semantic.mvpCount() == 63);
 }
 
 test "wasm_decode_differential: i32.add round-trip facts" {

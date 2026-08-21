@@ -950,7 +950,7 @@ fn planFieldLocals(e: *Emitter, instrs: []const dnir.Instr, first: u32) Error!u3
         const rec = dnir.findRecord(e.module, ins.record) orelse return e.refuse("record-unknown");
         const base = if (ins.field.len > 0) ins.field else "rec";
         for (rec.kinds) |k| {
-            if (k == .f64 or k == .f32) return e.refuse("record-float-field");
+            if (k == .f64) return e.refuse("record-f64-field");
         }
         for (rec.fields) |fname| {
             const key = try fieldKey(e, base, fname);
@@ -1208,7 +1208,7 @@ fn pushValue(e: *Emitter, b: *Buf, v: dnir.Value, want: SlotType) Error!void {
                 // float -> int is NOT symmetric with the widening below and must
                 // not be added: it truncates silently. `evalDnirValueFp` in the
                 // AArch64 backend says the same at gap[101].
-                if (slotTypeOf(e, s) == .f64 or slotTypeOf(e, s) == .f32) return e.refuse("float-slot-in-integer-position");
+                if (slotTypeOf(e, s) == .f64) return e.refuse("f64-slot-in-integer-position");
                 try b.get(s);
             },
             .void => return e.refuse("void-operand"),
