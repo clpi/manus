@@ -410,10 +410,27 @@ pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
             },
             // Wrapping ALU and comparison — no fault, no memory, no world.
             .add, .sub, .mul, .band, .bor, .bxor, .lshift, .rshift, .eq, .neq, .lt, .gt, .leq, .geq, .@"and", .@"or" => inert(opts, b.lhs) orelse inert(opts, b.rhs),
-            // `concat` materialises, `matmul` and `pipeline` are applications,
-            // `contains` is a search over a place, `pow` is a runtime call on
-            // this backend. All refused.
-            .concat, .matmul, .pipeline, .contains, .pow => .unsupported_shape,
+            // `concat` MATERIALISES, and materialising a value no observer
+            // reads is precisely what this walk exists to delete -- there is
+            // no obligation named "materialisation" in O1..O5, and
+            // `unsupported_shape` means NOT MODELLED, not PROVEN UNSAFE. It
+            // recurses into both operands exactly as the ALU arm does, so a
+            // concat over a call, a place read or a trapping divide is still
+            // refused by that operand's own blocker.
+            //
+            // THE LAW QUESTION THIS TURNS ON, stated rather than assumed:
+            // whether allocation failure is an observable outcome. If it is,
+            // this arm must go back to a refusal AND the table-literal path
+            // must join it, because that materialises too and is already
+            // deleted today. Measured cost of the refusal before this change:
+            // an unread `m: str = "value is {n} here"` emitted 72 instructions
+            // against a 23-instruction baseline, including one `malloc` and
+            // two `snprintf`, while an unread table, an unread literal and an
+            // unread `n * 7919` all emitted nothing.
+            .concat => inert(opts, b.lhs) orelse inert(opts, b.rhs),
+            // `matmul` and `pipeline` are applications, `contains` is a search
+            // over a place, `pow` is a runtime call on this backend.
+            .matmul, .pipeline, .contains, .pow => .unsupported_shape,
         },
 
         .unop => |u| switch (u.op) {
