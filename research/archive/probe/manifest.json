@@ -1,0 +1,29 @@
+{
+  "archive": "20260820.tar.gz",
+  "archive_sha256": "6ec438c37e52af8fadaeeeb04d727d0432d5591293fab4e0dc3022569d967c13",
+  "authority": false,
+  "captured_from": "untracked local diagnostic probes",
+  "files": [
+    {
+      "path": "tmp_grow.id",
+      "sha256": "215b76a2b671287ca0efef1025bfbda48b8a26b6cdf1c063854e8c07405d6979"
+    },
+    {
+      "path": "tmp_grow2.id",
+      "sha256": "69820244c13f3095670de38dce1c31c3570609c2557290b744444f8f7902309b"
+    },
+    {
+      "path": "tmp_grow3.id",
+      "sha256": "334e8abffcf561d64a99a1bfc42363c33322bdf9c2bffd98de04dcb21134321e"
+    },
+    {
+      "path": "tmp_grow4.id",
+      "sha256": "1fa2af05212dba83d0b943df2a95e44014de630859112ef291904df9945328a7"
+    },
+    {
+      "path": "tmp_res_inner.id",
+      "sha256": "20c9928f5e3f93bcf7f1210a3cef7a5471d6a2a4d9093caf759c25999f149f2c"
+    }
+  ],
+  "status": "Historical backend-shaped parser and record-result probes. They are preserved for provenance only and are not canonical Idol source, semantic law, production fixtures, or positive teaching."
+}
