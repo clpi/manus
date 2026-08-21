@@ -28,14 +28,29 @@ transfer: production lexer/token-span boundary (`docs/bootstrap.md`). Lexical
 identity, generated grammar roles, and parser recognition remain blocked or
 host-owned.
 
-**Score executed SHC authority:** ~10% (honest denominator), not file-count
-self-host percentages.
+**Score executed SHC authority:** milestone table (S0), not a percentage headline.
+
+| Milestone | State |
+|-----------|-------|
+| S0 source ingress + partial lexer | **current** |
+| B-L0 lexical + GAP-145 taint zero | open |
+| B-G0 grammar Idol owner | open |
+| B-P0 one parser production decision | open |
+| B0 compiler B executable | open |
+| C0 B compiles C | open |
+
+**Four-axis commit test** (see `../idol-native/docs/bootstrap-critical-path.md`):
+CAPABILITY, OWNERSHIP, CONVERGENCE, FTCFTW — capability-only is not SHC progress.
 **Do not conflate with DIRECT-COVERAGE.** The sibling native surface tracks a
 separate **LOWERABLE** ledger (`../idol-native/gate/selfhost.sh`: how many
 `lib/compiler/*.id` modules lower on `--backend=direct`). That count is useful
 backend-capability coverage only. **CANONICAL-COMPILER** and **EXECUTED-OWNER**
 are orthogonal; see `../idol-native/docs/shc-ownership-ledgers.md` and
-`../idol-native/docs/compiler-b-manifest.md`. Many green compiler modules are
+`../idol-native/docs/compiler-b-manifest.md`. Extended ledgers: HOST-TAINT
+(`../idol-native/docs/shc-host-taint.md`), BRIDGE-DEBT, HOST-DEPENDENCY,
+DELETION-VELOCITY (`../idol-native/gate/deletion_velocity.sh`), B-SOURCE
+canonicality (`../idol-native/gate/bsource.sh`) —
+see `../idol-native/docs/shc-ownership-ledgers.md`. Many green compiler modules are
 capability probes, not compiler B.
 
 
