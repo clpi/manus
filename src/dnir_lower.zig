@@ -5735,6 +5735,25 @@ fn tableUseInStmt(stmt: *const ast.Stmt, name: []const u8, bound: *const ast.Exp
             break :blk u;
         },
         .brk, .cont, .goto_stmt, .label_stmt => .none,
+        // A FUNCTION DECLARATION IS A BLOCK LIKE ANY OTHER. Leaving it
+        // unmodeled meant `else => .opaque_use` fired for every module that
+        // declares one — which is every real program — so no module-level table
+        // could ever be judged constant, however it was used. The walk descends
+        // instead, with the two ways a declaration can take the name away:
+        .func_decl => |fd| blk: {
+            // The declaration binds its own path; if that head IS the table's
+            // name the table is replaced.
+            if (fd.path.len > 0 and std.mem.eql(u8, fd.path[0], name)) break :blk .opaque_use;
+            // A parameter of the same name shadows the module binding for the
+            // whole body, so nothing inside is a use of THIS table.
+            for (fd.func.params) |prm| {
+                if (std.mem.eql(u8, prm.name, name)) break :blk .none;
+            }
+            if (fd.func.vararg_name) |vn| {
+                if (std.mem.eql(u8, vn, name)) break :blk .none;
+            }
+            break :blk tableUseInBlock(&fd.func.body, name, bound);
+        },
         // Same rule as the expression walker: an unmodeled statement is not
         // evidence of absence.
         else => .opaque_use,
