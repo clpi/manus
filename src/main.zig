@@ -4532,8 +4532,13 @@ fn do_compile(
 
     // §40 build cache. Only for a plain executable compile: test/bench/pgo/lib
     // modes have side effects beyond the artifact, so they always rebuild.
+    // Shared memory, link inputs, an alternate entry, and a nondefault C
+    // toolchain are also physical inputs. Until their exact witnessed
+    // identities enter the key, reusing an artifact compiled without them
+    // would be a wrong result.
     const cacheable = !check_only and !test_mode and !bench_mode and !pgo and
-        !lib_mode and !load_chunk and std.mem.indexOf(u8, target, "wasm") == null;
+        !lib_mode and !load_chunk and !shared_mem and link_flags.len == 0 and entry_override == null and
+        std.mem.eql(u8, cc, "clang") and std.mem.indexOf(u8, target, "wasm") == null;
     const cache_path: ?[]u8 = if (cacheable)
         buildCacheKey(alloc, io, src_path, target, backend_mode, opt)
     else

@@ -59,8 +59,9 @@ compile() {
     source=$2
     output=$3
     log=$4
+    shift 4
     if (CDPATH='' cd -- "$cwd" && "$compiler" compile --backend=direct "$source" \
-        -o "$output" --build-report=compact) >"$log" 2>&1; then
+        -o "$output" --build-report=compact "$@") >"$log" 2>&1; then
         return 0
     else
         return $?
@@ -167,6 +168,65 @@ cp "$work/left.out" "$work/damaged.out"
 if matches_home "$work/damaged.out" "$right_symbol" "$left_symbol"; then
     fail 'wrong-home artifact substitution escaped the verifier'
 fi
+
+# Physical compile inputs that are not yet represented in buildCacheKey must
+# disable reuse. Otherwise a warm ordinary artifact can bypass the requested
+# entry point, missing library, or missing C toolchain entirely.
+entry_source=$project/entry.id
+printf '%s\n' \
+    'main: i64 = ()' \
+    '    11' \
+    '' \
+    'alternate: i64 = ()' \
+    '    22' >"$entry_source"
+
+compile "$project" entry.id "$work/entry-default.out" "$work/entry-default.log" \
+    || fail 'cold default-entry compile failed'
+grep -Fq '(cached)' "$work/entry-default.log" && fail 'default-entry cache was not cold'
+if "$work/entry-default.out"; then
+    default_exit=0
+else
+    default_exit=$?
+fi
+[ "$default_exit" -eq 11 ] || fail "default entry returned $default_exit instead of 11"
+
+compile "$project" entry.id "$work/entry-cached.out" "$work/entry-cached.log" \
+    || fail 'warm ordinary compile failed'
+grep -Fq '(cached)' "$work/entry-cached.log" || fail 'ordinary compile no longer reuses cache'
+
+compile "$project" entry.id "$work/entry-alternate.out" "$work/entry-alternate.log" \
+    --entry alternate || fail 'alternate-entry compile failed'
+grep -Fq '(cached)' "$work/entry-alternate.log" \
+    && fail 'alternate entry reused the default-entry artifact'
+if "$work/entry-alternate.out"; then
+    alternate_exit=0
+else
+    alternate_exit=$?
+fi
+[ "$alternate_exit" -eq 22 ] || fail "alternate entry returned $alternate_exit instead of 22"
+
+missing_library=idol_cache_input_missing_83f1
+if compile "$project" entry.id "$work/link-missing.out" "$work/link-missing.log" \
+    --link "$missing_library"; then
+    fail 'missing library succeeded through a warm ordinary cache entry'
+fi
+grep -Fq '(cached)' "$work/link-missing.log" \
+    && fail 'missing library invocation reported a cache hit'
+
+missing_cc=idol_cc_missing_83f1
+if compile "$project" entry.id "$work/cc-missing.out" "$work/cc-missing.log" \
+    --cc "$missing_cc"; then
+    fail 'missing C toolchain succeeded through a warm ordinary cache entry'
+fi
+grep -Fq '(cached)' "$work/cc-missing.log" \
+    && fail 'missing C toolchain invocation reported a cache hit'
+
+if compile "$project" entry.id "$work/shared-memory.out" "$work/shared-memory.log" \
+    --shared-memory; then
+    fail 'shared-memory mode succeeded through a warm ordinary cache entry'
+fi
+grep -Fq '(cached)' "$work/shared-memory.log" \
+    && fail 'shared-memory invocation reported a cache hit'
 
 printf 'SUBJECT revision=%s dirty=%s compiler_sha256=%s build_mode=%s backend=direct\n' \
     "$(git -C "$root" rev-parse HEAD)" \
