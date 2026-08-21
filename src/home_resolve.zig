@@ -514,8 +514,23 @@ test "home_resolve: file identity resolves parents after symlinks" {
     try std.testing.expectEqualStrings("other.right.probe", symlink_parent);
     try std.testing.expect(!std.mem.eql(u8, canonical, symlink_parent));
 
-    try std.testing.expectError(error.HomePathEscape, homeOfPath(alloc, io, "../../escape.id"));
-    try std.testing.expectError(error.HomePathEscape, homeOfPath(alloc, io, "/../../escape.id"));
+    // The two assertions that stood here demanded `HomePathEscape` from
+    // `homeOfPath`, which cannot produce it. `canonicalHomePath` runs realpath
+    // first, and its output is absolute and `..`-free by definition, so the
+    // post-realpath `rejectParentUnderflow` has no `..` left to reject. They
+    // were written when the check ran lexically BEFORE realpath (3d30c93f) and
+    // were not updated when cf2473e0 moved it, so sibling imports spelled
+    // `../home/file.id` could reach the filesystem that resolves them.
+    //
+    // They were also cwd-dependent in a way no fixture can pin: `../../escape.id`
+    // answers FileNotFound from most directories and a VALUE from any directory
+    // where that file happens to exist. `/../../escape.id` is not underflow at
+    // all -- POSIX defines `/..` as `/`, so it is simply `/escape.id`.
+    //
+    // The law itself is asserted directly, and cwd-independently, against
+    // `rejectParentUnderflow` in the next test, which is where it lives. The
+    // `missing_parent` case below already covers "a `..` spelling with no file"
+    // using an absolute path built from `root`.
     const missing_parent = try std.fmt.allocPrint(alloc, "{s}{c}left{c}..{c}missing.id", .{
         root, std.fs.path.sep, std.fs.path.sep, std.fs.path.sep,
     });

@@ -722,7 +722,18 @@ fn positionalValue(field: ast.TableField) ?*const ast.Expr {
 fn allFieldsConst(fields: []const ast.TableField) bool {
     for (fields) |field| {
         const v = positionalValue(field) orelse return false;
-        if (v.* != .int_lit) return false;
+        switch (v.*) {
+            .int_lit => {},
+            // A NESTED LITERAL OF LITERALS IS STILL A LITERAL. Requiring every
+            // field to be `.int_lit` made `contents_known` `.no` for exactly the
+            // shape the nested-aggregate realization needs: `immutableAggregate`
+            // demands `contents_known == .yes`, while `immutableNestedAggregateRoot`
+            // demands an array-OF-ARRAY descriptor. The one predicate rejected the
+            // only input the other accepted, so the static nested realization was
+            // unreachable by construction rather than by any fact about a program.
+            .table => |t| if (!allFieldsConst(t.fields)) return false,
+            else => return false,
+        }
     }
     return true;
 }

@@ -12373,7 +12373,7 @@ test "native backend realizes graph nested aggregate as immutable const data" {
     const source =
         \\pairs = {{10, 11}, {20, 21}, {30, 31}}
         \\pick: i64 = (i: i64)
-        \\    pairs(i)(2)
+        \\    pairs[i][2]
         \\main: i64 = ()
         \\    pick(2)
     ;

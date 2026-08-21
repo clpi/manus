@@ -296,6 +296,43 @@ pub fn build(b: *std.Build) void {
     lock_gate_step.dependOn(&lock_gate_cmd.step);
     test_step.dependOn(&lock_gate_cmd.step);
 
+    // THE S0 OWNERSHIP CLAIM IS ONLY REAL IF PRODUCTION DEPENDS ON THE IDOL LEXER.
+    // src/lexer_tokenize.c is a tracked GENERATED bridge. If it may drift from
+    // lib/compiler/lexer.id, then damaging the Idol source changes NOTHING until
+    // somebody hand-runs `dump-c --lib` and commits -- and "the lexer is Idol
+    // owned" becomes a statement about intent rather than about the program that
+    // runs. That is a claim with no counterfactual.
+    //
+    // MEASURED before this step existed: tracked 446926 bytes, regenerated
+    // 450358. The artifact had drifted by an entire record field (`stmt_col`)
+    // and nothing in the tree noticed, because tools/node/dev/lexer/artifact
+    // had no caller anywhere -- not in build.zig, not in any gate, not in any
+    // aggregator. The gate was correct and simply never ran.
+    const lexer_artifact_cmd = b.addSystemCommand(&.{"./tools/node/dev/lexer/artifact"});
+    lexer_artifact_cmd.setCwd(b.path("."));
+    lexer_artifact_cmd.setEnvironmentVariable("IDOL", "./zig-out/bin/idol");
+    lexer_artifact_cmd.step.dependOn(b.getInstallStep());
+    const lexer_artifact_step = b.step("lexer-artifact", "src/lexer_tokenize.c regenerates byte-identically from lib/compiler/lexer.id (S0 counterfactual)");
+    lexer_artifact_step.dependOn(&lexer_artifact_cmd.step);
+    // NOT yet attached to test_step, and the reason is the finding itself.
+    //
+    // lib/compiler/lexer.id last moved at fb7a5639 (Aug 20); the tracked C was
+    // last regenerated at 96f058bf (Aug 18). Two days of Idol lexer source has
+    // never been projected into production, and the divergence is BEHAVIORAL,
+    // not cosmetic: regenerating turns 18 failures into 25, and all seven new
+    // ones fail inside parse_module -> parse_block -> parse_stmt.
+    //
+    // So the tracked artifact is not merely stale -- it is acting as a FREEZE
+    // POINT that holds in-progress Idol source out of production. That inverts
+    // the ownership claim: the generated C is the authority and the .id file is
+    // the draft. `stmt_col` is declared at lib/compiler/lexer.id:56, initialised
+    // once at :77, and referenced by NO host code at all.
+    //
+    // Attach this line once the host consumes stmt_col (or lexer.id drops it)
+    // and the regenerated artifact holds the suite at its baseline:
+    //     test_step.dependOn(&lexer_artifact_cmd.step);
+    // Until then `zig build lexer-artifact` reports the exact drift on demand.
+
     // Zig unit tests (lexer, parser, AST, types, sema).
     // Run independently from the binary: `zig build unit-test`
     const unit_tests = b.addTest(.{

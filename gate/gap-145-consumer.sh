@@ -11,6 +11,7 @@ TYPES="$ROOT/src/types.zig"
 SEMA="$ROOT/src/sema.zig"
 CODEGEN="$ROOT/src/codegen.zig"
 AST="$ROOT/src/ast.zig"
+DNIR="$ROOT/src/dnir_lower.zig"
 
 violations=0
 examined=0
@@ -48,11 +49,15 @@ has "$SEMA" 'types.quotedLiteralType(lit.quote)' \
     'sema.zig must type quoted literals via quotedLiteralType'
 has "$CODEGEN" 'types.quotedLiteralType(lit.quote)' \
     'codegen.zig must recover quoted literal types via quotedLiteralType'
+has "$DNIR" 'types.quotedLiteralType(lit.quote)' \
+    'dnir_lower.zig must type quoted globals via quotedLiteralType'
 
 forbid "$SEMA" '.quoted => .str,' \
     'sema.zig reintroduced bare `.quoted => .str` collapse'
 forbid "$CODEGEN" '.quoted => .str,' \
     'codegen.zig reintroduced bare `.quoted => .str` collapse'
+forbid "$DNIR" '.quoted => .str,' \
+    'dnir_lower.zig reintroduced bare `.quoted => .str` collapse'
 
 if [ "$violations" -eq 0 ]; then
     printf 'gap-145 consumer gate: PASS (%d check(s))\n' "$examined"

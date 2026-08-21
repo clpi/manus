@@ -1740,12 +1740,12 @@ test "observation: the gate's own `rt.id` probe, classified" {
         \\    s = (0, 0, 0)
         \\    i = 0
         \\    while i < 3
-        \\        s(i + 1) = i * 7
+        \\        s[i + 1] = i * 7
         \\        i += 1
         \\    h = 0
         \\    j = 0
         \\    while j < 3
-        \\        h += s(j + 1)
+        \\        h += s[j + 1]
         \\        j += 1
         \\    h & 255
         \\
@@ -2172,7 +2172,7 @@ test "observation: a runtime index leaves may_trap UNKNOWN, so memoization stays
         \\    h = 0
         \\    i = 0
         \\    while i < 3
-        \\        h += s(i + 1)
+        \\        h += s[i + 1]
         \\        i += 1
         \\    h & 255
         \\

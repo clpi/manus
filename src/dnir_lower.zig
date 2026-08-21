@@ -399,7 +399,10 @@ fn typeOfGlobal(t: ast.TypeExpr, init: ?*const Expr) RT {
     if (declared != .any) return declared;
     const e = init orelse return .i64;
     return switch (e.*) {
-        .quoted => .str,
+        // GAP-145 (`law.text.byte`): the producer quote identity selects the
+        // descriptor. A byte-sequence face is not text, so it must not collapse
+        // onto `.str` here the way sema/codegen were already forbidden to.
+        .quoted => |lit| types.quotedLiteralType(lit.quote),
         .float_lit => .f64,
         else => .i64,
     };
@@ -1757,7 +1760,15 @@ fn functionEligible(
         if (recordForTypeExpr(recs, p.typ, graph)) |r| {
             // Wide module tables (`lexer`, …) cross calls as one opaque handle,
             // matching `checkedScalarOperand`'s `.table_type` local path.
-            if (r.fields.len > max_reg_record_fields) {
+            //
+            // THE THRESHOLD IS THE RECORD CEILING, NOT THE REGISTER COUNT. With
+            // `max_reg_record_fields` here, a DECLARED nine-field record param
+            // counted as one slot, so the `gp_slots > max_reg_record_fields`
+            // refusal three lines down could never fire for it — this `if` and
+            // that comment contradicted each other, and the nine-field param
+            // was accepted into a frame that cannot hold it. Only a module
+            // table, which is wider than any explodable record, is opaque.
+            if (r.fields.len > max_record_fields) {
                 gp_slots += 1;
             } else {
                 gp_slots += r.fields.len;
@@ -10961,7 +10972,7 @@ test "dnir_lower: graph aggregate facts select one immutable nested layout" {
             .source =
             \\pairs = {{10, 11}, {20, 21}, {30, 31}}
             \\pick: i64 = (i: i64)
-            \\    pairs(i)(2)
+            \\    pairs[i][2]
             \\main: i64 = ()
             \\    pick(2)
             ,
@@ -10971,7 +10982,7 @@ test "dnir_lower: graph aggregate facts select one immutable nested layout" {
             .source =
             \\pick: i64 = (i: i64)
             \\    pairs = {{10, 11}, {20, 21}, {30, 31}}
-            \\    pairs(i)(2)
+            \\    pairs[i][2]
             \\main: i64 = ()
             \\    pick(2)
             ,
@@ -11128,7 +11139,7 @@ test "dnir_lower: nested aggregate constant bounds fail closed" {
     const source =
         \\pairs = {{10, 11}, {20, 21}, {30, 31}}
         \\main: i64 = ()
-        \\    pairs(2)(3)
+        \\    pairs[2][3]
     ;
     var lexer = Lexer.init(source, "aggregate-bounds.id");
     var parser = Parser.init(&lexer, alloc);
@@ -12636,5 +12647,24 @@ test "dnir_lower: a nine-field record return is eligible, a nine-field param is 
         parser.idol_mode = true;
         const mod = try parser.parse_module();
         try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
+    }
+}
+
+test "dnir_lower: a global byte-sequence literal keeps its element descriptor" {
+    // GAP-145 (`law.text.byte`): the global's place descriptor comes from the
+    // producer quote identity, not from the fact that a quoted face was written.
+    // A single-quoted literal is a byte sequence; collapsing it to `.str` makes
+    // the global observe the retired unified string identity.
+    const loc = @import("lexer.zig").Loc{ .line = 1, .col = 1, .file = "quote.id" };
+
+    const bytes = Expr{ .quoted = .{ .loc = loc, .val = "ab", .quote = .bytes } };
+    const bytes_ty = typeOfGlobal(.inferred, &bytes);
+    try std.testing.expect(bytes_ty == .array);
+    try std.testing.expect(bytes_ty.array.elem.* == .u8);
+
+    // The text faces keep text; the byte face is the only divergence.
+    for ([_]ast.Quote{ .text, .compat_text, .compat_long, .host }) |q| {
+        const text = Expr{ .quoted = .{ .loc = loc, .val = "ab", .quote = q } };
+        try std.testing.expect(typeOfGlobal(.inferred, &text) == .str);
     }
 }
