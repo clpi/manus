@@ -30,6 +30,14 @@ host-owned.
 
 **Score executed SHC authority:** ~10% (honest denominator), not file-count
 self-host percentages.
+**Do not conflate with DIRECT-COVERAGE.** The sibling native surface tracks a
+separate **LOWERABLE** ledger (`../idol-native/gate/selfhost.sh`: how many
+`lib/compiler/*.id` modules lower on `--backend=direct`). That count is useful
+backend-capability coverage only. **CANONICAL-COMPILER** and **EXECUTED-OWNER**
+are orthogonal; see `../idol-native/docs/shc-ownership-ledgers.md` and
+`../idol-native/docs/compiler-b-manifest.md`. Many green compiler modules are
+capability probes, not compiler B.
+
 
 ### 2. Semantic reconstruction debt
 
