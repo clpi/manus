@@ -174,6 +174,12 @@ fn apply_env_flags(init: std.process.Init) void {
     if (map.get("DUO_TAINT_LEDGER")) |v| {
         if (env_value_truthy(v)) taint_ledger_enabled = true;
     }
+    if (map.get("DUO_TAINT_ZERO")) |v| {
+        if (env_value_truthy(v)) {
+            @import("host_taint.zig").enforce_enabled = true;
+            taint_ledger_enabled = true;
+        }
+    }
     if (map.get("DUO_BENCH_BACKEND")) |v| {
         global_bench_backend = selectBenchBackend(v);
     }

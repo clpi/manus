@@ -225,6 +225,9 @@ fn toApplication(expr: *const Expr) bool {
 /// carries it does not change — only where this module reads it from.
 pub const waiver_request = "@bootstrap.waive(graph-facts)";
 
+/// Exact text a B-boundary module writes to REQUIRE taint zero at compile time.
+pub const taint_zero_requirement = "@bootstrap.require(taint-zero)";
+
 /// How far into a file the request may appear. A waiver is a claim the reader
 /// of the file has to see, so it belongs in the header with everything else
 /// that governs the file. Buried at line 900 it is not a request, it is a
@@ -280,6 +283,30 @@ pub fn gateTransport(path: []const u8) bool {
     return waiverRequestedIn(head);
 }
 
+/// Does the module at `path` DECLARE a B-boundary that requires host taint zero?
+pub fn boundaryRequiresTaintZero(path: []const u8) bool {
+    if (path.len == 0) return false;
+    var buf: [waiver_request_window]u8 = undefined;
+    const head = readHead(path, &buf) orelse return false;
+    return taintZeroRequiredIn(head);
+}
+
+fn bootstrapDirectiveIn(source: []const u8, directive: []const u8) bool {
+    var lines = std.mem.splitScalar(u8, source, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or line[0] != '#') continue;
+        const body = std.mem.trimStart(u8, line[1..], " \t");
+        if (std.mem.startsWith(u8, body, directive)) return true;
+    }
+    return false;
+}
+
+/// True when `source` carries `@bootstrap.require(taint-zero)` on a comment line.
+pub fn taintZeroRequiredIn(source: []const u8) bool {
+    return bootstrapDirectiveIn(source, taint_zero_requirement);
+}
+
 /// True when `source` carries the request on a comment line of its own.
 ///
 /// A COMMENT LINE, not a substring: `print("@bootstrap.waive(graph-facts)")` is
@@ -287,14 +314,7 @@ pub fn gateTransport(path: []const u8) bool {
 /// to begin with `#` is what separates the two, and it is why this is a
 /// function with its own test rather than an `indexOf`.
 pub fn waiverRequestedIn(source: []const u8) bool {
-    var lines = std.mem.splitScalar(u8, source, '\n');
-    while (lines.next()) |raw| {
-        const line = std.mem.trim(u8, raw, " \t\r");
-        if (line.len == 0 or line[0] != '#') continue;
-        const body = std.mem.trimStart(u8, line[1..], " \t");
-        if (std.mem.startsWith(u8, body, waiver_request)) return true;
-    }
-    return false;
+    return bootstrapDirectiveIn(source, waiver_request);
 }
 
 /// The first `buf.len` bytes of `path`, or null if it cannot be read.
@@ -681,6 +701,13 @@ test "native_bootstrap: the waiver is a request on a comment line, not a substri
     try std.testing.expect(!waiverRequestedIn("# @bootstrap.waive(something-else)\n"));
     try std.testing.expect(!waiverRequestedIn("main: i64 = ()\n    print(\"" ++ waiver_request ++ "\")\n"));
     try std.testing.expect(!waiverRequestedIn("x = \"" ++ waiver_request ++ "\"\n"));
+}
+
+test "native_bootstrap: taint-zero requirement mirrors waiver comment-line rules" {
+    try std.testing.expect(taintZeroRequiredIn("# " ++ taint_zero_requirement ++ "\nmain: i64 = ()\n"));
+    try std.testing.expect(taintZeroRequiredIn("# header\n#" ++ taint_zero_requirement ++ "\n"));
+    try std.testing.expect(!taintZeroRequiredIn("main: i64 = ()\n    print(\"" ++ taint_zero_requirement ++ "\")\n"));
+    try std.testing.expect(!taintZeroRequiredIn("# @bootstrap.require(something-else)\n"));
 }
 
 test "native_bootstrap: an unreadable path answers no, so it fails toward the strict law" {

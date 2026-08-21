@@ -3454,6 +3454,7 @@ const Arm64Compiler = struct {
                     // it costs NOTHING, because the refit replaces the `mov`
                     // that was already being emitted.
                     if (ins.result) |slot| {
+                        _ = self.fp_temps.remove(slot);
                         if (self.gp_stack_locals.get(slot)) |off| {
                             const src = try self.narrowedFrameSource(val_reg, ins.ty);
                             try self.storeGpStackLocal(off, src);

@@ -1285,6 +1285,26 @@ pub const Sema = struct {
         return .{ .subject = null, .arguments = arguments };
     }
 
+    /// Colon relations keep an implicit `self` parameter for method bodies, but
+    /// a bare `name(args)` call does not supply it — every explicit argument
+    /// is an operand, not a subject projection.
+    fn applicationSlotsForBareCall(
+        target: *const ast.FuncDecl,
+        arguments: []const *Expr,
+    ) struct { subject: ?*const Expr, arguments: []const *Expr } {
+        if (target.method) return .{ .subject = null, .arguments = arguments };
+        if (target.func.params.len > 0 and arguments.len > 0) {
+            return .{ .subject = arguments[0], .arguments = arguments[1..] };
+        }
+        return .{ .subject = null, .arguments = arguments };
+    }
+
+    fn callableDefName(fd: *const ast.FuncDecl) ?[]const u8 {
+        if (fd.path.len == 1 and !fd.method) return fd.path[0];
+        if (fd.method and fd.path.len >= 2) return fd.path[0];
+        return null;
+    }
+
     /// L1 — true when binding is a req module assumed frozen after load.
     pub fn moduleSealed(self: *const Sema, name: []const u8) bool {
         return self.module_sealed.contains(name);
@@ -2430,8 +2450,8 @@ pub const Sema = struct {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .func_decl) continue;
             const fd = &stmt.func_decl;
-            if (fd.path.len != 1 or fd.method) continue;
-            const slot = try self.callable_defs.getOrPut(self.alloc, fd.path[0]);
+            const name = callableDefName(fd) orelse continue;
+            const slot = try self.callable_defs.getOrPut(self.alloc, name);
             if (slot.found_existing) {
                 slot.value_ptr.* = null;
             } else {
@@ -4820,8 +4840,10 @@ pub const Sema = struct {
                 if (c.func.* == .name) {
                     if (self.callable_defs.get(c.func.name.ident)) |target| {
                         if (target) |resolved| {
-                            const slots = subjectSlotArgs(resolved, c.args);
-                            try self.recordApplication(expr, resolved, slots.subject, slots.arguments, result);
+                            const declared = try self.resolve_type(contract_ret_expr(&resolved.func));
+                            const slots = applicationSlotsForBareCall(resolved, c.args);
+                            try self.recordApplication(expr, resolved, slots.subject, slots.arguments, declared);
+                            return declared;
                         }
                     }
                 }
