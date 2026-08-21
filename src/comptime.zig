@@ -1506,29 +1506,47 @@ pub const Evaluator = struct {
     }
 
     fn evalBlockValue(self: *Evaluator, block: *const ast.Block) EvalError!Value {
-        const result = try self.evalBlockScoped(block);
+        const result = try self.evalBlockScoped(block, true);
         return switch (result) {
             .value => |value| value,
             .none => error.UnsupportedExpression,
         };
     }
 
-    fn evalBlockScoped(self: *Evaluator, block: *const ast.Block) EvalError!BlockResult {
+    /// TAIL POSITION IS A FACT THIS EVALUATOR MUST READ, NOT ASSUME.
+    ///
+    /// `dnir_lower` already owns the rule (`stmtIsTailSlot`, and the
+    /// `while_loop` arm that passes `allow_return = false`): a loop body is
+    /// NEVER an implicit-tail position, because its last expression runs once
+    /// per ITERATION, not once per CALL. This evaluator asserted the opposite
+    /// by construction — every `expr_stmt` produced `.value`, and every
+    /// `.value` unwound the whole body — so the two producers of one fact
+    /// disagreed, and the fold answered a program the backend never compiles.
+    fn evalBlockScoped(self: *Evaluator, block: *const ast.Block, tail: bool) EvalError!BlockResult {
         const mark = self.locals.items.len;
         defer self.popLocals(mark);
-        return self.evalBlock(block);
+        return self.evalBlock(block, tail);
     }
 
-    fn evalBlock(self: *Evaluator, block: *const ast.Block) EvalError!BlockResult {
-        for (block.stmts) |stmt| {
-            const result = try self.evalStmt(stmt);
+    fn evalBlock(self: *Evaluator, block: *const ast.Block, tail: bool) EvalError!BlockResult {
+        for (block.stmts, 0..) |stmt, i| {
+            // `stmtIsTailSlot`, verbatim: a trailing `tail_expr` takes the slot,
+            // otherwise the last statement holds it.
+            const slot = tail and block.tail_expr == null and i + 1 == block.stmts.len;
+            const result = try self.evalStmt(stmt, slot, tail);
             if (result == .value) return result;
         }
-        if (block.tail_expr) |expr| return .{ .value = try self.eval(expr) };
+        if (block.tail_expr) |expr| {
+            const value = try self.eval(expr);
+            // A non-tail block still RUNS its tail expression; it just does not
+            // answer with it. Discarding the value is what a statement means.
+            if (tail) return .{ .value = value };
+            return .none;
+        }
         return .none;
     }
 
-    fn evalStmt(self: *Evaluator, stmt: ast.Stmt) EvalError!BlockResult {
+    fn evalStmt(self: *Evaluator, stmt: ast.Stmt, slot: bool, tail: bool) EvalError!BlockResult {
         try self.step();
         return switch (stmt) {
             .local_decl => |decl| blk: {
@@ -1556,29 +1574,42 @@ pub const Evaluator = struct {
                 if (ret.vals.len != 1) return error.UnsupportedExpression;
                 break :blk .{ .value = try self.eval(ret.vals[0]) };
             },
-            .expr_stmt => |expr_stmt| .{ .value = try self.eval(expr_stmt.expr) },
-            .call_stmt => |call_stmt| .{ .value = try self.eval(call_stmt.expr) },
-            .do_block => |do_block| try self.evalBlockScoped(&do_block.body),
-            .if_stmt => |if_stmt| try self.evalIf(if_stmt),
+            .expr_stmt => |expr_stmt| blk: {
+                const value = try self.eval(expr_stmt.expr);
+                break :blk if (slot) BlockResult{ .value = value } else BlockResult.none;
+            },
+            .call_stmt => |call_stmt| blk: {
+                const value = try self.eval(call_stmt.expr);
+                break :blk if (slot) BlockResult{ .value = value } else BlockResult.none;
+            },
+            .do_block => |do_block| try self.evalBlockScoped(&do_block.body, tail),
+            .if_stmt => |if_stmt| try self.evalIf(if_stmt, tail),
             .while_loop => |while_loop| try self.evalWhile(while_loop),
             .num_for => |num_for| try self.evalNumFor(num_for),
             else => error.UnsupportedExpression,
         };
     }
 
-    fn evalIf(self: *Evaluator, if_stmt: anytype) EvalError!BlockResult {
-        if ((try self.eval(if_stmt.cond)).truthy()) return self.evalBlockScoped(&if_stmt.then);
+    fn evalIf(self: *Evaluator, if_stmt: anytype, tail: bool) EvalError!BlockResult {
+        if ((try self.eval(if_stmt.cond)).truthy()) return self.evalBlockScoped(&if_stmt.then, tail);
         for (if_stmt.elseifs) |elseif| {
-            if ((try self.eval(elseif.cond)).truthy()) return self.evalBlockScoped(&elseif.body);
+            if ((try self.eval(elseif.cond)).truthy()) return self.evalBlockScoped(&elseif.body, tail);
         }
-        if (if_stmt.else_body) |*else_body| return self.evalBlockScoped(else_body);
+        if (if_stmt.else_body) |*else_body| return self.evalBlockScoped(else_body, tail);
         return .none;
     }
 
+    /// A LOOP BODY IS NOT A TAIL POSITION, SO IT CANNOT ANSWER THE RELATION.
+    ///
+    /// `tail = false` is what makes an unbounded loop stay unbounded here: the
+    /// body's fall-off value is discarded, the guard is asked again, and a
+    /// `while 1 == 1` runs until the step budget refuses the fold. Divergence
+    /// therefore leaves the fold as a REFUSAL — the loop is lowered and the
+    /// program still hangs — instead of as an integer nobody proved.
     fn evalWhile(self: *Evaluator, while_loop: anytype) EvalError!BlockResult {
         while ((try self.eval(while_loop.cond)).truthy()) {
             try self.step();
-            const result = try self.evalBlockScoped(&while_loop.body);
+            const result = try self.evalBlockScoped(&while_loop.body, false);
             if (result == .value) return result;
         }
         return .none;
@@ -1599,7 +1630,7 @@ pub const Evaluator = struct {
         while (if (step_value > 0) i <= stop else i >= stop) : (i += step_value) {
             try self.step();
             try self.setLocal(num_for.var_name, .{ .int = i });
-            const result = try self.evalBlockScoped(&num_for.body);
+            const result = try self.evalBlockScoped(&num_for.body, false);
             if (result == .value) return result;
         }
         return .none;
