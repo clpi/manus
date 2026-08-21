@@ -937,8 +937,15 @@ pub fn build(b: *std.Build) void {
     const resident_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "check", "scripts/proof/resident.id" });
     resident_proof_cmd.step.dependOn(b.getInstallStep());
     resident_proof_cmd.setCwd(b.path("."));
+    const resident_absence_cmd = b.addSystemCommand(&.{
+        "sh",
+        "-c",
+        "git cat-file -e :lib/compiler/application.id && test -z \"$(git ls-files 'lib/semantic/**')\" && test ! -e lib/semantic",
+    });
+    resident_absence_cmd.setCwd(b.path("."));
     const resident_proof_step = b.step("resident-proof", "CATALOG-ZERO: lib/semantic relation registry must not exist");
     resident_proof_step.dependOn(&resident_proof_cmd.step);
+    resident_proof_step.dependOn(&resident_absence_cmd.step);
 
     const semantic_proof_cmd = b.addSystemCommand(&.{
         "./zig-out/bin/idol",

@@ -3895,11 +3895,9 @@ pub const Sema = struct {
     /// REFUSED ONLY WHERE IT IS APPLIED, and that is not a hedge — it is what
     /// the ruling objects to. The fixture's own sentence is "run is a global
     /// relation, not process home DISPATCH", and a dispatch is an application.
-    /// MEASURED: the only other live `process.` sites in the tree are
-    /// `lib/semantic/ingest.id:9-12`, where `run = process.run` builds a table
-    /// of world-home FACTS — names being recorded, not edges being taken. A rule
-    /// written against the name rather than the dispatch would have broken the
-    /// one file in this tree whose whole job is to write these names down.
+    /// The refusal remains application-specific: a user binding may own the
+    /// word `process`, but no project catalog may turn that spelling into
+    /// semantic dispatch authority.
     fn refuseProcessNamespaceDispatch(self: *Sema, loc: ast.Loc, func: *const ast.Expr) bool {
         if (!self.idol_mode) return false;
         if (func.* != .field) return false;

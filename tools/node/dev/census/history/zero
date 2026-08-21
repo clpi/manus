@@ -71,7 +71,7 @@ scan '@corpus (verified|proof|history|migration|compat|legacy|deprecated)' 'reti
 scan 'examples/spec100/' 'spec100 path references'
 scan_id_files '\bstd\.' 'std. in canonical .id (excl lib/std migration)'
 scan_id_files '\blib\.' 'lib. in canonical .id'
-scan_id_files 'process\.' 'process. namespace in .id' '^lib/semantic/ingest\.id$'
+scan_id_files 'process\.' 'process. namespace in .id'
 scan_id_files ':from\(' ':from( inverse face in .id'
 scan_id_files ': (readable|writable|iterable|hashable|convertible)' 'adjective protocols in .id'
 scan_id_files '\b(req|require|import)\(' 'admission syntax in .id'

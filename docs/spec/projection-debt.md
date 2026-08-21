@@ -55,14 +55,6 @@ debt**, not canonical teaching:
 | gate | `gate/idiom.id` | K — ratchet rules mentioning patterns |
 | canonical-teaching | `examples/conversion/*`, `examples/projection/*`, … | verified — must match C0 |
 
-## `process.*` namespace (GAP-159)
-
-The retired MCP transport and its `tools/mcp/shared.id` namespace were deleted.
-`lib/semantic/ingest.id` remains the live namespace debt. `gate/idiom.id` states
-the no-new-lines law, but today direct execution is blocked by DNB001 `concat`;
-static scans are nonsemantic migration pressure. Graph migration replaces the
-remaining use with the `run` relation plus an exact world witness.
-
 ## Corpus tagging (GAP-161 interim)
 
 | partition | tag | status |

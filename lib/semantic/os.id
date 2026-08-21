@@ -1,5 +1,0 @@
-# os world — launcher-supplied tables under one home (docs/spec/host.md).
-
-args = true
-env = true
-possessed = false

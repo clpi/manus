@@ -1,7 +1,0 @@
-# jit world — dynamic compilation relations.
-
-compile =
-  world = "jit"
-  possessed = false
-  callable = true
-  operation = false

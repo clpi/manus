@@ -257,7 +257,7 @@ main: i64 = ()
   if ascount(cmd) != 0
     print("(semanticgate, control, gate, suffix detector kingdom reintroduced)")
     code = 3
-  cmd = "git grep -n -E {q}(^|[[:space:]])(if not |and not |or not |\\\\(not ){q} -- scripts/proof lib/semantic gates 2>/dev/null | grep -v grammarconvergence | grep -v text:match | grep -v 'never if not' | wc -l | awk '{print $1}'"
+  cmd = "git grep -n -E {q}(^|[[:space:]])(if not |and not |or not |\\\\(not ){q} -- scripts/proof gates 2>/dev/null | grep -v grammarconvergence | grep -v text:match | grep -v 'never if not' | wc -l | awk '{print $1}'"
   if ascount(cmd) != 0
     print("(semanticgate, control, gate, keyword not in teaching surfaces)")
     code = 3

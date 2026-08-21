@@ -89,8 +89,8 @@ Gates convict via `law.adjective.zero` and `law.protocol.one`.
 No **snake_case** (or camelCase, kebab-case, mashed stems) in project-controlled
 path components. One lowercase word per home; decompose through hierarchy:
 
-- `semantic/graph.id` — never `semantic_graph.id`
+- `compiler/graph.id` — never `semantic_graph.id`
 - `suffix/array.id` — never `suffixarray.id`
 
 `gate/path.id` rejects `_` in stems via `sep()` on every path component.
-Positive control: `semantic_graph` fails; `semantic/graph.id` passes.
+Positive control: `semantic_graph` fails; `compiler/graph.id` passes.
