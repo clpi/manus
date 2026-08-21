@@ -13527,7 +13527,7 @@ test "sema: Pass23 colon method compound field assign with descriptor" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const src = "Vec: @{ x: i32 }\nVec:xplus = (amt): i32\n    self.x += amt\nend";
+    const src = "Vec: { x: i32 }\nVec:xplus = (amt): i32\n    self.x += amt\nend";
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
     p.idol_mode = true;

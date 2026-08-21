@@ -216,7 +216,7 @@ test "knowledge_snapshot: native Point record from graph lift" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end

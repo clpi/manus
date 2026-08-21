@@ -120,7 +120,7 @@ test "sim_pipeline: exportInterchangeSnapshot applies abi.specialize" {
     defer arena.deinit();
     const alloc = arena.allocator();
     var lex = Lexer.init(
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
@@ -153,7 +153,7 @@ test "sim_pipeline: graph enrichment attaches shape_id to Point" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end

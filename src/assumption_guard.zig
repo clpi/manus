@@ -248,7 +248,7 @@ test "assumption_guard: known and unknown shapes emit no guard" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\main(): f64
         \\    p = Point { x = 1.0, y = 2.0 }
         \\    p.x

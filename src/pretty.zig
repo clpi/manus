@@ -1293,7 +1293,7 @@ pub const PrettyPrinter = struct {
                             try self.print("{s}: ", .{ad.name});
                             try self.printTypeExpr(target);
                         } else {
-                            try self.print("{s}: @{{", .{ad.name});
+                            try self.print("{s}: {{", .{ad.name});
                             var wrote_any = false;
                             if (ad.parent) |p| {
                                 try self.print(" ..{s}", .{p});
@@ -2330,7 +2330,7 @@ test "pretty: the printer holds no precedence model to disagree with" {
     try testing.expect(std.mem.indexOf(u8, src, "fn child" ++ "Floor") == null);
 }
 
-test "pretty: descriptor keeps its @ sigil and its spread parents" {
+test "pretty: a descriptor spread round-trips with no sigil" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2338,8 +2338,8 @@ test "pretty: descriptor keeps its @ sigil and its spread parents" {
     // The `..Base` spread vanished, so the reprinted record lost field `x`
     // entirely — and still checked clean.
     const src =
-        \\Base: @{ x: i64 }
-        \\Derived: @{ ..Base, y: i64 }
+        \\Base: { x: i64 }
+        \\Derived: { ..Base, y: i64 }
         \\
     ;
     const out = try fmtCanonical(alloc, src);
@@ -2349,7 +2349,7 @@ test "pretty: descriptor keeps its @ sigil and its spread parents" {
     // after an attribute line, so emitting it unconditionally broke files.
     try testing.expectEqualStrings(
         \\Base: { x: i64 }
-        \\Derived: @{ ..Base, y: i64 }
+        \\Derived: { ..Base, y: i64 }
         \\
     , out);
     try expectIdempotent(alloc, src);

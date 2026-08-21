@@ -1823,7 +1823,7 @@ pub const Parser = struct {
             .kw_try, .kw_catch => "Pass 100 §0.5: bind the result and route it — `if v, err = f(x) use(v) else report(err)`",
             .kw_defer => "Pass 100 §15: scope exit is structural — hold the resource in a descriptor value whose release is its own, or route the failure with a result pack",
             .kw_goto => "Pass 100 §13: use `break`/`continue`, or a dispatch table — `next(state)(event) = handler`, which gets exhaustiveness and the diagram free",
-            .kw_extends => "Pass 100 §15: there is no inheritance — compose by spreading a descriptor `@{ ..base, extra = v }`, or home the shared surface on a face",
+            .kw_extends => "Pass 100 §15: there is no inheritance — compose by spreading a descriptor `{ ..base, extra = v }`, or home the shared surface on a face",
             .kw_private => "Pass 100 §15 denies visibility-by-naming: nest the value under the descriptor that owns it",
             .kw_await, .kw_async => "Pass 100 §15: no async/await keyword pair — concurrency is a property of the value, not a colour on the function",
             .kw_let => "Pass 100 §0: bindings are bare — `x = expr`. `if let p = e` / `while let p = e` is the Rust shape; write `if v, err = f(x) use(v) else report(err)`",
@@ -5070,16 +5070,31 @@ pub const Parser = struct {
                     _ = try self.adv();
                     const after = (try self.pk()).kind;
                     is_caseset = after == .comma or after == .lparen;
+                } else if ((try self.pk()).kind == .concat) {
+                    // `Name: { ..Base, y: i64 }` — a descriptor SPREAD. Only
+                    // `stmt_from_descriptor` reads `.spread` entries; the
+                    // record-type reader has nowhere to put a parent, so the
+                    // sigil-free spelling failed with "write `name` at this
+                    // token edge" and `{ ..Base }` was the ONLY spelling of a
+                    // composed descriptor. That made the sigil load-bearing
+                    // for one face after `law.injection.only` retired it, and
+                    // it made `pretty.zig` reprint `@{` to keep the parent.
+                    // Same reader, same entries; the sigil is no longer the
+                    // thing that reaches it.
+                    is_caseset = true;
                 }
                 self.lex.restoreState(saved);
                 if (!is_caseset) break :caseset;
                 return try self.stmt_from_descriptor(first.name.ident, first.loc());
             }
-            // `Color: @{ Red, Green, Blue }` keywordless enum descriptor
+            // RETIRED. `@{ … }` is exclusively world injection
+            // (`law.injection.only`); a descriptor is an ordinary table.
             if ((try self.pk()).kind == .at) {
                 _ = try self.adv();
                 if ((try self.pk()).kind == .lbrace) {
-                    return try self.stmt_from_descriptor(first.name.ident, first.loc());
+                    term.locErr(first.loc(), "'@{{ … }}' is world injection, not descriptor construction", .{});
+                    term.locHint(first.loc(), "law.injection.only retired the descriptor sigil; the copula reader is the same one, reached without it. Write '{s}: {{ … }}' — fields, variants and '..parent' spreads all spell there", .{first.name.ident});
+                    return ParseError.UnexpectedToken;
                 }
                 term.locErr(first.loc(), "expected '{{' after '@' in descriptor declaration", .{});
                 return ParseError.UnexpectedToken;
@@ -6337,14 +6352,25 @@ pub const Parser = struct {
     /// anchor? Same gluing rule as the anchor: the opener must sit in the
     /// column immediately after the sigil, on the same line, so a spaced
     /// `a @ b` stays matmul and no existing program changes meaning.
-    fn at_is_glued_world_face(self: *Parser, at_tok: Token) ParseError!bool {
+    /// Which world face, so the refusal can name the fact that is actually
+    /// missing. `thing@{ … }` is INTERJECTION and is blocked on the derived
+    /// world; `thing@( … )` is QUALIFICATION BY EXPRESSION — `world.md` spells
+    /// `thing@(world.member)` for a nested world and it needs no derived world
+    /// at all, only a world-expression operand the anchor cannot take. One
+    /// message for both said "interjection 'thing{ … }'" over source that
+    /// contains no brace, which is a reconstructed fact: the token that decides
+    /// is right here.
+    const WorldFace = enum { interject, qualify_expr };
+
+    fn at_glued_world_face(self: *Parser, at_tok: Token) ParseError!?WorldFace {
         const saved = self.lex.saveState();
         defer self.lex.restoreState(saved);
         _ = try self.adv();
         const opener = try self.pk();
-        if (opener.kind != .lbrace and opener.kind != .lparen) return false;
-        if (opener.loc.line != at_tok.loc.line) return false;
-        return opener.loc.col == at_tok.loc.col + @as(u32, @intCast(at_tok.text.len));
+        if (opener.kind != .lbrace and opener.kind != .lparen) return null;
+        if (opener.loc.line != at_tok.loc.line) return null;
+        if (opener.loc.col != at_tok.loc.col + @as(u32, @intCast(at_tok.text.len))) return null;
+        return if (opener.kind == .lbrace) .interject else .qualify_expr;
     }
 
     fn at_is_glued_anchor(self: *Parser, at_tok: Token) ParseError!bool {
@@ -7211,12 +7237,9 @@ pub const Parser = struct {
         // the pack is honestly anonymous — §43 says the name is RECOVERED from
         // context, and at top level there is no context to recover it from.
         if ((try self.pk()).kind == .lbrace) {
-            const pack = try self.parse_pack(.{
-                .applied = self.descriptor_home != null,
-                .elided = true,
-                .home = self.descriptor_home,
-            });
-            return self.new_expr(.{ .unop = .{ .loc = l, .op = .compile, .operand = pack } });
+            term.locErr(l, "injection '@{{ … }}' has no derived-world fact yet", .{});
+            term.locHint(l, "law.injection.only rules the sigil EXCLUSIVELY world-deriving, and the graph carries no derived world: WorldFact records home/reach/members with no parent and no fact deltas, so nothing can represent the injection. If a DESCRIPTOR was meant, law.expect.apply denies 'p: point = @{{ x, y }}' by name — write the pack '{{ … }}', the applied form 'name{{ … }}', or the case-set copula 'name: {{ a, b, c }}' for a keywordless enum", .{});
+            return ParseError.ExpectedToken;
         }
         const first = try self.parse_at_path_segment();
         var parts: std.ArrayList([]const u8) = .empty;
@@ -7575,11 +7598,18 @@ pub const Parser = struct {
                     // spec's own example has already taken. Refuse here, where
                     // the shape is known, and name the missing fact instead of
                     // blaming the operand types.
-                    if (try self.at_is_glued_world_face(tok)) {
-                        term.locErr(tok.loc, "interjection 'thing@{{ … }}' has no derived-world fact yet", .{});
-                        term.locHint(tok.loc, "docs/spec/world.md admits this face and law.injection.only rules that '@{{ … }}' derives a world, but the graph carries no derived world: WorldFact records home/reach/members with no parent and no fact deltas, so nothing can represent the injection. Qualify against a named world ('thing@world') until the derived-world fact exists", .{});
-                        return ParseError.ExpectedToken;
-                    }
+                    if (try self.at_glued_world_face(tok)) |face| switch (face) {
+                        .interject => {
+                            term.locErr(tok.loc, "interjection 'thing@{{ … }}' has no derived-world fact yet", .{});
+                            term.locHint(tok.loc, "docs/spec/world.md admits this face and law.injection.only rules that '@{{ … }}' derives a world, but the graph carries no derived world: WorldFact records home/reach/members with no parent and no fact deltas, so nothing can represent the injection. Qualify against a named world ('thing@world') until the derived-world fact exists", .{});
+                            return ParseError.ExpectedToken;
+                        },
+                        .qualify_expr => {
+                            term.locErr(tok.loc, "qualification 'thing@( … )' takes no world EXPRESSION yet", .{});
+                            term.locHint(tok.loc, "docs/spec/world.md spells 'thing@(world.member)' for a nested world and 'thing@(@{{ k = v }})' for the exact interjection reduction, but the anchor admits only a NAME glued to the sigil: it builds an anchored '.field' node, and there is no world-expression operand for it to take. Name the world and write 'thing@world' until qualification carries an expression", .{});
+                            return ParseError.ExpectedToken;
+                        },
+                    };
                     if (!try self.at_is_glued_anchor(tok)) break;
                     _ = try self.adv();
                     const rel = try self.expect_name_like();
@@ -10874,18 +10904,6 @@ test "parse: named table destructure assign" {
     try testing.expectEqualStrings("name", db.body.stmts[0].assign.targets[0].name.ident);
 }
 
-test "parse: compile-time table descriptor @ { ... }" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const mod = try parseSource(
-        \\x = @ { Red, Green, Blue }
-    , &arena);
-    const unop = mod.body.stmts[0].assign.values[0].unop;
-    try testing.expectEqual(ast.UnOp.compile, unop.op);
-    try testing.expect(unop.operand.* == .table);
-    try testing.expectEqual(@as(usize, 3), unop.operand.table.fields.len);
-}
-
 test "parse: selective import destructure from req module" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -10914,11 +10932,11 @@ test "parse: @export on underscored function is allowed" {
     try testing.expect(std.mem.eql(u8, fd.attributes[0].name, "export"));
 }
 
-test "parse: keywordless enum descriptor Color: @{ ... }" {
+test "parse: keywordless enum descriptor Color: { ... }" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const mod = try parseSource(
-        \\Color: @{ Red, Green, Blue }
+        \\Color: { Red, Green, Blue }
     , &arena);
     const ed = mod.body.stmts[0].enum_def;
     try testing.expectEqualStrings("Color", ed.name);
@@ -10928,11 +10946,11 @@ test "parse: keywordless enum descriptor Color: @{ ... }" {
     try testing.expectEqualStrings("Blue", ed.variants[2].name);
 }
 
-test "parse: keywordless record descriptor Point: @{ x: f64, y: f64 }" {
+test "parse: keywordless record descriptor Point: { x: f64, y: f64 }" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const mod = try parseSource(
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
     , &arena);
     const ad = mod.body.stmts[0].alias_def;
     try testing.expectEqualStrings("Point", ad.name);
@@ -10948,7 +10966,7 @@ test "parse: record descriptor with composition ..Named" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const mod = try parseSource(
-        \\User: @{ ..Named, id: i64 }
+        \\User: { ..Named, id: i64 }
     , &arena);
     const ad = mod.body.stmts[0].alias_def;
     try testing.expectEqualStrings("User", ad.name);
@@ -10962,7 +10980,7 @@ test "parse: enum descriptor with payload variants Ok(v), Err(e)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const mod = try parseSource(
-        \\Result: @{ Ok(v), Err(e) }
+        \\Result: { Ok(v), Err(e) }
     , &arena);
     const ed = mod.body.stmts[0].enum_def;
     try testing.expectEqualStrings("Result", ed.name);
@@ -10980,7 +10998,7 @@ test "parse: enum descriptor payload with named fields Some(value: T)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const mod = try parseSource(
-        \\Option: @{ Some(value: T), None }
+        \\Option: { Some(value: T), None }
     , &arena);
     const ed = mod.body.stmts[0].enum_def;
     try testing.expectEqual(@as(usize, 2), ed.variants.len);
@@ -11228,25 +11246,6 @@ test "apply-one: a bare pack is anonymous — no subject, so no application" {
     try testing.expect(t.table.pack.home == null);
 }
 
-test "apply-one: top-level @{...} has no name to recover and says so" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    // c0 §43 `anchor.brace` recovers the name from the ENCLOSING DESCRIPTOR. At
-    // top level there is no enclosing descriptor, so `home` is null and the pack
-    // is honestly anonymous rather than claiming a subject it cannot name.
-    // Positive control for the elided bit: it is set, and `home` is not.
-    const mod = try parseDuoSource(
-        \\kind = @{ eof = 0, ident = 1 }
-    , &arena);
-    const staged = mod.body.stmts[0].assign.values[0];
-    try testing.expect(staged.* == .unop);
-    try testing.expectEqual(ast.UnOp.compile, staged.unop.op);
-    const pack = staged.unop.operand.table.pack;
-    try testing.expect(pack.elided);
-    try testing.expect(pack.home == null);
-    try testing.expect(!pack.applied);
-}
-
 test "apply-one: a comprehension is a stream, and takes no pack stance" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -11257,26 +11256,4 @@ test "apply-one: a comprehension is a stream, and takes no pack stance" {
         \\r = { v for v in xs }
     , &arena);
     try testing.expect(mod.body.stmts[0].assign.values[0].* == .list_comp);
-}
-test "apply-one: @{...} under a named binding RECOVERS the elided subject" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    // c0 §43 `anchor.brace`: "the same form, name recovered from the enclosing
-    // descriptor". This is the row where there IS one, and it is the positive
-    // control for the top-level row above — that one asserts `home == null`,
-    // which a parser that never set `home` at all would also satisfy. The two
-    // must be read together or neither means anything.
-    //
-    // MEASURED, not assumed: `home` comes back "kind". The parser holds
-    // `descriptor_home` across the initializer of a named typed binding, so the
-    // elided subject resolves to the name being bound.
-    const mod = try parseDuoSource(
-        \\kind: any = @{ eof = 0 }
-    , &arena);
-    const staged = mod.body.stmts[0].local_decl.inits[0];
-    try testing.expect(staged.* == .unop);
-    const p = staged.unop.operand.table.pack;
-    try testing.expect(p.elided);
-    try testing.expectEqualStrings("kind", p.home.?);
-    try testing.expect(p.applied);
 }

@@ -13,9 +13,9 @@
 # Source reading is embedded rather than read from disk because `os.read_file`
 # does not lower on either backend today; the scanner logic is identical either way.
 
-Kind = @{ eof = 0, ident = 1, number = 2, punct = 3 }
+Kind: { eof, ident, number, punct }
 
-tok: @{ kind: i64, start: i64, len: i64 }
+tok: { kind: i64, start: i64, len: i64 }
 
 digit: i64 = (c: i64)
     if c >= 48 and c <= 57

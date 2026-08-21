@@ -15,7 +15,7 @@
 
 Classify = classify
 
-tok: @{ kind: i64, start: i64, len: i64 }
+tok: { kind: i64, start: i64, len: i64 }
 
 # Non-keyword kinds. `classify.id` covers only the 54 reserved words, so these
 # two live here and are deliberately outside the canonical keyword range.

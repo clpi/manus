@@ -34838,8 +34838,8 @@ test "codegen: descriptor composition merges parent record fields" {
     defer arena.deinit();
     const alloc = arena.allocator();
     var lex = Lexer.init(
-        \\Named: @{ name: str }
-        \\User: @{ ..Named, id: i64 }
+        \\Named: { name: str }
+        \\User: { ..Named, id: i64 }
         \\u: User = { name = "alice", id = 42 }
         \\print(u.name, u.id)
     , "test.duo");

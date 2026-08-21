@@ -17,7 +17,7 @@
 
 Classify = classify
 
-span: @{ kind: i64, start: i64, len: i64 }
+span: { kind: i64, start: i64, len: i64 }
 
 KIND_OTHER = 0
 

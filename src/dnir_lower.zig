@@ -10429,7 +10429,7 @@ test "dnir_lower: f64 record kernel" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
@@ -10461,7 +10461,7 @@ test "dnir_lower: f64 kernel call with table literal" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
@@ -10545,7 +10545,7 @@ test "dnir_lower: f64 local in integer main" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
@@ -11363,7 +11363,7 @@ test "dnir_lower: implicit f64 assign" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
@@ -11462,7 +11462,7 @@ test "dnir_lower: f64 compare in integer main" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\length2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
@@ -12422,7 +12422,7 @@ test "dnir_lower: record-return tail and call assign emit init_record" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: i64, y: i64 }
+        \\Point: { x: i64, y: i64 }
         \\make(): Point
         \\    { x = 1, y = 2 }
         \\end
@@ -12455,7 +12455,7 @@ test "dnir_lower: f64 record-return tail lowers ret_record" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\make(): Point
         \\    { x = 1.0, y = 2.0 }
         \\end
@@ -12487,7 +12487,7 @@ test "dnir_lower: f64 kernel inline table emits init_record" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
@@ -12605,7 +12605,7 @@ test "dnir_lower: colon method compound field assign exports Type.method" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const src = "Vec: @{ x: i32 }\nVec:xplus = (amt): i32\n    self.x += amt\nend";
+    const src = "Vec: { x: i32 }\nVec:xplus = (amt): i32\n    self.x += amt\nend";
     var lex = @import("lexer.zig").Lexer.init(src, "method.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
@@ -12624,7 +12624,7 @@ test "dnir_lower: trailing compound field assign returns updated field slot" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src =
-        \\Vec: @{ x: i32 }
+        \\Vec: { x: i32 }
         \\bump = (v: Vec, amt: i32): i32
         \\    v.x += amt
         \\end
@@ -12707,7 +12707,7 @@ test "dnir_lower: ret_record carries every field in DESCRIPTOR order" {
     // is the only ordering that agrees with it; walking the literal's own order
     // shipped `c`'s value in the slot the caller reads as `a`.
     const src =
-        \\rec: @{ a: i64, b: i64, c: i64, d: i64, e: i64 }
+        \\rec: { a: i64, b: i64, c: i64, d: i64, e: i64 }
         \\mk(): rec
         \\    return { c = 30, e = 50, a = 10, d = 40, b = 20 }
         \\end
@@ -12743,7 +12743,7 @@ test "dnir_lower: a nine-field record return is eligible, a nine-field param is 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    const wide = "big: @{ a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, i: i64 }\n";
+    const wide = "big: { a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, i: i64 }\n";
     const lit = "{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8, i = 9 }";
 
     // Nine fields RETURNED: the x8 indirect-result convention covers it.

@@ -2,7 +2,7 @@
 # Blockers: (1) embedded-module record ctor codegen, (2) C str cannot hold NUL — need slice+len.
 # Proof: numeric LEB128 + u32 le decode through it.
 
-bytecursor: @{ data: str, pos: i64, len: i64 }
+bytecursor: { data: str, pos: i64, len: i64 }
 
 new: bytecursor = (data: str)
     bytecursor { data = data, pos = 1, len = data:len() }

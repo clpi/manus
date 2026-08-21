@@ -10703,7 +10703,7 @@ test "native backend refuses source f64 aggregate application absent operand ABI
     const alloc = arena.allocator();
 
     var lex = Lexer.init(
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
@@ -11004,7 +11004,7 @@ test "native backend lowers sealed f64 record distance2 kernel" {
     const alloc = arena.allocator();
 
     var lex = Lexer.init(
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\distance2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
@@ -11073,7 +11073,7 @@ test "native backend refuses source length2 short-circuit absent physical loweri
     const alloc = arena.allocator();
 
     const source =
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\length2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
@@ -12604,7 +12604,7 @@ test "native backend refuses source sealed record application absent graph ident
     const alloc = arena.allocator();
 
     var lex = Lexer.init(
-        \\Point: @{ x: f64, y: f64 }
+        \\Point: { x: f64, y: f64 }
         \\length2(p: Point): f64
         \\    p.x * p.x + p.y * p.y
         \\end
@@ -13011,7 +13011,7 @@ test "record return wider than x0..x7 uses the AAPCS64 x8 indirect result" {
     // `--emit exe` reads all nine fields back (11,22,…,99) and agrees with
     // `--backend=c` field for field.
     const source =
-        \\big: @{ a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, i: i64 }
+        \\big: { a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, i: i64 }
         \\mk(): big
         \\    return { a = 11, b = 22, c = 33, d = 44, e = 55, f = 66, g = 77, h = 88, i = 99 }
         \\end
@@ -13073,7 +13073,7 @@ test "an eight-field record return still explodes into x0..x7" {
     // onward was whatever the frame left behind. Exercised by value: this
     // program exits 18 (1*10 + 8) under both backends; it exited 10 before.
     const source =
-        \\eight: @{ a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64 }
+        \\eight: { a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64 }
         \\mk(): eight
         \\    return { a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8 }
         \\end

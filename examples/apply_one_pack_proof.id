@@ -23,7 +23,7 @@
 # a `duo_g_p` declaration and the C compiler refuses it. Reproduces with no
 # brace face anywhere in the file. That is why `p` lives inside `main` here.
 
-point: @{ x: f64, y: f64 }
+point: { x: f64, y: f64 }
 
 # The CALLABLE subjects. `apply(callable)(argpack)` is one of the four edges
 # §44 `apply.edge` enumerates, and these rows prove the brace face reaches its
@@ -35,7 +35,7 @@ first: any = (t: any)
 second: any = (t: any)
     t.y
 
-kind = @{ eof = 0, ident = 1 }
+kind: { eof, ident }
 
 main = ()
     # ROW 1 — the anonymous pack, applied to nothing. c0 §44a: "`{ x = 1,

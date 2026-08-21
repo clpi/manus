@@ -18,7 +18,7 @@
 add: i64 = (x: i64, y: i64)
   return x + y
 
-Point: @{ x: f64, y: f64 }
+Point: { x: f64, y: f64 }
 
 distance: f64 = (a: Point, b: Point)
   dx = a.x - b.x

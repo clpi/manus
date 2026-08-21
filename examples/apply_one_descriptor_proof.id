@@ -18,7 +18,7 @@
 # Every row asserts a VALUE, except the last, which asserts a REPRESENTATION
 # and therefore cannot be asserted here at all — see ROW 4.
 
-point: @{ x: f64, y: f64 }
+point: { x: f64, y: f64 }
 
 # A parameter typed by the DESCRIPTOR. This is what makes ROW 2 a composition
 # proof rather than a second binding proof.

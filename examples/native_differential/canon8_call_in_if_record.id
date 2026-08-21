@@ -1,4 +1,4 @@
-tok: @{ kind: i64, start: i64, len: i64 }
+tok: { kind: i64, start: i64, len: i64 }
 pred: i64 = (c: i64)
     if c > 5
         return 1

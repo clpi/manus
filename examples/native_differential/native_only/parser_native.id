@@ -18,7 +18,7 @@
 # direct backend is strictly more capable here, so C is not a valid oracle.
 
 # A parse result: the value produced, and the position after it.
-res: @{ val: i64, pos: i64 }
+res: { val: i64, pos: i64 }
 
 digit: i64 = (c: i64)
     if c >= 48 and c <= 57

@@ -1,3 +1,3 @@
-kind = @{ eof = 0, ident = 1, number = 2, punct = 3 }
+kind: { eof, ident, number, punct }
 main: i64 = ()
   kind.ident + kind.punct + 38
