@@ -4265,7 +4265,7 @@ fn hashReqClosure(
                             // A reached module gets the same §87 quotient as the root
                             // (see `hashSourceQuotient`): a comment edit in a library
                             // must not invalidate an artifact it cannot change.
-                            if (hashSourceQuotient(h, body, path)) {
+                            if (hashSourceQuotient(alloc, h, body, path)) {
                                 h.update("q");
                             } else {
                                 h.update("r");
@@ -4312,17 +4312,26 @@ fn hashReqClosure(
 ///     the surviving tokens is exactly that. This is what makes a blank line
 ///     or a whole-line comment free while indentation stays load-bearing.
 ///
-/// A lex error returns false and the caller falls back to raw bytes, so an
-/// input this scanner cannot read is never given a coarser key than it earns.
-fn hashSourceQuotient(h: *std.crypto.hash.sha2.Sha256, src: []const u8, path: []const u8) bool {
-    var lx = Lexer.init(src, path);
+/// A producer rejection or resource failure returns false and the caller falls
+/// back to raw bytes, so an input the executed producer cannot read is never
+/// given a coarser key than it earns. Hash the raw producer pack rather than
+/// `Lexer.next()`: the parser-facing cursor intentionally hides comments, but
+/// hint-bearing `---` comments remain semantic cache inputs.
+fn hashSourceQuotient(
+    alloc: std.mem.Allocator,
+    h: *std.crypto.hash.sha2.Sha256,
+    src: []const u8,
+    path: []const u8,
+) bool {
+    const facts = admittedSourceFacts(path) orelse return false;
+    var lx = Lexer.initFacts(src, path, facts);
+    routeThroughDuoLexer(alloc, &lx, src, path) catch return false;
+    const toks = lx.duo_tokens orelse return false;
+    defer alloc.free(toks);
+
     var last_line: u32 = 0;
     var rank: u32 = 0;
-    // One token is at least one byte, so this bounds the loop without trusting
-    // the scanner to terminate.
-    var guard: usize = 0;
-    while (guard <= src.len + 8) : (guard += 1) {
-        const t = lx.next_tok() catch return false;
+    for (toks) |t| {
         switch (t.kind) {
             .comment, .compat_long_comment => continue,
             .compat_comment => {
@@ -4350,6 +4359,8 @@ fn hashSourceQuotient(h: *std.crypto.hash.sha2.Sha256, src: []const u8, path: []
         h.update(std.mem.asBytes(&t.float_val));
         if (t.kind == .eof) return true;
     }
+    // `routeThroughDuoLexer` admits only EOF-terminated packs. Keep this
+    // fail-closed return in case that contract changes beneath this consumer.
     return false;
 }
 
@@ -4383,7 +4394,7 @@ fn buildCacheKey(
     // The root source enters as the parser's quotient of itself, never as its
     // bytes — see `hashSourceQuotient`. The discriminant keeps a quotient key
     // and a raw-fallback key in disjoint keyspaces.
-    if (hashSourceQuotient(&h, src, src_path)) {
+    if (hashSourceQuotient(alloc, &h, src, src_path)) {
         h.update("q");
     } else {
         h.update("r");
