@@ -3270,35 +3270,82 @@ fn link_native_object(
     try run_child_process(io, argv.items, "native linker", quiet);
 }
 
+fn testSummaryRunCount(log_bytes: []const u8) ?u32 {
+    const prefix = "DUO_EVT\ttest\tsummary\trun=";
+    var result: ?u32 = null;
+    var lines = std.mem.splitScalar(u8, log_bytes, '\n');
+    while (lines.next()) |raw_line| {
+        const line = std.mem.trimEnd(u8, raw_line, "\r");
+        if (!std.mem.startsWith(u8, line, prefix)) continue;
+        const value = line[prefix.len..];
+        const end = std.mem.indexOfScalar(u8, value, '\t') orelse value.len;
+        result = std.fmt.parseInt(u32, value[0..end], 10) catch return null;
+    }
+    return result;
+}
+
+fn spawnPathNeedsCwd(path: []const u8) bool {
+    return !std.fs.path.isAbsolute(path) and std.fs.path.dirname(path) == null;
+}
+
 fn run_pretty_test_runner(alloc: std.mem.Allocator, io: Io, out_path: []const u8, bench_mode: bool) !u8 {
+    const owned_exec_path = if (spawnPathNeedsCwd(out_path))
+        try std.fmt.allocPrint(alloc, ".{c}{s}", .{ std.fs.path.sep, out_path })
+    else
+        null;
+    defer if (owned_exec_path) |path| alloc.free(path);
+    const exec_path = owned_exec_path orelse out_path;
+
     if (term.testUsesStructuredOutput()) {
         const log_ns = Io.Timestamp.now(io, .awake).nanoseconds;
-        const log_path = try std.fmt.allocPrint(alloc, "/tmp/duo_test_{x}.log", .{@as(u64, @intCast(log_ns))});
+        const log_path = try std.fmt.allocPrint(alloc, "/tmp/idol_test_{d}_{x}.log", .{
+            std.c.getpid(), @as(u64, @intCast(log_ns)),
+        });
         defer alloc.free(log_path);
-        const cmd = if (term.test_report == .json)
-            try std.fmt.allocPrint(alloc, "{s} >/dev/null 2>{s}", .{ out_path, log_path })
-        else
-            try std.fmt.allocPrint(alloc, "{s} 2>{s}", .{ out_path, log_path });
-        defer alloc.free(cmd);
-        const argv = [_][]const u8{ "/bin/sh", "-c", cmd };
+
+        var log_file: ?Io.File = try Io.Dir.createFileAbsolute(io, log_path, .{
+            .read = true,
+            .exclusive = true,
+            .permissions = if (builtin.os.tag == .windows) .default_file else .fromMode(0o600),
+        });
+        defer {
+            if (log_file) |file| file.close(io);
+            Io.Dir.deleteFileAbsolute(io, log_path) catch {};
+        }
+
+        const argv = [_][]const u8{exec_path};
         var child = try std.process.spawn(io, .{
             .argv = &argv,
             .stdin = .inherit,
-            .stdout = .inherit,
-            .stderr = .inherit,
+            .stdout = if (term.test_report == .json) .ignore else .inherit,
+            .stderr = .{ .file = log_file.? },
         });
+        defer child.kill(io);
         const wait_res = try child.wait(io);
         const exit_code: u8 = switch (wait_res) {
             .exited => |c| @truncate(c),
             else => 1,
         };
         term.testSessionBegin(bench_mode);
-        const log_bytes = read_source(alloc, io, log_path) catch |e| {
+        defer term.testSessionEnd();
+        var read_buf: [4096]u8 = undefined;
+        var log_reader = log_file.?.reader(io, &read_buf);
+        const log_bytes = log_reader.interface.allocRemaining(alloc, .unlimited) catch |e| {
             term.err("could not read test event log '{s}': {}", .{ log_path, e });
-            term.testSessionEnd();
-            return exit_code;
+            return 1;
         };
         defer alloc.free(log_bytes);
+        log_file.?.close(io);
+        log_file = null;
+
+        const tests_run = testSummaryRunCount(log_bytes) orelse {
+            term.err("test event log '{s}' has no valid final test summary", .{log_path});
+            return 1;
+        };
+        if (tests_run == 0) {
+            term.err("test event log '{s}' examined zero tests", .{log_path});
+            return 1;
+        }
         var start: usize = 0;
         for (log_bytes, 0..) |ch, i| {
             if (ch == '\n') {
@@ -3307,12 +3354,10 @@ fn run_pretty_test_runner(alloc: std.mem.Allocator, io: Io, out_path: []const u8
             }
         }
         if (start < log_bytes.len) term.feedTestLine(std.mem.trim(u8, log_bytes[start..], "\r"));
-        term.testSessionEnd();
-        Io.Dir.deleteFileAbsolute(io, log_path) catch {};
         return exit_code;
     }
 
-    const argv = [_][]const u8{out_path};
+    const argv = [_][]const u8{exec_path};
     var child = try std.process.spawn(io, .{
         .argv = &argv,
         .stdin = .inherit,
@@ -3324,6 +3369,64 @@ fn run_pretty_test_runner(alloc: std.mem.Allocator, io: Io, out_path: []const u8
         .exited => |c| @truncate(c),
         else => 1,
     };
+}
+
+test "pretty test runner executes a metacharacter path as one argv value" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    try std.testing.expect(spawnPathNeedsCwd("runner"));
+    try std.testing.expect(!spawnPathNeedsCwd("./runner"));
+    try std.testing.expect(!spawnPathNeedsCwd("dir/runner"));
+    try std.testing.expect(!spawnPathNeedsCwd("/tmp/runner"));
+
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const canary = try std.fmt.allocPrint(alloc, "idol_runner_canary_{s}", .{tmp.sub_path});
+    defer alloc.free(canary);
+    try std.testing.expectError(error.FileNotFound, Io.Dir.cwd().access(io, canary, .{}));
+    defer Io.Dir.cwd().deleteFile(io, canary) catch {};
+
+    const executable_name = try std.fmt.allocPrint(alloc, "runner ; touch {s} ; #", .{canary});
+    defer alloc.free(executable_name);
+    try tmp.dir.writeFile(io, .{
+        .sub_path = executable_name,
+        .data =
+        \\#!/bin/sh
+        \\printf 'DUO_EVT\ttest\trun\tname=runner\n' >&2
+        \\printf 'DUO_EVT\ttest\tpass\tname=runner\n' >&2
+        \\printf 'DUO_EVT\ttest\tsummary\trun=1\tpass=1\tskipped=0\tfailed=0\n' >&2
+        ,
+        .flags = .{ .permissions = .executable_file },
+    });
+
+    var root_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const root = root_buf[0..try tmp.dir.realPath(io, &root_buf)];
+    const executable_path = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ root, executable_name });
+    defer alloc.free(executable_path);
+
+    const saved_report = term.test_report;
+    defer term.test_report = saved_report;
+    term.init(io);
+    term.test_report = .json;
+    try std.testing.expectEqual(@as(u8, 0), try run_pretty_test_runner(alloc, io, executable_path, false));
+    try std.testing.expectError(error.FileNotFound, Io.Dir.cwd().access(io, canary, .{}));
+
+    const zero_name = "zero-run";
+    try tmp.dir.writeFile(io, .{
+        .sub_path = zero_name,
+        .data =
+        \\#!/bin/sh
+        \\printf 'DUO_EVT\ttest\tsummary\trun=1\tpass=1\tskipped=0\tfailed=0\n' >&2
+        \\printf 'DUO_EVT\ttest\tsummary\trun=0\tpass=0\tskipped=0\tfailed=0\n' >&2
+        ,
+        .flags = .{ .permissions = .executable_file },
+    });
+    const zero_path = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ root, zero_name });
+    defer alloc.free(zero_path);
+    try std.testing.expectEqual(@as(u8, 1), try run_pretty_test_runner(alloc, io, zero_path, false));
 }
 
 fn resolveCompileTarget(target_in: []const u8, emit: target_model.EmitKind) []const u8 {

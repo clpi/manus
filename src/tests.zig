@@ -107,4 +107,7 @@ test {
     // own tests; importing it here makes it reachable from a build entry
     // point (the orphan gate) and runs its tests on every build.
     _ = @import("floor_derive.zig");
+    // `main.zig` owns driver-only process and report boundaries. Import it here
+    // so those executable controls are part of the ordinary unit-test root.
+    _ = @import("main.zig");
 }
