@@ -3712,6 +3712,14 @@ pub const CodeGen = struct {
         // table representation since SH-04 landed (alloc_slots + ptr).
         // So this arm was rejecting a shape both ends already handle.
         if (value.table.fields.len > 0) {
+            // ADMISSION AND CAPABILITY MUST BE ONE FACT. This used to carry its
+            // own rule -- a positional INT blob with no keyed write -- while
+            // dnir_lower carried a different one for what it can actually
+            // lower. Two rules in two passes can disagree, and the disagreement
+            // is silent: a table admitted here and unlowerable there falls
+            // through to a read that emits a POINTER, nondeterministically,
+            // exit 0. So ask the lowering what it can do.
+            if (@import("dnir_lower.zig").moduleConstTableKind(mod, name, value) != null) return false;
             if (!table_is_positional_int_blob(value) or module_has_keyed_write(mod, name)) return true;
             return false;
         }

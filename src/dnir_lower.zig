@@ -174,6 +174,11 @@ fn refuseMissingApplication(
 const ModuleConsts = struct {
     ints: std.StringHashMapUnmanaged(i64) = .empty,
     strs: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Module-level positional tables whose every element is text. The function
+    /// path carries this in `LowerCtx.str_tables` via `noteStrTable`; a module
+    /// binding has no `LowerCtx`, so it is recorded here and read at the same
+    /// two places, so both classifiers agree on one read.
+    str_tables: std.StringHashMapUnmanaged(void) = .empty,
 
     fn deinit(self: *ModuleConsts, alloc: std.mem.Allocator) void {
         var it = self.ints.iterator();
@@ -182,6 +187,9 @@ const ModuleConsts = struct {
         var sit = self.strs.iterator();
         while (sit.next()) |e| alloc.free(e.key_ptr.*);
         self.strs.deinit(alloc);
+        var tit = self.str_tables.iterator();
+        while (tit.next()) |e| alloc.free(e.key_ptr.*);
+        self.str_tables.deinit(alloc);
     }
 };
 
@@ -489,6 +497,49 @@ fn constGlobalInit(init: *const Expr, ty: RT) ?dnir.Value {
     };
 }
 
+/// THE ONE FACT BOTH PASSES READ.
+///
+/// `codegen`'s native-scalar precheck decides ADMISSION and this file decides
+/// CAPABILITY, in different passes over different state. While they were two
+/// separate rules they could disagree, and the disagreement was silent: a table
+/// admitted here and unlowerable there fell through to a read that emitted a
+/// POINTER, nondeterministically, exit 0. So the rule lives once and both sides
+/// call it.
+///
+/// Answers: is `name`, bound to `value` at module level, a positional table of
+/// constants of ONE kind that nothing mutates? Returns the element kind, or
+/// null when the shape must not be assumed constant.
+pub const ModuleTableKind = enum { int, text };
+
+pub fn moduleConstTableKind(
+    mod: *const ast.Module,
+    name: []const u8,
+    value: *const Expr,
+) ?ModuleTableKind {
+    // `@{ … }` parses as `.compile` wrapping the table; unwrap before reading.
+    const tbl = switch (value.*) {
+        .table => value,
+        .unop => |u| if (u.op == .compile and u.operand.* == .table) u.operand else return null,
+        else => return null,
+    };
+    if (tbl.table.fields.len == 0) return null;
+    for (tbl.table.fields) |fld| {
+        if (fld != .positional) return null;
+    }
+    var all_int = true;
+    var all_text = true;
+    for (tbl.table.fields) |fld| {
+        if (intLiteralStep(fld.positional) == null) all_int = false;
+        if (fld.positional.* != .quoted) all_text = false;
+    }
+    // One kind or the other, never a mixture: a slot whose holding depends on
+    // the index is what no consumer downstream can read correctly.
+    if (all_int == all_text) return null;
+    // Written, rebound, shadowed or passed on -> nothing may be assumed.
+    if (@intFromEnum(tableUseInBlock(&mod.body, name, tbl)) > @intFromEnum(TableUse.dyn_read)) return null;
+    return if (all_int) .int else .text;
+}
+
 fn collectModuleConsts(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -567,6 +618,22 @@ fn collectModuleConsts(
                 const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ n, nf.key });
                 try out.strs.put(alloc, key, nf.val.quoted.val);
             }
+        }
+        // Positional elements recorded under exactly the keys
+        // `lowerDynamicIndex` spells. The VERDICT is the shared one, so what is
+        // recorded here and what the precheck admits cannot drift apart.
+        if (moduleConstTableKind(mod, n, v)) |kind| {
+            var pos: i64 = 0;
+            for (tbl.table.fields) |fld| {
+                pos += 1;
+                const key = try std.fmt.allocPrint(alloc, "{s}.{d}", .{ n, pos });
+                switch (kind) {
+                    .int => try map.put(alloc, key, intLiteralStep(fld.positional).?),
+                    .text => try out.strs.put(alloc, key, fld.positional.quoted.val),
+                }
+            }
+            try map.put(alloc, try std.fmt.allocPrint(alloc, "{s}.len", .{n}), pos);
+            if (kind == .text) try out.str_tables.put(alloc, try alloc.dupe(u8, n), {});
         }
     }
     return out;
@@ -4881,7 +4948,8 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // here, and a third member added to the world would have been text at
         // the emit site and not-text at this predicate.
         .index => |ix| (if (osMemberOf(ix.obj)) |m| m.face == .projection and m.result == .str else false) or
-            (ix.obj.* == .name and ctx.str_tables.contains(ix.obj.name.ident)),
+            (ix.obj.* == .name and (ctx.str_tables.contains(ix.obj.name.ident) or
+                ctx.module_consts.str_tables.contains(ix.obj.name.ident))),
         .method_call => |mc| blk: {
             if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "io") and
                 std.mem.eql(u8, mc.method, "read"))
@@ -6186,8 +6254,10 @@ fn lowerIndexAssignTarget(
 fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const ast.Expr) Error!dnir.Value {
     const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{table_name});
     defer ctx.alloc.free(len_key);
-    const len_slot = ctx.locals.get(len_key) orelse return bail(ctx.diagnostic, @src());
-    const len = ctx.table_lens.get(len_slot) orelse return bail(ctx.diagnostic, @src());
+    const len: i64 = if (ctx.locals.get(len_key)) |len_slot|
+        ctx.table_lens.get(len_slot) orelse return bail(ctx.diagnostic, @src())
+    else
+        ctx.module_consts.ints.get(len_key) orelse return bail(ctx.diagnostic, @src());
     // As on the write side: wide tables are memory-backed from their binding and
     // resolve through `ptrSlotOf` before reaching this chain.
     if (len == 0 or len > select_chain_max) return bail(ctx.diagnostic, @src());
@@ -6202,13 +6272,23 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
     // only thing a consumer that never sees the AST node can ask. It has to
     // agree with `exprIsStr`'s `.index` arm or the two classifiers disagree on
     // one read — which is the shape that printed a pointer.
-    if (ctx.str_tables.contains(table_name)) try ctx.str_slots.put(ctx.alloc, out_slot, {});
+    if (ctx.str_tables.contains(table_name) or ctx.module_consts.str_tables.contains(table_name))
+        try ctx.str_slots.put(ctx.alloc, out_slot, {});
 
     var i: i64 = 1;
     while (i <= len) : (i += 1) {
         const elem_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ table_name, i });
         defer ctx.alloc.free(elem_key);
-        const elem_slot = ctx.locals.get(elem_key) orelse return bail(ctx.diagnostic, @src());
+        // Local slot when bound in a function; module constant when bound at
+        // module level. Both spell the key `"{s}.{d}"`; only storage differs.
+        const elem_val: dnir.Value = if (ctx.locals.get(elem_key)) |elem_slot|
+            .{ .local = elem_slot }
+        else if (ctx.module_consts.strs.get(elem_key)) |sv|
+            .{ .str = sv }
+        else if (ctx.module_consts.ints.get(elem_key)) |iv|
+            .{ .i64 = iv }
+        else
+            return bail(ctx.diagnostic, @src());
 
         const cmp = ctx.freshTemp();
         try ctx.emit(.{
@@ -6220,7 +6300,7 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
         });
         const skip = ctx.instrs.items.len;
         try ctx.emit(.{ .op = .br, .lhs = .{ .temp = cmp }, .branch_target = 0, .branch_condition = .when_false });
-        try ctx.emit(.{ .op = .store_local, .result = out_slot, .lhs = .{ .local = elem_slot }, .ty = .any });
+        try ctx.emit(.{ .op = .store_local, .result = out_slot, .lhs = elem_val, .ty = .any });
         ctx.instrs.items[skip].branch_target = @intCast(ctx.instrs.items.len);
     }
     return .{ .local = out_slot };
