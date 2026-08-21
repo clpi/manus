@@ -45,6 +45,7 @@ test {
     _ = @import("assumption_guard.zig");
     _ = @import("repair_candidate.zig");
     _ = @import("evidence_record.zig");
+    _ = @import("host_taint.zig");
     _ = @import("place.zig");
     _ = @import("region.zig");
     _ = @import("eqspace.zig");
@@ -107,4 +108,5 @@ test {
     // own tests; importing it here makes it reachable from a build entry
     // point (the orphan gate) and runs its tests on every build.
     _ = @import("floor_derive.zig");
+    _ = @import("host_taint.zig");
 }

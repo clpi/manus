@@ -3255,6 +3255,59 @@ pub const SemanticGraph = struct {
         }
     }
 
+    fn tableShapeHasField(self: *const SemanticGraph, shape: id, field_name: []const u8) bool {
+        for (self.edges.items) |edge| {
+            if (edge.from != shape or edge.kind != .member) continue;
+            const member = self.get(edge.to) orelse continue;
+            const name = member.name orelse continue;
+            if (std.mem.eql(u8, name, field_name)) return true;
+        }
+        return false;
+    }
+
+    pub fn recordParamFieldSliceSite(self: *const SemanticGraph, expr: *const Expr, parent: id) bool {
+        const func_expr: *const Expr = switch (expr.*) {
+            .call => |c| blk: {
+                if (c.args.len != 1) return false;
+                break :blk c.func;
+            },
+            .method_call => |mc| blk: {
+                if (mc.args.len != 1) return false;
+                break :blk mc.obj;
+            },
+            else => return false,
+        };
+        const f = switch (func_expr.*) {
+            .field => |fld| fld,
+            else => return false,
+        };
+        if (f.obj.* != .name) return false;
+        const param_name = f.obj.name.ident;
+        if (self.resolveInHome(parent, param_name, .param) == null) return false;
+        var func_scope: ?id = parent;
+        while (func_scope) |scope| {
+            const node = self.get(scope) orelse break;
+            if (node.kind == .func) break;
+            func_scope = node.scope;
+        }
+        const func_id = func_scope orelse return false;
+        const func_node = self.get(func_id) orelse return false;
+        const raw = func_node.ast_ref orelse return false;
+        const fd: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
+        var type_name: ?[]const u8 = null;
+        for (fd.func.params) |param| {
+            if (!std.mem.eql(u8, param.name, param_name)) continue;
+            type_name = switch (param.typ) {
+                .named => |n| n,
+                else => null,
+            };
+            break;
+        }
+        const tn = type_name orelse return false;
+        const shape = self.resolveTableShape(func_id, tn) orelse return false;
+        return self.tableShapeHasField(shape, f.field);
+    }
+
     fn liftCallFromExpr(
         self: *SemanticGraph,
         expr: *const Expr,
@@ -3267,6 +3320,7 @@ pub const SemanticGraph = struct {
             if (!self.isBootstrapApplicationExpr(expr) and self.aggregateForExpr(site.obj, parent) != null)
                 return;
         }
+        if (self.recordParamFieldSliceSite(expr, parent)) return;
         const base = types.inferCallShape(expr) orelse return;
         const shape = types.callShapeWithConsumption(base, consumption);
         const call_loc = expr.loc();
