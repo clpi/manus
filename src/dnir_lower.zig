@@ -591,62 +591,12 @@ fn qualifiedExportNameFromExpr(
     };
 }
 
-fn callCalleeIdent(expr: *const ast.Expr) ?[]const u8 {
-    return switch (expr.*) {
-        .call => |c| switch (c.func.*) {
-            .name => |n| n.ident,
-            else => null,
-        },
-        .method_call => |m| if (m.obj.* == .name) m.method else null,
-        else => null,
-    };
-}
-
-const RecordReturnForCall = struct {
-    callee: []const u8,
-    record: []const u8,
-    callee_owned: bool,
-};
-
-fn recordReturnForCall(ctx: *const LowerCtx, value: *const ast.Expr) ?RecordReturnForCall {
-    if (ctx.function) |func_id| {
-        const relation: ?[]const u8 = switch (value.*) {
-            .call => |c| switch (c.func.*) {
-                .name => |n| n.ident,
-                .field => |f| if (f.obj.* == .name) f.field else null,
-                else => null,
-            },
-            .method_call => |m| if (m.obj.* == .name) m.method else null,
-            else => null,
-        };
-        if (relation) |callee| {
-            if (ctx.graph.resolveInHome(func_id, callee, .func)) |target| {
-                if (ctx.entity_linkage.get(target)) |sym| {
-                    if (ctx.func_record_returns.get(sym)) |rec| {
-                        return .{ .callee = sym, .record = rec, .callee_owned = false };
-                    }
-                }
-            }
-        }
-    }
-    const spelled_opt = qualifiedExportNameFromExpr(ctx.alloc, value) catch return null;
-    const spelled = spelled_opt orelse return null;
-    const rec = ctx.func_record_returns.get(spelled) orelse {
-        ctx.alloc.free(spelled);
-        return null;
-    };
-    return .{ .callee = spelled, .record = rec, .callee_owned = true };
-}
-
-fn recordCallAssignable(ctx: *const LowerCtx, value: *const ast.Expr) bool {
-    // The upfront `func_record_returns` map is populated from every eligible
-    // function before lowering — lawful for mutual-recursion record returns
-    // such as `inner: Res = parse_expr(...)` even without a graph occurrence.
-    return recordReturnForCall(ctx, value) != null;
-}
-
 fn recordExportMapAssignable(ctx: *const LowerCtx, value: *const ast.Expr) bool {
-    return recordCallAssignable(ctx, value);
+    if (ctx.require_graph_facts) return false;
+    const export_name = qualifiedExportNameFromExpr(ctx.alloc, value) catch return false;
+    defer if (export_name) |n| ctx.alloc.free(n);
+    if (export_name) |n| return ctx.func_record_returns.contains(n);
+    return false;
 }
 
 pub fn lowerModule(alloc: std.mem.Allocator, mod: *const ast.Module) Error!dnir.Module {
@@ -1165,23 +1115,6 @@ fn lowerModuleFromGraph(
             return err;
         };
     }
-    // Cross-home record returns (`lexer.peek`, `lexer.next`, …) use the same
-    // mangled symbol `entity_linkage` publishes for the call target.
-    decl_it = declarations.iterator();
-    while (decl_it.next()) |entry| {
-        const fd = entry.key_ptr.*;
-        const entity_id = entry.value_ptr.*;
-        const rec_name = recordReturnNameForDecl(records.items, graph, fd) orelse continue;
-        const sym = entity_linkage.get(entity_id) orelse continue;
-        if (func_record_returns.contains(sym)) continue;
-        const key = try alloc.dupe(u8, sym);
-        const value = try alloc.dupe(u8, rec_name);
-        func_record_returns.put(alloc, key, value) catch |err| {
-            alloc.free(key);
-            alloc.free(value);
-            return err;
-        };
-    }
     var skipped: ?[]const u8 = null;
     defer if (skipped) |name| alloc.free(name);
     for (mod.body.stmts) |*stmt| {
@@ -1631,29 +1564,6 @@ fn f64AbiParamSlots(fd: *const ast.FuncDecl, recs: []const dnir.RecordDesc) ?usi
 /// argument register, and there are eight of them (x0..x7). Eight is therefore
 /// the register file, not a conservative cap.
 pub const max_reg_record_fields = 8;
-
-/// How many GP local slots a scalar record parameter consumes at the DNIR
-/// boundary. Wide module tables (`lexer`, …) cross as one opaque pointer.
-pub fn scalRecordParamSlotCount(field_count: usize) u32 {
-    if (field_count > max_reg_record_fields) return 1;
-    return @intCast(field_count);
-}
-
-fn recordUsesOpaquePointer(rec: dnir.RecordDesc) bool {
-    return rec.fields.len > max_reg_record_fields;
-}
-
-fn recordFieldStoreTy(rec: dnir.RecordDesc, field_name: []const u8) RT {
-    for (rec.fields, rec.kinds, rec.widths) |fname, kind, width| {
-        if (!std.mem.eql(u8, fname, field_name)) continue;
-        return switch (kind) {
-            .str => .str,
-            .f64 => .f64,
-            .i64 => width orelse .any,
-        };
-    }
-    return .any;
-}
 
 /// Past `max_reg_record_fields` a record return uses the AAPCS64 indirect-result
 /// convention: the CALLER reserves the buffer and passes its address in x8, and
@@ -2603,16 +2513,6 @@ fn lowerFunction(
         }) |rec| {
             const param_key = try alloc.dupe(u8, par.name);
             try ctx.param_record_types.put(alloc, param_key, rec.name);
-            if (recordUsesOpaquePointer(rec)) {
-                const owned = try alloc.dupe(u8, par.name);
-                ctx.locals.put(alloc, owned, param_slot_cursor) catch |err| {
-                    alloc.free(owned);
-                    return err;
-                };
-                try ctx.ptr_slots.put(alloc, param_slot_cursor, {});
-                param_slot_cursor += 1;
-                continue;
-            }
             var all_scalar = rec.fields.len > 0;
             for (rec.kinds) |k| {
                 if (k == .f64) all_scalar = false;
@@ -3427,25 +3327,6 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
         try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = store_ty });
         subsumeProducerRefit(ctx);
         return;
-    }
-    if (opaqueRecordForObject(ctx, obj.name.ident)) |opaque_base| {
-        if (fieldIndexIn(opaque_base.rec, field_name)) |_| {
-            const store_ty = recordFieldStoreTy(opaque_base.rec, field_name);
-            try ctx.emit(.{
-                .op = .store_field,
-                .lhs = v,
-                .rhs = .{ .local = opaque_base.base_slot },
-                .req_alias = try ctx.alloc.dupe(u8, obj.name.ident),
-                .field = field_name,
-                .record = opaque_base.rec.name,
-                .ty = store_ty,
-            });
-            return;
-        }
-        if (recordFieldPrefixPresent(opaque_base.rec, field_name)) {
-            try lowerOpaqueRecordPrefixAssign(ctx, obj.name.ident, field_name, v, opaque_base);
-            return;
-        }
     }
     const store_ty: RT = if (exprIsF64(ctx, value)) .f64 else .any;
     const slot = ctx.freshTemp();
@@ -5454,46 +5335,22 @@ fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, a
     // written, so it read whatever the caller happened to leave in x1.
     const arg0 = try scalarCallLhs(ctx, args, callee);
     try ctx.emit(.{ .op = .call_direct, .callee = callee, .lhs = arg0, .record = rec_name, .field = name });
-    const rec_slot = if (ctx.locals.get(name)) |existing| existing else blk: {
-        const slot = ctx.freshTemp();
-        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), slot);
-        break :blk slot;
-    };
+    const rec_slot = ctx.freshTemp();
+    try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec_slot);
     try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = rec_name, .field = name });
-    for (ctx.records) |record| {
-        if (!std.mem.eql(u8, record.name, rec_name)) continue;
-        for (record.fields, 0..) |fname, fi| {
-            const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
-            defer ctx.alloc.free(fk);
-            if (ctx.locals.contains(fk)) continue;
-            const fslot = ctx.freshTemp();
-            try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), fslot);
-            if (fi < record.kinds.len) switch (record.kinds[fi]) {
-                .str => try ctx.str_slots.put(ctx.alloc, fslot, {}),
-                .f64 => try ctx.f64_slots.put(ctx.alloc, fslot, {}),
-                .i64 => {},
-            };
-        }
-        break;
-    }
 }
 
 fn tryAssignRecordCallFromExportMap(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) Error!bool {
-    const resolved = recordReturnForCall(ctx, value) orelse return false;
-    defer if (resolved.callee_owned) ctx.alloc.free(resolved.callee);
-    const record_type: ast.TypeExpr = .{ .named = resolved.record };
-    const record = findRecordName(ctx.records, record_type) orelse return false;
-    if (!checkedRecordResultSupported(record)) return false;
-    if (ctx.occurrences.get(value)) |application| {
-        try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
-        return true;
-    }
+    if (ctx.require_graph_facts) return false;
+    const export_name = try qualifiedExportNameFromExpr(ctx.alloc, value) orelse return false;
+    defer ctx.alloc.free(export_name);
+    const rec_name = ctx.func_record_returns.get(export_name) orelse return false;
     const args = switch (value.*) {
         .call => |c| c.args,
         .method_call => |m| m.args,
         else => return false,
     };
-    try lowerRecordCallAssign(ctx, name, resolved.callee, args, resolved.record);
+    try lowerRecordCallAssign(ctx, name, export_name, args, rec_name);
     return true;
 }
 
@@ -6793,75 +6650,17 @@ fn recordFieldRootName(expr: *const ast.Expr) ?[]const u8 {
     };
 }
 
-const OpaqueRecordBase = struct { base_slot: u32, rec: dnir.RecordDesc };
-
-fn opaqueRecordForObject(ctx: *LowerCtx, obj_name: []const u8) ?OpaqueRecordBase {
-    const base_slot = ctx.locals.get(obj_name) orelse return null;
-    if (!ctx.ptr_slots.contains(base_slot)) return null;
-    const rec = blk: {
-        if (ctx.param_record_types.get(obj_name)) |rec_name| {
-            if (findRecordName(ctx.records, .{ .named = rec_name })) |r| break :blk r;
-            if (findRecordByNominal(ctx.records, rec_name, ctx.graph)) |r| break :blk r;
-        }
-        if (recordLocalDesc(ctx, obj_name)) |r| break :blk r;
-        break :blk null;
-    } orelse return null;
-    if (!recordUsesOpaquePointer(rec)) return null;
-    return .{ .base_slot = base_slot, .rec = rec };
-}
-
-fn lowerOpaqueRecordPrefixAssign(
-    ctx: *LowerCtx,
-    obj_name: []const u8,
-    prefix: []const u8,
-    value: dnir.Value,
-    opaque_base: OpaqueRecordBase,
-) Error!void {
-    var dotted: [512]u8 = undefined;
-    const prefix_pat = std.fmt.bufPrint(&dotted, "{s}.", .{prefix}) catch return bail(ctx.diagnostic, @src());
-    for (opaque_base.rec.fields) |fname| {
-        if (!std.mem.eql(u8, fname, prefix) and !std.mem.startsWith(u8, fname, prefix_pat)) continue;
-        const store_ty = recordFieldStoreTy(opaque_base.rec, fname);
-        const t = ctx.freshTemp();
-        try ctx.emit(.{
-            .op = .load_field,
-            .result = t,
-            .rhs = value,
-            .req_alias = "",
-            .field = try ctx.alloc.dupe(u8, fname),
-            .record = opaque_base.rec.name,
-            .ty = store_ty,
-        });
-        try ctx.emit(.{
-            .op = .store_field,
-            .lhs = .{ .temp = t },
-            .rhs = .{ .local = opaque_base.base_slot },
-            .req_alias = try ctx.alloc.dupe(u8, obj_name),
-            .field = try ctx.alloc.dupe(u8, fname),
-            .record = opaque_base.rec.name,
-            .ty = store_ty,
-        });
-    }
-}
-
 fn loadFieldFromOpaquePath(ctx: *LowerCtx, path: []const u8) Error!?dnir.Value {
     const dot = std.mem.indexOfScalar(u8, path, '.') orelse return null;
     const obj_name = path[0..dot];
-    const record_view = opaqueRecordForObject(ctx, obj_name) orelse {
-        if (ctx.locals.get(obj_name) == null and ctx.param_record_types.get(obj_name) == null) return null;
-        return null;
-    };
+    if (ctx.locals.get(obj_name) == null and ctx.param_record_types.get(obj_name) == null) return null;
     const field = path[dot + 1 ..];
-    const load_ty = recordFieldStoreTy(record_view.rec, field);
     const t = ctx.freshTemp();
     try ctx.emit(.{
         .op = .load_field,
         .result = t,
-        .rhs = .{ .local = record_view.base_slot },
         .req_alias = try ctx.alloc.dupe(u8, obj_name),
         .field = try ctx.alloc.dupe(u8, field),
-        .record = record_view.rec.name,
-        .ty = load_ty,
     });
     return .{ .temp = t };
 }
@@ -6890,20 +6689,7 @@ fn lowerNestedRecordFromFieldRef(
             vals[idx] = .{ .local = slot };
         } else {
             const t = ctx.freshTemp();
-            if (opaqueRecordForObject(ctx, obj_name)) |opaque_base| {
-                const load_ty = recordFieldStoreTy(opaque_base.rec, fname);
-                try ctx.emit(.{
-                    .op = .load_field,
-                    .result = t,
-                    .rhs = .{ .local = opaque_base.base_slot },
-                    .req_alias = try ctx.alloc.dupe(u8, obj_name),
-                    .field = try ctx.alloc.dupe(u8, fname),
-                    .record = opaque_base.rec.name,
-                    .ty = load_ty,
-                });
-            } else {
-                try ctx.emit(.{ .op = .load_field, .result = t, .req_alias = obj_name, .field = fname });
-            }
+            try ctx.emit(.{ .op = .load_field, .result = t, .req_alias = obj_name, .field = fname });
             vals[idx] = .{ .temp = t };
         }
         seen[idx] = true;
@@ -6933,20 +6719,6 @@ fn callFieldSuffixFromExpr(
     return .{ .call = cur, .suffix = try ctx.alloc.dupe(u8, suffix.items) };
 }
 
-fn recordForCallProjection(
-    ctx: *LowerCtx,
-    call_expr: *const ast.Expr,
-    application: *const semantic_graph.ApplicationFact,
-) Error!?dnir.RecordDesc {
-    if (try checkedRecordForApplication(ctx, application)) |record| return record;
-    if (recordReturnForCall(ctx, call_expr)) |resolved| {
-        defer if (resolved.callee_owned) ctx.alloc.free(resolved.callee);
-        const record_type: ast.TypeExpr = .{ .named = resolved.record };
-        return findRecordName(ctx.records, record_type);
-    }
-    return null;
-}
-
 fn lowerCallRecordFieldProjection(
     ctx: *LowerCtx,
     call_expr: *const ast.Expr,
@@ -6954,7 +6726,7 @@ fn lowerCallRecordFieldProjection(
 ) Error!?dnir.Value {
     if (!ctx.require_graph_facts) return null;
     const application = ctx.occurrences.get(call_expr) orelse return null;
-    const record = try recordForCallProjection(ctx, call_expr, application) orelse return null;
+    const record = try checkedRecordForApplication(ctx, application) orelse return null;
     const tmp_slot = ctx.freshTemp();
     const tmp = try std.fmt.allocPrint(ctx.alloc, "__rf{d}", .{tmp_slot});
     // Keep `tmp` alive until `internInstrStrings` copies `.field` / `.req_alias`.
@@ -10462,12 +10234,6 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
             if (try loadFieldFromOpaquePath(ctx, path.items)) |v| return v;
         }
         return bail(ctx.diagnostic, @src());
-    }
-    if (fld.obj.* == .name) {
-        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ fld.obj.name.ident, fld.field });
-        defer ctx.alloc.free(fk);
-        if (ctx.locals.get(fk)) |slot| return .{ .local = slot };
-        if (try loadFieldFromOpaquePath(ctx, fk)) |v| return v;
     }
     const t = ctx.freshTemp();
     const base: []const u8 = if (fld.obj.* == .name) fld.obj.name.ident else "";

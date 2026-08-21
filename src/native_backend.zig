@@ -573,13 +573,6 @@ fn scalRecordDesc(records: *const ScalRecordMap, name: []const u8) ?ScalRecordDe
     return records.get(name);
 }
 
-fn scalRecordFieldIndex(rec: ScalRecordDesc, field_name: []const u8) ?usize {
-    for (rec.field_names, 0..) |fname, i| {
-        if (std.mem.eql(u8, fname, field_name)) return i;
-    }
-    return null;
-}
-
 fn f64RecordDesc(records: *const F64RecordMap, name: []const u8) ?F64RecordDesc {
     return records.get(name);
 }
@@ -2205,7 +2198,7 @@ const Arm64Compiler = struct {
             var slots_for_param: u32 = 1;
             if (p.record) |rec_name| {
                 if (scalRecordDesc(self.scal_records, rec_name)) |rec| {
-                    slots_for_param = dnir_lower.scalRecordParamSlotCount(rec.field_names.len);
+                    slots_for_param = @intCast(rec.field_names.len);
                 }
             }
             param_slots += slots_for_param;
@@ -2298,7 +2291,7 @@ const Arm64Compiler = struct {
             var slots_for_param: u32 = 1;
             if (p.record) |rec_name| {
                 if (scalRecordDesc(self.scal_records, rec_name)) |rec| {
-                    slots_for_param = dnir_lower.scalRecordParamSlotCount(rec.field_names.len);
+                    slots_for_param = @intCast(rec.field_names.len);
                 }
             }
             var k: u32 = 0;
@@ -2891,7 +2884,7 @@ const Arm64Compiler = struct {
                 var slots_for_param: u32 = 1;
                 if (p.record) |rec_name| {
                     if (scalRecordDesc(self.scal_records, rec_name)) |rec| {
-                        slots_for_param = dnir_lower.scalRecordParamSlotCount(rec.field_names.len);
+                        slots_for_param = @intCast(rec.field_names.len);
                     }
                 }
                 // A DECLARED narrow parameter arrives in a 64-bit register and
@@ -4082,64 +4075,27 @@ const Arm64Compiler = struct {
                 }
             },
             .load_field => {
-                if (ins.record.len > 0 and ins.rhs != .void) {
-                    const rec = scalRecordDesc(self.scal_records, ins.record) orelse return self.refuse(@src());
-                    const fi = scalRecordFieldIndex(rec, ins.field) orelse return self.refuse(@src());
-                    const offset: u16 = @intCast(fi * 8);
-                    if (offset > 32752) return self.refuse(@src());
-                    const base_reg = try self.evalDnirValue(temps, ins.rhs);
-                    if (rec.field_kinds[fi] == .f64) {
+                const base = if (ins.req_alias.len > 0) ins.req_alias else "rec";
+                const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, ins.field });
+                defer self.alloc.free(key);
+                if (self.fp_stack_slots.get(key)) |slot| {
+                    if (slot.float) {
                         const d = try self.allocFpReg();
-                        try self.emitLdrBaseImmFp(d, base_reg, offset);
-                        if (ins.result) |t| try temps.put(self.alloc, t, d);
-                        try self.markFpTemp(ins.result);
-                    } else {
-                        const reg = try self.allocReg();
-                        try self.emitLdrBaseImm(reg, base_reg, offset);
-                        _ = try self.emitNarrowFit(reg, reg, ins.ty);
-                        if (ins.result) |t| try temps.put(self.alloc, t, reg);
-                    }
-                    if (!Arm64Compiler.regIsPinned(pinned, base_reg)) self.releaseReg(base_reg);
-                } else {
-                    const base = if (ins.req_alias.len > 0) ins.req_alias else "rec";
-                    const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, ins.field });
-                    defer self.alloc.free(key);
-                    if (self.fp_stack_slots.get(key)) |slot| {
-                        if (slot.float) {
-                            const d = try self.allocFpReg();
-                            try self.emitLdrSpFp(d, slot.off);
-                            if (ins.result) |t| try temps.put(self.alloc, t, d);
-                            try self.markFpTemp(ins.result);
-                        } else {
-                            const reg = try self.loadStackField(key);
-                            if (ins.result) |t| try temps.put(self.alloc, t, reg);
-                        }
-                    } else if (self.cur_func_float) {
-                        const d = self.fp_locals.get(key) orelse return self.undefinedKey(@src(), "fp local", key);
+                        try self.emitLdrSpFp(d, slot.off);
                         if (ins.result) |t| try temps.put(self.alloc, t, d);
                         try self.markFpTemp(ins.result);
                     } else {
                         const reg = try self.loadStackField(key);
                         if (ins.result) |t| try temps.put(self.alloc, t, reg);
                     }
-                }
-            },
-            .store_field => {
-                const rec = scalRecordDesc(self.scal_records, ins.record) orelse return self.refuse(@src());
-                const fi = scalRecordFieldIndex(rec, ins.field) orelse return self.refuse(@src());
-                const offset: u16 = @intCast(fi * 8);
-                if (offset > 32752) return self.refuse(@src());
-                const base_reg = try self.evalDnirValue(temps, ins.rhs);
-                if (rec.field_kinds[fi] == .f64) {
-                    const src = try self.evalDnirValueFp(temps, ins.lhs);
-                    try self.emitStrBaseImmFp(src, base_reg, offset);
-                    self.releaseFpReg(src);
+                } else if (self.cur_func_float) {
+                    const d = self.fp_locals.get(key) orelse return self.undefinedKey(@src(), "fp local", key);
+                    if (ins.result) |t| try temps.put(self.alloc, t, d);
+                    try self.markFpTemp(ins.result);
                 } else {
-                    const src = try self.evalDnirValue(temps, ins.lhs);
-                    try self.emitStrBaseImm(src, base_reg, offset);
-                    self.releaseReg(src);
+                    const reg = try self.loadStackField(key);
+                    if (ins.result) |t| try temps.put(self.alloc, t, reg);
                 }
-                if (!Arm64Compiler.regIsPinned(pinned, base_reg)) self.releaseReg(base_reg);
             },
             .str_len => {
                 // Inline byte-length scan — the sovereign form of `string.len`.
@@ -6313,16 +6269,6 @@ const Arm64Compiler = struct {
             0xf9400000 | ((@as(u32, offset) / 8) << 10) | (@as(u32, base) << 5) | @as(u32, dst),
             "ldr x{d}, [x{d}, #{d}]",
             .{ dst, base, offset },
-        );
-    }
-
-    fn emitLdrBaseImmFp(self: *Arm64Compiler, dreg: u5, base: u5, offset: u16) Error!void {
-        if (offset % 8 != 0 or offset / 8 > 4095) return self.refuse(@src());
-        try self.ensureRegLive(base);
-        try self.emitFmt(
-            0xfd400000 | ((@as(u32, offset) / 8) << 10) | (@as(u32, base) << 5) | @as(u32, dreg),
-            "ldr d{d}, [x{d}, #{d}]",
-            .{ dreg, base, offset },
         );
     }
 
