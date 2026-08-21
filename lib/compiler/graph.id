@@ -46,11 +46,14 @@ add: str = (set: str, name: str)
 nodes: str = (src: str, file: str, family: i64)
   lx: lexer = lexer.new(src, file, family)
   acc = "|"
-  while lexer.advance(lx)
-    if lexer.last_kind(lx) == token.KIND_NAME and lexer.last_col(lx) == 1
-      pk = lexer.peek_kind(lx)
-      if pk == token.KIND_ASSIGN or pk == token.KIND_LPAREN or pk == token.KIND_COLON
-        acc = add(acc, lexer.last_text(lx))
+  while true
+    t = lexer.next(lx)
+    if t.kind == token.KIND_EOF
+      break
+    if t.kind == token.KIND_NAME and t.loc.col == 1
+      nxt = lexer.peek(lx)
+      if nxt.kind == token.KIND_ASSIGN or nxt.kind == token.KIND_LPAREN or nxt.kind == token.KIND_COLON
+        acc = add(acc, t.text)
   acc
 
 # Private nodes with in-degree 0: declared `_name`, never referenced in the
@@ -60,7 +63,11 @@ dead: i64 = (src: str, file: str, family: i64, report: bool)
   lx: lexer = lexer.new(src, file, family)
   used = "|"
   kind: i64 = 0
-  while lexer.advance(lx)
+  col: i64 = 0
+  while true
+    t = lexer.next(lx)
+    if t.kind == token.KIND_EOF
+      break
     # gap[025]: a RECEIVER FACE is a reference. `self:_fail(2)` calls the
     # top-level `_fail`, so excluding names after `:` made every converted
     # call site invisible and reported live privates as unreachable.
@@ -71,12 +78,13 @@ dead: i64 = (src: str, file: str, family: i64, report: bool)
     # `a:m()` now also marks a same-named top-level binding as used, so the
     # query can MISS a dead private — it can no longer invent one, which is
     # the failure that would delete live code.
-    if lexer.last_kind(lx) == token.KIND_NAME and kind != token.KIND_DOT
+    if t.kind == token.KIND_NAME and kind != token.KIND_DOT
       # a declaration site is not a use of itself
-      decl = lexer.last_col(lx) == 1
+      decl = t.loc.col == 1
       if !decl
-        used = add(used, lexer.last_text(lx))
-    kind = lexer.last_kind(lx)
+        used = add(used, t.text)
+    kind = t.kind
+    col = t.loc.col
 
   # walk the declared set and count private names never used
   n: i64 = declared:len()

@@ -30,10 +30,7 @@ state: {
     line: i64,
     col: i64,
     has_peeked: bool,
-    peeked_token: token,
-    last_kind: i64,
-    last_col: i64,
-    last_text: str
+    peeked_token: token
 }
 
 lexer: {
@@ -51,11 +48,6 @@ lexer: {
     family: i64,
     has_peeked: bool,
     peeked_token: token,
-    # Scalar projection of the most recent `next` for scan loops that cannot
-    # hold a token record under the direct-backend local register ceiling.
-    last_kind: i64,
-    last_col: i64,
-    last_text: str,
     has_error: bool,
     error_loc: loc,
     error_code: i64,
@@ -79,9 +71,6 @@ new: lexer = (src: str, file: str, family: i64)
         family = family,
         has_peeked = false,
         peeked_token = dummy_tok,
-        last_kind = 0,
-        last_col = 0,
-        last_text = "",
         has_error = false,
         error_loc = dummy_loc,
         error_code = 0,
@@ -712,29 +701,6 @@ peek: token = (self: lexer)
         self.has_peeked = true
     self.peeked_token
 
-# Scalar projection for scan loops that cannot hold a peeked token record under
-# the direct-backend local register ceiling. Aggregate access stays in this
-# home so callers only apply a cross-home scalar call.
-peek_kind: i64 = (self: lexer)
-    self:peek().kind
-
-# Advance one token and publish scalars for cross-home scan loops.
-advance: bool = (self: lexer)
-    tok = self:next()
-    self.last_kind = tok.kind
-    self.last_col = tok.loc.col
-    self.last_text = tok.text
-    tok.kind != token.KIND_EOF
-
-last_kind: i64 = (self: lexer)
-    self.last_kind
-
-last_col: i64 = (self: lexer)
-    self.last_col
-
-last_text: str = (self: lexer)
-    self.last_text
-
 save_state: state = (self: lexer)
     return {
         pos = self.pos,
@@ -743,9 +709,6 @@ save_state: state = (self: lexer)
         col = self.col,
         has_peeked = self.has_peeked,
         peeked_token = self.peeked_token,
-        last_kind = self.last_kind,
-        last_col = self.last_col,
-        last_text = self.last_text,
     }
 
 restore_state(self: lexer, state: state)
@@ -755,42 +718,6 @@ restore_state(self: lexer, state: state)
     self.col = state.col
     self.has_peeked = state.has_peeked
     self.peeked_token = state.peeked_token
-    self.last_kind = state.last_kind
-    self.last_col = state.last_col
-    self.last_text = state.last_text
-
-# Probe `a, b = …` binding without forcing callers to hold a lexer `state` record.
-peek_comma_assign_bind: bool = (self: lexer)
-    st = self:save_state()
-    walking = true
-    binds = false
-    while walking
-        walking = false
-        if self:advance()
-            if self.last_kind == token.KIND_COMMA
-                if self:advance()
-                    if self.last_kind == token.KIND_NAME
-                        pk2 = self:peek_kind()
-                        if pk2 == token.KIND_ASSIGN
-                            binds = true
-                        else(pk2 == token.KIND_COMMA)
-                            walking = true
-    self:restore_state(st)
-    binds
-
-# Probe `name: Type = …` (non-column-1) without callers holding `state`.
-peek_typed_local_bind: bool = (self: lexer)
-    st = self:save_state()
-    ok = false
-    if self:advance()
-        if self:advance()
-            lk = self.last_kind
-            if lk == token.KIND_NAME or lk >= token.KIND_I8 and lk <= token.KIND_STR
-                if self:peek_kind() == token.KIND_ASSIGN
-                    ok = true
-    self:restore_state(st)
-    ok
-
 
 # ── sovereign tokenize surface ───────────────────────────────────────────────
 #

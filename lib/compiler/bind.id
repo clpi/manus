@@ -69,34 +69,55 @@ unresolved: i64 = (src: str, file: str, family: i64, report: bool)
   # A first scan over a fresh lexer collects bindings; a second collects references.
   # Two passes because a name may be used before the line that binds it —
   # mutual recursion between top-level declarations is the normal case.
-  while lexer.advance(lx)
-    if lexer.last_kind(lx) == token.KIND_NAME
-      pk = lexer.peek_kind(lx)
+  while true
+    t = lexer.next(lx)
+    if t.kind == token.KIND_EOF
+      break
+    if t.kind == token.KIND_NAME
+      nxt = lexer.peek(lx)
       binds = false
-      if pk == token.KIND_ASSIGN
+      if nxt.kind == token.KIND_ASSIGN
         binds = true
       # Multiple assignment binds every name on the left:
       # `ok, result = pcall(f)`. Walk the comma list and accept it only
       # if it actually reaches `=`, so a call argument list is not
       # mistaken for a binding site.
-      if pk == token.KIND_COMMA and lexer.peek_comma_assign_bind(lx)
-        binds = true
-      if pk == token.KIND_LPAREN and kind != token.KIND_DOT and kind != token.KIND_COLON
+      if nxt.kind == token.KIND_COMMA
+        st = lexer.save_state(lx)
+        walking = true
+        while walking
+          walking = false
+          a = lexer.next(lx)
+          if a.kind == token.KIND_COMMA
+            b = lexer.next(lx)
+            if b.kind == token.KIND_NAME
+              if lexer.peek(lx).kind == token.KIND_ASSIGN
+                binds = true
+              else(lexer.peek(lx).kind == token.KIND_COMMA)
+                walking = true
+        lexer.restore_state(lx, st)
+      if nxt.kind == token.KIND_LPAREN and kind != token.KIND_DOT and kind != token.KIND_COLON
         binds = true
       # `span: { ... }` is a descriptor DECLARATION and binds the name.
       # Retired declaration spellings: `type X = { … }`, `type X = T`, and
       # `(typedecl … (type …))` alias projections (GAP-049 / law descriptor
       # axis). Canonical module-scope descriptors bind on `Name: { … }` at
       # column 1; nominal scalars await `Name: T` (gap[097]).
-      if pk == token.KIND_COLON and lexer.last_col(lx) == 1
+      if nxt.kind == token.KIND_COLON and t.loc.col == 1
         binds = true
       # `n: i64 = 5` — a typed local binding, at any indentation. The
       # column-1 rule above only covers descriptor declarations, so every
       # typed local read as unresolved. Distinguished from a method call
       # (`obj:m()`) by looking past the type for the `=`, which is the
       # same discriminator proj_stmt uses.
-      if pk == token.KIND_COLON and lexer.last_col(lx) != 1 and lexer.peek_typed_local_bind(lx)
-        binds = true
+      if nxt.kind == token.KIND_COLON and t.loc.col != 1
+        cst = lexer.save_state(lx)
+        c = lexer.next(lx)
+        ty = lexer.next(lx)
+        if ty.kind == token.KIND_NAME or ty.kind >= token.KIND_I8 and ty.kind <= token.KIND_STR
+          if lexer.peek(lx).kind == token.KIND_ASSIGN
+            binds = true
+        lexer.restore_state(lx, cst)
       # `spawn(fn: any, ...args)` — a NAMED vararg parameter binds too.
       if kind == token.KIND_DOTS
         binds = true
@@ -108,23 +129,26 @@ unresolved: i64 = (src: str, file: str, family: i64, report: bool)
       if kind == token.KIND_LPAREN or kind == token.KIND_COMMA
         binds = true
       if binds
-        bound = add(bound, lexer.last_text(lx))
-    kind = lexer.last_kind(lx)
+        bound = add(bound, t.text)
+    kind = t.kind
 
   lx2: lexer = lexer.new(src, file, family)
   kind = 0
   count: i64 = 0
   prev_kind: i64 = 0
-  while lexer.advance(lx2)
-    if lexer.last_kind(lx2) == token.KIND_NAME
+  while true
+    t = lexer.next(lx2)
+    if t.kind == token.KIND_EOF
+      break
+    if t.kind == token.KIND_NAME
       skip = kind == token.KIND_DOT or kind == token.KIND_COLON or prev_kind == token.KIND_AT
       if !skip
-        nm = lexer.last_text(lx2)
-        if lexer.peek_kind(lx2) != token.KIND_ASSIGN and !has(bound, nm) and !has(refs, nm)
-          refs = add(refs, nm)
+        nxt = lexer.peek(lx2)
+        if nxt.kind != token.KIND_ASSIGN and !has(bound, t.text) and !has(refs, t.text)
+          refs = add(refs, t.text)
           count = count + 1
           if report
-            print("  unresolved " .. file .. ": " .. nm)
-    kind = lexer.last_kind(lx2)
-    prev_kind = kind
+            print("  unresolved " .. file .. ": " .. t.text)
+    kind = t.kind
+    prev_kind = t.kind
   count
