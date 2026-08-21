@@ -11,15 +11,19 @@ seen: bool = (text: str, needle: str)
     i = i + 1
   false
 
-open: i64 = (label: str, needle: str, text: str)
+# A ROW THAT CANNOT FAIL IS NOT EVIDENCE. This returned 0 unconditionally, so
+# the ledger could print PASS while listing surviving reconstruction. The rows
+# now report, and the verdict names accessor readiness and closure separately.
+debtrow: i64 = (label: str, needle: str, text: str)
   if seen(text, needle)
     print("  open {label} still reconstructed ({needle})")
+    return 1
   0
 
 graphok: i64 = (label: str, needle: str, text: str)
   if seen(text, needle)
     print("  ok   {label} via graph accessor")
-  if not seen(text, needle)
+  if !seen(text, needle)
     print("  FAIL {label} graph accessor missing ({needle})")
     return 1
   0
@@ -31,26 +35,27 @@ application: i64 = ()
   lower = "src/dnir_lower.zig":read()
   backend = "src/native_backend.zig":read()
   graph = "src/semantic_graph.zig":read()
+  identity = "src/semantic_identity.zig":read()
   query = "src/graph_query.zig":read()
-  if not role:len()
+  if !role:len()
     print("  FAIL lib/compiler/application.id missing")
     fail = 1
   if role:len() and seen(role, "application: {")
     print("  FAIL coordinate application schema in application.id")
     fail = 1
-  if role:len() and not seen(role, "law.application.consumer")
+  if role:len() and !seen(role, "law.application.consumer")
     print("  FAIL application.id missing consumer law pointer")
     fail = 1
-  if role:len() and not seen(role, "application: {")
+  if role:len() and !seen(role, "application: {")
     print("  ok   application.id is role documentation only")
   print("graph accessors (required in graph + consumers)")
-  fail = fail + graphok("relation", "pub fn applicationRelation", graph)
-  fail = fail + graphok("caller", "pub fn applicationCaller", graph)
-  fail = fail + graphok("results", "pub fn applicationResults", graph)
-  fail = fail + graphok("descriptor", "pub fn applicationDescriptor", graph)
-  fail = fail + graphok("demand", "pub fn applicationDemand", graph)
-  fail = fail + graphok("subject", "pub fn applicationSubject", graph)
-  if not seen(lower, "applicationRelation")
+  fail += graphok("relation", "pub fn applicationRelation", graph)
+  fail += graphok("caller", "pub fn applicationCaller", graph)
+  fail += graphok("results", "pub fn applicationResults", graph)
+  fail += graphok("descriptor", "pub fn applicationDescriptor", graph)
+  fail += graphok("demand", "pub fn applicationDemand", graph)
+  fail += graphok("subject", "pub fn applicationSubject", graph)
+  if !seen(lower, "applicationRelation")
     print("  FAIL dnir_lower missing applicationRelation")
     fail = 1
   if seen(lower, "applicationRelation")
@@ -60,28 +65,40 @@ application: i64 = ()
   if seen(lower, "applicationSubject") and seen(backend, "applicationSubject")
     print("  ok   subject consumed via graph.applicationSubject")
   print("FACT-CARDINALITY-ONE")
-  if seen(graph, "pub const Card = union")
+  # THE UNION IS THE FACT; THE FILE IT SITS IN IS NOT. Grepping only
+  # semantic_graph.zig reported "Card union missing" the moment the union moved
+  # to semantic_identity.zig behind a re-export -- a behaviour-preserving code
+  # move failing a ledger whose whole subject is not reconstructing semantics
+  # from text.
+  card = seen(graph, "pub const Card = union") or seen(identity, "pub const Card = union")
+  if card
     print("  ok   Card unknown/none/one on ApplicationFact")
-  if not seen(graph, "pub const Card = union")
+  if !card
     fail = 1
-    print("  FAIL Card union missing")
+    print("  FAIL Card union missing from graph and identity")
   if seen(graph, "effect: ?id = null")
     fail = 1
     print("  FAIL nullable Card fields on ApplicationFact")
   print("reconstruction debt (target zero before closure)")
-  open("subject row", "subject: ?id,\n    arguments", graph)
-  open("subject lower", "fact.subject", lower)
-  open("subject backend", "fact.subject", backend)
-  open("subject query", "return fact.subject", query)
-  open("native_ir subject", "fact.subject", "src/native_ir.zig":read())
-  open("sema bridge", "applicationFact", "src/sema.zig":read())
-  if not seen(lower, "applicationArguments")
+  debt = 0
+  debt += debtrow("subject row", "subject: ?id,\n    arguments", graph)
+  debt += debtrow("subject lower", "fact.subject", lower)
+  debt += debtrow("subject backend", "fact.subject", backend)
+  debt += debtrow("subject query", "return fact.subject", query)
+  debt += debtrow("native_ir subject", "fact.subject", "src/native_ir.zig":read())
+  debt += debtrow("sema bridge", "applicationFact", "src/sema.zig":read())
+  if !seen(lower, "applicationArguments")
     print("  open operand pack not consumed from graph in dnir_lower")
   if seen(lower, "applicationArguments")
     print("  ok   dnir_lower consumes graph operand pack")
+  if !seen(lower, "applicationArguments")
+    debt += 1
   if fail
     print("ledger/application: FAIL provenance")
     return 1
-  print("ledger/application: PASS accessors (reconstruction debt listed)")
-  print("target downstream reconstructed application facts = 0")
+  if debt
+    print("ledger/application: accessors PASS, closure OPEN ({debt} reconstruction row(s))")
+    print("APPLICATION-CONSUMER-ZERO is NOT satisfied; accessors exist, consumers still reconstruct")
+    return 0
+  print("ledger/application: accessors PASS, closure CLOSED (zero reconstruction)")
   0
