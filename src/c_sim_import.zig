@@ -292,3 +292,15 @@ test "c_sim_import: point.h → SIM entities" {
     try sim.writeSnapshotJson(&snap, &aw2.writer);
     try std.testing.expectEqualStrings(j1, aw2.written());
 }
+
+test "c_sim_import: unsupported field declarators publish no partial SIM snapshot" {
+    const src =
+        \\typedef struct { int x; int y; } Point;
+        \\int point_x(Point *point);
+        \\typedef struct { int prefix; int values[4]; int tail; } Packet;
+    ;
+    try std.testing.expectError(
+        error.UnsupportedCFieldDeclarator,
+        importHeaderSource(std.testing.allocator, "mixed.h", src),
+    );
+}

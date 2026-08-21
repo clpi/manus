@@ -321,7 +321,9 @@ fn parseTypeSpec(alloc: std.mem.Allocator, raw: []const u8) !TypeRef {
     return tr;
 }
 
-fn splitTypeAndName(decl: []const u8) struct { type_raw: []const u8, name: []const u8 } {
+const TypeAndName = struct { type_raw: []const u8, name: []const u8 };
+
+fn splitTypeAndName(decl: []const u8) TypeAndName {
     var end: usize = decl.len;
     while (end > 0 and std.ascii.isWhitespace(decl[end - 1])) end -= 1;
     if (end == 0) return .{ .type_raw = decl, .name = "" };
@@ -341,6 +343,35 @@ fn splitTypeAndName(decl: []const u8) struct { type_raw: []const u8, name: []con
     const type_raw = std.mem.trim(u8, decl[0..start], " \t\r\n");
     if (type_raw.len == 0) return .{ .type_raw = decl, .name = "" };
     return .{ .type_raw = type_raw, .name = name };
+}
+
+fn isSupportedFieldDeclarator(
+    decl: []const u8,
+    split: TypeAndName,
+) bool {
+    if (split.name.len == 0 or !isIdentStart(split.name[0])) return false;
+    for (split.name[1..]) |c| {
+        if (!isIdentChar(c)) return false;
+    }
+
+    if (split.type_raw.len == 0) return false;
+    var saw_pointer = false;
+    for (split.type_raw) |c| {
+        if (c == '*') {
+            saw_pointer = true;
+            continue;
+        }
+        if (std.ascii.isWhitespace(c)) continue;
+        if (!isIdentChar(c)) return false;
+        // parseTypeSpec only represents qualifiers before the base type. Do not
+        // accept a post-pointer qualifier and silently turn it into a named type.
+        if (saw_pointer) return false;
+    }
+
+    // The supported subset is one plain named field. Commas, bitfields,
+    // arrays, callbacks, attributes, and nested declarations all contain a
+    // declarator token excluded above and must not become truncated ABI facts.
+    return std.mem.indexOfScalar(u8, decl, ',') == null;
 }
 
 fn appendUnsupported(
@@ -370,16 +401,22 @@ fn parseStructFields(alloc: std.mem.Allocator, body: []const u8) ![]FieldDecl {
 
     var rest = skipWs(body);
     while (rest.len > 0) {
-        const semi = std.mem.indexOfScalar(u8, rest, ';') orelse break;
+        const semi = std.mem.indexOfScalar(u8, rest, ';') orelse
+            return error.UnsupportedCFieldDeclarator;
         const decl = std.mem.trim(u8, rest[0..semi], " \t\r\n");
         if (decl.len > 0) {
             const split = splitTypeAndName(decl);
-            if (split.name.len > 0) {
-                try fields.append(alloc, .{
-                    .name = try alloc.dupe(u8, split.name),
-                    .typ = try parseTypeSpec(alloc, split.type_raw),
-                });
+            if (!isSupportedFieldDeclarator(decl, split))
+                return error.UnsupportedCFieldDeclarator;
+            var typ = try parseTypeSpec(alloc, split.type_raw);
+            if (typ == .unknown) {
+                typ.deinit(alloc);
+                return error.UnsupportedCFieldDeclarator;
             }
+            errdefer typ.deinit(alloc);
+            const name = try alloc.dupe(u8, split.name);
+            errdefer alloc.free(name);
+            try fields.append(alloc, .{ .name = name, .typ = typ });
         }
         rest = skipWs(rest[semi + 1 ..]);
     }
@@ -429,14 +466,38 @@ pub fn parseHeader(alloc: std.mem.Allocator, artifact: []const u8, src: []const 
     var enums: std.ArrayListUnmanaged(EnumDecl) = .empty;
     var unsupported: std.ArrayListUnmanaged(UnsupportedRegion) = .empty;
     errdefer {
-        var snap = FrontendSnapshot{
-            .artifact = owned_artifact,
-            .records = records.items,
-            .functions = functions.items,
-            .enums = enums.items,
-            .unsupported = unsupported.items,
-        };
-        snap.deinit(alloc);
+        alloc.free(owned_artifact);
+        for (records.items) |*rec| {
+            alloc.free(rec.name);
+            for (rec.fields) |*field| {
+                alloc.free(field.name);
+                field.typ.deinit(alloc);
+            }
+            alloc.free(rec.fields);
+        }
+        records.deinit(alloc);
+        for (functions.items) |*function| {
+            alloc.free(function.name);
+            function.ret.deinit(alloc);
+            for (function.params) |*param| {
+                alloc.free(param.name);
+                param.typ.deinit(alloc);
+            }
+            alloc.free(function.params);
+        }
+        functions.deinit(alloc);
+        for (enums.items) |*en| {
+            alloc.free(en.name);
+            for (en.variants) |variant| alloc.free(variant);
+            alloc.free(en.variants);
+        }
+        enums.deinit(alloc);
+        for (unsupported.items) |*region| {
+            alloc.free(region.kind);
+            alloc.free(region.snippet);
+            alloc.free(region.reason);
+        }
+        unsupported.deinit(alloc);
     }
 
     var rest = skipWs(src);
@@ -611,4 +672,111 @@ test "c_frontend: parse pointer parameter type" {
     try std.testing.expectEqual(@as(usize, 1), snap.functions[0].params.len);
     try std.testing.expectEqualStrings("rect", snap.functions[0].params[0].name);
     try std.testing.expect(snap.functions[0].params[0].typ == .pointer);
+}
+
+test "c_frontend: scalar and pointer record fields remain representable" {
+    const src =
+        \\typedef struct { const int count; char **data; } View;
+    ;
+    var snap = try parseHeader(std.testing.allocator, "view.h", src);
+    defer snap.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(usize, 1), snap.records.len);
+    try std.testing.expectEqual(@as(usize, 2), snap.records[0].fields.len);
+    try std.testing.expect(snap.records[0].fields[0].typ == .scalar);
+    try std.testing.expect(snap.records[0].fields[1].typ == .pointer);
+    try std.testing.expect(snap.records[0].fields[1].typ.pointer.* == .pointer);
+}
+
+test "c_frontend: array fields refuse instead of publishing a truncated record" {
+    const src =
+        \\typedef struct { int prefix; int values[4]; int tail; } Packet;
+    ;
+    try std.testing.expectError(
+        error.UnsupportedCFieldDeclarator,
+        parseHeader(std.testing.allocator, "array-field.h", src),
+    );
+}
+
+test "c_frontend: callback fields refuse instead of publishing a truncated record" {
+    const src =
+        \\typedef struct { int (*callback)(int); int tail; } Handler;
+    ;
+    try std.testing.expectError(
+        error.UnsupportedCFieldDeclarator,
+        parseHeader(std.testing.allocator, "callback-field.h", src),
+    );
+}
+
+test "c_frontend: comma and bitfield declarators refuse instead of publishing false fields" {
+    const comma_src =
+        \\typedef struct { int first, second; int tail; } Pair;
+    ;
+    try std.testing.expectError(
+        error.UnsupportedCFieldDeclarator,
+        parseHeader(std.testing.allocator, "comma-fields.h", comma_src),
+    );
+
+    const bitfield_src =
+        \\typedef struct { unsigned flags:3; int tail; } Bits;
+    ;
+    try std.testing.expectError(
+        error.UnsupportedCFieldDeclarator,
+        parseHeader(std.testing.allocator, "bitfield.h", bitfield_src),
+    );
+}
+
+test "c_frontend: nested and unterminated field declarations refuse" {
+    const nested_src =
+        \\typedef struct { struct { int value; } nested; int tail; } Outer;
+    ;
+    try std.testing.expectError(
+        error.UnsupportedCFieldDeclarator,
+        parseHeader(std.testing.allocator, "nested-field.h", nested_src),
+    );
+
+    const unterminated_src =
+        \\typedef struct { int first; int tail } MissingSemi;
+    ;
+    try std.testing.expectError(
+        error.UnsupportedCFieldDeclarator,
+        parseHeader(std.testing.allocator, "missing-semicolon.h", unterminated_src),
+    );
+}
+
+test "c_frontend: prior declarations are cleaned when a later field refuses" {
+    const src =
+        \\typedef struct { int x; int y; } Point;
+        \\int point_x(Point *point);
+        \\typedef struct { int prefix; int values[4]; int tail; } Packet;
+    ;
+    try std.testing.expectError(
+        error.UnsupportedCFieldDeclarator,
+        parseHeader(std.testing.allocator, "partial-header.h", src),
+    );
+}
+
+test "c_frontend: missing base field types refuse instead of publishing unknown types" {
+    const pointer_only_src =
+        \\typedef struct { *ptr; int tail; } MissingBase;
+    ;
+    try std.testing.expectError(
+        error.UnsupportedCFieldDeclarator,
+        parseHeader(std.testing.allocator, "missing-base.h", pointer_only_src),
+    );
+
+    const qualifier_only_src =
+        \\typedef struct { const value; int tail; } MissingQualifiedBase;
+    ;
+    try std.testing.expectError(
+        error.UnsupportedCFieldDeclarator,
+        parseHeader(std.testing.allocator, "qualifier-only.h", qualifier_only_src),
+    );
+
+    const tag_only_src =
+        \\typedef struct { struct value; int tail; } MissingTag;
+    ;
+    try std.testing.expectError(
+        error.UnsupportedCFieldDeclarator,
+        parseHeader(std.testing.allocator, "tag-only.h", tag_only_src),
+    );
 }
