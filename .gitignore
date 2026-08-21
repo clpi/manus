@@ -161,3 +161,11 @@ scripts/_*.id
 /ext/tree-sitter-idol/src/node-types.json
 /ext/tree-sitter-idol/src/tree_sitter/
 bin/idol
+
+# A SELF-REFERENTIAL SYMLINK CANNOT BE A TRACKED PATH. `idol -> <repo root>`
+# appeared in the worktree and reached the INDEX as a staged addition; had it
+# been committed, `idol/idol/idol/…` would recurse for every tree walker in the
+# tree — the censuses, the gates, CI checkout. Ignore the root entry so a
+# sweeping `git add` cannot stage it again. The compiler artifact is `bin/idol`,
+# already ignored above, and `zig-out/bin/idol` is the built binary.
+/idol
