@@ -113,9 +113,10 @@ pub const Bound = union(enum) {
     unknown,
     /// Narrowed to an exact integer, INCLUSIVE.
     at: i64,
-    /// Narrowed by another place's value, INCLUSIVE.
+    /// Narrowed by another BINDING's value, INCLUSIVE. A `place.Binding` id,
+    /// the same space as `Refinement.subject`.
     place: u32,
-    /// Narrowed by another place's value, EXCLUSIVE.
+    /// Narrowed by another BINDING's value, EXCLUSIVE. Same space as `place`.
     under: u32,
 
     pub fn name(self: Bound) []const u8 {
@@ -131,10 +132,13 @@ pub const Bound = union(enum) {
 /// §32: "Preserve range, width, sign, overflow law, REFINEMENT ... through the
 /// graph." The exact domain one alternative's predicate leaves.
 pub const Refinement = struct {
-    /// The place the predicate constrains. `.none` on an unconditional
-    /// alternative (a bare `else`); `.unknown` when the predicate is one this
-    /// pass cannot read exactly.
-    subject: place.Site = .unknown,
+    /// The BINDING the predicate constrains — a `place.Binding` id, not a
+    /// `place.Place` id. Scalars are not places (`f5857e0a`), and the subject
+    /// of a numeric predicate is almost always a scalar, so the place census
+    /// cannot name it. `.none` on an unconditional alternative (a bare
+    /// `else`); `.unknown` when the predicate is one this pass cannot read
+    /// exactly.
+    subject: place.BindingSite = .unknown,
     lower: Bound = .unknown,
     upper: Bound = .unknown,
     /// The single point an inequality predicate EXCLUDES (`n != 3`). Its own
@@ -164,8 +168,8 @@ pub const Region = struct {
     /// and `continue` are 0 and §6 says so explicitly.
     results: u16 = 0,
     refinement: Refinement = .{},
-    /// §8's `carried state`: the places this region UPDATES, by exact census
-    /// id, ascending. For a recurrence that is the carried set; for an
+    /// §8's `carried state`: the bindings this region UPDATES, by exact
+    /// binding id, ascending. For a recurrence that is the carried set; for an
     /// alternative it is what the alternative does.
     carried: Range = .{},
 };
@@ -173,7 +177,7 @@ pub const Region = struct {
 pub const Census = struct {
     alloc: std.mem.Allocator,
     regions: std.ArrayListUnmanaged(Region) = .empty,
-    /// Packed place ids; every `Region.carried` is a window into this.
+    /// Packed binding ids; every `Region.carried` is a window into this.
     carried: std.ArrayListUnmanaged(u32) = .empty,
     /// Statements walked. A census that examined zero statements has NOT
     /// passed — the rule every `gate/*.sh` lives by, applied to a producer.
@@ -230,9 +234,10 @@ const Ctx = struct {
 /// The regions of one relation body, over that relation's own place census.
 ///
 /// The two censuses are produced as a PAIR and their ids are only meaningful
-/// together: a `Refinement.subject` is an index into `places`, not into any
-/// other census. A caller that pairs them wrongly gets a wrong answer, which is
-/// why nothing here accepts a bare place id from outside.
+/// together: a `Refinement.subject` is an index into that census's `bindings`,
+/// not into its `places` and not into any other census. A caller that pairs
+/// them wrongly gets a wrong answer, which is why nothing here accepts a bare
+/// id from outside.
 pub fn analyzeFunction(
     alloc: std.mem.Allocator,
     fb: *const ast.FuncBody,
@@ -475,19 +480,25 @@ fn collectCarried(ctx: *Ctx, b: *const ast.Block) anyerror!void {
     };
 }
 
-/// The place a name denotes in this body, or null.
+/// The BINDING a name denotes in this body, or null.
 ///
-/// `place.Census.find` scans BACKWARD, so where one body binds two places of
-/// one spelling in sibling scopes this answers the LATER one. That is the same
-/// lookup `dnir_lower.zig` already resolves module names through, and it is the
-/// honest limit of a name-keyed locate: a shadowed spelling can attribute a
-/// refinement to the wrong place. It cannot attribute it to a place that does
-/// not exist, so a wrong answer here is a wrong SUBJECT and never a wrong
-/// program — and the day places carry lexical extent it becomes exact with no
-/// change to any consumer.
+/// It reads the binding census, not the place census, because `bindPlace`
+/// declines every scalar and the subject of a numeric predicate is a scalar.
+/// Asking `places.find` for `n` in `if (n > 3)` answered null for every
+/// program, which is how six region facts came to be computed off an
+/// all-default `Refinement`; gap[206] measures it.
+///
+/// `place.Census.findBinding` scans BACKWARD, so where one body binds two
+/// names of one spelling in sibling scopes this answers the LATER one. That is
+/// the same lookup `dnir_lower.zig` already resolves module names through, and
+/// it is the honest limit of a name-keyed locate: a shadowed spelling can
+/// attribute a refinement to the wrong binding. It cannot attribute it to a
+/// binding that does not exist, so a wrong answer here is a wrong SUBJECT and
+/// never a wrong program — and the day bindings carry lexical extent it becomes
+/// exact with no change to any consumer.
 fn placeOf(ctx: *Ctx, name: []const u8) ?u32 {
-    const p = ctx.places.find(name) orelse return null;
-    return p.id;
+    const b = ctx.places.findBinding(name) orelse return null;
+    return b.id;
 }
 
 /// The interval one predicate leaves, or `.unknown` — never a guess.
