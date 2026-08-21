@@ -509,6 +509,26 @@ fn constGlobalInit(init: *const Expr, ty: RT) ?dnir.Value {
 /// Answers: is `name`, bound to `value` at module level, a positional table of
 /// constants of ONE kind that nothing mutates? Returns the element kind, or
 /// null when the shape must not be assumed constant.
+/// GAP-145 (`law.text.byte`): a module constant enters `ModuleConsts.strs` only
+/// when the producer quote identity is a TEXT face.
+///
+/// `strs` is the retired unified string identity's last module-level home —
+/// `exprIsStr` answers `.str` from it. The byte face carries no text law, so it
+/// is not a member.
+///
+/// MEASURED before this guard. `typeOfGlobal` already routed the same literal
+/// through `types.quotedLiteralType`, so ONE literal had TWO answers depending
+/// only on which module-binding keyword was written:
+///
+///     const  j = '{"a":1}' ; j .. "b"   ->  ok, {"a":1}b
+///     local  j = '{"a":1}' ; j .. "b"   ->  ok, {"a":1}b
+///     global j = '{"a":1}' ; j .. "b"   ->  DNB001 lowerBinop() — concat
+///
+/// Three spellings of one fact must give one answer.
+fn quotedIsModuleTextConst(expr: *const Expr) bool {
+    return expr.* == .quoted and !ast.quotedLiteralIsByteSequence(expr.quoted.quote);
+}
+
 pub const ModuleTableKind = enum { int, text };
 
 pub fn moduleConstTableKind(
@@ -530,7 +550,7 @@ pub fn moduleConstTableKind(
     var all_text = true;
     for (tbl.table.fields) |fld| {
         if (intLiteralStep(fld.positional) == null) all_int = false;
-        if (fld.positional.* != .quoted) all_text = false;
+        if (!quotedIsModuleTextConst(fld.positional)) all_text = false;
     }
     // One kind or the other, never a mixture: a slot whose holding depends on
     // the index is what no consumer downstream can read correctly.
@@ -593,7 +613,7 @@ fn collectModuleConsts(
             try map.put(alloc, try alloc.dupe(u8, n), iv);
             continue;
         }
-        if (v.* == .quoted) {
+        if (quotedIsModuleTextConst(v)) {
             try out.strs.put(alloc, try alloc.dupe(u8, n), v.quoted.val);
             continue;
         }
@@ -614,7 +634,7 @@ fn collectModuleConsts(
                 try map.put(alloc, key, fv);
                 continue;
             }
-            if (nf.val.* == .quoted) {
+            if (quotedIsModuleTextConst(nf.val)) {
                 const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ n, nf.key });
                 try out.strs.put(alloc, key, nf.val.quoted.val);
             }
