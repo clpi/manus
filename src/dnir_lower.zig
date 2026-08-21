@@ -529,6 +529,26 @@ fn quotedIsModuleTextConst(expr: *const Expr) bool {
     return expr.* == .quoted and !ast.quotedLiteralIsByteSequence(expr.quoted.quote);
 }
 
+/// THE SAME QUESTION, ASKED OF THE PRODUCER.
+///
+/// `quotedIsModuleTextConst` above reads `expr.quoted.quote` off the AST, which
+/// makes this file a second authority on text-vs-bytes beside
+/// `semantic_graph.publishSourceQuote` — the exact reconstruction `law.md` §1
+/// forbids, and the one GAP-207 measured printing a pointer through `%lld` at
+/// exit 0. This face reads the DESCRIPTOR the graph already resolved for that
+/// literal, so no quote-face rule is spelled here at all.
+///
+/// It replaces the AST reader at every site that has a graph in scope.
+/// `moduleConstTableKind` still calls the AST form because its other caller is
+/// `codegen.zig:3722`, and `codegen.zig` imports `semantic_graph` ZERO times
+/// (measured at b64dc075) — see the deletion witness in the gap.
+fn graphTextConst(graph: *const semantic_graph.SemanticGraph, expr: *const Expr) bool {
+    const value = graph.sourceQuoteValue(expr) orelse return false;
+    const node = graph.get(value) orelse return false;
+    const descriptor = node.descriptor orelse return false;
+    return std.meta.activeTag(descriptor) == .str;
+}
+
 pub const ModuleTableKind = enum { int, text };
 
 pub fn moduleConstTableKind(
@@ -563,6 +583,7 @@ pub fn moduleConstTableKind(
 fn collectModuleConsts(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
+    graph: *const semantic_graph.SemanticGraph,
 ) Error!ModuleConsts {
     var out: ModuleConsts = .{};
     errdefer out.deinit(alloc);
@@ -613,7 +634,7 @@ fn collectModuleConsts(
             try map.put(alloc, try alloc.dupe(u8, n), iv);
             continue;
         }
-        if (quotedIsModuleTextConst(v)) {
+        if (graphTextConst(graph, v)) {
             try out.strs.put(alloc, try alloc.dupe(u8, n), v.quoted.val);
             continue;
         }
@@ -634,7 +655,7 @@ fn collectModuleConsts(
                 try map.put(alloc, key, fv);
                 continue;
             }
-            if (quotedIsModuleTextConst(nf.val)) {
+            if (graphTextConst(graph, nf.val)) {
                 const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ n, nf.key });
                 try out.strs.put(alloc, key, nf.val.quoted.val);
             }
@@ -1047,7 +1068,7 @@ fn lowerModuleFromGraph(
             }
         }
     }
-    var module_consts = try collectModuleConsts(alloc, mod);
+    var module_consts = try collectModuleConsts(alloc, mod, graph);
     defer module_consts.deinit(alloc);
     {
         var it = module_globals.types.keyIterator();
@@ -12786,4 +12807,100 @@ test "dnir_lower: a global byte-sequence literal keeps its element descriptor" {
         const text = Expr{ .quoted = .{ .loc = loc, .val = "ab", .quote = q } };
         try std.testing.expect(typeOfGlobal(.inferred, &text) == .str);
     }
+}
+
+test "dnir_lower: the quote face has ONE producer, and its reach is total over module bindings" {
+    // DELETION WITNESS, MADE EXECUTABLE.
+    //
+    // `quotedIsModuleTextConst` reads `expr.quoted.quote` off the AST. That is
+    // a SECOND authority on text-vs-bytes beside `semantic_graph`'s
+    // `publishSourceQuote`, and `law.md` §1 forbids a downstream phase
+    // reconstructing from syntax a fact a producer already published. GAP-207
+    // measured what a disagreement in this exact space costs: three ASLR'd
+    // pointers rendered through `%lld`, compile 0, run 0, no diagnostic.
+    //
+    // `collectModuleConsts` was moved to the graph (`graphTextConst`). The AST
+    // reader survives at exactly ONE call site — `moduleConstTableKind` — and
+    // only because that verdict's other caller is `codegen.zig:3722`, and
+    // `codegen.zig` imports `semantic_graph.zig` ZERO times.
+    //
+    // DELETION CONDITION, checked here and not asserted in prose:
+    //   1. the two authorities AGREE on every module-binding literal, and
+    //   2. the graph's reach is TOTAL over them — every such literal HAS a fact.
+    // (2) is the half that was false at `b64dc075`: `publishSourceQuote` was
+    // reachable only from `addApplicationValue`, so a literal that was not an
+    // application operand published nothing, and this file's own test
+    // `semantic_graph: lifted quoted literals publish source quote facts`
+    // asserted 2 and found 0.
+    //
+    // When `codegen.zig` can ask the graph, delete `quotedIsModuleTextConst`,
+    // route `moduleConstTableKind` through `graphTextConst`, and delete this
+    // test's clause (1) with it — clause (2) stays, because it is the reach the
+    // consumer depends on.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\t: str = "hi"
+        \\b = 'b'
+        \\const c = "cc"
+        \\global names = { "alpha", "beta" }
+        \\entry: str = ()
+        \\    local inner = 'z'
+        \\    t
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "quotewitness.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "quotewitness.id");
+
+    const Seen = struct {
+        var literals: usize = 0;
+        fn check(g: *const semantic_graph.SemanticGraph, e: *const Expr) !void {
+            switch (e.*) {
+                .quoted => {
+                    literals += 1;
+                    // (2) REACH IS TOTAL: the producer published for this literal.
+                    try std.testing.expect(g.sourceQuoteValue(e) != null);
+                    // (1) THE TWO AUTHORITIES AGREE.
+                    try std.testing.expectEqual(quotedIsModuleTextConst(e), graphTextConst(g, e));
+                },
+                .table => |tbl| for (tbl.fields) |f| switch (f) {
+                    .positional => |p| try check(g, p),
+                    .named => |n| try check(g, n.val),
+                    else => {},
+                },
+                else => {},
+            }
+        }
+    };
+    for (mod.body.stmts) |*stmt| switch (stmt.*) {
+        .local_decl => |ld| for (ld.inits) |seed| try Seen.check(&graph, seed),
+        .const_decl => |cd| try Seen.check(&graph, cd.val),
+        .global_decl => |gd| for (gd.inits) |seed| try Seen.check(&graph, seed),
+        .assign => |as| for (as.values) |v| try Seen.check(&graph, v),
+        else => {},
+    };
+    // A POSITIVE CONTROL FOR THE ZERO. Without this the whole test passes on a
+    // fixture the walk never reached, which is how a witness rots.
+    try std.testing.expect(Seen.literals >= 5);
+
+    // AND THE BYTE FACE IS STILL DISTINGUISHED. If the graph ever answered
+    // "text" for `b = 'b'`, clauses (1) and (2) would both still hold and the
+    // fact would be worthless.
+    var text_faces: usize = 0;
+    var byte_faces: usize = 0;
+    for (graph.source_quote_facts.items) |fact| switch (fact.quote) {
+        .bytes => byte_faces += 1,
+        else => text_faces += 1,
+    };
+    try std.testing.expect(byte_faces >= 2);
+    try std.testing.expect(text_faces >= 4);
 }

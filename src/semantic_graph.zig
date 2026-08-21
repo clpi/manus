@@ -907,6 +907,16 @@ pub const SemanticGraph = struct {
     exact_i64_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
     source_quote_facts: std.ArrayListUnmanaged(SourceQuoteFact) = .empty,
     source_quote_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
+    /// Physical index from the literal's own AST node to the graph value that
+    /// owns its quote identity. Producer: `publishSourceQuote`, the only
+    /// writer. Consumer: `sourceQuoteOfExpr`, which is how a realization phase
+    /// holding an `*const Expr` asks the graph instead of re-reading
+    /// `expr.quoted.quote`. Deletion condition: realization work items carry
+    /// the value id directly, at which point `sourceQuote(id)` is the only
+    /// face needed and this map goes with the rest of the AST bridge.
+    /// It also enforces ONE entity per literal occurrence: a second publish
+    /// against the same AST node is refused, so no shadow identity is minted.
+    source_quote_by_ast: std.AutoHashMapUnmanaged(*const Expr, id) = .empty,
     owned_descriptors: std.ArrayListUnmanaged(*types.ResolvedType) = .empty,
     aggregate_access_relation: ?id = null,
     application_rows: std.ArrayListUnmanaged(u32) = .empty,
@@ -988,6 +998,7 @@ pub const SemanticGraph = struct {
         self.exact_i64_rows.deinit(self.alloc);
         self.source_quote_facts.deinit(self.alloc);
         self.source_quote_rows.deinit(self.alloc);
+        self.source_quote_by_ast.deinit(self.alloc);
         for (self.owned_descriptors.items) |descriptor| self.alloc.destroy(descriptor);
         self.owned_descriptors.deinit(self.alloc);
         self.application_rows.deinit(self.alloc);
@@ -1557,14 +1568,38 @@ pub const SemanticGraph = struct {
         return fact.quote;
     }
 
-    fn publishSourceQuote(self: *SemanticGraph, value: id, quote: ast.Quote) !void {
+    /// THE PRODUCER QUOTE IDENTITY OF A LITERAL, ASKED WITH THE LITERAL.
+    ///
+    /// The face a realization phase can actually use: it holds an
+    /// `*const Expr`, not a value id, so without this it re-read
+    /// `expr.quoted.quote` and became a second authority on text-vs-bytes.
+    pub fn sourceQuoteOfExpr(self: *const SemanticGraph, expr: *const Expr) ?ast.Quote {
+        const value = self.sourceQuoteValue(expr) orelse return null;
+        return self.sourceQuote(value);
+    }
+
+    /// The graph VALUE a literal occurrence is, so a consumer can read the
+    /// descriptor the producer already resolved instead of re-deciding
+    /// text-vs-bytes from the quote face for itself.
+    pub fn sourceQuoteValue(self: *const SemanticGraph, expr: *const Expr) ?id {
+        const value = self.source_quote_by_ast.get(expr) orelse return null;
+        if (self.sourceQuote(value) == null) return null;
+        return value;
+    }
+
+    fn publishSourceQuote(self: *SemanticGraph, value: id, quote: ast.Quote, expr: *const Expr) !void {
         const node = self.get(value) orelse return error.InvalidSourceQuoteFact;
         if (node.kind != .value) return error.InvalidSourceQuoteFact;
         if (self.source_quote_rows.contains(value)) return error.DuplicateSourceQuoteFact;
+        // ONE ENTITY PER LITERAL OCCURRENCE. An operand lift and the binding
+        // sweep can both reach the same `.quoted` node; the first one to
+        // arrive owns it, and the second is a no-op rather than a shadow.
+        if (self.source_quote_by_ast.contains(expr)) return;
         const row = try coordinateForLength(self.source_quote_facts.items.len);
         try self.source_quote_facts.append(self.alloc, .{ .value = value, .quote = quote });
         errdefer _ = self.source_quote_facts.pop();
         try self.source_quote_rows.putNoClobber(self.alloc, value, row);
+        try self.source_quote_by_ast.putNoClobber(self.alloc, expr, value);
     }
 
     pub fn packEffect(self: *const SemanticGraph, pack_id: id) Card {
@@ -2672,6 +2707,107 @@ pub const SemanticGraph = struct {
         });
     }
 
+    /// THE QUOTE FACE OF EVERY LITERAL A BINDING IS INITIALIZED WITH.
+    ///
+    /// `publishSourceQuote` landed at `ac8be3a0` with exactly one reach:
+    /// `addApplicationValue`, so a literal published its producer quote
+    /// identity only when it was an APPLICATION OPERAND. Measured at
+    /// `b64dc075` on the pipeline lift (`liftModuleWithCheckedCalls`):
+    ///
+    ///     f(s: str); f("lit")      ->  source_quote = 1   (operand reach)
+    ///     s = 'abc'; print(s.."Z") ->  source_quote = 0
+    ///     t: str = "hi"; b = 'b'   ->  source_quote = 0
+    ///
+    /// The third row is this file's own test `semantic_graph: lifted quoted
+    /// literals publish source quote facts`, which asserts 2 and has been RED
+    /// at HEAD — the fact was published into a shape no program reaches, so
+    /// every downstream text-vs-bytes decision re-read `expr.quoted.quote`
+    /// off the AST and became a rival authority (GAP-145 `law.text.byte`,
+    /// GAP-207).
+    ///
+    /// This is a reach extension of the SAME producer, not a second one:
+    /// `publishSourceQuote` is still the only writer and refuses a second
+    /// publish against an AST node that already has an owner.
+    fn liftBindingQuotes(
+        self: *SemanticGraph,
+        file: []const u8,
+        scope: id,
+        stmts: []const ast.Stmt,
+    ) !void {
+        for (stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| for (ld.inits) |seed| try self.liftQuoteInitializer(file, scope, seed),
+                .const_decl => |*cd| try self.liftQuoteInitializer(file, scope, cd.val),
+                .global_decl => |*gd| for (gd.inits) |seed| try self.liftQuoteInitializer(file, scope, seed),
+                .assign => |*asg| for (asg.values) |value| try self.liftQuoteInitializer(file, scope, value),
+                .do_block => |*d| try self.liftBindingQuotes(file, scope, d.body.stmts),
+                .while_loop => |*w| try self.liftBindingQuotes(file, scope, w.body.stmts),
+                .repeat_loop => |*r| try self.liftBindingQuotes(file, scope, r.body.stmts),
+                .if_stmt => |*i| {
+                    try self.liftBindingQuotes(file, scope, i.then.stmts);
+                    for (i.elseifs) |*ei| try self.liftBindingQuotes(file, scope, ei.body.stmts);
+                    if (i.else_body) |*eb| try self.liftBindingQuotes(file, scope, eb.stmts);
+                },
+                .num_for => |*nf| try self.liftBindingQuotes(file, scope, nf.body.stmts),
+                .gen_for => |*g| try self.liftBindingQuotes(file, scope, g.body.stmts),
+                .try_stmt => |*t| {
+                    try self.liftBindingQuotes(file, scope, t.body.stmts);
+                    for (t.catches) |*cc| try self.liftBindingQuotes(file, scope, cc.body.stmts);
+                },
+                .defer_stmt => |*d| try self.liftBindingQuotes(file, scope, d.body.stmts),
+                .func_decl => |*fd| {
+                    const nested = self.findFuncDecl(fd) orelse continue;
+                    try self.liftBindingQuotes(file, nested, fd.func.body.stmts);
+                },
+                else => {},
+            }
+        }
+    }
+
+    /// One initializer. A bare literal is one value; a table of literals is one
+    /// value PER ELEMENT, because the element is the thing a later index reads
+    /// and `names[1]` must be able to ask what `names[1]` is (GAP-204).
+    fn liftQuoteInitializer(
+        self: *SemanticGraph,
+        file: []const u8,
+        scope: id,
+        expr: *const Expr,
+    ) !void {
+        switch (expr.*) {
+            .quoted => |lit| try self.addQuoteValue(file, scope, expr, lit.quote),
+            .table => |tbl| for (tbl.fields) |field| switch (field) {
+                .positional => |element| try self.liftQuoteInitializer(file, scope, element),
+                .named => |entry| try self.liftQuoteInitializer(file, scope, entry.val),
+                else => {},
+            },
+            // `@{ … }` wraps the table it folds; the literal inside is the same
+            // literal, so the fact belongs to it and not to the wrapper.
+            .unop => |u| if (u.op == .compile) try self.liftQuoteInitializer(file, scope, u.operand),
+            else => {},
+        }
+    }
+
+    fn addQuoteValue(
+        self: *SemanticGraph,
+        file: []const u8,
+        scope: id,
+        expr: *const Expr,
+        quote: ast.Quote,
+    ) !void {
+        if (self.source_quote_by_ast.contains(expr)) return;
+        const loc = expr.loc();
+        const descriptor = types.quotedLiteralType(quote);
+        const value = try self.addChild(scope, .{
+            .kind = .value,
+            .span = .{ .file = file, .start = loc.line, .end = loc.col },
+            .descriptor = descriptor,
+            .knowledge = semantic_algebra.knowledgeOfType(descriptor),
+            .stage = .sema,
+            .ast_ref = @ptrCast(@constCast(expr)),
+        });
+        try self.publishSourceQuote(value, quote, expr);
+    }
+
     fn liftBindingsInStmts(
         self: *SemanticGraph,
         file: []const u8,
@@ -3526,6 +3662,12 @@ pub const SemanticGraph = struct {
     pub fn liftModuleWithCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
         const mod_id = try self.liftModuleFull(mod, file);
         try self.liftCalls(mod, file, mod_id);
+        // AFTER the call lift, deliberately: a literal that is already an
+        // application operand HAS its value entity, and this sweep extends the
+        // producer's REACH to the literals no application names. It never
+        // mints a second owner for one occurrence — `publishSourceQuote`
+        // refuses that.
+        try self.liftBindingQuotes(file, mod_id, mod.body.stmts);
         return mod_id;
     }
 
@@ -3547,7 +3689,7 @@ pub const SemanticGraph = struct {
         });
         try self.publishNameBinding(value, expr, occurrence);
         switch (expr.*) {
-            .quoted => |lit| try self.publishSourceQuote(value, lit.quote),
+            .quoted => |lit| try self.publishSourceQuote(value, lit.quote, expr),
             else => {},
         }
         return value;
