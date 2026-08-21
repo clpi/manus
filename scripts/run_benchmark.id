@@ -47,7 +47,11 @@ if SDKROOT:len() == 0
 if SDKROOT:len() != 0
     CFLAGS = CFLAGS .. " -isysroot " .. SDKROOT
 
-s.must("cd " .. ROOT .. " && if [ ! -x zig-out/bin/idol ]; then ${ZIG:-zig} build; fi")
+# THE BYTE FACE, because this payload is braces with no holes. `"…"` is the
+# text face and interpolates, so `${ZIG:-zig}` opened a hole named `ZIG:-zig`
+# and the harness failed to parse at all -- which is why `zig build bench`
+# could not run. `'…'` does not interpolate and decodes no escapes.
+s.must("cd " .. ROOT .. ' && if [ ! -x zig-out/bin/idol ]; then ${ZIG:-zig} build; fi')
 
 # Explicit benchmark manifest (backend must not force boxing).
 # The first port dropped this entirely. It is not decoration: the row states
