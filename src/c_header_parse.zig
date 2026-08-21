@@ -8,16 +8,58 @@ pub const CDecl = struct {
     params: []const u8,
 };
 
+const clang_limits: host_run.CommandLimits = .{
+    .stdout_bytes = 128 * 1024 * 1024,
+    .stderr_bytes = 1024 * 1024,
+    .read_timeout_seconds = 30,
+};
+
 /// Run `clang -E -P` on a header and return preprocessed source.
 pub fn preprocessHeader(alloc: std.mem.Allocator, header: []const u8) ?[]const u8 {
-    const cmd = std.fmt.allocPrint(
-        alloc,
-        "printf '' | clang -E -P -x c -include {s} - 2>/dev/null || printf '' | clang -E -P -x c {s} - 2>/dev/null",
-        .{ header, header },
-    ) catch return null;
-    defer alloc.free(cmd);
-    const out = host_run.runHostCommand(alloc, cmd) orelse return null;
-    if (!out.ok or out.stdout.len == 0) return null;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    const io = threaded.io();
+    const existing = existing: {
+        std.Io.Dir.cwd().access(io, header, .{ .read = true }) catch |err| switch (err) {
+            error.FileNotFound => break :existing false,
+            else => return null,
+        };
+        break :existing true;
+    };
+
+    var owned_header: ?[]u8 = null;
+    defer if (owned_header) |path| alloc.free(path);
+
+    const header_arg: []const u8 = if (existing) path: {
+        if (std.fs.path.isAbsolute(header)) break :path header;
+        var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const cwd_len = std.Io.Dir.cwd().realPath(io, &cwd_buf) catch return null;
+        owned_header = std.fs.path.join(alloc, &.{ cwd_buf[0..cwd_len], header }) catch return null;
+        break :path owned_header.?;
+    } else name: {
+        if (!isHeaderSearchName(header)) return null;
+        break :name header;
+    };
+
+    const include = [_][]const u8{ "clang", "-E", "-P", "-x", "c", "-include", header_arg, "-" };
+    return preprocessWithArgs(alloc, &include);
+}
+
+fn isHeaderSearchName(header: []const u8) bool {
+    if (header.len == 0 or header[0] == '-' or header[0] == '@') return false;
+    for (header) |byte| switch (byte) {
+        'a'...'z', 'A'...'Z', '0'...'9', '_', '.', '/', '+', '-' => {},
+        else => return false,
+    };
+    return true;
+}
+
+fn preprocessWithArgs(alloc: std.mem.Allocator, argv: []const []const u8) ?[]const u8 {
+    const out = host_run.runHostCommandArgsLimited(alloc, argv, clang_limits) orelse return null;
+    alloc.free(out.stderr);
+    if (!out.ok or out.stdout.len == 0) {
+        alloc.free(out.stdout);
+        return null;
+    }
     return out.stdout;
 }
 
@@ -205,7 +247,8 @@ pub fn emitExternDecls(w: *std.Io.Writer, decls: []const CDecl) !void {
 }
 
 pub fn generateFfiFromHeader(alloc: std.mem.Allocator, header: []const u8) ![]const u8 {
-    const pre = preprocessHeader(alloc, header) orelse return try std.fmt.allocPrint(alloc, "/* [ffi_gen] could not preprocess {s} */\n", .{header});
+    const pre = preprocessHeader(alloc, header) orelse return error.CHeaderPreprocessFailed;
+    defer alloc.free(pre);
     const decls = try parseFunctionDecls(alloc, pre);
     defer {
         for (decls) |d| {
@@ -219,7 +262,7 @@ pub fn generateFfiFromHeader(alloc: std.mem.Allocator, header: []const u8) ![]co
     errdefer buf.deinit(alloc);
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
-    try aw.writer.print("/* [ffi_gen] from {s} — {d} declaration(s) */\n", .{ header, decls.len });
+    try aw.writer.print("/* [ffi_gen] {d} declaration(s) */\n", .{decls.len});
     try emitExternDecls(&aw.writer, decls);
     return try alloc.dupe(u8, aw.written());
 }
@@ -248,7 +291,7 @@ test "c_header_parse: parses function definitions" {
 
 test "c_header_parse: finds strlen in string.h preprocessed output" {
     const alloc = std.testing.allocator;
-    const pre = preprocessHeader(alloc, "string.h") orelse return;
+    const pre = preprocessHeader(alloc, "string.h") orelse return error.TestExpectedSystemHeader;
     defer alloc.free(pre);
     const decls = try parseFunctionDecls(alloc, pre);
     defer {
@@ -264,4 +307,68 @@ test "c_header_parse: finds strlen in string.h preprocessed output" {
         if (std.mem.eql(u8, d.name, "strlen")) found = true;
     }
     try std.testing.expect(found);
+}
+
+test "c_header_parse: header paths are argv data, never shell source" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const header_name = "fixture ; dollar $ quote '.h";
+    try tmp.dir.writeFile(io, .{
+        .sub_path = header_name,
+        .data = "long idol_header_probe(long value);\n",
+    });
+    var root_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const root = root_buf[0..try tmp.dir.realPath(io, &root_buf)];
+    const header = try std.fmt.allocPrint(alloc, "{s}{c}{s}", .{ root, std.fs.path.sep, header_name });
+    defer alloc.free(header);
+
+    const pre = preprocessHeader(alloc, header) orelse return error.TestExpectedPreprocessedHeader;
+    defer alloc.free(pre);
+    try std.testing.expect(std.mem.indexOf(u8, pre, "idol_header_probe") != null);
+
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "refuses-include.h",
+        .data =
+        \\#if __INCLUDE_LEVEL__ > 0
+        \\#error this source refuses header inclusion
+        \\#endif
+        \\long must_not_arrive_through_fallback(long value);
+        ,
+    });
+    const refuses_include = try std.fmt.allocPrint(alloc, "{s}/refuses-include.h", .{root});
+    defer alloc.free(refuses_include);
+    try std.testing.expect(preprocessHeader(alloc, refuses_include) == null);
+
+    try tmp.dir.symLink(io, header_name, "linked.h", .{});
+    const linked = try std.fmt.allocPrint(alloc, "{s}/linked.h", .{root});
+    defer alloc.free(linked);
+    const linked_pre = preprocessHeader(alloc, linked) orelse return error.TestExpectedSymlinkHeader;
+    defer alloc.free(linked_pre);
+    try std.testing.expect(std.mem.indexOf(u8, linked_pre, "idol_header_probe") != null);
+
+    const injected = try std.fmt.allocPrint(
+        alloc,
+        "{s}/missing.h; /usr/bin/touch '{s}/injected'; #",
+        .{ root, root },
+    );
+    defer alloc.free(injected);
+    try std.testing.expect(preprocessHeader(alloc, injected) == null);
+    try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, "injected", .{}));
+
+    const response_body = try std.fmt.allocPrint(alloc, "-o {s}/response-output\nstring.h\n", .{root});
+    defer alloc.free(response_body);
+    try tmp.dir.writeFile(io, .{ .sub_path = "clang-args.rsp", .data = response_body });
+    const response = try std.fmt.allocPrint(alloc, "@{s}/clang-args.rsp", .{root});
+    defer alloc.free(response);
+    try std.testing.expect(preprocessHeader(alloc, response) == null);
+    try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, "response-output", .{}));
+    try std.testing.expect(preprocessHeader(alloc, "--version") == null);
+
+    try std.testing.expectError(
+        error.CHeaderPreprocessFailed,
+        generateFfiFromHeader(alloc, "x */\nlong forged(long);\n/*"),
+    );
 }
