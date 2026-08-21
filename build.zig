@@ -76,6 +76,11 @@ fn addDirectRuntimeObjects(b: *std.Build, mod: *std.Build.Module) void {
                 .root_source_file = b.path("src/" ++ unit ++ ".zig"),
                 .target = rt_target,
                 .optimize = .ReleaseFast,
+                // These object bytes are embedded verbatim below. Debug
+                // records would therefore make the compiler binary depend on
+                // this source root and Zig cache root even when the outer
+                // executable itself is stripped.
+                .strip = true,
             }),
         });
         mod.addAnonymousImport(unit ++ ".o", .{ .root_source_file = obj.getEmittedBin() });
@@ -92,6 +97,10 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            // ReleaseFast is the vendored compiler artifact. Omitting its
+            // debug records keeps source/cache paths out of the Mach-O while
+            // Debug retains full diagnostics.
+            .strip = optimize == .fast,
         }),
     });
     linkProductionKeywordClassify(b, exe.root_module);
