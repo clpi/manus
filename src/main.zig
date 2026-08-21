@@ -105,7 +105,6 @@ var forwarded_program_args: []const []const u8 = &.{};
 var self_argv0: []const u8 = "";
 var graph_diag_enabled: bool = false;
 var graph_write_enabled: bool = false;
-var taint_ledger_enabled: bool = false;
 var global_bench_backend: backend_identity.BenchBackend = .direct;
 var global_bench_profile_cli: bool = false;
 var global_backend_explicit: bool = false;
@@ -170,9 +169,6 @@ fn apply_env_flags(init: std.process.Init) void {
     }
     if (map.get("DUO_GRAPH_WRITE")) |v| {
         if (env_value_truthy(v)) graph_write_enabled = true;
-    }
-    if (map.get("DUO_TAINT_LEDGER")) |v| {
-        if (env_value_truthy(v)) taint_ledger_enabled = true;
     }
     if (map.get("DUO_BENCH_BACKEND")) |v| {
         global_bench_backend = selectBenchBackend(v);
@@ -4629,7 +4625,6 @@ fn do_compile(
         defer graph.deinit();
         _ = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
         var lowering: dnir_lower.Diagnostic = .{};
-        defer lowering.deinit(alloc);
         const lowered = dnir_lower.lowerModuleWithGraphObserved(alloc, &ps.mod, &graph, &lowering) catch |err| {
             term.err("C99 realizer: graph-to-DNIR refused ({s})", .{@errorName(err)});
             if (lowering.note()) |why| term.hint("refused at: {s}", .{why});
@@ -4646,7 +4641,6 @@ fn do_compile(
             std.process.exit(1);
         };
         defer alloc.free(source);
-        if (taint_ledger_enabled) lowering.writeTaintLedger(io, std.Io.File.stderr());
         try Io.Dir.writeFile(Io.Dir.cwd(), io, .{ .sub_path = out_path, .data = source });
         if (phase_timer) |*timer| trace_phase(io, timer, "C99 emit", out_path);
         if (term.build_report != .plain and !test_mode) {
