@@ -7,10 +7,6 @@
 const std = @import("std");
 const semantic_graph = @import("semantic_graph.zig");
 
-/// When true (`DUO_TAINT_ZERO=1`), non-waived B-boundary compiles fail if any
-/// HOST-TAINTED witness was recorded in the lowering ledger.
-pub var enforce_enabled: bool = false;
-
 pub const Class = enum {
     clean,
     host_tainted,
@@ -117,12 +113,6 @@ pub const Ledger = struct {
         return total;
     }
 
-    pub fn mergedHostTaintTotal(lower: *const Ledger, codegen: ?*const Ledger) u32 {
-        var total = lower.hostTaintTotal();
-        if (codegen) |cg| total +%= cg.hostTaintTotal();
-        return total;
-    }
-
     pub fn writeLedgerLines(self: *const Ledger, w: *std.Io.Writer) !void {
         try w.print("TAINT host.total={d} events={d}\n", .{ self.hostTaintTotal(), self.events.items.len });
         var it = self.counts.iterator();
@@ -195,24 +185,4 @@ test "host_taint: ledger aggregates host taint counts" {
 
     try std.testing.expectEqual(@as(u32, 2), ledger.count(.lower, .opaque_path, .host_tainted));
     try std.testing.expectEqual(@as(u32, 2), ledger.hostTaintTotal());
-}
-
-test "host_taint: merged totals include codegen ledger" {
-    var lower: Ledger = .{};
-    defer lower.deinit(std.testing.allocator);
-    var codegen: Ledger = .{};
-    defer codegen.deinit(std.testing.allocator);
-    try lower.record(std.testing.allocator, .{
-        .stage = .lower,
-        .class = .host_tainted,
-        .channel = .ast_name,
-        .site = "world_symbol",
-    });
-    try codegen.record(std.testing.allocator, .{
-        .stage = .codegen,
-        .class = .host_tainted,
-        .channel = .method_string,
-        .site = "stream_method.arity",
-    });
-    try std.testing.expectEqual(@as(u32, 2), Ledger.mergedHostTaintTotal(&lower, &codegen));
 }
