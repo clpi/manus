@@ -39,19 +39,18 @@ host-owned.
 | B0 compiler B executable | open |
 | C0 B compiles C | open |
 
-**Four-axis commit test** (see `../idol-native/docs/bootstrap-critical-path.md`):
-CAPABILITY, OWNERSHIP, CONVERGENCE, FTCFTW — capability-only is not SHC progress.
+**Four-axis commit test:** CAPABILITY, OWNERSHIP, CONVERGENCE, FTCFTW —
+capability-only is not SHC progress. `gate/taint.sh` supplies the executable
+counterfactual for the transferred lexer boundary; `docs/bootstrap.md` owns the
+stage contract.
 **Do not conflate with DIRECT-COVERAGE.** The sibling native surface tracks a
 separate **LOWERABLE** ledger (`../idol-native/gate/selfhost.sh`: how many
 `lib/compiler/*.id` modules lower on `--backend=direct`). That count is useful
 backend-capability coverage only. **CANONICAL-COMPILER** and **EXECUTED-OWNER**
 are orthogonal; see `../idol-native/docs/shc-ownership-ledgers.md` and
-`../idol-native/docs/compiler-b-manifest.md`. Extended ledgers: HOST-TAINT
-(`../idol-native/docs/shc-host-taint.md`), BRIDGE-DEBT, HOST-DEPENDENCY,
-DELETION-VELOCITY (`../idol-native/gate/deletion_velocity.sh`), B-SOURCE
-canonicality (`../idol-native/gate/bsource.sh`) —
-see `../idol-native/docs/shc-ownership-ledgers.md`. Many green compiler modules are
-capability probes, not compiler B.
+`../idol-native/docs/compiler-b-manifest.md`. Many green compiler modules are
+capability probes, not compiler B. HOST-DEPENDENCY closes only through a live
+former-host death control, never through a prose or source-string ledger.
 
 
 ### 2. Semantic reconstruction debt
