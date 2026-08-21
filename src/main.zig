@@ -4631,14 +4631,8 @@ fn do_compile(
         var lowering: dnir_lower.Diagnostic = .{};
         defer lowering.deinit(alloc);
         const lowered = dnir_lower.lowerModuleWithGraphObserved(alloc, &ps.mod, &graph, &lowering) catch |err| {
-            if (err == error.GraphFactsInvalid) {
-                var mbuf: [384]u8 = undefined;
-                const msg = lowering.formatMissingApplicationFact(&mbuf);
-                term.err("C99 realizer: {s}", .{msg});
-            } else {
-                term.err("C99 realizer: graph-to-DNIR refused ({s})", .{@errorName(err)});
-                if (lowering.note()) |why| term.hint("refused at: {s}", .{why});
-            }
+            term.err("C99 realizer: graph-to-DNIR refused ({s})", .{@errorName(err)});
+            if (lowering.note()) |why| term.hint("refused at: {s}", .{why});
             std.process.exit(1);
         };
         defer native_ir.deinitModule(alloc, lowered);
