@@ -704,7 +704,7 @@ fn returnSlotTypes(e: *Emitter, f: dnir.Function) Error![]SlotType {
     }
     return switch (f.ret) {
         .void, .nil, .never => try e.alloc.dupe(SlotType, &.{}),
-        .f64 => try e.alloc.dupe(SlotType, &.{.f64}),
+        .f64, .f32 => try e.alloc.dupe(SlotType, &.{.f64}),
         else => try e.alloc.dupe(SlotType, &.{.i64}),
     };
 }
@@ -950,7 +950,7 @@ fn planFieldLocals(e: *Emitter, instrs: []const dnir.Instr, first: u32) Error!u3
         const rec = dnir.findRecord(e.module, ins.record) orelse return e.refuse("record-unknown");
         const base = if (ins.field.len > 0) ins.field else "rec";
         for (rec.kinds) |k| {
-            if (k == .f64) return e.refuse("record-float-field");
+            if (k == .f64 or k == .f32) return e.refuse("record-float-field");
         }
         for (rec.fields) |fname| {
             const key = try fieldKey(e, base, fname);
