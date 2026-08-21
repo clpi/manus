@@ -3731,6 +3731,29 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             if (is.binding) |b| {
                 try lowerAssignTarget(ctx, b.name, b.expr);
             }
+            // CONSTANT CONDITION: lower the arm that runs, and only it.
+            //
+            // Bounded deliberately to a chainless `if`. An `elseif` chain whose
+            // first condition is constant-false still has runtime conditions
+            // after it, so folding it means re-forming the chain rather than
+            // choosing an arm, and re-forming is where a rewrite starts moving
+            // statements the graph holds pointers into -- the cost the
+            // file-scope closure work already paid once. A chain is left whole.
+            //
+            // A binding is lowered first and unconditionally, above, because
+            // `if x = f() ...` binds whatever the condition decides.
+            if (is.binding == null and is.elseifs.len == 0) {
+                if (constConditionTruth(is.cond)) |truth| {
+                    const gate = allow_return or
+                        (ctx.block_answering and branchIsValueGuard(if (truth) &is.then else if (is.else_body) |*eb| eb else &is.then));
+                    if (truth) {
+                        _ = try lowerBlockReturns(ctx, &is.then, gate);
+                    } else if (is.else_body) |*eb| {
+                        _ = try lowerBlockReturns(ctx, eb, gate);
+                    }
+                    return;
+                }
+            }
             var end_branches: std.ArrayListUnmanaged(u32) = .empty;
             defer end_branches.deinit(ctx.alloc);
 
@@ -4002,6 +4025,35 @@ fn intLiteralStep(expr: *const ast.Expr) ?i64 {
             if (u.op != .neg or u.operand.* != .int_lit) break :blk null;
             break :blk -u.operand.int_lit.val;
         },
+        else => null,
+    };
+}
+
+/// THE TRUTH OF A CONDITION WHOSE OPERANDS ARE BOTH LITERAL, or null.
+///
+/// gap[213] measured what its absence costs: `if 3 > 100` emitted `mov x9,#3`,
+/// `mov x12,#0x64`, `cmp`, `csel` AND the dead arm's arithmetic -- eleven
+/// instructions for a relation whose answer is `mov x0, #0`. The live twin
+/// `if 3 < 100` was also eleven, differing only in the condition code. That is
+/// not an if-conversion gap; the `csel` shows if-conversion already fires. It
+/// is that NOTHING ANSWERED "this condition is constant" where realization
+/// could read it.
+///
+/// Comparisons only. An integer is not a truth value in this language and a
+/// non-comparison operand is not decided here -- `null` means "not known
+/// constant", never "false", so the caller emits both arms exactly as before.
+fn constConditionTruth(cond: *const ast.Expr) ?bool {
+    if (cond.* != .binop) return null;
+    const b = cond.binop;
+    const lhs = intLiteralStep(b.lhs) orelse return null;
+    const rhs = intLiteralStep(b.rhs) orelse return null;
+    return switch (b.op) {
+        .eq => lhs == rhs,
+        .neq => lhs != rhs,
+        .lt => lhs < rhs,
+        .gt => lhs > rhs,
+        .leq => lhs <= rhs,
+        .geq => lhs >= rhs,
         else => null,
     };
 }
