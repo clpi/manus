@@ -44,34 +44,6 @@ pub const Site = union(enum) {
     }
 };
 
-/// Three-valued reference into one census's NAME-BINDING space, spelled
-/// separately from `Site` because the two spaces are different spaces. A place
-/// id and a binding id can both be 0 in the same census and mean different
-/// things, so a value of one type is never assignable to the other.
-pub const BindingSite = union(enum) {
-    unknown,
-    none,
-    one: u32,
-
-    pub fn name(self: BindingSite) []const u8 {
-        return switch (self) {
-            .unknown => "unknown",
-            .none => "none",
-            .one => "one",
-        };
-    }
-};
-
-/// One name binding, whether or not it is a place. `bindPlace` declines every
-/// scalar (SCALARS ARE NOT PLACES, established by f5857e0a); a consumer that
-/// needs to name a scalar subject needs THIS row, not a place row.
-pub const Binding = struct {
-    id: u32,
-    name: []const u8,
-    stmt: *const ast.Stmt,
-    point: u32,
-};
-
 pub const Determinacy = enum { exact, bounded, unknown };
 
 pub const Extent = union(enum) {
@@ -264,10 +236,6 @@ pub fn ruledResidency(p: *const Place) Residency {
 
 pub const Census = struct {
     places: std.ArrayListUnmanaged(Place) = .empty,
-    /// Every name bound in this relation, in binding order. A superset of
-    /// `places` by construction: `bindPlace` declines scalars, `noteBinding`
-    /// declines nothing.
-    bindings: std.ArrayListUnmanaged(Binding) = .empty,
     alloc: std.mem.Allocator,
     points: u32 = 0,
 
@@ -278,7 +246,6 @@ pub const Census = struct {
     pub fn deinit(self: *Census) void {
         for (self.places.items) |*p| p.deinit(self.alloc);
         self.places.deinit(self.alloc);
-        self.bindings.deinit(self.alloc);
     }
 
     pub fn count(self: *const Census) usize {
@@ -298,21 +265,6 @@ pub const Census = struct {
         while (i > 0) {
             i -= 1;
             if (std.mem.eql(u8, self.places.items[i].name, name)) return &self.places.items[i];
-        }
-        return null;
-    }
-
-    pub fn bindingCount(self: *const Census) usize {
-        return self.bindings.items.len;
-    }
-
-    /// Backward search, exactly as `find`: the most recent binding of a name
-    /// is the one in scope.
-    pub fn findBinding(self: *const Census, name: []const u8) ?*const Binding {
-        var i = self.bindings.items.len;
-        while (i > 0) {
-            i -= 1;
-            if (std.mem.eql(u8, self.bindings.items[i].name, name)) return &self.bindings.items[i];
         }
         return null;
     }
@@ -560,7 +512,6 @@ fn bindOrRebind(
     typ: ast.TypeExpr,
     mode: BindMode,
 ) !void {
-    try noteBinding(ctx, name, stmt, point);
     if (ctx.lookup(name)) |p| {
         if (ctx.foreign and mode == .assignment) {
             try appendAccess(ctx, p, .write, point, true);
@@ -575,18 +526,6 @@ fn bindOrRebind(
     }
     if (ctx.foreign) return;
     try bindPlace(ctx, name, stmt, point, init, typ);
-}
-
-/// Record a name binding once per name. A rebind of a name already bound is
-/// the same binding, exactly as a rebind of a place is the same place.
-fn noteBinding(ctx: *Ctx, name: []const u8, stmt: *const ast.Stmt, point: u32) !void {
-    if (ctx.census.findBinding(name) != null) return;
-    try ctx.census.bindings.append(ctx.census.alloc, .{
-        .id = @intCast(ctx.census.bindings.items.len),
-        .name = name,
-        .stmt = stmt,
-        .point = point,
-    });
 }
 
 fn candidateShape(init: ?*const ast.Expr, typ: ast.TypeExpr) Shape {

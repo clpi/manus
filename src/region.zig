@@ -55,7 +55,8 @@
 
 const std = @import("std");
 const ast = @import("ast.zig");
-const place = @import("place.zig");
+const semantic_graph = @import("semantic_graph.zig");
+const semantic_identity = @import("semantic_identity.zig");
 
 /// The algebra, and only the algebra. A shape is NOT the source face that
 /// established it: `if b` and `if(b)` are one `refinement`, `else if b` and
@@ -113,11 +114,11 @@ pub const Bound = union(enum) {
     unknown,
     /// Narrowed to an exact integer, INCLUSIVE.
     at: i64,
-    /// Narrowed by another BINDING's value, INCLUSIVE. A `place.Binding` id,
-    /// the same space as `Refinement.subject`.
-    place: u32,
+    /// Narrowed by another BINDING's value, INCLUSIVE. An exact GRAPH entity
+    /// id, the same space as `Refinement.subject`.
+    place: semantic_identity.id,
     /// Narrowed by another BINDING's value, EXCLUSIVE. Same space as `place`.
-    under: u32,
+    under: semantic_identity.id,
 
     pub fn name(self: Bound) []const u8 {
         return switch (self) {
@@ -132,13 +133,15 @@ pub const Bound = union(enum) {
 /// §32: "Preserve range, width, sign, overflow law, REFINEMENT ... through the
 /// graph." The exact domain one alternative's predicate leaves.
 pub const Refinement = struct {
-    /// The BINDING the predicate constrains — a `place.Binding` id, not a
-    /// `place.Place` id. Scalars are not places (`f5857e0a`), and the subject
-    /// of a numeric predicate is almost always a scalar, so the place census
-    /// cannot name it. `.none` on an unconditional alternative (a bare
-    /// `else`); `.unknown` when the predicate is one this pass cannot read
+    /// The BINDING the predicate constrains, as ITS OWN GRAPH ENTITY ID — the
+    /// `.local`/`.param` node the graph mints for every name a relation binds.
+    /// Not a place id: scalars are not places (`f5857e0a`), and the subject of
+    /// a numeric predicate is almost always a scalar. `Card` is the graph's own
+    /// three-valued reference, so this column is a reference INTO the graph and
+    /// not a second identity space. `.none` on an unconditional alternative (a
+    /// bare `else`); `.unknown` when the predicate is one this pass cannot read
     /// exactly.
-    subject: place.BindingSite = .unknown,
+    subject: semantic_identity.Card = .unknown,
     lower: Bound = .unknown,
     upper: Bound = .unknown,
     /// The single point an inequality predicate EXCLUDES (`n != 3`). Its own
@@ -168,8 +171,8 @@ pub const Region = struct {
     /// and `continue` are 0 and §6 says so explicitly.
     results: u16 = 0,
     refinement: Refinement = .{},
-    /// §8's `carried state`: the bindings this region UPDATES, by exact
-    /// binding id, ascending. For a recurrence that is the carried set; for an
+    /// §8's `carried state`: the bindings this region UPDATES, by exact GRAPH
+    /// entity id, ascending. For a recurrence that is the carried set; for an
     /// alternative it is what the alternative does.
     carried: Range = .{},
 };
@@ -177,8 +180,8 @@ pub const Region = struct {
 pub const Census = struct {
     alloc: std.mem.Allocator,
     regions: std.ArrayListUnmanaged(Region) = .empty,
-    /// Packed binding ids; every `Region.carried` is a window into this.
-    carried: std.ArrayListUnmanaged(u32) = .empty,
+    /// Packed GRAPH entity ids; every `Region.carried` is a window into this.
+    carried: std.ArrayListUnmanaged(semantic_identity.id) = .empty,
     /// Statements walked. A census that examined zero statements has NOT
     /// passed — the rule every `gate/*.sh` lives by, applied to a producer.
     points: u32 = 0,
@@ -198,7 +201,7 @@ pub const Census = struct {
 
     /// The places one region updates. Empty is an answer; an out-of-range
     /// window is a defect and reads as empty rather than as a crash.
-    pub fn carriedOf(self: *const Census, r: Region) []const u32 {
+    pub fn carriedOf(self: *const Census, r: Region) []const semantic_identity.id {
         const end = std.math.add(u32, r.carried.start, r.carried.len) catch return &.{};
         if (end > self.carried.items.len) return &.{};
         return self.carried.items[r.carried.start..end];
@@ -217,7 +220,13 @@ pub const Census = struct {
 
 const Ctx = struct {
     census: *Census,
-    places: *const place.Census,
+    /// The graph this census's subjects are ids INTO. Regions are not graph
+    /// entities (this file mints no node kind and no edge kind), but the
+    /// binding a refinement is about IS one, so it is named by its graph id.
+    graph: *const semantic_graph.SemanticGraph,
+    /// The relation whose body is being walked — the scope every name in it
+    /// resolves from.
+    relation: semantic_identity.id,
     /// Nearest enclosing recurrence or iteration — the target every `break` and
     /// `continue` names EXACTLY, once, at lift.
     loop: Site = .none,
@@ -231,21 +240,21 @@ const Ctx = struct {
     }
 };
 
-/// The regions of one relation body, over that relation's own place census.
+/// The regions of one relation body, over THE GRAPH's own binding identities.
 ///
-/// The two censuses are produced as a PAIR and their ids are only meaningful
-/// together: a `Refinement.subject` is an index into that census's `bindings`,
-/// not into its `places` and not into any other census. A caller that pairs
-/// them wrongly gets a wrong answer, which is why nothing here accepts a bare
-/// id from outside.
+/// `Refinement.subject`, `Bound.place`/`.under` and `Region.carried` are all
+/// exact graph entity ids in the graph passed here — the same ids
+/// `resolveBindingInScope` publishes — so there is no second identity space to
+/// pair correctly and no census to hand along beside this one.
 pub fn analyzeFunction(
     alloc: std.mem.Allocator,
     fb: *const ast.FuncBody,
-    places: *const place.Census,
+    graph: *const semantic_graph.SemanticGraph,
+    relation: semantic_identity.id,
 ) !Census {
     var census = Census.init(alloc);
     errdefer census.deinit();
-    var ctx = Ctx{ .census = &census, .places = places };
+    var ctx = Ctx{ .census = &census, .graph = graph, .relation = relation };
     try walkBlock(&ctx, &fb.body, .none);
     return census;
 }
@@ -438,7 +447,7 @@ fn carry(ctx: *Ctx, region: u32, body: *const ast.Block) !void {
     const start: u32 = @intCast(ctx.census.carried.items.len);
     try collectCarried(ctx, body);
     const end: u32 = @intCast(ctx.census.carried.items.len);
-    std.mem.sort(u32, ctx.census.carried.items[start..end], {}, std.sort.asc(u32));
+    std.mem.sort(semantic_identity.id, ctx.census.carried.items[start..end], {}, std.sort.asc(semantic_identity.id));
     // Deduplicate in place: one place written twice is one carried place.
     var write: u32 = start;
     var read: u32 = start;
@@ -455,10 +464,10 @@ fn collectCarried(ctx: *Ctx, b: *const ast.Block) anyerror!void {
     for (b.stmts) |*s| switch (s.*) {
         .assign => |a| for (a.targets) |t| {
             if (t.* != .name) continue;
-            if (placeOf(ctx, t.name.ident)) |p| try ctx.census.carried.append(ctx.census.alloc, p);
+            if (bindingOf(ctx, t.name.ident)) |p| try ctx.census.carried.append(ctx.census.alloc, p);
         },
         .local_decl => |d| for (d.names) |n| {
-            if (placeOf(ctx, n.ident)) |p| try ctx.census.carried.append(ctx.census.alloc, p);
+            if (bindingOf(ctx, n.ident)) |p| try ctx.census.carried.append(ctx.census.alloc, p);
         },
         .if_stmt => |f| {
             try collectCarried(ctx, &f.then);
@@ -480,25 +489,24 @@ fn collectCarried(ctx: *Ctx, b: *const ast.Block) anyerror!void {
     };
 }
 
-/// The BINDING a name denotes in this body, or null.
+/// THE GRAPH ENTITY a name denotes in this relation, or null.
 ///
-/// It reads the binding census, not the place census, because `bindPlace`
-/// declines every scalar and the subject of a numeric predicate is a scalar.
-/// Asking `places.find` for `n` in `if (n > 3)` answered null for every
-/// program, which is how six region facts came to be computed off an
-/// all-default `Refinement`; gap[206] measures it.
+/// This is a resolution at the source-resolution boundary — `region` runs
+/// inside `liftBodies`, at lift, which is the one place `resolveBindingInScope`
+/// is for. No census is consulted: the graph mints a `.local` for every name a
+/// relation body binds and a `.param` for every parameter, so the id this
+/// answers is the graph's own and every consumer of `Refinement.subject` is
+/// holding a graph entity.
 ///
-/// `place.Census.findBinding` scans BACKWARD, so where one body binds two
-/// names of one spelling in sibling scopes this answers the LATER one. That is
-/// the same lookup `dnir_lower.zig` already resolves module names through, and
-/// it is the honest limit of a name-keyed locate: a shadowed spelling can
-/// attribute a refinement to the wrong binding. It cannot attribute it to a
-/// binding that does not exist, so a wrong answer here is a wrong SUBJECT and
-/// never a wrong program — and the day bindings carry lexical extent it becomes
-/// exact with no change to any consumer.
-fn placeOf(ctx: *Ctx, name: []const u8) ?u32 {
-    const b = ctx.places.findBinding(name) orelse return null;
-    return b.id;
+/// SHADOWING IS THE KNOWN LIMIT, unchanged and now shared with every other
+/// name-keyed locate in the graph: `resolveBindingInScope` walks the scope
+/// chain and one relation's locals are flat within it, so a body binding two
+/// names of one spelling in sibling scopes answers the FIRST. A wrong answer
+/// here names the wrong BINDING and never changes a program; it becomes exact
+/// when the graph's locals carry lexical extent, with no change to any
+/// consumer of this family.
+fn bindingOf(ctx: *Ctx, name: []const u8) ?semantic_identity.id {
+    return ctx.graph.resolveBindingInScope(ctx.relation, name);
 }
 
 /// The interval one predicate leaves, or `.unknown` — never a guess.
@@ -509,12 +517,12 @@ fn domainOf(ctx: *Ctx, cond: *const ast.Expr) Refinement {
     // reflected. Nothing else is read: `a and b`, a call, a projection and a
     // negation all publish `.unknown`, which is the honest answer.
     if (b.lhs.* == .name) {
-        if (placeOf(ctx, b.lhs.name.ident)) |subject| {
+        if (bindingOf(ctx, b.lhs.name.ident)) |subject| {
             return domainFrom(ctx, subject, b.op, b.rhs);
         }
     }
     if (b.rhs.* == .name) {
-        if (placeOf(ctx, b.rhs.name.ident)) |subject| {
+        if (bindingOf(ctx, b.rhs.name.ident)) |subject| {
             return domainFrom(ctx, subject, reflect(b.op), b.lhs);
         }
     }
@@ -531,7 +539,7 @@ fn reflect(op: ast.BinOp) ast.BinOp {
     };
 }
 
-fn domainFrom(ctx: *Ctx, subject: u32, op: ast.BinOp, operand: *const ast.Expr) Refinement {
+fn domainFrom(ctx: *Ctx, subject: semantic_identity.id, op: ast.BinOp, operand: *const ast.Expr) Refinement {
     var out = Refinement{ .subject = .{ .one = subject } };
     if (intLit(operand)) |k| {
         switch (op) {
@@ -550,7 +558,7 @@ fn domainFrom(ctx: *Ctx, subject: u32, op: ast.BinOp, operand: *const ast.Expr) 
         return out;
     }
     if (operand.* == .name) {
-        if (placeOf(ctx, operand.name.ident)) |bound| {
+        if (bindingOf(ctx, operand.name.ident)) |bound| {
             switch (op) {
                 .lt => out.upper = .{ .under = bound },
                 .leq => out.upper = .{ .place = bound },
@@ -602,29 +610,38 @@ fn parseModule(alloc: std.mem.Allocator, src: []const u8) !ast.Module {
     return try p.parse_module();
 }
 
-/// The two censuses of the fixture's one relation, produced as a PAIR — which
-/// is the only way a `Refinement.subject` means anything.
+/// The fixture's one relation, lifted THROUGH THE GRAPH — which is the only
+/// way a `Refinement.subject` means anything, because it is a graph id.
+///
+/// The graph is arena-owned and outlives the census, which is what makes a
+/// subject id resolvable back to the entity it names.
 const Pair = struct {
-    places: place.Census,
+    graph: *semantic_graph.SemanticGraph,
     regions: Census,
 
     fn deinit(self: *Pair) void {
-        self.places.deinit();
-        self.regions.deinit();
+        _ = self;
+    }
+
+    /// The name the graph gives one subject id — the check that a subject is
+    /// an EXACT ENTITY and not an opaque index.
+    fn subjectName(self: *const Pair, r: Region) ?[]const u8 {
+        return switch (r.refinement.subject) {
+            .one => |entity| (self.graph.get(entity) orelse return null).name,
+            else => null,
+        };
     }
 };
 
 fn censusOf(arena: *std.heap.ArenaAllocator, src: []const u8) !Pair {
     const alloc = arena.allocator();
-    const mod = try parseModule(alloc, src);
-    for (mod.body.stmts) |*s| {
-        if (s.* != .func_decl) continue;
-        var places = try place.analyzeFunction(alloc, &s.func_decl.func);
-        errdefer places.deinit();
-        const regions = try analyzeFunction(alloc, &s.func_decl.func, &places);
-        return .{ .places = places, .regions = regions };
-    }
-    return error.NoRelation;
+    const mod_ptr = try alloc.create(ast.Module);
+    mod_ptr.* = try parseModule(alloc, src);
+    const graph = try alloc.create(semantic_graph.SemanticGraph);
+    graph.* = semantic_graph.SemanticGraph.init(alloc);
+    _ = try graph.liftModuleFull(mod_ptr, "region_test.id");
+    if (graph.bodies.items.len == 0) return error.NoRelation;
+    return .{ .graph = graph, .regions = graph.bodies.items[0].regions };
 }
 
 test "region: a reordered three-alternative chain is a different graph" {

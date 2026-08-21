@@ -2643,6 +2643,35 @@ pub const SemanticGraph = struct {
         try self.addEdge(.{ .from = local_id, .to = shape_node_id, .kind = .descriptor });
     }
 
+    /// EVERY NAME A RELATION BODY BINDS, AS A GRAPH ENTITY.
+    ///
+    /// Deduplicated against this relation's own children, so a rebind of a name
+    /// already bound is the same binding — the rule `place.zig` states for a
+    /// place, applied to the entity the graph owns. A `.param` of the same
+    /// spelling already IS that binding and is not shadowed by a second row.
+    fn noteLocalBinding(
+        self: *SemanticGraph,
+        file: []const u8,
+        func_id: id,
+        name: []const u8,
+        loc: ast.Loc,
+        ast_ref: ?*anyopaque,
+    ) !void {
+        for (self.nested.of(func_id)) |child| {
+            const node = self.get(child) orelse continue;
+            if (node.kind != .local and node.kind != .param) continue;
+            if (node.name) |n| {
+                if (std.mem.eql(u8, n, name)) return;
+            }
+        }
+        _ = try self.addChild(func_id, .{
+            .kind = .local,
+            .span = .{ .file = file, .start = loc.line, .end = loc.col },
+            .name = name,
+            .ast_ref = ast_ref,
+        });
+    }
+
     fn liftBindingsInStmts(
         self: *SemanticGraph,
         file: []const u8,
@@ -2663,6 +2692,19 @@ pub const SemanticGraph = struct {
                             lname.attributes,
                             lname,
                         );
+                        try self.noteLocalBinding(file, func_id, lname.ident, lname.loc, @ptrCast(@constCast(lname)));
+                    }
+                },
+                .const_decl => |*cd| try self.noteLocalBinding(file, func_id, cd.ident, cd.loc, null),
+                .global_decl => |*gd| {
+                    for (gd.names) |*lname| {
+                        try self.noteLocalBinding(file, func_id, lname.ident, lname.loc, @ptrCast(@constCast(lname)));
+                    }
+                },
+                .assign => |*asg| {
+                    for (asg.targets) |target| {
+                        if (target.* != .name) continue;
+                        try self.noteLocalBinding(file, func_id, target.name.ident, target.loc(), null);
                     }
                 },
                 .do_block => |*d| try self.liftBindingsInStmts(file, func_id, func_name, d.body.stmts),
@@ -2673,8 +2715,14 @@ pub const SemanticGraph = struct {
                     for (i.elseifs) |*ei| try self.liftBindingsInStmts(file, func_id, func_name, ei.body.stmts);
                     if (i.else_body) |*eb| try self.liftBindingsInStmts(file, func_id, func_name, eb.stmts);
                 },
-                .num_for => |*nf| try self.liftBindingsInStmts(file, func_id, func_name, nf.body.stmts),
-                .gen_for => |*g| try self.liftBindingsInStmts(file, func_id, func_name, g.body.stmts),
+                .num_for => |*nf| {
+                    try self.noteLocalBinding(file, func_id, nf.var_name, nf.loc, null);
+                    try self.liftBindingsInStmts(file, func_id, func_name, nf.body.stmts);
+                },
+                .gen_for => |*g| {
+                    for (g.vars) |v| try self.noteLocalBinding(file, func_id, v, g.loc, null);
+                    try self.liftBindingsInStmts(file, func_id, func_name, g.body.stmts);
+                },
                 .func_decl => |*fd| {
                     if (self.findFuncDecl(fd)) |nested_id| {
                         try self.liftBindingsInStmts(file, nested_id, fd.path[0], fd.func.body.stmts);
@@ -2737,7 +2785,7 @@ pub const SemanticGraph = struct {
             const relation = self.findFuncDecl(fd) orelse continue;
             var places = try place.analyzeFunction(self.alloc, &fd.func);
             errdefer places.deinit();
-            var regions = try region.analyzeFunction(self.alloc, &fd.func, &places);
+            var regions = try region.analyzeFunction(self.alloc, &fd.func, self, relation);
             errdefer regions.deinit();
             try self.bodies.append(self.alloc, .{
                 .relation = relation,
@@ -3524,7 +3572,7 @@ pub const SemanticGraph = struct {
     /// Source-resolution boundary: resolve a binding name to an exact id by
     /// walking the lexical scope chain recorded on the graph. Downstream
     /// consumers must use published capture and binding edges — never repeat this walk.
-    fn resolveBindingInScope(self: *const SemanticGraph, start_scope: id, name: []const u8) ?id {
+    pub fn resolveBindingInScope(self: *const SemanticGraph, start_scope: id, name: []const u8) ?id {
         var scope: ?id = start_scope;
         while (scope) |s| {
             for (self.nested.of(s)) |child| {
@@ -5319,7 +5367,7 @@ pub const SemanticGraph = struct {
                 try appendJsonInt(buf, alloc, v);
             },
             .place, .under => |p| {
-                try buf.appendSlice(alloc, ",\"place\":");
+                try buf.appendSlice(alloc, ",\"binding\":");
                 try appendJsonInt(buf, alloc, p);
             },
         }
@@ -5377,7 +5425,7 @@ pub const SemanticGraph = struct {
             try buf.append(alloc, '"');
             switch (r.refinement.subject) {
                 .one => |v| {
-                    try buf.appendSlice(alloc, ",\"place\":");
+                    try buf.appendSlice(alloc, ",\"binding\":");
                     try appendJsonInt(buf, alloc, v);
                 },
                 else => {},
