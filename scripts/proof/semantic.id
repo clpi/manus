@@ -38,7 +38,7 @@ main: i64 = ()
     return 20
   if not "scripts/proof/graph.id":audit("graph:hit")
     return 22
-  if not "scripts/proof/graph.id":audit("descriptor_ref")
+  if !"scripts/proof/graph.id":audit("qualified.of")
     return 23
   if not "scripts/proof/graph.id":audit("callfirst:")
     return 29

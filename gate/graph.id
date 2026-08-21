@@ -5,7 +5,7 @@
 # Authority: structural edge roles only; occurrence/subject/packs on
 # ApplicationFact; relation identity is the unique .binding edge; node owns
 # descriptor/demand/provenance/stage/scope; id-first query API; descriptor
-# recursion from descriptor_ref edges only.
+# recursion from canonical descriptor edges plus one private qualified index.
 # Deletion condition: production semantic graph gate on staged diff (GAP-124).
 #
 # Blocks NEW graph-closure regressions on staged additions in graph owner files.
@@ -33,7 +33,7 @@ recursion: i64 = (path: str, no: i64, code: str)
   if code:has("classifyDescriptorRecursionFromEdges")
     return 0
   if code:has("classifyDescriptorRecursion(")
-    print("({path}, {no}, violation, graph.recursion, law.graph.descriptor, classifyDescriptorRecursionFromEdges + descriptor_ref edges only)")
+    print("({path}, {no}, violation, graph.recursion, law.graph.descriptor, exact descriptor edges plus the private qualification index)")
     return 1
   0
 
@@ -82,7 +82,10 @@ graphrules: i64 = (path: str, no: i64, code: str)
   hits = hits + row(path, no, code, "graph.edge.home", ".kind = .home", "law.graph.edge", "homeOf → Node.scope - do not publish a second home edge")
   hits = hits + row(path, no, code, "graph.card.null", "effect: ?id = null", "law.fact.cardinality", "Card unknown/none/one - null is not unknown")
   hits = hits + row(path, no, code, "graph.tag.validity", "kind != .func and", "law.tag.authority", "callable/hasDescriptorFacts - NodeKind must not establish validity")
-  hits = hits + row(path, no, code, "graph.contains.mut", 'addEdge(.{ .from = parent, .to = entity, .kind = .contains', "law.derived.index", "appendEdge from addChild - addEdge must not mint contains")
+  hits += row(path, no, code, "graph.edge.contains", "    contains,", "law.derived.index", "Node.scope plus nested reverse index - no contains edge")
+  hits += row(path, no, code, "graph.edge.contains.set", ".kind = .contains", "law.derived.index", "Node.scope plus nested reverse index - no contains edge")
+  hits += row(path, no, code, "graph.edge.descriptor.ref", "    descriptor_ref,", "law.graph.edge", "one descriptor edge plus private physical qualification")
+  hits += row(path, no, code, "graph.edge.descriptor.ref.set", ".kind = .descriptor_ref", "law.graph.edge", "one descriptor edge plus private physical qualification")
   hits = hits + row(path, no, code, "graph.tag.validity.shape", "kind != .table_shape", "law.tag.authority", "hasTableDescriptorFacts - not table_shape tag")
   hits = hits + row(path, no, code, "graph.tag.validity.enum", "kind != .enum_shape", "law.tag.authority", "hasEnumDescriptorFacts - not enum_shape tag")
   hits = hits + row(path, no, code, "graph.query.entitiesOfKind", "entitiesOfKind(", "law.tag.authority", "descriptorHomes/tableDescriptorHomes - not kind scan")
@@ -94,10 +97,10 @@ graphrules: i64 = (path: str, no: i64, code: str)
   hits = hits + row(path, no, code, "graph.from.storage", "fromStorageClass", "law.representation.one", "knowledge from seal - storage class is not a representation producer")
   hits = hits + row(path, no, code, "graph.native.specialize", "sc == .native", "law.representation.one", "native fields do not mint a specialize transform")
   hits = hits + row(path, no, code, "graph.shape.mash", "@shape", "law.path.name", "inline table_shape identity is the graph id - never a mashed @shape name")
-  hits = hits + row(path, no, code, "graph.desc.scan", "resolveDescriptorEntityAtLift", "law.graph.descriptor", "resolveInHome(start) - contains chain only, never a whole-graph name scan")
+  hits += row(path, no, code, "graph.desc.scan", "resolveDescriptorEntityAtLift", "law.graph.descriptor", "resolveInHome(start) - scope plus nested index only, never a whole-graph name scan")
   hits = hits + row(path, no, code, "graph.json.method", ",\"method\":", "law.graph.query", "call_shapes emit relation id - never recover method text")
   hits = hits + row(path, no, code, "graph.json.duoname", "duo_name(", "law.graph.query", "snapshot emits exact ids - never reconstruct a descriptor spelling")
-  hits = hits + row(path, no, code, "graph.desc.label", "descriptor_label", "law.graph.descriptor", "descriptor_ref ids - never a mashed composition label")
+  hits += row(path, no, code, "graph.desc.label", "descriptor_label", "law.graph.descriptor", "descriptor ids - never a mashed composition label")
   hits = hits + row(path, no, code, "graph.edge.typeof", "    type_of,", "law.graph.edge", "descriptor edge - never type_of underscore ontology")
   hits = hits + row(path, no, code, "graph.edge.transform.in", "    transform_input,", "law.graph.edge", "operand/provenance on the transformation identity - not transform_input")
   hits = hits + row(path, no, code, "graph.tag.func", "kind != .func", "law.tag.authority", "callable from result_descriptor facts - NodeKind must not establish validity")

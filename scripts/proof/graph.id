@@ -34,7 +34,7 @@ if not code and graph:hit(".argument =>")
   code = 6
 if not code and graph:hit("edge.kind == .relation")
   code = 7
-if not code and not graph:audit("descriptor_ref")
+if !code and !graph:audit("qualified.of")
   code = 8
 if not code and not graph:audit("classifyDescriptorRecursionFromEdges")
   code = 9
@@ -244,10 +244,18 @@ if not code and not query:audit("pub fn applicationsIn")
   code = 121
 if not code and not query:audit("pub fn relationsReferencedBy")
   code = 122
-if not code and not graph:audit("DerivedContainsIndex")
+if !code and graph:hit("    contains,")
   code = 123
-if not code and not graph:audit("descriptor_refs.of")
+if !code and graph:hit(".kind = .contains")
   code = 124
+if !code and graph:hit("    descriptor_ref,")
+  code = 125
+if !code and graph:hit(".kind = .descriptor_ref")
+  code = 126
+if !code and !graph:audit("qualified.of")
+  code = 127
+if !code and !graph:audit("EdgeKind exposes only irreducible lowercase words")
+  code = 128
 
 main: i64 = ()
   if not code

@@ -32,12 +32,12 @@ pub const State = enum {
 // `Recursion`, `Completion`, `DescriptorRefWalk`,
 // `classifyDescriptorRecursionFromEdges`, `resolveDescriptorCompletion` and
 // `SemanticGraph.descriptorRecursion` lived here. The classifier walked the
-// whole `.descriptor_ref` closure of every table shape on every compile, and
+// whole qualified descriptor closure of every table shape on every compile, and
 // its two answers went into `Node.recursion`/`Node.completion`, which were read
 // by one `writeJson` arm each and by nothing else in either tree. The public
 // `descriptorRecursion` had callers only in this file's own tests. Deleted
-// under HPLS §7-8; the `.descriptor_ref` EDGES stay, because
-// `hasDescriptorFacts`/`hasTableDescriptorFacts` do read them.
+// because they had no consumer. Exact descriptor edges and their private
+// qualification index remain because descriptor queries consume them.
 
 fn inferDescriptorState(is_sealed: bool) State {
     if (is_sealed) return .sealed;
@@ -77,17 +77,13 @@ pub const NodeKind = enum {
 /// WRITE-ONLY, added on every compile from two sites and read by nothing but
 /// its own `=> "output"` arm in the JSON dump. Every scan over `edges.items`
 /// filters on a kind and none of them named it, so it changed no answer and
-/// cost graph memory forever (`HPLS` §7-8). Remaining reduction:
-/// descriptor_ref when the descriptor role is already represented.
+/// cost graph memory forever. Containment is `Node.scope`; descriptor
+/// qualification is a private index over the canonical descriptor edge.
 pub const EdgeKind = enum {
-    /// Nesting/home containment (scope projection — not module lookup).
-    contains,
     /// Reference to an exact binding id (not a name recovery edge).
     binding,
     /// Static member/field of a descriptor home entity.
     member,
-    /// Descriptor entity references another descriptor entity by exact id.
-    descriptor_ref,
     /// Callable entity captures an exact outer binding id.
     capture,
     /// Named projection specialization (not operation spelling).
@@ -103,16 +99,17 @@ pub const EdgeKind = enum {
 // subject is the unique `.projection` at `application_subject_projection`.
 pub const application_subject_projection: u16 = 1;
 
-test "semantic_graph: EdgeKind excludes operational spellings" {
+test "semantic_graph: EdgeKind exposes only irreducible lowercase words" {
     const forbidden = [_][]const u8{
-        "run",  "call",            "invoke",  "execute",  "read",    "write",    "get",
-        "set",  "parse",           "encode",  "decode",   "convert", "compile",  "lower",
-        "emit", "transform",       "subject", "argument", "result",  "relation", "type_of",
-        "def",  "transform_input", "use",     "home",
+        "run",  "call",            "invoke",  "execute",  "read",     "write",          "get",
+        "set",  "parse",           "encode",  "decode",   "convert",  "compile",        "lower",
+        "emit", "transform",       "subject", "argument", "result",   "relation",       "type_of",
+        "def",  "transform_input", "use",     "home",     "contains", "descriptor_ref",
     };
     inline for (@typeInfo(EdgeKind).@"enum".field_names) |field_name| {
         const kind: EdgeKind = @field(EdgeKind, field_name);
         const label = @tagName(kind);
+        for (label) |byte| try std.testing.expect(byte >= 'a' and byte <= 'z');
         for (forbidden) |word| {
             try std.testing.expect(!std.mem.eql(u8, label, word));
         }
@@ -215,9 +212,9 @@ pub const Node = struct {
     // EITHER tree parses those keys — `grep` over `gate/`, `scripts/`,
     // `tools/` and `benchmarks/` in both repos returns one hit, and it is
     // `scripts/ledger/graph.id` reporting `hardware_lowerings` as OPEN DEBT.
-    // A JSON key with no reader is not "tooling" under HPLS §7; it is scenery
-    // with an audience of nobody, and it cost seven fields on every graph node
-    // plus a whole `.descriptor_ref` closure walk (`recursion`) per shape.
+    // A JSON key with no reader is not tooling; it is scenery with an audience
+    // of nobody, and it cost seven fields on every graph node plus a whole
+    // qualified descriptor closure walk (`recursion`) per shape.
     // `shape_id` stayed, because it has a reader that makes a decision.
     // ─────────────────────────────────────────────────────────────────────
     /// Opaque link to AST for Phase 1 — graph mirrors, does not replace, AST yet.
@@ -225,15 +222,15 @@ pub const Node = struct {
     /// THE HOME A CALLABLE IS DECLARED IN, when that home is not this module.
     ///
     /// Null on every node lifted from the module being compiled — its home is
-    /// the module node and the `.contains` chain already says so. Non-null only
+    /// the module node and the scope chain already says so. Non-null only
     /// on a FOREIGN relation: a declaration this module refers to and does not
     /// contain. It is the one fact that separates "the graph knows this call"
     /// from "the graph knows this call AND can name the symbol it lands on",
     /// and realization reads it through `foreignHome` rather than by
     /// re-deriving a home from a file path in a second place.
     foreign_home: ?[]const u8 = null,
-    /// The graph entity this one is nested inside. The `.contains` edge is a
-    /// projection of this field; `addChild` writes both from one call.
+    /// The graph entity this one is nested inside. `nested` is the sole derived
+    /// reverse index of this authoritative fact.
     scope: ?id = null,
     /// When true, `name` was allocated on the graph allocator and must be freed in deinit.
     owns_name: bool = false,
@@ -244,8 +241,6 @@ pub const Edge = struct {
     to: id,
     kind: EdgeKind,
     position: u16 = 0,
-    /// For `.descriptor_ref`: true when inline/embedded, false when indirect (e.g. pointer).
-    inline_ref: bool = false,
 };
 
 pub const FactRange = struct {
@@ -714,7 +709,7 @@ const Adjacency = struct {
 
 const DescriptorHit = struct {
     to: id,
-    inline_ref: bool,
+    embedded: bool,
 };
 
 const RefAdjacency = struct {
@@ -733,7 +728,7 @@ const RefAdjacency = struct {
         alloc: std.mem.Allocator,
         from: id,
         to: id,
-        inline_ref: bool,
+        embedded: bool,
     ) !void {
         const slot = try self.map.getOrPut(alloc, from);
         if (!slot.found_existing) slot.value_ptr.* = .empty;
@@ -743,7 +738,7 @@ const RefAdjacency = struct {
                 _ = self.map.remove(from);
             }
         }
-        try slot.value_ptr.append(alloc, .{ .to = to, .inline_ref = inline_ref });
+        try slot.value_ptr.append(alloc, .{ .to = to, .embedded = embedded });
     }
 
     fn of(self: *const RefAdjacency, from: id) []const DescriptorHit {
@@ -941,8 +936,8 @@ pub const SemanticGraph = struct {
     nested: Adjacency = .{},
     /// Caller home → published application ids (`law.fact.locality`).
     home_apps: Adjacency = .{},
-    /// Descriptor → descriptor_ref hits (`law.fact.locality`).
-    descriptor_refs: RefAdjacency = .{},
+    /// Descriptor → qualified descriptor hits (`law.fact.locality`).
+    qualified: RefAdjacency = .{},
     /// Func id assigned at addNode from the declaration pointer. Lookup is this
     /// index, not a later walk of `ast_ref` slots.
     origin: std.AutoHashMapUnmanaged(usize, id) = .empty,
@@ -1020,7 +1015,7 @@ pub const SemanticGraph = struct {
         self.application_candidates.deinit(self.alloc);
         self.nested.deinit(self.alloc);
         self.home_apps.deinit(self.alloc);
-        self.descriptor_refs.deinit(self.alloc);
+        self.qualified.deinit(self.alloc);
         self.origin.deinit(self.alloc);
         if (self.places) |*census| census.deinit();
         for (self.bodies.items) |*body| {
@@ -1092,10 +1087,8 @@ pub const SemanticGraph = struct {
         _ = self.origin.remove(@intFromPtr(raw));
     }
 
-    /// Add `node` inside `parent`: records the scope fact and emits the
-    /// `.contains` edge that projects it. Both used to be written by hand at
-    /// every lift site, and the scope half was simply never written — which is
-    /// how a parameter and a module function came to share one identity.
+    /// Add `node` inside `parent`: records the authoritative scope fact and its
+    /// private reverse index in one transaction.
     pub fn addChild(self: *SemanticGraph, parent: id, node: Node) !id {
         var n = node;
         n.scope = parent;
@@ -1106,8 +1099,6 @@ pub const SemanticGraph = struct {
             std.debug.assert(removed.scope == parent);
             self.forgetFunc(removed);
         }
-        try self.appendEdge(.{ .from = parent, .to = entity, .kind = .contains });
-        errdefer self.popEdge();
         try self.nested.push(self.alloc, parent, entity);
         return entity;
     }
@@ -1142,7 +1133,6 @@ pub const SemanticGraph = struct {
     }
 
     pub fn addEdge(self: *SemanticGraph, edge: Edge) !void {
-        if (edge.kind == .contains) return error.DerivedContainsIndex;
         try self.appendEdge(edge);
     }
 
@@ -1171,23 +1161,20 @@ pub const SemanticGraph = struct {
         if (node.descriptor_state != null) return true;
         for (self.edges.items) |edge| {
             if (edge.from != entity) continue;
-            if (edge.kind == .member or edge.kind == .descriptor_ref or edge.kind == .descriptor)
+            if (edge.kind == .member or edge.kind == .descriptor)
                 return true;
         }
         return false;
     }
 
-    /// Table/record descriptor home: sealed state or `.descriptor_ref` edges.
+    /// Table/record descriptor home: sealed state or qualified descriptor edges.
     pub fn hasTableDescriptorFacts(self: *const SemanticGraph, entity: id) bool {
         const node = self.get(entity) orelse return false;
         if (node.descriptor_state != null) return true;
-        for (self.edges.items) |edge| {
-            if (edge.from == entity and edge.kind == .descriptor_ref) return true;
-        }
-        return false;
+        return self.qualified.of(entity).len != 0;
     }
 
-    /// Enum descriptor home: member facts without table descriptor_ref/state.
+    /// Enum descriptor home: member facts without table qualification/state.
     pub fn hasEnumDescriptorFacts(self: *const SemanticGraph, entity: id) bool {
         if (!self.hasDescriptorFacts(entity)) return false;
         if (self.hasTableDescriptorFacts(entity)) return false;
@@ -2032,13 +2019,13 @@ pub const SemanticGraph = struct {
         return self.findUniqueByNameOfKind(name, .table_shape);
     }
 
-
-    fn publishDescriptorRefEdge(self: *SemanticGraph, from: id, to: id, inline_ref: bool) !void {
-        try self.addEdge(.{ .from = from, .to = to, .kind = .descriptor_ref, .inline_ref = inline_ref });
-        try self.descriptor_refs.push(self.alloc, from, to, inline_ref);
+    fn publishDescriptorRefEdge(self: *SemanticGraph, from: id, to: id, embedded: bool) !void {
+        try self.addEdge(.{ .from = from, .to = to, .kind = .descriptor });
+        errdefer self.popEdge();
+        try self.qualified.push(self.alloc, from, to, embedded);
     }
 
-    fn publishDescriptorRefType(self: *SemanticGraph, descriptor: id, rt: types.ResolvedType, inline_ref: bool) !void {
+    fn publishDescriptorRefType(self: *SemanticGraph, descriptor: id, rt: types.ResolvedType, embedded: bool) !void {
         switch (rt) {
             .pointer => |p| {
                 try self.publishDescriptorRefType(descriptor, p.*, false);
@@ -2046,23 +2033,23 @@ pub const SemanticGraph = struct {
             .@"struct" => |s| {
                 const start = self.homeOf(descriptor) orelse descriptor;
                 if (self.resolveInHome(start, s.name, .table_shape)) |ref| {
-                    try self.publishDescriptorRefEdge(descriptor, ref, inline_ref);
+                    try self.publishDescriptorRefEdge(descriptor, ref, embedded);
                 }
             },
             .table_type => |t| {
                 for (t.fields) |field| {
-                    try self.publishDescriptorRefType(descriptor, field.typ, inline_ref);
+                    try self.publishDescriptorRefType(descriptor, field.typ, embedded);
                 }
             },
             .enum_type => |e| {
                 const start = self.homeOf(descriptor) orelse descriptor;
                 if (self.resolveInHome(start, e.name, .enum_shape)) |ref| {
-                    try self.publishDescriptorRefEdge(descriptor, ref, inline_ref);
+                    try self.publishDescriptorRefEdge(descriptor, ref, embedded);
                 }
                 for (e.variants) |variant| {
                     if (variant.payload) |payload| {
                         for (payload) |member| {
-                            try self.publishDescriptorRefType(descriptor, member, inline_ref);
+                            try self.publishDescriptorRefType(descriptor, member, embedded);
                         }
                     }
                 }
@@ -2078,18 +2065,18 @@ pub const SemanticGraph = struct {
 
     pub const DescriptorRefTarget = struct {
         target: id,
-        inline_ref: bool,
+        embedded: bool,
     };
 
-    /// Exact descriptor entities referenced by published `.descriptor_ref` edges.
+    /// Exact descriptor entities referenced by canonical descriptor edges.
     pub fn descriptorRefsOf(self: *const SemanticGraph, descriptor: id, alloc: std.mem.Allocator) ![]const DescriptorRefTarget {
         if (!self.hasDescriptorFacts(descriptor)) return error.InvalidDescriptorEntity;
-        const hits = self.descriptor_refs.of(descriptor);
+        const hits = self.qualified.of(descriptor);
         var out: std.ArrayListUnmanaged(DescriptorRefTarget) = .empty;
         errdefer out.deinit(alloc);
         try out.ensureTotalCapacity(alloc, hits.len);
         for (hits) |hit| {
-            out.appendAssumeCapacity(.{ .target = hit.to, .inline_ref = hit.inline_ref });
+            out.appendAssumeCapacity(.{ .target = hit.to, .embedded = hit.embedded });
         }
         return try out.toOwnedSlice(alloc);
     }
@@ -3560,12 +3547,11 @@ pub const SemanticGraph = struct {
     fn resolveBindingInScope(self: *const SemanticGraph, start_scope: id, name: []const u8) ?id {
         var scope: ?id = start_scope;
         while (scope) |s| {
-            for (self.edges.items) |edge| {
-                if (edge.from != s or edge.kind != .contains) continue;
-                const node = self.get(edge.to) orelse continue;
+            for (self.nested.of(s)) |child| {
+                const node = self.get(child) orelse continue;
                 if (node.kind != .local and node.kind != .param) continue;
                 if (node.name) |n| {
-                    if (std.mem.eql(u8, n, name)) return edge.to;
+                    if (std.mem.eql(u8, n, name)) return child;
                 }
             }
             scope = self.get(s).?.scope;
@@ -3576,7 +3562,6 @@ pub const SemanticGraph = struct {
     const CaptureLiftError = error{
         OutOfMemory,
         DuplicateSemanticDeclaration,
-        DerivedContainsIndex,
         GraphIncarnationFrozen,
     };
 
@@ -4139,7 +4124,6 @@ pub const SemanticGraph = struct {
             else => {},
         };
     }
-
 
     fn verifyCheckedApplicationOperandPacks(
         self: *const SemanticGraph,
@@ -5122,10 +5106,8 @@ pub const SemanticGraph = struct {
 
     pub fn edgeKindLabel(kind: EdgeKind) []const u8 {
         return switch (kind) {
-            .contains => "contains",
             .binding => "binding",
             .member => "member",
-            .descriptor_ref => "descriptor_ref",
             .capture => "capture",
             .projection => "projection",
             .descriptor => "descriptor",
@@ -5641,7 +5623,9 @@ pub const SemanticGraph = struct {
         // consumer could not reproduce the fact closure used by realization.
         // version 7: `source_quote`. Version 6 collapsed every lifted `.quoted`
         // value to a bare `.str` descriptor with no producer quote identity.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":7,\"file\":\"");
+        // version 8: node `scope` replaces duplicate containment edges;
+        // qualified descriptor links use the canonical `descriptor` relation.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":8,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         if (source_hash) |h| {
@@ -5662,6 +5646,10 @@ pub const SemanticGraph = struct {
                 try out.appendSlice(alloc, ",\"name\":\"");
                 try jsonEscapeAppend(out, alloc, n);
                 try out.append(alloc, '"');
+            }
+            if (node.scope) |scope| {
+                try out.appendSlice(alloc, ",\"scope\":");
+                try appendJsonInt(out, alloc, scope);
             }
             if (self.hasTableDescriptorFacts(entity)) {
                 try out.appendSlice(alloc, ",\"home\":");
@@ -5763,8 +5751,12 @@ pub const SemanticGraph = struct {
                 try out.appendSlice(alloc, ",\"position\":");
                 try appendJsonInt(out, alloc, edge.position);
             }
-            if (edge.kind == .descriptor_ref and edge.inline_ref) {
-                try out.appendSlice(alloc, ",\"inline_ref\":true");
+            if (edge.kind == .descriptor) {
+                for (self.qualified.of(edge.from)) |hit| {
+                    if (hit.to != edge.to or !hit.embedded) continue;
+                    try out.appendSlice(alloc, ",\"inline\":true");
+                    break;
+                }
             }
             try out.append(alloc, '}');
         }
@@ -6036,9 +6028,9 @@ fn addChildAllocationProbe(alloc: std.mem.Allocator) !void {
         return err;
     };
     try std.testing.expectEqual(@as(usize, 2), graph.nodes.items.len);
-    try std.testing.expectEqual(@as(usize, 1), graph.edges.items.len);
-    try std.testing.expectEqual(parent, graph.edges.items[0].from);
-    try std.testing.expectEqual(child, graph.edges.items[0].to);
+    try std.testing.expectEqual(@as(usize, 0), graph.edges.items.len);
+    try std.testing.expectEqual(parent, graph.homeOf(child).?);
+    try std.testing.expectEqualSlices(id, &.{child}, graph.nested.of(parent));
 }
 
 fn orderFunctionComponentsAllocationProbe(alloc: std.mem.Allocator) !void {
@@ -6820,9 +6812,13 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Color\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Red\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"storage_class\"") == null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":8") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"home\":") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"scope\":") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"scope\":\"module\"") == null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"scope\":\"inline\"") == null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"relation\":\"contains\"") == null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"relation\":\"descriptor_ref\"") == null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"shape_fingerprint\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"id_scope\"") == null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"table_shapes\":[{\"id\":") != null);
@@ -7522,10 +7518,10 @@ test "semantic_graph: recursive descriptor facts remain graph-derived" {
     defer alloc.free(refs);
     try std.testing.expectEqual(@as(usize, 1), refs.len);
     try std.testing.expectEqual(node_shape, refs[0].target);
-    try std.testing.expect(!refs[0].inline_ref);
+    try std.testing.expect(!refs[0].embedded);
 
-    // The `.descriptor_ref` EDGE is the fact, and it is keyed on the exact
-    // graph id, not on the name — renaming the shape must not move it. (The
+    // The descriptor edge is keyed on the exact graph id, not on the name —
+    // renaming the shape must not move it. (The
     // `Recursion`/`Completion` classification that used to be asserted here
     // was deleted: nothing outside this test ever read either answer.)
     g.nodes.items[node_shape].name = "Renamed";
@@ -7599,11 +7595,10 @@ test "semantic_graph: usersOf finds binding edges" {
     const a = try g.addNode(.{ .kind = .local, .span = .{ .file = "t", .start = 0, .end = 1 }, .name = "a" });
     const b = try g.addNode(.{ .kind = .call, .span = .{ .file = "t", .start = 2, .end = 3 } });
     try g.addEdge(.{ .from = b, .to = a, .kind = .binding });
-    try std.testing.expectError(error.DerivedContainsIndex, g.addEdge(.{
-        .from = a,
-        .to = b,
-        .kind = .contains,
-    }));
+    const child = try g.addChild(a, .{ .kind = .value, .span = .{ .file = "t", .start = 4, .end = 5 } });
+    try std.testing.expectEqual(a, g.homeOf(child).?);
+    try std.testing.expectEqualSlices(id, &.{child}, g.nested.of(a));
+    for (g.edges.items) |edge| try std.testing.expect(edge.from != a or edge.to != child);
     var users: std.ArrayListUnmanaged(id) = .empty;
     defer users.deinit(g.alloc);
     try g.usersOf(a, &users);
@@ -7653,10 +7648,9 @@ test "semantic_graph: checked application publishes binding to relation and para
     try std.testing.expectEqual(@as(usize, 0), arguments.len);
     const subject = g.applicationSubject(occurrence) orelse return error.TestExpectedEqual;
     var param: ?id = null;
-    for (g.edges.items) |edge| {
-        if (edge.from != outer or edge.kind != .contains) continue;
-        const node = g.get(edge.to) orelse continue;
-        if (node.kind == .param) param = edge.to;
+    for (g.nested.of(outer)) |child| {
+        const node = g.get(child) orelse continue;
+        if (node.kind == .param) param = child;
     }
     const param_id = param orelse return error.TestExpectedEqual;
     var param_users: std.ArrayListUnmanaged(id) = .empty;
@@ -8021,7 +8015,7 @@ test "semantic_graph: same-named locals in sibling blocks are distinct identitie
     try std.testing.expectEqual(g.get(first).?.scope, g.get(second).?.scope);
 }
 
-test "semantic_graph: same-named descriptors resolve in the home contains chain" {
+test "semantic_graph: same-named descriptors resolve in the home scope chain" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -8052,25 +8046,31 @@ test "semantic_graph: same-named descriptors resolve in the home contains chain"
     var point_b: ?id = null;
     var use_a: ?id = null;
     var use_b: ?id = null;
-    for (g.edges.items) |edge| {
-        if (edge.kind != .contains) continue;
-        const node = g.get(edge.to) orelse continue;
+    for (g.nested.of(first)) |child| {
+        const node = g.get(child) orelse continue;
         const name = node.name orelse continue;
-        if (edge.from == first and node.kind == .table_shape and std.mem.eql(u8, name, "Point")) point_a = edge.to;
-        if (edge.from == second and node.kind == .table_shape and std.mem.eql(u8, name, "Point")) point_b = edge.to;
-        if (edge.from == first and node.kind == .func and std.mem.eql(u8, name, "use")) use_a = edge.to;
-        if (edge.from == second and node.kind == .func and std.mem.eql(u8, name, "use")) use_b = edge.to;
+        if (node.kind == .table_shape and std.mem.eql(u8, name, "Point")) point_a = child;
+        if (node.kind == .func and std.mem.eql(u8, name, "use")) use_a = child;
+    }
+    for (g.nested.of(second)) |child| {
+        const node = g.get(child) orelse continue;
+        const name = node.name orelse continue;
+        if (node.kind == .table_shape and std.mem.eql(u8, name, "Point")) point_b = child;
+        if (node.kind == .func and std.mem.eql(u8, name, "use")) use_b = child;
     }
     try std.testing.expect(point_a.? != point_b.?);
 
     var local_a: ?id = null;
     var local_b: ?id = null;
-    for (g.edges.items) |edge| {
-        if (edge.kind != .contains) continue;
-        const node = g.get(edge.to) orelse continue;
+    for (g.nested.of(use_a.?)) |child| {
+        const node = g.get(child) orelse continue;
         const name = node.name orelse continue;
-        if (edge.from == use_a.? and node.kind == .local and std.mem.eql(u8, name, "p")) local_a = edge.to;
-        if (edge.from == use_b.? and node.kind == .local and std.mem.eql(u8, name, "p")) local_b = edge.to;
+        if (node.kind == .local and std.mem.eql(u8, name, "p")) local_a = child;
+    }
+    for (g.nested.of(use_b.?)) |child| {
+        const node = g.get(child) orelse continue;
+        const name = node.name orelse continue;
+        if (node.kind == .local and std.mem.eql(u8, name, "p")) local_b = child;
     }
 
     var desc_a: ?id = null;
