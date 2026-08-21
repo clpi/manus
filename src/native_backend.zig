@@ -4115,7 +4115,13 @@ const Arm64Compiler = struct {
                 if (ins.record.len > 0 and ins.rhs == .local) {
                     const rec = scalRecordDesc(self.scal_records, ins.record) orelse
                         return self.refuse(@src());
-                    const idx = scalRecordFieldIndex(rec, ins.field) orelse return self.refuse(@src());
+                    const idx = scalRecordFieldIndex(rec, ins.field) orelse {
+                        std.debug.print(
+                            "load_field miss fn={s} rec={s} field={s}\n",
+                            .{ self.cur_func_name orelse "?", ins.record, ins.field },
+                        );
+                        return self.refuse(@src());
+                    };
                     const off: u16 = @intCast(idx * 8);
                     const base = try self.evalDnirValue(temps, ins.rhs);
                     switch (rec.field_kinds[idx]) {
