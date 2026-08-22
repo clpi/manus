@@ -2,10 +2,10 @@
 # Regenerate: idol run lib/compiler/token.id
 # Grammar-role projection of the one Idol grammar-fact owner.
 
-ROLEIDENTITYCOUNT = 113
-ROLECOUNT = 114
-KINDEOF = 109
-BEGINEXPR = {
+roleidentitycount = 113
+rolecount = 114
+kindeof = 109
+beginexpr = {
   1,
   1,
   1,
@@ -469,7 +469,7 @@ parameter = {
   0,
   0,
 }
-LITERALKIND = {
+literalkind = {
   0,
   1,
   1,
@@ -817,7 +817,7 @@ projection = {
   0,
   0,
 }
-BODYSTART = {
+bodystart = {
   1,
   1,
   1,
@@ -1165,7 +1165,7 @@ pattern = {
   0,
   0,
 }
-COMPATONLY = {
+compatonly = {
   0,
   0,
   0,
@@ -1515,43 +1515,43 @@ assoc = {
 }
 
 rolebeginexpr: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and BEGINEXPR(kind + 1) != 0
+  kind >= 0 and kind < rolecount and beginexpr[kind + 1] > 0
 
 roleprefix: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and prefix(kind + 1) != 0
+  kind >= 0 and kind < rolecount and prefix[kind + 1] > 0
 
 rolepostfix: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and postfix(kind + 1) != 0
+  kind >= 0 and kind < rolecount and postfix[kind + 1] > 0
 
 roleparameter: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and parameter(kind + 1) != 0
+  kind >= 0 and kind < rolecount and parameter[kind + 1] > 0
 
 roleliteral: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and LITERALKIND(kind + 1) != 0
+  kind >= 0 and kind < rolecount and literalkind[kind + 1] > 0
 
 rolequoted: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and quoted(kind + 1) != 0
+  kind >= 0 and kind < rolecount and quoted[kind + 1] > 0
 
 rolebodystart: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and BODYSTART(kind + 1) != 0
+  kind >= 0 and kind < rolecount and bodystart[kind + 1] > 0
 
 roledescriptor: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and descriptor(kind + 1) != 0
+  kind >= 0 and kind < rolecount and descriptor[kind + 1] > 0
 
 rolepattern: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and pattern(kind + 1) != 0
+  kind >= 0 and kind < rolecount and pattern[kind + 1] > 0
 
 rolecompatonly: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and COMPATONLY(kind + 1) != 0
+  kind >= 0 and kind < rolecount and compatonly[kind + 1] > 0
 
 roleprecedence: i64 = (kind: i64)
-  if kind < 0 or kind >= ROLECOUNT
+  if kind < 0 or kind >= rolecount
     0
   else
-    precedence(kind + 1)
+    precedence[kind + 1]
 
 roleassoc: i64 = (kind: i64)
-  if kind < 0 or kind >= ROLECOUNT
+  if kind < 0 or kind >= rolecount
     0
   else
-    assoc(kind + 1)
+    assoc[kind + 1]
