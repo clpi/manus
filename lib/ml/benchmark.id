@@ -44,8 +44,8 @@ result_calculate_stats = (result: any)
   result.median_latency = sorted(n / 2:floor() + 1)
   result.p95_latency = sorted(n * 0.95:floor() + 1)
   result.p99_latency = sorted(n * 0.99:floor() + 1)
-  result.min_latency = sorted(1)
-  result.max_latency = sorted(n)
+  result.min_latency = sorted[1]
+  result.max_latency = sorted[n]
   if result.mean_latency > 0
     result.throughput = result.batch_size / result.mean_latency
     result.tokens_per_second = result.throughput
@@ -75,7 +75,7 @@ runner_run: any = (runner: any, model_fn: any, input_generator: any)
       result_add_latency(result, end_time - start_time)
       i = i + 1
     result_calculate_stats(result)
-    results(batch_idx) = result
+    results[batch_idx] = result
     batch_idx = batch_idx + 1
   runner.results = results
   results
@@ -128,8 +128,8 @@ latency: any = (model_fn: any, input_generator: any, batch_size: i64, num_runs: 
     median = latencies(num_runs / 2:floor() + 1),
     p95 = latencies(num_runs * 0.95:floor() + 1),
     p99 = latencies(num_runs * 0.99:floor() + 1),
-    min = latencies(1),
-    max = latencies(num_runs)
+    min = latencies[1],
+    max = latencies[num_runs]
   }
 memory: any = (model_fn: any, input_generator: any, batch_size: i64)
   input = input_generator(batch_size)
@@ -149,7 +149,7 @@ memory: any = (model_fn: any, input_generator: any, batch_size: i64)
 compare: any = (results: any)
   comparison = {}
   for name, result in results
-    comparison(name) =
+    comparison[name] =
       mean_latency = result.mean_latency or 0
       throughput = result.throughput or 0
       tokens_per_second = result.tokens_per_second or 0

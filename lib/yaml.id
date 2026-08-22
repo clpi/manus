@@ -43,7 +43,7 @@ parse_value: any = (data: str, start: i64, indent: i64)
         else
           nkey = nv
           nval = ns
-        nested(nkey) = nval
+        nested[nkey] = nval
         i = ni
       return { _key = key, _value = nested }, i, nested
     else
@@ -97,6 +97,6 @@ parse: any = (data: str)
       i = ni
     else
       if type(kv) == "table" and kv._key != nil
-        res(kv._key) = kv._value
+        res[kv._key] = kv._value
       i = ni
   res

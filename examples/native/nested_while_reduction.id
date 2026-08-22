@@ -32,23 +32,23 @@ main: i64 = ()
     i = 1
     while i <= 5
         vt += 1
-        val(vt) = i
+        val[vt] = i
         if i <= 4
             while ot > 0
-                o = ops(ot)
+                o = ops[ot]
                 ot -= 1
-                b = val(vt)
+                b = val[vt]
                 vt -= 1
-                a = val(vt)
-                val(vt) = apply(o, a, b)
+                a = val[vt]
+                val[vt] = apply(o, a, b)
             ot += 1
-            ops(ot) = 43
+            ops[ot] = 43
         i += 1
     while ot > 0
-        o = ops(ot)
+        o = ops[ot]
         ot -= 1
-        b = val(vt)
+        b = val[vt]
         vt -= 1
-        a = val(vt)
-        val(vt) = apply(o, a, b)
-    val(1)
+        a = val[vt]
+        val[vt] = apply(o, a, b)
+    val[1]

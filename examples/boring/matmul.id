@@ -9,10 +9,10 @@ main: i64 = ()
     for j = 0, 2
       sum = 0
       for k = 0, 2
-        x = a(i * 3 + k + 1)
-        y = b(k * 3 + j + 1)
+        x = a[i * 3 + k + 1]
+        y = b[k * 3 + j + 1]
         sum = sum + x * y
-      c(i * 3 + j + 1) = sum
+      c[i * 3 + j + 1] = sum
   out = ""
   for v in c
     if out == ""

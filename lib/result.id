@@ -167,7 +167,7 @@ collect: any = (results: any)
     return { ok = vals, err = nil }
   i = 1
   while i <= results:len()
-    r = results(i)
+    r = results[i]
     if r != nil and r.kind == "ok"
       vals(vals:len() + 1) = r.value
     else
@@ -175,7 +175,7 @@ collect: any = (results: any)
     i = i + 1
   first_err = nil
   if errs:len() > 0
-    first_err = errs(1)
+    first_err = errs[1]
   { ok = vals, err = first_err, errors = errs }
 
 # all_ok: returns true if every Result in the list is ok.
@@ -184,7 +184,7 @@ all_ok: bool = (results: any)
     return true
   i = 1
   while i <= results:len()
-    if not is_ok(results(i))
+    if not is_ok(results[i])
       return false
     i = i + 1
   true
@@ -196,7 +196,7 @@ values: any = (results: any)
     return out
   i = 1
   while i <= results:len()
-    r = results(i)
+    r = results[i]
     if r != nil and r.kind == "ok"
       out(out:len() + 1) = r.value
     i = i + 1
@@ -209,7 +209,7 @@ std_result_errors: any = (results: any)
     return out
   i = 1
   while i <= results:len()
-    r = results(i)
+    r = results[i]
     if r != nil and r.kind == "err"
       out(out:len() + 1) = r.err
     i = i + 1

@@ -10,23 +10,23 @@
 # Tokens: a value >= 0 is a literal, -1 is `+`, -2 is `*`. The input is
 # 2 + 3 * 4 + 1, so precedence must be respected: 2 + 12 + 1 = 15, not 21.
 parse_factor: i64 = (toks: ptr, st: ptr)
-  p: i64 = st(1)
-  v: i64 = toks(p)
-  st(1) = p + 1
+  p: i64 = st[1]
+  v: i64 = toks[p]
+  st[1] = p + 1
   v
 
 parse_term: i64 = (toks: ptr, st: ptr, n: i64)
   acc: i64 = parse_factor(toks, st)
-  while st(1) <= n and toks(st(1)) == -2
-    st(1) = st(1) + 1
+  while st[1] <= n and toks(st[1]) == -2
+    st[1] = st[1] + 1
     rhs: i64 = parse_factor(toks, st)
     acc = acc * rhs
   acc
 
 parse_expr: i64 = (toks: ptr, st: ptr, n: i64)
   acc: i64 = parse_term(toks, st, n)
-  while st(1) <= n and toks(st(1)) == -1
-    st(1) = st(1) + 1
+  while st[1] <= n and toks(st[1]) == -1
+    st[1] = st[1] + 1
     rhs: i64 = parse_term(toks, st, n)
     acc = acc + rhs
   acc

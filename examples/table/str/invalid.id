@@ -5,6 +5,6 @@
 # @corpus current
 s = "ÿþ"
 n = s:len()
-a = s(0)
-b = s(1)
+a = s[0]
+b = s[1]
 print("{n} {a} {b}")

@@ -42,7 +42,7 @@ decode_header: any = (data: str)
         qt = {}
         qi = 1
         while qi <= 64
-          qt(qi) = data:byte(off + 5 + qi - 1)
+          qt[qi] = data:byte(off + 5 + qi - 1)
           qi = qi + 1
         info.quant_tables(table_id) = qt
       else(marker == 218)
@@ -68,7 +68,7 @@ idct_8x8: any = (block: any)
             cv = 1 / 2:sqrt()
           val = block(u * 8 + v + 1) or 0
           sum = sum + cu * cv * val * (2 * x + 1) * u * math.pi / 16:cos() * (2 * y + 1) * v * math.pi / 16:cos()
-      result(y * 8 + x + 1) = 0:max(255:min(sum / 4 + 128:floor()))
+      result[y * 8 + x + 1] = 0:max(255:min(sum / 4 + 128:floor()))
   result
 
 decode: any = (data: str)

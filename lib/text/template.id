@@ -72,7 +72,7 @@ resolve_path: any = (path: str, data: any)
   while i <= parts:len()
     if cur == nil
       return ""
-    cur = cur(parts(i))
+    cur = cur(parts[i])
     i = i + 1
   if cur == nil
     return ""
@@ -103,7 +103,7 @@ render_blocks: str = (tmpl: str, data: any, start: i64)
       # range block
       if expr:sub(1, 6) == "range "
         key = expr:sub(7):gsub("^%.", "")
-        collection = data(key)
+        collection = data[key]
         # find matching {{end}}
         depth = 1
         j = close + 2
@@ -134,7 +134,7 @@ render_blocks: str = (tmpl: str, data: any, start: i64)
           if type(collection) == "table"
             # iterate array part
             while k <= collection:len()
-              out(out:len() + 1) = render_blocks(block_text, collection(k), 1)
+              out(out:len() + 1) = render_blocks(block_text, collection[k], 1)
               k = k + 1
             # also iterate hash parts
             for hk, hv in collection
@@ -151,7 +151,7 @@ render_blocks: str = (tmpl: str, data: any, start: i64)
       else
         if expr:sub(1, 3) == "if "
           key = expr:sub(4):gsub("^%.", "")
-          cond = data(key)
+          cond = data[key]
           # find matching {{end}}
           depth = 1
           j = close + 2

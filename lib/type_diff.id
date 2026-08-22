@@ -43,7 +43,7 @@ default_value: str = (type_name: str)
     ["list"] = "NULL",
     ["any"] = "NULL"
   }
-  defaults(type_name) or "0"
+  defaults[type_name] or "0"
 
 # ═══════════════════════════════════════════════════════════════
 # Type compatibility analysis
@@ -62,7 +62,7 @@ is_widening: bool = (old_type: str, new_type: str)
     ["f32"] = { "f64" },
     ["str"] = { "any" }
   }
-  allowed = widenings(old_type)
+  allowed = widenings[old_type]
   if allowed
     for _, w in allowed
       if w == new_type

@@ -14,8 +14,8 @@ filter: any = (list: any, fn_ref: any)
     return out
   i = 1
   while i <= list:len()
-    if fn_ref(list(i))
-      out(out:len() + 1) = list(i)
+    if fn_ref(list[i])
+      out(out:len() + 1) = list[i]
     i = i + 1
   out
 
@@ -29,7 +29,7 @@ any: bool = (list: any, fn_ref: any)
     return false
   i = 1
   while i <= list:len()
-    if fn_ref(list(i))
+    if fn_ref(list[i])
       return true
     i = i + 1
   false
@@ -40,7 +40,7 @@ all: bool = (list: any, fn_ref: any)
     return true
   i = 1
   while i <= list:len()
-    if not fn_ref(list(i))
+    if not fn_ref(list[i])
       return false
     i = i + 1
   true
@@ -51,8 +51,8 @@ find: any = (list: any, fn_ref: any)
     return nil
   i = 1
   while i <= list:len()
-    if fn_ref(list(i))
-      return list(i)
+    if fn_ref(list[i])
+      return list[i]
     i = i + 1
   nil
 
@@ -62,7 +62,7 @@ find_index: any = (list: any, fn_ref: any)
     return nil
   i = 1
   while i <= list:len()
-    if fn_ref(list(i))
+    if fn_ref(list[i])
       return i
     i = i + 1
   nil
@@ -74,7 +74,7 @@ count: i64 = (list: any, fn_ref: any)
   n = 0
   i = 1
   while i <= list:len()
-    if fn_ref(list(i))
+    if fn_ref(list[i])
       n = n + 1
     i = i + 1
   n
@@ -90,8 +90,8 @@ zip: any = (l1: any, l2: any)
   i = 1
   while i <= n
     pair = {}
-    pair(1) = l1(i)
-    pair(2) = l2(i)
+    pair[1] = l1[i]
+    pair[2] = l2[i]
     out(out:len() + 1) = pair
     i = i + 1
   out
@@ -106,7 +106,7 @@ zip_with: any = (l1: any, l2: any, fn_ref: any)
     n = l2:len()
   i = 1
   while i <= n
-    out(out:len() + 1) = fn_ref(l1(i), l2(i))
+    out(out:len() + 1) = fn_ref(l1[i], l2[i])
     i = i + 1
   out
 
@@ -118,8 +118,8 @@ enumerate: any = (list: any)
   i = 1
   while i <= list:len()
     pair = {}
-    pair(1) = i
-    pair(2) = list(i)
+    pair[1] = i
+    pair[2] = list[i]
     out(out:len() + 1) = pair
     i = i + 1
   out
@@ -139,7 +139,7 @@ sliding_window: any = (list: any, n: i64)
     window = {}
     j = 0
     while j < n
-      window(window:len() + 1) = list(i + j)
+      window(window:len() + 1) = list[i + j]
       j = j + 1
     out(out:len() + 1) = window
     i = i + 1
@@ -155,7 +155,7 @@ take: any = (list: any, n: i64)
     n = len
   i = 1
   while i <= n
-    out(out:len() + 1) = list(i)
+    out(out:len() + 1) = list[i]
     i = i + 1
   out
 
@@ -167,7 +167,7 @@ drop: any = (list: any, n: i64)
   len = list:len()
   i = n + 1
   while i <= len
-    out(out:len() + 1) = list(i)
+    out(out:len() + 1) = list[i]
     i = i + 1
   out
 

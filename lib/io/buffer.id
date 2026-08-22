@@ -50,7 +50,7 @@ buffered_reader_fill: any = (br: any)
   n = br.buffer_size:min(avail)
   i = 0
   while i < n
-    br.buffer(i + 1) = src(pos + i)
+    br.buffer(i + 1) = src[pos + i]
     i = i + 1
   br.source.pos = pos + n
   br.buffer_len = n
@@ -189,7 +189,7 @@ writer_write_byte: any = (bw: any, byte: i64)
 writer_write: any = (bw: any, data: any)
   i = 1
   while i <= data:len()
-    result = writer_write_byte(bw, data(i))
+    result = writer_write_byte(bw, data[i])
     if not result.ok
       return result
     i = i + 1
@@ -229,7 +229,7 @@ ring_write: any = (rio: any, data: any)
   while i <= data:len()
     if rio.full
       return { ok = false, reason = "Buffer full", written = i - 1 }
-    rio.buf(rio.write_pos & rio.mask) = data(i)
+    rio.buf(rio.write_pos & rio.mask) = data[i]
     rio.write_pos = rio.write_pos + 1
     if rio.write_pos - rio.read_pos >= rio.capacity
       rio.full = true

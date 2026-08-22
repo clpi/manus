@@ -35,5 +35,5 @@ xor_bytes: i64 = (dst: any, a: any, b: any)
   if b:len() < n
     n = b:len()
   for i = 1, n
-    dst(i) = a(i) ~ b(i)
+    dst[i] = a[i] ~ b[i]
   return n

@@ -30,9 +30,9 @@ bpe_learn = (bpe: any, corpus: any, num_merges: i64)
   i = 1
   while i <= corpus:len()
     ch = corpus:sub(i, i)
-    if freqs(ch) == nil
-      freqs(ch) = 0
-    freqs(ch) = freqs(ch) + 1
+    if freqs[ch] == nil
+      freqs[ch] = 0
+    freqs[ch] = freqs[ch] + 1
     i = i + 1
 
   # Add all characters to vocabulary
@@ -54,10 +54,10 @@ bpe_learn = (bpe: any, corpus: any, num_merges: i64)
     adj_pairs = {}
     i = 1
     while i < words:len()
-      pair = words(i) .. "," .. words(i + 1)
-      if adj_pairs(pair) == nil
-        adj_pairs(pair) = 0
-      adj_pairs(pair) = adj_pairs(pair) + 1
+      pair = words[i] .. "," .. words[i + 1]
+      if adj_pairs[pair] == nil
+        adj_pairs[pair] = 0
+      adj_pairs[pair] = adj_pairs[pair] + 1
       i = i + 1
 
     # Find most frequent pair
@@ -93,16 +93,16 @@ bpe_learn = (bpe: any, corpus: any, num_merges: i64)
     i = 1
     while i <= words:len()
       if i < words:len()
-        pair = words(i) .. "," .. words(i + 1)
+        pair = words[i] .. "," .. words[i + 1]
         if pair == best_pair
           new_words(new_words:len() + 1) = bpe.vocab(new_token)
           i = i + 2
         else
           # continue
-          new_words(new_words:len() + 1) = words(i)
+          new_words(new_words:len() + 1) = words[i]
           i = i + 1
       else
-        new_words(new_words:len() + 1) = words(i)
+        new_words(new_words:len() + 1) = words[i]
         i = i + 1
     words = new_words
 
@@ -143,11 +143,11 @@ bpe_encode: any = (bpe: any, text: str)
       merged = {}
       i = 1
       while i <= tokens:len()
-        if i < tokens:len() and tokens(i) == left_id and tokens(i + 1) == right_id
+        if i < tokens:len() and tokens[i] == left_id and tokens[i + 1] == right_id
           merged(merged:len() + 1) = new_id
           i = i + 2
         else
-          merged(merged:len() + 1) = tokens(i)
+          merged(merged:len() + 1) = tokens[i]
           i = i + 1
       tokens = merged
 
@@ -158,7 +158,7 @@ bpe_decode: str = (bpe: any, tokens: any)
   parts = {}
   i = 1
   while i <= tokens:len()
-    token = bpe.inverse_vocab(tokens(i))
+    token = bpe.inverse_vocab(tokens[i])
     if token == nil
       token = "?"
     parts(parts:len() + 1) = token
@@ -203,7 +203,7 @@ wordpiece_encode: any = (vocab: any, text: str, max_word_len: i64)
         sub = chars:sub(1, end_pos)
         if end_pos == chars:len()
           # Whole word or prefix
-          if vocab(sub) != nil
+          if vocab[sub] != nil
             word_tokens(word_tokens:len() + 1) = sub
             chars = chars:sub(end_pos + 1)
             found = true
@@ -211,7 +211,7 @@ wordpiece_encode: any = (vocab: any, text: str, max_word_len: i64)
         else
           # Subword with ##
           sub_with_prefix = "##" .. sub
-          if vocab(sub_with_prefix) != nil
+          if vocab[sub_with_prefix] != nil
             word_tokens(word_tokens:len() + 1) = sub_with_prefix
             chars = chars:sub(end_pos + 1)
             found = true
@@ -263,9 +263,9 @@ simple_tokenize: any = (text: str)
 token_frequencies: any = (tokens: any)
   freq = {}
   for t in tokens
-    if freq(t) == nil
-      freq(t) = 0
-    freq(t) = freq(t) + 1
+    if freq[t] == nil
+      freq[t] = 0
+    freq[t] = freq[t] + 1
   freq
 
 top_k_tokens: any = (tokens: any, k: i64)
@@ -281,20 +281,20 @@ top_k_tokens: any = (tokens: any, k: i64)
     max_idx = i
     j = i + 1
     while j <= sorted:len()
-      if sorted(j).count > sorted(max_idx).count
+      if sorted[j].count > sorted[max_idx].count
         max_idx = j
       j = j + 1
     if max_idx != i
-      duostage0 = sorted(max_idx)
-      duostage1 = sorted(i)
-      sorted(i) = duostage0
-      sorted(max_idx) = duostage1
+      duostage0 = sorted[max_idx]
+      duostage1 = sorted[i]
+      sorted[i] = duostage0
+      sorted[max_idx] = duostage1
 
     i = i + 1
   result = {}
   i = 1
   while i <= k and i <= sorted:len()
-    result(result:len() + 1) = sorted(i)
+    result(result:len() + 1) = sorted[i]
     i = i + 1
   result
 # ═══════════════════════════════════════════════════════════════

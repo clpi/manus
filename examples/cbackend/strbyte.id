@@ -20,7 +20,7 @@ tail: i64 = (s: str)
   s(s:len() - 1)
 
 lead: i64 = (s: str)
-  s(0)
+  s[0]
 
 t = "ab"
 a = t(0)

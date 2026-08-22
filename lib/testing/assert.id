@@ -178,13 +178,13 @@ assert_table_equal = (ctx: any, got: any, expected: any, msg: str)
   # Check elements
   i = 1
   while i <= got:len()
-    if got(i) != expected(i)
+    if got[i] != expected[i]
       ctx.failed = ctx.failed + 1
       ctx.errors(ctx.errors:len() + 1) =
         type = "assert_table_equal"
         message = msg or "Tables differ at index " .. i:to(str)
-        expected = expected(i)
-        got = got(i)
+        expected = expected[i]
+        got = got[i]
         index = i
       return
     i = i + 1

@@ -21,7 +21,7 @@ mail: any = (addr: str, from: str, to: any, msg: str)
   recipients = ""
   i = 1
   while i <= to:len()
-    recipients = recipients .. " " .. escape(to(str)(to(i)))
+    recipients = recipients .. " " .. escape(to[str](to[i]))
     i = i + 1
   cmd = "sendmail -f " .. from .. recipients
   f = io.popen(cmd .. " 2>&1", "w")
@@ -45,10 +45,10 @@ send: any = (addr: str, auth: any, from: str, to: any, msg: str)
   colon = addr:find(":", 1, true)
   if colon != nil
     host = addr:sub(1, colon - 1)
-    port = addr:sub(colon + 1):to(i64)
+    port = addr:sub(colon + 1):to[i64]
   # Sanitize host to prevent shell injection
   host = escape(host)
-  url = "smtp://" .. host .. ":" .. port:to(str)
+  url = "smtp://" .. host .. ":" .. port:to[str]
   cmd = "curl -s --url " .. url
   if auth != nil and auth.username != nil
     # Sanitize credentials
@@ -59,7 +59,7 @@ send: any = (addr: str, auth: any, from: str, to: any, msg: str)
   cmd = cmd .. " --mail-from " .. from
   i = 1
   while i <= to:len()
-    cmd = cmd .. " --mail-rcpt " .. escape(to(str)(to(i)))
+    cmd = cmd .. " --mail-rcpt " .. escape(to[str](to[i]))
     i = i + 1
   cmd = cmd .. " -T -"
   f = io.popen(cmd .. " 2>&1", "w")
@@ -79,7 +79,7 @@ message: str = (headers: any, body: str)
     body = ""
   out = {}
   for k, v in headers
-    out(out:len() + 1) = k .. ": " .. v:to(str) .. "\r\n"
+    out(out:len() + 1) = k .. ": " .. v:to[str] .. "\r\n"
   out(out:len() + 1) = "\r\n"
   out(out:len() + 1) = body
   out:concat()

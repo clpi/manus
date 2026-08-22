@@ -59,7 +59,7 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
   dict = {}
   i = 0
   while i < clear_code
-    dict(i) = { i }
+    dict[i] = { i }
     i = i + 1
   dict_size = eoi_code + 1
   code_size = min_code_size + 1
@@ -86,7 +86,7 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
       # Reset
       i = 0
       while i < clear_code
-        dict(i) = { i }
+        dict[i] = { i }
         i = i + 1
       dict_size = eoi_code + 1
       st.code_size = min_code_size + 1
@@ -100,24 +100,24 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
 
         if code < dict_size
           # Code is in the table
-          entry = dict(code)
+          entry = dict[code]
           # Output the entry
           i = 1
           while i <= entry:len()
-            output(output:len() + 1) = entry(i)
+            output(output:len() + 1) = entry[i]
             i = i + 1
 
           if prev != nil
             # Add new entry: prev + first byte of current entry
             new_entry = {}
             j = 1
-            while j <= dict(prev):len()
-              new_entry(j) = dict(prev)(j)
+            while j <= dict[prev]:len()
+              new_entry[j] = dict[prev](j)
               j = j + 1
             if entry:len() > 0
-              new_entry(j) = entry(1)
+              new_entry[j] = entry[1]
             if next_code < 4096
-              dict(next_code) = new_entry
+              dict[next_code] = new_entry
               next_code = next_code + 1
               # Increase code size if needed
               # Typed local: `2 ^ st.code_size` on the `any` field
@@ -132,20 +132,20 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
           # code >= dict_size: special case
           if prev == nil
             break
-          entry = dict(prev)
+          entry = dict[prev]
           # Output entry + first byte of entry
           new_entry = {}
           j = 1
           while j <= entry:len()
-            new_entry(j) = entry(j)
-            output(output:len() + 1) = entry(j)
+            new_entry[j] = entry[j]
+            output(output:len() + 1) = entry[j]
             j = j + 1
-          first = entry(1)
-          new_entry(j) = first
+          first = entry[1]
+          new_entry[j] = first
           output(output:len() + 1) = first
 
           if next_code < 4096
-            dict(next_code) = new_entry
+            dict[next_code] = new_entry
             next_code = next_code + 1
             cs: i64 = st.code_size
             if next_code > to(i64)(2 ^ cs) and cs < 12
@@ -189,7 +189,7 @@ decode: any = (data: str)
   if gct_flag == 1
     i = 0
     while i < gct_size
-      gct(i) =
+      gct[i] =
         r = data:byte(off + i * 3)
         g = data:byte(off + i * 3 + 1)
         b = data:byte(off + i * 3 + 2)
@@ -245,7 +245,7 @@ decode: any = (data: str)
           lct = {}
           i = 0
           while i < lct_size
-            lct(i) =
+            lct[i] =
               r = data:byte(off + i * 3)
               g = data:byte(off + i * 3 + 1)
               b = data:byte(off + i * 3 + 2)
@@ -279,7 +279,7 @@ decode: any = (data: str)
           x = left
           while x < left + img_w and x < width
             if idx <= pixels:len()
-              color_idx = pixels(idx)
+              color_idx = pixels[idx]
               if color_idx != transparent_idx and palette != nil
                 c = palette(color_idx)
                 if c != nil

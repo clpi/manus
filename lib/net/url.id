@@ -72,7 +72,7 @@ parse_query: any = (query: str)
   parts(parts:len() + 1) = query:sub(start)
   j = 1
   while j <= parts:len()
-    pair = parts(j)
+    pair = parts[j]
     eq = pair:find("=", 1, true)
     k = ""
     v = ""
@@ -82,9 +82,9 @@ parse_query: any = (query: str)
     else
       k = unescape(pair)
       v = ""
-    if out(k) == nil
-      out(k) = {}
-    out(k)(out(k):len() + 1) = v
+    if out[k] == nil
+      out[k] = {}
+    out[k](out[k]:len() + 1) = v
     j = j + 1
   out
 
@@ -97,7 +97,7 @@ encode_query: str = (params: any)
     if type(vs) == "table"
       i = 1
       while i <= vs:len()
-        out(out:len() + 1) = escape(k) .. "=" .. escape(vs(i))
+        out(out:len() + 1) = escape(k) .. "=" .. escape(vs[i])
         i = i + 1
     else
       out(out:len() + 1) = escape(k) .. "=" .. escape(vs)

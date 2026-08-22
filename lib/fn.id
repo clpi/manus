@@ -21,7 +21,7 @@ foldl: any = (list: any, init: any, fn_ref: any)
     return acc
   i = 1
   while i <= list:len()
-    acc = fn_ref(acc, list(i))
+    acc = fn_ref(acc, list[i])
     i = i + 1
   acc
 
@@ -32,7 +32,7 @@ foldr: any = (list: any, init: any, fn_ref: any)
     return acc
   i = list:len()
   while i >= 1
-    acc = fn_ref(list(i), acc)
+    acc = fn_ref(list[i], acc)
     i = i - 1
   acc
 
@@ -43,7 +43,7 @@ map_filter: any = (list: any, fn_ref: any)
     return out
   i = 1
   while i <= list:len()
-    result = fn_ref(list(i))
+    result = fn_ref(list[i])
     if result != nil
       out(out:len() + 1) = result
     i = i + 1
@@ -56,10 +56,10 @@ group_by: any = (list: any, fn_ref: any)
     return groups
   i = 1
   while i <= list:len()
-    key = fn_ref(list(i))
-    if groups(key) == nil
-      groups(key) = {}
-    groups(key)(groups(key):len() + 1) = list(i)
+    key = fn_ref(list[i])
+    if groups[key] == nil
+      groups[key] = {}
+    groups[key](groups[key]:len() + 1) = list[i]
     i = i + 1
   groups
 
@@ -71,10 +71,10 @@ unique_by: any = (list: any, fn_ref: any)
     return out
   i = 1
   while i <= list:len()
-    key = fn_ref(list(i))
-    if seen(key) == nil
-      seen(key) = true
-      out(out:len() + 1) = list(i)
+    key = fn_ref(list[i])
+    if seen[key] == nil
+      seen[key] = true
+      out(out:len() + 1) = list[i]
     i = i + 1
   out
 
@@ -85,9 +85,9 @@ take_while: any = (list: any, fn_ref: any)
     return out
   i = 1
   while i <= list:len()
-    if not fn_ref(list(i))
+    if not fn_ref(list[i])
       break
-    out(out:len() + 1) = list(i)
+    out(out:len() + 1) = list[i]
     i = i + 1
   out
 
@@ -99,11 +99,11 @@ drop_while: any = (list: any, fn_ref: any)
   dropping = true
   i = 1
   while i <= list:len()
-    if dropping and fn_ref(list(i))
+    if dropping and fn_ref(list[i])
     else
       # skip
       dropping = false
-      out(out:len() + 1) = list(i)
+      out(out:len() + 1) = list[i]
     i = i + 1
   out
 
@@ -117,7 +117,7 @@ chunk: any = (list: any, n: i64)
     group = {}
     j = 0
     while j < n and i + j <= list:len()
-      group(group:len() + 1) = list(i + j)
+      group(group:len() + 1) = list[i + j]
       j = j + 1
     out(out:len() + 1) = group
     i = i + n
@@ -136,9 +136,9 @@ interleave: any = (a: any, b: any)
   i = 1
   while i <= n
     if i <= a:len()
-      out(out:len() + 1) = a(i)
+      out(out:len() + 1) = a[i]
     if i <= b:len()
-      out(out:len() + 1) = b(i)
+      out(out:len() + 1) = b[i]
     i = i + 1
   out
 
@@ -146,15 +146,15 @@ interleave: any = (a: any, b: any)
 transpose: any = (matrix: any)
   if matrix == nil or matrix:len() == 0
     return {}
-  cols = matrix(1):len()
+  cols = matrix[1]:len()
   out = {}
   c = 1
   while c <= cols
     col = {}
     r = 1
     while r <= matrix:len()
-      if matrix(r) != nil and matrix(r):len() >= c
-        col(col:len() + 1) = matrix(r)(c)
+      if matrix[r] != nil and matrix[r]:len() >= c
+        col(col:len() + 1) = matrix[r](c)
       r = r + 1
     out(out:len() + 1) = col
     c = c + 1
@@ -167,10 +167,10 @@ count_by: any = (list: any, fn_ref: any)
     return counts
   i = 1
   while i <= list:len()
-    key = fn_ref(list(i))
-    if counts(key) == nil
-      counts(key) = 0
-    counts(key) = counts(key) + 1
+    key = fn_ref(list[i])
+    if counts[key] == nil
+      counts[key] = 0
+    counts[key] = counts[key] + 1
     i = i + 1
   counts
 
@@ -181,11 +181,11 @@ flatten: any = (list: any)
     return out
   i = 1
   while i <= list:len()
-    item = list(i)
+    item = list[i]
     if type(item) == "table"
       j = 1
       while j <= item:len()
-        out(out:len() + 1) = item(j)
+        out(out:len() + 1) = item[j]
         j = j + 1
     else
       out(out:len() + 1) = item
@@ -200,27 +200,27 @@ partition: any = (list: any, fn_ref: any)
     return { yes, no }
   i = 1
   while i <= list:len()
-    if fn_ref(list(i))
-      yes(yes:len() + 1) = list(i)
+    if fn_ref(list[i])
+      yes(yes:len() + 1) = list[i]
     else
-      no(no:len() + 1) = list(i)
+      no(no:len() + 1) = list[i]
     i = i + 1
   out = {}
-  out(1) = yes
-  out(2) = no
+  out[1] = yes
+  out[2] = no
   out
 
 # min_by: find the element that minimizes fn's return value.
 min_by: any = (list: any, fn_ref: any)
   if list == nil or list:len() == 0
     return nil
-  best = list(1)
+  best = list[1]
   best_val = fn_ref(best)
   i = 2
   while i <= list:len()
-    val = fn_ref(list(i))
+    val = fn_ref(list[i])
     if val < best_val
-      best = list(i)
+      best = list[i]
       best_val = val
     i = i + 1
   best
@@ -229,13 +229,13 @@ min_by: any = (list: any, fn_ref: any)
 max_by: any = (list: any, fn_ref: any)
   if list == nil or list:len() == 0
     return nil
-  best = list(1)
+  best = list[1]
   best_val = fn_ref(best)
   i = 2
   while i <= list:len()
-    val = fn_ref(list(i))
+    val = fn_ref(list[i])
     if val > best_val
-      best = list(i)
+      best = list[i]
       best_val = val
     i = i + 1
   best
@@ -250,14 +250,14 @@ sort_by = (list: any, fn_ref: any)
   while i < n
     j = 1
     while j <= n - i
-      a = fn_ref(list(j))
-      b = fn_ref(list(j + 1))
+      a = fn_ref(list[j])
+      b = fn_ref(list[j + 1])
       if a > b
         duostage0 = j + 1
-        duostage1 = list(j + 1)
-        duostage2 = list(j)
-        list(j) = duostage1
-        list(duostage0) = duostage2
+        duostage1 = list[j + 1]
+        duostage2 = list[j]
+        list[j] = duostage1
+        list[duostage0] = duostage2
 
       j = j + 1
     i = i + 1

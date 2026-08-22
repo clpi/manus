@@ -8,7 +8,7 @@ find: i64 = (xs, n: i64, key: i64)
   hit = 0
   while lo <= hi and hit == 0
     mid = lo + (hi - lo) / 2
-    v = xs(mid)
+    v = xs[mid]
     if v == key
       hit = mid
     if v < key

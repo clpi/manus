@@ -112,15 +112,15 @@ summary: any = (t: any)
   if n == 0
     return { count = 0, total = 0, min = 0, max = 0, avg = 0 }
   total = 0
-  min_val = laps(1)
-  max_val = laps(1)
+  min_val = laps[1]
+  max_val = laps[1]
   i = 1
   while i <= n
-    if laps(i) < min_val
-      min_val = laps(i)
-    if laps(i) > max_val
-      max_val = laps(i)
-    total = total + laps(i)
+    if laps[i] < min_val
+      min_val = laps[i]
+    if laps[i] > max_val
+      max_val = laps[i]
+    total = total + laps[i]
     i = i + 1
   { count = n, total = total, min = min_val, max = max_val, avg = total / n }
 
@@ -149,15 +149,15 @@ time_it: any = (n: i64, fn_ref: any)
     times(times:len() + 1) = elapsed(t)
     i = i + 1
   total = 0
-  min_val = times(1)
-  max_val = times(1)
+  min_val = times[1]
+  max_val = times[1]
   j = 1
   while j <= times:len()
-    if times(j) < min_val
-      min_val = times(j)
-    if times(j) > max_val
-      max_val = times(j)
-    total = total + times(j)
+    if times[j] < min_val
+      min_val = times[j]
+    if times[j] > max_val
+      max_val = times[j]
+    total = total + times[j]
     j = j + 1
   out = {}
   out.iterations = n
@@ -183,14 +183,14 @@ bench: any = (fn_ref: any, min_seconds: float)
     times(times:len() + 1) = lap_time
     total = total + lap_time
     count = count + 1
-  min_val = times(1)
-  max_val = times(1)
+  min_val = times[1]
+  max_val = times[1]
   i = 1
   while i <= times:len()
-    if times(i) < min_val
-      min_val = times(i)
-    if times(i) > max_val
-      max_val = times(i)
+    if times[i] < min_val
+      min_val = times[i]
+    if times[i] > max_val
+      max_val = times[i]
     i = i + 1
   out = {}
   out.iterations = count
@@ -218,8 +218,8 @@ compare: any = (name_a: str, fn_a: any, name_b: str, fn_b: any, n: i64)
     if a.avg > 0
       ratio = b.avg / a.avg
   out = {}
-  out(name_a) = a
-  out(name_b) = b
+  out[name_a] = a
+  out[name_b] = b
   out.faster = faster
   out.ratio = ratio
   out

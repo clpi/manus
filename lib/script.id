@@ -365,7 +365,7 @@ arg: str = (n: i64, fallback: str)
   a = args()
   if a == nil or n < 1 or n > a:len()
     return fallback
-  return a(n)
+  return a[n]
 
 # === Quick JSON read — REMOVED, and the removal is the finding ===
 #

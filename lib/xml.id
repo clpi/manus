@@ -51,7 +51,7 @@ parse_attributes: any = (data: str, start: i64)
         i = i + 1
       val = data:sub(val_start, i - 1)
       i = i + 1
-      attrs(key) = unescape(val)
+      attrs[key] = unescape(val)
   return attrs, i
 
 parse_elem: any = (data: str, start: i64)

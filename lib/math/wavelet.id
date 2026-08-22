@@ -13,7 +13,7 @@ haar_forward: any = (data: any)
   # Pad to even length if needed
   padded = { data:unpack() }
   if n % 2 != 0
-    padded(n + 1) = padded(n)
+    padded[n + 1] = padded[n]
     n = n + 1
 
   result = {}
@@ -24,14 +24,14 @@ haar_forward: any = (data: any)
     half = level / 2
     i = 1
     while i <= half
-      avg = (temp(2 * i - 1) + temp(2 * i)) / 2
-      diff = (temp(2 * i - 1) - temp(2 * i)) / 2
-      result(half + i - 1) = diff
-      result(i) = avg
+      avg = (temp[2 * i - 1] + temp[2 * i]) / 2
+      diff = (temp[2 * i - 1] - temp[2 * i]) / 2
+      result[half + i - 1] = diff
+      result[i] = avg
       i = i + 1
     i = 1
     while i <= level
-      temp(i) = result(i)
+      temp[i] = result[i]
       i = i + 1
     level = half
 
@@ -50,8 +50,8 @@ haar_inverse: any = (data: any)
     half = level / 2
     i = 1
     while i <= half
-      temp(2 * i - 1) = temp(i) + temp(half + i)
-      temp(2 * i) = temp(i) - temp(half + i)
+      temp[2 * i - 1] = temp[i] + temp[half + i]
+      temp[2 * i] = temp[i] - temp[half + i]
       i = i + 1
     level = level * 2
 
@@ -98,9 +98,9 @@ convolve: any = (signal: any, filter: any)
     while j <= f
       idx = i - j + 1
       if idx >= 1 and idx <= n
-        sum = sum + signal(idx) * filter(j)
+        sum = sum + signal[idx] * filter[j]
       j = j + 1
-    result(i) = sum
+    result[i] = sum
     i = i + 1
   result
 
@@ -108,7 +108,7 @@ downsample: any = (data: any, factor: i64)
   result = {}
   i = 1
   while i <= data:len()
-    result(result:len() + 1) = data(i)
+    result(result:len() + 1) = data[i]
     i = i + factor
   result
 
@@ -116,7 +116,7 @@ upsample: any = (data: any, factor: i64)
   result = {}
   i = 1
   while i <= data:len()
-    result(result:len() + 1) = data(i)
+    result(result:len() + 1) = data[i]
     j = 1
     while j < factor
       result(result:len() + 1) = 0
@@ -143,7 +143,7 @@ db4_inverse: any = (approx: any, detail: any)
   result = {}
   i = 1
   while i <= n
-    result(i) = a(i) + d(i)
+    result[i] = a[i] + d[i]
     i = i + 1
   result
 
@@ -155,12 +155,12 @@ decompose: any = (data: any, levels: i64)
   coeffs = { data }
   i = 1
   while i <= levels
-    result = db4_forward(coeffs(i))
-    coeffs(i) = result.detail
-    coeffs(i + 1) = result.approx
+    result = db4_forward(coeffs[i])
+    coeffs[i] = result.detail
+    coeffs[i + 1] = result.approx
     i = i + 1
   {
-    approx = coeffs(levels + 1),
+    approx = coeffs[levels + 1],
     details = {},
     levels = levels
   }

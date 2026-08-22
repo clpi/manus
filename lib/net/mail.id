@@ -45,7 +45,7 @@ list: any = (s: str)
   parts(parts:len() + 1) = s:sub(start)
   i = 1
   while i <= parts:len()
-    addr = address(parts(i))
+    addr = address(parts[i])
     if addr != nil
       out(out:len() + 1) = addr
     i = i + 1
@@ -100,7 +100,7 @@ read: any = (raw: str)
   val = ""
   i = 1
   while i <= lines:len()
-    line = lines(i)
+    line = lines[i]
     if line:sub(1, 1) == " " or line:sub(1, 1) == "\t"
       val = val .. " " .. line:gsub("^%s+", "")
     else

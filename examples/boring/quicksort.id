@@ -2,17 +2,17 @@
 # the largest, so a partial sort cannot pass on the endpoints alone.
 # expect: 1 33 97
 part: i64 = (xs, lo: i64, hi: i64)
-  pivot = xs(hi)
+  pivot = xs[hi]
   i = lo - 1
   for j = lo, hi - 1
-    if xs(j) <= pivot
+    if xs[j] <= pivot
       i = i + 1
-      t = xs(i)
-      xs(i) = xs(j)
-      xs(j) = t
-  t = xs(i + 1)
-  xs(i + 1) = xs(hi)
-  xs(hi) = t
+      t = xs[i]
+      xs[i] = xs[j]
+      xs[j] = t
+  t = xs[i + 1]
+  xs[i + 1] = xs[hi]
+  xs[hi] = t
   i + 1
 
 sort = (xs, lo: i64, hi: i64)
@@ -24,8 +24,8 @@ sort = (xs, lo: i64, hi: i64)
 main: i64 = ()
   xs = { 38, 97, 12, 1, 55, 25, 71, 4, 88, 33 }
   sort(xs, 1, 10)
-  a = xs(1)
-  b = xs(5)
-  c = xs(10)
+  a = xs[1]
+  b = xs[5]
+  c = xs[10]
   print("{a} {b} {c}")
   0

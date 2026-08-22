@@ -154,7 +154,7 @@ leb128_decode_u: any = (bytes: any, pos: i64)
   shift = 0
   i = pos
   while true
-    byte = bytes(i)
+    byte = bytes[i]
     result = result | (byte & 127) << shift
     shift = shift + 7
     if byte & 128 == 0
@@ -182,7 +182,7 @@ leb128_decode_s: any = (bytes: any, pos: i64)
   shift = 0
   i = pos
   while true
-    byte = bytes(i)
+    byte = bytes[i]
     result = result | (byte & 127) << shift
     shift = shift + 7
     if byte & 128 == 0
@@ -200,7 +200,7 @@ and_bytes: any = (a: any, b: any)
     n = b:len()
   i = 1
   while i <= n
-    out(out:len() + 1) = a(i) & b(i)
+    out(out:len() + 1) = a[i] & b[i]
     i = i + 1
   out
 
@@ -211,7 +211,7 @@ or_bytes: any = (a: any, b: any)
     n = b:len()
   i = 1
   while i <= n
-    out(out:len() + 1) = a(i) | b(i)
+    out(out:len() + 1) = a[i] | b[i]
     i = i + 1
   out
 
@@ -222,7 +222,7 @@ xor_bytes: any = (a: any, b: any)
     n = b:len()
   i = 1
   while i <= n
-    out(out:len() + 1) = a(i) ^ b(i)
+    out(out:len() + 1) = a[i] ^ b[i]
     i = i + 1
   out
 
@@ -230,7 +230,7 @@ not_bytes: any = (a: any)
   out = {}
   i = 1
   while i <= a:len()
-    out(out:len() + 1) = ~a(i) & 255
+    out(out:len() + 1) = ~a[i] & 255
     i = i + 1
   out
 

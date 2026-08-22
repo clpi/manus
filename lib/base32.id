@@ -91,25 +91,25 @@ decode_with_alphabet: str = (data: str, tab: any)
     for j = 0, 7
       pos = i + j
       if pos > len
-        vals(j + 1) = 0
+        vals[j + 1] = 0
         pad_count = pad_count + 1
       else
         c = data:byte(pos)
         if c == 61
-          vals(j + 1) = 0
+          vals[j + 1] = 0
           pad_count = pad_count + 1
         else
           v = tab(c)
           if v != nil
-            vals(j + 1) = v
+            vals[j + 1] = v
           else
-            vals(j + 1) = 0
+            vals[j + 1] = 0
             pad_count = pad_count + 1
-    b1 = vals(1) << 3 | vals(2) >> 2
-    b2 = (vals(2) & 3) << 6 | vals(3) << 1 | vals(4) >> 4
-    b3 = (vals(4) & 15) << 4 | vals(5) >> 1
-    b4 = (vals(5) & 1) << 7 | vals(6) << 2 | vals(7) >> 3
-    b5 = (vals(7) & 7) << 5 | vals(8)
+    b1 = vals[1] << 3 | vals[2] >> 2
+    b2 = (vals[2] & 3) << 6 | vals[3] << 1 | vals[4] >> 4
+    b3 = (vals[4] & 15) << 4 | vals[5] >> 1
+    b4 = (vals[5] & 1) << 7 | vals[6] << 2 | vals[7] >> 3
+    b5 = (vals[7] & 7) << 5 | vals[8]
     res(res:len() + 1) = b1:char()
     if pad_count < 6
       res(res:len() + 1) = b2:char()

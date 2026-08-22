@@ -4,4 +4,4 @@
 # where both Lua and the direct backend give 10. C is not a valid oracle.
 main: i64 = ()
   t = { 10, 20, 30 }
-  return t(1) + t(2)
+  return t[1] + t[2]

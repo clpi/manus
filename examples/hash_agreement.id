@@ -49,12 +49,12 @@ main: i64 = ()
 
   # Inserted under the runtime hash, read back under the compile-time one.
   t = {}
-  t(shortbuilt) = 11
-  t(longbuilt) = 22
-  if t(shortlit) != 11
+  t[shortbuilt] = 11
+  t[longbuilt] = 22
+  if t[shortlit] != 11
     print("FAIL short key: inserted by runtime hash, read by literal hash")
     fails = fails + 1
-  if t(longlit) != 22
+  if t[longlit] != 22
     print("FAIL long key: inserted by runtime hash, read by literal hash")
     fails = fails + 1
 

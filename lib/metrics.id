@@ -62,7 +62,7 @@ histogram_new: any = (name: str, help: str, buckets: any)
     buckets = { 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0 }
   bucket_counts = {}
   for i = 1, buckets:len()
-    bucket_counts(i) = 0
+    bucket_counts[i] = 0
   {
     type = "histogram",
     name = name,
@@ -193,19 +193,19 @@ registry_register_timer: any = (reg: any, name: str)
 registry_summary: any = (reg: any)
   summary = {}
   for name, c in reg.counters
-    summary(name) =
+    summary[name] =
       type = "counter"
       value = c.value
   for name, g in reg.gauges
-    summary(name) =
+    summary[name] =
       type = "gauge"
       value = g.value
   for name, h in reg.histograms
-    summary(name) =
+    summary[name] =
       type = "histogram"
       value = histogram_get(h)
   for name, t in reg.timers
-    summary(name) =
+    summary[name] =
       type = "timer"
       value = timer_get(t)
   summary

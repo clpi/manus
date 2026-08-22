@@ -14,9 +14,9 @@ assert(h1 >= 0 and h1 < 4294967296, "hash in u32 range")
 toks = vector.tokens("Parse_TheThing!! 42 x")
 # expect: parse, thething (underscore is a boundary), x dropped (len 1), 42 dropped (len 2? "42" len2 kept)
 assert(toks:len() == 3, "token count: got " .. toks:len())
-assert(toks(1) == "parse", "tok1: " .. toks(1))
-assert(toks(2) == "thething", "tok2: " .. toks(2))
-assert(toks(3) == "42", "tok3: " .. toks(3))
+assert(toks[1] == "parse", "tok1: " .. toks[1])
+assert(toks[2] == "thething", "tok2: " .. toks[2])
+assert(toks[3] == "42", "tok3: " .. toks[3])
 
 # 3. embed produces a sparse string-keyed vector with norm > 0 and features.
 e = vector.embed("parse bare function declaration", 256)
@@ -46,7 +46,7 @@ recs = {
 }
 ranked = vector.rank(q, recs, 5)
 assert(ranked:len() == 2, "rank count")
-assert(ranked(1).name == "parse_bare_func", "top result is parser fn: " .. ranked(1).name)
-assert(ranked(1).score >= ranked(2).score, "sorted desc")
+assert(ranked[1].name == "parse_bare_func", "top result is parser fn: " .. ranked[1].name)
+assert(ranked[1].score >= ranked[2].score, "sorted desc")
 
 print("vector_embed_smoke: PASS  (parse=" .. score_parse .. " net=" .. score_net .. ")")

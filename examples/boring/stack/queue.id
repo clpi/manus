@@ -8,5 +8,5 @@ st:push(2)
 st:push(3)
 top = st:pop()
 q = { 1, 2, 3 }
-front = q(1)
+front = q[1]
 print("{top} {front}")

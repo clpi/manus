@@ -12,4 +12,4 @@
 slots = { 40, 41, 42 }
 
 pick: i64 = (i: i64)
-  slots(i)
+  slots[i]

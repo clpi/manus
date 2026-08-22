@@ -114,7 +114,7 @@ quic_stream_read: any = (stream: any, max_bytes: i64)
   count = max_bytes:min(stream.recv_buffer:len())
   i = 1
   while i <= count
-    bytes(i) = stream.recv_buffer(i)
+    bytes[i] = stream.recv_buffer(i)
     i = i + 1
 
   # Remove from buffer
@@ -151,25 +151,25 @@ quic_packet_header_encode: any = (packet_type: i64, connection_id: i64, packet_n
   bytes = {}
 
   # Version (4 bytes)
-  bytes(1) = bit.band(bit.rshift(M.QUIC_VERSION, 24), 255)
-  bytes(2) = bit.band(bit.rshift(M.QUIC_VERSION, 16), 255)
-  bytes(3) = bit.band(bit.rshift(M.QUIC_VERSION, 8), 255)
-  bytes(4) = bit.band(M.QUIC_VERSION, 255)
+  bytes[1] = bit.band(bit.rshift(M.QUIC_VERSION, 24), 255)
+  bytes[2] = bit.band(bit.rshift(M.QUIC_VERSION, 16), 255)
+  bytes[3] = bit.band(bit.rshift(M.QUIC_VERSION, 8), 255)
+  bytes[4] = bit.band(M.QUIC_VERSION, 255)
 
   # Connection ID length + connection ID
   # ID length
-  bytes(5) = 8
+  bytes[5] = 8
   i = 1
   while i <= 8
-    bytes(5 + i) = bit.band(bit.rshift(connection_id, (8 - i) * 8), 255)
+    bytes[5 + i] = bit.band(bit.rshift(connection_id, (8 - i) * 8), 255)
     i = i + 1
 
   # Packet number (4 bytes)
   offset = 14
-  bytes(offset) = bit.band(bit.rshift(packet_number, 24), 255)
-  bytes(offset + 1) = bit.band(bit.rshift(packet_number, 16), 255)
-  bytes(offset + 2) = bit.band(bit.rshift(packet_number, 8), 255)
-  bytes(offset + 3) = bit.band(packet_number, 255)
+  bytes[offset] = bit.band(bit.rshift(packet_number, 24), 255)
+  bytes[offset + 1] = bit.band(bit.rshift(packet_number, 16), 255)
+  bytes[offset + 2] = bit.band(bit.rshift(packet_number, 8), 255)
+  bytes[offset + 3] = bit.band(packet_number, 255)
 
   bytes
 
@@ -177,21 +177,21 @@ quic_frame_stream_encode: any = (stream_id: i64, offset: i64, data: any)
   bytes = {}
 
   # Frame type
-  bytes(1) = M.FRAME_STREAM
+  bytes[1] = M.FRAME_STREAM
 
   # Stream ID (varint)
-  bytes(2) = bit.band(stream_id, 255)
+  bytes[2] = bit.band(stream_id, 255)
 
   # Offset (varint)
-  bytes(3) = bit.band(offset, 255)
+  bytes[3] = bit.band(offset, 255)
 
   # Data length
-  bytes(4) = data:len()
+  bytes[4] = data:len()
 
   # Data
   i = 1
   while i <= data:len()
-    bytes(4 + i) = data(i)
+    bytes[4 + i] = data[i]
     i = i + 1
 
   bytes
@@ -200,16 +200,16 @@ quic_frame_ack_encode: any = (largest_acknowledged: i64, ack_delay: i64)
   bytes = {}
 
   # Frame type
-  bytes(1) = M.FRAME_ACK
+  bytes[1] = M.FRAME_ACK
 
   # Largest acknowledged (varint)
-  bytes(2) = bit.band(largest_acknowledged, 255)
+  bytes[2] = bit.band(largest_acknowledged, 255)
 
   # ACK delay (varint)
-  bytes(3) = bit.band(ack_delay, 255)
+  bytes[3] = bit.band(ack_delay, 255)
 
   # ACK range count
-  bytes(4) = 0
+  bytes[4] = 0
 
   bytes
 
@@ -247,7 +247,7 @@ generate_connection_id: any = ()
   data = crypto_rand.bytes(8)
   i = 1
   while i <= 8
-    bytes(i) = data:byte(i)
+    bytes[i] = data:byte(i)
     i = i + 1
   bytes
 

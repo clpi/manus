@@ -238,8 +238,8 @@ flash_attention_block: any = (q: any, k: any, v: any, block_size: i64)
   row_max = {}
   row_sum = {}
   for i = 1, seq_len
-    row_max(i) = -1000000000000000000000000000000.0
-    row_sum(i) = 0
+    row_max[i] = -1000000000000000000000000000000.0
+    row_sum[i] = 0
 
   # Process K,V in blocks
   col = 1
@@ -249,7 +249,7 @@ flash_attention_block: any = (q: any, k: any, v: any, block_size: i64)
     # Compute Q @ K_block^T
     for i = 1, seq_len
       # Compute scores for this block
-      new_max = row_max(i)
+      new_max = row_max[i]
       for j = col, block_end
         score = 0
         for d = 1, head_dim
@@ -259,8 +259,8 @@ flash_attention_block: any = (q: any, k: any, v: any, block_size: i64)
           new_max = score
 
       # Update output with rescaling
-      scale = row_max(i) - new_max:exp()
-      row_sum(i) = row_sum(i) * scale
+      scale = row_max[i] - new_max:exp()
+      row_sum[i] = row_sum[i] * scale
 
       for j = col, block_end
         score = 0
@@ -268,18 +268,18 @@ flash_attention_block: any = (q: any, k: any, v: any, block_size: i64)
           score = score + q.data((i - 1) * head_dim + d) * k.data((j - 1) * head_dim + d)
         score = score / head_dim:sqrt()
         weight = score - new_max:exp()
-        row_sum(i) = row_sum(i) + weight
+        row_sum[i] = row_sum[i] + weight
         for d = 1, head_dim
           output.data((i - 1) * head_dim + d) = output.data((i - 1) * head_dim + d) * scale + weight * v.data((j - 1) * head_dim + d)
 
-      row_max(i) = new_max
+      row_max[i] = new_max
     col = col + block_size
 
   # Normalize
   for i = 1, seq_len
-    if row_sum(i) > 0
+    if row_sum[i] > 0
       for d = 1, head_dim
-        output.data((i - 1) * head_dim + d) = output.data((i - 1) * head_dim + d) / row_sum(i)
+        output.data((i - 1) * head_dim + d) = output.data((i - 1) * head_dim + d) / row_sum[i]
 
   output
 # ═══════════════════════════════════════════════════════════════

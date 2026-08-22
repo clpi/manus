@@ -69,7 +69,7 @@ join: any = (...errs)
   parts = {}
   i = 1
   while i <= errs:len()
-    e = errs(i)
+    e = errs[i]
     if e != nil
       msg = e.message
       if msg == nil

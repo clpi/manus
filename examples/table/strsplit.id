@@ -5,6 +5,6 @@ main: i64 = ()
   s = "a,,b"
   p = s:split(",")
   n = p:len()
-  a = p(2)
+  a = p[2]
   print("{n} [{a}]")
   0

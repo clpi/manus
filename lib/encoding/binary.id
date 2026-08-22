@@ -47,7 +47,7 @@ encode_u64_be: str = (v: i64)
   parts = {}
   i = 0
   while i < 8
-    parts(8 - i) = v % 256:char()
+    parts[8 - i] = v % 256:char()
     v = v / 256
     i = i + 1
   parts:concat()

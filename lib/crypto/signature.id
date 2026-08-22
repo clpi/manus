@@ -23,18 +23,18 @@ keygen: any = (key_type: i64)
     private_key = {}
     i = 1
     while i <= 32
-      private_key(i) = key_data:byte(i)
+      private_key[i] = key_data:byte(i)
       i = i + 1
     # Clamp private key
-    private_key(1) = private_key(1) & 248
-    private_key(32) = private_key(32) & 127 | 64
+    private_key[1] = private_key[1] & 248
+    private_key[32] = private_key[32] & 127 | 64
 
     # Derive public key (simplified - hash-based derivation)
     pub_hash = crypto.sha256(private_key:to(str))
     public_key = {}
     i = 1
     while i <= 32
-      public_key(i) = pub_hash:byte(i)
+      public_key[i] = pub_hash:byte(i)
       i = i + 1
 
     {
@@ -50,7 +50,7 @@ keygen: any = (key_type: i64)
       private_key = {}
       i = 1
       while i <= 32
-        private_key(i) = key_data:byte(i)
+        private_key[i] = key_data:byte(i)
         i = i + 1
 
       # Derive public key (simplified - hash-based derivation)
@@ -99,14 +99,14 @@ ed25519_sign: any = (message: any, private_key: any)
   i = 1
   while i <= 32
     # Mix private key byte with hash byte
-    sig_byte = private_key(i) ~ msg_hash:byte((i - 1) % 64 + 1)
-    signature(i) = sig_byte
+    sig_byte = private_key[i] ~ msg_hash:byte((i - 1) % 64 + 1)
+    signature[i] = sig_byte
     i = i + 1
   # Second half: nonce derived from private key + message
   nonce_hash = crypto.sha256(msg_hash .. private_key:to(str))
   i = 1
   while i <= 32
-    signature(32 + i) = nonce_hash:byte(i)
+    signature[32 + i] = nonce_hash:byte(i)
     i = i + 1
 
   signature
@@ -124,7 +124,7 @@ ed25519_verify: bool = (message: any, signature: any, public_key: any)
   non_zero = false
   i = 1
   while i <= 32
-    if signature(i) != 0
+    if signature[i] != 0
       non_zero = true
     i = i + 1
   if not non_zero
@@ -134,7 +134,7 @@ ed25519_verify: bool = (message: any, signature: any, public_key: any)
   non_zero = false
   i = 33
   while i <= 64
-    if signature(i) != 0
+    if signature[i] != 0
       non_zero = true
     i = i + 1
   if not non_zero
@@ -162,14 +162,14 @@ ecdsa_sign: any = (message: any, private_key: any, curve: i64)
   # Derive r from message hash + private key
   i = 1
   while i <= sig_len
-    r(i) = msg_hash:byte((i - 1) % 64 + 1) ~ private_key(i)
+    r[i] = msg_hash:byte((i - 1) % 64 + 1) ~ private_key[i]
     i = i + 1
 
   # Derive s from private key + message hash
   s_hash = crypto.sha256(private_key:to(str) .. msg_hash)
   i = 1
   while i <= sig_len
-    s(i) = s_hash:byte((i - 1) % 64 + 1)
+    s[i] = s_hash:byte((i - 1) % 64 + 1)
     i = i + 1
 
   {
@@ -195,7 +195,7 @@ ecdsa_verify: bool = (message: any, signature: any, public_key: any, curve: i64)
     return false
 
   # Verify public key starts with 0x04 (uncompressed point)
-  if public_key(1) != 4
+  if public_key[1] != 4
     return false
 
   # In production, verify actual ECDSA curve equation
@@ -243,14 +243,14 @@ envelope_seal: any = (data: any, sender_key: any, recipient_public: any)
   symmetric_key = {}
   i = 1
   while i <= 32
-    symmetric_key(i) = key_data:byte(i)
+    symmetric_key[i] = key_data:byte(i)
     i = i + 1
 
   # Encrypt data with symmetric key (XOR stream cipher)
   encrypted = {}
   i = 1
   while i <= data:len()
-    encrypted(i) = data(i) ~ symmetric_key((i - 1) % 32 + 1)
+    encrypted[i] = data[i] ~ symmetric_key((i - 1) % 32 + 1)
     i = i + 1
 
   # Sign the encrypted data
@@ -276,7 +276,7 @@ envelope_open: any = (envelope: any, recipient_private: any, sender_public: any)
   decrypted = {}
   i = 1
   while i <= envelope.encrypted:len()
-    decrypted(i) = envelope.encrypted(i) ~ key((i - 1) % 32 + 1)
+    decrypted[i] = envelope.encrypted(i) ~ key((i - 1) % 32 + 1)
     i = i + 1
 
   { data = decrypted }
@@ -300,12 +300,12 @@ key_to_bytes: any = (key: any)
   result
 
 key_from_bytes: any = (data: any)
-  key_type = data(1) << 8 | data(2)
-  pub_len = data(3) << 8 | data(4)
+  key_type = data[1] << 8 | data[2]
+  pub_len = data[3] << 8 | data[4]
   public = {}
   i = 1
   while i <= pub_len
-    public(i) = data(4 + i)
+    public[i] = data[4 + i]
     i = i + 1
   {
     type = key_type,

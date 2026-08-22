@@ -4,7 +4,7 @@
 main: i64 = ()
   s = "é"
   n = s:len()
-  a = s(0)
-  b = s(1)
+  a = s[0]
+  b = s[1]
   print("{n} {a} {b}")
   0

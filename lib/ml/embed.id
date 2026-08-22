@@ -22,12 +22,12 @@ token_embed_forward: any = (layer: any, token_ids: any)
   # token_ids: {batch_size, seq_len} or 1D array
   batch = 1
   seq_len = token_ids:len()
-  if type(token_ids(1)) == "table"
+  if type(token_ids[1]) == "table"
     batch = token_ids:len()
-    seq_len = token_ids(1):len()
+    seq_len = token_ids[1]:len()
   result = ml.tensor.zeros(batch * seq_len, layer.embed_dim)
   for i = 1, batch * seq_len
-    id = token_ids(i)
+    id = token_ids[i]
     for j = 1, layer.embed_dim
       result.data((i - 1) * layer.embed_dim + j) = layer.weights.data((id - 1) * layer.embed_dim + j)
   ml.tensor.reshape(result, batch * seq_len, layer.embed_dim)
@@ -72,7 +72,7 @@ learned_positional_forward: any = (layer: any, positions: any)
   result = ml.tensor.zeros(seq_len, layer.embed_dim)
   for i = 1, seq_len
     # 1-indexed
-    pos = positions(i) + 1
+    pos = positions[i] + 1
     for j = 1, layer.embed_dim
       result.data((i - 1) * layer.embed_dim + j) = layer.weights.data((pos - 1) * layer.embed_dim + j)
   result
@@ -132,13 +132,13 @@ alibi_encoding: any = (heads: i64, max_seq_len: i64)
   slopes = {}
   for i = 1, heads
     base = 2:pow(-8 * i / heads)
-    slopes(i) = base
+    slopes[i] = base
 
   # Precompute bias matrix
   biases = ml.tensor.zeros(heads, max_seq_len)
   for h = 1, heads
     for pos = 0, max_seq_len - 1
-      biases.data((h - 1) * max_seq_len + pos + 1) = -slopes(h) * pos
+      biases.data((h - 1) * max_seq_len + pos + 1) = -slopes[h] * pos
 
   {
     type = "alibi",

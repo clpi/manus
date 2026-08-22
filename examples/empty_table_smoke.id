@@ -5,8 +5,8 @@ g: str = (f: any)
   seen = {}
   for i = 1, f.members:len()
     t = f.members(i).type
-    if seen(t) == nil
-      seen(t) = 1
+    if seen[t] == nil
+      seen[t] = 1
       types(types:len() + 1) = t
   "x"
 

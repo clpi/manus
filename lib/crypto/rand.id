@@ -53,5 +53,5 @@ read: i64 = (buf: any)
   n: i64 = buf:len()
   b = bytes(n)
   for i = 1, n
-    buf(i) = b(i)
+    buf[i] = b(i)
   n

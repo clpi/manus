@@ -113,15 +113,15 @@ get_weight: any = (g: any, from: any, to: any)
 bfs = (g: any, start: any, visit: any)
   visited = {}
   queue = { start }
-  visited(start) = true
+  visited[start] = true
   while queue:len() > 0
     id = queue:remove(1)
     visit(id, g.nodes(id))
     i = 1
     while i <= g.adj(id) or {}:len()
       nb = g.adj(id)(i).to
-      if not visited(nb)
-        visited(nb) = true
+      if not visited[nb]
+        visited[nb] = true
         queue(queue:len() + 1) = nb
       i = i + 1
 
@@ -132,25 +132,25 @@ bfs_shortest_path: any = (g: any, start: any, goal: any)
   visited = {}
   prev = {}
   queue = { start }
-  visited(start) = true
+  visited[start] = true
   while queue:len() > 0
     id = queue:remove(1)
     i = 1
     while i <= g.adj(id) or {}:len()
       nb = g.adj(id)(i).to
-      if not visited(nb)
-        visited(nb) = true
-        prev(nb) = id
+      if not visited[nb]
+        visited[nb] = true
+        prev[nb] = id
         if nb == goal
           path = {}
           cur = nb
           while cur != nil
             path(path:len() + 1) = cur
-            cur = prev(cur)
+            cur = prev[cur]
           out = {}
           j = path:len()
           while j >= 1
-            out(out:len() + 1) = path(j)
+            out(out:len() + 1) = path[j]
             j = j - 1
           return out
         queue(queue:len() + 1) = nb
@@ -166,13 +166,13 @@ dfs = (g: any, start: any, visit: any)
   stack = { start }
   while stack:len() > 0
     id = stack:remove()
-    if not visited(id)
-      visited(id) = true
+    if not visited[id]
+      visited[id] = true
       visit(id, g.nodes(id))
       i = g.adj(id) or {}:len()
       while i >= 1
         nb = g.adj(id)(i).to
-        if not visited(nb)
+        if not visited[nb]
           stack(stack:len() + 1) = nb
         i = i - 1
 
@@ -181,30 +181,30 @@ dfs_topological: any = (g: any)
   color = {}
   order = {}
   for n, _ in g.nodes
-    color(n) = white
+    color[n] = white
   for n, _ in g.nodes
-    if color(n) == white
+    if color[n] == white
       if not dfs_topo_visit(g, n, color, order)
         return nil
   out = {}
   i = order:len()
   while i >= 1
-    out(out:len() + 1) = order(i)
+    out(out:len() + 1) = order[i]
     i = i - 1
   out
 
 dfs_topo_visit: bool = (g: any, id: any, color: any, order: any)
-  color(id) = gray
+  color[id] = gray
   i = 1
   while i <= g.adj(id) or {}:len()
     nb = g.adj(id)(i).to
-    if color(nb) == gray
+    if color[nb] == gray
       return false
-    if color(nb) == white
+    if color[nb] == white
       if not dfs_topo_visit(g, nb, color, order)
         return false
     i = i + 1
-  color(id) = black
+  color[id] = black
   order(order:len() + 1) = id
   true
 
@@ -215,7 +215,7 @@ dfs_topo_visit: bool = (g: any, id: any, color: any, order: any)
 topological_sort: any = (g: any)
   in_deg = {}
   for n, _ in g.nodes
-    in_deg(n) = 0
+    in_deg[n] = 0
   for n, _ in g.adj
     i = 1
     while i <= g.adj(n):len()
@@ -232,8 +232,8 @@ topological_sort: any = (g: any)
     i = 1
     while i <= g.adj(id) or {}:len()
       nb = g.adj(id)(i).to
-      in_deg(nb) = in_deg(nb) - 1
-      if in_deg(nb) == 0
+      in_deg[nb] = in_deg[nb] - 1
+      if in_deg[nb] == 0
         queue(queue:len() + 1) = nb
       i = i + 1
   if order:len() != node_count(g)
@@ -247,25 +247,25 @@ topological_sort: any = (g: any)
 has_cycle: bool = (g: any)
   color = {}
   for n, _ in g.nodes
-    color(n) = white
+    color[n] = white
   for n, _ in g.nodes
-    if color(n) == white
+    if color[n] == white
       if cycle_dfs(g, n, color)
         return true
   false
 
 cycle_dfs: bool = (g: any, id: any, color: any)
-  color(id) = gray
+  color[id] = gray
   i = 1
   while i <= g.adj(id) or {}:len()
     nb = g.adj(id)(i).to
-    if color(nb) == gray
+    if color[nb] == gray
       return true
-    if color(nb) == white
+    if color[nb] == white
       if cycle_dfs(g, nb, color)
         return true
     i = i + 1
-  color(id) = black
+  color[id] = black
   false
 
 # ═══════════════════════════════════════════════════════════════
@@ -277,26 +277,26 @@ dijkstra: any = (g: any, start: any)
   prev = {}
   visited = {}
   for n, _ in g.nodes
-    dist(n) = 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000.0
-  dist(start) = 0
+    dist[n] = 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000.0
+  dist[start] = 0
   pq = { { id = start, d = 0 } }
   while pq:len() > 0
     min_idx = 1
     i = 2
     while i <= pq:len()
-      if pq(i).d < pq(min_idx).d
+      if pq[i].d < pq[min_idx].d
         min_idx = i
       i = i + 1
     cur = pq:remove(min_idx)
-    if not visited(cur.id)
-      visited(cur.id) = true
+    if not visited[cur.id]
+      visited[cur.id] = true
       i = 1
       while i <= g.adj(cur.id) or {}:len()
         edge = g.adj(cur.id)(i)
-        new_dist = dist(cur.id) + edge.weight
-        if new_dist < dist(edge.to)
-          dist(edge.to) = new_dist
-          prev(edge.to) = cur.id
+        new_dist = dist[cur.id] + edge.weight
+        if new_dist < dist[edge.to]
+          dist[edge.to] = new_dist
+          prev[edge.to] = cur.id
           pq(pq:len() + 1) =
             id = edge.to
             d = new_dist
@@ -315,7 +315,7 @@ dijkstra_path: any = (result: any, goal: any)
   out = {}
   i = path:len()
   while i >= 1
-    out(out:len() + 1) = path(i)
+    out(out:len() + 1) = path[i]
     i = i - 1
   out
 
@@ -327,20 +327,20 @@ connected_components: any = (g: any)
   visited = {}
   components = {}
   for n, _ in g.nodes
-    visited(n) = false
+    visited[n] = false
   for n, _ in g.nodes
-    if not visited(n)
+    if not visited[n]
       comp = {}
       stack = { n }
       while stack:len() > 0
         id = stack:remove()
-        if not visited(id)
-          visited(id) = true
+        if not visited[id]
+          visited[id] = true
           comp(comp:len() + 1) = id
           i = 1
           while i <= g.adj(id) or {}:len()
             nb = g.adj(id)(i).to
-            if not visited(nb)
+            if not visited[nb]
               stack(stack:len() + 1) = nb
             i = i + 1
       components(components:len() + 1) = comp
@@ -373,16 +373,16 @@ subgraph: any = (g: any, node_ids: any)
   set = {}
   i = 1
   while i <= node_ids:len()
-    set(node_ids(i)) = true
-    if g.nodes(node_ids(i)) != nil
-      add_node(g2, node_ids(i), g.nodes(node_ids(i)))
+    set(node_ids[i]) = true
+    if g.nodes(node_ids[i]) != nil
+      add_node(g2, node_ids[i], g.nodes(node_ids[i]))
     i = i + 1
   for n, _ in g.nodes
-    if set(n)
+    if set[n]
       i = 1
       while i <= g.adj(n) or {}:len()
         e = g.adj(n)(i)
-        if set(e.to)
+        if set[e.to]
           add_edge(g2, n, e.to, e.weight)
         i = i + 1
   g2

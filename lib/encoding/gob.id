@@ -57,7 +57,7 @@ encode = (v: any, out: any)
       encode_int(n, out)
       i = 1
       while i <= n
-        encode(v(i), out)
+        encode(v[i], out)
         i = i + 1
     else
       out(out:len() + 1) = TAG_TABLE:char()
@@ -84,7 +84,7 @@ encode_int = (v: i64, out: any)
     n = n / 256
   i = parts:len()
   while i >= 1
-    out(out:len() + 1) = parts(i)
+    out(out:len() + 1) = parts[i]
     i = i - 1
 
 # unmarshal: decode a binary string into a Duo value.
@@ -130,7 +130,7 @@ decode: any = (p: any)
     arr = {}
     i = 1
     while i <= n
-      arr(i) = decode(p)
+      arr[i] = decode(p)
       i = i + 1
     return arr
   if tag == TAG_TABLE
@@ -140,7 +140,7 @@ decode: any = (p: any)
     while i <= n
       k = decode(p)
       v = decode(p)
-      tbl(k) = v
+      tbl[k] = v
       i = i + 1
     return tbl
   nil

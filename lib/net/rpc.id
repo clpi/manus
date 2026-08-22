@@ -229,7 +229,7 @@ error_code_name: str = (code: i64)
     [INTERNAL_ERROR] = "Internal error",
     [SERVER_ERROR] = "Server error"
   }
-  codes(code) or "Unknown error"
+  codes[code] or "Unknown error"
 
 # ═══════════════════════════════════════════════════════════════
 # Service Discovery

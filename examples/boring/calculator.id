@@ -10,7 +10,7 @@ eval: i64 = (src: str)
   i = 0
   n = src:len()
   while i < n
-    b = src(i)
+    b = src[i]
     if b >= 48 and b <= 57
       d = b - 48
       if op == 43

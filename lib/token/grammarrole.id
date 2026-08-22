@@ -1520,28 +1520,28 @@ rolebeginexpr: bool = (kind: i64)
   kind >= 0 and kind < ROLECOUNT and BEGINEXPR(kind + 1) != 0
 
 roleprefix: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and prefix(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and prefix[kind + 1] != 0
 
 rolepostfix: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and postfix(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and postfix[kind + 1] != 0
 
 roleparameter: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and parameter(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and parameter[kind + 1] != 0
 
 roleliteral: bool = (kind: i64)
   kind >= 0 and kind < ROLECOUNT and LITERALKIND(kind + 1) != 0
 
 rolequoted: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and quoted(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and quoted[kind + 1] != 0
 
 rolebodystart: bool = (kind: i64)
   kind >= 0 and kind < ROLECOUNT and BODYSTART(kind + 1) != 0
 
 roledescriptor: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and descriptor(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and descriptor[kind + 1] != 0
 
 rolepattern: bool = (kind: i64)
-  kind >= 0 and kind < ROLECOUNT and pattern(kind + 1) != 0
+  kind >= 0 and kind < ROLECOUNT and pattern[kind + 1] != 0
 
 rolecompatonly: bool = (kind: i64)
   kind >= 0 and kind < ROLECOUNT and COMPATONLY(kind + 1) != 0
@@ -1550,10 +1550,10 @@ roleprecedence: i64 = (kind: i64)
   if kind < 0 or kind >= ROLECOUNT
     0
   else
-    precedence(kind + 1)
+    precedence[kind + 1]
 
 roleassoc: i64 = (kind: i64)
   if kind < 0 or kind >= ROLECOUNT
     0
   else
-    assoc(kind + 1)
+    assoc[kind + 1]

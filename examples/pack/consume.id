@@ -8,7 +8,7 @@ src = { 3, 5, 7, 11 }
 pos = 0
 pull = ()
   pos = pos + 1
-  src(pos)
+  src[pos]
 total = 0
 while true
   b = pull()

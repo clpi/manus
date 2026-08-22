@@ -40,7 +40,7 @@ std_property_navigate: any = (obj: any, path: str)
   current = obj
   i = 1
   while i < parts:len()
-    key = parts(i)
+    key = parts[i]
     idx = std_property_to_num(key)
     if idx != nil
       current = current(idx)
@@ -60,7 +60,7 @@ std_property_ensure_path: any = (obj: any, parts: any)
   current = obj
   i = 1
   while i <= parts:len()
-    key = parts(i)
+    key = parts[i]
     idx = std_property_to_num(key)
     if idx != nil
       if current(idx) == nil
@@ -88,7 +88,7 @@ get: any = (obj: any, path: str)
   while i <= parts:len()
     if type(current) != "table"
       return nil
-    key = parts(i)
+    key = parts[i]
     idx = std_property_to_num(key)
     if idx != nil
       current = current(idx)
@@ -110,7 +110,7 @@ set = (obj: any, path: str, value: any)
   current = obj
   i = 1
   while i < parts:len()
-    key = parts(i)
+    key = parts[i]
     idx = std_property_to_num(key)
     if idx != nil
       if current(idx) == nil
@@ -138,7 +138,7 @@ has: bool = (obj: any, path: str)
   while i <= parts:len()
     if type(current) != "table"
       return false
-    key = parts(i)
+    key = parts[i]
     idx = std_property_to_num(key)
     if idx != nil
       current = current(idx)
@@ -192,11 +192,11 @@ std_property_flatten_rec = (obj: any, prefix: any, out: any)
           has_leaf = true
           break
       if has_leaf
-        out(path) = v
+        out[path] = v
       else
         std_property_flatten_rec(v, path, out)
     else
-      out(path) = v
+      out[path] = v
 
 # flatten: flatten a nested table into dot-path => value pairs.
 flatten: any = (obj: any, prefix: any)
@@ -234,11 +234,11 @@ merge_deep: any = (a: any, b: any)
   out = {}
   if a != nil
     for k, v in a
-      out(k) = v
+      out[k] = v
   if b != nil
     for k, v in b
-      if type(v) == "table" and type(out(k)) == "table"
-        out(k) = merge_deep(out(k), v)
+      if type(v) == "table" and type(out[k]) == "table"
+        out[k] = merge_deep(out[k], v)
       else
-        out(k) = v
+        out[k] = v
   out

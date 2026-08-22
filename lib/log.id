@@ -6,7 +6,7 @@ global log_levels = { DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3 }
 set_level = (level: str)
   if level == nil
     level = "DEBUG"
-  v = log_levels(level)
+  v = log_levels[level]
   if v != nil
     log_level = v
 

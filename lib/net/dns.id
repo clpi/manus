@@ -27,23 +27,23 @@ header_new: any = (id: i64, qr: i64, opcode: i64, aa: i64, tc: i64, rd: i64, ra:
   }
 header_encode: any = (h: any)
   bytes = {}
-  bytes(1) = h.id >> 8 & 255
-  bytes(2) = h.id & 255
+  bytes[1] = h.id >> 8 & 255
+  bytes[2] = h.id & 255
   flags = h.qr << 15 | h.opcode << 11 | h.aa << 10 | h.tc << 9 | h.rd << 8 | h.ra << 7 | h.z << 4 | h.rcode
-  bytes(3) = flags >> 8 & 255
-  bytes(4) = flags & 255
-  bytes(5) = h.qdcount >> 8 & 255
-  bytes(6) = h.qdcount & 255
-  bytes(7) = h.ancount >> 8 & 255
-  bytes(8) = h.ancount & 255
-  bytes(9) = h.nscount >> 8 & 255
-  bytes(10) = h.nscount & 255
-  bytes(11) = h.arcount >> 8 & 255
-  bytes(12) = h.arcount & 255
+  bytes[3] = flags >> 8 & 255
+  bytes[4] = flags & 255
+  bytes[5] = h.qdcount >> 8 & 255
+  bytes[6] = h.qdcount & 255
+  bytes[7] = h.ancount >> 8 & 255
+  bytes[8] = h.ancount & 255
+  bytes[9] = h.nscount >> 8 & 255
+  bytes[10] = h.nscount & 255
+  bytes[11] = h.arcount >> 8 & 255
+  bytes[12] = h.arcount & 255
   bytes
 header_decode: any = (data: any)
-  id = data(1) << 8 | data(2)
-  flags = data(3) << 8 | data(4)
+  id = data[1] << 8 | data[2]
+  flags = data[3] << 8 | data[4]
   {
     id = id,
     qr = flags >> 15 & 1,
@@ -54,10 +54,10 @@ header_decode: any = (data: any)
     ra = flags >> 7 & 1,
     z = flags >> 4 & 7,
     rcode = flags & 15,
-    qdcount = data(5) << 8 | data(6),
-    ancount = data(7) << 8 | data(8),
-    nscount = data(9) << 8 | data(10),
-    arcount = data(11) << 8 | data(12)
+    qdcount = data[5] << 8 | data[6],
+    ancount = data[7] << 8 | data[8],
+    nscount = data[9] << 8 | data[10],
+    arcount = data[11] << 8 | data[12]
   }
 name_encode: any = (name: str)
   bytes = {}
@@ -83,14 +83,14 @@ name_decode: any = (data: any, pos: i64)
   while true
     if pos > data:len()
       break
-    len = data(pos)
+    len = data[pos]
     if len == 0
       pos = pos + 1
       break
     else(len & 192 == 192)
       if not jumped
         original_pos = original_pos + 2
-      pointer = (len & 63) << 8 | data(pos + 1)
+      pointer = (len & 63) << 8 | data[pos + 1]
       pos = pointer + 1
       jumped = true
     else
@@ -98,7 +98,7 @@ name_decode: any = (data: any, pos: i64)
       label = ""
       i = 0
       while i < len
-        label = label .. data(pos + i):char()
+        label = label .. data[pos + i]:char()
         i = i + 1
       parts(parts:len() + 1) = label
       pos = pos + len
@@ -138,23 +138,23 @@ record_decode: any = (data: any, pos: i64)
   result = name_decode(data, pos)
   name = result.name
   pos = result.next
-  rtype = data(pos) << 8 | data(pos + 1)
+  rtype = data[pos] << 8 | data[pos + 1]
   pos = pos + 2
-  rclass = data(pos) << 8 | data(pos + 1)
+  rclass = data[pos] << 8 | data[pos + 1]
   pos = pos + 2
-  ttl = data(pos) << 24 | data(pos + 1) << 16 | data(pos + 2) << 8 | data(pos + 3)
+  ttl = data[pos] << 24 | data[pos + 1] << 16 | data[pos + 2] << 8 | data[pos + 3]
   pos = pos + 4
-  rdlength = data(pos) << 8 | data(pos + 1)
+  rdlength = data[pos] << 8 | data[pos + 1]
   pos = pos + 2
   rdata = nil
   if rtype == A and rdlength == 4
-    rdata = to(str)(data(pos)) .. "." .. to(str)(data(pos + 1)) .. "." .. to(str)(data(pos + 2)) .. "." .. to(str)(data(pos + 3))
+    rdata = to(str)(data[pos]) .. "." .. to(str)(data[pos + 1]) .. "." .. to(str)(data[pos + 2]) .. "." .. to(str)(data[pos + 3])
   else(rtype == AAAA and rdlength == 16)
     parts = {}
     i = 0
     while i < 16
-      hi = data(pos + i)
-      lo = data(pos + i + 1)
+      hi = data[pos + i]
+      lo = data[pos + i + 1]
       parts(parts:len() + 1) = "%02x%02x":format(hi, lo)
       i = i + 2
     rdata = parts:concat(":")
@@ -162,24 +162,24 @@ record_decode: any = (data: any, pos: i64)
     cname = name_decode(data, pos)
     rdata = cname.name
   else(rtype == MX)
-    preference = data(pos) << 8 | data(pos + 1)
+    preference = data[pos] << 8 | data[pos + 1]
     exchange = name_decode(data, pos + 2)
     rdata = {
       preference = preference,
       exchange = exchange.name
     }
   else(rtype == TXT)
-    txt_len = data(pos)
+    txt_len = data[pos]
     txt = ""
     i = 1
     while i <= txt_len
-      txt = txt .. data(pos + i):char()
+      txt = txt .. data[pos + i]:char()
       i = i + 1
     rdata = txt
   else(rtype == SRV)
-    priority = data(pos) << 8 | data(pos + 1)
-    weight = data(pos + 2) << 8 | data(pos + 3)
-    port = data(pos + 4) << 8 | data(pos + 5)
+    priority = data[pos] << 8 | data[pos + 1]
+    weight = data[pos + 2] << 8 | data[pos + 3]
+    port = data[pos + 4] << 8 | data[pos + 5]
     target = name_decode(data, pos + 6)
     rdata = {
       priority = priority,
@@ -352,7 +352,7 @@ type_name: str = (qtype: i64)
     [PTR] = "PTR",
     [ANY] = "ANY"
   }
-  types(qtype) or "UNKNOWN"
+  types[qtype] or "UNKNOWN"
 type_from_name: i64 = (name: str)
   types = {
     A = A,

@@ -6,7 +6,7 @@ find: i64 = (xs, n: i64, key: i64)
   hi = n
   while lo <= hi
     mid = lo + (hi - lo) / 2
-    v = xs(mid)
+    v = xs[mid]
     if v == key
       return mid
     if v < key

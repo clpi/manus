@@ -9,7 +9,7 @@ permutation_new: any = (seed: i64)
   perm = {}
   i = 0
   while i < 256
-    perm(i) = i
+    perm[i] = i
     i = i + 1
 
   # Shuffle with seed
@@ -18,16 +18,16 @@ permutation_new: any = (seed: i64)
   while i > 0
     rng = (rng * 1103515245 + 12345) & 2147483647
     j = rng % (i + 1)
-    temp = perm(i)
-    perm(i) = perm(j)
-    perm(j) = temp
+    temp = perm[i]
+    perm[i] = perm[j]
+    perm[j] = temp
     i = i - 1
 
   # Duplicate
   p = {}
   i = 0
   while i < 512
-    p(i) = perm(i % 256)
+    p[i] = perm[i % 256]
     i = i + 1
   p
 
@@ -60,10 +60,10 @@ perlin_2d: f64 = (perm: any, x: f64, y: f64)
   u = perlin_fade(xf)
   v = perlin_fade(yf)
 
-  aa = perm(perm(xi) + yi)
-  ab = perm(perm(xi) + yi + 1)
-  ba = perm(perm(xi + 1) + yi)
-  bb = perm(perm(xi + 1) + yi + 1)
+  aa = perm(perm[xi] + yi)
+  ab = perm(perm[xi] + yi + 1)
+  ba = perm(perm[xi + 1] + yi)
+  bb = perm(perm[xi + 1] + yi + 1)
 
   x1 = perlin_lerp(perlin_grad_2d(aa, xf, yf), perlin_grad_2d(ba, xf - 1, yf), u)
   x2 = perlin_lerp(perlin_grad_2d(ab, xf, yf - 1), perlin_grad_2d(bb, xf - 1, yf - 1), u)
@@ -99,14 +99,14 @@ perlin_3d: f64 = (perm: any, x: f64, y: f64, z: f64)
   v = perlin_fade(yf)
   w = perlin_fade(zf)
 
-  aaa = perm(perm(perm(xi) + yi) + zi)
-  aba = perm(perm(perm(xi) + yi + 1) + zi)
-  aab = perm(perm(perm(xi) + yi) + zi + 1)
-  abb = perm(perm(perm(xi) + yi + 1) + zi + 1)
-  baa = perm(perm(perm(xi + 1) + yi) + zi)
-  bba = perm(perm(perm(xi + 1) + yi + 1) + zi)
-  bab = perm(perm(perm(xi + 1) + yi) + zi + 1)
-  bbb = perm(perm(perm(xi + 1) + yi + 1) + zi + 1)
+  aaa = perm(perm(perm[xi] + yi) + zi)
+  aba = perm(perm(perm[xi] + yi + 1) + zi)
+  aab = perm(perm(perm[xi] + yi) + zi + 1)
+  abb = perm(perm(perm[xi] + yi + 1) + zi + 1)
+  baa = perm(perm(perm[xi + 1] + yi) + zi)
+  bba = perm(perm(perm[xi + 1] + yi + 1) + zi)
+  bab = perm(perm(perm[xi + 1] + yi) + zi + 1)
+  bbb = perm(perm(perm[xi + 1] + yi + 1) + zi + 1)
 
   x1 = perlin_lerp(perlin_grad_3d(aaa, xf, yf, zf), perlin_grad_3d(baa, xf - 1, yf, zf), u)
   x2 = perlin_lerp(perlin_grad_3d(aba, xf, yf - 1, zf), perlin_grad_3d(bba, xf - 1, yf - 1, zf), u)
@@ -165,9 +165,9 @@ simplex_2d: f64 = (perm: any, x: f64, y: f64)
   # Hash
   ii = i & 255
   jj = j & 255
-  gi0 = perm(ii + perm(jj)) % 8
-  gi1 = perm(ii + i1 + perm(jj + j1)) % 8
-  gi2 = perm(ii + 1 + perm(jj + 1)) % 8
+  gi0 = perm(ii + perm[jj]) % 8
+  gi1 = perm(ii + i1 + perm[jj + j1]) % 8
+  gi2 = perm(ii + 1 + perm[jj + 1]) % 8
 
   # Contributions
   n0 = 0

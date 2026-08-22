@@ -83,11 +83,11 @@ embed: any = (text: str, dim: i64)
   for _, word in tokens(text)
     widx = hash32(word) % dim
     wk = "f" .. widx
-    vec(wk) = (vec(wk) or 0) + WORD_W
+    vec[wk] = (vec[wk] or 0) + WORD_W
     for _, tg in trigrams(word)
       gidx = hash32(tg) % dim
       gk = "f" .. gidx
-      vec(gk) = (vec(gk) or 0) + NGRAM_W
+      vec[gk] = (vec[gk] or 0) + NGRAM_W
   sumsq = 0.0
   for k, w in vec
     sumsq = sumsq + w * w
@@ -109,7 +109,7 @@ cosine: float = (q: any, s: any)
   dot = 0.0
   for k, qw in q
     if k != "norm" and k != "dim"
-      sw = s(k)
+      sw = s[k]
       if sw != nil
         dot = dot + qw * sw
   dot / q.norm / 1000000.0 * s.norm / 1000000.0
@@ -144,15 +144,15 @@ rank: any = (q: any, records: any, topk: i64)
     bestsc = -1.0
     i = 1
     while i <= n
-      if taken(i) == nil
-        if all(i).score > bestsc
-          bestsc = all(i).score
+      if taken[i] == nil
+        if all[i].score > bestsc
+          bestsc = all[i].score
           besti = i
       i = i + 1
     if besti == 0
       break
-    taken(besti) = true
-    out(out:len() + 1) = all(besti)
+    taken[besti] = true
+    out(out:len() + 1) = all[besti]
     round = round + 1
   out
 

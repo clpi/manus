@@ -10,12 +10,12 @@ parse: any = (data: str)
     if line:len() > 0 and line:sub(1, 1) != ";" and line:sub(1, 1) != "#"
       if line:sub(1, 1) == "[" and line:sub(line:len(), line:len()) == "]"
         sec_name = line:sub(2, line:len() - 1)
-        res(sec_name) = {}
-        current_section = res(sec_name)
+        res[sec_name] = {}
+        current_section = res[sec_name]
       else
         parts = line:split("=")
         if parts:len() >= 2
-          key = parts(1):trim()
-          val = parts(2):trim()
+          key = parts[1]:trim()
+          val = parts[2]:trim()
           current_section(key) = val
   res

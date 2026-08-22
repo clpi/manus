@@ -11,7 +11,7 @@ src = { 3, 5, 7, 11 }
 pos = 0
 pull = ()
   pos = pos + 1
-  src(pos)
+  src[pos]
 small = n
 n < 7
 total = 0

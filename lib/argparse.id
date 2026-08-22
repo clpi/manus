@@ -51,7 +51,7 @@ parse_with: any = (parser, args: any)
   stop_options = false
 
   while i <= args:len()
-    v = args(i)
+    v = args[i]
     if v == "--" and not stop_options
       stop_options = true
       i = i + 1
@@ -68,8 +68,8 @@ parse_with: any = (parser, args: any)
           matched = false
           for _, opt in parser.options
             if opt.long == v
-              if i + 1 <= args:len() and args(i + 1):sub(1, 1) != "-"
-                opts(opt.key) = args(i + 1)
+              if i + 1 <= args:len() and args[i + 1]:sub(1, 1) != "-"
+                opts(opt.key) = args[i + 1]
                 i = i + 2
               else
                 opts(opt.key) = nil
@@ -98,8 +98,8 @@ parse_with: any = (parser, args: any)
                 opts(opt.key) = rest
                 i = i + 1
               else
-                if i + 1 <= args:len() and args(i + 1):sub(1, 1) != "-"
-                  opts(opt.key) = args(i + 1)
+                if i + 1 <= args:len() and args[i + 1]:sub(1, 1) != "-"
+                  opts(opt.key) = args[i + 1]
                   i = i + 2
                 else
                   opts(opt.key) = nil
@@ -114,8 +114,8 @@ parse_with: any = (parser, args: any)
                 i = i + 1
                 break
           if not matched
-            if rest:len() > 0 and i + 1 <= args:len() and args(i + 1):sub(1, 1) != "-"
-              opts(name) = args(i + 1)
+            if rest:len() > 0 and i + 1 <= args:len() and args[i + 1]:sub(1, 1) != "-"
+              opts(name) = args[i + 1]
               i = i + 2
             else
               opts(name) = true

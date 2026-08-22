@@ -31,7 +31,7 @@ fit: any = (model, batches, epochs, lr)
   for e = 1, epochs
     total = 0.0
     for i = 1, batches:len()
-      b = batches(i)
+      b = batches[i]
       total = total + step(model, b.x, b.y, lr)
     print("epoch %d loss %.4f":format(e, total / batches:len()))
   return model

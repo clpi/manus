@@ -131,7 +131,7 @@ safetensors_encode: any = (st: any)
   header = {}
   offset = 0
   for name, tensor in st.tensors
-    header(name) =
+    header[name] =
       dtype = tensor.dtype
       shape = tensor.shape
       data_offsets = { offset, offset + tensor.size }

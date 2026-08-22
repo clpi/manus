@@ -11,7 +11,7 @@ shift: str = (s: str, delta: i64)
   while i < n
     ch = s:sub(i + 1, i + 1)
     piece = ch
-    b = s(i)
+    b = s[i]
     if b >= 97 and b <= 122
       pos = (b - 97 + delta) % 26 + 1
       piece = alpha:sub(pos, pos)

@@ -16,7 +16,7 @@ block: any = (heads, dim)
 stack: any = (layers, heads, dim)
   blocks = {}
   for i = 1, layers
-    blocks(i) = block(heads, dim)
+    blocks[i] = block(heads, dim)
   return {
     type = "transformer",
     layers = layers,

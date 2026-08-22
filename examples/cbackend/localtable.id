@@ -17,15 +17,15 @@
 # @corpus current
 pick: str = (i: i64)
   glyph = { "M", "CM", "D" }
-  glyph(i)
+  glyph[i]
 
 num: i64 = (i: i64)
   value = { 1000, 900, 500 }
-  value(i)
+  value[i]
 
 frac: f64 = (i: i64)
   parts = { 1.5, 2.5, 3.5 }
-  parts(i)
+  parts[i]
 
 a = pick(2)
 b = num(2)

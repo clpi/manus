@@ -342,9 +342,9 @@ query: any = (db: any, sql: str)
       else
         # SQLITE_NULL or unknown
         val = nil
-      row(name) = val
+      row[name] = val
       col_idx = col_idx + 1
-    rows(row_idx) = row
+    rows[row_idx] = row
     row_idx = row_idx + 1
     rc = sqlite3_step(stmt)
 

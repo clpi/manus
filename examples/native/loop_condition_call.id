@@ -27,6 +27,6 @@ prec: i64 = (o: i64)
 main: i64 = ()
     ops = { 1, 1, 1, 40, 40 }
     ot = 1
-    while ot > 0 and ops(ot) != 40 and prec(ops(ot)) >= prec(1)
+    while ot > 0 and ops[ot] != 40 and prec(ops[ot]) >= prec(1)
         ot += 1
     ot - 1

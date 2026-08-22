@@ -58,7 +58,7 @@ flush: str = (w: any)
     line = ""
     c = 1
     while c <= row:len()
-      cell = to(str)(row(c))
+      cell = to(str)(row[c])
       width = w.col_widths(c) + w.padding
       if width < w.minwidth
         width = w.minwidth

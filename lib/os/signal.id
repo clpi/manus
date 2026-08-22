@@ -86,7 +86,7 @@ name: str = (sig: i64)
     [SIGPROF] = "SIGPROF",
     [SIGWINCH] = "SIGWINCH"
   }
-  names(sig) or "UNKNOWN"
+  names[sig] or "UNKNOWN"
 
 from_name: i64 = (name: str)
   names = {
@@ -112,7 +112,7 @@ from_name: i64 = (name: str)
   clean = name
   if name:sub(1, 3) == "SIG"
     clean = name:sub(4)
-  names(clean) or 0
+  names[clean] or 0
 
 is_fatal: bool = (sig: i64)
   sig == SIGKILL or sig == SIGTERM or sig == SIGHUP

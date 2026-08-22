@@ -171,13 +171,13 @@ reverse_bytes_64: i64 = (x: i64)
   parts = {}
   i = 0
   while i < 8
-    parts(8 - i) = x % 256
+    parts[8 - i] = x % 256
     x = x / 256
     i = i + 1
   v = 0
   i = 1
   while i <= 8
-    v = v * 256 + parts(i)
+    v = v * 256 + parts[i]
     i = i + 1
   v
 

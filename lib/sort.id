@@ -6,57 +6,57 @@
 insertion = (arr: any, lo: any, hi: any, less: any)
   i = lo + 1
   while i <= hi
-    key = arr(i)
+    key = arr[i]
     j = i
-    while j > lo and less(key, arr(j - 1))
-      arr(j) = arr(j - 1)
+    while j > lo and less(key, arr[j - 1])
+      arr[j] = arr[j - 1]
       j = j - 1
-    arr(j) = key
+    arr[j] = key
     i = i + 1
 
 # Median-of-three pivot selection.
 median3: any = (arr: any, lo: any, hi: any, less: any)
   mid = lo + (hi - lo) / 2
-  if less(arr(mid), arr(lo))
-    tmp = arr(lo)
-    arr(lo) = arr(mid)
-    arr(mid) = tmp
-  if less(arr(hi), arr(lo))
-    tmp = arr(lo)
-    arr(lo) = arr(hi)
-    arr(hi) = tmp
-  if less(arr(hi), arr(mid))
-    tmp = arr(mid)
-    arr(mid) = arr(hi)
-    arr(hi) = tmp
-  arr(mid)
+  if less(arr[mid], arr[lo])
+    tmp = arr[lo]
+    arr[lo] = arr[mid]
+    arr[mid] = tmp
+  if less(arr[hi], arr[lo])
+    tmp = arr[lo]
+    arr[lo] = arr[hi]
+    arr[hi] = tmp
+  if less(arr[hi], arr[mid])
+    tmp = arr[mid]
+    arr[mid] = arr[hi]
+    arr[hi] = tmp
+  arr[mid]
 
 # Partition for quicksort (Lomuto scheme).
 partition: any = (arr: any, lo: any, hi: any, less: any)
   pivot = median3(arr, lo, hi, less)
   # move pivot to hi-1
-  tmp = arr(hi - 1)
-  arr(hi - 1) = arr(lo + (hi - lo) / 2)
+  tmp = arr[hi - 1]
+  arr[hi - 1] = arr(lo + (hi - lo) / 2)
   arr(lo + (hi - lo) / 2) = tmp
-  pivot = arr(hi - 1)
+  pivot = arr[hi - 1]
   i = lo
   j = hi - 1
   while true
     i = i + 1
-    while less(arr(i), pivot)
+    while less(arr[i], pivot)
       i = i + 1
     j = j - 1
-    while less(pivot, arr(j))
+    while less(pivot, arr[j])
       j = j - 1
     if i >= j
       break
-    tmp = arr(i)
-    arr(i) = arr(j)
-    arr(j) = tmp
+    tmp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = tmp
   # place pivot
-  tmp = arr(i)
-  arr(i) = arr(hi - 1)
-  arr(hi - 1) = tmp
+  tmp = arr[i]
+  arr[i] = arr[hi - 1]
+  arr[hi - 1] = tmp
   i
 
 # Introsort-style quicksort with insertion-sort cutoff.
@@ -133,7 +133,7 @@ sorted: bool = (arr: any, less: any)
   n = arr:len()
   i = 2
   while i <= n
-    if less(arr(i), arr(i - 1))
+    if less(arr[i], arr[i - 1])
       return false
     i = i + 1
   true
@@ -160,9 +160,9 @@ bsearch: any = (arr: any, v: any, less: any)
   hi = n
   while lo < hi
     mid = lo + (hi - lo) / 2
-    if less(v, arr(mid + 1))
+    if less(v, arr[mid + 1])
       hi = mid
-    else(less(arr(mid + 1), v))
+    else(less(arr[mid + 1], v))
       lo = mid + 1
     else
       return mid + 1
@@ -176,17 +176,17 @@ reverse = (arr: any)
   i = 1
   j = n
   while i < j
-    tmp = arr(i)
-    arr(i) = arr(j)
-    arr(j) = tmp
+    tmp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = tmp
     i = i + 1
     j = j - 1
 
 # swap: swap two indices.
 swap = (arr: any, i: any, j: any)
-  tmp = arr(i)
-  arr(i) = arr(j)
-  arr(j) = tmp
+  tmp = arr[i]
+  arr[i] = arr[j]
+  arr[j] = tmp
 
 # slice: sort a sub-range [from, to] of arr.
 slice = (arr: any, from: any, to: any, less: any)

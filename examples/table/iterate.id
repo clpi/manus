@@ -7,16 +7,16 @@ for x in xs
   x = x + 10
 
 assert(sum == 6)
-assert(xs(1) == 11)
-assert(xs(2) == 12)
-assert(xs(3) == 13)
+assert(xs[1] == 11)
+assert(xs[2] == 12)
+assert(xs[3] == 13)
 
 for i, v in xs
   v = v + i
 
-assert(xs(1) == 12)
-assert(xs(2) == 14)
-assert(xs(3) == 16)
+assert(xs[1] == 12)
+assert(xs[2] == 14)
+assert(xs[3] == 16)
 
 scores =
   ada = 10
@@ -40,8 +40,8 @@ for _, v in xs
   v = v + 1
 
 assert(legacy == 42)
-assert(xs(1) == 13)
-assert(xs(2) == 15)
-assert(xs(3) == 17)
+assert(xs[1] == 13)
+assert(xs[2] == 15)
+assert(xs[3] == 17)
 
 print("direct table iteration ok")

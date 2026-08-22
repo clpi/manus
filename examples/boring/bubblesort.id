@@ -6,10 +6,10 @@ main: i64 = ()
   n = 10
   for i = 1, n - 1
     for j = 1, n - i
-      if xs(j) > xs(j + 1)
-        t = xs(j)
-        xs(j) = xs(j + 1)
-        xs(j + 1) = t
+      if xs[j] > xs[j + 1]
+        t = xs[j]
+        xs[j] = xs[j + 1]
+        xs[j + 1] = t
   out = ""
   for v in xs
     if out == ""

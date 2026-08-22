@@ -62,12 +62,12 @@ parse: any = (fs: any, argv: any)
   fname: any = nil
   fval: any = nil
   while i <= n
-    arg = argv(i)
+    arg = argv[i]
     if arg == "--"
       # all remaining are positional
       i = i + 1
       while i <= n
-        fs.args(fs.args:len() + 1) = argv(i)
+        fs.args(fs.args:len() + 1) = argv[i]
         i = i + 1
       break
     # long flag: #name or #name=value
@@ -95,7 +95,7 @@ parse: any = (fs: any, argv: any)
           if i > n
             stdout:write("flag: --" .. fname .. " requires a value\n")
             return fs, false
-          fval = argv(i)
+          fval = argv[i]
         if f.kind == "int"
           f.value = fval:to(i64)
         else
@@ -129,7 +129,7 @@ parse: any = (fs: any, argv: any)
             if i > n
               stdout:write("flag: -" .. fname .. " requires a value\n")
               return fs, false
-            fval = argv(i)
+            fval = argv[i]
           if f.kind == "int"
             f.value = fval:to(i64)
           else

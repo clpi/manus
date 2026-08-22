@@ -25,7 +25,7 @@ format_int: str = (v: any, base: any)
   s = ""
   i = out:len()
   while i >= 1
-    s = s .. out(i)
+    s = s .. out[i]
     i = i - 1
   if neg
     s = "-" .. s
