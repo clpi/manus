@@ -281,7 +281,13 @@ consumers packadjustment packAdjustment
 consumers aggregate aggregate aggregateMembers aggregateAt aggregatePlace aggregateAccess aggregateProducer boundAggregateAtPlace
 consumers aggregateorigin aggregateOrigin
 consumers exacti64 exactI64
-consumers sourcequote sourceQuote
+# The accessors actually in use are `sourceQuoteValue(` and
+# `sourceQuoteOfExpr(`. Naming only `sourceQuote` built the pattern
+# `\.sourceQuote\(`, whose trailing paren excludes both by construction -- so
+# this gate reported CONSUMER-ZERO for a family `dnir_lower.zig:637` reads at
+# HEAD. An instrument that names its subject by a prefix and anchors on `(`
+# finds only the accessor whose name is exactly the prefix.
+consumers sourcequote sourceQuote sourceQuoteOfExpr sourceQuoteValue
 consumers origin valueOrigin
 consumers draw applicationWorld
 consumers world worldMembers
