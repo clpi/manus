@@ -5923,6 +5923,10 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     cg.target = target;
     cg.idol_mode = ps.sem.idol_mode;
     cg.lib_mode = lib_mode;
+    // gap[166]: home resolution is the checked program's answer, so the
+    // generator that embeds those homes must be holding it. Without this the
+    // module embed asks nothing and every home is unknown.
+    cg.checked_sema = &ps.sem;
     cg.foreign_records = &ps.sem.foreign_records;
     cg.foreign_functions = &ps.sem.foreign_functions;
     cg.emit_module(&ps.mod) catch |e| {

@@ -844,7 +844,7 @@ pub const Sema = struct {
         return answer;
     }
 
-    fn peekForeignHome(self: *const Sema, spelling: []const u8) ?ForeignHome {
+    pub fn peekForeignHome(self: *const Sema, spelling: []const u8) ?ForeignHome {
         if (self.foreign_homes.get(spelling)) |cached| return cached;
         const loader = self.home_loader orelse return null;
         return loader.load(loader.ctx, spelling);

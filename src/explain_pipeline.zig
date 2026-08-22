@@ -65,6 +65,9 @@ pub fn runModuleCodegen(
     cg.stdlib_root = compiler_lib_root;
     cg.target = target;
     cg.idol_mode = sem.idol_mode;
+    // gap[166]: the generator asks the resolver which file a home names; it no
+    // longer searches for one itself.
+    cg.checked_sema = sem;
     cg.foreign_records = &sem.foreign_records;
     cg.foreign_functions = &sem.foreign_functions;
     cg.emit_module(mod) catch |e| switch (e) {

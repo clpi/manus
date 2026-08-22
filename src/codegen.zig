@@ -3804,7 +3804,10 @@ pub const CodeGen = struct {
         if (native_diag) std.debug.print("[native-diag] CALLED idol_mode={} target={s} load={} lib={} test={} bench={}\n", .{ self.idol_mode, self.target, self.load_chunk, self.lib_mode, self.test_mode, self.bench_mode });
         self.current_module = mod;
         self.collect_req_module_bindings(mod) catch {
-            self.nativeDiagFail("module-bindings");
+            // gap[166]: an allocator failure while recording req bindings is not
+            // a MODULE VERDICT, and naming it one put a module-shaped reason in
+            // front of the graph's refusal. `nofit` records the site and nothing
+            // more.
             return self.nofit(@src());
         };
         self.noteSubjectDescriptors(mod) catch {
@@ -3974,6 +3977,52 @@ pub const CodeGen = struct {
         return true;
     }
 
+
+    /// gap[166]. THE MODULE QUESTION MOVED; IT DID NOT VANISH.
+    ///
+    /// `stmt_is_native_scalar` used to answer "does this file-scope home
+    /// binding lower natively?" by probing the filesystem, and it answered it
+    /// 210 lines BEFORE the graph is lifted, as a hard gate on the direct
+    /// backend. That is the pre-graph module reasoning gap[166] deletes: a
+    /// pre-graph gate cannot have a sound module answer, so it now admits the
+    /// SHAPE and the graph answers (`unresolved-application-facts`).
+    ///
+    /// This generator is not a pre-graph gate. It is the retired C bootstrap's
+    /// EMITTER, it runs after `collect_req_module_bindings`, and the native
+    /// scalar profile it selects has no way to represent a binding that will be
+    /// emitted as a runtime require. So the verdict lives HERE, once, on the
+    /// consumer that needs it — not in a predicate the direct backend shares.
+    ///
+    /// MEASURED, `idol dump-c` over all 1005 tracked `.id`: without this,
+    /// `lib/token/grammarrole.id` chose the native-scalar profile for
+    /// `grammar = req("std.compiler.token")` (a home that resolves to no file)
+    /// and then died on "codegen refused a binding whose value it cannot
+    /// represent" — 6400 lines of C to exit 1. With it, all 1005 rows and all
+    /// 815 emitted C artifacts are byte-identical to the unpatched compiler.
+    fn moduleHomeBindingsAreNativeDirect(self: *CodeGen, mod: *const ast.Module) bool {
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| for (ld.inits) |init_expr| {
+                    if (req_path_from_expr(init_expr)) |path| {
+                        if (!self.req_module_is_native_direct(path)) return false;
+                    }
+                },
+                .assign => |*as| for (as.values) |value| {
+                    if (req_path_from_expr(value)) |path| {
+                        if (!self.req_module_is_native_direct(path)) return false;
+                    }
+                },
+                .global_decl => |*gd| for (gd.inits) |init_expr| {
+                    if (req_path_from_expr(init_expr)) |path| {
+                        if (!self.req_module_is_native_direct(path)) return false;
+                    }
+                },
+                else => {},
+            }
+        }
+        return true;
+    }
+
     fn all_module_functions_native(self: *CodeGen, mod: *const ast.Module) bool {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .func_decl) continue;
@@ -3988,19 +4037,20 @@ pub const CodeGen = struct {
     fn module_top_level_is_native(self: *CodeGen, mod: *const ast.Module) bool {
         for (mod.body.stmts) |*stmt| {
             switch (stmt.*) {
+                // gap[166]: both arms below used to answer "is this top-level
+                // module binding native?" by probing the filesystem
+                // (`find_module_file_for_req`) or an emission record. Same
+                // deletion as the precheck gate: a home binding is admitted by
+                // shape and the module question belongs to the graph.
                 .local_decl => |*ld| {
                     for (ld.inits) |init_expr| {
-                        if (req_path_from_expr(init_expr)) |path| {
-                            if (self.find_module_file_for_req(path) == null) return false;
-                        } else if (!self.expr_is_native_scalar(init_expr)) return false;
+                        if (req_path_from_expr(init_expr) != null) continue;
+                        if (!self.expr_is_native_scalar(init_expr)) return false;
                     }
                 },
                 .assign => |*as| {
                     for (as.values) |value| {
-                        if (req_path_from_expr(value)) |path| {
-                            if (self.req_module_is_native_direct(path)) continue;
-                            return false;
-                        }
+                        if (req_path_from_expr(value) != null) continue;
                         if (!self.expr_is_native_scalar(value)) return false;
                     }
                 },
@@ -4512,62 +4562,27 @@ pub const CodeGen = struct {
                     }
                 }
                 for (gd.inits, 0..) |expr, i| {
-                    if (req_path_from_expr(expr)) |path| {
-                        if (self.req_module_is_native_direct(path)) continue;
-                        self.nativeDiagFail("global-decl-req-nonnative");
-                        break :blk false;
-                    }
-                    // `global C = std.compiler.comptime` — a MODULE binding
-                    // written as an ambient dotted path instead of a `req`
-                    // string. `init_is_native_scalar` says yes (an ambient path
-                    // is a static path and folds), but the binding still names a
-                    // module, so the same producer/consumer mismatch applies:
-                    // measured, `lib/compiler/rewrite.duo` chose native-scalar
-                    // and emitted `use of undeclared identifier
-                    // duo_g_std_compiler_rewrite_C` plus four boxed-value type
-                    // errors. It is the `req` case above wearing different
-                    // syntax, so it takes the same predicate.
-                    // Refused outright rather than routed through
-                    // `req_module_is_native_direct`, which answers TRUE for any
-                    // path that merely RESOLVES to a file (its last line is
-                    // `find_module_file_for_req(...) != null`) and so cannot
-                    // distinguish a native dependency from a runtime one here.
-                    // The refusal above was right to distrust
-                    // `req_module_is_native_direct` WHOLE, but it threw away the
-                    // sound part with the unsound part. That predicate has three
-                    // tiers: (1) `embedded_module_native` — what the module was
-                    // ACTUALLY emitted as, (2) `embedded_req_is_native`, and
-                    // (3) a bare `find_module_file_for_req(..) != null`, which
-                    // means only "a file exists" and is what cannot tell a
-                    // native dependency from a runtime one. Tiers 1-2 consult the
-                    // emission record and are exactly the evidence this site
-                    // needs. So: accept when the module was MEASURED native,
-                    // refuse otherwise — never on file existence alone.
-                    var abuf: [256]u8 = undefined;
-                    if (ambient_dotted_path(expr, &abuf)) |dotted| {
-                        if (self.find_module_file_for_req(dotted)) |mod_path| {
-                            // ORDERING, not nativeness. Both records are populated
-                            // AT EMISSION, and `main.zig` runs this precheck on a
-                            // standalone CodeGen BEFORE anything is emitted — so an
-                            // absent record means "not emitted yet", and reading it
-                            // as "not native" refuses clean modules for not having
-                            // happened. Measured: lib/compiler/bind.duo
-                            // prechecks CLEAN while its consumer bailed here.
-                            // With no record, defer to the SAME predicate the `req`
-                            // branch above already trusts — this is the `req` case
-                            // wearing different syntax, and two spellings of one
-                            // concept may not disagree about their own soundness.
-                            const emitted_native = if (self.embedded_module_native.get(mod_path)) |e|
-                                e
-                            else
-                                self.req_module_is_native_direct(dotted);
-                            if (!emitted_native) {
-                                self.nativeDiagFail("global-decl-module-path");
-                                break :blk false;
-                            }
-                            continue;
-                        }
-                    }
+                    // gap[166] MODULE-ZERO. `global x = req "a.b"` binds a HOME.
+                    // Whether that home lowers natively is a graph fact, and this
+                    // gate runs 210 lines BEFORE the graph is lifted, so the only
+                    // thing it could consult was a filesystem probe
+                    // (`req_module_is_native_direct` -> `find_module_file_for_req`)
+                    // — `path == identity`, which `docs/spec/source.md` forbids by
+                    // name. The probe is deleted and no verdict replaces it: this
+                    // gate admits the STATEMENT SHAPE and the graph answers the
+                    // module question, which it already does
+                    // (`unresolved-application-facts`). A refusal minted here
+                    // preempted that answer, because `main.zig` binds the graph
+                    // occurrence only when the precheck has no reason of its own.
+                    if (req_path_from_expr(expr) != null) continue;
+                    // gap[166]. `global C = std.compiler.comptime` — a module
+                    // binding written as an ambient dotted path. This arm asked
+                    // the FILESYSTEM whether that path named a file and then
+                    // asked an emission record whether the file had been emitted
+                    // native, both before any graph existed. Deleted with the
+                    // `req` verdict above: an ambient dotted path is an ordinary
+                    // static path here, and `init_is_native_scalar` below folds
+                    // it exactly as it folds every other one.
                     const hint: RT = if (i < gd.names.len) self.resolve_binding_type(&gd.names[i]) else .any;
                     if (!self.init_is_native_scalar(expr, hint)) {
                         self.nativeDiagFailFmt("global-decl-init:{s}", .{@tagName(expr.*)});
@@ -4595,14 +4610,12 @@ pub const CodeGen = struct {
                 // admits the surface shape only; DNIR must consume the exact
                 // graph PackAdjustment and refuses when that fact is absent.
                 if (as.targets.len != as.values.len and as.values.len != 1) break :blk false;
-                if (as.targets.len == 1 and as.values.len == 1 and as.targets[0].* == .name) {
-                    var pathbuf: [512]u8 = undefined;
-                    if (self.moduleBindingPath(as.values[0], &pathbuf)) |path| {
-                        if (self.req_module_is_native_direct(path)) break :blk true;
-                        self.nativeDiagFail("assign-module-nonnative");
-                        break :blk false;
-                    }
-                }
+                // gap[166]: the whole-statement module verdict that used to
+                // stand here (`moduleBindingPath` -> `req_module_is_native_direct`)
+                // is deleted. It was the only arm in this gate that ever minted a
+                // module-shaped reason on the corpus, and the reason it minted
+                // stood in front of the graph's own refusal for the one program
+                // that reached it.
                 for (as.targets) |target| {
                     if (!self.lvalue_is_native_scalar(target)) {
                         self.nativeDiagFail("assign-target");
@@ -4610,17 +4623,12 @@ pub const CodeGen = struct {
                     }
                 }
                 for (as.values, 0..) |value, i| {
-                    if (req_path_from_expr(value)) |path| {
-                        if (self.req_module_is_native_direct(path)) continue;
-                        self.nativeDiagFail("assign-req-nonnative");
-                        break :blk false;
-                    }
-                    var pathbuf: [512]u8 = undefined;
-                    if (self.moduleBindingPath(value, &pathbuf)) |path| {
-                        if (self.req_module_is_native_direct(path)) continue;
-                        self.nativeDiagFail("assign-module-nonnative");
-                        break :blk false;
-                    }
+                    // gap[166]: `x = req "a.b"` is a home binding; see the
+                    // `.global_decl` arm above. Shape admitted, module question
+                    // left to the graph. The ambient-dotted twin of this arm is
+                    // deleted outright — such a path is an ordinary static path
+                    // to `init_is_native_scalar` below.
+                    if (req_path_from_expr(value) != null) continue;
                     const hint: RT = if (i < as.targets.len and as.targets[i].* == .name)
                         self.global_type(as.targets[i].name.ident) orelse .any
                     else
@@ -6351,6 +6359,11 @@ pub const CodeGen = struct {
 
         self.collect_req_module_bindings(mod) catch {};
         self.native_scalar_mode = self.can_emit_native_scalar_module(mod);
+        // gap[166]: see `moduleHomeBindingsAreNativeDirect`. The pre-graph gate
+        // no longer answers this; the emitter that needs the answer asks it.
+        if (self.native_scalar_mode and !self.moduleHomeBindingsAreNativeDirect(mod)) {
+            self.native_scalar_mode = false;
+        }
         if (self.native_scalar_mode and !self.req_deps_allow_full_native(mod)) {
             self.native_scalar_mode = false;
         }
@@ -24333,10 +24346,6 @@ pub const CodeGen = struct {
         if (block.tail_expr) |tail| try self.collect_require_names(tail, names);
     }
 
-    fn find_module_path(self: *CodeGen, base_dir: []const u8, mod_name: []const u8) ?[]const u8 {
-        const source = home_resolve.moduleFileUnder(self.alloc, self.io, base_dir, mod_name) orelse return null;
-        return source.path;
-    }
 
     fn emit_required_modules(self: *CodeGen, mod: *const ast.Module) E!void {
         var names: std.ArrayList([]const u8) = .empty;
@@ -24356,28 +24365,6 @@ pub const CodeGen = struct {
 
         var seen: std.StringArrayHashMapUnmanaged(void) = .{};
         defer seen.deinit(self.alloc);
-        const dir = if (self.src_path.len > 0) std.fs.path.dirname(self.src_path) orelse "." else ".";
-
-        // Find the project root: the parent of the `src` directory that contains the source file.
-        // This makes `req "src.foo"` resolve to `<project_root>/src/foo.duo` regardless of whether
-        // the current source is `src/main.duo` or `src/wasm/init.duo`.
-        const project_root = blk: {
-            var d = dir;
-            while (d.len > 0) {
-                var pbuf: [1024]u8 = undefined;
-                const path_to_check = std.fmt.bufPrint(&pbuf, "{s}/src", .{d}) catch break;
-                const cwd = Io.Dir.cwd();
-                var fd = Io.Dir.openDir(cwd, self.io, path_to_check, .{}) catch {
-                    if (std.mem.eql(u8, d, ".")) break;
-                    d = std.fs.path.dirname(d) orelse ".";
-                    continue;
-                };
-                fd.close(self.io);
-                break :blk d;
-            }
-            break :blk dir;
-        };
-
         var embedded: std.ArrayList(struct { name: []const u8, cname: []const u8 }) = .empty;
         defer {
             for (embedded.items) |e| self.alloc.free(e.cname);
@@ -24403,42 +24390,11 @@ pub const CodeGen = struct {
             if (self.src_path.len == 0) continue;
             if (std.mem.eql(u8, name, "std")) continue;
 
-            // Handle collection-style namespaces: vendor.xxx → vendor/xxx, std.core.xxx → lib/core/xxx
-            const vendor_prefix = "vendor.";
-            const core_prefix = "std.core.";
-            const has_vendor = std.mem.startsWith(u8, name, vendor_prefix);
-            const has_core = std.mem.startsWith(u8, name, core_prefix);
-            const strip_len: usize = if (has_vendor) vendor_prefix.len else if (has_core) core_prefix.len else 0;
-            const mod_path_name = if (strip_len > 0) blk: {
-                const s = try self.alloc.dupe(u8, name[strip_len..]);
-                for (s) |*c| {
-                    if (c.* == '.') c.* = '/';
-                }
-                break :blk s;
-            } else blk: {
-                const s = try self.alloc.dupe(u8, name);
-                for (s) |*c| {
-                    if (c.* == '.') c.* = '/';
-                }
-                break :blk s;
-            };
-            defer self.alloc.free(mod_path_name);
-
-            var mod_path: ?[]const u8 = null;
-            if (self.find_module_path(project_root, mod_path_name)) |path| {
-                mod_path = path;
-            } else if (self.stdlib_root) |root| {
-                mod_path = self.find_module_path(root, mod_path_name);
-            }
-            if (mod_path == null) {
-                mod_path = self.find_module_path("lib", mod_path_name);
-            }
-            if (mod_path == null and has_vendor) {
-                mod_path = self.find_module_path("vendor", mod_path_name);
-            }
-            if (mod_path == null and has_core) {
-                mod_path = self.find_module_path("lib/core", mod_path_name);
-            }
+            // ONE RESOLVER. This block carried a verbatim third copy of the
+            // root list and prefix stripping that `find_module_file_for_req`
+            // carried a second copy of. Both are gone; the question goes to the
+            // resolver that checked the program.
+            const mod_path: ?[]const u8 = self.find_module_file_for_req(name);
 
             if (mod_path == null) continue;
             defer self.alloc.free(mod_path.?);
@@ -24583,54 +24539,29 @@ pub const CodeGen = struct {
         }
     }
 
-    fn project_root_dir(self: *const CodeGen) []const u8 {
-        if (self.src_path.len == 0) return ".";
-        const dir = std.fs.path.dirname(self.src_path) orelse ".";
-        var d = dir;
-        while (d.len > 0) {
-            var pbuf: [1024]u8 = undefined;
-            const path_to_check = std.fmt.bufPrint(&pbuf, "{s}/src", .{d}) catch break;
-            const cwd = Io.Dir.cwd();
-            var fd = Io.Dir.openDir(cwd, self.io, path_to_check, .{}) catch {
-                if (std.mem.eql(u8, d, ".")) break;
-                d = std.fs.path.dirname(d) orelse ".";
-                continue;
-            };
-            fd.close(self.io);
-            return d;
-        }
-        return dir;
-    }
 
+    /// THE FILE A HOME NAMES IS RESOLUTION'S ANSWER, NOT A SEARCH DONE HERE.
+    ///
+    /// This used to carry its own root list (project root, stdlib root, a bare
+    /// `lib`, `vendor/`, `lib/core/`) and its own project-root walk, which made
+    /// it a SECOND authority for "which file is `compiler.lexer`". It answered
+    /// differently from the one the program is actually checked and lowered
+    /// against: `home_resolve.resolve` searches the SIBLING DIRECTORY FIRST and
+    /// refuses a module naming itself, and neither rule existed here. Two
+    /// answers to one question is the MODULE-ZERO violation gap[166] names, and
+    /// the repair is to stop asking a filesystem and start asking the resolver
+    /// that already answered.
+    ///
+    /// Fail-closed when there is no checked semantics attached: an absent
+    /// resolver means the home is UNKNOWN, and reconstructing it from a path
+    /// here is exactly the rediscovery being deleted.
+    ///
+    /// The result is DUPED so ownership is unchanged for every caller — the
+    /// resolver owns its copy, and the one caller that frees this one still may.
     fn find_module_file_for_req(self: *CodeGen, req_name: []const u8) ?[]const u8 {
-        const project_root = self.project_root_dir();
-        const vendor_prefix = "vendor.";
-        const core_prefix = "std.core.";
-        const has_vendor = std.mem.startsWith(u8, req_name, vendor_prefix);
-        const has_core = std.mem.startsWith(u8, req_name, core_prefix);
-        const strip_len: usize = if (has_vendor) vendor_prefix.len else if (has_core) core_prefix.len else 0;
-        const mod_path_name = blk: {
-            const s = req_name[strip_len..];
-            var buf: [512]u8 = undefined;
-            if (s.len > buf.len) return null;
-            for (s, 0..) |c, i| {
-                buf[i] = if (c == '.') '/' else c;
-            }
-            break :blk buf[0..s.len];
-        };
-
-        if (self.find_module_path(project_root, mod_path_name)) |path| return path;
-        if (self.stdlib_root) |root| {
-            if (self.find_module_path(root, mod_path_name)) |path| return path;
-        }
-        if (self.find_module_path("lib", mod_path_name)) |path| return path;
-        if (has_vendor) {
-            if (self.find_module_path("vendor", mod_path_name)) |path| return path;
-        }
-        if (has_core) {
-            if (self.find_module_path("lib/core", mod_path_name)) |path| return path;
-        }
-        return null;
+        const checked = self.checked_sema orelse return null;
+        const resolved = checked.peekForeignHome(req_name) orelse return null;
+        return self.alloc.dupe(u8, resolved.path) catch null;
     }
 
     /// True when `req "path"` resolves to a module already embedded for native-direct dispatch.
