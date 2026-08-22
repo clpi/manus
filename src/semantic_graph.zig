@@ -6560,7 +6560,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     const source =
         \\pairs = {{10, 11}, {20, 21}, {30, 31}}
         \\pick: i64 = (i: i64)
-        \\    pairs(i)(2)
+        \\    pairs[i][2]
         \\main: i64 = ()
         \\    pick(2)
     ;
@@ -6624,7 +6624,9 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 7), parsed.value.object.get("version").?.integer);
+    // The schema went to 8 in `2918277e` and this assertion was not moved with
+    // it. The other writeJson test in this file already asserts 8.
+    try std.testing.expectEqual(@as(i64, 8), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
     try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
@@ -6684,11 +6686,11 @@ test "semantic_graph: local nested and module nested access share one fact famil
     const sources = [_][]const u8{
         \\pairs = {{10, 11}, {20, 21}, {30, 31}}
         \\pick: i64 = (i: i64)
-        \\    pairs(i)(2)
+        \\    pairs[i][2]
         ,
         \\pick: i64 = (i: i64)
         \\    pairs = {{10, 11}, {20, 21}, {30, 31}}
-        \\    pairs(i)(2)
+        \\    pairs[i][2]
         ,
     };
     for (sources, 0..) |source, source_index| {
