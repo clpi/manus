@@ -20,6 +20,13 @@
 #     apparent exit-code regressions (0 -> 1) on programs whose output was
 #     byte-identical. Each arm gets its own cwd here.
 #
+#   TRAP 5 — `$?` after a pipe is the PIPE's status, not the command's.
+#     `gate/x.sh | tail -3; echo rc=$?` reports tail's 0 and reads as a
+#     pass. This hid a genuinely failing gate in this session. Read the
+#     status from the direct command, or use "${PIPESTATUS[0]}" in bash
+#     ("${pipestatus[1]}" in zsh — the names and indices BOTH differ, so
+#     a snippet copied between the two shells is silently wrong).
+#
 #   TRAP 4 — a timeout emits NO diagnostic.
 #     A killed run produces empty stderr, which a naive census scores as a
 #     CLEAN COMPILE. The error is silent and OPTIMISTIC. Under load this
