@@ -58,3 +58,13 @@ if [ -n "$budget" ]; then
   [ "$refuse" -le "$budget" ] || { echo "gate/attribution.sh: RATCHET BROKEN" >&2; exit 1; }
 fi
 exit 0
+
+# LIB-ROOT TRAP, recorded because it is invisible and it bites hard:
+# `detectCompilerLibRoot(..., args[0])` in src/main.zig:483 resolves the
+# compiler's `lib/` from WHERE THE BINARY LIVES, not from the cwd. Passing
+# IDOL_BIN from a mirror therefore measures the LIVE corpus against the
+# MIRROR's lib/. Two binaries from different mirrors likewise compare two
+# different lib/ trees, not one. Measured bound at the time of writing: only
+# 4 of 943 corpus files reference `req(` at all, and 3 of 441 refusing ones,
+# so the effect on this census is negligible — but a sweep over `req`-heavy
+# source must build in place or the number is silently wrong.
