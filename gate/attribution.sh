@@ -44,7 +44,14 @@ refuse=$((total - clean - tmo))
   echo "== FIRST BLOCKING SEMANTIC EDGE =="
   echo "corpus $total   compile+run $clean   refuse $refuse   timeout $tmo (>${TMO}s, NOT counted as refusal)"
   echo
-  echo "-- producer owning the first blocking edge --"
+  # NOT AN INDEPENDENT OBSERVATION. src/native_backend.zig:242 reads
+  #   const producer = if (err == error.SemanticFactsInvalid) "graph"
+  #                    else "dnir lower";
+  # so this column RESTATES the error code and adds nothing to it. Measured:
+  # DNB001 333 / DNB011 92 against dnir-lower 333 / graph 91 — the same split
+  # twice. Report it as the code split it is; do not cite it as corroboration
+  # of a reason histogram, and do not call it attribution.
+  echo "-- error code restated as producer (NOT independent of the code) --"
   grep -oE 'producer: [a-z ]+' "$tmp.rec" | sed 's/producer: //' \
     | sort | uniq -c | sort -rn
   echo
