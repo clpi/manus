@@ -915,6 +915,22 @@ pub const SemanticGraph = struct {
     aggregate_origins: std.AutoHashMapUnmanaged(usize, id) = .empty,
     exact_i64_facts: std.ArrayListUnmanaged(ExactI64) = .empty,
     exact_i64_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
+    /// Physical index from an integer literal's own AST node to the graph value
+    /// that owns its content, exactly as `source_quote_by_ast` does for quotes,
+    /// and for exactly the same reason: `exactI64` answers over a value id, and
+    /// a realization phase holds an `*const Expr`. Without this face every
+    /// consumer re-parsed the literal off the AST -- `intLiteralStep` in
+    /// `dnir_lower.zig` at 19 sites, which `gate/coverage.sh` counts as the
+    /// `exact.i64` rival authority.
+    ///
+    /// It also enforces ONE ROW PER LITERAL OCCURRENCE. The denominator this
+    /// family is measured against is integer literal TOKENS counted off the
+    /// source text, so a second entity publishing the same token would push
+    /// reach past 100% while telling nobody anything new.
+    ///
+    /// Deletion condition: the same one `source_quote_by_ast` carries --
+    /// realization work items carrying the value id directly.
+    exact_i64_by_ast: std.AutoHashMapUnmanaged(*const Expr, id) = .empty,
     source_quote_facts: std.ArrayListUnmanaged(SourceQuoteFact) = .empty,
     source_quote_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
     /// Physical index from the literal's own AST node to the graph value that
@@ -1006,6 +1022,7 @@ pub const SemanticGraph = struct {
         self.aggregate_origins.deinit(self.alloc);
         self.exact_i64_facts.deinit(self.alloc);
         self.exact_i64_rows.deinit(self.alloc);
+        self.exact_i64_by_ast.deinit(self.alloc);
         self.source_quote_facts.deinit(self.alloc);
         self.source_quote_rows.deinit(self.alloc);
         self.source_quote_by_ast.deinit(self.alloc);
@@ -1560,14 +1577,60 @@ pub const SemanticGraph = struct {
         return fact.content;
     }
 
+    /// THE EXACT CONTENT OF A LITERAL, ASKED WITH THE LITERAL.
+    ///
+    /// The face a realization phase can actually use, because it holds an
+    /// `*const Expr` and not a value id. Its absence is why `intLiteralStep`
+    /// exists as an AST re-parse in `dnir_lower.zig`.
+    pub fn exactI64OfExpr(self: *const SemanticGraph, expr: *const Expr) ?i64 {
+        const value = self.exact_i64_by_ast.get(expr) orelse return null;
+        return self.exactI64(value);
+    }
+
+    /// The graph VALUE an integer literal occurrence is, so a consumer can read
+    /// the descriptor and the origin the producer already resolved.
+    pub fn exactI64Value(self: *const SemanticGraph, expr: *const Expr) ?id {
+        const value = self.exact_i64_by_ast.get(expr) orelse return null;
+        if (self.exactI64(value) == null) return null;
+        return value;
+    }
+
     fn publishExactI64(self: *SemanticGraph, value: id, content: i64) !void {
         const node = self.get(value) orelse return error.InvalidExactValueFact;
         if (node.descriptor == null or node.descriptor.? != .i64) return error.InvalidExactValueFact;
         if (self.exact_i64_rows.contains(value)) return error.DuplicateExactValueFact;
+        // ONE ROW PER LITERAL OCCURRENCE. An application-operand lift and the
+        // literal sweep can both reach the same `.int_lit` node; the first to
+        // arrive owns it and the second is a no-op rather than a shadow, which
+        // is `publishSourceQuote`'s rule and for the same reason -- the family
+        // is measured against source TOKENS.
+        //
+        // A value whose `ast_ref` is not itself an integer literal is a DERIVED
+        // content -- the result of `xs[1]` against a constant aggregate, a
+        // foreign module's `.field` constant. It takes no TOKEN slot, so the
+        // one-row-per-occurrence refusal does not apply to it, but it is
+        // indexed all the same: a derived content is precisely the answer the
+        // AST re-parse could never give, and `exactI64OfExpr` is where a
+        // consumer collects it.
+        const occurrence: ?*const Expr = blk: {
+            const raw = node.ast_ref orelse break :blk null;
+            break :blk @ptrCast(@alignCast(raw));
+        };
+        if (occurrence) |expr| {
+            if (expr.* == .int_lit and self.exact_i64_by_ast.contains(expr)) return;
+        }
         const row = try coordinateForLength(self.exact_i64_facts.items.len);
         try self.exact_i64_facts.append(self.alloc, .{ .value = value, .content = content });
         errdefer _ = self.exact_i64_facts.pop();
         try self.exact_i64_rows.putNoClobber(self.alloc, value, row);
+        if (occurrence) |expr| {
+            // FIRST WRITER WINS, and it is never an error for a second entity
+            // to describe the same derived expression -- `getOrPut` rather than
+            // `putNoClobber` because a refusal here would turn an ordinary
+            // duplicate description into a failed lift.
+            const slot = try self.exact_i64_by_ast.getOrPut(self.alloc, expr);
+            if (!slot.found_existing) slot.value_ptr.* = value;
+        }
     }
 
     pub fn sourceQuote(self: *const SemanticGraph, value: id) ?ast.Quote {
@@ -3674,6 +3737,18 @@ pub const SemanticGraph = struct {
 
     /// Lift module fully including call sites (Phase 1 complete lift).
     pub fn liftModuleWithCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
+        const mod_id = try self.liftModuleCalls(mod, file);
+        try self.liftLiteralIntegers(file, mod_id, &mod.body);
+        return mod_id;
+    }
+
+    /// Everything `liftModuleWithCalls` does EXCEPT the literal sweeps, so the
+    /// checked lift can run its own application operands FIRST and the sweep
+    /// LAST. Order is the whole reason this split exists: the sweep claims a
+    /// literal occurrence, and an occurrence an application names is better
+    /// owned by the application's operand entity, which carries the resolved
+    /// descriptor, the operand pack membership and the origin.
+    fn liftModuleCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
         const mod_id = try self.liftModuleFull(mod, file);
         try self.liftCalls(mod, file, mod_id);
         // AFTER the call lift, deliberately: a literal that is already an
@@ -3683,6 +3758,195 @@ pub const SemanticGraph = struct {
         // refuses that.
         try self.liftBindingQuotes(file, mod_id, mod.body.stmts);
         return mod_id;
+    }
+
+    /// THE CONTENT OF EVERY INTEGER LITERAL THE SOURCE WRITES.
+    ///
+    /// MEASURED BEFORE THIS EXISTED: `add(8, 34)` — two integer literal
+    /// operands — published ZERO `exact_i64` facts, and `gate/coverage.sh`
+    /// scored the family PRODUCER-HOLLOW at 3148/20354 = 15.5% over the
+    /// 716-module corpus. Every one of those 3148 came from an aggregate
+    /// member or a constant index key, the only two positions
+    /// `publishExactI64` was called from, so the graph did not hold the
+    /// content of an ordinary integer operand or an ordinary binding.
+    ///
+    /// That is the root of gap[213]: a constant condition needed a fold in the
+    /// backend because there was no fact to look up. It is also why
+    /// `intLiteralStep` exists as an AST re-parse at 19 sites in
+    /// `dnir_lower.zig` — `gate/coverage.sh`'s `exact.i64` rival row.
+    ///
+    /// ONE ROW PER TOKEN. `publishExactI64` claims the literal's AST node, so
+    /// an occurrence an application operand already owns is skipped here and
+    /// the family stays comparable with the lexical denominator it is measured
+    /// against.
+    ///
+    /// A `.func_expr` body is NOT swept: `findFuncDecl` keys on
+    /// `*const ast.FuncDecl` and a lambda has no such entity, so its literals
+    /// have no scope to be parented to that is not a lie. `liftBindingQuotes`
+    /// stops at the same boundary for the same reason.
+    fn liftLiteralIntegers(
+        self: *SemanticGraph,
+        file: []const u8,
+        scope: id,
+        block: *const ast.Block,
+    ) anyerror!void {
+        for (block.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| for (ld.inits) |seed| try self.liftIntegersInExpr(file, scope, seed),
+                .const_decl => |*cd| try self.liftIntegersInExpr(file, scope, cd.val),
+                .global_decl => |*gd| for (gd.inits) |seed| try self.liftIntegersInExpr(file, scope, seed),
+                .assign => |*asg| {
+                    for (asg.targets) |target| try self.liftIntegersInExpr(file, scope, target);
+                    for (asg.values) |value| try self.liftIntegersInExpr(file, scope, value);
+                },
+                .call_stmt => |*cs| try self.liftIntegersInExpr(file, scope, cs.expr),
+                .expr_stmt => |*es| try self.liftIntegersInExpr(file, scope, es.expr),
+                .ret => |*r| for (r.vals) |value| try self.liftIntegersInExpr(file, scope, value),
+                .do_block => |*d| try self.liftLiteralIntegers(file, scope, &d.body),
+                .while_loop => |*w| {
+                    try self.liftIntegersInExpr(file, scope, w.cond);
+                    try self.liftLiteralIntegers(file, scope, &w.body);
+                },
+                .repeat_loop => |*r| {
+                    try self.liftLiteralIntegers(file, scope, &r.body);
+                    try self.liftIntegersInExpr(file, scope, r.cond);
+                },
+                .if_stmt => |*i| {
+                    if (i.binding) |b| try self.liftIntegersInExpr(file, scope, b.expr);
+                    try self.liftIntegersInExpr(file, scope, i.cond);
+                    try self.liftLiteralIntegers(file, scope, &i.then);
+                    for (i.elseifs) |*ei| {
+                        try self.liftIntegersInExpr(file, scope, ei.cond);
+                        try self.liftLiteralIntegers(file, scope, &ei.body);
+                    }
+                    if (i.else_body) |*eb| try self.liftLiteralIntegers(file, scope, eb);
+                },
+                .num_for => |*nf| {
+                    try self.liftIntegersInExpr(file, scope, nf.start);
+                    try self.liftIntegersInExpr(file, scope, nf.stop);
+                    if (nf.step) |step| try self.liftIntegersInExpr(file, scope, step);
+                    try self.liftLiteralIntegers(file, scope, &nf.body);
+                },
+                .gen_for => |*g| {
+                    for (g.iters) |iter| try self.liftIntegersInExpr(file, scope, iter);
+                    try self.liftLiteralIntegers(file, scope, &g.body);
+                },
+                .try_stmt => |*t| {
+                    try self.liftLiteralIntegers(file, scope, &t.body);
+                    for (t.catches) |*cc| try self.liftLiteralIntegers(file, scope, &cc.body);
+                    for (t.defers) |*d| try self.liftLiteralIntegers(file, scope, &d.body);
+                },
+                .defer_stmt => |*d| try self.liftLiteralIntegers(file, scope, &d.body),
+                .match_stmt => |*m| {
+                    try self.liftIntegersInExpr(file, scope, m.scrutinee);
+                    for (m.arms) |*arm| {
+                        if (arm.pattern == .literal) try self.liftIntegersInExpr(file, scope, arm.pattern.literal);
+                        if (arm.guard) |guard| try self.liftIntegersInExpr(file, scope, guard);
+                        try self.liftLiteralIntegers(file, scope, &arm.body);
+                    }
+                },
+                .func_decl => |*fd| {
+                    const nested = self.findFuncDecl(fd) orelse continue;
+                    try self.liftLiteralIntegers(file, nested, &fd.func.body);
+                },
+                else => {},
+            }
+        }
+        // A single-line Idol body stores its answer in `tail_expr`, not in
+        // `stmts`. Omitting it here left every one-line relation's literals
+        // unreached, which is most of them.
+        if (block.tail_expr) |tail| try self.liftIntegersInExpr(file, scope, tail);
+    }
+
+    fn liftIntegersInExpr(
+        self: *SemanticGraph,
+        file: []const u8,
+        scope: id,
+        expr: *const Expr,
+    ) anyerror!void {
+        switch (expr.*) {
+            .int_lit => |literal| try self.addExactI64Value(file, scope, expr, literal.val),
+            .index => |ix| {
+                try self.liftIntegersInExpr(file, scope, ix.obj);
+                try self.liftIntegersInExpr(file, scope, ix.key);
+            },
+            .field => |f| try self.liftIntegersInExpr(file, scope, f.obj),
+            .call => |c| {
+                try self.liftIntegersInExpr(file, scope, c.func);
+                for (c.args) |argument| try self.liftIntegersInExpr(file, scope, argument);
+            },
+            .method_call => |mc| {
+                try self.liftIntegersInExpr(file, scope, mc.obj);
+                for (mc.args) |argument| try self.liftIntegersInExpr(file, scope, argument);
+            },
+            .binop => |b| {
+                try self.liftIntegersInExpr(file, scope, b.lhs);
+                try self.liftIntegersInExpr(file, scope, b.rhs);
+            },
+            .unop => |u| try self.liftIntegersInExpr(file, scope, u.operand),
+            .table => |t| for (t.fields) |field| switch (field) {
+                .indexed => |entry| {
+                    try self.liftIntegersInExpr(file, scope, entry.key);
+                    try self.liftIntegersInExpr(file, scope, entry.val);
+                },
+                .named => |entry| try self.liftIntegersInExpr(file, scope, entry.val),
+                .positional => |element| try self.liftIntegersInExpr(file, scope, element),
+                .spread => |source| try self.liftIntegersInExpr(file, scope, source),
+                .semantic => |entry| try self.liftIntegersInExpr(file, scope, entry.val),
+            },
+            .try_expr => |t| try self.liftIntegersInExpr(file, scope, t.operand),
+            .unwrap_expr => |u| try self.liftIntegersInExpr(file, scope, u.operand),
+            .await_expr => |a| try self.liftIntegersInExpr(file, scope, a.operand),
+            .contains_expr => |c| {
+                try self.liftIntegersInExpr(file, scope, c.lhs);
+                try self.liftIntegersInExpr(file, scope, c.rhs);
+            },
+            .sequence => |s| for (s.exprs) |element| try self.liftIntegersInExpr(file, scope, element),
+            .range => |r| {
+                try self.liftIntegersInExpr(file, scope, r.start);
+                try self.liftIntegersInExpr(file, scope, r.end);
+                if (r.step) |step| try self.liftIntegersInExpr(file, scope, step);
+            },
+            .if_expr => |ie| {
+                try self.liftIntegersInExpr(file, scope, ie.cond);
+                try self.liftIntegersInExpr(file, scope, ie.then_expr);
+                try self.liftIntegersInExpr(file, scope, ie.else_expr);
+            },
+            .match_expr => |me| {
+                try self.liftIntegersInExpr(file, scope, me.scrutinee);
+                for (me.arms) |*arm| {
+                    if (arm.pattern == .literal) try self.liftIntegersInExpr(file, scope, arm.pattern.literal);
+                    if (arm.guard) |guard| try self.liftIntegersInExpr(file, scope, guard);
+                    try self.liftLiteralIntegers(file, scope, &arm.body);
+                }
+            },
+            .list_comp => |lc| {
+                try self.liftIntegersInExpr(file, scope, lc.value);
+                try self.liftIntegersInExpr(file, scope, lc.iter);
+                if (lc.filter) |filter| try self.liftIntegersInExpr(file, scope, filter);
+            },
+            else => {},
+        }
+    }
+
+    fn addExactI64Value(
+        self: *SemanticGraph,
+        file: []const u8,
+        scope: id,
+        expr: *const Expr,
+        content: i64,
+    ) !void {
+        if (self.exact_i64_by_ast.contains(expr)) return;
+        const loc = expr.loc();
+        const value = try self.addChild(scope, .{
+            .kind = .value,
+            .span = .{ .file = file, .start = loc.line, .end = loc.col },
+            .descriptor = .i64,
+            .knowledge = .at_comptime,
+            .stage = .sema,
+            .ast_ref = @ptrCast(@constCast(expr)),
+        });
+        try self.publishExactI64(value, content);
     }
 
     fn addApplicationValue(
@@ -3704,6 +3968,16 @@ pub const SemanticGraph = struct {
         try self.publishNameBinding(value, expr, occurrence);
         switch (expr.*) {
             .quoted => |lit| try self.publishSourceQuote(value, lit.quote, expr),
+            // THE OPERAND HALF OF `exact_i64`. `add(8, 34)` published ZERO
+            // exact content facts: the family fired only on aggregate members
+            // and on a constant index key, so nothing in the graph held the
+            // content of an ordinary integer operand and every consumer that
+            // needed one re-parsed it from the AST. The value entity was
+            // already here and already carried the resolved `.i64` descriptor;
+            // what was missing was the one line that published its content.
+            .int_lit => |literal| if (descriptor == .i64) {
+                try self.publishExactI64(value, literal.val);
+            },
             else => {},
         }
         return value;
@@ -4368,7 +4642,7 @@ pub const SemanticGraph = struct {
                 self.home = h;
             } else |_| {}
         }
-        const module = try self.liftModuleWithCalls(mod, file);
+        const module = try self.liftModuleCalls(mod, file);
 
         const candidate_limit = self.application_candidates.bit_length;
         var candidate: usize = 0;
@@ -4447,6 +4721,11 @@ pub const SemanticGraph = struct {
         // it was measured.
         try self.publishApplicationWorlds(file);
         try self.verifyCheckedApplicationOperandPacks(checked);
+        // LAST, so every application operand has already claimed the literal
+        // occurrence it names and this sweep reaches only what nothing else
+        // does. Running it inside `liftModuleCalls` would have made the sweep
+        // the owner of every checked operand literal instead.
+        try self.liftLiteralIntegers(file, module, &mod.body);
         return module;
     }
 

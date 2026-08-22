@@ -3838,7 +3838,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // A binding is lowered first and unconditionally, above, because
             // `if x = f() ...` binds whatever the condition decides.
             if (is.binding == null and is.elseifs.len == 0) {
-                if (constConditionTruth(is.cond)) |truth| {
+                if (constConditionTruth(ctx.graph, is.cond)) |truth| {
                     const gate = allow_return or
                         (ctx.block_answering and branchIsValueGuard(if (truth) &is.then else if (is.else_body) |*eb| eb else &is.then));
                     if (truth) {
@@ -4150,11 +4150,39 @@ fn intLiteralStep(expr: *const ast.Expr) ?i64 {
 ///
 /// Division and remainder admit a literal non-zero divisor only; `sdiv` not
 /// faulting today is a reason to exclude a zero divisor, not to allow it.
-fn constIntValue(e: *const ast.Expr) ?i64 {
-    if (intLiteralStep(e)) |v| return v;
+fn constIntValue(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr) ?i64 {
+    // THE GRAPH FIRST, and it is not a stylistic preference. `exactI64OfExpr`
+    // answers for three shapes this walk cannot reach at all:
+    //
+    //   * an integer literal -- which this walk DID answer, by re-parsing it.
+    //     That re-parse is `gate/coverage.sh`'s `exact.i64` rival authority,
+    //     and asking the graph is how it stops being one here.
+    //   * `xs[1]` against a constant aggregate, whose selected member content
+    //     the graph publishes at the access. `intLiteralStep` returns null for
+    //     an `.index` node and always did.
+    //   * a foreign module's `.field` constant, published by
+    //     `liftForeignConstantFieldSites`. `intLiteralStep` returns null for a
+    //     `.field` node too.
+    //
+    // So this is a widening, not a swap: conditions that were undecidable
+    // become decidable because a producer now reaches them.
+    //
+    // STILL NO NAME IS RESOLVED HERE. gap[209] is fixed, but its fix made
+    // `ModuleConsts` refuse an overwritten name rather than making the GRAPH
+    // own module-binding value identity -- there is no edge from a module
+    // binding to the value entity its initializer became, so the graph cannot
+    // answer for `ring` and this must not pretend otherwise.
+    //
+    // THE AST RE-PARSE IS GONE FROM THIS SITE. `if (intLiteralStep(e)) |v|
+    // return v;` stood here as a fallback; with `exact_i64` reaching 98.4% of
+    // the corpus's integer literal tokens it is a rival authority that answers
+    // for the same shapes the graph already owns. Whether the remaining 1.6%
+    // costs a fold anywhere is a MEASUREMENT, not an argument -- see the
+    // corpus differential.
+    if (graph.exactI64OfExpr(e)) |v| return v;
     switch (e.*) {
         .unop => |u| {
-            const v = constIntValue(u.operand) orelse return null;
+            const v = constIntValue(graph, u.operand) orelse return null;
             return switch (u.op) {
                 .neg => std.math.negate(v) catch null,
                 .bnot => ~v,
@@ -4162,8 +4190,8 @@ fn constIntValue(e: *const ast.Expr) ?i64 {
             };
         },
         .binop => |b| {
-            const l = constIntValue(b.lhs) orelse return null;
-            const r = constIntValue(b.rhs) orelse return null;
+            const l = constIntValue(graph, b.lhs) orelse return null;
+            const r = constIntValue(graph, b.rhs) orelse return null;
             return switch (b.op) {
                 .add => l +% r,
                 .sub => l -% r,
@@ -4182,11 +4210,11 @@ fn constIntValue(e: *const ast.Expr) ?i64 {
     }
 }
 
-fn constConditionTruth(cond: *const ast.Expr) ?bool {
+fn constConditionTruth(graph: *const semantic_graph.SemanticGraph, cond: *const ast.Expr) ?bool {
     if (cond.* != .binop) return null;
     const b = cond.binop;
-    const lhs = constIntValue(b.lhs) orelse return null;
-    const rhs = constIntValue(b.rhs) orelse return null;
+    const lhs = constIntValue(graph, b.lhs) orelse return null;
+    const rhs = constIntValue(graph, b.rhs) orelse return null;
     return switch (b.op) {
         .eq => lhs == rhs,
         .neq => lhs != rhs,
