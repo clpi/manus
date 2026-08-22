@@ -5287,24 +5287,28 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         if (ctx.occurrences.get(value)) |application| {
             bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
             const descriptor = try publishedDescriptor(ctx, application);
+            // THE RESULT-VALUE -> SHAPE EDGE IS THE ONLY AUTHORITY for a
+            // record result, and `recordForApplicationResult` is the only
+            // reader of it. Recovering the record from the APPLICATION's own
+            // published descriptor instead makes that edge unfalsifiable:
+            // delete it and lowering still succeeds, which is exactly the
+            // damage control `dnir_lower: checked aggregate result consumes
+            // exact graph shape` runs. A second opinion about a fact is not a
+            // fallback for it.
             if (recordForApplicationResult(ctx, application)) |record| {
-                try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
-                return;
-            }
-            if (recordForDescriptor(ctx.records, descriptor, ctx.graph)) |record| {
                 try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
                 return;
             }
             const results = ctx.graph.applicationResults(application.application) orelse
                 return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
             if (results.len == 1) {
-                const result_node = ctx.graph.get(results[0]) orelse
+                // Same rule one level down. `node.descriptor` is a FIELD on
+                // the result node and survives deletion of the shape edge, so
+                // reading a record out of it is the same unfalsifiable second
+                // opinion. The node is still fetched, because its absence is a
+                // real refusal.
+                if (ctx.graph.get(results[0]) == null) {
                     return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-member");
-                if (result_node.descriptor) |result_desc| {
-                    if (recordForDescriptor(ctx.records, result_desc, ctx.graph)) |record| {
-                        try lowerCheckedRecordCallAssign(ctx, name, application, record, value);
-                        return;
-                    }
                 }
                 if (try tryAssignRecordCallFromExportMap(ctx, name, value)) return;
                 try checkedScalarResult(ctx.diagnostic, descriptor);
@@ -5599,14 +5603,26 @@ fn lowerCheckedRecordCallAssign(
         try ensureExtern(ctx, foreign_home, callee, callee);
     }
     const result = try checkedApplicationResult(ctx, application);
-    const rec_slot = if (ctx.locals.get(name)) |existing| existing else blk: {
+    // THE BINDING NEEDS A NAME, NOT A VALUE. Everything downstream that has
+    // to recognise `name` as a record region -- `loadFieldFromOpaquePath`,
+    // `recordLocalDesc` -- asks whether the name is bound at all; the slot
+    // itself is never stored to, because the record lives in the frame region
+    // `call_direct` fills below. Minting it is what lets `a.b.c` resolve
+    // against the region instead of bailing.
+    if (ctx.locals.get(name) == null) {
         const slot = ctx.freshTemp();
         try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), slot);
-        break :blk slot;
-    };
+    }
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    // Graph projection subject is the assignee, not a callee operand.
-    const operands = try checkedScalarOperands(ctx, application, &operand_storage, false);
+    // THE SUBJECT IS AN OPERAND LIKE ANY OTHER, and the graph publishes it in
+    // position 0. Excluding it here on the theory that "the projection subject
+    // is the assignee" dropped the FIRST ARGUMENT of every plain call:
+    // `t: tok = mk(5)` reached `mk` with x0 never written, so `mk` read argc.
+    // Measured on examples/native_differential/canon4_descriptor_in_record.id,
+    // which answered 3 instead of 7. Every other checked-call consumer
+    // (`lowerCheckedRecordCall`, `lowerCheckedScalarCall`) projects the subject,
+    // and the result side of a call has no reason to differ from the rest.
+    const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
     var values: [max_direct_scalar_args]dnir.Value = undefined;
     const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
@@ -5625,19 +5641,20 @@ fn lowerCheckedRecordCallAssign(
         .field = name,
         .ty = descriptor,
     });
-    try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = record.name, .field = name });
-    for (record.fields, 0..) |fname, fi| {
-        const fk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, fname });
-        defer ctx.alloc.free(fk);
-        if (ctx.locals.contains(fk)) continue;
-        const fslot = ctx.freshTemp();
-        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), fslot);
-        if (fi < record.kinds.len) switch (record.kinds[fi]) {
-            .str => try ctx.str_slots.put(ctx.alloc, fslot, {}),
-            .f64 => try ctx.f64_slots.put(ctx.alloc, fslot, {}),
-            .i64 => {},
-        };
-    }
+    // AND NOTHING ELSE. The `call_direct` above already carries `.record` and
+    // `.field`, and that pair IS the realization: the backend answers it with
+    // `assignRecordFromAbiRegs(ins.field, rec)` for a register return and with
+    // the x8 buffer for an indirect one. A following `init_record` on the same
+    // `.record`/`.field` re-runs that copy after the caller-save registers have
+    // been restored, so it writes call debris over a result that already landed.
+    //
+    // MINTING `name.field` LOCALS IS THE SAME ERROR STATED AS STORAGE. Those
+    // slots are never stored to -- the fields live in the frame region -- but
+    // `lowerField` checks `ctx.locals` FIRST, so every later `v.a` resolved to
+    // a slot holding nothing and the backend answered `DNB007 local N has no
+    // register`. Leaving the keys unminted sends `v.a` to
+    // `loadFieldFromOpaquePath`, which emits the `load_field` that reads the
+    // region the call actually filled.
 }
 
 fn lowerRecordCallAssign(ctx: *LowerCtx, name: []const u8, callee: []const u8, args: []const *ast.Expr, rec_name: []const u8) Error!void {
