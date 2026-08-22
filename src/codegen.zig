@@ -3844,6 +3844,11 @@ pub const CodeGen = struct {
             self.nativeDiagFail("guard-target");
             return self.nofit(@src());
         }
+        // The module's own scope, live for every check below that is NOT inside
+        // a function body: the tail expression here and the top-level
+        // statements in the loop further down. Both used to be walked with
+        // `precheck_types` empty — see `precheck_collect_module_types`.
+        self.precheck_collect_module_types(mod);
         if (mod.body.tail_expr) |expr| {
             if (!self.call_stmt_is_native_scalar(expr)) {
                 self.nativeDiagFail("mod-tail");
@@ -3959,7 +3964,10 @@ pub const CodeGen = struct {
                         }
                     }
                     self.precheck_collect_types(&fd.func);
-                    defer self.precheck_types.clearRetainingCapacity();
+                    // RESTORE, not wipe. Every statement after this one is in
+                    // MODULE scope, and clearing left them with no answer at
+                    // all — the same empty map the tail expression used to get.
+                    defer self.precheck_collect_module_types(mod);
                     if (!self.block_is_native_scalar(fd.func.body, true)) {
                         self.nativeDiagFail("func-body");
                         return self.nofit(@src());
@@ -5163,6 +5171,28 @@ pub const CodeGen = struct {
         return try self.try_emit_native_pipeline_named(lhs, rhs);
     }
 
+    /// WHAT THE MODULE'S OWN SCOPE HOLDS, from the one scanner that already
+    /// answers that question for function bodies.
+    ///
+    /// MEASURED, and this is the whole reason the module context needs it:
+    /// `can_emit_native_scalar_module` checks `mod.body.tail_expr` and the
+    /// module's top-level statements with `precheck_types` EMPTY. The map was
+    /// only ever filled inside the `.func_decl` arm, and cleared on the way out
+    /// of it, so a program with no functions at all had no answer for any name.
+    /// `x = 10  print(x)` — a whole program — was refused `print-arg:any`,
+    /// which is verbatim the sentence the `precheck_types` doc comment already
+    /// writes about function locals. Same hole, the other scope.
+    ///
+    /// NOT `module_globals`. That map is the checked sema's answer for a
+    /// different question — bindings that are GLOBAL — and under
+    /// local-by-default a module-top `x = 10` in a `.id` file is not one, so it
+    /// is absent from it by construction (`sema.zig` `note_global`). Reading it
+    /// harder would not have found `x`; nothing had computed `x`'s type at all.
+    fn precheck_collect_module_types(self: *CodeGen, mod: *const ast.Module) void {
+        self.precheck_types.clearRetainingCapacity();
+        self.precheck_scan_block(&mod.body);
+    }
+
     /// What the PRECHECK can prove about one function's local bindings.
     ///
     /// Deliberately not a type inferencer. It proves exactly two facts —
@@ -5180,12 +5210,28 @@ pub const CodeGen = struct {
     /// the rebinding. A per-point analysis would be sharper and would have to be
     /// right about control flow; this one only has to be right about a set.
     fn precheck_collect_types(self: *CodeGen, f: *const ast.FuncBody) void {
-        self.precheck_types.clearRetainingCapacity();
+        // The enclosing module's bindings first: a function body reads them,
+        // and before this they answered `.any` inside a function for exactly
+        // the same reason they did at module top — nobody had collected them.
+        if (self.current_module) |mod| {
+            self.precheck_collect_module_types(mod);
+        } else {
+            self.precheck_types.clearRetainingCapacity();
+        }
+        // A PARAMETER SHADOWS THE MODULE BINDING OF THE SAME NAME, so it
+        // OVERWRITES. `precheck_note_type` widens two disagreeing answers to
+        // `.any` — right for two bindings in one scope, wrong across a shadow,
+        // where the inner binding simply IS the answer.
         for (f.params) |param| {
             const rt = types.resolve(param.typ, null, self.alloc) catch continue;
-            self.precheck_note_type(param.name, rt);
+            self.precheck_set_type(param.name, rt);
         }
         self.precheck_scan_block(&f.body);
+    }
+
+    /// A binding that SHADOWS whatever the enclosing scope said. Never widens.
+    fn precheck_set_type(self: *CodeGen, name: []const u8, rt: RT) void {
+        self.precheck_types.put(self.alloc, name, rt) catch return;
     }
 
     fn precheck_note_type(self: *CodeGen, name: []const u8, rt: RT) void {
