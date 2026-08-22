@@ -45,7 +45,14 @@ hb="$(shasum -a 256 "$BASE" | cut -c1-16)"; hc="$(shasum -a 256 "$CAND" | cut -c
 [ "$hb" != "$hc" ] || { echo "differential: BOTH ARMS ARE THE SAME BINARY ($hb) — a patched build that never finished linking reports 0 differences and looks like success" >&2; exit 2; }
 echo "base $hb   cand $hc"
 A="$(mktemp -d)"; B="$(mktemp -d)"; trap 'rm -rf "$A" "$B"' EXIT
-norm() { sed -E -e 's/\([0-9]+ ms/(MS/' -e 's#/Volumes/[^ ]*/tmp-[a-z0-9]+/#TREE/#g' \
+# NOTE the path pattern: `[^ ]*` CANNOT cross the space in "/Volumes/d 1/",
+# so the first version of this normalizer left mirror paths in place and
+# produced 100+ false rows — this harness failing at the exact trap it
+# documents. The PID in the compiler's temp object name leaks into linker
+# stderr and needs its own rule for the same reason.
+norm() { sed -E -e 's/\([0-9]+ ms/(MS/' \
+                -e 's#/Volumes/.*/tmp-[A-Za-z0-9_-]+/#TREE/#g' \
+                -e 's#duo_[A-Za-z0-9_]+_[0-9a-f]{6,}_[0-9]+#DUOTMP#g' \
                 -e 's#^.*\(cached\)$#COMPILED#' -e 's#^  ok compile.*#COMPILED#'; }
 chg=0; same=0; tmo=0
 while IFS= read -r f; do
@@ -61,4 +68,9 @@ done < "$list"
 # to compile is vacuous, and was accepted as evidence in this repo once.
 ran=$(( chg + same ))
 echo "compared $ran   CHANGED $chg   IDENTICAL $same   TIMEOUT $tmo (excluded)"
+# GAP-201: a gate that examines ZERO subjects must FAIL, not pass. Run from
+# outside the tree this built an empty list and reported "compared 0 ...
+# CHANGED 0", exit 0 — a vacuous green, which is the failure mode every
+# other rule here exists to prevent.
+[ "$ran" -gt 0 ] || { echo "differential: ZERO SUBJECTS COMPARED — vacuous" >&2; exit 2; }
 exit 0
