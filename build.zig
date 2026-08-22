@@ -714,6 +714,18 @@ pub fn build(b: *std.Build) void {
     // fixtures are SUPPOSED to contain the denied text, and it ratchets off
     // measured budgets rather than gating at zero, because a gate that is red
     // on the day it ships is a gate people learn to skip.
+    const coverage_cmd = b.addSystemCommand(&.{ "sh", "gate/coverage.sh" });
+    coverage_cmd.setCwd(b.path("."));
+    // MEASURED, NOT ZERO. 5789 blocking application candidates at 64928599 on a
+    // clean checkout. A gate shipped red is skipped on day one -- which is why
+    // this file already records audit100 and capability-scan as skipped -- so
+    // this one is green at the subject it was measured against and fails only
+    // on regression. Everything else in the matrix reports and does not fail.
+    coverage_cmd.setEnvironmentVariable("COVERAGE_BUDGET", "5789");
+    coverage_cmd.step.dependOn(b.getInstallStep());
+    const coverage_step = b.step("coverage", "producer/consumer/coverage matrix over semantic fact families");
+    coverage_step.dependOn(&coverage_cmd.step);
+
     const audit100_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/audit100.id" });
     audit100_cmd.setCwd(b.path("."));
     audit100_cmd.step.dependOn(b.getInstallStep());
