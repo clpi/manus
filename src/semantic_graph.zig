@@ -4089,10 +4089,11 @@ pub const SemanticGraph = struct {
     /// A checked
     /// application's root stays with `addApplicationValue`; an unresolved or
     /// bootstrap application's root is included because no later pack producer
-    /// will claim it.  Every admitted name carries Sema's exact descriptor and
-    /// the graph's exact value -> binding edge.  An examined name whose binding
-    /// is unresolved remains a value with no edge, so consumers can distinguish
-    /// "visited but unknown" from "this producer never visited the shape".
+    /// will claim it. Every admitted name must already have both Sema's exact
+    /// descriptor and an exact graph binding; an unresolved name remains
+    /// unvisited. The graph does not yet carry a producer-domain completeness
+    /// certificate, so publishing an edge-less placeholder would make
+    /// "visited but refused" indistinguishable from damaged producer output.
     fn liftCheckedNamesInOperand(
         self: *SemanticGraph,
         checked: *const sema.Sema,
@@ -4101,19 +4102,22 @@ pub const SemanticGraph = struct {
         expr: *const Expr,
         include_root: bool,
     ) anyerror!void {
-        if (include_root and expr.* == .name and self.valueByAst(expr) == null) {
-            if (checked.exprDescriptor(expr)) |descriptor| {
-                const loc = expr.loc();
-                const value = try self.addChild(occurrence, .{
-                    .kind = .value,
-                    .span = .{ .file = file, .start = loc.line, .end = loc.col },
-                    .descriptor = descriptor,
-                    .knowledge = semantic_algebra.knowledgeOfType(descriptor),
-                    .stage = .sema,
-                    .ast_ref = @ptrCast(@constCast(expr)),
-                });
-                try self.publishNameBinding(value, expr, occurrence);
-            }
+        if (include_root and expr.* == .name and self.valueByAst(expr) == null) root: {
+            const descriptor = checked.exprDescriptor(expr) orelse break :root;
+            if (descriptor == .any) break :root;
+            const ident = expr.name.ident;
+            const start = self.get(occurrence).?.scope orelse break :root;
+            const binding = self.resolveBindingInScope(start, ident) orelse break :root;
+            const loc = expr.loc();
+            const value = try self.addChild(occurrence, .{
+                .kind = .value,
+                .span = .{ .file = file, .start = loc.line, .end = loc.col },
+                .descriptor = descriptor,
+                .knowledge = semantic_algebra.knowledgeOfType(descriptor),
+                .stage = .sema,
+                .ast_ref = @ptrCast(@constCast(expr)),
+            });
+            try self.addEdge(.{ .from = value, .to = binding, .kind = .binding });
         }
 
         switch (expr.*) {

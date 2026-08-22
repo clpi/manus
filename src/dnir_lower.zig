@@ -304,15 +304,13 @@ const GraphNameDescriptor = union(enum) {
     /// descriptor is explicitly unknown. Transitional consumers may ask the
     /// physical module census while this producer domain is being completed.
     unknown,
-    /// It visited the occurrence, but the authoritative value -> binding route
-    /// is absent or contradictory. Consumers must not reconstruct it by name.
-    invalid,
     known: types.ResolvedType,
 };
 
 /// Descriptor of this exact name occurrence through the graph's value and
-/// binding facts. The distinction between `unvisited` and `unknown` prevents a
-/// damaged/missing authoritative edge from falling through to ModuleGlobals.
+/// binding facts. Only an exact value -> binding route enters this consumer;
+/// edge-less values remain unvisited until the graph publishes a producer-domain
+/// completeness certificate that can distinguish refusal from damage.
 /// A pre-existing local physical slot remains a transitional realization fact
 /// outside this slice; its deletion requires graph-owned place residency.
 fn graphNameDescriptor(ctx: *const LowerCtx, expr: *const Expr) GraphNameDescriptor {
@@ -320,9 +318,9 @@ fn graphNameDescriptor(ctx: *const LowerCtx, expr: *const Expr) GraphNameDescrip
     const value = ctx.occurrences.exactValue(expr) orelse return .unvisited;
     switch (ctx.graph.valueOrigin(value)) {
         .one => {},
-        .none, .unknown => return .invalid,
+        .none, .unknown => return .unvisited,
     }
-    const node = ctx.graph.get(value) orelse return .invalid;
+    const node = ctx.graph.get(value) orelse return .unvisited;
     const descriptor = node.descriptor orelse return .unknown;
     // `.any` is Sema's explicit unknown descriptor, not a proof that the value
     // is non-text/non-numeric. Keep the visited state, but let transitional
@@ -4679,7 +4677,7 @@ fn exprIsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         .name => |n| blk: {
             switch (graphNameDescriptor(ctx, expr)) {
                 .known => |descriptor| break :blk descriptor == .f64,
-                .invalid, .unknown, .unvisited => {},
+                .unknown, .unvisited => {},
             }
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
             break :blk ctx.f64_slots.contains(slot);
@@ -4707,7 +4705,7 @@ fn exprIsPointer(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
         .name => |n| blk: {
             switch (graphNameDescriptor(ctx, expr)) {
                 .known => |descriptor| break :blk descriptor == .pointer,
-                .invalid, .unknown, .unvisited => {},
+                .unknown, .unvisited => {},
             }
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
             break :blk ctx.ptr_slots.contains(slot);
@@ -5478,7 +5476,7 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             const graph_descriptor = graphNameDescriptor(ctx, expr);
             switch (graph_descriptor) {
                 .known => |descriptor| break :blk descriptor == .str,
-                .invalid, .unknown, .unvisited => {},
+                .unknown, .unvisited => {},
             }
             // A module-level string constant is not a local, so the slot lookup
             // below can never see it. Without this arm the VALUE lowered fine
@@ -5486,14 +5484,6 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             // chose `%lld` and printed the pointer, and `OWNER != "x"` compared
             // addresses. The type answer has to follow the value.
             const slot = ctx.locals.get(n.ident) orelse {
-                // Once the checked-name producer visits this occurrence, a
-                // missing binding edge is authoritative absence. Do not let a
-                // mutable module-place census turn damage into a plausible
-                // answer. The older constant pool is still admissible here:
-                // its value producer proved immutability, and GAP-209 removes
-                // every written binding from it before this query.
-                if (graph_descriptor == .invalid)
-                    break :blk ctx.module_consts.strs.contains(n.ident);
                 // A WRITTEN module-scope binding is not a constant EITHER — and
                 // that is not an oversight, it is the deliberate act of the
                 // change that gave globals storage: `lowerModuleFromGraph`
@@ -10170,7 +10160,7 @@ fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         .name => |n| blk: {
             switch (graphNameDescriptor(ctx, expr)) {
                 .known => |descriptor| break :blk descriptor.is_integer(),
-                .invalid, .unknown, .unvisited => {},
+                .unknown, .unvisited => {},
             }
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
             break :blk !ctx.f64_slots.contains(slot) and
@@ -11886,11 +11876,9 @@ test "dnir_lower: interpolation consumes nested graph value descriptor" {
     }
     const value = interpolation_value orelse return error.TestExpectedEqual;
     var damaged = false;
-    for (graph.edges.items) |*edge| {
-        if (edge.from != value or edge.kind != .binding) continue;
-        edge.kind = .provenance;
+    if (graph.get(value) != null) {
+        graph.nodes.items[value].descriptor = .bool;
         damaged = true;
-        break;
     }
     try std.testing.expect(damaged);
     diagnostic.reset();
