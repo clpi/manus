@@ -30,8 +30,9 @@
 //! Replacing a loop by its live-out values claims: for every reachable entry
 //! state the two agree on (a) every live-out, (b) observable effects and their
 //! order, (c) termination, (d) traps. Nothing here re-proves any of that —
-//! `recurrence.closeWhile` owns O1-O8 and this file owns only the four
-//! obligations that are about the loop's SURROUNDINGS rather than its body:
+//! `recurrence.closeWhile` owns O1-O8 and this file owns only the obligations
+//! that are about the loop's SURROUNDINGS rather than its body, plus L6, which
+//! is about the BLOCK that contains it:
 //!
 //!   L1 ENTRY CONSTANCY. Every name the loop reads must hold a value this pass
 //!      knows exactly at the loop head. Only a literal prologue supplies one;
@@ -64,6 +65,12 @@
 //!      being causally operative at the loop level: on `s = s + i` under
 //!      `print(s)` it deletes the induction variable's exit store, because
 //!      nothing observes it.
+//!
+//!   L6 THE BLOCK'S VALUE IS NOT THE LOOP'S. A `while` carries no block value;
+//!      the store written in its slot must carry none either, or the program's
+//!      EXIT STATUS moves while its stdout does not. See `constantAssign` —
+//!      GAP-215. The only obligation here that is about the ENCLOSING BLOCK
+//!      rather than about the loop or the statements around it.
 //!
 //! WHAT IS DELIBERATELY NOT CLAIMED. The demand projection does NOT license the
 //! closure here — family A needs no demand fact and answers exactly, so
@@ -820,6 +827,37 @@ fn closeLoopsIn(
 /// `<name> = <int literal>` — ORDINARY AST, the same discipline
 /// `demand.guardedBreak` states: the backend sees a program it could have been
 /// given, and no second lowering path exists for a closed loop.
+///
+/// L6 THE BLOCK'S VALUE IS NOT THE LOOP'S, and this pass got it wrong for the
+/// same reason it is easy to miss: the rewrite is CORRECT statement for
+/// statement and still changes the program, because one of the block's
+/// readers does not read a statement — it reads WHICH statement is last.
+///
+///     a: i64 = 0                  a: i64 = 0
+///     i: i64 = 0                  i: i64 = 0
+///     while i < 5                 while i < 5
+///         a = a + 1                   t: i64 = a + 1
+///         i = i + 1                   a = t
+///     print(a)                        i = i + 1
+///                                 print(a)
+///     5, exit 5                   5, exit 0
+///
+/// Two spellings of one program, identical stdout, DIFFERENT EXIT STATUS —
+/// GAP-215, at 300 trips exit 44 = `300 & 0xff`. The module exit rule
+/// PRE-EXISTS and is not this pass's invention: `a: i64 = 0 ; a = 5 ;
+/// print(a)` exits 5 with no loop anywhere, because
+/// `tail_result_demand.blockTailResult` treats a void-shaped tail call as
+/// transparent and walks back to the last value-carrying STATEMENT. What this
+/// pass did was replace a `while` — which has no arm in that walk-back and so
+/// carries nothing — with an `.assign`, which carries. The loop's trip count
+/// reached the process status.
+///
+/// So the store is marked `closed_loop`, and `tailStatementResult` answers
+/// null for it exactly as it answered null for the `while`. NOT a decline:
+/// declining would refuse the whole family this pass exists for, since a
+/// file-scope loop under a `print` is precisely the shape whose loop is the
+/// last statement. The store still happens; only the claim "this is the
+/// block's value" is withdrawn, and that claim was never the loop's to make.
 fn constantAssign(
     alloc: std.mem.Allocator,
     loc: ast.Loc,
@@ -834,7 +872,12 @@ fn constantAssign(
     targets[0] = target;
     const values = try alloc.alloc(*ast.Expr, 1);
     values[0] = lit;
-    return .{ .assign = .{ .loc = loc, .targets = targets, .values = values } };
+    return .{ .assign = .{
+        .loc = loc,
+        .targets = targets,
+        .values = values,
+        .closed_loop = true,
+    } };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1420,4 +1463,448 @@ test "loop_closure: a narrow file-scope declaration refuses" {
     // what this file's header says L1 is for.
     try testing.expectEqual(@as(u32, 0), census.refused_narrow);
     try testing.expect(mod.body.stmts[2] == .while_loop);
+}
+
+// ── L6: EXIT STATUS ──────────────────────────────────────────────────────────
+//
+// GAP-215, AND WHY THE SECTION ABOVE DID NOT CATCH IT. Every assertion above is
+// about the STATEMENT LIST -- which statement stands where, and what number it
+// holds. All of them stayed true through the defect, because the defect is not
+// in any statement: it is in WHICH STATEMENT IS LAST. A `while` carries no
+// block value; the `.assign` that replaced it carries one, so
+// `tail_result_demand.blockTailResult` walked back onto it and the loop's
+// answer became the process exit status. Two spellings of one program, the same
+// stdout, different exit status.
+//
+// So these tests read the module's ANSWER rather than its statements, at both
+// producers: `blockTailResult`, which decides it, and `dnir_lower.lowerModule`,
+// which emits it as `main`'s `ret`. Every one is a DIFFERENTIAL between the
+// transformed and untransformed program -- the transform's whole claim is that
+// those two agree, so an assertion against a hand-written constant would prove
+// only that the author agrees with the author.
+//
+// AND EVERY ZERO HAS A POSITIVE CONTROL. `exitLiteralOf` answering `0` proves
+// nothing unless the same probe answers `5` for a module that really does exit
+// 5, which is what the "pre-existing rule" test below is for.
+
+const dnir_lower_probe = @import("dnir_lower.zig");
+const native_ir_probe = @import("native_ir.zig");
+const tail_probe = @import("tail_result_demand.zig");
+
+/// What the module's entry answers, read off the emitted `ret`.
+///
+/// `refused` is a REAL ANSWER, not a probe failure: some of these programs are
+/// outside the direct-native subset, and a refusal that stays a refusal is
+/// exactly what the differential must confirm. Folding it into an error would
+/// throw away the only fact a refused program has.
+const ExitProbe = union(enum) {
+    /// `dnir_lower` would not lower the module at all.
+    refused,
+    /// A `ret` whose operand is a slot rather than a literal.
+    slot,
+    /// The number the process exits with, before the kernel takes its low byte.
+    literal: i64,
+
+    fn same(a: ExitProbe, b: ExitProbe) bool {
+        if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
+        return switch (a) {
+            .literal => |v| v == b.literal,
+            else => true,
+        };
+    }
+};
+
+fn exitProbeOf(alloc: std.mem.Allocator, mod: *const ast.Module) ExitProbe {
+    const m = dnir_lower_probe.lowerModule(alloc, mod) catch return .refused;
+    for (m.functions) |f| {
+        if (!std.mem.eql(u8, f.name, "main")) continue;
+        const instrs = f.blocks[f.blocks.len - 1].instrs;
+        var i = instrs.len;
+        while (i > 0) {
+            i -= 1;
+            if (instrs[i].op != .ret) continue;
+            return switch (instrs[i].lhs) {
+                .i64 => |v| .{ .literal = v },
+                else => .slot,
+            };
+        }
+    }
+    return .refused;
+}
+
+/// `exitProbeOf`, asserted to be a literal. Used where the program is known to
+/// be inside the subset and the NUMBER is the claim.
+fn exitLiteralOf(alloc: std.mem.Allocator, mod: *const ast.Module) !i64 {
+    return switch (exitProbeOf(alloc, mod)) {
+        .literal => |v| v,
+        else => error.NotALiteralExit,
+    };
+}
+
+/// The rule `blockTailResult` picks for a module body, or null when it picks
+/// nothing. This is the fact the exit status is derived from, so it is asserted
+/// directly rather than only through the number it produces.
+fn tailRuleOf(mod: *const ast.Module) ?tail_probe.TailResultRule {
+    const r = tail_probe.blockTailResult(&mod.body) orelse return null;
+    return r.rule;
+}
+
+// THE DEFECT, EXACTLY AS FILED. Left spelling and right spelling of one
+// program: identical stdout, and before this the left exited 5 and the right
+// exited 0.
+test "loop_closure: L6 -- closing a file-scope loop does not give the module an exit status" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const left =
+        \\a: i64 = 0
+        \\i: i64 = 0
+        \\while i < 5
+        \\    a = a + 1
+        \\    i = i + 1
+        \\print(a)
+        \\
+    ;
+
+    // UNTRANSFORMED -- the program as written, and the answer both spellings
+    // must keep.
+    var plain = try parseModule(alloc, left);
+    try testing.expect(plain.body.stmts[2] == .while_loop);
+    try testing.expectEqual(tail_probe.TailResultRule.tail_call, tailRuleOf(&plain).?);
+    try testing.expectEqual(@as(i64, 0), try exitLiteralOf(alloc, &plain));
+
+    // TRANSFORMED -- the loop really is closed (the transform is not disabled
+    // to fix this), and the module's answer is unchanged.
+    var closed = try parseModule(alloc, left);
+    const census = try applyToModuleObserved(alloc, &closed, .{ .world_closed = true });
+    try testing.expectEqual(@as(u32, 1), census.loops_closed);
+    try testing.expect(closed.body.stmts[2] == .assign);
+    try testing.expect(closed.body.stmts[2].assign.closed_loop);
+    try testing.expectEqual(@as(i64, 5), closed.body.stmts[2].assign.values[0].int_lit.val);
+    try testing.expectEqual(tail_probe.TailResultRule.tail_call, tailRuleOf(&closed).?);
+    try testing.expectEqual(@as(i64, 0), try exitLiteralOf(alloc, &closed));
+
+    // THE RIGHT SPELLING. A body `local_decl` -- `recurrence.collectUpdates`
+    // walks only `.assign`, so the loop is REFUSED and no store is written.
+    // GAP-215 forbids widening that walk until this coverage exists; the row is
+    // here so the widening has something to answer to.
+    const right =
+        \\a: i64 = 0
+        \\i: i64 = 0
+        \\while i < 5
+        \\    t: i64 = a + 1
+        \\    a = t
+        \\    i = i + 1
+        \\print(a)
+        \\
+    ;
+    var other = try parseModule(alloc, right);
+    const c2 = try applyToModuleObserved(alloc, &other, .{ .world_closed = true });
+    try testing.expectEqual(@as(u32, 1), c2.loops_seen);
+    try testing.expectEqual(@as(u32, 0), c2.loops_closed);
+    try testing.expect(other.body.stmts[2] == .while_loop);
+    try testing.expectEqual(@as(i64, 0), try exitLiteralOf(alloc, &other));
+}
+
+// THE POSITIVE CONTROL FOR EVERY ZERO ABOVE, and the proof that the module exit
+// rule PRE-EXISTS this transform and is not being changed by the fix. No loop
+// appears anywhere: a module whose last statement is an assignment exits with
+// its value, before and after the pass runs.
+test "loop_closure: L6 -- a module whose last statement IS an assignment keeps its exit status" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\a: i64 = 0
+        \\a = 5
+        \\print(a)
+        \\
+    ;
+    var mod = try parseModule(alloc, src);
+    try testing.expectEqual(tail_probe.TailResultRule.tail_assignment, tailRuleOf(&mod).?);
+    try testing.expectEqual(@as(i64, 5), try exitLiteralOf(alloc, &mod));
+
+    const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = true });
+    try testing.expectEqual(@as(u32, 0), census.loops_seen);
+    try testing.expect(!mod.body.stmts[1].assign.closed_loop);
+    try testing.expectEqual(tail_probe.TailResultRule.tail_assignment, tailRuleOf(&mod).?);
+    try testing.expectEqual(@as(i64, 5), try exitLiteralOf(alloc, &mod));
+
+    // And the OTHER half of the same control: a bare declaration is not an
+    // assignment, so this one exits 0. Without this row a probe that always
+    // answered 0 would pass the test above by accident.
+    const decl_only =
+        \\a: i64 = 5
+        \\print(a)
+        \\
+    ;
+    var d = try parseModule(alloc, decl_only);
+    try testing.expectEqual(@as(i64, 0), try exitLiteralOf(alloc, &d));
+}
+
+// THE TRIP COUNT IS WHAT REACHED THE STATUS BYTE, so the count is varied and
+// the answer must not move with it. 300 trips exited 44 -- `300 & 0xff`.
+test "loop_closure: L6 -- the exit status does not follow the trip count" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const trips = [_]u64{ 5, 300, 1000000 };
+    for (trips) |n| {
+        const src = try std.fmt.allocPrint(alloc,
+            \\a: i64 = 0
+            \\i: i64 = 0
+            \\while i < {d}
+            \\    a = a + 1
+            \\    i = i + 1
+            \\print(a)
+            \\
+        , .{n});
+        var mod = try parseModule(alloc, src);
+        const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = true });
+        try testing.expectEqual(@as(u32, 1), census.loops_closed);
+
+        // DIFFERENTIAL: the same loop, in Zig, in the same ring. The STORE still
+        // holds the loop's answer -- only the claim that it is the module's
+        // answer is withdrawn.
+        var a: u64 = 0;
+        var i: u64 = 0;
+        while (i < n) : (i += 1) a = a +% 1;
+        try testing.expectEqual(@as(i64, @bitCast(a)), mod.body.stmts[2].assign.values[0].int_lit.val);
+
+        try testing.expectEqual(@as(i64, 0), try exitLiteralOf(alloc, &mod));
+    }
+}
+
+// THE SECOND DIRECTION, and the one a fix that simply refused every closable
+// file-scope loop would also pass. A real assignment AFTER the closed loop is
+// still the module's answer.
+test "loop_closure: L6 -- a real assignment after a closed loop is still the module's answer" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\a: i64 = 0
+        \\i: i64 = 0
+        \\b: i64 = 0
+        \\while i < 5
+        \\    a = a + 1
+        \\    i = i + 1
+        \\b = 9
+        \\print(a)
+        \\
+    ;
+    var plain = try parseModule(alloc, src);
+    try testing.expectEqual(@as(i64, 9), try exitLiteralOf(alloc, &plain));
+
+    var mod = try parseModule(alloc, src);
+    const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = true });
+    try testing.expectEqual(@as(u32, 1), census.loops_closed);
+    try testing.expect(mod.body.stmts[3].assign.closed_loop);
+    try testing.expect(!mod.body.stmts[4].assign.closed_loop);
+    try testing.expectEqual(@as(i64, 9), try exitLiteralOf(alloc, &mod));
+}
+
+// A CLOSED LOOP INSIDE A RELATION HAS THE SAME HOLE, and it is not the module
+// exit status -- it is the relation's return value. `main` here has no tail
+// expression at all, so the body's value is nothing; the store that replaced
+// the loop must not become it.
+test "loop_closure: L6 -- a closed loop is not a relation body's value either" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\main: i64 = ()
+        \\    a = 0
+        \\    i = 0
+        \\    while i < 1000000
+        \\        a = a + 1
+        \\        i = i + 1
+        \\    print(a)
+        \\
+    ;
+    var plain = try parseModule(alloc, src);
+    const plain_body = &plain.body.stmts[0].func_decl.func.body;
+    try testing.expectEqual(tail_probe.TailResultRule.tail_call, tail_probe.blockTailResult(plain_body).?.rule);
+
+    var mod = try parseModule(alloc, src);
+    const census = try applyToModule(alloc, &mod);
+    try testing.expectEqual(@as(u32, 1), census.loops_closed);
+    const body = &mod.body.stmts[0].func_decl.func.body;
+    try testing.expect(body.stmts[2].assign.closed_loop);
+    try testing.expectEqual(tail_probe.TailResultRule.tail_call, tail_probe.blockTailResult(body).?.rule);
+}
+
+// ── THE DECLINED SHAPES, BY REASON ───────────────────────────────────────────
+//
+// GAP-215's other half: the 538-file corpus differential that accompanied this
+// transform read as evidence of safety while exercising the changed path with
+// ONE program. Of those 538, ten contain a module-scope `while` and nine refuse
+// to compile on the direct backend, so `examples/boring/reverse.id` was the
+// entire file-scope safety corpus -- and its loop is not even closable.
+//
+// One row per REASON the module path can decline, each asserting the census
+// counter that names it AND that the module's answer is untouched. A refusal
+// that changes the exit status is still a regression, and nothing measured that
+// before.
+test "loop_closure: the module path declines, by reason, and never moves the answer" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const Row = struct {
+        why: []const u8,
+        src: []const u8,
+        world_closed: bool = true,
+        loop_at: usize,
+        refused_narrow: u32 = 0,
+        refused_would_move: u32 = 0,
+        refused_new_binding: u32 = 0,
+    };
+
+    const rows = [_]Row{
+        // W1. Not an executable: a dylib or an object is read from outside, so
+        // the file-scope tail is not analysable and the loop stands.
+        .{
+            .why = "W1 world not closed",
+            .world_closed = false,
+            .loop_at = 2,
+            .src =
+            \\s: i64 = 0
+            \\i: i64 = 1
+            \\while i <= 1000
+            \\    s = s + i
+            \\    i = i + 1
+            \\print(s)
+            \\
+            ,
+        },
+        // W2. A relation reads the carried name, so the store would be visible
+        // to a reader this walk cannot place.
+        .{
+            .why = "W2 deferred reader",
+            .loop_at = 4,
+            .src =
+            \\s: i64 = 0
+            \\i: i64 = 1
+            \\peek: i64 = ()
+            \\    s + 1
+            \\print(peek())
+            \\while i <= 4
+            \\    s = s + i
+            \\    i = i + 1
+            \\print(s)
+            \\
+            ,
+        },
+        // W5. A relation declared AFTER the loop makes `demandAfter` answer
+        // `whole` for every carried name, so the slot would need two stores.
+        .{
+            .why = "W5 would move a statement",
+            .loop_at = 2,
+            .refused_would_move = 1,
+            .src =
+            \\s: i64 = 0
+            \\i: i64 = 1
+            \\while i <= 1000
+            \\    s = s + i
+            \\    i = i + 1
+            \\later: i64 = (x: i64)
+            \\    x + 1
+            \\print(s)
+            \\
+            ,
+        },
+        // L1, BY OMISSION. The prologue is not a value this pass knows, so the
+        // name never enters the environment and `recurrence` refuses.
+        .{
+            .why = "L1 entry value unknown",
+            .loop_at = 3,
+            .src =
+            \\seed: i64 = (k: i64)
+            \\    k + 1
+            \\s: i64 = seed(1)
+            \\i: i64 = 1
+            \\while i <= 1000
+            \\    s = s + i
+            \\    i = i + 1
+            \\print(s)
+            \\
+            ,
+        },
+        // L2, ALSO BY OMISSION at file scope: the narrow name is poisoned,
+        // which kills it out of the entry environment before `refused_narrow`
+        // can be reached. The stores truncate, so the closed form would answer
+        // a different machine.
+        .{
+            .why = "L2 narrow declaration",
+            .loop_at = 2,
+            .src =
+            \\s: u8 = 0
+            \\i: i64 = 1
+            \\while i <= 1000
+            \\    s = s + i
+            \\    i = i + 1
+            \\print(s)
+            \\
+            ,
+        },
+        // `recurrence.collectUpdates` refuses a body that is not all
+        // single-target assignments -- an effect first.
+        .{
+            .why = "effect in the loop body",
+            .loop_at = 2,
+            .src =
+            \\s: i64 = 0
+            \\i: i64 = 1
+            \\while i <= 10
+            \\    print(s)
+            \\    s = s + i
+            \\    i = i + 1
+            \\print(s)
+            \\
+            ,
+        },
+        // The same refusal, reached by a body `local_decl` -- the exact shape
+        // GAP-215 says must not be admitted until this coverage exists.
+        .{
+            .why = "body local_decl",
+            .loop_at = 2,
+            .src =
+            \\a: i64 = 0
+            \\i: i64 = 0
+            \\while i < 5
+            \\    t: i64 = a + 1
+            \\    a = t
+            \\    i = i + 1
+            \\print(a)
+            \\
+            ,
+        },
+    };
+
+    var declined: u32 = 0;
+    for (rows) |row| {
+        var plain = try parseModule(alloc, row.src);
+        const before = exitProbeOf(alloc, &plain);
+
+        var mod = try parseModule(alloc, row.src);
+        const census = try applyToModuleObserved(alloc, &mod, .{ .world_closed = row.world_closed });
+        errdefer std.debug.print("row: {s}\n", .{row.why});
+        try testing.expectEqual(@as(u32, 0), census.loops_closed);
+        try testing.expectEqual(row.refused_narrow, census.refused_narrow);
+        try testing.expectEqual(row.refused_would_move, census.refused_would_move);
+        try testing.expectEqual(row.refused_new_binding, census.refused_new_binding);
+        // The loop is STILL THERE, and the module's answer is what it was.
+        try testing.expect(mod.body.stmts[row.loop_at] == .while_loop);
+        try testing.expect(before.same(exitProbeOf(alloc, &mod)));
+        declined += 1;
+    }
+    // The count is the coverage claim, and it is asserted so that deleting a
+    // row is a failure rather than a quiet reduction.
+    try testing.expectEqual(@as(u32, 7), declined);
 }

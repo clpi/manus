@@ -190,7 +190,13 @@ pub fn installVoidOracle(oracle: ?VoidOracle) ?VoidOracle {
 fn tailStatementResult(stmts: []const ast.Stmt, last_index: usize) ?Resolution {
     const last = &stmts[last_index];
     return switch (last.*) {
-        .assign => |as| resolveTailAssign(as.targets, as.values),
+        // `closed_loop` marks the store `loop_closure` wrote OVER a `while`.
+        // A `while` has no arm here, so it carries no block value; the store
+        // that stands in its slot carries none either, and answering
+        // otherwise moved the exit status of a program whose stdout was
+        // unchanged (GAP-215). Returning null is EXACTLY what the `while`
+        // returned — no walk-back further, same as before.
+        .assign => |as| if (as.closed_loop) null else resolveTailAssign(as.targets, as.values),
         .expr_stmt => |es| .{
             .rule = switch (es.expr.*) {
                 .call, .method_call => .tail_call,

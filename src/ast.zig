@@ -741,6 +741,27 @@ pub const Stmt = union(enum) {
         loc: Loc,
         targets: []*Expr,
         values: []*Expr,
+        /// TRUE ONLY WHERE A `while` STOOD, and it answers ONE question:
+        /// does this statement carry the enclosing block's value?
+        ///
+        /// A loop does not. `tail_result_demand.tailStatementResult` has no
+        /// `.while_loop` arm, so a body whose last statement is a loop yields
+        /// its tail expression (or nothing) — and the module entry's exit
+        /// status is the low byte of exactly that answer.
+        /// `loop_closure` replaces a `while` with the store its live-out
+        /// holds, so WITHOUT this fact the same program in two spellings
+        /// exits differently: `a = 0 ; i = 0 ; while i < 5 … ; print(a)`
+        /// printed 5 and exited 5 once the loop closed, and 5/0 when the
+        /// body's temporary made the loop unclosable (GAP-215). At 300 trips
+        /// it exited 44 — `300 & 0xff`, the loop's trip count reaching the
+        /// process status.
+        ///
+        /// It is a SEMANTIC fact about this statement, not provenance about
+        /// where it came from: the residue of a value-less statement is
+        /// value-less. `false` is the default so every parsed assignment —
+        /// the only kind a source file can contain — carries a value exactly
+        /// as before.
+        closed_loop: bool = false,
     },
     call_stmt: struct { loc: Loc, expr: *Expr },
     expr_stmt: struct { loc: Loc, expr: *Expr },
