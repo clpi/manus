@@ -1,0 +1,12 @@
+# expect: 40
+# One ordinary workload exercises both newly graph-owned flat projection
+# routes: the exact key contracts to the exact result, while the parameter key
+# retains one bounds-checked dense load. Native and Wasm must consume the same
+# application/result and aggregate-content facts.
+_pick: i64 = (i: i64)
+    values = {10, 20, 30}
+    values[i]
+
+_main: i64 = ()
+    values = {10, 20, 30}
+    values[2] + _pick(2)

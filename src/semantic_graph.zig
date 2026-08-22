@@ -1590,6 +1590,51 @@ pub const SemanticGraph = struct {
         return &census.places.items[site];
     }
 
+    fn aggregateExactI64WordsMatchAt(
+        self: *const SemanticGraph,
+        aggregate_id: id,
+        words: []const i64,
+        cursor: *usize,
+        depth: usize,
+    ) bool {
+        if (depth >= self.aggregateCount()) return false;
+        const fact = self.aggregate(aggregate_id) orelse return false;
+        if (fact.contents_known != .yes) return false;
+        const members = self.aggregateMembers(aggregate_id) orelse return false;
+        for (members) |member| {
+            const node = self.get(member) orelse return false;
+            const descriptor = node.descriptor orelse return false;
+            switch (descriptor) {
+                .i64 => {
+                    if (cursor.* >= words.len or self.exactI64(member) != words[cursor.*]) return false;
+                    cursor.* += 1;
+                },
+                .array => if (!self.aggregateExactI64WordsMatchAt(
+                    member,
+                    words,
+                    cursor,
+                    depth + 1,
+                )) return false,
+                else => return false,
+            }
+        }
+        return true;
+    }
+
+    /// Whether these physical words are exactly the graph-owned, descriptor-
+    /// ordered contents of one aggregate. Native and Wasm use the same query as
+    /// a damage boundary before admitting a dense realization; neither backend
+    /// reconstructs contents from source literals or its own layout census.
+    pub fn aggregateExactI64WordsMatch(
+        self: *const SemanticGraph,
+        aggregate_id: id,
+        words: []const i64,
+    ) bool {
+        var cursor: usize = 0;
+        return self.aggregateExactI64WordsMatchAt(aggregate_id, words, &cursor, 0) and
+            cursor == words.len;
+    }
+
     /// The unique aggregate value bound to one exact graph place.
     ///
     /// This is a derived index over `AggregateFact.owner/place`, not another
@@ -1648,6 +1693,28 @@ pub const SemanticGraph = struct {
         if (!result_descriptor.eql(subject_descriptor.array.elem.*)) return null;
         if (result_descriptor == .array and self.positionalAggregate(results[0]) == null) return null;
         return fact;
+    }
+
+    /// The graph producer classified this occurrence as computed aggregate
+    /// projection, independently of whether every fact needed by the strict
+    /// `aggregateAccess` query is still valid. Consumers use this only to fail
+    /// closed on damaged rows; it never supplies a missing result or place.
+    ///
+    /// The target card and relation edge are independent projections of the
+    /// same producer decision. Either surviving one identifies a damaged row;
+    /// requiring both would let damage to one erase the producer domain and
+    /// fall through to the older source/place reconstruction.
+    pub fn isAggregateAccessApplication(self: *const SemanticGraph, occurrence: id) bool {
+        const relation = self.aggregate_access_relation orelse return false;
+        for (self.application_facts.items) |fact| {
+            if (fact.application != occurrence) continue;
+            const target_is_projection = switch (fact.target) {
+                .one => |target| target == relation,
+                .unknown, .none => false,
+            };
+            return target_is_projection or self.bindingRelation(occurrence) == relation;
+        }
+        return false;
     }
 
     pub fn aggregateProducer(self: *const SemanticGraph, aggregate_id: id) ?id {
@@ -3981,9 +4048,10 @@ pub const SemanticGraph = struct {
         // corpus: of 77 admission attempts, 0 were rejected by the aggregate
         // fact and 48 were rejected by the place's copy — the two stores
         // disagreeing about one property, which is the defect, not the guard.
-        // Foldability is still gated exactly where it belongs: every member
-        // must carry an `exact_i64` (`flatAccessAnswerIsKnown`), and
-        // realization consults this same predicate, so the two cannot drift.
+        // Static realization is still gated exactly where it belongs: every
+        // demanded member must carry an `exact_i64`, and realization consults
+        // this same predicate before selecting the dense table, so the two
+        // cannot drift.
         if (p.shape != .collection) return false;
         // THE REMAINING REFUSALS ARE FACTS, NOT MISSING FACTS. RE-MEASURED AT
         // 09b20611: 1010 tracked `.id`, 22 of which contain any attempt at
@@ -4092,26 +4160,6 @@ pub const SemanticGraph = struct {
         };
     }
 
-    /// Whether this flat projection's ANSWER is already a fact of the graph.
-    ///
-    /// Pure: it mints nothing. `liftAggregateAccess` must decide whether to
-    /// publish BEFORE it creates the occurrence and its operand values, because
-    /// bailing afterwards would leave orphan entities behind. The literal read
-    /// here is the same one `publishExactI64` performs a few lines later for the
-    /// key operand — this producer's own reading of its own operand, not a
-    /// second authority for it.
-    fn flatAccessAnswerIsKnown(self: *const SemanticGraph, subject: id, key: *const ast.Expr) bool {
-        if (key.* != .int_lit) return false;
-        // THE SAME PREDICATE REALIZATION WILL APPLY. Publishing on a weaker
-        // condition than the one the fold requires publishes a projection
-        // nothing can realize, which is a refusal, not a widening.
-        if (!self.aggregateIsSoleImmutableBinding(subject)) return false;
-        const members = self.aggregateMembers(subject) orelse return false;
-        const index = key.int_lit.val;
-        if (index < 1 or index > @as(i64, @intCast(members.len))) return false;
-        return self.exactI64(members[@intCast(index - 1)]) != null;
-    }
-
     fn liftAggregateAccess(
         self: *SemanticGraph,
         expr: *const ast.Expr,
@@ -4126,22 +4174,13 @@ pub const SemanticGraph = struct {
         const descriptor = subject_node.descriptor orelse return error.InvalidAggregateFact;
         if (descriptor != .array) return error.InvalidAggregateFact;
         const result_descriptor = descriptor.array.elem.*;
-        // This bounded producer owns hierarchical aggregate projection. A flat
-        // scalar table read remains on the existing place realization until
-        // that family is migrated with its mutable cases; publishing an
-        // application that no graph consumer can yet realize would turn new
-        // semantic knowledge into a capability regression.
-        //
-        // THE ONE FLAT SHAPE THE REALIZATION CAN ALREADY CONSUME is the read
-        // whose ANSWER the graph already holds: contents known, key a literal
-        // in range, selected member carrying an exact content. That access has
-        // no dynamic index to realize and needs no base, no dense table and no
-        // load — `dnir_lower.foldAggregateAccess` emits the immediate. Every
-        // other flat read (runtime key, unknown contents, non-integer member)
-        // still declines here and keeps the place realization it has, so the
-        // capability boundary this comment was written about does not move.
+        // This bounded producer owns hierarchical projection and immutable
+        // one-level scalar projection. Mutable flat aggregates remain on the
+        // existing place realization until their writes carry the same exact
+        // access/result identities; they are outside this producer domain,
+        // not examined-and-unknown.
         if (result_descriptor != .array and self.aggregateProducer(subject) == null and
-            !self.flatAccessAnswerIsKnown(subject, site.key)) return false;
+            (result_descriptor != .i64 or !self.aggregateIsSoleImmutableBinding(subject))) return false;
         const aggregate_fact = self.aggregate(subject) orelse return error.InvalidAggregateFact;
         const loc = expr.loc();
         const occurrence = try self.addChild(parent, .{
@@ -4851,7 +4890,6 @@ pub const SemanticGraph = struct {
         }
     }
 
-
     fn liftForeignConstantFieldSites(
         self: *SemanticGraph,
         checked: *const sema.Sema,
@@ -5076,6 +5114,18 @@ pub const SemanticGraph = struct {
             if (candidate == expr) return self.application(fact.application);
         }
         return null;
+    }
+
+    /// The graph-owned computed projection at this still-AST-driven ingress
+    /// occurrence. This is a derived lookup over `Node.ast_ref`, not another
+    /// occurrence registry. Delete the pointer argument when the compile-time
+    /// evaluator carries the application id directly.
+    pub fn aggregateAccessForExpression(
+        self: *const SemanticGraph,
+        expr: *const Expr,
+    ) ?*const ApplicationFact {
+        const fact = self.applicationForExpression(expr) orelse return null;
+        return self.aggregateAccess(fact.application);
     }
 
     const BindingAdjustmentSource = struct {
@@ -7988,6 +8038,138 @@ test "semantic_graph: local nested and module nested access share one fact famil
         if (graph.aggregateAccess(application.application) != null) accesses += 1;
     }
     try std.testing.expectEqual(@as(usize, 0), accesses);
+}
+
+test "semantic_graph: immutable flat projection publishes exact application result" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const table_apply = @import("table_apply.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\main: i64 = ()
+        \\    values = {10, 20, 30}
+        \\    values[2]
+    ;
+    var lexer = Lexer.init(source, "flat-projection.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    table_apply.normalizeModule(alloc, &module, &checked.type_map);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const home = try graph.liftModuleWithCheckedCalls(&module, &checked, "flat-projection.id");
+    const main_relation = graph.resolveInHome(home, "main", .func) orelse return error.TestExpectedEqual;
+    const aggregate = graph.aggregateNamedInScope(main_relation, "values") orelse
+        return error.TestExpectedEqual;
+    try std.testing.expect(graph.aggregateIsSoleImmutableBinding(aggregate));
+    try std.testing.expect(graph.aggregateExactI64WordsMatch(aggregate, &.{ 10, 20, 30 }));
+    try std.testing.expect(!graph.aggregateExactI64WordsMatch(aggregate, &.{ 10, 99, 30 }));
+
+    var access: ?*const ApplicationFact = null;
+    for (graph.applications()) |application| {
+        if (graph.aggregateAccess(application.application)) |fact| access = fact;
+    }
+    const fact = access orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(aggregate, graph.applicationSubject(fact.application).?);
+    const results = graph.applicationResults(fact.application) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 1), results.len);
+    try std.testing.expectEqual(@as(?i64, 20), graph.exactI64(results[0]));
+    try std.testing.expectEqual(types.ResolvedType.i64, graph.get(results[0]).?.descriptor.?);
+}
+
+test "semantic_graph: flat projection producer declines unsupported scalar descriptors" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const table_apply = @import("table_apply.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const sources = [_][]const u8{
+        \\main: f64 = ()
+        \\    values = {1.0, 2.0}
+        \\    values[1]
+        ,
+        \\main: str = ()
+        \\    values = {"a", "b"}
+        \\    values[1]
+        ,
+    };
+
+    for (sources, 0..) |source, i| {
+        var lexer = Lexer.init(source, if (i == 0) "flat-f64.id" else "flat-text.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = sema.Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        table_apply.normalizeModule(alloc, &module, &checked.type_map);
+
+        var graph = SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, module.file);
+        var flat_accesses: usize = 0;
+        for (graph.applications()) |application| {
+            if (graph.aggregateAccess(application.application) != null) flat_accesses += 1;
+        }
+        try std.testing.expectEqual(@as(usize, 0), flat_accesses);
+    }
+}
+
+test "semantic_graph: flat projection producer declines mixed aggregate consumers" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const table_apply = @import("table_apply.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const sources = [_][]const u8{
+        \\main: i64 = ()
+        \\    values = {10, 20, 30}
+        \\    copy = values
+        \\    values[2]
+        ,
+        \\main: i64 = ()
+        \\    values = {10, 20, 30}
+        \\    selected = values[2]
+        \\    copy = values
+        \\    selected
+        ,
+    };
+
+    for (sources, 0..) |source, i| {
+        var lexer = Lexer.init(source, if (i == 0) "alias-before.id" else "alias-after.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = sema.Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        table_apply.normalizeModule(alloc, &module, &checked.type_map);
+
+        var graph = SemanticGraph.init(alloc);
+        defer graph.deinit();
+        const home = try graph.liftModuleWithCheckedCalls(&module, &checked, module.file);
+        const main_relation = graph.resolveInHome(home, "main", .func) orelse
+            return error.TestExpectedEqual;
+        const aggregate = graph.aggregateNamedInScope(main_relation, "values") orelse
+            return error.TestExpectedEqual;
+        try std.testing.expect(!graph.aggregateIsSoleImmutableBinding(aggregate));
+        var accesses: usize = 0;
+        for (graph.applications()) |application| {
+            if (graph.aggregateAccess(application.application) != null) accesses += 1;
+        }
+        try std.testing.expectEqual(@as(usize, 0), accesses);
+    }
 }
 
 test "semantic_graph: if-condition application is published" {

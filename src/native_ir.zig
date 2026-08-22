@@ -12,6 +12,12 @@ const types = @import("types.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
 const RT = types.ResolvedType;
 
+/// The semantic owner attached to checked DNIR. These aliases expose the exact
+/// graph identity already carried by this physical contract; they do not mint
+/// an IR-local identity or let a realizer reconstruct meaning.
+pub const SemanticGraph = semantic_graph.SemanticGraph;
+pub const SemanticId = semantic_graph.id;
+
 pub const HwIntrinsic = dnir_hardware.HwIntrinsic;
 pub const HardwareTier = dnir_hardware.Tier;
 

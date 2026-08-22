@@ -69,6 +69,11 @@ pub const Options = struct {
     ///    `n`, `k`, `q`, `d` and `b` freely. An application now opens a frame
     ///    that name resolution cannot see past.
     native_fold: bool = false,
+    /// Resident semantic graph for the native whole-body fold. The evaluator
+    /// still walks source expressions, but a published computed projection
+    /// obtains identity, shape and contents from its authoritative graph
+    /// producer. Delete this pointer when evaluator work items carry ids.
+    graph: ?*const semantic_graph.SemanticGraph = null,
 };
 
 /// Hook type for @comp.* combinator evaluation inside comptime callbacks.
@@ -376,6 +381,33 @@ pub const Evaluator = struct {
                 break :blk try self.evalCall(call.func, call.args);
             },
             .index => |index| blk: {
+                if (self.options.native_fold) {
+                    if (self.options.graph) |graph| {
+                        if (graph.aggregateAccessForExpression(expr)) |access| {
+                            const subject = graph.applicationSubject(access.application) orelse
+                                break :blk error.UnsupportedExpression;
+                            if (!graph.aggregateIsSoleImmutableBinding(subject))
+                                break :blk error.UnsupportedExpression;
+                            const members = graph.aggregateMembers(subject) orelse
+                                break :blk error.UnsupportedExpression;
+                            const key = try self.eval(index.key);
+                            if (key != .int or key.int < 1 or
+                                key.int > @as(i64, @intCast(members.len)))
+                            {
+                                break :blk error.UnsupportedExpression;
+                            }
+                            const member = members[@intCast(key.int - 1)];
+                            const node = graph.get(member) orelse
+                                break :blk error.UnsupportedExpression;
+                            const descriptor = node.descriptor orelse
+                                break :blk error.UnsupportedExpression;
+                            if (descriptor != .i64) break :blk error.UnsupportedExpression;
+                            const content = graph.exactI64(member) orelse
+                                break :blk error.UnsupportedExpression;
+                            break :blk .{ .int = content };
+                        }
+                    }
+                }
                 const obj = try self.eval(index.obj);
                 const key = try self.eval(index.key);
                 const value = try tableLookup(obj, key);
@@ -1858,6 +1890,20 @@ pub fn foldRelationBody(
     defer arena.deinit();
     const scratch = arena.allocator();
 
+    // A graph-owned projection must retain one inspectable realization until
+    // the fold publishes an equivalence witness that names every eliminated
+    // application. `Function.folded_to_constant` is only a presence bit and
+    // cannot prove that a damaged projection still corresponds to the final
+    // return value. Ordinary lowering already contracts an exact projection
+    // to a constant and the backend coalesces it into the return register, so
+    // refusing this broader fold preserves the two-instruction machine floor
+    // while keeping Native and Wasm validation load-bearing.
+    if (relation) |entity| {
+        for (graph.applicationsInCaller(entity)) |application| {
+            if (graph.aggregateAccess(application) != null) return null;
+        }
+    }
+
     if (bodyHasNoApplication(&fb.body)) {
         if (!bodyHasLoop(&fb.body)) return constantAnswer(&fb.body);
         return runFold(fb, .{}, .{
@@ -1950,6 +1996,7 @@ pub fn foldRelationBody(
         .step_limit = fold_step_limit,
         .alloc = scratch,
         .native_fold = true,
+        .graph = graph,
     });
 }
 

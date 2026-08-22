@@ -109,6 +109,7 @@ BACKEND  meta_codegen.zig
 BACKEND  meta_dispatch.zig
 BACKEND  lua_metamethod.zig
 BACKEND  native_backend.zig
+BACKEND  realization_validate.zig
 BACKEND  dnir_lower.zig
 BACKEND  dnir_hardware.zig
 BACKEND  native_bootstrap.zig

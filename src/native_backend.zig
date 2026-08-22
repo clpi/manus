@@ -14,6 +14,7 @@ const home_resolve = @import("home_resolve.zig");
 const table_apply = @import("table_apply.zig");
 const const_table = @import("const_table.zig");
 const region_graph = @import("region_graph.zig");
+const realization_validate = @import("realization_validate.zig");
 
 pub const Error = error{
     UnsupportedTarget,
@@ -3380,11 +3381,12 @@ const Arm64Compiler = struct {
                     try self.emitFusedMulAdd(&temps, &pinned, ins, b.instrs[bi + 1]);
                     extra_consumed = 1;
                 } else {
-                    const pack_result_reg = if (bi + 1 < b.instrs.len)
-                        self.returnPackBinopDestination(&temps, ins, b.instrs[bi + 1])
+                    const preferred_result = if (bi + 1 < b.instrs.len)
+                        self.returnPackBinopDestination(&temps, ins, b.instrs[bi + 1]) orelse
+                            self.returnConstDestination(ins, b.instrs[bi + 1], flat_idx)
                     else
                         null;
-                    try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches, pack_result_reg);
+                    try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches, preferred_result);
                 }
                 const fact_count: u2 = @as(u2, @intFromBool(ins.relation != null)) +
                     @as(u2, @intFromBool(ins.application != null)) +
@@ -3571,6 +3573,24 @@ const Arm64Compiler = struct {
         return dest;
     }
 
+    /// Materialize an integer constant directly in the ABI return register
+    /// when its only remaining consumer is the immediately following return.
+    /// The DNIR constant still owns the application realization and machine
+    /// lineage; this only prevents that ownership edge from adding a scratch
+    /// move to the previously optimal `mov x0,#k ; ret` sequence.
+    fn returnConstDestination(
+        self: *const Arm64Compiler,
+        ins: dnir.Instr,
+        next: dnir.Instr,
+        flat_idx: u32,
+    ) ?u5 {
+        if (ins.op != .@"const" or !ins.ty.is_integer() or next.op != .ret) return null;
+        const result = ins.result orelse return null;
+        if (next.lhs != .temp or next.lhs.temp != result) return null;
+        if (self.value_free_at.get(result) != flat_idx + 1) return null;
+        return 0;
+    }
+
     fn compileDnirInstr(
         self: *Arm64Compiler,
         temps: *std.AutoHashMapUnmanaged(u32, u5),
@@ -3603,7 +3623,8 @@ const Arm64Compiler = struct {
                 },
                 else => {
                     if (!ins.ty.is_integer()) return self.refuse(@src());
-                    const reg = try self.allocReg();
+                    const reg = preferred_result orelse try self.allocReg();
+                    if (preferred_result != null) self.claimReg(reg);
                     const val = switch (ins.lhs) {
                         .i64 => |v| v,
                         else => return self.refuse(@src()),
@@ -8852,234 +8873,6 @@ fn unrealizedApplicationCount(module: dnir.Module) usize {
     return count;
 }
 
-/// PROVE EVERY CLAIMED ABSENCE, one at a time.
-///
-/// A lowering that could subtract an application from the expected count by
-/// merely naming it would be able to hide a dropped call, which is the exact
-/// failure `validateDnirApplications` exists to catch. So each named
-/// application must be one the graph published, must be an aggregate
-/// projection, must carry an exact content on its result identity — the fact
-/// that made realizing it unnecessary — must belong to this function, and must
-/// not also appear as a realized instruction.
-fn validateAbsentApplications(
-    alloc: std.mem.Allocator,
-    module: dnir.Module,
-    graph: *const semantic_graph.SemanticGraph,
-    seen: *const std.AutoHashMapUnmanaged(semantic_graph.id, void),
-    diagnostic: *Diagnostic,
-) Error!void {
-    var named: std.AutoHashMapUnmanaged(semantic_graph.id, void) = .empty;
-    defer named.deinit(alloc);
-    for (module.functions) |function| {
-        for (function.absent_applications) |application| {
-            const slot = try named.getOrPut(alloc, application);
-            if (slot.found_existing) return invalidFactsWith(diagnostic, @src(), "absent-application-count");
-            if (seen.contains(application)) return invalidFactsWith(diagnostic, @src(), "absent-application-count");
-            if (graph.application(application) == null)
-                return invalidFactsWith(diagnostic, @src(), "absent-application-unpublished");
-            if (graph.isBootstrapApplicationNode(application))
-                return invalidFactsWith(diagnostic, @src(), "absent-application-unpublished");
-            if (graph.aggregateAccess(application) == null)
-                return invalidFactsWith(diagnostic, @src(), "absent-application-witness");
-            const caller = graph.applicationCaller(application) orelse
-                return invalidFactsWith(diagnostic, @src(), "absent-application-caller");
-            if (function.id == null or !std.meta.eql(function.id.?, caller))
-                return invalidFactsWith(diagnostic, @src(), "absent-application-caller");
-            const results = graph.applicationResults(application) orelse
-                return invalidFactsWith(diagnostic, @src(), "absent-application-witness");
-            if (results.len != 1) return invalidFactsWith(diagnostic, @src(), "absent-application-witness");
-        }
-    }
-    // SECOND PASS, because a chain justifies itself only once the whole chain
-    // is known. A leaf earns its absence by carrying the exact content; an
-    // intermediate step earns it by feeding another step that is itself absent.
-    // A step feeding a REALIZED consumer is not admitted: that consumer would
-    // be loading from a base this fold never emitted.
-    for (module.functions) |function| {
-        for (function.absent_applications) |application| {
-            const results = graph.applicationResults(application) orelse
-                return invalidFactsWith(diagnostic, @src(), "absent-application-witness");
-            if (graph.exactI64(results[0]) != null) continue;
-            if (!consumerIsAbsent(graph, results[0], &named))
-                return invalidFactsWith(diagnostic, @src(), "absent-application-witness");
-        }
-    }
-}
-
-/// Whether the application that consumes `value` as its subject is itself
-/// listed absent. `aggregateProducer` answers the other direction — which
-/// application PRODUCED this aggregate — so the consumer is found by asking
-/// every named application for its subject.
-fn consumerIsAbsent(
-    graph: *const semantic_graph.SemanticGraph,
-    value: semantic_graph.id,
-    named: *const std.AutoHashMapUnmanaged(semantic_graph.id, void),
-) bool {
-    var it = named.keyIterator();
-    while (it.next()) |application| {
-        const subject = graph.applicationSubject(application.*) orelse continue;
-        if (std.meta.eql(subject, value)) return true;
-    }
-    return false;
-}
-
-fn aggregateApplicationRoot(
-    graph: *const semantic_graph.SemanticGraph,
-    application: semantic_graph.id,
-) ?semantic_graph.id {
-    var subject = graph.applicationSubject(application) orelse return null;
-    var traversed: usize = 0;
-    while (graph.aggregateProducer(subject)) |producer| {
-        if (traversed >= graph.aggregateCount()) return null;
-        subject = graph.applicationSubject(producer) orelse return null;
-        traversed += 1;
-    }
-    return if (graph.aggregate(subject) != null) subject else null;
-}
-
-fn aggregateWordsMatch(
-    graph: *const semantic_graph.SemanticGraph,
-    aggregate: semantic_graph.id,
-    words: []const i64,
-    cursor: *usize,
-    depth: usize,
-) bool {
-    if (depth >= graph.aggregateCount()) return false;
-    const fact = graph.aggregate(aggregate) orelse return false;
-    if (fact.contents_known != .yes) return false;
-    const members = graph.aggregateMembers(aggregate) orelse return false;
-    for (members) |member| {
-        const node = graph.get(member) orelse return false;
-        const descriptor = node.descriptor orelse return false;
-        switch (descriptor) {
-            .i64 => {
-                if (cursor.* >= words.len) return false;
-                if (graph.exactI64(member) != words[cursor.*]) return false;
-                cursor.* += 1;
-            },
-            .array => if (!aggregateWordsMatch(graph, member, words, cursor, depth + 1)) return false,
-            else => return false,
-        }
-    }
-    return true;
-}
-
-fn validateAggregateAccessRealization(
-    module: dnir.Module,
-    function: dnir.Function,
-    graph: *const semantic_graph.SemanticGraph,
-    instruction: dnir.Instr,
-    descriptor: native_types.ResolvedType,
-    diagnostic: *Diagnostic,
-) Error!void {
-    const application = instruction.application orelse
-        return invalidFactsWith(diagnostic, @src(), "aggregate-access-application");
-    _ = graph.aggregateAccess(application) orelse
-        return invalidFactsWith(diagnostic, @src(), "aggregate-access-facts");
-    const root = aggregateApplicationRoot(graph, application) orelse
-        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
-    const root_node = graph.get(root) orelse
-        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
-    const root_descriptor = root_node.descriptor orelse
-        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
-    if (root_descriptor != .array) {
-        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
-    }
-    const root_fact = graph.aggregate(root) orelse
-        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
-    const aggregate_place = graph.aggregatePlace(root) orelse
-        return invalidFactsWith(diagnostic, @src(), "aggregate-access-place");
-    if (root_fact.contents_known != .yes or aggregate_place.shape != .collection or
-        aggregate_place.facts.contents_known != .yes or aggregate_place.facts.mutation != .no or
-        aggregate_place.facts.immutability != .yes or aggregate_place.facts.alias != .no or
-        aggregate_place.facts.escape != .no)
-    {
-        return invalidFactsWith(diagnostic, @src(), "aggregate-access-place");
-    }
-
-    // THE FOLDED REALIZATION IS CHECKED HERE, BEFORE ANY QUESTION ABOUT A
-    // BASE, A DENSE TABLE OR A NESTED ROOT — it uses none of them. Its witness
-    // is that the emitted immediate EQUALS the content the graph published on
-    // this projection's result identity, a fact the loading form is never asked
-    // to prove. `instruction.value` is the result id `setAggregateLineage`
-    // wrote, so this cannot be satisfied by an unrelated constant.
-    if (descriptor == .i64 and instruction.op == .store_local) {
-        const result_value = instruction.value orelse
-            return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-op");
-        const content = graph.exactI64(result_value) orelse
-            return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-op");
-        if (instruction.result == null or instruction.lhs != .i64 or
-            instruction.lhs.i64 != content or instruction.rhs != .void or
-            instruction.aggregate != null or instruction.callee.len != 0 or
-            instruction.record.len != 0 or instruction.pack_results.len != 0)
-        {
-            return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-op");
-        }
-        return;
-    }
-    // Only the LOADING realization needs a root of nested arrays: a dense table
-    // is what it indexes into, and only a nested root gets one.
-    if (root_descriptor.array.elem.* != .array) {
-        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
-    }
-
-    var table: ?dnir.DenseTable = null;
-    for (module.dense_tables) |candidate| {
-        if (candidate.value != root) continue;
-        if (table != null) return invalidFactsWith(diagnostic, @src(), "aggregate-dense-table-count");
-        table = candidate;
-    }
-    const dense = table orelse
-        return invalidFactsWith(diagnostic, @src(), "aggregate-dense-table");
-    if (dense.elem_ty != .i64 or dense.values.len == 0) {
-        return invalidFactsWith(diagnostic, @src(), "aggregate-dense-table");
-    }
-    var cursor: usize = 0;
-    if (!aggregateWordsMatch(graph, root, dense.values, &cursor, 0) or cursor != dense.values.len) {
-        return invalidFactsWith(diagnostic, @src(), "aggregate-dense-table-content");
-    }
-
-    var base: ?u32 = null;
-    for (function.blocks) |block| {
-        for (block.instrs) |candidate| {
-            if (candidate.aggregate != root) continue;
-            if (candidate.op != .alloc_slots or candidate.result == null or candidate.ty != .i64 or
-                candidate.lhs != .i64 or candidate.lhs.i64 != @as(i64, @intCast(dense.values.len)))
-            {
-                return invalidFactsWith(diagnostic, @src(), "aggregate-root-marker");
-            }
-            if (base != null) return invalidFactsWith(diagnostic, @src(), "aggregate-root-marker-count");
-            base = candidate.result.?;
-        }
-    }
-    if (instruction.aggregate != null or instruction.callee.len != 0 or
-        instruction.record.len != 0 or instruction.pack_results.len != 0)
-    {
-        return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization");
-    }
-    switch (descriptor) {
-        .array => {
-            if (instruction.op != .store_local or instruction.result == null or instruction.lhs == .void or
-                instruction.rhs != .void)
-            {
-                return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-op");
-            }
-        },
-        // The FOLDED leaf returned above; reaching here the leaf loads, and a
-        // load owes the root marker and the base register it reads from.
-        .i64 => {
-            const root_base = base orelse
-                return invalidFactsWith(diagnostic, @src(), "aggregate-root-marker");
-            if (instruction.op != .load_index or instruction.result == null or instruction.lhs != .temp or
-                instruction.lhs.temp != root_base or instruction.rhs != .temp)
-            {
-                return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-op");
-            }
-        },
-        else => return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-descriptor"),
-    }
-}
-
 fn validateDnirApplications(
     alloc: std.mem.Allocator,
     module: dnir.Module,
@@ -9088,6 +8881,10 @@ fn validateDnirApplications(
 ) Error!void {
     const context = module.graph orelse return invalidFactsWith(diagnostic, @src(), "missing-graph-context");
     if (context != graph) return invalidFactsWith(diagnostic, @src(), "graph-context-mismatch");
+    if (realization_validate.aggregateSchedule(module)) |failure| {
+        diagnostic.application = failure.application;
+        return invalidFactsWith(diagnostic, @src(), failure.note);
+    }
     const applications = try checkedApplications(graph, diagnostic);
     var seen: std.AutoHashMapUnmanaged(semantic_graph.id, void) = .empty;
     defer seen.deinit(alloc);
@@ -9209,16 +9006,7 @@ fn validateDnirApplications(
                     return invalidFactsWith(diagnostic, @src(), "application-fact-mismatch");
                 }
                 const aggregate_access = graph.aggregateAccess(application.application) != null;
-                if (aggregate_access) {
-                    try validateAggregateAccessRealization(
-                        module,
-                        function,
-                        graph,
-                        instruction,
-                        descriptor,
-                        diagnostic,
-                    );
-                } else if (instruction.op != .call_direct) {
+                if (!aggregate_access and instruction.op != .call_direct) {
                     // A checked call-to-constant or tail-call rewrite needs a
                     // semantic transform witness that the current graph does
                     // not publish. Until then, only the untransformed call is
@@ -9400,10 +9188,10 @@ fn validateDnirApplications(
     for (applications) |application| {
         if (!graph.isBootstrapApplicationNode(application.application)) expected += 1;
     }
-    // Applications inside a relation that folded to its answer are realized
-    // NOWHERE — known-absent, not missing. Everything else must still be
-    // realized exactly once.
-    try validateAbsentApplications(alloc, module, graph, &seen, diagnostic);
+    // Applications inside a relation that folded to its answer, and aggregate
+    // projections whose exact graph answer removed their work, are realized
+    // NOWHERE — known-absent, not missing. `aggregateSchedule` above is the one
+    // validator of every named aggregate absence; this count only consumes it.
     const unrealized = unrealizedApplicationCount(module);
     if (unrealized > expected) return invalidFactsWith(diagnostic, @src(), "application-realization-count");
     if (seen.count() != expected - unrealized) {
@@ -14189,7 +13977,7 @@ test "native backend realizes graph nested aggregate as immutable const data" {
         error.SemanticFactsInvalid,
         validateDnirApplications(alloc, lowered, &graph, &diagnostic),
     );
-    try std.testing.expectEqualStrings("application-fact-mismatch", diagnostic.note().?);
+    try std.testing.expectEqualStrings("aggregate-access-lineage", diagnostic.note().?);
     instruction.* = saved_instruction;
 
     instruction.target = saved_instruction.subject;
@@ -14198,7 +13986,7 @@ test "native backend realizes graph nested aggregate as immutable const data" {
         error.SemanticFactsInvalid,
         validateDnirApplications(alloc, lowered, &graph, &diagnostic),
     );
-    try std.testing.expectEqualStrings("application-target-mismatch", diagnostic.note().?);
+    try std.testing.expectEqualStrings("aggregate-access-lineage", diagnostic.note().?);
     instruction.* = saved_instruction;
 
     const root = lowered.dense_tables[0].value;
@@ -14210,8 +13998,71 @@ test "native backend realizes graph nested aggregate as immutable const data" {
         error.SemanticFactsInvalid,
         validateDnirApplications(alloc, lowered, &graph, &diagnostic),
     );
-    try std.testing.expectEqualStrings("unwitnessed-application-transform", diagnostic.note().?);
+    try std.testing.expectEqualStrings("aggregate-dense-table-facts", diagnostic.note().?);
     root_fact.members_pack = saved_members_pack;
+}
+
+test "native backend exact flat projection preserves the return instruction floor" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pick: i64 = (unused: i64)
+        \\    values = {10, 20, 30}
+        \\    values[2]
+        \\main: i64 = ()
+        \\    pick(0)
+    ;
+    var lexer = Lexer.init(source, "aggregate-flat-native.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&module, &checked, &graph);
+
+    var assembly = try emitCheckedTestAssembly(alloc, &module, &graph, null);
+    defer assembly.deinit(alloc);
+    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "\tmov x0, #20\n\tret\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "\tmov x9, #20\n") == null);
+
+    var projection_lineage: usize = 0;
+    for (assembly.lineage) |lineage| {
+        if (graph.aggregateAccess(lineage.application) == null) continue;
+        projection_lineage += 1;
+        try std.testing.expectEqual(native_types.ResolvedType.i64, lineage.descriptor);
+        try std.testing.expectEqual(lineage.value, graph.applicationResults(lineage.application).?[0]);
+    }
+    try std.testing.expectEqual(@as(usize, 1), projection_lineage);
+
+    const lowered = try dnir_lower.lowerModuleWithGraph(alloc, &module, &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    var exact_instruction: ?*dnir.Instr = null;
+    for (lowered.functions) |function| {
+        for (function.blocks) |block| {
+            for (@constCast(block.instrs)) |*instruction| {
+                const application = instruction.application orelse continue;
+                if (graph.aggregateAccess(application) == null or instruction.op != .@"const") continue;
+                exact_instruction = instruction;
+            }
+        }
+    }
+    const instruction = exact_instruction orelse return error.TestExpectedEqual;
+    const saved = instruction.*;
+    instruction.lhs = .{ .i64 = 99 };
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, lowered, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-access-realization-op", diagnostic.note().?);
+    instruction.* = saved;
 }
 
 test "native backend assembly lists helper call labels" {

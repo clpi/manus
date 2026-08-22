@@ -333,10 +333,21 @@ fn effectFreeApplications(
             },
             .unknown, .none => {},
         }
-        const callee = graph.applicationRelation(occurrence) orelse {
-            sites.deinit(alloc);
-            return null;
-        };
+        // Computed aggregate projection is a graph-owned intrinsic
+        // application. Its exact relation id proves which operation this is,
+        // while `aggregateAccess` rechecks subject, key and result packs. It
+        // has no source declaration to add to the transitive callee closure:
+        // asking `relationDeclaration` for the synthetic relation made a newly
+        // published `values[i]` destroy an otherwise valid whole-body fold.
+        // Keep the site in the AST/graph bijection, but give it no callee just
+        // like the other intrinsic/fused applications above.
+        const callee = if (graph.aggregateAccess(occurrence) != null)
+            null
+        else
+            graph.applicationRelation(occurrence) orelse {
+                sites.deinit(alloc);
+                return null;
+            };
         const raw = node.ast_ref orelse {
             sites.deinit(alloc);
             return null;
@@ -555,7 +566,15 @@ const ApplicationWalk = struct {
                 if (!(try self.expr(ie.then_expr))) return false;
                 return try self.expr(ie.else_expr);
             },
-            .index => |ix| return try self.expr(ix.obj) and try self.expr(ix.key),
+            .index => |ix| {
+                // Computed projection is an ordinary semantic application.
+                // Keep it in the AST half of the bijection even when the
+                // graph producer later declines its shape: a body containing
+                // an unowned projection is then conservatively non-foldable
+                // instead of being mistaken for an application-free body.
+                try self.out.append(self.alloc, e);
+                return try self.expr(ix.obj) and try self.expr(ix.key);
+            },
             .field => |f| return try self.expr(f.obj),
             // A table literal is a value and every entry is an ordinary
             // expression that can itself apply something. Only the three
@@ -585,6 +604,19 @@ const EffectFixture = struct {
     module: semantic_graph.id,
 
     fn init(alloc: std.mem.Allocator, source: []const u8, file: []const u8) !EffectFixture {
+        return initMode(alloc, source, file, false);
+    }
+
+    fn initNormalized(alloc: std.mem.Allocator, source: []const u8, file: []const u8) !EffectFixture {
+        return initMode(alloc, source, file, true);
+    }
+
+    fn initMode(
+        alloc: std.mem.Allocator,
+        source: []const u8,
+        file: []const u8,
+        normalize_tables: bool,
+    ) !EffectFixture {
         const Lexer = @import("lexer.zig").Lexer;
         const Parser = @import("parser.zig").Parser;
         const lexer = try alloc.create(Lexer);
@@ -597,6 +629,9 @@ const EffectFixture = struct {
         checked.* = @import("sema.zig").Sema.init(alloc);
         checked.idol_mode = true;
         try checked.check_module(module);
+        if (normalize_tables) {
+            @import("table_apply.zig").normalizeModule(alloc, module, &checked.type_map);
+        }
         var graph = semantic_graph.SemanticGraph.init(alloc);
         const module_id = try graph.liftModuleWithCheckedCalls(module, checked, file);
         return .{ .graph = graph, .module = module_id };
@@ -648,6 +683,49 @@ test "graph_query: print is unresolved and must never read as effect-free" {
     , "quiet.id");
     defer quiet.graph.deinit();
     try std.testing.expect(try quiet.foldable(alloc, "entry"));
+}
+
+test "graph_query: aggregate projection is an intrinsic pure application" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var projection = try EffectFixture.initNormalized(alloc,
+        \\pick: i64 = (i: i64)
+        \\    values = {10, 20, 30}
+        \\    values[i]
+        \\entry: i64 = ()
+        \\    pick(2)
+    , "aggregate-projection.id");
+    defer projection.graph.deinit();
+
+    // The projection remains a real application site for evidence and
+    // lowering, but its synthetic relation has no body to traverse. Publishing
+    // it must not remove the old lawful `entry -> 20` whole-body fold.
+    const pick = try projection.relationOf("pick");
+    var access_count: usize = 0;
+    for (projection.graph.applications()) |application| {
+        if (projection.graph.aggregateAccess(application.application) == null) continue;
+        access_count += 1;
+        try std.testing.expectEqual(semantic_graph.Card.none, application.effect);
+        try std.testing.expectEqual(semantic_graph.Card.none, application.authority);
+        try std.testing.expectEqual(pick, projection.graph.applicationCaller(application.application).?);
+    }
+    try std.testing.expectEqual(@as(usize, 1), access_count);
+    try std.testing.expect(try projection.foldable(alloc, "pick"));
+    try std.testing.expect(try projection.foldable(alloc, "entry"));
+
+    const entry = try projection.relationOf("entry");
+    const declaration = relationDeclaration(&projection.graph, entry) orelse
+        return error.TestExpectedEqual;
+    const closure = (try effectFreeCalleeClosure(
+        &projection.graph,
+        alloc,
+        entry,
+        &declaration.func.body,
+    )) orelse return error.TestExpectedEqual;
+    defer alloc.free(closure);
+    try std.testing.expectEqualSlices(semantic_graph.id, &.{pick}, closure);
 }
 
 test "graph_query: an @ffi target is invisible to the graph and must not read as effect-free" {

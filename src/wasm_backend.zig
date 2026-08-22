@@ -72,6 +72,7 @@ const types = @import("types.zig");
 const dnir = @import("native_ir.zig");
 const dnir_lower = @import("dnir_lower.zig");
 const semantic_graph = @import("semantic_graph.zig");
+const realization_validate = @import("realization_validate.zig");
 
 const RT = types.ResolvedType;
 
@@ -435,7 +436,7 @@ const helper_count: u32 = @typeInfo(Helper).@"enum".field_names.len;
 const import_count: u32 = 2;
 
 fn helperIndex(h: Helper) u32 {
-    return @intFromEnum(h);
+    return @backingInt(h);
 }
 
 const StringPool = struct {
@@ -495,6 +496,13 @@ const Emitter = struct {
     /// `load_global` / `store_global` name -> offset from `globals_base`.
     globals: std.StringHashMapUnmanaged(u32) = .empty,
     globals_used: u32 = 0,
+    /// Immutable aggregate id -> fixed linear-memory address. These are the
+    /// Wasm realization of the same `DenseTable` rows AArch64 places in
+    /// `__TEXT,__const`; `alloc_slots` becomes a pointer to these statically
+    /// initialized bytes rather
+    /// than rebuilding the aggregate in a shadow-stack frame.
+    dense_addr: std.AutoHashMapUnmanaged(semantic_graph.id, u32) = .empty,
+    dense_used: u32 = 0,
 
     /// Bodies in module function-index order, after the imports.
     bodies: std.ArrayListUnmanaged([]u8) = .empty,
@@ -555,6 +563,7 @@ const Emitter = struct {
         }
         self.func_sig.deinit(self.alloc);
         self.globals.deinit(self.alloc);
+        self.dense_addr.deinit(self.alloc);
         for (self.bodies.items) |b| {
             if (b.len > 0) self.alloc.free(b);
         }
@@ -756,6 +765,9 @@ pub fn emitFromDnir(
         .strings = .{ .alloc = alloc },
     };
     defer e.deinit();
+    if (realization_validate.aggregateSchedule(m)) |failure| {
+        return e.refuse(failure.note);
+    }
 
     e.ty_fd_write = try e.types.intern(&.{ vt_i32, vt_i32, vt_i32, vt_i32 }, &.{vt_i32});
     e.ty_proc_exit = try e.types.intern(&.{vt_i32}, &.{});
@@ -800,13 +812,31 @@ pub fn emitFromDnir(
         }
     }
 
-    // ---- 3. Reserve the helper slots so program bodies land at the right index.
+    // ---- 3. Give every graph-selected immutable dense table one exact
+    // statically initialized address. The aggregate semantic id is the key; source binding
+    // names and `alloc_slots` temporaries never decide which bytes are read.
+    for (m.dense_tables) |table| {
+        // Semantic shape, contents and uniqueness were admitted once by the
+        // shared graph-to-DNIR validator above. This loop selects only the
+        // physical linear-memory address and refuses arithmetic overflow.
+        const word_count = std.math.cast(u32, table.values.len) orelse
+            return e.refuse("dense-table-capacity");
+        const bytes = std.math.mul(u32, word_count, 8) catch
+            return e.refuse("dense-table-capacity");
+        if (bytes > dense_cap - e.dense_used) return e.refuse("dense-table-capacity");
+        const slot = try e.dense_addr.getOrPut(alloc, table.value);
+        if (slot.found_existing) return e.refuse("dense-table-duplicate");
+        slot.value_ptr.* = dense_base + e.dense_used;
+        e.dense_used += bytes;
+    }
+
+    // ---- 4. Reserve the helper slots so program bodies land at the right index.
     try e.bodies.resize(alloc, helper_count - import_count);
     try e.body_types.resize(alloc, helper_count - import_count);
     for (e.bodies.items) |*b| b.* = &.{};
     for (e.body_types.items) |*t| t.* = 0;
 
-    // ---- 4. Program bodies.
+    // ---- 5. Program bodies.
     for (m.functions) |f| {
         const body = try emitFunctionBody(&e, f);
         errdefer alloc.free(body);
@@ -1003,6 +1033,9 @@ fn emitFunctionBody(e: *Emitter, f: dnir.Function) Error![]u8 {
     e.frame_bytes = 0;
     for (instrs) |ins| {
         if (ins.op != .alloc_slots) continue;
+        if (ins.aggregate) |aggregate| {
+            if (e.dense_addr.contains(aggregate)) continue;
+        }
         const t = ins.result orelse return e.refuse("alloc-slots-no-result");
         const n = switch (ins.lhs) {
             .i64 => |v| v,
@@ -1392,6 +1425,13 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
 
         .alloc_slots => {
             const t = ins.result orelse return e.refuse("alloc-slots-no-result");
+            if (ins.aggregate) |aggregate| {
+                if (e.dense_addr.get(aggregate)) |address| {
+                    try b.i64c(address);
+                    try b.set(t);
+                    return;
+                }
+            }
             const off = e.frame_off.get(t) orelse return e.refuse("alloc-slots-unplanned");
             try b.get(e.frame_local);
             try b.i32c(@intCast(off));
@@ -1509,8 +1549,8 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
 const string_pool_cap: u32 = 1 << 18;
 const globals_base: u32 = addr_data + string_pool_cap;
 const globals_cap: u32 = 1 << 16;
-const heap_base: u32 = globals_base + globals_cap;
-const stack_top: u32 = heap_base + heap_bytes + shadow_stack_bytes;
+const dense_base: u32 = globals_base + globals_cap;
+const dense_cap: u32 = 1 << 20;
 
 fn emitFrameRestore(e: *Emitter, b: *Buf) Error!void {
     if (e.frame_bytes == 0) return;
@@ -3397,6 +3437,12 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
     const pool_len: u32 = @intCast(e.strings.data.items.len);
     if (pool_len > string_pool_cap) return e.refuse("string-pool-overflow");
     if (e.globals_used > globals_cap) return e.refuse("globals-overflow");
+    // Reserve only the bytes selected by this module. A fixed `dense_cap`
+    // hole would raise every program's declared Wasm memory by 1 MiB even
+    // when it has no dense realization, turning a bounded new capability into
+    // a universal startup/residency regression.
+    const heap_base = dense_base + e.dense_used;
+    const stack_top = heap_base + heap_bytes + shadow_stack_bytes;
 
     var out = Buf{ .alloc = alloc };
     errdefer out.deinit();
@@ -3514,15 +3560,19 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
     }
 
     // --- 11 data: the 256 interned one-byte strings, the string pool, then the
-    // demanded non-zero module-global words. Zero words remain physically
-    // absent and therefore keep WebAssembly's implicit zero initialization.
+    // demanded non-zero module-global words and graph-selected immutable dense
+    // tables. Zero global words remain physically absent and therefore keep
+    // WebAssembly's implicit zero initialization.
     {
         var s = Buf{ .alloc = alloc };
         defer s.deinit();
         var globals = Buf{ .alloc = alloc };
         defer globals.deinit();
         const global_count = try appendGlobalData(e, &globals);
-        try s.u32v(1 + @as(u32, @intFromBool(pool_len > 0)) + global_count);
+        const dense_segments = std.math.cast(u32, e.module.dense_tables.len) orelse
+            return e.refuse("dense-table-capacity");
+        const segment_count = 1 + @as(u32, @intFromBool(pool_len > 0)) + global_count + dense_segments;
+        try s.u32v(segment_count);
         try s.u32v(0); // active, memory 0
         try s.i32c(@intCast(addr_onechar));
         try s.byte(op_end);
@@ -3540,6 +3590,25 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
             try s.bytes(e.strings.data.items);
         }
         try s.bytes(globals.items.items);
+        for (e.module.dense_tables) |table| {
+            const address = e.dense_addr.get(table.value) orelse
+                return e.refuse("dense-table-address");
+            const word_count = std.math.cast(u32, table.values.len) orelse
+                return e.refuse("dense-table-capacity");
+            const byte_count = std.math.mul(u32, word_count, 8) catch
+                return e.refuse("dense-table-capacity");
+            try s.u32v(0);
+            try s.i32c(@intCast(address));
+            try s.byte(op_end);
+            try s.u32v(byte_count);
+            for (table.values) |word| {
+                const bits: u64 = @bitCast(word);
+                var byte_index: u6 = 0;
+                while (byte_index < 8) : (byte_index += 1) {
+                    try s.byte(@truncate(bits >> byte_index * 8));
+                }
+            }
+        }
         try section(&out, 11, s.items.items);
     }
 
@@ -3590,4 +3659,234 @@ test "wasm backend consumes the DNIR global initializer at its storage word" {
     data.items.clearRetainingCapacity();
     try testing.expectEqual(@as(u32, 0), try appendGlobalData(&emitter, &data));
     try testing.expectEqual(@as(usize, 0), data.items.items.len);
+}
+
+test "wasm backend realizes graph flat projection as exact dense data" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pick: i64 = (i: i64)
+        \\    values = {10, 20, 30}
+        \\    other = {40, 50}
+        \\    values[i] + other[1]
+        \\main: i64 = ()
+        \\    pick(2)
+    ;
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const lowered = try dnir_lower.lowerTestSourceWithGraph(
+        alloc,
+        source,
+        "flat-wasm.id",
+        &graph,
+    );
+    defer dnir.deinitModule(alloc, lowered);
+    try std.testing.expectEqual(@as(usize, 1), lowered.dense_tables.len);
+    const entry_name = for (lowered.functions) |function| {
+        if (function.params.len == 0) break function.name;
+    } else return error.TestExpectedEqual;
+
+    var diagnostic: Diagnostic = .{};
+    const bytes = try emitFromDnir(alloc, lowered, entry_name, &diagnostic);
+    defer alloc.free(bytes);
+    try std.testing.expect(std.mem.startsWith(u8, bytes, "\x00asm"));
+    var dense_bytes: [24]u8 = undefined;
+    for ([_]i64{ 10, 20, 30 }, 0..) |word, word_index| {
+        const bits: u64 = @bitCast(word);
+        var byte_index: u6 = 0;
+        while (byte_index < 8) : (byte_index += 1) {
+            dense_bytes[word_index * 8 + byte_index] = @truncate(bits >> byte_index * 8);
+        }
+    }
+    try std.testing.expect(std.mem.indexOf(u8, bytes, &dense_bytes) != null);
+
+    // Damage the physical table while keeping the graph exact. Wasm must ask
+    // the graph owner and refuse; accepting 10/99/30 would make the data
+    // segment a second semantic contents producer.
+    const mutable_values = @constCast(lowered.dense_tables[0].values);
+    const saved = mutable_values[1];
+    mutable_values[1] = 99;
+    var damage_diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, lowered, entry_name, &damage_diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-dense-table-content", damage_diagnostic.note().?);
+    mutable_values[1] = saved;
+
+    var duplicate_rows = [_]dnir.DenseTable{
+        lowered.dense_tables[0],
+        lowered.dense_tables[0],
+    };
+    var damaged_module = lowered;
+    damaged_module.dense_tables = &duplicate_rows;
+    damage_diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, damaged_module, entry_name, &damage_diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-dense-table-duplicate", damage_diagnostic.note().?);
+
+    var unknown_rows = [_]dnir.DenseTable{lowered.dense_tables[0]};
+    unknown_rows[0].value = std.math.maxInt(semantic_graph.id);
+    damaged_module.dense_tables = &unknown_rows;
+    damage_diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, damaged_module, entry_name, &damage_diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-dense-table-facts", damage_diagnostic.note().?);
+
+    var empty_rows = [_]dnir.DenseTable{lowered.dense_tables[0]};
+    empty_rows[0].values = &.{};
+    damaged_module.dense_tables = &empty_rows;
+    damage_diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, damaged_module, entry_name, &damage_diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-dense-table-shape", damage_diagnostic.note().?);
+
+    damaged_module = lowered;
+    damaged_module.graph = null;
+    damage_diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, damaged_module, entry_name, &damage_diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-dense-table-graph", damage_diagnostic.note().?);
+
+    var other_root: ?semantic_graph.id = null;
+    for (graph.applications()) |application| {
+        if (graph.aggregateAccess(application.application) == null) continue;
+        const subject = graph.applicationSubject(application.application) orelse continue;
+        if (subject != lowered.dense_tables[0].value) other_root = subject;
+    }
+    const exact_root = other_root orelse return error.TestExpectedEqual;
+    const extra_values = [_]i64{ 40, 50 };
+    var unused_rows = [_]dnir.DenseTable{
+        lowered.dense_tables[0],
+        .{ .value = exact_root, .elem_ty = .i64, .values = &extra_values },
+    };
+    damaged_module = lowered;
+    damaged_module.dense_tables = &unused_rows;
+    damage_diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, damaged_module, entry_name, &damage_diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-dense-table-unused", damage_diagnostic.note().?);
+}
+
+test "wasm backend validates exact flat projection lineage without dense storage" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pick: i64 = (unused: i64)
+        \\    values = {10, 20, 30}
+        \\    values[2]
+        \\main: i64 = ()
+        \\    pick(0)
+    ;
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const lowered = try dnir_lower.lowerTestSourceWithGraph(
+        alloc,
+        source,
+        "flat-exact-wasm.id",
+        &graph,
+    );
+    defer dnir.deinitModule(alloc, lowered);
+    try std.testing.expectEqual(@as(usize, 0), lowered.dense_tables.len);
+    const entry_name = for (lowered.functions) |function| {
+        if (function.params.len == 0) break function.name;
+    } else return error.TestExpectedEqual;
+
+    var diagnostic: Diagnostic = .{};
+    const bytes = try emitFromDnir(alloc, lowered, entry_name, &diagnostic);
+    alloc.free(bytes);
+
+    var graphless = lowered;
+    graphless.graph = null;
+    diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, graphless, entry_name, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("realization-graph", diagnostic.note().?);
+
+    var exact_instruction: ?*dnir.Instr = null;
+    for (lowered.functions) |function| {
+        for (function.blocks) |block| {
+            for (@constCast(block.instrs)) |*instruction| {
+                const application = instruction.application orelse continue;
+                if (graph.aggregateAccess(application) == null or instruction.op != .@"const") continue;
+                exact_instruction = instruction;
+            }
+        }
+    }
+    const instruction = exact_instruction orelse return error.TestExpectedEqual;
+    const saved = instruction.*;
+    instruction.lhs = .{ .i64 = 99 };
+    diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, lowered, entry_name, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-access-realization-op", diagnostic.note().?);
+    instruction.* = saved;
+
+    instruction.value = saved.subject;
+    diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, lowered, entry_name, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-access-lineage", diagnostic.note().?);
+    instruction.* = saved;
+
+    const result = saved.value orelse return error.TestExpectedEqual;
+    const content_row = graph.exact_i64_rows.get(result) orelse return error.TestExpectedEqual;
+    const saved_content = graph.exact_i64_facts.items[content_row].content;
+    graph.exact_i64_facts.items[content_row].content = 99;
+    diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, lowered, entry_name, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-access-realization-op", diagnostic.note().?);
+    graph.exact_i64_facts.items[content_row].content = saved_content;
+
+    const saved_descriptor = graph.nodes.items[result].descriptor;
+    graph.nodes.items[result].descriptor = .f64;
+    diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, lowered, entry_name, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-access-facts", diagnostic.note().?);
+    graph.nodes.items[result].descriptor = saved_descriptor;
+
+    const application = saved.application orelse return error.TestExpectedEqual;
+    const application_row = graph.application_rows.items[application];
+    const saved_target = graph.application_facts.items[application_row].target;
+    graph.application_facts.items[application_row].target = .unknown;
+    diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, lowered, entry_name, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-access-facts", diagnostic.note().?);
+    graph.application_facts.items[application_row].target = saved_target;
+
+    graph.application_presence.unset(application);
+    diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitFromDnir(alloc, lowered, entry_name, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("aggregate-access-facts", diagnostic.note().?);
+    graph.application_presence.set(application);
 }

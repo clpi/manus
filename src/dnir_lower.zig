@@ -265,6 +265,10 @@ const OccurrenceBridge = struct {
     /// that had nothing to do with the failure. The id lives here until a
     /// consumer decides to refuse ON it.
     first_unresolved: ?semantic_graph.id = null,
+    /// The first unresolved aggregate projection, kept separately so a later
+    /// consumer can attribute the aggregate-specific refusal to that exact
+    /// occurrence rather than to an unrelated earlier call.
+    first_unresolved_aggregate: ?semantic_graph.id = null,
 
     fn init(
         alloc: std.mem.Allocator,
@@ -285,6 +289,21 @@ const OccurrenceBridge = struct {
                 if (graph.isBootstrapApplicationNode(application)) continue;
                 index.unresolved += 1;
                 if (index.first_unresolved == null) index.first_unresolved = application;
+                // Retain the exact producer occurrence for damage handling.
+                // `get()` still returns null because the strict application is
+                // invalid; `id()` lets the expression walker refuse this graph-
+                // owned projection before the legacy place fold can answer it.
+                if (graph.isAggregateAccessApplication(application)) {
+                    if (index.first_unresolved_aggregate == null)
+                        index.first_unresolved_aggregate = application;
+                    const expression_raw = node.ast_ref orelse
+                        return refuseApplication(diagnostic, graph, @src(), "application-provenance", application);
+                    const expression: *const Expr = @ptrCast(@alignCast(expression_raw));
+                    const slot = try index.by_expression.getOrPut(alloc, expression);
+                    if (slot.found_existing)
+                        return refuseApplication(diagnostic, graph, @src(), "application-provenance-collision", application);
+                    slot.value_ptr.* = application;
+                }
                 continue;
             }
             _ = graph.applicationResults(application) orelse
@@ -312,6 +331,10 @@ const OccurrenceBridge = struct {
     fn get(self: *const OccurrenceBridge, expression: *const Expr) ?*const semantic_graph.ApplicationFact {
         const application = self.by_expression.get(expression) orelse return null;
         return self.graph.application(application);
+    }
+
+    fn id(self: *const OccurrenceBridge, expression: *const Expr) ?semantic_graph.id {
+        return self.by_expression.get(expression);
     }
 
     fn exactValue(self: *const OccurrenceBridge, expression: *const Expr) ?semantic_graph.id {
@@ -2171,11 +2194,15 @@ fn immutableAggregate(graph: *const semantic_graph.SemanticGraph, aggregate: sem
     return graph.aggregateIsSoleImmutableBinding(aggregate);
 }
 
-fn immutableNestedAggregateRoot(graph: *const semantic_graph.SemanticGraph, aggregate: semantic_graph.id) bool {
-    if (!immutableAggregate(graph, aggregate)) return false;
-    const node = graph.get(aggregate) orelse return false;
-    const descriptor = node.descriptor orelse return false;
-    return descriptor == .array and descriptor.array.elem.* == .array;
+fn hasDirectAggregateAccess(
+    graph: *const semantic_graph.SemanticGraph,
+    aggregate: semantic_graph.id,
+) bool {
+    for (graph.applications()) |application| {
+        if (graph.aggregateAccess(application.application) == null) continue;
+        if (graph.applicationSubject(application.application) == aggregate) return true;
+    }
+    return false;
 }
 
 /// Whether the exact graph place named by this transitional AST binding already
@@ -2202,10 +2229,15 @@ fn skipStaticAggregateBinding(ctx: *LowerCtx, binding_name: []const u8) Error!bo
         return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-root");
     const descriptor = node.descriptor orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-root-descriptor");
-    if (descriptor != .array or descriptor.array.elem.* != .array) return false;
+    if (descriptor != .array) return false;
+    // A flat immutable aggregate can disappear only when the graph owns at
+    // least one direct projection from it. Otherwise another still-migrating
+    // consumer may need the ordinary binding initialization. Nested aggregate
+    // access already has such a direct first edge by construction.
+    if (!hasDirectAggregateAccess(ctx.graph, aggregate)) return false;
     if (fact.contents_known != .yes or ctx.graph.aggregatePlace(aggregate) == null)
         return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-static-place");
-    return immutableNestedAggregateRoot(ctx.graph, aggregate);
+    return immutableAggregate(ctx.graph, aggregate);
 }
 
 fn appendAggregateWords(
@@ -2250,7 +2282,30 @@ fn collectDenseTables(
         const fact = graph.aggregateAt(row) orelse
             return invalidGraphFacts(diagnostic, @src(), "aggregate-member-pack");
         if (graph.aggregateProducer(fact.aggregate) != null) continue;
-        if (!immutableNestedAggregateRoot(graph, fact.aggregate)) continue;
+        if (!immutableAggregate(graph, fact.aggregate)) continue;
+        const descriptor = (graph.get(fact.aggregate) orelse
+            return invalidGraphFacts(diagnostic, @src(), "aggregate-root")).descriptor orelse
+            return invalidGraphFacts(diagnostic, @src(), "aggregate-root-descriptor");
+        // A flat exact-only projection disappears to its exact result and does
+        // not retain a dense object. A dynamic flat projection does. Nested
+        // aggregates keep the existing materialization until their complete
+        // access chain can be contracted.
+        if (descriptor == .array and descriptor.array.elem.* != .array) {
+            var runtime_access = false;
+            for (graph.applications()) |application| {
+                if (graph.aggregateAccess(application.application) == null) continue;
+                if (graph.applicationSubject(application.application) != fact.aggregate) continue;
+                const results = graph.applicationResults(application.application) orelse
+                    return invalidGraphFacts(diagnostic, @src(), "aggregate-result-pack");
+                if (results.len != 1)
+                    return invalidGraphFacts(diagnostic, @src(), "aggregate-access-pack-arity");
+                if (graph.exactI64(results[0]) == null) {
+                    runtime_access = true;
+                    break;
+                }
+            }
+            if (!runtime_access) continue;
+        }
         var words: std.ArrayListUnmanaged(i64) = .empty;
         errdefer words.deinit(alloc);
         appendAggregateWords(graph, fact.aggregate, &words, &stack, alloc) catch |err| switch (err) {
@@ -2710,6 +2765,8 @@ pub fn lowerModuleWithGraphObserved(
         // the id and the note are one cause. When the module is gate transport
         // this branch does not run and nothing is bound — the scan's finding
         // has no refusal to belong to.
+        if (occurrences.first_unresolved_aggregate) |application|
+            return refuseApplication(diagnostic, graph, @src(), "aggregate-access-fact", application);
         if (occurrences.first_unresolved) |application|
             return refuseApplication(diagnostic, graph, @src(), "missing-application-id", application);
         return invalidGraphFacts(diagnostic, @src(), "missing-application-id");
@@ -2719,6 +2776,35 @@ pub fn lowerModuleWithGraphObserved(
     errdefer dnir.deinitModule(alloc, m);
     try applyGraphToModule(alloc, graph, &m, diagnostic);
     return m;
+}
+
+/// Test-only construction seam for backend controls that must consume the same
+/// checked graph and DNIR without importing parser or semantic-stage modules
+/// into a physical realizer. The caller owns `graph` and the allocator-backed
+/// source lifetime; production compilation continues through the APIs above.
+pub fn lowerTestSourceWithGraph(
+    alloc: std.mem.Allocator,
+    source: []const u8,
+    file: []const u8,
+    graph: *semantic_graph.SemanticGraph,
+) !dnir.Module {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const table_apply = @import("table_apply.zig");
+
+    var lexer = Lexer.init(source, file);
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    table_apply.normalizeModule(alloc, &module, &checked.type_map);
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, file);
+    var diagnostic: Diagnostic = .{};
+    return lowerModuleWithGraphObserved(alloc, &module, graph, &diagnostic);
 }
 
 fn applyGraphToModule(
@@ -9399,7 +9485,7 @@ fn aggregateLeafCount(descriptor: RT) ?i64 {
 
 fn aggregateBase(ctx: *LowerCtx, root_aggregate: semantic_graph.id) Error!u32 {
     if (ctx.aggregate_bases.get(root_aggregate)) |base| return base;
-    if (!immutableNestedAggregateRoot(ctx.graph, root_aggregate))
+    if (!immutableAggregate(ctx.graph, root_aggregate))
         return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-static-place");
     const node = ctx.graph.get(root_aggregate) orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-root");
@@ -9521,20 +9607,66 @@ fn lowerAggregateAccess(
     const root_aggregate = steps.items[0].subject;
     if (ctx.graph.aggregateProducer(root_aggregate) != null)
         return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-root");
-    if (try foldAggregateAccess(ctx, steps.items, root_aggregate, consumption)) |folded| return folded;
-    // ONE STEP IS A FLAT READ, and the only flat read the graph publishes is
-    // the one the fold above just answered. Reaching here means the answer was
-    // not known after all, and the loading realization below needs a dense
-    // table only the nested root has — so this refuses instead of emitting a
-    // load against a base that does not exist.
-    if (steps.items.len < 2)
-        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-depth");
-    const base = try aggregateBase(ctx, root_aggregate);
+    // A one-step flat projection keeps one explicit constant instruction so
+    // its application, result value, and machine realization remain directly
+    // queryable. Nested chains may still disappear as a proved transformation;
+    // their ordered absent-application witnesses are validated once for every
+    // backend by `realization_validate.aggregateSchedule`.
+    if (steps.items.len > 1) {
+        if (try foldAggregateAccess(ctx, steps.items, root_aggregate, consumption)) |folded| return folded;
+    }
 
     var prefix: dnir.Value = .void;
     for (steps.items, 0..) |step, i| {
         const start: u32 = @intCast(ctx.instrs.items.len);
         const key = try aggregateKey(ctx, step);
+        const last = i + 1 == steps.items.len;
+        if (last) {
+            if (step.result_descriptor != .i64)
+                return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-leaf-descriptor");
+            // Exact member content is already the graph result. No dense
+            // object or indexed load is observable for this application. The
+            // graph-linked constant is the realization row: it preserves the
+            // application -> result -> machine lineage even though selection
+            // deleted the aggregate object and indexed load.
+            if (steps.items.len == 1) {
+                if (ctx.graph.exactI64(step.result)) |content| {
+                    const result = ctx.freshTemp();
+                    var instruction: dnir.Instr = .{
+                        .op = .@"const",
+                        .result = result,
+                        .lhs = .{ .i64 = content },
+                        .ty = .i64,
+                    };
+                    try setAggregateLineage(ctx, step, start, &instruction);
+                    try ctx.emit(instruction);
+                    return if (consumption == .discard) .void else .{ .temp = result };
+                }
+            }
+
+            const base = try aggregateBase(ctx, root_aggregate);
+            var offset = key;
+            if (i != 0) {
+                const biased = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .result = biased, .binop = .sub, .lhs = prefix, .rhs = .{ .i64 = 1 } });
+                const scaled = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .result = scaled, .binop = .mul, .lhs = .{ .temp = biased }, .rhs = .{ .i64 = step.extent } });
+                const combined = ctx.freshTemp();
+                try ctx.emit(.{ .op = .binop, .result = combined, .binop = .add, .lhs = .{ .temp = scaled }, .rhs = key });
+                offset = .{ .temp = combined };
+            }
+            const result = ctx.freshTemp();
+            var instruction: dnir.Instr = .{
+                .op = .load_index,
+                .result = result,
+                .lhs = .{ .temp = base },
+                .rhs = offset,
+                .ty = .i64,
+            };
+            try setAggregateLineage(ctx, step, start, &instruction);
+            try ctx.emit(instruction);
+            return if (consumption == .discard) .void else .{ .temp = result };
+        }
         if (i == 0) {
             const slot = ctx.freshTemp();
             var instruction: dnir.Instr = .{
@@ -9555,22 +9687,6 @@ fn lowerAggregateAccess(
         const offset = ctx.freshTemp();
         try ctx.emit(.{ .op = .binop, .result = offset, .binop = .add, .lhs = .{ .temp = scaled }, .rhs = key });
 
-        const last = i + 1 == steps.items.len;
-        if (last) {
-            if (step.result_descriptor != .i64)
-                return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-leaf-descriptor");
-            const result = ctx.freshTemp();
-            var instruction: dnir.Instr = .{
-                .op = .load_index,
-                .result = result,
-                .lhs = .{ .temp = base },
-                .rhs = .{ .temp = offset },
-                .ty = .i64,
-            };
-            try setAggregateLineage(ctx, step, start, &instruction);
-            try ctx.emit(instruction);
-            return if (consumption == .discard) .void else .{ .temp = result };
-        }
         const slot = ctx.freshTemp();
         var instruction: dnir.Instr = .{
             .op = .store_local,
@@ -9597,13 +9713,17 @@ fn lowerExprCons(
     // the module for a dropped realization — the rival authority converting a
     // published fact into a refusal. Where the graph published nothing,
     // `placeFold` still answers exactly as before.
-    if (ctx.occurrences.get(expr)) |application| {
-        if (ctx.graph.aggregateAccess(application.application) != null)
-            return lowerAggregateAccess(ctx, application, consumption);
-    }
-    // A PLACE ACCESS IS NOT AN APPLICATION. `t(2)` on a module-scope collection
+    // A PLACE ACCESS IS NOT AN APPLICATION. `t[2]` on a module-scope collection
     // reads a location; the graph could not tell that from a relation call
     // because it had no places, which is why the refusal below fired on it.
+    if (ctx.occurrences.id(expr)) |occurrence| {
+        if (ctx.graph.application(occurrence)) |application| {
+            if (ctx.graph.aggregateAccess(application.application) != null)
+                return lowerAggregateAccess(ctx, application, consumption);
+        }
+        if (ctx.graph.isAggregateAccessApplication(occurrence))
+            return refuseApplication(ctx.diagnostic, ctx.graph, @src(), "aggregate-access-fact", occurrence);
+    }
     if (placeFold(ctx, expr)) |folded| return folded;
     if (applicationNeedsGraphOccurrence(ctx, expr)) {
         return refuseMissingApplication(ctx, @src(), expr);
@@ -14577,6 +14697,98 @@ test "dnir_lower: graph aggregate facts select one immutable nested layout" {
     }
 }
 
+test "dnir_lower: immutable flat projection consumes graph result and layout" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const table_apply = @import("table_apply.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const cases = [_]struct { source: []const u8, dynamic: bool }{
+        .{
+            .source =
+            \\pick: i64 = (unused: i64)
+            \\    values = {10, 20, 30}
+            \\    values[2]
+            \\main: i64 = ()
+            \\    pick(0)
+            ,
+            .dynamic = false,
+        },
+        .{
+            .source =
+            \\pick: i64 = (i: i64)
+            \\    values = {10, 20, 30}
+            \\    values[i]
+            \\main: i64 = ()
+            \\    pick(2)
+            ,
+            .dynamic = true,
+        },
+    };
+
+    for (cases) |case| {
+        var lexer = Lexer.init(case.source, if (case.dynamic) "flat-dynamic.id" else "flat-exact.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        table_apply.normalizeModule(alloc, &module, &checked.type_map);
+
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, module.file);
+        var access: ?*const semantic_graph.ApplicationFact = null;
+        for (graph.applications()) |application| {
+            if (graph.aggregateAccess(application.application)) |fact| access = fact;
+        }
+        const fact = access orelse return error.TestExpectedEqual;
+        const result = graph.applicationResults(fact.application).?[0];
+        try std.testing.expectEqual(!case.dynamic, graph.exactI64(result) != null);
+
+        var diagnostic: Diagnostic = .{};
+        const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+        defer dnir.deinitModule(alloc, lowered);
+        try std.testing.expectEqual(@as(usize, if (case.dynamic) 1 else 0), lowered.dense_tables.len);
+
+        var saw_load = false;
+        var saw_exact_realization = false;
+        for (lowered.functions) |function| {
+            for (function.blocks) |block| {
+                for (block.instrs) |instruction| {
+                    if (instruction.op == .load_index and instruction.application == fact.application) {
+                        saw_load = true;
+                        try std.testing.expectEqual(result, instruction.value.?);
+                    }
+                    if (!case.dynamic and instruction.op == .@"const" and
+                        instruction.application == fact.application and instruction.lhs == .i64 and
+                        instruction.lhs.i64 == 20) saw_exact_realization = true;
+                }
+            }
+        }
+        try std.testing.expectEqual(case.dynamic, saw_load);
+        if (!case.dynamic) try std.testing.expect(saw_exact_realization);
+
+        // The consumer must follow the exact graph result descriptor. Damage
+        // invalidates the application at the graph/occurrence boundary before
+        // the source walker can fall back to the index or old name-keyed fold.
+        const saved_descriptor = graph.nodes.items[result].descriptor;
+        graph.nodes.items[result].descriptor = .f64;
+        diagnostic.reset();
+        try std.testing.expectError(
+            error.GraphFactsInvalid,
+            lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+        );
+        try std.testing.expectEqualStrings("aggregate-access-fact", diagnostic.note().?);
+        graph.nodes.items[result].descriptor = saved_descriptor;
+    }
+}
+
 test "dnir_lower: nested aggregate constant bounds fail closed" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -14708,6 +14920,42 @@ test "dnir_lower: checked one-result calls consume graph demand" {
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
     );
     try std.testing.expectEqualStrings("application-demand", diagnostic.note().?);
+}
+
+test "dnir_lower: flat aggregate constant bounds fail closed" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const table_apply = @import("table_apply.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_]i64{ 0, 4 }) |index| {
+        const source = try std.fmt.allocPrint(
+            alloc,
+            "main: i64 = ()\n    values = {{10, 20, 30}}\n    values[{d}]\n",
+            .{index},
+        );
+        var lexer = Lexer.init(source, if (index == 0) "flat-lower-bound.id" else "flat-upper-bound.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        table_apply.normalizeModule(alloc, &module, &checked.type_map);
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, module.file);
+        var diagnostic: Diagnostic = .{};
+        try std.testing.expectError(
+            error.UnsupportedConstruct,
+            lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+        );
+        try std.testing.expectEqualStrings("aggregate-index-bounds", diagnostic.note().?);
+    }
 }
 
 test "dnir_lower: checked aggregate result consumes exact graph shape" {
