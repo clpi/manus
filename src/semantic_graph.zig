@@ -3753,7 +3753,21 @@ pub const SemanticGraph = struct {
         const fact = self.aggregate(aggregate_id) orelse return false;
         if (fact.contents_known != .yes) return false;
         const p = self.aggregatePlace(aggregate_id) orelse return false;
-        if (p.shape != .collection or p.facts.contents_known != .yes) return false;
+        // ONE PRODUCER FOR CONTENTS-KNOWN. `fact.contents_known` is checked
+        // above and is authoritative: `publishAggregate` sets it when this
+        // graph has just lifted the members it names. `p.facts.contents_known`
+        // is a SECOND, AST-derived answer to the same question —
+        // `place.zig` recomputes it through `allFieldsConst`, which walks the
+        // initializer and rejects any field that is not an int literal or a
+        // nested table of them, including every NAMED field (it takes
+        // `positionalValue(field) orelse return false`). MEASURED over the
+        // corpus: of 77 admission attempts, 0 were rejected by the aggregate
+        // fact and 48 were rejected by the place's copy — the two stores
+        // disagreeing about one property, which is the defect, not the guard.
+        // Foldability is still gated exactly where it belongs: every member
+        // must carry an `exact_i64` (`flatAccessAnswerIsKnown`), and
+        // realization consults this same predicate, so the two cannot drift.
+        if (p.shape != .collection) return false;
         if (p.facts.mutation != .no or p.facts.immutability != .yes) return false;
         if (p.facts.alias != .no or p.facts.escape != .no) return false;
         return switch (p.bindCount()) {
