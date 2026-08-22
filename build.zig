@@ -112,8 +112,12 @@ pub fn build(b: *std.Build) void {
     // The host no longer holds a role table: src/grammar_role_table.zig is
     // generated and src/grammar_roles.zig is accessors over it. Damaging a role
     // in the Idol owner and regenerating changes what this compiler accepts.
-    const grammar_role_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "lib/compiler/token.id" });
+    // The owner runs in a private tree. Only a pair which parses through both
+    // consumers is installed, so a successful-but-malformed bootstrap compiler
+    // cannot corrupt either tracked projection before the next build.
+    const grammar_role_cmd = b.addSystemCommand(&.{ "./tools/node/dev/grammar/emit", "--write" });
     grammar_role_cmd.setCwd(b.path("."));
+    grammar_role_cmd.setEnvironmentVariable("IDOL", "./zig-out/bin/idol");
     grammar_role_cmd.step.dependOn(b.getInstallStep());
     const grammar_role_step = b.step("grammar-role", "Regenerate the grammar-role projections from lib/compiler/token.id");
     grammar_role_step.dependOn(&grammar_role_cmd.step);

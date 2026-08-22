@@ -1,0 +1,170 @@
+#!/bin/sh
+# Generate both physical grammar-role projections without letting the producer
+# write the tracked tree before its output has been validated.
+set -eu
+
+script_dir=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd) || exit 2
+repo=$(unset CDPATH; cd -- "$script_dir/../../../.." && pwd) || exit 2
+
+fail() {
+  printf 'grammar projection: FAIL — %s\n' "$*" >&2
+  exit 1
+}
+
+selftest() {
+  control=$(mktemp -d "${TMPDIR:-/tmp}/idol-grammar-control.XXXXXX") || exit 2
+  trap 'rm -rf -- "$control"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  root=$control/repo
+  mkdir -p "$root/tools/node/dev/grammar" "$root/lib/compiler" "$root/lib/token" "$root/src"
+  cp "$repo/tools/node/dev/grammar/emit" "$root/tools/node/dev/grammar/emit"
+  chmod +x "$root/tools/node/dev/grammar/emit"
+  printf 'owner\n' >"$root/lib/compiler/token.id"
+  printf 'old zig\n' >"$root/src/grammar_role_table.zig"
+  printf 'old idol\n' >"$root/lib/token/grammarrole.id"
+  printf 'test {}\n' >"$root/src/grammar_roles.zig"
+  cp "$root/src/grammar_role_table.zig" "$control/old.zig"
+  cp "$root/lib/token/grammarrole.id" "$control/old.id"
+
+  fake=$control/fake-idol
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'set -eu' \
+    'case ${1-} in' \
+    '  run)' \
+    "    printf 'pub const rows = .{ .{ .kind = ., }, };\\n' >src/grammar_role_table.zig" \
+    "    printf 'rolecount = 1\\n' >lib/token/grammarrole.id" \
+    '    exit 0' \
+    '    ;;' \
+    '  check) exit 0 ;;' \
+    'esac' \
+    'exit 2' >"$fake"
+  chmod +x "$fake"
+
+  if IDOL="$fake" "$root/tools/node/dev/grammar/emit" --write >"$control/out" 2>"$control/err"; then
+    printf 'grammar projection control: FAIL — malformed producer was admitted\n' >&2
+    exit 1
+  fi
+  cmp -s "$root/src/grammar_role_table.zig" "$control/old.zig" ||
+    fail 'malformed producer changed the tracked Zig projection'
+  cmp -s "$root/lib/token/grammarrole.id" "$control/old.id" ||
+    fail 'malformed producer changed the tracked Idol projection'
+  grep -q 'generated Zig projection is not syntactically valid' "$control/err" ||
+    fail 'malformed producer did not reach the validation refusal'
+  printf 'grammar projection control: PASS — malformed successful producer changed no tracked bytes\n'
+}
+
+mode=${1:---write}
+case $mode in
+  --selftest)
+    selftest
+    exit 0
+    ;;
+  --check|--write) ;;
+  *)
+    printf 'usage: %s [--check|--write|--selftest]\n' "$0" >&2
+    exit 2
+    ;;
+esac
+
+cd -- "$repo"
+idol=${IDOL:-./zig-out/bin/idol}
+case $idol in
+  /*) ;;
+  *) idol=$repo/${idol#./} ;;
+esac
+
+owner=lib/compiler/token.id
+zigout=src/grammar_role_table.zig
+idout=lib/token/grammarrole.id
+
+[ -x "$idol" ] || { printf 'grammar projection: FAIL — compiler is not executable: %s\n' "$idol" >&2; exit 2; }
+[ -f "$owner" ] || { printf 'grammar projection: FAIL — missing owner %s\n' "$owner" >&2; exit 2; }
+[ -f "$zigout" ] || { printf 'grammar projection: FAIL — missing projection %s\n' "$zigout" >&2; exit 2; }
+[ -f "$idout" ] || { printf 'grammar projection: FAIL — missing projection %s\n' "$idout" >&2; exit 2; }
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/idol-grammar-projection.XXXXXX") || exit 2
+cleanup() { rm -rf -- "$work"; }
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+stage=$work/tree
+mkdir -p "$stage/lib/compiler" "$stage/lib/token"
+cp -R src "$stage/src"
+rm -f -- "$stage/$zigout"
+cp "$owner" "$stage/$owner"
+
+if ! (cd -- "$stage" && "$idol" run "$owner") >"$work/run.out" 2>"$work/run.err"; then
+  printf 'grammar projection: FAIL — the Idol owner did not run\n' >&2
+  sed -n '1,20p' "$work/run.err" >&2
+  exit 1
+fi
+
+generated_zig=$stage/$zigout
+generated_id=$stage/$idout
+[ -f "$generated_zig" ] && [ ! -L "$generated_zig" ] || fail "owner did not produce $zigout"
+[ -f "$generated_id" ] && [ ! -L "$generated_id" ] || fail "owner did not produce $idout"
+[ -s "$generated_zig" ] || fail "owner produced empty $zigout"
+[ -s "$generated_id" ] || fail "owner produced empty $idout"
+
+if ! zig fmt --check "$generated_zig" >"$work/zigfmt.out" 2>"$work/zigfmt.err"; then
+  fail 'generated Zig projection is not syntactically valid'
+fi
+if ! (cd -- "$stage" && zig test src/grammar_roles.zig -fno-emit-bin) >"$work/zigtest.out" 2>"$work/zigtest.err"; then
+  printf 'grammar projection: FAIL — generated Zig projection does not satisfy its consumer\n' >&2
+  sed -n '1,20p' "$work/zigtest.err" >&2
+  exit 1
+fi
+if ! "$idol" check "$generated_id" >"$work/idol.out" 2>"$work/idol.err"; then
+  printf 'grammar projection: FAIL — generated Idol projection is not accepted\n' >&2
+  sed -n '1,20p' "$work/idol.err" >&2
+  exit 1
+fi
+
+if [ "$mode" = --check ]; then
+  changed=0
+  if cmp -s "$generated_zig" "$zigout"; then
+    printf 'grammar projection: %s regenerates byte-identically\n' "$zigout"
+  else
+    printf 'grammar projection: FAIL — %s drifted from %s\n' "$zigout" "$owner" >&2
+    changed=1
+  fi
+  if cmp -s "$generated_id" "$idout"; then
+    printf 'grammar projection: %s regenerates byte-identically\n' "$idout"
+  else
+    printf 'grammar projection: FAIL — %s drifted from %s\n' "$idout" "$owner" >&2
+    changed=1
+  fi
+  exit "$changed"
+fi
+
+if cmp -s "$generated_zig" "$zigout" && cmp -s "$generated_id" "$idout"; then
+  printf 'grammar projection: both tracked projections already match %s\n' "$owner"
+  exit 0
+fi
+
+cp "$zigout" "$work/old.zig"
+cp "$idout" "$work/old.id"
+next_zig=$zigout.next.$$
+next_id=$idout.next.$$
+rm -f -- "$next_zig" "$next_id"
+trap 'rm -f -- "$next_zig" "$next_id"; cleanup' EXIT
+cp "$generated_zig" "$next_zig"
+cp "$generated_id" "$next_id"
+chmod 0644 "$next_zig" "$next_id"
+
+if ! mv -f -- "$next_zig" "$zigout"; then
+  fail "could not install $zigout"
+fi
+if ! mv -f -- "$next_id" "$idout"; then
+  cp "$work/old.zig" "$next_zig"
+  mv -f -- "$next_zig" "$zigout" || true
+  fail "could not install $idout; restored $zigout"
+fi
+
+printf 'grammar projection: installed validated %s and %s\n' "$zigout" "$idout"
