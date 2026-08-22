@@ -387,6 +387,90 @@ fn stmtsAssignName(stmts: []const ast.Stmt, name: []const u8) bool {
     return false;
 }
 
+/// HOW MANY TIMES `name` IS ASSIGNED ANYWHERE IN THE MODULE.
+///
+/// Top-level statements, every nested block, and every relation body. The
+/// shadowing rule is `stmtsAssignName`'s: a `local` of the same name shadows
+/// the module binding for the rest of that block, so writes after it are not
+/// writes to this name.
+fn assignCountInStmts(stmts: []const ast.Stmt, name: []const u8) usize {
+    var n: usize = 0;
+    for (stmts) |*st| {
+        switch (st.*) {
+            .assign => |a| for (a.targets) |t| {
+                if (t.* == .name and std.mem.eql(u8, t.name.ident, name)) n += 1;
+            },
+            .local_decl => |ld| for (ld.names) |x| {
+                if (std.mem.eql(u8, x.ident, name)) return n;
+            },
+            .do_block => |b| n += assignCountInStmts(b.body.stmts, name),
+            .while_loop => |w| n += assignCountInStmts(w.body.stmts, name),
+            .repeat_loop => |r| n += assignCountInStmts(r.body.stmts, name),
+            .num_for => |f| n += assignCountInStmts(f.body.stmts, name),
+            .gen_for => |f| n += assignCountInStmts(f.body.stmts, name),
+            .if_stmt => |is| {
+                n += assignCountInStmts(is.then.stmts, name);
+                for (is.elseifs) |ei| n += assignCountInStmts(ei.body.stmts, name);
+                if (is.else_body) |eb| n += assignCountInStmts(eb.stmts, name);
+            },
+            .func_decl => |fd| n += assignCountInStmts(fd.func.body.stmts, name),
+            else => {},
+        }
+    }
+    return n;
+}
+
+/// gap[209]: `collectModuleConsts` recorded a name's DECLARED initializer and
+/// never invalidated it, so
+///
+///     s: i64 = 0 ; k: i64 = 41 ; peek: i64 = () s + 1 ; s = k + 1
+///
+/// answered `1` where the oracle answers `43` -- compile 0, run 0, no
+/// diagnostic. The walk saw one statement form and the language admits four:
+/// `s = k + 1` is not an int literal so it never overwrote, and a write nested
+/// in a `while` body was never seen at all. `s = 41` "worked" only by accident,
+/// because it happens to be a literal.
+///
+/// A recorded constant is now dropped unless the module writes the name exactly
+/// as many times as the recording statement itself accounts for. A bare
+/// `name = <literal>` accounts for its own write; a declared binding accounts
+/// for none. Anything beyond that -- a later non-literal assignment, a nested
+/// write, a write from a relation body -- makes the recorded value stale, and a
+/// stale constant is a wrong answer that still compiles.
+///
+/// `literalBindingOf` already refused to read this map for the same reason, in
+/// a different consumer, and wrote down why. This makes the map answer what
+/// that comment says it should.
+/// Writes to `name` at MODULE scope.
+///
+/// `assignCountInStmts` carries `stmtsAssignName`'s shadowing rule, which stops
+/// counting at a `local_decl` of the name because inside a relation body such a
+/// declaration SHADOWS the module binding. At module scope that is exactly
+/// wrong: the declaration IS the binding, not a shadow of it. Applying the
+/// nested rule here made the count stop at `s: i64 = 0` and never reach
+/// `s = k + 1`, so the predicate answered "stable" for the one program gap[209]
+/// is about. The declaring statement is skipped; every nested block still keeps
+/// the shadow rule, because inside a block it is a shadow again.
+fn moduleAssignCount(mod: *const ast.Module, name: []const u8) usize {
+    var n: usize = 0;
+    for (mod.body.stmts) |*st| {
+        switch (st.*) {
+            .assign => |a| for (a.targets) |t| {
+                if (t.* == .name and std.mem.eql(u8, t.name.ident, name)) n += 1;
+            },
+            .local_decl, .const_decl, .global_decl => {},
+            else => n += assignCountInStmts(st[0..1], name),
+        }
+    }
+    return n;
+}
+
+fn moduleConstIsStable(mod: *const ast.Module, name: []const u8, recorded_by_assign: bool) bool {
+    const writes = moduleAssignCount(mod, name);
+    const owned: usize = if (recorded_by_assign) 1 else 0;
+    return writes <= owned;
+}
+
 fn typeOfGlobal(t: ast.TypeExpr, init: ?*const Expr) RT {
     // THE FULL WIDTH TABLE, not the shared `resolveType` shortcut: a declared
     // width is a property of the PLACE (gate/narrow.sh), and the shortcut
@@ -422,7 +506,14 @@ fn collectModuleGlobals(alloc: std.mem.Allocator, mod: *const ast.Module) Error!
     for (mod.body.stmts) |*stmt| {
         switch (stmt.*) {
             .local_decl => |ld| for (ld.names, 0..) |n, i| {
-                if (!moduleFunctionsAssignName(mod, n.ident)) continue;
+                // gap[209]. A MODULE-SCOPE write needs storage exactly as much
+                // as a write from a relation body: the name outlives the
+                // statement that wrote it and a relation reads it later. The
+                // predicate looked only inside relation bodies, so
+                // `s: i64 = 0 ... s = k + 1` got neither storage nor a
+                // trustworthy constant, and every reader answered the declared
+                // initializer.
+                if (moduleAssignCount(mod, n.ident) == 0) continue;
                 const init: ?*const Expr = if (i < ld.inits.len) ld.inits[i] else null;
                 try out.types.put(alloc, n.ident, typeOfGlobal(n.typ, init));
                 try out.order.append(alloc, .{ .name = n.ident, .init = init });
@@ -630,6 +721,10 @@ fn collectModuleConsts(
         }
         const n = name orelse continue;
         const v = val orelse continue;
+        // gap[209]. A recorded value that the module later overwrites is a
+        // wrong answer that still compiles; refusing to record it makes the
+        // reference resolve through storage instead.
+        if (!moduleConstIsStable(mod, n, stmt.* == .assign)) continue;
         if (intLiteralStep(v)) |iv| {
             try map.put(alloc, try alloc.dupe(u8, n), iv);
             continue;
