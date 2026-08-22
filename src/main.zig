@@ -95,7 +95,6 @@ const native_barrier_checks = @import("native_barrier_checks.zig");
 const host_run = @import("host_run.zig");
 const wasm_semantic_gen = @import("wasm_semantic_gen.zig");
 const token_classify_gen = @import("token_classify_gen.zig");
-const grammar_role_gen = @import("grammar_role_gen.zig");
 
 var macos_sdkroot_configured = false;
 var compiler_lib_root: ?[]const u8 = null;
@@ -913,10 +912,10 @@ fn mainInner(init: std.process.Init) !void {
         }
         try token_classify_gen.emitTokenClassifyFile(alloc, io, "lib/token/classify.id");
         try token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, "src/keyword_classify.c");
-        try grammar_role_gen.emitGrammarRoleFile(alloc, io, "lib/token/grammarrole.id");
         term.print("wrote lib/token/classify.id\n", .{});
         term.print("wrote src/keyword_classify.c\n", .{});
-        term.print("wrote lib/token/grammarrole.id\n", .{});
+        term.print("lib/token/grammarrole.id is emitted by the Idol grammar-role\n", .{});
+        term.print("owner: idol run lib/compiler/token.id\n", .{});
         return;
     }
 

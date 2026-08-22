@@ -1,154 +1,22 @@
-//! GAP-134 — transitional host grammar-role table (`law.grammar.one`).
-//! Keyed by TokenKind ordinal, never by spelling. This file is a bridge
-//! (`law.bridge.death`): destination is one Idol grammar-fact owner that
-//! generates this table, `grammar.md`, and Tree-sitter. Do not treat this
-//! as the permanent grammar authority. Parser BinOp maps remain debt.
+//! GAP-134 — grammar-role ACCESSORS over the one Idol grammar-fact owner.
+//! The facts live in `lib/compiler/token.id` (`law.grammar.one`); this file
+//! holds no role of its own. `src/grammar_role_table.zig` is the generated
+//! bridge (`law.bridge.death`) that carries them into the host parser.
+//! Damaging a role in the Idol owner and regenerating changes what this
+//! compiler accepts — that counterfactual is the point of the split.
+//! Parser BinOp maps remain debt.
 const std = @import("std");
 const lexer = @import("lexer.zig");
+const table = @import("grammar_role_table.zig");
 
 pub const SCHEMA_VERSION = "grammar-role-v1";
 
-pub const Associativity = enum(u8) {
-    none = 0,
-    left = 1,
-    right = 2,
-    nonassoc = 3,
-};
-
-pub const RoleRow = struct {
-    /// Semantic identity occupying this physical producer slot. `null` means
-    /// the ABI slot is deliberately empty and must never acquire grammar role.
-    kind: ?lexer.TokenKind = null,
-    begin_expr: bool = false,
-    prefix: bool = false,
-    postfix: bool = false,
-    parameter: bool = false,
-    literal_kind: bool = false,
-    projection: bool = false,
-    body_start: bool = false,
-    quoted: bool = false,
-    descriptor: bool = false,
-    pattern: bool = false,
-    precedence: i8 = 0,
-    assoc: Associativity = .none,
-    compat_only: bool = false,
-};
-
-fn row(comptime k: lexer.TokenKind, r: RoleRow) RoleRow {
-    _ = k;
-    return r;
-}
-
-/// Physical producer-slot span. This is intentionally not the semantic token
-/// identity count: producer slot 3 is empty, while live identities retain their
-/// established backing values through 113.
-pub const slot_count = blk: {
-    const values = @typeInfo(lexer.TokenKind).@"enum".field_values;
-    var max_value: usize = 0;
-    for (values) |value| {
-        max_value = @max(max_value, @as(usize, @intCast(value)));
-    }
-    break :blk max_value + 1;
-};
-
-/// Compact generated lookup table — one row per physical producer slot.
-/// Semantic identities populate rows by backing value; the empty slot remains
-/// the all-false row and cannot be constructed as `TokenKind`.
-pub const rows = blk: {
-    const enum_info = @typeInfo(lexer.TokenKind).@"enum";
-    var table: [slot_count]RoleRow = @splat(.{});
-    for (enum_info.field_values) |value| {
-        const kind: lexer.TokenKind = @enumFromInt(value);
-        table[@intCast(value)] = switch (kind) {
-            .name => row(kind, .{ .kind = kind, .begin_expr = true, .body_start = true, .pattern = true }),
-            .int_lit, .float_lit => row(kind, .{ .kind = kind, .begin_expr = true, .literal_kind = true, .body_start = true, .pattern = true }),
-            .text_lit, .bytes_lit => row(kind, .{ .kind = kind, .begin_expr = true, .literal_kind = true, .quoted = true, .body_start = true, .pattern = true }),
-            .compat_text_lit, .compat_long_text_lit => row(kind, .{
-                .kind = kind,
-                .begin_expr = true,
-                .compat_only = true,
-                .literal_kind = true,
-                .quoted = true,
-                .body_start = true,
-                .pattern = true,
-            }),
-            .kw_true, .kw_false, .kw_nil => row(kind, .{
-                .kind = kind,
-                .begin_expr = true,
-                .compat_only = true,
-                .body_start = true,
-                .pattern = true,
-            }),
-            .dots => row(kind, .{ .kind = kind, .begin_expr = true, .pattern = true }),
-            .lparen => row(kind, .{ .kind = kind, .begin_expr = true, .prefix = true, .body_start = true }),
-            .lbrace => row(kind, .{ .kind = kind, .begin_expr = true, .body_start = true, .pattern = true }),
-            .lbracket => row(kind, .{ .kind = kind, .begin_expr = true, .projection = true, .pattern = true }),
-            .kw_not => row(kind, .{ .kind = kind, .begin_expr = true, .prefix = true, .precedence = 9, .body_start = true }),
-            .bang => row(kind, .{ .kind = kind, .begin_expr = true, .prefix = true, .precedence = 9 }),
-            .tilde => row(kind, .{ .kind = kind, .begin_expr = true, .prefix = true, .precedence = 9, .assoc = .left }),
-            .hash => row(kind, .{ .kind = kind, .begin_expr = true, .prefix = true, .compat_only = true, .body_start = true }),
-            .hash_hash => row(kind, .{ .kind = kind, .begin_expr = true, .prefix = true, .compat_only = true }),
-            .kw_comptime, .kw_await => row(kind, .{ .kind = kind, .begin_expr = true, .prefix = true }),
-            .comma => row(kind, .{ .kind = kind, .begin_expr = true }),
-            .at => row(kind, .{ .kind = kind, .begin_expr = true, .precedence = 19, .assoc = .left, .body_start = true }),
-            .dot => row(kind, .{ .kind = kind, .postfix = true, .projection = true, .precedence = 10 }),
-            .colon => row(kind, .{ .kind = kind, .parameter = true, .projection = true }),
-            .kw_i8, .kw_i16, .kw_i32, .kw_i64, .kw_u8, .kw_u16, .kw_u32, .kw_u64, .kw_f32, .kw_f64, .kw_bool, .kw_void, .kw_str => row(kind, .{ .kind = kind, .descriptor = true }),
-            .star, .slash, .percent, .idiv => row(kind, .{ .kind = kind, .precedence = 19, .assoc = .left }),
-            .plus => row(kind, .{ .kind = kind, .precedence = 17, .assoc = .left }),
-            .minus => row(kind, .{ .kind = kind, .begin_expr = true, .prefix = true, .precedence = 17, .assoc = .left, .body_start = true, .pattern = true }),
-            .concat => row(kind, .{ .kind = kind, .precedence = 16, .assoc = .right, .compat_only = true }),
-            .eq, .neq, .lt, .gt, .leq, .geq, .kw_in => row(kind, .{ .kind = kind, .precedence = 6, .assoc = .nonassoc }),
-            .kw_or => row(kind, .{ .kind = kind, .precedence = 2, .assoc = .left, .compat_only = true }),
-            .kw_and => row(kind, .{ .kind = kind, .precedence = 4, .assoc = .left, .compat_only = true }),
-            .pipe => row(kind, .{ .kind = kind, .precedence = 7, .assoc = .left, .body_start = true }),
-            .amp => row(kind, .{ .kind = kind, .precedence = 11, .assoc = .left }),
-            .lshift, .rshift => row(kind, .{ .kind = kind, .precedence = 13, .assoc = .left }),
-            .caret => row(kind, .{ .kind = kind, .precedence = 23, .assoc = .right }),
-            .pipe_gt => row(kind, .{ .kind = kind, .precedence = 1, .assoc = .left }),
-            .assign, .plus_assign, .minus_assign, .star_assign, .slash_assign, .percent_assign, .caret_assign => row(kind, .{
-                .kind = kind,
-                .precedence = 1,
-                .assoc = .right,
-            }),
-            // `return`, `break`, `continue` and `do` open a body exactly as
-            // `if`/`while`/`for` do. Leaving `return` out made a relation whose
-            // whole body is one `return` fail to be recognised as having a body
-            // at all: `main: i64 = ()` over `return 7` fell through to the
-            // module-top statement path and refused with `mod-top-stmt:ret`,
-            // while the same body with any statement before the `return` was
-            // fine. No control word is more of a statement than another.
-            .kw_if, .kw_match, .kw_while, .kw_for, .kw_return, .kw_break, .kw_continue => row(kind, .{ .kind = kind, .body_start = true }),
-            // THE BLOCK-DELIMITER FAMILY IS COMPAT-ONLY, and this row is the
-            // authority that says so — not the formatter's private opinion of
-            // it, and not `gate/design.sh`'s regex.
-            //
-            // `then`, `end`, `elseif` and `do` are Lua block punctuation. The
-            // canonical face is OFFSIDE: a block is delimited by indentation,
-            // `elseif` is `else(condition)`, and there is no terminator. That
-            // was true of `gate/design.sh` (which convicts `end`), true of
-            // `pretty.zig`'s canonical face (which refuses to emit any of
-            // them), and NOT recorded here — so the two enforcers each carried
-            // a private copy of one fact and `compat_only` had zero consumers
-            // (HPLS §7/§8 scenery). `pretty.zig` now reads this row.
-            //
-            // ONLY `compat_only` MOVES. `body_start` is read by the PARSER and
-            // is what lets `do` open a block; taking it away would change what
-            // the language accepts, which is a different question from what
-            // canonical tooling may WRITE (HPLS §94).
-            .kw_do => row(kind, .{ .kind = kind, .body_start = true, .compat_only = true }),
-            .kw_then, .kw_end, .kw_elseif => row(kind, .{ .kind = kind, .compat_only = true }),
-            .kw_fun, .kw_function => row(kind, .{ .kind = kind, .compat_only = true, .body_start = true }),
-            .kw_local, .kw_const, .kw_let => row(kind, .{ .kind = kind, .compat_only = true }),
-            .backtick => row(kind, .{ .kind = kind, .compat_only = true }),
-            .shebang => row(kind, .{ .kind = kind }),
-            .comment => row(kind, .{ .kind = kind }),
-            .compat_comment, .compat_long_comment => row(kind, .{ .kind = kind, .compat_only = true }),
-            else => row(kind, .{ .kind = kind }),
-        };
-    }
-    break :blk table;
-};
+/// Re-exported from the generated table. Every one of these is a projection
+/// of the Idol owner; nothing here may be edited to change a grammar fact.
+pub const Associativity = table.Associativity;
+pub const RoleRow = table.RoleRow;
+pub const slot_count = table.slot_count;
+pub const rows = table.rows;
 
 pub fn lookup(kind: lexer.TokenKind) RoleRow {
     return rows[@intFromEnum(kind)];

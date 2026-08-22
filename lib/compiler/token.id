@@ -128,3 +128,381 @@ token: { kind: i64, loc: loc, text: str, int_val: i64, float_val: f64 }
 
 is_type_keyword: bool = (kind: i64)
   kind >= KIND_I8 and kind <= KIND_STR
+
+# ---------------------------------------------------------------------------
+# GRAMMAR-ROLE FACTS — the one executable owner (GAP-134, law.grammar.one).
+# Keyed by producer slot identity, never by spelling.
+# ---------------------------------------------------------------------------
+
+# may this identity open an expression
+rolebeginexpr: bool = (kind: i64)
+  if (kind >= KIND_NAME and kind <= KIND_FLOAT_LIT) or kind == KIND_FALSE or kind == KIND_NIL
+    return true
+  if kind == KIND_NOT or kind == KIND_TRUE or kind == KIND_AWAIT
+    return true
+  if kind == KIND_COMPTIME or kind == KIND_LPAREN or kind == KIND_LBRACKET
+    return true
+  if kind == KIND_LBRACE or kind == KIND_MINUS or kind == KIND_HASH
+    return true
+  if kind == KIND_TILDE or kind == KIND_COMMA or kind == KIND_AT
+    return true
+  if kind == KIND_BANG or kind == KIND_DOTS or kind == KIND_HASH_HASH
+    return true
+  if (kind >= KIND_TEXT_LIT and kind <= KIND_COMPAT_LONG_TEXT_LIT)
+    return true
+  false
+
+# prefix (unary) position
+roleprefix: bool = (kind: i64)
+  if kind == KIND_NOT or kind == KIND_AWAIT or kind == KIND_COMPTIME
+    return true
+  if kind == KIND_LPAREN or kind == KIND_MINUS or kind == KIND_HASH
+    return true
+  if kind == KIND_TILDE or kind == KIND_BANG or kind == KIND_HASH_HASH
+    return true
+  false
+
+# postfix position
+rolepostfix: bool = (kind: i64)
+  if kind == KIND_DOT
+    return true
+  false
+
+# parameter-slot marker
+roleparameter: bool = (kind: i64)
+  if kind == KIND_COLON
+    return true
+  false
+
+# literal payload identity
+roleliteral: bool = (kind: i64)
+  if kind == KIND_INT_LIT or kind == KIND_FLOAT_LIT or (kind >= KIND_TEXT_LIT and kind <= KIND_COMPAT_LONG_TEXT_LIT)
+    return true
+  false
+
+# quoted payload identity (text / bytes / compat)
+rolequoted: bool = (kind: i64)
+  if (kind >= KIND_TEXT_LIT and kind <= KIND_COMPAT_LONG_TEXT_LIT)
+    return true
+  false
+
+# projection face (dot / bracket / colon)
+roleprojection: bool = (kind: i64)
+  if kind == KIND_LBRACKET or kind == KIND_COLON or kind == KIND_DOT
+    return true
+  false
+
+# may this identity open a callable body
+rolebodystart: bool = (kind: i64)
+  if (kind >= KIND_NAME and kind <= KIND_FLOAT_LIT) or (kind >= KIND_BREAK and kind <= KIND_DO) or (kind >= KIND_FALSE and kind <= KIND_FUN)
+    return true
+  if kind == KIND_IF or kind == KIND_NIL or kind == KIND_NOT
+    return true
+  if kind == KIND_RETURN or kind == KIND_TRUE or kind == KIND_WHILE
+    return true
+  if kind == KIND_MATCH or kind == KIND_LPAREN or kind == KIND_LBRACE
+    return true
+  if kind == KIND_MINUS or kind == KIND_HASH or kind == KIND_PIPE
+    return true
+  if kind == KIND_AT or (kind >= KIND_TEXT_LIT and kind <= KIND_COMPAT_LONG_TEXT_LIT)
+    return true
+  false
+
+# primitive descriptor identity
+roledescriptor: bool = (kind: i64)
+  if (kind >= KIND_I8 and kind <= KIND_STR)
+    return true
+  false
+
+# match-pattern start
+rolepattern: bool = (kind: i64)
+  if (kind >= KIND_NAME and kind <= KIND_FLOAT_LIT) or kind == KIND_FALSE or kind == KIND_NIL
+    return true
+  if kind == KIND_TRUE or kind == KIND_LBRACKET or kind == KIND_LBRACE
+    return true
+  if kind == KIND_MINUS or kind == KIND_DOTS or (kind >= KIND_TEXT_LIT and kind <= KIND_COMPAT_LONG_TEXT_LIT)
+    return true
+  false
+
+# canonical tooling may not WRITE this spelling
+rolecompatonly: bool = (kind: i64)
+  if kind == KIND_AND or kind == KIND_DO or (kind >= KIND_ELSEIF and kind <= KIND_FALSE)
+    return true
+  if kind == KIND_FUNCTION or kind == KIND_FUN or kind == KIND_LOCAL
+    return true
+  if kind == KIND_NIL or kind == KIND_OR or kind == KIND_THEN
+    return true
+  if kind == KIND_TRUE or kind == KIND_CONST or kind == KIND_LET
+    return true
+  if kind == KIND_HASH or kind == KIND_BACKTICK or kind == KIND_CONCAT
+    return true
+  if kind == KIND_HASH_HASH or kind == KIND_COMPAT_TEXT_LIT or kind == KIND_COMPAT_LONG_TEXT_LIT
+    return true
+  if kind == KIND_COMPAT_COMMENT or kind == KIND_COMPAT_LONG_COMMENT
+    return true
+  false
+
+# Pratt binding power
+roleprecedence: i64 = (kind: i64)
+  if kind == KIND_CARET
+    return 23
+  if (kind >= KIND_STAR and kind <= KIND_PERCENT) or kind == KIND_AT or kind == KIND_IDIV
+    return 19
+  if kind == KIND_PLUS or kind == KIND_MINUS
+    return 17
+  if kind == KIND_CONCAT
+    return 16
+  if kind == KIND_LSHIFT or kind == KIND_RSHIFT
+    return 13
+  if kind == KIND_AMP
+    return 11
+  if kind == KIND_DOT
+    return 10
+  if kind == KIND_NOT or kind == KIND_TILDE or kind == KIND_BANG
+    return 9
+  if kind == KIND_PIPE
+    return 7
+  if kind == KIND_IN or kind == KIND_LT or kind == KIND_GT
+    return 6
+  if (kind >= KIND_EQ and kind <= KIND_GEQ)
+    return 6
+  if kind == KIND_AND
+    return 4
+  if kind == KIND_OR
+    return 2
+  if kind == KIND_ASSIGN or kind == KIND_PIPE_GT or (kind >= KIND_PLUS_ASSIGN and kind <= KIND_CARET_ASSIGN)
+    return 1
+  0
+
+# associativity: 0 none, 1 left, 2 right, 3 nonassoc
+roleassoc: i64 = (kind: i64)
+  if kind == KIND_IN or kind == KIND_LT or kind == KIND_GT
+    return 3
+  if (kind >= KIND_EQ and kind <= KIND_GEQ)
+    return 3
+  if kind == KIND_CARET or kind == KIND_ASSIGN or kind == KIND_CONCAT
+    return 2
+  if (kind >= KIND_PLUS_ASSIGN and kind <= KIND_CARET_ASSIGN)
+    return 2
+  if kind == KIND_AND or kind == KIND_OR or (kind >= KIND_PLUS and kind <= KIND_PERCENT)
+    return 1
+  if kind == KIND_AMP or kind == KIND_PIPE or kind == KIND_TILDE
+    return 1
+  if kind == KIND_AT or (kind >= KIND_LSHIFT and kind <= KIND_IDIV) or kind == KIND_PIPE_GT
+    return 1
+  0
+
+# Host bridge spelling per physical producer slot. Provenance only:
+# recognition keys on the ordinal, never on this text. "." is the
+# unpublished slot that must never acquire a role.
+KINDZIG = "name int_lit float_lit . kw_and kw_break kw_continue kw_do kw_else kw_elseif kw_end kw_false kw_for kw_function kw_fun kw_global kw_goto kw_if kw_in kw_local kw_nil kw_not kw_or kw_repeat kw_return kw_then kw_true kw_until kw_while kw_const kw_enum kw_i8 kw_i16 kw_i32 kw_i64 kw_u8 kw_u16 kw_u32 kw_u64 kw_f32 kw_f64 kw_bool kw_void kw_str kw_match kw_try kw_catch kw_defer kw_async kw_await kw_concept kw_alias kw_private kw_extends kw_macro kw_comptime kw_by kw_let lparen rparen lbracket rbracket lbrace rbrace plus minus star slash percent caret hash amp pipe lt gt assign tilde semi colon comma dot at question bang backtick concat dots hash_hash eq neq leq geq lshift rshift idiv dcolon arrow pipe_gt fat_arrow plus_assign minus_assign star_assign slash_assign percent_assign caret_assign text_lit bytes_lit compat_text_lit compat_long_text_lit eof shebang comment compat_comment compat_long_comment "
+
+# ---------------------------------------------------------------------------
+# GENERATED PROJECTIONS (GAP-134 bridge, law.bridge.death).
+#
+# The facts above are the ONE executable grammar-role owner. Everything below
+# only writes them out. `src/grammar_role_table.zig` is the host bridge the
+# production parser reads; `lib/token/grammarrole.id` is the Idol projection.
+# Delete this section when the host consumes the owner without a Zig table.
+#
+#   idol run lib/compiler/token.id
+# ---------------------------------------------------------------------------
+
+ROLESLOTCOUNT = 114
+ROLEIDENTITYCOUNT = 113
+
+assocname: str = (kind: i64)
+  a = roleassoc(kind)
+  if a == 1
+    return "left"
+  if a == 2
+    return "right"
+  if a == 3
+    return "nonassoc"
+  "none"
+
+# Host bridge spelling for one physical slot. Provenance, never recognition.
+zigname: str = (kind: i64)
+  n = KINDZIG:len()
+  i = 1
+  seen = 0
+  start = 1
+  out = ""
+  while i <= n
+    if KINDZIG:byte(i) == 32
+      if seen == kind
+        out = KINDZIG:sub(start, i - 1)
+      seen = seen + 1
+      start = i + 1
+    i = i + 1
+  out
+
+zigrow: str = (kind: i64)
+  z = zigname(kind)
+  if z == "."
+    return "    .\{ .kind = null \},\n"
+  s = "    .\{ .kind = .{z}"
+  if rolebeginexpr(kind)
+    s = "{s}, .begin_expr = true"
+  if roleprefix(kind)
+    s = "{s}, .prefix = true"
+  if rolepostfix(kind)
+    s = "{s}, .postfix = true"
+  if roleparameter(kind)
+    s = "{s}, .parameter = true"
+  if roleliteral(kind)
+    s = "{s}, .literal_kind = true"
+  if roleprojection(kind)
+    s = "{s}, .projection = true"
+  if rolebodystart(kind)
+    s = "{s}, .body_start = true"
+  if rolequoted(kind)
+    s = "{s}, .quoted = true"
+  if roledescriptor(kind)
+    s = "{s}, .descriptor = true"
+  if rolepattern(kind)
+    s = "{s}, .pattern = true"
+  if roleprecedence(kind) != 0
+    s = "{s}, .precedence = {roleprecedence(kind)}"
+  if roleassoc(kind) != 0
+    s = "{s}, .assoc = .{assocname(kind)}"
+  if rolecompatonly(kind)
+    s = "{s}, .compat_only = true"
+  "{s} \},\n"
+
+zigbody: str = ()
+  # A module constant reaches interpolation only through a local
+  # binding: `"{ROLESLOTCOUNT}"` refuses DNB001 concat, `n = …` then
+  # `"{n}"` does not. Bootstrap subset limit, not a grammar fact.
+  slots = ROLESLOTCOUNT
+  ids = ROLEIDENTITYCOUNT
+  eof = KIND_EOF
+  s = "// GENERATED from lib/compiler/token.id — do not edit by hand.\n"
+  s = "{s}// Regenerate: idol run lib/compiler/token.id\n"
+  s = "{s}// One executable grammar-fact owner (law.grammar.one). This table is\n"
+  s = "{s}// a bridge (law.bridge.death), not an authority: change a role in the\n"
+  s = "{s}// Idol owner and regenerate. Editing this file by hand is a second\n"
+  s = "{s}// producer of one grammar fact.\n"
+  s = "{s}const lexer = @import(\"lexer.zig\");\n\n"
+  s = "{s}pub const Associativity = enum(u8) \{\n"
+  s = "{s}    none = 0,\n    left = 1,\n    right = 2,\n    nonassoc = 3,\n\};\n\n"
+  s = "{s}pub const RoleRow = struct \{\n"
+  s = "{s}    kind: ?lexer.TokenKind = null,\n"
+  s = "{s}    begin_expr: bool = false,\n"
+  s = "{s}    prefix: bool = false,\n"
+  s = "{s}    postfix: bool = false,\n"
+  s = "{s}    parameter: bool = false,\n"
+  s = "{s}    literal_kind: bool = false,\n"
+  s = "{s}    projection: bool = false,\n"
+  s = "{s}    body_start: bool = false,\n"
+  s = "{s}    quoted: bool = false,\n"
+  s = "{s}    descriptor: bool = false,\n"
+  s = "{s}    pattern: bool = false,\n"
+  s = "{s}    precedence: i8 = 0,\n"
+  s = "{s}    assoc: Associativity = .none,\n"
+  s = "{s}    compat_only: bool = false,\n"
+  s = "{s}\};\n\n"
+  s = "{s}pub const slot_count: usize = {slots};\n"
+  s = "{s}pub const identity_count: usize = {ids};\n"
+  s = "{s}pub const kind_eof: usize = {eof};\n\n"
+  s = "{s}pub const rows = [slot_count]RoleRow\{\n"
+  k = 0
+  while k < ROLESLOTCOUNT
+    s = "{s}{zigrow(k)}"
+    k = k + 1
+  "{s}\};\n"
+
+rolebit: i64 = (which: i64, kind: i64)
+  if which == 0 and rolebeginexpr(kind)
+    return 1
+  if which == 1 and roleprefix(kind)
+    return 1
+  if which == 2 and rolepostfix(kind)
+    return 1
+  if which == 3 and roleparameter(kind)
+    return 1
+  if which == 4 and roleliteral(kind)
+    return 1
+  if which == 5 and rolequoted(kind)
+    return 1
+  if which == 6 and roleprojection(kind)
+    return 1
+  if which == 7 and rolebodystart(kind)
+    return 1
+  if which == 8 and roledescriptor(kind)
+    return 1
+  if which == 9 and rolepattern(kind)
+    return 1
+  if which == 10 and rolecompatonly(kind)
+    return 1
+  if which == 11
+    return roleprecedence(kind)
+  if which == 12
+    return roleassoc(kind)
+  0
+
+tabletext: str = (name: str, which: i64)
+  s = "{name} = \{\n"
+  k = 0
+  while k < ROLESLOTCOUNT
+    s = "{s}  {rolebit(which, k)},\n"
+    k = k + 1
+  "{s}\}\n"
+
+idbody: str = ()
+  slots = ROLESLOTCOUNT
+  ids = ROLEIDENTITYCOUNT
+  eof = KIND_EOF
+  s = "# GENERATED from lib/compiler/token.id — do not edit by hand.\n"
+  s = "{s}# Regenerate: idol run lib/compiler/token.id\n"
+  s = "{s}# Grammar-role projection of the one Idol grammar-fact owner.\n\n"
+  s = "{s}ROLEIDENTITYCOUNT = {ids}\n"
+  s = "{s}ROLECOUNT = {slots}\n"
+  s = "{s}KINDEOF = {eof}\n"
+  s = "{s}{tabletext(\"BEGINEXPR\", 0)}"
+  s = "{s}{tabletext(\"prefix\", 1)}"
+  s = "{s}{tabletext(\"postfix\", 2)}"
+  s = "{s}{tabletext(\"parameter\", 3)}"
+  s = "{s}{tabletext(\"LITERALKIND\", 4)}"
+  s = "{s}{tabletext(\"quoted\", 5)}"
+  s = "{s}{tabletext(\"projection\", 6)}"
+  s = "{s}{tabletext(\"BODYSTART\", 7)}"
+  s = "{s}{tabletext(\"descriptor\", 8)}"
+  s = "{s}{tabletext(\"pattern\", 9)}"
+  s = "{s}{tabletext(\"COMPATONLY\", 10)}"
+  s = "{s}{tabletext(\"precedence\", 11)}"
+  s = "{s}{tabletext(\"assoc\", 12)}"
+  s = "{s}\nrolebeginexpr: bool = (kind: i64)\n  kind >= 0 and kind < ROLECOUNT and BEGINEXPR(kind + 1) != 0\n"
+  s = "{s}\nroleprefix: bool = (kind: i64)\n  kind >= 0 and kind < ROLECOUNT and prefix(kind + 1) != 0\n"
+  s = "{s}\nrolepostfix: bool = (kind: i64)\n  kind >= 0 and kind < ROLECOUNT and postfix(kind + 1) != 0\n"
+  s = "{s}\nroleparameter: bool = (kind: i64)\n  kind >= 0 and kind < ROLECOUNT and parameter(kind + 1) != 0\n"
+  s = "{s}\nroleliteral: bool = (kind: i64)\n  kind >= 0 and kind < ROLECOUNT and LITERALKIND(kind + 1) != 0\n"
+  s = "{s}\nrolequoted: bool = (kind: i64)\n  kind >= 0 and kind < ROLECOUNT and quoted(kind + 1) != 0\n"
+  s = "{s}\nrolebodystart: bool = (kind: i64)\n  kind >= 0 and kind < ROLECOUNT and BODYSTART(kind + 1) != 0\n"
+  s = "{s}\nroledescriptor: bool = (kind: i64)\n  kind >= 0 and kind < ROLECOUNT and descriptor(kind + 1) != 0\n"
+  s = "{s}\nrolepattern: bool = (kind: i64)\n  kind >= 0 and kind < ROLECOUNT and pattern(kind + 1) != 0\n"
+  s = "{s}\nrolecompatonly: bool = (kind: i64)\n  kind >= 0 and kind < ROLECOUNT and COMPATONLY(kind + 1) != 0\n"
+  s = "{s}\nroleprecedence: i64 = (kind: i64)\n  if kind < 0 or kind >= ROLECOUNT\n    0\n  else\n    precedence(kind + 1)\n"
+  s = "{s}\nroleassoc: i64 = (kind: i64)\n  if kind < 0 or kind >= ROLECOUNT\n    0\n  else\n    assoc(kind + 1)\n"
+  s
+
+spill: bool = (path: str, body: str)
+  f = io.open(path, "w")
+  if !f
+    return false
+  f:write(body)
+  f:close()
+  true
+
+main: i64 = ()
+  zigout = "src/grammar_role_table.zig"
+  idout = "lib/token/grammarrole.id"
+  if !spill(zigout, zigbody())
+    print("grammar role: FAIL — cannot write {zigout}")
+    return 1
+  if !spill(idout, idbody())
+    print("grammar role: FAIL — cannot write {idout}")
+    return 1
+  print("wrote {zigout}")
+  print("wrote {idout}")
+  0

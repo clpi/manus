@@ -107,22 +107,27 @@ pub fn build(b: *std.Build) void {
     addDirectRuntimeObjects(b, exe.root_module);
     b.installArtifact(exe);
 
-    // `zig build grammar-role` — regenerate lib/token/grammarrole.id, the
-    // generated grammar authority scripts/grammarconvergence.id consumes.
-    // This wiring is what makes src/emit_grammar_role.zig reachable from a
-    // build entry point (gate/orphan.sh), instead of a hand-run `zig run`.
-    const grammar_role_exe = b.addExecutable(.{
-        .name = "emit_grammar_role",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/emit_grammar_role.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    const grammar_role_run = b.addRunArtifact(grammar_role_exe);
-    grammar_role_run.setCwd(b.path("."));
-    const grammar_role_step = b.step("grammar-role", "Regenerate lib/token/grammarrole.id");
-    grammar_role_step.dependOn(&grammar_role_run.step);
+    // `zig build grammar-role` — regenerate BOTH grammar-role projections from
+    // the ONE Idol grammar-fact owner, lib/compiler/token.id (law.grammar.one).
+    // The host no longer holds a role table: src/grammar_role_table.zig is
+    // generated and src/grammar_roles.zig is accessors over it. Damaging a role
+    // in the Idol owner and regenerating changes what this compiler accepts.
+    const grammar_role_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "lib/compiler/token.id" });
+    grammar_role_cmd.setCwd(b.path("."));
+    grammar_role_cmd.step.dependOn(b.getInstallStep());
+    const grammar_role_step = b.step("grammar-role", "Regenerate the grammar-role projections from lib/compiler/token.id");
+    grammar_role_step.dependOn(&grammar_role_cmd.step);
+
+    // The counterfactual gate. A generated artifact that may drift from its
+    // owner is not generated — it is authored with a banner, and the lexer
+    // artifact already proved that failure shape in this tree. This step
+    // regenerates into a scratch tree and fails unless the tracked bytes match.
+    const grammar_projection_cmd = b.addSystemCommand(&.{"./gate/grammar-projection.sh"});
+    grammar_projection_cmd.setCwd(b.path("."));
+    grammar_projection_cmd.setEnvironmentVariable("IDOL", "./zig-out/bin/idol");
+    grammar_projection_cmd.step.dependOn(b.getInstallStep());
+    const grammar_projection_step = b.step("grammar-projection", "grammar-role tables regenerate byte-identically from lib/compiler/token.id");
+    grammar_projection_step.dependOn(&grammar_projection_cmd.step);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -345,6 +350,7 @@ pub fn build(b: *std.Build) void {
     linkProductionKeywordClassify(b, unit_tests.root_module);
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
+    test_step.dependOn(&grammar_projection_cmd.step);
     const unit_test_step = b.step("unit-test", "Run Zig unit tests only");
     unit_test_step.dependOn(&run_unit_tests.step);
 
