@@ -297,6 +297,40 @@ const OccurrenceBridge = struct {
     }
 };
 
+const GraphNameDescriptor = union(enum) {
+    /// The checked-name producer did not claim this occurrence.
+    unvisited,
+    /// It visited the occurrence and resolved its binding, but Sema's
+    /// descriptor is explicitly unknown. Transitional consumers may ask the
+    /// physical module census while this producer domain is being completed.
+    unknown,
+    /// It visited the occurrence, but the authoritative value -> binding route
+    /// is absent or contradictory. Consumers must not reconstruct it by name.
+    invalid,
+    known: types.ResolvedType,
+};
+
+/// Descriptor of this exact name occurrence through the graph's value and
+/// binding facts. The distinction between `unvisited` and `unknown` prevents a
+/// damaged/missing authoritative edge from falling through to ModuleGlobals.
+/// A pre-existing local physical slot remains a transitional realization fact
+/// outside this slice; its deletion requires graph-owned place residency.
+fn graphNameDescriptor(ctx: *const LowerCtx, expr: *const Expr) GraphNameDescriptor {
+    if (expr.* != .name) return .unvisited;
+    const value = ctx.occurrences.exactValue(expr) orelse return .unvisited;
+    switch (ctx.graph.valueOrigin(value)) {
+        .one => {},
+        .none, .unknown => return .invalid,
+    }
+    const node = ctx.graph.get(value) orelse return .invalid;
+    const descriptor = node.descriptor orelse return .unknown;
+    // `.any` is Sema's explicit unknown descriptor, not a proof that the value
+    // is non-text/non-numeric. Keep the visited state, but let transitional
+    // local residency answer until its own graph place route exists.
+    if (descriptor == .any) return .unknown;
+    return .{ .known = descriptor };
+}
+
 /// Collect top-level constant bindings so a function body can fold them.
 ///
 /// `N = 3` and the canonical enum form `Kind = @{ eof = 0, ident = 1 }` are
@@ -4643,6 +4677,10 @@ fn exprIsF64(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         .float_lit => true,
         .call => exprReturnsF64(ctx, expr),
         .name => |n| blk: {
+            switch (graphNameDescriptor(ctx, expr)) {
+                .known => |descriptor| break :blk descriptor == .f64,
+                .invalid, .unknown, .unvisited => {},
+            }
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
             break :blk ctx.f64_slots.contains(slot);
         },
@@ -4667,6 +4705,10 @@ fn exprIsPointer(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
     if (applicationResultIs(ctx, expr, .pointer)) return true;
     return switch (expr.*) {
         .name => |n| blk: {
+            switch (graphNameDescriptor(ctx, expr)) {
+                .known => |descriptor| break :blk descriptor == .pointer,
+                .invalid, .unknown, .unvisited => {},
+            }
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
             break :blk ctx.ptr_slots.contains(slot);
         },
@@ -5433,12 +5475,25 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             else => false,
         },
         .name => |n| blk: {
+            const graph_descriptor = graphNameDescriptor(ctx, expr);
+            switch (graph_descriptor) {
+                .known => |descriptor| break :blk descriptor == .str,
+                .invalid, .unknown, .unvisited => {},
+            }
             // A module-level string constant is not a local, so the slot lookup
             // below can never see it. Without this arm the VALUE lowered fine
             // and every consumer still read it as an integer: `print(OWNER)`
             // chose `%lld` and printed the pointer, and `OWNER != "x"` compared
             // addresses. The type answer has to follow the value.
             const slot = ctx.locals.get(n.ident) orelse {
+                // Once the checked-name producer visits this occurrence, a
+                // missing binding edge is authoritative absence. Do not let a
+                // mutable module-place census turn damage into a plausible
+                // answer. The older constant pool is still admissible here:
+                // its value producer proved immutability, and GAP-209 removes
+                // every written binding from it before this query.
+                if (graph_descriptor == .invalid)
+                    break :blk ctx.module_consts.strs.contains(n.ident);
                 // A WRITTEN module-scope binding is not a constant EITHER — and
                 // that is not an oversight, it is the deliberate act of the
                 // change that gave globals storage: `lowerModuleFromGraph`
@@ -10113,6 +10168,10 @@ fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
             !functionResultIs(ctx, cc.func.name.ident, .str) and
             !ctx.func_record_returns.contains(cc.func.name.ident),
         .name => |n| blk: {
+            switch (graphNameDescriptor(ctx, expr)) {
+                .known => |descriptor| break :blk descriptor.is_integer(),
+                .invalid, .unknown, .unvisited => {},
+            }
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
             break :blk !ctx.f64_slots.contains(slot) and
                 !ctx.str_slots.contains(slot) and
@@ -11791,6 +11850,55 @@ test "dnir_lower: checked module operand consumes graph binding edge" {
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
     );
     try std.testing.expectEqualStrings("application-operand-binding", diagnostic.note().?);
+}
+
+test "dnir_lower: interpolation consumes nested graph value descriptor" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\t: i64 = 0
+        \\t = t + 5
+        \\stdout:write("{t}\\n")
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "module-interpolation.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "module-interpolation.id");
+
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    dnir.deinitModule(alloc, lowered);
+
+    var interpolation_value: ?semantic_graph.id = null;
+    for (graph.nodes.items, 0..) |node, coordinate| {
+        if (node.kind != .value or node.ast_ref == null) continue;
+        const expression: *const Expr = @ptrCast(@alignCast(node.ast_ref.?));
+        if (expression.* != .name or !std.mem.eql(u8, expression.name.ident, "t")) continue;
+        interpolation_value = @intCast(coordinate);
+    }
+    const value = interpolation_value orelse return error.TestExpectedEqual;
+    var damaged = false;
+    for (graph.edges.items) |*edge| {
+        if (edge.from != value or edge.kind != .binding) continue;
+        edge.kind = .provenance;
+        damaged = true;
+        break;
+    }
+    try std.testing.expect(damaged);
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.UnsupportedConstruct,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("concat", diagnostic.note().?);
 }
 
 test "dnir_lower: checked aggregate operand requires graph ABI facts" {

@@ -4073,6 +4073,163 @@ pub const SemanticGraph = struct {
         return value;
     }
 
+    /// Publish checked name occurrences nested inside one application operand.
+    ///
+    /// Immediate operands of a checked application already get their value id
+    /// from `addApplicationValue`.  Their CHILDREN did not: `sink("{t}")`
+    /// published the concat value but not the `t` value inside it, and a
+    /// bootstrap application such as `stdout:write("{t}")` published neither
+    /// because it intentionally has no `ApplicationFact` yet.  In both cases
+    /// realization fell back to a module-name/type census even though Sema had
+    /// checked the exact occurrence and the graph already owned its binding.
+    ///
+    /// This bounded producer visits application operand expression trees only.
+    /// It deliberately does not enter nested function or block bodies: those
+    /// have their own scope and value producers and remain `unvisited` here.
+    /// A checked
+    /// application's root stays with `addApplicationValue`; an unresolved or
+    /// bootstrap application's root is included because no later pack producer
+    /// will claim it.  Every admitted name carries Sema's exact descriptor and
+    /// the graph's exact value -> binding edge.  An examined name whose binding
+    /// is unresolved remains a value with no edge, so consumers can distinguish
+    /// "visited but unknown" from "this producer never visited the shape".
+    fn liftCheckedNamesInOperand(
+        self: *SemanticGraph,
+        checked: *const sema.Sema,
+        file: []const u8,
+        occurrence: id,
+        expr: *const Expr,
+        include_root: bool,
+    ) anyerror!void {
+        if (include_root and expr.* == .name and self.valueByAst(expr) == null) {
+            if (checked.exprDescriptor(expr)) |descriptor| {
+                const loc = expr.loc();
+                const value = try self.addChild(occurrence, .{
+                    .kind = .value,
+                    .span = .{ .file = file, .start = loc.line, .end = loc.col },
+                    .descriptor = descriptor,
+                    .knowledge = semantic_algebra.knowledgeOfType(descriptor),
+                    .stage = .sema,
+                    .ast_ref = @ptrCast(@constCast(expr)),
+                });
+                try self.publishNameBinding(value, expr, occurrence);
+            }
+        }
+
+        switch (expr.*) {
+            .index => |index| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, index.obj, true);
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, index.key, true);
+            },
+            .field => |field| try self.liftCheckedNamesInOperand(checked, file, occurrence, field.obj, true),
+            .call => |call| for (call.args) |argument| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, argument, true);
+            },
+            .method_call => |call| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, call.obj, true);
+                for (call.args) |argument| {
+                    try self.liftCheckedNamesInOperand(checked, file, occurrence, argument, true);
+                }
+            },
+            .binop => |binary| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, binary.lhs, true);
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, binary.rhs, true);
+            },
+            .unop => |unary| try self.liftCheckedNamesInOperand(checked, file, occurrence, unary.operand, true),
+            .table => |table| for (table.fields) |field| switch (field) {
+                .indexed => |entry| {
+                    try self.liftCheckedNamesInOperand(checked, file, occurrence, entry.key, true);
+                    try self.liftCheckedNamesInOperand(checked, file, occurrence, entry.val, true);
+                },
+                .named => |entry| try self.liftCheckedNamesInOperand(checked, file, occurrence, entry.val, true),
+                .positional => |value| try self.liftCheckedNamesInOperand(checked, file, occurrence, value, true),
+                .spread => |value| try self.liftCheckedNamesInOperand(checked, file, occurrence, value, true),
+                .semantic => |value| try self.liftCheckedNamesInOperand(checked, file, occurrence, value.val, true),
+            },
+            .list_comp => |list| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, list.value, true);
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, list.iter, true);
+                if (list.filter) |filter| {
+                    try self.liftCheckedNamesInOperand(checked, file, occurrence, filter, true);
+                }
+            },
+            .try_expr => |attempt| try self.liftCheckedNamesInOperand(checked, file, occurrence, attempt.operand, true),
+            .unwrap_expr => |unwrap| try self.liftCheckedNamesInOperand(checked, file, occurrence, unwrap.operand, true),
+            .if_expr => |conditional| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, conditional.cond, true);
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, conditional.then_expr, true);
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, conditional.else_expr, true);
+            },
+            .match_expr => |match| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, match.scrutinee, true);
+                for (match.arms) |*arm| {
+                    if (arm.pattern == .literal) {
+                        try self.liftCheckedNamesInOperand(checked, file, occurrence, arm.pattern.literal, true);
+                    }
+                    if (arm.guard) |guard| {
+                        try self.liftCheckedNamesInOperand(checked, file, occurrence, guard, true);
+                    }
+                }
+            },
+            .await_expr => |awaited| try self.liftCheckedNamesInOperand(checked, file, occurrence, awaited.operand, true),
+            .contains_expr => |contains| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, contains.lhs, true);
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, contains.rhs, true);
+            },
+            .quote => |quoted| try self.liftCheckedNamesInOperand(checked, file, occurrence, quoted.expr, true),
+            .unquote => |quoted| try self.liftCheckedNamesInOperand(checked, file, occurrence, quoted.expr, true),
+            .macro_call => |macro| for (macro.args) |argument| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, argument, true);
+            },
+            .sequence => |sequence| for (sequence.exprs) |item| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, item, true);
+            },
+            .range => |range| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, range.start, true);
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, range.end, true);
+                if (range.step) |step| {
+                    try self.liftCheckedNamesInOperand(checked, file, occurrence, step, true);
+                }
+            },
+            // Nested bodies are outside this producer's declared domain.  A
+            // later scope-owned producer must publish their occurrences; this
+            // walk must not attach them to the enclosing application.
+            .func_expr => {},
+            else => {},
+        }
+    }
+
+    fn liftCheckedApplicationOperandNames(
+        self: *SemanticGraph,
+        checked: *const sema.Sema,
+        file: []const u8,
+        occurrence: id,
+        expr: *const Expr,
+        fact: ?sema.ApplicationFact,
+    ) anyerror!void {
+        if (fact) |application_fact| {
+            if (application_fact.subject) |subject| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, subject, false);
+            }
+            for (application_fact.arguments) |argument| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, argument, false);
+            }
+            return;
+        }
+        // No semantic application pack exists yet.  Its syntactic argument
+        // expressions are nevertheless sema-visited values, and this producer
+        // records that bounded domain without pretending the callee resolved.
+        switch (expr.*) {
+            .call => |call| for (call.args) |argument| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, argument, true);
+            },
+            .method_call => |call| for (call.args) |argument| {
+                try self.liftCheckedNamesInOperand(checked, file, occurrence, argument, true);
+            },
+            else => {},
+        }
+    }
+
     /// Lift-time only: a name operand projects onto an exact local/param id.
     fn publishNameBinding(
         self: *SemanticGraph,
@@ -4735,7 +4892,9 @@ pub const SemanticGraph = struct {
             if (self.application(call_id) != null) continue;
             const raw = self.nodes.items[call_id].ast_ref orelse continue;
             const expr: *const Expr = @ptrCast(@alignCast(raw));
-            const fact = checked.applicationFact(expr) orelse continue;
+            const checked_fact = checked.applicationFact(expr);
+            try self.liftCheckedApplicationOperandNames(checked, file, call_id, expr, checked_fact);
+            const fact = checked_fact orelse continue;
             const relation = self.findFuncDecl(fact.target) orelse
                 try self.liftForeignRelation(module, checked, fact, file);
             const applied = self.findFuncDecl(fact.applied) orelse
@@ -8275,6 +8434,50 @@ test "semantic_graph: one module binding owns checked value origin and survives 
     }
     try std.testing.expect(module_origin_seen);
     try std.testing.expect(shadow_origin_seen);
+}
+
+test "semantic_graph: nested application name publishes checked module descriptor" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\t: i64 = 0
+        \\t = t + 5
+        \\stdout:write("{t}\\n")
+    ;
+    var lexer = Lexer.init(source, "module-interpolation.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const module_id = try graph.liftModuleWithCheckedCalls(&module, &checked, "module-interpolation.id");
+
+    const binding = graph.resolveInHome(module_id, "t", .local) orelse
+        return error.TestExpectedEqual;
+    var nested_value: ?id = null;
+    for (graph.nodes.items, 0..) |node, coordinate| {
+        if (node.kind != .value or node.ast_ref == null) continue;
+        const expression: *const Expr = @ptrCast(@alignCast(node.ast_ref.?));
+        if (expression.* != .name or !std.mem.eql(u8, expression.name.ident, "t")) continue;
+        // Only the interpolation occurrence is inside an application operand;
+        // the assignment's read is outside this producer's declared domain.
+        try std.testing.expect(nested_value == null);
+        nested_value = @intCast(coordinate);
+    }
+    const value = nested_value orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(types.ResolvedType.i64, graph.get(value).?.descriptor.?);
+    try std.testing.expectEqual(Card{ .one = binding }, graph.valueOrigin(value));
+    const application = graph.get(value).?.scope orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(NodeKind.call, graph.get(application).?.kind);
+    try std.testing.expect(graph.application(application) == null);
+    try std.testing.expect(graph.isBootstrapApplicationNode(application));
 }
 
 test "semantic_graph: identity lookup survives a param that shadows a function name" {

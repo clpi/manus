@@ -1,0 +1,6 @@
+# expect: 5
+# A checked name nested inside a bootstrap application argument keeps its exact
+# value -> module binding -> descriptor route through graph-owned lowering.
+t: i64 = 0
+t = t + 5
+stdout:write("{t}\n")
