@@ -1757,9 +1757,15 @@ pub const Parser = struct {
                 // `return end` used to terminate it, and the closer was doing
                 // work the layout should have been doing.
                 if (self.idol_mode and nxt.loc.line != l.line) break :sw;
-                if (self.idol_mode and !grammar_roles.canBeginExpression(nxt.kind)) {
-                    term.locErr(nxt.loc, "expected a return value or line boundary, got '{s}'", .{nxt.kind.spelling()});
-                    return ParseError.UnexpectedToken;
+                if (self.idol_mode) {
+                    const view = token_view.fromLexer(self.lex) orelse {
+                        term.locErr(nxt.loc, "production token view is absent at return lookahead", .{});
+                        return ParseError.UnexpectedToken;
+                    };
+                    if (!view.canBeginExpression(self.lex.duoStreamIndex())) {
+                        term.locErr(nxt.loc, "expected a return value or line boundary, got '{s}'", .{nxt.kind.spelling()});
+                        return ParseError.UnexpectedToken;
+                    }
                 }
                 try vals.append(self.alloc, try self.parse_expr());
                 while (try self.eat(.comma) != null)
@@ -8502,7 +8508,7 @@ test "parse: return with no value" {
     try testing.expectEqual(@as(usize, 0), stmt.ret.vals.len);
 }
 
-test "parse: canonical return consumes generated expression-start role" {
+test "parse: canonical return consumes immutable token-view expression-start role" {
     try testing.expect(grammar_roles.canBeginExpression(.int_lit));
     try testing.expect(grammar_roles.canBeginExpression(.kw_function));
     try testing.expect(!grammar_roles.canBeginExpression(.rparen));
@@ -8523,6 +8529,19 @@ test "parse: canonical return consumes generated expression-start role" {
     var invalid_arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer invalid_arena.deinit();
     try testing.expectError(ParseError.UnexpectedToken, parseDuoSource("return )", &invalid_arena));
+}
+
+test "parse: canonical return refuses without the production token view" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var lex = Lexer.init("return 99", "test.id");
+    var p = Parser.init(&lex, arena.allocator());
+    p.idol_mode = true;
+
+    // Bypass parse_module deliberately: that is the owner that installs the
+    // producer pack. The lookahead must not reconstruct the role from the host
+    // scanner's token kind when the immutable view is absent.
+    try testing.expectError(ParseError.UnexpectedToken, p.parse_return());
 }
 
 test "parse: if statement" {
