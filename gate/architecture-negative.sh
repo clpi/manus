@@ -155,10 +155,13 @@ else
     bad 'POST-RESOLUTION-PATH-ZERO: graph must publish foreign constant value facts'
 fi
 examined=$((examined + 1))
-if grep -Fq 'fn exactValue' "$DNIR" && grep -Fq 'by_exact_value' "$DNIR" && grep -Fq 'ctx.occurrences.exactValue' "$DNIR"; then
-    ok 'POST-RESOLUTION-PATH-ZERO: DNIR consumes graph exact value bridge'
+if grep -Fq 'fn exactValue' "$DNIR" && \
+   grep -Fq 'return self.graph.valueByAst(expression);' "$DNIR" && \
+   grep -Fq 'ctx.occurrences.exactValue' "$DNIR" && \
+   ! grep -Fq 'by_exact_value' "$DNIR"; then
+    ok 'POST-RESOLUTION-PATH-ZERO: DNIR consumes the graph-owned occurrence value index'
 else
-    bad 'POST-RESOLUTION-PATH-ZERO: DNIR must lower foreign constants from graph exactI64'
+    bad 'POST-RESOLUTION-PATH-ZERO: DNIR must ask graph valueByAst and must not rebuild by_exact_value'
 fi
 
 # LINKAGE-DOES-NOT-DEFINE-MEANING — export names must not drive graph-required semantics
