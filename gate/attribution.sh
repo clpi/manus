@@ -51,6 +51,24 @@ refuse=$((total - clean - tmo))
   # DNB001 333 / DNB011 92 against dnir-lower 333 / graph 91 — the same split
   # twice. Report it as the code split it is; do not cite it as corroboration
   # of a reason histogram, and do not call it attribution.
+  #
+  # WORSE THAN UNINFORMATIVE — IT MISATTRIBUTES THE MAJORITY. Measured by an
+  # instrumented build: 302 of 444 first blocking edges (68%) are emitted by
+  # src/codegen.zig's PRE-GRAPH native_scalar_precheck, which runs at
+  # main.zig:4781, strictly before every graph lift (main.zig:4991/5214/5249)
+  # and so cannot consult the graph at all. main.zig:5102-5108 funnels that
+  # precheck tag into this same `missing:` slot, and formatDirectCause labels
+  # every error.UnsupportedProgram "dnir lower". There is no
+  # `producer: codegen precheck` value, so this census CANNOT NAME the phase
+  # that owns most of the budget. Treat the column as absent, not as data.
+  #
+  # AND THERE IS NO GRAPH FACT TO ROUTE TO for the descriptor family: an
+  # instrumented lift measured params_with_descriptor = 0 in 808 of 808
+  # relation nodes, and 46 of 46 ret-type-refused relations answer `any`
+  # identically in AST and graph — semantic_graph.zig:2536 and :4082 set
+  # `.result_descriptor = try types.resolve(fd.func.ret_type, ...)`, copying
+  # the same AST field the precheck reads. The graph MIRRORS the AST here.
+  # The fact is unproduced, not producer-hollow.
   echo "-- error code restated as producer (NOT independent of the code) --"
   grep -oE 'producer: [a-z ]+' "$tmp.rec" | sed 's/producer: //' \
     | sort | uniq -c | sort -rn
