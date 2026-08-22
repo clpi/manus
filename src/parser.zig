@@ -4411,22 +4411,23 @@ pub const Parser = struct {
         return e;
     }
 
-    fn tokenStartsMatchPattern(kind: TK) bool {
-        return grammar_roles.canStartPattern(kind);
-    }
-
     fn startsMatchArm(self: *Parser) ParseError!bool {
-        const saved = self.lex.saveState();
-        defer self.lex.restoreState(saved);
-
-        const first = try self.lex.peek();
+        const view = token_view.fromLexer(self.lex) orelse {
+            const tok = try self.pk();
+            term.locErr(tok.loc, "production token view is absent at match-arm lookahead", .{});
+            return ParseError.UnexpectedToken;
+        };
+        const start = self.lex.duoStreamIndex();
+        const first = view.at(start) orelse return false;
         if (first.kind == .name and std.mem.eql(u8, first.text, "case")) return true;
         if (first.kind == .kw_else) return true;
-        if (!tokenStartsMatchPattern(first.kind)) return false;
+        if (!view.canStartPattern(start)) return false;
 
         var depth: u32 = 0;
+        var idx = start;
         while (true) {
-            const tok = try self.lex.next();
+            const tok = view.at(idx) orelse return false;
+            idx += 1;
             if (tok.kind == .eof or tok.kind == .kw_end or tok.kind == .semi) return false;
             if (depth == 0 and tok.loc.line != first.loc.line) return false;
             switch (tok.kind) {
@@ -8542,6 +8543,32 @@ test "parse: canonical return refuses without the production token view" {
     // producer pack. The lookahead must not reconstruct the role from the host
     // scanner's token kind when the immutable view is absent.
     try testing.expectError(ParseError.UnexpectedToken, p.parse_return());
+}
+
+test "parse: match-arm pattern role consumes immutable token view" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var lex = Lexer.init("1 then return 7", "test.id");
+    var p = Parser.init(&lex, arena.allocator());
+    p.idol_mode = true;
+    try p.ensureProducerPack();
+    defer p.releaseOwnedPack();
+
+    const before = p.lex.duoStreamIndex();
+    try testing.expect(try p.startsMatchArm());
+    try testing.expectEqual(before, p.lex.duoStreamIndex());
+}
+
+test "parse: match-arm lookahead refuses without the production token view" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var lex = Lexer.init("1 then return 7", "test.id");
+    var p = Parser.init(&lex, arena.allocator());
+    p.idol_mode = true;
+
+    // Bypass parse_module deliberately. A host token kind is not permission to
+    // reconstruct the generated pattern role when its producer view is absent.
+    try testing.expectError(ParseError.UnexpectedToken, p.startsMatchArm());
 }
 
 test "parse: if statement" {
