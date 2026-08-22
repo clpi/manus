@@ -11,6 +11,43 @@
 # A changed row is red. A timeout or broken outcome channel is infrastructure,
 # never a semantic refusal. The oracle is intentionally bounded: callers must
 # supply only programs expected to retain legacy behaviour (law.oracle.bounded).
+#
+# WHY EACH MECHANISM BELOW EXISTS. Every one was written after a hand-rolled
+# differential in this tree produced a CONFIDENT WRONG ANSWER. Preserved as
+# provenance so none is removed as redundant ceremony:
+#
+#   normalising `([0-9]+ ms` — compiler progress lines carry per-run timings.
+#     Comparing raw stderr reported 279 of 943 files changed when nothing had.
+#
+#   normalising mirror paths — `detectCompilerLibRoot(..., args[0])`
+#     (src/main.zig) resolves the compiler's lib/ from the BINARY's location,
+#     not the cwd, so two arms from different mirrors compare two different
+#     lib/ trees and diagnostics carry the mirror path. 126 false rows. Note
+#     the pattern must cross a SPACE: an earlier `[^ ]*` could not match
+#     "/Volumes/d 1/" and silently normalised nothing.
+#
+#   a working directory per arm — both arms otherwise write ./<name>.out into
+#     one directory and the second hits the first's cached artifact. 28 false
+#     rows INCLUDING apparent exit-code regressions (0 -> 1) on programs whose
+#     stdout was byte-identical.
+#
+#   infrastructure classification — a killed run emits NO diagnostic, so a
+#     naive census scores it as a CLEAN COMPILE. The error is silent and
+#     OPTIMISTIC: under load this moved a measured refusal count from 445 to
+#     345 with no signal at all.
+#
+#   the same-binary guard — a patched build that never finished linking
+#     reports zero differences and reads as success. Related: copying a mirror
+#     WITH its .zig-cache makes `zig build` emit a byte-identical binary from
+#     changed sources (observed: 8584af5eb14f1ace on both arms). Hash both.
+#
+#   the zero-subject guard — run where the list resolves empty, an earlier
+#     version printed "compared 0 ... CHANGED 0" and exited 0. GAP-201: a gate
+#     examining zero subjects must fail.
+#
+#   Reading `$?` after a pipe reports the PIPE's status. This hid a genuinely
+#     failing gate here; bash PIPESTATUS[0] and zsh pipestatus[1] differ in
+#     BOTH name and index, so a snippet copied between shells is silently wrong.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
