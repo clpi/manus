@@ -4042,11 +4042,56 @@ fn intLiteralStep(expr: *const ast.Expr) ?i64 {
 /// Comparisons only. An integer is not a truth value in this language and a
 /// non-comparison operand is not decided here -- `null` means "not known
 /// constant", never "false", so the caller emits both arms exactly as before.
+/// THE VALUE OF AN INTEGER EXPRESSION BUILT ONLY FROM LITERALS, or null.
+///
+/// NO NAME IS RESOLVED HERE, and that is the whole boundary. `ctx.const_ints`
+/// would answer for a name, and `literalBindingOf`'s doc comment already
+/// records why reading it is a wrong answer: the map "records a name's last
+/// literal binding and is never invalidated by a non-literal reassignment, so
+/// after `i = 1 ; i = i + 5` it still answers 1". gap[209] is that same
+/// producer defect measured end to end. A condition folded from a stale name
+/// would pick the wrong arm and still compile, so names are refused until the
+/// producer is exact.
+///
+/// Division and remainder admit a literal non-zero divisor only; `sdiv` not
+/// faulting today is a reason to exclude a zero divisor, not to allow it.
+fn constIntValue(e: *const ast.Expr) ?i64 {
+    if (intLiteralStep(e)) |v| return v;
+    switch (e.*) {
+        .unop => |u| {
+            const v = constIntValue(u.operand) orelse return null;
+            return switch (u.op) {
+                .neg => std.math.negate(v) catch null,
+                .bnot => ~v,
+                else => null,
+            };
+        },
+        .binop => |b| {
+            const l = constIntValue(b.lhs) orelse return null;
+            const r = constIntValue(b.rhs) orelse return null;
+            return switch (b.op) {
+                .add => l +% r,
+                .sub => l -% r,
+                .mul => l *% r,
+                .band => l & r,
+                .bor => l | r,
+                .bxor => l ^ r,
+                .lshift => if (r >= 0 and r < 64) l << @intCast(r) else null,
+                .rshift => if (r >= 0 and r < 64) l >> @intCast(r) else null,
+                .idiv, .div => if (r == 0) null else @divFloor(l, r),
+                .mod => if (r == 0) null else @mod(l, r),
+                else => null,
+            };
+        },
+        else => return null,
+    }
+}
+
 fn constConditionTruth(cond: *const ast.Expr) ?bool {
     if (cond.* != .binop) return null;
     const b = cond.binop;
-    const lhs = intLiteralStep(b.lhs) orelse return null;
-    const rhs = intLiteralStep(b.rhs) orelse return null;
+    const lhs = constIntValue(b.lhs) orelse return null;
+    const rhs = constIntValue(b.rhs) orelse return null;
     return switch (b.op) {
         .eq => lhs == rhs,
         .neq => lhs != rhs,
