@@ -140,13 +140,17 @@ rolebeginexpr: bool = (kind: i64)
     return true
   if kind == KIND_NOT or kind == KIND_TRUE or kind == KIND_AWAIT
     return true
-  if kind == KIND_COMPTIME or kind == KIND_LPAREN or kind == KIND_LBRACKET
+  if kind == KIND_COMPTIME or kind == KIND_LPAREN or kind == KIND_LBRACE
     return true
-  if kind == KIND_LBRACE or kind == KIND_MINUS or kind == KIND_HASH
+  if kind == KIND_MINUS or kind == KIND_HASH or kind == KIND_TILDE
     return true
-  if kind == KIND_TILDE or kind == KIND_COMMA or kind == KIND_AT
+  if kind == KIND_AT or kind == KIND_BANG or kind == KIND_DOTS
     return true
-  if kind == KIND_BANG or kind == KIND_DOTS or kind == KIND_HASH_HASH
+  if kind == KIND_HASH_HASH or kind == KIND_PIPE or kind == KIND_DOT
+    return true
+  if kind == KIND_COLON or kind == KIND_IF or kind == KIND_MATCH
+    return true
+  if kind == KIND_FUNCTION or kind == KIND_FUN or is_type_keyword(kind)
     return true
   if (kind >= KIND_TEXT_LIT and kind <= KIND_COMPAT_LONG_TEXT_LIT)
     return true

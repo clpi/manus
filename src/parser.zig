@@ -1757,6 +1757,10 @@ pub const Parser = struct {
                 // `return end` used to terminate it, and the closer was doing
                 // work the layout should have been doing.
                 if (self.idol_mode and nxt.loc.line != l.line) break :sw;
+                if (self.idol_mode and !grammar_roles.canBeginExpression(nxt.kind)) {
+                    term.locErr(nxt.loc, "expected a return value or line boundary, got '{s}'", .{nxt.kind.spelling()});
+                    return ParseError.UnexpectedToken;
+                }
                 try vals.append(self.alloc, try self.parse_expr());
                 while (try self.eat(.comma) != null)
                     try vals.append(self.alloc, try self.parse_expr());
@@ -5437,10 +5441,6 @@ pub const Parser = struct {
         return e;
     }
 
-    fn is_expr_start(_: *Parser, kind: TK) bool {
-        return grammar_roles.canBeginExpression(kind);
-    }
-
     /// Parenless call arguments bind tighter than binary `+`/`-` (§2.5, GR-call-002).
     const parenless_call_arg_min_prec: u8 = 18;
 
@@ -8500,6 +8500,29 @@ test "parse: return with no value" {
     const stmt = mod.body.stmts[0];
     try testing.expect(stmt == .ret);
     try testing.expectEqual(@as(usize, 0), stmt.ret.vals.len);
+}
+
+test "parse: canonical return consumes generated expression-start role" {
+    try testing.expect(grammar_roles.canBeginExpression(.int_lit));
+    try testing.expect(grammar_roles.canBeginExpression(.kw_function));
+    try testing.expect(!grammar_roles.canBeginExpression(.rparen));
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource("return 99", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .ret);
+    try testing.expectEqual(@as(usize, 1), stmt.ret.vals.len);
+    try testing.expectEqual(@as(i64, 99), stmt.ret.vals[0].int_lit.val);
+
+    var function_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer function_arena.deinit();
+    const function_mod = try parseDuoSource("return function(x)\n  return x", &function_arena);
+    try testing.expect(function_mod.body.stmts[0].ret.vals[0].* == .func_expr);
+
+    var invalid_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer invalid_arena.deinit();
+    try testing.expectError(ParseError.UnexpectedToken, parseDuoSource("return )", &invalid_arena));
 }
 
 test "parse: if statement" {

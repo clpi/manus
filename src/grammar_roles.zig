@@ -19,7 +19,7 @@ pub const slot_count = table.slot_count;
 pub const rows = table.rows;
 
 pub fn lookup(kind: lexer.TokenKind) RoleRow {
-    return rows[@intFromEnum(kind)];
+    return rows[@backingInt(kind)];
 }
 
 pub fn canBeginExpression(kind: lexer.TokenKind) bool {
@@ -89,6 +89,19 @@ test "grammar roles: text and bytes both begin expressions" {
     try std.testing.expect(isQuotedKind(.text_lit));
     try std.testing.expect(isQuotedKind(.bytes_lit));
     try std.testing.expect(!isQuotedKind(.int_lit));
+}
+
+test "grammar roles: expression start and compatibility are independent facts" {
+    try std.testing.expect(canBeginExpression(.kw_function));
+    try std.testing.expect(lookup(.kw_function).compat_only);
+    try std.testing.expect(canBeginExpression(.kw_if));
+    try std.testing.expect(!lookup(.kw_if).compat_only);
+    try std.testing.expect(canBeginExpression(.pipe));
+    try std.testing.expect(canBeginExpression(.dot));
+    try std.testing.expect(canBeginExpression(.colon));
+    try std.testing.expect(canBeginExpression(.kw_i64));
+    try std.testing.expect(!canBeginExpression(.lbracket));
+    try std.testing.expect(!canBeginExpression(.comma));
 }
 
 test "grammar roles: shebang and comments are trivia not expression-start" {
@@ -206,14 +219,14 @@ test "grammar roles: every token identity has one ordinal row" {
     const enum_info = @typeInfo(lexer.TokenKind).@"enum";
     try std.testing.expectEqual(enum_info.field_names.len + 1, rows.len);
     inline for (enum_info.field_values) |value| {
-        const kind: lexer.TokenKind = @enumFromInt(value);
+        const kind: lexer.TokenKind = @fromBackingInt(@intCast(value));
         try std.testing.expectEqual(kind, lookup(kind).kind.?);
     }
 }
 
 test "grammar roles: unpublished producer slot has no token identity or role" {
     try std.testing.expect(!@hasField(lexer.TokenKind, "string_lit"));
-    try std.testing.expectEqual(@as(usize, 4), @intFromEnum(lexer.TokenKind.kw_and));
+    try std.testing.expectEqual(@as(usize, 4), @backingInt(lexer.TokenKind.kw_and));
     try std.testing.expect(rows[3].kind == null);
     try std.testing.expect(!rows[3].begin_expr);
     try std.testing.expect(!rows[3].literal_kind);
