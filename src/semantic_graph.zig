@@ -835,10 +835,20 @@ pub const Draw = struct {
 /// to any consumer of this family.
 pub const Origin = struct {
     value: id,
-    /// The relation whose census `place` indexes. A place id is only meaningful
-    /// against the census it came from.
+    /// The relation the binding was resolved in. Kept because it is the scope
+    /// the resolution started from, NOT because `binding` is only meaningful
+    /// against it -- a graph entity id is meaningful graph-wide, which is the
+    /// whole point of gap[206]'s deletion condition.
     relation: id,
-    place: u32,
+    /// THE BOUND NAME THIS VALUE CAME FROM, as a graph entity.
+    ///
+    /// This was a `place.Census` id until gap[206]. `noteOrigin` resolved it
+    /// through `body.places.find`, and `bindPlace` declines every scalar, so
+    /// the field answered for a record operand and for nothing else -- measured
+    /// `origins=0` on four scalar fixtures against `origins=1` on a record.
+    /// Two id spaces claimed the same question and the census could not answer
+    /// it for the shape that asks most often.
+    binding: id,
 };
 
 /// The two censuses of one relation body, produced as a PAIR.
@@ -3135,9 +3145,13 @@ pub const SemanticGraph = struct {
     }
 
     /// The place an application value reads, three-valued.
-    pub fn valueOrigin(self: *const SemanticGraph, value: id) place.Site {
+    /// The bound name a value came from, as the graph's OWN three-valued
+    /// reference. `place.Site` before gap[206]: a value that is a place id
+    /// answered through a type spelled for the place census, which is how the
+    /// two spaces stayed conflated with nothing forcing them apart.
+    pub fn valueOrigin(self: *const SemanticGraph, value: id) semantic_identity.Card {
         for (self.origins.items) |origin| {
-            if (origin.value == value) return .{ .one = origin.place };
+            if (origin.value == value) return .{ .one = origin.binding };
         }
         return .unknown;
     }
@@ -4645,12 +4659,17 @@ pub const SemanticGraph = struct {
     fn noteOrigin(self: *SemanticGraph, value: id, expr: *const Expr, caller: id) !void {
         if (expr.* != .name) return;
         const relation = self.enclosingCallable(caller) orelse return;
-        const body = self.bodyOf(relation) orelse return;
-        const found = body.places.find(expr.name.ident) orelse return;
+        // gap[206]'s named deletion condition, discharged: resolve through the
+        // graph's own scope-chain resolver rather than the place census. The
+        // census declines every scalar by design (`f5857e0a`), so the previous
+        // `body.places.find` answered for a record operand and for nothing
+        // else. `resolveBindingInScope` answers for every name a relation body
+        // binds, because gap[206] gave the producer that reach.
+        const binding = self.resolveBindingInScope(relation, expr.name.ident) orelse return;
         try self.origins.append(self.alloc, .{
             .value = value,
             .relation = relation,
-            .place = found.id,
+            .binding = binding,
         });
     }
 
@@ -5644,8 +5663,8 @@ pub const SemanticGraph = struct {
             try appendJsonInt(buf, alloc, origin.value);
             try buf.appendSlice(alloc, ",\"relation\":");
             try appendJsonInt(buf, alloc, origin.relation);
-            try buf.appendSlice(alloc, ",\"place\":");
-            try appendJsonInt(buf, alloc, origin.place);
+            try buf.appendSlice(alloc, ",\"binding\":");
+            try appendJsonInt(buf, alloc, origin.binding);
             try buf.append(alloc, '}');
         }
         try buf.append(alloc, ']');
