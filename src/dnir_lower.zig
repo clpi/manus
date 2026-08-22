@@ -814,7 +814,6 @@ fn collectFieldWriteTypes(
 /// section. Admitting it would put a link-time-unresolved pointer in a word the
 /// program dereferences — the confident-wrong-number class this whole change is
 /// about. It refuses until the relocation exists.
-
 fn globalInitIsSubjectBinding(init: *const Expr) bool {
     return switch (init.*) {
         .name => true,
@@ -916,7 +915,7 @@ pub fn moduleConstTableKind(
     // the index is what no consumer downstream can read correctly.
     if (all_int == all_text) return null;
     // Written, rebound, shadowed or passed on -> nothing may be assumed.
-    if (@intFromEnum(tableUseInBlock(&mod.body, name, tbl)) > @intFromEnum(TableUse.dyn_read)) return null;
+    if (@backingInt(tableUseInBlock(&mod.body, name, tbl)) > @backingInt(TableUse.dyn_read)) return null;
     return if (all_int) .int else .text;
 }
 
@@ -1023,7 +1022,6 @@ fn collectModuleConsts(
     }
     return out;
 }
-
 
 fn qualifiedExportNameFromExpr(
     alloc: std.mem.Allocator,
@@ -1475,8 +1473,7 @@ fn lowerModuleFromGraph(
             // C names (`abs`), not `idol_c__abs` mangling.
             if (std.mem.eql(u8, h, "c")) break :blk try alloc.dupe(u8, fd.path[0]);
             break :blk try home_resolve.homeSymbol(alloc, h, fd.path[0]);
-        } else
-            try funcExportName(alloc, self_home, fd);
+        } else try funcExportName(alloc, self_home, fd);
         errdefer alloc.free(export_name);
         const slot = try entity_linkage.getOrPut(alloc, entity_id);
         if (slot.found_existing) {
@@ -2265,7 +2262,6 @@ fn shapeOnStack(stack: []const semantic_graph.id, shape: semantic_graph.id) bool
     return false;
 }
 
-
 fn memberDescriptorFromShapeAst(
     graph: *const semantic_graph.SemanticGraph,
     shape: semantic_graph.id,
@@ -2397,7 +2393,6 @@ fn appendModuleAliasFields(
     }
     return true;
 }
-
 
 fn appendModuleRecordTypeFields(
     alloc: std.mem.Allocator,
@@ -2666,7 +2661,6 @@ fn recordCoversTableFields(record: dnir.RecordDesc, fields: []const types.FieldT
     }
     return true;
 }
-
 
 pub const LowerCtx = struct {
     alloc: std.mem.Allocator,
@@ -5820,8 +5814,6 @@ fn linkageForTarget(ctx: *LowerCtx, target: semantic_graph.id) Error![]const u8 
         invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-target");
 }
 
-
-
 fn checkedRecordForApplication(
     ctx: *LowerCtx,
     application: *const semantic_graph.ApplicationFact,
@@ -6045,7 +6037,7 @@ const TableUse = enum {
 };
 
 fn worseUse(a: TableUse, b: TableUse) TableUse {
-    return if (@intFromEnum(b) > @intFromEnum(a)) b else a;
+    return if (@backingInt(b) > @backingInt(a)) b else a;
 }
 
 /// `k` as a compile-time integer, for an index expression. Literals only — a
@@ -6423,7 +6415,7 @@ fn noteStrTable(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!
         if (fld != .positional) return;
         if (!exprIsStr(ctx, fld.positional)) return;
     }
-    if (@intFromEnum(tableUseInBlock(body, name, table)) > @intFromEnum(TableUse.dyn_read)) return;
+    if (@backingInt(tableUseInBlock(body, name, table)) > @backingInt(TableUse.dyn_read)) return;
     const key = try ctx.alloc.dupe(u8, name);
     errdefer ctx.alloc.free(key);
     try ctx.str_tables.put(ctx.alloc, key, {});
@@ -6442,7 +6434,7 @@ fn lowerPositionalTableAssign(ctx: *LowerCtx, name: []const u8, table: *const as
     if (table.* != .table) return bail(ctx.diagnostic, @src());
     try noteStrTable(ctx, name, table);
     const use = try noteConstTable(ctx, name, table);
-    if (@intFromEnum(use) <= @intFromEnum(TableUse.const_read)) {
+    if (@backingInt(use) <= @backingInt(TableUse.const_read)) {
         // DETERMINED, and read only at compile-time indices: the table itself is
         // not a thing this function needs. Bind the length (still a foldable
         // constant, so `#t` costs nothing) and emit no elements at all — every
@@ -6945,7 +6937,6 @@ fn lowerRecordLiteralAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.
 /// its order from the DESCRIPTOR instead — that is `recordFieldOrder`'s job,
 /// not this one, and conflating the two is the field-ordering miscompile this
 /// backend has already had twice.
-
 fn copyPrefixedLocalsFromRecordRef(
     ctx: *LowerCtx,
     dest_prefix: []const u8,
@@ -7103,7 +7094,6 @@ fn lowerInlineRecordArg(ctx: *LowerCtx, table: *const ast.Expr, rec_name: []cons
     try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = rec_name });
     return .{ .temp = rec_slot };
 }
-
 
 fn recordLocalDesc(ctx: *LowerCtx, name: []const u8) ?dnir.RecordDesc {
     for (ctx.records) |rec| {
@@ -7288,8 +7278,6 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
         .result = count,
     });
 }
-
-
 
 fn lowerNestedRecordFromLocal(
     ctx: *LowerCtx,
@@ -8027,6 +8015,10 @@ const CheckedScalarOperand = struct {
     value: semantic_graph.id,
     expression: *Expr,
     descriptor: types.ResolvedType,
+    /// Exact binding edge published by the graph for a name operand. Absence is
+    /// lawful only for a derived/literal operand; an unresolved name is not a
+    /// request for realization to repeat lexical lookup from its spelling.
+    binding: ?semantic_graph.id,
 };
 
 fn exprBinopDepth(expr: *const ast.Expr) usize {
@@ -8116,7 +8108,6 @@ fn operandNamesRecord(ctx: *LowerCtx, expr: *const Expr) bool {
     return false;
 }
 
-
 fn checkedScalarFieldProjection(
     ctx: *const LowerCtx,
     expr: *const Expr,
@@ -8151,6 +8142,16 @@ fn checkedScalarOperand(
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-descriptor");
     const raw = node.ast_ref orelse return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-provenance");
     const expression: *Expr = @ptrCast(@alignCast(raw));
+    const binding: ?semantic_graph.id = switch (expression.*) {
+        .name => switch (ctx.graph.valueOrigin(value)) {
+            .one => |exact| exact,
+            .unknown, .none => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-binding"),
+        },
+        else => switch (ctx.graph.valueOrigin(value)) {
+            .none => null,
+            .unknown, .one => return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-binding"),
+        },
+    };
     if (expression.* == .table) {
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
     }
@@ -8204,7 +8205,16 @@ fn checkedScalarOperand(
         .value = value,
         .expression = expression,
         .descriptor = effective,
+        .binding = binding,
     };
+}
+
+fn checkedOperandName(ctx: *const LowerCtx, operand: *const CheckedScalarOperand) Error![]const u8 {
+    const binding = operand.binding orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-binding");
+    const node = ctx.graph.get(binding) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-binding");
+    return node.name orelse invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-binding");
 }
 
 fn checkedScalarResult(diagnostic: *Diagnostic, descriptor: types.ResolvedType) Error!void {
@@ -8227,7 +8237,7 @@ fn checkedScalarResult(diagnostic: *Diagnostic, descriptor: types.ResolvedType) 
         .nil,
         => {},
         .@"struct" => |s| {
-if (types.nominalRepr(s.name)) |nr| {
+            if (types.nominalRepr(s.name)) |nr| {
                 if (types.nominalReprAdmissible(nr)) return;
             }
             return invalidGraphFacts(diagnostic, @src(), "application-result-abi");
@@ -8386,7 +8396,7 @@ fn evaluateCheckedScalarOperands(
                     if (kind == .f64) {
                         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
                     }
-                    const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ operand.expression.name.ident, fname });
+                    const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ try checkedOperandName(ctx, operand), fname });
                     defer ctx.alloc.free(key);
                     const slot = ctx.locals.get(key) orelse
                         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
@@ -11729,6 +11739,64 @@ test "dnir_lower: graph result pack crosses one checked application" {
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
     );
     try std.testing.expectEqualStrings("application-result-abi", diagnostic.note().?);
+}
+
+test "dnir_lower: checked module operand consumes graph binding edge" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\total: i64 = 3
+        \\total = total + 4
+        \\take: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    take(total)
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "module-operand.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "module-operand.id");
+
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+
+    var take_application: ?semantic_graph.id = null;
+    for (graph.applications()) |application| {
+        const relation = graph.applicationRelation(application.application) orelse continue;
+        const name = (graph.get(relation) orelse continue).name orelse continue;
+        if (std.mem.eql(u8, name, "take")) take_application = application.application;
+    }
+    const application = take_application orelse return error.TestExpectedEqual;
+    const subject = graph.applicationSubject(application) orelse return error.TestExpectedEqual;
+    try std.testing.expect(graph.valueOrigin(subject) == .one);
+
+    // Damage control: the realization must consume the exact value -> binding
+    // edge. Removing it turns the same checked program into a named refusal;
+    // the source spelling and ModuleGlobals map are still present and may not
+    // reconstruct the missing semantic identity.
+    var damaged = false;
+    for (graph.edges.items) |*edge| {
+        if (edge.from != subject or edge.kind != .binding) continue;
+        edge.kind = .provenance;
+        damaged = true;
+        break;
+    }
+    try std.testing.expect(damaged);
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-operand-binding", diagnostic.note().?);
 }
 
 test "dnir_lower: checked aggregate operand requires graph ABI facts" {

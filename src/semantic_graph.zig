@@ -2760,24 +2760,36 @@ pub const SemanticGraph = struct {
     fn noteLocalBinding(
         self: *SemanticGraph,
         file: []const u8,
-        func_id: id,
+        scope: id,
         name: []const u8,
         loc: ast.Loc,
+        descriptor: ?types.ResolvedType,
         ast_ref: ?*anyopaque,
     ) !void {
-        for (self.nested.of(func_id)) |child| {
+        for (self.nested.of(scope)) |child| {
             const node = self.get(child) orelse continue;
             if (node.kind != .local and node.kind != .param) continue;
             if (node.name) |n| {
-                if (std.mem.eql(u8, n, name)) return;
+                if (!std.mem.eql(u8, n, name)) continue;
+                if (descriptor != null and self.nodes.items[child].descriptor == null) {
+                    self.nodes.items[child].descriptor = descriptor;
+                }
+                return;
             }
         }
-        _ = try self.addChild(func_id, .{
+        _ = try self.addChild(scope, .{
             .kind = .local,
             .span = .{ .file = file, .start = loc.line, .end = loc.col },
             .name = name,
+            .descriptor = descriptor,
             .ast_ref = ast_ref,
         });
+    }
+
+    fn bindingDescriptor(self: *SemanticGraph, typ: ast.TypeExpr) ?types.ResolvedType {
+        const descriptor = types.resolve(typ, null, self.alloc) catch return null;
+        if (descriptor == .any) return null;
+        return descriptor;
     }
 
     /// THE QUOTE FACE OF EVERY LITERAL A BINDING IS INITIALIZED WITH.
@@ -2884,8 +2896,7 @@ pub const SemanticGraph = struct {
     fn liftBindingsInStmts(
         self: *SemanticGraph,
         file: []const u8,
-        func_id: id,
-        func_name: []const u8,
+        scope: id,
         stmts: []ast.Stmt,
     ) !void {
         for (stmts) |*stmt| {
@@ -2894,67 +2905,77 @@ pub const SemanticGraph = struct {
                     for (ld.names) |*lname| {
                         try self.liftTableShapeFromTypeExpr(
                             file,
-                            func_id,
+                            scope,
                             lname.ident,
                             lname.typ,
                             lname.loc,
                             lname.attributes,
                             lname,
                         );
-                        try self.noteLocalBinding(file, func_id, lname.ident, lname.loc, @ptrCast(@constCast(lname)));
+                        try self.noteLocalBinding(
+                            file,
+                            scope,
+                            lname.ident,
+                            lname.loc,
+                            self.bindingDescriptor(lname.typ),
+                            @ptrCast(@constCast(lname)),
+                        );
                     }
                 },
-                .const_decl => |*cd| try self.noteLocalBinding(file, func_id, cd.ident, cd.loc, null),
+                .const_decl => |*cd| try self.noteLocalBinding(
+                    file,
+                    scope,
+                    cd.ident,
+                    cd.loc,
+                    self.bindingDescriptor(cd.typ),
+                    null,
+                ),
                 .global_decl => |*gd| {
                     for (gd.names) |*lname| {
-                        try self.noteLocalBinding(file, func_id, lname.ident, lname.loc, @ptrCast(@constCast(lname)));
+                        try self.noteLocalBinding(
+                            file,
+                            scope,
+                            lname.ident,
+                            lname.loc,
+                            self.bindingDescriptor(lname.typ),
+                            @ptrCast(@constCast(lname)),
+                        );
                     }
                 },
                 .assign => |*asg| {
                     for (asg.targets) |target| {
                         if (target.* != .name) continue;
-                        try self.noteLocalBinding(file, func_id, target.name.ident, target.loc(), null);
+                        try self.noteLocalBinding(file, scope, target.name.ident, target.loc(), null, null);
                     }
                 },
-                .do_block => |*d| try self.liftBindingsInStmts(file, func_id, func_name, d.body.stmts),
-                .while_loop => |*w| try self.liftBindingsInStmts(file, func_id, func_name, w.body.stmts),
-                .repeat_loop => |*r| try self.liftBindingsInStmts(file, func_id, func_name, r.body.stmts),
+                .do_block => |*d| try self.liftBindingsInStmts(file, scope, d.body.stmts),
+                .while_loop => |*w| try self.liftBindingsInStmts(file, scope, w.body.stmts),
+                .repeat_loop => |*r| try self.liftBindingsInStmts(file, scope, r.body.stmts),
                 .if_stmt => |*i| {
-                    try self.liftBindingsInStmts(file, func_id, func_name, i.then.stmts);
-                    for (i.elseifs) |*ei| try self.liftBindingsInStmts(file, func_id, func_name, ei.body.stmts);
-                    if (i.else_body) |*eb| try self.liftBindingsInStmts(file, func_id, func_name, eb.stmts);
+                    try self.liftBindingsInStmts(file, scope, i.then.stmts);
+                    for (i.elseifs) |*ei| try self.liftBindingsInStmts(file, scope, ei.body.stmts);
+                    if (i.else_body) |*eb| try self.liftBindingsInStmts(file, scope, eb.stmts);
                 },
                 .num_for => |*nf| {
-                    try self.noteLocalBinding(file, func_id, nf.var_name, nf.loc, null);
-                    try self.liftBindingsInStmts(file, func_id, func_name, nf.body.stmts);
+                    try self.noteLocalBinding(file, scope, nf.var_name, nf.loc, null, null);
+                    try self.liftBindingsInStmts(file, scope, nf.body.stmts);
                 },
                 .gen_for => |*g| {
-                    for (g.vars) |v| try self.noteLocalBinding(file, func_id, v, g.loc, null);
-                    try self.liftBindingsInStmts(file, func_id, func_name, g.body.stmts);
+                    for (g.vars) |v| try self.noteLocalBinding(file, scope, v, g.loc, null, null);
+                    try self.liftBindingsInStmts(file, scope, g.body.stmts);
                 },
                 .func_decl => |*fd| {
                     if (self.findFuncDecl(fd)) |nested_id| {
-                        try self.liftBindingsInStmts(file, nested_id, fd.path[0], fd.func.body.stmts);
+                        try self.liftBindingsInStmts(file, nested_id, fd.func.body.stmts);
                     }
                 },
                 .try_stmt => |*t| {
-                    try self.liftBindingsInStmts(file, func_id, func_name, t.body.stmts);
-                    for (t.catches) |*cc| try self.liftBindingsInStmts(file, func_id, func_name, cc.body.stmts);
+                    try self.liftBindingsInStmts(file, scope, t.body.stmts);
+                    for (t.catches) |*cc| try self.liftBindingsInStmts(file, scope, cc.body.stmts);
                 },
-                .defer_stmt => |*d| try self.liftBindingsInStmts(file, func_id, func_name, d.body.stmts),
+                .defer_stmt => |*d| try self.liftBindingsInStmts(file, scope, d.body.stmts),
                 else => {},
             }
-        }
-    }
-
-    /// Lift typed bindings inside functions (inline records + alias descriptor edges).
-    pub fn liftFunctionBindings(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !void {
-        for (mod.body.stmts) |*stmt| {
-            if (stmt.* != .func_decl) continue;
-            const fd = &stmt.func_decl;
-            if (fd.path.len != 1) continue;
-            const func_id = self.findFuncDecl(fd) orelse return error.MissingSemanticDeclaration;
-            try self.liftBindingsInStmts(file, func_id, fd.path[0], fd.func.body.stmts);
         }
     }
 
@@ -3213,10 +3234,24 @@ pub const SemanticGraph = struct {
     /// answered through a type spelled for the place census, which is how the
     /// two spaces stayed conflated with nothing forcing them apart.
     pub fn valueOrigin(self: *const SemanticGraph, value: id) semantic_identity.Card {
-        for (self.origins.items) |origin| {
-            if (origin.value == value) return .{ .one = origin.binding };
+        const node = self.get(value) orelse return .unknown;
+        const raw = node.ast_ref orelse return .unknown;
+        const expr: *const Expr = @ptrCast(@alignCast(raw));
+        if (expr.* != .name) return .none;
+        var match: ?id = null;
+        for (self.outEdges(value)) |edge_index| {
+            if (edge_index >= self.edges.items.len) continue;
+            const edge = self.edges.items[edge_index];
+            if (edge.from != value or edge.kind != .binding) continue;
+            const binding = self.get(edge.to) orelse continue;
+            if (binding.kind != .local and binding.kind != .param) continue;
+            // Two bindings for one value is contradictory producer output. The
+            // three-state query cannot represent contradiction yet, so it must
+            // refuse exactness rather than select one by insertion order.
+            if (match != null) return .unknown;
+            match = edge.to;
         }
-        return .unknown;
+        return if (match) |binding| .{ .one = binding } else .unknown;
     }
 
     /// Lift module-level symbols, alias table shapes, and enum shapes.
@@ -3226,7 +3261,11 @@ pub const SemanticGraph = struct {
         try self.liftEnumShapes(mod, file, mod_id);
         try self.attachMemberDescriptorShapes(mod_id);
         try self.attachCallableResultShapes(mod_id);
-        try self.liftFunctionBindings(mod, file);
+        // One binding producer walks the module and every callable beneath it.
+        // Module bindings used to be absent while function locals were present,
+        // so an application value could carry an exact descriptor yet lose the
+        // binding it read solely because that binding lived one scope higher.
+        try self.liftBindingsInStmts(file, mod_id, mod.body.stmts);
         try self.liftPlaces(mod);
         try self.liftBodies(mod);
         try self.liftAggregates(mod, mod_id);
@@ -4937,14 +4976,14 @@ pub const SemanticGraph = struct {
     /// record fields.
     fn noteOrigin(self: *SemanticGraph, value: id, expr: *const Expr, caller: id) !void {
         if (expr.* != .name) return;
-        const relation = self.enclosingCallable(caller) orelse return;
-        // gap[206]'s named deletion condition, discharged: resolve through the
-        // graph's own scope-chain resolver rather than the place census. The
-        // census declines every scalar by design (`f5857e0a`), so the previous
-        // `body.places.find` answered for a record operand and for nothing
-        // else. `resolveBindingInScope` answers for every name a relation body
-        // binds, because gap[206] gave the producer that reach.
-        const binding = self.resolveBindingInScope(relation, expr.name.ident) orelse return;
+        // `publishNameBinding` is the one producer. `origins` remains a JSON
+        // evidence projection for now, so derive it from that exact edge rather
+        // than resolving the source spelling a second time.
+        const binding = switch (self.valueOrigin(value)) {
+            .one => |exact| exact,
+            .unknown, .none => return,
+        };
+        const relation = self.enclosingCallable(caller) orelse caller;
         try self.origins.append(self.alloc, .{
             .value = value,
             .relation = relation,
@@ -8128,6 +8167,72 @@ test "semantic_graph: checked application publishes binding to relation and para
     try g.usersOf(param_id, &param_users);
     try std.testing.expectEqual(@as(usize, 1), param_users.items.len);
     try std.testing.expectEqual(subject, param_users.items[0]);
+    try std.testing.expectEqual(Card{ .one = param_id }, g.valueOrigin(subject));
+}
+
+test "semantic_graph: one module binding owns checked value origin and survives shadowing" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\total: i64 = 3
+        \\total = total + 4
+        \\take: i64 = (value: i64)
+        \\    value
+        \\frommodule: i64 = ()
+        \\    take(total)
+        \\shadow: i64 = (total: i64)
+        \\    take(total)
+    ;
+    var lex = Lexer.init(src, "module-binding.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    const module_id = try g.liftModuleWithCheckedCalls(&module, &checked, "module-binding.id");
+
+    var module_binding: ?id = null;
+    var module_binding_count: usize = 0;
+    for (g.nested.of(module_id)) |child| {
+        const node = g.get(child) orelse continue;
+        if (node.kind != .local or node.name == null) continue;
+        if (!std.mem.eql(u8, node.name.?, "total")) continue;
+        module_binding = child;
+        module_binding_count += 1;
+        try std.testing.expectEqual(types.ResolvedType.i64, node.descriptor.?);
+    }
+    try std.testing.expectEqual(@as(usize, 1), module_binding_count);
+    const exact_module_binding = module_binding orelse return error.TestExpectedEqual;
+
+    var module_origin_seen = false;
+    var shadow_origin_seen = false;
+    for (g.applications()) |application| {
+        const caller = g.applicationCaller(application.application) orelse continue;
+        const caller_node = g.get(caller) orelse continue;
+        const caller_name = caller_node.name orelse continue;
+        const subject = g.applicationSubject(application.application) orelse continue;
+        if (std.mem.eql(u8, caller_name, "frommodule")) {
+            try std.testing.expectEqual(Card{ .one = exact_module_binding }, g.valueOrigin(subject));
+            module_origin_seen = true;
+        } else if (std.mem.eql(u8, caller_name, "shadow")) {
+            const shadow_binding = switch (g.valueOrigin(subject)) {
+                .one => |binding| binding,
+                .unknown, .none => return error.TestExpectedEqual,
+            };
+            try std.testing.expect(shadow_binding != exact_module_binding);
+            try std.testing.expectEqual(NodeKind.param, g.get(shadow_binding).?.kind);
+            shadow_origin_seen = true;
+        }
+    }
+    try std.testing.expect(module_origin_seen);
+    try std.testing.expect(shadow_origin_seen);
 }
 
 test "semantic_graph: identity lookup survives a param that shadows a function name" {
