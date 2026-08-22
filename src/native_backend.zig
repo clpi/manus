@@ -7526,7 +7526,14 @@ fn unrealizedApplicationCount(module: dnir.Module) usize {
     const graph = module.graph orelse return 0;
     var count: usize = 0;
     for (module.functions) |function| {
-        if (!function.folded_to_constant) continue;
+        if (!function.folded_to_constant) {
+            // ONE PROJECTION ANSWERED FROM THE GRAPH, inside a relation that
+            // still executes. `Function.absent_applications` is the lowering's
+            // own statement of which; `validateDnirApplications` proves each
+            // entry earned it before this subtraction is allowed to stand.
+            count += function.absent_applications.len;
+            continue;
+        }
         const relation = function.id orelse continue;
         for (graph.applicationsInCaller(relation)) |occurrence| {
             if (graph.application(occurrence) == null) continue;
@@ -7535,6 +7542,77 @@ fn unrealizedApplicationCount(module: dnir.Module) usize {
         }
     }
     return count;
+}
+
+/// PROVE EVERY CLAIMED ABSENCE, one at a time.
+///
+/// A lowering that could subtract an application from the expected count by
+/// merely naming it would be able to hide a dropped call, which is the exact
+/// failure `validateDnirApplications` exists to catch. So each named
+/// application must be one the graph published, must be an aggregate
+/// projection, must carry an exact content on its result identity — the fact
+/// that made realizing it unnecessary — must belong to this function, and must
+/// not also appear as a realized instruction.
+fn validateAbsentApplications(
+    alloc: std.mem.Allocator,
+    module: dnir.Module,
+    graph: *const semantic_graph.SemanticGraph,
+    seen: *const std.AutoHashMapUnmanaged(semantic_graph.id, void),
+    diagnostic: *Diagnostic,
+) Error!void {
+    var named: std.AutoHashMapUnmanaged(semantic_graph.id, void) = .empty;
+    defer named.deinit(alloc);
+    for (module.functions) |function| {
+        for (function.absent_applications) |application| {
+            const slot = try named.getOrPut(alloc, application);
+            if (slot.found_existing) return invalidFactsWith(diagnostic, @src(), "absent-application-count");
+            if (seen.contains(application)) return invalidFactsWith(diagnostic, @src(), "absent-application-count");
+            if (graph.application(application) == null)
+                return invalidFactsWith(diagnostic, @src(), "absent-application-unpublished");
+            if (graph.isBootstrapApplicationNode(application))
+                return invalidFactsWith(diagnostic, @src(), "absent-application-unpublished");
+            if (graph.aggregateAccess(application) == null)
+                return invalidFactsWith(diagnostic, @src(), "absent-application-witness");
+            const caller = graph.applicationCaller(application) orelse
+                return invalidFactsWith(diagnostic, @src(), "absent-application-caller");
+            if (function.id == null or !std.meta.eql(function.id.?, caller))
+                return invalidFactsWith(diagnostic, @src(), "absent-application-caller");
+            const results = graph.applicationResults(application) orelse
+                return invalidFactsWith(diagnostic, @src(), "absent-application-witness");
+            if (results.len != 1) return invalidFactsWith(diagnostic, @src(), "absent-application-witness");
+        }
+    }
+    // SECOND PASS, because a chain justifies itself only once the whole chain
+    // is known. A leaf earns its absence by carrying the exact content; an
+    // intermediate step earns it by feeding another step that is itself absent.
+    // A step feeding a REALIZED consumer is not admitted: that consumer would
+    // be loading from a base this fold never emitted.
+    for (module.functions) |function| {
+        for (function.absent_applications) |application| {
+            const results = graph.applicationResults(application) orelse
+                return invalidFactsWith(diagnostic, @src(), "absent-application-witness");
+            if (graph.exactI64(results[0]) != null) continue;
+            if (!consumerIsAbsent(graph, results[0], &named))
+                return invalidFactsWith(diagnostic, @src(), "absent-application-witness");
+        }
+    }
+}
+
+/// Whether the application that consumes `value` as its subject is itself
+/// listed absent. `aggregateProducer` answers the other direction — which
+/// application PRODUCED this aggregate — so the consumer is found by asking
+/// every named application for its subject.
+fn consumerIsAbsent(
+    graph: *const semantic_graph.SemanticGraph,
+    value: semantic_graph.id,
+    named: *const std.AutoHashMapUnmanaged(semantic_graph.id, void),
+) bool {
+    var it = named.keyIterator();
+    while (it.next()) |application| {
+        const subject = graph.applicationSubject(application.*) orelse continue;
+        if (std.meta.eql(subject, value)) return true;
+    }
+    return false;
 }
 
 fn aggregateApplicationRoot(
@@ -7596,7 +7674,7 @@ fn validateAggregateAccessRealization(
         return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
     const root_descriptor = root_node.descriptor orelse
         return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
-    if (root_descriptor != .array or root_descriptor.array.elem.* != .array) {
+    if (root_descriptor != .array) {
         return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
     }
     const root_fact = graph.aggregate(root) orelse
@@ -7609,6 +7687,32 @@ fn validateAggregateAccessRealization(
         aggregate_place.facts.escape != .no)
     {
         return invalidFactsWith(diagnostic, @src(), "aggregate-access-place");
+    }
+
+    // THE FOLDED REALIZATION IS CHECKED HERE, BEFORE ANY QUESTION ABOUT A
+    // BASE, A DENSE TABLE OR A NESTED ROOT — it uses none of them. Its witness
+    // is that the emitted immediate EQUALS the content the graph published on
+    // this projection's result identity, a fact the loading form is never asked
+    // to prove. `instruction.value` is the result id `setAggregateLineage`
+    // wrote, so this cannot be satisfied by an unrelated constant.
+    if (descriptor == .i64 and instruction.op == .store_local) {
+        const result_value = instruction.value orelse
+            return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-op");
+        const content = graph.exactI64(result_value) orelse
+            return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-op");
+        if (instruction.result == null or instruction.lhs != .i64 or
+            instruction.lhs.i64 != content or instruction.rhs != .void or
+            instruction.aggregate != null or instruction.callee.len != 0 or
+            instruction.record.len != 0 or instruction.pack_results.len != 0)
+        {
+            return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-op");
+        }
+        return;
+    }
+    // Only the LOADING realization needs a root of nested arrays: a dense table
+    // is what it indexes into, and only a nested root gets one.
+    if (root_descriptor.array.elem.* != .array) {
+        return invalidFactsWith(diagnostic, @src(), "aggregate-access-root");
     }
 
     var table: ?dnir.DenseTable = null;
@@ -7640,8 +7744,6 @@ fn validateAggregateAccessRealization(
             base = candidate.result.?;
         }
     }
-    const root_base = base orelse
-        return invalidFactsWith(diagnostic, @src(), "aggregate-root-marker");
     if (instruction.aggregate != null or instruction.callee.len != 0 or
         instruction.record.len != 0 or instruction.pack_results.len != 0)
     {
@@ -7655,7 +7757,11 @@ fn validateAggregateAccessRealization(
                 return invalidFactsWith(diagnostic, @src(), "aggregate-access-realization-op");
             }
         },
+        // The FOLDED leaf returned above; reaching here the leaf loads, and a
+        // load owes the root marker and the base register it reads from.
         .i64 => {
+            const root_base = base orelse
+                return invalidFactsWith(diagnostic, @src(), "aggregate-root-marker");
             if (instruction.op != .load_index or instruction.result == null or instruction.lhs != .temp or
                 instruction.lhs.temp != root_base or instruction.rhs != .temp)
             {
@@ -7944,6 +8050,7 @@ fn validateDnirApplications(
     // Applications inside a relation that folded to its answer are realized
     // NOWHERE — known-absent, not missing. Everything else must still be
     // realized exactly once.
+    try validateAbsentApplications(alloc, module, graph, &seen, diagnostic);
     const unrealized = unrealizedApplicationCount(module);
     if (unrealized > expected) return invalidFactsWith(diagnostic, @src(), "application-realization-count");
     if (seen.count() != expected - unrealized) {

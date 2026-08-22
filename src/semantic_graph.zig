@@ -3738,6 +3738,50 @@ pub const SemanticGraph = struct {
         };
     }
 
+    /// ONE BINDING, NEVER WRITTEN, NEVER ALIASED, NEVER ESCAPED, CONTENTS KNOWN.
+    ///
+    /// The licence to answer a projection from the aggregate's contents instead
+    /// of from its storage. It lives HERE because the aggregate fact and the
+    /// place fact both do, and because two readers need the SAME answer: the
+    /// lift decides whether to publish the projection at all, and realization
+    /// decides whether to fold it. When those two disagreed — the lift checking
+    /// only `contents_known` while realization also checked the place — five
+    /// corpus modules published a projection realization then refused with
+    /// `aggregate-access-depth`, which is `law.fact.producer.one` collecting on
+    /// a predicate that had been written down twice.
+    pub fn aggregateIsSoleImmutableBinding(self: *const SemanticGraph, aggregate_id: id) bool {
+        const fact = self.aggregate(aggregate_id) orelse return false;
+        if (fact.contents_known != .yes) return false;
+        const p = self.aggregatePlace(aggregate_id) orelse return false;
+        if (p.shape != .collection or p.facts.contents_known != .yes) return false;
+        if (p.facts.mutation != .no or p.facts.immutability != .yes) return false;
+        if (p.facts.alias != .no or p.facts.escape != .no) return false;
+        return switch (p.bindCount()) {
+            .exact => |count| count == 1,
+            .bounded, .unknown => false,
+        };
+    }
+
+    /// Whether this flat projection's ANSWER is already a fact of the graph.
+    ///
+    /// Pure: it mints nothing. `liftAggregateAccess` must decide whether to
+    /// publish BEFORE it creates the occurrence and its operand values, because
+    /// bailing afterwards would leave orphan entities behind. The literal read
+    /// here is the same one `publishExactI64` performs a few lines later for the
+    /// key operand — this producer's own reading of its own operand, not a
+    /// second authority for it.
+    fn flatAccessAnswerIsKnown(self: *const SemanticGraph, subject: id, key: *const ast.Expr) bool {
+        if (key.* != .int_lit) return false;
+        // THE SAME PREDICATE REALIZATION WILL APPLY. Publishing on a weaker
+        // condition than the one the fold requires publishes a projection
+        // nothing can realize, which is a refusal, not a widening.
+        if (!self.aggregateIsSoleImmutableBinding(subject)) return false;
+        const members = self.aggregateMembers(subject) orelse return false;
+        const index = key.int_lit.val;
+        if (index < 1 or index > @as(i64, @intCast(members.len))) return false;
+        return self.exactI64(members[@intCast(index - 1)]) != null;
+    }
+
     fn liftAggregateAccess(
         self: *SemanticGraph,
         expr: *const ast.Expr,
@@ -3757,7 +3801,17 @@ pub const SemanticGraph = struct {
         // that family is migrated with its mutable cases; publishing an
         // application that no graph consumer can yet realize would turn new
         // semantic knowledge into a capability regression.
-        if (result_descriptor != .array and self.aggregateProducer(subject) == null) return false;
+        //
+        // THE ONE FLAT SHAPE THE REALIZATION CAN ALREADY CONSUME is the read
+        // whose ANSWER the graph already holds: contents known, key a literal
+        // in range, selected member carrying an exact content. That access has
+        // no dynamic index to realize and needs no base, no dense table and no
+        // load — `dnir_lower.foldAggregateAccess` emits the immediate. Every
+        // other flat read (runtime key, unknown contents, non-integer member)
+        // still declines here and keeps the place realization it has, so the
+        // capability boundary this comment was written about does not move.
+        if (result_descriptor != .array and self.aggregateProducer(subject) == null and
+            !self.flatAccessAnswerIsKnown(subject, site.key)) return false;
         const aggregate_fact = self.aggregate(subject) orelse return error.InvalidAggregateFact;
         const loc = expr.loc();
         const occurrence = try self.addChild(parent, .{

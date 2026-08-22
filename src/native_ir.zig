@@ -317,6 +317,28 @@ pub const Function = struct {
     /// every other backend, and one that does not fold would read a realization
     /// card written by one that does.
     folded_to_constant: bool = false,
+    /// LAWFUL NONEXECUTION, PER APPLICATION — the projections this lowering
+    /// answered from the graph instead of realizing.
+    ///
+    /// `folded_to_constant` says the WHOLE relation is its answer. This says the
+    /// same thing about one application inside a relation that still executes:
+    /// the graph published an exact content on the projection's result identity,
+    /// so realization emits nothing at all for it, and the realization-count
+    /// checks would otherwise read the missing instruction as a dropped call.
+    ///
+    /// THE ALTERNATIVE WAS MEASURED AND IT IS WORSE. Emitting one dead
+    /// `store_local` per application purely to be counted cost `xs[1] > 2` four
+    /// instructions where the answer is one, so the accounting invariant was
+    /// buying its own bookkeeping with machine text. Absence stated is free.
+    ///
+    /// It lives here for `folded_to_constant`'s reason: realization presence is
+    /// already a DNIR-carried fact (`Instr.realization_start`), so its absence
+    /// belongs in the same representation, and it is a fact about THIS lowering
+    /// — a backend that does not fold must not read a card written by one that
+    /// does. Deletion condition: a graph transformation entity (law §11) that
+    /// owns replacement identity, at which point the absence is derivable and
+    /// this field is redundant.
+    absent_applications: []const semantic_graph.id = &.{},
     blocks: []const Block,
 };
 

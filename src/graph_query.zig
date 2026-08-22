@@ -156,6 +156,51 @@ fn collectionRelationSite(
 /// Caller owns the returned slice. Null is the only failure signal: this query
 /// never reports a partial proof, because a partial proof of purity is a wrong
 /// answer with extra steps.
+/// Whether the projection CHAIN this step belongs to ends in a result the
+/// graph has already answered.
+///
+/// `xs[2][1]` publishes two projections. Only the LEAF carries an exact
+/// content; the intermediate's result is a sub-aggregate and never will. Asking
+/// each step in isolation therefore admits the leaf and refuses the step that
+/// feeds it, which is the same chain answered twice with two verdicts. This
+/// walks consumer-ward to the leaf and lets the chain answer once.
+///
+/// The walk is bounded by the aggregate count, so a malformed graph terminates
+/// with `false` rather than looping.
+fn projectionChainIsAnswered(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) bool {
+    var current = occurrence;
+    var guard: usize = 0;
+    while (guard <= graph.aggregateCount()) : (guard += 1) {
+        const results = graph.applicationResults(current) orelse return false;
+        if (results.len != 1) return false;
+        if (graph.exactI64(results[0]) != null) return true;
+        const consumer = projectionConsumingSubject(graph, results[0]) orelse return false;
+        current = consumer;
+    }
+    return false;
+}
+
+/// The single projection that takes `value` as its subject, or null when there
+/// is none or more than one. Ambiguity answers null; it never picks one.
+fn projectionConsumingSubject(
+    graph: *const semantic_graph.SemanticGraph,
+    value: semantic_graph.id,
+) ?semantic_graph.id {
+    var found: ?semantic_graph.id = null;
+    for (graph.nodes.items, 0..) |_, coordinate| {
+        const candidate: semantic_graph.id = std.math.cast(semantic_graph.id, coordinate) orelse return null;
+        if (graph.aggregateAccess(candidate) == null) continue;
+        const subject = graph.applicationSubject(candidate) orelse continue;
+        if (subject != value) continue;
+        if (found != null) return null;
+        found = candidate;
+    }
+    return found;
+}
+
 fn effectFreeApplications(
     graph: *const semantic_graph.SemanticGraph,
     alloc: std.mem.Allocator,
@@ -180,6 +225,39 @@ fn effectFreeApplications(
         };
         const holder = enclosingCallable(graph, scope) orelse continue;
         if (holder != caller) continue;
+
+        // A COMPUTED PROJECTION IS NOT A CALL. `law.application.one` says it
+        // outright — "computed aggregate access table[key] is projection and
+        // never application" — and the two halves of this function agree with
+        // that in opposite directions: the graph→AST half sees a published
+        // ApplicationFact, while `ApplicationWalk` below counts only `()` and
+        // `:` faces as application sites. Leaving the projection in `sites`
+        // made the counts disagree by exactly one and refused the fold for
+        // every body containing a `[]` read. Measured: `xs = { 3, 5, 8 } ; n =
+        // xs[1] ; if n > 2 : 7` folded whole at two instructions until the
+        // projection began publishing, then lowered at ten.
+        //
+        // Skipping is not a purity assumption. A projection binds no callee, so
+        // it adds nothing to the effect-free CLOSURE this function computes;
+        // its own effect facts are checked where the projection is realized.
+        //
+        // BOUNDED TO THE PROJECTION THE GRAPH HAS ALREADY ANSWERED, and the
+        // bound is not cosmetic. `comptime`'s evaluator runs the SOURCE AST, so
+        // every relation this admits into the closure becomes foldable by
+        // reading the initializer expression again. `dnir_lower`'s "graph
+        // aggregate facts select one immutable nested layout" test measures
+        // exactly that: it poisons a root's initializer to `.nil` with the graph
+        // facts intact and requires identical realization. Admitting a
+        // projection whose answer is NOT already published (`pairs[i][2]`, a
+        // runtime index) made the whole caller fold through the AST and the
+        // poisoned relowering diverge by one instruction. A projection carrying
+        // an exact published result needs no evaluation to be answered, so
+        // admitting it adds no AST dependence the graph does not already
+        // license. GAP: `comptime.runFold` is an AST reader, and closing that
+        // is what would let this bound be lifted.
+        if (graph.aggregateAccess(occurrence) != null and projectionChainIsAnswered(graph, occurrence)) {
+            continue;
+        }
 
         const fact = graph.application(occurrence) orelse {
             // The ONE unresolved shape that is still provably unobservable, and

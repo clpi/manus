@@ -219,6 +219,7 @@ fn deinitFunction(alloc: std.mem.Allocator, function: dnir.Function) void {
         alloc.free(block.instrs);
     }
     alloc.free(function.blocks);
+    if (function.absent_applications.len > 0) alloc.free(function.absent_applications);
 }
 
 fn deinitExtern(alloc: std.mem.Allocator, external: dnir.Extern) void {
@@ -1250,17 +1251,12 @@ fn collectRelationEdges(
     return edges;
 }
 
+/// ONE READER OF ONE PREDICATE. The graph owns the aggregate fact and the place
+/// fact this asks about, so it owns the question too — see
+/// `SemanticGraph.aggregateIsSoleImmutableBinding`. This name is kept because
+/// the loading realization below reads it in four places.
 fn immutableAggregate(graph: *const semantic_graph.SemanticGraph, aggregate: semantic_graph.id) bool {
-    const fact = graph.aggregate(aggregate) orelse return false;
-    if (fact.contents_known != .yes) return false;
-    const p = graph.aggregatePlace(aggregate) orelse return false;
-    if (p.shape != .collection or p.facts.contents_known != .yes) return false;
-    if (p.facts.mutation != .no or p.facts.immutability != .yes) return false;
-    if (p.facts.alias != .no or p.facts.escape != .no) return false;
-    return switch (p.bindCount()) {
-        .exact => |count| count == 1,
-        .bounded, .unknown => false,
-    };
+    return graph.aggregateIsSoleImmutableBinding(aggregate);
 }
 
 fn immutableNestedAggregateRoot(graph: *const semantic_graph.SemanticGraph, aggregate: semantic_graph.id) bool {
@@ -2756,6 +2752,10 @@ pub const LowerCtx = struct {
     /// function. The identity and contents stay graph-owned; this map only
     /// avoids emitting a second address materialization for another access.
     aggregate_bases: std.AutoHashMapUnmanaged(semantic_graph.id, u32) = .empty,
+    /// Applications this lowering answered from the graph and realized NOWHERE.
+    /// Producer: `foldAggregateAccess`. Consumer: `native_backend`'s
+    /// realization-count checks, through `Function.absent_applications`.
+    absent_applications: std.ArrayListUnmanaged(semantic_graph.id) = .empty,
     /// Static element count of a positional table, keyed by its `.len` slot, so
     /// `t[i]` with a non-constant `i` knows how many slots to select over.
     table_lens: std.AutoHashMapUnmanaged(u32, i64) = .empty,
@@ -2854,6 +2854,7 @@ pub const LowerCtx = struct {
         self.loop_breaks.deinit(self.alloc);
         self.loop_heads.deinit(self.alloc);
         self.instrs.deinit(self.alloc);
+        self.absent_applications.deinit(self.alloc);
     }
 
     fn freshTemp(self: *LowerCtx) u32 {
@@ -3213,6 +3214,15 @@ fn lowerFunction(
     errdefer alloc.free(blocks);
     blocks[0] = .{ .instrs = owned_instrs };
 
+    // A RELATION THAT FOLDED WHOLE REALIZES NONE OF ITS OWN, and
+    // `unrealizedApplicationCount` already counts every one of them from
+    // `folded_to_constant`. Listing them again here would subtract them twice.
+    const owned_absent = if (folded)
+        try alloc.alloc(semantic_graph.id, 0)
+    else
+        try ctx.absent_applications.toOwnedSlice(alloc);
+    errdefer alloc.free(owned_absent);
+
     const ret_rec = findRecordName(records, fd.func.ret_type);
     const ret_record_name = if (ret_rec) |r| try alloc.dupe(u8, r.name) else null;
     errdefer if (ret_record_name) |record| alloc.free(record);
@@ -3247,6 +3257,7 @@ fn lowerFunction(
         },
         .id = id,
         .folded_to_constant = folded,
+        .absent_applications = owned_absent,
         .blocks = blocks,
     };
 }
@@ -3335,6 +3346,8 @@ fn root(
     const blocks = try alloc.alloc(dnir.Block, 1);
     errdefer alloc.free(blocks);
     blocks[0] = .{ .instrs = owned_instrs };
+    const owned_absent = try ctx.absent_applications.toOwnedSlice(alloc);
+    errdefer alloc.free(owned_absent);
     const export_name = try alloc.dupe(u8, "main");
     errdefer alloc.free(export_name);
     return .{
@@ -3343,6 +3356,7 @@ fn root(
         .params = &.{},
         .ret_record = null,
         .id = id,
+        .absent_applications = owned_absent,
         .blocks = blocks,
     };
 }
@@ -4153,6 +4167,25 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             // `if x = f() ...` binds whatever the condition decides.
             if (is.binding == null and is.elseifs.len == 0) {
                 if (constConditionTruth(ctx.graph, is.cond)) |truth| {
+                    // THE CONDITION IS DECIDED, ITS APPLICATIONS ARE NOT ABSENT.
+                    //
+                    // `constConditionTruth` answers from `exactI64OfExpr`, and
+                    // one of the shapes it answers for is a PUBLISHED aggregate
+                    // projection (`xs[2][1]`) — an application the graph owns
+                    // and `native_backend` requires to be realized exactly once.
+                    // Returning here without lowering the condition deleted
+                    // those realization rows, and the module was refused with
+                    // `application-realization-count`: measured at HEAD, `if
+                    // xs[2][1] > 2` REFUSED while the same projection bound to a
+                    // name first compiled. The fold was turning new knowledge
+                    // into a refusal.
+                    //
+                    // ONLY THE LINEAGE, NEVER THE COMPARISON. Lowering the whole
+                    // condition here would re-emit the `cmp`/`cset` gap[213]
+                    // deleted — measured: `if 3 > 100` went from two
+                    // instructions back to six. This walks to the published
+                    // projections and realizes those, and nothing else.
+                    try lowerFoldedConditionLineage(ctx, is.cond);
                     const gate = allow_return or
                         (ctx.block_answering and branchIsValueGuard(if (truth) &is.then else if (is.else_body) |*eb| eb else &is.then));
                     if (truth) {
@@ -4538,6 +4571,43 @@ fn constConditionTruth(graph: *const semantic_graph.SemanticGraph, cond: *const 
         .geq => lhs >= rhs,
         else => null,
     };
+}
+
+/// THE REALIZATION ROWS A DECIDED CONDITION STILL OWES.
+///
+/// `constConditionTruth` answers from `exactI64OfExpr`, and one of the shapes it
+/// answers for is a PUBLISHED aggregate projection. When the caller then lowers
+/// only the surviving arm, those applications are realized NOWHERE, and
+/// `native_backend`'s "every published application exactly once" check reads the
+/// difference as a dropped call. Measured at HEAD: `if xs[2][1] > 2` was REFUSED
+/// with `application-realization-count` while `n = xs[2][1] ; if n > 2` — the
+/// same projection, the same knowledge — compiled. The fold was converting new
+/// semantic knowledge into a refusal instead of into a win.
+///
+/// This walks the DECIDED condition to the occurrences the graph published and
+/// realizes those only. It does not lower the comparison, so the branch and the
+/// `cmp`/`cset` gap[213] removed stay removed.
+///
+/// SCOPE IS THE AGGREGATE PROJECTION, deliberately. Any other published
+/// application inside a decided condition has exactly the accounting problem it
+/// had before this existed; widening the walk to realize an ordinary call would
+/// EXECUTE a call the fold had elided, which is a semantic change and not this
+/// change. That case stays refused, visibly, rather than being papered over.
+fn lowerFoldedConditionLineage(ctx: *LowerCtx, expr: *const Expr) Error!void {
+    if (ctx.occurrences.get(expr)) |application| {
+        if (ctx.graph.aggregateAccess(application.application) != null) {
+            _ = try lowerAggregateAccess(ctx, application, .discard);
+            return;
+        }
+    }
+    switch (expr.*) {
+        .binop => |b| {
+            try lowerFoldedConditionLineage(ctx, b.lhs);
+            try lowerFoldedConditionLineage(ctx, b.rhs);
+        },
+        .unop => |u| try lowerFoldedConditionLineage(ctx, u.operand),
+        else => {},
+    }
 }
 
 fn resolveIntStep(ctx: *LowerCtx, step: *const ast.Expr) Error!i64 {
@@ -7674,6 +7744,62 @@ fn aggregateKey(ctx: *LowerCtx, step: AggregateAccessStep) Error!dnir.Value {
     return .{ .local = slot };
 }
 
+/// THE PROJECTION'S RESULT IDENTITY ALREADY CARRIES THE ANSWER.
+///
+/// `liftAggregateAccess` publishes the selected member's exact content onto the
+/// projection's OWN RESULT VALUE when the subject aggregate's contents and the
+/// key are both already known. That is the whole chain the graph exists to
+/// carry — value known, projection published, result identity published — and
+/// until this consumer existed the realization ignored it and re-derived the
+/// same answer at run time with `alloc_slots`, index arithmetic and a
+/// `load_index` against a static table.
+///
+/// THE LICENCE IS NOT NEW. It is `immutableNestedAggregateRoot`, the exact
+/// predicate that already licenses the dense-table realization this replaces:
+/// one binding, no write, no alias, no escape, contents known. Nothing weaker
+/// is assumed, and no second store decides — every input here is read from the
+/// graph.
+///
+/// EVERY STEP STILL EMITS EXACTLY ONE INSTRUCTION carrying its own application
+/// lineage, so `validateDnirApplications` counts the same realizations it
+/// counted before. The instructions merely stop touching memory. Returning
+/// `null` leaves the loading realization in place unchanged.
+fn foldAggregateAccess(
+    ctx: *LowerCtx,
+    steps: []const AggregateAccessStep,
+    root_aggregate: semantic_graph.id,
+    consumption: types.ReturnConsumption,
+) Error!?dnir.Value {
+    const leaf = steps[steps.len - 1];
+    if (leaf.result_descriptor != .i64) return null;
+    const content = ctx.graph.exactI64(leaf.result) orelse return null;
+    // `immutableAggregate` IS the nested predicate minus the "elements are
+    // themselves aggregates" clause, which is a shape question and not a
+    // safety one. A flat root that is bound once, never written, never
+    // aliased and never escaped is exactly as safe to answer from as a
+    // nested one; only the LOADING realization needs the nesting, because
+    // only it needs a dense table.
+    if (!immutableAggregate(ctx.graph, root_aggregate)) return null;
+    // A step whose key the graph does not know exactly cannot have produced an
+    // exact result, so this loop is a CONSISTENCY CHECK on the producer, not a
+    // second derivation of the answer. Disagreement refuses.
+    for (steps) |step| {
+        const key = ctx.graph.exactI64(step.key) orelse return null;
+        if (key < 1 or key > step.extent)
+            return bailWith(ctx.diagnostic, @src(), "aggregate-index-bounds");
+    }
+    // NOTHING IS EMITTED. Each step's application is recorded as realized
+    // NOWHERE, which is what actually happened: the answer was already a fact.
+    // An earlier draft emitted one dead `store_local` per step purely so the
+    // realization count would balance, and measured `xs[1] > 2` at four
+    // instructions against the rival AST walk's two — the accounting invariant
+    // paying for itself in machine text. Absence is stated instead.
+    for (steps) |step| {
+        try ctx.absent_applications.append(ctx.alloc, step.application.application);
+    }
+    return if (consumption == .discard) .void else dnir.Value{ .i64 = content };
+}
+
 fn lowerAggregateAccess(
     ctx: *LowerCtx,
     application: *const semantic_graph.ApplicationFact,
@@ -7684,11 +7810,19 @@ fn lowerAggregateAccess(
     var seen: std.AutoHashMapUnmanaged(semantic_graph.id, void) = .empty;
     defer seen.deinit(ctx.alloc);
     try collectAggregateAccessPath(ctx, application, &steps, &seen);
-    if (steps.items.len < 2)
+    if (steps.items.len == 0)
         return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-depth");
     const root_aggregate = steps.items[0].subject;
     if (ctx.graph.aggregateProducer(root_aggregate) != null)
         return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-root");
+    if (try foldAggregateAccess(ctx, steps.items, root_aggregate, consumption)) |folded| return folded;
+    // ONE STEP IS A FLAT READ, and the only flat read the graph publishes is
+    // the one the fold above just answered. Reaching here means the answer was
+    // not known after all, and the loading realization below needs a dense
+    // table only the nested root has — so this refuses instead of emitting a
+    // load against a base that does not exist.
+    if (steps.items.len < 2)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "aggregate-access-depth");
     const base = try aggregateBase(ctx, root_aggregate);
 
     var prefix: dnir.Value = .void;
@@ -7749,14 +7883,22 @@ fn lowerExprCons(
     expr: *const Expr,
     consumption: types.ReturnConsumption,
 ) Error!dnir.Value {
-    // A PLACE ACCESS IS NOT AN APPLICATION. `t(2)` on a module-scope collection
-    // reads a location; the graph could not tell that from a relation call
-    // because it had no places, which is why the refusal below fired on it.
-    if (placeFold(ctx, expr)) |folded| return folded;
+    // THE GRAPH FIRST WHEN THE GRAPH PUBLISHED SOMETHING. `placeFold` answers
+    // a module-scope collection read by RE-READING the initializer AST
+    // (`placeElement` → `intLiteralStep`), and it used to run first. Once the
+    // projection publishes an application, letting the AST walk answer would
+    // leave that application realized NOWHERE and `native_backend` would refuse
+    // the module for a dropped realization — the rival authority converting a
+    // published fact into a refusal. Where the graph published nothing,
+    // `placeFold` still answers exactly as before.
     if (ctx.occurrences.get(expr)) |application| {
         if (ctx.graph.aggregateAccess(application.application) != null)
             return lowerAggregateAccess(ctx, application, consumption);
     }
+    // A PLACE ACCESS IS NOT AN APPLICATION. `t(2)` on a module-scope collection
+    // reads a location; the graph could not tell that from a relation call
+    // because it had no places, which is why the refusal below fired on it.
+    if (placeFold(ctx, expr)) |folded| return folded;
     if (applicationNeedsGraphOccurrence(ctx, expr)) {
         return refuseMissingApplication(ctx, @src(), expr);
     }
