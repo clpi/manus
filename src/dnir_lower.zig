@@ -5533,10 +5533,10 @@ fn lowerCheckedRecordCall(
     const result = try checkedApplicationResult(ctx, application);
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
-    var values: [max_direct_scalar_args]dnir.Value = undefined;
-    const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
+    var slot_storage: [max_direct_scalar_args]StagedSlot = undefined;
+    const slots = try evaluateCheckedScalarOperands(ctx, operands, &slot_storage);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
-    try stageCheckedScalarOperands(ctx, operands[0..staged.count], values[0..staged.count]);
+    try stageCheckedScalarOperands(ctx, slots);
     const descriptor = try publishedDescriptor(ctx, application);
     if (consumption == .discard) {
         try ctx.emit(.{
@@ -5623,10 +5623,10 @@ fn lowerCheckedRecordCallAssign(
     // (`lowerCheckedRecordCall`, `lowerCheckedScalarCall`) projects the subject,
     // and the result side of a call has no reason to differ from the rest.
     const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
-    var values: [max_direct_scalar_args]dnir.Value = undefined;
-    const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
+    var slot_storage: [max_direct_scalar_args]StagedSlot = undefined;
+    const slots = try evaluateCheckedScalarOperands(ctx, operands, &slot_storage);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
-    try stageCheckedScalarOperands(ctx, operands[0..staged.count], values[0..staged.count]);
+    try stageCheckedScalarOperands(ctx, slots);
     const descriptor = try publishedDescriptor(ctx, application);
     try ctx.emit(.{
         .op = .call_direct,
@@ -7934,23 +7934,54 @@ fn checkedGpPackResultType(
     };
 }
 
-/// How many argument slots the operands actually occupy, and whether they are
-/// the floating file. THE COUNT IS NOT `operands.len`: one semantic operand may
-/// realize as several registers, which is the whole point of the record case
-/// below.
-const StagedOperands = struct {
-    count: usize,
-    floating: bool,
+/// ONE PHYSICAL ARGUMENT SLOT, AND THE SEMANTIC LINEAGE IT REALIZES.
+///
+/// THE GENERAL LAW: one semantic value realizes as 0..N physical components,
+/// and which operand — through which projection — a given component realizes is
+/// a FACT ITS PRODUCER KNOWS AND MUST CARRY FORWARD. It is not recoverable
+/// downstream: a consumer holds a physical slot index and a semantic operand
+/// array, and nothing lawfully relates the two.
+///
+/// This producer used to answer with a bare slot COUNT, and four consumers
+/// reconstructed "the operand behind slot i" as `operands[i]` — correct only
+/// while every operand realizes as exactly one slot, and out of bounds the
+/// moment one realizes as two. GAP-208: `add(p, q)` over `pt: { x: i64, y: i64 }`
+/// stages four field slots from two semantic operands and read `operands[4]` of
+/// a two-element slice. Clamping to `operands.len` would have staged two of the
+/// four values and exchanged a hard panic for a wrong answer, which is worse.
+///
+/// The same missing correspondence is what scalar replacement, ABI synthesis,
+/// result-pack specialization, SIMD packing, foreign aggregates and debugger
+/// reconstruction each need. None of them wants "how many registers"; each
+/// wants "slot 1 IS operand `p` projected through `y`, and it carries `y`'s
+/// descriptor, not `pt`'s".
+///
+/// So the count is DELETED rather than fixed. There is no longer a number a
+/// consumer could index the wrong array by: the producer answers with the
+/// physical slots themselves, each naming its own operand and projection.
+const StagedSlot = struct {
+    /// The semantic operand this slot realizes a component of. Points into the
+    /// caller's `operand_storage`, which outlives every use.
+    operand: *const CheckedScalarOperand,
+    /// WHICH component of that operand. The field name when this slot realizes
+    /// a projection; EMPTY when this slot realizes the operand entire. Empty
+    /// and "the operand has no fields" are different facts and stay different.
+    projection: []const u8,
+    /// What THIS SLOT carries: the projected field's descriptor for a
+    /// component, the operand's own descriptor for a whole-operand slot. An
+    /// aggregate's descriptor never stands in for a field's.
+    descriptor: types.ResolvedType,
+    value: dnir.Value,
 };
 
 fn evaluateCheckedScalarOperands(
     ctx: *LowerCtx,
     operands: []const CheckedScalarOperand,
-    values: *[max_direct_scalar_args]dnir.Value,
-) Error!StagedOperands {
+    storage: *[max_direct_scalar_args]StagedSlot,
+) Error![]const StagedSlot {
     var fp_count: usize = 0;
     var count: usize = 0;
-    for (operands) |operand| {
+    for (operands) |*operand| {
         // ONE SEMANTIC VALUE, A CONSUMER-DIRECTED REALIZATION. A record operand
         // is not materialized into an aggregate and it is not given an address:
         // this consumer wants scalar fields in registers, so the fields are what
@@ -7964,7 +7995,7 @@ fn evaluateCheckedScalarOperands(
         // DESCRIPTOR ORDER IS THE CONTRACT, and it is the same order the callee
         // homes its parameter from (`rec.fields`, one register each). The two
         // ends read the same list, which is why they cannot drift.
-        if (operandRecordStorage(ctx, operand)) |rec| {
+        if (operandRecordStorage(ctx, operand.*)) |rec| {
             // THE REGISTER FILE IS THE BOUND, and it is the same bound the
             // CALLEE applies when it homes the parameter (`functionEligible`
             // refuses a record parameter past `max_reg_record_fields`, because
@@ -7972,12 +8003,41 @@ fn evaluateCheckedScalarOperands(
             // in the same terms is what keeps a record that the callee would
             // refuse from being staged by the caller as if it fit.
             if (count + rec.fields.len <= max_reg_record_fields) {
-                for (rec.fields) |fname| {
+                for (rec.fields, 0..) |fname, fi| {
+                    // EVERY FIELD OF AN EXPANDED RECORD IS A GENERAL-PURPOSE
+                    // SLOT, AND THAT IS THE CALLEE'S OWN ACCOUNTING, not a
+                    // caller-side convention: `functionEligible` admits a
+                    // record parameter by adding `r.fields.len` to `gp_slots`
+                    // and refuses the all-f64 record outright, so a record that
+                    // reaches here has every field homed out of x0..x7.
+                    //
+                    // A MIXED record — `{ x: i64, y: f64 }` — is the one shape
+                    // where naming the field's real descriptor and staging by
+                    // it disagree: the descriptor rule below would put `y` in
+                    // v0 while the callee reads it from x1. Both ends still
+                    // compile, so the disagreement is a wrong ANSWER. Refuse it
+                    // by name instead. Nothing regresses: a mixed record has two
+                    // or more fields by construction, and every record operand
+                    // of two or more fields panicked here before this producer
+                    // carried per-slot lineage at all.
+                    const kind: dnir.FieldKind = if (fi < rec.kinds.len) rec.kinds[fi] else .i64;
+                    if (kind == .f64) {
+                        return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                    }
                     const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ operand.expression.name.ident, fname });
                     defer ctx.alloc.free(key);
                     const slot = ctx.locals.get(key) orelse
                         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-                    values[count] = .{ .local = slot };
+                    storage[count] = .{
+                        .operand = operand,
+                        .projection = fname,
+                        .descriptor = switch (kind) {
+                            .str => .str,
+                            .i64 => .i64,
+                            .f64 => unreachable,
+                        },
+                        .value = .{ .local = slot },
+                    };
                     count += 1;
                 }
                 continue;
@@ -7993,8 +8053,15 @@ fn evaluateCheckedScalarOperands(
         // locals, so it lands here — refused, with the operand law named.
         if (operand.descriptor == .@"struct") {
             if (operand.expression.* == .name) {
+                // THE PHYSICAL BOUND BELONGS TO THE PHYSICAL INDEX. This arm
+                // wrote `storage[count]` with no bound at all, which was
+                // unreachable only because a record operand used to panic in
+                // the caller before enough slots could accumulate to matter.
+                if (count >= storage.len) {
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+                }
                 if (try lowerOpaqueRecordLocalArg(ctx, operand.expression)) |materialized| {
-                    values[count] = materialized;
+                    storage[count] = wholeOperandSlot(operand, materialized);
                     count += 1;
                     continue;
                 }
@@ -8010,15 +8077,15 @@ fn evaluateCheckedScalarOperands(
         if (operandNamesRecord(ctx, operand.expression)) {
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
         }
-        if (count >= values.len) {
+        if (count >= storage.len) {
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
         }
         if (try lowerOpaqueRecordLocalArg(ctx, operand.expression)) |materialized| {
-            values[count] = materialized;
+            storage[count] = wholeOperandSlot(operand, materialized);
             count += 1;
             continue;
         }
-        values[count] = try lowerExprCons(ctx, operand.expression, .single);
+        storage[count] = wholeOperandSlot(operand, try lowerExprCons(ctx, operand.expression, .single));
         if (operand.descriptor == .f64) fp_count += 1;
         count += 1;
     }
@@ -8027,24 +8094,35 @@ fn evaluateCheckedScalarOperands(
     if (fp_count == count and count > 8) {
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
     }
-    return .{ .count = count, .floating = fp_count != 0 and fp_count == count };
+    return storage[0..count];
 }
 
-fn stageCheckedScalarOperands(
-    ctx: *LowerCtx,
-    operands: []const CheckedScalarOperand,
-    values: []const dnir.Value,
-) Error!void {
+/// A slot that realizes its operand ENTIRE — no projection, and the operand's
+/// own descriptor is what crosses.
+fn wholeOperandSlot(operand: *const CheckedScalarOperand, value: dnir.Value) StagedSlot {
+    return .{
+        .operand = operand,
+        .projection = "",
+        .descriptor = operand.descriptor,
+        .value = value,
+    };
+}
+
+/// EVERY SLOT IS ITS OWN. The register file follows the descriptor of what the
+/// SLOT carries, which for a record component is the field's and not the
+/// aggregate's. This loop no longer walks a semantic array in physical order,
+/// so there is nothing left for a slot count to be wrong about.
+fn stageCheckedScalarOperands(ctx: *LowerCtx, slots: []const StagedSlot) Error!void {
     var gp: u32 = 0;
     var fp: u32 = 0;
-    for (operands, values) |operand, value| {
-        if (operand.descriptor == .f64) {
+    for (slots) |slot| {
+        if (slot.descriptor == .f64) {
             if (fp >= 8) return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-            try ctx.emit(.{ .op = .fp_mov_arg, .result = fp, .lhs = value });
+            try ctx.emit(.{ .op = .fp_mov_arg, .result = fp, .lhs = slot.value });
             fp += 1;
         } else {
             if (gp >= max_direct_scalar_args) return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
-            try ctx.emit(.{ .op = .mov_arg, .result = gp, .lhs = value });
+            try ctx.emit(.{ .op = .mov_arg, .result = gp, .lhs = slot.value });
             gp += 1;
         }
     }
@@ -8073,16 +8151,22 @@ fn lowerCheckedPackCall(
     }
 
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    const raw_operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
-    const operands = raw_operands;
-    var values: [max_direct_scalar_args]dnir.Value = undefined;
-    const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
+    const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
+    var slot_storage: [max_direct_scalar_args]StagedSlot = undefined;
+    const slots = try evaluateCheckedScalarOperands(ctx, operands, &slot_storage);
     const first_ty = try checkedGpPackResultType(ctx, results[0]);
-    const direct_gp = operands.len == 1 and staged.count == 1 and
-        operands[0].descriptor == .i64 and first_ty == .i64 and
-        checkedOperandAdmitsDirectGp(ctx, operands[0].expression);
+    // THE FAST PATH WANTS ONE SLOT THAT REALIZES ITS OPERAND ENTIRE, and now it
+    // asks for exactly that. `operands.len == 1 and staged.count == 1` stood
+    // here: two counts from two different spaces, agreeing by arithmetic about a
+    // correspondence neither of them carried. `projection.len == 0` is the fact
+    // itself — a one-field record also yields one slot, but that slot is a
+    // PROJECTION of the operand and its record has no value of its own to hand
+    // to `call_direct.lhs`.
+    const direct_gp = slots.len == 1 and slots[0].projection.len == 0 and
+        slots[0].operand.descriptor == .i64 and first_ty == .i64 and
+        checkedOperandAdmitsDirectGp(ctx, slots[0].operand.expression);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
-    if (!direct_gp) try stageCheckedScalarOperands(ctx, operands[0..staged.count], values[0..staged.count]);
+    if (!direct_gp) try stageCheckedScalarOperands(ctx, slots);
 
     const projected = try ctx.alloc.alloc(dnir.PackResult, results.len);
     errdefer ctx.alloc.free(projected);
@@ -8105,7 +8189,7 @@ fn lowerCheckedPackCall(
         .target = target,
         .realization_start = realization_start,
         .callee = callee,
-        .lhs = if (direct_gp) values[0] else .void,
+        .lhs = if (direct_gp) slots[0].value else .void,
         .ty = try publishedDescriptor(ctx, application),
         .pack_results = projected,
     });
@@ -8147,24 +8231,24 @@ fn lowerCheckedScalarCall(
     try checkedScalarResult(ctx.diagnostic, descriptor);
 
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
-    const raw_operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
-    const operands = raw_operands;
-    var values: [max_direct_scalar_args]dnir.Value = undefined;
-    const staged = try evaluateCheckedScalarOperands(ctx, operands, &values);
+    const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
+    var slot_storage: [max_direct_scalar_args]StagedSlot = undefined;
+    const slots = try evaluateCheckedScalarOperands(ctx, operands, &slot_storage);
     const realization_start: u32 = @intCast(ctx.instrs.items.len);
     // Admit only the fixed-width integer contract with byte-equivalence proof.
     // Other general-register descriptors remain staged until their result and
     // operand laws have the same focused control.
     //
-    // `staged.count == 1` is what keeps a record out of this path without
-    // naming records here: the fast path hands ONE value straight to
-    // `call_direct.lhs` and skips staging entirely, so any operand that
-    // realized as more than one register must not reach it.
-    const direct_gp = operands.len == 1 and
-        staged.count == 1 and
-        operands[0].descriptor == .i64 and
+    // ONE SLOT, AND THAT SLOT REALIZES ITS OPERAND ENTIRE. The fast path hands
+    // a single value straight to `call_direct.lhs` and skips staging, so it
+    // needs a slot that IS its operand — not merely a slot count that happens
+    // to equal one. A one-field record also stages one slot, and that slot is a
+    // projection whose record has no value of its own to hand over.
+    const direct_gp = slots.len == 1 and
+        slots[0].projection.len == 0 and
+        slots[0].operand.descriptor == .i64 and
         descriptor == .i64 and
-        checkedOperandAdmitsDirectGp(ctx, operands[0].expression);
+        checkedOperandAdmitsDirectGp(ctx, slots[0].operand.expression);
     // A record operand is STAGED AS ITS FIELDS by `evaluateCheckedScalarOperands`
     // above, which refuses by name anything it could not expand. The loop that
     // stood here refused EVERY record equally — including the ones the argument
@@ -8176,7 +8260,7 @@ fn lowerCheckedScalarCall(
     // containing a call spills all GP locals to the stack frame
     // (`planGpStackLocals`, gate_spill_all_locals = body_has_call), so the
     // operand load/reload survives the call's caller-saved clobber.
-    if (!direct_gp) try stageCheckedScalarOperands(ctx, operands[0..staged.count], values[0..staged.count]);
+    if (!direct_gp) try stageCheckedScalarOperands(ctx, slots);
     const has_result = consumption != .discard and descriptor != .void;
     const result = if (has_result) ctx.freshTemp() else null;
     const value = try checkedApplicationResult(ctx, application);
@@ -8190,7 +8274,7 @@ fn lowerCheckedScalarCall(
         .realization_start = realization_start,
         .result = result,
         .callee = callee,
-        .lhs = if (direct_gp) values[0] else .void,
+        .lhs = if (direct_gp) slots[0].value else .void,
         .ty = descriptor,
     });
     return if (result) |temp| .{ .temp = temp } else .void;

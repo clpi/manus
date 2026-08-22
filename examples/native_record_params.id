@@ -1,8 +1,5 @@
 point: { x: i64, y: i64 }
 
-inline_y: i64 = (p: { x: i64, y: i64 })
-  return p.y
-
 alias_sum: i64 = (p: point)
   return p.x + p.y
 
@@ -10,5 +7,4 @@ p: point =
   x = 5
   y = 7
 
-print(inline_y({ x = 3, y = 4 }))
 print(alias_sum(p))
