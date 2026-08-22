@@ -50,7 +50,13 @@ It puts each canonical form beside the retired one it replaces and requires them
 to AGREE on every input, so reading it teaches the decomposition and running it
 proves the teaching is current. Its companions — `gate/access.id`,
 `gate/control.id`, `gate/word.id`, `gate/shadow.id` — do the same for one ruling
-each. `sh gate/all.sh` runs the lot.
+each. `sh gate/all.sh` runs the lot — **in `../idol-native`, which is the tree
+this whole paragraph is standing in**: `subject.id`, `access.id`, `control.id`,
+`word.id` and `shadow.id` exist only there, and so does the `gate/all.sh` that
+registers them (57 commits, first `02776b3`). This repository has its own,
+smaller `gate/all.sh` covering the shell gates in `gate/`. gap[212] read this
+sentence as naming a file that had never existed; it was reading it against the
+wrong repository, which is the same error that produced its headline number.
 
 ### Numbers live in exactly one place, and that place runs
 

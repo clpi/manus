@@ -1,0 +1,60 @@
+#!/bin/sh
+# build-mode — DERIVE the optimize mode of a built `idol` from the artifact.
+#
+#   tools/node/dev/build-mode <path-to-idol>
+#
+# Prints `ReleaseFast` and exits 0, or prints what it found and exits 1.
+#
+# WHY THIS EXISTS. `gate/defaults.sh`, `gate/world-launch.sh` and
+# `gate/cache-home.sh` read `IDOL_BUILD_MODE` and refused unless it said
+# ReleaseFast. Nothing in any of them ever looked at the binary, so the
+# "precondition" was an assertion supplied by the caller — the exact shape
+# AGENTS.md §"Numbers live in exactly one place, and that place runs" forbids.
+# It was not merely unverified, it was WRONG at 64928599: the binary those
+# gates run by default (`zig-out/bin/idol`, 18,404,520 bytes, sha256
+# 6833c8dc…) carries 41,294 debug symbol records, while a clean
+# `-Doptimize=ReleaseFast` build of the same tree is 6,295,908 bytes with 0 —
+# and the tree's own witnessed ReleaseFast artifact (idol-native bin/idol at
+# HEAD, sha256 b78fc0b7…) is 6,479,200 bytes. `IDOL_BUILD_MODE=ReleaseFast sh
+# gate/defaults.sh` certified the 18 MB binary as ReleaseFast and passed.
+#
+# THE DERIVATION. `build.zig` sets `.strip = optimize == .fast` on the
+# compiler module. Stripping removes the debug symbol table, so for artifacts
+# of THIS build.zig:
+#
+#     zero debug symbol records  <->  ReleaseFast
+#
+# It is a biconditional, not a heuristic: `.fast` is the only mode that sets
+# `.strip`, and `.strip` is the only thing that empties the table. The witness
+# is read out of the artifact, so no caller can supply it and nothing is
+# persisted between runs.
+#
+# A host whose `nm` cannot report symbols yields `unknown`, and `unknown` is a
+# REFUSAL, not a pass: a gate that cannot establish what it is measuring has
+# not measured it.
+set -u
+
+bin=${1:-}
+[ -n "$bin" ] || { printf 'build-mode: usage: build-mode <path-to-idol>\n' >&2; exit 2; }
+[ -x "$bin" ] || { printf 'build-mode: not an executable: %s\n' "$bin" >&2; exit 2; }
+
+command -v nm >/dev/null 2>&1 || {
+    printf 'unknown (no nm on this host — the artifact cannot be read)\n'
+    exit 1
+}
+
+# Debug symbol records. Mach-O reports them as stabs (SO/OSO/FUN/SOL); ELF
+# `nm -a` lists them with the lowercase/`N` type letters that `nm` gives to
+# debugging symbols. Either family being NON-EMPTY means the artifact was not
+# stripped, and `build.zig` strips exactly ReleaseFast.
+stabs=$(nm -ap "$bin" 2>/dev/null | grep -cE ' (SO|OSO|SOL|FUN) ' || true)
+elfdbg=$(nm -a --debug-syms "$bin" 2>/dev/null | awk '$2 == "N"' | grep -c . || true)
+debug=$((${stabs:-0} + ${elfdbg:-0}))
+
+if [ "$debug" -eq 0 ]; then
+    printf 'ReleaseFast\n'
+    exit 0
+fi
+
+printf 'not-ReleaseFast (%s debug symbol record(s); build.zig strips only ReleaseFast)\n' "$debug"
+exit 1

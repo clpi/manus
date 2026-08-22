@@ -11,10 +11,11 @@ if [ "${IDOL_LOCK_HELD:-0}" != 1 ]; then
 fi
 
 idol=${IDOL_BIN:-"$root/zig-out/bin/idol"}
-mode=${IDOL_BUILD_MODE:-unknown}
-case "$mode" in
-    ReleaseFast|fast) mode=ReleaseFast ;;
-esac
+# DERIVED FROM THE ARTIFACT, never from the caller. `IDOL_BUILD_MODE` used to
+# supply this and nothing checked it against the binary; see
+# tools/node/dev/build-mode for the measurement that refuted it.
+mode=$("$root/tools/node/dev/build-mode" "$idol" 2>/dev/null) || true
+: "${mode:=unknown}"
 work=$(mktemp -d "${TMPDIR:-/tmp}/idol-cache-home.XXXXXX")
 cache_before=$work/cache.before
 

@@ -11,8 +11,15 @@ syntax, keyword, or operator to mean what it says is not a GAP — it is a
 constitutional amendment request, and it must say so instead of drifting.
 
 This file states, once, the admission test and the field semantics every
-research GAP (GAP-175 onward) carries inline. Each GAP's `## C0 alignment`
-block is a per-GAP instance of the schema defined here.
+research GAP carries inline. Each GAP's `## C0 alignment` block is a per-GAP
+instance of the schema defined here.
+
+**The subject is the declared kind, not a number range.** A GAP is in this
+census exactly when it declares `**Kind:** research_gap`. GAP numbering is
+shared with defect reports (`wrong_answer`, `crash`, `regression`,
+`evidence_gap`, ...), which carry no C0 admission obligation and must not be
+convicted of one; a GAP numbered >= 175 that declares no kind at all IS a
+violation, because then the census cannot select its subject.
 
 ## The admission test
 

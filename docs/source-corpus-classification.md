@@ -46,6 +46,8 @@ debt; write headers only where the finer fact disagrees.
 ```text
 canonical   gate/subject.id
 canonical   lib/compiler/
+fixture     out/gap111_probe3.id
+fixture     src/testdata/
 fixture     tools/reduce/fixtures/
 fixture     tests/
 migration   lib/
@@ -57,6 +59,13 @@ scenery     explore/
 scenery     probe.id
 scenery     tmp_peek_test.id
 ```
+
+`src/testdata/` holds compiler test fixtures, exactly like `tests/`.
+`out/gap111_probe3.id` is named as a single PATH, not as a `out/` prefix: it is
+the probe `gate/gap-111-subject-first.sh` reads, and it is the only teaching
+artifact under a directory that otherwise holds build output (including a
+tracked 18 MB `out/bin/idol`). A prefix rule there would classify future build
+output as teaching material, which is the opposite of what this table is for.
 
 `lib/compiler/` is the executed self-host producer (canonical Idol);
 `lib/` otherwise is migration distribution — frozen std debt, do not extend;

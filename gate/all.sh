@@ -2,13 +2,19 @@
 # Runs every shell gate that EXISTS, and measures the citation debt gap[212]
 # records. AGENTS.md has told every reader `sh gate/all.sh runs the lot` since
 # before this file was written; `git log --all -- gate/all.sh` was empty until
-# this commit, so the instruction named a file that had never existed. This is
-# that file, and it claims only what it measures.
+# it was written. This is that file, and it claims only what it measures.
 set -u
 
 repo=$(unset CDPATH; cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo" || exit 64
 
+# THE COMPILER GATES ARE NOT SANDBOXED FROM THEIR OWN TREE. Anything below that
+# names `zig-out/bin/idol` reads the artifact that is there; it does not build
+# one. `gate/defaults.sh` and `gate/world-launch.sh` derive the optimize mode
+# from that artifact (tools/node/dev/build-mode) and refuse a non-ReleaseFast
+# one by name, which is why they can be run from here at all: they used to read
+# `IDOL_BUILD_MODE`, which this file has never set and never could have set
+# honestly.
 pass=0
 fail=0
 failed=
@@ -26,31 +32,147 @@ for gate in gate/*.sh; do
   fi
 done
 
-# CITATION DEBT. gap[212]: a citation to a gate that has never existed is
-# indistinguishable, to a reader, from a citation to a passing one. This counts
-# them rather than asserting a number, so the figure cannot rot the way the one
-# in AGENTS.md line 60 did.
+# ============================ CITATION RESOLUTION ============================
+# gap[212]: a citation to a gate that does not exist is indistinguishable, to a
+# reader, from a citation to a passing one. This RESOLVES each cited path and
+# counts the classes, rather than asserting a number, so the figure cannot rot
+# the way the one in AGENTS.md line 60 did.
+#
+# TWO CORRECTIONS TO THE FIRST VERSION OF THIS CENSUS, both of which inflated
+# it, and together they account for the whole of the reported "81 of 133
+# citations name 27 gates with no commit in any history":
+#
+#   1. IT LOOKED IN ONE REPOSITORY. The compiler in src/*.zig is cited against
+#      the gate home in the SIBLING tree — AGENTS.md's own instruction is
+#      `cd ../idol-native`, docs/METRICS.md already spells
+#      `../idol-native/gate/selfhost.sh`, and src/dnir_hardware.zig says
+#      "gate/simd.sh §1 in idol-native". Twenty-six of the twenty-seven
+#      "ghosts" are committed, runnable files in ../idol-native/gate/.
+#      `gate/narrow.sh` — the one cited by a live refusal in dnir_lower.zig —
+#      is 652 lines, passes, and prints the cited number on every run.
+#
+#   2. IT COUNTED UNTRACKED FILES. `src/*.zig.orig` are patch backups in a
+#      working tree. Eleven citations lived only there.
+#
+# So the debt is real but it is a DIFFERENT debt: an UNDER-QUALIFIED citation,
+# repaired by writing the path a reader can follow, not by writing a gate.
+native=${IDOL_NATIVE:-$repo/../idol-native}
+
 cited=0
-ghost_cites=0
-ghost_files=0
-for path in $(grep -rhoE 'gate/[a-z0-9_-]+\.sh' src gate docs AGENTS.md CLAUDE.md 2>/dev/null | sort -u); do
-  n=$(grep -rhoE "$(printf '%s' "$path" | sed 's/\./\\./g')" src gate docs AGENTS.md CLAUDE.md 2>/dev/null | wc -l | tr -d ' ')
-  cited=$((cited + n))
-  if [ -z "$(git log --all --oneline -- "$path" 2>/dev/null | head -1)" ]; then
-    ghost_cites=$((ghost_cites + n))
-    ghost_files=$((ghost_files + 1))
-  fi
-done
+here=0
+qualified=0
+here_retired=0
+sibling=0
+sibling_retired=0
+unresolved=0
+unresolved_names=
+sibling_names=
+retired_names=
+
+# THIS FILE IS EXCLUDED FROM ITS OWN CENSUS. The paragraphs above name a dozen
+# gates in order to explain the measurement, and a census that counts its own
+# explanation is measuring itself — `tools/node/dev/gapc0` records the same
+# convention for scanner fixtures. Nothing here is an authority citation; every
+# gate this runner actually depends on it RUNS, in the loop above.
+sources=$(git ls-files -- src gate docs AGENTS.md CLAUDE.md 2>/dev/null | grep -v '^gate/all\.sh$')
+if [ -z "$sources" ]; then
+  printf 'gate/all.sh: citation census could not list tracked sources — NOT MEASURED\n'
+else
+  # A citation may be spelled QUALIFIED (`../idol-native/gate/x.sh`, which
+  # docs/METRICS.md already uses) or bare. The qualified spelling is the repair
+  # for the under-qualified debt below, so it must be counted as its own class
+  # or repairing a citation would leave the number unmoved.
+  for cite in $(printf '%s\n' $sources | xargs grep -hoE '(\.\./idol-native/)?gate/[a-z0-9_-]+\.sh' 2>/dev/null | sort -u); do
+    n=$(printf '%s\n' $sources | xargs grep -hoF "$cite" 2>/dev/null | wc -l | tr -d ' ')
+    case $cite in
+      ../idol-native/*)
+        # A qualified citation resolves in the sibling or nowhere; the bare
+        # occurrences it contains are already counted here, so subtract them
+        # from the bare tally below by matching the bare form's count.
+        path=${cite#../idol-native/}
+        cited=$((cited + n))
+        if [ -f "$native/$path" ]; then
+          qualified=$((qualified + n))
+        else
+          unresolved=$((unresolved + n))
+          unresolved_names="$unresolved_names $cite"
+        fi
+        continue
+        ;;
+    esac
+    path=$cite
+    # `grep -oF gate/x.sh` also matches inside `../idol-native/gate/x.sh`, so a
+    # qualified citation would be double-counted as bare. Remove those.
+    q=$(printf '%s\n' $sources | xargs grep -hoF "../idol-native/$path" 2>/dev/null | wc -l | tr -d ' ')
+    n=$((n - q))
+    [ "$n" -gt 0 ] || continue
+    cited=$((cited + n))
+    if [ -f "$path" ]; then
+      here=$((here + n))
+    elif [ -n "$(git log --all --oneline -- "$path" 2>/dev/null | head -1)" ]; then
+      here_retired=$((here_retired + n))
+      retired_names="$retired_names $path(here)"
+    elif [ -f "$native/$path" ]; then
+      sibling=$((sibling + n))
+      sibling_names="$sibling_names $path"
+    elif [ -d "$native" ] && [ -n "$(git -C "$native" log --all --oneline -- "$path" 2>/dev/null | head -1)" ]; then
+      sibling_retired=$((sibling_retired + n))
+      retired_names="$retired_names $path(sibling)"
+    else
+      unresolved=$((unresolved + n))
+      unresolved_names="$unresolved_names $path"
+    fi
+  done
+fi
 
 printf 'gate/all.sh: ran %s gate(s): %s passed, %s failed\n' \
   "$((pass + fail))" "$pass" "$fail"
 [ -n "$failed" ] && printf 'gate/all.sh: FAILED:%s\n' "$failed"
-printf 'gate/all.sh: citation debt: %s of %s gate citations name %s gate(s) with no commit in any history (gap[212])\n' \
-  "$ghost_cites" "$cited" "$ghost_files"
 
-# This gate does NOT fail on the citation debt. gap[212] records the budget and
-# owns the ratchet; failing here would make `sh gate/all.sh` red on day one,
-# which is exactly how build.zig records that audit100 and capability-scan came
-# to be skipped. It fails only when a gate that exists fails.
-[ "$fail" -eq 0 ] || exit 1
+if [ ! -d "$native" ]; then
+  printf 'gate/all.sh: sibling gate home absent at %s — cross-tree citations CANNOT BE RESOLVED from here; set IDOL_NATIVE\n' "$native"
+fi
+printf 'gate/all.sh: gate citations: %s total — %s resolve here, %s spelled ../idol-native/ and resolve there, %s BARE but only in %s, %s name a RETIRED gate, %s UNRESOLVED (gap[212])\n' \
+  "$cited" "$here" "$qualified" "$sibling" "$native" "$((here_retired + sibling_retired))" "$unresolved"
+[ -n "$retired_names" ] && printf 'gate/all.sh: RETIRED authority:%s\n' "$retired_names"
+[ -n "$unresolved_names" ] && printf 'gate/all.sh: UNRESOLVED:%s\n' "$unresolved_names"
+
+# ================================ THE RATCHET ================================
+# A gate shipped red is skipped on day one, which is the reasoning build.zig
+# already records for audit100 and capability-scan. So these are CEILINGS that
+# fall, not a demand for zero — except UNRESOLVED, which is zero TODAY and is
+# therefore gated at zero honestly rather than aspirationally.
+#
+# Measured at 64928599 with both corrections applied, this file excluded, and
+# the two dnir_lower.zig citations for the live `mod-global-written:` refusal
+# qualified:
+#     120 citations, 43 here, 6 qualified, 70 bare-but-sibling, 1 retired,
+#     0 unresolved
+# The 70 fall by rewriting `gate/x.sh` as `../idol-native/gate/x.sh` in the
+# citing comment. That is a path edit, not a gate to write: every one of the 26
+# gates behind them is a committed, runnable file in the sibling tree.
+# Lower these as citations are qualified. Raising one is the edit that must be
+# argued for.
+UNRESOLVED_CEILING=0
+SIBLING_CEILING=71
+RETIRED_CEILING=1
+
+debt_fail=0
+if [ "$unresolved" -gt "$UNRESOLVED_CEILING" ]; then
+  printf 'gate/all.sh: CITATION DEBT ROSE — %s unresolved citations, ceiling %s\n' \
+    "$unresolved" "$UNRESOLVED_CEILING" >&2
+  debt_fail=1
+fi
+if [ "$sibling" -gt "$SIBLING_CEILING" ]; then
+  printf 'gate/all.sh: UNDER-QUALIFIED CITATIONS ROSE — %s, ceiling %s\n' \
+    "$sibling" "$SIBLING_CEILING" >&2
+  debt_fail=1
+fi
+if [ "$((here_retired + sibling_retired))" -gt "$RETIRED_CEILING" ]; then
+  printf 'gate/all.sh: CITATIONS TO RETIRED GATES ROSE — %s, ceiling %s\n' \
+    "$((here_retired + sibling_retired))" "$RETIRED_CEILING" >&2
+  debt_fail=1
+fi
+
+[ "$fail" -eq 0 ] && [ "$debt_fail" -eq 0 ] || exit 1
 exit 0

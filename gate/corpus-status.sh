@@ -21,6 +21,14 @@
 # (docs/spec/corpus.md — source-law authority). Tier 3: the teaching-status
 # prefix defaults in docs/source-corpus-classification.md (no ingress
 # semantics). Exit = unclassified + invalid.
+# THE REPO IS THE SUBJECT, so resolve it from this file rather than from the
+# ambient working directory. Every relative path below -- and `git ls-files` --
+# used to read whatever tree the caller happened to be standing in; from
+# anywhere else this gate exited 2 with "missing docs/spec/corpus.md", which is
+# indistinguishable from a repo that has lost its manifest. Same class as the
+# git_preservation test, which shells out with no .cwd set.
+cd -- "$(unset CDPATH; cd -- "$(dirname -- "$0")/.." && pwd)" || exit 2
+
 MANIFEST=docs/spec/corpus.md
 DEFAULTS=docs/source-corpus-classification.md
 [ -f "$MANIFEST" ] || { printf 'corpus-status gate: FAIL — missing %s\n' "$MANIFEST"; exit 2; }

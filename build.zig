@@ -636,16 +636,18 @@ pub fn build(b: *std.Build) void {
     const pathgate_step = b.step("path-gate", "law.path.name: gate/path admission firewall");
     pathgate_step.dependOn(&pathgate_cmd.step);
 
+    // IDOL_BUILD_MODE is no longer passed to these three gates. They derive
+    // the optimize mode from the installed artifact (tools/node/dev/build-mode),
+    // because the variable was an assertion nothing checked and it was WRONG:
+    // at 64928599 it certified an unstripped 18 MB binary as ReleaseFast.
     const world_launch_cmd = b.addSystemCommand(&.{ "sh", "gate/world-launch.sh" });
     world_launch_cmd.setCwd(b.path("."));
-    world_launch_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
     world_launch_cmd.step.dependOn(b.getInstallStep());
     const world_launch_step = b.step("world-launch", "launcher world admission and cache separation");
     world_launch_step.dependOn(&world_launch_cmd.step);
 
     const defaults_cmd = b.addSystemCommand(&.{ "sh", "gate/defaults.sh" });
     defaults_cmd.setCwd(b.path("."));
-    defaults_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
     defaults_cmd.step.dependOn(b.getInstallStep());
     const defaults_step = b.step("defaults-gate", "census function and descriptor defaults across parse, check, direct, and run");
     defaults_step.dependOn(&defaults_cmd.step);
@@ -654,7 +656,6 @@ pub fn build(b: *std.Build) void {
     const cache_home_cmd = b.addSystemCommand(&.{ "sh", "gate/cache-home.sh" });
     cache_home_cmd.setCwd(b.path("."));
     cache_home_cmd.setEnvironmentVariable("IDOL_BIN", "./zig-out/bin/idol");
-    cache_home_cmd.setEnvironmentVariable("IDOL_BUILD_MODE", @tagName(optimize));
     cache_home_cmd.step.dependOn(b.getInstallStep());
     const cache_home_step = b.step("cache-home", "executable cache follows resolved semantic home identity");
     cache_home_step.dependOn(&cache_home_cmd.step);

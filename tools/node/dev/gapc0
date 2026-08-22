@@ -1,12 +1,22 @@
 #!/bin/sh
 # gapc0 — research-GAP C0 alignment census (role-aware).
 #
-# Every gaps/GAP-*.md numbered >= 175, plus gaps/RESEARCH-SPINE.md, must carry
-# a complete "## C0 alignment" block (schema: gaps/RESEARCH-SPINE.md) whose
-# kind, registry, and source syntax deltas are literally 0. A missing block, a
-# missing field, an empty field, or a nonzero delta is one violation each. A
-# research note that needs a new kind/registry/syntax is a constitutional
-# amendment request, not a GAP, and it fails here until C0 itself is amended.
+# Every GAP that DECLARES `**Kind:** research_gap` (GAP-175 onward), plus
+# gaps/RESEARCH-SPINE.md, must carry a complete "## C0 alignment" block
+# (schema: gaps/RESEARCH-SPINE.md) whose kind, registry, and source syntax
+# deltas are literally 0. A missing block, a missing field, an empty field, or
+# a nonzero delta is one violation each. A research note that needs a new
+# kind/registry/syntax is a constitutional amendment request, not a GAP, and it
+# fails here until C0 itself is amended.
+#
+# THE SUBJECT IS A KIND, NOT A NUMBER RANGE. This census selected `>= 175`
+# because, on the day it was written, every GAP at or above 175 was a research
+# GAP. The numbering is shared with defect GAPs, so by GAP-203 the range had
+# stopped naming its subject and the census was convicting `wrong_answer`,
+# `crash`, `regression` and `evidence_gap` reports of missing a research
+# admission block they were never required to carry. The declared Kind is the
+# subject; a GAP >= 175 that declares NO Kind is a violation, because then the
+# census cannot select at all. Selecting zero research GAPs is exit 2.
 #
 # Role checks (law.md 111-115): canonicality belongs to (spelling, role, law),
 # never to a word blacklist. Mechanically decided roles only —
@@ -112,21 +122,36 @@ check_file() {
         ;;
     esac
   done
-
-  role_check "$f"
 }
 
+kind_of() {
+  # The declared kind, from the one metadata line every GAP carries.
+  sed -n 's/.*\*\*Kind:\*\*[[:space:]]*\([a-z_]*\).*/\1/p' "$1" | head -n 1
+}
+
+research=0
 for f in "$gaps"/GAP-*.md; do
   [ -f "$f" ] || continue
   n=$(number "${f##*/}")
   [ -n "$n" ] || continue
-  if [ "$n" -ge 175 ]; then
-    checked=$((checked + 1))
-    check_file "$f"
-  elif [ "$n" -ge 170 ]; then
-    checked=$((checked + 1))
-    role_check "$f"
-  fi
+  [ "$n" -ge 170 ] || continue
+  checked=$((checked + 1))
+  # law.md 111-115 roles apply to every GAP in range regardless of kind, and
+  # they run BEFORE the block test: a GAP missing its block used to `return`
+  # out of check_file and escape role checking entirely.
+  role_check "$f"
+  [ "$n" -ge 175 ] || continue
+  kind=$(kind_of "$f")
+  case $kind in
+    research_gap)
+      research=$((research + 1))
+      check_file "$f"
+      ;;
+    "")
+      report "${f##*/}" "no **Kind:** declared — the research census cannot select its subject"
+      ;;
+    *) ;;
+  esac
 done
 
 spine="$gaps/RESEARCH-SPINE.md"
@@ -138,9 +163,15 @@ else
 fi
 
 [ "$checked" -gt 0 ] || {
-  printf '%s\n' "gapc0: examined 0 research GAPs — the census did not run" >&2
+  printf '%s\n' "gapc0: examined 0 GAPs — the census did not run" >&2
+  exit 2
+}
+# A kind-selected census that selects NOTHING is the failure mode a range
+# selector could not have: it reads green while measuring an empty set.
+[ "$research" -gt 0 ] || {
+  printf '%s\n' "gapc0: 0 GAPs declare Kind: research_gap — the C0 admission census selected an empty subject" >&2
   exit 2
 }
 
-printf '%s\n' "gapc0: $checked research GAPs checked, $viol violations"
+printf '%s\n' "gapc0: $checked GAPs in range, $research research GAPs C0-checked, $viol violations"
 exit "$viol"
