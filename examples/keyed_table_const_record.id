@@ -1,0 +1,16 @@
+# @corpus current
+# A module-scope record of CONSTANTS, read from a relation body.
+#
+# This is the shape the `keyed-table-export` precheck refused for as long as it
+# existed, and it never needed storage at all: `ModuleConsts` records `M.A` and
+# `M.B` off the literal and folds both reads, inside a relation body exactly as
+# at module scope. The refusal named one problem ("the exported table has no
+# storage") and covered several; this file is the one it should never have
+# reached, and it is here so the admission cannot silently narrow again.
+# expect: 7
+M = { A = 3, B = 4 }
+
+sum: i64 = ()
+  M.A + M.B
+
+print(sum())

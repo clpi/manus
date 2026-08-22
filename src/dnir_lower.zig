@@ -332,10 +332,30 @@ const ModuleGlobals = struct {
     /// "the zero case happens to need no code" is not a rule anyone can read
     /// off the emitted text later.
     order: std.ArrayListUnmanaged(GlobalInit) = .empty,
+    /// THE KEYS THIS TYPE COMPOSED RATHER THAN BORROWED.
+    ///
+    /// Every scalar key above is an AST identifier, which outlives the compile,
+    /// so `Global.name` may borrow it (`native_ir.deinitModule` says so). A
+    /// module-scope TABLE FIELD's storage is named `M.x` — a string no AST node
+    /// holds — so this type owns it, and the ownership is why a field key is
+    /// never published as a `dnir.Global`: that name would escape into the
+    /// backend and this list frees it at the end of lowering. A field's initial
+    /// content is carried by the module body's own store instead, which is why
+    /// only a module WITH a body to run gets field storage at all.
+    owned_keys: std.ArrayListUnmanaged([]u8) = .empty,
 
     fn deinit(self: *ModuleGlobals, alloc: std.mem.Allocator) void {
+        for (self.owned_keys.items) |key| alloc.free(key);
+        self.owned_keys.deinit(alloc);
         self.types.deinit(alloc);
         self.order.deinit(alloc);
+    }
+
+    /// The stored key, so an emitted `Instr.field` points at a string that
+    /// outlives the statement composing it. Borrowing a `defer`-freed temporary
+    /// here would hand `internInstrStrings` a dangling slice.
+    fn storageKey(self: *const ModuleGlobals, name: []const u8) ?[]const u8 {
+        return self.types.getKey(name);
     }
 
     fn has(self: *const ModuleGlobals, name: []const u8) bool {
@@ -544,7 +564,236 @@ fn collectModuleGlobals(alloc: std.mem.Allocator, mod: *const ast.Module) Error!
             else => {},
         }
     }
+    try collectModuleTableFieldGlobals(alloc, mod, &out);
     return out;
+}
+
+/// A MODULE-SCOPE TABLE FIELD IS ONE STORAGE LOCATION, exactly as a written
+/// module-scope scalar is — this is `ModuleGlobals`' rule one level down.
+///
+/// `M = {}` / `M.x = 1` / a relation reading `M.x` was the shape the
+/// `keyed-table-export` precheck refused. The refusal was honest: the field
+/// writes were exploded into keyed LOCALS of whichever body lowered them, so a
+/// relation reading `M.x` named a slot the module body had filled in a
+/// different frame — measured as `DNB007 fp stack slot 'M.x' has no register`
+/// the moment the precheck was lifted. One `__DATA,__bss` word per written
+/// field key is the storage that refusal was standing in for.
+///
+/// WHAT IS REGISTERED, AND WHY EACH CONDITION IS LOAD-BEARING:
+///
+///   THE MODULE HAS A BODY TO RUN (`program() and !wrap()`, the same predicate
+///   that decides whether `root` is emitted at all). A field's initial content
+///   is a STORE the module body executes, not a load-time word — see
+///   `owned_keys`. A library module has no body to run, so registering its
+///   fields would give every reader a zero that nothing ever wrote. Those keep
+///   today's answer: folded when constant, refused otherwise.
+///
+///   SOMETHING WRITES THE FIELD after the literal that created it. A field
+///   nothing writes is a constant and `ModuleConsts` already folds it correctly
+///   everywhere, including inside relation bodies — that is why `M = { A = 3 }`
+///   read from a relation was already correct and the precheck was refusing it
+///   for a hazard that was not its own.
+///
+///   THE BINDING IS NOT REBOUND, NOT ITSELF THE TAIL, AND NEVER WRITTEN THROUGH
+///   A SUBSCRIPT. `M = other` later, `M` as the module's exported value, or
+///   `M["x"] = 1` alongside `M.x` each name the table as a WHOLE, and this pass
+///   only ever names its fields. Declining the whole binding keeps the two from
+///   describing one table differently.
+///
+///   EVERY WRITE AGREES ON WHAT THE WORD HOLDS, and it holds `i64` or `f64`. A
+///   `str` in this backend is an ADDRESS, and a word whose holding depends on
+///   which write ran last is the confident-wrong-number class this project
+///   refuses; those fields are declined and refuse at their read site instead.
+fn collectModuleTableFieldGlobals(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    out: *ModuleGlobals,
+) Error!void {
+    if (!(mod.program() and !wrap(mod))) return;
+    for (mod.body.stmts) |*stmt| {
+        switch (stmt.*) {
+            .assign => |as| for (as.targets, 0..) |t, i| {
+                if (t.* != .name or i >= as.values.len) continue;
+                try registerTableFieldGlobals(alloc, mod, out, t.name.ident, as.values[i]);
+            },
+            .global_decl => |gd| for (gd.names, 0..) |n, i| {
+                if (i >= gd.inits.len) continue;
+                try registerTableFieldGlobals(alloc, mod, out, n.ident, gd.inits[i]);
+            },
+            .local_decl => |ld| for (ld.names, 0..) |n, i| {
+                if (i >= ld.inits.len) continue;
+                try registerTableFieldGlobals(alloc, mod, out, n.ident, ld.inits[i]);
+            },
+            else => {},
+        }
+    }
+}
+
+/// Does `name` own module-scope FIELD storage — i.e. is there any `name.f`
+/// word? Asked at every bare mention of the name, because the fields being
+/// storage is exactly what leaves the whole table without a value.
+fn moduleFieldStorageBase(ctx: *const LowerCtx, name: []const u8) bool {
+    var it = ctx.module_globals.types.keyIterator();
+    while (it.next()) |k| {
+        const key = k.*;
+        if (key.len <= name.len + 1) continue;
+        if (key[name.len] != '.') continue;
+        if (std.mem.eql(u8, key[0..name.len], name)) return true;
+    }
+    return false;
+}
+
+fn registerTableFieldGlobals(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    out: *ModuleGlobals,
+    name: []const u8,
+    value: *const Expr,
+) Error!void {
+    if (value.* != .table) return;
+    // The whole table named as one value — see the header. Any of these and the
+    // binding is left exactly as it is today.
+    if (out.types.contains(name)) return;
+    if (moduleAssignCount(mod, name) > 1) return;
+    if (mod.body.tail_expr) |tail| {
+        if (tail.* == .name and std.mem.eql(u8, tail.name.ident, name)) return;
+    }
+    if (moduleWritesNameBySubscript(&mod.body, name)) return;
+
+    var fields: std.StringArrayHashMapUnmanaged(RT) = .{};
+    defer fields.deinit(alloc);
+
+    // The literal's own fields: the first write, and the one that fixes the
+    // holding every later write must agree with.
+    for (value.table.fields) |fld| {
+        const nf = switch (fld) {
+            .named => |x| x,
+            else => return, // positional element: not a keyed field at all
+        };
+        if (nf.val.* == .table) return; // nested table: its leaves, not this key
+        const gop = try fields.getOrPut(alloc, nf.key);
+        gop.value_ptr.* = typeOfGlobal(.inferred, nf.val);
+    }
+    // Every write anywhere in the module, module scope and relation bodies alike.
+    if (!try collectFieldWriteTypes(alloc, &mod.body, name, &fields)) return;
+
+    if (fields.count() == 0) return;
+    // A field nothing writes after its literal is a constant `ModuleConsts`
+    // already folds. Storage is owed only when a write exists.
+    if (!moduleHasFieldWrite(&mod.body, name)) return;
+
+    var it = fields.iterator();
+    while (it.next()) |entry| {
+        switch (entry.value_ptr.*) {
+            .i64, .f64 => {},
+            else => return,
+        }
+    }
+    it = fields.iterator();
+    while (it.next()) |entry| {
+        const composed = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ name, entry.key_ptr.* });
+        errdefer alloc.free(composed);
+        try out.owned_keys.append(alloc, composed);
+        try out.types.put(alloc, composed, entry.value_ptr.*);
+    }
+}
+
+/// Does any write name `name` through a SUBSCRIPT (`M["x"] = 1`, `M[i] = 1`)?
+/// A subscript write is a write to the table as a whole from this pass's point
+/// of view: it names a place these field words do not, and admitting the
+/// binding anyway would leave the two spellings writing different storage.
+fn moduleWritesNameBySubscript(block: *const ast.Block, name: []const u8) bool {
+    for (block.stmts) |*st| {
+        switch (st.*) {
+            .assign => |a| for (a.targets) |t| {
+                if (t.* == .index and t.index.obj.* == .name and
+                    std.mem.eql(u8, t.index.obj.name.ident, name)) return true;
+            },
+            .do_block => |b| if (moduleWritesNameBySubscript(&b.body, name)) return true,
+            .while_loop => |w| if (moduleWritesNameBySubscript(&w.body, name)) return true,
+            .repeat_loop => |r| if (moduleWritesNameBySubscript(&r.body, name)) return true,
+            .num_for => |f| if (moduleWritesNameBySubscript(&f.body, name)) return true,
+            .gen_for => |f| if (moduleWritesNameBySubscript(&f.body, name)) return true,
+            .func_decl => |fd| if (moduleWritesNameBySubscript(&fd.func.body, name)) return true,
+            .if_stmt => |is| {
+                if (moduleWritesNameBySubscript(&is.then, name)) return true;
+                for (is.elseifs) |ei| if (moduleWritesNameBySubscript(&ei.body, name)) return true;
+                if (is.else_body) |eb| if (moduleWritesNameBySubscript(&eb, name)) return true;
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
+fn moduleHasFieldWrite(block: *const ast.Block, name: []const u8) bool {
+    for (block.stmts) |*st| {
+        switch (st.*) {
+            .assign => |a| for (a.targets) |t| {
+                if (t.* == .field and t.field.obj.* == .name and
+                    std.mem.eql(u8, t.field.obj.name.ident, name)) return true;
+            },
+            .do_block => |b| if (moduleHasFieldWrite(&b.body, name)) return true,
+            .while_loop => |w| if (moduleHasFieldWrite(&w.body, name)) return true,
+            .repeat_loop => |r| if (moduleHasFieldWrite(&r.body, name)) return true,
+            .num_for => |f| if (moduleHasFieldWrite(&f.body, name)) return true,
+            .gen_for => |f| if (moduleHasFieldWrite(&f.body, name)) return true,
+            .func_decl => |fd| if (moduleHasFieldWrite(&fd.func.body, name)) return true,
+            .if_stmt => |is| {
+                if (moduleHasFieldWrite(&is.then, name)) return true;
+                for (is.elseifs) |ei| if (moduleHasFieldWrite(&ei.body, name)) return true;
+                if (is.else_body) |eb| if (moduleHasFieldWrite(&eb, name)) return true;
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
+/// Fold every `name.field = value` in the module into `fields`, and answer
+/// false the moment two writes disagree about what the word holds. Two stores
+/// that disagree is the failure this whole change exists to make impossible, so
+/// disagreement declines the binding rather than picking a winner.
+fn collectFieldWriteTypes(
+    alloc: std.mem.Allocator,
+    block: *const ast.Block,
+    name: []const u8,
+    fields: *std.StringArrayHashMapUnmanaged(RT),
+) Error!bool {
+    for (block.stmts) |*st| {
+        switch (st.*) {
+            .assign => |a| for (a.targets, 0..) |t, i| {
+                if (t.* != .field) continue;
+                if (t.field.obj.* != .name) continue;
+                if (!std.mem.eql(u8, t.field.obj.name.ident, name)) continue;
+                if (i >= a.values.len) return false;
+                const ty = typeOfGlobal(.inferred, a.values[i]);
+                const gop = try fields.getOrPut(alloc, t.field.field);
+                if (gop.found_existing) {
+                    if (!gop.value_ptr.*.eql(ty)) return false;
+                } else {
+                    gop.value_ptr.* = ty;
+                }
+            },
+            .do_block => |b| if (!try collectFieldWriteTypes(alloc, &b.body, name, fields)) return false,
+            .while_loop => |w| if (!try collectFieldWriteTypes(alloc, &w.body, name, fields)) return false,
+            .repeat_loop => |r| if (!try collectFieldWriteTypes(alloc, &r.body, name, fields)) return false,
+            .num_for => |f| if (!try collectFieldWriteTypes(alloc, &f.body, name, fields)) return false,
+            .gen_for => |f| if (!try collectFieldWriteTypes(alloc, &f.body, name, fields)) return false,
+            .func_decl => |fd| if (!try collectFieldWriteTypes(alloc, &fd.func.body, name, fields)) return false,
+            .if_stmt => |is| {
+                if (!try collectFieldWriteTypes(alloc, &is.then, name, fields)) return false;
+                for (is.elseifs) |ei| {
+                    if (!try collectFieldWriteTypes(alloc, &ei.body, name, fields)) return false;
+                }
+                if (is.else_body) |eb| {
+                    if (!try collectFieldWriteTypes(alloc, &eb, name, fields)) return false;
+                }
+            },
+            else => {},
+        }
+    }
+    return true;
 }
 
 /// THE INITIAL CONTENT OF A MODULE GLOBAL'S WORD, AS A LOAD-TIME FACT.
@@ -3383,6 +3632,35 @@ fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
             // invariant the comment demands is satisfied by reading the
             // storage back, not by re-evaluating: `load_global` after
             // `store_global` is the value that was stored, once.
+            // The same storage one level down: `M.x += 1` as a tail has
+            // already been lowered as a statement, and its `__DATA` word holds
+            // the answer. Reading it back is the invariant the comment above
+            // demands; re-evaluating the update expression would apply the
+            // operator twice.
+            if (target.* == .field and target.field.obj.* == .name) {
+                var fbuf: [512]u8 = undefined;
+                const fkey = std.fmt.bufPrint(&fbuf, "{s}.{s}", .{
+                    target.field.obj.name.ident,
+                    target.field.field,
+                }) catch "";
+                if (fkey.len > 0 and ctx.locals.get(fkey) == null) {
+                    if (ctx.module_globals.types.get(fkey)) |gty| {
+                        const t = ctx.freshTemp();
+                        try ctx.emit(.{
+                            .op = .load_global,
+                            .result = t,
+                            .field = ctx.module_globals.storageKey(fkey).?,
+                            .ty = gty,
+                        });
+                        try ctx.emit(.{
+                            .op = .ret,
+                            .lhs = .{ .temp = t },
+                            .ty = if (gty == .f64) .f64 else ret_ty,
+                        });
+                        return true;
+                    }
+                }
+            }
             if (target.* == .name) {
                 if (ctx.locals.get(target.name.ident) == null) {
                     if (ctx.module_globals.types.get(target.name.ident)) |gty| {
@@ -3539,6 +3817,22 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
         if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
         if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
         try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = store_ty });
+        subsumeProducerRefit(ctx);
+        return;
+    }
+    // A MODULE-SCOPE TABLE FIELD GOES TO ITS STORAGE, and this arm must sit
+    // above the fresh-local fallback below for the same reason the `.name` arm
+    // in `lowerAssignTarget` must: that fallback IS the defect. With no local of
+    // this key in scope it minted one, so `M.x = 1` in a relation body wrote a
+    // register the module body could not see and the module body's own write
+    // went to a different register still — two stores describing one field.
+    if (ctx.module_globals.types.get(fk)) |gty| {
+        try ctx.emit(.{
+            .op = .store_global,
+            .field = ctx.module_globals.storageKey(fk).?,
+            .lhs = v,
+            .ty = gty,
+        });
         subsumeProducerRefit(ctx);
         return;
     }
@@ -6615,11 +6909,22 @@ fn tableIsPositional(table: *const ast.Expr) bool {
 
 fn lowerRecordLiteralAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!void {
     if (table.* != .table) return bail(ctx.diagnostic, @src());
-    const rec_slot = ctx.freshTemp();
-    try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec_slot);
+    // A TABLE WHOSE FIELDS ARE `__DATA` WORDS BINDS NO MARKER SLOT. The marker
+    // exists so `isRecordLocalName` and the whole-value paths can see that the
+    // name is a bound record — but those paths then read the fields out of
+    // `ctx.locals`, and for this table they are not there. Binding it anyway
+    // would leave a register nothing writes standing in for the table. The
+    // fields are still emitted below; only the whole-value face is withheld,
+    // and `lowerExpr`'s `.name` arm refuses it by name.
+    if (!moduleFieldStorageBase(ctx, name)) {
+        const rec_slot = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), rec_slot);
+        try lowerRecordLiteralFields(ctx, name, table);
+        const rec_name = inferRecordNameFromTable(ctx.records, table) orelse "";
+        try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = rec_name });
+        return;
+    }
     try lowerRecordLiteralFields(ctx, name, table);
-    const rec_name = inferRecordNameFromTable(ctx.records, table) orelse "";
-    try ctx.emit(.{ .op = .init_record, .result = rec_slot, .record = rec_name });
 }
 
 /// Write one local per field under `prefix`, recursing through nested records.
@@ -6692,6 +6997,23 @@ fn lowerRecordLiteralFields(ctx: *LowerCtx, prefix: []const u8, table: *const as
             continue;
         } else if (nf.val.* == .name) {
             try copyPrefixedLocalsFromRecordRef(ctx, fk, nf.val.name.ident);
+            continue;
+        }
+        // THE LITERAL IS THE FIELD'S FIRST WRITE. When the field owns a
+        // `__DATA` word, that write is what puts its initial content there —
+        // this pass publishes no load-time image for a field key, so the store
+        // emitted here is the whole of the initialization. Minting a local
+        // beside the word instead would leave module scope reading a register
+        // and every relation reading a zero.
+        if (ctx.module_globals.types.get(fk)) |gty| {
+            const gv = try lowerExpr(ctx, nf.val);
+            try ctx.emit(.{
+                .op = .store_global,
+                .field = ctx.module_globals.storageKey(fk).?,
+                .lhs = gv,
+                .ty = gty,
+            });
+            ctx.alloc.free(fk);
             continue;
         }
         const v = try lowerExpr(ctx, nf.val);
@@ -7442,6 +7764,18 @@ fn lowerExprCons(
             // it the name means the element and nothing else.
             if (ctx.fused_literals.get(n.ident)) |element| break :blk dnir.Value{ .i64 = element };
             if (ctx.locals.get(n.ident)) |slot| break :blk dnir.Value{ .local = slot };
+            // A TABLE WHOSE FIELDS ARE STORAGE HAS NO WHOLE-VALUE FACE HERE.
+            //
+            // The fields live in `__DATA` words; the table itself is not a value
+            // this pass can produce. Answering with the record-marker slot that
+            // `lowerRecordLiteralAssign` used to bind would hand `f(M)` a
+            // register nothing ever wrote — garbage, at exit 0, which is the
+            // class this whole change exists to avoid. So the marker is not
+            // bound at all for such a table (see `lowerRecordLiteralAssign`) and
+            // the read refuses here, AFTER `ctx.locals`: a parameter or local
+            // spelled `M` is a different binding and still wins.
+            if (moduleFieldStorageBase(ctx, n.ident))
+                return bailWith(ctx.diagnostic, @src(), "table-value-field-storage");
             // A WRITTEN module-scope binding is READ FROM ITS STORAGE, never
             // folded. `ctx.locals` still wins: a parameter or local of the same
             // name shadows the global, exactly as it shadows the world below.
@@ -10675,6 +11009,21 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ fld.obj.name.ident, fld.field });
         defer ctx.alloc.free(key);
         if (ctx.locals.get(key)) |slot| return .{ .local = slot };
+        // A WRITTEN module-scope table field is READ FROM ITS STORAGE, never
+        // folded and never resolved to a frame slot of some other body.
+        // `ctx.locals` still wins: a local or parameter spelled `M.x` shadows
+        // the module's field exactly as a local shadows a module global.
+        if (ctx.module_globals.types.get(key)) |gty| {
+            const t = ctx.freshTemp();
+            try ctx.emit(.{
+                .op = .load_global,
+                .result = t,
+                .field = ctx.module_globals.storageKey(key).?,
+                .ty = gty,
+            });
+            if (gty == .f64) try ctx.f64_slots.put(ctx.alloc, t, {});
+            return .{ .temp = t };
+        }
         if (try loadFieldFromOpaquePath(ctx, key)) |v| return v;
     }
     if (fld.obj.* == .call or fld.obj.* == .method_call) {

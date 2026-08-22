@@ -3849,19 +3849,43 @@ pub const CodeGen = struct {
                 self.nativeDiagFail("mod-tail");
                 return self.nofit(@src());
             }
-            // A module whose exported value is a table built by keyed writes
-            // (`M = {}` / `M.x = 1` / … / `M`) has to materialize a real table,
-            // so it needs the lua runtime. Under native-scalar mode the producer
-            // emitted `void* M = NULL` and dropped every field write, while the
-            // CONSUMER flattened `m.x` to a native symbol (`mod__x`) that was
-            // never defined — which is why a constants module could not be
-            // `req`d at all, including duo's own
-            // lib/wasm/ward_mvp_opcodes.duo.
         }
-        if (module_materializes_table(mod)) {
-            self.nativeDiagFail("keyed-table-export");
-            return self.nofit(@src());
-        }
+
+        // `keyed-table-export` CLOSED: a module-scope table binding's FIELDS now
+        // have real storage on the direct path. `ModuleGlobals` in
+        // `dnir_lower.zig` interns one `__DATA,__bss` word per written field key
+        // (`Lduo_g_M.x`), the module body runs the literal and every keyed write
+        // as stores into it, and `native_backend.zig`'s `globals` map answers
+        // every read — so module scope and a relation body name ONE location and
+        // cannot disagree. The refusal that stood here was the honest guard
+        // while the write landed nowhere; the storage landed, so it is deleted.
+        //
+        // ONE DIAGNOSTIC STRING, SEVERAL PROBLEMS. Measured on the 941-file
+        // corpus at HEAD, this line stopped 70 programs, and the shape its own
+        // comment described — a table EXPORTED by keyed writes — was the
+        // minority. Most were ordinary single-file programs holding a
+        // module-scope record of constants (`M = { A = 3, B = 4 }`), whose reads
+        // `ModuleConsts` has folded correctly for as long as it has existed. The
+        // guard was refusing them for a hazard that was not theirs.
+        //
+        // DELETING IT ALONE WOULD MISCOMPILE, which is why the storage is the
+        // deliverable and not the deletion. `M = { a = 1 }` / `M.a = 2` / a
+        // relation reading `M.a` prints 1 with this line removed and nothing
+        // else changed — `ModuleConsts` folds the literal while the write goes
+        // somewhere else. Registering the field as storage is what removes it
+        // from the constant pool. `examples/keyed_table_write_wins.id` is that
+        // program.
+        //
+        // WHAT IS NOT CLOSED, and now refuses at LOWERING where the capability
+        // lives rather than here: a LIBRARY module (no entry, so no body runs to
+        // fill the words) whose table is its export — that one still needs an
+        // EXTERNAL symbol and a naming law the consumer resolves through the
+        // graph, and `internGlobal` emits a local symbol today; and a field
+        // whose holding two writes describe differently. Both bail with a named
+        // reason from `dnir_lower`/`native_backend` before any symbol is
+        // emitted. The dependency-edge use of `module_materializes_table` in
+        // `module_path_allows_full_native_embed` is untouched and still honest
+        // for exactly that reason.
 
         // gap[066]/gap[108] CLOSED 2026-08-18: a file-scope binding a function
         // writes now has real storage on the direct path — `ModuleGlobals` in

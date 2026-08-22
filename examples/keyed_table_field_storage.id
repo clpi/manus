@@ -1,0 +1,17 @@
+# @corpus current
+# ONE `__DATA,__bss` WORD PER MODULE-SCOPE TABLE FIELD, shared by the module
+# body and every relation that names it.
+#
+# `bump` both reads and writes `M.x`, and it is called twice: 5 then 10, summing
+# to 15. A per-body flattened local would answer 5 + 5 = 10 — the second call
+# would not see the first one's write — and a folded constant would answer
+# 0 + 0. Two calls are what separate the three readings; one call cannot.
+# expect: 15
+M = {}
+M.x = 0
+
+bump: i64 = ()
+  M.x = M.x + 5
+  M.x
+
+print(bump() + bump())
