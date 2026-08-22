@@ -33,16 +33,35 @@ while IFS= read -r f; do
     # files once already. Recorded separately and excluded from the budget.
     printf '%s\tTIMEOUT\n' "$f" >> "$tmp.rec"
   else
-    printf '%s\t%s\n' "$f" "$(printf '%s' "$e" | grep -m1 -E 'missing:|DNB[0-9]+')" >> "$tmp.rec"
+    diag="$(printf '%s' "$e" | grep -m1 -E 'missing:|DNB[0-9]+')"
+    if [ -n "$diag" ]; then
+      printf '%s\t%s\n' "$f" "$diag" >> "$tmp.rec"
+    elif [ "$rc" -eq 0 ]; then
+      printf '%s\t\n' "$f" >> "$tmp.rec"
+    else
+      # NONZERO EXIT WITH NO DIAGNOSTIC IS NOT A CLEAN COMPILE. A parser
+      # error, a crash, or a killed compiler emits no `missing:` and no DNB
+      # code; scoring it by the empty field would count it as compile+run,
+      # SHRINKING the refusal budget and leaving this gate green on a
+      # regression. Same failure shape as TRAP 4 in gate/differential.sh —
+      # the silent error is OPTIMISTIC. Classified separately and excluded
+      # from both the clean count and the budget.
+      printf '%s\tUNCLASSIFIED rc=%s\n' "$f" "$rc" >> "$tmp.rec"
+    fi
   fi
 done < "$tmp.files"
 total=$(wc -l < "$tmp.rec" | tr -d ' ')
 clean=$(awk -F'\t' '$2==""' "$tmp.rec" | wc -l | tr -d ' ')
 tmo=$(awk -F'\t' '$2=="TIMEOUT"' "$tmp.rec" | wc -l | tr -d ' ')
-refuse=$((total - clean - tmo))
+unc=$(grep -c '\tUNCLASSIFIED' "$tmp.rec" || true)
+refuse=$((total - clean - tmo - unc))
 {
   echo "== FIRST BLOCKING SEMANTIC EDGE =="
-  echo "corpus $total   compile+run $clean   refuse $refuse   timeout $tmo (>${TMO}s, NOT counted as refusal)"
+  echo "corpus $total   compile+run $clean   refuse $refuse   timeout $tmo (>${TMO}s)   unclassified $unc (nonzero exit, no diagnostic)"
+  if [ "$unc" -gt 0 ]; then
+    echo "  UNCLASSIFIED runs invalidate the budget — a crash or parse error is not a refusal:"
+    grep '\tUNCLASSIFIED' "$tmp.rec" | head -10 | sed 's/^/    /'
+  fi
   echo
   # NOT AN INDEPENDENT OBSERVATION. src/native_backend.zig:242 reads
   #   const producer = if (err == error.SemanticFactsInvalid) "graph"
@@ -80,6 +99,7 @@ refuse=$((total - clean - tmo))
 budget="${ATTRIBUTION_BUDGET:-}"
 if [ -n "$budget" ]; then
   echo "gate/attribution.sh: budget $budget, measured $refuse"
+  [ "$unc" -eq 0 ] || { echo "gate/attribution.sh: $unc UNCLASSIFIED run(s) — budget NOT judged" >&2; exit 1; }
   [ "$refuse" -le "$budget" ] || { echo "gate/attribution.sh: RATCHET BROKEN" >&2; exit 1; }
 fi
 exit 0
