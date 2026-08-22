@@ -240,7 +240,6 @@ const OccurrenceBridge = struct {
     graph: *const semantic_graph.SemanticGraph,
     diagnostic: *Diagnostic,
     by_expression: std.AutoHashMapUnmanaged(*const Expr, semantic_graph.id) = .empty,
-    by_exact_value: std.AutoHashMapUnmanaged(*const Expr, semantic_graph.id) = .empty,
     unresolved: usize = 0,
 
     fn init(
@@ -276,21 +275,16 @@ const OccurrenceBridge = struct {
                 return refuseApplication(diagnostic, graph, @src(), "application-provenance-collision", application);
             slot.value_ptr.* = application;
         }
-        for (graph.nodes.items, 0..) |node, coordinate| {
-            if (node.kind != .value) continue;
-            if (graph.exactI64(@intCast(coordinate)) == null) continue;
-            const expression_raw = node.ast_ref orelse continue;
-            const expression: *const Expr = @ptrCast(@alignCast(expression_raw));
-            const slot = try index.by_exact_value.getOrPut(alloc, expression);
-            if (slot.found_existing) continue;
-            slot.value_ptr.* = @intCast(coordinate);
-        }
+        // A THIRD STORE of occurrence -> value stood here: a rescan of
+        // `graph.nodes` reconstructing, in this file, the correspondence the
+        // graph already keeps on `Node.ast_ref`. `law.fact.producer.one`:
+        // "consumers must not reconstruct facts already owned upstream".
+        // `graph.valueByAst` is that same answer asked of its owner.
         return index;
     }
 
     fn deinit(self: *OccurrenceBridge) void {
         self.by_expression.deinit(self.alloc);
-        self.by_exact_value.deinit(self.alloc);
     }
 
     fn get(self: *const OccurrenceBridge, expression: *const Expr) ?*const semantic_graph.ApplicationFact {
@@ -299,7 +293,7 @@ const OccurrenceBridge = struct {
     }
 
     fn exactValue(self: *const OccurrenceBridge, expression: *const Expr) ?semantic_graph.id {
-        return self.by_exact_value.get(expression);
+        return self.graph.valueByAst(expression);
     }
 };
 

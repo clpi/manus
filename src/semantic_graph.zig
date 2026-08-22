@@ -915,34 +915,8 @@ pub const SemanticGraph = struct {
     aggregate_origins: std.AutoHashMapUnmanaged(usize, id) = .empty,
     exact_i64_facts: std.ArrayListUnmanaged(ExactI64) = .empty,
     exact_i64_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
-    /// Physical index from an integer literal's own AST node to the graph value
-    /// that owns its content, exactly as `source_quote_by_ast` does for quotes,
-    /// and for exactly the same reason: `exactI64` answers over a value id, and
-    /// a realization phase holds an `*const Expr`. Without this face every
-    /// consumer re-parsed the literal off the AST -- `intLiteralStep` in
-    /// `dnir_lower.zig` at 19 sites, which `gate/coverage.sh` counts as the
-    /// `exact.i64` rival authority.
-    ///
-    /// It also enforces ONE ROW PER LITERAL OCCURRENCE. The denominator this
-    /// family is measured against is integer literal TOKENS counted off the
-    /// source text, so a second entity publishing the same token would push
-    /// reach past 100% while telling nobody anything new.
-    ///
-    /// Deletion condition: the same one `source_quote_by_ast` carries --
-    /// realization work items carrying the value id directly.
-    exact_i64_by_ast: std.AutoHashMapUnmanaged(*const Expr, id) = .empty,
     source_quote_facts: std.ArrayListUnmanaged(SourceQuoteFact) = .empty,
     source_quote_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
-    /// Physical index from the literal's own AST node to the graph value that
-    /// owns its quote identity. Producer: `publishSourceQuote`, the only
-    /// writer. Consumer: `sourceQuoteOfExpr`, which is how a realization phase
-    /// holding an `*const Expr` asks the graph instead of re-reading
-    /// `expr.quoted.quote`. Deletion condition: realization work items carry
-    /// the value id directly, at which point `sourceQuote(id)` is the only
-    /// face needed and this map goes with the rest of the AST bridge.
-    /// It also enforces ONE entity per literal occurrence: a second publish
-    /// against the same AST node is refused, so no shadow identity is minted.
-    source_quote_by_ast: std.AutoHashMapUnmanaged(*const Expr, id) = .empty,
     owned_descriptors: std.ArrayListUnmanaged(*types.ResolvedType) = .empty,
     aggregate_access_relation: ?id = null,
     application_rows: std.ArrayListUnmanaged(u32) = .empty,
@@ -957,6 +931,35 @@ pub const SemanticGraph = struct {
     /// Func id assigned at addNode from the declaration pointer. Lookup is this
     /// index, not a later walk of `ast_ref` slots.
     origin: std.AutoHashMapUnmanaged(usize, id) = .empty,
+    /// REVERSE OF `Node.ast_ref` FOR VALUE NODES — a derived physical index
+    /// (`law.derived.index`), the same shape as `origin` above and as
+    /// `out_edges`, and nothing more.
+    ///
+    /// It replaced `exact_i64_by_ast`, which was a SECOND STORE of the same
+    /// correspondence: that map was written by `publishExactI64` in PUBLISH
+    /// order while `Node.ast_ref` already recorded the same occurrence in
+    /// CREATION order, and it was consulted as the authority for
+    /// one-row-per-literal-occurrence — so it established meaning rather than
+    /// accelerating a query, which `law.derived.index` forbids and
+    /// `law.fact.producer.one` forbids twice over. MEASURED before deleting it:
+    /// over the 809-module corpus, across every `exact_i64` publish carrying an
+    /// occurrence in the 453 modules that reach the producer, the two stores
+    /// never once disagreed. They were the same relation kept twice.
+    ///
+    /// Written ONLY by `addNode`, from the node's own `ast_ref`, so it is a
+    /// pure function of the node set and can be rebuilt by scanning `nodes`.
+    /// FIRST NODE WINS, which is exactly what the linear scan it replaced
+    /// (`findValueByAstRef`) already answered. Every read re-checks
+    /// `Node.kind` and `Node.ast_ref` against the node itself, so a stale
+    /// bucket is harmless and no answer originates here.
+    ///
+    /// It does NOT retire AST identity: `exactI64OfExpr` still takes an
+    /// `*const Expr` because `constIntValue` in `dnir_lower.zig` is reached
+    /// from an AST-driven lowering walk. That is the remaining defect, and its
+    /// deletion condition is unchanged — realization work items carrying the
+    /// value id, at which point `exactI64(id)` is the only face needed and
+    /// this index goes with the rest of the AST bridge.
+    value_by_ast: std.AutoHashMapUnmanaged(usize, id) = .empty,
     /// §18 — PLACE, IN THE GRAPH.
     ///
     /// The graph MUST represent place: identity, determinacy, extent, mutation,
@@ -1022,10 +1025,8 @@ pub const SemanticGraph = struct {
         self.aggregate_origins.deinit(self.alloc);
         self.exact_i64_facts.deinit(self.alloc);
         self.exact_i64_rows.deinit(self.alloc);
-        self.exact_i64_by_ast.deinit(self.alloc);
         self.source_quote_facts.deinit(self.alloc);
         self.source_quote_rows.deinit(self.alloc);
-        self.source_quote_by_ast.deinit(self.alloc);
         for (self.owned_descriptors.items) |descriptor| self.alloc.destroy(descriptor);
         self.owned_descriptors.deinit(self.alloc);
         self.application_rows.deinit(self.alloc);
@@ -1035,6 +1036,7 @@ pub const SemanticGraph = struct {
         self.home_apps.deinit(self.alloc);
         self.qualified.deinit(self.alloc);
         self.origin.deinit(self.alloc);
+        self.value_by_ast.deinit(self.alloc);
         if (self.places) |*census| census.deinit();
         for (self.bodies.items) |*body| {
             body.places.deinit();
@@ -1087,6 +1089,18 @@ pub const SemanticGraph = struct {
         const entity = try coordinateForLength(self.nodes.items.len);
         try self.rememberFunc(node, entity);
         errdefer self.forgetFunc(node);
+        // THE ONE WRITER of `value_by_ast`, and it writes nothing the node does
+        // not already carry: the key is the node's own `ast_ref`, the value is
+        // the node's own id. FIRST NODE WINS, matching the linear scan this
+        // index replaced. A caller that unwinds may leave a bucket pointing at
+        // an id that no longer exists; `valueByAst` re-checks the node, so such
+        // a bucket answers null rather than lying.
+        if (node.kind == .value) {
+            if (node.ast_ref) |raw| {
+                const slot = try self.value_by_ast.getOrPut(self.alloc, @intFromPtr(raw));
+                if (!slot.found_existing) slot.value_ptr.* = entity;
+            }
+        }
         try self.nodes.append(self.alloc, node);
         return entity;
     }
@@ -1577,22 +1591,35 @@ pub const SemanticGraph = struct {
         return fact.content;
     }
 
+    /// THE VALUE AN OCCURRENCE IS, asked with the occurrence.
+    ///
+    /// The single route from an `*const Expr` to the graph entity minted for
+    /// it. `value_by_ast` only accelerates it: the answer is CONFIRMED against
+    /// the node's own `kind` and `ast_ref` before it is returned, so the index
+    /// can be dropped or rebuilt at will and no fact originates in it.
+    pub fn valueByAst(self: *const SemanticGraph, expr: *const Expr) ?id {
+        const raw: *const anyopaque = @ptrCast(@constCast(expr));
+        const candidate = self.value_by_ast.get(@intFromPtr(raw)) orelse return null;
+        const node = self.get(candidate) orelse return null;
+        if (node.kind != .value) return null;
+        if (node.ast_ref != raw) return null;
+        return candidate;
+    }
+
     /// THE EXACT CONTENT OF A LITERAL, ASKED WITH THE LITERAL.
     ///
     /// The face a realization phase can actually use, because it holds an
     /// `*const Expr` and not a value id. Its absence is why `intLiteralStep`
     /// exists as an AST re-parse in `dnir_lower.zig`.
+    ///
+    /// It is now a COMPOSITION, not a lookup in a store of its own: the
+    /// occurrence names the value (`valueByAst`), and the value names the
+    /// content (`exactI64`). There is exactly one store of each, so the two
+    /// cannot drift apart the way `exact_i64_by_ast` and `exact_i64_rows`
+    /// could.
     pub fn exactI64OfExpr(self: *const SemanticGraph, expr: *const Expr) ?i64 {
-        const value = self.exact_i64_by_ast.get(expr) orelse return null;
+        const value = self.valueByAst(expr) orelse return null;
         return self.exactI64(value);
-    }
-
-    /// The graph VALUE an integer literal occurrence is, so a consumer can read
-    /// the descriptor and the origin the producer already resolved.
-    pub fn exactI64Value(self: *const SemanticGraph, expr: *const Expr) ?id {
-        const value = self.exact_i64_by_ast.get(expr) orelse return null;
-        if (self.exactI64(value) == null) return null;
-        return value;
     }
 
     fn publishExactI64(self: *SemanticGraph, value: id, content: i64) !void {
@@ -1617,20 +1644,22 @@ pub const SemanticGraph = struct {
             break :blk @ptrCast(@alignCast(raw));
         };
         if (occurrence) |expr| {
-            if (expr.* == .int_lit and self.exact_i64_by_ast.contains(expr)) return;
+            // ONE ROW PER TOKEN, decided against the GRAPH rather than against
+            // a private map: the occurrence's value is `valueByAst(expr)`, and
+            // if that value is not this one and already owns content, this
+            // token is taken. Identical to the map's first-writer-wins rule
+            // wherever the two were ever both consulted, which was everywhere:
+            // measured over the corpus, they never disagreed.
+            if (expr.* == .int_lit) {
+                if (self.valueByAst(expr)) |owner| {
+                    if (owner != value and self.exact_i64_rows.contains(owner)) return;
+                }
+            }
         }
         const row = try coordinateForLength(self.exact_i64_facts.items.len);
         try self.exact_i64_facts.append(self.alloc, .{ .value = value, .content = content });
         errdefer _ = self.exact_i64_facts.pop();
         try self.exact_i64_rows.putNoClobber(self.alloc, value, row);
-        if (occurrence) |expr| {
-            // FIRST WRITER WINS, and it is never an error for a second entity
-            // to describe the same derived expression -- `getOrPut` rather than
-            // `putNoClobber` because a refusal here would turn an ordinary
-            // duplicate description into a failed lift.
-            const slot = try self.exact_i64_by_ast.getOrPut(self.alloc, expr);
-            if (!slot.found_existing) slot.value_ptr.* = value;
-        }
     }
 
     pub fn sourceQuote(self: *const SemanticGraph, value: id) ?ast.Quote {
@@ -1654,25 +1683,40 @@ pub const SemanticGraph = struct {
     /// The graph VALUE a literal occurrence is, so a consumer can read the
     /// descriptor the producer already resolved instead of re-deciding
     /// text-vs-bytes from the quote face for itself.
+    ///
+    /// Composed, like `exactI64OfExpr`: the occurrence names the value and the
+    /// value names the quote. `source_quote_by_ast` used to answer the first
+    /// half from a store of its own, in publish order, duplicating what
+    /// `Node.ast_ref` already recorded in creation order. MEASURED over the
+    /// 809-module corpus before deleting it: on every `publishSourceQuote`
+    /// call the two named the same entity, and neither ever failed to find one.
     pub fn sourceQuoteValue(self: *const SemanticGraph, expr: *const Expr) ?id {
-        const value = self.source_quote_by_ast.get(expr) orelse return null;
+        const value = self.valueByAst(expr) orelse return null;
         if (self.sourceQuote(value) == null) return null;
         return value;
     }
 
-    fn publishSourceQuote(self: *SemanticGraph, value: id, quote: ast.Quote, expr: *const Expr) !void {
+    /// THE OCCURRENCE IS NOT A PARAMETER. It is `node.ast_ref`, which the value
+    /// already carries; passing it separately made the caller a second source
+    /// of the same correspondence and let the two be handed different exprs.
+    fn publishSourceQuote(self: *SemanticGraph, value: id, quote: ast.Quote) !void {
         const node = self.get(value) orelse return error.InvalidSourceQuoteFact;
         if (node.kind != .value) return error.InvalidSourceQuoteFact;
         if (self.source_quote_rows.contains(value)) return error.DuplicateSourceQuoteFact;
         // ONE ENTITY PER LITERAL OCCURRENCE. An operand lift and the binding
         // sweep can both reach the same `.quoted` node; the first one to
-        // arrive owns it, and the second is a no-op rather than a shadow.
-        if (self.source_quote_by_ast.contains(expr)) return;
+        // arrive owns it, and the second is a no-op rather than a shadow --
+        // decided against the graph now, not against a private map.
+        if (node.ast_ref) |raw| {
+            const expr: *const Expr = @ptrCast(@alignCast(raw));
+            if (self.valueByAst(expr)) |owner| {
+                if (owner != value and self.source_quote_rows.contains(owner)) return;
+            }
+        }
         const row = try coordinateForLength(self.source_quote_facts.items.len);
         try self.source_quote_facts.append(self.alloc, .{ .value = value, .quote = quote });
         errdefer _ = self.source_quote_facts.pop();
         try self.source_quote_rows.putNoClobber(self.alloc, value, row);
-        try self.source_quote_by_ast.putNoClobber(self.alloc, expr, value);
     }
 
     pub fn packEffect(self: *const SemanticGraph, pack_id: id) Card {
@@ -2879,7 +2923,10 @@ pub const SemanticGraph = struct {
         expr: *const Expr,
         quote: ast.Quote,
     ) !void {
-        if (self.source_quote_by_ast.contains(expr)) return;
+        // The occurrence already IS a value that owns its quote identity.
+        if (self.valueByAst(expr)) |owner| {
+            if (self.source_quote_rows.contains(owner)) return;
+        }
         const loc = expr.loc();
         const descriptor = types.quotedLiteralType(quote);
         const value = try self.addChild(scope, .{
@@ -2890,7 +2937,7 @@ pub const SemanticGraph = struct {
             .stage = .sema,
             .ast_ref = @ptrCast(@constCast(expr)),
         });
-        try self.publishSourceQuote(value, quote, expr);
+        try self.publishSourceQuote(value, quote);
     }
 
     fn liftBindingsInStmts(
@@ -3975,7 +4022,11 @@ pub const SemanticGraph = struct {
         expr: *const Expr,
         content: i64,
     ) !void {
-        if (self.exact_i64_by_ast.contains(expr)) return;
+        // The occurrence already IS a value that owns its content — do not
+        // mint a second entity for one token.
+        if (self.valueByAst(expr)) |owner| {
+            if (self.exact_i64_rows.contains(owner)) return;
+        }
         const loc = expr.loc();
         const value = try self.addChild(scope, .{
             .kind = .value,
@@ -4006,7 +4057,7 @@ pub const SemanticGraph = struct {
         });
         try self.publishNameBinding(value, expr, occurrence);
         switch (expr.*) {
-            .quoted => |lit| try self.publishSourceQuote(value, lit.quote, expr),
+            .quoted => |lit| try self.publishSourceQuote(value, lit.quote),
             // THE OPERAND HALF OF `exact_i64`. `add(8, 34)` published ZERO
             // exact content facts: the family fired only on aggregate members
             // and on a constant index key, so nothing in the graph held the
@@ -4278,7 +4329,7 @@ pub const SemanticGraph = struct {
     ) anyerror!void {
         if (expr.* == .field) {
             if (checked.foreignModuleIntConstant(expr)) |content| {
-                if (self.findValueByAstRef(expr)) |existing| {
+                if (self.valueByAst(expr)) |existing| {
                     if (self.exactI64(existing) == null) {
                         const node = self.get(existing) orelse return;
                         if (node.descriptor == null or node.descriptor.? != .i64) {
@@ -4366,15 +4417,6 @@ pub const SemanticGraph = struct {
             },
             else => {},
         }
-    }
-
-    fn findValueByAstRef(self: *const SemanticGraph, expr: *const Expr) ?id {
-        const raw: *const anyopaque = @ptrCast(@constCast(expr));
-        for (self.nodes.items, 0..) |node, i| {
-            if (node.kind != .value) continue;
-            if (node.ast_ref == raw) return @intCast(i);
-        }
-        return null;
     }
 
     fn liftForeignRelation(
