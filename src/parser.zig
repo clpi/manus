@@ -575,58 +575,7 @@ pub const Parser = struct {
     /// sequence of slots, not one demanded operand, and a comment on its own
     /// line inside a pack is ordinary.
     fn demandsOperand(kind: TK) bool {
-        return switch (kind) {
-            .assign,
-            .lparen,
-            .lbracket,
-            .comma,
-            .plus,
-            .minus,
-            .star,
-            .slash,
-            .percent,
-            .caret,
-            .amp,
-            .pipe,
-            .lt,
-            .gt,
-            .tilde,
-            .colon,
-            .dot,
-            .at,
-            .bang,
-            .hash,
-            .hash_hash,
-            .concat,
-            .eq,
-            .neq,
-            .leq,
-            .geq,
-            .lshift,
-            .rshift,
-            .idiv,
-            .arrow,
-            .pipe_gt,
-            .fat_arrow,
-            .plus_assign,
-            .minus_assign,
-            .star_assign,
-            .slash_assign,
-            .percent_assign,
-            .caret_assign,
-            .kw_and,
-            .kw_or,
-            .kw_not,
-            .kw_in,
-            .kw_if,
-            .kw_elseif,
-            .kw_while,
-            .kw_until,
-            .kw_return,
-            .kw_by,
-            => true,
-            else => false,
-        };
+        return grammar_roles.lookup(kind).demands_operand;
     }
 
     /// The first byte a `#` would have to be followed by for `#…` to read as the
@@ -757,10 +706,10 @@ pub const Parser = struct {
     /// reached. A token's own text is a view into the source on both token
     /// paths, so its offset cannot go stale.
     fn opensLineAndExpression(self: *Parser, tok: Token) bool {
-        switch (tok.kind) {
-            .minus, .tilde, .at => {},
-            else => return false,
-        }
+        // WHICH identities are ambiguous at the head of a line is the grammar
+        // owner's fact, not a list kept here. It was `.minus, .tilde, .at`,
+        // and the cost of getting that membership wrong is recorded above.
+        if (!grammar_roles.lookup(tok.kind).opens_line) return false;
         const src = self.lex.cursor.bytes;
         const off = sourceOffset(src, tok) orelse return false;
         var i = off;

@@ -360,6 +360,44 @@ _roleglue: bool = (kind: i64)
     return true
   false
 
+# CANNOT END AN EXPRESSION, so whatever follows is an operand.
+#
+# The dual of `rolebeginexpr`, and the other half of one ruling: that fact
+# says what an identity can BEGIN, this one says what it cannot END, and
+# between them they decide where an expression stops. Not derivable from the
+# infix and prefix faces — `(`, `[`, `,`, `:`, `->`, `=>`, `if`, `while`,
+# `until`, `return` and `by` demand an operand without applying a relation.
+_roledemand: bool = (kind: i64)
+  if kind >= kindplus and kind <= kindtilde
+    return true
+  if kind >= kindcolon and kind <= kindat
+    return true
+  if kind >= kindhashhash and kind <= kindidiv
+    return true
+  if kind >= kindarrow and kind <= kindcaretassign
+    return true
+  if kind == kindlparen or kind == kindlbracket or kind == kindbang
+    return true
+  if kind == kindconcat or kind == kindand or kind == kindelseif
+    return true
+  if kind == kindif or kind == kindin or kind == kindnot
+    return true
+  if kind == kindor or kind == kindreturn or kind == kinduntil
+    return true
+  if kind == kindwhile or kind == kindby
+    return true
+  false
+
+# A LINE-LEADING occurrence of this identity opens an expression instead of
+# continuing the one above. Only an identity with both an infix and a
+# line-leading reading is ambiguous at the head of a line; a line-leading `*`
+# can only be a continuation. `-` and `~` carry a prefix relation, `@` carries
+# the attribute face, and all three are infix.
+_roleopensline: bool = (kind: i64)
+  if kind == kindminus or kind == kindtilde or kind == kindat
+    return true
+  false
+
 # Pratt binding power
 roleprecedence: i64 = (kind: i64)
   if kind == kindcaret
@@ -565,6 +603,10 @@ zigrow: str = (kind: i64)
     s = "{s}, .update = true"
   if _roleglue(kind)
     s = "{s}, .glue = true"
+  if _roledemand(kind)
+    s = "{s}, .demands_operand = true"
+  if _roleopensline(kind)
+    s = "{s}, .opens_line = true"
   "{s} \},\n"
 
 zigbody: str = ()
@@ -609,6 +651,8 @@ zigbody: str = ()
   s = "{s}    infix: bool = false,\n"
   s = "{s}    update: bool = false,\n"
   s = "{s}    glue: bool = false,\n"
+  s = "{s}    demands_operand: bool = false,\n"
+  s = "{s}    opens_line: bool = false,\n"
   s = "{s}\};\n\n"
   s = "{s}pub const slot_count: usize = {slots};\n"
   s = "{s}pub const identity_count: usize = {ids};\n"
@@ -652,6 +696,10 @@ rolebit: i64 = (which: i64, kind: i64)
   if which == 14 and _roleupdate(kind)
     return 1
   if which == 15 and _roleglue(kind)
+    return 1
+  if which == 16 and _roledemand(kind)
+    return 1
+  if which == 17 and _roleopensline(kind)
     return 1
   0
 
@@ -702,6 +750,8 @@ idbody: str = ()
   s = "{s}{tabletext(\"_infix\", 13)}"
   s = "{s}{tabletext(\"_update\", 14)}"
   s = "{s}{tabletext(\"_glue\", 15)}"
+  s = "{s}{tabletext(\"_demand\", 16)}"
+  s = "{s}{tabletext(\"_opensline\", 17)}"
   s = "{s}{_nametext(\"_relationtext\", 0)}"
   s = "{s}{_nametext(\"_unarytext\", 1)}"
   s = "{s}\nrolebeginexpr: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and beginexpr[kind + 1] > 0\n"
@@ -719,6 +769,8 @@ idbody: str = ()
   s = "{s}\n_roleinfix: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _infix[kind + 1] > 0\n"
   s = "{s}\n_roleupdate: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _update[kind + 1] > 0\n"
   s = "{s}\n_roleglue: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _glue[kind + 1] > 0\n"
+  s = "{s}\n_roledemand: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _demand[kind + 1] > 0\n"
+  s = "{s}\n_roleopensline: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _opensline[kind + 1] > 0\n"
   s = "{s}\n_slotword: str = (row: str, kind: i64)\n"
   s = "{s}  n = row:len()\n  i = 1\n  seen = 0\n  start = 1\n  out = \".\"\n"
   s = "{s}  while i <= n\n    if row:byte(i) == 32\n      if seen == kind\n        out = row:sub(start, i - 1)\n"

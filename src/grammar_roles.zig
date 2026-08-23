@@ -351,3 +351,47 @@ test "grammar roles: relation identity is held by ordinal, never by spelling" {
     try std.testing.expectEqual(Relation.matmul, infixRelation(.at).?);
     try std.testing.expect(unaryRelation(.at) == null);
 }
+
+test "grammar roles: the demand fact is the exact dual of expression start" {
+    // 48 identities that cannot END an expression. `(`, `[`, `,`, `:`, `->`,
+    // `=>` and the control words demand an operand without applying any
+    // relation, which is why this is its own fact and not `infix or prefix`.
+    try std.testing.expect(lookup(.lparen).demands_operand);
+    try std.testing.expect(lookup(.comma).demands_operand);
+    try std.testing.expect(lookup(.arrow).demands_operand);
+    try std.testing.expect(lookup(.kw_return).demands_operand);
+    try std.testing.expect(lookup(.kw_by).demands_operand);
+    try std.testing.expect(lookup(.plus_assign).demands_operand);
+    // A closer, a literal and a name all END an expression.
+    try std.testing.expect(!lookup(.rparen).demands_operand);
+    try std.testing.expect(!lookup(.rbracket).demands_operand);
+    try std.testing.expect(!lookup(.name).demands_operand);
+    try std.testing.expect(!lookup(.int_lit).demands_operand);
+    try std.testing.expect(!lookup(.eof).demands_operand);
+    // `{` is deliberately absent: a brace opens a REGION of slots, not one
+    // demanded operand.
+    try std.testing.expect(!lookup(.lbrace).demands_operand);
+    // `..` (dots) is absent too — it is a complete operand on its own.
+    try std.testing.expect(!lookup(.dots).demands_operand);
+    var n: usize = 0;
+    for (rows) |r| {
+        if (r.kind != null and r.demands_operand) n += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 48), n);
+}
+
+test "grammar roles: only a two-faced identity opens a line" {
+    // A line-leading `*` can only continue the line above; a line-leading `-`
+    // could be either, and the wrong answer there silently deleted a tail
+    // expression (see Parser.opensLineAndExpression).
+    try std.testing.expect(lookup(.minus).opens_line);
+    try std.testing.expect(lookup(.tilde).opens_line);
+    try std.testing.expect(lookup(.at).opens_line);
+    try std.testing.expect(!lookup(.star).opens_line);
+    try std.testing.expect(!lookup(.plus).opens_line);
+    try std.testing.expect(!lookup(.pipe).opens_line);
+    // Every one of them is infix, which is what makes it ambiguous at all.
+    for (rows) |r| {
+        if (r.kind != null and r.opens_line) try std.testing.expect(r.infix);
+    }
+}
