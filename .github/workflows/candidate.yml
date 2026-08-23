@@ -4,6 +4,9 @@ name: Candidate admission
 # commit, not the PR head. Enforcement therefore requires a repository or
 # organization Ruleset that requires this exact base-owned workflow. A normal
 # required-status context from GitHub Actions is spoofable by candidate code.
+# Updates to this workflow, its verifier, gates, or ledgers use a reviewed
+# trusted bootstrap after old/new damage controls; ordinary candidates cannot
+# authorize that privilege through their own contract or lane.
 
 on:
   pull_request_target:
@@ -27,7 +30,8 @@ jobs:
       CANDIDATE_HEAD: ${{ github.event.pull_request.head.sha }}
     steps:
       # pull_request_target loads this workflow from the base revision. The
-      # candidate checkout is data only: no program from it is ever executed.
+      # candidate checkout is data only: no candidate source is compiled or
+      # executed. Exact diffs are inspected with external diff/textconv off.
       - name: Checkout exact protected base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -73,15 +77,26 @@ jobs:
       - name: Install exact bootstrap toolchain
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
-          version: 0.17.0-dev.389+f5a1968f6
+          version: 0.17.0-dev.1567+f0354179a
 
       - name: Build exact protected-base compiler
         shell: bash
         run: |
           set -euo pipefail
           basework="$GITHUB_WORKSPACE/protected-base"
-          (cd "$basework" && zig build)
-          idol="$basework/zig-out/bin/idol"
+          ziglocal="$RUNNER_TEMP/idol-zig-local"
+          zigglobal="$RUNNER_TEMP/idol-zig-global"
+          buildtmp="$RUNNER_TEMP/idol-build-tmp"
+          prefix="$RUNNER_TEMP/idol-prefix"
+          mkdir -p "$ziglocal" "$zigglobal" "$buildtmp" "$prefix"
+          test -z "$(git -C "$basework" status --porcelain=v1 --untracked-files=all)"
+          (
+            cd "$basework"
+            ZIG_GLOBAL_CACHE_DIR="$zigglobal" TMPDIR="$buildtmp" TMP="$buildtmp" TEMP="$buildtmp" \
+              zig build --cache-dir "$ziglocal" --prefix "$prefix"
+          )
+          test -z "$(git -C "$basework" status --porcelain=v1 --untracked-files=all)"
+          idol="$prefix/bin/idol"
           test -x "$idol"
           idolsha=$(sha256sum "$idol" | awk '{print $1}')
           test "${#idolsha}" -eq 64
@@ -112,6 +127,7 @@ jobs:
             python3 "$basework/tools/node/dev/candidate" \
               --github-event "$GITHUB_EVENT_PATH" \
               --protected-base "$CANDIDATE_BASE" \
+              --trusted-root "$basework" \
               --idol "$IDOL_ADMISSION_COMPILER" \
               --idol-sha256 "$IDOL_ADMISSION_COMPILER_SHA256" \
               --mode structural
@@ -130,6 +146,7 @@ jobs:
             python3 "$basework/tools/node/dev/candidate" \
               --github-event "$GITHUB_EVENT_PATH" \
               --protected-base "$CANDIDATE_BASE" \
+              --trusted-root "$basework" \
               --idol "$IDOL_ADMISSION_COMPILER" \
               --idol-sha256 "$IDOL_ADMISSION_COMPILER_SHA256" \
               --mode full

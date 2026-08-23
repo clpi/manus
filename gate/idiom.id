@@ -160,9 +160,6 @@ dot__os = (code: str)
   # text), every other os.method() is a namespace call.
   boundface(code, "os.") and !code:has("os.args") and !code:has("os.env")
 
-dot__std = (world: str, code: str)
-  code:find("std." .. world, 1, true)
-
 # Needle membership is subject-first only: hay:has(needle). Never has(hay, needle).
 
 # Subject-first law: scanned source must use subject:rel(...), never rel(subject) or world:rel(...).
@@ -1058,14 +1055,6 @@ realm: i64 = (path: str, no: i64, code: str, quiet: bool)
       if !quiet
         print("({path}, {no}, violation, law.world.dot, os is a world — use os.args[n] / os.env[k]; never os.method())")
       hits = hits + 1
-    if dot__std(io, code)
-      if !quiet
-        print("({path}, {no}, violation, law.world.dot, std.io is forbidden — stdin:read() / path:read() / subject:relation(); docs/spec/world.md")
-      hits = hits + 1
-    if dot__std(os, code)
-      if !quiet
-        print("({path}, {no}, violation, law.world.dot, std.os is forbidden — use root projection or bridge relations; docs/spec/world.md")
-      hits = hits + 1
   hits
 
 term: i64 = (path: str, no: i64, code: str, quiet: bool)
@@ -1368,6 +1357,12 @@ control: bool = ()
   if !"x = std.proc.capture(\"echo\")":has("std.")
     print("control FAIL: std namespace firewall did not fire")
     ok = false
+  if !strike("control", 1, "f = std" .. ".io.open(p)")
+    print("control FAIL: general retired namespace rule did not reject io")
+    ok = false
+  if !strike("control", 1, "x = std" .. ".os.exit(1)")
+    print("control FAIL: general retired namespace rule did not reject os")
+    ok = false
   if !"node = ir.node()":has("ir.")
     print("control FAIL: ir namespace firewall did not fire")
     ok = false
@@ -1382,9 +1377,6 @@ control: bool = ()
     ok = false
   if dot__io("x = std.io.open(p)")
     print("control FAIL: dot(io) fired on std.io qualification")
-    ok = false
-  if !dot__std(io, "f = std.io.open(p)")
-    print("control FAIL: dot(std)(io) did not reject std.io.open")
     ok = false
   if !sigil("x = @c.emit(\"fn()\")")
     print("control FAIL: except-anchor firewall did not fire")
@@ -1618,13 +1610,21 @@ control: bool = ()
   if !scanfired(samplehome)
     print("control FAIL: catalog home lib/semantic/ not rejected")
     ok = false
+  samplestd = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+f = std" .. ".io.open(p){nl}"
+  if !scanfired(samplestd)
+    print("control FAIL: staged std namespace firewall did not fire")
+    ok = false
+  sampleworld = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+f = path:open(mode){nl}"
+  if scanfired(sampleworld)
+    print("control FAIL: std namespace firewall fired on canonical subject relation")
+    ok = false
   sample = "--- /dev/null{nl}+++ b/x.id{nl}@@ -0,0 +1 @@{nl}+process = process{nl}"
   if !scanfired(sample)
     print("control FAIL: scan did not convict added-line diff body — check newline boundary")
     ok = false
   ok
 
-main: i64 = ()
+_verify: i64 = ()
   if !seed()
     print("gate/idiom: relation catalog must not exist")
     return 3
@@ -1646,3 +1646,6 @@ main: i64 = ()
     print("The corpus is NOT the law — do not imitate the file you are editing.")
     return 1
   0
+
+
+_verify()

@@ -746,7 +746,7 @@ control: bool = ()
     ok = false
   ok
 
-main: i64 = ()
+_verify: i64 = ()
   if !seed()
     print("gate/path: vocabulary load failed")
     return 3
@@ -759,3 +759,6 @@ main: i64 = ()
     print("  \{ printf 'IDOLGATE tree\\n'; git ls-files; printf '\\nIDOLGATE end\\n'; \} | idol run gate/path.id")
     return 3
   feed(body)
+
+
+_verify()
