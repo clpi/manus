@@ -29,14 +29,30 @@ selftest() {
   cp "$root/src/grammar_role_table.zig" "$control/old.zig"
   cp "$root/lib/token/grammarrole.id" "$control/old.id"
 
+  fake_program=$control/fake-program
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'set -eu' \
+    "printf 'pub const rows = .{ .{ .kind = ., }, };\\n' >src/grammar_role_table.zig" \
+    "printf 'rolecount = 1\\n' >lib/token/grammarrole.id" >"$fake_program"
+  chmod +x "$fake_program"
+
   fake=$control/fake-idol
+  # shellcheck disable=SC2016
   printf '%s\n' \
     '#!/bin/sh' \
     'set -eu' \
     'case ${1-} in' \
-    '  run)' \
-    "    printf 'pub const rows = .{ .{ .kind = ., }, };\\n' >src/grammar_role_table.zig" \
-    "    printf 'rolecount = 1\\n' >lib/token/grammarrole.id" \
+    '  compile)' \
+    '    shift' \
+    '    out=' \
+    '    while [ "$#" -gt 0 ]; do' \
+    '      if [ "$1" = -o ]; then out=$2; break; fi' \
+    '      shift' \
+    '    done' \
+    '    [ -n "$out" ] || exit 2' \
+    '    cp "$(dirname "$0")/fake-program" "$out"' \
+    '    chmod +x "$out"' \
     '    exit 0' \
     '    ;;' \
     '  check) exit 0 ;;' \
@@ -99,8 +115,14 @@ cp -R src "$stage/src"
 rm -f -- "$stage/$zigout"
 cp "$owner" "$stage/$owner"
 
-if ! (cd -- "$stage" && "$idol" run "$owner") >"$work/run.out" 2>"$work/run.err"; then
-  printf 'grammar projection: FAIL — the Idol owner did not run\n' >&2
+artifact=$work/project.out
+if ! (cd -- "$stage" && "$idol" compile --no-cache --backend=direct "$owner" -o "$artifact") >"$work/compile.out" 2>"$work/compile.err"; then
+  printf 'grammar projection: FAIL — the Idol owner did not compile from its root\n' >&2
+  sed -n '1,20p' "$work/compile.err" >&2
+  exit 1
+fi
+if ! (cd -- "$stage" && "$artifact") >"$work/run.out" 2>"$work/run.err"; then
+  printf 'grammar projection: FAIL — the Idol owner root did not run\n' >&2
   sed -n '1,20p' "$work/run.err" >&2
   exit 1
 fi
@@ -125,6 +147,70 @@ if ! "$idol" check "$generated_id" >"$work/idol.out" 2>"$work/idol.err"; then
   sed -n '1,20p' "$work/idol.err" >&2
   exit 1
 fi
+
+# MAIN-ZERO: the owner is an ordinary `project` relation selected once by the
+# module root. `main` exists only as the process ABI emitted for that root.
+if ! (cd -- "$stage" && "$idol" graph "$owner") >"$work/graph.json" 2>"$work/graph.err"; then
+  printf 'grammar projection: FAIL — the owner graph was not published\n' >&2
+  sed -n '1,20p' "$work/graph.err" >&2
+  exit 1
+fi
+project_rows=$(grep -Eo '"id":[0-9]+,"kind":"func","name":"project"' "$work/graph.json" || true)
+project_count=$(printf '%s\n' "$project_rows" | awk 'NF { n += 1 } END { print n + 0 }')
+[ "$project_count" -eq 1 ] || fail "owner graph published $project_count project relations"
+project_id=$(printf '%s\n' "$project_rows" | sed -E 's/^"id":([0-9]+),.*/\1/')
+root_rows=$(grep -Eo '"relation":'"$project_id"',"caller":0' "$work/graph.json" || true)
+root_count=$(printf '%s\n' "$root_rows" | awk 'NF { n += 1 } END { print n + 0 }')
+[ "$root_count" -eq 1 ] || fail "module root selected project relation $root_count times"
+if grep -q '"kind":"func","name":"main"' "$work/graph.json"; then
+  fail 'owner graph restored a ceremonial source-main relation'
+fi
+
+if ! nm -g "$artifact" >"$work/symbols" 2>"$work/nm.err"; then
+  printf 'grammar projection: FAIL — the root executable symbols were not inspectable\n' >&2
+  sed -n '1,20p' "$work/nm.err" >&2
+  exit 1
+fi
+grep -Eq '[[:space:]]_?main$' "$work/symbols" || fail 'root executable omitted the physical ABI main'
+grep -Eq '[[:space:]]_?idol_.*__project$' "$work/symbols" || fail 'root executable omitted the semantic project relation'
+if grep -Eq '[[:space:]]_?idol_.*__main$' "$work/symbols"; then
+  fail 'root executable retained a source-main relation beside the physical ABI main'
+fi
+
+# The root and an explicit exact relation select the same semantic work. A
+# compatibility request for the retired source spelling must refuse before it
+# creates an artifact or either projection.
+explicit=$work/explicit
+mkdir -p "$explicit/lib/compiler" "$explicit/lib/token"
+cp -R src "$explicit/src"
+rm -f -- "$explicit/$zigout" "$explicit/$idout"
+cp "$owner" "$explicit/$owner"
+explicit_artifact=$work/explicit.out
+if ! (cd -- "$explicit" && "$idol" compile --no-cache --backend=direct --entry project "$owner" -o "$explicit_artifact") >"$work/explicit.compile.out" 2>"$work/explicit.compile.err"; then
+  printf 'grammar projection: FAIL — exact project entry did not compile\n' >&2
+  sed -n '1,20p' "$work/explicit.compile.err" >&2
+  exit 1
+fi
+if ! (cd -- "$explicit" && "$explicit_artifact") >"$work/explicit.run.out" 2>"$work/explicit.run.err"; then
+  printf 'grammar projection: FAIL — exact project entry did not run\n' >&2
+  sed -n '1,20p' "$work/explicit.run.err" >&2
+  exit 1
+fi
+cmp -s "$explicit/$zigout" "$generated_zig" || fail 'root and exact project entry emitted different Zig projections'
+cmp -s "$explicit/$idout" "$generated_id" || fail 'root and exact project entry emitted different Idol projections'
+
+hidden=$work/hidden-main
+mkdir -p "$hidden/lib/compiler" "$hidden/lib/token" "$hidden/src"
+cp "$owner" "$hidden/$owner"
+hidden_artifact=$work/hidden-main.out
+if (cd -- "$hidden" && "$idol" compile --no-cache --backend=direct --entry main "$owner" -o "$hidden_artifact") >"$work/hidden.out" 2>"$work/hidden.err"; then
+  fail 'retired source-main entry compiled successfully'
+fi
+[ ! -e "$hidden_artifact" ] || fail 'retired source-main refusal left an executable artifact'
+[ ! -e "$hidden/$zigout" ] || fail 'retired source-main refusal emitted the Zig projection'
+[ ! -e "$hidden/$idout" ] || fail 'retired source-main refusal emitted the Idol projection'
+grep -q -- "--entry 'main': no zero-arg" "$work/hidden.err" || fail 'retired source-main refusal lost its exact diagnostic'
+printf 'grammar projection entry: PASS — root selects project once; exact project agrees; source main refuses; ABI main only\n'
 
 if [ "$mode" = --check ]; then
   changed=0
