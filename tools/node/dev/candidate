@@ -1,0 +1,1049 @@
+#!/usr/bin/env python3
+"""Exact-range structural candidate admission.
+
+This is a bounded control-plane bridge.  It does not decide Idol semantics or
+own public vocabulary.  Full admission remains unavailable unless the existing
+Idol admission, host, and architecture programs execute successfully.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+
+
+REJECT = 1
+USAGE = 64
+UNAVAILABLE = 125
+HEX40 = re.compile(r"[0-9a-f]{40}\Z")
+HEX64 = re.compile(r"[0-9a-f]{64}\Z")
+PATH = re.compile(r"[A-Za-z0-9._/-]+\Z")
+GATES = ("gate/path.id", "gate/idiom.id")
+FULL = ("gate/admission.id", "gate/host.id", "gate/architecture.id")
+LANES = frozenset(("ingress", "grammar", "graph", "demand", "memory", "native", "wasm", "evidence"))
+CONTROL = frozenset(
+    GATES
+    + FULL
+    + (
+        ".github/workflows/candidate.yml",
+        "docs/spec/std-zero-ledger.json",
+        "tools/node/dev/candidate",
+    )
+)
+LAW = {
+    "AGENTS.md",
+    "CLAUDE.md",
+    "docs/spec/canonical.md",
+    "docs/spec/constitution.md",
+    "docs/spec/law.md",
+    "docs/spec/source.md",
+}
+MARKER = "<!-- idol-candidate\n"
+MARKEREND = "\n-->"
+
+
+class Refusal(Exception):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def refuse(message):
+    raise Refusal(REJECT, message)
+
+
+def unavailable(message):
+    raise Refusal(UNAVAILABLE, message)
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def filebytes(path):
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        unavailable(f"cannot read {path}: {error}")
+
+
+def call(argv, cwd, body=None, limit=60):
+    try:
+        return subprocess.run(
+            argv,
+            cwd=str(cwd),
+            input=body,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=limit,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        unavailable(f"command timed out after {limit}s: {argv[0]}")
+    except OSError as error:
+        unavailable(f"cannot execute {argv[0]}: {error}")
+
+
+def git(repo, *args, ok=True):
+    result = call(["git", *args], repo)
+    if ok and result.returncode != 0:
+        detail = result.stderr.decode("utf-8", "replace").strip()
+        unavailable(f"git {' '.join(args)} failed: {detail}")
+    return result
+
+
+def root():
+    result = call(["git", "rev-parse", "--show-toplevel"], Path.cwd())
+    if result.returncode != 0:
+        unavailable("candidate must run inside a Git worktree")
+    return Path(result.stdout.decode().strip()).resolve()
+
+
+def validpath(value):
+    if not PATH.fullmatch(value) or value.startswith("/") or value.endswith("/"):
+        return False
+    parts = value.split("/")
+    return all(part not in ("", ".", "..") for part in parts)
+
+
+def strictjson(body, label):
+    def objectpairs(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError(f"duplicate JSON key: {key}")
+            value[key] = item
+        return value
+
+    def constant(value):
+        raise ValueError(f"non-standard JSON constant: {value}")
+
+    try:
+        return json.loads(body, object_pairs_hook=objectpairs, parse_constant=constant)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        raise Refusal(USAGE, f"{label} is not exact JSON: {error}")
+
+
+def jsonfile(path):
+    try:
+        body = Path(path).read_bytes()
+    except OSError as error:
+        unavailable(f"cannot read candidate contract: {error}")
+    return strictjson(body, "candidate contract"), sha(body)
+
+
+def eventfile(path):
+    event, eventsha = jsonfile(path)
+    try:
+        request = event["pull_request"]
+        body = request["body"] or ""
+        eventbase = request["base"]["sha"]
+        eventhead = request["head"]["sha"]
+        default = event["repository"]["default_branch"]
+        baseref = request["base"]["ref"]
+    except (KeyError, TypeError):
+        raise Refusal(USAGE, "GitHub event is not a pull_request event")
+    if baseref != default:
+        refuse(f"pull request base is not the protected default branch: {baseref}")
+    if body.count(MARKER) != 1:
+        raise Refusal(USAGE, "pull request body must contain exactly one idol-candidate JSON block")
+    start = body.index(MARKER) + len(MARKER)
+    end = body.find(MARKEREND, start)
+    if end < 0:
+        raise Refusal(USAGE, "idol-candidate JSON block is not terminated")
+    encoded = body[start:end].encode("utf-8")
+    contract = strictjson(encoded, "idol-candidate block")
+    return contract, sha(encoded), eventsha, eventbase, eventhead
+
+
+def contract(args):
+    if args.event:
+        value, digest, eventsha, eventbase, eventhead = eventfile(args.event)
+        print(f"candidate.event sha256={eventsha}")
+    else:
+        value, digest = jsonfile(args.contractfile)
+        eventbase = None
+        eventhead = None
+    if not isinstance(value, dict) or set(value) != {"version", "base", "head", "lane", "paths", "compatibility"}:
+        raise Refusal(USAGE, "candidate contract must have exactly version/base/head/lane/paths/compatibility")
+    if value["version"] != 1:
+        raise Refusal(USAGE, "candidate contract version must be 1")
+    if not isinstance(value["base"], str) or not HEX40.fullmatch(value["base"]):
+        raise Refusal(USAGE, "candidate contract base must be exact lowercase 40-hex")
+    if not isinstance(value["head"], str) or not HEX40.fullmatch(value["head"]):
+        raise Refusal(USAGE, "candidate contract head must be exact lowercase 40-hex")
+    if value["lane"] not in LANES:
+        raise Refusal(USAGE, f"candidate lane is not declared: {value['lane']!r}")
+    if not isinstance(value["paths"], list) or not value["paths"]:
+        raise Refusal(USAGE, "candidate contract paths must be a nonempty array")
+    paths = []
+    expected = {}
+    for row in value["paths"]:
+        if not isinstance(row, dict) or set(row) != {"path", "sha256"}:
+            raise Refusal(USAGE, "each candidate path row must have exactly path/sha256")
+        path = row["path"]
+        digestrow = row["sha256"]
+        if not isinstance(path, str) or not validpath(path):
+            raise Refusal(USAGE, "candidate contract contains an invalid path")
+        if digestrow is not None and (not isinstance(digestrow, str) or not HEX64.fullmatch(digestrow)):
+            raise Refusal(USAGE, f"candidate blob digest is invalid: {path}")
+        if path in expected:
+            raise Refusal(USAGE, f"candidate contract repeats path: {path}")
+        paths.append(path)
+        expected[path] = digestrow
+    if paths != sorted(paths):
+        raise Refusal(USAGE, "candidate contract paths must be sorted")
+    compatibility = value["compatibility"]
+    if not isinstance(compatibility, list) or any(not isinstance(path, str) for path in compatibility):
+        raise Refusal(USAGE, "candidate compatibility must be an array of paths")
+    if compatibility != sorted(set(compatibility)):
+        raise Refusal(USAGE, "candidate compatibility paths must be sorted and unique")
+    if any(not validpath(path) or path not in expected for path in compatibility):
+        raise Refusal(USAGE, "candidate compatibility paths must be declared changed paths")
+    if eventbase is not None and (value["base"] != eventbase or value["head"] != eventhead):
+        refuse("candidate contract base/head differs from pull_request event")
+    return value, expected, set(compatibility), digest
+
+
+def changes(repo, base, head):
+    raw = git(
+        repo,
+        "diff",
+        "--name-status",
+        "-z",
+        "--find-renames",
+        "--find-copies",
+        base,
+        head,
+        "--",
+    ).stdout
+    fields = raw.split(b"\0")
+    if fields and fields[-1] == b"":
+        fields.pop()
+    rows = []
+    index = 0
+    while index < len(fields):
+        statusname = fields[index].decode("ascii", "strict")
+        index += 1
+        if statusname.startswith(("R", "C")):
+            if index + 1 >= len(fields):
+                unavailable("malformed Git rename/copy record")
+            old = fields[index].decode("utf-8", "strict")
+            new = fields[index + 1].decode("utf-8", "strict")
+            refuse(f"rename/copy is outside the first admission slice: {old} -> {new}")
+        if index >= len(fields):
+            unavailable("malformed Git changed-path record")
+        path = fields[index].decode("utf-8", "strict")
+        index += 1
+        if statusname == "T":
+            refuse(f"candidate file type changes are outside structural admission: {path}")
+        if statusname not in ("A", "M", "D"):
+            refuse(f"unsupported Git change status {statusname}: {path}")
+        if not validpath(path):
+            refuse(f"unsupported repository path spelling: {path!r}")
+        rows.append((statusname, path))
+    return rows
+
+
+def diff(repo, base, head, paths):
+    if not paths:
+        return b""
+    return git(
+        repo,
+        "diff",
+        "--no-ext-diff",
+        "--no-color",
+        "--no-renames",
+        "--unified=0",
+        base,
+        head,
+        "--",
+        *paths,
+    ).stdout
+
+
+def additions(body):
+    return [
+        line[1:]
+        for line in body.splitlines()
+        if line.startswith(b"+") and not line.startswith(b"+++")
+    ]
+
+
+def blob(repo, revision, path):
+    result = git(repo, "show", f"{revision}:{path}", ok=False)
+    if result.returncode != 0:
+        unavailable(f"head does not contain required gate: {path}")
+    return result.stdout
+
+
+def blobmode(repo, revision, path):
+    result = git(repo, "ls-tree", "-z", revision, "--", path)
+    rows = [row for row in result.stdout.split(b"\0") if row]
+    if len(rows) != 1:
+        unavailable(f"head has no unique tree entry for changed path: {path}")
+    try:
+        metadata, actual = rows[0].split(b"\t", 1)
+        mode, kind, _ = metadata.split(b" ", 2)
+    except ValueError:
+        unavailable(f"head has malformed tree metadata for changed path: {path}")
+    if actual.decode("utf-8", "strict") != path or kind != b"blob":
+        refuse(f"candidate path is not an ordinary blob: {path}")
+    if mode not in (b"100644", b"100755"):
+        refuse(f"candidate path has an unsupported file mode {mode.decode()}: {path}")
+    return mode.decode()
+
+
+def gates(repo, base, head, paths):
+    bound = {}
+    for path in paths:
+        committed = blob(repo, head, path)
+        trusted = blob(repo, base, path)
+        if committed != trusted:
+            refuse(f"admission gate changed inside candidate range: {path}")
+        disk = filebytes(repo / path)
+        if disk != committed:
+            unavailable(f"gate differs from exact head: {path}")
+        bound[path] = sha(disk)
+        print(f"candidate.gate path={path} sha256={bound[path]}")
+    return bound
+
+
+def clean(repo):
+    statusout = git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout
+    if statusout:
+        refuse("candidate worktree is dirty or has untracked files")
+
+
+def generated(repo, head, rows):
+    for statusname, path in rows:
+        if statusname == "D":
+            continue
+        # Generated artifacts carry their warning at the file boundary.  Do not
+        # let a detector's own planted marker turn the detector into an artifact.
+        data = b"\n".join(blob(repo, head, path).splitlines()[:8]).lower()
+        marker = b"do not edit" in data and (
+            b"generated" in data or b"auto-generated" in data or b"autogenerated" in data
+        )
+        named = any(
+            part.endswith(("_gen", "-gen")) or "_gen." in part or "-gen." in part
+            for part in path.split("/")
+        )
+        if marker or named:
+            refuse(f"generated projection changed in candidate: {path}")
+
+
+def protected(rows):
+    for _, path in rows:
+        if path in CONTROL:
+            refuse(f"base-owned admission control changed inside candidate: {path}")
+
+
+def compatclasses(repo, base):
+    data = blob(repo, base, "docs/spec/std-zero-ledger.json")
+    try:
+        ledger = strictjson(data, "protected std ledger")
+    except Refusal as error:
+        unavailable(error.message)
+    if not isinstance(ledger, dict) or ledger.get("schema") != "std-zero-ledger/1":
+        unavailable("protected std ledger schema is unavailable")
+    rows = ledger.get("files")
+    if not isinstance(rows, list):
+        unavailable("protected std ledger has no file rows")
+    classes = {}
+    for row in rows:
+        if (
+            not isinstance(row, dict)
+            or not isinstance(row.get("path"), str)
+            or not validpath(row["path"])
+            or not isinstance(row.get("class"), str)
+            or not isinstance(row.get("code_budget"), int)
+            or isinstance(row.get("code_budget"), bool)
+            or row["code_budget"] < 0
+        ):
+            unavailable("protected std ledger has a malformed file row")
+        path = row["path"]
+        if path in classes:
+            unavailable(f"protected std ledger repeats path: {path}")
+        classes[path] = (row["class"], row["code_budget"])
+    return classes, sha(data)
+
+
+def codeface(data):
+    try:
+        source = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        unavailable(f"Idol source is not UTF-8: {error}")
+    visible = []
+    state = "code"
+    index = 0
+    while index < len(source):
+        char = source[index]
+        if state == "comment":
+            if char in "\r\n":
+                state = "code"
+                visible.append(char)
+            else:
+                visible.append(" ")
+            index += 1
+            continue
+        if state in ("'", '"'):
+            if char == "\\" and index + 1 < len(source):
+                visible.extend((" ", "\n" if source[index + 1] == "\n" else " "))
+                index += 2
+                continue
+            if char == state:
+                state = "code"
+            visible.append("\n" if char == "\n" else " ")
+            index += 1
+            continue
+        if char == "#":
+            state = "comment"
+            visible.append(" ")
+        elif char in ("'", '"'):
+            state = char
+            visible.append(" ")
+        else:
+            visible.append(char)
+        index += 1
+    return "".join(visible)
+
+
+def stdsites(data):
+    return len(re.findall(r"(?<![A-Za-z0-9_])std\.", codeface(data)))
+
+
+def mainsites(data):
+    source = codeface(data)
+    rootface = re.compile(r"^\s*main\s*:\s*[^=\n]+\s*=\s*\(\s*\)", re.MULTILINE)
+    retiredface = re.compile(r"^\s*main\s*\(\s*\)\s*:\s*[^\n]+", re.MULTILINE)
+    return len(rootface.findall(source)) + len(retiredface.findall(source))
+
+
+def sourceblob(repo, revision, path):
+    result = git(repo, "show", f"{revision}:{path}", ok=False)
+    if result.returncode != 0:
+        unavailable(f"cannot read exact source blob {revision}:{path}")
+    return result.stdout
+
+
+def compatibility(repo, base, head, rows, paths):
+    classes, digest = compatclasses(repo, base)
+    print(f"candidate.ledger path=docs/spec/std-zero-ledger.json sha256={digest}")
+    for path in paths:
+        row = classes.get(path)
+        if row is None or row[0] not in ("compatibility", "negative-fixture"):
+            refuse(f"compatibility declaration escapes its protected fixture class: {path}")
+    for statusname, path in rows:
+        if not path.endswith(".id"):
+            continue
+        old = b"" if statusname == "A" else sourceblob(repo, base, path)
+        new = b"" if statusname == "D" else sourceblob(repo, head, path)
+        budget = classes[path][1] if path in classes else 0
+        before = stdsites(old)
+        actual = stdsites(new)
+        if actual > budget or actual > before:
+            refuse(
+                f"std code-site budget increased: {path} "
+                f"base={before} budget={budget} actual={actual}"
+            )
+        oldmain = mainsites(old)
+        newmain = mainsites(new)
+        if newmain > oldmain:
+            refuse(f"ceremonial main count increased: {path} base={oldmain} head={newmain}")
+
+
+def public(repo, base, head, rows):
+    for statusname, path in rows:
+        if path in LAW:
+            refuse(f"semantic-law/public-vocabulary authority is outside structural admission: {path}")
+        if statusname == "A" and path.startswith("lib/") and path.endswith(".id"):
+            refuse(f"new canonical library surface requires semantic admission: {path}")
+
+    for statusname, path in rows:
+        if statusname == "D" or not path.startswith("lib/") or not path.endswith(".id"):
+            continue
+        body = diff(repo, base, head, [path])
+        for line in additions(body):
+            text = line.decode("utf-8", "strict")
+            if text and not text[0].isspace() and not text.startswith("#"):
+                refuse(f"new top-level library vocabulary requires semantic admission: {path}")
+
+
+def output(result):
+    return result.stdout.decode("utf-8", "replace") + result.stderr.decode("utf-8", "replace")
+
+
+def rungate(repo, idol, path, body, marker, failmark, limit, outdir):
+    target = outdir / path.replace("/", "-").replace(".id", "")
+    result = call([str(idol), "run", path, "-o", str(target)], repo, body, limit)
+    text = output(result)
+    print(
+        f"candidate.runner path={path} exit={result.returncode} "
+        f"stdout_sha256={sha(result.stdout)} stderr_sha256={sha(result.stderr)}"
+    )
+    if result.returncode == 0 and marker in text:
+        print(f"candidate.runner path={path} outcome=pass")
+        return
+    if result.returncode == 1 and failmark in text:
+        sys.stderr.write(text)
+        refuse(f"candidate findings reported by {path}")
+    if text:
+        sys.stderr.write(text)
+        if not text.endswith("\n"):
+            sys.stderr.write("\n")
+    unavailable(f"runner unavailable or failed its controls: {path} (exit {result.returncode})")
+
+
+def verify(repo, args):
+    value, expected, compat, contractsha = contract(args)
+    base = value["base"]
+    head = value["head"]
+    lane = value["lane"]
+    declared = list(expected)
+    if not HEX40.fullmatch(args.protectedbase):
+        raise Refusal(USAGE, "protected base must be exact lowercase 40-hex")
+    if base != args.protectedbase:
+        refuse(f"candidate base is stale or not the protected-main event base: {base}")
+    if not HEX64.fullmatch(args.idolsha):
+        raise Refusal(USAGE, "idol sha256 must be exact lowercase 64-hex")
+    if args.limit <= 0:
+        raise Refusal(USAGE, "timeout must be a positive decimal")
+
+    idol = Path(args.idol).resolve()
+    try:
+        mode = idol.stat().st_mode
+    except OSError as error:
+        unavailable(f"compiler is unavailable: {error}")
+    if not stat.S_ISREG(mode) or not os.access(str(idol), os.X_OK):
+        unavailable("compiler must be an executable regular file")
+    idolbefore = sha(filebytes(idol))
+    if idolbefore != args.idolsha:
+        unavailable(f"compiler digest mismatch: expected {args.idolsha}, got {idolbefore}")
+
+    clean(repo)
+    actualhead = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+    if actualhead != head:
+        refuse(f"checked-out head mismatch: expected {head}, got {actualhead}")
+    for revision in (base, head):
+        result = git(repo, "cat-file", "-e", f"{revision}^{{commit}}", ok=False)
+        if result.returncode != 0:
+            unavailable(f"declared revision is unavailable: {revision}")
+    ancestor = git(repo, "merge-base", "--is-ancestor", base, head, ok=False)
+    if ancestor.returncode != 0:
+        refuse("declared base is not an ancestor of declared head")
+    if base == head:
+        refuse("candidate range is empty")
+
+    rows = changes(repo, base, head)
+    if not rows:
+        refuse("candidate range changes zero paths")
+    actual = sorted(path for _, path in rows)
+    if actual != declared:
+        refuse(f"declared path set differs from exact range: declared={declared!r} actual={actual!r}")
+    statuses = {path: statusname for statusname, path in rows}
+    for path in actual:
+        want = expected[path]
+        if statuses[path] == "D":
+            if want is not None:
+                refuse(f"deleted candidate path must declare null blob digest: {path}")
+        else:
+            got = sha(blob(repo, head, path))
+            if want != got:
+                refuse(f"candidate blob digest mismatch: {path} expected={want} actual={got}")
+            blobmode(repo, head, path)
+
+    pathset = b"".join(
+        path.encode() + b"\0" + ((expected[path] or "null").encode()) + b"\n" for path in actual
+    )
+    compatset = ("\n".join(sorted(compat)) + ("\n" if compat else "")).encode()
+    print(
+        f"candidate.subject base={base} head={head} lane={lane} contract_sha256={contractsha} "
+        f"paths={len(actual)} pathset_sha256={sha(pathset)} compatibility_paths={len(compat)} "
+        f"compatibility_pathset_sha256={sha(compatset)} compiler_sha256={idolbefore}"
+    )
+    protected(rows)
+    compatibility(repo, base, head, rows, compat)
+    generated(repo, head, rows)
+    idpaths = [path for _, path in rows if path.endswith(".id")]
+    iddiff = diff(repo, base, head, idpaths)
+    canonicalpaths = [path for path in idpaths if path not in compat]
+    canonicaldiff = diff(repo, base, head, canonicalpaths)
+    public(repo, base, head, rows)
+
+    bound = gates(repo, base, head, GATES + (FULL if args.mode == "full" else ()))
+    namepacket = "\n".join(actual).encode() + b"\n"
+    packet = b"IDOLGATE staged\n" + namepacket + b"IDOLGATE namediff\n" + iddiff + b"\nIDOLGATE end\n"
+    with tempfile.TemporaryDirectory(prefix="idol-candidate-output-") as temporary:
+        outdir = Path(temporary)
+        rungate(repo, idol, "gate/path.id", packet, "[control: pass]", "[control: pass]", args.limit, outdir)
+        idadds = additions(canonicaldiff)
+        if idadds:
+            rungate(repo, idol, "gate/idiom.id", canonicaldiff, "[control: pass]", "[control: pass]", args.limit, outdir)
+        else:
+            print("candidate.runner path=gate/idiom.id outcome=not-applicable subjects=0")
+
+        if args.mode == "full":
+            probe = b"--- /dev/null\n+++ b/examples/probe.id\n@@ -0,0 +1 @@\n+value = text:len()\n"
+            semanticbody = canonicaldiff if idadds else probe
+            rungate(
+                repo,
+                idol,
+                "gate/admission.id",
+                semanticbody,
+                "[controls: A-H pass]",
+                "[controls: A-H pass]",
+                args.limit,
+                outdir,
+            )
+            alldiff = diff(repo, base, head, actual)
+            hostbody = alldiff if additions(alldiff) else probe
+            rungate(
+                repo,
+                idol,
+                "gate/host.id",
+                hostbody,
+                "[control: pass]",
+                "[control: pass]",
+                args.limit,
+                outdir,
+            )
+            rungate(
+                repo,
+                idol,
+                "gate/architecture.id",
+                b"",
+                "(semanticgate, pass,",
+                "(semanticgate, fail,",
+                args.limit,
+                outdir,
+            )
+
+    if sha(filebytes(idol)) != idolbefore:
+        unavailable("compiler moved during admission")
+    for path, before in bound.items():
+        if sha(filebytes(repo / path)) != before or sha(blob(repo, head, path)) != before:
+            unavailable(f"gate moved during admission: {path}")
+    clean(repo)
+    print(f"candidate.structural=pass full={'pass' if args.mode == 'full' else 'not-requested'}")
+
+
+def commit(repo, message):
+    git(repo, "add", "--all")
+    git(repo, "commit", "-q", "-m", message)
+    return git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+
+
+def fixture(source, change):
+    temporary = tempfile.TemporaryDirectory(prefix="idol-candidate-selftest-")
+    repo = Path(temporary.name)
+    git(repo, "init", "-q")
+    git(repo, "config", "user.name", "Candidate Selftest")
+    git(repo, "config", "user.email", "candidate@example.invalid")
+    (repo / ".github/workflows").mkdir(parents=True)
+    (repo / "docs/spec").mkdir(parents=True)
+    (repo / "gate").mkdir()
+    (repo / "examples").mkdir()
+    (repo / "tools/node/dev").mkdir(parents=True)
+    (repo / ".github/workflows/candidate.yml").write_bytes((source / ".github/workflows/candidate.yml").read_bytes())
+    (repo / "tools/node/dev/candidate").write_bytes((source / "tools/node/dev/candidate").read_bytes())
+    (repo / "gate/path.id").write_bytes((source / "gate/path.id").read_bytes())
+    (repo / "gate/idiom.id").write_bytes((source / "gate/idiom.id").read_bytes())
+    (repo / "examples/probe.id").write_text("value = 1\n", encoding="utf-8")
+    (repo / "examples/negative.id").write_text(
+        '# std. is a planted compatibility word\nmain: i64 = ()\n  note = "std. is data"\n  0\n',
+        encoding="utf-8",
+    )
+    ledger = {
+        "schema": "std-zero-ledger/1",
+        "files": [{"path": "examples/negative.id", "class": "compatibility", "code_budget": 0}],
+    }
+    (repo / "docs/spec/std-zero-ledger.json").write_text(json.dumps(ledger, sort_keys=True) + "\n", encoding="utf-8")
+    base = commit(repo, "base")
+    paths = change(repo)
+    head = commit(repo, "candidate")
+    return temporary, repo, base, head, paths
+
+
+def selftest(source, tool, idol, idolsha, limit):
+    tests = 0
+
+    def invoke(
+        repo,
+        base,
+        head,
+        paths,
+        mode="structural",
+        compiler=idol,
+        expected=idolsha,
+        compat=(),
+        lane="evidence",
+        protectedbase=None,
+        mutate=None,
+        raw=None,
+        event=False,
+    ):
+        rows = []
+        for path in sorted(paths):
+            result = git(repo, "show", f"{head}:{path}", ok=False)
+            rows.append({"path": path, "sha256": sha(result.stdout) if result.returncode == 0 else None})
+        description = {
+            "version": 1,
+            "base": base,
+            "head": head,
+            "lane": lane,
+            "paths": rows,
+            "compatibility": sorted(compat),
+        }
+        if mutate is not None:
+            mutate(description)
+        contractdir = tempfile.TemporaryDirectory(prefix="idol-candidate-contract-")
+        encoded = raw if raw is not None else json.dumps(description, sort_keys=True) + "\n"
+        contractpath = Path(contractdir.name) / "candidate.json"
+        if event:
+            eventpath = Path(contractdir.name) / "event.json"
+            eventbody = {
+                "pull_request": {
+                    "body": f"candidate evidence\n{MARKER}{encoded.rstrip()}{MARKEREND}",
+                    "base": {"sha": base, "ref": "main"},
+                    "head": {"sha": head},
+                },
+                "repository": {"default_branch": "main"},
+            }
+            eventpath.write_text(json.dumps(eventbody, sort_keys=True) + "\n", encoding="utf-8")
+            sourceargs = ["--github-event", str(eventpath)]
+        else:
+            contractpath.write_text(encoded, encoding="utf-8")
+            sourceargs = ["--contract-file", str(contractpath)]
+        argv = [
+            sys.executable,
+            str(tool),
+            "--mode",
+            mode,
+            *sourceargs,
+            "--protected-base",
+            protectedbase or base,
+            "--idol",
+            str(compiler),
+            "--idol-sha256",
+            expected,
+            "--timeout",
+            str(limit),
+        ]
+        try:
+            return call(argv, repo, limit=max(limit * 4, 30))
+        finally:
+            contractdir.cleanup()
+
+    def expect(label, code, made, needle, event=False):
+        nonlocal tests
+        temporary, repo, base, head, paths = made
+        try:
+            result = invoke(repo, base, head, paths, event=event)
+            text = output(result)
+            if result.returncode != code or needle not in text:
+                sys.stderr.write(text)
+                raise Refusal(UNAVAILABLE, f"selftest {label} failed")
+            tests += 1
+            print(f"candidate.selftest name={label} outcome=pass")
+        finally:
+            temporary.cleanup()
+
+    expect(
+        "positive",
+        0,
+        fixture(source, lambda repo: ((repo / "examples/probe.id").write_text("value = text:len()\n"), ["examples/probe.id"])[1]),
+        "candidate.structural=pass",
+    )
+    expect(
+        "github-event-positive",
+        0,
+        fixture(source, lambda repo: ((repo / "examples/probe.id").write_text("value = text:len()\n"), ["examples/probe.id"])[1]),
+        "candidate.structural=pass",
+        event=True,
+    )
+    expect(
+        "path-negative",
+        REJECT,
+        fixture(source, lambda repo: ((repo / "semantic_graph.id").write_text("value = 1\n"), ["semantic_graph.id"])[1]),
+        "candidate findings reported by gate/path.id",
+    )
+    expect(
+        "idiom-negative",
+        REJECT,
+        fixture(source, lambda repo: ((repo / "examples/probe.id").write_text("value = local\n"), ["examples/probe.id"])[1]),
+        "candidate findings reported by gate/idiom.id",
+    )
+
+    temporary, repo, base, head, paths = fixture(
+        source,
+        lambda repo: ((repo / "examples/probe.id").write_text("main: i64 = ()\n  0\n"), ["examples/probe.id"])[1],
+    )
+    try:
+        result = invoke(repo, base, head, paths)
+        if result.returncode != REJECT or "ceremonial main count increased" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest main-zero negative failed")
+        tests += 1
+        print("candidate.selftest name=main-zero-negative outcome=pass")
+        result = invoke(repo, base, head, paths, compat=paths)
+        if result.returncode != REJECT or "compatibility declaration escapes" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest compatibility escape failed")
+        tests += 1
+        print("candidate.selftest name=compatibility-escape outcome=pass")
+    finally:
+        temporary.cleanup()
+
+    temporary, repo, base, head, paths = fixture(
+        source,
+        lambda repo: (
+            (repo / "examples/negative.id").write_text(
+                "main: i64 = ()\n  0\nmain(): i64\n  0\n",
+                encoding="utf-8",
+            ),
+            ["examples/negative.id"],
+        )[1],
+    )
+    try:
+        result = invoke(repo, base, head, paths, compat=paths)
+        if result.returncode != REJECT or "ceremonial main count increased" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest compatibility main budget failed")
+        tests += 1
+        print("candidate.selftest name=compatibility-main-budget outcome=pass")
+    finally:
+        temporary.cleanup()
+
+    temporary, repo, base, head, paths = fixture(
+        source,
+        lambda repo: (
+            (repo / "examples/negative.id").write_text(
+                '# std. remains data\nmain: i64 = ()\n  note = "std. remains data"\n  0\n',
+                encoding="utf-8",
+            ),
+            ["examples/negative.id"],
+        )[1],
+    )
+    try:
+        result = invoke(repo, base, head, paths, compat=paths)
+        if result.returncode != 0 or "candidate.structural=pass" not in output(result):
+            sys.stderr.write(output(result))
+            raise Refusal(UNAVAILABLE, "selftest frozen compatibility failed")
+        tests += 1
+        print("candidate.selftest name=frozen-compatibility outcome=pass")
+    finally:
+        temporary.cleanup()
+
+    temporary, repo, base, head, paths = fixture(
+        source,
+        lambda repo: (
+            (repo / "examples/negative.id").write_text(
+                "main: i64 = ()\n  std.os.exit(0)\n",
+                encoding="utf-8",
+            ),
+            ["examples/negative.id"],
+        )[1],
+    )
+    try:
+        result = invoke(repo, base, head, paths, compat=paths)
+        if result.returncode != REJECT or "std code-site budget increased" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest compatibility std budget failed")
+        tests += 1
+        print("candidate.selftest name=compatibility-std-budget outcome=pass")
+    finally:
+        temporary.cleanup()
+
+    temporary, repo, base, head, paths = fixture(
+        source, lambda repo: ((repo / "examples/probe.id").write_text("value = 2\n"), ["examples/probe.id"])[1]
+    )
+    try:
+        result = invoke(repo, head, head, paths)
+        if result.returncode != REJECT or "candidate range is empty" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest zero-range failed")
+        tests += 1
+        print("candidate.selftest name=zero-range outcome=pass")
+
+        result = invoke(repo, base, head, ["docs/note.md"])
+        if result.returncode != REJECT or "declared path set differs" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest exact-pathset failed")
+        tests += 1
+        print("candidate.selftest name=exact-pathset outcome=pass")
+
+        result = invoke(repo, base, head, paths, protectedbase=head)
+        if result.returncode != REJECT or "base is stale" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest stale-base failed")
+        tests += 1
+        print("candidate.selftest name=stale-base outcome=pass")
+
+        result = invoke(repo, base, head, paths, lane="research")
+        if result.returncode != USAGE or "lane is not declared" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest bad-lane failed")
+        tests += 1
+        print("candidate.selftest name=bad-lane outcome=pass")
+
+        def mismatchevent(description):
+            description["base"] = "0" * 40
+
+        result = invoke(repo, base, head, paths, mutate=mismatchevent, event=True)
+        if result.returncode != REJECT or "differs from pull_request event" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest event-subject binding failed")
+        tests += 1
+        print("candidate.selftest name=event-subject-binding outcome=pass")
+
+        result = invoke(repo, base, head, paths, raw='{"version":1,"version":1}\n')
+        if result.returncode != USAGE or "duplicate JSON key" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest duplicate-contract-key failed")
+        tests += 1
+        print("candidate.selftest name=duplicate-contract-key outcome=pass")
+
+        result = invoke(repo, base, head, paths, raw='{"version":NaN}\n')
+        if result.returncode != USAGE or "non-standard JSON constant" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest nonstandard-contract-number failed")
+        tests += 1
+        print("candidate.selftest name=nonstandard-contract-number outcome=pass")
+
+        def wrongblob(description):
+            description["paths"][0]["sha256"] = "0" * 64
+
+        result = invoke(repo, base, head, paths, mutate=wrongblob)
+        if result.returncode != REJECT or "blob digest mismatch" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest blob-binding failed")
+        tests += 1
+        print("candidate.selftest name=blob-binding outcome=pass")
+    finally:
+        temporary.cleanup()
+
+    expect(
+        "public-negative",
+        REJECT,
+        fixture(source, lambda repo: ((repo / "lib").mkdir(), (repo / "lib/new.id").write_text("new = 1\n"), ["lib/new.id"])[2]),
+        "new canonical library surface requires semantic admission",
+    )
+    expect(
+        "generated-negative",
+        REJECT,
+        fixture(source, lambda repo: ((repo / "gen.zig").write_text("// GENERATED - do not edit\nconst x = 1;\n"), ["gen.zig"])[1]),
+        "generated projection changed",
+    )
+
+    def symlinkchange(repo):
+        path = repo / "examples/probe.id"
+        path.unlink()
+        path.symlink_to("negative.id")
+        return ["examples/probe.id"]
+
+    expect(
+        "symlink-type-negative",
+        REJECT,
+        fixture(source, symlinkchange),
+        "file type changes are outside structural admission",
+    )
+    expect(
+        "gate-binding",
+        REJECT,
+        fixture(source, lambda repo: ((repo / "gate/path.id").write_text("# damaged\n"), ["gate/path.id"])[1]),
+        "base-owned admission control changed inside candidate",
+    )
+    expect(
+        "verifier-binding",
+        REJECT,
+        fixture(source, lambda repo: ((repo / "tools/node/dev/candidate").write_text("# weakened\n"), ["tools/node/dev/candidate"])[1]),
+        "base-owned admission control changed inside candidate",
+    )
+    expect(
+        "workflow-binding",
+        REJECT,
+        fixture(source, lambda repo: ((repo / ".github/workflows/candidate.yml").write_text("name: weakened\n"), [".github/workflows/candidate.yml"])[1]),
+        "base-owned admission control changed inside candidate",
+    )
+
+    temporary, repo, base, head, paths = fixture(
+        source, lambda repo: ((repo / "examples/probe.id").write_text("value = 4\n"), ["examples/probe.id"])[1]
+    )
+    try:
+        unrelated = git(repo, "commit-tree", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "-m", "unrelated").stdout.decode().strip()
+        result = invoke(repo, unrelated, head, paths)
+        if result.returncode != REJECT or "not an ancestor" not in output(result):
+            raise Refusal(UNAVAILABLE, "selftest ancestry failed")
+        tests += 1
+        print("candidate.selftest name=ancestry outcome=pass")
+    finally:
+        temporary.cleanup()
+
+    temporary, repo, base, head, paths = fixture(
+        source, lambda repo: ((repo / "examples/probe.id").write_text("value = 3\n"), ["examples/probe.id"])[1]
+    )
+    try:
+        marker = repo / "executed"
+        fake = repo / "fake"
+        fake.write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
+        fake.chmod(0o755)
+        result = invoke(repo, base, head, paths, compiler=fake, expected=idolsha)
+        if result.returncode != UNAVAILABLE or marker.exists():
+            raise Refusal(UNAVAILABLE, "selftest compiler-binding failed")
+        tests += 1
+        print("candidate.selftest name=compiler-binding outcome=pass")
+        fake.unlink()
+
+        result = invoke(repo, base, head, paths, mode="full")
+        if result.returncode != UNAVAILABLE or "required gate" not in output(result):
+            sys.stderr.write(output(result))
+            raise Refusal(UNAVAILABLE, "selftest full-fail-closed failed")
+        tests += 1
+        print("candidate.selftest name=full-fail-closed outcome=pass")
+    finally:
+        temporary.cleanup()
+
+    print(f"candidate.selftest=pass controls={tests}")
+
+
+def arguments():
+    parser = argparse.ArgumentParser(description="exact-range Idol candidate admission")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--contract-file", dest="contractfile")
+    source.add_argument("--github-event", dest="event")
+    parser.add_argument("--protected-base", dest="protectedbase")
+    parser.add_argument("--idol")
+    parser.add_argument("--idol-sha256", dest="idolsha")
+    parser.add_argument("--mode", choices=("structural", "full"), default="full")
+    parser.add_argument("--timeout", dest="limit", type=int, default=60)
+    parser.add_argument("--selftest", action="store_true")
+    return parser.parse_args()
+
+
+def main():
+    args = arguments()
+    try:
+        if args.selftest:
+            if not args.idol or not args.idolsha:
+                raise Refusal(USAGE, "selftest requires --idol and --idol-sha256")
+            if not HEX64.fullmatch(args.idolsha):
+                raise Refusal(USAGE, "idol sha256 must be exact lowercase 64-hex")
+            if args.limit <= 0:
+                raise Refusal(USAGE, "timeout must be a positive decimal")
+            source = Path(__file__).resolve().parents[3]
+            selftest(source, Path(__file__).resolve(), Path(args.idol).resolve(), args.idolsha, args.limit)
+        else:
+            required = (args.contractfile or args.event, args.protectedbase, args.idol, args.idolsha)
+            if any(value is None for value in required):
+                raise Refusal(
+                    USAGE,
+                    "one contract source, protected-base, idol, and idol-sha256 are required",
+                )
+            verify(root(), args)
+        return 0
+    except Refusal as error:
+        print(f"candidate.refused code={error.code} reason={error.message}", file=sys.stderr)
+        return error.code
+    except (UnicodeDecodeError, ValueError) as error:
+        print(f"candidate.refused code={UNAVAILABLE} reason=invalid repository data: {error}", file=sys.stderr)
+        return UNAVAILABLE
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,149 @@
+name: Candidate admission
+
+# The native pull_request_target check suite is attached to the trusted base
+# commit, not the PR head. Enforcement therefore requires a repository or
+# organization Ruleset that requires this exact base-owned workflow. A normal
+# required-status context from GitHub Actions is spoofable by candidate code.
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candidate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    name: Exact protected-base candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CANDIDATE_BASE: ${{ github.event.pull_request.base.sha }}
+      CANDIDATE_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      # pull_request_target loads this workflow from the base revision. The
+      # candidate checkout is data only: no program from it is ever executed.
+      - name: Checkout exact protected base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: protected-base
+
+      - name: Checkout exact untrusted head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Reviewed opt-out: the candidate tree is only inspected as Git data.
+          # No candidate file, action, hook, filter, submodule, or build runs.
+          allow-unsafe-pr-checkout: true
+          fetch-depth: 0
+          persist-credentials: false
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate-head
+
+      - name: Bind exact repositories and ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          basework="$GITHUB_WORKSPACE/protected-base"
+          headwork="$GITHUB_WORKSPACE/candidate-head"
+          test "$GITHUB_SHA" = "$CANDIDATE_BASE"
+          test "$(git -C "$basework" rev-parse HEAD)" = "$CANDIDATE_BASE"
+          test "$(git -C "$headwork" rev-parse HEAD)" = "$CANDIDATE_HEAD"
+          if git -C "$headwork" symbolic-ref -q HEAD >/dev/null; then
+            echo 'candidate head is not detached' >&2
+            exit 125
+          fi
+          test -z "$(git -C "$basework" status --porcelain=v1 --untracked-files=all)"
+          test -z "$(git -C "$headwork" status --porcelain=v1 --untracked-files=all)"
+          bundle="$RUNNER_TEMP/idol-protected-base.bundle"
+          git -C "$basework" bundle create "$bundle" HEAD
+          git -C "$headwork" fetch --no-tags "$bundle" HEAD
+          git -C "$headwork" cat-file -e "$CANDIDATE_BASE^{commit}"
+          test "$(git -C "$headwork" rev-parse HEAD)" = "$CANDIDATE_HEAD"
+          test -z "$(git -C "$headwork" status --porcelain=v1 --untracked-files=all)"
+
+      - name: Install exact bootstrap toolchain
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.17.0-dev.389+f5a1968f6
+
+      - name: Build exact protected-base compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          basework="$GITHUB_WORKSPACE/protected-base"
+          (cd "$basework" && zig build)
+          idol="$basework/zig-out/bin/idol"
+          test -x "$idol"
+          idolsha=$(sha256sum "$idol" | awk '{print $1}')
+          test "${#idolsha}" -eq 64
+          printf 'IDOL_ADMISSION_COMPILER=%s\n' "$idol" >> "$GITHUB_ENV"
+          printf 'IDOL_ADMISSION_COMPILER_SHA256=%s\n' "$idolsha" >> "$GITHUB_ENV"
+          printf 'candidate.compiler sha256=%s\n' "$idolsha"
+
+      - name: Exercise protected-base verifier controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          basework="$GITHUB_WORKSPACE/protected-base"
+          python3 "$basework/tools/node/dev/candidate" \
+            --selftest \
+            --idol "$IDOL_ADMISSION_COMPILER" \
+            --idol-sha256 "$IDOL_ADMISSION_COMPILER_SHA256"
+
+      - name: Structurally admit exact untrusted candidate
+        id: structural
+        shell: bash
+        run: |
+          set -euo pipefail
+          basework="$GITHUB_WORKSPACE/protected-base"
+          headwork="$GITHUB_WORKSPACE/candidate-head"
+          test "$(git -C "$headwork" rev-parse HEAD)" = "$CANDIDATE_HEAD"
+          (
+            cd "$headwork"
+            python3 "$basework/tools/node/dev/candidate" \
+              --github-event "$GITHUB_EVENT_PATH" \
+              --protected-base "$CANDIDATE_BASE" \
+              --idol "$IDOL_ADMISSION_COMPILER" \
+              --idol-sha256 "$IDOL_ADMISSION_COMPILER_SHA256" \
+              --mode structural
+          )
+
+      - name: Full semantic admission audit — non-admitting and currently unavailable
+        id: full
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          basework="$GITHUB_WORKSPACE/protected-base"
+          headwork="$GITHUB_WORKSPACE/candidate-head"
+          (
+            cd "$headwork"
+            python3 "$basework/tools/node/dev/candidate" \
+              --github-event "$GITHUB_EVENT_PATH" \
+              --protected-base "$CANDIDATE_BASE" \
+              --idol "$IDOL_ADMISSION_COMPILER" \
+              --idol-sha256 "$IDOL_ADMISSION_COMPILER_SHA256" \
+              --mode full
+          )
+
+      - name: Record full semantic audit disposition
+        if: ${{ always() && steps.structural.conclusion == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test '${{ steps.full.outcome }}' = success; then
+            echo 'candidate.full=pass'
+            echo 'Full semantic admission: PASS' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'candidate.full=unavailable-or-refused (not admission)'
+            echo 'Full semantic admission: UNAVAILABLE OR REFUSED; this result is not admission.' >> "$GITHUB_STEP_SUMMARY"
+          fi
