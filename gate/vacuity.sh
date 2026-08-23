@@ -122,6 +122,8 @@ elif command -v gtimeout >/dev/null 2>&1; then
   runner='gtimeout'
 else
   runner=''
+  printf 'vacuity: NOTE no timeout(1) — a gate that hangs under a plant will hang this harness.\n' >&2
+  printf 'vacuity:   TIMEOUT cannot be distinguished from "still running"; install coreutils.\n' >&2
 fi
 
 # `$1/.say` receives the gate's own last line of output, which is what makes a
@@ -129,19 +131,27 @@ fi
 # trust this harness; quoting what the gate said lets them judge it. The first
 # conviction this file produced needed exactly that — the gate had a
 # zero-subject guard and still passed, and only its own PASS line showed why.
+# THE TRANSCRIPT LIVES OUTSIDE THE SCAFFOLD. It used to be written to
+# `$dir/.say`, INSIDE the very tree the gate is about to examine — a plant that
+# adds a file to the scaffold is not a clean plant, and any gate globbing the
+# root would have been handed a subject this harness invented. Nothing may
+# exist in a scaffold except what the plant deliberately put there.
+say_file=$(mktemp) || exit 2
+trap 'rm -f -- "$say_file"' EXIT
+
 run_bounded() {
   # $1 dir, $2 relative gate path -> echoes exit code, or 124 for timeout
   if [ -n "$runner" ]; then
-    ( cd "$1" && $runner "$PER_GATE_TIMEOUT" sh "$2" >"$1/.say" 2>&1 </dev/null )
+    ( cd "$1" && $runner "$PER_GATE_TIMEOUT" sh "$2" >"$say_file" 2>&1 </dev/null )
   else
-    ( cd "$1" && sh "$2" >"$1/.say" 2>&1 </dev/null )
+    ( cd "$1" && sh "$2" >"$say_file" 2>&1 </dev/null )
   fi
   echo $?
 }
 
 said() {
-  [ -f "$1/.say" ] || { echo '(no output)'; return; }
-  tr -d '\r' < "$1/.say" | grep -v '^[[:space:]]*$' | tail -1 | cut -c1-96
+  [ -s "$say_file" ] || { echo '(no output)'; return; }
+  tr -d '\r' < "$say_file" | grep -v '^[[:space:]]*$' | tail -1 | cut -c1-96
 }
 
 # A non-zero exit is the requirement, but HOW a gate reached one is worth
@@ -215,7 +225,6 @@ chmod +x "$canary/probe/gate/"*.sh
 self_fail=0
 for c in hollowcanary soundcanary; do
   ce=$(mktemp -d); ch=$(mktemp -d)
-  ( cd "$canary/probe" && build_empty "$ce" "gate/$c.sh" ) >/dev/null 2>&1 || true
   mkdir -p "$ce/gate" "$ch/gate"
   cp "$canary/probe/gate/$c.sh" "$ce/gate/$c.sh"
   cp "$canary/probe/gate/$c.sh" "$ch/gate/$c.sh"
@@ -291,9 +300,10 @@ for g in $gates; do
     printf 'vacuity: could not plant %s — a plant that fails to apply is not a pass\n' "$g" >&2
     rm -rf "$e" "$h"; exit 2
   fi
-  re=$(run_bounded "$e" "$g")
-  rh=$(run_bounded "$h" "$g")
-  saye=$(said "$e"); sayh=$(said "$h")
+  re=$(run_bounded "$e" "$g"); SAY_E=$(said)
+  rh=$(run_bounded "$h" "$g"); SAY_H=$(said)
+  # Captured immediately after each run, because one transcript file is reused.
+  saye=$SAY_E; sayh=$SAY_H
   rm -rf "$e" "$h"
   v=$(verdict_of "$re" "$rh")
 
