@@ -227,3 +227,57 @@ Every other remote branch fetched from `git@github.com:clpi/idol.git` — includ
 `fix/divisor-one-producer`, `fix/std-code-position-budget`, `fix/gap145-observers`,
 `fix/application-continuity`, `fix/oracle-string-order-unsigned`,
 `gaps/declare-kind-218-222` — has **zero** unique commits against `b8073cef`.
+
+---
+
+## Ruling on the one landing operation: DO NOT LAND
+
+The census left three questions open. The first — *"does unit 13 land at all?"* —
+is answered by measurement, and it answers the other two by making them moot.
+
+`613e3dca` "evidence: preserve exact process outcomes" reworks three Idol
+mirrors (`scripts/capability_rows.id`, `scripts/capability_table.id`,
+`scripts/native_differential.id`, plus `gate/differential.sh`) — 290 insertions
+across 4 files, of which 7 of 9 hunks needed rework rather than resolution
+because main has since renamed the helpers.
+
+**Those mirrors cannot execute on main.** Measured:
+
+    zig build capability-rows    -> exit 1
+    zig build capability-table   -> exit 1
+
+    ./zig-out/bin/idol run scripts/capability_rows.id
+      error: direct backend: DNB001 application: unknown
+             missing: param-type:any
+      bail site: native-scalar precheck — param-type:any
+
+`param-type:any` is one of the direct-native lowering holes the integrated
+measurement identified, and it is not what this commit addresses. The commit
+adds outcome-preservation discipline to a route that refuses to lower at all.
+
+So landing it would rework 290 lines of a script that cannot run, to add
+evidence discipline whose effect is unobservable, in a route whose own body
+already says: *"this source route is currently UNMEASURED end to end. The
+native expect gate is the executable typed-outcome authority."*
+
+That claim is now demonstrably true: the native expect gate is healthy and
+carries the typed-outcome contract (`# expect-outcome:` with event, exit,
+stdout and stderr), and it measures 130 agreements / 10 contradictions over
+139 files with its ledger absorbed. There is no expect gate in `clpi/idol` at
+all — `git ls-tree -r --name-only origin/main | grep -i expect` is empty.
+
+**Disposition: DROP, with the blocker recorded.** The four branches carrying
+this payload (`grammar-main-zero`, `integrate-chain-09b`,
+`main-zero-graphslice`, `main-zero-smokes`) join the DROP list.
+
+Questions 2 and 3 are moot given the above: no rework is performed, so no
+convention needs to survive it; and `codex/nul-quote-extent-20260823`'s only
+unique commit is superseded by `2ee24a52` regardless of what its name suggests.
+
+**Re-open condition.** If `param-type:any` lowering lands and these three
+build steps execute, re-evaluate: the outcome-preservation discipline is
+correct, and it would then be measurable. Until then it is discipline applied
+to a route with no observations to preserve.
+
+**Reconciliation is therefore closed.** All 16 second-wave branches are DROP:
+7 CONTENT-IN, 5 SUPERSEDED, 4 carrying only this refused payload.
