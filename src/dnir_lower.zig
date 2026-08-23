@@ -242,6 +242,16 @@ const OccurrenceBridge = struct {
     diagnostic: *Diagnostic,
     by_expression: std.AutoHashMapUnmanaged(*const Expr, semantic_graph.id) = .empty,
     unresolved: usize = 0,
+    /// The first occurrence this scan found without a published application.
+    ///
+    /// HELD, NOT REPORTED. This used to be written straight into the shared
+    /// `Diagnostic` during the scan, and the scan does not refuse — a
+    /// gate-transport module carries unresolved occurrences and keeps lowering.
+    /// So the bind outlived its cause, and the next unrelated refusal, which
+    /// binds no occurrence of its own, inherited it: a DNB011 naming a call
+    /// that had nothing to do with the failure. The id lives here until a
+    /// consumer decides to refuse ON it.
+    first_unresolved: ?semantic_graph.id = null,
 
     fn init(
         alloc: std.mem.Allocator,
@@ -261,9 +271,7 @@ const OccurrenceBridge = struct {
             if (graph.application(application) == null) {
                 if (graph.isBootstrapApplicationNode(application)) continue;
                 index.unresolved += 1;
-                if (diagnostic.application == null) {
-                    bindOccurrence(diagnostic, graph, application);
-                }
+                if (index.first_unresolved == null) index.first_unresolved = application;
                 continue;
             }
             _ = graph.applicationResults(application) orelse
@@ -2610,8 +2618,15 @@ pub fn lowerModuleWithGraphObserved(
     diagnostic.reset();
     var occurrences = try OccurrenceBridge.init(alloc, graph, diagnostic);
     defer occurrences.deinit();
-    if (!graph.gateTransportModule() and occurrences.unresolved != 0)
+    if (!graph.gateTransportModule() and occurrences.unresolved != 0) {
+        // The occurrence is bound HERE, by the consumer that is refusing, so
+        // the id and the note are one cause. When the module is gate transport
+        // this branch does not run and nothing is bound — the scan's finding
+        // has no refusal to belong to.
+        if (occurrences.first_unresolved) |application|
+            return refuseApplication(diagnostic, graph, @src(), "missing-application-id", application);
         return invalidGraphFacts(diagnostic, @src(), "missing-application-id");
+    }
     const require_graph_facts = !graph.gateTransportModule();
     var m = try lowerModuleFromGraph(alloc, mod, graph, &occurrences, diagnostic, require_graph_facts);
     errdefer dnir.deinitModule(alloc, m);
@@ -3123,22 +3138,6 @@ fn shapeOnStack(stack: []const semantic_graph.id, shape: semantic_graph.id) bool
     return false;
 }
 
-fn memberDescriptorFromShapeAst(
-    graph: *const semantic_graph.SemanticGraph,
-    shape: semantic_graph.id,
-    member_name: []const u8,
-    alloc: std.mem.Allocator,
-) Error!?types.ResolvedType {
-    const shape_node = graph.get(shape) orelse return null;
-    const raw = shape_node.ast_ref orelse return null;
-    const ad: *const ast.AliasDef = @ptrCast(@alignCast(raw));
-    for (ad.fields) |field| {
-        if (!std.mem.eql(u8, field.name, member_name)) continue;
-        return try types.resolve(field.typ, null, alloc);
-    }
-    return null;
-}
-
 fn appendGraphRecordFields(
     alloc: std.mem.Allocator,
     graph: *const semantic_graph.SemanticGraph,
@@ -3167,13 +3166,22 @@ fn appendGraphRecordFields(
             if (!try appendGraphRecordFields(alloc, graph, nested, path, stack, names, kinds, widths)) return false;
             continue;
         }
-        const descriptor = if (node.descriptor) |existing|
-            existing
-        else
-            (try memberDescriptorFromShapeAst(graph, shape, member_name, alloc)) orelse {
-                alloc.free(path);
-                return false;
-            };
+        // NO AST FALLBACK. `memberDescriptorFromShapeAst` stood here: when the
+        // graph had no descriptor on a shape member, this cast the shape's
+        // `ast_ref` back to an `ast.AliasDef` and re-ran `types.resolve` on the
+        // syntax — a consumer re-deriving, from the source text, a fact whose
+        // producer is the shape lift (`law.fallback.zero`, `law.md` §1: "once
+        // known, a fact is carried forward; downstream phases never reconstruct
+        // it from syntax or representation").
+        //
+        // Absence is now what it is. A member with no published descriptor
+        // refuses the record projection by name instead of answering from the
+        // spelling, which is the same refusal this loop already makes when the
+        // descriptor is present but not a field fact.
+        const descriptor = node.descriptor orelse {
+            alloc.free(path);
+            return false;
+        };
         const fact = graphFieldFact(descriptor) orelse {
             alloc.free(path);
             return false;
