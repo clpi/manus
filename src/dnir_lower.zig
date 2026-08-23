@@ -641,15 +641,15 @@ fn collectModuleTableFieldGlobals(
         switch (stmt.*) {
             .assign => |as| for (as.targets, 0..) |t, i| {
                 if (t.* != .name or i >= as.values.len) continue;
-                try registerTableFieldGlobals(alloc, mod, out, t.name.ident, as.values[i]);
+                try registerTableFieldGlobals(alloc, mod, out, stmt, t.name.ident, as.values[i]);
             },
             .global_decl => |gd| for (gd.names, 0..) |n, i| {
                 if (i >= gd.inits.len) continue;
-                try registerTableFieldGlobals(alloc, mod, out, n.ident, gd.inits[i]);
+                try registerTableFieldGlobals(alloc, mod, out, stmt, n.ident, gd.inits[i]);
             },
             .local_decl => |ld| for (ld.names, 0..) |n, i| {
                 if (i >= ld.inits.len) continue;
-                try registerTableFieldGlobals(alloc, mod, out, n.ident, ld.inits[i]);
+                try registerTableFieldGlobals(alloc, mod, out, stmt, n.ident, ld.inits[i]);
             },
             else => {},
         }
@@ -674,6 +674,7 @@ fn registerTableFieldGlobals(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
     out: *ModuleGlobals,
+    owner: *const ast.Stmt,
     name: []const u8,
     value: *const Expr,
 ) Error!void {
@@ -685,7 +686,7 @@ fn registerTableFieldGlobals(
     if (mod.body.tail_expr) |tail| {
         if (tail.* == .name and std.mem.eql(u8, tail.name.ident, name)) return;
     }
-    if (moduleWritesNameBySubscript(&mod.body, name)) return;
+    if (try moduleWritesNameBySubscript(&mod.body, owner, name)) return;
 
     var fields: std.StringArrayHashMapUnmanaged(RT) = .{};
     defer fields.deinit(alloc);
@@ -701,13 +702,14 @@ fn registerTableFieldGlobals(
         const gop = try fields.getOrPut(alloc, nf.key);
         gop.value_ptr.* = typeOfGlobal(.inferred, nf.val);
     }
-    // Every write anywhere in the module, module scope and relation bodies alike.
-    if (!try collectFieldWriteTypes(alloc, &mod.body, name, &fields)) return;
+    // Every write anywhere this binding is still the one `name` reaches —
+    // module scope and relation bodies alike, and no scope that rebound it.
+    if (!try collectFieldWriteTypes(alloc, &mod.body, owner, name, &fields)) return;
 
     if (fields.count() == 0) return;
     // A field nothing writes after its literal is a constant `ModuleConsts`
     // already folds. Storage is owed only when a write exists.
-    if (!moduleHasFieldWrite(&mod.body, name)) return;
+    if (!try moduleHasFieldWrite(&mod.body, owner, name)) return;
 
     var it = fields.iterator();
     while (it.next()) |entry| {
@@ -725,103 +727,205 @@ fn registerTableFieldGlobals(
     }
 }
 
+/// SPELLING IS NOT IDENTITY, AND THESE SCANS ONCE DECIDED THAT IT WAS.
+///
+/// Every scan below asks one question about ONE binding: the module-scope table
+/// spelled `name` and declared by the statement `owner`. A relation that
+/// declares its own `name` — a parameter, a typed local, a loop variable, an
+/// `if name = …` binding — names a DIFFERENT binding, so a write it performs is
+/// not a write to the module's table. Matching by spelling counted it as one.
+///
+/// MEASURED at f5d87d40, with no walker and a plain recursive descent:
+///
+///     cell: { x: i64 }
+///     M = { x = 1 }
+///     bump: i64 = ()
+///       M: cell = { x = 5 }
+///       M.x = 99
+///       M.x
+///     read: i64 = ()
+///       M.x
+///
+/// `read()` answered 99. The SAME program with the relation's local spelled `N`
+/// answered 1, and 1 is the answer: nothing ever writes the module's `M.x`. The
+/// shadow's store had reached the module's word. That is the confident wrong
+/// number, not the incidental refusal the finding predicted — a bare
+/// `M = { x = 5 }` inside the relation is an assignment to the module binding,
+/// not a shadow of it, and it is declined earlier by `moduleAssignCount`.
+///
+/// So the walk stops at the first statement that REBINDS `name` — every later
+/// statement in that block reaches the new binding, not this one — and declines
+/// to enter a nested scope that binds `name` on entry. `owner` is exempt: at
+/// module scope the declaration of the table IS this binding, not a shadow.
+///
+/// It walks in SOURCE ORDER for the same reason: a write standing before the
+/// rebinding statement still names the module's table.
+fn walkBindingAssigns(
+    block: *const ast.Block,
+    owner: *const ast.Stmt,
+    name: []const u8,
+    visitor: anytype,
+) Error!void {
+    for (block.stmts) |*st| {
+        if (st != owner and stmtRebindsName(st, name)) return;
+        switch (st.*) {
+            .assign => |a| try visitor.assign(a),
+            .do_block => |b| try walkBindingAssigns(&b.body, owner, name, visitor),
+            .while_loop => |w| try walkBindingAssigns(&w.body, owner, name, visitor),
+            .repeat_loop => |r| try walkBindingAssigns(&r.body, owner, name, visitor),
+            .num_for => |f| {
+                if (std.mem.eql(u8, f.var_name, name)) continue;
+                try walkBindingAssigns(&f.body, owner, name, visitor);
+            },
+            .gen_for => |f| {
+                if (identsBindName(f.vars, name)) continue;
+                try walkBindingAssigns(&f.body, owner, name, visitor);
+            },
+            .func_decl => |fd| {
+                if (paramsBindName(fd.func.params, name)) continue;
+                try walkBindingAssigns(&fd.func.body, owner, name, visitor);
+            },
+            .if_stmt => |is| {
+                if (is.binding) |b| {
+                    if (std.mem.eql(u8, b.name, name)) continue;
+                }
+                try walkBindingAssigns(&is.then, owner, name, visitor);
+                for (is.elseifs) |ei| try walkBindingAssigns(&ei.body, owner, name, visitor);
+                if (is.else_body) |eb| try walkBindingAssigns(&eb, owner, name, visitor);
+            },
+            else => {},
+        }
+    }
+}
+
+/// Does this statement give `name` a NEW binding for the rest of its block? A
+/// bare `name = value` does not: it is an assignment, and it was measured to
+/// write the enclosing binding (`g = 1` at module scope, `g = 5` in a relation,
+/// a second relation reading `g` answered 5). A DECLARATION does.
+///
+/// `global_decl` is absent deliberately: it names the module global itself.
+fn stmtRebindsName(st: *const ast.Stmt, name: []const u8) bool {
+    return switch (st.*) {
+        .local_decl => |ld| localNamesBind(ld.names, name),
+        .const_decl => |cd| std.mem.eql(u8, cd.ident, name),
+        .func_decl => |fd| fd.path.len == 1 and std.mem.eql(u8, fd.path[0], name),
+        else => false,
+    };
+}
+
+fn localNamesBind(names: []const ast.LocalName, name: []const u8) bool {
+    for (names) |n| {
+        if (std.mem.eql(u8, n.ident, name)) return true;
+    }
+    return false;
+}
+
+fn paramsBindName(params: []const ast.FuncParam, name: []const u8) bool {
+    for (params) |p| {
+        if (std.mem.eql(u8, p.name, name)) return true;
+    }
+    return false;
+}
+
+fn identsBindName(idents: []const []const u8, name: []const u8) bool {
+    for (idents) |i| {
+        if (std.mem.eql(u8, i, name)) return true;
+    }
+    return false;
+}
+
 /// Does any write name `name` through a SUBSCRIPT (`M["x"] = 1`, `M[i] = 1`)?
 /// A subscript write is a write to the table as a whole from this pass's point
 /// of view: it names a place these field words do not, and admitting the
 /// binding anyway would leave the two spellings writing different storage.
-fn moduleWritesNameBySubscript(block: *const ast.Block, name: []const u8) bool {
-    for (block.stmts) |*st| {
-        switch (st.*) {
-            .assign => |a| for (a.targets) |t| {
-                if (t.* == .index and t.index.obj.* == .name and
-                    std.mem.eql(u8, t.index.obj.name.ident, name)) return true;
-            },
-            .do_block => |b| if (moduleWritesNameBySubscript(&b.body, name)) return true,
-            .while_loop => |w| if (moduleWritesNameBySubscript(&w.body, name)) return true,
-            .repeat_loop => |r| if (moduleWritesNameBySubscript(&r.body, name)) return true,
-            .num_for => |f| if (moduleWritesNameBySubscript(&f.body, name)) return true,
-            .gen_for => |f| if (moduleWritesNameBySubscript(&f.body, name)) return true,
-            .func_decl => |fd| if (moduleWritesNameBySubscript(&fd.func.body, name)) return true,
-            .if_stmt => |is| {
-                if (moduleWritesNameBySubscript(&is.then, name)) return true;
-                for (is.elseifs) |ei| if (moduleWritesNameBySubscript(&ei.body, name)) return true;
-                if (is.else_body) |eb| if (moduleWritesNameBySubscript(&eb, name)) return true;
-            },
-            else => {},
-        }
-    }
-    return false;
+fn moduleWritesNameBySubscript(
+    block: *const ast.Block,
+    owner: *const ast.Stmt,
+    name: []const u8,
+) Error!bool {
+    var scan = SubscriptWriteScan{ .name = name };
+    try walkBindingAssigns(block, owner, name, &scan);
+    return scan.found;
 }
 
-fn moduleHasFieldWrite(block: *const ast.Block, name: []const u8) bool {
-    for (block.stmts) |*st| {
-        switch (st.*) {
-            .assign => |a| for (a.targets) |t| {
-                if (t.* == .field and t.field.obj.* == .name and
-                    std.mem.eql(u8, t.field.obj.name.ident, name)) return true;
-            },
-            .do_block => |b| if (moduleHasFieldWrite(&b.body, name)) return true,
-            .while_loop => |w| if (moduleHasFieldWrite(&w.body, name)) return true,
-            .repeat_loop => |r| if (moduleHasFieldWrite(&r.body, name)) return true,
-            .num_for => |f| if (moduleHasFieldWrite(&f.body, name)) return true,
-            .gen_for => |f| if (moduleHasFieldWrite(&f.body, name)) return true,
-            .func_decl => |fd| if (moduleHasFieldWrite(&fd.func.body, name)) return true,
-            .if_stmt => |is| {
-                if (moduleHasFieldWrite(&is.then, name)) return true;
-                for (is.elseifs) |ei| if (moduleHasFieldWrite(&ei.body, name)) return true;
-                if (is.else_body) |eb| if (moduleHasFieldWrite(&eb, name)) return true;
-            },
-            else => {},
+const SubscriptWriteScan = struct {
+    name: []const u8,
+    found: bool = false,
+
+    fn assign(self: *SubscriptWriteScan, a: anytype) Error!void {
+        for (a.targets) |t| {
+            if (t.* != .index) continue;
+            if (t.index.obj.* != .name) continue;
+            if (std.mem.eql(u8, t.index.obj.name.ident, self.name)) self.found = true;
         }
     }
-    return false;
+};
+
+fn moduleHasFieldWrite(
+    block: *const ast.Block,
+    owner: *const ast.Stmt,
+    name: []const u8,
+) Error!bool {
+    var scan = FieldWriteScan{ .name = name };
+    try walkBindingAssigns(block, owner, name, &scan);
+    return scan.found;
 }
 
-/// Fold every `name.field = value` in the module into `fields`, and answer
-/// false the moment two writes disagree about what the word holds. Two stores
-/// that disagree is the failure this whole change exists to make impossible, so
-/// disagreement declines the binding rather than picking a winner.
+const FieldWriteScan = struct {
+    name: []const u8,
+    found: bool = false,
+
+    fn assign(self: *FieldWriteScan, a: anytype) Error!void {
+        for (a.targets) |t| {
+            if (t.* != .field) continue;
+            if (t.field.obj.* != .name) continue;
+            if (std.mem.eql(u8, t.field.obj.name.ident, self.name)) self.found = true;
+        }
+    }
+};
+
+/// Fold every `name.field = value` that still reaches this binding into
+/// `fields`, and answer false the moment two writes disagree about what the
+/// word holds. Two stores that disagree is the failure this whole change exists
+/// to make impossible, so disagreement declines the binding rather than picking
+/// a winner.
 fn collectFieldWriteTypes(
     alloc: std.mem.Allocator,
     block: *const ast.Block,
+    owner: *const ast.Stmt,
     name: []const u8,
     fields: *std.StringArrayHashMapUnmanaged(RT),
 ) Error!bool {
-    for (block.stmts) |*st| {
-        switch (st.*) {
-            .assign => |a| for (a.targets, 0..) |t, i| {
-                if (t.* != .field) continue;
-                if (t.field.obj.* != .name) continue;
-                if (!std.mem.eql(u8, t.field.obj.name.ident, name)) continue;
-                if (i >= a.values.len) return false;
-                const ty = typeOfGlobal(.inferred, a.values[i]);
-                const gop = try fields.getOrPut(alloc, t.field.field);
-                if (gop.found_existing) {
-                    if (!gop.value_ptr.*.eql(ty)) return false;
-                } else {
-                    gop.value_ptr.* = ty;
-                }
-            },
-            .do_block => |b| if (!try collectFieldWriteTypes(alloc, &b.body, name, fields)) return false,
-            .while_loop => |w| if (!try collectFieldWriteTypes(alloc, &w.body, name, fields)) return false,
-            .repeat_loop => |r| if (!try collectFieldWriteTypes(alloc, &r.body, name, fields)) return false,
-            .num_for => |f| if (!try collectFieldWriteTypes(alloc, &f.body, name, fields)) return false,
-            .gen_for => |f| if (!try collectFieldWriteTypes(alloc, &f.body, name, fields)) return false,
-            .func_decl => |fd| if (!try collectFieldWriteTypes(alloc, &fd.func.body, name, fields)) return false,
-            .if_stmt => |is| {
-                if (!try collectFieldWriteTypes(alloc, &is.then, name, fields)) return false;
-                for (is.elseifs) |ei| {
-                    if (!try collectFieldWriteTypes(alloc, &ei.body, name, fields)) return false;
-                }
-                if (is.else_body) |eb| {
-                    if (!try collectFieldWriteTypes(alloc, &eb, name, fields)) return false;
-                }
-            },
-            else => {},
+    var scan = FieldTypeScan{ .alloc = alloc, .name = name, .fields = fields };
+    try walkBindingAssigns(block, owner, name, &scan);
+    return scan.agreed;
+}
+
+const FieldTypeScan = struct {
+    alloc: std.mem.Allocator,
+    name: []const u8,
+    fields: *std.StringArrayHashMapUnmanaged(RT),
+    agreed: bool = true,
+
+    fn assign(self: *FieldTypeScan, a: anytype) Error!void {
+        for (a.targets, 0..) |t, i| {
+            if (t.* != .field) continue;
+            if (t.field.obj.* != .name) continue;
+            if (!std.mem.eql(u8, t.field.obj.name.ident, self.name)) continue;
+            if (i >= a.values.len) {
+                self.agreed = false;
+                continue;
+            }
+            const ty = typeOfGlobal(.inferred, a.values[i]);
+            const gop = try self.fields.getOrPut(self.alloc, t.field.field);
+            if (gop.found_existing) {
+                if (!gop.value_ptr.*.eql(ty)) self.agreed = false;
+            } else {
+                gop.value_ptr.* = ty;
+            }
         }
     }
-    return true;
-}
+};
 
 /// THE INITIAL CONTENT OF A MODULE GLOBAL'S WORD, AS A LOAD-TIME FACT.
 ///
@@ -11195,19 +11299,27 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
     }
     const fld = expr.field;
     if (fld.obj.* == .name) {
-        // Module-level descriptor constant: `Kind.ident` folds to an immediate.
-        const mk = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ fld.obj.name.ident, fld.field });
-        defer ctx.alloc.free(mk);
-        if (ctx.module_consts.ints.get(mk)) |mv| return .{ .i64 = mv };
-        if (ctx.module_consts.strs.get(mk)) |sv| return .{ .str = sv };
-        // native_req_support removed, no constant fallback lookup
         const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ fld.obj.name.ident, fld.field });
         defer ctx.alloc.free(key);
+        // THE INNERMOST BINDING ANSWERS FIRST. A relation that declares its own
+        // `M` exploded `M.x` into a frame slot, and that slot is what `M.x`
+        // means inside it — the module's `M` is a different binding that merely
+        // shares a spelling.
+        //
+        // The module-constant lookup used to stand ahead of this and it was
+        // ONLY EVER RIGHT BY ACCIDENT: `lowerModuleFromGraph` deletes a
+        // module-const entry whose name also owns module-global storage, so the
+        // shadow case answered correctly exactly when the field-write scan had
+        // WRONGLY given the module storage — one identity-by-spelling defect
+        // covering another. Measured with the scan repaired and this order
+        // unchanged: `M = { x = 1 }` at module scope, `M: cell = { x = 5 }` and
+        // `M.x = 99` in a relation, and the relation's own `M.x` answered 1.
         if (ctx.locals.get(key)) |slot| return .{ .local = slot };
+        // Module-level descriptor constant: `Kind.ident` folds to an immediate.
+        if (ctx.module_consts.ints.get(key)) |mv| return .{ .i64 = mv };
+        if (ctx.module_consts.strs.get(key)) |sv| return .{ .str = sv };
         // A WRITTEN module-scope table field is READ FROM ITS STORAGE, never
         // folded and never resolved to a frame slot of some other body.
-        // `ctx.locals` still wins: a local or parameter spelled `M.x` shadows
-        // the module's field exactly as a local shadows a module global.
         if (ctx.module_globals.types.get(key)) |gty| {
             const t = ctx.freshTemp();
             try ctx.emit(.{
