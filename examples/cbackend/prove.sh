@@ -71,7 +71,18 @@ test "$auto_answer" -eq 42
 
 # This is a semantic program that reaches the direct capability boundary.
 # Auto must preserve that refusal instead of trying either C realization.
-refusal="$repo/examples/native_differential/unsupported/g066_written_file_scope_global.id"
+#
+# THE SUBJECT MUST EXIST, and that line is the whole point of this paragraph.
+# Until 2026-08-22 this pointed at g066_written_file_scope_global.id, which
+# 4cb1fd1c had DELETED on 2026-08-18 when written file-scope bindings gained
+# storage. A missing path makes `compile` exit non-zero with `FileNotFound`,
+# which is indistinguishable from the refusal this control is asserting -- so
+# the `if` below read a vacuous success for 324 commits and only the grep on
+# the (empty) log kept the step red. A negative control whose subject can
+# vanish silently is not a control, so the existence check is asserted first
+# and by itself.
+refusal="$repo/examples/native_differential/unsupported/p09_closure.id"
+test -f "$refusal" || { echo "refusal subject is missing: $refusal" >&2; exit 1; }
 if locked "$compiler" compile "$refusal" --backend=auto -o "$scratch/auto-refusal.out" >"$scratch/auto-refusal.log" 2>&1; then
     echo "auto hid a direct-native refusal" >&2
     exit 1

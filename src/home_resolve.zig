@@ -331,7 +331,7 @@ fn homeFromDir(
 /// home: `lib/compiler/lexer.id` and a project-root `compiler/lexer.id` are the
 /// same home reached two ways, and they must mangle alike.
 pub fn homeOfPath(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]const u8 {
-    // Sibling imports from another checkout often arrive as `../home/file.id`.
+    // Sibling imports from another checkout often arrive as `../<home>/file.id`.
     // Lexical `..` rejection before `realpath` makes those bytes unliftable even
     // though the filesystem resolves them to the same home identity.
     if (!hasParentComponent(native_path_type, path)) {
@@ -520,7 +520,7 @@ test "home_resolve: file identity resolves parents after symlinks" {
     // post-realpath `rejectParentUnderflow` has no `..` left to reject. They
     // were written when the check ran lexically BEFORE realpath (3d30c93f) and
     // were not updated when cf2473e0 moved it, so sibling imports spelled
-    // `../home/file.id` could reach the filesystem that resolves them.
+    // `../<home>/file.id` could reach the filesystem that resolves them.
     //
     // They were also cwd-dependent in a way no fixture can pin: `../../escape.id`
     // answers FileNotFound from most directories and a VALUE from any directory
