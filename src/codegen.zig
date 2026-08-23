@@ -3935,7 +3935,7 @@ pub const CodeGen = struct {
                         self.nativeDiagFail("func-type-params");
                         return self.nofit(@src());
                     }
-                    const ret_ty = contract_ret(&fd.func);
+                    const ret_ty = native_ret_contract(&fd.func);
                     if (ret_ty != .inferred and !self.type_expr_is_native_scalar(ret_ty) and
                         !self.type_expr_is_native_result_pack(ret_ty))
                     {
@@ -4195,7 +4195,7 @@ pub const CodeGen = struct {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .func_decl) continue;
             const fd = &stmt.func_decl;
-            if (contract_ret(&fd.func) != .inferred and !self.type_expr_is_native_scalar(contract_ret(&fd.func))) return true;
+            if (native_ret_contract(&fd.func) != .inferred and !self.type_expr_is_native_scalar(native_ret_contract(&fd.func))) return true;
             for (fd.func.params) |param| {
                 if (!self.type_expr_is_native_scalar(param.typ)) return true;
             }
@@ -4380,7 +4380,7 @@ pub const CodeGen = struct {
         if (@import("directives.zig").attrsWantBench(fd.attributes)) return false;
         if (@import("directives.zig").attrsHaveDebug(fd.attributes)) return false;
         if (fd.func.type_params != null) return false;
-        if (contract_ret(&fd.func) != .inferred and !self.type_expr_is_native_scalar(contract_ret(&fd.func))) return false;
+        if (native_ret_contract(&fd.func) != .inferred and !self.type_expr_is_native_scalar(native_ret_contract(&fd.func))) return false;
         for (fd.func.params) |param| {
             if (param.default_val != null) return false;
             if (!self.type_expr_is_native_scalar(param.typ)) return false;
@@ -21472,6 +21472,47 @@ pub const CodeGen = struct {
         return if (fb.ret_fallible) .inferred else fb.ret_type;
     }
 
+    /// The return contract AS NATIVE ADMISSION MUST READ IT: an explicitly
+    /// declared `any` is folded to `.inferred`, because they are the same
+    /// statement about the value.
+    ///
+    /// `any` is the TOP of the descriptor lattice — the absence of a
+    /// constraint — so declaring it asserts nothing that omitting it did not
+    /// already leave open. Admission nevertheless read the two spellings
+    /// differently, and the difference was total:
+    ///
+    ///     f: any = (x: i64)          f = (x: i64)
+    ///         x * 2                      x * 2
+    ///     -> DNB001 ret-type:any     -> prints 42
+    ///
+    /// Same body, same semantics, same inferred result; one compiles natively
+    /// and one has no realization at all. That inverts law.perf.dominance
+    /// (`examples/cfloor/weak.id`): adding a fact may never REDUCE the
+    /// realization set, and this reduced it from {native} to {} for the
+    /// weakest fact expressible. It is also a law.infer.one violation standing
+    /// in the backend — a source spelling that restates nothing was changing
+    /// the realization.
+    ///
+    /// The two were already the same value downstream: the C backend renders
+    /// `.inferred` as the string "any" (see the `.inferred => "any"` arms),
+    /// and `resolve_type` answers `.any` for both.
+    ///
+    /// THIS DOES NOT WIDEN WHAT LOWERS. Folding only removes the spelling test;
+    /// every body still faces `block_is_native_scalar` and the per-argument
+    /// checks. Measured on bodies that genuinely are not native scalars —
+    /// `f = (x: i64) { a = x }` and a body returning a table on one path and an
+    /// integer on the other — both still refuse, on `print-arg:any`, which is
+    /// the real reason rather than the spelling. The refusal moves to the
+    /// truth; it does not disappear.
+    ///
+    /// Deliberately NOT applied to parameters. A parameter's descriptor is
+    /// fixed by its call sites, not by the body, so `param-type:any` is a
+    /// genuine missing fact and folding it would be unsound.
+    fn native_ret_contract(fb: *const ast.FuncBody) ast.TypeExpr {
+        const ret = contract_ret(fb);
+        return if (type_expr_is_explicit_any(ret)) .inferred else ret;
+    }
+
     fn primitive_descriptor_name(name: []const u8) ?[]const u8 {
         for ([_][]const u8{
             "i8",  "i16", "i32",  "i64",
@@ -24721,7 +24762,10 @@ pub const CodeGen = struct {
     }
 
     fn func_decl_blocks_full_native_ast(fd: *const ast.FuncDecl) bool {
-        if (type_expr_is_explicit_any(fd.func.ret_type)) return true;
+        // The RETURN spelling is not a blocker; see `native_ret_contract`.
+        // `any` and an omitted annotation are one statement, and only the
+        // parameter case below is a real missing fact.
+        _ = type_expr_is_explicit_any(fd.func.ret_type);
         for (fd.func.params) |param| {
             if (type_expr_is_explicit_any(param.typ)) return true;
         }
