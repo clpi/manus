@@ -4343,6 +4343,29 @@ pub const Sema = struct {
                         return ft;
                     }
                 }
+                // A DECLARED RECORD HAS A CLOSED FIELD SET, so a read of a
+                // field it does not have is an error and not "dynamic".
+                // Falling through to `.any` here is why
+                //     cell: { x: i64 }
+                //     c: cell = { x = 5 }
+                //     c.y
+                // reported "checked — no errors" and was caught only by the
+                // BACKEND, and by accident — `fp stack slot 'c.y' has no
+                // register`, a missing slot rather than a type law. Every
+                // `idol check` count in this repository was inflated by
+                // exactly this class. Construction already refuses the
+                // mirror-image case ("descriptor '{s}' has no field '{s}'");
+                // this is the read face of the same law.
+                if (ot == .@"struct") {
+                    if (self.aliasRecordLacksField(ot.@"struct".name, f.field)) {
+                        self.err(
+                            f.loc,
+                            "descriptor '{s}' has no field '{s}', so reading '{s}' names nothing the subject carries",
+                            .{ ot.@"struct".name, f.field, f.field },
+                        );
+                        return .any;
+                    }
+                }
                 return .any; // otherwise, field access is dynamic
             },
             .index => |idx| {
@@ -6959,6 +6982,24 @@ pub const Sema = struct {
     }
 
     /// Field type from a descriptor alias (`Vec: @{ x: i32 }`) for static member access.
+    /// Whether `alias_name` names a record with a CLOSED field set that does
+    /// not contain `field_name`. Distinguishes "this record lacks the field"
+    /// from "this alias is not a record at all", which `field_type_of_alias`
+    /// cannot: it returns null for both.
+    fn aliasRecordLacksField(self: *Sema, alias_name: []const u8, field_name: []const u8) bool {
+        const ad = self.alias_defs.get(alias_name) orelse return false;
+        var closed = ad.fields.len > 0;
+        for (ad.fields) |f| if (std.mem.eql(u8, f.name, field_name)) return false;
+        if (ad.target) |target| switch (target) {
+            .record => |rec| {
+                closed = true;
+                for (rec.fields) |f| if (std.mem.eql(u8, f.name, field_name)) return false;
+            },
+            else => return false, // aliases something that is not a record
+        };
+        return closed;
+    }
+
     fn field_type_of_alias(self: *Sema, alias_name: []const u8, field_name: []const u8) SemaError!?RT {
         const ad = self.alias_defs.get(alias_name) orelse return null;
         for (ad.fields) |f| {
