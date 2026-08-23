@@ -49,7 +49,15 @@ while IFS= read -r f; do
     # keyed on that classified the entire corpus as failing.
     # The two authoritative markers are the compiler's own: `✓` = it produced
     # and ran an artifact, `error:` = it refused.
-    ok="$(printf '%s' "$e" | grep -c '^✓')"
+    # BOTH SUCCESS SPELLINGS, because the compiler has two and they are not
+    # interchangeable: a COLD compile prints `  ok compile (35 ms — ./x.out)`
+    # and only a CACHE HIT prints `✓ ./x.out (cached)`. Keying on `✓` alone
+    # made this census measure CACHE STATE rather than the compiler: the same
+    # tree scored 230 compile+run warm and 4 cold, and every `zig build`
+    # relink flipped it, because the compiler's size and mtime are in the
+    # build cache key so a rebuild invalidates every entry at once. That
+    # produced a 227-program phantom regression twice.
+    ok="$(printf '%s' "$e" | grep -cE '^✓|ok compile')"
     err="$(printf '%s' "$e" | grep -c -E '^error:|: error: ')"
     diag="$(printf '%s' "$e" | grep -m1 -E 'missing:|DNB[0-9]+')"
     if [ -n "$diag" ]; then
