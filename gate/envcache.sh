@@ -127,8 +127,48 @@ VALUES='1 0 EMPTY'
 
 value_of() { [ "$1" = EMPTY ] && printf '' || printf '%s' "$1"; }
 
+# A GENERIC VALUE SET CANNOT PROBE A PATH-SHAPED INPUT, and a gate that probes
+# the wrong values reports inert and moves on. `SDKROOT=1` is not an SDK: the
+# toolchain ignores or rejects it, the bytes do not move, and the gate would
+# have declared code-affecting-by-measurement the one thing it must never
+# declare -- that this input does not matter. So a name whose values are paths
+# gets real ones, discovered on this machine, and if none can be discovered the
+# gate says the name went UNPROBED rather than calling it inert.
+ALT_SDK=''
+for _c in /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
+          /Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk; do
+    [ -d "$_c" ] && { ALT_SDK=$_c; break; }
+done
+if [ -z "$ALT_SDK" ]; then
+    for _c in /Library/Developer/CommandLineTools/SDKs/*.sdk; do
+        [ -d "$_c" ] || continue
+        [ "$_c" = "$(xcrun --show-sdk-path 2>/dev/null)" ] && continue
+        ALT_SDK=$_c; break
+    done
+fi
+
+values_for() {
+    case $1 in
+        SDKROOT) [ -n "$ALT_SDK" ] && printf '%s' "$ALT_SDK" || printf '' ;;
+        # A FACTOR IS NOT A BOOLEAN. `IDOL_UNROLL` selects an unroll factor:
+        # `off`/`0`/`1` sever, 2..16 choose. MEASURED on this tree, on the
+        # runtime-bound reduce subject: the severing spellings now produce bytes
+        # IDENTICAL to the default, because the default plan no longer fires on
+        # that loop -- while `=2` and `=8` still differ. Probed with {1,0,''}
+        # alone this variable reports inert and leaves §3 with nothing to hold
+        # the key to, which is how a modelled name quietly stops being tested.
+        IDOL_UNROLL) printf 'off 2 8' ;;
+        *)       printf '%s' "$VALUES" ;;
+    esac
+}
+
 printf 'envcache gate -- compiler %s\n' "$idol"
 printf '  subjects: %s\n' "$SUBJECTS"
+if [ -n "$ALT_SDK" ]; then
+    printf '  SDKROOT probe value: %s\n' "$ALT_SDK"
+else
+    printf '  SDKROOT probe value: NONE FOUND -- SDKROOT will report UNPROBED, not inert\n'
+fi
 
 # ---------------------------------------------------------------------------
 # §1 THE REGISTRY IS THE COMPILER'S, AND IT IS EXHAUSTIVE.
@@ -283,8 +323,8 @@ while IFS="$TAB" read -r V CLASS; do
     HIT=''; PROBED=0; REFUSED_HERE=0
     for S in $SUBJECTS; do
         [ -f "$work/base.$S.d/p.out" ] || continue
-        for TOK in $VALUES; do
-            VAL=$(value_of "$TOK")
+        for TOK in $(values_for "$V"); do
+            case $V in SDKROOT|IDOL_UNROLL) VAL=$TOK ;; *) VAL=$(value_of "$TOK") ;; esac
             D="$work/fresh"; rm -rf "$D" "$work/fc"
             run "$work/fc" "$D/p.out" "$work/$S.id" "$V=$VAL"
             if [ ! -f "$D/p.out" ]; then
@@ -347,7 +387,7 @@ printf '\n  §3 negative control -- warm cache must not serve the unset-env arti
 
 while IFS="$TAB" read -r V CLASS S TOK; do
     [ -n "$V" ] || continue
-    VAL=$(value_of "$TOK")
+    case $V in SDKROOT|IDOL_UNROLL) VAL=$TOK ;; *) VAL=$(value_of "$TOK") ;; esac
 
     # A cache root that holds exactly one thing: the V-unset artifact.
     WARM="$work/warm.root"; rm -rf "$WARM"
