@@ -107,9 +107,20 @@ DECLARED='gate/architecture-roadmap.sh gate/coverage.sh'
 #   gate/researchgap.sh — invisible until the launcher fix below. It execs
 #     `tools/node/dev/gapc0`, which the plant did not provide, so it died at
 #     126 and was scored SOUND. With the stub present it REACHES its
-#     measurement, finds nothing, prints nothing and exits 0. Confirmed by
-#     hand on a scaffold containing only the gate, a silent `gapc0` and an
-#     empty git repo: rc=0, no output.
+#     measurement, finds nothing, prints nothing and exits 0.
+#
+#     RE-VERIFIED BY HAND, and the contrast is the whole finding — run
+#     `sh gate/researchgap.sh` in this tree and again on a scaffold holding
+#     only the gate, a silent `gapc0` and an empty git repo:
+#
+#       real tree     `gapc0: … GAPs in range, … research GAPs C0-checked,
+#                      0 violations`                                  rc=0
+#       empty tree    (no output whatsoever)                          rc=0
+#
+#     One census examined every GAP in the tree; the other examined none.
+#     The gate reports the same verdict for both, so nothing it prints or
+#     returns can tell a reader which of the two happened. That is this
+#     harness's invariant stated in one gate.
 KNOWNVACUOUS='gate/posix.sh gate/researchgap.sh'
 
 # ── crashed under HOLLOW before reaching a measurement ─────────────────────
@@ -151,7 +162,7 @@ fi
 # ONE SCRATCH PARENT, torn down on EXIT AND ON SIGNALS. Every scaffold and the
 # transcript live under it, so there is no path — normal, refusing, or
 # interrupted — that leaves a planted tree behind. Per-scaffold `rm -rf` calls
-# remain, because 44 gates x 2 plants should not all sit on disk at once.
+# remain, because every gate x 2 plants should not all sit on disk at once.
 scratch=$(mktemp -d) || { echo "vacuity: cannot allocate scratch" >&2; exit 2; }
 cleanup() { rm -rf -- "$scratch"; }
 trap 'cleanup' EXIT
@@ -167,7 +178,7 @@ say_file="$scratch/say"
 # coreutils; the `timeout` first on PATH here is a PERL SCRIPT that rejects the
 # switch and exits 25. Every plant then returned 25, every gate looked non-zero
 # on both, and the whole report would have been a uniform silent SOUND — the
-# instrument reporting 46 facts it had not measured, in the file written to
+# instrument reporting one fact per gate that it had not measured, in the file written to
 # forbid exactly that. The canary self-test below caught it.
 #
 # So each capability is DEMONSTRATED on a command with a known answer before it
@@ -287,7 +298,7 @@ verdict_of() {
 
 # ═══ SELF-TEST: the harness must convict a gate it KNOWS is vacuous ════════
 # The worst defect this file could ship is the one it exists to catch, so it
-# is not permitted to report on 43 gates without first demonstrating, on this
+# is not permitted to report on the gate home without first demonstrating, on this
 # run, that its own verdict function can say VACUOUS at all. Two canaries: one
 # that examines nothing and exits 0, one that refuses when its subject is
 # absent. Misclassify either and nothing below is printed.
