@@ -14,21 +14,19 @@ add: i64 = (a: i64, b: i64)
 mul: i64 = (a: i64, b: i64)
     return a * b
 
-# Same function, different call shapes at each site:
-main(): i64
-    # Shape 1: add(i64, i64) → i64, single return consumed
-    x: i64 = add(10, 20)
+# Same function, different call shapes at each site. The module root is the
+# process observation; no source `main` relation is manufactured for the ABI.
+# Shape 1: add(i64, i64) → i64, single return consumed
+_x: i64 = add(10, 20)
 
-    # Shape 2: add(i64, i64), result discarded (could elide entire call if pure)
-    add(1, 2)
+# Shape 2: add(i64, i64), result discarded (could elide entire call if pure)
+add(1, 2)
 
-    # Shape 3: mul with same shape as add — same arg_count, same typed mask
-    y: i64 = mul(x, 3)
+# Shape 3: mul with same shape as add — same arg_count, same typed mask
+_y: i64 = mul(_x, 3)
 
-    # Shape 4: different arg count calls
-    print(x)
-    print(y)
+# Shape 4: different arg count calls
+print(_x)
+print(_y)
 
-    return y
-
-main()
+_y
