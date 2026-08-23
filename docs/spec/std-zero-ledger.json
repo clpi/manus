@@ -1,0 +1,2247 @@
+{
+ "schema": "std-zero-ledger/1",
+ "owner": "GAP-157 (P0, open) \u00b7 law.std.zero \u00b7 docs/spec/world.md STD-ZERO",
+ "measured_at": {
+  "commit": "f1ba66f1d1321655fcbe687236d2d6021df8e0d7",
+  "ref": "origin/main",
+  "date": "2026-08-22"
+ },
+ "population": {
+  "verb": "git ls-files '*.id' on a real clone (GAP-220: archive mirrors return zero)",
+  "tracked_id_files": 1013,
+  "files_with_any_std_token": 94
+ },
+ "counting_rule": {
+  "token": "word-bounded `std.` \u2014 regex (?<![A-Za-z0-9_])std\\.",
+  "position": "a lexer-accurate split per docs/spec/grammar.md: `\"` text, `'` bytes, `#` line comment",
+  "chargeable": "ONLY code-position sites. A std. inside a string literal or a comment resolves no home and cannot be a law.std.zero violation.",
+  "measurement_hazard": "`grep -E '(^|[^A-Za-z0-9_])std\\.'` returns 0 on gate/idiom.id under ugrep 7.5.0 (the `grep` on this host) while /usr/bin/grep returns 18. Do not build this ratchet on grep -E alternation.",
+  "not_this": "tools/node/dev/hostcensus `std_dot` is `git grep -F 'std.'` over *.id *.zig *.md *.mdc *.yaml *.ts and reports 13325 \u2014 of which 12631 are *.zig `@import(\"std\")`, which docs/spec/convergence-directive.md \u00a76 states explicitly is NOT an Idol violation. That counter cannot serve as the GAP-157 ratchet."
+ },
+ "verbs": {
+  "check": "./zig-out/bin/idol check <file>",
+  "direct": "./zig-out/bin/idol compile --backend=direct <file> -o /dev/null"
+ },
+ "totals": {
+  "files": 94,
+  "sites_code": 350,
+  "sites_string": 114,
+  "sites_comment": 83,
+  "files_by_class": {
+   "canonical": 40,
+   "negative-fixture": 1,
+   "historical": 6,
+   "compatibility": 47
+  },
+  "code_sites_by_class": {
+   "canonical": 335,
+   "negative-fixture": 1,
+   "historical": 14,
+   "compatibility": 0
+  },
+  "chargeable_code_sites": 335,
+  "check_pass": 81,
+  "direct_pass": 8,
+  "gate_token_count": 512
+ },
+ "ratchet": {
+  "charge": "class == 'canonical' \u2192 sites.code",
+  "exempt": "class in {'compatibility','negative-fixture'} \u2192 sites.code is frozen at code_budget and must not rise",
+  "retire": "class == 'historical' \u2192 the file leaves the tree; its budget leaves with it",
+  "monotone": "no entry's sites.code may exceed its code_budget; no new path may be added at class 'canonical' with sites.code > 0",
+  "added_line_firewall": "the firewall must also run on REVERT commits \u2014 37 of the 44 net code-position sites added since the 2026-08-14 'std elimination complete' claim (2d2ff63b) arrived through two reverts, b45d9a38 (+34/-0) and 37734161 (+3/-0)"
+ },
+ "files": [
+  {
+   "path": "benchmarks/wasm_rt/conform/run_spec.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 3,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 3,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 3,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "benchmarks/wasm_rt/run.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 8,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 8,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 9,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "examples/compile_fail/world_std_os.id",
+   "class": "negative-fixture",
+   "kind": "fixture",
+   "sites": {
+    "code": 1,
+    "string": 0,
+    "comment": 2
+   },
+   "code_budget": 1,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "compile_fail fixture for law.std.zero; MEASURED: stripping the prefix makes it compile (rc 0) and destroys the fixture",
+   "migration_probe": {
+    "direct_before": "'std' is not semantic authority, so 'std.os.exit' routes the 'os' world through a namespace root that owns none (c0 law.std.zero: 'std is migration distribution and foreign provenance, never semantic ",
+    "direct_after": "OK",
+    "direct_after_pass": true,
+    "check_before": "'std' is not semantic authority, so 'std.os.exit' routes the 'os' world through a namespace root that owns none (c0 law.std.zero: 'std is migration distribution and foreign provenance, never semantic ",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 3,
+   "gate_overcharge": 2
+  },
+  {
+   "path": "examples/ml_showcase.id",
+   "class": "historical",
+   "kind": "review-for-deletion",
+   "sites": {
+    "code": 0,
+    "string": 5,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "req(\"std.ml.nn\") \u2014 req architecture deleted (MODULE-ZERO); zero executable references; check fails",
+   "gate_token_count": 5,
+   "gate_overcharge": 5
+  },
+  {
+   "path": "examples/pretty_trace.id",
+   "class": "compatibility",
+   "kind": "data",
+   "sites": {
+    "code": 0,
+    "string": 1,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "trace payload data, a fictional module name",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "examples/req_splice_table_constant_proof.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "examples/std_metaprogramming_modules_smoke.id",
+   "class": "historical",
+   "kind": "delete-file",
+   "sites": {
+    "code": 7,
+    "string": 20,
+    "comment": 0
+   },
+   "code_budget": 7,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "line 1 is `std = std`; zero references outside gaps/GAP-101.md, which records it FAIL; does not parse",
+   "migration_probe": {
+    "direct_before": "expected expression, got 'return'",
+    "direct_after": "expected expression, got 'return'",
+    "direct_after_pass": false,
+    "check_before": "expected expression, got 'return'",
+    "check_after": "expected expression, got 'return'",
+    "check_after_pass": false
+   },
+   "lines_last_touched_after_claim": 5,
+   "gate_token_count": 27,
+   "gate_overcharge": 20
+  },
+  {
+   "path": "examples/stdlib_comprehensive_test.id",
+   "class": "historical",
+   "kind": "review-for-deletion",
+   "sites": {
+    "code": 0,
+    "string": 8,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "section labels for a `std.*` stdlib that no longer exists; zero references anywhere",
+   "gate_token_count": 8,
+   "gate_overcharge": 8
+  },
+  {
+   "path": "gate/admission.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 3,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "admission gate rule text + its own positive control",
+   "gate_token_count": 2,
+   "gate_overcharge": 2
+  },
+  {
+   "path": "gate/architecture.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 1,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "reason": "architecture gate control command text",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "gate/host.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 7,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "host/world gate rule text (law.host.namespace)",
+   "gate_token_count": 5,
+   "gate_overcharge": 5
+  },
+  {
+   "path": "gate/idiom.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 18,
+    "comment": 3
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "gate ratchet rule text (GAP-157 ratchet); law.gate.projection",
+   "gate_token_count": 18,
+   "gate_overcharge": 18
+  },
+  {
+   "path": "gate/path.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 1,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "pass",
+   "in_build_zig": false,
+   "reason": "law.std.zero diagnostic text emitted by the path gate",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "gate/probe.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 15,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "gate ratchet rule text (idiom sibling)",
+   "gate_token_count": 12,
+   "gate_overcharge": 12
+  },
+  {
+   "path": "lib/bufio.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/compiler/arm64.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/compiler/comptime.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/compiler/emit_c.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 3,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 3,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "no process: a file-scope tail is the program, or one zero-arg function, or --entry <name>",
+    "direct_after": "no process: a file-scope tail is the program, or one zero-arg function, or --entry <name>",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 3,
+   "gate_token_count": 4,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/compiler/parser.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/crypto.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 3
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 3,
+   "gate_overcharge": 3
+  },
+  {
+   "path": "lib/encoding/pem.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 2,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 2,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 2,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "lib/fn.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 3
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 3,
+   "gate_overcharge": 3
+  },
+  {
+   "path": "lib/graphics/audio.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 12,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 12,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies \u2014 write 'f:read(\u2026)' (c0 law.subject.res",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies \u2014 write 'f:read(\u2026)' (c0 law.subject.res",
+    "check_after_pass": false
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 12,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "lib/graphics/image.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 2
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 2,
+   "gate_overcharge": 2
+  },
+  {
+   "path": "lib/hash/maphash.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 1,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 1,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 1,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "lib/image/gif.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/jit.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/meta/codegen.id",
+   "class": "compatibility",
+   "kind": "data",
+   "sites": {
+    "code": 0,
+    "string": 1,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "doc string listing agent hook names",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/ml/deploy.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 19,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 19,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "no process: a file-scope tail is the program, or one zero-arg function, or --entry <name>",
+    "direct_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies \u2014 write 'f:read(\u2026)' (c0 law.subject.res",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies \u2014 write 'f:read(\u2026)' (c0 law.subject.res",
+    "check_after_pass": false
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 19,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "lib/nativespliceprobe.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "pass",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/net/rpc.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 8,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 8,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 8,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "lib/net/ws.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 3,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 3,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 3,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "lib/rewrite.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/script.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 0,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "lib/splicetableprobe.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "pass",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/std.id",
+   "class": "compatibility",
+   "kind": "tombstone",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "pass",
+   "in_build_zig": false,
+   "reason": "the GAP-157 tombstone itself: the prohibition is written here",
+   "gate_token_count": 0,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "lib/unicode.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "lib/wasm.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 6,
+    "string": 0,
+    "comment": 2
+   },
+   "code_budget": 6,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 3,
+   "gate_token_count": 8,
+   "gate_overcharge": 2
+  },
+  {
+   "path": "probe.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 1,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "pass",
+   "in_build_zig": false,
+   "reason": "one-line probe fixture; the literal is the payload",
+   "gate_token_count": 0,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/applyone.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 2
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 2,
+   "gate_overcharge": 2
+  },
+  {
+   "path": "scripts/audit100.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 1,
+    "comment": 8
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "reason": "census row label",
+   "gate_token_count": 9,
+   "gate_overcharge": 9
+  },
+  {
+   "path": "scripts/bootstrap_scan.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 2,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 2,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB011 application: 51 relation: capture missing: unresolved-application-facts consumer: native realization producer: graph",
+    "direct_after": "linker command failed with exit code 1 (use -v to see invocation)",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 2,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/capability_matrix.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 4,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 4,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "indentation matches no block: this line starts at column 9, its block's statements start at column 5",
+    "direct_after": "indentation matches no block: this line starts at column 9, its block's statements start at column 5",
+    "direct_after_pass": false,
+    "check_before": "indentation matches no block: this line starts at column 9, its block's statements start at column 5",
+    "check_after": "indentation matches no block: this line starts at column 9, its block's statements start at column 5",
+    "check_after_pass": false
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 5,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "scripts/capability_rows.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 6,
+    "string": 4,
+    "comment": 2
+   },
+   "code_budget": 6,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 2,
+   "gate_token_count": 12,
+   "gate_overcharge": 6
+  },
+  {
+   "path": "scripts/capability_scan.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 3,
+    "string": 0,
+    "comment": 3
+   },
+   "code_budget": 3,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB011 application: 229 relation: getenv missing: unresolved-application-facts consumer: native realization producer: graph",
+    "direct_after": "direct backend: DNB001 application: 103 relation: head missing: concat consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 4,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "scripts/capability_table.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 4,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 4,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "expected expression, got '+'",
+    "direct_after": "expected expression, got '+'",
+    "direct_after_pass": false,
+    "check_before": "expected expression, got '+'",
+    "check_after": "expected expression, got '+'",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 2,
+   "gate_token_count": 5,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "scripts/census/chained/comparison.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "scripts/census/native.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 2,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "census needle inside embedded shell scan",
+   "gate_token_count": 2,
+   "gate_overcharge": 2
+  },
+  {
+   "path": "scripts/census/projection.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 1,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "pass",
+   "in_build_zig": false,
+   "reason": "census output label ('std. references')",
+   "gate_token_count": 0,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/cfloor.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 6,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 6,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB011 application: 99 relation: chomp missing: unresolved-application-facts consumer: native realization producer: graph",
+    "direct_after": "direct backend: DNB001 application: 174 relation: note missing: concat consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 4,
+   "gate_token_count": 6,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/chained_comparison_census.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "scripts/contract.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 5,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 5,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB011 application: 40 relation: chomp missing: unresolved-application-facts consumer: native realization producer: graph",
+    "direct_after": "direct backend: DNB011 application: 117 relation: shout missing: application-realization-count consumer: native realization producer: graph",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 5,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/corpus_classify.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 10,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 10,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 1,
+   "gate_token_count": 10,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/grammarconvergence.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "pass",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 0,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/id.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 21,
+    "string": 1,
+    "comment": 0
+   },
+   "code_budget": 21,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: block-tail-no-return consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: block-tail-no-return consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 4,
+   "gate_token_count": 22,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "scripts/init_build_smoke.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 7,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 7,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB011 application: 25 relation: status missing: unresolved-application-facts consumer: native realization producer: graph",
+    "direct_after": "direct backend: DNB011 application: 54 relation: run missing: application-realization-count consumer: native realization producer: graph",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 7,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/luahost.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 12,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 12,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB011 application: 18 relation: chomp missing: unresolved-application-facts consumer: native realization producer: graph",
+    "direct_after": "direct backend: DNB011 application: 43 relation: shout missing: application-realization-count consumer: native realization producer: graph",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 13,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "scripts/native_census.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 2,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "reason": "census needle inside embedded shell scan",
+   "gate_token_count": 2,
+   "gate_overcharge": 2
+  },
+  {
+   "path": "scripts/native_differential.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 11,
+    "string": 0,
+    "comment": 3
+   },
+   "code_budget": 11,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 3,
+   "gate_token_count": 14,
+   "gate_overcharge": 3
+  },
+  {
+   "path": "scripts/nominal_zero_cost.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 6,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 6,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "expected expression, got '/'",
+    "direct_after": "expected expression, got '/'",
+    "direct_after_pass": false,
+    "check_before": "expected expression, got '/'",
+    "check_after": "expected expression, got '/'",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 6,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/projection_census.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 1,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "pass",
+   "in_build_zig": false,
+   "reason": "census output label ('std. references')",
+   "gate_token_count": 0,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/proof/ambientfold.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "scripts/proof/convert.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 9,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 9,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB011 application: 37 relation: run missing: unresolved-application-facts consumer: native realization producer: graph",
+    "direct_after": "direct backend: DNB001 application: 66 relation: verdict missing: concat consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 9,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/proof/core.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 3,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "reason": "STD-ZERO proof needle",
+   "gate_token_count": 0,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/proof/fs.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 2,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "reason": "STD-ZERO proof needle",
+   "gate_token_count": 0,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/proof/semantic.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 1,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "reason": "STD-ZERO proof needle",
+   "gate_token_count": 0,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/proof/str.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 2,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "proof failure-message text",
+   "gate_token_count": 2,
+   "gate_overcharge": 2
+  },
+  {
+   "path": "scripts/proof/zerostd.id",
+   "class": "compatibility",
+   "kind": "guard-needle",
+   "sites": {
+    "code": 0,
+    "string": 6,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "reason": "STD-ZERO proof: asserts named files do NOT contain the needle",
+   "gate_token_count": 0,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/realize.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 11,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 11,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "'std' is not semantic authority, so 'std.os.exit' routes the 'os' world through a namespace root that owns none (c0 law.std.zero: 'std is migration distribution and foreign provenance, never semantic ",
+    "direct_after": "direct backend: DNB011 application: 106 relation: shout missing: application-realization-count consumer: native realization producer: graph",
+    "direct_after_pass": false,
+    "check_before": "'std' is not semantic authority, so 'std.os.exit' routes the 'os' world through a namespace root that owns none (c0 law.std.zero: 'std is migration distribution and foreign provenance, never semantic ",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 9,
+   "gate_token_count": 11,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/recognition_scan.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 29,
+    "string": 3,
+    "comment": 7
+   },
+   "code_budget": 29,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB011 application: 102 relation: chomp missing: unresolved-application-facts consumer: native realization producer: graph",
+    "direct_after": "direct backend: DNB001 application: 108 relation: capture missing: concat consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 1,
+   "gate_token_count": 38,
+   "gate_overcharge": 9
+  },
+  {
+   "path": "scripts/reproducibility_smoke.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 6,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 6,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB011 application: 16 relation: run missing: unresolved-application-facts consumer: native realization producer: graph",
+    "direct_after": "linker command failed with exit code 1 (use -v to see invocation)",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 6,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/run_compile_size_benchmark.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 2,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 2,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 2,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/run_cross_benchmark.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 14,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 14,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 1,
+   "gate_token_count": 14,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/run_gpu_benchmark.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 10,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 10,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB011 application: 15 relation: chomp missing: unresolved-application-facts consumer: native realization producer: graph",
+    "direct_after": "direct backend: DNB001 application: 38 relation: run missing: unspecified consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 3,
+   "gate_token_count": 10,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/run_wasm_benchmark.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 21,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 21,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 21,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/runtime_bench.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 21,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 21,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 22,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "scripts/semantic_harness.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 7,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 7,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "migration_probe": {
+    "direct_before": "write `name` at this token edge",
+    "direct_after": "write `name` at this token edge",
+    "direct_after_pass": false,
+    "check_before": "write `name` at this token edge",
+    "check_after": "write `name` at this token edge",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 1,
+   "gate_token_count": 7,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/spec_conformance.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 4,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 4,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: expr-unhandled:vararg consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: expr-unhandled:vararg consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 4,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/stdlib_correctness_gate.id",
+   "class": "historical",
+   "kind": "delete-file",
+   "sites": {
+    "code": 7,
+    "string": 0,
+    "comment": 6
+   },
+   "code_budget": 7,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "standing ruling docs/spec/path-migration.md:26 'delete under GAP-157'; no executable reference; does not parse",
+   "migration_probe": {
+    "direct_before": "expected function arguments",
+    "direct_after": "expected function arguments",
+    "direct_after_pass": false,
+    "check_before": "expected function arguments",
+    "check_after": "expected function arguments",
+    "check_after_pass": false
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 13,
+   "gate_overcharge": 6
+  },
+  {
+   "path": "scripts/stdlib_embed_gate.id",
+   "class": "historical",
+   "kind": "delete-file",
+   "sites": {
+    "code": 0,
+    "string": 2,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "standing ruling docs/spec/path-migration.md:25 'delete under GAP-157'; only referrer is the other dead gate; its sed MINTS std. names from lib/ paths",
+   "gate_token_count": 0,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/test_property_12.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 2,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 2,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB011 application: 28 relation: run missing: unresolved-application-facts consumer: native realization producer: graph",
+    "direct_after": "direct backend: DNB001 application: 30 relation: _next_rand missing: concat consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 2,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/test_wasm_execution.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 13,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 13,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 1,
+   "gate_token_count": 13,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "scripts/transform.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 4,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 4,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 4,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "tools/wasm/bench/derived.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "tools/wasm/bench/perf.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "tools/wasm/bench/run.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 4,
+    "string": 0,
+    "comment": 2
+   },
+   "code_budget": 4,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 6,
+   "gate_overcharge": 2
+  },
+  {
+   "path": "tools/wasm/bench/six.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "tools/wasm/bench/verify.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 14,
+    "string": 0,
+    "comment": 0
+   },
+   "code_budget": 14,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "expected expression, got 'else'",
+    "direct_after": "expected expression, got 'else'",
+    "direct_after_pass": false,
+    "check_before": "expected expression, got 'else'",
+    "check_after": "expected expression, got 'else'",
+    "check_after_pass": false
+   },
+   "lines_last_touched_after_claim": 12,
+   "gate_token_count": 14,
+   "gate_overcharge": 0
+  },
+  {
+   "path": "tools/wasm/bench/wart.id",
+   "class": "canonical",
+   "kind": "migrate",
+   "sites": {
+    "code": 2,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 2,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "migration_probe": {
+    "direct_before": "direct backend: DNB001 application: unknown missing: mod-top-stmt:if_stmt consumer: native realization producer: dnir lower",
+    "direct_after": "direct backend: DNB001 application: unknown missing: mod-top-stmt:if_stmt consumer: native realization producer: dnir lower",
+    "direct_after_pass": false,
+    "check_before": "OK",
+    "check_after": "OK",
+    "check_after_pass": true
+   },
+   "lines_last_touched_after_claim": 0,
+   "gate_token_count": 3,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "tools/wasm/src/engine.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "tools/wasm/src/wasm/jit.id",
+   "class": "historical",
+   "kind": "review-for-deletion",
+   "sites": {
+    "code": 0,
+    "string": 2,
+    "comment": 0
+   },
+   "code_budget": 0,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "inert `req \"std.os\"` / `req \"std.fmt\"` header lines; req is deleted architecture",
+   "gate_token_count": 2,
+   "gate_overcharge": 2
+  },
+  {
+   "path": "tools/wasm/src/wasm/simd.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 1
+   },
+   "code_budget": 0,
+   "check": "fail",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  },
+  {
+   "path": "tools/wasm/test/conform.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 2
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": true,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 2,
+   "gate_overcharge": 2
+  },
+  {
+   "path": "tools/wasm/tools/opcodes.id",
+   "class": "compatibility",
+   "kind": "prose",
+   "sites": {
+    "code": 0,
+    "string": 0,
+    "comment": 3
+   },
+   "code_budget": 0,
+   "check": "pass",
+   "direct": "fail",
+   "in_build_zig": false,
+   "reason": "std. appears only inside a `#` comment; it never resolves a home",
+   "gate_token_count": 1,
+   "gate_overcharge": 1
+  }
+ ],
+ "gate_reconciliation": {
+  "consumer": "gate/admission.sh + gate/std-fixtures.manifest",
+  "gate_regex": "(^|[^A-Za-z0-9_])std\\.[A-Za-z_]  \u2014 same token, but position-blind",
+  "gate_reports_at_f1ba66f1": {
+   "total": 512,
+   "pinned": 39,
+   "counted_against_budget": 473,
+   "pinned_files": 6
+  },
+  "this_ledger_says": {
+   "total_word_bounded": 547,
+   "gate_misses": "35 bare `std.` with no identifier after the dot (print(\"std.\"), flag(..., \"std.\", ...)) \u2014 the gate's [A-Za-z_] tail excludes them; all 35 are in strings or comments, so the miss is harmless",
+   "chargeable_code_sites": 335,
+   "correct_budget": 335
+  },
+  "action": {
+   "1_extend_fixtures": "37 further files carry the token with ZERO code-position sites; adding them takes the pinned set from 6 files/39 to 43 files/127",
+   "2_retire": "6 files are historical; 3 carry a standing 'delete under GAP-157' ruling (docs/spec/path-migration.md:25-26) or bind `std = std` at line 1. Their 55 tokens should leave with the files, not be exempted",
+   "3_split_not_exempt": "14 canonical files are BOTH live debt and partial fixture \u2014 scripts/recognition_scan.id is 29 code sites plus 9 detector/rule-name literals. A whole-file exact pin cannot express that; the gate needs the per-position split this ledger carries in sites{code,string,comment}",
+   "4_budget": "473 -> 335 once (1) and (2) land; 335 is the number that must ratchet to zero"
+  },
+  "proposed_fixture_entries": [
+   {
+    "path": "examples/pretty_trace.id",
+    "count": 1,
+    "kind": "data",
+    "reason": "trace payload data, a fictional module name"
+   },
+   {
+    "path": "examples/req_splice_table_constant_proof.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "gate/admission.id",
+    "count": 2,
+    "kind": "guard-needle",
+    "reason": "admission gate rule text + its own positive control"
+   },
+   {
+    "path": "gate/architecture.id",
+    "count": 1,
+    "kind": "guard-needle",
+    "reason": "architecture gate control command text"
+   },
+   {
+    "path": "gate/host.id",
+    "count": 5,
+    "kind": "guard-needle",
+    "reason": "host/world gate rule text (law.host.namespace)"
+   },
+   {
+    "path": "gate/idiom.id",
+    "count": 18,
+    "kind": "guard-needle",
+    "reason": "gate ratchet rule text (GAP-157 ratchet); law.gate.projection"
+   },
+   {
+    "path": "gate/path.id",
+    "count": 1,
+    "kind": "guard-needle",
+    "reason": "law.std.zero diagnostic text emitted by the path gate"
+   },
+   {
+    "path": "gate/probe.id",
+    "count": 12,
+    "kind": "guard-needle",
+    "reason": "gate ratchet rule text (idiom sibling)"
+   },
+   {
+    "path": "lib/bufio.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/compiler/arm64.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/compiler/comptime.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/compiler/parser.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/crypto.id",
+    "count": 3,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/fn.id",
+    "count": 3,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/graphics/image.id",
+    "count": 2,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/image/gif.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/jit.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/meta/codegen.id",
+    "count": 1,
+    "kind": "data",
+    "reason": "doc string listing agent hook names"
+   },
+   {
+    "path": "lib/nativespliceprobe.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/rewrite.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/splicetableprobe.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "lib/unicode.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "scripts/applyone.id",
+    "count": 2,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "scripts/audit100.id",
+    "count": 9,
+    "kind": "guard-needle",
+    "reason": "census row label"
+   },
+   {
+    "path": "scripts/census/chained/comparison.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "scripts/census/native.id",
+    "count": 2,
+    "kind": "guard-needle",
+    "reason": "census needle inside embedded shell scan"
+   },
+   {
+    "path": "scripts/chained_comparison_census.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "scripts/native_census.id",
+    "count": 2,
+    "kind": "guard-needle",
+    "reason": "census needle inside embedded shell scan"
+   },
+   {
+    "path": "scripts/proof/ambientfold.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "scripts/proof/str.id",
+    "count": 2,
+    "kind": "guard-needle",
+    "reason": "proof failure-message text"
+   },
+   {
+    "path": "tools/wasm/bench/derived.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "tools/wasm/bench/perf.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "tools/wasm/bench/six.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "tools/wasm/src/engine.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "tools/wasm/src/wasm/simd.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "tools/wasm/test/conform.id",
+    "count": 2,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   },
+   {
+    "path": "tools/wasm/tools/opcodes.id",
+    "count": 1,
+    "kind": "prose",
+    "reason": "std. appears only inside a `#` comment; it never resolves a home"
+   }
+  ]
+ }
+}
