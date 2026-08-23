@@ -5240,10 +5240,11 @@ fn do_compile(
                     // artifact kind on its own.
                     //
                     // Refuses unless the observer roster is exactly {program,
-                    // deployment, failure_recovery}, `main` is the entry, nothing
-                    // in the module applies it, every application in the graph is
-                    // resolved, the body is one counted loop over a trap-free
-                    // grammar whose every operator commutes with the projection,
+                    // deployment, failure_recovery}, the exact selected relation
+                    // id is the entry, nothing in the module applies it, every
+                    // application in the graph is resolved, and the body is one
+                    // counted loop over a trap-free grammar whose every operator
+                    // commutes with the projection,
                     // and the contracted orbit is a fixed point reached before
                     // the loop ends. MEASURED on a 20,000,000-iteration serial
                     // xor/multiply chain: 105,950,622 -> 4,938,857 whole-process
@@ -5257,12 +5258,12 @@ fn do_compile(
                     // 4,630,978 with no observer, 108,363,341 with one, 23.4x,
                     // same exit byte, and the observer never asked for a value.
                     switch (selected_entry) {
-                        .relation => {
-                            _ = try obseq.applyToEntry(alloc, &ps.mod, &direct_graph, global_observer_demand.world(observation.ordinary_executable));
+                        .relation => |relation| {
+                            _ = try obseq.applyToEntry(alloc, &ps.mod, &direct_graph, relation, global_observer_demand.world(observation.ordinary_executable));
                         },
-                        // The physical root is the file-scope program, not the
-                        // unrelated source relation that `applyToEntry` still
-                        // recognizes by its compatibility spelling.
+                        // The physical root is the file-scope program. It is a
+                        // distinct graph identity and has no relation-body
+                        // quotient route.
                         .root => {},
                     }
                     // RUNG 3 -- REDUCE THE COMPLEXITY CLASS, AT THE LOOP
