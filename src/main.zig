@@ -364,11 +364,20 @@ fn behaviourEnvClass(name: []const u8) BehaviourEnvClass {
 /// The point is not the printing. It is that a gate can ask the binary under
 /// test what it believes, so a classification that drifts between the compiler
 /// and the gate is impossible rather than merely unlikely.
-fn do_env_census() void {
+fn do_env_census(io: Io) !void {
+    // STDOUT, not `term`. `term` writes diagnostics to stderr, which is right
+    // for everything it carries and wrong for this: a consumer that reads the
+    // registry off stdout got an EMPTY census and no error, and a gate whose
+    // first act is `idol env-census > rows` then enumerated nothing. Data goes
+    // where data is read from.
+    const stdout = std.Io.File.stdout();
+    var buf: [4096]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
     for (behaviour_env_table) |row| {
-        term.printRaw("{s}\t{s}\n", .{ row[0], @tagName(row[1]) });
+        try fw.interface.print("{s}\t{s}\n", .{ row[0], @tagName(row[1]) });
     }
-    term.printRaw("(unclassified)\t{s}\n", .{@tagName(behaviourEnvClass("IDOL_A_NAME_NOBODY_CLASSIFIED"))});
+    try fw.interface.print("(unclassified)\t{s}\n", .{@tagName(behaviourEnvClass("IDOL_A_NAME_NOBODY_CLASSIFIED"))});
+    try fw.interface.flush();
 }
 
 test "the census names every DUO_/IDOL_ variable the compiler reads" {
@@ -1239,7 +1248,7 @@ fn mainInner(init: std.process.Init) !void {
             term.err("idol env-census takes no file argument", .{});
             std.process.exit(1);
         }
-        do_env_census();
+        try do_env_census(io);
         return;
     }
 
