@@ -119,9 +119,11 @@ cat > "$work/lex.awk" <<'AWK'
 #   THE DENOMINATOR ONLY COUNTS FILES THAT LIFT. This scanner runs inside
 #   the `if "$idol" graph "$src" && jq ...` block, so a refused file
 #   contributes to NEITHER side. The ratio is "of literals in files that
-#   already lift", not "of literals in the corpus". At the time of writing
-#   4655 application candidates are BLOCKING, and none of their files are
-#   in this denominator.
+#   already lift", not "of literals in the corpus". For the size of what is
+#   excluded, read this gate's own `refusal census:` line in the same run —
+#   its BLOCKING count is exactly the population absent from this
+#   denominator. That number is deliberately NOT repeated here: a census
+#   total frozen into a comment rots against the runner that produces it.
 #
 #   THE TWO SIDES COUNT DIFFERENT POPULATIONS. The numerator is
 #   `.exact_i64|length` from the graph export, which may include DERIVED
