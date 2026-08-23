@@ -116,23 +116,23 @@ test {
 // THE DIVISOR-NONZERO OBLIGATION, ACROSS THE LAYERING FIREWALL
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// `/`, `//` and `%` are undefined at a zero divisor, and that one obligation
-/// has to be readable from BOTH sides of `gate/layers.manifest`: the meaning
-/// consumers (`sema`, `demand`) hold an `ast.BinOp`, the realization consumers
-/// (`dnir_lower`, `native_backend`) hold a `dnir.BinOpTag`, and a BACKEND may
-/// not import SEMA. So it is declared twice — `demand_projection.Law
-/// .divisor_nonzero` and `native_ir.BinOpTag.requiresNonzeroDivisor` — and this is the runner
-/// that makes the two declarations one fact rather than two hopes.
-///
-/// IT EXISTS BECAUSE THE DRIFT ALREADY HAPPENED AND NOTHING NOTICED. `//` used
-/// to lower to the `.div` tag; the guard site's hand-kept list, `tag == .div or
-/// tag == .mod`, covered it by accident. Giving `//` its own tag so it could
-/// carry floor law dropped it out of that list, and AArch64 `sdiv` answers 0
-/// instead of faulting, so an opaque runtime zero through `//` returned 0 with
-/// exit 0. The tag split DID break exhaustive switches, and those the compiler
-/// reported (see the `wasm_backend.zig` note above); an `if` comparing two tags
-/// is not a switch, so nothing reported this one. A set equality is what an
-/// exhaustiveness check cannot give you, and it is what this asserts.
+// `/`, `//` and `%` are undefined at a zero divisor, and that one obligation
+// has to be readable from BOTH sides of `gate/layers.manifest`: the meaning
+// consumers (`sema`, `demand`) hold an `ast.BinOp`, the realization consumers
+// (`dnir_lower`, `native_backend`) hold a `dnir.BinOpTag`, and a BACKEND may
+// not import SEMA. So it is declared twice — `demand_projection.Law
+// .divisor_nonzero` and `native_ir.BinOpTag.requiresNonzeroDivisor` — and this is the runner
+// that makes the two declarations one fact rather than two hopes.
+//
+// IT EXISTS BECAUSE THE DRIFT ALREADY HAPPENED AND NOTHING NOTICED. `//` used
+// to lower to the `.div` tag; the guard site's hand-kept list, `tag == .div or
+// tag == .mod`, covered it by accident. Giving `//` its own tag so it could
+// carry floor law dropped it out of that list, and AArch64 `sdiv` answers 0
+// instead of faulting, so an opaque runtime zero through `//` returned 0 with
+// exit 0. The tag split DID break exhaustive switches, and those the compiler
+// reported (see the `wasm_backend.zig` note above); an `if` comparing two tags
+// is not a switch, so nothing reported this one. A set equality is what an
+// exhaustiveness check cannot give you, and it is what this asserts.
 test "divisor obligation: IR and relation law agree" {
     const ast = @import("ast.zig");
     const dnir = @import("native_ir.zig");
@@ -140,8 +140,8 @@ test "divisor obligation: IR and relation law agree" {
     const demand_projection = @import("demand_projection.zig");
 
     var carriers: usize = 0;
-    inline for (@typeInfo(ast.BinOp).@"enum".fields) |field| {
-        const op: ast.BinOp = @enumFromInt(field.value);
+    inline for (@typeInfo(ast.BinOp).@"enum".field_values) |value| {
+        const op: ast.BinOp = @enumFromInt(value);
         const law = demand_projection.lawsOf(op).divisor_nonzero;
         if (dnir_lower.binopTagOf(op)) |tag| {
             // A relation this substrate realizes as a binop. The two
