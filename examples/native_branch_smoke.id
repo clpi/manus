@@ -12,9 +12,11 @@ pick: i64 = (n: i64)
         out = 19
   out
 
-main: i64 = ()
+score: i64 = ()
   a = pick(-1)
   b = pick(0)
   c = pick(11)
   d = pick(5)
   a + b + c + d
+
+score()

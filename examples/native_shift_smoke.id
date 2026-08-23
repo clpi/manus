@@ -1,11 +1,10 @@
 # examples/native_shift_smoke.id
 # Native arm64 lowering of the `<<` / `>>` operators (LSL / ASR) via
 # src/native_backend.zig. No C, no LLVM — direct machine code.
-#
-#   duo run #target native-exe examples/native_shift_smoke.id ; echo $?
-#   -> 48   ((1 << 4) + (256 >> 3) == 16 + 32 == 48)
 
-main: i64 = ()
+shifted: i64 = ()
   a = 1 << 4
   b = 256 >> 3
   a + b
+
+shifted()

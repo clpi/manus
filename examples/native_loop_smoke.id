@@ -10,5 +10,7 @@ sum_to: i64 = (n: i64)
     total = total + i
   total
 
-main: i64 = ()
+total: i64 = ()
   sum_to(8)
+
+total()
