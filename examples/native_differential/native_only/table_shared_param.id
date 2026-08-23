@@ -1,4 +1,4 @@
-# expect: 99
+# expect-exit: 99
 # Native tables, step 4: a table CROSSING A FUNCTION BOUNDARY, mutated by the
 # callee, with the mutation visible to the caller.
 #

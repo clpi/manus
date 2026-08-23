@@ -1,4 +1,4 @@
-# expect: 21
+# expect-exit: 21
 # SH-06 completed slice: a MUTABLE symbol table — declare and look up — written
 # in Duo and compiled to native ARM64.
 #

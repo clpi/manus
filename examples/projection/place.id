@@ -33,7 +33,7 @@
 # patched compiler. `gate/place.sh` now gives every probe a per-run nonce for
 # exactly this reason; a corpus fixture cannot, so its ledger row in
 # `gate/expect.sh` is measured with the cache in whatever state it is in.
-# expect: 5
+# expect-exit: 5
 
 main: i64 = ()
     n = 0

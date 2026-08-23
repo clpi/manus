@@ -1,4 +1,4 @@
-# expect: 2
+# expect-exit: 2
 # SH-11 step 2: a code GENERATOR written in Duo, compiled to native ARM64.
 #
 # `arm64_encoder.id` proved encoding — one instruction to one word. This proves

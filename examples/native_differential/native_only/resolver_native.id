@@ -1,4 +1,4 @@
-# expect: 2
+# expect-exit: 2
 # SH-06 step: name resolution (binding/scopes) written in Duo, compiled to
 # native ARM64.
 #

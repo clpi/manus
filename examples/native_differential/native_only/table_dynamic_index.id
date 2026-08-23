@@ -1,4 +1,4 @@
-# expect: 60
+# expect-exit: 60
 # Native tables, step 2: DYNAMIC indexing — `t[i]` where `i` is a loop variable,
 # not a compile-time constant.
 #

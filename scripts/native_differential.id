@@ -169,13 +169,13 @@ main: i64 = ()
 
   # `native_only/` gates capabilities where the C backend is not a valid
   # oracle (it cannot compile them at all), so the expected exit status is
-  # declared in the file itself as `-- expect: N`. These block like the main
+  # declared in the file itself as `# expect-exit: N`. These block like the main
   # corpus: they pin self-hosting capabilities with no differential twin.
   for i, src in listfiles(corpus .. "/native_only")
     name = stem(src)
-    expected = std.script.chomp(std.script.capture("sed -n 's/^-- expect: *\\([0-9][0-9]*\\).*/\\1/p' " .. src .. " | head -1"))
+    expected = std.script.chomp(std.script.capture("sed -n 's/^# expect-exit: *\\([0-9][0-9]*\\).*/\\1/p' " .. src .. " | head -1"))
     if expected == ""
-      fail(name .. ": native_only file has no '-- expect: N' header")
+      fail(name .. ": native_only file has no '# expect-exit: N' header")
     else
       bin = work .. "/no_" .. name
       if not compileok(idol, src, "direct", bin)

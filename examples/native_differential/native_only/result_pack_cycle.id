@@ -1,4 +1,4 @@
-# expect: 44
+# expect-exit: 44
 # Swapping two incoming registers is a real parallel-copy cycle. The return
 # preserves one source in a scratch register instead of overwriting it.
 swap(a: i64, b: i64): (i64, i64)

@@ -1,4 +1,4 @@
-# expect: 84
+# expect-exit: 84
 # SH-03 step: a Duo lexer that lowers to native ARM64 and emits the CANONICAL
 # token kind IDs — the same ids `src/lexer.zig` uses.
 #

@@ -49,7 +49,7 @@
 #     W  witnessed    the two backends ran and AGREE on stdout and on exit
 #                     status. Under `native_only/` the C backend cannot
 #                     compile the program at all and is therefore not an
-#                     oracle, so the fixture's own `-- expect: N` is the
+#                     oracle, so the fixture's own `# expect-exit: N` is the
 #                     witness and the direct binary's exit status must equal
 #                     it. Same rule scripts/native_differential.id uses.
 #     H  hosted       the SELF-HOSTED front end accepts the fixture:
@@ -79,7 +79,7 @@
 #
 #     syntax   a copy of a fixture with unparseable text appended — loses P
 #     type     a copy with a type error appended     — keeps P, loses S
-#     value    a copy whose `-- expect:` is falsified — drops C from matched
+#     value    a copy whose `# expect:` is falsified — drops C from matched
 #              to merely-ran. Its baseline is checked first: the intact
 #              fixture must MATCH its own declared value, or falsifying it
 #              proves nothing.
@@ -100,7 +100,7 @@
 #
 # MEASURED CONTROL, 2026-08-08. Two corpus fixtures were deliberately broken
 # and the report caught both. `examples/layout/offside.id`'s `bump` changed
-# from `n + 10` to `n + 11`: exit 3, "does not match its own `-- expect:`" —
+# from `n + 10` to `n + 11`: exit 3, "does not match its own `# expect:`" —
 # it is the value control's baseline, so the report refused to run at all
 # rather than print a table whose C column it could no longer defend.
 # `examples/native_differential/rec4_return.id` given a `to(str)` concat the
@@ -116,7 +116,7 @@
 #   * its `proven` is the STRICT differential and refuses `native_only/`
 #     outright, because the C backend cannot compile those programs and is not
 #     an oracle for them; it names the three fixtures in that gap. This W
-#     accepts the fixture's own `-- expect: N` there, which is what the
+#     accepts the fixture's own `# expect-exit: N` there, which is what the
 #     BLOCKING gate `zig build native-differential` accepts. So W is looser
 #     than its `proven` on exactly `native_only/` and identical everywhere
 #     else. `parser_token_stream.id` is the visible case: `native, no C path`
@@ -348,21 +348,24 @@ probetext: str = (duo: str, tprefix: str)
     "if $d graph \"$f\" > {work}/g/$s.json 2>/dev/null; then",
     "  if [ -s {work}/g/$s.json ]; then gra=1; fi",
     "fi",
-    "want=$(sed -n 's/^-- expect: *//p' \"$f\" | head -1)",
+    "wantout=$(sed -n 's/^# expect: *//p' \"$f\" | head -1)",
+    "wantexit=$(sed -n 's/^# expect-exit: *//p' \"$f\" | head -1)",
+    "want=",
     "decl=0",
-    "if [ -n \"$want\" ]; then decl=1; fi",
-    "mode=out",
-    "case \"$f\" in */native_only/*) mode=exit;; esac",
+    "mode=none",
+    "if [ -n \"$wantout\" ] && [ -z \"$wantexit\" ]; then decl=1; mode=out; want=$wantout; fi",
+    "if [ -n \"$wantexit\" ] && [ -z \"$wantout\" ]; then decl=1; mode=exit; want=$wantexit; fi",
     "cst=0",
     "crc=-1",
     "if $d compile \"$f\" --emit exe -o $t.cb >/dev/null 2>&1; then",
     " if [ -x $t.cb ]; then",
-    "  {tprefix}$t.cb > $t.co 2>/dev/null; crc=$?",
+    "  {tprefix}$t.cb > $t.co 2>$t.ce; crc=$?",
     "  if [ $crc -ne 124 ]; then cst=1",
     "   if [ $decl -eq 1 ]; then",
-    "    if [ \"$mode\" = exit ]; then got=\"$crc\"",
-    "    else got=$(tr '\\n' ' ' < $t.co | sed 's/ *$//'); fi",
-    "    if [ \"$got\" = \"$want\" ]; then cst=2; fi",
+    "    if [ \"$mode\" = exit ]; then got=\"$crc\"; fi",
+    "    if [ \"$mode\" = out ]; then got=$(tr '\\n' ' ' < $t.co | sed 's/ *$//'); fi",
+    "    if [ \"$mode\" = exit ] && [ \"$got\" = \"$want\" ]; then cst=2; fi",
+    "    if [ \"$mode\" = out ] && [ $crc -eq 0 ] && [ ! -s $t.ce ] && [ \"$got\" = \"$want\" ]; then cst=2; fi",
     "   fi",
     "  fi",
     " fi",
@@ -371,7 +374,7 @@ probetext: str = (duo: str, tprefix: str)
     "nrc=-1",
     "if $d compile \"$f\" --backend=direct --emit exe -o $t.db >/dev/null 2>&1; then",
     " if [ -x $t.db ]; then",
-    "  {tprefix}$t.db > $t.do 2>/dev/null; nrc=$?",
+    "  {tprefix}$t.db > $t.do 2>$t.de; nrc=$?",
     "  if [ $nrc -ne 124 ]; then nat=1; fi",
     " fi",
     "fi",
@@ -380,11 +383,12 @@ probetext: str = (duo: str, tprefix: str)
     " if [ \"$mode\" = exit ]; then",
     "  if [ $decl -eq 1 ] && [ \"$nrc\" = \"$want\" ]; then wit=1; fi",
     " else",
-    "  if [ $cst -ge 1 ] && [ $crc -eq $nrc ] && cmp -s $t.co $t.do; then wit=1; fi",
+    "  if [ \"$mode\" = out ] && [ $cst -eq 2 ] && [ $nrc -eq 0 ] && [ ! -s $t.de ] && cmp -s $t.co $t.do; then wit=1; fi",
+    "  if [ \"$mode\" = none ] && [ $cst -ge 1 ] && [ $crc -eq $nrc ] && cmp -s $t.co $t.do; then wit=1; fi",
     " fi",
     "fi",
     "printf \"%s%s%s%s%s%s%s\\t%s\\n\" $des $par $chk $gra $cst $nat $wit \"$f\"",
-    "rm -f $t.cb $t.db $t.co $t.do $t.fmt.id"
+    "rm -f $t.cb $t.db $t.co $t.ce $t.do $t.de $t.fmt.id"
   }
   # fmt rewrites in place and deletes comments; the copy takes it.
   # The declared answer, and which observable it is declared over.
@@ -536,7 +540,7 @@ main: i64 = ()
   ctlvalue = "{work}/c/ctlvalue.id"
   script.run("cp {good} {ctlsyntax} && printf 'if if if\\n' >> {ctlsyntax}")
   script.run("cp {good} {ctltype} && printf 'bad: i64 = \"notanumber\"\\n' >> {ctltype}")
-  script.run("sed 's/^-- expect: .*/-- expect: 99 99 99/' {good} > {ctlvalue}")
+  script.run("sed 's/^# expect: .*/# expect: 99 99 99/' {good} > {ctlvalue}")
   remember(files, seen, ctlsyntax)
   remember(files, seen, ctltype)
   remember(files, seen, ctlvalue)
@@ -609,12 +613,12 @@ main: i64 = ()
     print("  wanted parse 1 check 0, got record {ct}")
     return 3
   if digit(gb, 5) != 2
-    print("capability_rows: FAIL — {good} does not match its own `-- expect:`;")
+    print("capability_rows: FAIL — {good} does not match its own `# expect:`;")
     print("  the value control cannot mean anything until it does. record {gb}")
     return 3
   if digit(cv, 5) != 1
     print("capability_rows: FAIL — the value control still MATCHES a falsified")
-    print("  `-- expect:`; the C column is not checking values. record {cv}")
+    print("  `# expect:`; the C column is not checking values. record {cv}")
     return 3
   # H's control is that the column is NOT CONSTANT, not that a chosen pair
   # differs. The pair form was tried and was wrong: it compared the syntax
@@ -723,7 +727,7 @@ main: i64 = ()
   print("  D described (first line states intent) · P parsed (`duo fmt` on a copy)")
   print("  S `duo check` · G `duo graph` names the capability · C C backend ran AND")
   print("  matched its declared value · N `--backend=direct` ran · W both backends")
-  print("  agree (or native_only matched `-- expect:`) · H `std.compiler.parser`")
+  print("  agree (or an exit oracle matched `# expect-exit:`) · H `std.compiler.parser`")
   print("  accepts it — the Duo-written front end, not the Zig one")
   print("")
 

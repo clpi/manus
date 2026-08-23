@@ -15,7 +15,7 @@
 # `ops` holds sentinel 40 — `(` — at the position the scan must stop on, which
 # is the same byte the filed condition tested, so the second conjunct is
 # load-bearing too and not decoration.
-# expect: 3
+# expect-exit: 3
 
 prec: i64 = (o: i64)
     if o == 42

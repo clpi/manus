@@ -17,7 +17,7 @@
 # (idol-native) beside this one, because "the `for` was right and the `while`
 # was wrong" is the whole content of the report and neither half means anything
 # alone.
-# expect: 15
+# expect-exit: 15
 
 apply: i64 = (o: i64, a: i64, b: i64)
     if o == 43

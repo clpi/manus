@@ -28,7 +28,7 @@
 #   proven     direct and C agree on exit status. For `native_only/`, where
 #              the C backend cannot compile the program at all and is
 #              therefore not an oracle, the fixture declares its own answer as
-#              `-- expect: N` and that is what must match.
+#              `# expect-exit: N` and that is what must match.
 #   canonical  the fixture lives in a BLOCKING directory, so losing any rung
 #              above fails `zig build native-differential`. A capability that
 #              is proven but not canonical is proven until someone breaks it
@@ -94,10 +94,10 @@ name: str = (path: str)
 hasint: bool = (src: str)
   std.script.chomp(std.script.capture("awk '/^--/ {c++} END{print c+0}' " .. src)) != "0"
 
-# `-- expect: N`, the declared answer for a program the C backend cannot be an
+# `# expect-exit: N`, the declared answer for a program the C backend cannot be an
 # oracle for.
 declared: str = (src: str)
-  std.script.chomp(std.script.capture("sed -n 's/^-- expect: *\\([0-9][0-9]*\\).*/\\1/p' " .. src .. " | head -1"))
+  std.script.chomp(std.script.capture("sed -n 's/^# expect-exit: *\\([0-9][0-9]*\\).*/\\1/p' " .. src .. " | head -1"))
 
 rung: str = (reached: bool)
   if reached
@@ -106,9 +106,9 @@ rung: str = (reached: bool)
 
 # One fixture, one row. `blocking` says whether this directory's failures fail
 # native-differential. `declared` marks `native_only/`, where the C backend is
-# not an oracle and the fixture must state its own answer as `-- expect: N`.
+# not an oracle and the fixture must state its own answer as `# expect-exit: N`.
 #
-# A `native_only/` fixture with no `-- expect:` header is NOT proven even when
+# A `native_only/` fixture with no `# expect-exit:` header is NOT proven even when
 # the C backend happens to compile it. Being in that directory is a claim that
 # C cannot judge the program; if C can, the fixture is in the wrong directory,
 # and reading a passing differential off it would be reading an oracle the
@@ -124,7 +124,7 @@ measure = (idol: str, src: str, group: str, blocking: bool, declaredans: bool)
   # `idol fmt` REWRITES ITS ARGUMENT IN PLACE, and it deletes comments
   # (gap[048]). The first version of this ran it on the fixture and
   # reformatted all 68 corpus files in one run: 13 broke, agreement fell
-  # 59 -> 46, the `-- expect: N` headers `native_only/` depends on were
+  # 59 -> 46, the `# expect-exit: N` headers `native_only/` depends on were
   # stripped, and this table then reported those numbers confidently from
   # evidence it had destroyed itself.
   #

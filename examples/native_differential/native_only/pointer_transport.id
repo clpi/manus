@@ -1,4 +1,4 @@
-# expect: 77
+# expect-exit: 77
 # Exact pointer descriptors cross ordinary relation boundaries in the graph;
 # the physical realization is one general-purpose register and no aggregate.
 make: *u8 = (size: i64)

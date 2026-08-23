@@ -1,4 +1,4 @@
-# expect: 100
+# expect-exit: 100
 # Native tables, step 3: MUTABLE dynamic stores — `t[i] = v` with `i` a loop
 # variable. Reference `lua` gives 100; the C backend cannot compile this, so the
 # gate uses Lua's answer. Lowers as a select-chain of stores over register-

@@ -16,7 +16,7 @@
 # beside the flat version GAP-173 said always worked and requires them to agree.
 # Here the file is one shape and one number, so it can be read in five seconds
 # and cannot pass for the wrong reason.
-# expect: 5
+# expect-exit: 5
 
 main: i64 = ()
     i = 0

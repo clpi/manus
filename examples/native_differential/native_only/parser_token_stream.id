@@ -1,4 +1,4 @@
-# expect: 15
+# expect-exit: 15
 # The capability SH-04 was actually waiting on: a token-driven recursive-descent
 # parser lowering to native ARM64.
 #

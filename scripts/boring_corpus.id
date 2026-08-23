@@ -27,7 +27,8 @@
 #            and marks which of them contradict the overflow rule.
 #
 # VERIFY BY VALUE. A program is not passing because it compiled — it passes
-# when its stdout equals the `-- expect:` line it carries. Two of the twenty
+# when its stdout equals the `# expect:` line it carries, exits zero, and
+# emits no stderr. Two of the twenty
 # shipped with an `expect` this author had computed WRONG; both were caught
 # by a sibling that asserted the same data a different way, which is why
 # `bubblesort` asserts the whole sorted sequence while `quicksort` asserts
@@ -115,10 +116,10 @@ diagnostic: str = (duo: str, path: str)
 runone: i64 = (duo: str, path: str, which: str)
   ok = 0
   name = stem(path)
-  want = cap("sed -n 's/^-- expect: *//p' {path} | head -1")
+  want = cap("sed -n 's/^# expect: *//p' {path} | head -1")
   bin = "{work}/{which}-{name}.out"
   if want == ""
-    row = "  FAIL  {name}  carries no '-- expect:' line\n"
+    row = "  FAIL  {name}  carries no '# expect:' line\n"
     record(which, row)
   if want != ""
     if status("{duo} compile {path} --emit exe -o {bin}") != 0
@@ -126,16 +127,20 @@ runone: i64 = (duo: str, path: str, which: str)
       row = "  FAIL  {name}  {note}\n"
       record(which, row)
     if status("{duo} compile {path} --emit exe -o {bin}") == 0
-      code = status("{bin} >{work}/{name}.stdout 2>/dev/null")
+      code = status("{bin} >{work}/{name}.stdout 2>{work}/{name}.stderr")
       got = cap("cat {work}/{name}.stdout")
+      err = cap("cat {work}/{name}.stderr")
       if code != 0
         row = "  FAIL  {name}  exited {code} (signal or error), stdout '{got}'\n"
         record(which, row)
-      if code == 0 and got == want
+      if code == 0 and err != ""
+        row = "  FAIL  {name}  unexpected stderr '{err}', stdout '{got}'\n"
+        record(which, row)
+      if code == 0 and err == "" and got == want
         ok = 1
         row = "  pass  {name}  {got}\n"
         record(which, row)
-      if code == 0 and got != want
+      if code == 0 and err == "" and got != want
         row = "  FAIL  {name}  want '{want}' got '{got}'\n"
         record(which, row)
   ok
@@ -166,7 +171,7 @@ sweep = (duo: str, dir: str, which: str)
     j = j + 1
 
 # THE POSITIVE CONTROL. Take a program that passes, corrupt the VALUE it
-# computes without touching its `-- expect:` line, and require the row to go
+# computes without touching its `# expect:` line, and require the row to go
 # red. A gate whose comparison is broken reports every row green and reads
 # exactly like success, which is how this repository once shipped a gate that
 # zeroed sixteen of seventeen rows and exited 0.

@@ -1,4 +1,4 @@
-# expect: 5
+# expect-exit: 5
 # SH-11 step: ARM64 instruction encoding written in Duo, compiled to native
 # ARM64 by the very backend whose encodings it reproduces.
 #

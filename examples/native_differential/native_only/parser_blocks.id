@@ -1,4 +1,4 @@
-# expect: 3
+# expect-exit: 3
 # SH-04 step 2: block-structure analysis over real Duo source, natively compiled.
 #
 # Step 1 (`parser_native.id`) proved precedence climbing and mutual recursion

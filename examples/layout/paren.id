@@ -28,7 +28,7 @@
 #
 # No output: the process exit status is the observable, so no string literal
 # appears here and nothing about this file runs through interpolation.
-# expect: 11
+# expect-exit: 11
 
 twice: i64 = (t)
   t + t

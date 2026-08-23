@@ -1,4 +1,4 @@
-# expect: 7
+# expect-exit: 7
 # SH-04 step: a recursive-descent expression parser written in Duo and compiled
 # to native ARM64.
 #

@@ -1,4 +1,4 @@
-# expect: 45
+# expect-exit: 45
 # The first call remains live in x0 while the second call returns a pack through
 # x0/x1; the selected member must survive caller restoration without clobbering
 # the earlier value.
