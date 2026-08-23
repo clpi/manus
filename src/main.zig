@@ -272,9 +272,14 @@ const BehaviourEnvClass = enum {
 /// should be made with a byte comparison in hand — same output basename,
 /// different directories, `otool`'s filename header stripped, because two arms
 /// written to different names differ in the Mach-O UUID alone.
-fn behaviourEnvClass(name: []const u8) BehaviourEnvClass {
-    const Row = struct { []const u8, BehaviourEnvClass };
-    const table = [_]Row{
+/// ONE PRODUCER. The rows live at file scope so that the classification the
+/// cache enforces and the classification a gate reads are the SAME BYTES.
+/// `idol env-census` prints this array and nothing else, so `gate/envcache.sh`
+/// enumerates the compiler's own registry instead of re-typing it — a hand list
+/// in a gate is a second producer, and a second producer is how the seventh
+/// flag gets classified in one place and not the other.
+pub const BehaviourEnvRow = struct { []const u8, BehaviourEnvClass };
+const behaviour_env_table = [_]BehaviourEnvRow{
         // Read by the compiler, reporting only.
         .{ "DUO_NATIVE_DIAG", .inert },
         .{ "DUO_WHY_CONVERT", .inert },
@@ -332,11 +337,59 @@ fn behaviourEnvClass(name: []const u8) BehaviourEnvClass {
         // already excludes; classified `.affects` so the exclusion does not
         // rest on that one call site staying true.
         .{ "DUO_BENCH_BACKEND", .affects },
-    };
-    for (table) |row| {
+        // Sets `dnir_lower.module_promote_probe`, which only COUNTS the loops a
+        // widened syntactic region would reach; `dnir_lower.zig:1057` states it
+        // "returns nothing lowering reads" and `:1326` is the single early
+        // return that makes that true. Byte-compared inert on the runtime-bound
+        // reduce kernel that `IDOL_UNROLL` moves. It was unclassified until
+        // now, which cost the cache on every probe run without buying safety
+        // this row does not also buy.
+        .{ "DUO_MODULE_PROMOTE_PROBE", .inert },
+        // Set by `build.zig:291` for the C-realizer build step and never read
+        // by the compiler; listed so that step keeps its cache.
+        .{ "IDOL_C_REALIZER_COMPILER", .inert },
+};
+
+fn behaviourEnvClass(name: []const u8) BehaviourEnvClass {
+    for (behaviour_env_table) |row| {
         if (std.mem.eql(u8, row[0], name)) return row[1];
     }
     return .affects;
+}
+
+/// `idol env-census` — THE REGISTRY, PRINTED. Two tab-separated columns, one
+/// row per classified name, in table order, then a trailing `default\taffects`
+/// row so a consumer can see the fail-closed rule rather than assume it.
+///
+/// The point is not the printing. It is that a gate can ask the binary under
+/// test what it believes, so a classification that drifts between the compiler
+/// and the gate is impossible rather than merely unlikely.
+fn do_env_census() void {
+    for (behaviour_env_table) |row| {
+        term.printRaw("{s}\t{s}\n", .{ row[0], @tagName(row[1]) });
+    }
+    term.printRaw("(unclassified)\t{s}\n", .{@tagName(behaviourEnvClass("IDOL_A_NAME_NOBODY_CLASSIFIED"))});
+}
+
+test "the census names every DUO_/IDOL_ variable the compiler reads" {
+    // A duplicate row is two answers to one question, and the second is dead.
+    for (behaviour_env_table, 0..) |a, i| {
+        for (behaviour_env_table[i + 1 ..]) |b| {
+            if (std.mem.eql(u8, a[0], b[0])) {
+                std.debug.print("duplicate census row: {s}\n", .{a[0]});
+                return error.DuplicateCensusRow;
+            }
+        }
+    }
+    for (behaviour_env_table) |row| {
+        try std.testing.expect(std.mem.startsWith(u8, row[0], "DUO_") or
+            std.mem.startsWith(u8, row[0], "IDOL_"));
+    }
+    // The fail-closed default is the whole repair; assert it here so a refactor
+    // that turns the linear scan into a lookup returning `.inert` on miss is
+    // caught by a unit test and not by a benchmark reading 1.00x.
+    try std.testing.expectEqual(BehaviourEnvClass.affects, behaviourEnvClass("IDOL_NOT_IN_THE_TABLE"));
+    try std.testing.expectEqual(BehaviourEnvClass.affects, behaviourEnvClass("DUO_NOT_IN_THE_TABLE"));
 }
 
 /// Set when the environment carries a `DUO_*`/`IDOL_*` variable classified
@@ -344,45 +397,95 @@ fn behaviourEnvClass(name: []const u8) BehaviourEnvClass {
 /// neither loads nor stores under a flag the key does not model.
 var global_unmodelled_behaviour_env: bool = false;
 
+/// THE DECLINE IS ON PRESENCE, NOT ON TRUTH, AND THE DIFFERENCE WAS LIVE.
+///
+/// This filter used to read `if (!env_value_truthy(value)) continue;` on the
+/// theory that "a falsy value sets nothing, so it changes nothing" — that the
+/// truthiness predicate here is "the same predicate every reader above
+/// applies". IT IS NOT THE SAME PREDICATE. The readers that matter most do not
+/// interpret their value at all:
+///
+///     dnir_lower.zig:11832  getenv("IDOL_DIVZERO_GUARD_ALWAYS") != null
+///     dnir_lower.zig:11776  getenv("IDOL_FLOOR_FIXUP_ALWAYS")   != null
+///     native_backend.zig:5551 getenv("IDOL_UNSAFE_TRUNC_DIVREM")  != null
+///     native_backend.zig:5573 getenv("IDOL_PROBE_NONNEG_DIVISOR") != null
+///
+/// and `IDOL_HOME_BUDGET` parses its value, where `0` is the most meaningful
+/// setting it has (native_backend.zig:1616 — the zero-budget rung is the exact
+/// pre-homing behaviour, the whole point of the handle). So for every one of
+/// those, `V=0` CHANGES THE ARTIFACT and the old filter classified it false and
+/// kept the cache. MEASURED on `a // b` with a runtime divisor, one compiler
+/// binary, same output basename, cache root carrying the unset-env entry:
+///
+///     arm                            fresh cache      warm cache
+///     IDOL_UNSAFE_TRUNC_DIVREM=1     differs from A   differs from A   ok
+///     IDOL_UNSAFE_TRUNC_DIVREM=0     differs from A   EQUAL TO A       (cached)
+///     IDOL_PROBE_NONNEG_DIVISOR=0    differs from A   EQUAL TO A       (cached)
+///     IDOL_UNSAFE_TRUNC_DIVREM=''    differs from A   EQUAL TO A       (cached)
+///
+/// The rows that say EQUAL TO A are the false-severing-control failure in the
+/// flesh: the compiler printed `✓ (cached)` and handed the second arm the FIRST
+/// arm's binary, so an A/B differing only in that variable measures 1.00x
+/// against itself. `=1` was safe only because truthiness happened to agree with
+/// presence there.
+///
+/// Presence is the only predicate that is correct WITHOUT KNOWING HOW THE
+/// READER SPELLS ITS TEST, and this table cannot know that for the row that
+/// ships next. A value-interpreting decline is a claim about a reader
+/// elsewhere in the tree; a presence decline is a claim about nothing. It costs
+/// a rebuild for `V=0` on a variable whose reader really is truthiness-gated,
+/// and it cannot cost a wrong number.
+///
+/// `.inert` and `.modelled` are unaffected: `.inert` is a value-independent
+/// claim that no byte moves, and `.modelled` names reach the key through the
+/// one site that interprets them (`dnir_lower.unrollFactorSetting`,
+/// `dnir_lower.module_promote_enabled`), so the key already carries the
+/// interpreted setting rather than the raw text.
 fn surveyBehaviourEnv(map: anytype) void {
     var it = map.iterator();
     while (it.next()) |entry| {
         const name = entry.key_ptr.*;
         if (!std.mem.startsWith(u8, name, "DUO_") and !std.mem.startsWith(u8, name, "IDOL_")) continue;
-        // `.affects` is presence-based. Several physical controls deliberately
-        // read `getenv(...) != null`, and `IDOL_HOME_BUDGET=0` is a meaningful
-        // zero-budget request. Interpreting their values here would therefore
-        // let a warm default artifact answer a different physical compile.
+        // The classifier runs first and the value is never consulted; the doc
+        // comment above records the measurement that forced that order.
         if (behaviourEnvClass(name) != .affects) continue;
         global_unmodelled_behaviour_env = true;
         return;
     }
 }
 
-test "unmodelled behaviour environment declines cache on presence" {
-    global_unmodelled_behaviour_env = false;
-    defer global_unmodelled_behaviour_env = false;
-
-    const Case = struct {
-        name: []const u8,
-        value: []const u8,
-        declines: bool,
-    };
+test "an unmodelled behaviour variable declines the cache on PRESENCE" {
+    const Case = struct { name: []const u8, value: []const u8, declines: bool };
     const cases = [_]Case{
-        // A zero home budget is an exact physical request, not false.
-        .{ .name = "IDOL_HOME_BUDGET", .value = "0", .declines = true },
-        // Legacy severing controls read presence, including a value of zero.
+        // Presence readers: `getenv(...) != null` ignores the text entirely, so
+        // `0` and `` are settings, not absences. Each of these was MEASURED to
+        // change the artifact under a fresh cache and to be served the
+        // unset-env artifact under a warm one before this predicate changed.
+        .{ .name = "IDOL_UNSAFE_TRUNC_DIVREM", .value = "0", .declines = true },
+        .{ .name = "IDOL_PROBE_NONNEG_DIVISOR", .value = "0", .declines = true },
         .{ .name = "IDOL_DIVZERO_GUARD_ALWAYS", .value = "0", .declines = true },
-        // An unclassified future control must fail closed even when empty.
+        .{ .name = "IDOL_DIVZERO_GUARD_ALWAYS", .value = "", .declines = true },
+        .{ .name = "IDOL_FLOOR_FIXUP_ALWAYS", .value = "false", .declines = true },
+        // A parsed value whose zero is its most meaningful setting.
+        .{ .name = "IDOL_HOME_BUDGET", .value = "0", .declines = true },
+        // Fail closed on a name nobody has classified, at any value.
         .{ .name = "IDOL_FUTURE_PHYSICAL_CONTROL", .value = "", .declines = true },
-        // Classified reporting and key-modelled controls retain their policy.
+        .{ .name = "DUO_FUTURE_PHYSICAL_CONTROL", .value = "0", .declines = true },
+        // Classified rows keep their policy: reporting costs no cache, and a
+        // key-modelled control occupies its own entry rather than declining.
         .{ .name = "DUO_TRACE", .value = "1", .declines = false },
         .{ .name = "IDOL_UNROLL", .value = "8", .declines = false },
+        .{ .name = "IDOL_UNROLL", .value = "0", .declines = false },
+        // A variable outside both prefixes is not this survey's business.
+        .{ .name = "TMPDIR", .value = "/tmp", .declines = false },
     };
 
-    // Damage control: the old truthiness filter classifies both required zero
-    // controls as false and therefore makes the two `declines = true` rows fail.
+    // DAMAGE CONTROL. The predicate this test replaced answers false for every
+    // value in the `declines = true` rows that is not simply unclassified, so a
+    // silent revert to truthiness fails the rows above rather than passing them.
     try std.testing.expect(!env_value_truthy("0"));
+    try std.testing.expect(!env_value_truthy(""));
+    try std.testing.expect(!env_value_truthy("false"));
 
     for (cases) |case| {
         var map = std.process.Environ.Map.init(std.testing.allocator);
@@ -390,8 +493,12 @@ test "unmodelled behaviour environment declines cache on presence" {
         try map.put(case.name, case.value);
 
         global_unmodelled_behaviour_env = false;
+        defer global_unmodelled_behaviour_env = false;
         surveyBehaviourEnv(&map);
-        try std.testing.expectEqual(case.declines, global_unmodelled_behaviour_env);
+        std.testing.expectEqual(case.declines, global_unmodelled_behaviour_env) catch |e| {
+            std.debug.print("{s}={s}: expected declines={}\n", .{ case.name, case.value, case.declines });
+            return e;
+        };
     }
 }
 
@@ -683,6 +790,7 @@ fn mainInner(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "sim") or
             std.mem.eql(u8, args[1], "explain") or
             std.mem.eql(u8, args[1], "algebra") or
+            std.mem.eql(u8, args[1], "env-census") or
             std.mem.eql(u8, args[1], "catalog") or
             std.mem.eql(u8, args[1], "dev") or
             std.mem.eql(u8, args[1], "wasm-tables") or
@@ -1123,6 +1231,15 @@ fn mainInner(init: std.process.Init) !void {
         term.print("wrote src/keyword_classify.c\n", .{});
         term.print("lib/token/grammarrole.id is emitted by the Idol grammar-role\n", .{});
         term.print("owner: idol run lib/compiler/token.id\n", .{});
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "env-census")) {
+        if (input_file != null) {
+            term.err("idol env-census takes no file argument", .{});
+            std.process.exit(1);
+        }
+        do_env_census();
         return;
     }
 
