@@ -26,16 +26,16 @@
 # face of the five compiles yet. This gate asserts the sigil is FREE, never that
 # injection works.
 set -eu
-root=${WORLD_FACE_ZERO_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}
+root=${WORLDFACEROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)}
 if [ "${IDOL_LOCK_HELD:-0}" != 1 ]; then
     exec "$root/tools/node/dev/idol-lock" -- "$0" "$@"
 fi
 idol=${IDOL_BIN:-"$root/zig-out/bin/idol"}
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/idol-world-face-zero.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/idol-world-face.XXXXXX")
 cleanup() { rm -rf "$work"; }
 trap cleanup EXIT INT TERM
-fail() { printf 'world-face-zero gate: FAIL %s\n' "$1" >&2; exit 1; }
+fail() { printf 'world/face gate: FAIL %s\n' "$1" >&2; exit 1; }
 [ -x "$idol" ] || fail "compiler is not executable: $idol"
 
 # ---------------------------------------------------------------- §1 REFUSAL
@@ -282,5 +282,5 @@ printf '    if t.kind == token.kindat\n        return proj_directive(lx)\n' >"$w
 grep -q 'dt\.kind == token\.kindat' "$work/selfhost_live.id" && fail "§5 control: the row convicts the live directive face; it would delete a face the language has"
 grep -q 'token\.kindat' "$selfhost" || fail "§5 subject: the self-host parser has NO kindat test at all — the anchor and directive faces are gone, and this row is reading a file that no longer parses '@'"
 
-printf 'world-face-zero gate: PASS — sigil free (4 retired spellings refused by name, 4 migrated spellings admitted, 0 live corpus sites, formatter sigil-free, both frontiers agree)\n'
-printf 'world-face-zero gate: NOTE — a free sigil is not a closed algebra; 0 of 5 world faces compile (gap[203])\n'
+printf 'world/face gate: PASS — sigil free (4 retired spellings refused by name, 4 migrated spellings admitted, 0 live corpus sites, formatter sigil-free, both frontiers agree)\n'
+printf 'world/face gate: NOTE — a free sigil is not a closed algebra; 0 of 5 world faces compile (gap[203])\n'

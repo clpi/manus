@@ -19,7 +19,7 @@ pass=0
 fail=0
 failed=
 
-for gate in gate/*.sh; do
+for gate in gate/*.sh gate/*/*.sh; do
   case $gate in
     gate/all.sh) continue ;;
   esac

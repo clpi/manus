@@ -7281,7 +7281,7 @@ pub const Parser = struct {
         // The corpus dependency the old comment named — "the 25 measured
         // `= @{ … }` sites in the tree are frozen constant tables that depend
         // on the staging" — is gone: fd85e7b8 migrated all 69 lines across 36
-        // files, and gate/world-face-zero.sh §3 holds the corpus at zero.
+        // files, and gate/world/face.sh §3 holds the corpus at zero.
         if ((try self.pk()).kind == .lbrace) {
             term.locErr(l, "injection '@{{ … }}' has no derived-world fact yet", .{});
             term.locHint(l, "law.injection.only rules the sigil EXCLUSIVELY world-deriving, and the graph carries no derived world: WorldFact records home/reach/members with no parent and no fact deltas, so nothing can represent the injection. If a DESCRIPTOR was meant, law.expect.apply denies 'p: point = @{{ x, y }}' by name — write the pack '{{ … }}', the applied form 'name{{ … }}', or the case-set copula 'name: {{ a, b, c }}' for a keywordless enum", .{});

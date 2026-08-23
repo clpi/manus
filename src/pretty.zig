@@ -2353,7 +2353,7 @@ test "pretty: a descriptor spread round-trips with no sigil" {
     const out = try fmtCanonical(alloc, src);
     // Both faces are sigil-free. The parent-bearing one is written out by hand
     // because `printTypeExpr` has nowhere to put a `..parent`; the one with no
-    // parents delegates. Neither may emit `@{` — gate/world-face-zero.sh §4
+    // parents delegates. Neither may emit `@{` — gate/world/face.sh §4
     // holds that, because a reprint the parser refuses is the defect this whole
     // family of tests exists to catch.
     try testing.expectEqualStrings(
