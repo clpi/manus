@@ -1,4 +1,4 @@
-# expect: 41
+# expect-outcome: {"event":"ok","exit":41,"stdout":"7\n","stderr":""}
 # The observed print keeps the call at runtime. The record is produced after
 # that boundary, and the caller reads only `left`, so `right` needs no home.
 pair: {
