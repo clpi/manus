@@ -4204,6 +4204,18 @@ pub const SemanticGraph = struct {
         const binding_node = self.get(binding) orelse return;
         if (binding_node.kind != .local or binding_node.scope != self.module_root) return;
 
+        // This producer certifies only values whose exact-i64 occurrence
+        // descriptor already agrees with the binding. A checked literal such
+        // as `n: u64 = 3` is lawful, but its descriptor satisfaction is not an
+        // exact-i64 binding-initialization fact; leave it unvisited until that
+        // producer exists. Once a row is claimed, publish/query validation
+        // below still refuses every descriptor mismatch as graph damage.
+        if (binding_node.descriptor) |binding_descriptor| {
+            const value_node = self.get(value) orelse return;
+            const value_descriptor = value_node.descriptor orelse return;
+            if (!binding_descriptor.eql(value_descriptor)) return;
+        }
+
         // Prove the transitional name projection found this exact definition,
         // not another binding with the same spelling, before storing its place
         // identity. A later rebind therefore cannot publish a rival row.
@@ -9106,6 +9118,7 @@ test "semantic_graph: module binding names its initializer value and exact place
         \\const fixed: i64 = 41
         \\moving: i64 = 1
         \\moving = 2
+        \\wide: u64 = 3
         \\take: i64 = (value: i64)
         \\    value
         \\readfixed: i64 = ()
@@ -9157,11 +9170,19 @@ test "semantic_graph: module binding names its initializer value and exact place
         }
     }
 
+    const wide = graph.resolveInHome(module_id, "wide", .local) orelse
+        return error.TestExpectedEqual;
+    try std.testing.expect(graph.bindingInitialization(wide) == .unvisited);
+
     const fixed = graph.resolveInHome(module_id, "fixed", .local).?;
     const saved_row = graph.binding_initialization_rows.fetchRemove(fixed) orelse
         return error.TestExpectedEqual;
     try std.testing.expect(graph.bindingInitialization(fixed) == .invalid);
     try graph.binding_initialization_rows.putNoClobber(alloc, saved_row.key, saved_row.value);
+    switch (graph.bindingInitialization(fixed)) {
+        .known => {},
+        .unvisited, .invalid => return error.TestExpectedEqual,
+    }
 }
 
 test "semantic_graph: nested application name publishes checked module descriptor" {
