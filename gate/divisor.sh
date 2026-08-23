@@ -27,7 +27,7 @@
 # same trap one step further in: the comptime folder would settle it and no
 # guard would be emitted either way.
 #
-# So the divisor is `os.env("IDOLDIVZERO"):len()` — a length the compiler cannot
+# So the divisor is `os.env["IDOLDIVZERO"]:len()` — a length the compiler cannot
 # read and cannot fold. §2 below is what makes that claim CHECKED rather than
 # asserted: the SAME BINARY is run twice, once with the variable unset (an
 # opaque runtime 0) and once with it set (an opaque runtime 2), and it must
@@ -72,7 +72,7 @@ for spec in 'idiv://' 'div:/' 'mod:%'; do
   cat > "$work/$name.id" <<ID
 # Opaque runtime divisor: the compiler cannot read an environment value.
 main: i64 = ()
-  s: str = os.env("IDOLDIVZERO")
+  s: str = os.env["IDOLDIVZERO"]
   d = s:len()
   q: i64 = 7 $op d
   print(q)
@@ -116,7 +116,7 @@ cat > "$work/matrix.id" <<'ID'
 # The divisor magnitude is a length the compiler cannot read, so no row here
 # is constant-folded. `n` is its negation, giving both divisor signs.
 main: i64 = ()
-  s: str = os.env("IDOLDIVZERO")
+  s: str = os.env["IDOLDIVZERO"]
   d = s:len()
   n = 0 - d
   a: i64 = 7 // d
@@ -214,8 +214,22 @@ predicate='requiresNonzeroDivisor'
 #     `.lshift, .rshift, .div, .idiv, .mod, .pow => .int64`, which is about how
 #     wide a result is, not about who owes a divisor; `.pow` is in it and owes
 #     nothing. So the match requires the set to END at `.mod`.
+# §6 SCANS THE TREE, SO IT MUST SCAN THE RIGHT TREE. §1-§5 reach the compiler
+# through `$root`; these scans used to name `src/...` relative to the CALLER's
+# working directory. Invoked from outside the checkout that reads as "no such
+# file", `2>/dev/null` swallowed it, `grep -c` answered 0, and a gate whose
+# producers had all "disappeared" reported them absent rather than unfound —
+# a clean zero from a scan that never ran. `gate/all.sh` masked it by cd-ing
+# to the root first. Anchor the scans, and make a missing subject FATAL.
+cd "$root" || { printf '%s\n' "divisor: cannot enter \$root ($root)" >&2; exit 2; }
+
 spellings() {
-  sed 's|//.*||' "$1" 2>/dev/null | grep -cE '\.div, \.idiv, \.mod *=>|tag == \.div' || true
+  [ -f "$1" ] || {
+    bad "§6 $1 does not exist — a scan with no subject is not a count of zero"
+    printf '0\n'
+    return
+  }
+  sed 's|//.*||' "$1" | grep -cE '\.div, \.idiv, \.mod *=>|tag == \.div' || true
 }
 
 for f in src/dnir_lower.zig src/native_backend.zig; do
