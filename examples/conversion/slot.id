@@ -37,3 +37,4 @@ a = width(pad)(t, 3)
 b = width(trim)(t, 3)
 c = t:plain(3)
 print("{a} {b} {c}")
+0

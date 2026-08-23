@@ -28,3 +28,4 @@ a = step__u64(41)
 b = step__u32(41)
 c = step__wide(41)
 print("{a} {b} {c}")
+0

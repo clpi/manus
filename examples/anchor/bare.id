@@ -33,3 +33,4 @@ one = small:viaat()
 two = large:viaat()
 plain = small:direct()
 print("{one} {two} {plain}")
+0

@@ -31,3 +31,4 @@ top = grade(9)
 mid = grade(5)
 low = grade(1)
 print("{hi} {lo} {top} {mid} {low}")
+0

@@ -39,3 +39,4 @@ e = 0 - 7
 f = e % two
 g = 7 % neg
 print("{a} {b} {c} {d} {f} {g}")
+0

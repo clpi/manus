@@ -20,3 +20,4 @@ last = 0
 for j = 1, 3
   last = j
 print("{total} {i} {k} {last}")
+0

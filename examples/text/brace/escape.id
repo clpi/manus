@@ -37,3 +37,4 @@ print("both {x} and \{x}")
 # source text today (with an STR-1 warning), so it is the control: the ruling
 # must not change it, only make it sayable without a diagnostic.
 print("pair=\{\"k\": 1\}")
+0

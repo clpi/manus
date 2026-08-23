@@ -19,3 +19,4 @@ loop: i64 = (n: i64)
 r = fib(20)
 l = loop(20)
 print("{r} {l}")
+0
