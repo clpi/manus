@@ -395,3 +395,32 @@ test "grammar roles: only a two-faced identity opens a line" {
         if (r.kind != null and r.opens_line) try std.testing.expect(r.infix);
     }
 }
+
+test "grammar roles: source spelling has one producer and it is the owner" {
+    // `lexer.zig` answers out of the generated row now, so this pins the row
+    // against the identities themselves rather than against a second switch.
+    try std.testing.expectEqualStrings("+", lexer.TokenKind.plus.spelling());
+    try std.testing.expectEqualStrings("!=", lexer.TokenKind.neq.spelling());
+    try std.testing.expectEqualStrings("..", lexer.TokenKind.concat.spelling());
+    try std.testing.expectEqualStrings("@", lexer.TokenKind.at.spelling());
+    try std.testing.expectEqualStrings("and", lexer.TokenKind.kw_and.spelling());
+    try std.testing.expectEqualStrings("<eof>", lexer.TokenKind.eof.spelling());
+    // Slot 3 is unpublished and its spelling field is empty — not ".", which
+    // is the real spelling of `dot` and would collide with a live identity.
+    try std.testing.expectEqualStrings("", rows[3].spell);
+}
+
+test "grammar roles: the host keyword table cannot drift from the owner" {
+    // `token_semantic.keywords` still carries keyword text for the classifier.
+    // It is no longer where `spelling()` reads, so it could rot silently; this
+    // requires it to agree with the owner on every keyword identity.
+    const token_semantic = @import("token_semantic.zig");
+    var checked: usize = 0;
+    for (rows) |r| {
+        const kind = r.kind orelse continue;
+        const entry = token_semantic.entryForKind(kind) orelse continue;
+        try std.testing.expectEqualStrings(entry.text, kind.spelling());
+        checked += 1;
+    }
+    try std.testing.expect(checked >= 50);
+}

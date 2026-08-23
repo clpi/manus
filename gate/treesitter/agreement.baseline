@@ -1,0 +1,34 @@
+# gate/treesitter/agreement.baseline — the exact disagreement between the two
+# grammar authorities, pinned so that a TENTH cannot arrive quietly.
+#
+# Produced by `idol run gate/treesitter/agreement.id`, which reads the owner's
+# generated bridge (identity, spelling, infix face, precedence, associativity —
+# all on one row) and ext/tree-sitter-idol/grammar.js. Every line below is a
+# place where the authored editor grammar and lib/compiler/token.id say
+# different things about the SAME operator.
+#
+# A RATCHET, NOT A BUDGET. The gate fails when a divergence appears that is not
+# here, AND when a line here no longer describes a divergence. Seven pins were
+# deleted the first time this ran against a newer editor grammar: `..` and `~`
+# had been moved into the owner's band upstream, and the gate said so by name
+# rather than passing quietly on a stale count.
+
+# ── 7 comparisons: the owner says NONASSOC, tree-sitter says LEFT.
+# `a < b < c` is refused by the compiler and accepted by the editor grammar.
+# tree-sitter can express this — a plain `prec(n, …)` leaves the conflict
+# unresolved instead of silently choosing a side.
+assoc in nonassoc left
+assoc < nonassoc left
+assoc > nonassoc left
+assoc == nonassoc left
+assoc != nonassoc left
+assoc <= nonassoc left
+assoc >= nonassoc left
+
+# ── infix `@` (matmul) exists for the compiler and not for the editor.
+missing @
+
+# ── `~=` is recognized by the editor grammar as an operator the owner does not
+# own. src/grammar_roles.zig records that this spelling moved to xor-assign,
+# and lib/compiler/lexer.id refuses to glue it: "`~` is XOR and nothing else".
+extra ~=

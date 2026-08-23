@@ -801,9 +801,9 @@ pub fn build(b: *std.Build) void {
     // existence, associativity and induced binding order. It reads the owner's
     // generated role table, src/lexer.zig's spelling map and grammar.js, joins
     // them on token identity, and fails on any divergence not pinned in
-    // gate/treesitter.baseline. Sixteen are pinned today; the pin is a ratchet
+    // gate/treesitter/agreement.baseline. Sixteen are pinned today; the pin is a ratchet
     // and a stale line fails too.
-    const ts_agreement_cmd = b.addSystemCommand(&.{"./gate/treesitter-agreement.sh"});
+    const ts_agreement_cmd = b.addSystemCommand(&.{"./gate/treesitter/agreement.sh"});
     ts_agreement_cmd.setCwd(b.path("."));
     ts_agreement_cmd.step.dependOn(b.getInstallStep());
     const ts_agreement_step = b.step("treesitter-agreement", "the editor grammar agrees with the one grammar owner within a pinned ratchet (GAP-134)");
