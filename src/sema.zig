@@ -18,6 +18,7 @@ const abi_specialize = @import("abi_specialize.zig");
 const tail_result_demand = @import("tail_result_demand.zig");
 const wiring = @import("wiring.zig");
 const collection_relation = @import("collection_relation.zig");
+const authority_projection = @import("authority_projection.zig");
 
 const callable_brace_error = "c0 §43 law.brace: braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses";
 
@@ -580,6 +581,9 @@ pub const Sema = struct {
     /// Source provenance for foreign-header and home resolution. It never
     /// grants a world.
     source_path: ?[]const u8 = null,
+    /// Exact source-law epoch supplied by ingress. The suffix and `idol_mode`
+    /// are physical/parser projections and cannot reconstruct this fact.
+    source_law_edition: authority_projection.SourceLawEdition = .unknown,
     /// Exact worlds supplied by the launcher. Resolution and graph publication
     /// consume this set instead of reconstructing authority from source paths.
     worlds: subject_home.WorldSet,
@@ -966,7 +970,6 @@ pub const Sema = struct {
         return buf[0..len];
     }
 
-
     /// Whether a module-level relation declaration answers to `name`.
     ///
     /// Idol admits two canonical top-level spellings:
@@ -1230,7 +1233,6 @@ pub const Sema = struct {
         try self.collectForeignRelationsInHomes(&foreign_module_homes, method, &matches);
         return self.resolveUniqueForeignRelations(loc, method, matches.items);
     }
-
 
     fn recordApplication(
         self: *Sema,
@@ -2665,7 +2667,6 @@ pub const Sema = struct {
         }
         try merged.append(self.alloc, .{ .name = name, .typ = field_typ });
     }
-
 
     fn seed_globals(self: *Sema) void {
         const names = seedGlobalNames();

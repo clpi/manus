@@ -201,7 +201,6 @@ pub const TokenKind = enum(u8) {
             },
         };
     }
-
 };
 
 pub const Token = struct {
@@ -251,6 +250,7 @@ pub const Lexer = struct {
     /// stages consume this fact and must not re-parse the path (`law.family.one`).
     family: i64 = 0,
     source_law: @import("lexer_bridge.zig").SourceLaw = .unknown,
+    source_law_edition: @import("authority_projection.zig").SourceLawEdition = .unknown,
     /// Byte-zero `#!` line published by the producer. Empty when absent.
     shebang: []const u8 = "",
 
@@ -262,12 +262,7 @@ pub const Lexer = struct {
     }
 
     pub fn initFacts(src: []const u8, file: []const u8, facts: @import("lexer_bridge.zig").SourceFacts) Lexer {
-        return initFamilyLaw(
-            src,
-            file,
-            @import("lexer_bridge.zig").familyCode(facts),
-            facts.law,
-        );
+        return initFamilyLaw(src, file, @import("lexer_bridge.zig").familyCode(facts), facts.law);
     }
 
     pub fn initFamily(src: []const u8, file: []const u8, family: i64) Lexer {
@@ -284,12 +279,30 @@ pub const Lexer = struct {
         family: i64,
         source_law: @import("lexer_bridge.zig").SourceLaw,
     ) Lexer {
+        const edition: @import("authority_projection.zig").SourceLawEdition = switch (source_law) {
+            .idol => @import("authority_projection.zig").SourceLawEdition.idolCurrent(),
+            .lua => .foreign_unversioned,
+            .unknown => .unknown,
+        };
+        return initFamilyLawEdition(src, file, family, source_law, edition);
+    }
+
+    /// Preserve an already selected exact edition for nested/subsource parsing.
+    /// Broad family alone cannot reconstruct a historical edition.
+    pub fn initFamilyLawEdition(
+        src: []const u8,
+        file: []const u8,
+        family: i64,
+        source_law: @import("lexer_bridge.zig").SourceLaw,
+        source_law_edition: @import("authority_projection.zig").SourceLawEdition,
+    ) Lexer {
         return .{
             .cursor = source_cursor.ProductionCursor.init(src, file),
             .peeked = null,
             .last_error_loc = null,
             .family = family,
             .source_law = source_law,
+            .source_law_edition = source_law_edition,
         };
     }
 
@@ -1141,7 +1154,6 @@ pub const Lexer = struct {
         self.peeked = state.peeked;
         self.duo_index = state.duo_index;
     }
-
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -1452,10 +1464,10 @@ test "lex: multi-char operators" {
     // lexes bare and the grammar forms `~=` as a compound assignment.
     var l = Lexer.init("== != <= >= << >> // .. ... ## -> :: += -= *= /= %= ^= ~=", "test");
     const expected = [_]TokenKind{
-        .eq,           .neq,         .leq,          .geq,            .lshift,       .rshift,
-        .idiv,         .concat,      .dots,         .hash_hash,      .arrow,        .dcolon, .plus_assign,
-        .minus_assign, .star_assign, .slash_assign, .percent_assign, .caret_assign,
-        .tilde,        .assign,
+        .eq,          .neq,          .leq,         .geq,          .lshift,         .rshift,
+        .idiv,        .concat,       .dots,        .hash_hash,    .arrow,          .dcolon,
+        .plus_assign, .minus_assign, .star_assign, .slash_assign, .percent_assign, .caret_assign,
+        .tilde,       .assign,
     };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
 }

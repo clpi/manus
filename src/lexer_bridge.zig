@@ -219,7 +219,8 @@ test "lexer bridge: executed ingress produces unlisted law and provenance" {
     try std.testing.expectEqual(SourceLaw.lua, lua.law);
     try std.testing.expectEqual(SourceProvenance.foreign, lua.provenance);
     try std.testing.expectEqual(family_compat, familyCode(lua));
-    try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("compiler.duo").law);
+    const retired = sourceFacts("compiler.duo");
+    try std.testing.expectEqual(SourceLaw.unknown, retired.law);
     try std.testing.expectEqual(SourceProvenance.unknown, sourceFacts("compiler.txt").provenance);
 }
 

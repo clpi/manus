@@ -1,5 +1,5 @@
 {
-  "schema": "idol.authority.v1",
+  "schema": "idol.authority.v2",
   "authority": {
     "repository": "clpi/idol",
     "branch": "main",
@@ -19,6 +19,17 @@
       "authoritative": false
     }
   },
+  "source_law_edition": {
+    "schema": "idol.source.law.v1",
+    "sha256": "677cfc928031f13d072bba895172a5c0b60b2d2a2b08b91ab6e317e91c138fa4",
+    "algorithm": "sha256 of schema UTF-8, NUL, compact-law bytes, NUL, long-form-law bytes",
+    "input_blob_ids": {
+      "compact_law": "201b78015e8f463798e50b2e180dc61cda45fcd1",
+      "long_form_law": "7406246f170602414d620a01b042ae98768a40b6"
+    },
+    "canonical_source": ".id",
+    "foreign_source_editions": "must carry their own exact law identity; unknown never inherits this edition"
+  },
   "identity": {
     "name": "Idol",
     "binary": "idol",
@@ -37,6 +48,172 @@
     "subject_relation": ":",
     "world": "@"
   },
+  "rulings": {
+    "coverage": "seed; docs/spec/constitution.md remains the complete law-id owner until every ruling is projected here",
+    "status_vocabulary": [
+      "current",
+      "superseded",
+      "historical",
+      "compatibility"
+    ],
+    "rows": [
+      {
+        "law": "law.identity.current",
+        "identity": "Idol",
+        "status": "current",
+        "effective": "677cfc928031f13d072bba895172a5c0b60b2d2a2b08b91ab6e317e91c138fa4",
+        "supersedes": [
+          "historical.identity.Duo",
+          "historical.identity.Duon",
+          "historical.identity.Idsem"
+        ],
+        "source_faces": [
+          ".id"
+        ],
+        "semantic_form": "canonical Idol source under the exact source-law edition",
+        "negative_controls": [
+          "historical project names do not select current semantics",
+          "a source suffix alone does not identify a historical law epoch"
+        ],
+        "generated_consumers": [
+          "source ingress",
+          "semantic graph export",
+          "evidence"
+        ],
+        "implementation_state": "partial: the compiler binds its current interpretation after source-family selection and graph export carries the root edition; imported positions, parser tooling, and all evidence still need exact editions"
+      },
+      {
+        "law": "law.application.parentheses",
+        "identity": "application",
+        "status": "current",
+        "effective": "677cfc928031f13d072bba895172a5c0b60b2d2a2b08b91ab6e317e91c138fa4",
+        "supersedes": [
+          "historical.call-shaped-indexing"
+        ],
+        "source_faces": [
+          "()"
+        ],
+        "semantic_form": "ordinary relation application",
+        "negative_controls": [
+          "table(key) never means indexed projection"
+        ],
+        "generated_consumers": [
+          "lexer roles",
+          "parser roles",
+          "formatter",
+          "Tree-sitter",
+          "LSP"
+        ],
+        "implementation_state": "partial"
+      },
+      {
+        "law": "law.projection.computed",
+        "identity": "computed projection",
+        "status": "current",
+        "effective": "677cfc928031f13d072bba895172a5c0b60b2d2a2b08b91ab6e317e91c138fa4",
+        "supersedes": [
+          "historical.brackets-legacy",
+          "historical.call-shaped-indexing"
+        ],
+        "source_faces": [
+          "[]"
+        ],
+        "semantic_form": "computed or indexed projection",
+        "negative_controls": [
+          "computed projection is not ordinary application"
+        ],
+        "generated_consumers": [
+          "lexer roles",
+          "parser roles",
+          "formatter",
+          "Tree-sitter",
+          "LSP"
+        ],
+        "implementation_state": "partial"
+      },
+      {
+        "law": "law.structure.braces",
+        "identity": "structured pack",
+        "status": "current",
+        "effective": "677cfc928031f13d072bba895172a5c0b60b2d2a2b08b91ab6e317e91c138fa4",
+        "supersedes": [],
+        "source_faces": [
+          "{}"
+        ],
+        "semantic_form": "structured pack, table, or descriptor structure",
+        "negative_controls": [
+          "braces do not create a separate object-model ontology"
+        ],
+        "generated_consumers": [
+          "lexer roles",
+          "parser roles",
+          "formatter",
+          "Tree-sitter",
+          "LSP"
+        ],
+        "implementation_state": "partial"
+      },
+      {
+        "law": "law.block.offside",
+        "identity": "block closure",
+        "status": "current",
+        "effective": "677cfc928031f13d072bba895172a5c0b60b2d2a2b08b91ab6e317e91c138fa4",
+        "supersedes": [
+          "historical.block.end-canonical"
+        ],
+        "source_faces": [
+          "offside indentation"
+        ],
+        "semantic_form": "canonical blocks close by indentation",
+        "negative_controls": [
+          "end is compatibility or historical input, never current canonical law"
+        ],
+        "generated_consumers": [
+          "lexer roles",
+          "parser roles",
+          "formatter",
+          "Tree-sitter",
+          "LSP"
+        ],
+        "implementation_state": "partial"
+      },
+      {
+        "law": "law.at.one",
+        "identity": "world axis",
+        "status": "current",
+        "effective": "677cfc928031f13d072bba895172a5c0b60b2d2a2b08b91ab6e317e91c138fa4",
+        "supersedes": [
+          "historical.at.descriptor-anchor",
+          "historical.at.descriptor-application",
+          "historical.at.directive-namespace",
+          "historical.at.universal-compiler-namespace"
+        ],
+        "source_faces": [
+          "@x",
+          "@{ k = v }",
+          "thing@world",
+          "thing@{ k = v }",
+          "@k = v"
+        ],
+        "semantic_form": "current-world access, closed derivation, qualification, interjection, or exact world-place mutation",
+        "negative_controls": [
+          "@comp and @c directive namespaces are not current language law",
+          "@ does not independently construct or apply a descriptor",
+          "a value-shaped fact cannot manufacture authority"
+        ],
+        "generated_consumers": [
+          "lexer roles",
+          "parser roles",
+          "world graph",
+          "formatter",
+          "Tree-sitter",
+          "LSP",
+          "MCP"
+        ],
+        "implementation_state": "partial"
+      }
+    ]
+  },
   "semantic_invariants": {
     "one_graph": true,
     "one_identity_per_semantic_thing": true,
@@ -47,7 +224,17 @@
     "path_is_identity": false,
     "dnir_is_semantic_authority": false,
     "syntax_shape_may_decide_lowering_meaning": false,
-    "facts_are_reconstructed_downstream": false
+    "facts_are_reconstructed_downstream": false,
+    "equal_source_name_content_and_edition_imply_correspondence": false
+  },
+  "open_architecture_gaps": {
+    "typed_identity_and_lineage": {
+      "status": "open",
+      "required_distinction": "relation, application occurrence, value, pack, place, assumption, transformation, realization, instruction, and object byte range are different entities",
+      "cross_class_lineage": "typed produces, transformed-by, realized-by, represented-by, and emitted-at edges",
+      "cross_incarnation_correspondence": "separate witnessed preserved, replaced, split, merged, generated, and retired relation",
+      "implementation_state": "the graph currently uses one private u32 coordinate type; this row is a target and not a claim of typed compiler enforcement"
+    }
   },
   "native_projection": {
     "repository": "clpi/idol-native",
@@ -58,8 +245,9 @@
   "research": {
     "pass_2": {
       "path": "research/archive/pass-2",
-      "archive_sha256": "0ac4b3a198a45f51ec6e3f3387977ecf9e964663ce6652dca499da4e99e9f139",
+      "archive_sha256": "e66fe6cd2470eb7ce73a82ed0f758b84044715c4a8102e55e95b61435e32ed78",
       "files": 25,
+      "archive_integrity": "corrupt; recovery requires the 25 original inputs",
       "duplicate_inputs_preserved": true,
       "superseded_identity_recommendations_preserved_as_history": true
     },

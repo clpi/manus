@@ -96,6 +96,7 @@ const native_barrier_checks = @import("native_barrier_checks.zig");
 const host_run = @import("host_run.zig");
 const wasm_semantic_gen = @import("wasm_semantic_gen.zig");
 const token_classify_gen = @import("token_classify_gen.zig");
+const authority_projection = @import("authority_projection.zig");
 
 var macos_sdkroot_configured = false;
 var compiler_lib_root: ?[]const u8 = null;
@@ -546,6 +547,7 @@ const usage =
     \\  test       [file]   run inline @test functions (or @build.test target)
     \\  bench      [file]   run @bench-marked functions (or @build.bench target)
     \\  prove               reproduce the seven release proofs and write a proof bundle
+    \\  authority           print the exact source-law authority edition carried by this compiler
     \\  symbols    <file>   glanceable module/test/build symbol map
     \\  graph      <file>   export semantic graph JSON (table_shapes, enum_shapes)
     \\  sim        <file>   export SIM v0 semantic snapshot JSON (Pass 5)
@@ -638,6 +640,7 @@ fn mainInner(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "test") or
             std.mem.eql(u8, args[1], "bench") or
             std.mem.eql(u8, args[1], "prove") or
+            std.mem.eql(u8, args[1], "authority") or
             std.mem.eql(u8, args[1], "symbols") or
             std.mem.eql(u8, args[1], "graph") or
             std.mem.eql(u8, args[1], "sim") or
@@ -653,6 +656,18 @@ fn mainInner(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "-h"));
     const cmd: []const u8 = if (known_cmd) args[1] else "run";
     const start: usize = if (known_cmd) 2 else 1;
+    if (std.mem.eql(u8, cmd, "authority")) {
+        if (args.len != 2) {
+            term.err("idol authority takes no arguments or options", .{});
+            std.process.exit(2);
+        }
+        const stdout = std.Io.File.stdout();
+        var buf: [512]u8 = undefined;
+        var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+        try authority_projection.writeCurrentJson(&fw.interface);
+        try fw.interface.flush();
+        return;
+    }
     var input_file: ?[]const u8 = null;
     var output_file: ?[]const u8 = null;
     var cc: []const u8 = "clang";
@@ -1148,10 +1163,16 @@ fn is_source_path(path: []const u8) bool {
     return admittedSourceFacts(path) != null;
 }
 
-test "unlisted source path is not admitted by a guessed law" {
+test "source family selects ingress and compiler binds the applied edition" {
     try std.testing.expect(admittedSourceFacts("vendor/opaque.bin") == null);
-    try std.testing.expect(admittedSourceFacts("program.id") != null);
-    try std.testing.expect(admittedSourceFacts("program.lua") != null);
+    const idol_facts = admittedSourceFacts("program.id").?;
+    try std.testing.expectEqual(lexer_bridge.SourceLaw.idol, idol_facts.law);
+    const idol = Lexer.initFacts("", "program.id", idol_facts);
+    try std.testing.expect(idol.source_law_edition.eql(authority_projection.SourceLawEdition.idolCurrent()));
+    const lua_facts = admittedSourceFacts("program.lua").?;
+    try std.testing.expectEqual(lexer_bridge.SourceLaw.lua, lua_facts.law);
+    const lua = Lexer.initFacts("", "program.lua", lua_facts);
+    try std.testing.expect(lua.source_law_edition.eql(.foreign_unversioned));
 }
 
 fn usesProjectWorkspace(cmd: []const u8, input_file: ?[]const u8) bool {
@@ -3261,6 +3282,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     sem.lua55_mode = lex.source_law == .lua;
     sem.idol_mode = lex.family == lexer_bridge.family_canon;
     sem.source_path = try alloc.dupe(u8, src_path);
+    sem.source_law_edition = lex.source_law_edition;
     sem.worlds = launchWorlds(src_path);
     {
         const ctx = try alloc.create(HomeLoaderCtx);

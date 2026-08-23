@@ -5970,6 +5970,16 @@ pub const Parser = struct {
     ///
     /// Returns null when the text is not one whole expression. The CALLER
     /// decides what that means; it must not mean "quietly emit the braces".
+    fn interpolationLexer(self: *Parser, text: []const u8) Lexer {
+        return Lexer.initFamilyLawEdition(
+            text,
+            self.lex.cursor.file,
+            self.lex.family,
+            self.lex.source_law,
+            self.lex.source_law_edition,
+        );
+    }
+
     fn parseInterpolationHole(self: *Parser, hole_loc: ast.Loc, raw: []const u8) ParseError!?*ast.Expr {
         const text = std.mem.trim(u8, raw, " \t\r\n");
         if (text.len == 0) return null;
@@ -5990,7 +6000,7 @@ pub const Parser = struct {
         // scratch buffer freed here would leave every identifier in the hole
         // pointing at reclaimed memory. It is a subslice of the decoded literal,
         // which the parse arena owns.
-        var sub = Lexer.initFamilyLaw(text, self.lex.cursor.file, self.lex.family, self.lex.source_law);
+        var sub = self.interpolationLexer(text);
         var p = Parser.init(&sub, self.alloc);
         p.idol_mode = self.idol_mode;
         p.ensureProducerPack() catch return null;
@@ -10652,6 +10662,29 @@ test "parse: interpolation hole locations are the file's, not the fragment's" {
     try testing.expectEqualStrings("x", second.name.ident);
     try testing.expectEqual(@as(u32, 2002), second.loc().line);
     try testing.expectEqual(@as(u32, 20), second.loc().col); // `{` is col 17
+}
+
+test "parse: interpolation sublexer preserves the parent's exact source-law edition" {
+    const bridge = @import("lexer_bridge.zig");
+    const authority = @import("authority_projection.zig");
+    const historical: authority.SourceLawEdition = .{ .exact = .{
+        .family = "idol",
+        .schema = "idol.source.law.test-previous",
+        .sha256 = "1111111111111111111111111111111111111111111111111111111111111111",
+    } };
+    var parent = Lexer.initFamilyLawEdition(
+        "edition_probe = 1",
+        "edition.id",
+        bridge.family_canon,
+        .idol,
+        historical,
+    );
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(&parent, arena.allocator());
+    const sub = parser.interpolationLexer("edition_probe");
+    try testing.expect(sub.source_law_edition.eql(historical));
+    try testing.expectEqualStrings(historical.sha256().?, sub.source_law_edition.sha256().?);
 }
 
 test "parse: string interpolation indexed holes" {

@@ -16,6 +16,7 @@ const place = @import("place.zig");
 const region = @import("region.zig");
 const subject_home = @import("subject_home.zig");
 const semantic_identity = @import("semantic_identity.zig");
+const authority_projection = @import("authority_projection.zig");
 pub const id = semantic_identity.id;
 pub const Card = semantic_identity.Card;
 
@@ -870,6 +871,9 @@ pub const SemanticGraph = struct {
     incarnation_coordinate: ?incarnation = null,
     /// Source path for the lifted module; used for gate-transport bootstrap faces.
     module_path: ?[]const u8 = null,
+    /// Exact source-law epoch inherited from checked ingress. Source suffix,
+    /// path, parser mode, and graph schema are not substitutes for this fact.
+    root_source_law_edition: authority_projection.SourceLawEdition = .unknown,
     /// Exact launcher-supplied worlds for this graph incarnation. This is copied
     /// from checked sema facts; `module_path` is provenance only.
     launch_worlds: subject_home.WorldSet,
@@ -5031,6 +5035,16 @@ pub const SemanticGraph = struct {
         checked: *const sema.Sema,
         file: []const u8,
     ) !id {
+        try checked.source_law_edition.validate();
+        try self.root_source_law_edition.validate();
+        if (!checked.source_law_edition.eql(.unknown)) {
+            if (!self.root_source_law_edition.eql(.unknown) and
+                !self.root_source_law_edition.eql(checked.source_law_edition))
+            {
+                return error.SourceLawEditionMismatch;
+            }
+            self.root_source_law_edition = checked.source_law_edition;
+        }
         self.module_path = file;
         self.launch_worlds = checked.worlds;
         // THE DEFINER'S HALF OF `(home, name)`, established at the same moment
@@ -6503,6 +6517,7 @@ pub const SemanticGraph = struct {
         out: *std.ArrayListUnmanaged(u8),
         source_hash: ?u64,
     ) !void {
+        try self.root_source_law_edition.validate();
         // version 3: every `applications[]` row now carries all five Cards as
         // always-present tagged objects (`appendCardJson`). Version 2 omitted a
         // card whose answer was `.none` or `.unknown`, so a v2 reader pointed at
@@ -6549,9 +6564,24 @@ pub const SemanticGraph = struct {
         // storage and shadowed by a relation-local declaration answered the
         // shadow's write from the module's word, and no v9 export distinguished
         // the shadow from a plain module write.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":10,\"file\":\"");
+        // version 11: exact `root_source_law` edition. Imported source positions
+        // need their own source/home facts before mixed-law closure can be claimed.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":11,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
+        switch (self.root_source_law_edition) {
+            .exact => |edition| {
+                try out.appendSlice(alloc, ",\"root_source_law\":{\"card\":\"one\",\"family\":\"");
+                try jsonEscapeAppend(out, alloc, edition.family);
+                try out.appendSlice(alloc, "\",\"schema\":\"");
+                try jsonEscapeAppend(out, alloc, edition.schema);
+                try out.appendSlice(alloc, "\",\"sha256\":\"");
+                try jsonEscapeAppend(out, alloc, edition.sha256);
+                try out.appendSlice(alloc, "\"}");
+            },
+            .foreign_unversioned => try out.appendSlice(alloc, ",\"root_source_law\":{\"card\":\"unknown\",\"family\":\"foreign\"}"),
+            .unknown => try out.appendSlice(alloc, ",\"root_source_law\":{\"card\":\"unknown\"}"),
+        }
         if (source_hash) |h| {
             try out.appendSlice(alloc, ",\"source_hash\":");
             try appendJsonInt(out, alloc, h);
@@ -7063,6 +7093,7 @@ test "semantic_graph: tuple return descriptor publishes one semantic result pack
     var checked = sema.Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
+    checked.source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
     try checked.check_module(&module);
 
     var graph = SemanticGraph.init(alloc);
@@ -7080,6 +7111,101 @@ test "semantic_graph: tuple return descriptor publishes one semantic result pack
     try std.testing.expectEqual(application_fact.result_pack, adjustment.source_pack);
     try std.testing.expectEqual(@as(?u32, 2), graph.pack(adjustment.target_pack).?.arity.fixedPrefix());
     try std.testing.expectEqual(@as(usize, 2), graph.packMembers(adjustment.target_pack).?.len);
+}
+
+test "semantic_graph: source-law edition preserves knowledge and refuses conflict" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\edition_probe = 1
+    ;
+    var lex = Lexer.init(src, "edition.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    checked.source_law_edition = lex.source_law_edition;
+    try checked.check_module(&module);
+
+    var retained = SemanticGraph.init(alloc);
+    defer retained.deinit();
+    _ = try retained.liftModuleWithCheckedCalls(&module, &checked, "edition.id");
+    try std.testing.expect(retained.root_source_law_edition.eql(authority_projection.SourceLawEdition.idolCurrent()));
+
+    var current_json: std.ArrayListUnmanaged(u8) = .empty;
+    defer current_json.deinit(alloc);
+    try retained.writeJson(alloc, "edition.id", &current_json, null);
+    var current_parsed = try std.json.parseFromSlice(std.json.Value, alloc, current_json.items, .{});
+    defer current_parsed.deinit();
+    const current_law = current_parsed.value.object.get("root_source_law").?.object;
+    try std.testing.expectEqualStrings("one", current_law.get("card").?.string);
+    try std.testing.expectEqualStrings("idol", current_law.get("family").?.string);
+    try std.testing.expectEqualStrings(authority_projection.source_law_schema, current_law.get("schema").?.string);
+    try std.testing.expectEqualStrings(authority_projection.source_law_sha256, current_law.get("sha256").?.string);
+
+    const historical: authority_projection.SourceLawEdition = .{ .exact = .{
+        .family = "idol",
+        .schema = "idol.source.law.historical-test",
+        .sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    } };
+    checked.source_law_edition = historical;
+    var historical_graph = SemanticGraph.init(alloc);
+    defer historical_graph.deinit();
+    _ = try historical_graph.liftModuleWithCheckedCalls(&module, &checked, "edition.id");
+    try std.testing.expect(historical_graph.root_source_law_edition.eql(historical));
+    var historical_json: std.ArrayListUnmanaged(u8) = .empty;
+    defer historical_json.deinit(alloc);
+    try historical_graph.writeJson(alloc, "edition.id", &historical_json, null);
+    var historical_parsed = try std.json.parseFromSlice(std.json.Value, alloc, historical_json.items, .{});
+    defer historical_parsed.deinit();
+    const historical_law = historical_parsed.value.object.get("root_source_law").?.object;
+    try std.testing.expectEqualStrings("one", historical_law.get("card").?.string);
+    try std.testing.expectEqualStrings("idol.source.law.historical-test", historical_law.get("schema").?.string);
+    try std.testing.expectEqualStrings(historical.sha256().?, historical_law.get("sha256").?.string);
+
+    checked.source_law_edition = .foreign_unversioned;
+    var foreign_graph = SemanticGraph.init(alloc);
+    defer foreign_graph.deinit();
+    _ = try foreign_graph.liftModuleWithCheckedCalls(&module, &checked, "edition.lua");
+    var foreign_json: std.ArrayListUnmanaged(u8) = .empty;
+    defer foreign_json.deinit(alloc);
+    try foreign_graph.writeJson(alloc, "edition.lua", &foreign_json, null);
+    var foreign_parsed = try std.json.parseFromSlice(std.json.Value, alloc, foreign_json.items, .{});
+    defer foreign_parsed.deinit();
+    const foreign_law = foreign_parsed.value.object.get("root_source_law").?.object;
+    try std.testing.expectEqualStrings("unknown", foreign_law.get("card").?.string);
+    try std.testing.expectEqualStrings("foreign", foreign_law.get("family").?.string);
+    try std.testing.expect(foreign_law.get("schema") == null);
+    try std.testing.expect(foreign_law.get("sha256") == null);
+
+    var malformed_graph = SemanticGraph.init(alloc);
+    defer malformed_graph.deinit();
+    malformed_graph.root_source_law_edition = .{ .exact = .{
+        .family = "idol",
+        .schema = "idol.source.law.v1",
+        .sha256 = "not-a-sha256",
+    } };
+    var malformed_json: std.ArrayListUnmanaged(u8) = .empty;
+    defer malformed_json.deinit(alloc);
+    try std.testing.expectError(
+        error.InvalidSourceLawEdition,
+        malformed_graph.writeJson(alloc, "edition.id", &malformed_json, null),
+    );
+
+    var conflicting = SemanticGraph.init(alloc);
+    defer conflicting.deinit();
+    conflicting.root_source_law_edition = .foreign_unversioned;
+    checked.source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
+    try std.testing.expectError(
+        error.SourceLawEditionMismatch,
+        conflicting.liftModuleWithCheckedCalls(&module, &checked, "edition.id"),
+    );
 }
 
 test "semantic_graph: checked subject application retains relation and value identities" {
@@ -7105,6 +7231,7 @@ test "semantic_graph: checked subject application retains relation and value ide
     var checked = sema.Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
+    checked.source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
     try checked.check_module(&module);
 
     var graph = SemanticGraph.init(alloc);
@@ -7202,6 +7329,10 @@ test "semantic_graph: checked subject application retains relation and value ide
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
     const projected = parsed.value.object.get("applications").?.array.items;
+    const source_law = parsed.value.object.get("root_source_law").?.object;
+    try std.testing.expectEqualStrings("one", source_law.get("card").?.string);
+    try std.testing.expectEqualStrings("idol", source_law.get("family").?.string);
+    try std.testing.expectEqualStrings(authority_projection.source_law_sha256, source_law.get("sha256").?.string);
     try std.testing.expectEqual(@as(usize, 1), projected.len);
     try std.testing.expectEqual(
         @as(i64, @intCast(subject_id)),
@@ -7359,9 +7490,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    // The schema went to 8 in `2918277e` and this assertion was not moved with
-    // it. The other writeJson test in this file already asserts 8.
-    try std.testing.expectEqual(@as(i64, 10), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 11), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
     try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
@@ -7738,7 +7867,11 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Color\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Red\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"storage_class\"") == null);
-    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":10") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":11") != null);
+    try std.testing.expectEqualStrings(
+        "unknown",
+        parsed.value.object.get("root_source_law").?.object.get("card").?.string,
+    );
     try std.testing.expect(std.mem.indexOf(u8, s, "\"home\":") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"scope\":") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"scope\":\"module\"") == null);
@@ -9248,6 +9381,7 @@ test "semantic_graph: gate transport census clears bootstrap-only unresolved app
 test "semantic_graph: continuity requires a witnessed cross-incarnation fact" {
     var before = SemanticGraph.init(std.testing.allocator);
     defer before.deinit();
+    before.root_source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
     const old = try before.addNode(.{
         .kind = .func,
         .span = .{ .file = "old/place.id", .start = 1, .end = 1 },
@@ -9256,6 +9390,7 @@ test "semantic_graph: continuity requires a witnessed cross-incarnation fact" {
 
     var after = SemanticGraph.init(std.testing.allocator);
     defer after.deinit();
+    after.root_source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
     const current = try after.addNode(.{
         .kind = .func,
         .span = .{ .file = "moved/place.id", .start = 9, .end = 9 },
@@ -9281,7 +9416,8 @@ test "semantic_graph: continuity requires a witnessed cross-incarnation fact" {
     const current_ref = try after.entityRef(current);
     const witness_ref = try after.entityRef(witness);
 
-    // Equal spelling cannot establish continuity, even across a file move.
+    // Equal source-law edition and spelling cannot establish continuity, even
+    // across a file move. Only the witnessed correspondence below may do so.
     try std.testing.expect(history.exactSuccessor(old_ref) == null);
     _ = try history.addCorrespondence(.{
         .predecessors = &.{old_ref},
