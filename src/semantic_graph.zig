@@ -3768,6 +3768,50 @@ pub const SemanticGraph = struct {
         // must carry an `exact_i64` (`flatAccessAnswerIsKnown`), and
         // realization consults this same predicate, so the two cannot drift.
         if (p.shape != .collection) return false;
+        // THE REMAINING REFUSALS ARE FACTS, NOT MISSING FACTS. Re-measured over
+        // the whole corpus (813 modules, 15 of which contain any attempt at
+        // all) with a per-place cause tag on every degradation site in
+        // `place.zig`: of 77 admission attempts, 5 admit, 48 stop on the
+        // mutation clause below and 24 on the escape clause, and EVERY ONE OF
+        // THE 72 IS A TRUE NEGATIVE.
+        //
+        //   all 48   `mutation = .yes` set by `writeTarget`'s index arm — the
+        //            module really does execute `t[k] = v` on this place
+        //            (`symtab_native` 21, `simultaneous_assign_proof` 12,
+        //            `swap` 6, `table_mutable_store` 4, `projection_index_assign`
+        //            2, `codegen_native` 2, `nested_while_reduction` 1).
+        //            `markAllUnknown`, the whole-census sledgehammer, tagged
+        //            ZERO of them: no reject here comes from an unmodelled
+        //            statement.
+        //   18 of 24 `escape = .unknown` from `for x in xs`, whose body assigns
+        //            the loop variable and thereby writes the table. The place
+        //            walk records NO mutation for that write, so escape is the
+        //            only fact standing between this predicate and a wrong
+        //            answer.
+        //    6 of 24 `escape = .unknown` from `sort(xs, 1, 10)` — an in-place
+        //            quicksort that mutates through the parameter.
+        //
+        // BOTH WIDENINGS WERE BUILT AND MEASURED, and both are refusals. Making
+        // iteration non-escaping moved admits 5 -> 23 and published
+        // applications 4997 -> 5015; the 18 new rows assert `xs[1] == 1` on the
+        // exact source lines that read `assert(xs[1] == 11)`. Deleting the
+        // mutation clause moved admits 5 -> 53 and published applications
+        // 4997 -> 5045; of the five machine-compilable modules it reaches, two
+        // (`projection_index_assign`, `symtab_native`) then refuse with DNB011
+        // `application-realization-count` and three (`table_mutable_store`
+        // 100 -> 0, `nested_while_reduction` 15 -> 0, `codegen_native` 2 -> 0)
+        // return the wrong answer.
+        //
+        // THE MISSING PIECE IS NOT A PLACE FACT, IT IS A PLACE INCARNATION.
+        // Every clause here is whole-binding because `AggregateFact.place` is
+        // `.one(site)` and `boundAggregateAtPlace` returns null when two
+        // aggregates share a place. The graph can name the collection at a site
+        // but not its CONTENTS BETWEEN TWO WRITES, and that is exactly what the
+        // 72 need. No relaxation of this predicate can substitute, because
+        // `dnir_lower` asks it TWO questions at two granularities: per-read
+        // (`foldAggregateAccess`) and whole-place (`immutableNestedAggregateRoot`
+        // gating static residency). A per-member or per-point answer would
+        // license deleting the storage of a table that is written at runtime.
         if (p.facts.mutation != .no or p.facts.immutability != .yes) return false;
         if (p.facts.alias != .no or p.facts.escape != .no) return false;
         return switch (p.bindCount()) {
@@ -6059,6 +6103,26 @@ pub const SemanticGraph = struct {
             try buf.appendSlice(alloc, @tagName(p.facts.determinacy));
             try buf.appendSlice(alloc, "\",\"mutation\":\"");
             try buf.appendSlice(alloc, @tagName(p.facts.mutation));
+            // THE THREE FACTS THE FOLD ACTUALLY TURNS ON, and until v9 the only
+            // ones it consults that this projection did not publish.
+            // `aggregateIsSoleImmutableBinding` reads six place inputs — shape,
+            // mutation, immutability, alias, escape, bind count — and v8
+            // published three of them. A reader holding a v8 export could see
+            // `mutation:"no"` on a place the predicate had just refused and had
+            // no way to learn why, so REPRODUCING AN ADMISSION DECISION FROM THE
+            // EXPORT WAS IMPOSSIBLE. Measured while auditing that predicate over
+            // the corpus: the 77 admission attempts had to be attributed with an
+            // instrumented compiler because these keys were absent, and an
+            // instrumented build is a second store that rots the moment it is
+            // deleted. Absence of a key is not the same answer as `"unknown"`
+            // (see the version note above), so these are published, never
+            // inferred.
+            try buf.appendSlice(alloc, "\",\"immutability\":\"");
+            try buf.appendSlice(alloc, @tagName(p.facts.immutability));
+            try buf.appendSlice(alloc, "\",\"alias\":\"");
+            try buf.appendSlice(alloc, @tagName(p.facts.alias));
+            try buf.appendSlice(alloc, "\",\"contents_known\":\"");
+            try buf.appendSlice(alloc, @tagName(p.facts.contents_known));
             try buf.appendSlice(alloc, "\",\"escape\":\"");
             try buf.appendSlice(alloc, @tagName(p.facts.escape));
             try buf.appendSlice(alloc, "\",\"lifetime\":\"");
@@ -6405,7 +6469,16 @@ pub const SemanticGraph = struct {
         // value to a bare `.str` descriptor with no producer quote identity.
         // version 8: node `scope` replaces duplicate containment edges;
         // qualified descriptor links use the canonical `descriptor` relation.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":8,\"file\":\"");
+        //
+        // version 9: `places[]` rows gain `immutability`, `alias` and
+        // `contents_known`. Version 8 published `mutation` and `escape` but not
+        // the three siblings `aggregateIsSoleImmutableBinding` reads alongside
+        // them, so no v8 reader could reproduce that predicate's answer — the
+        // one predicate that decides whether an aggregate projection is
+        // published at all AND whether realization may fold it. The bump is what
+        // lets a v8 reader know it was not being told, rather than read a
+        // missing key as agreement.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":9,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         if (source_hash) |h| {
@@ -7217,7 +7290,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     defer parsed.deinit();
     // The schema went to 8 in `2918277e` and this assertion was not moved with
     // it. The other writeJson test in this file already asserts 8.
-    try std.testing.expectEqual(@as(i64, 8), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 9), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
     try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
@@ -7594,7 +7667,7 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Color\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Red\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"storage_class\"") == null);
-    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":8") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":9") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"home\":") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"scope\":") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"scope\":\"module\"") == null);
