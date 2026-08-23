@@ -36,16 +36,24 @@
     },
     {
       "name": "idol-native",
-      "sibling": "idol-native",
+      "root_input": "IDOL_NATIVE_ROOT",
+      "repository": "clpi/idol-native",
+      "revision": "9fa95a3e826a37e95e0de1498203ef8818029d0a",
+      "tree": "64682fc0ffba89c923854abc087de46444f4a2ab",
       "entry": "tools/mcp/server.id",
+      "entry_sha256": "fdeb4d635e1de3bd372494a99faf1a7728fb9dc378d56c7e3e08a7226bcbd73c",
       "bin": "bin/idol",
+      "artifact_sha256": "0f76a51db2410c804b40dedc7b94d2c4e5b0118629fe721829b8507eb73c7139",
+      "authority_projection": "docs/spec/AUTHORITY.json",
+      "authority_projection_sha256": "a67c48eb53e12e6a86d7786a3ccafc115a1fd34311a170ffe9c4234fc5fc65e0",
+      "authority_revision": "c9480b77189c8ce308403bd377b6c509046796e4",
       "provenance": "native",
       "backend": "native",
       "enabled": true,
       "required": false,
       "startup_timeout_sec": 60,
       "tool_timeout_sec": 1800,
-      "purpose": "native semantic-graph server from the idol-native benchmark checkout (sibling directory): check, symbols, graph, run, gates, orient, sim, explain, fmt, asm"
+      "purpose": "native semantic-graph server from one explicitly supplied, exact clean idol-native worktree: check, symbols, graph, run, gates, orient, sim, explain, fmt, asm"
     }
   ]
 }

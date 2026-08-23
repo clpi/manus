@@ -1,0 +1,186 @@
+#!/bin/sh
+set -eu
+
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    echo "mcp-pair: INFRASTRUCTURE: neither shasum nor sha256sum is available" >&2
+    return 1
+  fi
+}
+
+fail() {
+  echo "mcp-pair: INFRASTRUCTURE: $*" >&2
+  exit 2
+}
+
+usage() {
+  echo "usage: mcp-pair validate MANIFEST SERVER | launch MANIFEST SERVER" >&2
+  exit 2
+}
+
+[ "$#" -eq 3 ] || usage
+mode="$1"
+manifest="$2"
+name="$3"
+case "$mode" in
+  validate|launch) ;;
+  *) usage ;;
+esac
+
+command -v jq >/dev/null 2>&1 || fail "jq is required"
+command -v git >/dev/null 2>&1 || fail "git is required"
+[ -r "$manifest" ] || fail "manifest is unreadable: $manifest"
+
+count="$(jq -r --arg name "$name" '[.servers[] | select(.name == $name)] | length' "$manifest" 2>/dev/null)" ||
+  fail "manifest is invalid: $manifest"
+[ "$count" -eq 1 ] || fail "server identity must occur exactly once: $name (found $count)"
+
+server="$(jq -c --arg name "$name" '.servers[] | select(.name == $name)' "$manifest")"
+root_input="$(printf '%s\n' "$server" | jq -r '.root_input // empty')"
+case "$root_input" in
+  [A-Z][A-Z0-9_]*) ;;
+  *) fail "$name has no valid explicit root_input" ;;
+esac
+case "$root_input" in
+  *[!A-Z0-9_]*) fail "$name has invalid root_input: $root_input" ;;
+esac
+
+root="$(printenv "$root_input" 2>/dev/null || true)"
+[ -n "$root" ] || fail "$name requires explicit $root_input"
+case "$root" in
+  /*) ;;
+  *) fail "$name $root_input must be an absolute path: $root" ;;
+esac
+[ -d "$root" ] || fail "$name root is missing: $root"
+root="$(cd "$root" 2>/dev/null && pwd -P)" || fail "$name root is unreadable"
+
+top="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" || fail "$name root is not a Git worktree: $root"
+top="$(cd "$top" 2>/dev/null && pwd -P)" || fail "$name Git root is unreadable"
+[ "$top" = "$root" ] || fail "$name root is not the Git toplevel: input=$root top=$top"
+
+expected_revision="$(printf '%s\n' "$server" | jq -r '.revision // empty')"
+expected_tree="$(printf '%s\n' "$server" | jq -r '.tree // empty')"
+printf '%s\n' "$expected_revision" | grep -Eq '^[0-9a-f]{40}$' || fail "$name manifest revision is absent or malformed"
+printf '%s\n' "$expected_tree" | grep -Eq '^[0-9a-f]{40}$' || fail "$name manifest tree is absent or malformed"
+
+actual_revision="$(git -C "$root" rev-parse HEAD 2>/dev/null)" || fail "$name cannot resolve HEAD"
+actual_tree="$(git -C "$root" rev-parse 'HEAD^{tree}' 2>/dev/null)" || fail "$name cannot resolve HEAD tree"
+[ "$actual_revision" = "$expected_revision" ] ||
+  fail "$name revision mismatch: expected=$expected_revision actual=$actual_revision"
+[ "$actual_tree" = "$expected_tree" ] ||
+  fail "$name tree mismatch: expected=$expected_tree actual=$actual_tree"
+
+status="$(git -C "$root" status --porcelain=v1 --untracked-files=all 2>/dev/null)" || fail "$name cannot inspect worktree state"
+[ -z "$status" ] || fail "$name root is dirty or contains untracked files"
+
+entry_rel="$(printf '%s\n' "$server" | jq -r '.entry // empty')"
+bin_rel="$(printf '%s\n' "$server" | jq -r '.bin // empty')"
+backend="$(printf '%s\n' "$server" | jq -r '.backend // empty')"
+entry_sha="$(printf '%s\n' "$server" | jq -r '.entry_sha256 // empty')"
+bin_sha="$(printf '%s\n' "$server" | jq -r '.artifact_sha256 // empty')"
+[ -n "$entry_rel" ] || fail "$name entry is absent"
+[ -n "$bin_rel" ] || fail "$name artifact is absent"
+case "$entry_rel" in
+  /*|..|../*|*/..|*/../*) fail "$name entry path is not a contained relative path: $entry_rel" ;;
+esac
+case "$bin_rel" in
+  /*|..|../*|*/..|*/../*) fail "$name artifact path is not a contained relative path: $bin_rel" ;;
+esac
+entry="$root/$entry_rel"
+bin="$root/$bin_rel"
+[ -f "$entry" ] && [ ! -L "$entry" ] || fail "$name entry is not a regular non-symlink file: $entry"
+[ -f "$bin" ] && [ ! -L "$bin" ] && [ -x "$bin" ] || fail "$name artifact is not an executable regular non-symlink file: $bin"
+
+actual_entry_sha="$(sha256_file "$entry")" || fail "$name entry SHA-256 is unavailable"
+actual_bin_sha="$(sha256_file "$bin")" || fail "$name artifact SHA-256 is unavailable"
+[ "$actual_entry_sha" = "$entry_sha" ] ||
+  fail "$name entry digest mismatch: expected=$entry_sha actual=$actual_entry_sha"
+[ "$actual_bin_sha" = "$bin_sha" ] ||
+  fail "$name artifact digest mismatch: expected=$bin_sha actual=$actual_bin_sha"
+
+authority_rel="$(printf '%s\n' "$server" | jq -r '.authority_projection // empty')"
+authority_sha="$(printf '%s\n' "$server" | jq -r '.authority_projection_sha256 // empty')"
+authority_revision="$(printf '%s\n' "$server" | jq -r '.authority_revision // empty')"
+if [ -n "$authority_rel" ] || [ -n "$authority_sha" ] || [ -n "$authority_revision" ]; then
+  [ -n "$authority_rel" ] && [ -n "$authority_sha" ] && [ -n "$authority_revision" ] ||
+    fail "$name authority projection identity is incomplete"
+  authority="$root/$authority_rel"
+  [ -f "$authority" ] && [ ! -L "$authority" ] || fail "$name authority projection is unreadable: $authority"
+  actual_authority_sha="$(sha256_file "$authority")" || fail "$name authority projection SHA-256 is unavailable"
+  [ "$actual_authority_sha" = "$authority_sha" ] ||
+    fail "$name authority projection digest mismatch: expected=$authority_sha actual=$actual_authority_sha"
+  projected_revision="$(jq -r '.authority.commit // empty' "$authority" 2>/dev/null)" ||
+    fail "$name authority projection is invalid JSON"
+  [ "$projected_revision" = "$authority_revision" ] ||
+    fail "$name authority revision mismatch: expected=$authority_revision actual=$projected_revision"
+fi
+
+if [ "$mode" = validate ]; then
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$name" "$root" "$bin" "$entry" "$backend" "$actual_revision" "$actual_tree" "$authority_revision"
+  exit 0
+fi
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/idol-mcp-pair.XXXXXX")"
+# Invoked by the process traps below.
+# shellcheck disable=SC2329
+cleanup_pair() {
+  rm -rf "$work"
+}
+trap cleanup_pair EXIT HUP INT TERM
+# Execute only a private checkout of the validated commit. Concurrent edits to
+# the supplied live root cannot change the server entry, compiler artifact, or
+# repository queries after admission.
+if ! git clone -q --shared --no-checkout "$root" "$work/root"; then
+  fail "$name exact private snapshot clone failed"
+fi
+if ! git -c advice.detachedHead=false -C "$work/root" checkout -q "$actual_revision"; then
+  fail "$name exact private snapshot checkout failed"
+fi
+snapshot_root="$(cd "$work/root" && pwd -P)"
+snapshot_revision="$(git -C "$snapshot_root" rev-parse HEAD 2>/dev/null)" || fail "$name snapshot revision is unreadable"
+snapshot_tree="$(git -C "$snapshot_root" rev-parse 'HEAD^{tree}' 2>/dev/null)" || fail "$name snapshot tree is unreadable"
+snapshot_status="$(git -C "$snapshot_root" status --porcelain=v1 --untracked-files=all 2>/dev/null)" || fail "$name snapshot state is unreadable"
+[ "$snapshot_revision" = "$actual_revision" ] && [ "$snapshot_tree" = "$actual_tree" ] && [ -z "$snapshot_status" ] ||
+  fail "$name exact private snapshot identity disagrees"
+snapshot_entry="$snapshot_root/$entry_rel"
+snapshot_bin="$snapshot_root/$bin_rel"
+[ "$(sha256_file "$snapshot_entry")" = "$actual_entry_sha" ] || fail "$name snapshot entry digest disagrees"
+[ "$(sha256_file "$snapshot_bin")" = "$actual_bin_sha" ] || fail "$name snapshot artifact digest disagrees"
+if [ -n "$authority_rel" ]; then
+  [ "$(sha256_file "$snapshot_root/$authority_rel")" = "$authority_sha" ] || fail "$name snapshot authority digest disagrees"
+fi
+
+compiler="${IDOL_PAIR_COMPILER:-}"
+[ -n "$compiler" ] || fail "$name launch requires explicit IDOL_PAIR_COMPILER"
+case "$compiler" in
+  /*) ;;
+  *) fail "$name IDOL_PAIR_COMPILER must be an absolute path: $compiler" ;;
+esac
+[ -f "$compiler" ] && [ ! -L "$compiler" ] && [ -x "$compiler" ] ||
+  fail "$name pair compiler is not an executable regular non-symlink file: $compiler"
+compiler_sha="$(sha256_file "$compiler")" || fail "$name pair compiler SHA-256 is unavailable"
+echo "mcp-pair: validated name=$name revision=$actual_revision tree=$actual_tree entry_sha256=$actual_entry_sha artifact_sha256=$actual_bin_sha authority_revision=$authority_revision pair_compiler_sha256=$compiler_sha snapshot_root=$snapshot_root" >&2
+if ! (cd "$snapshot_root" && "$compiler" compile --no-cache "$snapshot_entry" "--backend=$backend" --emit exe -o "$work/server" >"$work/compile.out" 2>"$work/compile.err"); then
+  cat "$work/compile.out" "$work/compile.err" >&2
+  fail "$name cold server compilation failed"
+fi
+if grep -Fq '(cached)' "$work/compile.out" "$work/compile.err"; then
+  cat "$work/compile.out" "$work/compile.err" >&2
+  fail "$name compiler ignored --no-cache"
+fi
+[ -x "$work/server" ] || fail "$name cold server compilation produced no executable"
+# Transitional transport only: the protected server builds one shell command
+# without quoting IDOL_BIN. Supply one already-quoted shell token for the exact
+# artifact; this does not close native path-quoting debt.
+case "$snapshot_bin" in
+  *"'"*) fail "$name snapshot path cannot be represented by the transitional native shell transport" ;;
+esac
+server_bin="'$snapshot_bin'"
+rc=0
+env IDOL_ROOT="$snapshot_root" IDOL_BIN="$server_bin" "$work/server" || rc=$?
+exit "$rc"

@@ -3,8 +3,8 @@
  *
  * WHY THIS EXISTS
  * pi has no native MCP. The Idol coordination workflow is MCP-based:
- * `idol` owns status/head/orient; `idol-native` (sibling idol-native
- * checkout) owns the semantic-graph surface: check, symbols, graph, run,
+ * `idol` owns status/head/orient; an exact explicitly paired `idol-native`
+ * checkout owns the semantic-graph surface: check, symbols, graph, run,
  * gates, orient, sim, explain, fmt, asm. This extension speaks
  * newline-delimited JSON-RPC 2.0 to those servers by spawning each server's
  * own `idol` binary on the entrypoints declared by
@@ -32,15 +32,15 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 interface ManifestServer {
   name: string;
   entry: string;
   backend: string;
-  /** Sibling checkout name; resolves the root and launcher against it. */
-  sibling?: string;
-  /** Launcher binary inside the server root (sibling servers only). */
+  /** Environment input naming the exact root; never inferred by topology. */
+  root_input?: string;
+  /** Exact launcher artifact inside an explicitly paired root. */
   bin?: string;
   enabled?: boolean;
   required?: boolean;
@@ -77,8 +77,10 @@ class McpClient {
   readonly tools: McpTool[] = [];
 
   constructor(
-    private readonly idolBin: string,
-    private readonly root: string,
+    private readonly command: string,
+    private readonly args: string[],
+    private readonly cwd: string,
+    private readonly env: NodeJS.ProcessEnv,
     private readonly server: ManifestServer,
   ) {}
 
@@ -94,12 +96,12 @@ class McpClient {
     let proc: ChildProcessWithoutNullStreams;
     try {
       proc = spawn(
-        this.idolBin,
-        ["run", `--backend=${this.server.backend}`, join(this.root, this.server.entry)],
+        this.command,
+        this.args,
         {
-          cwd: this.root,
+          cwd: this.cwd,
           stdio: ["pipe", "pipe", "pipe"],
-          env: { ...process.env, IDOL_ROOT: this.root, IDOL_BIN: this.idolBin },
+          env: this.env,
         },
       );
     } catch (e) {
@@ -213,11 +215,11 @@ class McpClient {
 
 export default function (pi: ExtensionAPI) {
   let repo = process.cwd();
-  const manifestPath = join(repo, "tools", "node", "dev", "mcp.manifest.json");
 
   // The Idol dev workflow sends session metadata; PI env may resolve repo.
   const fromEnv = process.env.IDOL_REPO ?? process.env.IDOL_ROOT;
   if (fromEnv) repo = fromEnv;
+  const manifestPath = join(repo, "tools", "node", "dev", "mcp.manifest.json");
   const idolBin = process.env.IDOL_BOOTSTRAP_BIN ?? process.env.IDOL_BIN ?? join(repo, "zig-out", "bin", "idol");
 
   const clients = new Map<string, McpClient>();
@@ -233,18 +235,31 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  // A server with a "sibling" field resolves its root and launcher against
-  // the sibling checkout of this clone (for example the idol-native
-  // repository); every other server resolves against this repository.
-  const serverRoot = (s: ManifestServer): string =>
-    s.sibling ? join(dirname(repo), s.sibling) : repo;
-  const serverBin = (s: ManifestServer): string =>
-    s.sibling ? join(serverRoot(s), s.bin ?? "bin/idol") : idolBin;
-
   const ensureClient = async (s: ManifestServer): Promise<McpClient> => {
     let c = clients.get(s.name);
     if (!c) {
-      c = new McpClient(serverBin(s), serverRoot(s), s);
+      if (s.root_input) {
+        const root = process.env[s.root_input] ?? "";
+        c = new McpClient(
+          join(repo, "tools", "node", "dev", "mcp-pair"),
+          ["launch", manifestPath, s.name],
+          repo,
+          {
+            ...process.env,
+            [s.root_input]: root,
+            IDOL_PAIR_COMPILER: idolBin,
+          },
+          s,
+        );
+      } else {
+        c = new McpClient(
+          idolBin,
+          ["run", `--backend=${s.backend}`, join(repo, s.entry)],
+          repo,
+          { ...process.env, IDOL_ROOT: repo, IDOL_BIN: idolBin },
+          s,
+        );
+      }
       clients.set(s.name, c);
     }
     await c.start((s.startup_timeout_sec ?? 60) * 1000);

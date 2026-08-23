@@ -5,6 +5,7 @@ repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$repo"
 
 fail=0
+control_id=0
 
 expect_fail() {
   name="$1"
@@ -19,6 +20,31 @@ expect_fail() {
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/idol-positive.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
+
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    sha256sum "$1" | awk '{print $1}'
+  fi
+}
+
+expect_infrastructure() {
+  name="$1"
+  shift
+  control_id=$((control_id + 1))
+  control_root="$work/control-$control_id"
+  mkdir -p "$control_root"
+  rc=0
+  TMPDIR="$control_root" "$@" >"$control_root/stdout" 2>"$control_root/stderr" || rc=$?
+  if [ "$rc" -ne 2 ] || ! grep -Fq 'INFRASTRUCTURE' "$control_root/stderr"; then
+    echo "FAIL infrastructure control: $name (rc=$rc)" >&2
+    cat "$control_root/stdout" "$control_root/stderr" >&2
+    fail=$((fail + 1))
+  else
+    echo "ok infrastructure control refused: $name"
+  fi
+}
 
 cat > "$work/dead-manifest.json" <<JSON
 {
@@ -36,6 +62,153 @@ cat > "$work/dead-manifest.json" <<JSON
   ]
 }
 JSON
+
+native_root="${IDOL_NATIVE_ROOT:-}"
+if [ -z "$native_root" ]; then
+  echo "FAIL paired-root controls require explicit IDOL_NATIVE_ROOT" >&2
+  fail=$((fail + 1))
+elif ! "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native >"$work/pair.tsv"; then
+  echo "FAIL exact paired native root did not validate" >&2
+  fail=$((fail + 1))
+else
+  fields="$(awk -F '\t' 'NF == 8 { print NF }' "$work/pair.tsv")"
+  if [ "$fields" != 8 ]; then
+    echo "FAIL exact paired native root did not publish eight identity fields" >&2
+    fail=$((fail + 1))
+  else
+    echo "ok exact paired native root validated"
+  fi
+
+  git -c advice.detachedHead=false clone -q --shared --no-checkout "$native_root" "$work/native-control"
+  git -c advice.detachedHead=false -C "$work/native-control" checkout -q 9fa95a3e826a37e95e0de1498203ef8818029d0a
+  IDOL_NATIVE_ROOT="$work/native-control" "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native >"$work/native-before-dirty.tsv"
+  printf '\n' >>"$work/native-control/tools/mcp/server.id"
+  expect_infrastructure "dirty paired root" env IDOL_NATIVE_ROOT="$work/native-control" \
+    "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native
+  git -C "$work/native-control" checkout -q -- tools/mcp/server.id
+  IDOL_NATIVE_ROOT="$work/native-control" "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native >"$work/native-after-dirty.tsv"
+
+  IDOL_NATIVE_ROOT="$work/native-control" "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native >"$work/native-before-untracked.tsv"
+  : >"$work/native-control/untracked-control"
+  expect_infrastructure "untracked paired root" env IDOL_NATIVE_ROOT="$work/native-control" \
+    "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native
+  git -C "$work/native-control" clean -qf -- untracked-control
+  IDOL_NATIVE_ROOT="$work/native-control" "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native >"$work/native-after-untracked.tsv"
+
+  IDOL_NATIVE_ROOT="$work/native-control" "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native >"$work/native-before-stale.tsv"
+  git -c advice.detachedHead=false -C "$work/native-control" checkout -q 9fa95a3e826a37e95e0de1498203ef8818029d0a^
+  expect_infrastructure "stale paired revision" env IDOL_NATIVE_ROOT="$work/native-control" \
+    "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native
+  git -c advice.detachedHead=false -C "$work/native-control" checkout -q 9fa95a3e826a37e95e0de1498203ef8818029d0a
+  if ! IDOL_NATIVE_ROOT="$work/native-control" "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native >"$work/native-poison-then-positive.tsv"; then
+    echo "FAIL reused control root remained poisoned after exact restore" >&2
+    fail=$((fail + 1))
+  else
+    echo "ok poison-then-positive exact root validation"
+  fi
+
+  jq '.servers |= map(if .name == "idol-native" then .tree = "0000000000000000000000000000000000000000" else . end)' \
+    "$repo/tools/node/dev/mcp.manifest.json" >"$work/wrong-tree.json"
+  expect_infrastructure "wrong paired tree" env IDOL_NATIVE_ROOT="$native_root" \
+    "$repo/tools/node/dev/mcp-pair" validate "$work/wrong-tree.json" idol-native
+
+  jq '.servers |= map(if .name == "idol-native" then .entry_sha256 = "0000000000000000000000000000000000000000000000000000000000000000" else . end)' \
+    "$repo/tools/node/dev/mcp.manifest.json" >"$work/wrong-entry.json"
+  expect_infrastructure "damaged paired entry digest" env IDOL_NATIVE_ROOT="$native_root" \
+    "$repo/tools/node/dev/mcp-pair" validate "$work/wrong-entry.json" idol-native
+
+  jq '.servers |= map(if .name == "idol-native" then .artifact_sha256 = "0000000000000000000000000000000000000000000000000000000000000000" else . end)' \
+    "$repo/tools/node/dev/mcp.manifest.json" >"$work/wrong-artifact.json"
+  expect_infrastructure "damaged paired artifact digest" env IDOL_NATIVE_ROOT="$native_root" \
+    "$repo/tools/node/dev/mcp-pair" validate "$work/wrong-artifact.json" idol-native
+fi
+
+expect_infrastructure "missing explicit paired root" env IDOL_NATIVE_ROOT= \
+  "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native
+expect_infrastructure "missing paired root path" env IDOL_NATIVE_ROOT="$work/no-such-native" \
+  "$repo/tools/node/dev/mcp-pair" validate "$repo/tools/node/dev/mcp.manifest.json" idol-native
+
+# A missing pair must refuse the whole roster before even the primary compiler
+# is invoked. This also proves there is no fallback to a coincidental sibling.
+cat >"$work/marker-compiler" <<'SH'
+#!/bin/sh
+: >"$MCP_MARKER"
+exit 99
+SH
+chmod +x "$work/marker-compiler"
+marker="$work/native-executed"
+expect_infrastructure "paired preflight precedes every native process" env \
+  IDOL_NATIVE_ROOT= IDOL_BOOTSTRAP_BIN="$work/marker-compiler" MCP_MARKER="$marker" \
+  "$repo/tools/node/dev/probe-mcp"
+if [ -e "$marker" ]; then
+  echo "FAIL invalid pair executed the primary compiler" >&2
+  fail=$((fail + 1))
+else
+  echo "ok invalid pair executed zero native subjects"
+fi
+
+cat >"$work/zero-manifest.json" <<'JSON'
+{"schema":1,"servers":[]}
+JSON
+expect_infrastructure "zero enabled MCP subjects" env IDOL_MCP_MANIFEST="$work/zero-manifest.json" \
+  IDOL_BOOTSTRAP_BIN="$work/marker-compiler" MCP_MARKER="$marker" "$repo/tools/node/dev/probe-mcp"
+if [ -e "$marker" ]; then
+  echo "FAIL zero-subject manifest executed a compiler" >&2
+  fail=$((fail + 1))
+else
+  echo "ok zero-subject manifest executed zero native subjects"
+fi
+
+# A compiler that accepts but ignores --no-cache must not reach its emitted
+# server. The fake repository is exact, clean, and fully digest-bound so the
+# only failed obligation is effective cold compilation.
+mkdir -p "$work/fake-native/tools/mcp" "$work/fake-native/bin"
+printf 'server\n' >"$work/fake-native/tools/mcp/server.id"
+cat >"$work/fake-native/bin/idol" <<'SH'
+#!/bin/sh
+echo compile >>"$FAKE_MCP_MARKER"
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -o ]; then
+    shift
+    out="$1"
+  fi
+  shift
+done
+cat >"$out" <<'SERVER'
+#!/bin/sh
+echo server >>"$FAKE_MCP_MARKER"
+SERVER
+chmod +x "$out"
+echo 'fake (cached)'
+SH
+chmod +x "$work/fake-native/bin/idol"
+git -C "$work/fake-native" init -q
+git -C "$work/fake-native" config user.email controls@idol.invalid
+git -C "$work/fake-native" config user.name controls
+git -C "$work/fake-native" add tools/mcp/server.id bin/idol
+git -C "$work/fake-native" commit -qm fake
+fake_revision="$(git -C "$work/fake-native" rev-parse HEAD)"
+fake_tree="$(git -C "$work/fake-native" rev-parse 'HEAD^{tree}')"
+fake_entry_sha="$(sha256_file "$work/fake-native/tools/mcp/server.id")"
+fake_artifact_sha="$(sha256_file "$work/fake-native/bin/idol")"
+jq -n --arg revision "$fake_revision" --arg tree "$fake_tree" --arg entry_sha "$fake_entry_sha" --arg artifact_sha "$fake_artifact_sha" '
+  {schema:1,servers:[{
+    name:"fake",root_input:"FAKE_NATIVE_ROOT",revision:$revision,tree:$tree,
+    entry:"tools/mcp/server.id",entry_sha256:$entry_sha,
+    bin:"bin/idol",artifact_sha256:$artifact_sha,backend:"native",
+    enabled:true,required:true,startup_timeout_sec:1,tool_timeout_sec:1
+  }]}
+' >"$work/fake-manifest.json"
+fake_marker="$work/fake-events"
+expect_infrastructure "ignored no-cache compiler" env FAKE_NATIVE_ROOT="$work/fake-native" FAKE_MCP_MARKER="$fake_marker" IDOL_PAIR_COMPILER="$work/fake-native/bin/idol" \
+  "$repo/tools/node/dev/mcp-pair" launch "$work/fake-manifest.json" fake
+if [ "$(cat "$fake_marker" 2>/dev/null || true)" != compile ]; then
+  echo "FAIL ignored no-cache control did not stop before fake server execution" >&2
+  fail=$((fail + 1))
+else
+  echo "ok ignored no-cache control stopped before fake server execution"
+fi
 
 expect_fail "missing dependency" env PATH="/usr/bin:/bin" IDOL_DOCTOR_SKIP_GATES=1 "$repo/tools/node/dev/doctor"
 expect_fail "dead MCP server" env IDOL_MCP_MANIFEST="$work/dead-manifest.json" "$repo/tools/node/dev/probe-mcp"

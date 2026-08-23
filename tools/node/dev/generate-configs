@@ -9,9 +9,11 @@ if [ -n "$xlink" ]; then
     "$xlink"/*) repo="$HOME/x/${repo#"$xlink"/}" ;;
   esac
 fi
-parent="$(dirname "$repo")"
 manifest="$repo/tools/node/dev/mcp.manifest.json"
 idol="${IDOL_BOOTSTRAP_BIN:-${IDOL_BIN:-$repo/zig-out/bin/idol}}"
+pair="$repo/tools/node/dev/mcp-pair"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/idol-mcp.XXXXXX")"
+trap 'rm -rf "$tmp"' EXIT
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "generate-configs: jq is required" >&2
@@ -34,24 +36,49 @@ if [ ! -x "$idol" ]; then
   echo "generate-configs: missing compiler artifact: $idol" >&2
   exit 1
 fi
+if [ ! -x "$pair" ]; then
+  echo "generate-configs: missing paired-root validator: $pair" >&2
+  exit 2
+fi
 
-# name <tab> root <tab> bin <tab> entry <tab> backend <tab> enabled <tab> required <tab> startup_sec <tab> tool_sec
-# A server with a "sibling" field resolves against the sibling checkout of the
-# canonical clone (for example the idol-native benchmark repository); every
-# other server resolves against this repository. "bin" selects the server's
-# launcher binary inside its root (default zig-out/bin/idol).
-servers_tsv="$(jq -r --arg repo "$repo" --arg parent "$parent" --arg mainbin "$idol" '
+# name <tab> root_input <tab> entry <tab> backend <tab> enabled <tab> required <tab> startup_sec <tab> tool_sec
+jq -r '
   .servers[] |
-  (if .sibling then ($parent + "/" + .sibling) else $repo end) as $root |
-  (if .sibling then ($root + "/" + (.bin // "bin/idol")) else $mainbin end) as $bin |
-  [.name, $root, $bin, .entry, .backend, .enabled, .required, .startup_timeout_sec, .tool_timeout_sec] | @tsv
-' "$manifest")"
+  [.name, (.root_input // "-"), .entry, .backend, .enabled, .required, .startup_timeout_sec, .tool_timeout_sec] | @tsv
+' "$manifest" >"$tmp/declared.tsv"
+
+# name <tab> root <tab> bin <tab> absolute-entry <tab> backend <tab> enabled <tab> required <tab> startup <tab> tool <tab> kind <tab> root_input
+: >"$tmp/servers.tsv"
+tab="$(printf '\t')"
+while IFS="$tab" read -r name root_input entry backend enabled required startup tool; do
+  if [ "$root_input" != - ]; then
+    validated="$("$pair" validate "$manifest" "$name")" || exit 2
+    IFS="$tab" read -r validated_name root bin absolute_entry validated_backend validated_revision validated_tree validated_authority <<EOF
+$validated
+EOF
+    [ "$validated_name" = "$name" ] && [ "$validated_backend" = "$backend" ] || {
+      echo "generate-configs: paired validator returned the wrong server identity" >&2
+      exit 2
+    }
+    [ -n "$validated_revision" ] && [ -n "$validated_tree" ] && [ -n "$validated_authority" ] || {
+      echo "generate-configs: paired validator omitted revision, tree, or authority provenance" >&2
+      exit 2
+    }
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\tpair\t%s\n' \
+      "$name" "$root" "$bin" "$absolute_entry" "$backend" "$enabled" "$required" "$startup" "$tool" "$root_input" \
+      >>"$tmp/servers.tsv"
+  else
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\tlocal\t-\n' \
+      "$name" "$repo" "$idol" "$repo/$entry" "$backend" "$enabled" "$required" "$startup" "$tool" \
+      >>"$tmp/servers.tsv"
+  fi
+done <"$tmp/declared.tsv"
+servers_tsv="$(cat "$tmp/servers.tsv")"
 
 missing=0
-tab="$(printf '\t')"
-while IFS="$tab" read -r name root bin entry backend enabled required startup tool; do
-  [ -f "$root/$entry" ] || {
-    echo "generate-configs: missing $name entry: $root/$entry" >&2
+while IFS="$tab" read -r name root bin entry backend enabled required startup tool kind root_input; do
+  [ -f "$entry" ] || {
+    echo "generate-configs: missing $name entry: $entry" >&2
     missing=1
   }
   if [ "$enabled" = true ] && [ ! -x "$bin" ]; then
@@ -65,9 +92,6 @@ if [ "$missing" -ne 0 ]; then
   exit 1
 fi
 
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/idol-mcp.XXXXXX")"
-trap 'rm -rf "$tmp"' EXIT
-
 mkdir -p "$repo/.codex" "$repo/.cursor" "$repo/.opencode/skills"
 
 codex_out="$tmp/codex.toml"
@@ -76,63 +100,80 @@ opencode_out="$tmp/opencode.json"
 
 {
   echo "# Generated from tools/node/dev/mcp.manifest.json. Do not edit by hand."
-  while IFS="$tab" read -r name root bin entry backend enabled required startup tool; do
+  while IFS="$tab" read -r name root bin entry backend enabled required startup tool kind root_input; do
     printf '[mcp_servers.%s]\n' "$name"
-    printf 'command = "%s"\n' "$bin"
-    printf 'args = ["run", "--backend=%s", "%s"]\n' "$backend" "$root/$entry"
-    printf 'cwd = "%s"\n' "$root"
+    if [ "$kind" = pair ]; then
+      printf 'command = "%s"\n' "$pair"
+      printf 'args = ["launch", "%s", "%s"]\n' "$manifest" "$name"
+      printf 'cwd = "%s"\n' "$repo"
+    else
+      printf 'command = "%s"\n' "$bin"
+      printf 'args = ["run", "--backend=%s", "%s"]\n' "$backend" "$entry"
+      printf 'cwd = "%s"\n' "$root"
+    fi
     printf 'startup_timeout_sec = %s\n' "$startup"
     printf 'tool_timeout_sec = %s\n' "$tool"
     printf 'enabled = %s\n' "$enabled"
     printf 'required = %s\n\n' "$required"
     printf '[mcp_servers.%s.env]\n' "$name"
     printf 'IDOL_ROOT = "%s"\n' "$root"
-    printf 'IDOL_BIN = "%s"\n\n' "$bin"
+    printf 'IDOL_BIN = "%s"\n' "$bin"
+    if [ "$root_input" != - ]; then
+      printf '%s = "%s"\n' "$root_input" "$root"
+      printf 'IDOL_PAIR_COMPILER = "%s"\n' "$idol"
+    fi
+    printf '\n'
   done <<EOF
 $servers_tsv
 EOF
 } > "$codex_out"
 
-jq --arg repo "$repo" --arg parent "$parent" '
+jq -Rn --arg repo "$repo" --arg pair "$pair" --arg manifest "$manifest" --arg pair_compiler "$idol" '
+  [inputs | split("\t") | {
+    name: .[0], root: .[1], bin: .[2], entry: .[3], backend: .[4],
+    enabled: (.[5] == "true"), required: (.[6] == "true"),
+    startup: (.[7] | tonumber), tool: (.[8] | tonumber), kind: .[9], root_input: .[10]
+  }] |
   {
     mcpServers: (
-      [.servers[] | select(.enabled) |
-        (if .sibling then ($parent + "/" + .sibling) else $repo end) as $root |
-        (if .sibling then ($root + "/" + (.bin // "bin/idol")) else ($root + "/zig-out/bin/idol") end) as $bin |
+      [.[] | select(.enabled) |
         {
           key: .name,
           value: {
-            command: $bin,
-            args: ["run", ("--backend=" + .backend), ($root + "/" + .entry)],
-            cwd: $root,
-            env: { IDOL_ROOT: $root, IDOL_BIN: $bin }
+            command: (if .kind == "pair" then $pair else .bin end),
+            args: (if .kind == "pair" then ["launch", $manifest, .name] else ["run", ("--backend=" + .backend), .entry] end),
+            cwd: (if .kind == "pair" then $repo else .root end),
+            env: ({ IDOL_ROOT: .root, IDOL_BIN: .bin } + (if .root_input == "-" then {} else {(.root_input): .root, IDOL_PAIR_COMPILER: $pair_compiler} end))
           }
         }] | from_entries
     )
   }
-' "$manifest" > "$cursor_out"
+' <"$tmp/servers.tsv" > "$cursor_out"
 
-jq --arg repo "$repo" --arg parent "$parent" '
+jq -Rn --arg repo "$repo" --arg pair "$pair" --arg manifest "$manifest" --arg pair_compiler "$idol" '
+  [inputs | split("\t") | {
+    name: .[0], root: .[1], bin: .[2], entry: .[3], backend: .[4],
+    enabled: (.[5] == "true"), required: (.[6] == "true"),
+    startup: (.[7] | tonumber), tool: (.[8] | tonumber), kind: .[9], root_input: .[10]
+  }] |
   {
     "$schema": "https://opencode.ai/config.json",
     mcp: (
-      [.servers[] | select(.enabled) |
-        (if .sibling then ($parent + "/" + .sibling) else $repo end) as $root |
-        (if .sibling then ($root + "/" + (.bin // "bin/idol")) else ($root + "/zig-out/bin/idol") end) as $bin |
+      [.[] | select(.enabled) |
         {
           key: .name,
           value: {
             type: "local",
-            command: [$bin, "run", ("--backend=" + .backend), ($root + "/" + .entry)],
-            cwd: $root,
-            environment: { IDOL_ROOT: $root, IDOL_BIN: $bin },
+            command: (if .kind == "pair" then [$pair, "launch", $manifest, .name] else [.bin, "run", ("--backend=" + .backend), .entry] end),
+            cwd: (if .kind == "pair" then $repo else .root end),
+            environment: ({ IDOL_ROOT: .root, IDOL_BIN: .bin } + (if .root_input == "-" then {} else {(.root_input): .root, IDOL_PAIR_COMPILER: $pair_compiler} end)),
             enabled: true,
-            timeout: (.startup_timeout_sec * 1000)
+            timeout: (.startup * 1000)
           }
         }] | from_entries
     )
   }
-' "$manifest" > "$opencode_out"
+' <"$tmp/servers.tsv" > "$opencode_out"
 
 if [ "${1:-}" = "--check" ]; then
   cmp -s "$codex_out" "$repo/.codex/mcp.generated.toml" || {
@@ -227,7 +268,7 @@ opencode_skills="$opencode_home/skills"
 mkdir -p "$opencode_skills"
 for name in idol idol-dev; do
   [ -f "$repo/.pi/skills/$name/SKILL.md" ] || continue
-  rm -rf "$opencode_skills/$name"
+  rm -rf "${opencode_skills:?}/$name"
   cp -R "$repo/.pi/skills/$name" "$opencode_skills/$name"
 done
 echo "generated .codex/mcp.generated.toml"

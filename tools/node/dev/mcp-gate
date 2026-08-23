@@ -121,7 +121,12 @@ sha256_file() {
 }
 
 printf 'mcp-gate: manifest-driven production JSON-RPC\n'
-if ! "$repo/tools/node/dev/probe-mcp"; then
+probe_rc=0
+"$repo/tools/node/dev/probe-mcp" || probe_rc=$?
+if [ "$probe_rc" -eq 2 ]; then
+  printf 'mcp-gate: INFRASTRUCTURE FAIL — enabled-server pair/refusal preflight failed before gate execution\n' >&2
+  exit 2
+elif [ "$probe_rc" -ne 0 ]; then
   report fail "enabled-server initialize probe" "probe-mcp failed"
 else
   report ok "enabled-server initialize probe" ""
@@ -159,7 +164,8 @@ else
     report fail "compiler artifact SHA-256" "neither shasum nor sha256sum is available"
   fi
 
-  if (cd "$repo" && "$idol" compile "$repo/$entry" --backend=direct --emit exe -o "$work/native-server" >"$work/native-compile.out" 2>"$work/native-compile.err"); then
+  if (cd "$repo" && "$idol" compile --no-cache "$repo/$entry" --backend=direct --emit exe -o "$work/native-server" >"$work/native-compile.out" 2>"$work/native-compile.err") &&
+    ! grep -Fq '(cached)' "$work/native-compile.out" "$work/native-compile.err"; then
     start_stream "$work/native-server" "$work/native-stream"
     printf '%s\n' '{"jsonrpc":"2.0","id":91,"method":"initialize","params":{}}' >&9
     if wait_for_path "$work/native-stream.1.ready" &&
@@ -198,7 +204,7 @@ else
 
   rc=0
   (cd "$repo" && IDOL_ROOT="$repo" IDOL_BIN="$idol" \
-    "$idol" run "$repo/$entry" <"$work/request.json" >"$work/response.json" 2>"$work/server.err") || rc=$?
+    "$work/native-server" <"$work/request.json" >"$work/response.json" 2>"$work/server.err") || rc=$?
   if [ "$rc" -ne 0 ]; then
     report fail "native idol process" "exited $rc"
     cat "$work/server.err" >&2
@@ -219,7 +225,7 @@ else
   printf '%s\n' '{"method":"tools/call","params":{"name":"head","arguments":{}},"jsonrpc":"2.0","id":6}' >"$work/idlast.json"
   rc=0
   (cd "$repo" && IDOL_ROOT="$repo" IDOL_BIN="$idol" \
-    "$idol" run "$repo/$entry" <"$work/idlast.json" >"$work/idlast-response.json" 2>"$work/idlast.err") || rc=$?
+    "$work/native-server" <"$work/idlast.json" >"$work/idlast-response.json" 2>"$work/idlast.err") || rc=$?
   if [ "$rc" -eq 0 ] && jq -e --arg head "$head" '.jsonrpc == "2.0" and .id == 6 and (has("error") | not) and .result.content[0].type == "text" and ((.result.content[0].text | sub("\\n$"; "")) == $head)' "$work/idlast-response.json" >/dev/null 2>&1; then
     report ok "member-order tolerance: id serialized last round-trips" ""
   else
@@ -259,7 +265,8 @@ else
   new_writes="$(grep -c 'stdout:write(resp)$' "$work/no-newline.id" || true)"
   if [ "$old_writes" -ne 0 ] || [ "$new_writes" -ne 1 ]; then
     report fail "damage control: newline removal landed" "production response write was not damaged exactly once"
-  elif ! (cd "$repo" && "$idol" compile "$work/no-newline.id" --backend=direct --emit exe -o "$work/no-newline-server" >"$work/no-newline-compile.out" 2>"$work/no-newline-compile.err"); then
+  elif ! (cd "$repo" && "$idol" compile --no-cache "$work/no-newline.id" --backend=direct --emit exe -o "$work/no-newline-server" >"$work/no-newline-compile.out" 2>"$work/no-newline-compile.err") ||
+    grep -Fq '(cached)' "$work/no-newline-compile.out" "$work/no-newline-compile.err"; then
     report fail "damage control: newline removal compiled" "damaged server did not compile"
     cat "$work/no-newline-compile.err" >&2
   else
