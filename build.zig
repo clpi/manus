@@ -349,6 +349,17 @@ pub fn build(b: *std.Build) void {
     const unit_test_step = b.step("unit-test", "Run Zig unit tests only");
     unit_test_step.dependOn(&run_unit_tests.step);
 
+    // A DNIR module-global initializer is one fact consumed by both physical
+    // realizations. Both columns exit 40, so this gate compares stdout too; an
+    // exit-only differential would pass the exact zero-initialization defect it
+    // guards. Kept as an explicit step because Wasmtime is an external oracle.
+    const wasm_global_cmd = b.addSystemCommand(&.{ "sh", "gate/wasm/global.sh" });
+    wasm_global_cmd.setCwd(b.path("."));
+    wasm_global_cmd.setEnvironmentVariable("IDOL_BIN", "./zig-out/bin/idol");
+    wasm_global_cmd.step.dependOn(b.getInstallStep());
+    const wasm_global_step = b.step("wasm-global", "DNIR global initialization agrees under direct and Wasm realization");
+    wasm_global_step.dependOn(&wasm_global_cmd.step);
+
     // C0 law.corpus.zero is the Idol owner; this is an authority-free physical
     // Git-status projection. The same shim guards commits and serialized
     // admission so empty, binary, renamed, case-varied, and untracked .id

@@ -2,10 +2,10 @@
 //!
 //! THE SEAM IS THE IR, NOT THE AST. `dnir_lower.zig` already turns a checked
 //! module into `native_ir.Module`; `native_backend.zig` turns that into AArch64
-//! Mach-O. This file is the SECOND consumer of the same lowering, so everything
-//! the direct backend can express the wasm32-wasi target can express too, and
-//! the two cannot drift apart by construction: a lowering change lands in both
-//! columns on the same commit or in neither.
+//! Mach-O. This file is the SECOND consumer of the same lowering, so both
+//! realizations consume one fact stream. Every new DNIR fact still needs an
+//! explicit consumer here: sharing the producer prevents semantic
+//! reconstruction, while differential controls prevent consumer omission.
 //!
 //! WHAT THIS REPLACES. `--target wasm32-wasi` used to be the C emitter's tail —
 //! `src/codegen.zig` wrote C and `zig cc --target=wasm32-wasi` compiled it. That
@@ -782,7 +782,8 @@ pub fn emitFromDnir(
 
     // ---- 2. One 8-byte word per module-scope global, discovered from the
     // instructions exactly as `native_backend.internGlobal` discovers them.
-    // Zero-initialized, which is what `__DATA,__bss` gives the AArch64 build.
+    // `assemble` consumes `m.globals` into these same offsets; words without a
+    // published initializer retain WebAssembly's implicit zero initialization.
     for (m.functions) |f| {
         for (f.blocks) |b| {
             for (b.instrs) |ins| {
@@ -3362,6 +3363,35 @@ fn section(out: *Buf, id: u8, payload: []const u8) Error!void {
     try out.bytes(payload);
 }
 
+/// Append the load-time bytes already published by `dnir.Module.globals` for
+/// words this realization actually allocated. The name-to-offset map is the
+/// storage decision consumed by `load_global` and `store_global`; consulting it
+/// here keeps initialization, reads, and writes on one physical word without
+/// re-deriving which source declaration was a global.
+fn appendGlobalData(e: *Emitter, out: *Buf) Error!u32 {
+    var count: u32 = 0;
+    for (e.module.globals) |global| {
+        const off = e.globals.get(global.name) orelse continue;
+        const word: u64 = switch (global.init) {
+            .i64 => |value| @bitCast(value),
+            .f64 => |value| @bitCast(value),
+            else => {
+                e.diagnostic.remember("global-init-kind");
+                return error.UnsupportedProgram;
+            },
+        };
+        try out.u32v(0); // active, memory 0
+        try out.i32c(@intCast(globals_base + off));
+        try out.byte(op_end);
+        try out.u32v(8);
+        var raw: [8]u8 = undefined;
+        std.mem.writeInt(u64, &raw, word, .little);
+        try out.bytes(&raw);
+        count += 1;
+    }
+    return count;
+}
+
 fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
     const alloc = e.alloc;
     const pool_len: u32 = @intCast(e.strings.data.items.len);
@@ -3483,13 +3513,16 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
         try section(&out, 10, s.items.items);
     }
 
-    // --- 11 data: the 256 interned one-byte strings, then the string pool. The
-    // globals region is left implicitly zero, which is exactly what
-    // `__DATA,__bss` gives the AArch64 build.
+    // --- 11 data: the 256 interned one-byte strings, the string pool, then the
+    // demanded non-zero module-global words. Zero words remain physically
+    // absent and therefore keep WebAssembly's implicit zero initialization.
     {
         var s = Buf{ .alloc = alloc };
         defer s.deinit();
-        try s.u32v(if (pool_len > 0) 2 else 1);
+        var globals = Buf{ .alloc = alloc };
+        defer globals.deinit();
+        const global_count = try appendGlobalData(e, &globals);
+        try s.u32v(1 + @as(u32, @intFromBool(pool_len > 0)) + global_count);
         try s.u32v(0); // active, memory 0
         try s.i32c(@intCast(addr_onechar));
         try s.byte(op_end);
@@ -3506,8 +3539,55 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
             try s.u32v(pool_len);
             try s.bytes(e.strings.data.items);
         }
+        try s.bytes(globals.items.items);
         try section(&out, 11, s.items.items);
     }
 
     return out.items.toOwnedSlice(alloc);
+}
+
+test "wasm backend consumes the DNIR global initializer at its storage word" {
+    const testing = std.testing;
+    const globals = [_]dnir.Global{
+        .{ .name = "z", .ty = .i64, .init = .{ .i64 = 30 } },
+        // No load/store names this word, so demand gives it no physical slot.
+        .{ .name = "unused", .ty = .i64, .init = .{ .i64 = 99 } },
+    };
+    const floats = [_]dnir.Global{
+        .{ .name = "z", .ty = .f64, .init = .{ .f64 = -1.5 } },
+    };
+    var diagnostic: Diagnostic = .{};
+    var emitter = Emitter{
+        .alloc = testing.allocator,
+        .diagnostic = &diagnostic,
+        .module = .{ .functions = &.{}, .globals = &globals },
+        .types = .{ .alloc = testing.allocator },
+        .strings = .{ .alloc = testing.allocator },
+    };
+    defer emitter.deinit();
+    try emitter.globals.put(testing.allocator, "z", 8);
+    emitter.globals_used = 16;
+
+    var data = Buf{ .alloc = testing.allocator };
+    defer data.deinit();
+    try testing.expectEqual(@as(u32, 1), try appendGlobalData(&emitter, &data));
+    try testing.expect(data.items.items.len >= 8);
+    const word = data.items.items[data.items.items.len - 8 ..];
+    try testing.expectEqual(@as(u64, 30), std.mem.readInt(u64, word[0..8], .little));
+
+    emitter.module.globals = &floats;
+    data.items.clearRetainingCapacity();
+    try testing.expectEqual(@as(u32, 1), try appendGlobalData(&emitter, &data));
+    const float_word = data.items.items[data.items.items.len - 8 ..];
+    try testing.expectEqual(
+        @as(u64, @bitCast(@as(f64, -1.5))),
+        std.mem.readInt(u64, float_word[0..8], .little),
+    );
+
+    // Damage control: removing the producer fact must remove the segment even
+    // though the same physical word remains allocated for loads and stores.
+    emitter.module.globals = &.{};
+    data.items.clearRetainingCapacity();
+    try testing.expectEqual(@as(u32, 0), try appendGlobalData(&emitter, &data));
+    try testing.expectEqual(@as(usize, 0), data.items.items.len);
 }
