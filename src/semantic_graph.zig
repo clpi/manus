@@ -899,6 +899,10 @@ pub const SemanticGraph = struct {
     /// (`dnir_lower.applicationFace`, `native_backend.occurrenceFace`) cast any
     /// `ast_ref` they are handed straight to `*const Expr`.
     module_ast: ?*const ast.Module = null,
+    /// Exact identity of `module_ast` in this graph incarnation. Entry
+    /// selection and realization consume this producer-owned id instead of
+    /// accepting any node whose tag happens to be `.module`.
+    module_root: ?id = null,
     nodes: std.ArrayListUnmanaged(Node) = .empty,
     edges: std.ArrayListUnmanaged(Edge) = .empty,
     /// from-id -> indices into `edges`. A PHYSICAL ACCELERATION INDEX ONLY
@@ -1060,6 +1064,25 @@ pub const SemanticGraph = struct {
     /// authority for the caller's half.
     pub fn selfHome(self: *const SemanticGraph) ?[]const u8 {
         return self.home;
+    }
+
+    /// Exact semantic root for this lifted source module. The pointer check
+    /// establishes graph/source association; the returned id remains the
+    /// semantic identity consumed downstream.
+    pub fn rootForModule(self: *const SemanticGraph, mod: *const ast.Module) ?id {
+        if (self.module_ast != mod) return null;
+        const root = self.module_root orelse return null;
+        const node = self.get(root) orelse return null;
+        if (node.kind != .module) return null;
+        return root;
+    }
+
+    /// True only for this graph incarnation's exact root. Node kind validates
+    /// the fact; it cannot establish root identity by itself.
+    pub fn isModuleRoot(self: *const SemanticGraph, entity: id) bool {
+        if (self.module_root != entity) return false;
+        const node = self.get(entity) orelse return false;
+        return node.kind == .module;
     }
 
     pub fn entityRef(self: *const SemanticGraph, entity: id) !EntityRef {
@@ -2643,6 +2666,7 @@ pub const SemanticGraph = struct {
             .span = .{ .file = file, .start = 0, .end = 0 },
             .name = file,
         });
+        self.module_root = mod_id;
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .func_decl) continue;
             const fd = &stmt.func_decl;

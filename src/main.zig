@@ -4789,6 +4789,24 @@ fn outputHoldsAnArtifact(io: Io, out_path: []const u8) bool {
     };
 }
 
+/// One CLI projection of semantic entry selection for every executable
+/// realizer. An explicit spelling must resolve before C, Wasm, or native sees
+/// an entry symbol; `null` remains meaningful only for an absent default.
+fn selectProcessEntryOrReport(
+    mod: *const ast.Module,
+    graph: *const semantic_graph.SemanticGraph,
+    root: semantic_graph.id,
+    requested: ?[]const u8,
+) !?native_backend.ProcessEntry {
+    return native_backend.selectProcessEntry(mod, graph, root, requested) catch |err| switch (err) {
+        error.InvalidProcessEntry => {
+            term.err("--entry '{s}': no zero-arg i64/void/f64 function with that name", .{requested.?});
+            std.process.exit(1);
+        },
+        else => return err,
+    };
+}
+
 fn do_compile(
     alloc: std.mem.Allocator,
     io: Io,
@@ -4934,7 +4952,7 @@ fn do_compile(
         defer native_ir.deinitModule(alloc, lowered);
 
         var diagnostic: c_backend.Diagnostic = .{};
-        const selected_entry = try native_backend.selectProcessEntry(&ps.mod, &graph, root, entry_override);
+        const selected_entry = try selectProcessEntryOrReport(&ps.mod, &graph, root, entry_override);
         const entry_symbol = if (selected_entry) |entry|
             try native_backend.processEntrySymbol(alloc, &graph, entry)
         else
@@ -5008,7 +5026,7 @@ fn do_compile(
         defer wasm_demand.deinit();
         try demand.prune(alloc, &ps.mod, &wasm_demand);
         var wasm_diagnostic: wasm_backend.Diagnostic = .{};
-        const selected_entry = try native_backend.selectProcessEntry(&ps.mod, &wasm_graph, wasm_root, entry_override);
+        const selected_entry = try selectProcessEntryOrReport(&ps.mod, &wasm_graph, wasm_root, entry_override);
         const wasm_entry = if (selected_entry) |entry|
             try native_backend.processEntrySymbol(alloc, &wasm_graph, entry)
         else
@@ -5067,7 +5085,7 @@ fn do_compile(
                 var direct_graph = semantic_graph.SemanticGraph.init(alloc);
                 defer direct_graph.deinit();
                 const direct_root = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
-                if (try native_backend.selectProcessEntry(&ps.mod, &direct_graph, direct_root, entry_override)) |selected_entry| {
+                if (try selectProcessEntryOrReport(&ps.mod, &direct_graph, direct_root, entry_override)) |selected_entry| {
                     // ENTRY IDENTITY PRECEDES LINKAGE. A root and an ordinary
                     // source relation named `main` are distinct graph entities;
                     // only the root owns the bare process symbol. `--entry`
@@ -5416,13 +5434,8 @@ fn do_compile(
                         std.process.exit(1);
                     }
                 } else {
-                    if (entry_override) |name| {
-                        term.err("--entry '{s}': no zero-arg i64/void/f64 function with that name", .{name});
-                        std.process.exit(1);
-                    } else {
-                        term.err("no process: a file-scope tail is the program, or one zero-arg function, or --entry <name>", .{});
-                        std.process.exit(1);
-                    }
+                    term.err("no process: a file-scope tail is the program, or one zero-arg function, or --entry <name>", .{});
+                    std.process.exit(1);
                 }
             } else if (native_backend.isNativeSharedTarget(mt)) {
                 var direct_graph = semantic_graph.SemanticGraph.init(alloc);

@@ -36,6 +36,7 @@ TOKEN    keyword_bridge.zig
 TOKEN    lexical_identity.zig
 TOKEN    grammar_roles.zig
 TOKEN    grammar_role_table.zig
+TOKEN    authority_projection.zig
 
 AST      parser.zig
 AST      ast.zig

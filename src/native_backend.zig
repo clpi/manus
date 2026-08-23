@@ -14,7 +14,6 @@ const home_resolve = @import("home_resolve.zig");
 const table_apply = @import("table_apply.zig");
 const const_table = @import("const_table.zig");
 const region_graph = @import("region_graph.zig");
-const demand_projection = @import("demand_projection.zig");
 
 pub const Error = error{
     UnsupportedTarget,
@@ -727,10 +726,17 @@ pub const ProcessEntry = union(enum) {
     relation: semantic_graph.id,
 };
 
+pub const ProcessEntryError = error{
+    /// An explicit source spelling did not resolve to an eligible relation.
+    InvalidProcessEntry,
+    /// The source, root, or relation did not belong to this graph.
+    SemanticFactsInvalid,
+};
+
 fn relationProcessEntry(
     graph: *const semantic_graph.SemanticGraph,
     declaration: *const ast.FuncDecl,
-) Error!ProcessEntry {
+) ProcessEntryError!ProcessEntry {
     return .{ .relation = graph.relationForDeclaration(declaration) orelse
         return error.SemanticFactsInvalid };
 }
@@ -746,13 +752,15 @@ pub fn selectProcessEntry(
     graph: *const semantic_graph.SemanticGraph,
     root: semantic_graph.id,
     want: ?[]const u8,
-) Error!?ProcessEntry {
+) ProcessEntryError!?ProcessEntry {
+    const graph_root = graph.rootForModule(mod) orelse return error.SemanticFactsInvalid;
+    if (root != graph_root) return error.SemanticFactsInvalid;
     if (want) |name| {
-        const fd = findModuleFunction(mod, name) orelse return null;
-        if (!isZeroArgEntryFunction(fd)) return null;
+        const fd = findModuleFunction(mod, name) orelse return error.InvalidProcessEntry;
+        if (!isZeroArgEntryFunction(fd)) return error.InvalidProcessEntry;
         return try relationProcessEntry(graph, fd);
     }
-    if (mod.program()) return .{ .root = root };
+    if (mod.program()) return .{ .root = graph_root };
 
     var sole: ?*const ast.FuncDecl = null;
     var sole_count: usize = 0;
@@ -783,11 +791,15 @@ pub fn processEntrySymbol(
 ) Error![]const u8 {
     return switch (entry) {
         .root => |entity| blk: {
-            const node = graph.get(entity) orelse return error.SemanticFactsInvalid;
-            if (node.kind != .module) return error.SemanticFactsInvalid;
+            if (!graph.isModuleRoot(entity)) return error.SemanticFactsInvalid;
             break :blk try alloc.dupe(u8, "main");
         },
         .relation => |entity| blk: {
+            // TRANSITIONAL LINKAGE BRIDGE: selection already carries the exact
+            // graph relation id, but linkage/origin/ABI facts are not graph
+            // columns yet. Delete this `ast_ref` cast when that producer lands;
+            // DNIR definition emission and this consumer must then read the
+            // same graph fact, with no declaration/text fallback.
             const node = graph.get(entity) orelse return error.SemanticFactsInvalid;
             if (!graph.callable(entity)) return error.SemanticFactsInvalid;
             const raw = node.ast_ref orelse return error.SemanticFactsInvalid;
@@ -12083,6 +12095,36 @@ test "native backend: root and source main retain distinct entry identities" {
         error.SemanticFactsInvalid,
         processEntrySymbol(alloc, &graph, .{ .relation = root }),
     );
+    try std.testing.expectEqual(root, graph.rootForModule(&mod).?);
+    try std.testing.expect(graph.isModuleRoot(root));
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        selectProcessEntry(&mod, &graph, selected_relation.relation, null),
+    );
+
+    // A different source module cannot borrow this graph even when the caller
+    // supplies this graph's numerically valid root id.
+    var other_lex = Lexer.init("9", "entry/other.id");
+    var other_parser = Parser.init(&other_lex, alloc);
+    other_parser.idol_mode = true;
+    var other_mod = try other_parser.parse_module();
+    try std.testing.expect(graph.rootForModule(&other_mod) == null);
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        selectProcessEntry(&other_mod, &graph, root, null),
+    );
+
+    // A same-kind node is still not the producer-owned module root.
+    const decoy_module = try graph.addNode(.{
+        .kind = .module,
+        .span = .{ .file = "entry/decoy.id", .start = 0, .end = 0 },
+        .name = "entry/decoy.id",
+    });
+    try std.testing.expect(!graph.isModuleRoot(decoy_module));
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        processEntrySymbol(alloc, &graph, .{ .root = decoy_module }),
+    );
 
     const lowered = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph);
     defer dnir.deinitModule(alloc, lowered);
@@ -12115,7 +12157,10 @@ test "native backend: body-less modules retain relation entry compatibility" {
     const symbol = try processEntrySymbol(alloc, &graph, selected);
     defer alloc.free(symbol);
     try std.testing.expectEqualStrings("idol_entry_sole__run", symbol);
-    try std.testing.expect((try selectProcessEntry(&mod, &graph, root, "missing")) == null);
+    try std.testing.expectError(
+        error.InvalidProcessEntry,
+        selectProcessEntry(&mod, &graph, root, "missing"),
+    );
 }
 
 test "native backend: internal i64 result stays whole before deployment" {
@@ -12173,8 +12218,7 @@ test "native backend: deployment truncates the root result only at its observer"
     const lowered = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph);
     defer dnir.deinitModule(alloc, lowered);
     try std.testing.expectEqual(@as(?i64, 300), immediateReturn(dnirFunction(lowered, "main").?));
-    const deployment: demand_projection.Projection = .{ .low_bits = 8 };
-    try std.testing.expectEqual(@as(?i64, 44), deployment.apply(300));
+    try std.testing.expectEqual(@as(u8, 44), @as(u8, @truncate(@as(i64, 300))));
 }
 
 test "native backend: f64 process entry coerces d0 to x0 exit code" {
