@@ -794,6 +794,21 @@ pub fn build(b: *std.Build) void {
     const ts_projection_step = b.step("treesitter-projection", "grammar.js regenerates byte-identically from scripts/treesitter_emit.id (GAP-049)");
     ts_projection_step.dependOn(&ts_projection_cmd.step);
 
+    // treesitter-agreement -- GAP-134 / law.grammar.one. The step above asks
+    // whether grammar.js matches ITS OWN generator. This one asks the question
+    // that generator cannot: whether the editor grammar agrees with the ONE
+    // grammar-fact owner, lib/compiler/token.id, on every infix operator's
+    // existence, associativity and induced binding order. It reads the owner's
+    // generated role table, src/lexer.zig's spelling map and grammar.js, joins
+    // them on token identity, and fails on any divergence not pinned in
+    // gate/treesitter.baseline. Sixteen are pinned today; the pin is a ratchet
+    // and a stale line fails too.
+    const ts_agreement_cmd = b.addSystemCommand(&.{"./gate/treesitter-agreement.sh"});
+    ts_agreement_cmd.setCwd(b.path("."));
+    ts_agreement_cmd.step.dependOn(b.getInstallStep());
+    const ts_agreement_step = b.step("treesitter-agreement", "the editor grammar agrees with the one grammar owner within a pinned ratchet (GAP-134)");
+    ts_agreement_step.dependOn(&ts_agreement_cmd.step);
+
     const ftcftw_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/ledger/ftcftw.id" });
     ftcftw_cmd.setCwd(b.path("."));
     ftcftw_cmd.step.dependOn(b.getInstallStep());
