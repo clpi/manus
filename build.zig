@@ -305,6 +305,29 @@ pub fn build(b: *std.Build) void {
     lock_gate_step.dependOn(&lock_gate_cmd.step);
     test_step.dependOn(&lock_gate_cmd.step);
 
+    // THE DIRECTIVE-AUTHORITY AND RETIRED-IDENTITY GATES.
+    //
+    // `gate/directive.sh` (landed separately) owns `@comp.*` USAGE in `.id`
+    // source through docs/spec/directive-ledger.json. These two own what that
+    // ledger does not: the compiler's own authority claims in `src/`, and the
+    // retired project identity in text a person actually reads.
+    //
+    // NO TOTALS HERE ON PURPOSE. Prose totals beside a live counter drift, and
+    // an earlier version of this comment already had: it said 1,574 while the
+    // runner pinned 1,564 and the tree measured 1,567. Every budget lives in
+    // its runner. To read them, run the gate.
+    const directive_authority_cmd = b.addSystemCommand(&.{ "sh", "gate/directive/authority.sh" });
+    directive_authority_cmd.setCwd(b.path("."));
+    const directive_authority_step = b.step("directive-authority", "Directive catalog ceiling, no canonical claim, no namespace recommendation");
+    directive_authority_step.dependOn(&directive_authority_cmd.step);
+    test_step.dependOn(&directive_authority_cmd.step);
+
+    const identity_retired_cmd = b.addSystemCommand(&.{ "sh", "gate/identity/retired.sh" });
+    identity_retired_cmd.setCwd(b.path("."));
+    const identity_retired_step = b.step("identity-retired", "Retired project identity in user-visible compiler text");
+    identity_retired_step.dependOn(&identity_retired_cmd.step);
+    test_step.dependOn(&identity_retired_cmd.step);
+
     // THE S0 OWNERSHIP CLAIM IS ONLY REAL IF PRODUCTION DEPENDS ON THE IDOL LEXER.
     // src/lexer_tokenize.c is a tracked GENERATED bridge. If it may drift from
     // lib/compiler/lexer.id, then damaging the Idol source changes NOTHING until

@@ -1,10 +1,17 @@
 /// Attribute parsing for @test.*, @build.*, @time, @bench, and related
 /// debugging/benchmark annotations.
 ///
-/// EPOCH 2: every predicate here answers a question that wants asked
-/// of the graph instead. See `docs/directive_erasure.md` for the per-directive
-/// edge fact each one is standing in for, and the order in which they go.
-/// Do not add new names here — add the fact to its owning relation.
+/// Every predicate here answers a question that wants asked of the graph
+/// instead. Each one stands in for an edge fact whose owner is named in
+/// `docs/metaprogramming.md`: an ordinary relation over graph values, a stage
+/// fact, a demand, a transformation, a target fact, a foreign origin/ABI
+/// realization, a world authority, or a diagnostic projection. Where no owner
+/// exists yet the answer is `SEMANTIC-VOCABULARY-BLOCKED`, never a new
+/// directive. Do not add new names here — add the fact to its owning relation.
+///
+/// (The previous version of this paragraph pointed at
+/// `docs/directive_erasure.md`, which is not in the tree. A dangling authority
+/// reference is not an authority.)
 const std = @import("std");
 const ast = @import("ast.zig");
 const meta_module = @import("meta_module.zig");
@@ -49,17 +56,21 @@ pub const TestOptions = struct {
     warmup: u32 = 0,
 };
 
-/// `@comp.c.emit`, `@comp.c.include`, … — C interface metaprogramming under the
-/// `@` prefix, in EVERY spelling rather than in the six that were written here.
+/// `@comp.c.emit`, `@comp.c.include`, … — the retired C-interface directive
+/// spellings, recognised in EVERY form rather than in the six that were
+/// written here. Recognition is not endorsement: none of these spellings is
+/// canonical (`docs/spec/law.md` §5 gives `@` to the current world;
+/// `docs/metaprogramming.md` admits no compiler-directive syntax). The
+/// operations behind them are foreign origin/ABI realizations awaiting an
+/// owning graph fact.
 ///
 /// THIS FUNCTION USED TO COMPARE AGAINST SIX SHORT LITERALS, and that is the
-/// defect the whole file now guards against. `@comp.c.emit` — the CANONICAL
-/// form, the one `parser.zig:warnDeprecatedAtQualified` tells you to write —
-/// failed all six compares, fell through to `validateModuleDirective`, and was
-/// rejected as `unknown module directive '@comp.c.emit'`. `sema.zig:2619`
-/// patched around it by calling two MORE predicates alongside this one, which
-/// is the same mistake one level up: three predicates that must be kept in
-/// agreement instead of one that cannot disagree with itself.
+/// defect the whole file now guards against. The dotted form failed all six
+/// compares, fell through to `validateModuleDirective`, and was rejected as
+/// `unknown module directive`. `sema.zig` patched around it by calling two
+/// MORE predicates alongside this one, which is the same mistake one level up:
+/// three predicates that must be kept in agreement instead of one that cannot
+/// disagree with itself.
 ///
 /// `resolveBuiltin` is the alias table, and the table is the only place the set
 /// of spellings is written down. Reading it answers for all twenty-eight at
@@ -81,7 +92,7 @@ pub fn isCInterfaceDirective(name: []const u8) bool {
 }
 
 /// True when `@c.emit(...)` argument text is a raw C string/bracket literal,
-/// not a Duo expression such as `@comp.expand(...)`.
+/// not an Idol expression such as a compile-time expansion.
 pub fn isRawCEmitLiteral(raw: []const u8) bool {
     const trimmed = std.mem.trim(u8, raw, " \t\r\n");
     if (trimmed.len >= 4 and std.mem.startsWith(u8, trimmed, "[[")) return true;

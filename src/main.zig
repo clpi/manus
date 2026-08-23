@@ -720,15 +720,15 @@ fn emitCompileProofArtifact(
 }
 
 const usage =
-    \\usage: duo [command] [options] [file]
+    \\usage: idol [command] [options] [file]
     \\
     \\commands:
     \\  shell              persistent semantic shell (Pass 15; default when no args)
     \\  init       [name]   create a new Idol project
     \\  build      [target] build the default or named target from @build metadata
-    \\             list     show all @build.* targets (or: duo build --list)
+    \\             list     show all @build.* targets (or: idol build --list)
     \\             all      build every compile target in stage order
-    \\             stage S  build targets in stage S (or: duo build all --stage S)
+    \\             stage S  build targets in stage S (or: idol build all --stage S)
     \\  compile    [file]   compile Idol .id (foreign .lua remains accepted)
     \\  run        [file]   compile and run immediately, or run @build target
     \\  check      <file>   type-check only, no output
@@ -1142,7 +1142,7 @@ fn mainInner(init: std.process.Init) !void {
     }
 
     if (std.mem.eql(u8, cmd, "init")) {
-        const name = input_file orelse "duo-app";
+        const name = input_file orelse "app";
         try do_init(alloc, io, name);
         return;
     }
@@ -1158,7 +1158,7 @@ fn mainInner(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "prove")) {
         if (input_file != null) {
-            term.err("duo prove takes no arguments", .{});
+            term.err("idol prove takes no arguments", .{});
             std.process.exit(2);
         }
         if (!try do_prove(alloc, io)) std.process.exit(1);
@@ -1172,7 +1172,7 @@ fn mainInner(init: std.process.Init) !void {
         }
         if (input_file != null and std.mem.eql(u8, input_file.?, "stage")) {
             const stage_name = extra_arg orelse stage_filter orelse {
-                term.err("duo build stage requires a stage name", .{});
+                term.err("idol build stage requires a stage name", .{});
                 std.process.exit(1);
             };
             try do_build_stage(alloc, io, stage_name, output_file, cc, opt_level, target, backend_mode, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items);
@@ -1202,7 +1202,7 @@ fn mainInner(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "symbols")) {
         const file = input_file orelse {
-            term.err("no input file (duo symbols <file.id>)", .{});
+            term.err("no input file (idol symbols <file.id>)", .{});
             std.process.exit(1);
         };
         try do_symbols(alloc, io, file);
@@ -1224,7 +1224,7 @@ fn mainInner(init: std.process.Init) !void {
             }
         }
         const file = graph_file orelse {
-            term.err("no input file (duo graph <file.id> [--write])", .{});
+            term.err("no input file (idol graph <file.id> [--write])", .{});
             std.process.exit(1);
         };
         try do_graph(alloc, io, file, graph_write);
@@ -1255,7 +1255,7 @@ fn mainInner(init: std.process.Init) !void {
             return;
         }
         const file = duo_file orelse {
-            term.err("no input file (duo sim <file.id> or duo sim --import-c <header>)", .{});
+            term.err("no input file (idol sim <file.id> or idol sim --import-c <header>)", .{});
             std.process.exit(1);
         };
         try do_sim(alloc, io, file);
@@ -1264,7 +1264,7 @@ fn mainInner(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "explain")) {
         const file = input_file orelse {
-            term.err("no input file (duo explain <file.id>)", .{});
+            term.err("no input file (idol explain <file.id>)", .{});
             std.process.exit(1);
         };
         try do_explain(alloc, io, file);
@@ -1273,7 +1273,7 @@ fn mainInner(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "wasm-tables")) {
         const sub = input_file orelse {
-            term.err("usage: duo wasm-tables emit", .{});
+            term.err("usage: idol wasm-tables emit", .{});
             std.process.exit(1);
         };
         if (!std.mem.eql(u8, sub, "emit")) {
@@ -1289,7 +1289,7 @@ fn mainInner(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "token-tables")) {
         const sub = input_file orelse {
-            term.err("usage: duo token-tables emit", .{});
+            term.err("usage: idol token-tables emit", .{});
             std.process.exit(1);
         };
         if (!std.mem.eql(u8, sub, "emit")) {
@@ -1316,7 +1316,7 @@ fn mainInner(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "algebra")) {
         if (input_file != null) {
-            term.err("duo algebra takes no file argument", .{});
+            term.err("idol algebra takes no file argument", .{});
             std.process.exit(1);
         }
         try do_algebra(io);
@@ -1586,7 +1586,7 @@ fn maybeReadBuildTarget(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8
         build_framework.ResolveError.TargetNotFound => {
             term.err("target '{s}' not found in '{s}'", .{ want.?, project.build_source });
             if (build_framework.nearestTargetName(want.?, &project)) |hint| {
-                term.hint("did you mean '{s}'? try: duo build {s}", .{ hint, hint });
+                term.hint("did you mean '{s}'? try: idol build {s}", .{ hint, hint });
             } else {
                 const names = build_framework.listTargetNames(alloc, &project) catch "";
                 defer alloc.free(names);
@@ -1964,7 +1964,7 @@ fn do_symbols(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     var func_buf: [32]u8 = undefined;
     term.kv("functions", std.fmt.bufPrint(&func_buf, "{d}", .{funcs}) catch "?");
     term.divider();
-    term.dim("inline tests live in source — duo test {s}", .{src_path});
+    term.dim("inline tests live in source — idol test {s}", .{src_path});
 }
 
 fn hashSourceFile(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !u64 {
@@ -2125,7 +2125,7 @@ fn do_prove(alloc: std.mem.Allocator, io: Io) !bool {
     defer alloc.free(revision_process.stdout);
     defer alloc.free(revision_process.stderr);
     if (!revision_process.term.success()) {
-        term.err("duo prove could not identify the source revision: {s}", .{revision_process.stderr});
+        term.err("idol prove could not identify the source revision: {s}", .{revision_process.stderr});
         return false;
     }
     const revision = std.mem.trim(u8, revision_process.stdout, " \t\r\n");
@@ -2136,7 +2136,7 @@ fn do_prove(alloc: std.mem.Allocator, io: Io) !bool {
     defer alloc.free(worktree_process.stdout);
     defer alloc.free(worktree_process.stderr);
     if (!worktree_process.term.success()) {
-        term.err("duo prove could not inspect the source worktree: {s}", .{worktree_process.stderr});
+        term.err("idol prove could not inspect the source worktree: {s}", .{worktree_process.stderr});
         return false;
     }
     const worktree_path = try std.fmt.allocPrint(alloc, "{s}/worktree.txt", .{proof_carrying.RELEASE_PROOF_BUNDLE_DIR});
@@ -2211,7 +2211,7 @@ fn run_release_gate(
     defer child.kill(io);
     const result = child.wait(io) catch |err| {
         log_file.close(io);
-        term.err("duo prove could not wait for gate {s}: {s}", .{ gate, @errorName(err) });
+        term.err("idol prove could not wait for gate {s}: {s}", .{ gate, @errorName(err) });
         return .unavailable;
     };
     log_file.close(io);
@@ -2262,10 +2262,10 @@ fn do_init(alloc: std.mem.Allocator, io: Io, name: []const u8) !void {
     term.kv("•", "src/main.id");
     term.kv("•", "zig-out/bin/");
     term.divider();
-    term.dim("next: duo build   # compile default target", .{});
-    term.dim("       duo test    # run inline @test functions", .{});
-    term.dim("       duo run     # build and run", .{});
-    term.dim("       duo shell  # interactive REPL", .{});
+    term.dim("next: idol build   # compile default target", .{});
+    term.dim("       idol test    # run inline @test functions", .{});
+    term.dim("       idol run     # build and run", .{});
+    term.dim("       idol shell  # interactive REPL", .{});
     term.ok("ready — project '{s}'", .{name});
 }
 
@@ -2390,7 +2390,7 @@ fn run_host_shell_command(io: Io, command: []const u8) !void {
 }
 
 fn run_build_command(io: Io, name: []const u8, command: []const u8) !void {
-    term.banner("duo build");
+    term.banner("idol build");
     term.buildPhaseStart("command", name);
     term.kv("target", name);
     term.kv("command", command);
@@ -2513,7 +2513,7 @@ fn run_shell_line(
         try shell_session.wrapExpression(alloc, line);
     defer alloc.free(source);
 
-    const src_path = try shell_session.tempArtifactBasename(alloc, session.compile_counter, "duo");
+    const src_path = try shell_session.tempArtifactBasename(alloc, session.compile_counter, "idol");
     const out_path = try shell_session.tempArtifactBasename(alloc, session.compile_counter, "out");
     defer alloc.free(src_path);
     defer alloc.free(out_path);
@@ -2603,9 +2603,9 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool, backend_mode: []con
                         block_depth = 0;
                         // Print fresh prompt
                         if (term.color) {
-                            term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m>\x1b[0m ", .{});
+                            term.printRaw("\x1b[1;36midol\x1b[0m\x1b[2m>\x1b[0m ", .{});
                         } else {
-                            term.printRaw("duo> ", .{});
+                            term.printRaw("idol> ", .{});
                         }
                     }
                 } else {
@@ -2613,9 +2613,9 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool, backend_mode: []con
                     block_depth = 0;
                     line.clearRetainingCapacity();
                     if (term.color) {
-                        term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m>\x1b[0m ", .{});
+                        term.printRaw("\x1b[1;36midol\x1b[0m\x1b[2m>\x1b[0m ", .{});
                     } else {
-                        term.printRaw("duo> ", .{});
+                        term.printRaw("idol> ", .{});
                     }
                 }
             } else if (b != '\r') {
@@ -2709,7 +2709,7 @@ fn do_project_build_one(
         if (std.mem.eql(u8, target, "wasm32-wasi")) break :out try std.fmt.allocPrint(alloc, "zig-out/bin/{s}.wasm", .{stem});
         break :out try std.fmt.allocPrint(alloc, "zig-out/bin/{s}", .{stem});
     };
-    term.banner("duo build");
+    term.banner("idol build");
     if (term.build_report != .plain) {
         term.buildTargetCard(t.name, src, build_framework.kindLabel(t.kind));
     }
@@ -3573,7 +3573,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
         if (graph.liftModuleWithCheckedCalls(&mod, &sem, src_path)) |_| {
             graph.dumpSummary(io, std.Io.File.stderr(), src_path);
         } else |e| {
-            term.dim("[duo graph] lift skipped: {s}", .{@errorName(e)});
+            term.dim("[idol graph] lift skipped: {s}", .{@errorName(e)});
         }
     }
     return .{ .mod = mod, .sem = sem };
@@ -6235,8 +6235,8 @@ fn do_completion(io: Io, args: []const [:0]const u8) !void {
 }
 
 const bash_completion =
-    \\# bash completion for duo
-    \\_duo()
+    \\# bash completion for idol
+    \\_idol()
     \\{
     \\    local cur prev
     \\    COMPREPLY=()
@@ -6269,17 +6269,17 @@ const bash_completion =
     \\            ;;
     \\    esac
     \\}
-    \\complete -F _duo duo
+    \\complete -F _idol idol
     \\
 ;
 
 const zsh_completion =
-    \\#compdef duo
-    \\_duo() {
+    \\#compdef idol
+    \\_idol() {
     \\  local -a commands opts shells targets
     \\  commands=(
-    \\    'shell:start the interactive Duo shell'
-    \\    'init:create a new Duo project'
+    \\    'shell:start the interactive Idol shell'
+    \\    'init:create a new Idol project'
     \\    'build:build the default or named build.id target'
     \\    'compile:compile .id/.lua to a native binary'
     \\    'run:compile and run a file or build target'
@@ -6324,74 +6324,74 @@ const zsh_completion =
     \\  else
     \\    case "${words[2]}" in
     \\      completion) _values 'shell' bash zsh fish nu ;;
-    \\      compile|run|check|test|bench|dump-c) _arguments $opts '*:source:_files -g "*.(duo|lua)"' ;;
+    \\      compile|run|check|test|bench|dump-c) _arguments $opts '*:source:_files -g "*.(idol|lua)"' ;;
     \\      *) _arguments $opts ;;
     \\    esac
     \\  fi
     \\}
-    \\_duo "$@"
+    \\_idol "$@"
     \\
 ;
 
 const fish_completion =
-    \\# fish completion for duo
-    \\complete -c duo -f
-    \\complete -c duo -n '__fish_use_subcommand' -a 'shell' -d 'Start the interactive Duo shell'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'init' -d 'Create a new Duo project'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'build' -d 'Build the default or named build.id target'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'compile' -d 'Compile .id/.lua to a native binary'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'run' -d 'Compile and run a file or build target'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'check' -d 'Type-check only'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'test' -d 'Run @test functions in a .id file'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'bench' -d 'Run @bench functions only'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'prove' -d 'Reproduce the seven release proofs'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'dump-c' -d 'Print generated C'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'symbols' -d 'Glanceable module symbol map'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'graph' -d 'Export semantic graph JSON'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'completion' -d 'Generate shell completions'
-    \\complete -c duo -n '__fish_use_subcommand' -a 'help' -d 'Show help'
-    \\complete -c duo -s o -r -d 'Output binary name'
-    \\complete -c duo -l cc -r -d 'C compiler'
-    \\complete -c duo -l target -x -a 'native wasm32-wasi' -d 'Compilation target'
-    \\complete -c duo -l load-chunk -d 'Compile as shared library for load()'
-    \\complete -c duo -l no-cache -d 'Compile without reading or writing the physical build cache'
-    \\complete -c duo -l lib -d 'Compile as library'
-    \\complete -c duo -l pgo -d 'Profile-guided optimization'
-    \\complete -c duo -l shared-memory -d 'Enable WASM shared memory'
-    \\complete -c duo -l link -r -d 'Link against C library'
-    \\complete -c duo -l filter -r -d 'Run only tests whose name contains pattern'
-    \\complete -c duo -l trace -d 'Show compiler pipeline steps'
-    \\complete -c duo -l info -d 'Show informational compiler notes'
-    \\complete -c duo -l hints -d 'Show compiler hints'
-    \\complete -c duo -l plain-diagnostics -d 'One-line diagnostics for LSP/CI'
-    \\complete -c duo -l debug -d 'Enable all compiler debug channels'
-    \\complete -c duo -l debug-depth -r -d 'Max debug nesting depth'
-    \\complete -c duo -l test-report -x -a 'pretty compact verbose plain json' -d 'Test output style'
-    \\complete -c duo -l build-report -x -a 'pretty compact verbose plain json' -d 'Build output style'
-    \\complete -c duo -l no-color -d 'Disable ANSI styling'
-    \\complete -c duo -s v -l verbose -d 'Show compiler warnings'
-    \\complete -c duo -s h -l help -d 'Show help'
-    \\complete -c duo -n '__fish_seen_subcommand_from completion' -x -a 'bash zsh fish nu'
+    \\# fish completion for idol
+    \\complete -c idol -f
+    \\complete -c idol -n '__fish_use_subcommand' -a 'shell' -d 'Start the interactive Idol shell'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'init' -d 'Create a new Idol project'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'build' -d 'Build the default or named build.id target'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'compile' -d 'Compile .id/.lua to a native binary'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'run' -d 'Compile and run a file or build target'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'check' -d 'Type-check only'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'test' -d 'Run @test functions in a .id file'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'bench' -d 'Run @bench functions only'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'prove' -d 'Reproduce the seven release proofs'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'dump-c' -d 'Print generated C'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'symbols' -d 'Glanceable module symbol map'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'graph' -d 'Export semantic graph JSON'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'completion' -d 'Generate shell completions'
+    \\complete -c idol -n '__fish_use_subcommand' -a 'help' -d 'Show help'
+    \\complete -c idol -s o -r -d 'Output binary name'
+    \\complete -c idol -l cc -r -d 'C compiler'
+    \\complete -c idol -l target -x -a 'native wasm32-wasi' -d 'Compilation target'
+    \\complete -c idol -l load-chunk -d 'Compile as shared library for load()'
+    \\complete -c idol -l no-cache -d 'Compile without reading or writing the physical build cache'
+    \\complete -c idol -l lib -d 'Compile as library'
+    \\complete -c idol -l pgo -d 'Profile-guided optimization'
+    \\complete -c idol -l shared-memory -d 'Enable WASM shared memory'
+    \\complete -c idol -l link -r -d 'Link against C library'
+    \\complete -c idol -l filter -r -d 'Run only tests whose name contains pattern'
+    \\complete -c idol -l trace -d 'Show compiler pipeline steps'
+    \\complete -c idol -l info -d 'Show informational compiler notes'
+    \\complete -c idol -l hints -d 'Show compiler hints'
+    \\complete -c idol -l plain-diagnostics -d 'One-line diagnostics for LSP/CI'
+    \\complete -c idol -l debug -d 'Enable all compiler debug channels'
+    \\complete -c idol -l debug-depth -r -d 'Max debug nesting depth'
+    \\complete -c idol -l test-report -x -a 'pretty compact verbose plain json' -d 'Test output style'
+    \\complete -c idol -l build-report -x -a 'pretty compact verbose plain json' -d 'Build output style'
+    \\complete -c idol -l no-color -d 'Disable ANSI styling'
+    \\complete -c idol -s v -l verbose -d 'Show compiler warnings'
+    \\complete -c idol -s h -l help -d 'Show help'
+    \\complete -c idol -n '__fish_seen_subcommand_from completion' -x -a 'bash zsh fish nu'
     \\
 ;
 
 const nu_completion =
-    \\# nushell completion for duo
-    \\def "nu-complete duo commands" [] {
+    \\# nushell completion for idol
+    \\def "nu-complete idol commands" [] {
     \\  [shell init build compile run check test bench prove dump-c completion help]
     \\}
-    \\def "nu-complete duo shells" [] {
+    \\def "nu-complete idol shells" [] {
     \\  [bash zsh fish nu]
     \\}
-    \\def "nu-complete duo targets" [] {
+    \\def "nu-complete idol targets" [] {
     \\  [native wasm32-wasi]
     \\}
-    \\export extern "duo" [
-    \\  command?: string@"nu-complete duo commands"
+    \\export extern "idol" [
+    \\  command?: string@"nu-complete idol commands"
     \\  arg?: string
     \\  -o: string
     \\  --cc: string
-    \\  --target: string@"nu-complete duo targets"
+    \\  --target: string@"nu-complete idol targets"
     \\  --load-chunk
     \\  --no-cache
     \\  --lib
@@ -6412,8 +6412,8 @@ const nu_completion =
     \\  -h
     \\  --help
     \\]
-    \\export extern "duo completion" [
-    \\  shell: string@"nu-complete duo shells"
+    \\export extern "idol completion" [
+    \\  shell: string@"nu-complete idol shells"
     \\]
     \\
 ;

@@ -68,12 +68,12 @@ pub fn tempArtifactBasename(alloc: std.mem.Allocator, counter: usize, ext: []con
         const environ: std.process.Environ = .{ .block = .global };
         const temp = environ.getAlloc(alloc, "TEMP") catch try alloc.dupe(u8, ".");
         defer alloc.free(temp);
-        return std.fmt.allocPrint(alloc, "{s}\\duo_shell_{d}.{s}", .{ temp, counter, ext });
+        return std.fmt.allocPrint(alloc, "{s}\\idolshell{d}.{s}", .{ temp, counter, ext });
     }
     // The counter is per-SESSION, so two shells running at once both produced
-    // `/tmp/duo_shell_1.out`. `scratch.salt()` separates the processes and
+    // `/tmp/idolshell1.out`. `scratch.salt()` separates the processes and
     // `scratch.root()` honours TMPDIR.
-    return scratch.path(alloc, "duo_shell_{x}_{d}.{s}", .{ scratch.salt(), counter, ext });
+    return scratch.path(alloc, "idolshell{x}_{d}.{s}", .{ scratch.salt(), counter, ext });
 }
 
 pub fn wrapExpression(alloc: std.mem.Allocator, line: []const u8) ![]u8 {
@@ -119,8 +119,8 @@ pub fn recordHistory(
 pub fn exportHistoryModule(alloc: std.mem.Allocator, session: *const Session, limit: usize) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(alloc);
-    try out.appendSlice(alloc, "-- exported from Duo semantic shell session\n");
-    try out.appendSlice(alloc, "-- canonical Duo — no shell-only syntax\n\n");
+    try out.appendSlice(alloc, "-- exported from Idol semantic shell session\n");
+    try out.appendSlice(alloc, "-- canonical Idol — no shell-only syntax\n\n");
     const start = if (session.history.items.len > limit) session.history.items.len - limit else 0;
     for (session.history.items[start..]) |e| {
         if (e.kind == .meta or e.kind == .raw_shell) continue;

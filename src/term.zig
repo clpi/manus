@@ -317,10 +317,10 @@ fn printDiagnosticNote(comptime label: []const u8, body: []const u8, is_last: bo
 
 fn printDiagnosticHelp(comptime label: []const u8) void {
     if (std.mem.eql(u8, label, "error")) {
-        printDiagnosticNote("detail", "the marked source construct is the one Duo rejected", false);
+        printDiagnosticNote("detail", "the marked source construct is the one Idol rejected", false);
         printDiagnosticNote("help", "fix this diagnostic first; later messages may be caused by this one", true);
     } else if (std.mem.eql(u8, label, "warning")) {
-        printDiagnosticNote("detail", "Duo accepted the code, but this construct may be fragile or deprecated", false);
+        printDiagnosticNote("detail", "Idol accepted the code, but this construct may be fragile or deprecated", false);
         printDiagnosticNote("help", "consider updating this location before relying on it long-term", true);
     } else if (std.mem.eql(u8, label, "hint")) {
         printDiagnosticNote("detail", "this note points at source that helps explain the preceding diagnostic", true);
@@ -732,7 +732,7 @@ pub fn buildTargetTable(rows: []const BuildTargetRow) void {
         }
     }
     if (color) {
-        wprint("\x1b[2m╰─ {d} target(s) · duo build <name>\x1b[0m\n", .{rows.len});
+        wprint("\x1b[2m╰─ {d} target(s) · idol build <name>\x1b[0m\n", .{rows.len});
     } else {
         wprint("{d} target(s)\n", .{rows.len});
     }
