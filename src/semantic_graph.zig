@@ -3415,6 +3415,76 @@ pub const SemanticGraph = struct {
         return .unknown;
     }
 
+    /// THE EFFECT OF ONE APPLICATION OCCURRENCE, including the POSITIVE card
+    /// that `ApplicationFact.effect` structurally cannot carry.
+    ///
+    /// `publishApplicationEffects` computes "provably unobservable" and stops,
+    /// so the stored field only ever holds `.none` or `.unknown`. Measured over
+    /// the corpus: 842 files, 7709 applications, none 4518, unknown 3191, ONE
+    /// ZERO. That zero was read as an unimplemented arm. It is not — the fact
+    /// is stored on the wrong entity:
+    ///
+    ///     draws naming a world                       381
+    ///     ...that also have an ApplicationFact         0
+    ///
+    /// PERFECTLY DISJOINT. Every world observation in the corpus happens at an
+    /// occurrence with NO `ApplicationFact`, exactly as `Draw`'s own note says
+    /// ("the applications that actually DRAW a world are overwhelmingly the
+    /// ones with no `ApplicationFact` at all") — measured, it is not
+    /// overwhelmingly but entirely. So a positive card written into that field
+    /// can never reach a single world-drawing occurrence, and an earlier
+    /// attempt to write one there fired zero times.
+    ///
+    /// Because the two domains are disjoint there is no second producer here
+    /// and no new column: this DERIVES the answer from `draws`, which already
+    /// records which world an occurrence drew. `stdin:read()` draws `io`, so it
+    /// observes the world and `Card.one` names WHICH world it observed.
+    ///
+    /// THE `c` WORLD IS EXCLUDED. Drawing `c` means the call is FOREIGN, not
+    /// that it acts — an earlier seed taken from foreign declarations produced
+    /// `llabs` as its first identity, and `llabs` is pure. Crossing the foreign
+    /// boundary establishes that the compiler cannot SEE the callee, never that
+    /// the callee ACTS; `publishApplicationWorlds` already routes `c` to
+    /// AUTHORITY for that reason, and effect stays `.unknown` there.
+    pub fn applicationEffect(self: *const SemanticGraph, occurrence: id) Card {
+        if (self.application(occurrence)) |fact| return fact.effect;
+        const drawn = switch (self.applicationWorld(occurrence)) {
+            .one => |w| w,
+            else => return .unknown,
+        };
+        for (self.worlds.items) |fact| {
+            if (fact.world != drawn) continue;
+            // A PROTOCOL WORLD OBSERVES NOTHING. `subject_home` already carries
+            // the discriminator as `Provision`: `string`, `math` and `table`
+            // are `.realized` — the file calls them "the protocol worlds" and
+            // states that `string.len(s)` is "the operation-first face of
+            // `s:len()`". Such a relation acts on the value it was handed and
+            // reaches no state outside it, so drawing that world is not an
+            // effect. `os` supplies a ROSTER of environment members (`env`,
+            // `cwd`, `clock`, `arg`) and `io` SUPPLIES the standing streams;
+            // those observe state the program does not own.
+            //
+            // Read from `Provision` and NOT from a list of world names. An
+            // earlier cut of this accessor published `.one` for every drawn
+            // world and produced `math` 41 times and `string` 5 — 46 of 381
+            // identities asserting an effect for `math.floor`. A name list
+            // would have fixed the count while committing exactly the
+            // names-carry-semantics error this tree denies; `Provision` is the
+            // fact that was already there.
+            //
+            // `c` is excluded separately and for a different reason: drawing it
+            // means the call is FOREIGN, not that it acts. The seed tried
+            // before this one came from foreign declarations and named `llabs`,
+            // which is pure. `publishApplicationWorlds` routes `c` to
+            // AUTHORITY, and effect stays `.unknown` there.
+            if (fact.home == .c) return .unknown;
+            const declaration = subject_home.declarationOf(fact.home);
+            if (declaration.provides == .realized) return .unknown;
+            return .{ .one = drawn };
+        }
+        return .unknown;
+    }
+
     /// The members of one world this module reaches.
     pub fn worldMembers(self: *const SemanticGraph, fact: WorldFact) []const id {
         const end = std.math.add(u32, fact.members.start, fact.members.len) catch return &.{};
@@ -6539,6 +6609,11 @@ pub const SemanticGraph = struct {
             try buf.appendSlice(alloc, "{\"application\":");
             try appendJsonInt(buf, alloc, draw.application);
             try appendCardJson(buf, alloc, "world", draw.world);
+            // The DERIVED effect for this occurrence. Projected here and not
+            // stored, because `ApplicationFact.effect` cannot reach a
+            // world-drawing occurrence at all: measured, 381 draws name a world
+            // and 0 of them have an `ApplicationFact`. See `applicationEffect`.
+            try appendCardJson(buf, alloc, "effect", self.applicationEffect(draw.application));
             try buf.append(alloc, '}');
         }
         try buf.appendSlice(alloc, "],\"origins\":[");
