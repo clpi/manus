@@ -2951,86 +2951,6 @@ pub const SemanticGraph = struct {
         return descriptor;
     }
 
-    /// THE QUOTE FACE OF EVERY LITERAL A BINDING IS INITIALIZED WITH.
-    ///
-    /// `publishSourceQuote` landed at `ac8be3a0` with exactly one reach:
-    /// `addApplicationValue`, so a literal published its producer quote
-    /// identity only when it was an APPLICATION OPERAND. Measured at
-    /// `b64dc075` on the pipeline lift (`liftModuleWithCheckedCalls`):
-    ///
-    ///     f(s: str); f("lit")      ->  source_quote = 1   (operand reach)
-    ///     s = 'abc'; print(s.."Z") ->  source_quote = 0
-    ///     t: str = "hi"; b = 'b'   ->  source_quote = 0
-    ///
-    /// The third row is this file's own test `semantic_graph: lifted quoted
-    /// literals publish source quote facts`, which asserts 2 and has been RED
-    /// at HEAD — the fact was published into a shape no program reaches, so
-    /// every downstream text-vs-bytes decision re-read `expr.quoted.quote`
-    /// off the AST and became a rival authority (GAP-145 `law.text.byte`,
-    /// GAP-207).
-    ///
-    /// This is a reach extension of the SAME producer, not a second one:
-    /// `publishSourceQuote` is still the only writer and refuses a second
-    /// publish against an AST node that already has an owner.
-    fn liftBindingQuotes(
-        self: *SemanticGraph,
-        file: []const u8,
-        scope: id,
-        stmts: []const ast.Stmt,
-    ) !void {
-        for (stmts) |*stmt| {
-            switch (stmt.*) {
-                .local_decl => |*ld| for (ld.inits) |seed| try self.liftQuoteInitializer(file, scope, seed),
-                .const_decl => |*cd| try self.liftQuoteInitializer(file, scope, cd.val),
-                .global_decl => |*gd| for (gd.inits) |seed| try self.liftQuoteInitializer(file, scope, seed),
-                .assign => |*asg| for (asg.values) |value| try self.liftQuoteInitializer(file, scope, value),
-                .do_block => |*d| try self.liftBindingQuotes(file, scope, d.body.stmts),
-                .while_loop => |*w| try self.liftBindingQuotes(file, scope, w.body.stmts),
-                .repeat_loop => |*r| try self.liftBindingQuotes(file, scope, r.body.stmts),
-                .if_stmt => |*i| {
-                    try self.liftBindingQuotes(file, scope, i.then.stmts);
-                    for (i.elseifs) |*ei| try self.liftBindingQuotes(file, scope, ei.body.stmts);
-                    if (i.else_body) |*eb| try self.liftBindingQuotes(file, scope, eb.stmts);
-                },
-                .num_for => |*nf| try self.liftBindingQuotes(file, scope, nf.body.stmts),
-                .gen_for => |*g| try self.liftBindingQuotes(file, scope, g.body.stmts),
-                .try_stmt => |*t| {
-                    try self.liftBindingQuotes(file, scope, t.body.stmts);
-                    for (t.catches) |*cc| try self.liftBindingQuotes(file, scope, cc.body.stmts);
-                },
-                .defer_stmt => |*d| try self.liftBindingQuotes(file, scope, d.body.stmts),
-                .func_decl => |*fd| {
-                    const nested = self.findFuncDecl(fd) orelse continue;
-                    try self.liftBindingQuotes(file, nested, fd.func.body.stmts);
-                },
-                else => {},
-            }
-        }
-    }
-
-    /// One initializer. A bare literal is one value; a table of literals is one
-    /// value PER ELEMENT, because the element is the thing a later index reads
-    /// and `names[1]` must be able to ask what `names[1]` is (GAP-204).
-    fn liftQuoteInitializer(
-        self: *SemanticGraph,
-        file: []const u8,
-        scope: id,
-        expr: *const Expr,
-    ) !void {
-        switch (expr.*) {
-            .quoted => |lit| try self.addQuoteValue(file, scope, expr, lit.quote),
-            .table => |tbl| for (tbl.fields) |field| switch (field) {
-                .positional => |element| try self.liftQuoteInitializer(file, scope, element),
-                .named => |entry| try self.liftQuoteInitializer(file, scope, entry.val),
-                else => {},
-            },
-            // `@{ … }` wraps the table it folds; the literal inside is the same
-            // literal, so the fact belongs to it and not to the wrapper.
-            .unop => |u| if (u.op == .compile) try self.liftQuoteInitializer(file, scope, u.operand),
-            else => {},
-        }
-    }
-
     fn addQuoteValue(
         self: *SemanticGraph,
         file: []const u8,
@@ -3038,9 +2958,13 @@ pub const SemanticGraph = struct {
         expr: *const Expr,
         quote: ast.Quote,
     ) !void {
-        // The occurrence already IS a value that owns its quote identity.
+        // The occurrence already IS a value. Publish on that exact identity;
+        // minting a second value would leave `valueByAst` pointing at the
+        // first, quote-less node and make the fact unreachable to consumers.
         if (self.valueByAst(expr)) |owner| {
             if (self.source_quote_rows.contains(owner)) return;
+            try self.publishSourceQuote(owner, quote);
+            return;
         }
         const loc = expr.loc();
         const descriptor = types.quotedLiteralType(quote);
@@ -4106,7 +4030,7 @@ pub const SemanticGraph = struct {
     /// Lift module fully including call sites (Phase 1 complete lift).
     pub fn liftModuleWithCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
         const mod_id = try self.liftModuleCalls(mod, file);
-        try self.liftLiteralIntegers(file, mod_id, &mod.body);
+        try self.liftLiteralFacts(file, mod_id, &mod.body);
         return mod_id;
     }
 
@@ -4119,16 +4043,10 @@ pub const SemanticGraph = struct {
     fn liftModuleCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
         const mod_id = try self.liftModuleFull(mod, file);
         try self.liftCalls(mod, file, mod_id);
-        // AFTER the call lift, deliberately: a literal that is already an
-        // application operand HAS its value entity, and this sweep extends the
-        // producer's REACH to the literals no application names. It never
-        // mints a second owner for one occurrence — `publishSourceQuote`
-        // refuses that.
-        try self.liftBindingQuotes(file, mod_id, mod.body.stmts);
         return mod_id;
     }
 
-    /// THE CONTENT OF EVERY INTEGER LITERAL THE SOURCE WRITES.
+    /// THE CONTENT OR QUOTE IDENTITY OF EVERY LITERAL VALUE THE SOURCE WRITES.
     ///
     /// MEASURED BEFORE THIS EXISTED: `add(8, 34)` — two integer literal
     /// operands — published ZERO `exact_i64` facts, and `gate/coverage.sh`
@@ -4148,11 +4066,16 @@ pub const SemanticGraph = struct {
     /// the family stays comparable with the lexical denominator it is measured
     /// against.
     ///
+    /// `source_quote` used to have a second, narrower binding-initializer walk.
+    /// On the exact 817-file coverage corpus that published 1,693 facts for
+    /// 8,086 lexical quote tokens (20.9%) while `exact_i64` reached 98.5%.
+    /// Keeping two walks made their domains drift. One walk now publishes both
+    /// existing families; no second literal census or producer is introduced.
+    ///
     /// A `.func_expr` body is NOT swept: `findFuncDecl` keys on
     /// `*const ast.FuncDecl` and a lambda has no such entity, so its literals
-    /// have no scope to be parented to that is not a lie. `liftBindingQuotes`
-    /// stops at the same boundary for the same reason.
-    fn liftLiteralIntegers(
+    /// have no scope to be parented to that is not a lie.
+    fn liftLiteralFacts(
         self: *SemanticGraph,
         file: []const u8,
         scope: id,
@@ -4160,62 +4083,62 @@ pub const SemanticGraph = struct {
     ) anyerror!void {
         for (block.stmts) |*stmt| {
             switch (stmt.*) {
-                .local_decl => |*ld| for (ld.inits) |seed| try self.liftIntegersInExpr(file, scope, seed),
-                .const_decl => |*cd| try self.liftIntegersInExpr(file, scope, cd.val),
-                .global_decl => |*gd| for (gd.inits) |seed| try self.liftIntegersInExpr(file, scope, seed),
+                .local_decl => |*ld| for (ld.inits) |seed| try self.liftLiteralFactsInExpr(file, scope, seed),
+                .const_decl => |*cd| try self.liftLiteralFactsInExpr(file, scope, cd.val),
+                .global_decl => |*gd| for (gd.inits) |seed| try self.liftLiteralFactsInExpr(file, scope, seed),
                 .assign => |*asg| {
-                    for (asg.targets) |target| try self.liftIntegersInExpr(file, scope, target);
-                    for (asg.values) |value| try self.liftIntegersInExpr(file, scope, value);
+                    for (asg.targets) |target| try self.liftLiteralFactsInExpr(file, scope, target);
+                    for (asg.values) |value| try self.liftLiteralFactsInExpr(file, scope, value);
                 },
-                .call_stmt => |*cs| try self.liftIntegersInExpr(file, scope, cs.expr),
-                .expr_stmt => |*es| try self.liftIntegersInExpr(file, scope, es.expr),
-                .ret => |*r| for (r.vals) |value| try self.liftIntegersInExpr(file, scope, value),
-                .do_block => |*d| try self.liftLiteralIntegers(file, scope, &d.body),
+                .call_stmt => |*cs| try self.liftLiteralFactsInExpr(file, scope, cs.expr),
+                .expr_stmt => |*es| try self.liftLiteralFactsInExpr(file, scope, es.expr),
+                .ret => |*r| for (r.vals) |value| try self.liftLiteralFactsInExpr(file, scope, value),
+                .do_block => |*d| try self.liftLiteralFacts(file, scope, &d.body),
                 .while_loop => |*w| {
-                    try self.liftIntegersInExpr(file, scope, w.cond);
-                    try self.liftLiteralIntegers(file, scope, &w.body);
+                    try self.liftLiteralFactsInExpr(file, scope, w.cond);
+                    try self.liftLiteralFacts(file, scope, &w.body);
                 },
                 .repeat_loop => |*r| {
-                    try self.liftLiteralIntegers(file, scope, &r.body);
-                    try self.liftIntegersInExpr(file, scope, r.cond);
+                    try self.liftLiteralFacts(file, scope, &r.body);
+                    try self.liftLiteralFactsInExpr(file, scope, r.cond);
                 },
                 .if_stmt => |*i| {
-                    if (i.binding) |b| try self.liftIntegersInExpr(file, scope, b.expr);
-                    try self.liftIntegersInExpr(file, scope, i.cond);
-                    try self.liftLiteralIntegers(file, scope, &i.then);
+                    if (i.binding) |b| try self.liftLiteralFactsInExpr(file, scope, b.expr);
+                    try self.liftLiteralFactsInExpr(file, scope, i.cond);
+                    try self.liftLiteralFacts(file, scope, &i.then);
                     for (i.elseifs) |*ei| {
-                        try self.liftIntegersInExpr(file, scope, ei.cond);
-                        try self.liftLiteralIntegers(file, scope, &ei.body);
+                        try self.liftLiteralFactsInExpr(file, scope, ei.cond);
+                        try self.liftLiteralFacts(file, scope, &ei.body);
                     }
-                    if (i.else_body) |*eb| try self.liftLiteralIntegers(file, scope, eb);
+                    if (i.else_body) |*eb| try self.liftLiteralFacts(file, scope, eb);
                 },
                 .num_for => |*nf| {
-                    try self.liftIntegersInExpr(file, scope, nf.start);
-                    try self.liftIntegersInExpr(file, scope, nf.stop);
-                    if (nf.step) |step| try self.liftIntegersInExpr(file, scope, step);
-                    try self.liftLiteralIntegers(file, scope, &nf.body);
+                    try self.liftLiteralFactsInExpr(file, scope, nf.start);
+                    try self.liftLiteralFactsInExpr(file, scope, nf.stop);
+                    if (nf.step) |step| try self.liftLiteralFactsInExpr(file, scope, step);
+                    try self.liftLiteralFacts(file, scope, &nf.body);
                 },
                 .gen_for => |*g| {
-                    for (g.iters) |iter| try self.liftIntegersInExpr(file, scope, iter);
-                    try self.liftLiteralIntegers(file, scope, &g.body);
+                    for (g.iters) |iter| try self.liftLiteralFactsInExpr(file, scope, iter);
+                    try self.liftLiteralFacts(file, scope, &g.body);
                 },
                 .try_stmt => |*t| {
-                    try self.liftLiteralIntegers(file, scope, &t.body);
-                    for (t.catches) |*cc| try self.liftLiteralIntegers(file, scope, &cc.body);
-                    for (t.defers) |*d| try self.liftLiteralIntegers(file, scope, &d.body);
+                    try self.liftLiteralFacts(file, scope, &t.body);
+                    for (t.catches) |*cc| try self.liftLiteralFacts(file, scope, &cc.body);
+                    for (t.defers) |*d| try self.liftLiteralFacts(file, scope, &d.body);
                 },
-                .defer_stmt => |*d| try self.liftLiteralIntegers(file, scope, &d.body),
+                .defer_stmt => |*d| try self.liftLiteralFacts(file, scope, &d.body),
                 .match_stmt => |*m| {
-                    try self.liftIntegersInExpr(file, scope, m.scrutinee);
+                    try self.liftLiteralFactsInExpr(file, scope, m.scrutinee);
                     for (m.arms) |*arm| {
-                        if (arm.pattern == .literal) try self.liftIntegersInExpr(file, scope, arm.pattern.literal);
-                        if (arm.guard) |guard| try self.liftIntegersInExpr(file, scope, guard);
-                        try self.liftLiteralIntegers(file, scope, &arm.body);
+                        if (arm.pattern == .literal) try self.liftLiteralFactsInExpr(file, scope, arm.pattern.literal);
+                        if (arm.guard) |guard| try self.liftLiteralFactsInExpr(file, scope, guard);
+                        try self.liftLiteralFacts(file, scope, &arm.body);
                     }
                 },
                 .func_decl => |*fd| {
                     const nested = self.findFuncDecl(fd) orelse continue;
-                    try self.liftLiteralIntegers(file, nested, &fd.func.body);
+                    try self.liftLiteralFacts(file, nested, &fd.func.body);
                 },
                 else => {},
             }
@@ -4223,10 +4146,10 @@ pub const SemanticGraph = struct {
         // A single-line Idol body stores its answer in `tail_expr`, not in
         // `stmts`. Omitting it here left every one-line relation's literals
         // unreached, which is most of them.
-        if (block.tail_expr) |tail| try self.liftIntegersInExpr(file, scope, tail);
+        if (block.tail_expr) |tail| try self.liftLiteralFactsInExpr(file, scope, tail);
     }
 
-    fn liftIntegersInExpr(
+    fn liftLiteralFactsInExpr(
         self: *SemanticGraph,
         file: []const u8,
         scope: id,
@@ -4234,64 +4157,65 @@ pub const SemanticGraph = struct {
     ) anyerror!void {
         switch (expr.*) {
             .int_lit => |literal| try self.addExactI64Value(file, scope, expr, literal.val),
+            .quoted => |literal| try self.addQuoteValue(file, scope, expr, literal.quote),
             .index => |ix| {
-                try self.liftIntegersInExpr(file, scope, ix.obj);
-                try self.liftIntegersInExpr(file, scope, ix.key);
+                try self.liftLiteralFactsInExpr(file, scope, ix.obj);
+                try self.liftLiteralFactsInExpr(file, scope, ix.key);
             },
-            .field => |f| try self.liftIntegersInExpr(file, scope, f.obj),
+            .field => |f| try self.liftLiteralFactsInExpr(file, scope, f.obj),
             .call => |c| {
-                try self.liftIntegersInExpr(file, scope, c.func);
-                for (c.args) |argument| try self.liftIntegersInExpr(file, scope, argument);
+                try self.liftLiteralFactsInExpr(file, scope, c.func);
+                for (c.args) |argument| try self.liftLiteralFactsInExpr(file, scope, argument);
             },
             .method_call => |mc| {
-                try self.liftIntegersInExpr(file, scope, mc.obj);
-                for (mc.args) |argument| try self.liftIntegersInExpr(file, scope, argument);
+                try self.liftLiteralFactsInExpr(file, scope, mc.obj);
+                for (mc.args) |argument| try self.liftLiteralFactsInExpr(file, scope, argument);
             },
             .binop => |b| {
-                try self.liftIntegersInExpr(file, scope, b.lhs);
-                try self.liftIntegersInExpr(file, scope, b.rhs);
+                try self.liftLiteralFactsInExpr(file, scope, b.lhs);
+                try self.liftLiteralFactsInExpr(file, scope, b.rhs);
             },
-            .unop => |u| try self.liftIntegersInExpr(file, scope, u.operand),
+            .unop => |u| try self.liftLiteralFactsInExpr(file, scope, u.operand),
             .table => |t| for (t.fields) |field| switch (field) {
                 .indexed => |entry| {
-                    try self.liftIntegersInExpr(file, scope, entry.key);
-                    try self.liftIntegersInExpr(file, scope, entry.val);
+                    try self.liftLiteralFactsInExpr(file, scope, entry.key);
+                    try self.liftLiteralFactsInExpr(file, scope, entry.val);
                 },
-                .named => |entry| try self.liftIntegersInExpr(file, scope, entry.val),
-                .positional => |element| try self.liftIntegersInExpr(file, scope, element),
-                .spread => |source| try self.liftIntegersInExpr(file, scope, source),
-                .semantic => |entry| try self.liftIntegersInExpr(file, scope, entry.val),
+                .named => |entry| try self.liftLiteralFactsInExpr(file, scope, entry.val),
+                .positional => |element| try self.liftLiteralFactsInExpr(file, scope, element),
+                .spread => |source| try self.liftLiteralFactsInExpr(file, scope, source),
+                .semantic => |entry| try self.liftLiteralFactsInExpr(file, scope, entry.val),
             },
-            .try_expr => |t| try self.liftIntegersInExpr(file, scope, t.operand),
-            .unwrap_expr => |u| try self.liftIntegersInExpr(file, scope, u.operand),
-            .await_expr => |a| try self.liftIntegersInExpr(file, scope, a.operand),
+            .try_expr => |t| try self.liftLiteralFactsInExpr(file, scope, t.operand),
+            .unwrap_expr => |u| try self.liftLiteralFactsInExpr(file, scope, u.operand),
+            .await_expr => |a| try self.liftLiteralFactsInExpr(file, scope, a.operand),
             .contains_expr => |c| {
-                try self.liftIntegersInExpr(file, scope, c.lhs);
-                try self.liftIntegersInExpr(file, scope, c.rhs);
+                try self.liftLiteralFactsInExpr(file, scope, c.lhs);
+                try self.liftLiteralFactsInExpr(file, scope, c.rhs);
             },
-            .sequence => |s| for (s.exprs) |element| try self.liftIntegersInExpr(file, scope, element),
+            .sequence => |s| for (s.exprs) |element| try self.liftLiteralFactsInExpr(file, scope, element),
             .range => |r| {
-                try self.liftIntegersInExpr(file, scope, r.start);
-                try self.liftIntegersInExpr(file, scope, r.end);
-                if (r.step) |step| try self.liftIntegersInExpr(file, scope, step);
+                try self.liftLiteralFactsInExpr(file, scope, r.start);
+                try self.liftLiteralFactsInExpr(file, scope, r.end);
+                if (r.step) |step| try self.liftLiteralFactsInExpr(file, scope, step);
             },
             .if_expr => |ie| {
-                try self.liftIntegersInExpr(file, scope, ie.cond);
-                try self.liftIntegersInExpr(file, scope, ie.then_expr);
-                try self.liftIntegersInExpr(file, scope, ie.else_expr);
+                try self.liftLiteralFactsInExpr(file, scope, ie.cond);
+                try self.liftLiteralFactsInExpr(file, scope, ie.then_expr);
+                try self.liftLiteralFactsInExpr(file, scope, ie.else_expr);
             },
             .match_expr => |me| {
-                try self.liftIntegersInExpr(file, scope, me.scrutinee);
+                try self.liftLiteralFactsInExpr(file, scope, me.scrutinee);
                 for (me.arms) |*arm| {
-                    if (arm.pattern == .literal) try self.liftIntegersInExpr(file, scope, arm.pattern.literal);
-                    if (arm.guard) |guard| try self.liftIntegersInExpr(file, scope, guard);
-                    try self.liftLiteralIntegers(file, scope, &arm.body);
+                    if (arm.pattern == .literal) try self.liftLiteralFactsInExpr(file, scope, arm.pattern.literal);
+                    if (arm.guard) |guard| try self.liftLiteralFactsInExpr(file, scope, guard);
+                    try self.liftLiteralFacts(file, scope, &arm.body);
                 }
             },
             .list_comp => |lc| {
-                try self.liftIntegersInExpr(file, scope, lc.value);
-                try self.liftIntegersInExpr(file, scope, lc.iter);
-                if (lc.filter) |filter| try self.liftIntegersInExpr(file, scope, filter);
+                try self.liftLiteralFactsInExpr(file, scope, lc.value);
+                try self.liftLiteralFactsInExpr(file, scope, lc.iter);
+                if (lc.filter) |filter| try self.liftLiteralFactsInExpr(file, scope, filter);
             },
             else => {},
         }
@@ -5278,7 +5202,7 @@ pub const SemanticGraph = struct {
         // occurrence it names and this sweep reaches only what nothing else
         // does. Running it inside `liftModuleCalls` would have made the sweep
         // the owner of every checked operand literal instead.
-        try self.liftLiteralIntegers(file, module, &mod.body);
+        try self.liftLiteralFacts(file, module, &mod.body);
         return module;
     }
 
@@ -9702,6 +9626,45 @@ test "semantic_graph: lifted quoted literals publish source quote facts" {
     }
     try std.testing.expect(saw_text);
     try std.testing.expect(saw_bytes);
+}
+
+test "semantic_graph: one literal sweep reaches nested, operand, and tail quotes" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\entry: str = ()
+        \\    raw = 'raw'
+        \\    pair = "left" .. "right"
+        \\    print("operand")
+        \\    "tail"
+    ;
+    var lex = Lexer.init(source, "quote-reach.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&mod);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "quote-reach.id");
+
+    // Five lexical value occurrences, including the unresolved `print`
+    // operand. The retired binding-only sweep reached just `raw` here.
+    try std.testing.expectEqual(@as(usize, 5), graph.source_quote_facts.items.len);
+    var text: usize = 0;
+    var bytes: usize = 0;
+    for (graph.source_quote_facts.items) |fact| switch (fact.quote) {
+        .bytes => bytes += 1,
+        else => text += 1,
+    };
+    try std.testing.expectEqual(@as(usize, 4), text);
+    try std.testing.expectEqual(@as(usize, 1), bytes);
 }
 
 test "semantic_graph: cross-home tail constant publishes exactI64" {
