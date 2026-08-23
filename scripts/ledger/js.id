@@ -50,6 +50,14 @@ main: i64 = ()
     print("ledger/js: fail no git root")
     return 3
 
+  # GAP-220 / GAP-201: the enumeration below reads zero with a stale pathspec
+  # or in a tree with no `.git`, and zero is the verdict this file most wants
+  # to print. `gate/subject.sh` owns the ruling; ask it where a status is not
+  # destroyed by a pipe.
+  if cap("cd '{root}' && sh gate/subject.sh '*.id' >/dev/null 2>&1; echo $?") != "0"
+    print("ledger/js: FAIL subject enumeration is not trustworthy here — GAP-201/GAP-220")
+    return 3
+
   files = lines(capture("cd '{root}' && git ls-files '*.js' | sort"))
   generated = {}
   partial = {}

@@ -19,6 +19,11 @@ envor: str = (name: str, fallback: str)
 
 tally: i64 = (pattern: str)
   home = envor("DUO_ROOT", ".")
+  # GAP-220 / GAP-201: `git ls-files | grep -c` at the head of a pipe answers 0
+  # in a tree with no `.git`, and this file's only output is that number.
+  if cap("cd '{home}' && sh gate/subject.sh >/dev/null 2>&1; echo $?") != "0"
+    print("census/language/supplement: FAIL zero subjects — the census did not run (GAP-201)")
+    return -1
   out = cap("cd '{home}' && git ls-files | grep -c -E '{pattern}' 2>/dev/null")
   n = out:len()
   while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
@@ -34,4 +39,7 @@ ratchet: i64 = (ceiling: i64)
 duo = tally("\\.id$")
 zig = tally("\\.zig$")
 print(zig)
-0
+code = 0
+if duo < 0 or zig < 0
+  code = 3
+code

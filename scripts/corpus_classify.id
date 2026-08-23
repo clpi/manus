@@ -213,6 +213,13 @@ main: i64 = ()
   # The group is a SUBSHELL, not a `{ …; }` brace group: a brace in a string
   # literal is an interpolation hole, and `{ cat build.zig` would
   # be read as one. `( … )` groups identically for a redirect.
+  # GAP-220 / GAP-201: the haystack below is guarded only IN AGGREGATE by
+  # `haybytes == 0`, and `cat build.zig` alone keeps that nonzero — so the
+  # `git ls-files 'scripts/*.id'` arm could contribute nothing and every UNREF
+  # verdict would still be reported as measured.
+  if shell("cd {root} && sh gate/subject.sh 'scripts/*.id' >/dev/null 2>&1 && printf y || printf n") != "y"
+    print("corpus_classify: FAIL — the gate-source arm of the haystack is not trustworthy here (GAP-220)")
+    return 3
   shell("cd {root} && ( cat build.zig 2>/dev/null; git ls-files 'scripts/*.id' | grep -v corpus_classify | tr '\\n' '\\0' | xargs -0 cat 2>/dev/null; find .github -type f 2>/dev/null | tr '\\n' '\\0' | xargs -0 cat 2>/dev/null; ) > {haystack}")
   haybytes: i64 = to(i64)(std.script.chomp(shell("wc -c < {haystack} 2>/dev/null")))
   if haybytes == 0

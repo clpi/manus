@@ -17,27 +17,21 @@ idol=${IDOL_BIN:-"$root/zig-out/bin/idol"}
 mode=$("$root/tools/node/dev/build-mode" "$idol" 2>/dev/null) || true
 : "${mode:=unknown}"
 work=$(mktemp -d "${TMPDIR:-/tmp}/idol-cache-home.XXXXXX")
-cache_before=$work/cache.before
 
-snapshot_cache() {
-    output=$1
-    for cache in /tmp/idol-cache-*; do
-        [ -f "$cache" ] && printf '%s\n' "$cache"
-    done | sort >"$output"
-}
-
-snapshot_cache "$cache_before"
+# A PRIVATE SCRATCH ROOT FOR THIS RUN, not a diff of a shared one.
+#
+# This used to snapshot `/tmp/idol-cache-*` before and after and delete the
+# difference. That is a diff of a directory EVERY LANE ON THE MACHINE WRITES:
+# a concurrent compile's entry appears in the "created" set and gets deleted,
+# and this run's own entry can be deleted by the other lane doing the same
+# thing. `src/scratch.zig` now routes the executable cache, intermediate
+# objects, emitted C and logs through TMPDIR, so a private root is one export
+# and the cleanup is `rm -rf` of a directory nobody else can name.
+TMPDIR="$work/scratch"
+export TMPDIR
+mkdir -p "$TMPDIR"
 
 cleanup() {
-    cache_after=$work/cache.after
-    cache_created=$work/cache.created
-    snapshot_cache "$cache_after"
-    comm -13 "$cache_before" "$cache_after" >"$cache_created"
-    while IFS= read -r cache; do
-        case "$cache" in
-            /tmp/idol-cache-*) [ ! -f "$cache" ] || rm -f "$cache" ;;
-        esac
-    done <"$cache_created"
     rm -rf "$work"
 }
 trap cleanup EXIT INT TERM

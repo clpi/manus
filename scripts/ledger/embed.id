@@ -34,6 +34,10 @@ envor: str = (name: str, fallback: str)
   else
     v
 
+# GAP-220 / GAP-201: `not sites` prints this ledger's PASS line, so a tree
+# with no `.git` — where every enumeration is empty — produces its best
+# verdict from nothing.
+subject = cap("sh gate/subject.sh '*.id' >/dev/null 2>&1; echo $?")
 sites = digits(cap("git ls-files '*.id' | grep -v scripts/census/foreign.id | tr '\\n' '\\0' | xargs -0 grep -l -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | wc -l | tr -d ' '"))
 payload = digits(cap("git ls-files '*.id' | grep -v scripts/census/foreign.id | tr '\\n' '\\0' | xargs -0 grep -h -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | grep -v -E '^[[:space:]]*#' | wc -l | tr -d ' '"))
 floor = digits(envor("EMBED_FLOOR", "11"))
@@ -42,6 +46,9 @@ if sites
   print(cap("git ls-files '*.id' | grep -v scripts/census/foreign.id | tr '\\n' '\\0' | xargs -0 grep -l -E '@(comp\\.)?c\\.(emit|include)' 2>/dev/null | sed 's/^/  /'"))
 print("ledger/embed: enforce zero embedded @c sites for self-hosting")
 code = 0
+if subject != "0"
+  print("ledger/embed: FAIL subject enumeration is not trustworthy here — GAP-201/GAP-220")
+  code = 3
 if not sites
   print("ledger/embed: pass sites 0 payload-lines 0")
 if sites > floor

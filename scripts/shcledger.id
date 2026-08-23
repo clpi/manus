@@ -119,6 +119,15 @@ main: i64 = ()
     print("shcledger: FAIL no git root")
     return 3
 
+  # GAP-220 / GAP-201, AND THE WORST CASE OF IT IN THIS TREE: every subject
+  # count below feeds `debt`, and `debt == 0` is the ONLY input that produces
+  # `shcledger: PASS complete`. A tree with no `.git`, or one stale pathspec,
+  # therefore yields this file's strongest possible verdict from an empty
+  # measurement. `gate/subject.sh` refuses first.
+  if cap("cd '" .. root .. "' && sh gate/subject.sh '*.id' >/dev/null 2>&1; echo $?") != "0"
+    print("shcledger: FAIL subject enumeration is not trustworthy here — GAP-201/GAP-220")
+    return 3
+
   duobin = root .. "/zig-out/bin/idol"
   zigfiles = lines(capture("cd '" .. root .. "' && git ls-files '*.zig' | sort"))
   zig = zigfiles:len()

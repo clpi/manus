@@ -27,6 +27,16 @@ census: i64 = ()
     print("census/projection: fail no root — run from repository root")
     return 3
 
+  # GAP-220 / GAP-201. EVERY enumeration below is `git ls-files` at the HEAD OF
+  # A PIPELINE, so its exit status is destroyed before anything can read it:
+  # with a stale pathspec, or in a tree with no `.git`, every row reads 0 and
+  # this census prints a perfect, meaningless report. `gate/subject.sh` owns
+  # the ruling — a gate that examines zero subjects must FAIL — and this asks
+  # it in the one position where a status survives a pipe.
+  if cap("sh gate/subject.sh '*.id' >/dev/null 2>&1; echo $?") != "0"
+    print("census/projection: FAIL zero subjects — the census did not run (GAP-201)")
+    return 3
+
   subjto = cap("git ls-files '*.id' | xargs grep -h -c ':to(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
   fromface = cap("git ls-files '*.id' | xargs grep -h -c ':from(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")
   nestto = cap("git ls-files '*.id' | xargs grep -h -E -c 'to\\((str|i64|bytes)\\)\\(' 2>/dev/null | awk '{s+=$1} END{print s+0}'")

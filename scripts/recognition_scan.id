@@ -163,8 +163,14 @@ modules: i64 = (root: str, pat: str)
 # lines above. The lib/std rows never had the problem (this file is not in
 # lib/std) but the exclusion is written against the pathspec, not the
 # directory, so moving the file cannot silently reintroduce it.
+# GAP-220 / GAP-201: this enumerates '*.id' MINUS lib/, which is a DIFFERENT
+# pathspec from the `lib/*.id` one the total/control rows above guard, and its
+# rows are reported rather than ratcheted — so a zero here reads as "nothing
+# outside std does this", the answer the scan is hoping for. `gate/subject.sh`
+# runs first inside the same shell, and its refusal becomes a sentinel the
+# caller cannot mistake for a clean zero.
 outside: i64 = (root: str, pat: str)
-  cmd: str = "cd {root} && git ls-files '*.id' | grep -v -E {q}^lib/{q} | grep -v -E {q}^scripts/recognition{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E {q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | wc -l"
+  cmd: str = "cd {root} && sh gate/subject.sh '*.id' >/dev/null 2>&1 || \{ printf 1000000; exit 0; \}; git ls-files '*.id' | grep -v -E {q}^lib/{q} | grep -v -E {q}^scripts/recognition{q} | tr '\\n' '\\0' | xargs -0 grep -H -n -E {q}{pat}{q} 2>/dev/null | grep -v -E {q}{comments}{q} | wc -l"
   to(i64)(std.script.chomp(std.script.capture(cmd)))
 
 # One synthetic line through the ENTIRE filter chain.
@@ -293,6 +299,9 @@ main: i64 = ()
     pure: i64 = hits(root, purepat)
     purem: i64 = modules(root, purepat)
     pureo: i64 = outside(root, purepat)
+    if pureo >= 1000000
+      print("recognition scan: FAIL — the beyond-std enumeration is not trustworthy here (GAP-220/GAP-201)")
+      code = 3
     rand: i64 = hits(root, randpat)
     randm: i64 = modules(root, randpat)
     rando: i64 = outside(root, randpat)

@@ -412,7 +412,13 @@ main: i64 = ()
     existence = ascount(cmd)
     cmd = "git show :scripts/semanticgate.id | grep -E {q}std[.]proc[.]capture\\({q} | grep -v -E {q}^[[:space:]]*positive[[:space:]]*={q} | wc -l | awk '{print $1}'"
     bootstrap = ascount(cmd)
-    cmd = "git ls-files '*.id' | grep -c {q}_{q}"
+    # GAP-220 / GAP-201: the `fileword` row is a SEPARATE enumeration from the
+    # pathset controls above, it is a CEILING, and it heads a pipe — so zero is
+    # a pass and nothing downstream can see the enumerator fail. Ask
+    # `gate/subject.sh` in a position where the status survives; a refusal
+    # blows the cap rather than clearing it, the same sentinel this file
+    # already uses for an empty `$files`.
+    cmd = "sh gate/subject.sh '*.id' >/dev/null 2>&1 && git ls-files '*.id' | grep -c {q}_{q} || printf 1000000"
     fileword = ascount(cmd)
 
     over = 0

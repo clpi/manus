@@ -236,6 +236,15 @@ main: i64 = ()
       print("capability_scan: FAIL — 0 std modules found; the scan did not run")
       code = 3
 
+  # GAP-220 / GAP-201: `beyond()` enumerates '*.id' MINUS lib/, a different
+  # pathspec from the one the guard above covers, and its rows are reported
+  # rather than ratcheted — so a zero there reads as "nothing outside std does
+  # this", which is the answer the scan is hoping for.
+  if code == 0
+    if script.chomp(script.capture("cd {root} && sh gate/subject.sh '*.id' >/dev/null 2>&1; echo $?")) != "0"
+      print("capability_scan: FAIL — the beyond-std enumeration is not trustworthy here (GAP-220)")
+      code = 3
+
   # Control 1: the pipeline itself. Every count below rides this exact
   # shell; if the control reads 0 the pipeline is broken and every class row
   # is a lie rather than a clean result.

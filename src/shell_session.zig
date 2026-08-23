@@ -1,6 +1,7 @@
 //! §15 — persistent semantic shell session (history, export, snapshot).
 const std = @import("std");
 const builtin = @import("builtin");
+const scratch = @import("scratch.zig");
 const shell_host = @import("shell_host.zig");
 
 pub const SCHEMA_VERSION = "shell-session-v0";
@@ -69,7 +70,10 @@ pub fn tempArtifactBasename(alloc: std.mem.Allocator, counter: usize, ext: []con
         defer alloc.free(temp);
         return std.fmt.allocPrint(alloc, "{s}\\duo_shell_{d}.{s}", .{ temp, counter, ext });
     }
-    return std.fmt.allocPrint(alloc, "/tmp/duo_shell_{d}.{s}", .{ counter, ext });
+    // The counter is per-SESSION, so two shells running at once both produced
+    // `/tmp/duo_shell_1.out`. `scratch.salt()` separates the processes and
+    // `scratch.root()` honours TMPDIR.
+    return scratch.path(alloc, "duo_shell_{x}_{d}.{s}", .{ scratch.salt(), counter, ext });
 }
 
 pub fn wrapExpression(alloc: std.mem.Allocator, line: []const u8) ![]u8 {

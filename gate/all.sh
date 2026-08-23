@@ -74,9 +74,19 @@ retired_names=
 # explanation is measuring itself — `tools/node/dev/gapc0` records the same
 # convention for scanner fixtures. Nothing here is an authority citation; every
 # gate this runner actually depends on it RUNS, in the loop above.
-sources=$(git ls-files -- src gate docs AGENTS.md CLAUDE.md 2>/dev/null | grep -v '^gate/all\.sh$')
+# `2>/dev/null` on the enumerator, and a "NOT MEASURED" line that then falls
+# through to the ratchet below with unresolved=0, which passes a ceiling of 0.
+# That is a vacuous PASS wearing a warning's clothes: in a tree with no `.git`
+# this census examined nothing and the file still exited 0. GAP-201 rules that
+# a gate examining zero subjects must FAIL, so it does.
+if ! sh "$repo/gate/subject.sh" -- src gate docs AGENTS.md CLAUDE.md >/dev/null; then
+  printf 'gate/all.sh: citation census has NO SUBJECTS — refusing to report a debt figure\n' >&2
+  exit 2
+fi
+sources=$(git ls-files -- src gate docs AGENTS.md CLAUDE.md | grep -v '^gate/all\.sh$')
 if [ -z "$sources" ]; then
-  printf 'gate/all.sh: citation census could not list tracked sources — NOT MEASURED\n'
+  printf 'gate/all.sh: citation census resolved to zero sources after self-exclusion — NOT MEASURED\n' >&2
+  exit 2
 else
   # A citation may be spelled QUALIFIED (`../idol-native/gate/x.sh`, which
   # docs/METRICS.md already uses) or bare. The qualified spelling is the repair

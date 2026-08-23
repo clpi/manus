@@ -273,7 +273,15 @@ loc: i64 = (root: str, spec: str)
     probe: str = "cd '{root}' && git ls-files {spec} | tr '\\n' '\\0' | xargs -0 wc -l 2>/dev/null | tail -1"
     number(std.script.chomp(shell(probe)))
 
+# GAP-220 / GAP-201: this row is REPORTED, never tested, so a zero from a
+# stale pathspec or a tree with no `.git` prints as a small, tidy runtime. The
+# `loc()` rows above are guarded by the wardcore/wartcore control; this one was
+# not. -1 is the enumerator refusing, which `number()` already spells for an
+# unreadable answer, so the row reads n/a rather than a confident zero.
 filecount: i64 = (root: str, spec: str)
+    guard: str = "cd '{root}' && sh gate/subject.sh {spec} >/dev/null 2>&1 && printf y || printf n"
+    if shell(guard) != "y"
+        return -1
     probe: str = "cd '{root}' && git ls-files {spec} | wc -l"
     number(std.script.chomp(shell(probe)))
 

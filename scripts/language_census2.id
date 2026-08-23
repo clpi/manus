@@ -40,6 +40,11 @@ ratchet: i64 = (ceiling: i64)
     113
 
 main: i64 = ()
+  # GAP-220 / GAP-201: `git ls-files | grep -c` at the head of a pipe answers 0
+  # in a tree with no `.git`, and every row of this census is one of those.
+  if cap("sh gate/subject.sh >/dev/null 2>&1; echo $?") != "0"
+    print("language_census2: FAIL zero subjects — the census did not run (GAP-201)")
+    return 3
   duo = tally("\\.id$")
   zig = tally("\\.zig$")
   print(zig)

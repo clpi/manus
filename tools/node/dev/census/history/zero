@@ -4,6 +4,20 @@ set -eu
 repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$repo"
 
+# GAP-220 / GAP-201. EVERY enumeration below is `git ls-files` at the head of a
+# pipeline, so its exit status is destroyed before anything can read it: in a
+# tree with no `.git` each one yields nothing, every `rg` finds nothing, and
+# this census prints `pass` for each check having examined NOTHING. Assert the
+# tree and the subject set once, HERE, in the one position where the status
+# survives. `gate/subject.sh` owns both rulings; if it is missing, `sh` exits
+# 127 and this still refuses to run, which is the correct direction.
+for spec in "" "*.id"; do
+  sh "$repo/gate/subject.sh" $spec >/dev/null || {
+    echo "census/history/zero: REFUSED — subject enumeration is not trustworthy here" >&2
+    exit 3
+  }
+done
+
 fail=0
 warn=0
 filter='census/history/zero|convergencecensus|law\.zero\.history|ZERO-HISTORY|retired name|(?i)retired|git stores|foreign provenance|Zig @import|@c\.import|No `language\.history`|no language\.history|path-migration\.md|Forbidden | Canonical'

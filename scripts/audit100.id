@@ -1298,6 +1298,15 @@ main: i64 = ()
     i = i + 1
 
   # The one §1 row that is about files, not lines.
+  #
+  # GAP-220 / GAP-201: this is a SECOND enumeration, over the whole tree rather
+  # than over '*.id', and the guard above does not cover it. Its budget is a
+  # CEILING, so zero passes — a tree with no `.git` scores a perfect row here
+  # while the '*.id' guard above is what would have caught it. Guard the
+  # pathspec that is actually used.
+  if cap("cd {root} && sh gate/subject.sh >/dev/null 2>&1; echo $?") != "0"
+    print("audit100: FAIL — the whole-tree enumeration is not trustworthy here (GAP-220)")
+    return 3
   nonduo: i64 = cap("cd {root} && git ls-files | grep -c -v -E {q}\\.(duo|md)${q}"):to(i64)
   # LOWERED 560 -> 536. The count fell on its own (546 -> 536) as tracked
   # non-.id files were deleted elsewhere, and "lower a budget whenever you

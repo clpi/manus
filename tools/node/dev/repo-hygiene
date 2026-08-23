@@ -12,8 +12,18 @@ report() {
   fi
 }
 
+# EMPTY IS THE LAWFUL ANSWER HERE — this asks "is this forbidden artifact
+# tracked?" and "no" is the result the gate wants — so `--any` waives the
+# zero-subject ruling and keeps the tree ruling. Without it, a tree with no
+# `.git` answered "not tracked" to EVERY question and this gate reported a
+# perfectly clean repository having checked nothing (GAP-220).
 tracked() {
-  git ls-files "$1" 2>/dev/null | head -1 | grep -q .
+  sh "$repo/gate/subject.sh" --any "$1" 2>/dev/null | head -1 | grep -q .
+}
+
+sh "$repo/gate/subject.sh" --tree || {
+  printf 'repo_hygiene: REFUSED — every tracked-file probe below would answer "no" here\n' >&2
+  exit 3
 }
 
 report "$( [ -f '-' ] && echo 1 || echo 0 )" "root file '-' must be removed"

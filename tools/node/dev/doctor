@@ -134,11 +134,20 @@ else
   if ! (cd "$repo" && zig build install >/dev/null 2>&1); then
     bad "zig build install failed"
   fi
+  # A `while` loop reading a pipe destroys the enumerator's status, and an
+  # empty enumeration takes the `ok` branch below — so a tree with no `.git`
+  # certified the compiler artifact as newer than sources it never looked at.
+  # Assert the subject set first, where the status survives (GAP-220).
+  if ! sh "$repo/gate/subject.sh" build.zig.zon src >/dev/null; then
+    bad "cannot enumerate compiler sources — staleness NOT MEASURED"
+    stale=
+  else
   stale="$(git ls-files build.zig.zon src | while IFS= read -r p; do [ "$p" -nt "$duo" ] && echo "$p" && break; done)"
   if [ -n "$stale" ]; then
     bad "compiler artifact is older than tracked source: $stale"
   else
     ok "compiler artifact is newer than compiler sources"
+  fi
   fi
 fi
 

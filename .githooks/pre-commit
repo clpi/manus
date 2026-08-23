@@ -136,7 +136,14 @@ if [ -s "$list" ] || [ -s "$names" ]; then
   }
 fi
 
-git ls-files >"$track"
+# The tracked-tree arm. This used to be a bare `git ls-files`, which in a tree
+# with no `.git` writes an EMPTY listing — and `gate/path.id`'s own GAP-201
+# guard then reports "tree listing carried zero paths" only if it is actually
+# fed the listing. Refuse before we get there.
+sh "$root/gate/subject.sh" >"$track" || {
+  echo "COMMIT BLOCKED — cannot enumerate the tracked tree; gate/path.id would judge nothing." >&2
+  exit 1
+}
 {
   echo "IDOLGATE tree"
   cat "$track"

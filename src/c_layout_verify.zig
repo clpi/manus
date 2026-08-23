@@ -1,5 +1,6 @@
 //! Target layout verification for imported C records (validation engine seam).
 const std = @import("std");
+const scratch = @import("scratch.zig");
 const host_run = @import("host_run.zig");
 const c_frontend = @import("c_frontend.zig");
 
@@ -95,8 +96,13 @@ pub fn verifyRecordWithClang(
     }
     try pw.writeAll("  return 0;\n}\n");
 
-    const src_path = "/tmp/duo_layout_probe.c";
-    const bin_path = "/tmp/duo_layout_probe";
+    // FIXED NAMES, NO PROCESS IDENTITY. Two compilers verifying a C layout at
+    // the same moment overwrote one another's probe and each read the other's
+    // offsets — a wrong answer, not a missing one.
+    const src_path = try scratch.path(alloc, "duo_layout_probe_{x}.c", .{scratch.salt()});
+    defer alloc.free(src_path);
+    const bin_path = try scratch.path(alloc, "duo_layout_probe_{x}", .{scratch.salt()});
+    defer alloc.free(bin_path);
     const src_bytes = prog.written();
     {
         var threaded = std.Io.Threaded.init(alloc, .{});

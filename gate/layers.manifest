@@ -124,6 +124,7 @@ RUNTIME  idol_str_runtime.zig
 RUNTIME  host_run.zig
 RUNTIME  shell_host.zig
 RUNTIME  shell_session.zig
+RUNTIME  scratch.zig
 RUNTIME  launch_role.zig
 RUNTIME  sim.zig
 RUNTIME  sim_pipeline.zig

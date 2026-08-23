@@ -13,7 +13,7 @@
 # git ls-files is the authority on what is TRACKED. A file existing on disk is
 # not a violation — only a tracked one ships.
 _tracked: bool = (pattern: str)
-  out = script.capture("git ls-files " .. pattern .. " 2>/dev/null | head -1")
+  out = script.capture("sh gate/subject.sh --any " .. pattern .. " 2>/dev/null | head -1")
   script.chomp(out) != ""
 
 _report: bool = (bad: bool, msg: str)
@@ -21,8 +21,19 @@ _report: bool = (bad: bool, msg: str)
     stdout:write("repo_hygiene: FAIL — " .. msg .. "\n")
   bad
 
+# GAP-220: every _tracked() probe reads "no" in a tree with no `.git`, so this
+# gate reported a perfectly clean repository having examined nothing. "No" is
+# the LAWFUL answer to each individual probe here, so the zero-subject ruling
+# is waived (`--any`) and the tree ruling is asserted once, here.
+_treeok: bool = ()
+  script.chomp(script.capture("sh gate/subject.sh --tree >/dev/null 2>&1; echo $?")) == "0"
+
 main: i64 = ()
   fails = 0
+
+  if !_treeok()
+    stdout:write("repo_hygiene: REFUSED — not a git work tree; every tracked-file probe would answer no\n")
+    return 3
 
   # Root file literally named "-" (1 MB accident from the audit).
   if _report(script.fs_exists("-"), "root file '-' must be removed")

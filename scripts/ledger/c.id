@@ -62,10 +62,24 @@ show: i64 = (name: str, files: any)
     print("  {files[i]}")
   count
 
+# GAP-220 / GAP-201. ZERO IS THIS LEDGER'S GOAL, so an empty enumeration
+# cannot simply be scored a failure — and that is exactly what made the vacuous
+# case so dangerous here. A tree with no `.git` answers zero for every pathspec,
+# and this file then prints its BEST POSSIBLE verdict having examined nothing.
+# So the enumerator is live-wired instead: `gate/subject.sh` is asked for a
+# pathspec this repository cannot lack, and a zero there is the enumerator
+# being broken, never the debt being retired.
+subject: i64 = (root: str)
+  status("cd '{root}' && sh gate/subject.sh '*.id'")
+
 main: i64 = ()
   root = cap("git rev-parse --show-toplevel 2>/dev/null")
   if root == ""
     print("ledger/c: fail no git root")
+    return 3
+
+  if subject(root) != 0
+    print("ledger/c: FAIL subject enumeration is not trustworthy here — GAP-220")
     return 3
 
   cmd = "cd '{root}' && git ls-files '*.[ch]' | sort"

@@ -65,6 +65,7 @@ const waist = struct {
 };
 const backend_identity = @import("backend_identity.zig");
 const home_resolve = @import("home_resolve.zig");
+const scratch = @import("scratch.zig");
 const dnir_lower = @import("dnir_lower.zig");
 const native_ir = @import("native_ir.zig");
 const benchmark_evidence = @import("benchmark_evidence.zig");
@@ -1382,7 +1383,7 @@ fn do_project_fmt(alloc: std.mem.Allocator, io: Io, t: build_framework.Target) !
 fn do_project_check(alloc: std.mem.Allocator, io: Io, t: build_framework.Target) !void {
     term.banner("check");
     if (t.src) |src| {
-        const dummy = try std.fmt.allocPrint(alloc, "/tmp/duo_check_{s}.out", .{std.fs.path.stem(src)});
+        const dummy = try scratch.path(alloc, "duo_check_{s}.out", .{std.fs.path.stem(src)});
         defer alloc.free(dummy);
         try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, false, false, false, false, false, false, false, null, t.link, null);
         term.ok("'{s}' ok", .{src});
@@ -1508,7 +1509,7 @@ fn run_test_sources(
         const out = if (output_file != null and sources.len == 1)
             output_file.?
         else
-            try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_{d}.test.out", .{ std.fs.path.stem(file), idx });
+            try scratch.path(alloc, "duo_{s}_{d}.test.out", .{ std.fs.path.stem(file), idx });
         defer if (!(output_file != null and sources.len == 1)) alloc.free(out);
         try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null);
         const code = try run_pretty_test_runner(alloc, io, out, bench_only);
@@ -3297,7 +3298,7 @@ fn run_pretty_test_runner(alloc: std.mem.Allocator, io: Io, out_path: []const u8
 
     if (term.testUsesStructuredOutput()) {
         const log_ns = Io.Timestamp.now(io, .awake).nanoseconds;
-        const log_path = try std.fmt.allocPrint(alloc, "/tmp/idol_test_{d}_{x}.log", .{
+        const log_path = try scratch.path(alloc, "idol_test_{d}_{x}.log", .{
             std.c.getpid(), @as(u64, @intCast(log_ns)),
         });
         defer alloc.free(log_path);
@@ -4033,7 +4034,7 @@ fn materializeBootstrapC(alloc: std.mem.Allocator, io: Io, name: []const u8) ![]
     var digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(bytes, &digest, .{});
     const hex = std.fmt.bytesToHex(digest, .lower);
-    const path = try std.fmt.allocPrint(alloc, "/tmp/idol-boot-{s}-{s}", .{ hex[0..16], name });
+    const path = try scratch.path(alloc, "idol-boot-{s}-{s}", .{ hex[0..16], name });
     const cwd = Io.Dir.cwd();
     if (Io.Dir.statFile(cwd, io, path, .{})) |stat| {
         if (stat.size == bytes.len) return path;
@@ -4558,7 +4559,12 @@ fn buildCacheDir(io: Io) ?Io.Dir {
     // relative readFileAlloc/writeFile entry points take a sub_path, so handing
     // them an absolute "/tmp/..." silently misbehaves — that is what made the
     // first version of this cache never store anything.
-    return Io.Dir.openDirAbsolute(io, "/tmp", .{}) catch null;
+    // ...and the root itself is `scratch.root()`, so `TMPDIR=<unique>` gives a
+    // run a PRIVATE executable cache. That is the only isolation this cache
+    // offers and it has to be asked for: with TMPDIR unset the home stays
+    // exactly `/tmp`, which is what every gate that sweeps `/tmp/idol-cache-*`
+    // already assumes.
+    return Io.Dir.openDirAbsolute(io, scratch.root(), .{}) catch null;
 }
 
 fn buildCacheLoad(io: Io, cache_name: []const u8, out_path: []const u8, alloc: std.mem.Allocator) bool {
@@ -4566,6 +4572,17 @@ fn buildCacheLoad(io: Io, cache_name: []const u8, out_path: []const u8, alloc: s
     defer dir.close(io);
     const bytes = Io.Dir.readFileAlloc(dir, io, cache_name, alloc, .unlimited) catch return false;
     defer alloc.free(bytes);
+    // A ZERO-BYTE ENTRY IS NEVER AN EXECUTABLE. `buildCacheStore` no longer
+    // makes one, but an entry written by an older compiler is still sitting in
+    // a shared `/tmp` on every machine that ran one, and serving it hands the
+    // caller a file that runs and EXITS 0 having done nothing — a green test
+    // suite for a program that was never linked. Refuse it and delete it, so
+    // the poisoned key is repaired by the first run that touches it rather
+    // than on every run forever.
+    if (bytes.len == 0) {
+        Io.Dir.deleteFile(dir, io, cache_name) catch {};
+        return false;
+    }
     const cwd = Io.Dir.cwd();
 
     // WRITE-THEN-RENAME, not write-in-place. Rewriting a Mach-O that was recently
@@ -4593,7 +4610,32 @@ fn buildCacheStore(io: Io, cache_name: []const u8, out_path: []const u8, alloc: 
     const cwd = Io.Dir.cwd();
     const bytes = Io.Dir.readFileAlloc(cwd, io, out_path, alloc, .unlimited) catch return;
     defer alloc.free(bytes);
+    // THE KEY DOES NOT NAME THE OUTPUT PATH, SO THE OUTPUT MUST BE AN ARTIFACT.
+    // That omission is deliberate — the same program compiled to two different
+    // names is the same program — but it means whatever bytes are found at
+    // `out_path` are stored under a key that a LATER, ORDINARY compile of the
+    // same source will hit. `idol compile x.id -o /dev/null` reads back zero
+    // bytes, and the next real compile of x.id was served an EMPTY EXECUTABLE
+    // THAT EXITS 0. Measured. `cacheable` already refuses the sink outputs it
+    // can name; this is the backstop that does not depend on naming them.
+    if (bytes.len == 0) return;
     Io.Dir.writeFile(dir, io, .{ .sub_path = cache_name, .data = bytes }) catch return;
+}
+
+/// Does `out_path` name a place an artifact can be READ BACK FROM?
+///
+/// `/dev/null` is the whole point: it is the standard way to ask for "compile
+/// this and throw the binary away", it accepts every byte written to it, and it
+/// yields nothing on read. Any character device behaves the same way, and so
+/// does a directory.
+fn outputHoldsAnArtifact(io: Io, out_path: []const u8) bool {
+    if (std.mem.eql(u8, out_path, "/dev/null")) return false;
+    if (std.mem.startsWith(u8, out_path, "/dev/")) return false;
+    const stat = Io.Dir.statFile(Io.Dir.cwd(), io, out_path, .{}) catch return true;
+    return switch (stat.kind) {
+        .file => true,
+        else => false,
+    };
 }
 
 fn do_compile(
@@ -4640,7 +4682,8 @@ fn do_compile(
     // would be a wrong result.
     const cacheable = !check_only and !test_mode and !bench_mode and !pgo and
         !lib_mode and !load_chunk and !shared_mem and link_flags.len == 0 and entry_override == null and
-        std.mem.eql(u8, cc, "clang") and std.mem.indexOf(u8, target, "wasm") == null;
+        std.mem.eql(u8, cc, "clang") and std.mem.indexOf(u8, target, "wasm") == null and
+        outputHoldsAnArtifact(io, out_path);
     const cache_path: ?[]u8 = if (cacheable)
         buildCacheKey(alloc, io, src_path, target, backend_mode, opt)
     else
@@ -5123,6 +5166,7 @@ fn do_compile(
                         const direct_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null, artifact.need);
                         const obj_path = blk: {
                             var oh = std.hash.Wyhash.init(0);
+                            const scratch_salt = scratch.salt();
                             // std.c.realpath is what lexer_bridge.zig:199
                             // already uses to turn a SPELLING into a FILE
                             // IDENTITY, and this is the same question: two
@@ -5137,7 +5181,16 @@ fn do_compile(
                                     oh.update(std.mem.sliceTo(rp, 0));
                                 } else oh.update(src_path);
                             } else oh.update(src_path);
-                            break :blk try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_{x}_{d}_native.o", .{
+                            // ...AND WHICH PROCESS IS ASKING. realpath + pid was
+                            // not enough: pids are reused, and a stale object
+                            // left by a dead compiler with the same pid is
+                            // exactly the file a live run must not pick up.
+                            // `scratch.salt()` is unique to this process, and
+                            // folding it into the EXISTING hash field keeps the
+                            // name's shape `duo_<stem>_<hex>_<pid>_native.o`,
+                            // which gate/differential.sh normalises by pattern.
+                            oh.update(std.mem.asBytes(&scratch_salt));
+                            break :blk try scratch.path(alloc, "duo_{s}_{x}_{d}_native.o", .{
                                 std.fs.path.stem(src_path), oh.final(), std.c.getpid(),
                             });
                         };
@@ -5231,7 +5284,15 @@ fn do_compile(
                     std.process.exit(1);
                 };
                 defer artifact.deinit(alloc);
-                const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native_dylib.o", .{std.fs.path.stem(src_path)});
+                // THE PROVEN COLLISION. This name carried the source stem and
+                // NOTHING ELSE, so two concurrent compiles of same-named sources
+                // wrote and unlinked one another's object and the failure
+                // surfaced as `clang: no such file or directory`, which reads
+                // like a compiler defect. Same hash+pid field as the executable
+                // object above.
+                const obj_path = try scratch.path(alloc, "duo_{s}_{x}_{d}_native_dylib.o", .{
+                    std.fs.path.stem(src_path), scratch.salt(), std.c.getpid(),
+                });
                 const cwd = Io.Dir.cwd();
                 try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = artifact.bytes });
                 try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, false, true, &.{}, null);
@@ -5411,7 +5472,10 @@ fn do_compile(
 
     const is_wasm = std.mem.eql(u8, target, "wasm32-wasi");
 
-    const c_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}.c", .{
+    // NO SALT HERE, deliberately. `gate/wasm.sh` in the sibling tree asserts
+    // that `/tmp/duo_<stem>.c` was written, by exact path. Honouring TMPDIR
+    // isolates a run that asks to be isolated without moving the default.
+    const c_path = try scratch.path(alloc, "duo_{s}.c", .{
         std.fs.path.stem(src_path),
     });
 
@@ -5464,7 +5528,7 @@ fn do_compile(
     } else |_| {}
 
     const ml_c_path = if (ml_kernels_sidecar) blk: {
-        const path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_ml.c", .{
+        const path = try scratch.path(alloc, "duo_{s}_ml.c", .{
             std.fs.path.stem(src_path),
         });
         const cwd = Io.Dir.cwd();
@@ -5573,9 +5637,9 @@ fn do_compile(
     // PGO two-pass compile (skipped for wasm, load_chunk, or run_after).
     if (pgo and !is_wasm and !load_chunk) {
         const stem = std.fs.path.stem(src_path);
-        const profraw_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}.profraw", .{stem});
-        const profdata_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}.profdata", .{stem});
-        const instr_out = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_instr.out", .{stem});
+        const profraw_path = try scratch.path(alloc, "duo_{s}.profraw", .{stem});
+        const profdata_path = try scratch.path(alloc, "duo_{s}.profdata", .{stem});
+        const instr_out = try scratch.path(alloc, "duo_{s}_instr.out", .{stem});
 
         // instrument.
         var p1_args: std.ArrayList([]const u8) = .empty;
