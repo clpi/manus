@@ -28,17 +28,22 @@
 # nothing; if the find below returns no files the gate exits nonzero rather than
 # reporting a clean tree.
 set -u
+LC_ALL=C
+export LC_ALL
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo"
 led="docs/spec/directive-ledger.json"
+subject="$repo/gate/subject.sh"
 [ -f "$led" ] || { echo "directive.sh: missing $led" >&2; exit 2; }
+[ -x "$subject" ] || { echo "directive.sh: missing executable $subject" >&2; exit 2; }
 tmp="$(mktemp -t idoldir)"; trap 'rm -f "$tmp" "$tmp.led" "$tmp.now" "$tmp.files"' EXIT
 
-# Counted OUTSIDE the pipeline on purpose. The loop below feeds `sort`, so it runs
-# in a subshell and any counter incremented inside it is discarded when the subshell
-# exits — the first version of this gate counted 0 subjects for exactly that reason
-# and its own zero-subject guard caught it.
-find . -name '*.id' -not -path './.git/*' | sort > "$tmp.files"
+# Consume the one fail-closed repository subject producer. Do not restore a
+# gate-local `find`/Git/fallback policy beside it.
+if ! sh "$subject" '*.id' >"$tmp.files"; then
+  echo "directive.sh: Idol source enumeration failed (GAP-201/GAP-220)" >&2
+  exit 2
+fi
 subjects=$(wc -l < "$tmp.files" | tr -d ' ')
 : > "$tmp.now"
 while IFS= read -r f; do

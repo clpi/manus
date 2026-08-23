@@ -16,16 +16,23 @@ set -u
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo"
 bin="${IDOL_BIN:-$repo/zig-out/bin/idol}"
+subject="$repo/gate/subject.sh"
 [ -x "$bin" ] || { echo "attribution: no compiler at $bin" >&2; exit 2; }
+[ -x "$subject" ] || { echo "attribution: no subject enumerator at $subject" >&2; exit 2; }
 out="${1:-/dev/stdout}"
 TMO="${ATTRIBUTION_TIMEOUT:-60}"
-tmp="$(mktemp -t idolattr)"; trap 'rm -f "$tmp"' EXIT
+tmp="$(mktemp -t idolattr)"; trap 'rm -f "$tmp" "$tmp.all" "$tmp.files" "$tmp.rec"' EXIT
 # examples/compile_fail/ IS EXCLUDED ON PURPOSE. Those files exist to be
 # rejected — a refusal there is the fixture passing, not a blocked program.
 # Counting them inflated this budget by 29 and would have made the census
 # improve every time someone ADDED a negative test.
-find examples native_differential lib scripts -name '*.id' 2>/dev/null \
-  | grep -v '/compile_fail/' | sort > "$tmp.files"
+if ! sh "$subject" 'examples/*.id' 'native_differential/*.id' 'lib/*.id' \
+    'scripts/*.id' >"$tmp.all"; then
+  echo "attribution: source enumeration failed (GAP-201/GAP-220)" >&2
+  exit 2
+fi
+LC_ALL=C awk '!/\/compile_fail\//' "$tmp.all" | LC_ALL=C sort >"$tmp.files"
+[ -s "$tmp.files" ] || { echo "attribution: ZERO non-fixture subjects" >&2; exit 2; }
 : > "$tmp.rec"
 while IFS= read -r f; do
   # stdin MUST be closed: `idol run` otherwise consumes this very list.
