@@ -5344,11 +5344,11 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
 /// loop DISAPPEARS and what is measured is constant folding. Against a runtime
 /// bound the honest band is 1.20x-1.60x at factor 4.
 ///
-/// FACTOR 4 IS THE DEFAULT BECAUSE IT IS THE ONLY ONE THAT NEVER LOSES. Swept
-/// on the same four kernels: factor 2 REGRESSES mix to 0.920x, factor 3 loses
-/// half the win on the reduce kernels (1.16x against 1.48x at factor 2) because
-/// the residual it leaves is larger, and factor 8 wins more on one kernel and
-/// less on two. 4 measures 1.19x-1.61x with no row below 1.
+/// FACTOR 4 IS THE MEASURED RESEARCH CANDIDATE. Swept on the same four kernels:
+/// factor 2 REGRESSES mix to 0.920x, factor 3 loses half the win on the reduce
+/// kernels (1.16x against 1.48x at factor 2) because the residual it leaves is
+/// larger, and factor 8 wins more on one kernel and less on two. 4 measures
+/// 1.19x-1.61x with no row below 1.
 ///
 /// THE RECURRENCE IS NOT SHORTENED AND NOTHING HERE CLAIMS IT IS. The fib body
 /// is a chain of 1-cycle adds; unrolling it takes the loop from ~1.37 cycles
@@ -5375,6 +5375,14 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
 /// on the expected side of `bound`, which it does exactly when the subtraction
 /// did not wrap) branching straight past the unrolled loop; a literal bound is
 /// checked at compile time and the transform simply declines.
+///
+/// CURRENT DISPOSITION: RESEARCH-ONLY AND OFF BY DEFAULT. Eligibility below is
+/// still reconstructed from AST shapes, local slot names and a duplicated
+/// operator classifier; the graph publishes neither a transformation identity
+/// nor its input/output correspondence, observation obligations or witness.
+/// Those are admission prerequisites, not documentation debt. `IDOL_UNROLL`
+/// therefore selects an explicit experiment; ordinary compilation must retain
+/// the original loop until that graph-native transformation path exists.
 const UnrollPlan = struct {
     iv_slot: u32,
     cmp: dnir.BinOpTag,
@@ -5383,20 +5391,34 @@ const UnrollPlan = struct {
     factor: u32,
 };
 
-/// `IDOL_UNROLL` — the SEVERING negative control. `off`/`0`/`1` sever the
-/// transform, any other integer 2..16 selects the factor, absent means 4. One
-/// compiler binary therefore produces both arms of a timing comparison, which
-/// is the only way to show the timing return is this transform's and not a
-/// difference between two builds.
+/// `IDOL_UNROLL` — an explicit research selector. `off`/`0`/`1`, absence,
+/// emptiness and malformed values leave the transform off; an integer 2..16
+/// selects the factor. One compiler binary therefore produces both arms of a
+/// timing comparison without making the unwitnessed arm production law.
 pub fn unrollFactorSetting() u32 {
-    const raw = std.c.getenv("IDOL_UNROLL") orelse return 4;
-    const text = std.mem.sliceTo(raw, 0);
-    if (text.len == 0) return 4;
+    const raw = std.c.getenv("IDOL_UNROLL") orelse return unrollFactorFromText(null);
+    return unrollFactorFromText(std.mem.sliceTo(raw, 0));
+}
+
+fn unrollFactorFromText(setting: ?[]const u8) u32 {
+    const text = setting orelse return 1;
+    if (text.len == 0) return 1;
     if (std.mem.eql(u8, text, "off") or std.mem.eql(u8, text, "OFF")) return 1;
-    const n = std.fmt.parseInt(u32, text, 10) catch return 4;
+    const n = std.fmt.parseInt(u32, text, 10) catch return 1;
     if (n < 2) return 1;
     if (n > 16) return 16;
     return n;
+}
+
+test "dnir_lower: runtime unroll is research opt-in pending graph transform identity" {
+    try std.testing.expectEqual(@as(u32, 1), unrollFactorFromText(null));
+    try std.testing.expectEqual(@as(u32, 1), unrollFactorFromText(""));
+    try std.testing.expectEqual(@as(u32, 1), unrollFactorFromText("off"));
+    try std.testing.expectEqual(@as(u32, 1), unrollFactorFromText("0"));
+    try std.testing.expectEqual(@as(u32, 1), unrollFactorFromText("1"));
+    try std.testing.expectEqual(@as(u32, 1), unrollFactorFromText("invalid"));
+    try std.testing.expectEqual(@as(u32, 4), unrollFactorFromText("4"));
+    try std.testing.expectEqual(@as(u32, 16), unrollFactorFromText("99"));
 }
 
 /// A slot that holds a plain full-width integer and nothing else. An induction
