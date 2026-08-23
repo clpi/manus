@@ -54,6 +54,28 @@ rc: i64 = (bin: str)
 outtext: str = (bin: str)
   std.script.chomp(std.script.capture(bounded .. bin .. " 2>/dev/null | tr '\\n' ' '"))
 
+# A typed exit oracle observes one process outcome: the exact status and no
+# output on either channel. The files are retained from that one execution so
+# checking the status cannot accidentally execute the subject a second time.
+exitmatch: bool = (want: str, actual: i64, out: str, err: str)
+  actual:to(str) == want and script.status("test ! -s " .. out) == 0 and script.status("test ! -s " .. err) == 0
+
+exitcontrols: bool = ()
+  out = work .. "/exit-control.stdout"
+  err = work .. "/exit-control.stderr"
+  script.fs_write(out, "")
+  script.fs_write(err, "")
+  if !exitmatch("7", 7, out, err)
+    return false
+  script.fs_write(out, "noise")
+  if exitmatch("7", 7, out, err)
+    return false
+  script.fs_write(out, "")
+  script.fs_write(err, "noise")
+  if exitmatch("7", 7, out, err)
+    return false
+  true
+
 # The stdout half of one row's verdict. Split out so the comparison reads as
 # one fact at the call site instead of four nested lines inside the status
 # ladder.
@@ -142,6 +164,8 @@ main: i64 = ()
       bounded = cand .. " " .. bound .. " "
 
   std.script.run("rm -rf " .. work .. " && mkdir -p " .. work)
+  if !exitcontrols()
+    fail("exit-oracle controls failed: matching status with stdout/stderr must refuse")
 
   for i, src in listfiles(corpus)
     name = stem(src)
@@ -181,9 +205,11 @@ main: i64 = ()
       if not compileok(idol, src, "direct", bin)
         fail(name .. ": direct backend failed to compile (native_only)")
       else
-        actual = rc(bin)
-        if actual:to(str) != expected
-          fail(name .. ": expected " .. expected .. ", got " .. actual:to(str) .. " (native_only)")
+        out = bin .. ".stdout"
+        err = bin .. ".stderr"
+        actual = std.script.status(bounded .. bin .. " >" .. out .. " 2>" .. err)
+        if !exitmatch(expected, actual, out, err)
+          fail(name .. ": expected exit " .. expected .. " with empty stdout/stderr, got " .. actual:to(str) .. " (native_only)")
         else
           agree = agree + 1
 

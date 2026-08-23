@@ -70,6 +70,25 @@ status: i64 = (cmd: str)
 quiet: i64 = (cmd: str)
   script.status(cmd .. " >/dev/null 2>&1")
 
+exitmatch: bool = (want: str, actual: i64, out: str, err: str)
+  actual:to(str) == want and script.status("test ! -s " .. out) == 0 and script.status("test ! -s " .. err) == 0
+
+exitcontrols: bool = ()
+  out = work .. "/exit-control.stdout"
+  err = work .. "/exit-control.stderr"
+  script.fs_write(out, "")
+  script.fs_write(err, "")
+  if !exitmatch("7", 7, out, err)
+    return false
+  script.fs_write(out, "noise")
+  if exitmatch("7", 7, out, err)
+    return false
+  script.fs_write(out, "")
+  script.fs_write(err, "noise")
+  if exitmatch("7", 7, out, err)
+    return false
+  true
+
 files: any = (dir: str)
   out = script.capture("ls " .. dir .. "/*.id 2>/dev/null")
   acc = {}
@@ -136,22 +155,26 @@ measure = (idol: str, src: str, group: str, blocking: bool, declaredans: bool)
   ischk = quiet(idol .. " check " .. src) == 0
 
   cbuilt = quiet(idol .. " compile " .. src .. " --emit exe -o " .. bindir_c) == 0
+  cout = bindir_c .. ".stdout"
+  cerr = bindir_c .. ".stderr"
   crc = -1
   if cbuilt
-    crc = status(bindir_c)
+    crc = status(bindir_c .. " >" .. cout .. " 2>" .. cerr)
   # Compiled is not run. A binary that hangs has no answer to compare.
   iscp = cbuilt and crc != 124
 
   isnat = quiet(idol .. " compile " .. src .. " --backend=direct --emit exe -o " .. bindir_d) == 0
+  dout = bindir_d .. ".stdout"
+  derr = bindir_d .. ".stderr"
   drc = -1
   if isnat
-    drc = status(bindir_d)
+    drc = status(bindir_d .. " >" .. dout .. " 2>" .. derr)
 
   want = declared(src)
   isprv = false
   if isnat and drc != 124
     if declaredans
-      isprv = want != "" and drc:to(str) == want
+      isprv = want != "" and exitmatch(want, drc, dout, derr)
     else
       isprv = iscp and drc == crc
 
@@ -189,6 +212,9 @@ main: i64 = ()
       timeprep = cand .. " " .. run_timeout .. " "
 
   script.run("rm -rf " .. work .. " && mkdir -p " .. work)
+  if !exitcontrols()
+    print("capability_table: FAIL — exit-oracle controls accepted matching status with stdout/stderr")
+    return 1
 
   for i, src in files(corpus)
     measure(idol, src, "corpus", true, false)
