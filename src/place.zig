@@ -102,8 +102,18 @@ pub const Residency = enum { absent, register, frame, static, foreign, unknown }
 pub const Origin = enum { literal, derived, parameter, world, unknown };
 
 /// Compatibility encoding for consumers while graph facts replace host tags.
-/// Only `collection` and `record` are produced. The retired members remain so
-/// old exhaustive switches fail closed rather than acquiring a new meaning.
+/// `collection`, `record` and `scalar` are produced. The retired members remain
+/// so old exhaustive switches fail closed rather than acquiring a new meaning.
+///
+/// WHY `scalar` IS PRODUCED, AND ONLY AT MODULE REGION. This file's header says
+/// a place exists where semantics may require a LOCATION — mutation, aliasing,
+/// escape, lifetime identity, PERSISTENCE — and not merely because the host
+/// compiler stores or names a value. A module-scope binding is exactly such a
+/// location: it is one `__DATA` word whose lifetime is the module's and which
+/// every relation in the file may read or write at a time the module's own
+/// statement order does not fix. That is persistence and lifetime identity, so
+/// it is a place. A FUNCTION-LOCAL scalar is not: it dies with its frame and no
+/// second region can name it, so `bindPlace` still declines one.
 pub const Shape = enum { unknown, scalar, collection, record, parameter, home };
 pub const Region = enum { function, module };
 
@@ -285,6 +295,210 @@ pub const Census = struct {
     }
 };
 
+/// WHICH MODULE-SCOPE WORDS A RELATION BODY CAN REACH.
+///
+/// THIS EXISTS BECAUSE THE MAIN WALK IS ORDER-DEPENDENT AND THE FACT IS NOT.
+/// `walkForeignBody` visits a relation's body at the statement where the
+/// relation is DECLARED, and `bindOrRebind` drops a bare-name assignment whose
+/// place does not exist yet (`if (ctx.foreign) return;`). So for
+///
+///     f: () = ()
+///         x = 5
+///     x: i64 = 0
+///
+/// the write is invisible and `x` would be published as never mutated — a
+/// WRONG answer, not a missing one, and the only kind a consumer cannot defend
+/// against. Module-scope order does not decide whether a relation reaches a
+/// word, so the question is answered before the walk begins and consulted at
+/// every bind.
+///
+/// IT OVER-APPROXIMATES, DELIBERATELY. A relation that DECLARES its own `x`
+/// still counts as reaching the module's `x`, because separating the two here
+/// would duplicate the shadow adjudication `BindOrigin` owns and put a second
+/// answer to one question in the tree. Over-counting moves `escape`/`mutation`
+/// toward `.yes`, which is the refusing direction for every consumer.
+///
+/// `opaque_body` is the fail-closed exit: a construct this scan does not model
+/// could reach ANY word, so no `.no` may be published for any name once it is
+/// set. Both switches below are EXHAUSTIVE — a new AST member breaks the build
+/// rather than silently joining the modelled set.
+const ForeignReach = struct {
+    named: std.ArrayListUnmanaged([]const u8) = .empty,
+    assigned: std.ArrayListUnmanaged([]const u8) = .empty,
+    opaque_body: bool = false,
+
+    fn deinit(self: *ForeignReach, alloc: std.mem.Allocator) void {
+        self.named.deinit(alloc);
+        self.assigned.deinit(alloc);
+    }
+
+    fn has(list: []const []const u8, name: []const u8) bool {
+        for (list) |n| if (std.mem.eql(u8, n, name)) return true;
+        return false;
+    }
+
+    fn mentions(self: *const ForeignReach, name: []const u8) bool {
+        return has(self.named.items, name);
+    }
+
+    fn assigns(self: *const ForeignReach, name: []const u8) bool {
+        return has(self.assigned.items, name);
+    }
+
+    fn note(alloc: std.mem.Allocator, list: *std.ArrayListUnmanaged([]const u8), name: []const u8) !void {
+        if (has(list.items, name)) return;
+        try list.append(alloc, name);
+    }
+};
+
+/// EVERY BODY IN THE MODULE THAT IS NOT THE MODULE'S OWN.
+///
+/// `.func_decl` is not the only one. `alias_def` carries `methods`, and a scan
+/// that visited only relations would publish `escape:"no"` for a word an alias
+/// method writes — a wrong answer with a consumer waiting for it.
+///
+/// Statements not named here need no arm: they are either the module's own
+/// straight-line body, which the main walk records access by access, or a shape
+/// the main walk already refuses through `markAllUnknown`. The two exceptions
+/// are named explicitly, because the main walk treats them as NO-OPS: a C
+/// header brings in code this compiler does not read, and a macro body is code
+/// whose expansion this scan does not model.
+fn foreignReach(alloc: std.mem.Allocator, mod: *const ast.Module) !ForeignReach {
+    var out: ForeignReach = .{};
+    errdefer out.deinit(alloc);
+    for (mod.body.stmts) |*stmt| switch (stmt.*) {
+        .func_decl => |*fd| try reachBody(alloc, &out, &fd.func),
+        .alias_def => |ad| for (ad.methods) |*m| try reachBody(alloc, &out, &m.func),
+        .cinclude, .macro_def => out.opaque_body = true,
+        else => {},
+    };
+    return out;
+}
+
+fn reachBody(alloc: std.mem.Allocator, out: *ForeignReach, fb: *const ast.FuncBody) anyerror!void {
+    try reachBlock(alloc, out, &fb.body);
+}
+
+fn reachBlock(alloc: std.mem.Allocator, out: *ForeignReach, b: *const ast.Block) anyerror!void {
+    for (b.stmts) |*s| try reachStmt(alloc, out, s);
+    if (b.tail_expr) |t| try reachExpr(alloc, out, t);
+}
+
+fn reachStmt(alloc: std.mem.Allocator, out: *ForeignReach, s: *const ast.Stmt) anyerror!void {
+    switch (s.*) {
+        .local_decl => |d| for (d.inits) |e| try reachExpr(alloc, out, e),
+        .const_decl => |d| try reachExpr(alloc, out, d.val),
+        .global_decl => |d| {
+            for (d.inits) |e| try reachExpr(alloc, out, e);
+            // `global x = …` inside a relation writes the module word.
+            for (d.names) |n| try ForeignReach.note(alloc, &out.assigned, n.ident);
+            for (d.names) |n| try ForeignReach.note(alloc, &out.named, n.ident);
+        },
+        .assign => |a| {
+            for (a.values) |v| try reachExpr(alloc, out, v);
+            for (a.targets) |t| {
+                if (t.* == .name) {
+                    try ForeignReach.note(alloc, &out.assigned, t.name.ident);
+                    try ForeignReach.note(alloc, &out.named, t.name.ident);
+                } else try reachExpr(alloc, out, t);
+            }
+        },
+        .call_stmt => |c| try reachExpr(alloc, out, c.expr),
+        .expr_stmt => |e| try reachExpr(alloc, out, e.expr),
+        .do_block => |d| try reachBlock(alloc, out, &d.body),
+        .while_loop => |w| {
+            try reachExpr(alloc, out, w.cond);
+            try reachBlock(alloc, out, &w.body);
+        },
+        .repeat_loop => |r| {
+            try reachBlock(alloc, out, &r.body);
+            try reachExpr(alloc, out, r.cond);
+        },
+        .if_stmt => |f| {
+            if (f.binding) |binding| try reachExpr(alloc, out, binding.expr);
+            try reachExpr(alloc, out, f.cond);
+            try reachBlock(alloc, out, &f.then);
+            for (f.elseifs) |ei| {
+                try reachExpr(alloc, out, ei.cond);
+                try reachBlock(alloc, out, &ei.body);
+            }
+            if (f.else_body) |*body| try reachBlock(alloc, out, body);
+        },
+        .num_for => |f| {
+            try reachExpr(alloc, out, f.start);
+            try reachExpr(alloc, out, f.stop);
+            if (f.step) |st| try reachExpr(alloc, out, st);
+            try reachBlock(alloc, out, &f.body);
+        },
+        .gen_for => |f| {
+            for (f.iters) |iter| try reachExpr(alloc, out, iter);
+            try reachBlock(alloc, out, &f.body);
+        },
+        .ret => |r| for (r.vals) |v| try reachExpr(alloc, out, v),
+        .brk, .cont, .label_stmt, .enum_def, .concept_def, .alias_def => {},
+        // NOT MODELLED. A nested relation, a macro, a `goto`, a C header, a
+        // `defer`, a `match` or a `try` body can name anything; publishing
+        // `.no` for a word after seeing one would be a claim this scan cannot
+        // support.
+        .func_decl, .macro_def, .cinclude, .directive, .goto_stmt, .match_stmt, .try_stmt, .defer_stmt => out.opaque_body = true,
+    }
+}
+
+fn reachExpr(alloc: std.mem.Allocator, out: *ForeignReach, e: *const ast.Expr) anyerror!void {
+    switch (e.*) {
+        .name => |n| try ForeignReach.note(alloc, &out.named, n.ident),
+        .index => |ix| {
+            try reachExpr(alloc, out, ix.obj);
+            try reachExpr(alloc, out, ix.key);
+        },
+        .field => |f| try reachExpr(alloc, out, f.obj),
+        .call => |c| {
+            try reachExpr(alloc, out, c.func);
+            for (c.args) |a| try reachExpr(alloc, out, a);
+        },
+        .method_call => |m| {
+            try reachExpr(alloc, out, m.obj);
+            for (m.args) |a| try reachExpr(alloc, out, a);
+        },
+        .binop => |b| {
+            try reachExpr(alloc, out, b.lhs);
+            try reachExpr(alloc, out, b.rhs);
+        },
+        .unop => |u| try reachExpr(alloc, out, u.operand),
+        .try_expr => |v| try reachExpr(alloc, out, v.operand),
+        .unwrap_expr => |v| try reachExpr(alloc, out, v.operand),
+        .await_expr => |v| try reachExpr(alloc, out, v.operand),
+        .contains_expr => |v| {
+            try reachExpr(alloc, out, v.lhs);
+            try reachExpr(alloc, out, v.rhs);
+        },
+        .range => |r| {
+            try reachExpr(alloc, out, r.start);
+            try reachExpr(alloc, out, r.end);
+            if (r.step) |st| try reachExpr(alloc, out, st);
+        },
+        .sequence => |sq| for (sq.exprs) |v| try reachExpr(alloc, out, v),
+        .if_expr => |i| {
+            try reachExpr(alloc, out, i.cond);
+            try reachExpr(alloc, out, i.then_expr);
+            try reachExpr(alloc, out, i.else_expr);
+        },
+        .table => |t| for (t.fields) |field| switch (field) {
+            .indexed => |v| {
+                try reachExpr(alloc, out, v.key);
+                try reachExpr(alloc, out, v.val);
+            },
+            .named => |v| try reachExpr(alloc, out, v.val),
+            .positional => |v| try reachExpr(alloc, out, v),
+            .spread => |v| try reachExpr(alloc, out, v),
+            .semantic => |v| try reachExpr(alloc, out, v.val),
+        },
+        .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => {},
+        // NOT MODELLED — same rule as `reachStmt`.
+        .func_expr, .list_comp, .match_expr, .quote, .unquote, .macro_call, .semantic, .semantic_scope => out.opaque_body = true,
+    }
+}
+
 const Ctx = struct {
     census: *Census,
     depth: u8 = 0,
@@ -292,9 +506,16 @@ const Ctx = struct {
     region: Region = .function,
     foreign: bool = false,
     shadow: std.ArrayListUnmanaged([]const u8) = .empty,
+    reach: ForeignReach = .{},
+    /// `markAllUnknown` has fired. It degrades every place the census ALREADY
+    /// holds, and a place bound afterwards would otherwise be published as if
+    /// the refusal had never happened — the same order-dependence
+    /// `ForeignReach` exists to end, on the other axis.
+    refused: bool = false,
 
     fn deinit(self: *Ctx) void {
         self.shadow.deinit(self.census.alloc);
+        self.reach.deinit(self.census.alloc);
     }
 
     fn lookup(self: *Ctx, name: []const u8) ?*Place {
@@ -319,7 +540,13 @@ pub fn analyzeFunction(alloc: std.mem.Allocator, fb: *const ast.FuncBody) !Censu
 pub fn analyzeModule(alloc: std.mem.Allocator, mod: *const ast.Module) !Census {
     var census = Census.init(alloc);
     errdefer census.deinit();
-    var ctx = Ctx{ .census = &census, .region = .module };
+    var ctx = Ctx{
+        .census = &census,
+        .region = .module,
+        // Answered BEFORE the walk, because which relations reach a word does
+        // not depend on where in the file the word is declared.
+        .reach = try foreignReach(alloc, mod),
+    };
     defer ctx.deinit();
     try walkBlock(&ctx, &mod.body);
     return census;
@@ -498,12 +725,20 @@ fn walkForeignBody(ctx: *Ctx, fb: *const ast.FuncBody) anyerror!void {
 }
 
 fn markAllUnknown(ctx: *Ctx) !void {
+    ctx.refused = true;
     for (ctx.census.places.items) |*p| {
         p.facts.escape = .unknown;
         p.facts.alias = .unknown;
         p.facts.mutation = .unknown;
         p.facts.immutability = .unknown;
         p.facts.determinacy = .unknown;
+        // A SCALAR HAS NO SECOND STORE FOR ITS VALUE. An aggregate's
+        // `contents_known` survives this sledgehammer because it is a fact
+        // about the INITIALIZER's fields, which an unmodelled statement
+        // elsewhere does not rewrite. A scalar's contents ARE its value, and an
+        // unmodelled statement may have written it, so the same refusal reaches
+        // one fact further here.
+        if (p.shape == .scalar) p.facts.contents_known = .unknown;
     }
 }
 
@@ -529,6 +764,20 @@ fn bindOrRebind(
     mode: BindMode,
 ) !void {
     if (ctx.lookup(name)) |p| {
+        // A SCALAR ASSIGNMENT IS A STORE TO THE WORD, NOT A REBINDING.
+        // A collection's `xs = { … }` builds a NEW value and binds the name to
+        // it, which is why the census records `.bind` and
+        // `residencyRefusal` counts binds. A module scalar has one word for the
+        // module's lifetime; `i = i + 1` writes it. Recording that as a bind
+        // would leave `writeCount()` at zero for the only kind of place whose
+        // whole cost is its stores.
+        if (p.shape == .scalar and mode == .assignment) {
+            try appendAccess(ctx, p, .write, point, true);
+            p.facts.mutation = .yes;
+            p.facts.immutability = .no;
+            p.facts.contents_known = .no;
+            return;
+        }
         if (ctx.foreign and mode == .assignment) {
             try appendAccess(ctx, p, .write, point, true);
             p.facts.mutation = .yes;
@@ -546,16 +795,139 @@ fn bindOrRebind(
 
 fn candidateShape(init: ?*const ast.Expr, typ: ast.TypeExpr) Shape {
     if (declaredExtent(typ) != null) return .collection;
+    // A BRACE INITIALIZER OUTRANKS A SCALAR ANNOTATION, and this order is
+    // measured, not stylistic. `lib/crypto.id` spells
+    // `secure_random_int: i64 = {}`; reading the annotation first turned its
+    // aggregate row into a scalar one and DELETED a place a consumer already
+    // has. A construction of an aggregate is an aggregate whatever the
+    // annotation says, and the new answer must never take a row away from the
+    // old one.
+    if (init) |e| if (e.* == .table) {
+        for (e.table.fields) |field| switch (field) {
+            .named, .indexed, .semantic => return .record,
+            else => {},
+        };
+        return .collection;
+    };
+    if (typ == .named and scalarRingWord(typ.named)) return .scalar;
     const e = init orelse return .unknown;
     return switch (e.*) {
-        .table => |t| blk: {
-            for (t.fields) |field| switch (field) {
-                .named, .indexed, .semantic => break :blk .record,
-                else => {},
-            };
-            break :blk .collection;
-        },
+        // AN UNANNOTATED BINDING IS SCALAR ONLY WHEN ITS INITIALIZER PROVES IT.
+        // `x = f()` stays `.unknown` — that is the honest answer for a value
+        // this walk did not evaluate, and `.unknown` means NO ROW, not a row of
+        // unknowns. Nothing here widens by guessing.
+        .int_lit, .float_lit, .true_lit, .false_lit, .unop => if (typ == .inferred and scalarLiteral(e)) .scalar else .unknown,
         else => .unknown,
+    };
+}
+
+/// THE SCALAR RING WORDS — the declared types that name one ring element and no
+/// members. `str` is absent on purpose: a string has contents and a location
+/// this walk does not model. `ptr`, `*T`, `?T`, arrays, records, tuples,
+/// generics and function types are absent because they are not one element.
+///
+/// `int`/`integer` are here because `types.zig` resolves both to `i64`, so
+/// leaving them out would make ONE type answer two ways depending on spelling —
+/// the defect §8 forbids.
+fn scalarRingWord(n: []const u8) bool {
+    const words = [_][]const u8{
+        "i8",  "i16", "i32", "i64", "u8",   "u16",     "u32", "u64",
+        "f32", "f64", "bool", "int", "integer",
+    };
+    for (words) |w| if (std.mem.eql(u8, n, w)) return true;
+    return false;
+}
+
+fn scalarLiteral(e: *const ast.Expr) bool {
+    return switch (e.*) {
+        .int_lit, .float_lit, .true_lit, .false_lit => true,
+        .unop => |u| switch (u.op) {
+            .neg, .not, .bnot => scalarLiteral(u.operand),
+            // `len` and `compile` are applications, not ring arithmetic.
+            .len, .compile => false,
+        },
+        else => false,
+    };
+}
+
+/// THE SIX DECISION FACTS FOR A MODULE SCALAR, EACH WITH ITS OWN PROOF.
+///
+/// The same fact family collections and records publish — no scalar-specific
+/// names, no second identity space for one question. What differs is the PROOF,
+/// and it differs for one reason stated once here:
+///
+///   A SCALAR MENTION YIELDS A COPY OF THE RING ELEMENT, NOT ITS LOCATION.
+///   `ys = xs` on a collection makes `ys` a second name for one location, which
+///   is why `aliasInit` degrades the aggregate's `alias` to `.unknown`. `y = x`
+///   on a scalar copies the word. The surface offers no operator that produces
+///   the address of a binding — `ast.UnOp` is `{ neg, not, len, bnot, compile }`
+///   and `TypeExpr.pointer` is TYPE position, so a value may BE a pointer while
+///   no expression MAKES one out of a binding. `scalarAliasIsTwoValued` below
+///   is an exhaustive switch over `ast.UnOp` so that adding an address-of
+///   operator breaks this build instead of quietly invalidating the proof.
+///
+/// escape          `.yes`  a module relation body names the word — it is read
+///                         or written at a time this module's straight-line
+///                         order does not fix.
+///                 `.no`   no relation body names it and nothing was refused.
+///                 `.unknown` the walk refused a construct, here or in a body.
+/// alias           `.no` by the copy rule above; `.unknown` once refused.
+///                 `.yes` IS UNREACHABLE on this surface — see the report.
+/// mutation        `.yes`  some assignment stores to the word.
+/// immutability    the complement of `mutation`, published because a consumer
+///                 reads them together (see `aggregateIsSoleImmutableBinding`).
+/// contents_known  `.yes`  a literal initializer and no store anywhere.
+///                 `.no`   a store exists, so no static value answers for it.
+///                 `.unknown` the initializer is a value this walk did not
+///                         evaluate, or the walk refused.
+/// bind_origin     already carried by `Place`; `.declaration` for `x: i64 = 0`,
+///                 `.assignment` for a bare `x = 0` the module never declared.
+fn scalarFacts(ctx: *Ctx, p: *Place, name: []const u8, init: ?*const ast.Expr) void {
+    // A scalar holds exactly one ring element, and there is no index to be
+    // indeterminate about.
+    p.facts.extent = .{ .exact = 1 };
+    p.facts.determinacy = if (ctx.refused) .unknown else .exact;
+
+    const blind = ctx.refused or ctx.reach.opaque_body;
+    const written = ctx.reach.assigns(name);
+
+    p.facts.escape = if (blind) .unknown else if (ctx.reach.mentions(name)) .yes else .no;
+    // The `.no` below is licensed by the closed operator set, so the guard that
+    // keeps that set closed is REFERENCED here — an unreferenced function in
+    // this language is never analyzed, and an unanalyzed exhaustive switch
+    // guards nothing.
+    std.debug.assert(scalarAliasIsTwoValued(.neg));
+    p.facts.alias = if (blind) .unknown else .no;
+    p.facts.mutation = if (blind) .unknown else if (written) .yes else .no;
+    p.facts.immutability = switch (p.facts.mutation) {
+        .yes => .no,
+        .no => .yes,
+        .unknown => .unknown,
+    };
+
+    const literal = if (init) |e| scalarLiteral(e) else false;
+    p.facts.origin = if (literal) .literal else .derived;
+    // `.unknown` and `.no` are DIFFERENT answers and are kept apart: `.no` says
+    // no static value answers for this word because something stores to it;
+    // `.unknown` says this walk did not evaluate the initializer, so it has no
+    // opinion either way.
+    p.facts.contents_known = if (!literal or blind) .unknown else switch (p.facts.mutation) {
+        .yes => .no,
+        .no => .yes,
+        .unknown => .unknown,
+    };
+}
+
+/// A COMPILE-TIME GUARD ON THE ALIAS PROOF, not a runtime check.
+///
+/// `scalarFacts` publishes `alias = .no` for every module scalar because no
+/// expression on this surface produces the address of a binding. That is a
+/// claim about `ast.UnOp`, and a claim about a closed set should fail the BUILD
+/// when the set opens, not fail a program later. Adding a member to `ast.UnOp`
+/// makes this switch non-exhaustive.
+fn scalarAliasIsTwoValued(op: ast.UnOp) bool {
+    return switch (op) {
+        .neg, .not, .bnot, .len, .compile => true,
     };
 }
 
@@ -570,6 +942,9 @@ fn bindPlace(
 ) !void {
     const shape = candidateShape(init, typ);
     if (shape == .unknown) return;
+    // See `Shape`. A frame slot that dies with its frame is not a location any
+    // second region can name, so no scalar place is minted for one.
+    if (shape == .scalar and ctx.region != .module) return;
 
     var p = Place{
         .id = @intCast(ctx.census.places.items.len),
@@ -587,7 +962,9 @@ fn bindPlace(
     p.facts.immutability = .yes;
     p.facts.determinacy = .exact;
 
-    if (init) |e| switch (e.*) {
+    if (shape == .scalar) {
+        scalarFacts(ctx, &p, name, init);
+    } else if (init) |e| switch (e.*) {
         .table => |t| {
             p.facts.origin = .literal;
             p.facts.extent = .{ .exact = @intCast(t.fields.len) };
@@ -609,6 +986,13 @@ fn bindPlace(
 fn aliasInit(ctx: *Ctx, e: *const ast.Expr) !bool {
     if (e.* != .name) return false;
     const p = ctx.lookup(e.name.ident) orelse return false;
+    // `y = x` ON A SCALAR IS A COPY, NOT A SECOND NAME FOR ONE WORD. Answering
+    // `.unknown` here would make `alias` unknown for every scalar that is ever
+    // read into another binding — a fact published everywhere and true nowhere,
+    // which is worse than absent because a consumer trusts it. `false` returns
+    // this initializer to `readExpr`, where the mention is recorded as the READ
+    // it is.
+    if (p.shape == .scalar) return false;
     p.facts.alias = .unknown;
     return true;
 }
@@ -652,7 +1036,18 @@ fn readExpr(ctx: *Ctx, e: *const ast.Expr) anyerror!void {
     switch (e.*) {
         .name => |n| {
             if (ctx.lookup(n.ident)) |p| {
-                @constCast(p).facts.escape = .unknown;
+                // THE ONE PLACE THE COPY RULE PAYS. A bare mention of an
+                // AGGREGATE hands its location to code this walk cannot model,
+                // so its escape drops to `.unknown`. A bare mention of a SCALAR
+                // loads the ring element; the word stays where it is. Applying
+                // the aggregate rule here would publish `escape:"unknown"` on
+                // every scalar the program actually uses — including both
+                // variables of the loop kernel this exists to serve.
+                if (p.shape == .scalar) {
+                    try appendAccess(ctx, @constCast(p), .read, ctx.census.points, true);
+                } else {
+                    @constCast(p).facts.escape = .unknown;
+                }
             }
         },
         .index => |ix| {
@@ -831,7 +1226,7 @@ test "place: an ordinary call is not an indexed read" {
     try testing.expectEqual(Tri.unknown, p.facts.escape);
 }
 
-test "place: scalar values, parameters and homes are not places" {
+test "place: parameters, homes and function-local scalars are not places" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -840,12 +1235,190 @@ test "place: scalar values, parameters and homes are not places" {
         \\global C = compiler.comptime
         \\
         \\main: i64 = (n: i64)
-        \\    k + n
+        \\    t = 1
+        \\    k + n + t
         \\
     );
     var census = try analyzeModule(alloc, &mod);
     defer census.deinit();
-    try testing.expectEqual(@as(usize, 0), census.count());
+    // `k` IS a place: a module word `main` reads. `C` is not — its initializer
+    // is a value this walk did not evaluate, and `.unknown` shape means NO ROW,
+    // never a row of unknowns. The parameter `n` and the frame-local `t` are
+    // not places: neither is a location a second region can name.
+    try testing.expectEqual(@as(usize, 1), census.count());
+    const k = census.find("k").?;
+    try testing.expectEqual(Shape.scalar, k.shape);
+    try testing.expect(census.find("C") == null);
+    try testing.expect(census.find("n") == null);
+    try testing.expect(census.find("t") == null);
+}
+
+test "place: a function-local scalar gets no row even when the same walk mints module ones" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\g: i64 = 0
+        \\main: i64 = ()
+        \\    local w: i64 = 2
+        \\    g + w
+        \\
+    );
+    var census = try analyzeModule(alloc, &mod);
+    defer census.deinit();
+    try testing.expect(census.find("g") != null);
+    try testing.expect(census.find("w") == null);
+}
+
+test "place: a module scalar publishes every decision fact, and mutation is two-sided" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\i: i64 = 0
+        \\fixed: i64 = 7
+        \\while i < 3
+        \\    i = i + 1
+        \\
+    );
+    var census = try analyzeModule(alloc, &mod);
+    defer census.deinit();
+
+    const i = census.find("i").?;
+    try testing.expectEqual(Shape.scalar, i.shape);
+    try testing.expectEqual(Region.module, i.region);
+    try testing.expectEqual(BindOrigin.declaration, i.bind_origin);
+    try testing.expectEqual(Tri.yes, i.facts.mutation);
+    try testing.expectEqual(Tri.no, i.facts.immutability);
+    try testing.expectEqual(Tri.no, i.facts.alias);
+    try testing.expectEqual(Tri.no, i.facts.escape);
+    try testing.expectEqual(Tri.no, i.facts.contents_known);
+    // The store is a WRITE, not a rebinding: see `bindOrRebind`.
+    try testing.expectEqual(@as(?u64, 1), i.bindCount().upperOrNull());
+    try testing.expect(i.writeCount().upperOrNull().? >= 1);
+
+    // The other direction, in the SAME module — so the answers cannot both be
+    // coming from a constant.
+    const fixed = census.find("fixed").?;
+    try testing.expectEqual(Tri.no, fixed.facts.mutation);
+    try testing.expectEqual(Tri.yes, fixed.facts.immutability);
+    try testing.expectEqual(Tri.yes, fixed.facts.contents_known);
+}
+
+test "place: a relation naming a module word makes it escape; not naming it does not" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\seen: i64 = 1
+        \\hidden: i64 = 2
+        \\peek: i64 = ()
+        \\    seen
+        \\
+    );
+    var census = try analyzeModule(alloc, &mod);
+    defer census.deinit();
+    try testing.expectEqual(Tri.yes, census.find("seen").?.facts.escape);
+    // Reading is not writing: the word is observed from a region whose call
+    // order this module does not fix, and its value is still never stored to.
+    try testing.expectEqual(Tri.no, census.find("seen").?.facts.mutation);
+    try testing.expectEqual(Tri.no, census.find("hidden").?.facts.escape);
+}
+
+test "place: a relation ABOVE the binding it writes is not invisible" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // THE ORDER-DEPENDENCE CONTROL. `walkForeignBody` visits `poke` before `x`
+    // exists, and drops the write. Without `ForeignReach` this publishes
+    // `mutation:"no"` on a word a relation stores to — a wrong answer, not a
+    // missing one.
+    const mod = try parseModule(alloc,
+        \\poke: i64 = ()
+        \\    x = 5
+        \\    x
+        \\x: i64 = 0
+        \\
+    );
+    var census = try analyzeModule(alloc, &mod);
+    defer census.deinit();
+    const x = census.find("x").?;
+    try testing.expectEqual(Tri.yes, x.facts.mutation);
+    try testing.expectEqual(Tri.no, x.facts.immutability);
+    try testing.expectEqual(Tri.yes, x.facts.escape);
+}
+
+test "place: a refused construct reaches scalars bound after it, not only before" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\before: i64 = 1
+        \\z = fun(q) q
+        \\after: i64 = 2
+        \\
+    );
+    var census = try analyzeModule(alloc, &mod);
+    defer census.deinit();
+    for ([_][]const u8{ "before", "after" }) |n| {
+        const p = census.find(n).?;
+        try testing.expectEqual(Tri.unknown, p.facts.escape);
+        try testing.expectEqual(Tri.unknown, p.facts.alias);
+        try testing.expectEqual(Tri.unknown, p.facts.mutation);
+        try testing.expectEqual(Tri.unknown, p.facts.immutability);
+        try testing.expectEqual(Tri.unknown, p.facts.contents_known);
+    }
+}
+
+test "place: a scalar copy is not an alias, and a scalar read is not an escape" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\a: i64 = 4
+        \\c: i64 = a
+        \\
+    );
+    var census = try analyzeModule(alloc, &mod);
+    defer census.deinit();
+    const a = census.find("a").?;
+    try testing.expectEqual(Tri.no, a.facts.alias);
+    try testing.expectEqual(Tri.no, a.facts.escape);
+    // `c` copied a value this walk did not fold, so its CONTENTS are unknown
+    // while its location facts are not. Two different questions, two answers.
+    const c = census.find("c").?;
+    try testing.expectEqual(Tri.unknown, c.facts.contents_known);
+    try testing.expectEqual(Tri.no, c.facts.alias);
+}
+
+test "place: a bare module assignment is a place whose origin is assignment" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\q = 5
+        \\r: i64 = 6
+        \\
+    );
+    var census = try analyzeModule(alloc, &mod);
+    defer census.deinit();
+    try testing.expectEqual(BindOrigin.assignment, census.find("q").?.bind_origin);
+    try testing.expectEqual(BindOrigin.declaration, census.find("r").?.bind_origin);
+}
+
+test "place: a string is not a scalar" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc,
+        \\s: str = "hi"
+        \\n: i64 = 1
+        \\
+    );
+    var census = try analyzeModule(alloc, &mod);
+    defer census.deinit();
+    try testing.expect(census.find("s") == null);
+    try testing.expect(census.find("n") != null);
 }
 
 test "place: indexed reads retain loop multiplicity" {

@@ -784,20 +784,40 @@ fn moduleFieldStorageBase(ctx: *const LowerCtx, name: []const u8) bool {
 //      pass has to publish, and both are checked as controls rather than
 //      assumed.
 //
-// ═══ THE FACT THAT IS MISSING ══════════════════════════════════════════════
+// ═══ THE FACT THAT WAS MISSING, AND WHAT IT DOES AND DOES NOT BUY ══════════
 //
-// P1 SHOULD have been a published place fact. `src/place.zig` publishes
-// `mutation`, `escape`, `immutability`, `alias`, `contents_known` and
-// `bind_origin` on place rows, and graph export v10 emits them — but
-// `bindPlace` returns early on `candidateShape(...) == .unknown`
-// (`src/place.zig:551`), and `candidateShape` answers `.collection`/`.record`
-// only. A SCALAR module binding therefore has NO PLACE ROW AT ALL, and `idol
-// graph` prints `"places":[]` for exactly the kernels that carry this cost.
-// So there is no `escape` and no `alias` to consult for `i` or `acc`, and
-// there is no per-place "which calls may touch this word" summary anywhere in
-// the tree either. P1 is a property of the REGION rather than of the place,
-// which is why it is discharged by refusing every construct that could run
-// other code — and why the admitted shape is deliberately tiny.
+// P1 SHOULD have been a published place fact, and until `place.zig` learned to
+// mint scalar rows it was not one: `bindPlace` returned early on
+// `candidateShape(...) == .unknown` and that function answered
+// `.collection`/`.record` only, so a SCALAR module binding had no place row at
+// all and `idol graph` printed `"places":[]` for exactly the kernels that carry
+// this cost. It now publishes one, with the same six decision facts a
+// collection carries. `i` and `acc` in the measured kernel read
+// `escape:"no" alias:"no" mutation:"yes" immutability:"no"
+// contents_known:"no" bind_origin:"declaration"`.
+//
+// THAT DOES NOT LET THIS PASS DELETE ITS SYNTACTIC GUARD, and saying otherwise
+// would be the wrong answer in the dangerous direction. P1 is a CONJUNCTION:
+//
+//   (a) nothing else RUNS between the preload and the write-back, and
+//   (b) nothing else can REACH the word.
+//
+// The published `escape`/`alias` answer (b) and only (b). The admitted region
+// answers (a) — by refusing every construct that could transfer control. Adding
+// the fact consult on top of the region would only NARROW the admitted set
+// (a module counter a relation also reads publishes `escape:"yes"` and would be
+// refused, while the region already makes the promotion sound for it), which is
+// why this pass consults the facts through `probeVerdict` — a measurement that
+// changes no lowering — instead of as a second admission clause.
+//
+// The widening the facts DO license is: admit constructs that transfer control
+// (a call, a `print`) inside the region, for bindings whose place row says
+// `escape:"no"` — no relation body can name the word, so no callee can observe
+// or store the register-resident copy. `DUO_MODULE_PROMOTE_PROBE=1` reports,
+// per loop, exactly which loops that reaches. IT IS NOT DONE HERE: a widening
+// that admitted a call would be a silent wrong answer if the escape fact were
+// wrong anywhere, and the population it reaches is reported in the log for this
+// change rather than assumed.
 
 /// SEVERING CONTROL. `true` is the shipped behaviour; `DUO_NO_MODULE_PROMOTE`
 /// restores the previous lowering exactly, which is what makes the negative
@@ -818,6 +838,14 @@ pub var module_promote_enabled: bool = true;
 /// was refused. A transform whose firing can only be inferred from a byte
 /// comparison cannot be kept honest, so the reason is published instead.
 pub var module_promote_diag: bool = false;
+
+/// WIDENING PROBE (`DUO_MODULE_PROMOTE_PROBE`). MEASUREMENT ONLY: nothing this
+/// flag reaches is read by lowering, and `planPromotionsInner` returns the same
+/// count with it set as without. It answers one question the header poses and
+/// declines to act on — how many loops a fact-licensed widening would reach —
+/// with the pass's own predicates, so the number cannot drift from the pass the
+/// way a script re-implementing them would.
+pub var module_promote_probe: bool = false;
 
 /// Why one `while` kept nothing, or that it kept something. The diagnostic's
 /// vocabulary; also the exhaustive list of ways `planPromotions` answers zero.
@@ -1022,10 +1050,295 @@ fn scanPromotableStmt(ctx: *const LowerCtx, s: *const ast.Stmt, scan: *PromoScan
     }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// THE WIDENING PROBE — WHAT THE PUBLISHED PLACE FACTS WOULD ADMIT
+//
+// Everything from here to `planPromotions` is measurement. It is reached only
+// under `module_promote_probe`, it returns nothing lowering reads, and it is
+// called AFTER `planPromotionsInner` has already decided, so it cannot move a
+// decision even by accident.
+//
+// WHAT IT MODELS. A region widened by exactly the obligations the place facts
+// discharge, and by nothing else:
+//
+//   ADMITTED IN ADDITION to the shipped region — constructs that transfer
+//   control or touch memory this pass does not name: calls, method calls,
+//   `print` and other effect statements, indexed and field reads and writes,
+//   text, `do` blocks, `for` loops. Each is sound for a promoted word ONLY
+//   because `escape:"no"` says no relation body can name that word, so no
+//   callee reads or stores it.
+//
+//   STILL REFUSED, because no place fact answers them: `return` (P2 — an exit
+//   that skips the write-back), any declaration (P4 — a shadow rebinding the
+//   name mid-region), a lambda or macro (the region becomes unbounded), and a
+//   `goto`/`match`/`try`/`defer` control shape this pass has never reasoned
+//   about.
+//
+// The verdict is deliberately conservative in the same direction as the pass:
+// anything it has not enumerated refuses the loop.
+// ════════════════════════════════════════════════════════════════════════════
+
+const ProbeVerdict = enum {
+    /// The facts license this loop; the shipped region is what refuses it.
+    would_admit,
+    /// Outside even the widened region — the facts are not what stands in the
+    /// way, so widening on them reaches nothing here.
+    probe_shape,
+    /// No full-ring module binding to promote (the `no_module_binding` case).
+    probe_no_binding,
+    /// A named binding has no place row. `place.Census` publishes rows for
+    /// module scalars; a name with storage and no row is a producer gap, and
+    /// `null` means UNKNOWN, never "no place".
+    probe_no_place,
+    /// The place row exists and REFUSES: a relation body can reach the word, so
+    /// a callee inside the loop could observe the stale `__DATA` copy.
+    probe_escape,
+    /// The place row exists and cannot rule out a second name for the word.
+    probe_alias,
+    /// More distinct bindings than the budget.
+    probe_budget,
+};
+
+fn probeExpr(e: *const ast.Expr) bool {
+    return switch (e.*) {
+        .int_lit, .float_lit, .true_lit, .false_lit, .nil, .quoted, .name => true,
+        .binop => |b| probeExpr(b.lhs) and probeExpr(b.rhs),
+        .unop => |u| probeExpr(u.operand),
+        .index => |ix| probeExpr(ix.obj) and probeExpr(ix.key),
+        .field => |f| probeExpr(f.obj),
+        .call => |c| blk: {
+            if (!probeExpr(c.func)) break :blk false;
+            for (c.args) |a| if (!probeExpr(a)) break :blk false;
+            break :blk true;
+        },
+        .method_call => |m| blk: {
+            if (!probeExpr(m.obj)) break :blk false;
+            for (m.args) |a| if (!probeExpr(a)) break :blk false;
+            break :blk true;
+        },
+        .if_expr => |i| probeExpr(i.cond) and probeExpr(i.then_expr) and probeExpr(i.else_expr),
+        .contains_expr => |v| probeExpr(v.lhs) and probeExpr(v.rhs),
+        .range => |r| blk: {
+            if (!probeExpr(r.start) or !probeExpr(r.end)) break :blk false;
+            if (r.step) |st| if (!probeExpr(st)) break :blk false;
+            break :blk true;
+        },
+        .sequence => |sq| blk: {
+            for (sq.exprs) |v| if (!probeExpr(v)) break :blk false;
+            break :blk true;
+        },
+        .table => |t| blk: {
+            for (t.fields) |field| {
+                const ok = switch (field) {
+                    .indexed => |v| probeExpr(v.key) and probeExpr(v.val),
+                    .named => |v| probeExpr(v.val),
+                    .positional => |v| probeExpr(v),
+                    .spread => |v| probeExpr(v),
+                    .semantic => |v| probeExpr(v.val),
+                };
+                if (!ok) break :blk false;
+            }
+            break :blk true;
+        },
+        // An early exit is an exit that skips the write-back — P2, which no
+        // place fact answers.
+        .try_expr, .unwrap_expr => false,
+        else => false,
+    };
+}
+
+fn probeBlock(b: *const ast.Block) bool {
+    if (b.tail_expr != null) return false;
+    for (b.stmts) |*st| if (!probeStmt(st)) return false;
+    return true;
+}
+
+fn probeStmt(s: *const ast.Stmt) bool {
+    return switch (s.*) {
+        .assign => |a| blk: {
+            if (a.closed_loop) break :blk false;
+            if (a.targets.len != a.values.len) break :blk false;
+            for (a.targets) |t| if (!probeExpr(t)) break :blk false;
+            for (a.values) |v| if (!probeExpr(v)) break :blk false;
+            break :blk true;
+        },
+        .if_stmt => |f| blk: {
+            // `if name = expr` binds a name — P4, unanswered by any place fact.
+            if (f.binding != null) break :blk false;
+            if (!probeExpr(f.cond)) break :blk false;
+            if (!probeBlock(&f.then)) break :blk false;
+            for (f.elseifs) |ei| {
+                if (!probeExpr(ei.cond)) break :blk false;
+                if (!probeBlock(&ei.body)) break :blk false;
+            }
+            if (f.else_body) |eb| if (!probeBlock(&eb)) break :blk false;
+            break :blk true;
+        },
+        .while_loop => |w| probeExpr(w.cond) and probeBlock(&w.body),
+        .repeat_loop => |r| probeBlock(&r.body) and probeExpr(r.cond),
+        .do_block => |d| probeBlock(&d.body),
+        .num_for => |f| blk: {
+            if (!probeExpr(f.start) or !probeExpr(f.stop)) break :blk false;
+            if (f.step) |st| if (!probeExpr(st)) break :blk false;
+            break :blk probeBlock(&f.body);
+        },
+        .gen_for => |f| blk: {
+            for (f.iters) |it| if (!probeExpr(it)) break :blk false;
+            break :blk probeBlock(&f.body);
+        },
+        .call_stmt => |c| probeExpr(c.expr),
+        .expr_stmt => |e| probeExpr(e.expr),
+        .brk, .cont => true,
+        else => false,
+    };
+}
+
+fn scanProbeExpr(ctx: *const LowerCtx, e: *const ast.Expr, scan: *PromoScan) void {
+    switch (e.*) {
+        .name => |n| if (promotableBindingName(ctx, n.ident)) scan.note(n.ident, false),
+        .binop => |b| {
+            scanProbeExpr(ctx, b.lhs, scan);
+            scanProbeExpr(ctx, b.rhs, scan);
+        },
+        .unop => |u| scanProbeExpr(ctx, u.operand, scan),
+        .index => |ix| {
+            scanProbeExpr(ctx, ix.obj, scan);
+            scanProbeExpr(ctx, ix.key, scan);
+        },
+        .field => |f| scanProbeExpr(ctx, f.obj, scan),
+        .call => |c| {
+            scanProbeExpr(ctx, c.func, scan);
+            for (c.args) |a| scanProbeExpr(ctx, a, scan);
+        },
+        .method_call => |m| {
+            scanProbeExpr(ctx, m.obj, scan);
+            for (m.args) |a| scanProbeExpr(ctx, a, scan);
+        },
+        .if_expr => |i| {
+            scanProbeExpr(ctx, i.cond, scan);
+            scanProbeExpr(ctx, i.then_expr, scan);
+            scanProbeExpr(ctx, i.else_expr, scan);
+        },
+        .contains_expr => |v| {
+            scanProbeExpr(ctx, v.lhs, scan);
+            scanProbeExpr(ctx, v.rhs, scan);
+        },
+        .range => |r| {
+            scanProbeExpr(ctx, r.start, scan);
+            scanProbeExpr(ctx, r.end, scan);
+            if (r.step) |st| scanProbeExpr(ctx, st, scan);
+        },
+        .sequence => |sq| for (sq.exprs) |v| scanProbeExpr(ctx, v, scan),
+        .table => |t| for (t.fields) |field| switch (field) {
+            .indexed => |v| {
+                scanProbeExpr(ctx, v.key, scan);
+                scanProbeExpr(ctx, v.val, scan);
+            },
+            .named => |v| scanProbeExpr(ctx, v.val, scan),
+            .positional => |v| scanProbeExpr(ctx, v, scan),
+            .spread => |v| scanProbeExpr(ctx, v, scan),
+            .semantic => |v| scanProbeExpr(ctx, v.val, scan),
+        },
+        else => {},
+    }
+}
+
+fn scanProbeBlock(ctx: *const LowerCtx, b: *const ast.Block, scan: *PromoScan) void {
+    for (b.stmts) |*st| scanProbeStmt(ctx, st, scan);
+}
+
+fn scanProbeStmt(ctx: *const LowerCtx, s: *const ast.Stmt, scan: *PromoScan) void {
+    switch (s.*) {
+        .assign => |a| {
+            for (a.values) |v| scanProbeExpr(ctx, v, scan);
+            for (a.targets) |t| {
+                if (t.* == .name) {
+                    if (promotableBindingName(ctx, t.name.ident)) scan.note(t.name.ident, true);
+                } else scanProbeExpr(ctx, t, scan);
+            }
+        },
+        .if_stmt => |f| {
+            scanProbeExpr(ctx, f.cond, scan);
+            scanProbeBlock(ctx, &f.then, scan);
+            for (f.elseifs) |ei| {
+                scanProbeExpr(ctx, ei.cond, scan);
+                scanProbeBlock(ctx, &ei.body, scan);
+            }
+            if (f.else_body) |eb| scanProbeBlock(ctx, &eb, scan);
+        },
+        .while_loop => |w| {
+            scanProbeExpr(ctx, w.cond, scan);
+            scanProbeBlock(ctx, &w.body, scan);
+        },
+        .repeat_loop => |r| {
+            scanProbeBlock(ctx, &r.body, scan);
+            scanProbeExpr(ctx, r.cond, scan);
+        },
+        .do_block => |d| scanProbeBlock(ctx, &d.body, scan),
+        .num_for => |f| {
+            scanProbeExpr(ctx, f.start, scan);
+            scanProbeExpr(ctx, f.stop, scan);
+            if (f.step) |st| scanProbeExpr(ctx, st, scan);
+            scanProbeBlock(ctx, &f.body, scan);
+        },
+        .gen_for => |f| {
+            for (f.iters) |it| scanProbeExpr(ctx, it, scan);
+            scanProbeBlock(ctx, &f.body, scan);
+        },
+        .call_stmt => |c| scanProbeExpr(ctx, c.expr, scan),
+        .expr_stmt => |e| scanProbeExpr(ctx, e.expr, scan),
+        else => {},
+    }
+}
+
+/// THE CONSULT ITSELF. One module scalar's place row, read for the two facts
+/// that answer P1(b).
+fn probeOneBinding(ctx: *const LowerCtx, name: []const u8) ProbeVerdict {
+    const key = ctx.module_globals.storageKey(name) orelse return .probe_no_binding;
+    // `placeNamed` documents `null` as UNKNOWN, never "no place", so it refuses.
+    const p = ctx.graph.placeNamed(key) orelse return .probe_no_place;
+    if (p.shape != .scalar or p.region != .module) return .probe_no_place;
+    if (p.facts.escape != .no) return .probe_escape;
+    if (p.facts.alias != .no) return .probe_alias;
+    return .would_admit;
+}
+
+const ProbeReport = struct { verdict: ProbeVerdict, name: []const u8 = "" };
+
+fn probeVerdict(ctx: *const LowerCtx, ws: anytype) ProbeReport {
+    if (!probeExpr(ws.cond) or !probeBlock(&ws.body)) return .{ .verdict = .probe_shape };
+    var scan: PromoScan = .{};
+    scanProbeExpr(ctx, ws.cond, &scan);
+    scanProbeBlock(ctx, &ws.body, &scan);
+    if (scan.overflow) return .{ .verdict = .probe_budget };
+    if (scan.len == 0) return .{ .verdict = .probe_no_binding };
+    for (scan.found[0..scan.len]) |name| {
+        const v = probeOneBinding(ctx, name);
+        // The NAME is reported, not just the verdict: a count of refusals with
+        // no subject cannot be audited, and every refusal here is a claim about
+        // one specific word.
+        if (v != .would_admit) return .{ .verdict = v, .name = name };
+    }
+    return .{ .verdict = .would_admit, .name = scan.found[0] };
+}
+
+fn reportProbe(ctx: *const LowerCtx, ws: anytype, admitted: usize, line: u32) void {
+    if (!module_promote_probe) return;
+    // A loop the shipped pass already keeps is not a widening candidate.
+    if (admitted > 0) {
+        std.debug.print("[module-promote-probe] line {d}: already_admitted\n", .{line});
+        return;
+    }
+    const r = probeVerdict(ctx, ws);
+    std.debug.print("[module-promote-probe] line {d}: {s} {s}\n", .{ line, @tagName(r.verdict), r.name });
+}
+
 /// Decide the promotions for one `while`. Returns how many entries of `out`
 /// were filled; the caller emits the preloads and installs the shadows.
 fn planPromotions(ctx: *LowerCtx, ws: anytype, out: *[max_promoted_bindings]Promotion) usize {
     const n = planPromotionsInner(ctx, ws, out);
+    // AFTER the decision, and it reads nothing the decision wrote.
+    reportProbe(ctx, ws, n, ws.cond.loc().line);
     return n;
 }
 

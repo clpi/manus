@@ -83,8 +83,21 @@ if [ -r "$TABLE" ]; then
 fi
 
 if [ -r "$PLACE" ]; then
-    has "$PLACE" 'Only `collection` and `record` are produced.' \
-        'aggregate-only producer contract disappeared'
+    # THE PRODUCER CONTRACT, AS WIDENED AND AS STILL BOUNDED. `scalar` joined
+    # `collection` and `record` because a module-scope word IS a location — one
+    # `__DATA` word, module lifetime, reachable from every relation in the file
+    # — and publishing no row for it left `mutation`/`escape`/`immutability`/
+    # `alias`/`contents_known`/`bind_origin` absent for exactly the bindings a
+    # register-promotion consumer decides about. The three clauses below pin
+    # BOTH halves: what is produced, and the region restriction that keeps a
+    # frame slot out of the census. Widening past module region must move this
+    # gate, not slip past it.
+    has "$PLACE" '`collection`, `record` and `scalar` are produced.' \
+        'producer contract disappeared'
+    has "$PLACE" 'if (shape == .scalar and ctx.region != .module) return;' \
+        'the module-region restriction on scalar places disappeared'
+    has "$PLACE" 'A FUNCTION-LOCAL scalar is not' \
+        'the reason a frame slot is not a place disappeared'
     lacks "$PLACE" 'break :blk .scalar' 'scalar bindings are being produced as places again'
     lacks "$PLACE" 'break :blk .parameter' 'parameters are being produced as places again'
     lacks "$PLACE" 'break :blk .home' 'homes are being produced as places again'
@@ -94,7 +107,7 @@ if [ -r "$PLACE" ]; then
         'place delimiter control disappeared'
     has "$PLACE" 'an ordinary call is not an indexed read' \
         'place call/index negative control disappeared'
-    has "$PLACE" 'scalar values, parameters and homes are not places' \
+    has "$PLACE" 'parameters, homes and function-local scalars are not places' \
         'rejected place-ontology control disappeared'
 fi
 

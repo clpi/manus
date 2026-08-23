@@ -178,6 +178,14 @@ fn apply_env_flags(init: std.process.Init) void {
     if (map.get("DUO_MODULE_PROMOTE_DIAG")) |v| {
         if (env_value_truthy(v)) dnir_lower.module_promote_diag = true;
     }
+    // WIDENING PROBE. Reports what the PUBLISHED place facts would admit, for
+    // every loop the syntactic region refuses. It changes no lowering — see
+    // `dnir_lower.module_promote_probe` — and exists so the population a
+    // widening would reach is counted by the pass's own predicates rather than
+    // by a script that re-implements them and drifts.
+    if (map.get("DUO_MODULE_PROMOTE_PROBE")) |v| {
+        if (env_value_truthy(v)) dnir_lower.module_promote_probe = true;
+    }
     if (map.get("DUO_GRAPH")) |v| {
         if (env_value_truthy(v)) graph_diag_enabled = true;
     }
