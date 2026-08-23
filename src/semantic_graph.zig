@@ -5459,14 +5459,28 @@ pub const SemanticGraph = struct {
         try self.publishBindingAdjustmentsInBlock(checked, file, &mod.body);
         try self.liftForeignConstantFieldSites(checked, &mod.body, file, module);
         try self.liftCaptureEdges(mod);
-        try self.publishApplicationEffects();
-        // AFTER the effect fixpoint, deliberately. That pass blocks a relation
-        // on any `.member` edge inside it, and a world's member edges are the
-        // graph's record of exactly the reach it means. Publishing worlds first
-        // would have moved `effect`/`authority` on relations for a reason that
-        // has nothing to do with what they do — a measurement changing because
-        // it was measured.
+        // WORLDS FIRST, WHICH REVERSES THE PREVIOUS ORDER AND IS MEASURED.
+        //
+        // The effect fixpoint used to run first, and the reason recorded here
+        // was that it "blocks a relation on any `.member` edge inside it, and a
+        // world's member edges are the graph's record of exactly the reach it
+        // means" — so publishing worlds first would move `effect` for a reason
+        // unrelated to what the relation does.
+        //
+        // THAT FEAR IS FALSE AND THE GRAPH SAYS SO. A world member is added by
+        // `addChild(world, …)` and the world is `addChild(module, …)`, so the
+        // member edge's `from` is scoped to the MODULE. `enclosingCallable` of a
+        // module-scoped entity is null, and the member scan drops it with
+        // `orelse continue`. Not one world member edge can block a relation.
+        //
+        // What the old order DID cost is the whole subject of this lane: the
+        // draw rows are the only POSITIVE evidence in the graph that an
+        // application reaches a world, and running the effect pass before they
+        // existed is exactly why `effect` could never say `one`. The census
+        // control for the reversal is `effect none`, which must not move:
+        // 1027/1317 on `examples`, 3646/5005 on `examples lib`.
         try self.publishApplicationWorlds(file);
+        try self.publishApplicationEffects();
         try self.verifyCheckedApplicationOperandPacks(checked);
         // LAST, so every application operand has already claimed the literal
         // occurrence it names and this sweep reaches only what nothing else
@@ -5572,12 +5586,17 @@ pub const SemanticGraph = struct {
             try self.draws.append(self.alloc, .{ .application = row.application, .world = card });
         }
 
-        // AUTHORITY for foreign-world applications. The effect pass above wrote
-        // `.none` for effect-free relations, but a call through the `c` world is
-        // a foreign call — it is AUTHORIZED by the world, not effect-free. This
-        // closes the gap that kept `c.abs(0-7)` blocked without the graph-facts
-        // waiver: the world node exists now, so `authority = .one(c_world)` can
-        // be written.
+        // AUTHORITY for foreign-world applications. A call through the `c`
+        // world is a foreign call — it is AUTHORIZED by the world, not
+        // effect-free. This closes the gap that kept `c.abs(0-7)` blocked
+        // without the graph-facts waiver: the world node exists now, so
+        // `authority = .one(c_world)` can be written.
+        //
+        // THIS PASS NOW RUNS FIRST and `publishApplicationEffects` runs after,
+        // so the effect pass no longer overwrites this row: it writes
+        // `authority = .none` only where the card is still `.unknown`. One
+        // exact authority identity, written once, by whichever pass has the
+        // evidence.
         for (self.worlds.items) |world_fact| {
             if (world_fact.home != .c) continue;
             for (drawn.items) |row| {
@@ -5707,9 +5726,78 @@ pub const SemanticGraph = struct {
         /// Something about this relation's body the graph cannot see through.
         /// A blocked relation is never effect-free and never becomes so.
         blocked: bool = false,
+        /// THE EVIDENCE THAT AN OBSERVATION EXISTS, which `blocked` cannot
+        /// carry and never could. `blocked` is one boolean over five conditions
+        /// of two OPPOSITE kinds: four of them are absences of evidence (a
+        /// foreign body, an unresolved call), and the graph learns nothing from
+        /// them; the draw rows and the capture edges are evidence that the
+        /// relation REACHES AN EXACT PLACE, which is a fact and not a hole.
+        /// Collapsing both into `blocked` is why `ApplicationFact.effect` could
+        /// publish `none` and `unknown` and never `one`.
+        ///
+        /// Exact entity of the first place the relation is proved to reach, in
+        /// entity order — which is lift order, which is source order, so this
+        /// is "the first observation in the body" and not an arbitrary pick.
+        /// The relation may reach more; `one` is a cardinality statement about
+        /// the EFFECT ("exactly one exact identity is known for it"), and a
+        /// second reached place does not unknow the first.
+        site: ?id = null,
         callees_start: u32 = 0,
         callees_len: u32 = 0,
     };
+
+    /// DOES REACHING THIS WORLD OBSERVE ANYTHING OUTSIDE THE PROGRAM — asked of
+    /// the world's OWN DECLARATION, not of a list kept here.
+    ///
+    /// `math.floor(x)` draws the `math` world and observes nothing. A
+    /// `.realized` world provides exactly the relations the compiler realizes
+    /// (`realizedBy(roster, m) == home`), so reaching one is reaching a pure
+    /// projection of this program and grounding an effect on it is an
+    /// over-claim. The first census of this pass caught precisely that: of 192
+    /// positive sites, 24 were `math` and 2 were `string`, and not one of them
+    /// is an observation.
+    ///
+    /// `.roster` and `.supplies` are the boundary. `os` members are the process
+    /// environment; `io` supplies the standing streams. Reaching either
+    /// observes state this program does not own.
+    ///
+    /// `c` IS EXCLUDED THOUGH ITS PROVISION IS A ROSTER. A foreign body is
+    /// invisible, and invisible is `unknown` — the fact there is evidence for
+    /// is `authority = .one(c_world)`, and `publishApplicationWorlds` already
+    /// publishes exactly that.
+    fn worldObservesOutside(self: *const SemanticGraph, world: id) bool {
+        for (self.worlds.items) |fact| {
+            if (fact.world != world) continue;
+            if (fact.home == .c) return false;
+            return switch (subject_home.declarationOf(fact.home).provides) {
+                .realized => false,
+                .roster, .supplies => true,
+            };
+        }
+        return false;
+    }
+
+    /// Record an exact reached place on a relation's effect row, keeping the
+    /// FIRST in entity order. Entity ids are assigned in lift order, so the
+    /// kept witness is the first observation the body performs; a later one is
+    /// not more exact, and swapping between them on a graph edit would move a
+    /// published identity for no semantic reason.
+    fn groundRow(row: *EffectRow, site: id) void {
+        const existing = row.site orelse {
+            row.site = site;
+            return;
+        };
+        if (site < existing) row.site = site;
+    }
+
+    /// Publication of `ApplicationFact.effect` severed at the producer, for the
+    /// counterfactual control. Every application reads `unknown`; nothing else
+    /// in the compiler changes. `IDOL_EFFECT_SEVER` is classed `.affects` in
+    /// `main.behaviourEnvClass` because it does change the artifact — that is
+    /// the entire point of a severing control.
+    fn effectSevered() bool {
+        return std.c.getenv("IDOL_EFFECT_SEVER") != null;
+    }
 
     /// THE ONE EXCEPTION TO "AN UNRESOLVED CANDIDATE IS NEVER EFFECT-FREE".
     ///
@@ -5802,10 +5890,39 @@ pub const SemanticGraph = struct {
     /// `ApplicationFact.effect` and `.authority` shipped with no write site at
     /// all: `Card` distinguishes "known-absent" from "not yet known", and every
     /// application said "not yet known" forever, so every consumer downstream
-    /// had to assume the worst. This is the write site. It publishes exactly
-    /// one value — `.none` — and only where the whole transitive body is
-    /// provably unobservable; everything else keeps `.unknown`, which is the
-    /// honest answer and not a sentinel.
+    /// had to assume the worst. This is the write site.
+    ///
+    /// IT USED TO PUBLISH EXACTLY ONE VALUE, AND THAT WAS THE DEFECT. Measured
+    /// at ce03c7eb over `examples`: 1317 published applications, 1027 `none`,
+    /// 290 `unknown`, and `one` ZERO — the same shape over `examples lib`
+    /// (5005 / 3646 / 1359 / 0). A fact whose positive case is unreachable is
+    /// not an effect fact; it is a purity fact wearing the name. It can refuse
+    /// a transformation and it can license one, but it can never say WHICH
+    /// observation stands in the way, so every consumer that needs to
+    /// distinguish "this reads the `os` world" from "nobody looked" has to
+    /// treat both as the worst case. CSE, hoisting, fusion and speculation all
+    /// need exactly that distinction.
+    ///
+    /// THE POSITIVE CASE HAS EVIDENCE, and it was already in the graph:
+    ///
+    ///   - a DRAW row with `world == .one(W)` says this application occurrence
+    ///     reaches world `W` — `env("HOME")`, `print(v)`, `clock()`. 261 such
+    ///     rows over `examples lib`, and not one of them was reaching `effect`;
+    ///   - a `.capture` edge says the relation reads an exact binding from an
+    ///     enclosing frame, which is a place it does not own.
+    ///
+    /// Both name an EXACT ENTITY, so both publish `effect = .one(entity)`. The
+    /// remaining three blocking conditions — a foreign body, an unresolved
+    /// call, a `.member` edge the pass cannot see through — are absences of
+    /// evidence and keep publishing `.unknown`, which is the honest answer and
+    /// not a sentinel. `unknown != none != one` all the way down.
+    ///
+    /// WHAT `one` CLAIMS, EXACTLY. "This application can reach an observation
+    /// of entity E." It is a MAY-fact with a witness, which is what an effect
+    /// fact is everywhere: `.none` proves no observation is reachable, `.one`
+    /// exhibits one that is, `.unknown` has looked and found neither proof. A
+    /// relation that is both positively grounded and partly hidden publishes
+    /// `.one`: a proved observation is not unproved by an unexamined body.
     ///
     /// A relation is EFFECT-FREE when all of these hold:
     ///   1. its callable linkage origin is not C;
@@ -5864,11 +5981,41 @@ pub const SemanticGraph = struct {
 
         // Condition 5, then 4: a member read or a capture blocks the relation
         // it sits inside, whichever relation that is.
+        //
+        // A CAPTURE ALSO GROUNDS THE EFFECT, and a member does not. The two
+        // were one line because both only ever had to answer "blocked". They
+        // are not the same fact: `edge.to` on a capture is the exact outer
+        // binding the relation reads, which is a place; `edge.to` on a member
+        // is a field of a descriptor home declared inside the body, which is
+        // a shape and observes nothing. Blocking on the second stays (it is
+        // the conservative reading of a body this pass does not model), but it
+        // publishes no positive claim.
         for (self.edges.items) |edge| {
             if (edge.kind != .member and edge.kind != .capture) continue;
             const holder = self.enclosingCallable(edge.from) orelse continue;
             const row = row_of.get(holder) orelse continue;
             rows.items[row].blocked = true;
+            if (edge.kind == .capture) groundRow(&rows.items[row], edge.to);
+        }
+
+        // THE DRAW ROWS, which is where the positive evidence actually lives.
+        //
+        // `publishApplicationWorlds` runs before this pass now and keys one
+        // row per application CANDIDATE — published or not — with the exact
+        // world entity it reaches. An occurrence that draws `os` reads the `os`
+        // world; the relation the occurrence sits in performs that read. This
+        // is the only place in the compiler where "an effect exists" is
+        // established rather than failed to be refuted.
+        for (self.draws.items) |draw| {
+            const world = switch (draw.world) {
+                .one => |w| w,
+                .unknown, .none => continue,
+            };
+            const node = self.get(draw.application) orelse continue;
+            const holder = self.enclosingCallable(node.scope orelse continue) orelse continue;
+            const row = row_of.get(holder) orelse continue;
+            rows.items[row].blocked = true;
+            if (self.worldObservesOutside(world)) groundRow(&rows.items[row], world);
         }
 
         // Condition 2: an unresolved candidate is a call the graph could not
@@ -5955,11 +6102,63 @@ pub const SemanticGraph = struct {
             if (!bad.isSet(row.relation)) effect_free.set(row.relation);
         }
 
+        // THE POSITIVE FIXPOINT, and it is the same shape as BAD for the same
+        // reason. GROUNDED is the least set that contains every relation with
+        // an exact reached place and is closed under "applies a relation in
+        // GROUNDED" — a caller of something that reads the `os` world can
+        // itself reach that read. It is least, so a cycle none of whose members
+        // is grounded stays ungrounded, and the witness carried along the edge
+        // is the callee's, which is the place actually reached.
+        //
+        // BAD and GROUNDED are not complements and must not be collapsed into
+        // one three-valued pass. A relation can be in BAD and not in GROUNDED
+        // (an unresolved call: blocked, nothing known) and it can be in both (a
+        // world read: blocked, and exactly what it reads is known). Only the
+        // pair distinguishes "no fact" from "this fact".
+        const grounded_site = try self.alloc.alloc(?id, node_count);
+        defer self.alloc.free(grounded_site);
+        @memset(grounded_site, null);
+        for (rows.items) |row| {
+            if (row.site) |site| grounded_site[row.relation] = site;
+        }
+        spread = true;
+        while (spread) {
+            spread = false;
+            for (rows.items) |row| {
+                if (grounded_site[row.relation] != null) continue;
+                const start: usize = row.callees_start;
+                for (callees.items[start .. start + row.callees_len]) |callee| {
+                    if (callee >= node_count) continue;
+                    const site = grounded_site[callee] orelse continue;
+                    grounded_site[row.relation] = site;
+                    spread = true;
+                    break;
+                }
+            }
+        }
+
+        if (effectSevered()) return;
+
         for (self.application_facts.items) |*fact| {
             const callee = self.applicationRelation(fact.application) orelse continue;
-            if (callee >= effect_free.bit_length or !effect_free.isSet(callee)) continue;
-            fact.effect = .none;
-            fact.authority = .none;
+            if (callee < effect_free.bit_length and effect_free.isSet(callee)) {
+                fact.effect = .none;
+                // NOT AN UNCONDITIONAL WRITE, because this pass now runs AFTER
+                // `publishApplicationWorlds` and that pass owns
+                // `authority = .one(c_world)` for a foreign-world application.
+                // Under the old order the worlds pass wrote last and won; the
+                // reversal would otherwise have this one erase an exact
+                // authority identity with `none`, which is a wrong fact and not
+                // a lost one.
+                if (fact.authority == .unknown) fact.authority = .none;
+                continue;
+            }
+            if (callee >= node_count) continue;
+            // AUTHORITY IS NOT WRITTEN HERE. `publishApplicationWorlds` owns
+            // `authority = .one(c_world)` and `law.fact.producer.one` means one
+            // of us writes it, not both. Effect and authority rode the same
+            // evidence only while that evidence was a single boolean.
+            if (grounded_site[callee]) |site| fact.effect = .{ .one = site };
         }
     }
 
@@ -9803,6 +10002,12 @@ test "semantic_graph: effect and authority are published, not left empty" {
 
     // …and a face in the SAME bootstrap set that reaches the world is not
     // admitted. The bootstrap set is not a purity predicate.
+    //
+    // THIS PINNED `unknown` AND THAT WAS THE WHOLE DEFECT IN ONE ASSERTION.
+    // `stdout:write(s)` is an OBSERVATION — the clearest one a program makes —
+    // and the strongest thing the graph could say about it was "nobody looked".
+    // It now says `one`, and the id is the exact `io` world entity the draw row
+    // named. `unknown` here would be a fact that is available and not published.
     {
         var g = SemanticGraph.init(alloc);
         defer g.deinit();
@@ -9816,7 +10021,30 @@ test "semantic_graph: effect and authority are published, not left empty" {
             error.TestExpectedEqual => Card.unknown,
             else => return err,
         };
-        try std.testing.expect(observed == .unknown);
+        try std.testing.expect(observed == .one);
+        const world = g.get(observed.one) orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqualStrings("io", world.name.?);
+    }
+
+    // AND THE OTHER HALF OF THE SAME FACT, which is what keeps `one` from
+    // becoming a second spelling of "not none": a body that reaches a
+    // `.realized` world observes nothing, and grounding an effect on it would
+    // be an over-claim. `math.floor` draws the `math` world and the honest
+    // answer stays `unknown` — the relation is blocked for a reason this pass
+    // does not model, not because an observation was proved.
+    {
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        const observed = liftedEffectOf(alloc, &g,
+            \\down: f64 = (x: f64)
+            \\    math.floor(x)
+            \\entry: f64 = ()
+            \\    down(1.5)
+        , "entry") catch |err| switch (err) {
+            error.TestExpectedEqual => Card.unknown,
+            else => return err,
+        };
+        try std.testing.expect(observed != .one);
     }
 }
 

@@ -326,6 +326,12 @@ const behaviour_env_table = [_]BehaviourEnvRow{
     .{ "DUO_EMIT_MANIFEST", .affects },
     .{ "DUO_EMIT_PROOF", .affects },
     .{ "IDOL_DIVZERO_GUARD_ALWAYS", .affects },
+    // THE EFFECT COUNTERFACTUAL. Severs `publishApplicationEffects` at the
+    // producer: every `ApplicationFact.effect` reads `unknown` and nothing
+    // else in the compiler is touched. It changes the artifact — a fact
+    // that does not is decorative, and proving it is not is what this
+    // control is for.
+    .{ "IDOL_EFFECT_SEVER", .affects },
     .{ "IDOL_FLOOR_FIXUP_ALWAYS", .affects },
     .{ "IDOL_UNSAFE_TRUNC_DIVREM", .affects },
     .{ "IDOL_HOME_BUDGET", .affects },
