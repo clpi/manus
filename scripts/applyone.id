@@ -202,9 +202,23 @@ main: void = ()
     # defect in `lib/script.id`, reported and !repaired here. The
     # underscored spellings are the ones that work and LAW-ONE forbids them on
     # a new line, so these rows take the third road and let `sh` do it.
-    put(fa, "point: @{ x: f64, y: f64 }\nmain(): void\n    q = point{ x = 3.0, y: 4.0 }\n    print(q.x)\n")
-    put(fb, "point: @{ x: f64, y: f64 }\nmain(): void\n    q: point = { x = 3.0, y: 4.0 }\n    print(q.x)\n")
-    put(fc, "main(): void\n    q = { x = 3.0, y: 4.0 }\n    print(q.x)\n")
+    # Both payloads carried the RETIRED descriptor sigil until fd85e7b8 freed
+    # it (`law.injection.only`: `@{ … }` is world derivation, a descriptor is
+    # an ordinary table). The migration missed this generator because it emits
+    # its subjects from string literals, so a grep for a declaration never saw
+    # them — and the row measured nothing: measured at ce03c7eb, fa and fb both
+    # died at the parser with "'@{ … }' is world injection, not descriptor
+    # construction", so `allocs` read a C file that was never written.
+    # The field separator is the second repair. 72e35402 canonicalized this
+    # script to process/os/env forms and rewrote `y = 4.0` to `y: 4.0` inside
+    # all three payloads on the way past — a pack field became a type
+    # annotation, and even the UNTOUCHED third program stopped parsing with
+    # "expected type, got 'float'". Restored to the spelling 2c3c9d69 wrote.
+    # After both: all three check clean and reach three DISTINCT direct-backend
+    # outcomes, which is the three-outcome reading the row exists to take.
+    put(fa, "point: { x: f64, y: f64 }\nmain(): void\n    q = point{ x = 3.0, y = 4.0 }\n    print(q.x)\n")
+    put(fb, "point: { x: f64, y: f64 }\nmain(): void\n    q: point = { x = 3.0, y = 4.0 }\n    print(q.x)\n")
+    put(fc, "main(): void\n    q = { x = 3.0, y = 4.0 }\n    print(q.x)\n")
     status("{duo} run {fa}")
     status("{duo} run {fb}")
     status("{duo} run {fc}")
