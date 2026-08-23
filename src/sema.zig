@@ -513,6 +513,11 @@ pub const Sema = struct {
     home_loader: ?HomeLoader = null,
     /// Authoritative callable resolution retained per checked application.
     applications: std.AutoHashMapUnmanaged(*const Expr, ApplicationFact) = .empty,
+    /// Transitional exact occurrence retention for a checked foreign integer
+    /// constant. The expression pointer is occurrence provenance only, not a
+    /// semantic identity. Delete this map when graph value/projection identity
+    /// owns the exact constant and downstream consumers project that fact.
+    foreign_module_int_constants: std.AutoHashMapUnmanaged(*const Expr, i64) = .empty,
     /// Top-level type aliases, used by semantic type resolution. Shares one
     /// type, one derivation and one decision procedure with CodeGen's registry
     /// — see `AliasRegistry`.
@@ -839,19 +844,20 @@ pub const Sema = struct {
     fn homeNamed(self: *Sema, spelling: []const u8) ?ForeignHome {
         if (self.foreign_homes.get(spelling)) |cached| return cached;
         const loader = self.home_loader orelse return null;
-        const answer = loader.load(loader.ctx, spelling);
+        var answer = loader.load(loader.ctx, spelling);
+        if (answer) |entry| {
+            // Foreign Idol homes are parsed without recursively checking their
+            // bodies. Their migration boundary spellings still cross into this
+            // compilation and must be quarantined before descriptors/relations
+            // can publish. This check mints no linkage or foreign identity.
+            if (!self.check_foreign_module_boundaries(entry.module)) answer = null;
+        }
         const key = self.alloc.dupe(u8, spelling) catch return answer;
         self.foreign_homes.put(self.alloc, key, answer) catch {
             self.alloc.free(key);
         };
         if (answer) |entry| self.registerForeignModuleDescriptors(entry.module);
         return answer;
-    }
-
-    pub fn peekForeignHome(self: *const Sema, spelling: []const u8) ?ForeignHome {
-        if (self.foreign_homes.get(spelling)) |cached| return cached;
-        const loader = self.home_loader orelse return null;
-        return loader.load(loader.ctx, spelling);
     }
 
     /// The already-resolved home with this semantic home identity. This never
@@ -909,12 +915,32 @@ pub const Sema = struct {
         return buf[0..len];
     }
 
+    fn removeHomeAlias(self: *Sema, name: []const u8) void {
+        if (self.home_aliases.fetchRemove(name)) |entry| {
+            self.alloc.free(entry.key);
+            self.alloc.free(entry.value);
+        }
+    }
+
+    fn clearHomeAliases(self: *Sema) void {
+        var it = self.home_aliases.iterator();
+        while (it.next()) |entry| {
+            self.alloc.free(entry.key_ptr.*);
+            self.alloc.free(entry.value_ptr.*);
+        }
+        self.home_aliases.clearRetainingCapacity();
+    }
+
     /// Record `global <name> = <a.dotted.chain>` as a NAME FOR A HOME.
     ///
     /// Deliberately silent on everything else: a non-chain initializer is an
     /// ordinary value and writes no row, and a self-naming binding
     /// (`global a = a`) writes none either because expanding it would loop.
     fn noteHomeAlias(self: *Sema, name: []const u8, init_expr: *const ast.Expr) !void {
+        // A declaration replaces the binding's prior meaning. Retire its old
+        // home row before inspecting the new initializer so a non-home value,
+        // self-name, or allocation failure cannot leave stale reach behind.
+        self.removeHomeAlias(name);
         var buf: [512]u8 = undefined;
         const spelling = dottedNameChain(init_expr, &buf) orelse return;
         if (std.mem.eql(u8, spelling, name)) return;
@@ -1121,33 +1147,37 @@ pub const Sema = struct {
         return null;
     }
 
-    fn foreignHomeSpellingForRoot(self: *const Sema, root: []const u8, buf: *[512]u8) ?[]const u8 {
+    fn foreignHomeSpellingForRoot(self: *const Sema, root: []const u8) ?[]const u8 {
         if (self.home_loader == null) return null;
+        if (self.home_aliases.get(root)) |target| {
+            const symbol = self.scope.lookup(root) orelse return null;
+            // An exact foreign constant may travel through a binding only
+            // while that binding is an immutable module name for the home.
+            if (!symbol.is_global or !symbol.is_const) return null;
+            return target;
+        }
         if (self.scope.lookup(root) != null) return null;
         if (self.module_globals.contains(root)) return null;
-        if (self.home_aliases.get(root)) |target| {
-            if (target.len > buf.len) return null;
-            @memcpy(buf[0..target.len], target);
-            return buf[0..target.len];
-        }
-        if (self.peekForeignHome(root)) |entry| {
-            if (entry.home.len > buf.len) return null;
-            @memcpy(buf[0..entry.home.len], entry.home);
-            return buf[0..entry.home.len];
-        }
-        return null;
+        return root;
     }
 
-    /// Exact integer constant from a foreign module field read (`token.kindeof`).
-    /// Resolution stays in sema/graph; lowering must not re-open sibling files.
-    pub fn foreignModuleIntConstant(self: *const Sema, expr: *const Expr) ?i64 {
+    fn resolveForeignModuleIntConstant(self: *Sema, expr: *const Expr) SemaError!?i64 {
         if (expr.* != .field) return null;
         const fld = expr.field;
         if (fld.obj.* != .name) return null;
-        var buf: [512]u8 = undefined;
-        const home_spelling = self.foreignHomeSpellingForRoot(fld.obj.name.ident, &buf) orelse return null;
-        const entry = self.resolvedHome(home_spelling) orelse self.peekForeignHome(home_spelling) orelse return null;
-        return moduleScopeIntConstant(entry.module, fld.field);
+        const home_spelling = self.foreignHomeSpellingForRoot(fld.obj.name.ident) orelse return null;
+        const entry = self.homeNamed(home_spelling) orelse return null;
+        const value = moduleScopeIntConstant(entry.module, fld.field) orelse return null;
+        try self.foreign_module_int_constants.put(self.alloc, expr, value);
+        return value;
+    }
+
+    /// Exact integer constant from a foreign module field read (`token.kindeof`).
+    /// Semantic checking owns resolution and quarantine. Graph and lowering may
+    /// only project the checked occurrence fact retained above; they must not
+    /// replay scope, spelling, home, or foreign-AST classification.
+    pub fn foreignModuleIntConstant(self: *const Sema, expr: *const Expr) ?i64 {
+        return self.foreign_module_int_constants.get(expr);
     }
 
     /// The relation `method` declared at top level in a reachable foreign home.
@@ -1379,6 +1409,7 @@ pub const Sema = struct {
         while (fh_it.next()) |entry| self.alloc.free(entry.key_ptr.*);
         self.foreign_homes.deinit(self.alloc);
         self.applications.deinit(self.alloc);
+        self.foreign_module_int_constants.deinit(self.alloc);
         self.alias_defs.deinit(self.alloc);
         self.generic_func_arities.deinit(self.alloc);
         self.test_entries.deinit(self.alloc);
@@ -2364,6 +2395,7 @@ pub const Sema = struct {
         resolved_type: RT,
         init_expr: ?*const ast.Expr,
     ) SemaError!void {
+        _ = self.check_boundary_declaration(lname.loc, lname.attributes, lname.ident);
         for (lname.attributes) |attr| {
             if (std.mem.eql(u8, attr.name, "arc")) {
                 if (validate_arc_attr(&.{attr})) |valid| {
@@ -2397,6 +2429,55 @@ pub const Sema = struct {
         }
     }
 
+    fn check_boundary_declaration(
+        self: *Sema,
+        loc: ast.Loc,
+        attrs: []const ast.Attribute,
+        fallback_name: ?[]const u8,
+    ) bool {
+        if (directives.boundaryAttributeError(attrs, fallback_name)) |issue| {
+            self.err(loc, "invalid migration boundary attribute '@{s}': {s}", .{ issue.name, issue.reason });
+            return false;
+        }
+        return true;
+    }
+
+    /// A parsed foreign home bypasses recursive semantic checking, so perform
+    /// the same declaration-ingress quarantine before the home can publish any
+    /// relation or descriptor. This is intentionally only a syntax/ownership
+    /// refusal: cross-declaration symbol identity remains OPEN in GAP-211.
+    fn check_foreign_module_boundaries(self: *Sema, mod: *const ast.Module) bool {
+        var valid = true;
+        for (mod.body.stmts) |*stmt| switch (stmt.*) {
+            .func_decl => |*fd| {
+                const fallback = if (fd.path.len == 1) fd.path[0] else null;
+                if (!self.check_boundary_declaration(fd.loc, fd.attributes, fallback)) valid = false;
+            },
+            .alias_def => |*ad| {
+                if (!self.check_boundary_declaration(ad.loc, ad.attributes, ad.name)) valid = false;
+            },
+            .enum_def => |*ed| {
+                if (!self.check_boundary_declaration(ed.loc, ed.attributes, ed.name)) valid = false;
+            },
+            .local_decl => |*decl| for (decl.names) |*name| {
+                if (!self.check_boundary_declaration(name.loc, name.attributes, name.ident)) valid = false;
+            },
+            .global_decl => |*decl| for (decl.names) |*name| {
+                if (!self.check_boundary_declaration(name.loc, name.attributes, name.ident)) valid = false;
+            },
+            .directive => |*directive| {
+                if (directives.isBoundaryMigrationAttribute(directive.attr.name)) {
+                    self.err(directive.loc, "invalid migration boundary attribute '@{s}': must attach to one declaration", .{directive.attr.name});
+                    valid = false;
+                } else if (!self.check_boundary_declaration(directive.loc, &.{directive.attr}, null)) {
+                    valid = false;
+                }
+            },
+            else => {},
+        };
+        return valid;
+    }
+
     fn record(self: *Sema, expr: *const ast.Expr, t: RT) !RT {
         try self.type_map.put(expr, t);
         return t;
@@ -2412,6 +2493,8 @@ pub const Sema = struct {
         self.generic_func_arities.clearRetainingCapacity();
         self.callable_defs.clearRetainingCapacity();
         self.applications.clearRetainingCapacity();
+        self.foreign_module_int_constants.clearRetainingCapacity();
+        self.clearHomeAliases();
         // import foreign declarations from @c.import / @cinclude headers first.
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .cinclude) {
@@ -3142,7 +3225,11 @@ pub const Sema = struct {
                     }
                     try self.check_binding_attributes(lname, t, if (i < gd.inits.len) gd.inits[i] else null);
                     try self.note_global(lname.ident, t);
-                    if (i < gd.inits.len) try self.noteHomeAlias(lname.ident, gd.inits[i]);
+                    if (i < gd.inits.len) {
+                        try self.noteHomeAlias(lname.ident, gd.inits[i]);
+                    } else {
+                        self.removeHomeAlias(lname.ident);
+                    }
                     try self.scope.define(lname.ident, .{
                         .typ = t,
                         .is_const = is_const,
@@ -3350,6 +3437,7 @@ pub const Sema = struct {
                 try self.check_concept_def(cd);
             },
             .alias_def => |*ad| {
+                _ = self.check_boundary_declaration(ad.loc, ad.attributes, ad.name);
                 // Alias types are compile-time declarations; type-check fields and methods.
                 const prev_type_name = self.current_type_name;
                 self.current_type_name = ad.name;
@@ -3378,6 +3466,11 @@ pub const Sema = struct {
                 // `meta_module.isCEmitDirective` / `isCHeaderImportDirective`
                 // normalise both spellings, so consult them too.
                 const meta_module = @import("meta_module.zig");
+                if (directives.isBoundaryMigrationAttribute(dir.attr.name)) {
+                    self.err(dir.loc, "invalid migration boundary attribute '@{s}': must attach to one declaration", .{dir.attr.name});
+                    return;
+                }
+                if (!self.check_boundary_declaration(dir.loc, &.{dir.attr}, null)) return;
                 if (directives.isCInterfaceDirective(dir.attr.name) or
                     meta_module.isCEmitDirective(dir.attr.name) or
                     meta_module.isCHeaderImportDirective(dir.attr.name)) return;
@@ -4287,6 +4380,10 @@ pub const Sema = struct {
                 return .any;
             },
             .field => |f| {
+                // Resolve while Sema still owns refusal. A malformed foreign
+                // home must diagnose and enter the negative cache before graph
+                // or codegen can ask for an exact occurrence value.
+                if (try self.resolveForeignModuleIntConstant(expr)) |_| return .i64;
                 // THE OPERATION-FIRST WORLD FACE, asked before the object is
                 // walked. `os` is a seeded global, so walking it first would
                 // succeed and this arm would fall through to "field access is
@@ -5678,6 +5775,8 @@ pub const Sema = struct {
 
     fn check_func_decl(self: *Sema, fd: *ast.FuncDecl) SemaError!void {
         const fb = &fd.func;
+        const fallback = if (fd.path.len == 1) fd.path[0] else null;
+        _ = self.check_boundary_declaration(fd.loc, fd.attributes, fallback);
         self.seed_method_self_param_type(fd);
         const has_vararg = fb.vararg or fb.vararg_name != null;
         var all_typed = true;
@@ -6482,6 +6581,7 @@ pub const Sema = struct {
 
     /// Register an enum type definition in the type registry and scope.
     fn check_enum_def(self: *Sema, ed: *const ast.EnumDef) SemaError!void {
+        _ = self.check_boundary_declaration(ed.loc, ed.attributes, ed.name);
         const prev_type_name = self.current_type_name;
         self.current_type_name = ed.name;
         defer self.current_type_name = prev_type_name;
@@ -15906,6 +16006,198 @@ fn checkSource(alloc: std.mem.Allocator, src: []const u8, path: []const u8) !Sem
 fn firstDiagnostic(s: *const Sema) []const u8 {
     if (s.diagnostics.items.len == 0) return "";
     return s.diagnostics.items[0].message;
+}
+
+test "sema: migration boundary symbols fail closed before realization" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const rejected = [_][]const u8{
+        "@ffi\nf: i64 = ()\n  0\n",
+        "@ffi(\"\")\nf: i64 = ()\n  0\n",
+        "@ffi('puts')\nf: i64 = ()\n  0\n",
+        "@ffi(\"put-s\")\nf: i64 = ()\n  0\n",
+        "@ffi(\"switch\")\nf: i64 = ()\n  0\n",
+        "@ffi(\"puts\", \"fputs\")\nf: i64 = ()\n  0\n",
+        "@c.export(\"idol.add\")\nf: i64 = ()\n  0\n",
+        "@c.export(\"_idol9\")\nf: i64 = ()\n  0\n",
+        "@c.export(\"static\")\nf: i64 = ()\n  0\n",
+        "@export(\"idol_add\")\nf: i64 = ()\n  0\n",
+        "@meta.c.export(\"idol_add\")\nf: i64 = ()\n  0\n",
+        "@compiler.c.export(\"idol_add\")\nf: i64 = ()\n  0\n",
+        "@ffi(\"puts\")\n@ffi(\"fputs\")\nf: i64 = ()\n  0\n",
+        "@ffi(\"puts\")\n@export\nf: i64 = ()\n  0\n",
+    };
+    for (rejected) |src| {
+        var s = try checkSource(alloc, src, "probe.id");
+        try testing.expect(s.errors > 0);
+        try testing.expect(std.mem.indexOf(u8, firstDiagnostic(&s), "invalid migration boundary attribute") != null);
+    }
+}
+
+test "sema: admitted migration boundary spellings retain target-specific arity" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const accepted = [_][]const u8{
+        "@ffi(\"idol_9\")\nf: i64 = ()\n  0\n",
+        "@ffi(\"_Exit\")\nf: i64 = ()\n  0\n",
+        "@c.export\nf: i64 = ()\n  0\n",
+        "@c.export(\"idol_add\")\nf: i64 = ()\n  0\n",
+        "@comp.c.export(\"idol_add\")\nf: i64 = ()\n  0\n",
+        // Plain export remains the Wasm-facing migration form. Its declaration
+        // name is deliberately outside public-C policy.
+        "@export\n_api: i64 = ()\n  0\n",
+    };
+    for (accepted) |src| {
+        const s = try checkSource(alloc, src, "probe.id");
+        try testing.expectEqual(@as(u32, 0), s.errors);
+    }
+}
+
+test "sema: same symbol on two declarations remains GAP-211 rather than syntax closure" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // This patch owns only per-declaration migration ingress. It does not mint
+    // graph-owned linkage identity or claim that two declarations cannot name
+    // the same physical symbol. GAP-211 remains the P0 owner of that collision.
+    const s = try checkSource(
+        alloc,
+        "@c.export(\"shared\")\nfirst: i64 = ()\n  1\n@c.export(\"shared\")\nsecond: i64 = ()\n  2\n",
+        "probe.id",
+    );
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: malformed foreign home cannot publish exact constants through an unchecked load" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const foreign_module = try alloc.create(ast.Module);
+    var foreign_lexer = Lexer.init("@ffi(\"bad-name\")\nbad: i64 = ()\n  0\nK = 7\n", "dep.id");
+    var foreign_parser = Parser.init(&foreign_lexer, alloc);
+    foreign_parser.idol_mode = true;
+    foreign_module.* = try foreign_parser.parse_module();
+
+    const Loader = struct {
+        module: *ast.Module,
+        calls: usize = 0,
+
+        fn load(raw: *anyopaque, spelling: []const u8) ?ForeignHome {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            if (!std.mem.eql(u8, spelling, "dep")) return null;
+            self.calls += 1;
+            return .{ .home = "dep", .path = "dep.id", .module = self.module };
+        }
+    };
+
+    var primary_lexer = Lexer.init("probe: i64 = ()\n  dep.K + dep.K\n", "primary.id");
+    var primary_parser = Parser.init(&primary_lexer, alloc);
+    primary_parser.idol_mode = true;
+    var primary_module = try primary_parser.parse_module();
+    const tail = primary_module.body.stmts[0].func_decl.func.body.tail_expr orelse return error.TestExpectedEqual;
+    try testing.expect(tail.* == .binop);
+    const lhs = tail.binop.lhs;
+    const rhs = tail.binop.rhs;
+    var loader = Loader{ .module = foreign_module };
+    var checked = Sema.init(alloc);
+    checked.idol_mode = true;
+    checked.source_path = "primary.id";
+    checked.home_loader = .{ .ctx = &loader, .load = Loader.load };
+    try checked.check_module(&primary_module);
+
+    try testing.expect(checked.errors > 0);
+    try testing.expect(std.mem.indexOf(u8, firstDiagnostic(&checked), "invalid migration boundary attribute") != null);
+    try testing.expectEqual(@as(usize, 1), loader.calls);
+    try testing.expect(checked.resolvedHome("dep") == null);
+    // Damage control: neither occurrence may recover the known K=7 by loading
+    // the rejected home after the semantic-error boundary.
+    try testing.expect(checked.foreignModuleIntConstant(lhs) == null);
+    try testing.expect(checked.foreignModuleIntConstant(rhs) == null);
+    try testing.expectEqual(@as(usize, 1), loader.calls);
+}
+
+test "sema: foreign constant occurrence retention respects alias shadow redeclaration and module lifecycle" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const foreign_module = try alloc.create(ast.Module);
+    var foreign_lexer = Lexer.init("K = 7\n", "dep.id");
+    var foreign_parser = Parser.init(&foreign_lexer, alloc);
+    foreign_parser.idol_mode = true;
+    foreign_module.* = try foreign_parser.parse_module();
+
+    const Loader = struct {
+        module: *ast.Module,
+        calls: usize = 0,
+
+        fn load(raw: *anyopaque, spelling: []const u8) ?ForeignHome {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            if (!std.mem.eql(u8, spelling, "dep")) return null;
+            self.calls += 1;
+            return .{ .home = "dep", .path = "dep.id", .module = self.module };
+        }
+    };
+
+    const primary_source =
+        \\alias Row = { K: i64 }
+        \\global A <const> = dep
+        \\global M = dep
+        \\M = 0
+        \\global R <const> = dep
+        \\global R <const> = 0
+        \\unshadowed: i64 = ()
+        \\  A.K
+        \\shadowed: i64 = (A: Row)
+        \\  A.K
+        \\mutated: i64 = ()
+        \\  M.K
+        \\redeclared: i64 = ()
+        \\  R.K
+    ;
+    var primary_lexer = Lexer.init(primary_source, "primary.id");
+    var primary_parser = Parser.init(&primary_lexer, alloc);
+    primary_parser.idol_mode = true;
+    var primary_module = try primary_parser.parse_module();
+    const unshadowed = primary_module.body.stmts[6].func_decl.func.body.tail_expr orelse return error.TestExpectedEqual;
+    const shadowed = primary_module.body.stmts[7].func_decl.func.body.tail_expr orelse return error.TestExpectedEqual;
+    const mutated = primary_module.body.stmts[8].func_decl.func.body.tail_expr orelse return error.TestExpectedEqual;
+    const redeclared = primary_module.body.stmts[9].func_decl.func.body.tail_expr orelse return error.TestExpectedEqual;
+
+    var loader = Loader{ .module = foreign_module };
+    var checked = Sema.init(alloc);
+    checked.idol_mode = true;
+    checked.source_path = "primary.id";
+    checked.home_loader = .{ .ctx = &loader, .load = Loader.load };
+    try checked.check_module(&primary_module);
+
+    try testing.expectEqual(@as(u32, 0), checked.errors);
+    try testing.expectEqual(@as(usize, 1), loader.calls);
+    try testing.expectEqual(@as(?i64, 7), checked.foreignModuleIntConstant(unshadowed));
+    try testing.expect(checked.foreignModuleIntConstant(shadowed) == null);
+    try testing.expect(checked.foreignModuleIntConstant(mutated) == null);
+    try testing.expect(checked.foreignModuleIntConstant(redeclared) == null);
+    try testing.expectEqual(@as(usize, 1), loader.calls);
+
+    // Reusing Sema for another module must retire both alias reach and exact
+    // occurrence facts from the prior checked subject.
+    var replacement_lexer = Lexer.init(
+        "global A <const> = 0\nprobe: i64 = ()\n  A.K\n",
+        "replacement.id",
+    );
+    var replacement_parser = Parser.init(&replacement_lexer, alloc);
+    replacement_parser.idol_mode = true;
+    var replacement_module = try replacement_parser.parse_module();
+    const replacement = replacement_module.body.stmts[1].func_decl.func.body.tail_expr orelse return error.TestExpectedEqual;
+    try checked.check_module(&replacement_module);
+    try testing.expect(checked.foreignModuleIntConstant(replacement) == null);
+    try testing.expectEqual(@as(usize, 1), loader.calls);
 }
 
 test "sema: every world-as-receiver spelling of a stream relation is refused HERE" {

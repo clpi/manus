@@ -24630,7 +24630,7 @@ pub const CodeGen = struct {
     /// resolver owns its copy, and the one caller that frees this one still may.
     fn find_module_file_for_req(self: *CodeGen, req_name: []const u8) ?[]const u8 {
         const checked = self.checked_sema orelse return null;
-        const resolved = checked.peekForeignHome(req_name) orelse return null;
+        const resolved = checked.resolvedHome(req_name) orelse return null;
         return self.alloc.dupe(u8, resolved.path) catch null;
     }
 

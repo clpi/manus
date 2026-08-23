@@ -236,6 +236,148 @@ pub const AttrArg = struct {
     }
 };
 
+/// A malformed migration attribute must stop before its raw spelling reaches
+/// a C, Wasm, object, or linker projection. This quarantines compatibility
+/// syntax only: `@` remains the world accessor, and this check publishes no
+/// foreign relation, symbol identity, ABI, ownership, or lifetime fact.
+pub const BoundaryAttributeError = struct {
+    name: []const u8,
+    reason: []const u8,
+};
+
+fn isCKeyword(name: []const u8) bool {
+    const keywords = [_][]const u8{
+        "auto",         "break",      "case",           "char",          "const",
+        "continue",     "default",    "do",             "double",        "else",
+        "enum",         "extern",     "float",          "for",           "goto",
+        "if",           "inline",     "int",            "long",          "register",
+        "restrict",     "return",     "short",          "signed",        "sizeof",
+        "static",       "struct",     "switch",         "typedef",       "union",
+        "unsigned",     "void",       "volatile",       "while",         "_Alignas",
+        "_Alignof",     "_Atomic",    "_Bool",          "_Complex",      "_Generic",
+        "_Imaginary",   "_Noreturn",  "_Static_assert", "_Thread_local", "_BitInt",
+        "_Decimal32",   "_Decimal64", "_Decimal128",    "alignas",       "alignof",
+        "bool",         "constexpr",  "false",          "nullptr",       "static_assert",
+        "thread_local", "true",       "typeof",         "typeof_unqual",
+    };
+    for (keywords) |keyword| {
+        if (std.mem.eql(u8, name, keyword)) return true;
+    }
+    return false;
+}
+
+fn isCTransportName(name: []const u8) bool {
+    if (name.len == 0) return false;
+    if (!std.ascii.isAlphabetic(name[0]) and name[0] != '_') return false;
+    for (name[1..]) |c| {
+        if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
+    }
+    // `asm` is a compiler extension rather than ISO C. Admitting it would make
+    // generated source dialect-dependent, so quarantine it at transport ingress.
+    return !isCKeyword(name) and !std.mem.eql(u8, name, "asm");
+}
+
+fn isPortablePublicCName(name: []const u8) bool {
+    // A foreign origin may already own a leading-underscore symbol (`_Exit`).
+    // Idol must not mint a public C export in the implementation namespace.
+    return name.len > 0 and std.ascii.isAlphabetic(name[0]) and isCTransportName(name);
+}
+
+fn isQuotedCIdentifier(raw: ?[]const u8, public_export: bool) bool {
+    const source = std.mem.trim(u8, raw orelse return false, " \t\r\n");
+    if (source.len < 3 or source[0] != '"' or source[source.len - 1] != '"') return false;
+    const name = source[1 .. source.len - 1];
+    return if (public_export) isPortablePublicCName(name) else isCTransportName(name);
+}
+
+fn hasNoAttributeArguments(raw: ?[]const u8) bool {
+    return std.mem.trim(u8, raw orelse return true, " \t\r\n").len == 0;
+}
+
+fn isCExportMigrationAttribute(name: []const u8) bool {
+    return std.mem.eql(u8, name, "c.export") or
+        std.mem.eql(u8, name, "comp.c.export");
+}
+
+/// Exact compatibility faces admitted at the parser/sema quarantine. This is
+/// deliberately not the normalized compiler-directive roster: accepting every
+/// alias would silently grow a second language beneath world-only `@`.
+pub fn isBoundaryMigrationAttribute(name: []const u8) bool {
+    return std.mem.eql(u8, name, "ffi") or
+        std.mem.eql(u8, name, "export") or
+        isCExportMigrationAttribute(name);
+}
+
+/// Validate all boundary compatibility attributes attached to one declaration.
+/// Plain `@export` is the existing Wasm export face and receives only arity and
+/// ownership-conflict checks. C identifier/keyword policy applies exclusively
+/// to `@ffi` and `@c.export`/`@comp.c.export`.
+pub fn boundaryAttributeError(
+    attrs: []const ast.Attribute,
+    fallback_name: ?[]const u8,
+) ?BoundaryAttributeError {
+    var seen = false;
+    var first_ffi = false;
+    var first_export = false;
+    var first_c_export = false;
+
+    for (attrs) |attr| {
+        const is_ffi = std.mem.eql(u8, attr.name, "ffi");
+        const is_export = std.mem.eql(u8, attr.name, "export");
+        const is_c_export = isCExportMigrationAttribute(attr.name);
+        const normalized = meta_module.normalizeCompileAttribute(attr.name);
+        const looks_like_boundary = std.mem.eql(u8, normalized, "ffi") or
+            std.mem.eql(u8, normalized, "export") or
+            std.mem.eql(u8, normalized, "c.export");
+
+        if (!is_ffi and !is_export and !is_c_export) {
+            if (looks_like_boundary) return .{
+                .name = attr.name,
+                .reason = "is not an admitted migration boundary attribute; only exact @ffi, @export, @c.export, and @comp.c.export compatibility faces are quarantined",
+            };
+            continue;
+        }
+
+        if (is_ffi and !isQuotedCIdentifier(attr.args, false)) return .{
+            .name = attr.name,
+            .reason = "requires exactly one nonempty double-quoted ASCII C identifier",
+        };
+        if (is_export and !hasNoAttributeArguments(attr.args)) return .{
+            .name = attr.name,
+            .reason = "accepts no arguments; it is the existing Wasm export compatibility face",
+        };
+        if (is_c_export and !hasNoAttributeArguments(attr.args) and !isQuotedCIdentifier(attr.args, true)) return .{
+            .name = attr.name,
+            .reason = "accepts zero or one nonempty double-quoted portable ASCII C identifier",
+        };
+        if (is_c_export and hasNoAttributeArguments(attr.args)) {
+            if (!isPortablePublicCName(fallback_name orelse "")) return .{
+                .name = attr.name,
+                .reason = "requires a declaration whose implicit symbol is a portable public ASCII C identifier",
+            };
+        }
+
+        if (seen) {
+            const duplicate = (is_ffi and first_ffi) or
+                (is_export and first_export) or
+                (is_c_export and first_c_export);
+            return .{
+                .name = attr.name,
+                .reason = if (duplicate)
+                    "duplicates a migration boundary attribute on this declaration"
+                else
+                    "conflicts with another migration boundary attribute on this declaration",
+            };
+        }
+
+        seen = true;
+        first_ffi = is_ffi;
+        first_export = is_export;
+        first_c_export = is_c_export;
+    }
+    return null;
+}
+
 pub const ArgIter = struct {
     src: []const u8,
     pos: usize = 0,
@@ -661,6 +803,66 @@ test "directives: attrInt and attrFlag ignore surrounding noise" {
     // Neither true nor false: answer null rather than defaulting to on.
     try std.testing.expect(attrFlag("maybe") == null);
     try std.testing.expect(attrFlag(null) == null);
+}
+
+test "directives: C boundary migration symbols are exact quoted identifiers" {
+    const accepted = [_]ast.Attribute{
+        .{ .name = "ffi", .args = "\"puts\"" },
+        .{ .name = "ffi", .args = "\"idol_9\"" },
+        .{ .name = "ffi", .args = "\"_Exit\"" },
+        .{ .name = "c.export", .args = null },
+        .{ .name = "comp.c.export", .args = "\"idol_add\"" },
+    };
+    for (accepted) |attr| try std.testing.expect(boundaryAttributeError(&.{attr}, "idol_decl") == null);
+
+    const rejected = [_]ast.Attribute{
+        .{ .name = "ffi", .args = null },
+        .{ .name = "ffi", .args = "\"\"" },
+        .{ .name = "ffi", .args = "'puts'" },
+        .{ .name = "ffi", .args = "\"9puts\"" },
+        .{ .name = "ffi", .args = "\"put-s\"" },
+        .{ .name = "ffi", .args = "\"switch\"" },
+        .{ .name = "ffi", .args = "\"idé\"" },
+        .{ .name = "ffi", .args = "\"puts\", \"fputs\"" },
+        .{ .name = "c.export", .args = "\"_idol9\"" },
+        .{ .name = "c.export", .args = "\"static\"" },
+        .{ .name = "comp.c.export", .args = "\"idol.add\"" },
+        .{ .name = "meta.c.export", .args = "\"idol_add\"" },
+        .{ .name = "compiler.c.export", .args = "\"idol_add\"" },
+        .{ .name = "comp.ffi", .args = "\"idol_add\"" },
+    };
+    for (rejected) |attr| try std.testing.expect(boundaryAttributeError(&.{attr}, "idol_decl") != null);
+
+    const implicit = ast.Attribute{ .name = "c.export", .args = null };
+    try std.testing.expect(boundaryAttributeError(&.{implicit}, "static") != null);
+    try std.testing.expect(boundaryAttributeError(&.{implicit}, null) != null);
+}
+
+test "directives: plain export keeps Wasm naming law separate from C policy" {
+    const wasm_export = ast.Attribute{ .name = "export", .args = null };
+    // Leading underscore is a current Wasm-facing parser/codegen control. A C
+    // public export with this fallback is refused by the separate row below.
+    try std.testing.expect(boundaryAttributeError(&.{wasm_export}, "_api") == null);
+    const c_export = ast.Attribute{ .name = "c.export", .args = null };
+    try std.testing.expect(boundaryAttributeError(&.{c_export}, "_api") != null);
+    const export_with_name = ast.Attribute{ .name = "export", .args = "\"_api\"" };
+    try std.testing.expect(boundaryAttributeError(&.{export_with_name}, "ignored") != null);
+}
+
+test "directives: migration boundary attributes reject duplicate and conflicting owners" {
+    const duplicate = [_]ast.Attribute{
+        .{ .name = "c.export", .args = null },
+        .{ .name = "comp.c.export", .args = "\"idol_add\"" },
+    };
+    const duplicate_error = boundaryAttributeError(&duplicate, "idol_add").?;
+    try std.testing.expect(std.mem.indexOf(u8, duplicate_error.reason, "duplicates") != null);
+
+    const conflict = [_]ast.Attribute{
+        .{ .name = "ffi", .args = "\"idol_add\"" },
+        .{ .name = "export", .args = null },
+    };
+    const conflict_error = boundaryAttributeError(&conflict, "idol_add").?;
+    try std.testing.expect(std.mem.indexOf(u8, conflict_error.reason, "conflicts") != null);
 }
 
 test "directives: a comma inside a value no longer splits the map" {

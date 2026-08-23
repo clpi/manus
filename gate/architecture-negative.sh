@@ -143,10 +143,10 @@ grep_file "$ROOT/lib/compiler/lexer.id" 'word(start, n, "alias") return 51' 'RET
 
 # POST-RESOLUTION-PATH-ZERO — cross-home constants belong in sema/graph, not DNIR IO
 examined=$((examined + 1))
-if grep -Fq 'pub fn foreignModuleIntConstant' "$SEMA" && grep -Fq 'fn peekForeignHome' "$SEMA"; then
-    ok 'POST-RESOLUTION-PATH-ZERO: sema publishes foreign module constant lookup'
+if grep -Fq 'pub fn foreignModuleIntConstant' "$SEMA" && ! grep -Fq 'peekForeignHome' "$SEMA"; then
+    ok 'POST-RESOLUTION-PATH-ZERO: sema publishes checked foreign module constant occurrences without an unchecked loader'
 else
-    bad 'POST-RESOLUTION-PATH-ZERO: sema must expose foreignModuleIntConstant without DNIR filesystem lookup'
+    bad 'POST-RESOLUTION-PATH-ZERO: sema must expose checked foreignModuleIntConstant occurrences and no peekForeignHome bypass'
 fi
 examined=$((examined + 1))
 if grep -Fq 'fn liftForeignConstantFieldSites' "$ROOT/src/semantic_graph.zig" && grep -Fq 'fn liftForeignModuleConstants' "$ROOT/src/semantic_graph.zig"; then
