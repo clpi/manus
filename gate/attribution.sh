@@ -20,7 +20,12 @@ bin="${IDOL_BIN:-$repo/zig-out/bin/idol}"
 out="${1:-/dev/stdout}"
 TMO="${ATTRIBUTION_TIMEOUT:-60}"
 tmp="$(mktemp -t idolattr)"; trap 'rm -f "$tmp"' EXIT
-find examples native_differential lib scripts -name '*.id' 2>/dev/null | sort > "$tmp.files"
+# examples/compile_fail/ IS EXCLUDED ON PURPOSE. Those files exist to be
+# rejected — a refusal there is the fixture passing, not a blocked program.
+# Counting them inflated this budget by 29 and would have made the census
+# improve every time someone ADDED a negative test.
+find examples native_differential lib scripts -name '*.id' 2>/dev/null \
+  | grep -v '/compile_fail/' | sort > "$tmp.files"
 : > "$tmp.rec"
 while IFS= read -r f; do
   # stdin MUST be closed: `idol run` otherwise consumes this very list.
@@ -33,19 +38,57 @@ while IFS= read -r f; do
     # files once already. Recorded separately and excluded from the budget.
     printf '%s\tTIMEOUT\n' "$f" >> "$tmp.rec"
   else
+    # THE COMPILER STATES ITS OWN OUTCOME; DO NOT INFER IT FROM rc.
+    # An Idol program's exit status IS its tail value — examples/anchor/bare.id
+    # prints `5 9 5` and exits 5 because 5 is its answer. An earlier rule here
+    # scored `rc == 0` as "compiled and ran", which actually scored "the program
+    # answered zero" — an arbitrary property of the source, not a success
+    # signal — and moved 391 correct programs into a bogus failure bucket.
+    # Nor is empty stderr the signal: progress lines (`> compile ...`, the `✓`)
+    # are written to STDERR, so `$e` is essentially never empty and a rule
+    # keyed on that classified the entire corpus as failing.
+    # The two authoritative markers are the compiler's own: `✓` = it produced
+    # and ran an artifact, `error:` = it refused.
+    ok="$(printf '%s' "$e" | grep -c '^✓')"
+    err="$(printf '%s' "$e" | grep -c -E '^error:|: error: ')"
     diag="$(printf '%s' "$e" | grep -m1 -E 'missing:|DNB[0-9]+')"
     if [ -n "$diag" ]; then
       printf '%s\t%s\n' "$f" "$diag" >> "$tmp.rec"
-    elif [ "$rc" -eq 0 ]; then
+    elif printf '%s' "$e" | grep -q '^error: no process:'; then
+      # NOT A PROGRAM, THEREFORE NOT A BLOCKED PROGRAM. 171 corpus files —
+      # 64 in lib/, 21 in lib/ml/, 15 in lib/compiler/ — define values and
+      # relations and declare no entry point, so `idol run` correctly reports
+      # `no process`. Scoring that as a first blocking semantic edge charged
+      # 171 refusals (25% of the budget) to the compiler for a question the
+      # file never asked. Excluded from clean AND from refuse.
+      # Keyed on the DIAGNOSTIC, not on the path: a lib/ file that grows an
+      # entry point re-enters the census by itself, and an examples/ program
+      # that loses one leaves it. A path rule would freeze today's layout.
+      printf '%s\tNOTAPROGRAM\n' "$f" >> "$tmp.rec"
+    elif [ "$err" -gt 0 ]; then
+      # A REFUSAL THE REASON PATTERN CANNOT NAME — e.g. `error: no process: a
+      # file-scope tail is the program`. It is a real refusal with different
+      # wording, so it belongs in the budget; it is reported separately only
+      # because the reason histogram below cannot bucket it.
+      # `^error: N error(s)` is the SUMMARY line, not the reason — it only
+      # restates that something failed. The reason is the located diagnostic
+      # `file:line:col: error: <text>`, so that is what gets recorded.
+      # Prefer the LOCATED diagnostic `file:line:col: error: <text>`; fall back
+      # to the bare `error: <text>` form (e.g. `macro expansion error:
+      # UnknownMacro`, 5 files) which carries a reason but no source position.
+      # Without the fallback those refusals bucket as the empty string and
+      # sort to the top of the histogram as a phantom leading cause — which
+      # is exactly how 176 files once presented as one nameless #1 reason.
+      r="$(printf '%s' "$e" | grep -m1 ': error: ' | sed 's/.*: error: //')"
+      [ -n "$r" ] || r="$(printf '%s' "$e" | grep -m1 '^error:' | sed 's/^error: //')"
+      printf '%s\tUNNAMED %s\n' "$f" "$(printf '%s' "$r" | cut -c1-80)" >> "$tmp.rec"
+    elif [ "$ok" -gt 0 ]; then
       printf '%s\t\n' "$f" >> "$tmp.rec"
     else
-      # NONZERO EXIT WITH NO DIAGNOSTIC IS NOT A CLEAN COMPILE. A parser
-      # error, a crash, or a killed compiler emits no `missing:` and no DNB
-      # code; scoring it by the empty field would count it as compile+run,
-      # SHRINKING the refusal budget and leaving this gate green on a
-      # regression. Same failure shape as TRAP 4 in gate/differential.sh —
-      # the silent error is OPTIMISTIC. Classified separately and excluded
-      # from both the clean count and the budget.
+      # NEITHER MARKER. The compiler did not claim success and did not claim
+      # refusal: a crash, a signal, or a message shape this gate does not know.
+      # Scoring it either way is a lie in a different direction, so it is
+      # counted apart and it makes the budget refuse to judge.
       printf '%s\tUNCLASSIFIED rc=%s\n' "$f" "$rc" >> "$tmp.rec"
     fi
   fi
@@ -53,13 +96,20 @@ done < "$tmp.files"
 total=$(wc -l < "$tmp.rec" | tr -d ' ')
 clean=$(awk -F'\t' '$2==""' "$tmp.rec" | wc -l | tr -d ' ')
 tmo=$(awk -F'\t' '$2=="TIMEOUT"' "$tmp.rec" | wc -l | tr -d ' ')
+unn=$(grep -c '\tUNNAMED' "$tmp.rec" || true)
+nap=$(grep -c '\tNOTAPROGRAM' "$tmp.rec" || true)
 unc=$(grep -c '\tUNCLASSIFIED' "$tmp.rec" || true)
-refuse=$((total - clean - tmo - unc))
+refuse=$((total - clean - tmo - unc - nap))   # UNNAMED stays inside refuse; UNCLASSIFIED does not
 {
   echo "== FIRST BLOCKING SEMANTIC EDGE =="
-  echo "corpus $total   compile+run $clean   refuse $refuse   timeout $tmo (>${TMO}s)   unclassified $unc (nonzero exit, no diagnostic)"
+  echo "corpus $total   programs $((total - nap))   not-a-program $nap (no entry point)"
+  echo "compile+run $clean   refuse $refuse   timeout $tmo (>${TMO}s)   unnamed $unn (refused, reason unbucketed)   unclassified $unc (no ✓, no error:)"
+  if [ "$unn" -gt 0 ]; then
+    echo "  UNNAMED — inside the refuse count; the reason histogram cannot bucket these:"
+    grep '\tUNNAMED' "$tmp.rec" | head -10 | sed 's/^/    /'
+  fi
   if [ "$unc" -gt 0 ]; then
-    echo "  UNCLASSIFIED runs invalidate the budget — a crash or parse error is not a refusal:"
+    echo "  UNCLASSIFIED — compiler claimed neither success nor refusal:"
     grep '\tUNCLASSIFIED' "$tmp.rec" | head -10 | sed 's/^/    /'
   fi
   echo
@@ -92,14 +142,22 @@ refuse=$((total - clean - tmo - unc))
   grep -oE 'producer: [a-z ]+' "$tmp.rec" | sed 's/producer: //' \
     | sort | uniq -c | sort -rn
   echo
-  echo "-- first blocking reason --"
+  # 250 of 690 refusals (36%) carry a located prose diagnostic rather than a
+  # `missing:` tag. The tagged histogram below therefore ranks barely half the
+  # budget; read BOTH or the top of the list is an artifact of which refusals
+  # happen to be machine-tagged. This section is the untagged remainder.
+  echo "-- first blocking reason (untagged prose, $unn of $refuse refusals) --"
+  awk -F'\t' '$2 ~ /^UNNAMED /{sub(/^UNNAMED /,"",$2); print $2}' "$tmp.rec" \
+    | sort | uniq -c | sort -rn | head -20
+  echo
+  echo "-- first blocking reason (tagged, $((refuse - unn)) of $refuse refusals) --"
   grep -oE 'missing: [a-z0-9:_-]+' "$tmp.rec" | sed 's/missing: //' \
     | sort | uniq -c | sort -rn
 } > "$out"
 budget="${ATTRIBUTION_BUDGET:-}"
 if [ -n "$budget" ]; then
   echo "gate/attribution.sh: budget $budget, measured $refuse"
-  [ "$unc" -eq 0 ] || { echo "gate/attribution.sh: $unc UNCLASSIFIED run(s) — budget NOT judged" >&2; exit 1; }
+  [ "$unc" -eq 0 ] || { echo "gate/attribution.sh: $unc UNCLASSIFIED — budget NOT judged" >&2; exit 1; }
   [ "$refuse" -le "$budget" ] || { echo "gate/attribution.sh: RATCHET BROKEN" >&2; exit 1; }
 fi
 exit 0
