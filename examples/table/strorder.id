@@ -1,28 +1,26 @@
-# TEXT: string ordering. Byte-lexicographic over the UNSIGNED byte domain.
-# "Z" sorts below "a"; a prefix sorts below its extension; and the non-ASCII
-# row is the one that discriminates: "é" is 0xC3 0xA9, "z" is 0x7A, so 0xC3
-# (195) sorts ABOVE 0x7A (122) and `t < u` is FALSE. The answer is `1 1 0`.
+# TEXT: string ordering, declared-`main` twin of `table/str/order.id`.
+# Byte-lexicographic over the UNSIGNED byte domain, in the process's initial
+# C locale.
 #
-# THIS ORACLE WAS CORRECTED FROM `1 1 1`, 2026-08-23. `1 1 1` requires 0xC3 to
-# compare BELOW 0x7A, which is exactly what a SIGNED char comparison does
-# (0xC3 read as int8 is -61). It was never an independent answer: e4bc334c,
-# the commit that introduced this file, says the numerics/text pages were
-# "read off the compiler", so the line transcribed the then-signed behaviour
-# while the prose directly above it called that behaviour the defect. The
-# oracle and its own header contradicted each other from the first commit,
-# and the line — not the compiler — is the half that was wrong.
+# Three rows: "Z" against "a" (uppercase below lowercase), a prefix against
+# its extension, and the discriminating non-ASCII row. "é" is 0xC3 0xA9 and
+# "z" is 0x7A, so the leading byte decides: 195 sorts ABOVE 122 and `t < u`
+# is false. Read as SIGNED char, 0xC3 is -61 and the comparison inverts — the
+# third row is the only one that tells the two readings apart.
 #
 # THE UNSIGNED DOMAIN IS NOT INFERRED FROM THE COMPILER. `str/bytes.id`, an
 # oracle in this same corpus that AGREES on both realizations, records the
-# bytes of "é" as `2 195 169` — 0xC3 IS 195. An ordering over that same byte
-# domain cannot then place 195 below 122; the two oracles cannot both stand.
-# `law.md` §0 and §8 make ordinary Lua meaning the entry of the specialization
-# chain, and Lua 5.4 §3.4.4 orders strings by C-locale collation, which is
-# unsigned-char order. Codepoint order answers `1 1 0` too (U+00E9 > U+007A),
-# so every defensible reading agrees and only the signed one does not.
+# bytes of "é" as 195 and 169. An ordering over that same byte domain cannot
+# place 195 below 122. `law.md` §0 and §8 make ordinary Lua meaning the entry
+# of the specialization chain, and Lua 5.4 §3.4.4 orders strings by locale
+# collation; under the initial C locale that is unsigned-char order, which is
+# what the generated `strcmp` performs. Codepoint order agrees (U+00E9 >
+# U+007A).
 #
-# `§12 B-11`, cited by the retired header, does not exist in either tree — the
-# same phantom-law family `cbackend/modsign.id` records for `§12 B-4`.
+# SCOPE: this fixture pins the C-locale answer only. Lua ordering follows the
+# CURRENT locale and this tree exposes `os.setlocale`, while generated
+# comparisons call `strcmp` unconditionally — so a non-C locale is a real
+# divergence this oracle does not cover and does not license.
 # expect: 1 1 0
 main: i64 = ()
   p = "Z"
