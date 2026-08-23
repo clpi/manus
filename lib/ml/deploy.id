@@ -51,14 +51,14 @@ export_onnx: any = (model, path)
     std.ml.export.onnx_model_save(onnx_model, path)
 
 load_safetensors: any = (path: str)
-    f = std.io.open(path, "rb")
+    f = path:open("rb")
     if f == nil
         return {ok = false, error = "Cannot open file: " .. path}
 
     # Read 8-byte header length prefix
-    len_bytes = std.io.read(f, 8)
+    len_bytes = f:read(8)
     if len_bytes == nil or len_bytes:len() < 8
-        std.io.close(f)
+        f:close()
         return {ok = false, error = "Invalid safetensors: missing header length"}
 
     # Decode little-endian u64 header length
@@ -69,8 +69,8 @@ load_safetensors: any = (path: str)
         i += 1
 
     # Read header JSON
-    header_json = std.io.read(f, header_len)
-    std.io.close(f)
+    header_json = f:read(header_len)
+    f:close()
     if header_json == nil
         return {ok = false, error = "Invalid safetensors: cannot read header"}
 

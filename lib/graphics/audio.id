@@ -26,23 +26,23 @@ buffer_new: any = (config: any)
   }
 
 buffer_load: any = (buffer: any, path: str)
-  f = std.io.open(path, "rb")
+  f = path:open("rb")
   if f == nil
     return { ok = false, error = "Cannot open file: " .. path }
 
   # Read RIFF header
-  riff = std.io.read(f, 4)
+  riff = f:read(4)
   if riff != "RIFF"
-    std.io.close(f)
+    f:close()
     return { ok = false, error = "Not a WAV file (missing RIFF header)" }
 
   # File size (skip)
-  std.io.read(f, 4)
+  f:read(4)
 
   # WAVE marker
-  wave = std.io.read(f, 4)
+  wave = f:read(4)
   if wave != "WAVE"
-    std.io.close(f)
+    f:close()
     return { ok = false, error = "Not a WAV file (missing WAVE marker)" }
 
   # Parse chunks
@@ -52,12 +52,12 @@ buffer_load: any = (buffer: any, path: str)
   data = nil
 
 while true
-  chunk_id = std.io.read(f, 4)
+  chunk_id = f:read(4)
   if chunk_id == nil or chunk_id:len() < 4
     break
 
   # Read chunk size (little-endian u32)
-  size_bytes = std.io.read(f, 4)
+  size_bytes = f:read(4)
   if size_bytes == nil or size_bytes:len() < 4
     break
   chunk_size = 0
@@ -68,7 +68,7 @@ while true
 
 if chunk_id == "fmt "
   # Format chunk
-  fmt_data = std.io.read(f, chunk_size)
+  fmt_data = f:read(chunk_size)
   if fmt_data and fmt_data:len() >= 16
     audio_format = fmt_data:byte(1) + fmt_data:byte(2) * 256
     channels = fmt_data:byte(3) + fmt_data:byte(4) * 256
@@ -76,7 +76,7 @@ if chunk_id == "fmt "
     bits_per_sample = fmt_data:byte(15) + fmt_data:byte(16) * 256
 else(chunk_id == "data")
   # Data chunk — read raw PCM samples
-  raw = std.io.read(f, chunk_size)
+  raw = f:read(chunk_size)
   if raw
     samples = {}
     bytes_per_sample = bits_per_sample / 8:floor()
@@ -100,9 +100,9 @@ else(chunk_id == "data")
     data = samples
 else
   # Skip unknown chunk
-  std.io.read(f, chunk_size)
+  f:read(chunk_size)
 
-std.io.close(f)
+f:close()
 
 if data == nil
   return { ok = false, error = "No audio data found in WAV file" }

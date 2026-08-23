@@ -251,4 +251,4 @@ main: i64 = ()
     bad
 end
 
-std.os.exit(main())
+exit(main())

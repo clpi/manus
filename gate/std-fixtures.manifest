@@ -1,0 +1,45 @@
+# gate/std-fixtures.manifest — the ONLY escape from the std ratchet.
+#
+# lib/std.id is a tombstone: "NO std namespace. NO std table. NO `std.*`
+# spellings in Idol source." GAP-157 is P0 OPEN and says "not as a migration
+# alias". Every CODE-POSITION `std.` reach in tracked .id source is therefore
+# debt, and gate/admission.sh counts it.
+#
+# THIS FILE WAS DELETED ON MAIN IN ee8adabf, together with the census that
+# consumed it. The census is restored here because a quarantine on added lines
+# cannot ratchet; the file comes back with it, and shorter.
+#
+# WHAT CHANGED, 2026-08-23, AND WHY THE LIST GOT SHORTER.
+#   This file used to carry six gate scanners — idiom.id, probe.id, host.id,
+#   admission.id, architecture.id, path.id — pinned at 39 spellings between
+#   them. Not one of those 39 was a namespace reach. Every one sat inside a
+#   `"` literal or a `#` comment: they are the DETECTOR NEEDLES those gates
+#   match against, and a rule that cannot name the spelling it forbids cannot
+#   enforce it.
+#
+#   The counter was position-blind, so it charged them, so they needed
+#   whole-file exemptions — and a whole-file exemption is a bad trade in both
+#   directions: it charged six files for prose they were right to carry, and
+#   it let a REAL reach added to any of those six ride in free under the pin.
+#   gate/admission.sh now lexes the line before it charges. All six exemptions
+#   were earned out by that change and are deleted, measured: all six carry
+#   zero code-position reaches.
+#
+# WHAT IS LEFT IS THREE FILES, and each is a code-position reach that must NOT
+# be migrated, for a reason that is not "it would be work":
+#
+# FORMAT — one entry per line:
+#     <path><TAB or spaces><exact-count>   # reason
+#
+# The count is EXACT, not a ceiling, and must be a positive integer. If a
+# pinned file gains a reach the gate fails; if it loses one the gate fails and
+# says the exemption has been EARNED OUT — delete the entry, never re-pin at
+# zero. Either way a human re-pins the number and states why in the commit.
+# There is no "close enough".
+#
+# Adding a path here is the whole audit trail. Do not add a path to make a
+# failure go away.
+
+examples/compile_fail/world_std_os.id   1   # the law.std.zero refusal's own subject: `std.os.exit(1)` is what sema must reject. MEASURED: stripping the prefix makes the file compile clean (rc 0) and destroys the fixture.
+examples/std_metaprogramming_modules_smoke.id   7   # historical, kind=retire: std.reflect/std.maps/std.table reaches into a metaprogramming surface that has no canonical vocabulary. Its budget leaves with the file, not by exemption.
+scripts/stdlib_correctness_gate.id      7   # historical, kind=retire: std.hash.fnv/std.fmt/std.strconv reaches in a gate for a library layer GAP-157 retires. Its budget leaves with the file.

@@ -19,11 +19,31 @@ count() {
   printf '%s' "${n:-0}"
 }
 
+# Idol source only. Some needles are not violations outside `.id` at all --
+# `std.` over `*.zig` is 12631 `@import("std")` lines that
+# docs/spec/convergence-directive.md §6 states explicitly are NOT Idol
+# violations, and a row that reports 13325 for a debt of 332 is not a ratchet,
+# it is noise with a number on it.
+countid() {
+  needle="$1"
+  n="$(git grep -F "$needle" -- '*.id' 2>/dev/null | wc -l | tr -d ' ')"
+  printf '%s' "${n:-0}"
+}
+
 emit() {
   name="$1"
   class="$2"
   needle="$3"
   n="$(count "$needle")"
+  total=$((total + n))
+  printf '%s  %s  %s\n' "$name" "$class" "$n"
+}
+
+emitid() {
+  name="$1"
+  class="$2"
+  needle="$3"
+  n="$(countid "$needle")"
   total=$((total + n))
   printf '%s  %s  %s\n' "$name" "$class" "$n"
 }
@@ -46,7 +66,7 @@ emit io_popen VIOLATION 'io.popen'
 emit popen MIGRATION 'popen('
 emit os_execute VIOLATION 'os.execute'
 emit getenv MIGRATION 'getenv('
-emit std_dot VIOLATION 'std.'
+emitid std_dot VIOLATION 'std.'
 emit proc_dot VIOLATION 'proc.'
 emit use_paren VIOLATION 'use('
 emit using_paren VIOLATION 'using('
@@ -64,3 +84,12 @@ emit io_write_rel CANONICAL 'io:write'
 printf '\n'
 printf 'total violation+migration hits: %s\n' "$total"
 printf 'ratchet: new os.args( os.getenv environment io.read io.write std on added lines = 0\n'
+printf '\n'
+printf 'NOTE: std_dot here is `.id`-only and LINE-based -- a line with two reaches\n'
+printf 'counts once, and a `std.` in a comment or a string literal counts as one.\n'
+printf 'It is a trend line, not the ratchet. The GAP-157 authority is the\n'
+printf 'position-aware census in gate/admission.sh:\n'
+printf '\n'
+printf '    sh gate/admission.sh --census-only\n'
+printf '\n'
+printf 'which lexes each line and charges only CODE-position reaches.\n'

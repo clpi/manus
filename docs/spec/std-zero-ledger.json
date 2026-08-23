@@ -1,6 +1,6 @@
 {
  "schema": "std-zero-ledger/1",
- "owner": "GAP-157 (P0, open) \u00b7 law.std.zero \u00b7 docs/spec/world.md STD-ZERO",
+ "owner": "GAP-157 (P0, open) · law.std.zero · docs/spec/world.md STD-ZERO",
  "measured_at": {
   "commit": "f1ba66f1d1321655fcbe687236d2d6021df8e0d7",
   "ref": "origin/main",
@@ -12,11 +12,11 @@
   "files_with_any_std_token": 94
  },
  "counting_rule": {
-  "token": "word-bounded `std.` \u2014 regex (?<![A-Za-z0-9_])std\\.",
+  "token": "word-bounded `std.` — regex (?<![A-Za-z0-9_])std\\.",
   "position": "a lexer-accurate split per docs/spec/grammar.md: `\"` text, `'` bytes, `#` line comment",
   "chargeable": "ONLY code-position sites. A std. inside a string literal or a comment resolves no home and cannot be a law.std.zero violation.",
   "measurement_hazard": "`grep -E '(^|[^A-Za-z0-9_])std\\.'` returns 0 on gate/idiom.id under ugrep 7.5.0 (the `grep` on this host) while /usr/bin/grep returns 18. Do not build this ratchet on grep -E alternation.",
-  "not_this": "tools/node/dev/hostcensus `std_dot` is `git grep -F 'std.'` over *.id *.zig *.md *.mdc *.yaml *.ts and reports 13325 \u2014 of which 12631 are *.zig `@import(\"std\")`, which docs/spec/convergence-directive.md \u00a76 states explicitly is NOT an Idol violation. That counter cannot serve as the GAP-157 ratchet."
+  "not_this": "tools/node/dev/hostcensus `std_dot` is `git grep -F 'std.'` over *.id *.zig *.md *.mdc *.yaml *.ts and reports 13325 — of which 12631 are *.zig `@import(\"std\")`, which docs/spec/convergence-directive.md §6 states explicitly is NOT an Idol violation. That counter cannot serve as the GAP-157 ratchet."
  },
  "verbs": {
   "check": "./zig-out/bin/idol check <file>",
@@ -45,11 +45,11 @@
   "gate_token_count": 512
  },
  "ratchet": {
-  "charge": "class == 'canonical' \u2192 sites.code",
-  "exempt": "class in {'compatibility','negative-fixture'} \u2192 sites.code is frozen at code_budget and must not rise",
-  "retire": "class == 'historical' \u2192 the file leaves the tree; its budget leaves with it",
+  "charge": "class == 'canonical' → sites.code",
+  "exempt": "class in {'compatibility','negative-fixture'} → sites.code is frozen at code_budget and must not rise",
+  "retire": "class == 'historical' → the file leaves the tree; its budget leaves with it",
   "monotone": "no entry's sites.code may exceed its code_budget; no new path may be added at class 'canonical' with sites.code > 0",
-  "added_line_firewall": "the firewall must also run on REVERT commits \u2014 37 of the 44 net code-position sites added since the 2026-08-14 'std elimination complete' claim (2d2ff63b) arrived through two reverts, b45d9a38 (+34/-0) and 37734161 (+3/-0)"
+  "added_line_firewall": "the firewall must also run on REVERT commits — 37 of the 44 net code-position sites added since the 2026-08-14 'std elimination complete' claim (2d2ff63b) arrived through two reverts, b45d9a38 (+34/-0) and 37734161 (+3/-0)"
  },
  "files": [
   {
@@ -141,7 +141,7 @@
    "check": "fail",
    "direct": "fail",
    "in_build_zig": false,
-   "reason": "req(\"std.ml.nn\") \u2014 req architecture deleted (MODULE-ZERO); zero executable references; check fails",
+   "reason": "req(\"std.ml.nn\") — req architecture deleted (MODULE-ZERO); zero executable references; check fails",
    "gate_token_count": 5,
    "gate_overcharge": 5
   },
@@ -491,10 +491,10 @@
    "in_build_zig": false,
    "migration_probe": {
     "direct_before": "direct backend: DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
-    "direct_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies \u2014 write 'f:read(\u2026)' (c0 law.subject.res",
+    "direct_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies — write 'f:read(…)' (c0 law.subject.res",
     "direct_after_pass": false,
     "check_before": "OK",
-    "check_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies \u2014 write 'f:read(\u2026)' (c0 law.subject.res",
+    "check_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies — write 'f:read(…)' (c0 law.subject.res",
     "check_after_pass": false
    },
    "lines_last_touched_after_claim": 0,
@@ -609,10 +609,10 @@
    "in_build_zig": false,
    "migration_probe": {
     "direct_before": "no process: a file-scope tail is the program, or one zero-arg function, or --entry <name>",
-    "direct_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies \u2014 write 'f:read(\u2026)' (c0 law.subject.res",
+    "direct_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies — write 'f:read(…)' (c0 law.subject.res",
     "direct_after_pass": false,
     "check_before": "OK",
-    "check_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies \u2014 write 'f:read(\u2026)' (c0 law.subject.res",
+    "check_after": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies — write 'f:read(…)' (c0 law.subject.res",
     "check_after_pass": false
    },
    "lines_last_touched_after_claim": 0,
@@ -2000,7 +2000,7 @@
  ],
  "gate_reconciliation": {
   "consumer": "gate/admission.sh + gate/std-fixtures.manifest",
-  "gate_regex": "(^|[^A-Za-z0-9_])std\\.[A-Za-z_]  \u2014 same token, but position-blind",
+  "gate_regex": "(^|[^A-Za-z0-9_])std\\.[A-Za-z_]  — same token, but position-blind",
   "gate_reports_at_f1ba66f1": {
    "total": 512,
    "pinned": 39,
@@ -2009,14 +2009,14 @@
   },
   "this_ledger_says": {
    "total_word_bounded": 547,
-   "gate_misses": "35 bare `std.` with no identifier after the dot (print(\"std.\"), flag(..., \"std.\", ...)) \u2014 the gate's [A-Za-z_] tail excludes them; all 35 are in strings or comments, so the miss is harmless",
+   "gate_misses": "35 bare `std.` with no identifier after the dot (print(\"std.\"), flag(..., \"std.\", ...)) — the gate's [A-Za-z_] tail excludes them; all 35 are in strings or comments, so the miss is harmless",
    "chargeable_code_sites": 335,
    "correct_budget": 335
   },
   "action": {
    "1_extend_fixtures": "37 further files carry the token with ZERO code-position sites; adding them takes the pinned set from 6 files/39 to 43 files/127",
    "2_retire": "6 files are historical; 3 carry a standing 'delete under GAP-157' ruling (docs/spec/path-migration.md:25-26) or bind `std = std` at line 1. Their 55 tokens should leave with the files, not be exempted",
-   "3_split_not_exempt": "14 canonical files are BOTH live debt and partial fixture \u2014 scripts/recognition_scan.id is 29 code sites plus 9 detector/rule-name literals. A whole-file exact pin cannot express that; the gate needs the per-position split this ledger carries in sites{code,string,comment}",
+   "3_split_not_exempt": "14 canonical files are BOTH live debt and partial fixture — scripts/recognition_scan.id is 29 code sites plus 9 detector/rule-name literals. A whole-file exact pin cannot express that; the gate needs the per-position split this ledger carries in sites{code,string,comment}",
    "4_budget": "473 -> 335 once (1) and (2) land; 335 is the number that must ratchet to zero"
   },
   "proposed_fixture_entries": [
@@ -2242,6 +2242,572 @@
     "kind": "prose",
     "reason": "std. appears only inside a `#` comment; it never resolves a home"
    }
+  ]
+ },
+ "verdict": {
+  "question": "Two live denominators for one ratchet: gate/admission.sh pinned 473 (all-position tokens minus whole-file exemptions) while this ledger measured 335 code-position sites in canonical files. Which is the enforced budget?",
+  "ruling": "CODE-POSITION. A `std.` inside a `#` comment or a `\"` text literal resolves no home, reaches no world, and cannot violate law.std.zero -- it is prose, or it is a detector's own needle. The all-position count is not a measurement of the rule the ratchet enforces.",
+  "independently_remeasured": {
+   "by": "the lexer in gate/admission.sh, written for this ruling; reproduces this ledger's per-file split on all 94 files with zero drift",
+   "at_commit": "ce03c7eb (pre-migration)",
+   "command": "sh gate/admission.sh --census-only",
+   "tokens_all_positions": 547,
+   "split": {
+    "code": 350,
+    "text": 114,
+    "comment": 83
+   },
+   "tokens_with_identifier_tail": 512,
+   "bare_std_dot_dropped_by_old_regex": 35,
+   "bare_all_in_text_or_comment": true
+  },
+  "arithmetic": {
+   "old_budget": "473 = 512 (tail-required tokens, all positions) - 39 (whole-file pins over 6 gate scanners)",
+   "all_39_pinned_tokens_are_non_code": true,
+   "difference": "473 - 335 = 138",
+   "decomposition": {
+    "123": "text/comment tokens charged outside the 6 pinned files: (88 text + 74 comment with tail) - 39 pinned",
+    "15": "code-position reaches in files that are not canonical debt: 14 historical + 1 the law.std.zero compile-fail fixture"
+   },
+   "residual": 0
+  },
+  "does_this_raise_the_budget": {
+   "answer": "NO. It lowers the enforced number and REMOVES headroom rather than creating it.",
+   "why": "473 was not slack the tree was consuming -- the tree measured exactly 473 -- but 123 of those 473 were comment and string mentions. Deleting 123 characters of prose would have bought 123 new real reaches with no gate objection. Under code-position accounting a comment is worth nothing, so nothing can be sold to buy a reach.",
+   "headroom_before": "123 real code reaches purchasable by deleting prose",
+   "headroom_after": 0,
+   "exemptions_before": "6 files, WHOLE-FILE: any future std. in them, code or not, rode in free under a pinned integer",
+   "exemptions_after": "3 files, 15 code-position reaches, each pinned exactly and each with a stated non-migratable reason",
+   "rule_b_before": "the 6 pinned files were exempt from the added-line rule entirely, so a real reach added to gate/idiom.id passed unseen",
+   "rule_b_after": "position-aware per added line; the 6 whole-file exemptions are gone and a real reach added to any of them is refused (control: 'a REAL reach added to a former whole-file-exempt gate scanner')"
+  },
+  "enforced_number": {
+   "at_ce03c7eb_before_migration": 335,
+   "after_the_18_site_migration_in_this_lane": 317,
+   "pinned_exempt": 15,
+   "total_code_position_reaches_after_migration": 332,
+   "on_c77dea60_before_migration": 344,
+   "on_c77dea60_after_migration": 326,
+   "budget_shipped": 311
+  },
+  "hand_merge_when_shadow_clean_lands": {
+   "conflict": "reconcile/shadow-clean-20260822 moves the budget 473 -> 350; this lane moves it 473 -> 317 and changes what is counted.",
+   "resolution": "TAKE THIS LANE'S COUNTER, NOT ITS NUMBER. 350 is the all-class code-position total; 317 is that total minus the 15 pinned non-canonical reaches minus the 18 migrated here. Both branches agree the denominator is code position; they disagree on whether the historical and negative-fixture reaches are budget or exemption.",
+   "steps": [
+    "0. Note that main no longer carries a census at all. A merge that 'keeps main's admission.sh' keeps a gate with no budget.",
+    "1. Keep gate/admission.sh's SCANNER and census_all from this lane -- shadow-clean recounts, this lane changes HOW, and a recount over the old byte counter reintroduces the 123.",
+    "2. Keep gate/std-fixtures.manifest from this lane (3 code-position pins). shadow-clean's 350 has no exemption set, so the compile-fail fixture examples/compile_fail/world_std_os.id becomes budget the tree can never retire -- it MUST carry std.os.exit(1) or it stops being a fixture.",
+    "3. Set STD_BUDGET to whatever `sh gate/admission.sh --census-only` prints on the merged tree. Do not hand-pick it and do not carry 350 or 317 across the merge: both were measured on trees that no longer exist.",
+    "4. Re-run gate/admission-controls.sh. Its synthetic trees are built at the shipped budget, so a stale number turns the at-budget control red -- that is the intended alarm, not a control to relax.",
+    "5. If the merged number exceeds 317 + (code reaches on lines shadow-clean genuinely added), the merge reintroduced debt. Investigate rather than re-pinning upward."
+   ],
+   "already_done_for_main": "This lane IS the hand-merge against c77dea60. gate/admission.sh here is main's file plus a census section; the quarantine half is unchanged from ee8adabf."
+  },
+  "rebase_note_c77dea60": {
+   "what_main_actually_does_now": "The premise that main's gate/admission.sh 'reports 473 counted against budget 473' is STALE. Commit ee8adabf ('admission: remove false semantic registries', on main at c77dea60) DELETED the census outright, along with gate/std-fixtures.manifest and gate/vocabulary.admitted. main's admission.sh is an added-line quarantine only: it has no budget, no denominator, and no downward pressure on the reaches already in the tree.",
+   "mains_objection_was_right": "Its header states it exactly: the census was 'a position-blind 473-token census and therefore created a second, false authority one commit after the ledger was published.' That is the same finding this lane reaches independently. The disagreement is only about the remedy.",
+   "why_deletion_is_the_wrong_remedy": "A quarantine cannot ratchet. It stops the debt growing on added lines and does nothing about the 344 reaches already there, and it cannot notice a rewrite that relocates them. Between ee8adabf and this commit the only thing making the number fall was voluntary.",
+   "resolution_taken_here": "Both rules, and they deliberately disagree about position. QUARANTINE (main's, kept byte-for-byte): raw `std.` on any added line, ANY position, no exemptions -- on an added line the cheap rule is the strong one. CENSUS (restored, position-accurate): charges only code-position reaches, because a budget that counts prose is a budget payable in prose.",
+   "remeasured_on_c77dea60": {
+    "subjects": 1012,
+    "tokens_all_positions": 534,
+    "split": {
+     "code": 344,
+     "text": 108,
+     "comment": 82
+    },
+    "tokens_with_identifier_tail": 501,
+    "bare_all_in_text_or_comment": true,
+    "delta_from_ce03c7eb": "main's 48 commits removed 6 code reaches: scripts/capability_table.id deleted (4) and scripts/native_differential.id down 2."
+   },
+   "enforced_after_migration_on_c77dea60": {
+    "code_reaches": 326,
+    "pinned_exempt": 15,
+    "budget": 311
+   }
+  }
+ },
+ "second_blocker_probe": {
+  "measured_at": "ce03c7eb",
+  "method": "For each of the 40 files this ledger classes `canonical`, strip the `std.` prefix at CODE positions only (comments and literals untouched), then `idol check` and `idol compile --backend=direct`. Restore the file. This is a PROBE of what the prefix was hiding, not a migration: `io.read(f,4)` is still a world-as-receiver and still wrong.",
+  "headline": "Removing `std.` unblocked ZERO of the 40 files on the direct backend. 36 of 40 pass `idol check` after the strip, which is why check-pass was never evidence.",
+  "direct_pass_after_strip": 0,
+  "check_pass_after_strip": 36,
+  "blocker_classes": {
+   "realization-gap": 25,
+   "entry-point": 1,
+   "WORLD-GRANT-VIOLATION": 2,
+   "other": 1,
+   "link": 2,
+   "parse": 5,
+   "unresolved-application-facts": 4
+  },
+  "files": [
+   {
+    "path": "benchmarks/wasm_rt/conform/run_spec.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "benchmarks/wasm_rt/run.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "lib/compiler/emit_c.id",
+    "blocker_after_strip": "no process: a file-scope tail is the program, or one zero-arg function, or --entry <name>",
+    "blocker_class": "entry-point",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "no process: a file-scope tail is the program, or one zero-arg function, or --entry <name>"
+   },
+   {
+    "path": "lib/encoding/pem.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "lib/graphics/audio.id",
+    "blocker_after_strip": "'open' is neither a descriptor nor a callable, so the receiver_parenthesized application has no subject: descriptor space holds no 'op",
+    "blocker_class": "SEMANTIC-VOCABULARY-BLOCKED (path:open)",
+    "check_after_strip": "fail",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand"
+   },
+   {
+    "path": "lib/hash/maphash.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "lib/ml/deploy.id",
+    "blocker_after_strip": "'open' is neither a descriptor nor a callable, so the receiver_parenthesized application has no subject: descriptor space holds no 'open' a",
+    "blocker_class": "SEMANTIC-VOCABULARY-BLOCKED (path:open)",
+    "check_after_strip": "fail",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in f"
+   },
+   {
+    "path": "lib/net/rpc.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "90 |     return error_new(request.id, -32603, \"Internal error\", result:to(str))"
+   },
+   {
+    "path": "lib/net/ws.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "lib/wasm.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/bootstrap_scan.id",
+    "blocker_after_strip": "linker command failed with exit code 1 (use -v to see invocation)",
+    "blocker_class": "link",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "linker command failed with exit code 1 (use -v to see invocation)"
+   },
+   {
+    "path": "scripts/capability_matrix.id",
+    "blocker_after_strip": "indentation matches no block: this line starts at column 9, its block's statements start at column 5",
+    "blocker_class": "parse",
+    "check_after_strip": "fail",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "indentation matches no block: this line starts at column 9, its block's statements start at column 5"
+   },
+   {
+    "path": "scripts/capability_rows.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: param-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/capability_scan.id",
+    "blocker_after_strip": "DNB001 application: 103 relation: head missing: concat consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: 103 relation: head missing: concat consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/capability_table.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "expected expression, got '+'"
+   },
+   {
+    "path": "scripts/cfloor.id",
+    "blocker_after_strip": "DNB001 application: 174 relation: note missing: concat consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: 174 relation: note missing: concat consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/contract.id",
+    "blocker_after_strip": "DNB001 application: 119 relation: main missing: unspecified consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB011 application: 117 relation: shout missing: application-realization-count consumer: native realization producer: graph"
+   },
+   {
+    "path": "scripts/corpus_classify.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/id.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: block-tail-no-return consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: block-tail-no-return consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/init_build_smoke.id",
+    "blocker_after_strip": "DNB001 application: 58 relation: main missing: unspecified consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB011 application: 54 relation: run missing: application-realization-count consumer: native realization producer: graph"
+   },
+   {
+    "path": "scripts/luahost.id",
+    "blocker_after_strip": "DNB001 application: 45 relation: main missing: unspecified consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB011 application: 43 relation: shout missing: application-realization-count consumer: native realization producer: graph"
+   },
+   {
+    "path": "scripts/native_differential.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/nominal_zero_cost.id",
+    "blocker_after_strip": "expected expression, got '/'",
+    "blocker_class": "parse",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "expected expression, got '/'"
+   },
+   {
+    "path": "scripts/proof/convert.id",
+    "blocker_after_strip": "DNB001 application: 66 relation: verdict missing: concat consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: 66 relation: verdict missing: concat consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/realize.id",
+    "blocker_after_strip": "linker command failed with exit code 1 (use -v to see invocation)",
+    "blocker_class": "link",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB011 application: 106 relation: shout missing: application-realization-count consumer: native realization producer: graph"
+   },
+   {
+    "path": "scripts/recognition_scan.id",
+    "blocker_after_strip": "DNB001 application: 108 relation: capture missing: concat consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: 108 relation: capture missing: concat consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/reproducibility_smoke.id",
+    "blocker_after_strip": "linker command failed with exit code 1 (use -v to see invocation)",
+    "blocker_class": "link",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "linker command failed with exit code 1 (use -v to see invocation)"
+   },
+   {
+    "path": "scripts/run_compile_size_benchmark.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/run_cross_benchmark.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/run_gpu_benchmark.id",
+    "blocker_after_strip": "DNB001 application: 38 relation: run missing: unspecified consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: 38 relation: run missing: unspecified consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/run_wasm_benchmark.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/runtime_bench.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: ret-type:any consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/semantic_harness.id",
+    "blocker_after_strip": "write `name` at this token edge",
+    "blocker_class": "parse",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "write `name` at this token edge"
+   },
+   {
+    "path": "scripts/spec_conformance.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: expr-unhandled:vararg consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: expr-unhandled:vararg consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/test_property_12.id",
+    "blocker_after_strip": "DNB001 application: 30 relation: _next_rand missing: concat consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: 30 relation: _next_rand missing: concat consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/test_wasm_execution.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "scripts/transform.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "tools/wasm/bench/run.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: gen-for-dynamic-iter consumer: native realization producer: dnir lower"
+   },
+   {
+    "path": "tools/wasm/bench/verify.id",
+    "blocker_after_strip": "expected expression, got 'else'",
+    "blocker_class": "parse",
+    "check_after_strip": "fail",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "expected expression, got 'else'"
+   },
+   {
+    "path": "tools/wasm/bench/wart.id",
+    "blocker_after_strip": "DNB001 application: unknown missing: mod-top-stmt:if_stmt consumer: native realization producer: dnir lower",
+    "blocker_class": "realization-gap (DNB001)",
+    "check_after_strip": "pass",
+    "unblocked_by_removing_std": false,
+    "blocker_at_ce03c7eb": "DNB001 application: unknown missing: mod-top-stmt:if_stmt consumer: native realization producer: dnir lower"
+   }
+  ],
+  "remeasured_at": "c77dea60 + this lane's migration",
+  "remeasured_direct_pass": 0,
+  "remeasured_check_pass": 36,
+  "remeasured_blocker_classes": {
+   "realization-gap (DNB001)": 30,
+   "entry-point": 1,
+   "SEMANTIC-VOCABULARY-BLOCKED (path:open)": 2,
+   "link": 3,
+   "parse": 4
+  }
+ },
+ "migration_20260823": {
+  "lane": "lane/stdmig-20260823",
+  "base": "ce03c7eb",
+  "rule": "Migrate only where the compiler itself names the canonical relation. No compatibility alias, no resolver shim, no namespace fallback, and no rename of one root to another.",
+  "sites_migrated": 18,
+  "files": [
+   {
+    "path": "scripts/realize.id",
+    "sites": 1,
+    "from": "std.os.exit(main())",
+    "to": "exit(main())",
+    "semantic_diff": "subject: the process exit status. relation: `exit`, a member edge of the `os` world (src/subject_home.zig os_dot_members, how=direct, face=relation, result=void -- measured to lower end to end). world: `os`, default-injected, so the anchor is not spelled. The `std` root is DELETED, not renamed: it owned no meaning and supplied no authority.",
+    "compiler_named_the_repair": true,
+    "check_before": "fail (law.std.zero refusal, the only one of 350 code sites the compiler catches)",
+    "check_after": "pass",
+    "second_blocker": "DNB011 application 37 relation `chomp` unresolved-application-facts -- std.script.chomp, frozen debt"
+   },
+   {
+    "path": "lib/graphics/audio.id",
+    "sites": 12,
+    "from": "std.io.open(path, m) / std.io.read(f, n) / std.io.close(f)",
+    "to": "path:open(m) / f:read(n) / f:close()",
+    "semantic_diff": "The `io` world SUPPLIES a stream; it is not the stream. `read`/`close` are relations on the stream instance (src/subject_home.zig stream_relations), so the stream `f` becomes the subject and the world disappears from the source entirely -- it is a grant, not a receiver. `open` orients on the path per C0 law.world.grant canon `file = path:open()`.",
+    "world_grant_violation_exposed": "YES -- see world_grant_violations below",
+    "check_before": "pass",
+    "check_after": "fail",
+    "second_blocker": "SEMANTIC-VOCABULARY-BLOCKED: `open` is in NO relation space. src/subject_home.zig leaves it out of stream_relations deliberately -- 'its canon is path:open(), and path:open has no lowering anywhere in this tree, so listing it here would refuse the only spelling that works. Recorded as owed, not enforced.' The canon C0 names is unimplemented.",
+    "check_regression_is_exposure": "The file's `check` passed only because `std.io.open` was an unresolved namespace projection nothing typed. `direct` already failed before the migration. Nothing in build.zig or gate/ consumes this file."
+   },
+   {
+    "path": "lib/ml/deploy.id",
+    "sites": 5,
+    "from": "std.io.open(path, m) / std.io.read(f, n) / std.io.close(f)",
+    "to": "path:open(m) / f:read(n) / f:close()",
+    "semantic_diff": "Same decomposition as lib/graphics/audio.id.",
+    "world_grant_violation_exposed": "YES -- see world_grant_violations below",
+    "check_before": "pass",
+    "check_after": "fail",
+    "second_blocker": "Same: `path:open` unadmitted. Its other 14 reaches stay: 13 `std.ml.export.onnx_*` (SEMANTIC-VOCABULARY-BLOCKED, no admitted ONNX relation, and the names are mashed compounds LAW-16 forbids) and 1 `std.encoding.json.decode` (SEMANTIC-VOCABULARY-BLOCKED, measured: `json:decode(x)` answers 'decode is neither a descriptor nor a callable')."
+   }
+  ],
+  "deliberately_not_migrated": [
+   {
+    "spelling": "std.script.*",
+    "code_sites": 269,
+    "share_of_350": "76.9%",
+    "reason": "Frozen debt. `script` is a namespace root that owns no meaning, and the relations behind it need structured command + process world vocabulary that does not exist. Measured: the fs subset has an explicit canonical mapping in AGENTS.md (`fs_exists` -> `path:exists()`, `fs_write` -> `path:write()`) and NEITHER relation resolves -- 'exists is neither a descriptor nor a callable'. SEMANTIC-VOCABULARY-BLOCKED.",
+    "one_exception_is_ready": "std.script.getenv(k, fallback) and std.script.getenv_or(k), 28 sites: the compiler names `env(k)` as the repair by hand and `env(\"HOME\")` checks clean. NOT taken here because getenv falls back on BOTH nil and empty string while `env(k)` answers \"\" for a name set to empty -- a silent behaviour change in benchmark harnesses. Needs a per-site read, not a sweep."
+   },
+   {
+    "spelling": "std.time.monotonic",
+    "code_sites": 12,
+    "reason": "SEMANTIC-VOCABULARY-BLOCKED. lib/time.id defines `monotonic` as `now_ns()` whose only body is `@comp.c.emit(...)` -- a retired directive namespace. The `os` roster's `clock` is a DIFFERENT fact (CPU time, not a monotonic wall clock) and is marked `.unrealized` anyway. Rewriting monotonic timing onto `clock()` would silently change what five benchmark harnesses measure."
+   },
+   {
+    "spelling": "std.base64.* / std.crypto.rand.bytes / std.hash.* / std.bit.* / std.net.* / std.maps.* / std.table.* / std.reflect.* / std.strconv.* / std.fmt.*",
+    "code_sites": 34,
+    "reason": "SEMANTIC-VOCABULARY-BLOCKED. Each is a namespace-first dispatch whose subject-first form has no admitted relation. Inventing one would be the namespace this gap forbids, spelled differently."
+   }
+  ]
+ },
+ "world_grant_violations": {
+  "count": 2,
+  "class": "CORRECTNESS FINDING, not migration debt. These are not files that merely spell `std.`; they are files whose call SHAPE violates C0 law.world.grant, and the `std.` prefix was HIDING that from the type checker.",
+  "law": "C0 law.world.grant / law.subject.resolve, quoted in src/subject_home.zig: canon = 'file = path:open()'; deny = 'io:open(path)'; 'io:open(path) cannot become canonical merely because io is reachable'; fails = 'world authority arriving through ... namespace receiver'.",
+  "mechanism": "`std.io.read(f, n)` passes the STREAM as the first operand of a relation reached through the `io` WORLD. The io world supplies stream instances; it is not itself a stream and has no `read`. Because the whole chain hung off the unresolved `std` root, sema's checkStreamRelationFace never saw it and `idol check` reported the files clean. Drop four characters and the refusal fires immediately.",
+  "sites": [
+   {
+    "path": "lib/graphics/audio.id",
+    "lines": [
+     29,
+     34,
+     36,
+     40,
+     43,
+     45,
+     55,
+     60,
+     71,
+     79,
+     103,
+     105
+    ],
+    "shape": "std.io.read(f, 4) / std.io.close(f) / std.io.open(path, \"rb\")",
+    "check_status_before": "PASS -- the violation was invisible",
+    "diagnostic_once_the_prefix_is_gone": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies -- write 'f:read(...)'",
+    "repaired_in_this_lane": true
+   },
+   {
+    "path": "lib/ml/deploy.id",
+    "lines": [
+     54,
+     59,
+     61,
+     72,
+     73
+    ],
+    "shape": "std.io.read(f, 8) / std.io.close(f) / std.io.open(path, \"rb\")",
+    "check_status_before": "PASS -- the violation was invisible",
+    "diagnostic_once_the_prefix_is_gone": "same refusal, same law",
+    "repaired_in_this_lane": true
+   }
+  ],
+  "why_it_matters_beyond_these_two": "The general lesson is the measurement, not the two files: a `std.` prefix SUPPRESSES semantic checking of everything downstream of it. 36 of the 40 canonical files pass `idol check` today; 4 of them stop passing the moment the prefix is removed. `check`-pass over a tree carrying 332 code-position reaches is not evidence of anything.",
+  "reconfirmed_on_c77dea60": {
+   "method": "Take each file AS IT STANDS at c77dea60 (pre-migration), strip `std.` at code positions, `idol check`.",
+   "lib/graphics/audio.id:34": "'read' is a relation on a stream, and 'f' is that stream: passing it as the first operand of 'io.read' makes the world stand in for the subject it only supplies",
+   "lib/ml/deploy.id:59": "same refusal, same law",
+   "count_across_all_40_canonical_files": 2,
+   "after_repair": "The probe over the migrated tree reports ZERO of this class -- not because the detector stopped working, but because both sites are gone. Their new blocker is `path:open` being in no relation space, which is a different finding."
+  }
+ },
+ "law_vs_implementation_conflict": {
+  "finding": "docs/spec/host.md and docs/spec/world.md both carry a 'RETRACTED under world reconciliation v2' paragraph ruling that `io` IS an ordinary world value and a legitimate subject, so `io:read()` and `io:write(x)` are CANONICAL. AGENTS.md restates it: 'I/O uses io:read / io:write, not io.read / io.write'. GAP-157's own ruling text names `io:read` as a canonical reach.",
+  "measured": "The compiler refuses both. `io:read()` answers \"'read' is a relation on a stream, and the 'io' world is not a stream -- it SUPPLIES the stream ... write 'stdin:read(...)'\" (src/sema.zig checkStreamRelationFace, citing law.world.grant). `io:write(\"x\")` answers the same.",
+  "so": "sema enforces the RETRACTED v1 reading. One of the two must move, and this lane does not own either. Reported, not repaired.",
+  "consequence_for_this_gap": "The canonical target GAP-157 names for the 17 `std.io.*` sites does not compile. The only spelling that does is subject-first on the stream instance -- which is what this lane wrote, and which the v2 text also permits ('Where a stream is the real subject, it stays the subject').",
+  "owner": "GAP-154 (host boundary) with GAP-157; needs a ruling before any further io migration."
+ },
+ "non_vacuity": {
+  "harness": "sh gate/admission-controls.sh -- 35 controls, 0 failures. 13 of them are position plants: the identical bytes appear twice, once where they reach a home and once where they cannot, and the harness demands opposite verdicts. A byte counter fails the 6 'admit' halves; a gate that has stopped charging anything fails the 7 'reject' halves.",
+  "live_binding_proof": {
+   "claim": "The pinned budget 311 is binding on the real tree, not merely satisfied by it.",
+   "command": "git show c77dea60:lib/graphics/audio.id > lib/graphics/audio.id && sh gate/admission.sh --census-only",
+   "result": "ADMISSION BLOCKED -- code-position std census is 323, budget is 311.",
+   "meaning": "Reverting 12 of the 18 migrated sites is refused. The ground taken cannot be given back."
+  },
+  "what_would_make_it_vacuous_and_does_not": [
+   "A budget above the measured value: the gate prints 'census is N, UNDER the pinned budget' and demands the pin be lowered in the same commit.",
+   "An exemption for a file that stopped needing one: refused as EARNED OUT.",
+   "A pin of zero: refused by the manifest parser.",
+   "A missing or empty manifest: refused, rather than falling back to exempting nothing.",
+   "Zero or too few readable subjects: refused (GAP-201/GAP-220, via gate/subject.sh plus a MIN_SUBJECTS floor on files actually opened)."
   ]
  }
 }
