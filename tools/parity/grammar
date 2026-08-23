@@ -6,8 +6,8 @@
 #
 # Projections compared:
 #   canonical   src/lexer.zig TokenKind semantic identities + backing span
-#   generated   lib/token/grammarrole.id    (ROLEIDENTITYCOUNT / ROLECOUNT /
-#                                             KINDEOF / BEGINEXPR)
+#   generated   lib/token/grammarrole.id    (roleidentitycount / rolecount /
+#                                             kindeof / beginexpr)
 #   tree-sitter ext/tree-sitter-idol/src/grammar.json (rule count, context)
 
 set -eu
@@ -45,17 +45,28 @@ def enum_shape(path):
         'values': values,
     }
 
+# A PROBE THAT MATCHES NOTHING IS NOT AN ABSENT FILE. These two were reported
+# as one state ("absent or malformed") and the collapse hid a live defect for
+# as long as the projection has been lowercase: the patterns below asked for
+# ROLEIDENTITYCOUNT / ROLECOUNT / KINDEOF / BEGINEXPR, the generator has always
+# written roleidentitycount / rolecount / kindeof / beginexpr, and so every run
+# of this tool reported DRIFT while the four checks that consume `generated`
+# never executed at all. A tool that cannot pass is not a control. The names
+# are the ones the generator writes; a rename must break this loudly, and
+# `missing` is what makes that a different sentence from "the file is gone".
 def id_projection(path, identity_pat, count_pat, eof_pat, vec_pat):
     try:
         src = open(path).read()
     except FileNotFoundError:
         return None
-    i = re.search(identity_pat, src)
-    c = re.search(count_pat, src)
-    e = re.search(eof_pat, src)
-    v = re.search(vec_pat, src, re.S)
-    if not (i and c and e and v):
-        return None
+    i = re.search(identity_pat, src, re.M)
+    c = re.search(count_pat, src, re.M)
+    e = re.search(eof_pat, src, re.M)
+    v = re.search(vec_pat, src, re.M | re.S)
+    missing = [name for name, m in (('identity', i), ('count', c),
+                                    ('eof', e), ('begin_expr', v)) if not m]
+    if missing:
+        return {'probe_failed': missing}
     vec = [int(x) for x in re.findall(r'-?\d+', v.group(1))]
     return {
         'identities': int(i.group(1)),
@@ -66,9 +77,12 @@ def id_projection(path, identity_pat, count_pat, eof_pat, vec_pat):
 
 canonical = enum_shape('src/lexer.zig')
 generated = id_projection('lib/token/grammarrole.id',
-                          r'ROLEIDENTITYCOUNT\s*=\s*(\d+)',
-                          r'ROLECOUNT\s*=\s*(\d+)', r'KINDEOF\s*=\s*(\d+)',
-                          r'BEGINEXPR\s*=\s*\{(.*?)\}')
+                          r'^roleidentitycount\s*=\s*(\d+)',
+                          r'^rolecount\s*=\s*(\d+)', r'^kindeof\s*=\s*(\d+)',
+                          r'^beginexpr\s*=\s*\{(.*?)^\}')
+probe_failed = generated.get('probe_failed') if generated else None
+if probe_failed:
+    generated = None
 try:
     ts = len(json.load(open('ext/tree-sitter-idol/src/grammar.json'))['rules'])
 except Exception:
@@ -96,23 +110,28 @@ print()
 drift = []
 if canonical is None:
     drift.append('canonical src/lexer.zig TokenKind is unreadable')
-if generated is None:
-    drift.append('generated lib/token/grammarrole.id is absent or malformed')
+if probe_failed:
+    drift.append('this tool cannot read lib/token/grammarrole.id: no match for '
+                 + ', '.join(probe_failed)
+                 + ' -- the PROBE is broken, and a broken probe reports drift forever '
+                   'while the checks below never run')
+elif generated is None:
+    drift.append('generated lib/token/grammarrole.id is absent')
 if canonical and 'string_lit' in canonical['names']:
     drift.append('retired TokenKind.string_lit identity still exists')
 if canonical and 3 in canonical['values']:
     drift.append('unpublished producer slot 3 has a host semantic identity')
 if canonical and generated and generated['identities'] != canonical['identities']:
-    drift.append('generated ROLEIDENTITYCOUNT=%d != canonical semantic identities=%d'
+    drift.append('generated roleidentitycount=%d != canonical semantic identities=%d'
                  % (generated['identities'], canonical['identities']))
 if canonical and generated and generated['count'] != canonical['slots']:
-    drift.append('generated ROLECOUNT=%d != canonical physical slot span=%d'
+    drift.append('generated rolecount=%d != canonical physical slot span=%d'
                  % (generated['count'], canonical['slots']))
 if generated and len(generated['begin_expr']) != generated['count']:
-    drift.append('generated BEGINEXPR length=%d != ROLECOUNT=%d'
+    drift.append('generated beginexpr length=%d != rolecount=%d'
                  % (len(generated['begin_expr']), generated['count']))
 if generated and generated['eof'] >= generated['count']:
-    drift.append('generated KINDEOF=%d out of range for ROLECOUNT=%d'
+    drift.append('generated kindeof=%d out of range for rolecount=%d'
                  % (generated['eof'], generated['count']))
 if generated and (generated['count'] <= 3 or generated['begin_expr'][3] != 0):
     drift.append('unpublished producer slot 3 acquired an expression role')

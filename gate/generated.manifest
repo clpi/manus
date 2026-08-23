@@ -23,5 +23,6 @@ lib/token/grammarrole.id	lib/compiler/token.id	do not edit by hand
 lib/wasm/opcode_lookup.id	src/wasm_semantic_gen.zig	do not edit by hand
 lib/wasm/ward_mvp_opcodes.id	src/wasm_semantic_gen.zig	do not edit by hand
 ext/tree-sitter-idol/grammar.js	scripts/treesitter_emit.id	GENERATED
+ext/tree-sitter-idol/src/grammar.json	ext/tree-sitter-idol/grammar.js	$schema
 tools/wasm/src/duo_keyword_classify.c	src/token_classify_gen.zig	do not edit by hand
 tools/lsp/src/duo_keyword_classify.c	src/token_classify_gen.zig	do not edit by hand

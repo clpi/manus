@@ -493,7 +493,40 @@ zigrow: str = (kind: i64)
   z = _zigname(kind)
   if z == "."
     return "    .\{ .kind = null \},\n"
-  s = "    .\{ .kind = .{z}"
+  # Source spelling per physical producer slot — the grammar fact
+  # `src/lexer.zig` `spelling()` used to own in a 60-arm switch with a fallback
+  # into `src/token_semantic.zig`. Two producers answered "how is this identity
+  # written"; this is the one that stays (`law.fact.producer.one`). Recognition
+  # still keys on the ordinal: this row is what a diagnostic PRINTS and what a
+  # projection consumer MATCHES, never what the lexer decides from.
+  #
+  # Slot 3 is the unpublished producer slot and its field is EMPTY (two spaces
+  # after `float`), not `.` — `.` is the real spelling of `dot` at slot 80, and
+  # a sentinel that collides with a live spelling is how a spelling-keyed
+  # consumer silently resolves to the wrong identity.
+  #
+  # THE ROW AND ITS READER LIVE IN THIS BODY, and the field scan below repeats
+  # `zigname`'s. That duplication is deliberate and measured: `gate/vocabulary.sh`
+  # refuses every new module-scope declaration in `.id` outright, and the only
+  # alternatives it names are underscore-private names — which `gate/idiom.id`
+  # `under()` forbids in `.id` source — nested bindings, and body-only changes.
+  # A shared `pick(row, kind)` is a new module-scope relation and cannot be
+  # committed; a nested binding can. Fold the two scans together when the
+  # vocabulary freeze lifts.
+  row = "name integer float  and break continue do else elseif end false for function fun global goto if in local nil not or repeat return then true until while const enum i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 bool void str match try catch defer async await concept alias private extends macro comptime by let ( ) [ ] \{ \} + - * / % ^ # & | < > = ~ ; : , . @ ? ! ` .. ... ## == != <= >= << >> // :: -> |> => += -= *= /= %= ^= text bytes compat_text compat_long_text <eof> #! # -- --[[ "
+  n = row:len()
+  i = 1
+  seen = 0
+  start = 1
+  spell = ""
+  while i <= n
+    if row:byte(i) == 32
+      if seen == kind
+        spell = row:sub(start, i - 1)
+      seen = seen + 1
+      start = i + 1
+    i = i + 1
+  s = "    .\{ .kind = .{z}, .spell = \"{spell}\""
   if rolebeginexpr(kind)
     s = "{s}, .begin_expr = true"
   if roleprefix(kind)
@@ -557,6 +590,7 @@ zigbody: str = ()
   s = "{s}    none = 0,\n    left = 1,\n    right = 2,\n    nonassoc = 3,\n\};\n\n"
   s = "{s}pub const RoleRow = struct \{\n"
   s = "{s}    kind: ?lexer.TokenKind = null,\n"
+  s = "{s}    spell: []const u8 = \"\",\n"
   s = "{s}    begin_expr: bool = false,\n"
   s = "{s}    prefix: bool = false,\n"
   s = "{s}    postfix: bool = false,\n"

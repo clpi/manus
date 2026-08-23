@@ -1,9 +1,25 @@
 #!/bin/sh
-# gate/gap-145-consumer.sh — quoted literals must not collapse to `.str` blindly.
+# gate/gap-145-consumer.sh — GAP-145: nothing may hold a second answer about
+# what a token IS.
 #
-# GAP-145 acceptance requires consumers to observe producer quote identity.
-# This gate ratchets the shared helper and forbids reintroducing bare
-# `.quoted => .str` in sema/codegen typing paths.
+# Three classes of observer, one runner:
+#
+#   (1) QUOTE COLLAPSE.   A consumer that answers `.str` for every `.quoted`
+#       has thrown away the producer's text/bytes distinction.
+#   (2) DUPLICATE PRODUCER. A host module that classifies quotes, comments,
+#       shebang or backtick beside `lib/compiler/lexer.id`.
+#   (3) SECOND GRAMMAR AUTHORITY. The tree-sitter grammar is an independently
+#       authored operator table. GAP-145's closure bullet allows it to be
+#       "generated or mechanically verified from the same grammar/lexical
+#       authority". Nothing verified it: the check inside the generator
+#       compared against a hand-copied restatement of docs/spec/grammar.md 2 --
+#       a file whose own first paragraph says it is not a grammar authority --
+#       and compared only ADJACENT rows. Section 3 below compares EVERY PAIR
+#       against `src/grammar_role_table.zig`, the generated projection of
+#       `lib/compiler/token.id` (law.grammar.one).
+#
+# Every section positive-controls its own detector. A gate that cannot fail
+# reports a number that proves nothing (law.gate.protocol).
 set -u
 
 ROOT=${GAP145_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
@@ -41,6 +57,8 @@ forbid() {
     fi
 }
 
+# ── 1. quote identity reaches the consumers ─────────────────────────────────
+
 has "$AST" 'pub fn quotedLiteralIsByteSequence' \
     'ast.zig lost quotedLiteralIsByteSequence helper'
 has "$TYPES" 'pub fn quotedLiteralType' \
@@ -58,6 +76,228 @@ forbid "$CODEGEN" '.quoted => .str,' \
     'codegen.zig reintroduced bare `.quoted => .str` collapse'
 forbid "$DNIR" '.quoted => .str,' \
     'dnir_lower.zig reintroduced bare `.quoted => .str` collapse'
+
+# ── 2. one producer of lexical identity ─────────────────────────────────────
+#
+# `src/lexical_identity.zig` called itself "canonical lexical token identities
+# (production source of truth)" and had ZERO consumers, which is exactly why no
+# call-graph census ever saw it. Its `classifyQuote` keyed on
+# `facts.law` x `facts.provenance`; the producer's `classify_quote` keys on
+# `family`. Two answers, and the divergence was invisible only because nothing
+# asked. Deleted 2026-08-23. This is the ratchet that keeps it deleted.
+examined=$((examined + 1))
+if [ -e "$ROOT/src/lexical_identity.zig" ]; then
+    bad 'src/lexical_identity.zig is back — one producer owns lexical identity (law.fact.producer.one); it is lib/compiler/lexer.id'
+fi
+
+# Source spelling has one owner too. `src/lexer.zig` `spelling()` used to be a
+# 60-arm switch falling through to `src/token_semantic.zig`; it now reads the
+# generated projection of `lib/compiler/token.id` `kindspell`.
+examined=$((examined + 1))
+if ! grep -Fq 'grammar_role_table.zig").rows[@intFromEnum(self)].spell' "$ROOT/src/lexer.zig"; then
+    bad 'src/lexer.zig spelling() no longer reads the generated owner projection — a second spelling table is back'
+fi
+
+# ── 3. tree-sitter agrees with the one grammar-fact owner ───────────────────
+
+python3 - "$ROOT" <<'PY'
+import re, sys, os
+
+root = sys.argv[1]
+
+# `~=` and `!=` are ONE producer identity (`neq`, slot 89) with two source
+# spellings. `kindspell` carries one field per slot, so the compat spelling has
+# no row of its own. Declared here, printed on every run, rather than silently
+# skipped -- an unresolved operator must be visible, not absent.
+ALIAS = {'~=': '!='}
+
+# Owner infix identities that tree-sitter does NOT render as a
+# `binary_expression` row, each with the rule that owns it instead. This is a
+# PROJECTION BOUNDARY, not a precedence fact: the owner says these have binding
+# power, and the editor grammar spends it somewhere else.
+#
+# It exists so the check can demand SET EQUALITY. Requiring the tree-sitter set
+# to be merely nonempty passed when an operator was DELETED -- drop `^` from
+# grammar.js and its generator and the remaining 23 rows still agree with each
+# other, so the editor grammar loses exponentiation and the gate says PASS.
+# Every owner infix identity must now be in the table or in this list.
+EXCLUDED = {
+    '=':  'assignment statement, not an expression operator',
+    '+=': 'compound assignment statement',
+    '-=': 'compound assignment statement',
+    '*=': 'compound assignment statement',
+    '/=': 'compound assignment statement',
+    '%=': 'compound assignment statement',
+    '^=': 'compound assignment statement',
+    '.':  'field_projection / field_expression',
+    '@':  'attribute and world-access rules',
+    'not': 'unary_expression',
+    '!':  'unary_expression',
+}
+
+def owner_rows(path):
+    src = open(path).read()
+    body = re.search(r'pub const rows = \[slot_count\]RoleRow\{(.*)\n\};', src, re.S).group(1)
+    by_spell = {}
+    for line in (l for l in body.splitlines() if l.strip().startswith('.{')):
+        if '.kind = null' in line:
+            continue
+        sp = re.search(r'\.spell = "((?:[^"\\]|\\.)*)"', line)
+        if not sp or not sp.group(1):
+            continue
+        prec = re.search(r'\.precedence = (-?\d+)', line)
+        asc = re.search(r'\.assoc = \.([a-z]+)', line)
+        by_spell[sp.group(1)] = (
+            int(prec.group(1)) if prec else 0,
+            asc.group(1) if asc else 'none',
+        )
+    return by_spell
+
+def ts_rows(path):
+    src = open(path).read()
+    body = re.search(r'binary_expression: \$ => choice\((.*?)\n    \),', src, re.S).group(1)
+    out = []
+    for m in re.finditer(r"prec\.(left|right)\((\d+), seq\(\$\.expression, '((?:[^'\\]|\\.)*)', \$\.expression\)\)", body):
+        out.append((m.group(3), int(m.group(2)), m.group(1)))
+    return out
+
+def compare(owner, ts):
+    """Returns (problems, pairs, resolved-count). Set equality first, then order."""
+    problems = []
+    resolved = []
+    covered = set()
+    for spell, level, side in ts:
+        key = ALIAS.get(spell, spell)
+        if key not in owner:
+            problems.append('tree-sitter operator %r has no identity in the owner projection' % spell)
+            continue
+        if owner[key][0] == 0:
+            problems.append('tree-sitter renders %r as an infix operator; the owner gives it no binding power' % spell)
+            continue
+        covered.add(key)
+        resolved.append((spell, level, side, owner[key][0], owner[key][1]))
+
+    # SET EQUALITY, the half that a nonempty check cannot see.
+    infix = {sp for sp, (prec, _) in owner.items() if prec != 0}
+    for sp in sorted(infix - covered - set(EXCLUDED)):
+        problems.append(
+            'owner infix identity %r is MISSING from tree-sitter binary_expression '
+            'and is not a declared projection exclusion' % sp)
+    for sp in sorted(set(EXCLUDED) - infix):
+        problems.append(
+            'declared exclusion %r is not an owner infix identity — the exclusion '
+            'list has drifted from the owner' % sp)
+
+    pairs = 0
+    for i in range(len(resolved)):
+        for j in range(i + 1, len(resolved)):
+            a, b = resolved[i], resolved[j]
+            pairs += 1
+            ts_ord = (a[1] > b[1]) - (a[1] < b[1])
+            au_ord = (a[3] > b[3]) - (a[3] < b[3])
+            if ts_ord != au_ord:
+                problems.append(
+                    'binding order: %r (ts %d / owner %d) vs %r (ts %d / owner %d)'
+                    % (a[0], a[1], a[3], b[0], b[1], b[3]))
+    for spell, level, side, prec, asc in resolved:
+        # tree-sitter has no nonassoc; `prec.left` is its only rendering of one.
+        want = {'left': 'left', 'right': 'right', 'nonassoc': 'left', 'none': 'left'}[asc]
+        if side != want:
+            problems.append('associativity: %r is prec.%s, owner says %s' % (spell, side, asc))
+    return problems, pairs, len(resolved)
+
+owner_path = os.path.join(root, 'src/grammar_role_table.zig')
+ts_path = os.path.join(root, 'ext/tree-sitter-idol/grammar.js')
+owner = owner_rows(owner_path)
+ts = ts_rows(ts_path)
+if not ts:
+    print('gap-145 consumer gate: FAIL tree-sitter binary_expression yielded 0 operators — '
+          'the reader is broken, and a broken reader reports agreement')
+    sys.exit(1)
+
+infix_total = len([1 for _, (prec, _) in owner.items() if prec != 0])
+problems, pairs, resolved = compare(owner, ts)
+print('  owner infix identities: %d = %d rendered + %d declared exclusions'
+      % (infix_total, infix_total - len(EXCLUDED), len(EXCLUDED)))
+print('  tree-sitter operators: %d, resolved against the owner: %d, pairs compared: %d'
+      % (len(ts), resolved, pairs))
+print('  declared compat spellings sharing one identity: %s'
+      % ', '.join('%s->%s' % kv for kv in sorted(ALIAS.items())))
+
+# POSITIVE CONTROLS. Two, because the two failure modes are independent: a row
+# that MOVED and a row that VANISHED. The second one is here because the first
+# version of this check had only the nonempty guard, and a deleted operator
+# passed it.
+planted_move = [(sp, (99 if sp == '..' else lv), a) for (sp, lv, a) in ts]
+ctl_move, _, _ = compare(owner, planted_move)
+if not any(p.startswith('binding order') for p in ctl_move):
+    print('gap-145 consumer gate: FAIL the comparator did not see a planted inversion — '
+          'it cannot fail, so its pass means nothing')
+    sys.exit(1)
+
+planted_drop = [(sp, lv, a) for (sp, lv, a) in ts if sp != '^']
+ctl_drop, _, _ = compare(owner, planted_drop)
+if not any(p.startswith('owner infix identity') for p in ctl_drop):
+    print("gap-145 consumer gate: FAIL the comparator did not see a planted DELETION of "
+          "'^' — an editor grammar can lose an operator and still report agreement")
+    sys.exit(1)
+print('  positive controls: planted inversion detected (%d finding(s)); '
+      'planted deletion of %r detected (%d finding(s))'
+      % (len(ctl_move), '^', len(ctl_drop)))
+
+if problems:
+    for p in problems:
+        print('gap-145 consumer gate: FAIL tree-sitter vs lib/compiler/token.id — %s' % p)
+    sys.exit(1)
+print('  tree-sitter operator table agrees with lib/compiler/token.id on every pair, '
+      'and covers every owner infix identity')
+sys.exit(0)
+PY
+ts_status=$?
+examined=$((examined + 1))
+if [ "$ts_status" -ne 0 ]; then
+    bad 'tree-sitter is a second grammar authority that disagrees with lib/compiler/token.id'
+fi
+
+# ── 3b. the quote-blind arm count is a CEILING that falls ───────────────────
+#
+# 34 `.quoted =>` arms; 12 read the producer quote. The other 22 are mostly
+# span, truthiness and emit-side realization and carry no text/byte claim, so
+# this is not a demand for zero today. It is a demand that the number not GROW
+# while GAP-145 is open, and it is COUNTED on every run rather than asserted in
+# a comment, because every count this project wrote down as prose has decayed.
+#
+# Lower the ceiling as arms are converted. The pattern is
+# `src/dnir_lower.zig` `graphTextConst`, which reads `sourceQuoteValue` off the
+# graph instead of assuming text. Raising it is the edit that must be argued
+# for.
+QUOTE_BLIND_CEILING=22
+
+arms=$(grep -h '^[[:space:]]*\(\.[a-z_, .]*\)\?\.quoted =>' "$ROOT"/src/*.zig | wc -l | tr -d ' ')
+# `.quoted` CONTAINS `.quote`, so a naive `grep -c '\.quote'` matches every arm
+# and reports 0 blind ones. It did, on the first run of this check. `[^d]` is
+# what separates reading the fact from naming the node.
+observing=$(grep -h '^[[:space:]]*\(\.[a-z_, .]*\)\?\.quoted =>' "$ROOT"/src/*.zig | grep -cE '\.quote[^d]|Quote|graphTextConst')
+blind=$((arms - observing))
+examined=$((examined + 1))
+if [ "$arms" -eq 0 ]; then
+    bad 'the quoted-arm census matched nothing — a reader that examines zero subjects reports agreement'
+else
+    printf '  quoted arms: %s, observing the producer quote: %s, blind: %s (ceiling %s)\n' \
+        "$arms" "$observing" "$blind" "$QUOTE_BLIND_CEILING"
+    if [ "$blind" -gt "$QUOTE_BLIND_CEILING" ]; then
+        bad "quote-blind .quoted arms ROSE to $blind, ceiling $QUOTE_BLIND_CEILING"
+    fi
+fi
+
+# ── 4. the identity-count parity probe must be able to run ──────────────────
+
+if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
+    examined=$((examined + 1))
+    if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then
+        bad 'tools/parity/grammar reports drift between host TokenKind identity and the generated projection'
+    fi
+fi
 
 if [ "$violations" -eq 0 ]; then
     printf 'gap-145 consumer gate: PASS (%d check(s))\n' "$examined"

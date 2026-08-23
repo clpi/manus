@@ -31,7 +31,8 @@
 #   quoted string tokens      one template, two quote characters.
 #   binary and unary operators  one table of spelling, level and
 #                             associativity — which is what a precedence
-#                             table IS — checked against grammar.md §2.
+#                             table IS. The levels are the ranks of
+#                             roleprecedence in lib/compiler/token.id.
 #
 # THE CHECK FOUND A REAL DEFECT THE DAY IT WAS WRITTEN, which is the argument
 # for the whole approach. The authored table numbered `or` 11 and `^` 4, and
@@ -43,12 +44,27 @@
 # `prec.left` lines against Lua by eye. A table that is DATA gets compared;
 # a table that is code gets read past.
 #
-# WHAT IS CHECKED AGAINST THE SPEC BUT NOT PROJECTED FROM IT: the operator
-# table is compared, adjacent pair by adjacent pair, against §2, and every
-# divergence is PRINTED. The emitted bytes deliberately do NOT depend on
-# grammar.md: docs/spec is edited by other sessions, and a byte-identity gate
-# that an unrelated documentation commit can redden is a gate people learn to
-# skip. The report is the link; making it load-bearing needs §3 first.
+# WHERE THE OPERATOR TABLE IS CHECKED, and why not here. It used to be checked
+# against docs/spec/grammar.md §2 — a file whose own first paragraph says it
+# "is not a grammar authority and must not be used to hand-build parser
+# tables" — and the comparison walked ADJACENT ROWS ONLY. Both halves were
+# wrong, and together they reported 0 divergences while 6 pairs of 276
+# disagreed with the real owner, `lib/compiler/token.id`. The §2 reader,
+# `specrows`, and the `spec` row are deleted rather than repaired: a second
+# place that answers "which binds tighter" is the thing GAP-145 is counting.
+#
+# The check now runs against the ARTIFACT, from the owner's own generated
+# projection, over every pair, with a planted inversion as its positive
+# control:
+#
+#     sh gate/gap-145-consumer.sh
+#
+# That matters because this generator cannot currently execute at all:
+# `slurp` uses `f:read("a")` and the direct backend refuses with
+# DNB001 method-unresolved:read, so `zig build treesitter-projection` — the
+# byte-identity control on this projection — has been dead. A control that
+# cannot run is how the tracked grammar.js acquired hand-authored GAP-145
+# comment and literal identities this generator does not emit.
 #
 # THE OFFSIDE LAYER IS NOT EMITTED AND CANNOT BE. grammar.md §1 defines
 # NEWLINE / INDENT / DEDENT. tree-sitter has no offside layer; it needs an
@@ -75,7 +91,6 @@
 # usually a broken gate, so every path here is positive-controlled).
 
 grammarpath = "ext/tree-sitter-idol/grammar.js"
-specpath = "docs/spec/grammar.md"
 markbegin = "@@residue:begin"
 markend = "@@residue:end"
 
@@ -163,10 +178,10 @@ banner: str = (count: i64)
     b = "{b} *                                 delimiter is computed from the level\n"
     b = "{b} *   double / single quoted string ONE template, two quote characters\n"
     b = "{b} *   binary_expression             one table of spelling, level and\n"
-    b = "{b} *   unary_expression              associativity, compared pair by pair\n"
-    b = "{b} *                                 against docs/spec/grammar.md §2 with every\n"
-    b = "{b} *                                 divergence PRINTED. That comparison is how\n"
-    b = "{b} *                                 the inverted precedence table was found.\n"
+    b = "{b} *   unary_expression              associativity. The levels are the RANKS\n"
+    b = "{b} *                                 of roleprecedence in lib/compiler/token.id,\n"
+    b = "{b} *                                 the one grammar-fact owner. Verified by\n"
+    b = "{b} *                                 gate/gap-145-consumer.sh over EVERY pair.\n"
     b = "{b} *   comment / helpers             the tail registry\n"
     b = "{b} *\n"
     b = "{b} * NOT GENERATED FROM DOC EBNF, and why:\n"
@@ -1408,17 +1423,38 @@ tokens: str = ()
 spell: str = ()
     "or and < > <= >= ~= != == in | & ~ << >> |> cat + - * / // % ^"
 
-# Tree-sitter binding power. Tighter binds higher. §2 order, translated:
-# ^ 13 · unary 12 · * / // % 11 · + - 10 · << >> 9 · & 8 · ~ | 7 · cat 6 ·
-# comparisons and `in` 5 · and 4 · or 3 · |> 2.
+# Tree-sitter binding power. Tighter binds higher. These are the RANKS of
+# `roleprecedence` in `lib/compiler/token.id`, the one grammar-fact owner —
+# not a translation of a documentation table.
+#
+# |> 1 · or 2 · and 3 · comparisons and `in` 4 · | 5 · ~ 6 · & 7 · << >> 8 ·
+# cat 9 · + - 10 · * / // % 11 · unary 12 · ^ 13
+#
+# WHAT MOVED, and why it was invisible. The previous row put `cat` at 6 —
+# LOOSER than `|`, `~`, `&` and the shifts — while the owner gives
+# `roleprecedence(kindconcat) = 16`, tighter than all five. So `a | b .. c`
+# grouped as `(a | b) .. c` in every editor and as `a | (b .. c)` in the
+# compiler. `~` was tied with `|` where the owner separates them.
+#
+# The in-file check could not see any of it: it compared ADJACENT ROWS ONLY,
+# and `cat` and `|` are fourteen rows apart. Six pairs of 276 diverged and the
+# report said zero. The authority comparison now lives where it can be run
+# against the ARTIFACT rather than against this table:
+#
+#     sh gate/gap-145-consumer.sh
+#
+# which reads `src/grammar_role_table.zig` — the generated projection of the
+# owner — and compares EVERY PAIR, with a planted inversion as its positive
+# control.
 level: str = ()
-    "3 4 5 5 5 5 5 5 5 5 7 8 7 9 9 2 6 10 10 11 11 11 11 13"
+    "2 3 4 4 4 4 4 4 4 4 5 7 6 8 8 1 9 10 10 11 11 11 11 13"
 
-spec: str = ()
-    "12 11 10 10 10 10 10 10 10 0 8 7 8 6 6 0 9 5 5 4 4 0 4 3"
-
+# `roleassoc` in the owner: 1 left, 2 right, 3 nonassoc. tree-sitter has no
+# nonassoc, so the eight comparison identities the owner marks nonassoc are
+# rendered `prec.left`; `cat` and `^` are the owner's two right-associative
+# identities and `cat` was rendered left here until 2026-08-23.
 assoc: str = ()
-    "left left left left left left left left left left left left left left left left left left left left left left left right"
+    "left left left left left left left left left left left left left left left left right left left left left left left right"
 
 field: str = (row: str, n: i64)
     parts = row:split(" ")
@@ -1524,37 +1560,28 @@ tail: str = ()
     b = "{b}}\n"
     b
 
-# ── The spec cross-check ─────────────────────────────────────────────────────
+# ── The row-parity control ───────────────────────────────────────────────────
 #
-# Reads docs/spec/grammar.md §2 and reports, per adjacent pair of operators,
-# whether the tree-sitter table and the normative table agree on WHICH BINDS
-# TIGHTER. Compared by order, not by value, because the two tables count in
-# opposite directions. Nothing here changes a byte of the output.
-
-specrows: i64 = (body: str)
-    rows = body:split("\n")
-    seen: i64 = 0
-    i: i64 = 1
-    while i <= rows:len()
-        row: str = rows[i]
-        two: str = row:sub(1, 2)
-        one: str = row:sub(1, 1)
-        digit: bool = one == "1" or one == "2" or one == "3" or one == "4" or one == "5"
-        digit = digit or one == "6" or one == "7" or one == "8" or one == "9"
-        if digit and (two:sub(2, 2) == " " or two:sub(2, 2) == "0" or two:sub(2, 2) == "1" or two:sub(2, 2) == "2" or two:sub(2, 2) == "3" or two:sub(2, 2) == "4")
-            seen += 1
-        i += 1
-    seen
+# The operator rows are parallel, and parallel rows that drift silently assign
+# the wrong precedence to the wrong operator. That is the whole failure mode a
+# table-as-data is meant to remove, so it is refused here before a byte is
+# emitted.
+#
+# THIS IS NOT AN AUTHORITY COMPARISON, and it no longer pretends to be. What
+# stood here read docs/spec/grammar.md §2 — which opens by saying it is not a
+# grammar authority — and compared adjacent rows only. It printed 0
+# divergences while 6 pairs of 276 disagreed with `lib/compiler/token.id`.
+# `gate/gap-145-consumer.sh` does that comparison now, against the emitted
+# artifact, from the owner's generated projection, over every pair.
 
 report: i64 = ()
     sp: str = spell()
     lv: str = level()
-    sc: str = spec()
     ac: str = assoc()
     bad: i64 = 0
 
     n: i64 = width(sp)
-    if width(lv) != n or width(sc) != n or width(ac) != n
+    if width(lv) != n or width(ac) != n
         print("treesitter emit: FAIL — the operator rows are not the same length.")
         print("  Parallel rows that drift silently assign the wrong precedence to the")
         print("  wrong operator, which is the exact defect this table was written to")
@@ -1562,41 +1589,9 @@ report: i64 = ()
         bad = 3
 
     if bad == 0
-        body: str = slurp(specpath)
-        rows: i64 = specrows(body)
-        if rows == 0
-            print("treesitter emit: FAIL — docs/spec/grammar.md yielded 0 precedence rows.")
-            print("  The §2 reader is broken, and a broken reader reports agreement.")
-            bad = 3
-        if bad == 0
-            nrows: str = rows:to(str)
-            nops: str = n:to(str)
-            print("  operators in the table: {nops}")
-            print("  §2 precedence rows read from docs/spec/grammar.md: {nrows}")
-            flips: i64 = 0
-            unlisted: i64 = 0
-            i: i64 = 1
-            while i < n
-                sa: i64 = to(i64)(field(sc, i))
-                sb: i64 = to(i64)(field(sc, i + 1))
-                if sa == 0 or sb == 0
-                    unlisted += 1
-                else
-                    la: i64 = to(i64)(field(lv, i))
-                    lb: i64 = to(i64)(field(lv, i + 1))
-                    if la != lb
-                        tighter: bool = la > lb
-                        spectighter: bool = sa < sb
-                        if tighter != spectighter
-                            opa: str = field(sp, i)
-                            opb: str = field(sp, i + 1)
-                            print("  DIVERGENCE  `{opa}` vs `{opb}` — tree-sitter and §2 disagree on which binds tighter")
-                            flips += 1
-                i += 1
-            nflips: str = flips:to(str)
-            nunlisted: str = unlisted:to(str)
-            print("  adjacent pairs where §2 and this table disagree: {nflips}")
-            print("  adjacent pairs §2 does not list at all: {nunlisted}")
+        nops: str = n:to(str)
+        print("  operators in the table: {nops}")
+        print("  authority comparison: sh gate/gap-145-consumer.sh (all pairs, artifact side)")
     bad
 
 # ── Splice ───────────────────────────────────────────────────────────────────

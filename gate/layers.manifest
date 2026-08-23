@@ -33,7 +33,6 @@ TOKEN    token_view.zig
 TOKEN    token_semantic.zig
 TOKEN    token_classify_gen.zig
 TOKEN    keyword_bridge.zig
-TOKEN    lexical_identity.zig
 TOKEN    grammar_roles.zig
 TOKEN    grammar_role_table.zig
 TOKEN    authority_projection.zig

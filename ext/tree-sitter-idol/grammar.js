@@ -40,10 +40,10 @@
  *                                 delimiter is computed from the level
  *   double / single quoted string ONE template, two quote characters
  *   binary_expression             one table of spelling, level and
- *   unary_expression              associativity, compared pair by pair
- *                                 against docs/spec/grammar.md §2 with every
- *                                 divergence PRINTED. That comparison is how
- *                                 the inverted precedence table was found.
+ *   unary_expression              associativity. The levels are the RANKS
+ *                                 of roleprecedence in lib/compiler/token.id,
+ *                                 the one grammar-fact owner. Verified by
+ *                                 gate/gap-145-consumer.sh over EVERY pair.
  *   comment / helpers             the tail registry
  *
  * NOT GENERATED FROM DOC EBNF, and why:
@@ -1182,28 +1182,28 @@ module.exports = grammar({
     // ── Binary operators ──────────────────────────────────────────────
 
     binary_expression: $ => choice(
-      prec.left(3, seq($.expression, 'or', $.expression)),
-      prec.left(4, seq($.expression, 'and', $.expression)),
-      prec.left(5, seq($.expression, '<', $.expression)),
-      prec.left(5, seq($.expression, '>', $.expression)),
-      prec.left(5, seq($.expression, '<=', $.expression)),
-      prec.left(5, seq($.expression, '>=', $.expression)),
-      prec.left(5, seq($.expression, '~=', $.expression)),
+      prec.left(2, seq($.expression, 'or', $.expression)),
+      prec.left(3, seq($.expression, 'and', $.expression)),
+      prec.left(4, seq($.expression, '<', $.expression)),
+      prec.left(4, seq($.expression, '>', $.expression)),
+      prec.left(4, seq($.expression, '<=', $.expression)),
+      prec.left(4, seq($.expression, '>=', $.expression)),
+      prec.left(4, seq($.expression, '~=', $.expression)),
       // `!=` is the SAME token as `~=` in src/lexer.zig (both lex to `.neq`),
       // and it is the spelling 271 tracked files actually use. Without it
       // `a != nil` lexed as an unwrap_expression `a!` followed by `= nil`.
-      prec.left(5, seq($.expression, '!=', $.expression)),
-      prec.left(5, seq($.expression, '==', $.expression)),
-      prec.left(5, seq($.expression, 'in', $.expression)),
-      prec.left(7, seq($.expression, '|', $.expression)),
+      prec.left(4, seq($.expression, '!=', $.expression)),
+      prec.left(4, seq($.expression, '==', $.expression)),
+      prec.left(4, seq($.expression, 'in', $.expression)),
+      prec.left(5, seq($.expression, '|', $.expression)),
       // `&` (amp) and binary `~` (xor) are in the lexer's token table and were
       // not in this one; `|` alone was.
-      prec.left(8, seq($.expression, '&', $.expression)),
-      prec.left(7, seq($.expression, '~', $.expression)),
-      prec.left(9, seq($.expression, '<<', $.expression)),
-      prec.left(9, seq($.expression, '>>', $.expression)),
-      prec.left(2, seq($.expression, '|>', $.expression)),
-      prec.left(6, seq($.expression, '..', $.expression)),
+      prec.left(7, seq($.expression, '&', $.expression)),
+      prec.left(6, seq($.expression, '~', $.expression)),
+      prec.left(8, seq($.expression, '<<', $.expression)),
+      prec.left(8, seq($.expression, '>>', $.expression)),
+      prec.left(1, seq($.expression, '|>', $.expression)),
+      prec.right(9, seq($.expression, '..', $.expression)),
       prec.left(10, seq($.expression, '+', $.expression)),
       prec.left(10, seq($.expression, '-', $.expression)),
       prec.left(11, seq($.expression, '*', $.expression)),

@@ -161,72 +161,19 @@ pub const TokenKind = enum(u8) {
     compat_comment,
     compat_long_comment,
 
+    /// Source spelling of one identity, read from the generated projection of
+    /// the ONE grammar-fact owner (`lib/compiler/token.id` `kindspell`).
+    ///
+    /// This used to be a 60-arm switch here plus an `else` that fell through to
+    /// `token_semantic.entryForKind` for the keywords — two host tables
+    /// answering the one question `law.fact.producer.one` allows one producer
+    /// to answer, and neither of them the owner. Damaging `kindspell` in the
+    /// Idol owner and regenerating now changes what this compiler PRINTS;
+    /// `zig build grammar-projection` is the counterfactual.
+    ///
+    /// Ordinal in, spelling out. Nothing recognises FROM this string.
     pub fn spelling(self: TokenKind) []const u8 {
-        return switch (self) {
-            .name => "name",
-            .int_lit => "integer",
-            .float_lit => "float",
-            .text_lit => "text",
-            .bytes_lit => "bytes",
-            .compat_text_lit => "compat_text",
-            .compat_long_text_lit => "compat_long_text",
-            .lparen => "(",
-            .rparen => ")",
-            .lbracket => "[",
-            .rbracket => "]",
-            .lbrace => "{",
-            .rbrace => "}",
-            .plus => "+",
-            .minus => "-",
-            .star => "*",
-            .slash => "/",
-            .percent => "%",
-            .caret => "^",
-            .hash => "#",
-            .amp => "&",
-            .pipe => "|",
-            .lt => "<",
-            .gt => ">",
-            .assign => "=",
-            .tilde => "~",
-            .semi => ";",
-            .colon => ":",
-            .comma => ",",
-            .dot => ".",
-            .at => "@",
-            .question => "?",
-            .bang => "!",
-            .backtick => "`",
-            .concat => "..",
-            .dots => "...",
-            .hash_hash => "##",
-            .eq => "==",
-            .neq => "!=",
-            .leq => "<=",
-            .geq => ">=",
-            .lshift => "<<",
-            .rshift => ">>",
-            .idiv => "//",
-            .dcolon => "::",
-            .arrow => "->",
-            .pipe_gt => "|>",
-            .fat_arrow => "=>",
-            .plus_assign => "+=",
-            .minus_assign => "-=",
-            .star_assign => "*=",
-            .slash_assign => "/=",
-            .percent_assign => "%=",
-            .caret_assign => "^=",
-            .eof => "<eof>",
-            .shebang => "#!",
-            .comment => "#",
-            .compat_comment => "--",
-            .compat_long_comment => "--[[",
-            else => blk: {
-                const entry = @import("token_semantic.zig").entryForKind(self) orelse unreachable;
-                break :blk entry.text;
-            },
-        };
+        return @import("grammar_role_table.zig").rows[@intFromEnum(self)].spell;
     }
 };
 

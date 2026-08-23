@@ -7,7 +7,6 @@ test {
     _ = @import("conversion_law.zig");
     _ = @import("lexer.zig");
     _ = @import("lexer_bridge.zig");
-    _ = @import("lexical_identity.zig");
     _ = @import("lexer_dispatch.zig");
     _ = @import("launch_role.zig");
     _ = @import("home_resolve.zig");
