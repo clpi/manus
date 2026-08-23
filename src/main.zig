@@ -283,94 +283,96 @@ const BehaviourEnvClass = enum {
 /// flag gets classified in one place and not the other.
 pub const BehaviourEnvRow = struct { []const u8, BehaviourEnvClass };
 const behaviour_env_table = [_]BehaviourEnvRow{
-        // Read by the compiler, reporting only.
-        .{ "DUO_NATIVE_DIAG", .inert },
-        .{ "DUO_WHY_CONVERT", .inert },
-        .{ "DUO_SER", .inert },
-        .{ "DUO_GRAPH", .inert },
-        .{ "DUO_GRAPH_WRITE", .inert },
-        .{ "DUO_MODULE_PROMOTE_DIAG", .inert },
-        .{ "DUO_DNIR_TRACE", .inert },
-        .{ "DUO_TRACE", .inert },
-        .{ "DUO_TRACE_RICH", .inert },
-        .{ "DUO_DEBUG", .inert },
-        .{ "DUO_DEBUG_DEPTH", .inert },
-        .{ "DUO_HINTS", .inert },
-        .{ "DUO_INFO", .inert },
-        .{ "DUO_PLAIN_DIAG", .inert },
-        .{ "DUO_TEST_REPORT", .inert },
-        .{ "DUO_BUILD_REPORT", .inert },
-        .{ "DUO_COLOR", .inert },
-        .{ "DUO_WAIST_REPORT", .inert },
-        .{ "IDOL_IFCONV_REPORT", .inert },
-        .{ "IDOL_IFCONV_TRACE", .inert },
-        .{ "IDOL_TRACE", .inert },
-        // Not read by the compiler at all — build harness and lock plumbing.
-        // Listed so an ordinary gate run does not lose the cache to a name the
-        // compiler never consults.
-        .{ "IDOL_BIN", .inert },
-        .{ "IDOL_BUILD_LOCK", .inert },
-        .{ "IDOL_LOCK_HELD", .inert },
-        .{ "IDOL_BUILD_MODE", .inert },
-        .{ "IDOL_NATIVE", .inert },
-        .{ "IDOL_RM_STATE", .inert },
-        .{ "IDOL_RMDIR_STATE", .inert },
-        // In the key. See `buildCacheKey`.
-        .{ "IDOL_UNROLL", .modelled },
-        .{ "DUO_NO_MODULE_PROMOTE", .modelled },
-        // Changes the artifact, not in the key: decline. Each of these is a
-        // measurement waiting to read 1.00x against itself.
-        .{ "DUO_PROVENANCE", .affects },
-        .{ "DUO_TRANSFORM_GATE", .affects },
-        .{ "DUO_EMIT_MANIFEST", .affects },
-        .{ "DUO_EMIT_PROOF", .affects },
-        .{ "IDOL_DIVZERO_GUARD_ALWAYS", .affects },
-        .{ "IDOL_FLOOR_FIXUP_ALWAYS", .affects },
-        .{ "IDOL_UNSAFE_TRUNC_DIVREM", .affects },
-        .{ "IDOL_HOME_BUDGET", .affects },
-        // MEASURED, not assumed: with a RUNTIME divisor this flag replaces the
-        // eight-instruction floored correction with a five-instruction one, and
-        // it was classified `.inert` here until the byte comparison was run on a
-        // source that actually reaches a division. A first probe source folded
-        // its divisor to a constant, took the magic-multiply path, and reported
-        // the flag inert — which is why a `.inert` row is a claim about the
-        // flag's implementation and not about one program.
-        .{ "IDOL_PROBE_NONNEG_DIVISOR", .affects },
-        // `DUO_BENCH_BACKEND` only reaches bench mode, which `cacheable`
-        // already excludes; classified `.affects` so the exclusion does not
-        // rest on that one call site staying true.
-        .{ "DUO_BENCH_BACKEND", .affects },
-        // Sets `dnir_lower.module_promote_probe`, which only COUNTS the loops a
-        // widened syntactic region would reach; `dnir_lower.zig:1057` states it
-        // "returns nothing lowering reads" and `:1326` is the single early
-        // return that makes that true. Byte-compared inert on the runtime-bound
-        // reduce kernel that `IDOL_UNROLL` moves. It was unclassified until
-        // now, which cost the cache on every probe run without buying safety
-        // this row does not also buy.
-        .{ "DUO_MODULE_PROMOTE_PROBE", .inert },
-        // Set by `build.zig:291` for the C-realizer build step and never read
-        // by the compiler; listed so that step keeps its cache.
-        .{ "IDOL_C_REALIZER_COMPILER", .inert },
-        // ---- NO PREFIX, AND THAT IS EXACTLY WHY THEY ARE LISTED ----
-        // `surveyBehaviourEnv` can only decline on the two prefixes: it walks
-        // the whole environment, and a rule that declined on any unclassified
-        // NAME would decline on `PATH`. So for unprefixed inputs the closure is
-        // not the runtime default -- it is this table plus `gate/envcache.sh`
-        // §1, which enumerates every env read in `src/` regardless of prefix
-        // and FAILS on one that is not classified here. The ratchet is the
-        // gate; the rows below are what the gate ratchets against.
-        //
-        // A code-affecting unprefixed input must therefore be `.modelled` --
-        // hashed into the key -- because declining is not available to it.
-        .{ "SDKROOT", .modelled },
-        // Selects `scratch.root()`, which is WHERE the cache lives. It chooses
-        // which cache answers, never what the artifact contains, and hashing it
-        // would give every TMPDIR its own entry for identical bytes.
-        .{ "TMPDIR", .inert },
-        .{ "NO_COLOR", .inert },
-        // Read only by `token_classify_gen`, reached from `token-tables emit`,
-        // which writes a generated source file and compiles nothing.
-        .{ "EMIT_CLASSIFY_C", .inert },
+    // Read by the compiler, reporting only.
+    .{ "DUO_NATIVE_DIAG", .inert },
+    .{ "DUO_WHY_CONVERT", .inert },
+    .{ "DUO_SER", .inert },
+    .{ "DUO_GRAPH", .inert },
+    .{ "DUO_GRAPH_WRITE", .inert },
+    .{ "DUO_MODULE_PROMOTE_DIAG", .inert },
+    .{ "DUO_DNIR_TRACE", .inert },
+    .{ "DUO_TRACE", .inert },
+    .{ "DUO_TRACE_RICH", .inert },
+    .{ "DUO_DEBUG", .inert },
+    .{ "DUO_DEBUG_DEPTH", .inert },
+    .{ "DUO_HINTS", .inert },
+    .{ "DUO_INFO", .inert },
+    .{ "DUO_PLAIN_DIAG", .inert },
+    .{ "DUO_TEST_REPORT", .inert },
+    .{ "DUO_BUILD_REPORT", .inert },
+    .{ "DUO_COLOR", .inert },
+    .{ "DUO_WAIST_REPORT", .inert },
+    .{ "IDOL_IFCONV_REPORT", .inert },
+    .{ "IDOL_IFCONV_TRACE", .inert },
+    .{ "IDOL_TIGHTDEF_REPORT", .inert },
+    .{ "IDOL_TRACE", .inert },
+    // Not read by the compiler at all — build harness and lock plumbing.
+    // Listed so an ordinary gate run does not lose the cache to a name the
+    // compiler never consults.
+    .{ "IDOL_BIN", .inert },
+    .{ "IDOL_BUILD_LOCK", .inert },
+    .{ "IDOL_LOCK_HELD", .inert },
+    .{ "IDOL_BUILD_MODE", .inert },
+    .{ "IDOL_NATIVE", .inert },
+    .{ "IDOL_RM_STATE", .inert },
+    .{ "IDOL_RMDIR_STATE", .inert },
+    // In the key. See `buildCacheKey`.
+    .{ "IDOL_UNROLL", .modelled },
+    .{ "DUO_NO_MODULE_PROMOTE", .modelled },
+    // Changes the artifact, not in the key: decline. Each of these is a
+    // measurement waiting to read 1.00x against itself.
+    .{ "DUO_PROVENANCE", .affects },
+    .{ "DUO_TRANSFORM_GATE", .affects },
+    .{ "DUO_EMIT_MANIFEST", .affects },
+    .{ "DUO_EMIT_PROOF", .affects },
+    .{ "IDOL_DIVZERO_GUARD_ALWAYS", .affects },
+    .{ "IDOL_FLOOR_FIXUP_ALWAYS", .affects },
+    .{ "IDOL_UNSAFE_TRUNC_DIVREM", .affects },
+    .{ "IDOL_HOME_BUDGET", .affects },
+    .{ "IDOL_NO_TIGHTDEF", .affects },
+    // MEASURED, not assumed: with a RUNTIME divisor this flag replaces the
+    // eight-instruction floored correction with a five-instruction one, and
+    // it was classified `.inert` here until the byte comparison was run on a
+    // source that actually reaches a division. A first probe source folded
+    // its divisor to a constant, took the magic-multiply path, and reported
+    // the flag inert — which is why a `.inert` row is a claim about the
+    // flag's implementation and not about one program.
+    .{ "IDOL_PROBE_NONNEG_DIVISOR", .affects },
+    // `DUO_BENCH_BACKEND` only reaches bench mode, which `cacheable`
+    // already excludes; classified `.affects` so the exclusion does not
+    // rest on that one call site staying true.
+    .{ "DUO_BENCH_BACKEND", .affects },
+    // Sets `dnir_lower.module_promote_probe`, which only COUNTS the loops a
+    // widened syntactic region would reach; `dnir_lower.zig:1057` states it
+    // "returns nothing lowering reads" and `:1326` is the single early
+    // return that makes that true. Byte-compared inert on the runtime-bound
+    // reduce kernel that `IDOL_UNROLL` moves. It was unclassified until
+    // now, which cost the cache on every probe run without buying safety
+    // this row does not also buy.
+    .{ "DUO_MODULE_PROMOTE_PROBE", .inert },
+    // Set by `build.zig:291` for the C-realizer build step and never read
+    // by the compiler; listed so that step keeps its cache.
+    .{ "IDOL_C_REALIZER_COMPILER", .inert },
+    // ---- NO PREFIX, AND THAT IS EXACTLY WHY THEY ARE LISTED ----
+    // `surveyBehaviourEnv` can only decline on the two prefixes: it walks
+    // the whole environment, and a rule that declined on any unclassified
+    // NAME would decline on `PATH`. So for unprefixed inputs the closure is
+    // not the runtime default -- it is this table plus `gate/envcache.sh`
+    // §1, which enumerates every env read in `src/` regardless of prefix
+    // and FAILS on one that is not classified here. The ratchet is the
+    // gate; the rows below are what the gate ratchets against.
+    //
+    // A code-affecting unprefixed input must therefore be `.modelled` --
+    // hashed into the key -- because declining is not available to it.
+    .{ "SDKROOT", .modelled },
+    // Selects `scratch.root()`, which is WHERE the cache lives. It chooses
+    // which cache answers, never what the artifact contains, and hashing it
+    // would give every TMPDIR its own entry for identical bytes.
+    .{ "TMPDIR", .inert },
+    .{ "NO_COLOR", .inert },
+    // Read only by `token_classify_gen`, reached from `token-tables emit`,
+    // which writes a generated source file and compiles nothing.
+    .{ "EMIT_CLASSIFY_C", .inert },
 };
 
 fn behaviourEnvClass(name: []const u8) BehaviourEnvClass {
