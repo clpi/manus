@@ -576,6 +576,7 @@ const usage =
     \\  --observer <debugger|profiler|reflection|mcp>  demand an inspection observer
     \\                    (HPLS §11; repeatable). Costs realization freedoms — see gate/recon.sh
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
+    \\  --no-cache        compile without reading or writing the physical build cache
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
     \\  --shared-memory   enable WASM shared memory (-matomics -mbulk-memory; wasm32-wasi only)
     \\  --link <lib>      link against a C library (e.g. --link raylib; repeatable)
@@ -688,6 +689,7 @@ fn mainInner(init: std.process.Init) !void {
     var no_color = false;
     var verbose_count: u8 = 0;
     var load_chunk = false;
+    var no_cache = false;
     var lib_mode = false;
     var pgo = false;
     var shared_mem = false;
@@ -769,6 +771,15 @@ fn mainInner(init: std.process.Init) !void {
             if (!global_backend_explicit) compile_backend = "direct";
         } else if (std.mem.eql(u8, arg, "--load-chunk")) {
             load_chunk = true;
+        } else if (std.mem.eql(u8, arg, "--no-cache")) {
+            if (no_cache) {
+                term.err("--no-cache specified more than once", .{});
+                std.process.exit(2);
+            }
+            no_cache = true;
+        } else if (std.mem.startsWith(u8, arg, "--no-cache=")) {
+            term.err("--no-cache takes no value", .{});
+            std.process.exit(2);
         } else if (std.mem.eql(u8, arg, "--lib")) {
             // Library mode: compile @export functions as WASM exports,
             // skip main() / _start, for use with wasmtime WAST testing.
@@ -837,6 +848,11 @@ fn mainInner(init: std.process.Init) !void {
     }
     forwarded_program_args = forwarded_args.items;
     if (args.len > 0) self_argv0 = args[0];
+
+    if (no_cache and !std.mem.eql(u8, cmd, "compile") and !std.mem.eql(u8, cmd, "run")) {
+        term.err("--no-cache is valid only with compile or run", .{});
+        std.process.exit(2);
+    }
 
     if (global_bench_profile_cli and global_backend_explicit) {
         const selected = backend_identity.Backend.parse(compile_backend) orelse {
@@ -1129,11 +1145,11 @@ fn mainInner(init: std.process.Init) !void {
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, global_bench_profile_cli, null, link_flags.items, entry_override);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, global_bench_profile_cli, null, link_flags.items, entry_override, !no_cache);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override, !no_cache);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{}, entry_override);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{}, entry_override, true);
     } else if (std.mem.eql(u8, cmd, "fmt")) {
         try do_fmt(alloc, io, file);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
@@ -1545,7 +1561,7 @@ fn do_project_check(alloc: std.mem.Allocator, io: Io, t: build_framework.Target)
     if (t.src) |src| {
         const dummy = try scratch.path(alloc, "duo_check_{s}.out", .{std.fs.path.stem(src)});
         defer alloc.free(dummy);
-        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, false, false, false, false, false, false, false, null, t.link, null);
+        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, false, false, false, false, false, false, false, null, t.link, null, true);
         term.ok("'{s}' ok", .{src});
         return;
     }
@@ -1671,7 +1687,7 @@ fn run_test_sources(
         else
             try scratch.path(alloc, "duo_{s}_{d}.test.out", .{ std.fs.path.stem(file), idx });
         defer if (!(output_file != null and sources.len == 1)) alloc.free(out);
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null, true);
         const code = try run_pretty_test_runner(alloc, io, out, bench_only);
         if (code != 0) failures += 1;
     }
@@ -2289,7 +2305,7 @@ fn run_shell_line(
     defer term.build_report = prev_report;
 
     const compile_started = Io.Timestamp.now(io, .awake);
-    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", backend_mode, false, false, verbose, false, false, false, false, false, false, null, &.{}, null);
+    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", backend_mode, false, false, verbose, false, false, false, false, false, false, null, &.{}, null, true);
     const compile_elapsed: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
 
     try run_shell_binary(io, out_path);
@@ -2507,6 +2523,7 @@ fn do_project_build_one(
         null,
         merged_link,
         null,
+        true,
     );
     if (t.test_mode() and !run_after) {
         _ = try run_pretty_test_runner(alloc, io, out, false);
@@ -4828,6 +4845,7 @@ fn do_compile(
     test_filter: ?[]const u8,
     link_flags: []const []const u8,
     entry_override: ?[]const u8,
+    allow_build_cache: bool,
 ) !void {
     const compile_started = Io.Timestamp.now(io, .awake);
 
@@ -4849,7 +4867,7 @@ fn do_compile(
     // toolchain are also physical inputs. Until their exact witnessed
     // identities enter the key, reusing an artifact compiled without them
     // would be a wrong result.
-    const cacheable = !check_only and !test_mode and !bench_mode and !pgo and
+    const cacheable = allow_build_cache and !check_only and !test_mode and !bench_mode and !pgo and
         !lib_mode and !load_chunk and !shared_mem and link_flags.len == 0 and entry_override == null and
         std.mem.eql(u8, cc, "clang") and std.mem.indexOf(u8, target, "wasm") == null and
         outputHoldsAnArtifact(io, out_path);
@@ -5944,7 +5962,7 @@ const bash_completion =
     \\    prev="${COMP_WORDS[COMP_CWORD-1]}"
     \\
     \\    local commands="shell init build compile run check test bench prove dump-c completion help"
-    \\    local options="-o -O0 -O1 -O2 -O3 --cc --target --load-chunk --lib --pgo --shared-memory --link --filter --trace --info --hints --plain-diagnostics --debug --debug-depth --test-report --build-report --no-color -v --verbose -h --help"
+    \\    local options="-o -O0 -O1 -O2 -O3 --cc --target --load-chunk --no-cache --lib --pgo --shared-memory --link --filter --trace --info --hints --plain-diagnostics --debug --debug-depth --test-report --build-report --no-color -v --verbose -h --help"
     \\    local shells="bash zsh fish nu"
     \\    local targets="native wasm32-wasi"
     \\
@@ -6000,6 +6018,7 @@ const zsh_completion =
     \\    '--cc[C compiler]:compiler:_command_names'
     \\    '--target[target triple]:(native wasm32-wasi)'
     \\    '--load-chunk[compile as shared library for load()]'
+    \\    '--no-cache[compile without reading or writing the physical build cache]'
     \\    '--lib[compile as library]'
     \\    '--pgo[profile-guided optimization]'
     \\    '--shared-memory[enable WASM shared memory]'
@@ -6053,6 +6072,7 @@ const fish_completion =
     \\complete -c duo -l cc -r -d 'C compiler'
     \\complete -c duo -l target -x -a 'native wasm32-wasi' -d 'Compilation target'
     \\complete -c duo -l load-chunk -d 'Compile as shared library for load()'
+    \\complete -c duo -l no-cache -d 'Compile without reading or writing the physical build cache'
     \\complete -c duo -l lib -d 'Compile as library'
     \\complete -c duo -l pgo -d 'Profile-guided optimization'
     \\complete -c duo -l shared-memory -d 'Enable WASM shared memory'
@@ -6091,6 +6111,7 @@ const nu_completion =
     \\  --cc: string
     \\  --target: string@"nu-complete duo targets"
     \\  --load-chunk
+    \\  --no-cache
     \\  --lib
     \\  --pgo
     \\  --shared-memory
