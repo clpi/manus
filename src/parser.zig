@@ -1429,10 +1429,7 @@ pub const Parser = struct {
                 const attr = try self.parse_one_attribute();
                 // THE ALIAS TABLE DECIDES, not the literal `"c.type"`.
                 // Comparing the short spelling made type position the ONE place
-                // in the language where the canonical name is the broken one:
-                // `@comp.c.type("size_t")` — the spelling
-                // `warnDeprecatedAtQualified` tells you to write — was refused
-                // with "expected @c.type(...)", while the deprecated `@c.type`
+                // where one compatibility spelling was refused while another
                 // worked. Four spellings resolve to `__c_type`; all four now
                 // name the same descriptor here, as they already do everywhere
                 // else (`isAttachingCInterfaceAttribute` reads the same table).
@@ -1893,15 +1890,15 @@ pub const Parser = struct {
                 // GR-007: reject bare @const / @comptime / @comptime_expr /
                 // @compile_time up front with a directed hint, before attribute
                 // dispatch cascades a generic "expected 'name'" error (these
-                // spellings are keyword tokens). @(expr) is comptime eval; @comp.*
-                // are metaprogramming combinators.
+                // spellings are keyword tokens). The parser refuses them
+                // without electing another prefix directive as their replacement.
                 {
                     const ban_saved = self.lex.saveState();
                     _ = try self.adv(); // consume '@'
                     const after = try self.pk();
                     if (after.text.len > 0) {
                         if (Parser.bannedAtDirectiveSuggestion(after.text)) |sug| {
-                            term.locErr(tok.loc, "'@{s}' is not a Duo directive", .{after.text});
+                            term.locErr(tok.loc, "'@{s}' is not an Idol directive", .{after.text});
                             term.locHint(tok.loc, "{s}", .{sug});
                             return ParseError.ExpectedToken;
                         }
@@ -1996,7 +1993,7 @@ pub const Parser = struct {
             // THE ASSEMBLED NAME DECIDES, not the token path that assembled it.
             // This used to be a pre-pass that only fired when the FIRST segment
             // was literally `c` and the second literally `export`, so
-            // `@comp.c.export` — the canonical spelling — never set the flag and
+            // the `@comp.c.export` compatibility spelling never set the flag and
             // fell through to `is_known_attribute("comp.c.export")`, which does
             // not list it. Same defect as `isAttachingCInterfaceAttribute`'s
             // `c.call`: a literal restating part of the alias table, agreeing
@@ -4349,7 +4346,7 @@ pub const Parser = struct {
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
             } else {
                 if (tok.kind == .kw_comptime and self.idol_mode) {
-                    term.locErr(tok.loc, "'comptime' is not valid in .id files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
+                    term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
                 const op: ?ast.UnOp = switch (tok.kind) {
@@ -5627,7 +5624,7 @@ pub const Parser = struct {
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
             } else {
                 if (tok.kind == .kw_comptime and self.idol_mode) {
-                    term.locErr(tok.loc, "'comptime' is not valid in .id files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
+                    term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
                 const op: ?ast.UnOp = switch (tok.kind) {
@@ -7219,18 +7216,18 @@ pub const Parser = struct {
         return node;
     }
 
-    // GR-007: returns a redirect hint for deprecated/non-existent single-word
+    // GR-007: returns a refusal hint for deprecated/non-existent single-word
     // compile-time directives, or null if `qualified` is acceptable. Dotted paths
-    // (e.g. @comp.comptime.warn) are never matched here — only bare single words.
+    // are never matched here — only bare single words.
     fn bannedAtDirectiveSuggestion(qualified: []const u8) ?[]const u8 {
         const Entry = struct { name: []const u8, hint: []const u8 };
         const banned = [_]Entry{
-            .{ .name = "const", .hint = "compile-time values use '@(expr)'; module-level bindings like 'x = 5' are already immutable (see GR-007)" },
-            .{ .name = "comptime", .hint = "compile-time evaluation uses '@(expr)'; metaprogramming combinators use '@comp.*' e.g. @comp.map (see GR-007)" },
-            .{ .name = "comptime_expr", .hint = "compile-time evaluation uses '@(expr)'; e.g. '@(1 + 2 * 3)' (see GR-007)" },
-            .{ .name = "comptimeexpr", .hint = "compile-time evaluation uses '@(expr)'; e.g. '@(1 + 2 * 3)' (see GR-007)" },
-            .{ .name = "compile_time", .hint = "compile-time evaluation uses '@(expr)'; metaprogramming combinators use '@comp.*' (see GR-007)" },
-            .{ .name = "compiletime", .hint = "compile-time evaluation uses '@(expr)'; metaprogramming combinators use '@comp.*' (see GR-007)" },
+            .{ .name = "const", .hint = "prefix compiler directives have no canonical Idol spelling (see GR-007)" },
+            .{ .name = "comptime", .hint = "prefix compiler directives have no canonical Idol spelling (see GR-007)" },
+            .{ .name = "comptime_expr", .hint = "prefix compiler directives have no canonical Idol spelling (see GR-007)" },
+            .{ .name = "comptimeexpr", .hint = "prefix compiler directives have no canonical Idol spelling (see GR-007)" },
+            .{ .name = "compile_time", .hint = "prefix compiler directives have no canonical Idol spelling (see GR-007)" },
+            .{ .name = "compiletime", .hint = "prefix compiler directives have no canonical Idol spelling (see GR-007)" },
             // NOTE: '@constexpr' is intentionally NOT banned — it is a working
             // directive that folds pure expressions through the comptime evaluator.
         };
@@ -7244,18 +7241,18 @@ pub const Parser = struct {
         const l = (try self.expect(.at)).loc;
         // GR-007: reject @const / @comptime / @comptime_expr / @compile_time in
         // expression position too, before parse_at_path_segment errors generically
-        // on the keyword token. @(expr) is comptime eval; @comp.* are combinators.
+        // on the keyword token. Refusal does not elect a replacement directive.
         {
             const after = try self.pk();
             if (after.text.len > 0) {
                 if (Parser.bannedAtDirectiveSuggestion(after.text)) |sug| {
-                    term.locErr(l, "'@{s}' is not a Duo directive", .{after.text});
+                    term.locErr(l, "'@{s}' is not an Idol directive", .{after.text});
                     term.locHint(l, "{s}", .{sug});
                     return ParseError.ExpectedToken;
                 }
             }
         }
-        // @(expr) — compile-time eval (no name, immediate paren)
+        // Compatibility @(expr) route (no name, immediate paren).
         if ((try self.pk()).kind == .lparen) {
             _ = try self.adv(); // consume '('
             const operand = try self.parse_expr();
@@ -7267,10 +7264,9 @@ pub const Parser = struct {
         // it does not get a reader of its own; it is `parse_pack` with the
         // subject-elided stance, and the enclosing descriptor is the name.
         //
-        // The `.compile` wrapper STAYS, and that is a separate axis rather than
-        // a second mechanism: `@` also stages, and the 25 measured `= @{ … }`
-        // sites in the tree are frozen constant tables that depend on the
-        // staging. Where there is no enclosing descriptor, `home` is null and
+        // The transitional `.compile` wrapper preserves existing physical
+        // behavior until graph/world/stage facts replace this compatibility
+        // route. Where there is no enclosing descriptor, `home` is null and
         // the pack is honestly anonymous — §43 says the name is RECOVERED from
         // context, and at top level there is no context to recover it from.
         if ((try self.pk()).kind == .lbrace) {
@@ -7363,11 +7359,11 @@ pub const Parser = struct {
         if (at_builtin_internal_name(self, qualified)) |internal| {
             if (self.idol_mode) {
                 if (std.mem.eql(u8, qualified, "constexpr")) {
-                    term.locErr(l, "@constexpr is not valid in .id files. Use @(expr) for comptime evaluation.", .{});
+                    term.locErr(l, "@constexpr is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
                 if (std.mem.eql(u8, qualified, "comptime_if")) {
-                    term.locErr(l, "@comptime_if is not valid in .id files. Use if-expressions with @(expr) conditions.", .{});
+                    term.locErr(l, "@comptime_if is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
             }
@@ -7396,34 +7392,35 @@ pub const Parser = struct {
         return self.expect(.name);
     }
 
-    /// (P3-08): deprecation warnings for flat/legacy @-directive aliases in .id mode.
+    const compatibility_at_diagnostic = "@{s} is retained compatibility syntax; prefix compiler directives have no canonical Idol spelling";
+
+    /// Compatibility warnings for already-routed prefix directives in .id mode.
+    /// This diagnostic never creates a replacement spelling or semantic route.
     fn warnDeprecatedAtQualified(self: *Parser, loc: ast.Loc, qualified: []const u8) void {
         if (!self.idol_mode) return;
         if (std.mem.startsWith(u8, qualified, "meta.")) {
-            term.locWarn(loc, "warning: @meta.* is deprecated, use @comp.{s} instead", .{qualified["meta.".len..]});
+            term.locWarn(loc, compatibility_at_diagnostic, .{qualified});
             return;
         }
         if (std.mem.startsWith(u8, qualified, "compiler.")) {
-            term.locWarn(loc, "warning: @compiler.* is deprecated, use @comp.{s} instead", .{qualified["compiler.".len..]});
+            term.locWarn(loc, compatibility_at_diagnostic, .{qualified});
             return;
         }
         if (std.mem.eql(u8, qualified, "pipeline")) {
-            term.locWarn(loc, "warning: @pipeline is deprecated, use @comp.pipeline instead", .{});
+            term.locWarn(loc, compatibility_at_diagnostic, .{qualified});
             return;
         }
         if (std.mem.eql(u8, qualified, "emit")) {
-            term.locWarn(loc, "warning: @emit is deprecated, use @comp.c.emit instead", .{});
+            term.locWarn(loc, compatibility_at_diagnostic, .{qualified});
             return;
         }
         if (std.mem.startsWith(u8, qualified, "c.") and !std.mem.startsWith(u8, qualified, "comp.")) {
-            var buf: [128]u8 = undefined;
-            const replacement = std.fmt.bufPrint(&buf, "comp.{s}", .{qualified}) catch return;
-            term.locWarn(loc, "warning: @{s} is deprecated, use @{s} instead", .{ qualified, replacement });
+            term.locWarn(loc, compatibility_at_diagnostic, .{qualified});
             return;
         }
         if (legacy_directives.resolvePublic(qualified)) |entry| {
-            if (entry.canonical) |canonical| {
-                term.locWarn(loc, "warning: @{s} is deprecated, use @{s} instead", .{ entry.public, canonical });
+            if (entry.compatibility != null) {
+                term.locWarn(loc, compatibility_at_diagnostic, .{entry.public});
             }
         }
     }
@@ -9303,10 +9300,9 @@ test "parse error: unexpected token" {
     try testing.expectError(error.ExpectedToken, parseSource("if true", &arena));
 }
 
-test "parse: GR-007 rejects @const/@comptime/@comptime_expr/@compile_time with directed hint" {
-    // These bare spellings are NOT valid Duo directives (GR-007). Compile-time
-    // eval is @(expr); metaprogramming combinators are @comp.*. The parser must
-    // reject them with ParseError rather than accept or cascade a generic error.
+test "parse: GR-007 rejects @const/@comptime/@comptime_expr/@compile_time with a refusal" {
+    // These bare spellings are NOT valid directives (GR-007). The parser must
+    // reject them without electing replacement syntax or cascading a generic error.
     const banned = [_][]const u8{
         "@const x = 5",
         "@comptime y = 10",
@@ -9323,8 +9319,8 @@ test "parse: GR-007 rejects @const/@comptime/@comptime_expr/@compile_time with d
     }
 }
 
-test "parse: GR-007 does NOT reject @(expr) or working single-word builtins" {
-    // @(expr) comptime eval, @sizeof, @popcount must keep parsing.
+test "parse: GR-007 preserves already-routed compatibility forms" {
+    // This authority deletion does not change the existing parser routes.
     const ok = [_][]const u8{
         "y = @(1 + 2 * 3)",
         "print(@sizeof(i64))",
@@ -11266,7 +11262,7 @@ test "parse: a new-line @attribute is not an anchor on the line above" {
     try testing.expectEqual(@as(i64, 42), mod.body.stmts[0].assign.values[0].int_lit.val);
 }
 
-test "parse: duo mode legacy @comptime_fold warns" {
+test "parse: idol mode legacy @comptime_fold compatibility route remains parseable" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     _ = try parseDuoSource(
@@ -11274,12 +11270,31 @@ test "parse: duo mode legacy @comptime_fold warns" {
     , &arena);
 }
 
-test "parse: duo mode @c.emit warns toward @comp.c.emit" {
+test "parse: idol mode @c.emit compatibility route remains parseable" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     _ = try parseDuoSource(
         \\@c.emit("int x = 1;")
     , &arena);
+}
+
+test "parse: compatibility warning cannot claim a replacement or duplicate severity" {
+    const forbidden_replacement = "use " ++ "@comp";
+    try testing.expect(std.mem.indexOf(u8, Parser.compatibility_at_diagnostic, "retained compatibility syntax") != null);
+    try testing.expect(std.mem.indexOf(u8, Parser.compatibility_at_diagnostic, "no canonical Idol spelling") != null);
+    try testing.expect(std.mem.indexOf(u8, Parser.compatibility_at_diagnostic, forbidden_replacement) == null);
+    try testing.expect(std.mem.indexOf(u8, Parser.compatibility_at_diagnostic, "warning:") == null);
+}
+
+test "parse: parser source carries no forbidden prefix guidance" {
+    const parser_source = @embedFile("parser.zig");
+    const forbidden_replacement = "use " ++ "@comp";
+    const forbidden_combinator_claim = "@comp.* are " ++ "combinators";
+    try testing.expect(std.mem.indexOf(u8, parser_source, forbidden_replacement) == null);
+    try testing.expect(std.mem.indexOf(u8, parser_source, forbidden_combinator_claim) == null);
+
+    const planted_damage = "retired hint: " ++ forbidden_replacement ++ " instead";
+    try testing.expect(std.mem.indexOf(u8, planted_damage, forbidden_replacement) != null);
 }
 
 test "parse: @c.emit with combinator arg is expr_stmt not directive" {

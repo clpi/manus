@@ -1,44 +1,45 @@
-/// Parser-only legacy flat/underscore @-directive aliases.
-/// Each underscore form MUST carry a `canonical` dotted `@comp.*` replacement;
-/// `meta_module` tests scan this table so flat names cannot bypass the catalog guard.
+/// Parser-only compatibility transport for flat/underscore @-directive aliases.
+/// A dotted peer records an already-accepted compatibility route to the same
+/// internal handler. It is never a canonical-source recommendation: prefix
+/// compiler directives have no canonical Idol spelling.
 const std = @import("std");
 const meta_module = @import("meta_module.zig");
 
 pub const Entry = struct {
     public: []const u8,
     internal: []const u8,
-    /// Dotted `@comp.*` (or `hot`) replacement shown in deprecation warnings.
-    canonical: ?[]const u8 = null,
+    /// Existing dotted compatibility peer, retained only to prove route identity.
+    compatibility: ?[]const u8 = null,
 };
 
 pub const entries = [_]Entry{
     .{ .public = "constexpr", .internal = "__constexpr" },
-    // Legacy underscore spellings — each maps to canonical @comp.* (warn on use).
-    .{ .public = "comptime_if", .internal = "__comptimeif", .canonical = "comp.if" },
-    .{ .public = "comptime_fold", .internal = "__comptimefold", .canonical = "comp.fold" },
-    .{ .public = "comptime_for", .internal = "__comptimefor", .canonical = "comp.for" },
-    .{ .public = "compile_log", .internal = "__comptimeprint", .canonical = "comp.compile.log" },
-    .{ .public = "static_assert", .internal = "__static_assert", .canonical = "comp.assert" },
-    .{ .public = "typeof", .internal = "__typeof", .canonical = "comp.typeof" },
-    .{ .public = "type_name", .internal = "__type_name", .canonical = "comp.type.name" },
-    .{ .public = "type_id", .internal = "__type_id", .canonical = "comp.type.id" },
-    .{ .public = "is_type", .internal = "__is_type", .canonical = "comp.type.is" },
-    .{ .public = "fields", .internal = "__fields", .canonical = "comp.fields" },
-    .{ .public = "methods", .internal = "__methods", .canonical = "comp.methods" },
-    .{ .public = "concept_methods", .internal = "__concept_methods", .canonical = "comp.concepts.methods" },
-    .{ .public = "satisfies", .internal = "__satisfies", .canonical = "comp.satisfies" },
-    .{ .public = "bitfield", .internal = "__bitfield", .canonical = "comp.bit.field" },
-    .{ .public = "likely", .internal = "__likely", .canonical = "comp.hint.likely" },
-    .{ .public = "unlikely", .internal = "__unlikely", .canonical = "comp.hint.unlikely" },
-    .{ .public = "prefetch", .internal = "__prefetch", .canonical = "comp.hint.prefetch" },
-    .{ .public = "fence", .internal = "__fence", .canonical = "comp.hint.fence" },
-    .{ .public = "ctz", .internal = "__ctz", .canonical = "comp.bit.ctz" },
-    .{ .public = "clz", .internal = "__clz", .canonical = "comp.bit.clz" },
-    .{ .public = "popcount", .internal = "__popcount", .canonical = "comp.bit.popcount" },
-    .{ .public = "bswap", .internal = "__bswap", .canonical = "comp.bit.bswap" },
-    .{ .public = "rotl", .internal = "__rotl", .canonical = "comp.bit.rotl" },
-    .{ .public = "volatile", .internal = "__volatile", .canonical = "comp.hint.volatile" },
-    .{ .public = "hot_path", .internal = "__hot_path", .canonical = "hot" },
+    // Legacy underscore spellings retain their existing compatibility peers.
+    .{ .public = "comptime_if", .internal = "__comptimeif", .compatibility = "comp.if" },
+    .{ .public = "comptime_fold", .internal = "__comptimefold", .compatibility = "comp.fold" },
+    .{ .public = "comptime_for", .internal = "__comptimefor", .compatibility = "comp.for" },
+    .{ .public = "compile_log", .internal = "__comptimeprint", .compatibility = "comp.compile.log" },
+    .{ .public = "static_assert", .internal = "__static_assert", .compatibility = "comp.assert" },
+    .{ .public = "typeof", .internal = "__typeof", .compatibility = "comp.typeof" },
+    .{ .public = "type_name", .internal = "__type_name", .compatibility = "comp.type.name" },
+    .{ .public = "type_id", .internal = "__type_id", .compatibility = "comp.type.id" },
+    .{ .public = "is_type", .internal = "__is_type", .compatibility = "comp.type.is" },
+    .{ .public = "fields", .internal = "__fields", .compatibility = "comp.fields" },
+    .{ .public = "methods", .internal = "__methods", .compatibility = "comp.methods" },
+    .{ .public = "concept_methods", .internal = "__concept_methods", .compatibility = "comp.concepts.methods" },
+    .{ .public = "satisfies", .internal = "__satisfies", .compatibility = "comp.satisfies" },
+    .{ .public = "bitfield", .internal = "__bitfield", .compatibility = "comp.bit.field" },
+    .{ .public = "likely", .internal = "__likely", .compatibility = "comp.hint.likely" },
+    .{ .public = "unlikely", .internal = "__unlikely", .compatibility = "comp.hint.unlikely" },
+    .{ .public = "prefetch", .internal = "__prefetch", .compatibility = "comp.hint.prefetch" },
+    .{ .public = "fence", .internal = "__fence", .compatibility = "comp.hint.fence" },
+    .{ .public = "ctz", .internal = "__ctz", .compatibility = "comp.bit.ctz" },
+    .{ .public = "clz", .internal = "__clz", .compatibility = "comp.bit.clz" },
+    .{ .public = "popcount", .internal = "__popcount", .compatibility = "comp.bit.popcount" },
+    .{ .public = "bswap", .internal = "__bswap", .compatibility = "comp.bit.bswap" },
+    .{ .public = "rotl", .internal = "__rotl", .compatibility = "comp.bit.rotl" },
+    .{ .public = "volatile", .internal = "__volatile", .compatibility = "comp.hint.volatile" },
+    .{ .public = "hot_path", .internal = "__hot_path", .compatibility = "hot" },
 };
 
 pub fn resolvePublic(name: []const u8) ?Entry {
@@ -48,25 +49,20 @@ pub fn resolvePublic(name: []const u8) ?Entry {
     return null;
 }
 
-test "legacy_directives: underscore public names require canonical mapping" {
+test "legacy_directives: underscore ingress retains an explicit compatibility peer" {
     for (entries) |entry| {
         if (std.mem.indexOfScalar(u8, entry.public, '_') != null) {
-            try std.testing.expect(entry.canonical != null);
+            try std.testing.expect(entry.compatibility != null);
         }
     }
 }
 
-test "legacy_directives: canonical @comp.* forms registered in meta_module" {
+test "legacy_directives: compatibility peers preserve the exact internal route" {
+    var checked: usize = 0;
     for (entries) |entry| {
-        const canonical = entry.canonical orelse continue;
-        if (!std.mem.startsWith(u8, canonical, "comp.")) continue;
-        try std.testing.expect(meta_module.resolveBuiltin(canonical) != null);
+        const compatibility = entry.compatibility orelse continue;
+        try std.testing.expectEqualStrings(entry.internal, meta_module.resolveBuiltin(compatibility) orelse return error.MissingCompatibilityRoute);
+        checked += 1;
     }
-}
-
-test "legacy_directives: no underscore in canonical paths" {
-    for (entries) |entry| {
-        const canonical = entry.canonical orelse continue;
-        try std.testing.expect(std.mem.indexOfScalar(u8, canonical, '_') == null);
-    }
+    try std.testing.expect(checked > 0);
 }
