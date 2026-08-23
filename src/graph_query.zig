@@ -393,30 +393,50 @@ fn effectFreeApplications(
     return try sites.toOwnedSlice(alloc);
 }
 
-/// Relation bodies reachable from `body` through applications the graph proved
-/// effect-free, transitively — or null, meaning REFUSED. The entry relation is
-/// not included; every element is a distinct callee.
+/// Relation bodies and exact application occurrences reachable from `body`
+/// through applications the graph proved effect-free, transitively — or null,
+/// meaning REFUSED. The entry relation is not included; every `callee` is
+/// distinct. `sites` includes the entry's sites and every retained callee's
+/// sites, carrying the graph occurrence that `effectFreeApplications` already
+/// proved corresponds to the expression provenance.
 ///
+/// The compile-time evaluator consumes this query result directly. It must not
+/// throw the occurrence away and later recover it by asking the graph to scan
+/// `Node.ast_ref` for the expression again.
+pub const EffectFreeClosure = struct {
+    callees: []semantic_graph.id,
+    sites: []EffectFreeSite,
+
+    pub fn deinit(self: EffectFreeClosure, alloc: std.mem.Allocator) void {
+        alloc.free(self.callees);
+        alloc.free(self.sites);
+    }
+};
+
 /// The least fixpoint never promotes a recursive relation, so this closure
 /// cannot cycle through published facts; the visited set is kept anyway,
 /// because a query that relies on an invariant it does not check is how the
 /// invariant stops holding.
-pub fn effectFreeCalleeClosure(
+pub fn effectFreeClosure(
     graph: *const semantic_graph.SemanticGraph,
     alloc: std.mem.Allocator,
     caller: semantic_graph.id,
     body: *const ast.Block,
-) EffectQueryError!?[]semantic_graph.id {
+) EffectQueryError!?EffectFreeClosure {
     var visited: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
     errdefer visited.deinit(alloc);
+    var sites: std.ArrayListUnmanaged(EffectFreeSite) = .empty;
+    errdefer sites.deinit(alloc);
     var pending: std.ArrayListUnmanaged(semantic_graph.id) = .empty;
     defer pending.deinit(alloc);
 
     const entry = try effectFreeApplications(graph, alloc, caller, body) orelse {
         visited.deinit(alloc);
+        sites.deinit(alloc);
         return null;
     };
     defer alloc.free(entry);
+    try sites.appendSlice(alloc, entry);
     for (entry) |site| if (site.callee) |callee| try pending.append(alloc, callee);
 
     while (pending.items.len > 0) {
@@ -431,16 +451,45 @@ pub fn effectFreeCalleeClosure(
 
         const declaration = relationDeclaration(graph, callee) orelse {
             visited.deinit(alloc);
+            sites.deinit(alloc);
             return null;
         };
         const nested = try effectFreeApplications(graph, alloc, callee, &declaration.func.body) orelse {
             visited.deinit(alloc);
+            sites.deinit(alloc);
             return null;
         };
         defer alloc.free(nested);
+        try sites.appendSlice(alloc, nested);
         for (nested) |site| if (site.callee) |next_callee| try pending.append(alloc, next_callee);
     }
-    return try visited.toOwnedSlice(alloc);
+
+    const callees = try visited.toOwnedSlice(alloc);
+    errdefer alloc.free(callees);
+    return .{
+        .callees = callees,
+        .sites = try sites.toOwnedSlice(alloc),
+    };
+}
+
+/// Relation bodies reachable from `body` through applications the graph proved
+/// effect-free, transitively — or null, meaning REFUSED. Compatibility query
+/// for callers that need only relations; new consumers that execute the body
+/// must retain `EffectFreeClosure.sites` as well.
+///
+/// The least fixpoint never promotes a recursive relation, so this closure
+/// cannot cycle through published facts; the visited set is kept anyway,
+/// because a query that relies on an invariant it does not check is how the
+/// invariant stops holding.
+pub fn effectFreeCalleeClosure(
+    graph: *const semantic_graph.SemanticGraph,
+    alloc: std.mem.Allocator,
+    caller: semantic_graph.id,
+    body: *const ast.Block,
+) EffectQueryError!?[]semantic_graph.id {
+    const closure = try effectFreeClosure(graph, alloc, caller, body) orelse return null;
+    alloc.free(closure.sites);
+    return closure.callees;
 }
 
 /// The module declaration the graph was lifted from, when it has one.
@@ -704,9 +753,11 @@ test "graph_query: aggregate projection is an intrinsic pure application" {
     // it must not remove the old lawful `entry -> 20` whole-body fold.
     const pick = try projection.relationOf("pick");
     var access_count: usize = 0;
+    var access_occurrence: ?semantic_graph.id = null;
     for (projection.graph.applications()) |application| {
         if (projection.graph.aggregateAccess(application.application) == null) continue;
         access_count += 1;
+        access_occurrence = application.application;
         try std.testing.expectEqual(semantic_graph.Card.none, application.effect);
         try std.testing.expectEqual(semantic_graph.Card.none, application.authority);
         try std.testing.expectEqual(pick, projection.graph.applicationCaller(application.application).?);
@@ -718,14 +769,21 @@ test "graph_query: aggregate projection is an intrinsic pure application" {
     const entry = try projection.relationOf("entry");
     const declaration = relationDeclaration(&projection.graph, entry) orelse
         return error.TestExpectedEqual;
-    const closure = (try effectFreeCalleeClosure(
+    const closure = (try effectFreeClosure(
         &projection.graph,
         alloc,
         entry,
         &declaration.func.body,
     )) orelse return error.TestExpectedEqual;
-    defer alloc.free(closure);
-    try std.testing.expectEqualSlices(semantic_graph.id, &.{pick}, closure);
+    defer closure.deinit(alloc);
+    try std.testing.expectEqualSlices(semantic_graph.id, &.{pick}, closure.callees);
+    var carried_projection = false;
+    for (closure.sites) |site| {
+        if (site.occurrence != access_occurrence.?) continue;
+        carried_projection = true;
+        try std.testing.expect(site.expr.* == .index);
+    }
+    try std.testing.expect(carried_projection);
 }
 
 test "graph_query: an @ffi target is invisible to the graph and must not read as effect-free" {

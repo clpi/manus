@@ -22,6 +22,18 @@ pub const CommandOutput = struct {
 
 pub const SatisfiesHook = *const fn (ctx: ?*anyopaque, type_expr: *const ast.Expr, concept_name: []const u8) ?bool;
 
+/// Exact graph application work admitted by the effect/authority query for one
+/// native whole-body fold. Each site already carries the occurrence id its
+/// graph producer published; `expr` is only the evaluator walk's provenance
+/// key for selecting that carried work item.
+///
+/// Delete the expression key when the evaluator itself is scheduled from graph
+/// value/application ids rather than from `ast.FuncBody`.
+pub const ApplicationWork = struct {
+    graph: *const semantic_graph.SemanticGraph,
+    sites: []const graph_query.EffectFreeSite,
+};
+
 pub const Options = struct {
     step_limit: usize = 100_000,
     alloc: ?std.mem.Allocator = null,
@@ -69,11 +81,10 @@ pub const Options = struct {
     ///    `n`, `k`, `q`, `d` and `b` freely. An application now opens a frame
     ///    that name resolution cannot see past.
     native_fold: bool = false,
-    /// Resident semantic graph for the native whole-body fold. The evaluator
-    /// still walks source expressions, but a published computed projection
-    /// obtains identity, shape and contents from its authoritative graph
-    /// producer. Delete this pointer when evaluator work items carry ids.
-    graph: ?*const semantic_graph.SemanticGraph = null,
+    /// Exact applications admitted for this native whole-body fold. The graph
+    /// pointer cannot recover identity: the carried site occurrence is the
+    /// only input to semantic application queries.
+    application_work: ?ApplicationWork = null,
 };
 
 /// Hook type for @comp.* combinator evaluation inside comptime callbacks.
@@ -233,6 +244,11 @@ pub const Bindings = struct {
 };
 
 pub const Evaluator = struct {
+    const WorkItem = struct {
+        expr: *const ast.Expr,
+        application: ?semantic_graph.id,
+    };
+
     const LocalBinding = struct {
         name: []const u8,
         value: Value,
@@ -340,7 +356,27 @@ pub const Evaluator = struct {
         _ = try self.pushLocal(name, value);
     }
 
+    fn workItem(self: *const Evaluator, expr: *const ast.Expr) EvalError!WorkItem {
+        const work = self.options.application_work orelse return .{
+            .expr = expr,
+            .application = null,
+        };
+        var application: ?semantic_graph.id = null;
+        for (work.sites) |site| {
+            if (site.expr != expr) continue;
+            if (application != null and application.? != site.occurrence)
+                return error.UnsupportedExpression;
+            application = site.occurrence;
+        }
+        return .{ .expr = expr, .application = application };
+    }
+
     pub fn eval(self: *Evaluator, expr: *const ast.Expr) EvalError!Value {
+        return self.evalWork(try self.workItem(expr));
+    }
+
+    fn evalWork(self: *Evaluator, work_item: WorkItem) EvalError!Value {
+        const expr = work_item.expr;
         try self.step();
         // THE STEP BUDGET DOES NOT BOUND THE NATIVE STACK. `steps` counts work
         // and `eval` recurses, so a deeply recursive source program exhausted
@@ -382,29 +418,34 @@ pub const Evaluator = struct {
             },
             .index => |index| blk: {
                 if (self.options.native_fold) {
-                    if (self.options.graph) |graph| {
-                        if (graph.aggregateAccessForExpression(expr)) |access| {
-                            const subject = graph.applicationSubject(access.application) orelse
-                                break :blk error.UnsupportedExpression;
-                            if (!graph.aggregateIsSoleImmutableBinding(subject))
-                                break :blk error.UnsupportedExpression;
-                            const members = graph.aggregateMembers(subject) orelse
-                                break :blk error.UnsupportedExpression;
-                            const key = try self.eval(index.key);
-                            if (key != .int or key.int < 1 or
-                                key.int > @as(i64, @intCast(members.len)))
-                            {
-                                break :blk error.UnsupportedExpression;
+                    if (self.options.application_work) |work| {
+                        if (work_item.application) |occurrence| {
+                            if (work.graph.aggregateAccess(occurrence)) |access| {
+                                if (access.application != occurrence)
+                                    break :blk error.UnsupportedExpression;
+                                const graph = work.graph;
+                                const subject = graph.applicationSubject(access.application) orelse
+                                    break :blk error.UnsupportedExpression;
+                                if (!graph.aggregateIsSoleImmutableBinding(subject))
+                                    break :blk error.UnsupportedExpression;
+                                const members = graph.aggregateMembers(subject) orelse
+                                    break :blk error.UnsupportedExpression;
+                                const key = try self.eval(index.key);
+                                if (key != .int or key.int < 1 or
+                                    key.int > @as(i64, @intCast(members.len)))
+                                {
+                                    break :blk error.UnsupportedExpression;
+                                }
+                                const member = members[@intCast(key.int - 1)];
+                                const node = graph.get(member) orelse
+                                    break :blk error.UnsupportedExpression;
+                                const descriptor = node.descriptor orelse
+                                    break :blk error.UnsupportedExpression;
+                                if (descriptor != .i64) break :blk error.UnsupportedExpression;
+                                const content = graph.exactI64(member) orelse
+                                    break :blk error.UnsupportedExpression;
+                                break :blk .{ .int = content };
                             }
-                            const member = members[@intCast(key.int - 1)];
-                            const node = graph.get(member) orelse
-                                break :blk error.UnsupportedExpression;
-                            const descriptor = node.descriptor orelse
-                                break :blk error.UnsupportedExpression;
-                            if (descriptor != .i64) break :blk error.UnsupportedExpression;
-                            const content = graph.exactI64(member) orelse
-                                break :blk error.UnsupportedExpression;
-                            break :blk .{ .int = content };
                         }
                     }
                 }
@@ -1914,8 +1955,9 @@ pub fn foldRelationBody(
     }
 
     const entity = relation orelse return null;
-    const closure = (graph_query.effectFreeCalleeClosure(graph, scratch, entity, &fb.body) catch
+    const closure = (graph_query.effectFreeClosure(graph, scratch, entity, &fb.body) catch
         return null) orelse return null;
+    defer closure.deinit(scratch);
 
     var scope: std.StringHashMapUnmanaged(Value) = .empty;
 
@@ -1963,7 +2005,7 @@ pub fn foldRelationBody(
         }
     }
 
-    for (closure) |callee| {
+    for (closure.callees) |callee| {
         const node = graph.get(callee) orelse return null;
         const name = node.name orelse return null;
         if (interceptedSpelling(name)) return null;
@@ -1977,7 +2019,7 @@ pub fn foldRelationBody(
         // interpreter (`lookup` reads locals first) while the graph bound this
         // application to the relation. Refuse rather than let the two disagree.
         if (bindsIdent(&fb.body, name)) return null;
-        for (closure) |other| {
+        for (closure.callees) |other| {
             const other_declaration = graph_query.relationDeclaration(graph, other) orelse return null;
             if (bindsIdent(&other_declaration.func.body, name)) return null;
             for (other_declaration.func.params) |param| {
@@ -1996,7 +2038,7 @@ pub fn foldRelationBody(
         .step_limit = fold_step_limit,
         .alloc = scratch,
         .native_fold = true,
-        .graph = graph,
+        .application_work = .{ .graph = graph, .sites = closure.sites },
     });
 }
 
@@ -2740,6 +2782,66 @@ test "comptime eval: a table receiver is refused, so no mutation is swallowed" {
         \\    t:insert(4)
         \\    t:len()
     ));
+}
+
+test "comptime eval: effect closure carries aggregate projection occurrence" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const table_apply = @import("table_apply.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\pick: i64 = (i: i64)
+        \\    values = {10, 20, 30}
+        \\    values[i]
+        \\entry: i64 = ()
+        \\    pick(2)
+    ;
+    var lexer = Lexer.init(source, "comptime-occurrence.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    table_apply.normalizeModule(alloc, &module, &checked.type_map);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const home = try graph.liftModuleWithCheckedCalls(&module, &checked, "comptime-occurrence.id");
+    const pick = graph.resolveInHome(home, "pick", .func) orelse
+        return error.TestExpectedEqual;
+    const entry = graph.resolveInHome(home, "entry", .func) orelse
+        return error.TestExpectedEqual;
+    const declaration = graph_query.relationDeclaration(&graph, entry) orelse
+        return error.TestExpectedEqual;
+
+    // `pick`'s dynamic projection has no exact result until its operand is
+    // supplied. The fold must therefore execute that projection through the
+    // closure's carried occurrence. Poisoning the initializer provenance after
+    // graph publication makes the old source-table fallback refuse while the
+    // exact graph occurrence still answers 20.
+    var aggregate: ?semantic_graph.id = null;
+    for (0..graph.aggregateCount()) |row| {
+        const fact = graph.aggregateAt(row) orelse continue;
+        if (fact.owner != pick or graph.aggregateProducer(fact.aggregate) != null) continue;
+        const node = graph.get(fact.aggregate) orelse continue;
+        if (node.scope != pick) continue;
+        if (aggregate != null) return error.TestExpectedEqual;
+        aggregate = fact.aggregate;
+    }
+    const source_initializer = @constCast(graph.valueExpression(aggregate orelse
+        return error.TestExpectedEqual) orelse return error.TestExpectedEqual);
+    const saved_initializer = source_initializer.*;
+    source_initializer.* = .{ .nil = saved_initializer.loc() };
+    defer source_initializer.* = saved_initializer;
+    try std.testing.expectEqual(
+        @as(?i64, 20),
+        foldRelationBody(alloc, &graph, entry, &declaration.func),
+    );
 }
 
 /// True for @comp.* hook callee names that take inline `fun()` callbacks folded at comptime.

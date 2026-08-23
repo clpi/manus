@@ -5246,18 +5246,6 @@ pub const SemanticGraph = struct {
         return null;
     }
 
-    /// The graph-owned computed projection at this still-AST-driven ingress
-    /// occurrence. This is a derived lookup over `Node.ast_ref`, not another
-    /// occurrence registry. Delete the pointer argument when the compile-time
-    /// evaluator carries the application id directly.
-    pub fn aggregateAccessForExpression(
-        self: *const SemanticGraph,
-        expr: *const Expr,
-    ) ?*const ApplicationFact {
-        const fact = self.applicationForExpression(expr) orelse return null;
-        return self.aggregateAccess(fact.application);
-    }
-
     const BindingAdjustmentSource = struct {
         application: id,
         source_pack: id,
