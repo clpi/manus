@@ -9,7 +9,7 @@
 //! per token and drops `float_val`. Dispatching on it would mis-read every float
 //! literal while every kind- and text-based differential stayed green — which is
 //! not hypothetical, it is exactly how GAP-021 hid for the whole life of  the Idol
-//! lexer. The full entry carries all seven fields the host `Token` holds.
+//! lexer. The full entry carries the producer's eight projected fields.
 //!
 //! The generated-C bridge is produced directly from `lexer.id` with
 //! `dump-c --lib`. GAP-020's former primary-module initialization workaround
@@ -29,6 +29,7 @@ extern fn fieldint() i64;
 extern fn fieldoff() i64;
 extern fn fieldlen() i64;
 extern fn fieldfloat() i64;
+extern fn _fieldintclass() i64;
 extern fn rejectioncount() i64;
 extern fn rejectioncode(i: i64) i64;
 extern fn rejectionname(code: i64) [*:0]const u8;
@@ -100,8 +101,6 @@ fn producer(name: []const u8) i64 {
     return -1;
 }
 
-
-
 /// SCHEMA-ONE hot path: producer `kindname(i)` binds to host identity once.
 /// Per-token `kindFromName(kindname(raw))` is a string compare on every
 /// record. Deleting `bindKindSchema` / `kind_at_name` is a compile failure
@@ -133,8 +132,8 @@ fn slot(pos: i64, slots: usize) DispatchError!usize {
 }
 
 /// Producer record layout binds once (`law.schema.one`). `recordslots()` and
-/// `field*()` are the same seven facts on every call; querying them per
-/// tokenize is seven extra foreign calls on the compile hot path.
+/// `field*()` are the same eight facts on every call; querying them per
+/// tokenize is eight extra foreign calls on the compile hot path.
 var record_slots: usize = 0;
 var at_kind: usize = 0;
 var at_line: usize = 0;
@@ -143,6 +142,7 @@ var at_int: usize = 0;
 var at_off: usize = 0;
 var at_len: usize = 0;
 var at_float: usize = 0;
+var at_int_class: usize = 0;
 var record_bound = false;
 
 fn bindRecordSchema() DispatchError!void {
@@ -156,6 +156,7 @@ fn bindRecordSchema() DispatchError!void {
     const off = try slot(fieldoff(), slots);
     const len = try slot(fieldlen(), slots);
     const flt = try slot(fieldfloat(), slots);
+    const int_class = try slot(_fieldintclass(), slots);
     at_kind = kind;
     at_line = line;
     at_col = col;
@@ -163,6 +164,7 @@ fn bindRecordSchema() DispatchError!void {
     at_off = off;
     at_len = len;
     at_float = flt;
+    at_int_class = int_class;
     record_slots = slots;
     record_bound = true;
 }
@@ -185,6 +187,7 @@ fn decodeRecords(
     const off_at = at_off;
     const len_at = at_len;
     const float_at = at_float;
+    const int_class_at = at_int_class;
 
     const count = std.math.cast(usize, record_count) orelse return DispatchError.InvalidRecordCount;
     if (count == 0) return DispatchError.InvalidRecordCount;
@@ -209,6 +212,7 @@ fn decodeRecords(
             off_at,
             len_at,
             float_at,
+            int_class_at,
             i + 1 == count,
         ) catch |e| {
             allocator.free(tokens);
@@ -230,6 +234,7 @@ fn tokenFromRecord(
     off_at: usize,
     len_at: usize,
     float_at: usize,
+    int_class_at: usize,
     final: bool,
 ) DispatchError!lexer.Token {
     const kind = try kindFromRecord(r[kind_at]);
@@ -249,11 +254,28 @@ fn tokenFromRecord(
     } else if (final) {
         return DispatchError.InvalidEndToken;
     }
+    const int_class: lexer.DecimalIntegerClass = switch (r[int_class_at]) {
+        0 => .ordinary,
+        1 => .min_magnitude,
+        2 => .u64_bits,
+        3 => .wider,
+        else => return DispatchError.InvalidRecordCount,
+    };
+    switch (int_class) {
+        .ordinary => {},
+        .min_magnitude => if (kind != .int_lit or r[int_at] != std.math.minInt(i64))
+            return DispatchError.InvalidRecordCount,
+        .u64_bits => if (kind != .int_lit or r[int_at] >= 0)
+            return DispatchError.InvalidRecordCount,
+        .wider => if (kind != .int_lit or r[int_at] != 0)
+            return DispatchError.InvalidRecordCount,
+    }
     return .{
         .kind = kind,
         .loc = .{ .file = file, .line = line, .col = col },
         .text = src[off .. off + len],
         .int_val = r[int_at],
+        .int_class = int_class,
         .float_val = @bitCast(r[float_at]),
     };
 }
@@ -476,6 +498,7 @@ pub fn differential(
         if (h.loc.col != d.loc.col) return error.TokenColMismatch;
         if (!std.mem.eql(u8, h.text, d.text)) return error.TokenTextMismatch;
         if (h.int_val != d.int_val) return error.TokenIntMismatch;
+        if (h.int_class != d.int_class) return error.TokenIntClassMismatch;
         if (h.float_val != d.float_val) return error.TokenFloatMismatch;
     }
 }
@@ -502,8 +525,8 @@ test "lexer_dispatch: record fields are producer positions" {
     const slots = recordslots();
     try std.testing.expect(slots > 0);
     const positions = [_]i64{
-        fieldkind(), fieldline(), fieldcol(), fieldint(),
-        fieldoff(), fieldlen(), fieldfloat(),
+        fieldkind(), fieldline(), fieldcol(),   fieldint(),
+        fieldoff(),  fieldlen(),  fieldfloat(), _fieldintclass(),
     };
     var seen: [16]bool = undefined;
     inline for (0..16) |j| seen[j] = false;
@@ -551,11 +574,35 @@ test "lexer_dispatch: malformed generated records fail closed" {
         0,
         0,
         0,
+        0,
     };
 
     const valid = try decodeRecords(a, source, file, &record, 1);
     defer a.free(valid);
     try std.testing.expectEqual(lexer.TokenKind.eof, valid[0].kind);
+
+    const int_class_at: usize = @intCast(_fieldintclass());
+    record[int_class_at] = 4;
+    try std.testing.expectError(
+        DispatchError.InvalidRecordCount,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[int_class_at] = 1;
+    try std.testing.expectError(
+        DispatchError.InvalidRecordCount,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[int_class_at] = 3;
+    try std.testing.expectError(
+        DispatchError.InvalidRecordCount,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[int_class_at] = 2;
+    try std.testing.expectError(
+        DispatchError.InvalidRecordCount,
+        decodeRecords(a, source, file, &record, 1),
+    );
+    record[int_class_at] = 0;
 
     try std.testing.expectError(
         DispatchError.InvalidEndToken,
@@ -651,8 +698,8 @@ test "lexer_dispatch: malformed generated records fail closed" {
     );
 
     var premature = [_]i64{
-        producer("eof"), 1, 1, 0, 0, 0, 0,
-        producer("eof"), 1, 1, 0, 0, 0, 0,
+        producer("eof"), 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        producer("eof"), 1, 1, 0, 0, 0, 0, 0, 0, 0,
     };
     try std.testing.expectError(
         DispatchError.InvalidEndToken,
@@ -670,8 +717,8 @@ test "lexer_dispatch: malformed generated records fail closed" {
     );
 
     var double_eof = [_]i64{
-        producer("eof"), 1, 1, 0, 0, 0, 0,
-        producer("eof"), 1, 1, 0, 0, 0, 0,
+        producer("eof"), 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        producer("eof"), 1, 1, 0, 0, 0, 0, 0, 0, 0,
     };
     try std.testing.expectError(
         DispatchError.InvalidEndToken,
@@ -919,6 +966,68 @@ test "lexer_dispatch: gap[042] — the FNV offset basis carries its bits" {
     defer a.free(toks);
     try std.testing.expectEqual(lexer.TokenKind.int_lit, toks[0].kind);
     try std.testing.expectEqual(@as(i64, -3750763034362895579), toks[0].int_val);
+}
+
+test "lexer_dispatch: decimal magnitude class is producer-owned and lossless" {
+    const a = std.testing.allocator;
+    const cases = [_][:0]const u8{
+        "9223372036854775807",
+        "9223372036854775808",
+        "18446744073709551608",
+        "18446744073709551615",
+        "18446744073709551616",
+        "0009223372036854775808",
+    };
+    for (cases) |case| try differential(a, case, "magnitude.id", lexer_bridge.family_canon);
+
+    const fit = try tokenize(a, cases[0], "magnitude.id", lexer_bridge.family_canon);
+    defer a.free(fit);
+    try std.testing.expectEqual(std.math.maxInt(i64), fit[0].int_val);
+    try std.testing.expectEqual(lexer.DecimalIntegerClass.ordinary, fit[0].int_class);
+
+    const magnitude = try tokenize(a, cases[1], "magnitude.id", lexer_bridge.family_canon);
+    defer a.free(magnitude);
+    try std.testing.expectEqual(std.math.minInt(i64), magnitude[0].int_val);
+    try std.testing.expectEqual(lexer.DecimalIntegerClass.min_magnitude, magnitude[0].int_class);
+
+    const u64_bits = try tokenize(a, cases[2], "magnitude.id", lexer_bridge.family_canon);
+    defer a.free(u64_bits);
+    try std.testing.expectEqual(@as(i64, -8), u64_bits[0].int_val);
+    try std.testing.expectEqual(lexer.DecimalIntegerClass.u64_bits, u64_bits[0].int_class);
+
+    const wide = try tokenize(a, cases[4], "magnitude.id", lexer_bridge.family_canon);
+    defer a.free(wide);
+    try std.testing.expectEqual(@as(i64, 0), wide[0].int_val);
+    try std.testing.expectEqual(lexer.DecimalIntegerClass.wider, wide[0].int_class);
+
+    const leading = try tokenize(a, cases[5], "magnitude.id", lexer_bridge.family_canon);
+    defer a.free(leading);
+    try std.testing.expectEqual(lexer.DecimalIntegerClass.min_magnitude, leading[0].int_class);
+}
+
+test "lexer_dispatch: decimal class preserves contextual alias token spans" {
+    const a = std.testing.allocator;
+    const source: [:0]const u8 = "alias Point = { x: f64, y: f64 }";
+    try differential(a, source, "alias.id", lexer_bridge.family_canon);
+    const tokens = try tokenize(a, source, "alias.id", lexer_bridge.family_canon);
+    defer a.free(tokens);
+    const expected_kinds = [_]lexer.TokenKind{
+        .kw_alias, .name,  .assign, .lbrace, .name,   .colon,
+        .kw_f64,   .comma, .name,   .colon,  .kw_f64, .rbrace,
+        .eof,
+    };
+    const expected_text = [_][]const u8{
+        "alias", "Point", "=", "{", "x", ":", "f64", ",", "y", ":", "f64", "}", "",
+    };
+    const expected_offsets = [_]usize{ 0, 6, 12, 14, 16, 17, 19, 22, 24, 25, 27, 31, 32 };
+    try std.testing.expectEqual(expected_kinds.len, tokens.len);
+    for (tokens, expected_kinds, expected_text, expected_offsets) |token, kind, text, offset| {
+        try std.testing.expectEqual(kind, token.kind);
+        try std.testing.expectEqualStrings(text, token.text);
+        try std.testing.expectEqual(offset, @intFromPtr(token.text.ptr) - @intFromPtr(source.ptr));
+        try std.testing.expectEqual(text.len, token.text.len);
+        try std.testing.expectEqual(lexer.DecimalIntegerClass.ordinary, token.int_class);
+    }
 }
 
 test "lexer_dispatch: family is tokenize operand not suffix" {

@@ -21,6 +21,9 @@ token: {
     off: i64,
     len: i64,
     int_val: i64,
+    # Producer-owned decimal integer class: 0 ordinary/hex, 1 exact 2^63
+    # magnitude, 2 admitted u64 bit pattern, 3 wider than u64.
+    int_class: i64,
     float_val: f64
 }
 
@@ -58,7 +61,7 @@ lexer: {
 
 new: lexer = (src: str, file: str, family: i64)
     dummy_loc: loc = { file = "", line = 0, col = 0 }
-    dummy_tok: token = { kind = 0, loc = dummy_loc, text = "", off = 0, len = 0, int_val = 0, float_val = 0.0 }
+    dummy_tok: token = { kind = 0, loc = dummy_loc, text = "", off = 0, len = 0, int_val = 0, int_class = 0, float_val = 0.0 }
     # Family is an operand (`law.family.one`). Path is provenance only.
     return {
         src = src,
@@ -160,7 +163,11 @@ lookup: i64 = (self: lexer, start: i64, stop: i64)
         if self:word(start, n, "true") return 26
         if self:word(start, n, "void") return 42
     elseif n == 5
-        # Retired keyword `alias` — ordinary identifier under current law.
+        # Migration compatibility only: the host parser and the remaining
+        # source declarations still consume the historical alias token.
+        # Delete this row when every .id alias declaration uses the descriptor
+        # face and the host parser's alias arm is removed.
+        if self:word(start, n, "alias") return 51
         if self:word(start, n, "async") return 48
         if self:word(start, n, "await") return 49
         if self:word(start, n, "break") return 5
@@ -218,7 +225,7 @@ long_bracket_level: i64 = (self: lexer)
 #
 # Codes mirror src/lexer.zig's LexError order so the host maps them directly:
 #   1 UnterminatedString  2 UnterminatedLongString  3 InvalidEscape
-#   4 UnexpectedChar
+#   4 UnexpectedChar  5 InsufficientIndent
 # First error wins: later failures are consequences of the first, and reporting
 # the last one points at the wrong place.
 _fail(self: lexer, code: i64)
@@ -347,9 +354,12 @@ read_str(self: lexer, quote: i64)
 # One token identity with two physical projections. `off` / `len` are exact
 # source facts consumed by production. `text` is a temporary compatibility
 # view retained only for the historical Idol parser until it consumes spans.
-span: token = (kind: i64, loc: loc, text: str, off: i64, len: i64, integer: i64, decimal: f64)
+_spanfull: token = (kind: i64, loc: loc, text: str, off: i64, len: i64, integer: i64, intclass: i64, decimal: f64)
     at: loc = { file = loc.file, line = loc.line, col = loc.col }
-    { kind = kind, loc = at, text = text, off = off, len = len, int_val = integer, float_val = decimal }
+    { kind = kind, loc = at, text = text, off = off, len = len, int_val = integer, int_class = intclass, float_val = decimal }
+
+_span: token = (kind: i64, loc: loc, text: str, off: i64, len: i64, integer: i64, decimal: f64)
+    _spanfull(kind, loc, text, off, len, integer, 0, decimal)
 
 # GAP-023/024: exact decimal and hex to i64, never through f64.
 #
@@ -360,9 +370,41 @@ span: token = (kind: i64, loc: loc, text: str, off: i64, len: i64, integer: i64,
 # the two fingerprint proofs were the only programs that had one, which is why
 # they were the only two that regressed under production dispatch.
 #
-# Digits accumulate in i64 directly. Values beyond i64 wrap rather than
-# rejecting; that is the same shape the rest of the compiler carries today and
-# is recorded in GAP-024 rather than fixed here.
+# Hex digits retain their existing 64-bit bit-pattern law. Decimal digits are
+# classified before conversion: 2^63 is a producer fact consumed by unary-minus
+# parsing, the current u64 bit-pattern domain remains admitted, and still wider
+# exact magnitudes remain lawful source while the implementation refuses them.
+
+# 0 fits i64, 1 is exactly 2^63, 2 is the admitted unsigned-64 bit-pattern
+# domain above 2^63, and 3 is wider than u64. Leading zeroes do not change the
+# magnitude. This producer-owned comparison avoids both unsigned wrap and any
+# downstream reconstruction from token text.
+_decimal_class: i64 = (self: lexer, start: i64, stop: i64)
+    i: i64 = start
+    while i <= stop and self.src:byte(i) == 48
+        i += 1
+    digits: i64 = stop - i + 1
+    if digits <= 0 or digits < 19 return 0
+    if digits > 20 return 3
+    lower: str = "9223372036854775808"
+    if digits == 19
+        j: i64 = 1
+        while j <= 19
+            source_digit = self.src:byte(i + j - 1)
+            boundary_digit = lower:byte(j)
+            if source_digit < boundary_digit return 0
+            if source_digit > boundary_digit return 2
+            j += 1
+        return 1
+    upper: str = "18446744073709551615"
+    j: i64 = 1
+    while j <= 20
+        source_digit = self.src:byte(i + j - 1)
+        boundary_digit = upper:byte(j)
+        if source_digit < boundary_digit return 2
+        if source_digit > boundary_digit return 3
+        j += 1
+    2
 _int_of: i64 = (self: lexer, start: i64, stop: i64)
     n: i64 = stop - start + 1
     if n > 2 and self.src:byte(start) == 48 and (self.src:byte(start + 1) == 120 or self.src:byte(start + 1) == 88)
@@ -406,9 +448,10 @@ _int_of: i64 = (self: lexer, start: i64, stop: i64)
     #
     # reached from `print(tostring(13636438360258349679))` # the u64 form of
     # the text fingerprint, an ordinary literal a program is entitled to write.
-    # Unsigned multiplication wraps rather than trapping, so the accumulator
-    # carries the full 64-bit range and the value lands in int_val with the
-    # same bits the host lexer's parseInt(u64) produces.
+    # Unsigned arithmetic keeps the 2^63 boundary representable. Wider decimal
+    # source beyond u64 never reaches this converter; `_decimal_class`
+    # preserves it as an exact-but-currently-unrealizable token fact instead of
+    # wrapping it. The admitted unsigned-64 domain retains its bit-pattern law.
     v: u64 = 0
     i: i64 = start
     while i <= stop
@@ -483,8 +526,15 @@ read_num: token = (self: lexer)
         # The current numeric conversion boundary consumes terminated text.
         # Keep this one local materialization until conversion consumes a span.
         text = self.src:sub(start, self.pos - 1)
-        return span(2, l, text, start - 1, self.pos - start, 0, to(f64)(text))
-    span(1, l, "", start - 1, self.pos - start, self:_int_of(start, self.pos - 1), 0.0)
+        return _span(2, l, text, start - 1, self.pos - start, 0, to(f64)(text))
+    class: i64 = 0
+    is_hex_number = c1 == 48 and (c2 == 120 or c2 == 88)
+    if !is_hex_number
+        class = self:_decimal_class(start, self.pos - 1)
+    integer: i64 = 0
+    if class != 3
+        integer = self:_int_of(start, self.pos - 1)
+    _spanfull(1, l, "", start - 1, self.pos - start, integer, class, 0.0)
 
 next_tok: token = (self: lexer)
     if self.pos == 1 and self:peek_char() == 35 and self:peek_char2() == 33
@@ -492,12 +542,12 @@ next_tok: token = (self: lexer)
         start = self.pos
         while self.pos <= self.extent and self:peek_char() != 10
             self:adv()
-        return span(110, l, "", start - 1, self.pos - start, 0, 0.0)
+        return _span(110, l, "", start - 1, self.pos - start, 0, 0.0)
     self:skip_ws()
     self.start = self.pos
     if self.pos > self.extent
         eof = self:cur_loc()
-        return span(109, eof, "", self.pos - 1, 0, 0, 0.0)
+        return _span(109, eof, "", self.pos - 1, 0, 0, 0.0)
     
     l = self:cur_loc()
     c = self:peek_char()
@@ -516,28 +566,28 @@ next_tok: token = (self: lexer)
         kind = self:lookup(start, self.pos - 1)
         if kind == 0
             kind = 0
-        return span(kind, l, "", start - 1, self.pos - start, 0, 0.0)
+        return _span(kind, l, "", start - 1, self.pos - start, 0, 0.0)
     
     if c == 39 or c == 34
         lit_kind = classify_quote(self.family, c)
         self:read_str(c)
         if self.has_error
-            return span(lit_kind, l, "", self.start - 1, 0, 0, 0.0)
-        return span(lit_kind, l, "", self.start - 1, self.pos - self.start - 1, 0, 0.0)
+            return _span(lit_kind, l, "", self.start - 1, 0, 0, 0.0)
+        return _span(lit_kind, l, "", self.start - 1, self.pos - self.start - 1, 0, 0.0)
     
     if c == 91
         lvl = self:long_bracket_level()
         if lvl >= 0
             self:read_long_str(lvl)
             if self.has_error
-                return span(108, l, "", self.start - 1, 0, lvl, 0.0)
-            return span(108, l, "", self.start - 1, self.pos - self.start - 2 - lvl, lvl, 0.0)
+                return _span(108, l, "", self.start - 1, 0, lvl, 0.0)
+            return _span(108, l, "", self.start - 1, self.pos - self.start - 2 - lvl, lvl, 0.0)
     
     if c == 35 and self.family == 1
         start = self.pos
         while self.pos <= self.extent and self:peek_char() != 10
             self:adv()
-        return span(111, l, "", start - 1, self.pos - start, 0, 0.0)
+        return _span(111, l, "", start - 1, self.pos - start, 0, 0.0)
 
     if c == 45 and self:peek_char2() == 45
         start = self.pos
@@ -546,13 +596,13 @@ next_tok: token = (self: lexer)
         lvl = self:long_bracket_level()
         if lvl >= 0
             self:skip_long(lvl)
-            return span(113, l, "", start - 1, self.pos - start, 0, 0.0)
+            return _span(113, l, "", start - 1, self.pos - start, 0, 0.0)
         is_triple = (self.pos <= self.extent and self:peek_char() == 45)
         if is_triple
             self:adv()
         while self.pos <= self.extent and self:peek_char() != 10
             self:adv()
-        return span(112, l, "", start - 1, self.pos - start, 0, 0.0)
+        return _span(112, l, "", start - 1, self.pos - start, 0, 0.0)
     
     self:adv()
     p = self.pos
@@ -560,83 +610,83 @@ next_tok: token = (self: lexer)
     if c == 43
         if self:peek_char() == 61
             self:adv()
-            return span(99, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(64, l, "", p - 2, 1, 0, 0.0)
+            return _span(99, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(64, l, "", p - 2, 1, 0, 0.0)
     elseif c == 42
         if self:peek_char() == 61
             self:adv()
-            return span(101, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(66, l, "", p - 2, 1, 0, 0.0)
+            return _span(101, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(66, l, "", p - 2, 1, 0, 0.0)
     elseif c == 37
         if self:peek_char() == 61
             self:adv()
-            return span(103, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(68, l, "", p - 2, 1, 0, 0.0)
+            return _span(103, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(68, l, "", p - 2, 1, 0, 0.0)
     elseif c == 94
         if self:peek_char() == 61
             self:adv()
-            return span(104, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(69, l, "", p - 2, 1, 0, 0.0)
+            return _span(104, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(69, l, "", p - 2, 1, 0, 0.0)
     elseif c == 35
         if self:peek_char() == 35
             self:adv()
-            return span(87, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(70, l, "", p - 2, 1, 0, 0.0)
+            return _span(87, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(70, l, "", p - 2, 1, 0, 0.0)
     elseif c == 38
-        return span(71, l, "", p - 2, 1, 0, 0.0)
+        return _span(71, l, "", p - 2, 1, 0, 0.0)
     elseif c == 124
         if self.pos <= self.extent and self.src:byte(self.pos) == 62
             self.pos = self.pos + 1
-            return span(97, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(72, l, "", p - 2, 1, 0, 0.0)
+            return _span(97, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(72, l, "", p - 2, 1, 0, 0.0)
     elseif c == 40
-        return span(58, l, "", p - 2, 1, 0, 0.0)
+        return _span(58, l, "", p - 2, 1, 0, 0.0)
     elseif c == 41
-        return span(59, l, "", p - 2, 1, 0, 0.0)
+        return _span(59, l, "", p - 2, 1, 0, 0.0)
     elseif c == 91
-        return span(60, l, "", p - 2, 1, 0, 0.0)
+        return _span(60, l, "", p - 2, 1, 0, 0.0)
     elseif c == 93
-        return span(61, l, "", p - 2, 1, 0, 0.0)
+        return _span(61, l, "", p - 2, 1, 0, 0.0)
     elseif c == 123
-        return span(62, l, "", p - 2, 1, 0, 0.0)
+        return _span(62, l, "", p - 2, 1, 0, 0.0)
     elseif c == 125
-        return span(63, l, "", p - 2, 1, 0, 0.0)
+        return _span(63, l, "", p - 2, 1, 0, 0.0)
     elseif c == 59
-        return span(77, l, "", p - 2, 1, 0, 0.0)
+        return _span(77, l, "", p - 2, 1, 0, 0.0)
     elseif c == 44
-        return span(79, l, "", p - 2, 1, 0, 0.0)
+        return _span(79, l, "", p - 2, 1, 0, 0.0)
     elseif c == 45
         if self:peek_char() == 61
             self:adv()
-            return span(100, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+            return _span(100, l, "", p - 2, self.pos - p + 1, 0, 0.0)
         if self:peek_char() == 62
             self:adv()
-            return span(96, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(65, l, "", p - 2, 1, 0, 0.0)
+            return _span(96, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(65, l, "", p - 2, 1, 0, 0.0)
     elseif c == 47
         if self:peek_char() == 61
             self:adv()
-            return span(102, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+            return _span(102, l, "", p - 2, self.pos - p + 1, 0, 0.0)
         if self:peek_char() == 47
             self:adv()
-            return span(94, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(67, l, "", p - 2, 1, 0, 0.0)
+            return _span(94, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(67, l, "", p - 2, 1, 0, 0.0)
     elseif c == 46
         if self:peek_char() == 46
             self:adv()
             if self:peek_char() == 46
                 self:adv()
-                return span(86, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-            return span(85, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(80, l, "", p - 2, 1, 0, 0.0)
+                return _span(86, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+            return _span(85, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(80, l, "", p - 2, 1, 0, 0.0)
     elseif c == 61
         if self:peek_char() == 61
             self:adv()
-            return span(88, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+            return _span(88, l, "", p - 2, self.pos - p + 1, 0, 0.0)
         if self:peek_char() == 62
             self:adv()
-            return span(98, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(75, l, "", p - 2, 1, 0, 0.0)
+            return _span(98, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(75, l, "", p - 2, 1, 0, 0.0)
     elseif c == 126
         # `~` is XOR and nothing else. It used to swallow a following `=` and
         # report inequality (kind 89), which is Lua's spelling, not this
@@ -645,45 +695,45 @@ next_tok: token = (self: lexer)
         # was meant. Emitting the bare tilde lets the grammar's adjacency rule
         # form `~=` as a compound assignment, exactly as it already forms
         # `>>=`, `<<=`, `|=` and `&=`.
-        return span(76, l, "", p - 2, 1, 0, 0.0)
+        return _span(76, l, "", p - 2, 1, 0, 0.0)
     elseif c == 60
         if self:peek_char() == 61
             self:adv()
-            return span(90, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+            return _span(90, l, "", p - 2, self.pos - p + 1, 0, 0.0)
         if self:peek_char() == 60
             self:adv()
-            return span(92, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(73, l, "", p - 2, 1, 0, 0.0)
+            return _span(92, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(73, l, "", p - 2, 1, 0, 0.0)
     elseif c == 62
         if self:peek_char() == 61
             self:adv()
-            return span(91, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+            return _span(91, l, "", p - 2, self.pos - p + 1, 0, 0.0)
         if self:peek_char() == 62
             self:adv()
-            return span(93, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(74, l, "", p - 2, 1, 0, 0.0)
+            return _span(93, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(74, l, "", p - 2, 1, 0, 0.0)
     elseif c == 58
         if self:peek_char() == 58
             self:adv()
-            return span(95, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(78, l, "", p - 2, 1, 0, 0.0)
+            return _span(95, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(78, l, "", p - 2, 1, 0, 0.0)
     elseif c == 64
-        return span(81, l, "", p - 2, 1, 0, 0.0)
+        return _span(81, l, "", p - 2, 1, 0, 0.0)
     elseif c == 63
-        return span(82, l, "", p - 2, 1, 0, 0.0)
+        return _span(82, l, "", p - 2, 1, 0, 0.0)
     elseif c == 33
         if self:peek_char() == 61
             self:adv()
-            return span(89, l, "", p - 2, self.pos - p + 1, 0, 0.0)
-        return span(83, l, "", p - 2, 1, 0, 0.0)
+            return _span(89, l, "", p - 2, self.pos - p + 1, 0, 0.0)
+        return _span(83, l, "", p - 2, 1, 0, 0.0)
     elseif c == 96
         if self.family == 1
             self:_fail(4)
-            return span(109, l, "", p - 2, 0, 0, 0.0)
-        return span(84, l, "", p - 2, 1, 0, 0.0)
+            return _span(109, l, "", p - 2, 0, 0, 0.0)
+        return _span(84, l, "", p - 2, 1, 0, 0.0)
     else
         self:_fail(4)
-        return span(109, l, "", p - 2, 0, 0, 0.0)
+        return _span(109, l, "", p - 2, 0, 0, 0.0)
 
 next: token = (self: lexer)
     if self.has_peeked
@@ -734,10 +784,12 @@ restore_state(self: lexer, state: state)
 # pass. Exact source coordinates are token facts, not cursor state reconstructed
 # here. The host projects its temporary text view from those coordinates.
 #
-# Positional seven-i64 records are SCHEMA-ONE debt. Host RECORD_SLOTS and
+# Positional eight-i64 records are SCHEMA-ONE debt. Host RECORD_SLOTS and
 # slot decode are a second copy of this law. Deletion: producer-projected
 # record or immutable token view — not a named Zig slot map.
 #     0 kind   1 line   2 col   3 int_val   4 source offset   5 text length   6 float value
+#     7 decimal integer class (0 ordinary/hex, 1 exact 2^63, 2 u64 bits,
+#       3 wider than u64)
 #
 # Returns the token count, or -1 if `cap` is too small. The final two arguments
 # remain only to preserve the bootstrap ABI while consumers migrate; token text
@@ -761,13 +813,14 @@ duo_lexer_tokenize_full: i64 = (src: str, file: str, family: i64, out: i64, cap:
     n: i64 = 0
     while n < cap
         tok = next_tok(lex)
-        mem.write_i64(buf, (n * 7) * 8, tok.kind)
-        mem.write_i64(buf, (n * 7 + 1) * 8, tok.loc.line)
-        mem.write_i64(buf, (n * 7 + 2) * 8, tok.loc.col)
-        mem.write_i64(buf, (n * 7 + 3) * 8, tok.int_val)
-        mem.write_i64(buf, (n * 7 + 4) * 8, tok.off)
-        mem.write_i64(buf, (n * 7 + 5) * 8, tok.len)
-        mem.write_f64(buf, (n * 7 + 6) * 8, tok.float_val)
+        mem.write_i64(buf, (n * 8) * 8, tok.kind)
+        mem.write_i64(buf, (n * 8 + 1) * 8, tok.loc.line)
+        mem.write_i64(buf, (n * 8 + 2) * 8, tok.loc.col)
+        mem.write_i64(buf, (n * 8 + 3) * 8, tok.int_val)
+        mem.write_i64(buf, (n * 8 + 4) * 8, tok.off)
+        mem.write_i64(buf, (n * 8 + 5) * 8, tok.len)
+        mem.write_f64(buf, (n * 8 + 6) * 8, tok.float_val)
+        mem.write_i64(buf, (n * 8 + 7) * 8, tok.int_class)
         n += 1
         # GAP-017: a rejection is returned, not raised. Negative codes offset
         # by 100 so they cannot collide with -1 (buffer too small) are
@@ -1000,7 +1053,7 @@ sourcefactprovenance: str = (path: str, role: str)
     sourcepathformprovenance(path)
 
 recordslots: i64 = ()
-    7
+    8
 
 fieldkind: i64 = ()
     0
@@ -1022,6 +1075,9 @@ fieldlen: i64 = ()
 
 fieldfloat: i64 = ()
     6
+
+_fieldintclass: i64 = ()
+    7
 
 rejectioncount: i64 = ()
     5

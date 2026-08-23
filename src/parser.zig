@@ -93,6 +93,11 @@ pub const Parser = struct {
     expr_depth: u32 = 0,
     /// Live `parse_block_open` recursion depth. See `max_block_depth`.
     block_depth: u32 = 0,
+    /// Decimal values in the admitted unsigned-64 bit-pattern domain may stay
+    /// positive for compatibility, but cannot be reinterpreted as a signed
+    /// operand of unary minus. This survives grouping until exact integers are
+    /// graph-native and the temporary bit-pattern realization can be deleted.
+    negation_operand_depth: u32 = 0,
     /// Incremented while parsing a match arm body. When > 0, assignment
     /// right-hand sides use the restricted scrutinee parser so that `[` at
     /// the start of the next arm is not greedily consumed as an index suffix.
@@ -532,11 +537,32 @@ pub const Parser = struct {
         return self.lex.peek();
     }
 
-    fn adv(self: *Parser) ParseError!Token {
+    fn advRaw(self: *Parser) ParseError!Token {
         const tok = try self.lex.next();
         self.prev_line = tok.loc.line;
         self.prev_end_col = tok.loc.col + @as(u32, @intCast(tok.text.len));
         if (demandsOperand(tok.kind)) try self.denyRetiredLengthHash(tok);
+        return tok;
+    }
+
+    /// Decimal 2^63 is a magnitude, not an i64 value. The producer carries
+    /// that fact explicitly because its signed payload has the same bits as a
+    /// lawful hex minInt literal. Every ordinary parser consumer fails closed;
+    /// only the Pratt unary-prefix path may consume and normalize the magnitude.
+    fn adv(self: *Parser) ParseError!Token {
+        const tok = try self.advRaw();
+        if (tok.int_class == .wider) {
+            term.locErr(tok.loc, "exact integer literal is lawful but this compiler cannot yet realize magnitudes wider than u64", .{});
+            return ParseError.UnexpectedToken;
+        }
+        if (tok.int_class == .u64_bits and self.negation_operand_depth > 0) {
+            term.locErr(tok.loc, "unary '-' of an unsigned-domain decimal literal is not yet supported as an exact integer", .{});
+            return ParseError.UnexpectedToken;
+        }
+        if (tok.int_class == .min_magnitude) {
+            term.locErr(tok.loc, "positive exact integer 9223372036854775808 is lawful but this compiler cannot yet realize it as i64; unary '-9223372036854775808' is representable", .{});
+            return ParseError.UnexpectedToken;
+        }
         return tok;
     }
 
@@ -5616,8 +5642,32 @@ pub const Parser = struct {
                     if (tok.kind == .kw_not and self.idol_mode)
                         term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
                     _ = try self.adv();
-                    const operand = try self.parse_prec(20);
-                    lhs = try self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = uop, .operand = operand } });
+                    if (uop == .neg and (try self.pk()).int_class == .min_magnitude) {
+                        _ = try self.advRaw();
+                        lhs = try self.new_expr(.{ .int_lit = .{
+                            .loc = tok.loc,
+                            .val = std.math.minInt(i64),
+                        } });
+                    } else {
+                        if (uop == .neg and (try self.pk()).int_class == .u64_bits) {
+                            const unsupported = try self.pk();
+                            term.locErr(unsupported.loc, "unary '-' of an unsigned-domain decimal literal is not yet supported as an exact integer", .{});
+                            return ParseError.UnexpectedToken;
+                        }
+                        const negated_operand = uop == .neg;
+                        if (negated_operand) self.negation_operand_depth += 1;
+                        defer {
+                            if (negated_operand) self.negation_operand_depth -= 1;
+                        }
+                        const operand = try self.parse_prec(20);
+                        if (uop == .neg and operand.* == .int_lit and
+                            operand.int_lit.val == std.math.minInt(i64))
+                        {
+                            term.locErr(tok.loc, "integer negation is outside the i64 range", .{});
+                            return ParseError.UnexpectedToken;
+                        }
+                        lhs = try self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = uop, .operand = operand } });
+                    }
                 } else {
                     lhs = try self.parse_suffixed_expr();
                 }
@@ -5679,36 +5729,6 @@ pub const Parser = struct {
             }
         }
         return lhs;
-    }
-
-    fn parse_unary(self: *Parser) ParseError!*ast.Expr {
-        const tok = try self.pk();
-        if (tok.kind == .kw_await) {
-            try self.denyRetiredStmtKeyword(tok);
-            _ = try self.adv(); // consume `await`
-            const operand = try self.parse_prec(20);
-            return self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
-        }
-        if (tok.kind == .kw_comptime and self.idol_mode) {
-            term.locErr(tok.loc, "'comptime' is not valid in .id files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
-            return ParseError.UnexpectedToken;
-        }
-        const op: ?ast.UnOp = switch (tok.kind) {
-            .kw_not, .bang => .not,
-            .hash => .len,
-            .hash_hash, .kw_comptime => .compile,
-            .minus => .neg,
-            .tilde => .bnot,
-            else => null,
-        };
-        if (op) |uop| {
-            if (tok.kind == .kw_not and self.idol_mode)
-                term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
-            _ = try self.adv();
-            const operand = try self.parse_prec(20);
-            return self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = uop, .operand = operand } });
-        }
-        return self.parse_suffixed_expr();
     }
 
     fn parse_closure_expr(self: *Parser) ParseError!*ast.Expr {
@@ -8187,6 +8207,63 @@ test "parse: quoted producer identities stay distinct" {
     var p = Parser.init(&lex, arena.allocator());
     const compat = try p.parse_module();
     try testing.expectEqual(ast.Quote.compat_text, compat.body.stmts[0].assign.values[0].quoted.quote);
+}
+
+test "parse: unary minus owns exactly the decimal i64 minimum magnitude" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource("x = -9223372036854775808", &arena);
+    const value = mod.body.stmts[0].assign.values[0];
+    try testing.expect(value.* == .int_lit);
+    try testing.expectEqual(std.math.minInt(i64), value.int_lit.val);
+}
+
+test "parse: positive minimum magnitude and wider exact decimal fail closed" {
+    const cases = [_][]const u8{
+        "x = 9223372036854775808",
+        "x = 18446744073709551616",
+        "x = -18446744073709551616",
+    };
+    for (cases) |source| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        try testing.expectError(error.UnexpectedToken, parseDuoSource(source, &arena));
+    }
+}
+
+test "parse: admitted decimal u64 bit patterns stay positive-only" {
+    var positive_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer positive_arena.deinit();
+    const positive = try parseDuoSource("x = 18446744073709551608", &positive_arena);
+    const value = positive.body.stmts[0].assign.values[0];
+    try testing.expect(value.* == .int_lit);
+    try testing.expectEqual(@as(i64, -8), value.int_lit.val);
+
+    const refused = [_][]const u8{
+        "x = -18446744073709551608",
+        "x = -(18446744073709551608)",
+    };
+    for (refused) |source| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        try testing.expectError(error.UnexpectedToken, parseDuoSource(source, &arena));
+    }
+}
+
+test "parse: hex stays a bit pattern while negating hex minInt refuses" {
+    var positive_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer positive_arena.deinit();
+    const positive = try parseDuoSource("x = 0x8000000000000000", &positive_arena);
+    const value = positive.body.stmts[0].assign.values[0];
+    try testing.expect(value.* == .int_lit);
+    try testing.expectEqual(std.math.minInt(i64), value.int_lit.val);
+
+    var negative_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer negative_arena.deinit();
+    try testing.expectError(
+        error.UnexpectedToken,
+        parseDuoSource("x = -0x8000000000000000", &negative_arena),
+    );
 }
 
 test "parse: postfix generic type annotation" {

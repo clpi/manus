@@ -138,9 +138,10 @@ extern int64_t fieldint(void);
 extern int64_t fieldoff(void);
 extern int64_t fieldlen(void);
 extern int64_t fieldfloat(void);
+extern int64_t _fieldintclass(void);
 extern const char *kindname(int64_t);
 
-static int schema(int64_t slots, int64_t fields[7]) {
+static int schema(int64_t slots, int64_t fields[8]) {
     fields[0] = fieldkind();
     fields[1] = fieldline();
     fields[2] = fieldcol();
@@ -148,7 +149,8 @@ static int schema(int64_t slots, int64_t fields[7]) {
     fields[4] = fieldoff();
     fields[5] = fieldlen();
     fields[6] = fieldfloat();
-    for (int64_t i = 0; i < 7; ++i) {
+    fields[7] = _fieldintclass();
+    for (int64_t i = 0; i < 8; ++i) {
         if (fields[i] < 0 || fields[i] >= slots) return 0;
         for (int64_t j = 0; j < i; ++j) {
             if (fields[i] == fields[j]) return 0;
@@ -170,7 +172,7 @@ int main(void) {
         fprintf(stderr, "probe: invalid record slot count: %" PRId64 "\n", slots);
         return 90;
     }
-    int64_t fields[7];
+    int64_t fields[8];
     if (!schema(slots, fields)) {
         fprintf(stderr, "probe: record fields are not unique in-range positions\n");
         return 91;
@@ -227,6 +229,11 @@ int main(void) {
             fprintf(stderr, "probe: token %" PRId64 " has nonzero float bits\n", i);
             free(records);
             return 98;
+        }
+        if (record[fields[7]] != 0) {
+            fprintf(stderr, "probe: token %" PRId64 " has non-ordinary integer class\n", i);
+            free(records);
+            return 99;
         }
     }
 

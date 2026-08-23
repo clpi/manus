@@ -323,24 +323,15 @@ pub fn build(b: *std.Build) void {
     lexer_artifact_cmd.step.dependOn(b.getInstallStep());
     const lexer_artifact_step = b.step("lexer-artifact", "src/lexer_tokenize.c regenerates byte-identically from lib/compiler/lexer.id (S0 counterfactual)");
     lexer_artifact_step.dependOn(&lexer_artifact_cmd.step);
-    // NOT yet attached to test_step, and the reason is the finding itself.
-    //
-    // lib/compiler/lexer.id last moved at fb7a5639 (Aug 20); the tracked C was
-    // last regenerated at 96f058bf (Aug 18). Two days of Idol lexer source has
-    // never been projected into production, and the divergence is BEHAVIORAL,
-    // not cosmetic: regenerating turns 18 failures into 25, and all seven new
-    // ones fail inside parse_module -> parse_block -> parse_stmt.
-    //
-    // So the tracked artifact is not merely stale -- it is acting as a FREEZE
-    // POINT that holds in-progress Idol source out of production. That inverts
-    // the ownership claim: the generated C is the authority and the .id file is
-    // the draft. `stmt_col` is declared at lib/compiler/lexer.id:56, initialised
-    // once at :77, and referenced by NO host code at all.
-    //
-    // Attach this line once the host consumes stmt_col (or lexer.id drops it)
-    // and the regenerated artifact holds the suite at its baseline:
-    //     test_step.dependOn(&lexer_artifact_cmd.step);
-    // Until then `zig build lexer-artifact` reports the exact drift on demand.
+    // Executable source and tracked projection are one boundary again. The
+    // regeneration counterfactual exposed that `alias` had been retired in the
+    // producer while the host parser and remaining source declarations still
+    // consumed its historical token. The producer now carries that row as
+    // migration compatibility, with deletion tied to migrating those sources
+    // and removing the host parser arm. `stmt_col` remains because the executed
+    // Idol parser consumes it for offside lambda recognition. Any later source
+    // move must regenerate byte-identically before the ordinary test gate runs.
+    test_step.dependOn(&lexer_artifact_cmd.step);
 
     // Zig unit tests (lexer, parser, AST, types, sema).
     // Run independently from the binary: `zig build unit-test`

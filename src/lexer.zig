@@ -3,6 +3,33 @@ const source_cursor = @import("source_cursor.zig");
 
 pub const Loc = source_cursor.Loc;
 
+pub const DecimalIntegerClass = enum(u8) { ordinary, min_magnitude, u64_bits, wider };
+
+/// Differential-only mirror of the Idol producer's decimal magnitude fact.
+/// Production tokens receive this fact from `lib/compiler/lexer.id`; this
+/// independent host scanner exists only to make producer damage observable.
+fn decimalMagnitudeClass(text: []const u8) DecimalIntegerClass {
+    var first: usize = 0;
+    while (first < text.len and text[first] == '0') : (first += 1) {}
+    const significant = text[first..];
+    if (significant.len < 19) return .ordinary;
+    if (significant.len > 20) return .wider;
+    const lower = "9223372036854775808";
+    if (significant.len == 19) {
+        for (significant, lower) |source_digit, boundary_digit| {
+            if (source_digit < boundary_digit) return .ordinary;
+            if (source_digit > boundary_digit) return .u64_bits;
+        }
+        return .min_magnitude;
+    }
+    const upper = "18446744073709551615";
+    for (significant, upper) |source_digit, boundary_digit| {
+        if (source_digit < boundary_digit) return .u64_bits;
+        if (source_digit > boundary_digit) return .wider;
+    }
+    return .u64_bits;
+}
+
 pub const TokenKind = enum(u8) {
     // Literals
     name = 0,
@@ -205,11 +232,27 @@ pub const TokenKind = enum(u8) {
 
 pub const Token = struct {
     kind: TokenKind,
+    /// Producer-owned decimal integer class. One card is carried because the
+    /// four states are mutually exclusive; three booleans would admit
+    /// impossible token facts. Hex bit patterns and fitted decimals are
+    /// ordinary.
+    int_class: DecimalIntegerClass = .ordinary,
     loc: Loc,
     text: []const u8,
     int_val: i64 = 0,
     float_val: f64 = 0.0,
 };
+
+test "lexer: decimal integer card consumes existing Token padding" {
+    if (@sizeOf(usize) != 8) return;
+    try std.testing.expectEqual(@as(usize, 64), @sizeOf(Token));
+    try std.testing.expectEqual(@as(usize, 0), @offsetOf(Token, "loc"));
+    try std.testing.expectEqual(@as(usize, 24), @offsetOf(Token, "text"));
+    try std.testing.expectEqual(@as(usize, 40), @offsetOf(Token, "int_val"));
+    try std.testing.expectEqual(@as(usize, 48), @offsetOf(Token, "float_val"));
+    try std.testing.expectEqual(@as(usize, 56), @offsetOf(Token, "kind"));
+    try std.testing.expectEqual(@as(usize, 57), @offsetOf(Token, "int_class"));
+}
 
 pub const LexError = error{
     UnterminatedString,
@@ -862,6 +905,7 @@ pub const Lexer = struct {
             const v = std.fmt.parseFloat(f64, text) catch return LexError.InvalidNumber;
             return Token{ .kind = .float_lit, .loc = l, .text = text, .float_val = v };
         } else {
+            var int_class: DecimalIntegerClass = .ordinary;
             const v = if (text.len > 2 and (text[1] == 'x' or text[1] == 'X')) blk: {
                 // A hex literal is a bit pattern, not a signed magnitude. Parsing it
                 // as i64 rejected every constant with the top bit set — e.g. the FNV
@@ -875,21 +919,31 @@ pub const Lexer = struct {
                         return LexError.InvalidNumber;
                     break :blk @as(i64, @bitCast(unsigned));
                 }
-            } else if (std.fmt.parseInt(i64, text, 10)) |signed| blk2: {
-                break :blk2 signed;
-            } else |_| blk2: {
-                // gap[024]: same reinterpretation the hex path above already
-                // does, and for the same reason. A decimal literal in
-                // (i64max, u64max] is a valid u64 that i64 cannot hold, and
-                // rejecting it made the two lexers disagree on the one
-                // construct the fingerprint proofs are built from. Token.int_val
-                // is i64, so the VALUE is carried as its bit pattern — exactly
-                // as `0xcbf29ce484222325` already was.
-                const unsigned = std.fmt.parseInt(u64, text, 10) catch
-                    return LexError.InvalidNumber;
-                break :blk2 @as(i64, @bitCast(unsigned));
+            } else switch (decimalMagnitudeClass(text)) {
+                .ordinary => std.fmt.parseInt(i64, text, 10) catch
+                    return LexError.InvalidNumber,
+                .min_magnitude => blk2: {
+                    int_class = .min_magnitude;
+                    break :blk2 std.math.minInt(i64);
+                },
+                .u64_bits => blk2: {
+                    const unsigned = std.fmt.parseInt(u64, text, 10) catch
+                        return LexError.InvalidNumber;
+                    int_class = .u64_bits;
+                    break :blk2 @as(i64, @bitCast(unsigned));
+                },
+                .wider => blk2: {
+                    int_class = .wider;
+                    break :blk2 0;
+                },
             };
-            return Token{ .kind = .int_lit, .loc = l, .text = text, .int_val = v };
+            return Token{
+                .kind = .int_lit,
+                .loc = l,
+                .text = text,
+                .int_val = v,
+                .int_class = int_class,
+            };
         }
     }
 

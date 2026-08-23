@@ -5930,10 +5930,11 @@ typedef struct {
     int64_t off;
     int64_t len;
     int64_t int_val;
+    int64_t int_class;
     double float_val;
-} duo_rec_1992d065f3bb441b;
+} duo_rec_735fa21981531a8e;
 
-typedef duo_rec_1992d065f3bb441b duo_token;
+typedef duo_rec_735fa21981531a8e duo_token;
 typedef struct {
     const char* src;
     int64_t extent;
@@ -5944,23 +5945,24 @@ typedef struct {
     const char* file;
     int64_t family;
     bool has_peeked;
-    duo_rec_1992d065f3bb441b peeked_token;
+    duo_rec_735fa21981531a8e peeked_token;
     bool has_error;
     duo_rec_ddce63158070fd68 error_loc;
     int64_t error_code;
-} duo_rec_baf12a9b72d17f38;
+    int64_t stmt_col;
+} duo_rec_ae78087612f938ba;
 
-typedef duo_rec_baf12a9b72d17f38 duo_lexer;
+typedef duo_rec_ae78087612f938ba duo_lexer;
 typedef struct {
     int64_t pos;
     int64_t start;
     int64_t line;
     int64_t col;
     bool has_peeked;
-    duo_rec_1992d065f3bb441b peeked_token;
-} duo_rec_772cd0eb8098063d;
+    duo_rec_735fa21981531a8e peeked_token;
+} duo_rec_8126e0d62b0fd79;
 
-typedef duo_rec_772cd0eb8098063d duo_state;
+typedef duo_rec_8126e0d62b0fd79 duo_state;
 
 
 
@@ -6179,15 +6181,15 @@ static inline lua_Value lua_jit_init(void) {
     return m;
 }
 
-__attribute__((visibility("default"))) duo_rec_baf12a9b72d17f38 new(const char* src, const char* file, int64_t family);
+__attribute__((visibility("default"))) duo_rec_ae78087612f938ba new(const char* src, const char* file, int64_t family);
 static lua_Value new__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);
-__attribute__((visibility("default"))) duo_rec_ddce63158070fd68 cur_loc(duo_rec_baf12a9b72d17f38 *self);
+__attribute__((visibility("default"))) duo_rec_ddce63158070fd68 cur_loc(duo_rec_ae78087612f938ba *self);
 static lua_Value cur_loc__lua(lua_Value _a0);
-__attribute__((visibility("default"))) int64_t peek_char(duo_rec_baf12a9b72d17f38 *self);
+__attribute__((visibility("default"))) int64_t peek_char(duo_rec_ae78087612f938ba *self);
 static lua_Value peek_char__lua(lua_Value _a0);
-__attribute__((visibility("default"))) int64_t peek_char2(duo_rec_baf12a9b72d17f38 *self);
+__attribute__((visibility("default"))) int64_t peek_char2(duo_rec_ae78087612f938ba *self);
 static lua_Value peek_char2__lua(lua_Value _a0);
-__attribute__((visibility("default"))) lua_Value adv(duo_rec_baf12a9b72d17f38 *self);
+__attribute__((visibility("default"))) lua_Value adv(duo_rec_ae78087612f938ba *self);
 static lua_Value adv__lua(lua_Value _a0);
 __attribute__((visibility("default"))) bool is_digit(int64_t c);
 static lua_Value is_digit__lua(lua_Value _a0);
@@ -6197,39 +6199,42 @@ __attribute__((visibility("default"))) bool is_alnum(int64_t c);
 static lua_Value is_alnum__lua(lua_Value _a0);
 __attribute__((visibility("default"))) bool is_hex(int64_t c);
 static lua_Value is_hex__lua(lua_Value _a0);
-__attribute__((visibility("default"))) bool word(duo_rec_baf12a9b72d17f38 *self, int64_t start, int64_t n, const char* pattern);
+__attribute__((visibility("default"))) bool word(duo_rec_ae78087612f938ba *self, int64_t start, int64_t n, const char* pattern);
 static lua_Value word__lua4(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3);
-__attribute__((visibility("default"))) int64_t lookup(duo_rec_baf12a9b72d17f38 *self, int64_t start, int64_t stop);
+__attribute__((visibility("default"))) int64_t lookup(duo_rec_ae78087612f938ba *self, int64_t start, int64_t stop);
 static lua_Value lookup__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);
 __attribute__((visibility("default"))) int64_t classify_quote(int64_t family, int64_t quote);
 static lua_Value classify_quote__lua2(lua_Value _a0, lua_Value _a1);
-__attribute__((visibility("default"))) int64_t long_bracket_level(duo_rec_baf12a9b72d17f38 *self);
+__attribute__((visibility("default"))) int64_t long_bracket_level(duo_rec_ae78087612f938ba *self);
 static lua_Value long_bracket_level__lua(lua_Value _a0);
-__attribute__((visibility("default"))) lua_Value _fail(duo_rec_baf12a9b72d17f38 *self, int64_t code);
+__attribute__((visibility("default"))) lua_Value _fail(duo_rec_ae78087612f938ba *self, int64_t code);
 static lua_Value _fail__lua2(lua_Value _a0, lua_Value _a1);
-__attribute__((visibility("default"))) lua_Value skip_long(duo_rec_baf12a9b72d17f38 *self, int64_t level);
+__attribute__((visibility("default"))) lua_Value skip_long(duo_rec_ae78087612f938ba *self, int64_t level);
 static lua_Value skip_long__lua2(lua_Value _a0, lua_Value _a1);
-__attribute__((visibility("default"))) lua_Value skip_ws(duo_rec_baf12a9b72d17f38 *self);
+__attribute__((visibility("default"))) lua_Value skip_ws(duo_rec_ae78087612f938ba *self);
 static lua_Value skip_ws__lua(lua_Value _a0);
-__attribute__((visibility("default"))) lua_Value read_long_str(duo_rec_baf12a9b72d17f38 *self, int64_t level);
+__attribute__((visibility("default"))) lua_Value read_long_str(duo_rec_ae78087612f938ba *self, int64_t level);
 static lua_Value read_long_str__lua2(lua_Value _a0, lua_Value _a1);
-__attribute__((visibility("default"))) lua_Value read_str(duo_rec_baf12a9b72d17f38 *self, int64_t quote);
+__attribute__((visibility("default"))) lua_Value read_str(duo_rec_ae78087612f938ba *self, int64_t quote);
 static lua_Value read_str__lua2(lua_Value _a0, lua_Value _a1);
-__attribute__((visibility("default"))) duo_rec_1992d065f3bb441b span(int64_t kind, duo_rec_ddce63158070fd68 *loc, const char* text, int64_t off, int64_t len, int64_t integer, double decimal);
-static lua_Value span__lua7(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4, lua_Value _a5, lua_Value _a6);
-__attribute__((visibility("default"))) int64_t _int_of(duo_rec_baf12a9b72d17f38 *self, int64_t start, int64_t stop);
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e _spanfull(int64_t kind, duo_rec_ddce63158070fd68 *loc, const char* text, int64_t off, int64_t len, int64_t integer, int64_t intclass, double decimal);
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e _span(int64_t kind, duo_rec_ddce63158070fd68 *loc, const char* text, int64_t off, int64_t len, int64_t integer, double decimal);
+static lua_Value _span__lua7(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4, lua_Value _a5, lua_Value _a6);
+__attribute__((visibility("default"))) int64_t _decimal_class(duo_rec_ae78087612f938ba *self, int64_t start, int64_t stop);
+static lua_Value _decimal_class__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);
+__attribute__((visibility("default"))) int64_t _int_of(duo_rec_ae78087612f938ba *self, int64_t start, int64_t stop);
 static lua_Value _int_of__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);
-__attribute__((visibility("default"))) duo_rec_1992d065f3bb441b read_num(duo_rec_baf12a9b72d17f38 *self);
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e read_num(duo_rec_ae78087612f938ba *self);
 static lua_Value read_num__lua(lua_Value _a0);
-__attribute__((visibility("default"))) duo_rec_1992d065f3bb441b next_tok(duo_rec_baf12a9b72d17f38 *self);
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e next_tok(duo_rec_ae78087612f938ba *self);
 static lua_Value next_tok__lua(lua_Value _a0);
-__attribute__((visibility("default"))) duo_rec_1992d065f3bb441b next(duo_rec_baf12a9b72d17f38 *self);
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e next(duo_rec_ae78087612f938ba *self);
 static lua_Value next__lua(lua_Value _a0);
-__attribute__((visibility("default"))) duo_rec_1992d065f3bb441b peek(duo_rec_baf12a9b72d17f38 *self);
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e peek(duo_rec_ae78087612f938ba *self);
 static lua_Value peek__lua(lua_Value _a0);
-__attribute__((visibility("default"))) duo_rec_772cd0eb8098063d save_state(duo_rec_baf12a9b72d17f38 *self);
+__attribute__((visibility("default"))) duo_rec_8126e0d62b0fd79 save_state(duo_rec_ae78087612f938ba *self);
 static lua_Value save_state__lua(lua_Value _a0);
-__attribute__((visibility("default"))) lua_Value restore_state(duo_rec_baf12a9b72d17f38 *self, duo_rec_772cd0eb8098063d *state);
+__attribute__((visibility("default"))) lua_Value restore_state(duo_rec_ae78087612f938ba *self, duo_rec_8126e0d62b0fd79 *state);
 static lua_Value restore_state__lua2(lua_Value _a0, lua_Value _a1);
 __attribute__((visibility("default"))) int64_t duo_lexer_error_line(const char* src, const char* file, int64_t family);
 static lua_Value duo_lexer_error_line__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);
@@ -6291,6 +6296,8 @@ __attribute__((visibility("default"))) int64_t fieldlen(void);
 static lua_Value fieldlen__lua(lua_Value _unused);
 __attribute__((visibility("default"))) int64_t fieldfloat(void);
 static lua_Value fieldfloat__lua(lua_Value _unused);
+__attribute__((visibility("default"))) int64_t _fieldintclass(void);
+static lua_Value _fieldintclass__lua(lua_Value _unused);
 __attribute__((visibility("default"))) int64_t rejectioncount(void);
 static lua_Value rejectioncount__lua(lua_Value _unused);
 __attribute__((visibility("default"))) int64_t rejectioncode(int64_t i);
@@ -6305,9 +6312,9 @@ static lua_Value new__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {
 const char* _p0 = lua_to_str(_a0);
 const char* _p1 = lua_to_str(_a1);
 int64_t _p2 = (int64_t)lua_to_num(_a2);
-duo_rec_baf12a9b72d17f38 _r = new(_p0, _p1, _p2);
+duo_rec_ae78087612f938ba _r = new(_p0, _p1, _p2);
     return ({
-    lua_Value _tmp = lua_table_new_with_capacity(0, 13);
+    lua_Value _tmp = lua_table_new_with_capacity(0, 14);
     lua_table_set_raw_lit(_tmp, "src", 3543982537, 3, lua_val_from_str(_r.src));
     lua_table_set_raw_lit(_tmp, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_r.extent)));
     lua_table_set_raw_lit(_tmp, "pos", 1412654217, 3, lua_val_from_int((int64_t)(_r.pos)));
@@ -6318,7 +6325,7 @@ duo_rec_baf12a9b72d17f38 _r = new(_p0, _p1, _p2);
     lua_table_set_raw_lit(_tmp, "family", 1377633321, 6, lua_val_from_int((int64_t)(_r.family)));
     lua_table_set_raw_lit(_tmp, "has_peeked", 3699109778, 10, lua_val_from_bool(_r.has_peeked));
     lua_table_set_raw_lit(_tmp, "peeked_token", 1875270549, 12, ({
-    lua_Value _tmp = lua_table_new_with_capacity(0, 7);
+    lua_Value _tmp = lua_table_new_with_capacity(0, 8);
     lua_table_set_raw_lit(_tmp, "kind", 3641958979, 4, lua_val_from_int((int64_t)(_r.peeked_token.kind)));
     lua_table_set_raw_lit(_tmp, "loc", 1129404317, 3, ({
     lua_Value _tmp = lua_table_new_with_capacity(0, 3);
@@ -6331,6 +6338,7 @@ duo_rec_baf12a9b72d17f38 _r = new(_p0, _p1, _p2);
     lua_table_set_raw_lit(_tmp, "off", 2872740362, 3, lua_val_from_int((int64_t)(_r.peeked_token.off)));
     lua_table_set_raw_lit(_tmp, "len", 912972556, 3, lua_val_from_int((int64_t)(_r.peeked_token.len)));
     lua_table_set_raw_lit(_tmp, "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_r.peeked_token.int_val)));
+    lua_table_set_raw_lit(_tmp, "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_r.peeked_token.int_class)));
     lua_table_set_raw_lit(_tmp, "float_val", 1013216485, 9, lua_val_from_num((double)(_r.peeked_token.float_val)));
     _tmp;
 }));
@@ -6343,26 +6351,28 @@ duo_rec_baf12a9b72d17f38 _r = new(_p0, _p1, _p2);
     _tmp;
 }));
     lua_table_set_raw_lit(_tmp, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_r.error_code)));
+    lua_table_set_raw_lit(_tmp, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_r.stmt_col)));
     _tmp;
 });
 }
 
-__attribute__((visibility("default"))) duo_rec_baf12a9b72d17f38 new(const char* src, const char* file, int64_t family) {
+__attribute__((visibility("default"))) duo_rec_ae78087612f938ba new(const char* src, const char* file, int64_t family) {
     duo_rec_ddce63158070fd68 dummy_loc = {
         .file = "",
         .line = 0,
         .col = 0
     };
-    duo_rec_1992d065f3bb441b dummy_tok = {
+    duo_rec_735fa21981531a8e dummy_tok = {
         .kind = 0,
         .loc = dummy_loc,
         .text = "",
         .off = 0,
         .len = 0,
         .int_val = 0,
+        .int_class = 0,
         .float_val = 0e0
     };
-    return (duo_rec_baf12a9b72d17f38){
+    return (duo_rec_ae78087612f938ba){
         .src = src,
         .extent = ((int64_t)strlen(src)),
         .pos = 1,
@@ -6375,12 +6385,13 @@ __attribute__((visibility("default"))) duo_rec_baf12a9b72d17f38 new(const char* 
         .peeked_token = dummy_tok,
         .has_error = false,
         .error_loc = dummy_loc,
-        .error_code = 0
+        .error_code = 0,
+        .stmt_col = 0
     };
 }
 
 static lua_Value cur_loc__lua(lua_Value _a0) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 duo_rec_ddce63158070fd68 _r = cur_loc(&_p0);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
@@ -6399,12 +6410,14 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return ({
     lua_Value _tmp = lua_table_new_with_capacity(0, 3);
     lua_table_set_raw_lit(_tmp, "file", 2867484483, 4, lua_val_from_str(_r.file));
@@ -6414,7 +6427,7 @@ lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_
 });
 }
 
-__attribute__((visibility("default"))) duo_rec_ddce63158070fd68 cur_loc(duo_rec_baf12a9b72d17f38 *self) {
+__attribute__((visibility("default"))) duo_rec_ddce63158070fd68 cur_loc(duo_rec_ae78087612f938ba *self) {
     return (duo_rec_ddce63158070fd68){
         .file = self->file,
         .line = self->line,
@@ -6423,7 +6436,7 @@ __attribute__((visibility("default"))) duo_rec_ddce63158070fd68 cur_loc(duo_rec_
 }
 
 static lua_Value peek_char__lua(lua_Value _a0) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 int64_t _r = peek_char(&_p0);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
@@ -6442,16 +6455,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return lua_val_from_int((int64_t)(_r));
 }
 
-__attribute__((visibility("default"))) int64_t peek_char(duo_rec_baf12a9b72d17f38 *self) {
+__attribute__((visibility("default"))) int64_t peek_char(duo_rec_ae78087612f938ba *self) {
     if ((self->pos > self->extent)) {
         return 0;
     }
@@ -6459,7 +6474,7 @@ __attribute__((visibility("default"))) int64_t peek_char(duo_rec_baf12a9b72d17f3
 }
 
 static lua_Value peek_char2__lua(lua_Value _a0) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 int64_t _r = peek_char2(&_p0);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
@@ -6478,16 +6493,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return lua_val_from_int((int64_t)(_r));
 }
 
-__attribute__((visibility("default"))) int64_t peek_char2(duo_rec_baf12a9b72d17f38 *self) {
+__attribute__((visibility("default"))) int64_t peek_char2(duo_rec_ae78087612f938ba *self) {
     if (((self->pos + 1) > self->extent)) {
         return 0;
     }
@@ -6495,7 +6512,7 @@ __attribute__((visibility("default"))) int64_t peek_char2(duo_rec_baf12a9b72d17f
 }
 
 static lua_Value adv__lua(lua_Value _a0) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 lua_Value _r = adv(&_p0);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
@@ -6514,16 +6531,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return _r;
 }
 
-__attribute__((visibility("default"))) lua_Value adv(duo_rec_baf12a9b72d17f38 *self) {
+__attribute__((visibility("default"))) lua_Value adv(duo_rec_ae78087612f938ba *self) {
     if ((self->pos > self->extent)) {
         return lua_val_nil();
     }
@@ -6580,7 +6599,7 @@ __attribute__((visibility("default"))) bool is_hex(int64_t c) {
 }
 
 static lua_Value word__lua4(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 int64_t _p1 = (int64_t)lua_to_num(_a1);
 int64_t _p2 = (int64_t)lua_to_num(_a2);
 const char* _p3 = lua_to_str(_a3);
@@ -6602,16 +6621,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return lua_val_from_bool(_r);
 }
 
-__attribute__((visibility("default"))) bool word(duo_rec_baf12a9b72d17f38 *self, int64_t start, int64_t n, const char* pattern) {
+__attribute__((visibility("default"))) bool word(duo_rec_ae78087612f938ba *self, int64_t start, int64_t n, const char* pattern) {
     int64_t i = 1;
     while ((i <= n)) {
         if ((((int64_t)(unsigned char)(self->src[((start + i) - 1) - 1])) != ((int64_t)(unsigned char)(pattern[i - 1])))) {
@@ -6623,7 +6644,7 @@ __attribute__((visibility("default"))) bool word(duo_rec_baf12a9b72d17f38 *self,
 }
 
 static lua_Value lookup__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 int64_t _p1 = (int64_t)lua_to_num(_a1);
 int64_t _p2 = (int64_t)lua_to_num(_a2);
 int64_t _r = lookup(&_p0, _p1, _p2);
@@ -6644,16 +6665,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return lua_val_from_int((int64_t)(_r));
 }
 
-__attribute__((visibility("default"))) int64_t lookup(duo_rec_baf12a9b72d17f38 *self, int64_t start, int64_t stop) {
+__attribute__((visibility("default"))) int64_t lookup(duo_rec_ae78087612f938ba *self, int64_t start, int64_t stop) {
     int64_t n = ((stop - start) + 1);
     if ((n == 2)) {
         if (word(self, start, n, "by")) {
@@ -6849,7 +6872,7 @@ __attribute__((visibility("default"))) int64_t classify_quote(int64_t family, in
 }
 
 static lua_Value long_bracket_level__lua(lua_Value _a0) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 int64_t _r = long_bracket_level(&_p0);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
@@ -6868,16 +6891,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return lua_val_from_int((int64_t)(_r));
 }
 
-__attribute__((visibility("default"))) int64_t long_bracket_level(duo_rec_baf12a9b72d17f38 *self) {
+__attribute__((visibility("default"))) int64_t long_bracket_level(duo_rec_ae78087612f938ba *self) {
     int64_t i = self->pos;
     if (((i > self->extent) || (((int64_t)(unsigned char)(self->src[i - 1])) != 91))) {
         return (-(1));
@@ -6895,7 +6920,7 @@ __attribute__((visibility("default"))) int64_t long_bracket_level(duo_rec_baf12a
 }
 
 static lua_Value _fail__lua2(lua_Value _a0, lua_Value _a1) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 int64_t _p1 = (int64_t)lua_to_num(_a1);
 lua_Value _r = _fail(&_p0, _p1);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
@@ -6915,16 +6940,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return _r;
 }
 
-__attribute__((visibility("default"))) lua_Value _fail(duo_rec_baf12a9b72d17f38 *self, int64_t code) {
+__attribute__((visibility("default"))) lua_Value _fail(duo_rec_ae78087612f938ba *self, int64_t code) {
     if ((!self->has_error)) {
         self->has_error = true;
         self->error_code = code;
@@ -6934,7 +6961,7 @@ __attribute__((visibility("default"))) lua_Value _fail(duo_rec_baf12a9b72d17f38 
 }
 
 static lua_Value skip_long__lua2(lua_Value _a0, lua_Value _a1) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 int64_t _p1 = (int64_t)lua_to_num(_a1);
 lua_Value _r = skip_long(&_p0, _p1);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
@@ -6954,16 +6981,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return _r;
 }
 
-__attribute__((visibility("default"))) lua_Value skip_long(duo_rec_baf12a9b72d17f38 *self, int64_t level) {
+__attribute__((visibility("default"))) lua_Value skip_long(duo_rec_ae78087612f938ba *self, int64_t level) {
     adv(self);
     int64_t i = INT64_C(0);
     while ((i < level)) {
@@ -6991,7 +7020,7 @@ __attribute__((visibility("default"))) lua_Value skip_long(duo_rec_baf12a9b72d17
 }
 
 static lua_Value skip_ws__lua(lua_Value _a0) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 lua_Value _r = skip_ws(&_p0);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
@@ -7010,16 +7039,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return _r;
 }
 
-__attribute__((visibility("default"))) lua_Value skip_ws(duo_rec_baf12a9b72d17f38 *self) {
+__attribute__((visibility("default"))) lua_Value skip_ws(duo_rec_ae78087612f938ba *self) {
     while ((self->pos <= self->extent)) {
         int64_t c = peek_char(self);
         if (((((c == 32) || (c == 9)) || (c == 13)) || (c == 10))) {
@@ -7032,7 +7063,7 @@ __attribute__((visibility("default"))) lua_Value skip_ws(duo_rec_baf12a9b72d17f3
 }
 
 static lua_Value read_long_str__lua2(lua_Value _a0, lua_Value _a1) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 int64_t _p1 = (int64_t)lua_to_num(_a1);
 lua_Value _r = read_long_str(&_p0, _p1);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
@@ -7052,16 +7083,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return _r;
 }
 
-__attribute__((visibility("default"))) lua_Value read_long_str(duo_rec_baf12a9b72d17f38 *self, int64_t level) {
+__attribute__((visibility("default"))) lua_Value read_long_str(duo_rec_ae78087612f938ba *self, int64_t level) {
     adv(self);
     int64_t i = INT64_C(0);
     while ((i < level)) {
@@ -7098,7 +7131,7 @@ __attribute__((visibility("default"))) lua_Value read_long_str(duo_rec_baf12a9b7
 }
 
 static lua_Value read_str__lua2(lua_Value _a0, lua_Value _a1) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 int64_t _p1 = (int64_t)lua_to_num(_a1);
 lua_Value _r = read_str(&_p0, _p1);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
@@ -7118,16 +7151,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return _r;
 }
 
-__attribute__((visibility("default"))) lua_Value read_str(duo_rec_baf12a9b72d17f38 *self, int64_t quote) {
+__attribute__((visibility("default"))) lua_Value read_str(duo_rec_ae78087612f938ba *self, int64_t quote) {
     adv(self);
     self->start = self->pos;
     while ((self->pos <= self->extent)) {
@@ -7203,7 +7238,25 @@ __attribute__((visibility("default"))) lua_Value read_str(duo_rec_baf12a9b72d17f
     return _fail(self, 1);
 }
 
-static lua_Value span__lua7(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4, lua_Value _a5, lua_Value _a6) {
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e _spanfull(int64_t kind, duo_rec_ddce63158070fd68 *loc, const char* text, int64_t off, int64_t len, int64_t integer, int64_t intclass, double decimal) {
+    duo_rec_ddce63158070fd68 at = {
+        .file = loc->file,
+        .line = loc->line,
+        .col = loc->col
+    };
+    return (duo_rec_735fa21981531a8e){
+        .kind = kind,
+        .loc = at,
+        .text = text,
+        .off = off,
+        .len = len,
+        .int_val = integer,
+        .int_class = intclass,
+        .float_val = decimal
+    };
+}
+
+static lua_Value _span__lua7(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4, lua_Value _a5, lua_Value _a6) {
 int64_t _p0 = (int64_t)lua_to_num(_a0);
 duo_rec_ddce63158070fd68 _p1 = (duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(_a1, "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(_a1, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a1, "col", 4069381233u, 3)),};
 const char* _p2 = lua_to_str(_a2);
@@ -7211,12 +7264,12 @@ int64_t _p3 = (int64_t)lua_to_num(_a3);
 int64_t _p4 = (int64_t)lua_to_num(_a4);
 int64_t _p5 = (int64_t)lua_to_num(_a5);
 double _p6 = (double)lua_to_num(_a6);
-duo_rec_1992d065f3bb441b _r = span(_p0, &_p1, _p2, _p3, _p4, _p5, _p6);
+duo_rec_735fa21981531a8e _r = _span(_p0, &_p1, _p2, _p3, _p4, _p5, _p6);
 lua_table_set_raw_lit(_a1, "file", 2867484483, 4, lua_val_from_str(_p1.file));
 lua_table_set_raw_lit(_a1, "line", 400234023, 4, lua_val_from_int((int64_t)(_p1.line)));
 lua_table_set_raw_lit(_a1, "col", 4069381233, 3, lua_val_from_int((int64_t)(_p1.col)));
     return ({
-    lua_Value _tmp = lua_table_new_with_capacity(0, 7);
+    lua_Value _tmp = lua_table_new_with_capacity(0, 8);
     lua_table_set_raw_lit(_tmp, "kind", 3641958979, 4, lua_val_from_int((int64_t)(_r.kind)));
     lua_table_set_raw_lit(_tmp, "loc", 1129404317, 3, ({
     lua_Value _tmp = lua_table_new_with_capacity(0, 3);
@@ -7229,30 +7282,101 @@ lua_table_set_raw_lit(_a1, "col", 4069381233, 3, lua_val_from_int((int64_t)(_p1.
     lua_table_set_raw_lit(_tmp, "off", 2872740362, 3, lua_val_from_int((int64_t)(_r.off)));
     lua_table_set_raw_lit(_tmp, "len", 912972556, 3, lua_val_from_int((int64_t)(_r.len)));
     lua_table_set_raw_lit(_tmp, "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_r.int_val)));
+    lua_table_set_raw_lit(_tmp, "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_r.int_class)));
     lua_table_set_raw_lit(_tmp, "float_val", 1013216485, 9, lua_val_from_num((double)(_r.float_val)));
     _tmp;
 });
 }
 
-__attribute__((visibility("default"))) duo_rec_1992d065f3bb441b span(int64_t kind, duo_rec_ddce63158070fd68 *loc, const char* text, int64_t off, int64_t len, int64_t integer, double decimal) {
-    duo_rec_ddce63158070fd68 at = {
-        .file = loc->file,
-        .line = loc->line,
-        .col = loc->col
-    };
-    return (duo_rec_1992d065f3bb441b){
-        .kind = kind,
-        .loc = at,
-        .text = text,
-        .off = off,
-        .len = len,
-        .int_val = integer,
-        .float_val = decimal
-    };
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e _span(int64_t kind, duo_rec_ddce63158070fd68 *loc, const char* text, int64_t off, int64_t len, int64_t integer, double decimal) {
+    return _spanfull(kind, loc, text, off, len, integer, 0, decimal);
+}
+
+static lua_Value _decimal_class__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
+int64_t _p1 = (int64_t)lua_to_num(_a1);
+int64_t _p2 = (int64_t)lua_to_num(_a2);
+int64_t _r = _decimal_class(&_p0, _p1, _p2);
+lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
+lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
+lua_table_set_raw_lit(_a0, "pos", 1412654217, 3, lua_val_from_int((int64_t)(_p0.pos)));
+lua_table_set_raw_lit(_a0, "start", 1697318111, 5, lua_val_from_int((int64_t)(_p0.start)));
+lua_table_set_raw_lit(_a0, "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.line)));
+lua_table_set_raw_lit(_a0, "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.col)));
+lua_table_set_raw_lit(_a0, "file", 2867484483, 4, lua_val_from_str(_p0.file));
+lua_table_set_raw_lit(_a0, "family", 1377633321, 6, lua_val_from_int((int64_t)(_p0.family)));
+lua_table_set_raw_lit(_a0, "has_peeked", 3699109778, 10, lua_val_from_bool(_p0.has_peeked));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979, 4, lua_val_from_int((int64_t)(_p0.peeked_token.kind)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483, 4, lua_val_from_str(_p0.peeked_token.loc.file));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.peeked_token.loc.line)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.peeked_token.loc.col)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134, 4, lua_val_from_str(_p0.peeked_token.text));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
+lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
+lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
+    return lua_val_from_int((int64_t)(_r));
+}
+
+__attribute__((visibility("default"))) int64_t _decimal_class(duo_rec_ae78087612f938ba *self, int64_t start, int64_t stop) {
+    int64_t i = start;
+    while (((i <= stop) && (((int64_t)(unsigned char)(self->src[i - 1])) == 48))) {
+                i = (i + 1);
+    }
+    int64_t digits = ((stop - i) + 1);
+    if (((digits <= 0) || (digits < 19))) {
+        return 0;
+    }
+    if ((digits > 20)) {
+        return 3;
+    }
+    const char* lower = "9223372036854775808";
+    duo_retain((void*)(lower));
+        int64_t boundary_digit = 0;
+        int64_t source_digit = 0;
+    if ((digits == 19)) {
+        int64_t j = 1;
+        while ((j <= 19)) {
+                        source_digit = ((int64_t)(unsigned char)(self->src[((i + j) - 1) - 1]));
+                        boundary_digit = ((int64_t)(unsigned char)(lower[j - 1]));
+            if ((source_digit < boundary_digit)) {
+                return 0;
+            }
+            if ((source_digit > boundary_digit)) {
+                return 2;
+            }
+                        j = (j + 1);
+        }
+        return 1;
+    }
+    const char* upper = "18446744073709551615";
+    duo_retain((void*)(upper));
+    int64_t j = 1;
+    while ((j <= 20)) {
+                source_digit = ((int64_t)(unsigned char)(self->src[((i + j) - 1) - 1]));
+                boundary_digit = ((int64_t)(unsigned char)(upper[j - 1]));
+        if ((source_digit < boundary_digit)) {
+            return 2;
+        }
+        if ((source_digit > boundary_digit)) {
+            return 3;
+        }
+                j = (j + 1);
+    }
+    return 2;
+    duo_release((void*)(upper));
+    duo_release((void*)(lower));
 }
 
 static lua_Value _int_of__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
 int64_t _p1 = (int64_t)lua_to_num(_a1);
 int64_t _p2 = (int64_t)lua_to_num(_a2);
 int64_t _r = _int_of(&_p0, _p1, _p2);
@@ -7273,16 +7397,18 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return lua_val_from_int((int64_t)(_r));
 }
 
-__attribute__((visibility("default"))) int64_t _int_of(duo_rec_baf12a9b72d17f38 *self, int64_t start, int64_t stop) {
+__attribute__((visibility("default"))) int64_t _int_of(duo_rec_ae78087612f938ba *self, int64_t start, int64_t stop) {
     int64_t n = ((stop - start) + 1);
     if ((((n > 2) && (((int64_t)(unsigned char)(self->src[start - 1])) == 48)) && ((((int64_t)(unsigned char)(self->src[(start + 1) - 1])) == 120) || (((int64_t)(unsigned char)(self->src[(start + 1) - 1])) == 88)))) {
         uint64_t v = ((uint64_t)(0));
@@ -7318,8 +7444,8 @@ __attribute__((visibility("default"))) int64_t _int_of(duo_rec_baf12a9b72d17f38 
 }
 
 static lua_Value read_num__lua(lua_Value _a0) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
-duo_rec_1992d065f3bb441b _r = read_num(&_p0);
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
+duo_rec_735fa21981531a8e _r = read_num(&_p0);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
 lua_table_set_raw_lit(_a0, "pos", 1412654217, 3, lua_val_from_int((int64_t)(_p0.pos)));
@@ -7337,14 +7463,16 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return ({
-    lua_Value _tmp = lua_table_new_with_capacity(0, 7);
+    lua_Value _tmp = lua_table_new_with_capacity(0, 8);
     lua_table_set_raw_lit(_tmp, "kind", 3641958979, 4, lua_val_from_int((int64_t)(_r.kind)));
     lua_table_set_raw_lit(_tmp, "loc", 1129404317, 3, ({
     lua_Value _tmp = lua_table_new_with_capacity(0, 3);
@@ -7357,12 +7485,13 @@ lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_
     lua_table_set_raw_lit(_tmp, "off", 2872740362, 3, lua_val_from_int((int64_t)(_r.off)));
     lua_table_set_raw_lit(_tmp, "len", 912972556, 3, lua_val_from_int((int64_t)(_r.len)));
     lua_table_set_raw_lit(_tmp, "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_r.int_val)));
+    lua_table_set_raw_lit(_tmp, "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_r.int_class)));
     lua_table_set_raw_lit(_tmp, "float_val", 1013216485, 9, lua_val_from_num((double)(_r.float_val)));
     _tmp;
 });
 }
 
-__attribute__((visibility("default"))) duo_rec_1992d065f3bb441b read_num(duo_rec_baf12a9b72d17f38 *self) {
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e read_num(duo_rec_ae78087612f938ba *self) {
     duo_rec_ddce63158070fd68 l = cur_loc(self);
     int64_t start = self->pos;
     bool is_float = false;
@@ -7422,14 +7551,23 @@ __attribute__((visibility("default"))) duo_rec_1992d065f3bb441b read_num(duo_rec
     }
     if (is_float) {
         const char* text = duo_str_sub_cstr(self->src, (int64_t)(start), (int64_t)((self->pos - 1)));
-        return span(2, &l, text, (start - 1), (self->pos - start), 0, lua_to_num(lua_val_from_str(text)));
+        return _span(2, &l, text, (start - 1), (self->pos - start), 0, lua_to_num(lua_val_from_str(text)));
     }
-    return span(1, &l, "", (start - 1), (self->pos - start), _int_of(self, start, (self->pos - 1)), 0e0);
+    int64_t class = 0;
+    bool is_hex_number = ((c1 == 48) && ((c2 == 120) || (c2 == 88)));
+    if ((!is_hex_number)) {
+                class = _decimal_class(self, start, (self->pos - 1));
+    }
+    int64_t integer = 0;
+    if ((class != 3)) {
+                integer = _int_of(self, start, (self->pos - 1));
+    }
+    return _spanfull(1, &l, "", (start - 1), (self->pos - start), integer, class, 0e0);
 }
 
 static lua_Value next_tok__lua(lua_Value _a0) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
-duo_rec_1992d065f3bb441b _r = next_tok(&_p0);
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
+duo_rec_735fa21981531a8e _r = next_tok(&_p0);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
 lua_table_set_raw_lit(_a0, "pos", 1412654217, 3, lua_val_from_int((int64_t)(_p0.pos)));
@@ -7447,14 +7585,16 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return ({
-    lua_Value _tmp = lua_table_new_with_capacity(0, 7);
+    lua_Value _tmp = lua_table_new_with_capacity(0, 8);
     lua_table_set_raw_lit(_tmp, "kind", 3641958979, 4, lua_val_from_int((int64_t)(_r.kind)));
     lua_table_set_raw_lit(_tmp, "loc", 1129404317, 3, ({
     lua_Value _tmp = lua_table_new_with_capacity(0, 3);
@@ -7467,12 +7607,13 @@ lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_
     lua_table_set_raw_lit(_tmp, "off", 2872740362, 3, lua_val_from_int((int64_t)(_r.off)));
     lua_table_set_raw_lit(_tmp, "len", 912972556, 3, lua_val_from_int((int64_t)(_r.len)));
     lua_table_set_raw_lit(_tmp, "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_r.int_val)));
+    lua_table_set_raw_lit(_tmp, "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_r.int_class)));
     lua_table_set_raw_lit(_tmp, "float_val", 1013216485, 9, lua_val_from_num((double)(_r.float_val)));
     _tmp;
 });
 }
 
-__attribute__((visibility("default"))) duo_rec_1992d065f3bb441b next_tok(duo_rec_baf12a9b72d17f38 *self) {
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e next_tok(duo_rec_ae78087612f938ba *self) {
         int64_t start = 0;
         duo_rec_ddce63158070fd68 l = {0};
     if ((((self->pos == 1) && (peek_char(self) == 35)) && (peek_char2(self) == 33))) {
@@ -7481,13 +7622,13 @@ __attribute__((visibility("default"))) duo_rec_1992d065f3bb441b next_tok(duo_rec
         while (((self->pos <= self->extent) && (peek_char(self) != 10))) {
             adv(self);
         }
-        return span(110, &l, "", (start - 1), (self->pos - start), 0, 0e0);
+        return _span(110, &l, "", (start - 1), (self->pos - start), 0, 0e0);
     }
     skip_ws(self);
     self->start = self->pos;
     if ((self->pos > self->extent)) {
         duo_rec_ddce63158070fd68 eof = cur_loc(self);
-        return span(109, &eof, "", (self->pos - 1), 0, 0, 0e0);
+        return _span(109, &eof, "", (self->pos - 1), 0, 0, 0e0);
     }
         l = cur_loc(self);
     int64_t c = peek_char(self);
@@ -7509,15 +7650,15 @@ __attribute__((visibility("default"))) duo_rec_1992d065f3bb441b next_tok(duo_rec
         if ((kind == 0)) {
                         kind = 0;
         }
-        return span(kind, &l, "", (start - 1), (self->pos - start), 0, 0e0);
+        return _span(kind, &l, "", (start - 1), (self->pos - start), 0, 0e0);
     }
     if (((c == 39) || (c == 34))) {
         int64_t lit_kind = classify_quote(self->family, c);
         read_str(self, c);
         if (self->has_error) {
-            return span(lit_kind, &l, "", (self->start - 1), 0, 0, 0e0);
+            return _span(lit_kind, &l, "", (self->start - 1), 0, 0, 0e0);
         }
-        return span(lit_kind, &l, "", (self->start - 1), ((self->pos - self->start) - 1), 0, 0e0);
+        return _span(lit_kind, &l, "", (self->start - 1), ((self->pos - self->start) - 1), 0, 0e0);
     }
         int64_t lvl = 0;
     if ((c == 91)) {
@@ -7525,9 +7666,9 @@ __attribute__((visibility("default"))) duo_rec_1992d065f3bb441b next_tok(duo_rec
         if ((lvl >= 0)) {
             read_long_str(self, lvl);
             if (self->has_error) {
-                return span(108, &l, "", (self->start - 1), 0, lvl, 0e0);
+                return _span(108, &l, "", (self->start - 1), 0, lvl, 0e0);
             }
-            return span(108, &l, "", (self->start - 1), (((self->pos - self->start) - 2) - lvl), lvl, 0e0);
+            return _span(108, &l, "", (self->start - 1), (((self->pos - self->start) - 2) - lvl), lvl, 0e0);
         }
     }
     if (((c == 35) && (self->family == 1))) {
@@ -7535,7 +7676,7 @@ __attribute__((visibility("default"))) duo_rec_1992d065f3bb441b next_tok(duo_rec
         while (((self->pos <= self->extent) && (peek_char(self) != 10))) {
             adv(self);
         }
-        return span(111, &l, "", (start - 1), (self->pos - start), 0, 0e0);
+        return _span(111, &l, "", (start - 1), (self->pos - start), 0, 0e0);
     }
     if (((c == 45) && (peek_char2(self) == 45))) {
                 start = self->pos;
@@ -7544,7 +7685,7 @@ __attribute__((visibility("default"))) duo_rec_1992d065f3bb441b next_tok(duo_rec
                 lvl = long_bracket_level(self);
         if ((lvl >= 0)) {
             skip_long(self, lvl);
-            return span(113, &l, "", (start - 1), (self->pos - start), 0, 0e0);
+            return _span(113, &l, "", (start - 1), (self->pos - start), 0, 0e0);
         }
         bool is_triple = ((self->pos <= self->extent) && (peek_char(self) == 45));
         if (is_triple) {
@@ -7553,157 +7694,157 @@ __attribute__((visibility("default"))) duo_rec_1992d065f3bb441b next_tok(duo_rec
         while (((self->pos <= self->extent) && (peek_char(self) != 10))) {
             adv(self);
         }
-        return span(112, &l, "", (start - 1), (self->pos - start), 0, 0e0);
+        return _span(112, &l, "", (start - 1), (self->pos - start), 0, 0e0);
     }
     adv(self);
         p = self->pos;
     if ((c == 43)) {
         if ((peek_char(self) == 61)) {
             adv(self);
-            return span(99, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(99, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(64, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(64, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 42)) {
         if ((peek_char(self) == 61)) {
             adv(self);
-            return span(101, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(101, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(66, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(66, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 37)) {
         if ((peek_char(self) == 61)) {
             adv(self);
-            return span(103, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(103, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(68, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(68, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 94)) {
         if ((peek_char(self) == 61)) {
             adv(self);
-            return span(104, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(104, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(69, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(69, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 35)) {
         if ((peek_char(self) == 35)) {
             adv(self);
-            return span(87, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(87, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(70, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(70, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 38)) {
-        return span(71, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(71, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 124)) {
         if (((self->pos <= self->extent) && (((int64_t)(unsigned char)(self->src[self->pos - 1])) == 62))) {
             self->pos = (self->pos + 1);
-            return span(97, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(97, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(72, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(72, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 40)) {
-        return span(58, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(58, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 41)) {
-        return span(59, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(59, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 91)) {
-        return span(60, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(60, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 93)) {
-        return span(61, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(61, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 123)) {
-        return span(62, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(62, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 125)) {
-        return span(63, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(63, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 59)) {
-        return span(77, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(77, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 44)) {
-        return span(79, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(79, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 45)) {
         if ((peek_char(self) == 61)) {
             adv(self);
-            return span(100, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(100, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
         if ((peek_char(self) == 62)) {
             adv(self);
-            return span(96, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(96, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(65, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(65, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 47)) {
         if ((peek_char(self) == 61)) {
             adv(self);
-            return span(102, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(102, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
         if ((peek_char(self) == 47)) {
             adv(self);
-            return span(94, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(94, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(67, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(67, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 46)) {
         if ((peek_char(self) == 46)) {
             adv(self);
             if ((peek_char(self) == 46)) {
                 adv(self);
-                return span(86, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+                return _span(86, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
             }
-            return span(85, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(85, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(80, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(80, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 61)) {
         if ((peek_char(self) == 61)) {
             adv(self);
-            return span(88, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(88, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
         if ((peek_char(self) == 62)) {
             adv(self);
-            return span(98, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(98, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(75, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(75, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 126)) {
-        return span(76, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(76, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 60)) {
         if ((peek_char(self) == 61)) {
             adv(self);
-            return span(90, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(90, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
         if ((peek_char(self) == 60)) {
             adv(self);
-            return span(92, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(92, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(73, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(73, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 62)) {
         if ((peek_char(self) == 61)) {
             adv(self);
-            return span(91, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(91, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
         if ((peek_char(self) == 62)) {
             adv(self);
-            return span(93, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(93, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(74, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(74, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 58)) {
         if ((peek_char(self) == 58)) {
             adv(self);
-            return span(95, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(95, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(78, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(78, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 64)) {
-        return span(81, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(81, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 63)) {
-        return span(82, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(82, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 33)) {
         if ((peek_char(self) == 61)) {
             adv(self);
-            return span(89, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
+            return _span(89, &l, "", (p - 2), ((self->pos - p) + 1), 0, 0e0);
         }
-        return span(83, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(83, &l, "", (p - 2), 1, 0, 0e0);
     } else if ((c == 96)) {
         if ((self->family == 1)) {
             _fail(self, 4);
-            return span(109, &l, "", (p - 2), 0, 0, 0e0);
+            return _span(109, &l, "", (p - 2), 0, 0, 0e0);
         }
-        return span(84, &l, "", (p - 2), 1, 0, 0e0);
+        return _span(84, &l, "", (p - 2), 1, 0, 0e0);
     } else {
         _fail(self, 4);
-        return span(109, &l, "", (p - 2), 0, 0, 0e0);
+        return _span(109, &l, "", (p - 2), 0, 0, 0e0);
     }
 }
 
 static lua_Value next__lua(lua_Value _a0) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
-duo_rec_1992d065f3bb441b _r = next(&_p0);
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
+duo_rec_735fa21981531a8e _r = next(&_p0);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
 lua_table_set_raw_lit(_a0, "pos", 1412654217, 3, lua_val_from_int((int64_t)(_p0.pos)));
@@ -7721,14 +7862,16 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return ({
-    lua_Value _tmp = lua_table_new_with_capacity(0, 7);
+    lua_Value _tmp = lua_table_new_with_capacity(0, 8);
     lua_table_set_raw_lit(_tmp, "kind", 3641958979, 4, lua_val_from_int((int64_t)(_r.kind)));
     lua_table_set_raw_lit(_tmp, "loc", 1129404317, 3, ({
     lua_Value _tmp = lua_table_new_with_capacity(0, 3);
@@ -7741,13 +7884,14 @@ lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_
     lua_table_set_raw_lit(_tmp, "off", 2872740362, 3, lua_val_from_int((int64_t)(_r.off)));
     lua_table_set_raw_lit(_tmp, "len", 912972556, 3, lua_val_from_int((int64_t)(_r.len)));
     lua_table_set_raw_lit(_tmp, "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_r.int_val)));
+    lua_table_set_raw_lit(_tmp, "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_r.int_class)));
     lua_table_set_raw_lit(_tmp, "float_val", 1013216485, 9, lua_val_from_num((double)(_r.float_val)));
     _tmp;
 });
 }
 
-__attribute__((visibility("default"))) duo_rec_1992d065f3bb441b next(duo_rec_baf12a9b72d17f38 *self) {
-        duo_rec_1992d065f3bb441b tok = {0};
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e next(duo_rec_ae78087612f938ba *self) {
+        duo_rec_735fa21981531a8e tok = {0};
     if (self->has_peeked) {
                 tok = self->peeked_token;
         self->has_peeked = false;
@@ -7761,8 +7905,8 @@ __attribute__((visibility("default"))) duo_rec_1992d065f3bb441b next(duo_rec_baf
 }
 
 static lua_Value peek__lua(lua_Value _a0) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
-duo_rec_1992d065f3bb441b _r = peek(&_p0);
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
+duo_rec_735fa21981531a8e _r = peek(&_p0);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
 lua_table_set_raw_lit(_a0, "pos", 1412654217, 3, lua_val_from_int((int64_t)(_p0.pos)));
@@ -7780,14 +7924,16 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return ({
-    lua_Value _tmp = lua_table_new_with_capacity(0, 7);
+    lua_Value _tmp = lua_table_new_with_capacity(0, 8);
     lua_table_set_raw_lit(_tmp, "kind", 3641958979, 4, lua_val_from_int((int64_t)(_r.kind)));
     lua_table_set_raw_lit(_tmp, "loc", 1129404317, 3, ({
     lua_Value _tmp = lua_table_new_with_capacity(0, 3);
@@ -7800,12 +7946,13 @@ lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_
     lua_table_set_raw_lit(_tmp, "off", 2872740362, 3, lua_val_from_int((int64_t)(_r.off)));
     lua_table_set_raw_lit(_tmp, "len", 912972556, 3, lua_val_from_int((int64_t)(_r.len)));
     lua_table_set_raw_lit(_tmp, "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_r.int_val)));
+    lua_table_set_raw_lit(_tmp, "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_r.int_class)));
     lua_table_set_raw_lit(_tmp, "float_val", 1013216485, 9, lua_val_from_num((double)(_r.float_val)));
     _tmp;
 });
 }
 
-__attribute__((visibility("default"))) duo_rec_1992d065f3bb441b peek(duo_rec_baf12a9b72d17f38 *self) {
+__attribute__((visibility("default"))) duo_rec_735fa21981531a8e peek(duo_rec_ae78087612f938ba *self) {
     if ((!self->has_peeked)) {
         self->peeked_token = next(self);
         self->has_peeked = true;
@@ -7814,8 +7961,8 @@ __attribute__((visibility("default"))) duo_rec_1992d065f3bb441b peek(duo_rec_baf
 }
 
 static lua_Value save_state__lua(lua_Value _a0) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
-duo_rec_772cd0eb8098063d _r = save_state(&_p0);
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
+duo_rec_8126e0d62b0fd79 _r = save_state(&_p0);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
 lua_table_set_raw_lit(_a0, "pos", 1412654217, 3, lua_val_from_int((int64_t)(_p0.pos)));
@@ -7833,12 +7980,14 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
     return ({
     lua_Value _tmp = lua_table_new_with_capacity(0, 6);
     lua_table_set_raw_lit(_tmp, "pos", 1412654217, 3, lua_val_from_int((int64_t)(_r.pos)));
@@ -7847,7 +7996,7 @@ lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_
     lua_table_set_raw_lit(_tmp, "col", 4069381233, 3, lua_val_from_int((int64_t)(_r.col)));
     lua_table_set_raw_lit(_tmp, "has_peeked", 3699109778, 10, lua_val_from_bool(_r.has_peeked));
     lua_table_set_raw_lit(_tmp, "peeked_token", 1875270549, 12, ({
-    lua_Value _tmp = lua_table_new_with_capacity(0, 7);
+    lua_Value _tmp = lua_table_new_with_capacity(0, 8);
     lua_table_set_raw_lit(_tmp, "kind", 3641958979, 4, lua_val_from_int((int64_t)(_r.peeked_token.kind)));
     lua_table_set_raw_lit(_tmp, "loc", 1129404317, 3, ({
     lua_Value _tmp = lua_table_new_with_capacity(0, 3);
@@ -7860,6 +8009,7 @@ lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_
     lua_table_set_raw_lit(_tmp, "off", 2872740362, 3, lua_val_from_int((int64_t)(_r.peeked_token.off)));
     lua_table_set_raw_lit(_tmp, "len", 912972556, 3, lua_val_from_int((int64_t)(_r.peeked_token.len)));
     lua_table_set_raw_lit(_tmp, "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_r.peeked_token.int_val)));
+    lua_table_set_raw_lit(_tmp, "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_r.peeked_token.int_class)));
     lua_table_set_raw_lit(_tmp, "float_val", 1013216485, 9, lua_val_from_num((double)(_r.peeked_token.float_val)));
     _tmp;
 }));
@@ -7867,8 +8017,8 @@ lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_
 });
 }
 
-__attribute__((visibility("default"))) duo_rec_772cd0eb8098063d save_state(duo_rec_baf12a9b72d17f38 *self) {
-    return (duo_rec_772cd0eb8098063d){
+__attribute__((visibility("default"))) duo_rec_8126e0d62b0fd79 save_state(duo_rec_ae78087612f938ba *self) {
+    return (duo_rec_8126e0d62b0fd79){
         .pos = self->pos,
         .start = self->start,
         .line = self->line,
@@ -7879,8 +8029,8 @@ __attribute__((visibility("default"))) duo_rec_772cd0eb8098063d save_state(duo_r
 }
 
 static lua_Value restore_state__lua2(lua_Value _a0, lua_Value _a1) {
-duo_rec_baf12a9b72d17f38 _p0 = (duo_rec_baf12a9b72d17f38){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)),};
-duo_rec_772cd0eb8098063d _p1 = (duo_rec_772cd0eb8098063d){.pos = ((int64_t)lua_table_get_str_num(_a1, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a1, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a1, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a1, "col", 4069381233u, 3)), .has_peeked = lua_table_get_str_bool(_a1, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_1992d065f3bb441b){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}),};
+duo_rec_ae78087612f938ba _p0 = (duo_rec_ae78087612f938ba){.src = lua_to_str(lua_table_get_raw_str_lit(_a0, "src", 3543982537u, 3)), .extent = ((int64_t)lua_table_get_str_num(_a0, "extent", 2591907865u, 6)), .pos = ((int64_t)lua_table_get_str_num(_a0, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a0, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a0, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a0, "col", 4069381233u, 3)), .file = lua_to_str(lua_table_get_raw_str_lit(_a0, "file", 2867484483u, 4)), .family = ((int64_t)lua_table_get_str_num(_a0, "family", 1377633321u, 6)), .has_peeked = lua_table_get_str_bool(_a0, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}), .has_error = lua_table_get_str_bool(_a0, "has_error", 1092395586u, 9), .error_loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233u, 3)),}), .error_code = ((int64_t)lua_table_get_str_num(_a0, "error_code", 352063879u, 10)), .stmt_col = ((int64_t)lua_table_get_str_num(_a0, "stmt_col", 2356770046u, 8)),};
+duo_rec_8126e0d62b0fd79 _p1 = (duo_rec_8126e0d62b0fd79){.pos = ((int64_t)lua_table_get_str_num(_a1, "pos", 1412654217u, 3)), .start = ((int64_t)lua_table_get_str_num(_a1, "start", 1697318111u, 5)), .line = ((int64_t)lua_table_get_str_num(_a1, "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(_a1, "col", 4069381233u, 3)), .has_peeked = lua_table_get_str_bool(_a1, "has_peeked", 3699109778u, 10), .peeked_token = ((duo_rec_735fa21981531a8e){.kind = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "kind", 3641958979u, 4)), .loc = ((duo_rec_ddce63158070fd68){.file = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "file", 2867484483u, 4)), .line = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "line", 400234023u, 4)), .col = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "loc", 1129404317u, 3), "col", 4069381233u, 3)),}), .text = lua_to_str(lua_table_get_raw_str_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "text", 3185987134u, 4)), .off = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "off", 2872740362u, 3)), .len = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "len", 912972556u, 3)), .int_val = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "int_val", 1034212706u, 7)), .int_class = ((int64_t)lua_table_get_str_num(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "int_class", 1019567685u, 9)), .float_val = ((double)lua_table_get_str_num(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "float_val", 1013216485u, 9)),}),};
 lua_Value _r = restore_state(&_p0, &_p1);
 lua_table_set_raw_lit(_a0, "src", 3543982537, 3, lua_val_from_str(_p0.src));
 lua_table_set_raw_lit(_a0, "extent", 2591907865, 6, lua_val_from_int((int64_t)(_p0.extent)));
@@ -7899,12 +8049,14 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p0.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p0.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p0.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p0.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p0.peeked_token.float_val)));
 lua_table_set_raw_lit(_a0, "has_error", 1092395586, 9, lua_val_from_bool(_p0.has_error));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "file", 2867484483, 4, lua_val_from_str(_p0.error_loc.file));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "line", 400234023, 4, lua_val_from_int((int64_t)(_p0.error_loc.line)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a0, "error_loc", 4232039340u, 9), "col", 4069381233, 3, lua_val_from_int((int64_t)(_p0.error_loc.col)));
 lua_table_set_raw_lit(_a0, "error_code", 352063879, 10, lua_val_from_int((int64_t)(_p0.error_code)));
+lua_table_set_raw_lit(_a0, "stmt_col", 2356770046, 8, lua_val_from_int((int64_t)(_p0.stmt_col)));
 lua_table_set_raw_lit(_a1, "pos", 1412654217, 3, lua_val_from_int((int64_t)(_p1.pos)));
 lua_table_set_raw_lit(_a1, "start", 1697318111, 5, lua_val_from_int((int64_t)(_p1.start)));
 lua_table_set_raw_lit(_a1, "line", 400234023, 4, lua_val_from_int((int64_t)(_p1.line)));
@@ -7918,11 +8070,12 @@ lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "off", 2872740362, 3, lua_val_from_int((int64_t)(_p1.peeked_token.off)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "len", 912972556, 3, lua_val_from_int((int64_t)(_p1.peeked_token.len)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "int_val", 1034212706, 7, lua_val_from_int((int64_t)(_p1.peeked_token.int_val)));
+lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "int_class", 1019567685, 9, lua_val_from_int((int64_t)(_p1.peeked_token.int_class)));
 lua_table_set_raw_lit(lua_table_get_raw_str_lit(_a1, "peeked_token", 1875270549u, 12), "float_val", 1013216485, 9, lua_val_from_num((double)(_p1.peeked_token.float_val)));
     return _r;
 }
 
-__attribute__((visibility("default"))) lua_Value restore_state(duo_rec_baf12a9b72d17f38 *self, duo_rec_772cd0eb8098063d *state) {
+__attribute__((visibility("default"))) lua_Value restore_state(duo_rec_ae78087612f938ba *self, duo_rec_8126e0d62b0fd79 *state) {
     self->pos = state->pos;
     self->start = state->start;
     self->line = state->line;
@@ -7941,10 +8094,10 @@ int64_t _r = duo_lexer_error_line(_p0, _p1, _p2);
 }
 
 __attribute__((visibility("default"))) int64_t duo_lexer_error_line(const char* src, const char* file, int64_t family) {
-    duo_rec_baf12a9b72d17f38 lex = new(src, file, family);
+    duo_rec_ae78087612f938ba lex = new(src, file, family);
     int64_t n = 0;
     while ((n < 10000000)) {
-        duo_rec_1992d065f3bb441b tok = next_tok(&lex);
+        duo_rec_735fa21981531a8e tok = next_tok(&lex);
                 n = (n + 1);
         if (lex.has_error) {
             return lex.error_loc.line;
@@ -7969,18 +8122,19 @@ int64_t _r = duo_lexer_tokenize_full(_p0, _p1, _p2, _p3, _p4, _p5, _p6);
 }
 
 __attribute__((visibility("default"))) int64_t duo_lexer_tokenize_full(const char* src, const char* file, int64_t family, int64_t out, int64_t cap, int64_t txt, int64_t txtcap) {
-    duo_rec_baf12a9b72d17f38 lex = new(src, file, family);
+    duo_rec_ae78087612f938ba lex = new(src, file, family);
     int64_t* buf = ((int64_t*)(uintptr_t)(out));
     int64_t n = 0;
     while ((n < cap)) {
-        duo_rec_1992d065f3bb441b tok = next_tok(&lex);
-        *(int64_t*)((uint8_t*)(buf) + (((n * 7) * 8))) = (int64_t)(tok.kind);
-        *(int64_t*)((uint8_t*)(buf) + ((((n * 7) + 1) * 8))) = (int64_t)(tok.loc.line);
-        *(int64_t*)((uint8_t*)(buf) + ((((n * 7) + 2) * 8))) = (int64_t)(tok.loc.col);
-        *(int64_t*)((uint8_t*)(buf) + ((((n * 7) + 3) * 8))) = (int64_t)(tok.int_val);
-        *(int64_t*)((uint8_t*)(buf) + ((((n * 7) + 4) * 8))) = (int64_t)(tok.off);
-        *(int64_t*)((uint8_t*)(buf) + ((((n * 7) + 5) * 8))) = (int64_t)(tok.len);
-        *(double*)((uint8_t*)(buf) + ((((n * 7) + 6) * 8))) = (double)(tok.float_val);
+        duo_rec_735fa21981531a8e tok = next_tok(&lex);
+        *(int64_t*)((uint8_t*)(buf) + (((n * 8) * 8))) = (int64_t)(tok.kind);
+        *(int64_t*)((uint8_t*)(buf) + ((((n * 8) + 1) * 8))) = (int64_t)(tok.loc.line);
+        *(int64_t*)((uint8_t*)(buf) + ((((n * 8) + 2) * 8))) = (int64_t)(tok.loc.col);
+        *(int64_t*)((uint8_t*)(buf) + ((((n * 8) + 3) * 8))) = (int64_t)(tok.int_val);
+        *(int64_t*)((uint8_t*)(buf) + ((((n * 8) + 4) * 8))) = (int64_t)(tok.off);
+        *(int64_t*)((uint8_t*)(buf) + ((((n * 8) + 5) * 8))) = (int64_t)(tok.len);
+        *(double*)((uint8_t*)(buf) + ((((n * 8) + 6) * 8))) = (double)(tok.float_val);
+        *(int64_t*)((uint8_t*)(buf) + ((((n * 8) + 7) * 8))) = (int64_t)(tok.int_class);
                 n = (n + 1);
         if (lex.has_error) {
             return (-100 - lex.error_code);
@@ -8003,11 +8157,11 @@ int64_t _r = duo_lexer_tokenize_all(_p0, _p1, _p2, _p3, _p4);
 }
 
 __attribute__((visibility("default"))) int64_t duo_lexer_tokenize_all(const char* src, const char* file, int64_t family, int64_t out, int64_t cap) {
-    duo_rec_baf12a9b72d17f38 lex = new(src, file, family);
+    duo_rec_ae78087612f938ba lex = new(src, file, family);
     int64_t* buf = ((int64_t*)(uintptr_t)(out));
     int64_t n = 0;
     while ((n < cap)) {
-        duo_rec_1992d065f3bb441b tok = next_tok(&lex);
+        duo_rec_735fa21981531a8e tok = next_tok(&lex);
         *(int64_t*)((uint8_t*)(buf) + (((n * 4) * 8))) = (int64_t)(tok.kind);
         *(int64_t*)((uint8_t*)(buf) + ((((n * 4) + 1) * 8))) = (int64_t)(tok.loc.line);
         *(int64_t*)((uint8_t*)(buf) + ((((n * 4) + 2) * 8))) = (int64_t)(tok.loc.col);
@@ -8033,9 +8187,9 @@ int64_t _r = duo_lexer_step(_p0, _p1, _p2, _p3);
 }
 
 __attribute__((visibility("default"))) int64_t duo_lexer_step(const char* src, const char* file, int64_t family, int64_t pos) {
-    duo_rec_baf12a9b72d17f38 lex = new(src, file, family);
+    duo_rec_ae78087612f938ba lex = new(src, file, family);
     lex.pos = pos;
-    duo_rec_1992d065f3bb441b tok = next_tok(&lex);
+    duo_rec_735fa21981531a8e tok = next_tok(&lex);
     return ((tok.kind * 1099511627776) + lex.pos);
 }
 
@@ -8048,10 +8202,10 @@ uint64_t _r = duo_lexer_text_fingerprint(_p0, _p1, _p2);
 }
 
 __attribute__((visibility("default"))) uint64_t duo_lexer_text_fingerprint(const char* src, const char* file, int64_t family) {
-    duo_rec_baf12a9b72d17f38 lex = new(src, file, family);
+    duo_rec_ae78087612f938ba lex = new(src, file, family);
     uint64_t h = ((uint64_t)(0));
     while (1) {
-        duo_rec_1992d065f3bb441b tok = next_tok(&lex);
+        duo_rec_735fa21981531a8e tok = next_tok(&lex);
                 h = ((uint64_t)(((h * 31) + tok.len)));
         int64_t bi = 0;
         while ((bi < tok.len)) {
@@ -8074,10 +8228,10 @@ uint64_t _r = duo_lexer_kind_fingerprint(_p0, _p1, _p2);
 }
 
 __attribute__((visibility("default"))) uint64_t duo_lexer_kind_fingerprint(const char* src, const char* file, int64_t family) {
-    duo_rec_baf12a9b72d17f38 lex = new(src, file, family);
+    duo_rec_ae78087612f938ba lex = new(src, file, family);
     uint64_t h = ((uint64_t)(0));
     while (1) {
-        duo_rec_1992d065f3bb441b tok = next_tok(&lex);
+        duo_rec_735fa21981531a8e tok = next_tok(&lex);
                 h = ((uint64_t)(((h * 31) + tok.kind)));
         if ((tok.kind == 109)) {
             return h;
@@ -8505,7 +8659,7 @@ static lua_Value recordslots__lua(lua_Value _unused) {
 }
 
 __attribute__((visibility("default"))) int64_t recordslots(void) {
-    return 7;
+    return 8;
 }
 
 static lua_Value fieldkind__lua(lua_Value _unused) {
@@ -8576,6 +8730,16 @@ static lua_Value fieldfloat__lua(lua_Value _unused) {
 
 __attribute__((visibility("default"))) int64_t fieldfloat(void) {
     return 6;
+}
+
+static lua_Value _fieldintclass__lua(lua_Value _unused) {
+    (void)_unused;
+    int64_t _r = _fieldintclass();
+    return lua_val_from_int((int64_t)(_r));
+}
+
+__attribute__((visibility("default"))) int64_t _fieldintclass(void) {
+    return 7;
 }
 
 static lua_Value rejectioncount__lua(lua_Value _unused) {
