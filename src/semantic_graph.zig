@@ -3508,12 +3508,12 @@ pub const SemanticGraph = struct {
                 else => {},
             }
         }
+        // A module tail is the process result. Call syntax does not make that
+        // result unobserved: `_answer()` at root must carry `_answer`'s value
+        // into the physical ABI `main`. Statement/call_stmt positions above
+        // remain the producer-owned discard cases.
         if (mod.body.tail_expr) |tail| {
-            const rc: types.ReturnConsumption = switch (tail.*) {
-                .call, .method_call => .discard,
-                else => .single,
-            };
-            try self.liftExprsFromExpr(tail, file, parent, rc);
+            try self.liftExprsFromExpr(tail, file, parent, .single);
         }
     }
 
@@ -7393,6 +7393,55 @@ test "semantic_graph: source-law edition preserves knowledge and refuses conflic
         error.SourceLawEditionMismatch,
         conflicting.liftModuleWithCheckedCalls(&module, &checked, "edition.id"),
     );
+}
+
+test "semantic_graph: module tail application result is process-observed" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\produce: i64 = (value: i64)
+        \\    value + 1
+        \\answer: i64 = (seed: i64)
+        \\    produce(seed)
+        \\    produce(seed)
+        \\answer(40)
+    ;
+    var lexer = Lexer.init(source, "root-demand.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    checked.source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
+    try checked.check_module(&module);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const root = try graph.liftModuleWithCheckedCalls(&module, &checked, "root-demand.id");
+
+    var root_single: usize = 0;
+    var nested_single: usize = 0;
+    var nested_discard: usize = 0;
+    for (graph.applications()) |application| {
+        const demand = graph.applicationDemand(application.application) orelse
+            return error.TestExpectedEqual;
+        if (graph.applicationCaller(application.application).? == root) {
+            try std.testing.expectEqual(types.ReturnConsumption.single, demand);
+            root_single += 1;
+        } else switch (demand) {
+            .single => nested_single += 1,
+            .discard => nested_discard += 1,
+            else => return error.TestExpectedEqual,
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), root_single);
+    try std.testing.expectEqual(@as(usize, 1), nested_single);
+    try std.testing.expectEqual(@as(usize, 1), nested_discard);
 }
 
 test "semantic_graph: checked subject application retains relation and value identities" {

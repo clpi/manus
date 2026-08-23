@@ -7475,6 +7475,27 @@ fn applicationRelation(
         invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-relation");
 }
 
+/// Result consumption for checked one-result scalar/record relation calls
+/// comes from the graph occurrence, never from the AST walker's separately
+/// threaded context. Pack adjustment, multi-result calls, aggregate projection
+/// and one-result `.multi` demand retain their existing lowering until exact
+/// pack/projection correspondence owns those decisions too.
+fn checkedApplicationConsumption(
+    ctx: *LowerCtx,
+    application: *const semantic_graph.ApplicationFact,
+    result_members: []const semantic_graph.id,
+    outside: types.ReturnConsumption,
+) Error!types.ReturnConsumption {
+    if (result_members.len != 1) return outside;
+    const demand = ctx.graph.applicationDemand(application.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-demand");
+    return switch (demand) {
+        .discard, .single => demand,
+        .multi => outside,
+        .unknown => invalidGraphFacts(ctx.diagnostic, @src(), "application-demand"),
+    };
+}
+
 fn linkageForTarget(ctx: *LowerCtx, target: semantic_graph.id) Error![]const u8 {
     return ctx.entity_linkage.get(target) orelse
         invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-target");
@@ -7600,6 +7621,12 @@ fn lowerCheckedRecordCallAssign(
 ) Error!void {
     _ = _call_value;
     bindOccurrence(ctx.diagnostic, ctx.graph, application.application);
+    const result_members = ctx.graph.applicationResults(application.application) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
+    const demand = try checkedApplicationConsumption(ctx, application, result_members, .single);
+    if (demand != .single) {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-consumption");
+    }
     const relation = try applicationRelation(ctx, application);
     const target = try applicationTarget(ctx, application);
     const callee = try linkageForTarget(ctx, target);
@@ -10430,6 +10457,12 @@ fn lowerCheckedScalarCall(
 ) Error!dnir.Value {
     const result_members = ctx.graph.applicationResults(application.application) orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-pack");
+    const graph_consumption = try checkedApplicationConsumption(
+        ctx,
+        application,
+        result_members,
+        consumption,
+    );
     if (result_members.len > 1) {
         var temps: [max_reg_record_fields]?u32 = @splat(null);
         const demanded: usize = if (consumption == .discard) 0 else if (consumption == .single) 1 else return invalidGraphFacts(ctx.diagnostic, @src(), "application-result-consumption");
@@ -10448,7 +10481,7 @@ fn lowerCheckedScalarCall(
     try ensureTargetExtern(ctx, target, callee);
     const descriptor = try publishedDescriptor(ctx, application);
     if (try checkedRecordForApplication(ctx, application)) |record| {
-        return try lowerCheckedRecordCall(ctx, application, record, consumption);
+        return try lowerCheckedRecordCall(ctx, application, record, graph_consumption);
     }
     try checkedScalarResult(ctx.diagnostic, descriptor);
 
@@ -10483,7 +10516,7 @@ fn lowerCheckedScalarCall(
     // (`planGpStackLocals`, gate_spill_all_locals = body_has_call), so the
     // operand load/reload survives the call's caller-saved clobber.
     if (!direct_gp) try stageCheckedScalarOperands(ctx, slots);
-    const has_result = consumption != .discard and descriptor != .void;
+    const has_result = graph_consumption != .discard and descriptor != .void;
     const result = if (has_result) ctx.freshTemp() else null;
     const value = try checkedApplicationResult(ctx, application);
     try ctx.emit(.{
@@ -14443,20 +14476,121 @@ test "dnir_lower: nested aggregate constant bounds fail closed" {
     try std.testing.expectEqualStrings("aggregate-index-bounds", diagnostic.note().?);
 }
 
+test "dnir_lower: checked one-result calls consume graph demand" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\produce: i64 = (value: i64)
+        \\    value + 1
+        \\answer: i64 = (seed: i64)
+        \\    kept = produce(seed)
+        \\    produce(seed)
+        \\    kept + 1
+        \\answer(40)
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "application-demand.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "application-demand.id");
+
+    var single_application: ?semantic_graph.id = null;
+    var discard_application: ?semantic_graph.id = null;
+    for (graph.applications()) |application| {
+        const relation = graph.applicationRelation(application.application) orelse continue;
+        const name = (graph.get(relation) orelse continue).name orelse continue;
+        if (!std.mem.eql(u8, name, "produce")) continue;
+        switch (graph.applicationDemand(application.application) orelse continue) {
+            .single => single_application = application.application,
+            .discard => discard_application = application.application,
+            else => {},
+        }
+    }
+    const single = single_application orelse return error.TestExpectedEqual;
+    const discard = discard_application orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 1), graph.applicationResults(single).?.len);
+    try std.testing.expectEqual(@as(usize, 1), graph.applicationResults(discard).?.len);
+
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    var saw_single = false;
+    var saw_discard = false;
+    for (lowered.functions) |function| {
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.application == single) {
+                    try std.testing.expect(instruction.result != null);
+                    saw_single = true;
+                }
+                if (instruction.application == discard) {
+                    try std.testing.expect(instruction.result == null);
+                    saw_discard = true;
+                }
+            }
+        }
+    }
+    try std.testing.expect(saw_single);
+    try std.testing.expect(saw_discard);
+
+    // Damage the graph only. The AST walker still supplies the original
+    // consumption in both positions, so swapped result materialization proves
+    // that the graph fact now decides the physical call shape.
+    graph.nodes.items[single].demand = .discard;
+    graph.nodes.items[discard].demand = .single;
+    const swapped = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, swapped);
+    saw_single = false;
+    saw_discard = false;
+    for (swapped.functions) |function| {
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.application == single) {
+                    try std.testing.expect(instruction.result == null);
+                    saw_single = true;
+                }
+                if (instruction.application == discard) {
+                    try std.testing.expect(instruction.result != null);
+                    saw_discard = true;
+                }
+            }
+        }
+    }
+    try std.testing.expect(saw_single);
+    try std.testing.expect(saw_discard);
+
+    graph.nodes.items[single].demand = .unknown;
+    graph.nodes.items[discard].demand = .discard;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-demand", diagnostic.note().?);
+}
+
 test "dnir_lower: checked aggregate result consumes exact graph shape" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
     const source =
         \\point: {
-        \\    x: f64
-        \\    y: f64
+        \\    x: i64
+        \\    y: i64
         \\}
-        \\make: point = ()
-        \\    { x = 1.0, y = 2.0 }
-        \\main: i64 = ()
-        \\    value = make()
-        \\    0
+        \\make: point = (seed: i64)
+        \\    { x = seed, y = seed + 1 }
+        \\answer: i64 = (seed: i64)
+        \\    value = make(seed)
+        \\    value.x
+        \\answer(1)
     ;
     var lexer = @import("lexer.zig").Lexer.init(source, "aggregate-result.id");
     var parser = @import("parser.zig").Parser.init(&lexer, alloc);
@@ -14472,6 +14606,7 @@ test "dnir_lower: checked aggregate result consumes exact graph shape" {
 
     var diagnostic: Diagnostic = .{};
     const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
     try std.testing.expectEqual(@as(usize, 1), lowered.records.len);
     const shape = lowered.records[0].semantic_shape orelse return error.TestExpectedEqual;
     var make_application: ?semantic_graph.id = null;
@@ -14482,6 +14617,33 @@ test "dnir_lower: checked aggregate result consumes exact graph shape" {
     }
     const application = make_application orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(shape, graph.applicationResultShape(application, 0).?);
+    try std.testing.expectEqual(types.ReturnConsumption.single, graph.applicationDemand(application).?);
+    var saw_materialized_record = false;
+    for (lowered.functions) |function| {
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.application != application) continue;
+                try std.testing.expect(instruction.record.len > 0);
+                try std.testing.expectEqualStrings("value", instruction.field);
+                saw_materialized_record = true;
+            }
+        }
+    }
+    try std.testing.expect(saw_materialized_record);
+
+    // The assignment route used to materialize this record solely because the
+    // AST walker was in a single-result context. Change the graph fact to
+    // discard and the named record-region route must refuse before that rival
+    // context can authorize a result.
+    const saved_demand = graph.nodes.items[application].demand;
+    graph.nodes.items[application].demand = .discard;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-result-consumption", diagnostic.note().?);
+    graph.nodes.items[application].demand = saved_demand;
 
     // Damage control: deleting the exact result-value -> shape edge makes the
     // production consumer refuse. It does not recover `point` from the AST.
