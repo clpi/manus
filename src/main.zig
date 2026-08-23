@@ -239,6 +239,123 @@ fn apply_env_flags(init: std.process.Init) void {
     if (map.get("DUO_COLOR")) |v| {
         if (env_value_truthy(v)) term.color = true;
     }
+    surveyBehaviourEnv(map);
+}
+
+/// HOW ONE `DUO_*`/`IDOL_*` VARIABLE RELATES TO THE §40 BUILD CACHE KEY.
+const BehaviourEnvClass = enum {
+    /// Changes no byte of the artifact: diagnostics, census printing, tracing,
+    /// report styling, and harness plumbing the compiler never reads.
+    inert,
+    /// Changes the artifact AND is hashed into `buildCacheKey`, so two settings
+    /// occupy two cache entries and a severing control is a control.
+    modelled,
+    /// Changes the artifact and is NOT in the key. The cache is declined.
+    affects,
+};
+
+/// THE TABLE IS EXHAUSTIVE AND ITS DEFAULT IS `affects`, and that default is
+/// the entire repair.
+///
+/// `buildCacheKey` has now been corrected at this site six times and every
+/// correction had one shape: a new behaviour flag shipped, nobody added it to
+/// the key, and the flag's own severing control was handed the other arm's
+/// artifact and measured 1.00x against itself. THREE SEPARATE LANES LOST A
+/// MEASUREMENT TO IT TODAY, which is why the seventh is answered here rather
+/// than after it happens.
+///
+/// An enumeration of code-affecting flags fails OPEN on the seventh flag. This
+/// enumeration fails CLOSED on it: a name nobody has classified declines the
+/// cache, which costs a rebuild and cannot cost a wrong number. Moving a name
+/// to `.inert` is a claim that it does not change a byte of the artifact and
+/// should be made with a byte comparison in hand — same output basename,
+/// different directories, `otool`'s filename header stripped, because two arms
+/// written to different names differ in the Mach-O UUID alone.
+fn behaviourEnvClass(name: []const u8) BehaviourEnvClass {
+    const Row = struct { []const u8, BehaviourEnvClass };
+    const table = [_]Row{
+        // Read by the compiler, reporting only.
+        .{ "DUO_NATIVE_DIAG", .inert },
+        .{ "DUO_WHY_CONVERT", .inert },
+        .{ "DUO_SER", .inert },
+        .{ "DUO_GRAPH", .inert },
+        .{ "DUO_GRAPH_WRITE", .inert },
+        .{ "DUO_MODULE_PROMOTE_DIAG", .inert },
+        .{ "DUO_DNIR_TRACE", .inert },
+        .{ "DUO_TRACE", .inert },
+        .{ "DUO_TRACE_RICH", .inert },
+        .{ "DUO_DEBUG", .inert },
+        .{ "DUO_DEBUG_DEPTH", .inert },
+        .{ "DUO_HINTS", .inert },
+        .{ "DUO_INFO", .inert },
+        .{ "DUO_PLAIN_DIAG", .inert },
+        .{ "DUO_TEST_REPORT", .inert },
+        .{ "DUO_BUILD_REPORT", .inert },
+        .{ "DUO_COLOR", .inert },
+        .{ "DUO_WAIST_REPORT", .inert },
+        .{ "IDOL_IFCONV_REPORT", .inert },
+        .{ "IDOL_IFCONV_TRACE", .inert },
+        .{ "IDOL_TRACE", .inert },
+        // Not read by the compiler at all — build harness and lock plumbing.
+        // Listed so an ordinary gate run does not lose the cache to a name the
+        // compiler never consults.
+        .{ "IDOL_BIN", .inert },
+        .{ "IDOL_BUILD_LOCK", .inert },
+        .{ "IDOL_LOCK_HELD", .inert },
+        .{ "IDOL_BUILD_MODE", .inert },
+        .{ "IDOL_NATIVE", .inert },
+        .{ "IDOL_RM_STATE", .inert },
+        .{ "IDOL_RMDIR_STATE", .inert },
+        // In the key. See `buildCacheKey`.
+        .{ "IDOL_UNROLL", .modelled },
+        .{ "DUO_NO_MODULE_PROMOTE", .modelled },
+        // Changes the artifact, not in the key: decline. Each of these is a
+        // measurement waiting to read 1.00x against itself.
+        .{ "DUO_PROVENANCE", .affects },
+        .{ "DUO_TRANSFORM_GATE", .affects },
+        .{ "DUO_EMIT_MANIFEST", .affects },
+        .{ "DUO_EMIT_PROOF", .affects },
+        .{ "IDOL_DIVZERO_GUARD_ALWAYS", .affects },
+        .{ "IDOL_FLOOR_FIXUP_ALWAYS", .affects },
+        .{ "IDOL_UNSAFE_TRUNC_DIVREM", .affects },
+        .{ "IDOL_HOME_BUDGET", .affects },
+        // MEASURED, not assumed: with a RUNTIME divisor this flag replaces the
+        // eight-instruction floored correction with a five-instruction one, and
+        // it was classified `.inert` here until the byte comparison was run on a
+        // source that actually reaches a division. A first probe source folded
+        // its divisor to a constant, took the magic-multiply path, and reported
+        // the flag inert — which is why a `.inert` row is a claim about the
+        // flag's implementation and not about one program.
+        .{ "IDOL_PROBE_NONNEG_DIVISOR", .affects },
+        // `DUO_BENCH_BACKEND` only reaches bench mode, which `cacheable`
+        // already excludes; classified `.affects` so the exclusion does not
+        // rest on that one call site staying true.
+        .{ "DUO_BENCH_BACKEND", .affects },
+    };
+    for (table) |row| {
+        if (std.mem.eql(u8, row[0], name)) return row[1];
+    }
+    return .affects;
+}
+
+/// Set when the environment carries a `DUO_*`/`IDOL_*` variable classified
+/// `.affects`. `buildCacheKey` then produces no key at all, so the §40 cache
+/// neither loads nor stores under a flag the key does not model.
+var global_unmodelled_behaviour_env: bool = false;
+
+fn surveyBehaviourEnv(map: anytype) void {
+    var it = map.iterator();
+    while (it.next()) |entry| {
+        const name = entry.key_ptr.*;
+        if (!std.mem.startsWith(u8, name, "DUO_") and !std.mem.startsWith(u8, name, "IDOL_")) continue;
+        // A falsy or empty value sets nothing, so it changes nothing. This is
+        // the same predicate every reader above applies, so a variable exported
+        // as `0` costs neither behaviour nor cache.
+        if (!env_value_truthy(entry.value_ptr.*)) continue;
+        if (behaviourEnvClass(name) != .affects) continue;
+        global_unmodelled_behaviour_env = true;
+        return;
+    }
 }
 
 fn apply_cli_flags(trace_flag: bool, info_flag: bool, hints_flag: bool, plain_diag: bool, debug_flag: bool, debug_list: ?[]const u8, debug_depth: ?u32, test_report: ?[]const u8, build_report: ?[]const u8, no_color: bool, verbose_count: u8) void {
@@ -4497,6 +4614,12 @@ fn buildCacheKey(
     backend_mode: []const u8,
     opt: []const u8,
 ) ?[]u8 {
+    // FAIL CLOSED ON A FLAG THIS KEY DOES NOT MODEL. Declining to cache costs a
+    // rebuild; caching under an unmodelled behaviour flag costs a measurement
+    // that reads 1.00x because both arms were handed one artifact. The named
+    // flags below still enter the key so that the COMMON severing controls stay
+    // cacheable and fast; this catch-all covers the one that ships next.
+    if (global_unmodelled_behaviour_env) return null;
     const cwd = Io.Dir.cwd();
     const src = Io.Dir.readFileAlloc(cwd, io, src_path, alloc, .unlimited) catch return null;
     defer alloc.free(src);
@@ -4556,6 +4679,22 @@ fn buildCacheKey(
     // served the UNWATCHED artifact. See `observer_demand.Demand.cacheKey`.
     const obs_key = global_observer_demand.cacheKey();
     h.update(std.mem.asBytes(&obs_key));
+    // ...AND THE LOOP-UNROLL SETTING (gap[221]). Fifth defect avoided at this
+    // site rather than found here: `IDOL_UNROLL` changes which machine code a
+    // source lowers to, exactly as `--observer` does, and a key without it
+    // serves the unrolled artifact to a compile that severed the transform —
+    // which would make the transform's own negative control measure 1.00x by
+    // handing both arms the same binary. Read from `dnir_lower`, the one place
+    // the setting is interpreted, so there is no second reading of the value.
+    const unroll_key: u32 = dnir_lower.unrollFactorSetting();
+    h.update(std.mem.asBytes(&unroll_key));
+    // ...AND THE MODULE-PROMOTION SEVERING CONTROL. Sixth defect at this site,
+    // and it was LIVE: `DUO_NO_MODULE_PROMOTE` changes which machine code a
+    // source lowers to and was not in the key at all, so the promotion lane's
+    // own negative control was one `TMPDIR` away from measuring 1.00x against
+    // itself. Three separate lanes have been bitten by this exact shape.
+    const promote_key: u8 = if (dnir_lower.module_promote_enabled) 1 else 0;
+    h.update(std.mem.asBytes(&promote_key));
     const worlds = launchWorlds(src_path);
     for (worlds.slice()) |w| h.update(subject_home.homeName(w));
     h.update(std.mem.asBytes(&worlds.len));

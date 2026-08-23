@@ -5119,6 +5119,8 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             }
         },
         .while_loop => |ws| {
+            // TWO TRANSFORMS COMPOSED, AND THE ORDER IS THE WHOLE ARGUMENT.
+            //
             // MODULE-BINDING REGISTER PROMOTION. The preloads sit BEFORE
             // `head_idx`, so the back edge re-runs the test and not the load;
             // the write-backs sit AT `end_idx`, which is where both the failing
@@ -5129,6 +5131,50 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 try ctx.emit(.{ .op = .load_global, .result = p.slot, .field = p.name, .ty = .i64 });
                 try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, p.name), p.slot);
             }
+            // gap[221] — the unrolled main loop is emitted AHEAD of this, and
+            // this lowering, unchanged, becomes its residual. When the loop is
+            // not a plannable counted loop the call emits nothing and the
+            // program lowers exactly as it did before.
+            //
+            // IT RUNS INSIDE THE PROMOTION'S SHADOW SCOPE — after the preloads
+            // and the `ctx.locals` installs above, before the write-backs
+            // below — and that placement discharges the two obligations the
+            // composition has that neither transform has alone.
+            //
+            // OBLIGATION 1: THE UNROLLED COPIES MUST READ THE REGISTER. They do
+            // because by the time this call lowers the body, the promoted
+            // module names resolve through `ctx.locals` like any other local,
+            // so the body lowers to `store_local`/`binop` rather than to
+            // `store_global`/`load_global`. This is not merely a speed
+            // difference: `unrollRangeIsCopyable` REFUSES `load_global` and
+            // `store_global`, so with the two calls in the other order the
+            // unroll does not run slowly at module scope — it declines
+            // outright, which is what it did in the lane that measured it
+            // against a bare baseline. Composition is what makes the transform
+            // reach module-scope loops at all.
+            //
+            // OBLIGATION 2: THE WRITE-BACK MUST HAPPEN EXACTLY ONCE, AFTER THE
+            // RESIDUAL. It does because it is still emitted at `end_idx`, and
+            // nothing between here and there stores the binding. Control
+            // reaches the residual from the unrolled loop with the promoted
+            // registers LIVE: the unrolled loop's two exits — its failing head
+            // test and its overflow guard — are both patched to the
+            // instruction index the ordinary lowering below then begins at,
+            // which is exactly the residual's `head_idx`. A `store_global`
+            // emitted between the two loops with no reload after it is the
+            // silent stale-value defect this ordering exists to prevent: the
+            // residual would go on updating a register whose word had already
+            // been written, and the module would keep the value the unrolled
+            // loop left rather than the one the whole loop computed.
+            //
+            // AND NOTHING LEAVES THE UNROLLED LOOP PAST THE WRITE-BACK.
+            // `unrollScanBlock` refuses `break`, `continue`, `return` and every
+            // statement kind it has not been reasoned about; `unrollRangeIsCopyable`
+            // refuses a branch leaving the copied range; and
+            // `emitUnrolledWhilePrologue` withdraws itself if the body lowering
+            // registered a break against the ENCLOSING loop anyway. So the
+            // unrolled loop has exactly the two exits named above.
+            try emitUnrolledWhilePrologue(ctx, ws);
             try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
             const head_idx: u32 = @intCast(ctx.instrs.items.len);
             try ctx.loop_heads.append(ctx.alloc, head_idx);
@@ -5243,6 +5289,543 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
         },
         else => return bailWith(ctx.diagnostic, @src(), @tagName(stmt.*)),
     }
+}
+
+/// gap[221] — UNROLL A COUNTED `while` WHOSE TRIP COUNT IS A RUNTIME VALUE.
+///
+/// MEASURED BEFORE IT WAS BUILT, at subject a8929d50, by hand-unrolling the
+/// SOURCE of four runtime-trip-count kernels and compiling both spellings with
+/// the UNPATCHED compiler — so the headroom is the unroll's own and not a
+/// difference between two compilers. Factor 4 predicted 1.25x-1.64x.
+///
+/// MEASURED AGAIN AFTER IT WAS BUILT, severed against enabled through
+/// `IDOL_UNROLL` on ONE compiler binary, min-of-9, ~1.03s arms, 3.4e9 inner
+/// iterations, whole distribution within 2% of its own minimum:
+///
+///     kernel          severed   unrolled   ratio
+///     fib recurrence   1.0322     0.7325   1.409x
+///     sum reduce       1.0025     0.6254   1.603x
+///     square reduce    1.0033     0.6484   1.547x
+///     mul+add mix      1.0315     0.8622   1.196x
+///
+/// On the fib kernel that is also 1.31x FASTER THAN `clang -O3` on the same
+/// source (0.7398 against 0.9703), which clang does not unroll because the
+/// bound is runtime.
+///
+/// GAP-205 RANKED THIS 5.77x AND THAT NUMBER IS NOT THIS TRANSFORM. It came
+/// from FULLY unrolling a loop whose trip count is the literal 30, where the
+/// loop DISAPPEARS and what is measured is constant folding. Against a runtime
+/// bound the honest band is 1.20x-1.60x at factor 4.
+///
+/// FACTOR 4 IS THE DEFAULT BECAUSE IT IS THE ONLY ONE THAT NEVER LOSES. Swept
+/// on the same four kernels: factor 2 REGRESSES mix to 0.920x, factor 3 loses
+/// half the win on the reduce kernels (1.16x against 1.48x at factor 2) because
+/// the residual it leaves is larger, and factor 8 wins more on one kernel and
+/// less on two. 4 measures 1.19x-1.61x with no row below 1.
+///
+/// THE RECURRENCE IS NOT SHORTENED AND NOTHING HERE CLAIMS IT IS. The fib body
+/// is a chain of 1-cycle adds; unrolling it takes the loop from ~1.37 cycles
+/// per iteration to ~1.0, which is the chain bound, and no further. What is
+/// removed is the back-edge and the trip test, not the dependence — and the
+/// instruction count barely moves. On the sum kernel the rolled loop is 7
+/// instructions with 2 branches per iteration and the unrolled one is 5
+/// instructions with 2 branches per FOUR iterations. GAP-205's own rule reads
+/// the right axis: what pays here is the back-edge, not the instruction.
+///
+/// LEGALITY. The unrolled loop runs only while `iv <cmp> bound - (K-1)*step`,
+/// which is exactly the condition under which the original loop would take K
+/// more iterations. So NO BODY COPY IS SPECULATED: every copy that executes is
+/// an iteration the rolled loop also executes, in the same order, with the same
+/// values. Trip counts 0, 1, K-1, K, K+1 and large all fall out of that without
+/// a special case — the residual is the ORIGINAL loop, emitted unchanged
+/// immediately after, and it is what runs when fewer than K iterations remain.
+/// A body that traps mid-loop traps in the same copy the rolled loop would
+/// have trapped in, because the copy before it ran on the same values.
+///
+/// THE `bound - (K-1)*step` SUBTRACTION CAN OVERFLOW and that is the one place
+/// a wrong answer could enter: if it wraps, `iv <cmp> lim` admits iterations
+/// the original refuses. A runtime bound gets a runtime guard (`lim` must land
+/// on the expected side of `bound`, which it does exactly when the subtraction
+/// did not wrap) branching straight past the unrolled loop; a literal bound is
+/// checked at compile time and the transform simply declines.
+const UnrollPlan = struct {
+    iv_slot: u32,
+    cmp: dnir.BinOpTag,
+    bound: dnir.Value,
+    step: i64,
+    factor: u32,
+};
+
+/// `IDOL_UNROLL` — the SEVERING negative control. `off`/`0`/`1` sever the
+/// transform, any other integer 2..16 selects the factor, absent means 4. One
+/// compiler binary therefore produces both arms of a timing comparison, which
+/// is the only way to show the timing return is this transform's and not a
+/// difference between two builds.
+pub fn unrollFactorSetting() u32 {
+    const raw = std.c.getenv("IDOL_UNROLL") orelse return 4;
+    const text = std.mem.sliceTo(raw, 0);
+    if (text.len == 0) return 4;
+    if (std.mem.eql(u8, text, "off") or std.mem.eql(u8, text, "OFF")) return 1;
+    const n = std.fmt.parseInt(u32, text, 10) catch return 4;
+    if (n < 2) return 1;
+    if (n > 16) return 16;
+    return n;
+}
+
+/// A slot that holds a plain full-width integer and nothing else. An induction
+/// variable that is secretly an f64, a `str` descriptor, a pointer, a bool or a
+/// declared-narrow binding is not one this arithmetic reasons about.
+fn unrollPlainIntSlot(ctx: *const LowerCtx, slot: u32) bool {
+    if (ctx.f64_slots.contains(slot)) return false;
+    if (ctx.str_slots.contains(slot)) return false;
+    if (ctx.ptr_slots.contains(slot)) return false;
+    if (ctx.bool_slots.contains(slot)) return false;
+    if (ctx.narrow_slots.contains(slot)) return false;
+    return true;
+}
+
+/// The local slot a NAME denotes here, in the same binding order the `.name`
+/// arm of `lowerExprCons` states. A published application on the expression, a
+/// fused body-relation shadow, or a non-integer slot all answer null.
+fn unrollNameSlot(ctx: *const LowerCtx, expr: *const ast.Expr) ?u32 {
+    if (expr.* != .name) return null;
+    if (ctx.occurrences.get(expr) != null) return null;
+    if (ctx.fused_literals.contains(expr.name.ident)) return null;
+    const slot = ctx.locals.get(expr.name.ident) orelse return null;
+    if (!unrollPlainIntSlot(ctx, slot)) return null;
+    return slot;
+}
+
+/// Every expression under `expr` is one this transform can duplicate: no
+/// published application anywhere, and no expression kind that could reach a
+/// call, a table, a string or a place.
+///
+/// `scan.declared` carries the names the body BINDS BEFORE this expression.
+/// They are not in `ctx.locals` yet — nothing in the body has been lowered —
+/// and without them a body as ordinary as `t = a + b ; b = t` reads as
+/// uncopyable because `t` resolves nowhere.
+fn unrollExprIsCopyable(ctx: *const LowerCtx, scan: *const UnrollBodyScan, expr: *const ast.Expr) bool {
+    // THE GRAPH DECIDES, not the spelling. `occurrences` is the same index
+    // `native_backend` counts realizations against, so an expression the graph
+    // published an application for is refused here by the producer's own
+    // record rather than by a guess about which syntax makes calls.
+    if (ctx.occurrences.get(expr) != null) return false;
+    return switch (expr.*) {
+        .int_lit, .true_lit, .false_lit => true,
+        .name => |n| blk: {
+            if (ctx.fused_literals.contains(n.ident)) break :blk false;
+            if (scan.declaresName(n.ident)) break :blk true;
+            const slot = ctx.locals.get(n.ident) orelse break :blk false;
+            break :blk unrollPlainIntSlot(ctx, slot);
+        },
+        .unop => |u| (u.op == .neg or u.op == .not or u.op == .bnot) and
+            unrollExprIsCopyable(ctx, scan, u.operand),
+        // THE OPERATOR HAS TO BE ARITHMETIC THAT CANNOT CALL, not merely a
+        // `binop` node. `pow` and `concat` reach a runtime helper and `matmul`,
+        // `pipeline` and `contains` are applications — copying any of them
+        // either duplicates a call or breaks `native_backend`'s
+        // application-realization count. `promotableExpr` (P1) already owns the
+        // exact list of ops that are safe to duplicate inside a loop region;
+        // this asks it rather than keeping a second copy that can drift.
+        //
+        // The emitted-stream check in `unrollRangeIsCopyable` would catch these
+        // too, but only by withdrawing AFTER the body was lowered. Refusing on
+        // the AST keeps the common case out of the asymmetric withdrawal path
+        // above.
+        .binop => |b| unrollCopyableBinOp(b.op) and
+            unrollExprIsCopyable(ctx, scan, b.lhs) and unrollExprIsCopyable(ctx, scan, b.rhs),
+        else => false,
+    };
+}
+
+/// The binary operators `promotableExpr` admits — the ops that are arithmetic
+/// and cannot reach a call. Stated against that predicate so the two lanes
+/// cannot disagree about which operators are duplicable.
+fn unrollCopyableBinOp(op: ast.BinOp) bool {
+    return switch (op) {
+        .add,
+        .sub,
+        .mul,
+        .div,
+        .idiv,
+        .mod,
+        .band,
+        .bor,
+        .bxor,
+        .lshift,
+        .rshift,
+        .eq,
+        .neq,
+        .lt,
+        .gt,
+        .leq,
+        .geq,
+        .@"and",
+        .@"or",
+        => true,
+        else => false,
+    };
+}
+
+fn unrollExprAssignsName(expr: *const ast.Expr, ident: []const u8) bool {
+    return expr.* == .name and std.mem.eql(u8, expr.name.ident, ident);
+}
+
+const UnrollBodyScan = struct {
+    ok: bool = true,
+    stmts: u32 = 0,
+    iv_writes: u32 = 0,
+    /// Names the body binds. Bounded by the statement budget, so a fixed array
+    /// is the whole storage and the scan allocates nothing.
+    declared: [32][]const u8 = undefined,
+    declared_len: usize = 0,
+
+    fn declaresName(self: *const UnrollBodyScan, ident: []const u8) bool {
+        for (self.declared[0..self.declared_len]) |name| {
+            if (std.mem.eql(u8, name, ident)) return true;
+        }
+        return false;
+    }
+
+    fn declare(self: *UnrollBodyScan, ident: []const u8) void {
+        if (self.declared_len == self.declared.len) {
+            self.ok = false;
+            return;
+        }
+        self.declared[self.declared_len] = ident;
+        self.declared_len += 1;
+    }
+};
+
+/// Walk a candidate body. Refuses every statement kind that can leave the body
+/// (`break`, `continue`, `return`, `goto`), every kind that can call or read
+/// storage the copies would then touch more than once, and every nested loop.
+fn unrollScanBlock(
+    ctx: *const LowerCtx,
+    block: *const ast.Block,
+    iv: []const u8,
+    bound: ?[]const u8,
+    scan: *UnrollBodyScan,
+) void {
+    if (block.tail_expr != null) {
+        scan.ok = false;
+        return;
+    }
+    for (block.stmts) |*stmt| {
+        if (!scan.ok) return;
+        scan.stmts += 1;
+        switch (stmt.*) {
+            .local_decl => |ld| {
+                if (ld.names.len != ld.inits.len) {
+                    scan.ok = false;
+                    return;
+                }
+                for (ld.inits) |init| {
+                    if (!unrollExprIsCopyable(ctx, scan, init)) scan.ok = false;
+                }
+                for (ld.names) |nm| {
+                    // A body-local rebinding of the induction variable or of
+                    // the bound would make the trip arithmetic describe a
+                    // different name than the loop tests.
+                    if (std.mem.eql(u8, nm.ident, iv)) scan.ok = false;
+                    if (bound) |b| if (std.mem.eql(u8, nm.ident, b)) {
+                        scan.ok = false;
+                    };
+                    scan.declare(nm.ident);
+                }
+            },
+            .assign => |as| {
+                if (as.targets.len != as.values.len) {
+                    scan.ok = false;
+                    return;
+                }
+                for (as.targets) |t| {
+                    if (t.* != .name) {
+                        scan.ok = false;
+                        return;
+                    }
+                    if (ctx.occurrences.get(t) != null) scan.ok = false;
+                    if (unrollExprAssignsName(t, iv)) scan.iv_writes += 1;
+                    if (bound) |b| if (unrollExprAssignsName(t, b)) {
+                        scan.ok = false;
+                    };
+                }
+                for (as.values) |v| {
+                    if (!unrollExprIsCopyable(ctx, scan, v)) scan.ok = false;
+                }
+            },
+            .if_stmt => |ifs| {
+                if (ifs.binding != null) {
+                    scan.ok = false;
+                    return;
+                }
+                if (!unrollExprIsCopyable(ctx, scan, ifs.cond)) scan.ok = false;
+                unrollScanBlock(ctx, &ifs.then, iv, bound, scan);
+                for (ifs.elseifs) |ei| {
+                    if (!unrollExprIsCopyable(ctx, scan, ei.cond)) scan.ok = false;
+                    unrollScanBlock(ctx, &ei.body, iv, bound, scan);
+                }
+                if (ifs.else_body) |eb| unrollScanBlock(ctx, &eb, iv, bound, scan);
+            },
+            else => {
+                scan.ok = false;
+                return;
+            },
+        }
+    }
+}
+
+/// The constant step of a trailing `iv = iv + c` / `iv = iv - c`, or null.
+fn unrollTrailingStep(ctx: *const LowerCtx, stmt: *const ast.Stmt, iv: []const u8) ?i64 {
+    if (stmt.* != .assign) return null;
+    const as = stmt.assign;
+    if (as.targets.len != 1 or as.values.len != 1) return null;
+    if (!unrollExprAssignsName(as.targets[0], iv)) return null;
+    const v = as.values[0];
+    if (v.* != .binop) return null;
+    const b = v.binop;
+    if (b.op != .add and b.op != .sub) return null;
+    if (!unrollExprAssignsName(b.lhs, iv)) return null;
+    const c = constIntValue(ctx.graph, b.rhs) orelse return null;
+    if (b.op == .add) return c;
+    return std.math.negate(c) catch null;
+}
+
+fn unrollPlanWhile(ctx: *const LowerCtx, ws: anytype) ?UnrollPlan {
+    const factor = unrollFactorSetting();
+    if (factor < 2) return null;
+    if (ws.cond.* != .binop) return null;
+    if (ctx.occurrences.get(ws.cond) != null) return null;
+    const cond = ws.cond.binop;
+    const cmp: dnir.BinOpTag = switch (cond.op) {
+        .lt => .lt,
+        .leq => .leq,
+        .gt => .gt,
+        .geq => .geq,
+        else => return null,
+    };
+    const iv_expr = cond.lhs;
+    if (iv_expr.* != .name) return null;
+    const iv = iv_expr.name.ident;
+    const iv_slot = unrollNameSlot(ctx, iv_expr) orelse return null;
+
+    var bound_name: ?[]const u8 = null;
+    const bound: dnir.Value = blk: {
+        if (constIntValue(ctx.graph, cond.rhs)) |v| break :blk .{ .i64 = v };
+        const slot = unrollNameSlot(ctx, cond.rhs) orelse return null;
+        bound_name = cond.rhs.name.ident;
+        break :blk .{ .local = slot };
+    };
+    if (bound_name) |b| if (std.mem.eql(u8, b, iv)) return null;
+
+    if (ws.body.stmts.len == 0) return null;
+    const step = unrollTrailingStep(ctx, &ws.body.stmts[ws.body.stmts.len - 1], iv) orelse return null;
+    if (step == 0) return null;
+    // A COUNTER RUNNING THE WRONG WAY NEVER TERMINATES, and unrolling an
+    // infinite loop is still an infinite loop — but the limit arithmetic below
+    // assumes the counter moves TOWARD the bound, so state the requirement
+    // rather than relying on the program not to be written.
+    switch (cmp) {
+        .lt, .leq => if (step <= 0) return null,
+        .gt, .geq => if (step >= 0) return null,
+        else => return null,
+    }
+
+    var scan: UnrollBodyScan = .{};
+    unrollScanBlock(ctx, &ws.body, iv, bound_name, &scan);
+    if (!scan.ok) return null;
+    // Exactly one write to the induction variable, and it is the trailing step
+    // the plan is built from.
+    if (scan.iv_writes != 1) return null;
+    if (scan.stmts == 0 or scan.stmts > 24) return null;
+    if (scan.stmts * factor > 96) return null;
+
+    return .{ .iv_slot = iv_slot, .cmp = cmp, .bound = bound, .step = step, .factor = factor };
+}
+
+/// Every DNIR instruction in `[start, end)` may be duplicated verbatim.
+///
+/// THE OP WHITELIST IS THE REALIZATION-COUNT ARGUMENT. `native_backend`
+/// requires every application the graph published to be realized EXACTLY ONCE,
+/// so copying an instruction that carries an application id would refuse the
+/// module (`application-realization-count`) — or, worse, execute a call twice.
+/// The ops admitted here carry none, own no heap slices, and touch no storage
+/// outside the frame.
+///
+/// The branch check is the control-flow argument: a `br` leaving the range is a
+/// `break`, a `continue` or a return, and the copies have no such edge to
+/// offset. A target of exactly `end` is the body's own fall-through and becomes
+/// the next copy's first instruction, which is what falling through means here.
+fn unrollRangeIsCopyable(instrs: []const dnir.Instr, start: u32, end: u32) bool {
+    var i = start;
+    while (i < end) : (i += 1) {
+        const in = instrs[i];
+        switch (in.op) {
+            .@"const", .store_local, .binop, .br => {},
+            else => return false,
+        }
+        if (in.application != null or in.aggregate != null or in.target != null) return false;
+        if (in.realization_start != null) return false;
+        if (in.vals.len != 0 or in.pack_results.len != 0) return false;
+        if (in.callee.len != 0 or in.field.len != 0 or in.record.len != 0 or in.req_alias.len != 0) return false;
+        if (in.op == .br and (in.branch_target < start or in.branch_target > end)) return false;
+    }
+    return true;
+}
+
+/// Emit the unrolled main loop AHEAD of the ordinary loop lowering, so the
+/// ordinary lowering that follows IS the residual. Emits nothing at all when
+/// the loop is not a plannable counted loop; the caller is unchanged either way.
+fn emitUnrolledWhilePrologue(ctx: *LowerCtx, ws: anytype) Error!void {
+    const plan = unrollPlanWhile(ctx, ws) orelse return;
+
+    // `(factor - 1) * step`, the distance from the last counter value the
+    // unrolled loop may admit to the bound. Computed with overflow checks: a
+    // step and factor whose product does not fit is not a loop this reasons
+    // about.
+    const span = std.math.mul(i64, @as(i64, plan.factor - 1), plan.step) catch return;
+
+    const saved_instrs = ctx.instrs.items.len;
+    // THE ENCLOSING LOOP'S BREAK LIST, so a withdrawal cannot leave a dangling
+    // index in it. This prologue runs BEFORE the `while` arm pushes its own
+    // list, so a `break` lowered here would register against the loop OUTSIDE
+    // this one; `unrollScanBlock` refuses `.brk` outright, but a withdrawal
+    // that shrank `ctx.instrs` past a recorded index would then patch an
+    // unrelated instruction's branch target. Recorded rather than reasoned
+    // about, and checked below.
+    const saved_breaks: usize = if (ctx.loop_breaks.items.len == 0)
+        0
+    else
+        ctx.loop_breaks.items[ctx.loop_breaks.items.len - 1].items.len;
+
+    // THE LIMIT IS NEVER GIVEN A LOCAL SLOT, and that is a measured decision
+    // rather than a style. `native_backend.planGpStackLocals` earns a register
+    // home for a slot by finding its `store_local` INSIDE a loop range; a
+    // preheader store is outside every range, so a `store_local` here takes a
+    // FRAME slot and the unrolled loop pays an `ldr` per trip for a value that
+    // never changes. It also broke the pinned test "a carried local in a
+    // calling function keeps its register across the back edge", which counts
+    // exactly that: expected 0 frame locals, found 1. Recomputing the
+    // subtraction in the loop head instead costs one `sub` per K iterations,
+    // in a register, and leaves the frame exactly as it was.
+    var bound_slot: ?u32 = null;
+    var limit_const: i64 = 0;
+    var guard_idx: ?usize = null;
+    switch (plan.bound) {
+        .i64 => |b| limit_const = std.math.sub(i64, b, span) catch return,
+        .local => |slot| {
+            bound_slot = slot;
+            // THE OVERFLOW GUARD, STATED AS THE CONDITION RATHER THAN DETECTED
+            // AFTER THE FACT. `bound - span` is evaluated in wrapping i64 below,
+            // and a wrapped limit would admit iterations the rolled loop
+            // refuses — the one way a wrong answer could enter here. With
+            // `span > 0` the subtraction is exact exactly when
+            // `bound >= INT64_MIN + span`, and that right-hand side is a
+            // compile-time constant; symmetric against INT64_MAX for `span < 0`.
+            // When the guard fails, control goes straight past the unrolled
+            // loop and the residual — which is the ORIGINAL loop, emitted
+            // unchanged below — runs the whole trip.
+            const edge: i64 = if (span > 0)
+                std.math.minInt(i64) + span
+            else
+                std.math.maxInt(i64) + span;
+            const guard = ctx.freshTemp();
+            try ctx.emit(.{
+                .op = .binop,
+                .result = guard,
+                .binop = if (span > 0) .geq else .leq,
+                .lhs = .{ .local = slot },
+                .rhs = .{ .i64 = edge },
+            });
+            guard_idx = ctx.instrs.items.len;
+            try ctx.emit(.{
+                .op = .br,
+                .lhs = .{ .temp = guard },
+                .branch_target = 0,
+                .branch_condition = .when_false,
+            });
+        },
+        else => return,
+    }
+
+    const head_idx: u32 = @intCast(ctx.instrs.items.len);
+    const limit: dnir.Value = if (bound_slot) |slot| blk: {
+        const t = ctx.freshTemp();
+        try ctx.emit(.{
+            .op = .binop,
+            .result = t,
+            .binop = .sub,
+            .lhs = .{ .local = slot },
+            .rhs = .{ .i64 = span },
+        });
+        break :blk .{ .temp = t };
+    } else .{ .i64 = limit_const };
+
+    const cond_temp = ctx.freshTemp();
+    try ctx.emit(.{
+        .op = .binop,
+        .result = cond_temp,
+        .binop = plan.cmp,
+        .lhs = .{ .local = plan.iv_slot },
+        .rhs = limit,
+    });
+    const fail_idx = ctx.instrs.items.len;
+    try ctx.emit(.{
+        .op = .br,
+        .lhs = .{ .temp = cond_temp },
+        .branch_target = 0,
+        .branch_condition = .when_false,
+    });
+
+    const body_start: u32 = @intCast(ctx.instrs.items.len);
+    // Loop bodies are not implicit-tail positions — see the while_loop arm.
+    _ = try lowerBlockReturns(ctx, &ws.body, false);
+    const body_end: u32 = @intCast(ctx.instrs.items.len);
+
+    // BELT AND BRACES, and it is not redundant with the AST scan: the scan
+    // rules on what the SOURCE says, this rules on what lowering actually
+    // emitted. If they ever disagree the emitted stream wins, the whole
+    // prologue is withdrawn, and the ordinary lowering below runs the loop
+    // exactly as it did before this existed.
+    const broke_out: bool = ctx.loop_breaks.items.len != 0 and
+        ctx.loop_breaks.items[ctx.loop_breaks.items.len - 1].items.len != saved_breaks;
+    if (broke_out or body_end == body_start or
+        !unrollRangeIsCopyable(ctx.instrs.items, body_start, body_end))
+    {
+        ctx.instrs.shrinkRetainingCapacity(saved_instrs);
+        if (ctx.loop_breaks.items.len != 0) {
+            ctx.loop_breaks.items[ctx.loop_breaks.items.len - 1].shrinkRetainingCapacity(saved_breaks);
+        }
+        // `ctx.next_temp` IS DELIBERATELY NOT ROLLED BACK, and this is the one
+        // place the withdrawal has to be asymmetric. The withdrawn lowering may
+        // have BOUND NAMES: a body-local `t: i64 = ...` puts `t -> slot N` into
+        // `ctx.locals`, and that entry survives the shrink because `ctx.locals`
+        // is not part of the emitted stream. Rewinding the counter would then
+        // hand slot N out again to the residual's first `freshTemp` — a `.temp`
+        // and a `.local` share one numbering space here, so the residual's
+        // condition temp and the body's `t` would be the same register and the
+        // loop would compute a wrong answer that still compiles. Burning the
+        // slot numbers instead costs a few unused ids; `planGpStackLocals`
+        // enumerates slots from the INSTRUCTIONS, so an id no instruction
+        // mentions never reaches a frame or a home.
+        return;
+    }
+
+    var copy: u32 = 1;
+    while (copy < plan.factor) : (copy += 1) {
+        const offset: u32 = @as(u32, @intCast(ctx.instrs.items.len)) - body_start;
+        var i = body_start;
+        while (i < body_end) : (i += 1) {
+            var instruction = ctx.instrs.items[i];
+            if (instruction.op == .br) instruction.branch_target += offset;
+            try ctx.emit(instruction);
+        }
+    }
+
+    try ctx.emit(.{ .op = .br, .branch_target = head_idx });
+    const exit_idx: u32 = @intCast(ctx.instrs.items.len);
+    ctx.instrs.items[fail_idx].branch_target = exit_idx;
+    if (guard_idx) |g| ctx.instrs.items[g].branch_target = exit_idx;
 }
 
 fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error!bool {
