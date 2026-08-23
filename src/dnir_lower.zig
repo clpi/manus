@@ -835,10 +835,72 @@ fn moduleFieldStorageBase(ctx: *const LowerCtx, name: []const u8) bool {
 // (a call, a `print`) inside the region, for bindings whose place row says
 // `escape:"no"` — no relation body can name the word, so no callee can observe
 // or store the register-resident copy. `DUO_MODULE_PROMOTE_PROBE=1` reports,
-// per loop, exactly which loops that reaches. IT IS NOT DONE HERE: a widening
-// that admitted a call would be a silent wrong answer if the escape fact were
-// wrong anywhere, and the population it reaches is reported in the log for this
-// change rather than assumed.
+// per loop, exactly which loops that reaches. IT IS STILL NOT DONE HERE, AND
+// THE REASON IS NOW A COUNT RATHER THAN A CAUTION: it reaches nothing.
+//
+// ═══ THE FACT-LICENSED WIDENING REACHES ZERO LOOPS. MEASURED ═══════════════
+//
+// `find examples lib scripts -name '*.id' | grep -v /compile_fail/` — 921
+// files, each compiled cold under `DUO_MODULE_PROMOTE_DIAG=1
+// DUO_MODULE_PROMOTE_PROBE=1`, from a binary built out of a clean
+// `git archive HEAD` tree so a neighbouring lane's working copy could not move
+// under the count, and with a private `TMPDIR` so no arm read another's cache.
+//
+//   132  `while` statements reach this pass at all
+//     0  the SHIPPED region admits        (119 `region_shape`, 13 `no_module_binding`)
+//     0  the FACT-WIDENED region would admit
+//
+// The widened region's 132 refusals are the whole answer, and only four of them
+// are about a fact:
+//
+//    87  `probe_no_binding`  no name in the loop is a full-ring module binding
+//                            WITH STORAGE. There is nothing to promote: a
+//                            module name with no `__bss` word is already
+//                            register-resident. No place fact bears on this.
+//    41  `probe_shape`       outside even the widened region — `return`, a
+//                            declaration, a lambda, `match`, `try`. P2 and P4,
+//                            which no place fact answers.
+//     3  `probe_no_place`    `examples/boring/{caesar,calculator,palindrome}.id`
+//     1  `probe_escape`      `scripts/boring_corpus.id:157`
+//
+// THE CEILING IS NOT THIS REGION AND NOT A FACT. The corpus spells 1546 `while`
+// statements across 303 files; 132 of them reach this pass because only 231 of
+// the 921 files reach `ok compile` at all — the other 690 are refused earlier
+// (`param-type:any`, `print-arg:any`, `mod-top-stmt:if_stmt`, or the front end).
+// Widening this region cannot reach a loop inside a program the direct backend
+// declines to lower.
+//
+// ═══ THE TWO FACTS THAT ARE ACTUALLY MISSING, AND WHAT THEY WOULD BUY ══════
+//
+// Named exactly, because "consult the facts harder" is not one of them.
+//
+//   M1 A PLACE ROW FOR A MODULE SCALAR WITH A DERIVED INITIALIZER. The three
+//      `probe_no_place` loops share one shape: `b = eval("3*4")` at module
+//      scope. `candidateShape` answers `.unknown` for a call initializer, and
+//      correctly — `place.zig` is an AST census with no types, a call may
+//      return a table, and minting `scalar` there would publish `alias:"no"`
+//      off the copy rule for something that is not a scalar. The word IS known
+//      to be `.i64` here, but by `ModuleGlobals`, not by the census. The
+//      missing fact is a row minted from the graph's TYPE for the binding
+//      instead of from its initializer's SYNTAX.
+//
+//   M2 AN ESCAPE FACT SCOPED TO WHAT THE LOOP CAN CALL. `ForeignReach` takes
+//      the union over every relation and alias method in the module and
+//      discards which body each mention came from, so `escape:"yes"` means
+//      "somebody names the word", never "somebody THIS LOOP CAN REACH names
+//      it". The single `probe_escape` loop is precisely that gap:
+//      `scripts/boring_corpus.id:157` increments `boringtotal` in a loop whose
+//      only calls are `cap` and `runone`, neither of which names it — the
+//      mention that sets the fact is in the module's own report code, which
+//      does not run during the loop.
+//
+// AND BOTH TOGETHER MOVE REACH FROM 0 TO 1. M1 alone converts three UNKNOWNs
+// into three REFUSALS, not three admissions: `caesar`'s `b`, `calculator`'s `b`
+// and `palindrome`'s `a` are each also assigned inside the very relation the
+// loop lives in, so a row for them answers `escape:"yes"`. M2 alone admits
+// `boringtotal`, whose loop spawns a process per iteration and cannot show a
+// register's worth of difference. That is the whole prize, it is measured
+// rather than estimated, and it is why the widening is still not taken.
 
 /// SEVERING CONTROL. `true` is the shipped behaviour; `DUO_NO_MODULE_PROMOTE`
 /// restores the previous lowering exactly, which is what makes the negative
@@ -1107,10 +1169,22 @@ const ProbeVerdict = enum {
     probe_shape,
     /// No full-ring module binding to promote (the `no_module_binding` case).
     probe_no_binding,
-    /// A named binding has no place row. `place.Census` publishes rows for
-    /// module scalars; a name with storage and no row is a producer gap, and
-    /// `null` means UNKNOWN, never "no place".
+    /// A named binding has no place row AT ALL. `place.Census` publishes rows
+    /// for module scalars; a name with storage and no row is a producer gap,
+    /// and `null` means UNKNOWN, never "no place".
+    ///
+    /// KEPT APART FROM `probe_row_not_module_scalar` BECAUSE THEY NAME
+    /// DIFFERENT MISSING THINGS, and the corpus census in this file's header
+    /// turns on which one a loop reports. This one says the producer minted
+    /// nothing, so the question was never asked; the other says the producer
+    /// answered and the answer was about a different kind of location.
+    /// Reporting both as "no place" would have read as one gap where there are
+    /// two.
     probe_no_place,
+    /// A row exists for the name and is not a module scalar — a collection, a
+    /// record, or a scalar in some function's region. Not a producer gap: the
+    /// census answered, and the answer refuses.
+    probe_row_not_module_scalar,
     /// The place row exists and REFUSES: a relation body can reach the word, so
     /// a callee inside the loop could observe the stale `__DATA` copy.
     probe_escape,
@@ -1318,7 +1392,7 @@ fn probeOneBinding(ctx: *const LowerCtx, name: []const u8) ProbeVerdict {
     const key = ctx.module_globals.storageKey(name) orelse return .probe_no_binding;
     // `placeNamed` documents `null` as UNKNOWN, never "no place", so it refuses.
     const p = ctx.graph.placeNamed(key) orelse return .probe_no_place;
-    if (p.shape != .scalar or p.region != .module) return .probe_no_place;
+    if (p.shape != .scalar or p.region != .module) return .probe_row_not_module_scalar;
     if (p.facts.escape != .no) return .probe_escape;
     if (p.facts.alias != .no) return .probe_alias;
     return .would_admit;
