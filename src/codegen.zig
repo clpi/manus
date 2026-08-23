@@ -3958,6 +3958,74 @@ pub const CodeGen = struct {
                             self.nativeDiagFail("param-default");
                             return self.nofit(@src());
                         }
+                        // `param-type:any` IS THE LARGEST REFUSAL FAMILY AND
+                        // CLOSING IT BUYS NOTHING. Measured on the 921-file
+                        // corpus (`examples`+`lib`+`scripts`, `compile_fail`
+                        // excluded): 60 programs stop here on `any` and 30 more
+                        // on `inferred`. The obvious repair is CALL-SITE
+                        // INFERENCE — for a whole-program compile, if every
+                        // call site passes one native scalar descriptor, the
+                        // parameter IS that descriptor. It was measured before
+                        // it was written, and it must not be written.
+                        //
+                        // REACH IS ZERO, twice over. Admitting every `any`
+                        // parameter unconditionally — the strict upper bound on
+                        // what any inference can reach — moves all 60 programs
+                        // to a DEEPER refusal and compiles none of them:
+                        // `assign-target` (11), `method-unresolved:*` (16),
+                        // `gen-for-dynamic-iter` (9), `expr-unhandled:func_expr`
+                        // (2), `runtime-global*` (6), and one each of a dozen
+                        // more. Leaving the annotation `any` is not the whole
+                        // story, so the three programs whose sites do agree were
+                        // also re-measured with the inferred descriptor written
+                        // in BY HAND: `examples/cfloor/weak.id` with
+                        // `mix(a: i64, b: i64)` still stops on `print-arg:any`
+                        // (its caller's local is what is untyped, not its
+                        // parameter), and both hash-agreement fixtures with
+                        // `box(x: str)` still stop on `assign-target` /
+                        // `block-tail-no-return`. Same 68-for-zero shape the
+                        // `ret-type:any` fold hit.
+                        //
+                        // AND THE SOUND SET IS THREE PROGRAMS. 55 of the 60 are
+                        // `lib/` modules with no entry point, so their
+                        // `any`-parameter functions ARE the module's exports:
+                        // of the 707 top-level functions carrying a non-native
+                        // parameter, 241 have ZERO in-module call sites (no
+                        // constraint exists to read) and 317 put the name in
+                        // value position (higher-order, so the site is
+                        // indirect). Only `examples/cfloor/weak.id` (`mix`,
+                        // both parameters i64) and the two hash-agreement
+                        // fixtures (`box`, str at all four sites) have every
+                        // site visible, agreeing, and native.
+                        //
+                        // ON THOSE THREE THE INFERENCE WOULD BE A REGRESSION,
+                        // not a gain. `examples/hash/agreement.id` is the
+                        // `hash-agreement` build step and `docs/source-corpus-
+                        // classification.md` lists it as a fixture with
+                        // INTENTIONAL `any`: it proves the compile-time and
+                        // runtime string hashes agree, which requires the value
+                        // to stay BOXED so that `!=` is object identity. Typing
+                        // `box`'s parameter `str` makes both halves take the
+                        // runtime hash and the control can no longer fire — the
+                        // gate would still print PASS, for no reason. `weak.id`
+                        // is the weak half of the `law.perf.dominance` pair
+                        // (`scripts/cfloor.id`) and its premise, written in its
+                        // own header, is that an `any` parameter makes
+                        // `lower.native` an invalid candidate for `mix`.
+                        //
+                        // THE MONO FACILITY CANNOT CARRY THIS. `mono.zig`'s
+                        // `collectGenerics` keys strictly on a non-empty
+                        // `type_params`, and `func-type-params` above refuses
+                        // every such function before this loop runs — so no
+                        // function that reaches this line is, or can become, a
+                        // `findSpecializationForCall` candidate.
+                        //
+                        // The refusal stands because it is TRUE, not because it
+                        // is unexamined: a parameter's descriptor is fixed by
+                        // its call sites and this compile cannot see all of
+                        // them. Reopen it only when the deeper blockers above
+                        // have fallen and a program is measured to be waiting
+                        // on this line alone.
                         if (!self.type_expr_is_native_scalar(param.typ)) {
                             self.nativeDiagFailFmt("param-type:{s}", .{typeLabel(param.typ)});
                             return self.nofit(@src());
