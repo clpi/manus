@@ -31902,8 +31902,65 @@ const duo_runtime =
     \\    return "duo";
     \\}
     \\
+    \\/* IDOL_PRIVATE_TEMP_BEGIN -- GAP-141 executable extraction boundary. */
+    \\#if defined(_WIN32)
+    \\#include <direct.h>
+    \\#endif
+    \\static char idol_private_run_dir[512];
+    \\static int idol_private_run_dir_ready = 0;
+    \\
+    \\static void idol_cleanup_private_run_dir(void) {
+    \\    if (!idol_private_run_dir_ready) return;
+    \\#if defined(_WIN32)
+    \\    (void)_rmdir(idol_private_run_dir);
+    \\#else
+    \\    (void)rmdir(idol_private_run_dir);
+    \\#endif
+    \\    idol_private_run_dir[0] = '\0';
+    \\    idol_private_run_dir_ready = 0;
+    \\}
+    \\
+    \\static int idol_prepare_private_run_dir(void) {
+    \\    if (idol_private_run_dir_ready) return 0;
+    \\#if defined(__wasm__)
+    \\    return -1;
+    \\#elif defined(_WIN32)
+    \\    for (int attempt = 0; attempt < 64; ++attempt) {
+    \\        char candidate[sizeof idol_private_run_dir];
+    \\        int n = snprintf(candidate, sizeof candidate, "/tmp/idol-run-XXXXXX");
+    \\        if (n < 0 || n >= (int)sizeof candidate) return -1;
+    \\        if (_mktemp_s(candidate, sizeof candidate) != 0) return -1;
+    \\        if (_mkdir(candidate) == 0) {
+    \\            memcpy(idol_private_run_dir, candidate, (size_t)n + 1);
+    \\            break;
+    \\        }
+    \\        if (errno != EEXIST) return -1;
+    \\    }
+    \\    if (!idol_private_run_dir[0]) return -1;
+    \\#else
+    \\    int n = snprintf(idol_private_run_dir, sizeof idol_private_run_dir, "/tmp/idol-run-XXXXXX");
+    \\    if (n < 0 || n >= (int)sizeof idol_private_run_dir) return -1;
+    \\    if (!mkdtemp(idol_private_run_dir)) {
+    \\        idol_private_run_dir[0] = '\0';
+    \\        return -1;
+    \\    }
+    \\#endif
+    \\    idol_private_run_dir_ready = 1;
+    \\    if (atexit(idol_cleanup_private_run_dir) != 0) {
+    \\        idol_cleanup_private_run_dir();
+    \\        return -1;
+    \\    }
+    \\    return 0;
+    \\}
+    \\
     \\static int duo_make_temp_path(char* out, size_t out_sz, const char* suffix) {
-    \\    if (snprintf(out, out_sz, "/tmp/duo_ldXXXXXX%s", suffix) >= (int)out_sz) return -1;
+    \\#if defined(__wasm__)
+    \\    (void)out; (void)out_sz; (void)suffix;
+    \\    return -1;
+    \\#else
+    \\    if (idol_prepare_private_run_dir() != 0) return -1;
+    \\    int written = snprintf(out, out_sz, "%s/artifact-XXXXXX%s", idol_private_run_dir, suffix);
+    \\    if (written < 0 || written >= (int)out_sz) return -1;
     \\#if defined(_WIN32)
     \\    size_t suffix_len = strlen(suffix);
     \\    size_t path_len = strlen(out);
@@ -31920,7 +31977,9 @@ const duo_runtime =
     \\    if (fd < 0) return -1;
     \\    close(fd);
     \\    return 0;
+    \\#endif
     \\}
+    \\/* IDOL_PRIVATE_TEMP_END */
     \\
     \\static int duo_read_file(const char* path, char** out, size_t* out_len) {
     \\    FILE* f = fopen(path, "rb");
@@ -32804,10 +32863,15 @@ test "runtime: temporary artifact path is reserved with its suffix" {
     try testing.expect(std.mem.indexOf(
         u8,
         duo_runtime,
-        "snprintf(out, out_sz, \"/tmp/duo_ldXXXXXX%s\", suffix)",
+        "snprintf(out, out_sz, \"%s/artifact-XXXXXX%s\", idol_private_run_dir, suffix)",
     ) != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "mkdtemp(idol_private_run_dir)") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "idol_private_run_dir_ready") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "atexit(idol_cleanup_private_run_dir)") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "mkstemps(out, (int)strlen(suffix))") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "O_CREAT | O_EXCL") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "#if defined(__wasm__)\n    (void)out") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "\"/tmp/duo_ldXXXXXX%s\"") == null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "unlink(tmpl)") == null);
 }
 
