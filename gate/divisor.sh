@@ -223,19 +223,38 @@ predicate='requiresNonzeroDivisor'
 # to the root first. Anchor the scans, and make a missing subject FATAL.
 cd "$root" || { printf '%s\n' "divisor: cannot enter \$root ($root)" >&2; exit 2; }
 
+# AND THE REFUSAL HAS TO REACH THE EXIT CODE. Refusing inside `spellings` was
+# tried and is not enough: every call site reads it as `$(spellings ...)`, and a
+# command substitution is a SUBSHELL, so the `fail=1` it set died with the
+# subshell while the message still printed on stderr. Measured against a
+# deliberately absent subject: the gate printed
+# "FAIL — §6 src/doesnotexist.zig does not exist" and then "DIVISOR OK", exit 0.
+# A gate that reports a failure and exits green is the same fabricated pass one
+# level in, and it is worse, because a reader now has a FAIL line telling them
+# the check ran. So existence is asserted by the CALLER, in the caller's shell,
+# and `spellings` only counts.
+subject() {
+  [ -f "$1" ] && return 0
+  bad "§6 $1 does not exist — a scan with no subject is not a count of zero"
+  return 1
+}
+
+# `spellings` ANSWERS -1 RATHER THAN 0 FOR A SUBJECT IT CANNOT OPEN, so that a
+# caller which forgot its `subject` assertion still cannot read "no such file"
+# as "clean". Every comparison below treats a negative count as fatal in the
+# CALLER's shell, which is the only shell whose `fail` survives.
 spellings() {
-  [ -f "$1" ] || {
-    bad "§6 $1 does not exist — a scan with no subject is not a count of zero"
-    printf '0\n'
-    return
-  }
+  [ -f "$1" ] || { printf -- '-1\n'; return; }
   sed 's|//.*||' "$1" | grep -cE '\.div, \.idiv, \.mod *=>|tag == \.div' || true
 }
 
 for f in src/dnir_lower.zig src/native_backend.zig; do
+  subject "$f" || continue
   spelled=$(spellings "$f")
   asks=$(grep -c "$predicate" "$f" 2>/dev/null || true)
-  if [ "${spelled:-0}" -ne 0 ]; then
+  if [ "${spelled:-0}" -lt 0 ]; then
+    bad "§6 $f could not be scanned — a scan with no subject is not a count of zero"
+  elif [ "${spelled:-0}" -ne 0 ]; then
     bad "§6 $f spells the divisor set ${spelled} time(s) instead of asking \`$predicate\`. That is the shape the defect came in: a hand-kept member list at a consumer, which an enum split silently falsifies."
   elif [ "${asks:-0}" -eq 0 ]; then
     bad "§6 $f neither spells nor asks the obligation — it has stopped consulting it at all"
@@ -249,7 +268,9 @@ done
 # silently, which is exactly what happened, while a switch makes the compiler
 # demand an answer. `tests.zig` line 97 records that the same tag split DID
 # break exhaustive switches and that those were reported.
-if ! grep -q "pub fn $predicate" src/native_ir.zig; then
+if ! subject src/native_ir.zig; then
+  :
+elif ! grep -q "pub fn $predicate" src/native_ir.zig; then
   bad "§6 src/native_ir.zig has no \`$predicate\` — the IR-side producer is gone"
 elif ! grep -q '\.band, \.bor, \.bxor, \.shl, \.shr => false' src/native_ir.zig; then
   bad "§6 $predicate is no longer an exhaustive switch; a tag added to BinOpTag can slip through without deciding whether it divides"
@@ -258,7 +279,9 @@ else
 fi
 
 # THE SEMA PRODUCER, for `sema` and `demand`, over `ast.BinOp`.
-if ! grep -q 'divisor_nonzero' src/demand_projection.zig; then
+if ! subject src/demand_projection.zig; then
+  :
+elif ! grep -q 'divisor_nonzero' src/demand_projection.zig; then
   bad '§6 src/demand_projection.zig has no `divisor_nonzero` — the relation-law producer is gone'
 else
   note '§6 src/demand_projection.zig: relation-law producer present'
@@ -269,7 +292,9 @@ fi
 # A CEILING, not a target — lower it if the arm ever becomes unnecessary.
 DEMAND_CEILING=1
 demand_spellings=$(spellings src/demand.zig)
-if [ "${demand_spellings:-0}" -gt "$DEMAND_CEILING" ]; then
+if [ "${demand_spellings:-0}" -lt 0 ]; then
+  bad '§6 src/demand.zig could not be scanned — a scan with no subject is not a count of zero'
+elif [ "${demand_spellings:-0}" -gt "$DEMAND_CEILING" ]; then
   bad "§6 src/demand.zig spells the divisor set ${demand_spellings} time(s), ceiling $DEMAND_CEILING"
 else
   note "§6 src/demand.zig: ${demand_spellings} spelling(s), ceiling $DEMAND_CEILING"
