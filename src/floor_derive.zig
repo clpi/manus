@@ -562,20 +562,7 @@ const Builder = struct {
     }
 };
 
-fn litOf(e: *const ast.Expr) ?i64 {
-    return switch (e.*) {
-        .int_lit => |x| x.val,
-        .unop => |u| switch (u.op) {
-            .neg => blk: {
-                const inner = litOf(u.operand) orelse break :blk null;
-                if (inner == std.math.minInt(i64)) break :blk null;
-                break :blk -inner;
-            },
-            else => null,
-        },
-        else => null,
-    };
-}
+const litOf = ast.intLiteralValue;
 
 fn binOpOf(op: ast.BinOp) ?Op {
     return switch (op) {
@@ -1461,10 +1448,9 @@ fn foldConst(b: *Builder, e: *const ast.Expr) ?i64 {
         .int_lit => |x| x.val,
         .name => |x| b.constOf(x.ident),
         .unop => |u| switch (u.op) {
-            .neg => blk: {
-                const i = foldConst(b, u.operand) orelse break :blk null;
-                break :blk -i;
-            },
+            // Bare `-i` aborts the compiler at `INT_MIN`, and `b.constOf` can
+            // supply one. An unrepresentable negation is not a constant.
+            .neg => ast.negatedIntLiteral(foldConst(b, u.operand) orelse return null),
             else => null,
         },
         .binop => |bo| blk: {

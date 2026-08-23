@@ -981,20 +981,7 @@ fn namesEnumerable(b: *const ast.Block) bool {
 /// only `.int_lit` made `while i < -5` — a loop that never enters, so the most
 /// trivially terminating loop there is — fail its termination proof. Negating
 /// `minInt` is refused rather than wrapped.
-fn intLiteralOf(e: *const ast.Expr) ?i64 {
-    return switch (e.*) {
-        .int_lit => |x| x.val,
-        .unop => |u| switch (u.op) {
-            .neg => blk: {
-                const inner = intLiteralOf(u.operand) orelse break :blk null;
-                if (inner == std.math.minInt(i64)) break :blk null;
-                break :blk -inner;
-            },
-            else => null,
-        },
-        else => null,
-    };
-}
+const intLiteralOf = ast.intLiteralValue;
 
 /// A proof that a counted `while` runs a finite number of times, or `null`.
 ///

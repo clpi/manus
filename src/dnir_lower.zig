@@ -9578,7 +9578,11 @@ fn lowerExprCons(
         .if_expr => |ie| try lowerIfExpr(ctx, ie),
         .unop => |u| blk: {
             if (u.op == .neg and u.operand.* == .int_lit) {
-                break :blk dnir.Value{ .i64 = ast.negatedIntLiteral(u.operand.int_lit.val) };
+                // A negation with no i64 is not a constant this realizer can
+                // hold; it falls through to the ordinary refusal rather than
+                // being folded to a number nobody wrote.
+                if (ast.negatedIntLiteral(u.operand.int_lit.val)) |v|
+                    break :blk dnir.Value{ .i64 = v };
             }
             // `#s` on a known `str` is C `strlen` — a plain libc call, no
             // dynamic length probe and no boxed value. Any other `#` operand

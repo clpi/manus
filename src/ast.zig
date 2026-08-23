@@ -504,25 +504,25 @@ pub fn quotedLiteralIsByteSequence(quote: Quote) bool {
     return quote == .bytes;
 }
 
-/// THE VALUE OF A WRITTEN INTEGER MAGNITUDE UNDER UNARY MINUS. Total; exact.
+/// THE VALUE OF A WRITTEN LITERAL UNDER UNARY MINUS, or null when it has none.
 ///
-/// The lexer accumulates the written decimal/hex magnitude UNSIGNED and hands
-/// the 64-bit pattern over in `int_lit.val` (`lib/compiler/lexer.id` `read_num`,
-/// mirrored by `src/lexer.zig`; gap[024]). So the text `9223372036854775808`
-/// arrives as the pattern `0x8000000000000000`, and `-9223372036854775808`
-/// arrives as `.neg` over it.
+/// THE MAGNITUDE IS THE PRODUCER'S FACT, NOT THIS FUNCTION'S GUESS. The lexer
+/// classifies a decimal magnitude (`lexer.DecimalIntegerClass`) and the parser
+/// consumes that class: `-9223372036854775808` is normalized to a bare
+/// `int_lit` holding `INT_MIN`, and a `.neg` over a literal whose value is
+/// already `INT_MIN` is REFUSED at the parse boundary with "integer negation is
+/// outside the i64 range" (`src/parser.zig`). So the node this function is
+/// asked about cannot come from source, and answering `INT_MIN` here would put
+/// a second, quieter numeric law beside the producer's.
 ///
-/// Negation over that domain is TOTAL, and its one fixed point is the exact
-/// answer rather than a wrap: 2^63 is not an i64 value, so the only literal
-/// that can reach `-2^63` under unary minus is the magnitude `2^63`, whose
-/// negation IS `INT_MIN`. `std.math.negate` refuses it — it reads the pattern
-/// as a signed value that was already negative — and bare `-v` PANICKED the
-/// whole compiler on `x: i64 = -9223372036854775808`, a valid i64 declaration.
-/// c0 `law.number.projection`: "an unannotated integer literal retains its
-/// exact integer value"; `law.effect.order` forbids "backend decided trap
-/// semantics"; `law.ub.zero`: "numeric law is fully defined".
-pub fn negatedIntLiteral(written: i64) i64 {
-    return if (written == std.math.minInt(i64)) written else -written;
+/// Declining is therefore the agreeing answer AND the safe one. What must never
+/// happen is the third thing, which is what stood here: bare host `-v`, which
+/// ABORTED the compiler with `panic: integer overflow`. c0 `law.effect.order`
+/// fails on "backend decided trap semantics"; `law.ub.zero`: "ordinary integer
+/// arithmetic has no C-style undefined behavior and numeric law is fully
+/// defined"; law.md §1 keeps unknown distinct from zero.
+pub fn negatedIntLiteral(written: i64) ?i64 {
+    return std.math.negate(written) catch null;
 }
 
 /// THE ONE PRODUCER of "the exact i64 this literal expression denotes", or null
@@ -533,42 +533,47 @@ pub fn negatedIntLiteral(written: i64) i64 {
 /// `demand_projection` — and they disagreed three ways at `INT_MIN`: panic,
 /// decline, or answer. `law.fact.producer.one`: one authoritative producer.
 ///
-/// Depth matters and the two depths are different facts. Directly under the
-/// minus sits a WRITTEN MAGNITUDE, where negation is total (above). Deeper, the
-/// operand is already a computed i64, where `-INT_MIN` is a real overflow and
-/// the honest answer is "not known" — law.md §1: "Unknown, absent, false, zero,
-/// empty, and not-asked are distinct."
+/// Null is a real answer here, not the absence of one — law.md §1: "Unknown,
+/// absent, false, zero, empty, and not-asked are distinct."
 pub fn intLiteralValue(expr: *const Expr) ?i64 {
     return switch (expr.*) {
         .int_lit => |lit| lit.val,
-        .unop => |u| if (u.op == .neg) switch (u.operand.*) {
-            .int_lit => |lit| negatedIntLiteral(lit.val),
-            else => std.math.negate(intLiteralValue(u.operand) orelse return null) catch null,
-        } else null,
+        .unop => |u| if (u.op == .neg)
+            negatedIntLiteral(intLiteralValue(u.operand) orelse return null)
+        else
+            null,
         else => null,
     };
 }
 
-test "ast: -9223372036854775808 is INT_MIN, not a panic" {
+test "ast: negating a literal answers or declines — it never aborts" {
     const test_loc = Loc{ .file = "ast.zig", .line = 1, .col = 1 };
-    var magnitude = Expr{ .int_lit = .{ .loc = test_loc, .val = std.math.minInt(i64) } };
-    var negated = Expr{ .unop = .{ .loc = test_loc, .op = .neg, .operand = &magnitude } };
-    try std.testing.expectEqual(@as(?i64, std.math.minInt(i64)), intLiteralValue(&negated));
 
-    // The bare magnitude keeps the pattern the lexer produced.
-    try std.testing.expectEqual(@as(?i64, std.math.minInt(i64)), intLiteralValue(&magnitude));
+    // THE NODE THE PARSER REFUSES TO BUILD, built by hand. `-2^63` reaches the
+    // AST as a bare `int_lit` (the parser normalizes the classified magnitude),
+    // and a `.neg` over an INT_MIN-valued literal is rejected at the parse
+    // boundary. Reading one anyway must decline, not abort: bare `-v` here
+    // ended the compiler with `panic: integer overflow`.
+    var floor = Expr{ .int_lit = .{ .loc = test_loc, .val = std.math.minInt(i64) } };
+    var negated = Expr{ .unop = .{ .loc = test_loc, .op = .neg, .operand = &floor } };
+    try std.testing.expectEqual(@as(?i64, null), intLiteralValue(&negated));
+    try std.testing.expectEqual(@as(?i64, null), negatedIntLiteral(std.math.minInt(i64)));
 
-    // One level deeper the operand is a computed value, and 2^63 has no i64.
+    // INT_MIN itself is a value and stays one.
+    try std.testing.expectEqual(@as(?i64, std.math.minInt(i64)), intLiteralValue(&floor));
+
+    // Declining propagates rather than resurfacing as a number at depth.
     var twice = Expr{ .unop = .{ .loc = test_loc, .op = .neg, .operand = &negated } };
     try std.testing.expectEqual(@as(?i64, null), intLiteralValue(&twice));
 
-    // Ordinary literals are unaffected.
+    // Ordinary literals are unaffected, at the boundary and away from it.
     var ordinary = Expr{ .int_lit = .{ .loc = test_loc, .val = 42 } };
     var minus = Expr{ .unop = .{ .loc = test_loc, .op = .neg, .operand = &ordinary } };
     try std.testing.expectEqual(@as(?i64, -42), intLiteralValue(&minus));
-    try std.testing.expectEqual(@as(?i64, std.math.maxInt(i64)), intLiteralValue(&Expr{
-        .int_lit = .{ .loc = test_loc, .val = std.math.maxInt(i64) },
-    }));
+    var ceiling = Expr{ .int_lit = .{ .loc = test_loc, .val = std.math.maxInt(i64) } };
+    var lowered = Expr{ .unop = .{ .loc = test_loc, .op = .neg, .operand = &ceiling } };
+    try std.testing.expectEqual(@as(?i64, std.math.maxInt(i64)), intLiteralValue(&ceiling));
+    try std.testing.expectEqual(@as(?i64, -std.math.maxInt(i64)), intLiteralValue(&lowered));
 }
 
 pub const Expr = union(enum) {

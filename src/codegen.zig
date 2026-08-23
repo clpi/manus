@@ -10813,7 +10813,7 @@ pub const CodeGen = struct {
             .quoted => |lit| if (ast.quotedLiteralIsByteSequence(lit.quote)) null else .str,
             .unop => |u| switch (u.op) {
                 .neg => switch (u.operand.*) {
-                    .int_lit => .i64,
+                    .int_lit => |lit| if (ast.negatedIntLiteral(lit.val) == null) null else .i64,
                     .float_lit => .f64,
                     else => null,
                 },
@@ -10830,7 +10830,7 @@ pub const CodeGen = struct {
             .quoted => try self.emit_c_string_literal(expr.quoted.val),
             .unop => |u| switch (u.op) {
                 .neg => switch (u.operand.*) {
-                    .int_lit => self.emit_c_int_literal(ast.negatedIntLiteral(u.operand.int_lit.val)),
+                    .int_lit => self.emit_c_int_literal(ast.negatedIntLiteral(u.operand.int_lit.val).?),
                     .float_lit => self.p("{e}", .{-u.operand.float_lit.val}),
                     else => unreachable,
                 },

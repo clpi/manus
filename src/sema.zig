@@ -16461,11 +16461,13 @@ test "sema: INT_MIN is a value under an i64 demand, and a diagnostic under a nar
 
     // THE REPORTED P0-A DEFECT, at its check-time face. `literalOutOfRange`
     // read the literal through a private copy of `intLiteralValue` that
-    // negated with bare host `-`, so a VALID i64 declaration crashed the
-    // compiler with `panic: integer overflow` at sema.zig:1488 before it could
-    // decide anything. c0 `law.number.projection`: "an unannotated integer
-    // literal retains its exact integer value"; `law.effect.order` rejects
-    // "backend decided trap semantics".
+    // negated with bare host `-`, so a VALID i64 declaration ended the whole
+    // compiler with `panic: integer overflow` before it could decide anything.
+    // The lexer classifies the magnitude now and the parser normalizes it, so
+    // this is the reader BEHIND that boundary — the rung that has to stay
+    // sound for a synthesized node too. c0 `law.number.projection`: "an
+    // unannotated integer literal retains its exact integer value";
+    // `law.effect.order` fails on "backend decided trap semantics".
     const held = try runIdolSema("x: i64 = -9223372036854775808\n", &arena);
     try testing.expectEqual(@as(u32, 0), held.errors);
 
@@ -16476,6 +16478,16 @@ test "sema: INT_MIN is a value under an i64 demand, and a diagnostic under a nar
     const narrow = try runIdolSema("x: u32 = -9223372036854775808\n", &narrow_arena);
     try testing.expectEqual(@as(u32, 1), narrow.errors);
     try testing.expect(std.mem.indexOf(u8, narrow.diagnostics.items[0].message, "u32") != null);
+
+    // THE OTHER HALF, and the boundary this lane agrees with rather than
+    // relitigates: the bare magnitude has no i64 and is refused where it is
+    // recognized, so it never reaches a reader at all.
+    var over_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer over_arena.deinit();
+    try testing.expectError(
+        error.UnexpectedToken,
+        runIdolSema("x: i64 = 9223372036854775808\n", &over_arena),
+    );
 
     // Negative control: the literal one above INT_MIN never reached the
     // overflow and must keep behaving exactly as it did.
