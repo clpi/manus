@@ -369,62 +369,117 @@ if [ -e "$ROOT/.agents/SESSION_STATE.md" ]; then
     bad '.agents/SESSION_STATE.md is ephemeral state masquerading as durable authority'
 fi
 
-archive_sha='e66fe6cd2470eb7ce73a82ed0f758b84044715c4a8102e55e95b61435e32ed78'
 if [ -r "$RESEARCH_ARCHIVE" ]; then
-    archive_valid=1
-    expected_archive_bytes=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["archive_bytes"])' "$RESEARCH_MANIFEST")
-    actual_archive_bytes=$(wc -c < "$RESEARCH_ARCHIVE" | tr -d '[:space:]')
-    [ -n "$expected_archive_bytes" ] || bad 'Pass 2 manifest archive byte count missing'
-    if [ "$actual_archive_bytes" != "$expected_archive_bytes" ]; then
-        bad "Pass 2 archive is truncated or replaced (manifest $expected_archive_bytes got $actual_archive_bytes bytes)"
-        archive_valid=0
-    fi
-    if ! gzip -t "$RESEARCH_ARCHIVE" 2>/dev/null; then
-        bad 'Pass 2 archive is not a valid complete gzip stream'
-        archive_valid=0
-    fi
-    actual=''
-    if command -v sha256sum >/dev/null 2>&1; then
-        actual=$(sha256sum "$RESEARCH_ARCHIVE" | awk '{print $1}')
-    elif command -v shasum >/dev/null 2>&1; then
-        actual=$(shasum -a 256 "$RESEARCH_ARCHIVE" | awk '{print $1}')
-    fi
-    if [ -z "$actual" ]; then
-        bad 'Pass 2 archive SHA-256 could not be derived'
-        archive_valid=0
-    elif [ "$actual" != "$archive_sha" ]; then
-        bad "Pass 2 archive digest mismatch: $actual"
-        archive_valid=0
-    fi
-    if [ "$archive_valid" -eq 1 ] && ! python3 - "$RESEARCH_MANIFEST" "$RESEARCH_ARCHIVE" <<'PY'
+    archive_observation=$(python3 - "$RESEARCH_MANIFEST" "$RESEARCH_ARCHIVE" <<'PY'
 import hashlib
+import gzip
 import json
 import sys
 import tarfile
+import zlib
 
 manifest = json.load(open(sys.argv[1]))
+
+def classify(status, size, digest, gzip_complete, expected_size, expected_digest,
+             observed_size=None, observed_digest=None):
+    if status == "complete":
+        if size != expected_size or digest != expected_digest or not gzip_complete:
+            raise ValueError("declared-complete archive does not match complete identity")
+        return "complete"
+    if status == "corrupt":
+        if observed_size is None or observed_digest is None:
+            raise ValueError("declared-corrupt archive lacks exact observed identity")
+        if size != observed_size or digest != observed_digest:
+            raise ValueError("declared-corrupt archive moved from its preserved identity")
+        if gzip_complete:
+            raise ValueError("declared-corrupt archive unexpectedly became a complete gzip stream")
+        return "preserved-corrupt"
+    raise ValueError("unknown archive integrity status")
+
+# Mandatory classifier damage controls. Exact corrupt provenance is distinct
+# from complete admission, and neither moved bytes nor a false complete claim
+# may enter either class.
+if classify("complete", 8, "a", True, 8, "a") != "complete":
+    raise SystemExit("complete archive classifier positive control failed")
+if classify("corrupt", 3, "b", False, 8, "a", 3, "b") != "preserved-corrupt":
+    raise SystemExit("corrupt archive classifier positive control failed")
+for damaged in (
+    ("corrupt", 4, "b", False, 8, "a", 3, "b"),
+    ("corrupt", 3, "c", False, 8, "a", 3, "b"),
+    ("corrupt", 3, "b", True, 8, "a", 3, "b"),
+    ("complete", 3, "b", False, 8, "a", None, None),
+    ("unknown", 8, "a", True, 8, "a", None, None),
+):
+    try:
+        classify(*damaged)
+    except ValueError:
+        pass
+    else:
+        raise SystemExit("archive integrity classifier damage control failed")
+
+archive_path = sys.argv[2]
+raw = open(archive_path, "rb").read()
+digest = hashlib.sha256(raw).hexdigest()
+try:
+    with gzip.open(archive_path, "rb") as stream:
+        while stream.read(1024 * 1024):
+            pass
+    gzip_complete = True
+except (EOFError, OSError, zlib.error):
+    gzip_complete = False
+
+integrity = manifest.get("archive_integrity", {})
+try:
+    state = classify(
+        integrity.get("status"),
+        len(raw),
+        digest,
+        gzip_complete,
+        manifest.get("archive_bytes"),
+        manifest.get("archive_sha256"),
+        integrity.get("observed_bytes"),
+        integrity.get("observed_sha256"),
+    )
+except ValueError as exc:
+    print(exc)
+    raise SystemExit(1)
+
+if state == "preserved-corrupt":
+    print(f"preserved corrupt archive {len(raw)} bytes sha256={digest}")
+    raise SystemExit(2)
+
 expected = {row["name"]: row for row in manifest["files"]}
-with tarfile.open(sys.argv[2], "r:gz") as archive:
-    members = archive.getmembers()
-    if len(members) != len(expected):
-        raise SystemExit("archive member count")
-    seen = set()
-    for member in members:
-        if not member.isfile() or member.name not in expected or member.name in seen:
-            raise SystemExit(f"archive member identity: {member.name}")
-        seen.add(member.name)
-        row = expected[member.name]
-        if member.size != row["bytes"]:
-            raise SystemExit(f"archive member bytes: {member.name}")
-        stream = archive.extractfile(member)
-        if stream is None or hashlib.sha256(stream.read()).hexdigest() != row["sha256"]:
-            raise SystemExit(f"archive member digest: {member.name}")
-    if seen != set(expected):
-        raise SystemExit("archive member roster")
+try:
+    with tarfile.open(archive_path, "r:gz") as archive:
+        members = archive.getmembers()
+        if len(members) != len(expected):
+            raise ValueError("archive member count")
+        seen = set()
+        for member in members:
+            if not member.isfile() or member.name not in expected or member.name in seen:
+                raise ValueError(f"archive member identity: {member.name}")
+            seen.add(member.name)
+            row = expected[member.name]
+            if member.size != row["bytes"]:
+                raise ValueError(f"archive member bytes: {member.name}")
+            stream = archive.extractfile(member)
+            if stream is None or hashlib.sha256(stream.read()).hexdigest() != row["sha256"]:
+                raise ValueError(f"archive member digest: {member.name}")
+        if seen != set(expected):
+            raise ValueError("archive member roster")
+except (OSError, tarfile.TarError, ValueError) as exc:
+    print(exc)
+    raise SystemExit(1)
+
+print(f"complete archive {len(raw)} bytes sha256={digest}")
 PY
-    then
-        bad 'Pass 2 archive members do not match the exact manifest roster, sizes, and digests'
-    fi
+    )
+    archive_rc=$?
+    case "$archive_rc" in
+        0) : ;;
+        2) bad "Pass 2 archive is exact preserved corrupt provenance ($archive_observation); complete 88,492-byte archive is required for admission" ;;
+        *) bad "Pass 2 archive identity, integrity, or member roster is invalid: ${archive_observation:-unclassified}" ;;
+    esac
 fi
 
 # When a compiler subject is explicitly supplied, bind both its exact bytes and
@@ -543,8 +598,10 @@ schema, digest, path = sys.argv[1:]
 try:
     graph = json.load(open(path))
     law = graph["root_source_law"]
-    assert graph["version"] == 11
-    assert law == {"card": "one", "family": "idol", "schema": schema, "sha256": digest}
+    if graph["version"] != 11:
+        raise ValueError("graph schema version")
+    if law != {"card": "one", "family": "idol", "schema": schema, "sha256": digest}:
+        raise ValueError("root source-law projection")
 except Exception:
     raise SystemExit(1)
 PY
