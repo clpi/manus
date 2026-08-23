@@ -18,6 +18,7 @@
 #   gate/admission.sh   no newly added raw std source spelling
 #   gate/vocabulary.sh  fail-closed module-declaration freeze; no word registry
 #   gate/layering.sh    dependency direction, projections, relation ownership
+#   gate/directive.sh   @comp.* namespace closure: no new form, no new use
 #
 # Each has controls in both directions. This script is not server enforcement:
 # a candidate-owned hook or workflow can weaken itself. A protected-base
@@ -65,6 +66,15 @@ if [ "$run_gates" = yes ]; then
             sh "$here/$g.sh" || rc=1
         fi
     done
+    # A WHOLE-TREE RATCHET, so it is NOT given --base. The three gates above
+    # judge a diff; this one pins an absolute census of the `@comp.*` directive
+    # namespace and fails when a form is added or used more often. Handing it a
+    # base revision would invite the reading that an untouched tree is exempt,
+    # which is exactly how a namespace grows without a reviewer noticing.
+    printf '\n--- gate/directive.sh ---\n' >&2
+    if ! sh "$here/directive.sh"; then
+        rc=1
+    fi
 fi
 
 if [ "$run_controls" = yes ]; then

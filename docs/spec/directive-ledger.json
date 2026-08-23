@@ -1,0 +1,674 @@
+{
+  "subject": "every @comp.* directive form at a CODE position in tracked .id source",
+  "why": "Current metaprogramming law admits no compiler-directive syntax: metaprogramming operates on graph identities, facts, dependencies, demand, worlds, provenance and transformations. src/legacy_directives.zig nevertheless labels the dotted @comp.* forms `canonical` and maps the older underscore spellings onto them. This ledger is the inventory that conflict requires, and gate/directive.sh is its ratchet.",
+  "counting": "CODE POSITIONS ONLY. `#` comments are stripped before matching, because prose describing a directive is not a use of it \u2014 counting comments reported 1063 where the code figure is 824. Forms may not end in a dot; an earlier census produced phantom forms like `@comp.define...` by capturing sentence punctuation.",
+  "totals": {
+    "code_occurrences": 824,
+    "distinct_forms": 109,
+    "files": 133,
+    "by_disposition": {
+      "evidence": 12,
+      "foreign": 9,
+      "relation": 57,
+      "stage": 7,
+      "target": 1,
+      "transformation": 23
+    }
+  },
+  "forms": {
+    "@comp.c.emit": {
+      "code_occurrences": 132,
+      "files": 33,
+      "disposition": "foreign",
+      "rationale": "generated-C / ABI escape; realization + origin + linkage facts, never semantic selection"
+    },
+    "@comp.c.call": {
+      "code_occurrences": 64,
+      "files": 17,
+      "disposition": "foreign",
+      "rationale": "generated-C / ABI escape; realization + origin + linkage facts, never semantic selection"
+    },
+    "@comp.define.derive": {
+      "code_occurrences": 35,
+      "files": 27,
+      "disposition": "stage",
+      "rationale": "stage-scoped binding; compile-time world"
+    },
+    "@comp.ffi": {
+      "code_occurrences": 35,
+      "files": 2,
+      "disposition": "foreign",
+      "rationale": "foreign origin and ABI realization"
+    },
+    "@comp.map": {
+      "code_occurrences": 30,
+      "files": 24,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.match": {
+      "code_occurrences": 29,
+      "files": 8,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.each": {
+      "code_occurrences": 28,
+      "files": 13,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.assert": {
+      "code_occurrences": 24,
+      "files": 12,
+      "disposition": "relation",
+      "rationale": "proof obligation over graph facts"
+    },
+    "@comp.run": {
+      "code_occurrences": 20,
+      "files": 4,
+      "disposition": "stage",
+      "rationale": "compile-time stage evaluation of an ordinary relation"
+    },
+    "@comp.pipeline": {
+      "code_occurrences": 19,
+      "files": 10,
+      "disposition": "transformation",
+      "rationale": "transformation composition"
+    },
+    "@comp.c.include": {
+      "code_occurrences": 17,
+      "files": 10,
+      "disposition": "foreign",
+      "rationale": "generated-C / ABI escape; realization + origin + linkage facts, never semantic selection"
+    },
+    "@comp.str.contains": {
+      "code_occurrences": 17,
+      "files": 10,
+      "disposition": "relation",
+      "rationale": "ordinary text relation"
+    },
+    "@comp.interpolate": {
+      "code_occurrences": 16,
+      "files": 4,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.tabulate": {
+      "code_occurrences": 15,
+      "files": 4,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.zip": {
+      "code_occurrences": 14,
+      "files": 6,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.satisfies": {
+      "code_occurrences": 13,
+      "files": 5,
+      "disposition": "relation",
+      "rationale": "protocol satisfaction; a graph fact with normally zero source syntax"
+    },
+    "@comp.str.countlines": {
+      "code_occurrences": 13,
+      "files": 9,
+      "disposition": "relation",
+      "rationale": "ordinary text relation"
+    },
+    "@comp.c.export": {
+      "code_occurrences": 12,
+      "files": 8,
+      "disposition": "foreign",
+      "rationale": "generated-C / ABI escape; realization + origin + linkage facts, never semantic selection"
+    },
+    "@comp.template": {
+      "code_occurrences": 12,
+      "files": 9,
+      "disposition": "transformation",
+      "rationale": "projection generation"
+    },
+    "@comp.generate": {
+      "code_occurrences": 11,
+      "files": 6,
+      "disposition": "transformation",
+      "rationale": "projection generation; generated source is never the only artifact"
+    },
+    "@comp.power": {
+      "code_occurrences": 11,
+      "files": 7,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.scheme": {
+      "code_occurrences": 10,
+      "files": 5,
+      "disposition": "transformation",
+      "rationale": "graph transformation"
+    },
+    "@comp.concepts.members": {
+      "code_occurrences": 9,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "protocol/adjective relation"
+    },
+    "@comp.for": {
+      "code_occurrences": 9,
+      "files": 5,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.type.is": {
+      "code_occurrences": 9,
+      "files": 3,
+      "disposition": "relation",
+      "rationale": "descriptor relation over graph identities"
+    },
+    "@comp.type.name": {
+      "code_occurrences": 9,
+      "files": 4,
+      "disposition": "relation",
+      "rationale": "descriptor relation over graph identities"
+    },
+    "@comp.derive": {
+      "code_occurrences": 8,
+      "files": 5,
+      "disposition": "transformation",
+      "rationale": "graph transformation with exact in/out identities"
+    },
+    "@comp.derive.power": {
+      "code_occurrences": 7,
+      "files": 4,
+      "disposition": "transformation",
+      "rationale": "graph transformation with exact in/out identities"
+    },
+    "@comp.fixpoint": {
+      "code_occurrences": 6,
+      "files": 3,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.permute": {
+      "code_occurrences": 6,
+      "files": 3,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.type.id": {
+      "code_occurrences": 6,
+      "files": 3,
+      "disposition": "relation",
+      "rationale": "descriptor relation over graph identities"
+    },
+    "@comp.choose": {
+      "code_occurrences": 5,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.derive.eval": {
+      "code_occurrences": 5,
+      "files": 3,
+      "disposition": "transformation",
+      "rationale": "graph transformation with exact in/out identities"
+    },
+    "@comp.ladder": {
+      "code_occurrences": 5,
+      "files": 4,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.bit.bitcast": {
+      "code_occurrences": 4,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary numeric relation"
+    },
+    "@comp.concepts.methods": {
+      "code_occurrences": 4,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "protocol/adjective relation"
+    },
+    "@comp.derive.all": {
+      "code_occurrences": 4,
+      "files": 3,
+      "disposition": "transformation",
+      "rationale": "graph transformation with exact in/out identities"
+    },
+    "@comp.derive.bundle": {
+      "code_occurrences": 4,
+      "files": 3,
+      "disposition": "transformation",
+      "rationale": "graph transformation with exact in/out identities"
+    },
+    "@comp.embed.json": {
+      "code_occurrences": 4,
+      "files": 4,
+      "disposition": "foreign",
+      "rationale": "foreign byte ingress; world read authority + provenance"
+    },
+    "@comp.fields.map": {
+      "code_occurrences": 4,
+      "files": 3,
+      "disposition": "relation",
+      "rationale": "descriptor projection"
+    },
+    "@comp.foreign": {
+      "code_occurrences": 4,
+      "files": 1,
+      "disposition": "foreign",
+      "rationale": "foreign origin and ABI realization"
+    },
+    "@comp.grammar": {
+      "code_occurrences": 4,
+      "files": 3,
+      "disposition": "transformation",
+      "rationale": "grammar projection from the one grammar owner"
+    },
+    "@comp.has.metamethod": {
+      "code_occurrences": 4,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "descriptor predicate; must be card-valued, not boolean"
+    },
+    "@comp.if": {
+      "code_occurrences": 4,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.product": {
+      "code_occurrences": 4,
+      "files": 4,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.type.names": {
+      "code_occurrences": 4,
+      "files": 4,
+      "disposition": "relation",
+      "rationale": "descriptor relation over graph identities"
+    },
+    "@comp.weave": {
+      "code_occurrences": 4,
+      "files": 3,
+      "disposition": "transformation",
+      "rationale": "transformation composition"
+    },
+    "@comp.agent.dedupe": {
+      "code_occurrences": 3,
+      "files": 2,
+      "disposition": "evidence",
+      "rationale": "tooling/evidence projection"
+    },
+    "@comp.burst": {
+      "code_occurrences": 3,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.catalog": {
+      "code_occurrences": 3,
+      "files": 3,
+      "disposition": "evidence",
+      "rationale": "evidence projection"
+    },
+    "@comp.chain": {
+      "code_occurrences": 3,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.field.offset": {
+      "code_occurrences": 3,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "descriptor projection"
+    },
+    "@comp.fields": {
+      "code_occurrences": 3,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "descriptor projection"
+    },
+    "@comp.scheme.clauses": {
+      "code_occurrences": 3,
+      "files": 2,
+      "disposition": "transformation",
+      "rationale": "graph transformation"
+    },
+    "@comp.str.splitcount": {
+      "code_occurrences": 3,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary text relation"
+    },
+    "@comp.type.info": {
+      "code_occurrences": 3,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "descriptor relation over graph identities"
+    },
+    "@comp.type.shape": {
+      "code_occurrences": 3,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "descriptor relation over graph identities"
+    },
+    "@comp.agent.gaps": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "evidence",
+      "rationale": "tooling/evidence projection"
+    },
+    "@comp.agent.hooks": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "evidence",
+      "rationale": "tooling/evidence projection"
+    },
+    "@comp.as.type": {
+      "code_occurrences": 2,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "conversion relation; must resolve through the destination's admitted relation and witness (conversion soundness is itself an open law, so this form is classified but not yet dischargeable)"
+    },
+    "@comp.bit.rotr": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary numeric relation"
+    },
+    "@comp.ceiling": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.compile.cached": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "stage",
+      "rationale": "stage fact (cached/only/thread)"
+    },
+    "@comp.compile.log": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "evidence",
+      "rationale": "diagnostic projection"
+    },
+    "@comp.concepts.fields": {
+      "code_occurrences": 2,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "protocol/adjective relation"
+    },
+    "@comp.define.bundle": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "stage",
+      "rationale": "stage-scoped binding; compile-time world"
+    },
+    "@comp.derive.list": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "transformation",
+      "rationale": "graph transformation with exact in/out identities"
+    },
+    "@comp.derive.lookup": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "transformation",
+      "rationale": "graph transformation with exact in/out identities"
+    },
+    "@comp.derive.product": {
+      "code_occurrences": 2,
+      "files": 1,
+      "disposition": "transformation",
+      "rationale": "graph transformation with exact in/out identities"
+    },
+    "@comp.embed.str": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "foreign",
+      "rationale": "foreign byte ingress; world read authority + provenance"
+    },
+    "@comp.expand": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "transformation",
+      "rationale": "graph transformation"
+    },
+    "@comp.fanout": {
+      "code_occurrences": 2,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.field.type": {
+      "code_occurrences": 2,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "descriptor projection"
+    },
+    "@comp.has.field": {
+      "code_occurrences": 2,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "descriptor predicate; must be card-valued, not boolean"
+    },
+    "@comp.infinity": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.lua": {
+      "code_occurrences": 2,
+      "files": 1,
+      "disposition": "foreign",
+      "rationale": "foreign host realization"
+    },
+    "@comp.omni": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.register.derive": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "stage",
+      "rationale": "compile-time registry; must ERASE for sealed programs"
+    },
+    "@comp.rewrite": {
+      "code_occurrences": 2,
+      "files": 1,
+      "disposition": "transformation",
+      "rationale": "graph transformation"
+    },
+    "@comp.rewrite.bundle": {
+      "code_occurrences": 2,
+      "files": 1,
+      "disposition": "transformation",
+      "rationale": "graph transformation"
+    },
+    "@comp.rewrite.describe": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "transformation",
+      "rationale": "graph transformation"
+    },
+    "@comp.rewrite.rulecount": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "transformation",
+      "rationale": "graph transformation"
+    },
+    "@comp.schema": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.tensor": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.transcend": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.types.with": {
+      "code_occurrences": 2,
+      "files": 2,
+      "disposition": "relation",
+      "rationale": "descriptor relation"
+    },
+    "@comp.agent.catalog": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "evidence",
+      "rationale": "tooling/evidence projection"
+    },
+    "@comp.agent.multiplier": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "evidence",
+      "rationale": "tooling/evidence projection"
+    },
+    "@comp.bit.field": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary numeric relation"
+    },
+    "@comp.compile.only": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "stage",
+      "rationale": "stage fact (cached/only/thread)"
+    },
+    "@comp.compile.thread": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "stage",
+      "rationale": "stage fact (cached/only/thread)"
+    },
+    "@comp.compile.warn": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "evidence",
+      "rationale": "diagnostic projection"
+    },
+    "@comp.concepts.count": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "protocol/adjective relation"
+    },
+    "@comp.derive.choose": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "transformation",
+      "rationale": "graph transformation with exact in/out identities"
+    },
+    "@comp.derive.permute": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "transformation",
+      "rationale": "graph transformation with exact in/out identities"
+    },
+    "@comp.derive.tensor": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "transformation",
+      "rationale": "graph transformation with exact in/out identities"
+    },
+    "@comp.diff": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "evidence",
+      "rationale": "evidence projection"
+    },
+    "@comp.field.size": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "descriptor projection"
+    },
+    "@comp.hyper": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.nfold": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.origin": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.sql": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.sweep": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.union": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.variants": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@comp.wasm": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "target",
+      "rationale": "target capability fact"
+    },
+    "@comp.why": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "evidence",
+      "rationale": "explanation projection over graph lineage"
+    },
+    "@comp.why.module": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "evidence",
+      "rationale": "explanation projection over graph lineage"
+    },
+    "@comp.why.shape": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "evidence",
+      "rationale": "explanation projection over graph lineage"
+    }
+  }
+}
