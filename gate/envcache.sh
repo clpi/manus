@@ -222,12 +222,16 @@ done
 # calls `.inert` -- a claim that no byte moves, which buys it the cache -- that
 # measurably moves bytes.
 # ---------------------------------------------------------------------------
-printf '\n  §2 measured effect -- fresh cache, one variable at a time\n'
+printf '\n  §2 measured effect -- fresh cache, EVERY value of every variable\n'
 
 : > "$work/affecting.txt"
 N_AFFECTING=0
 N_INERT=0
 N_REFUSED=0
+N_UNMEASURED=0
+N_ACCEPTED=0
+N_PAIRS=0
+: > "$work/unmeasured.txt"
 
 for S in $SUBJECTS; do
     run "$work/base.$S" "$work/base.$S.d/p.out" "$work/$S.id"
@@ -240,7 +244,22 @@ done
 
 while IFS="$TAB" read -r V CLASS; do
     [ -n "$V" ] || continue
-    HIT=''
+    # EVERY VALUE, NO EARLY EXIT, AND THIS IS THE WHOLE DIFFERENCE BETWEEN A
+    # GATE THAT CATCHES THE DEFECT AND ONE THAT DOES NOT.
+    #
+    # This loop used to stop at the first value that moved the bytes and hand
+    # §3 that one pair. MEASURED against a compiler carrying the defect
+    # deliberately reintroduced: the gate reported
+    #
+    #     ok IDOL_UNSAFE_TRUNC_DIVREM=1 ... warm cache produced arm B's own artifact
+    #     envcache gate: PASS (18 probe(s))
+    #
+    # on a binary whose warm cache demonstrably served the unset-env artifact
+    # -- because the decline it was missing was a TRUTHINESS decline, so `=1`
+    # was the one value it still handled correctly, and `=1` is the value the
+    # first-hit rule always picks. A gate that probes only the value that
+    # works is a gate that passes on the broken build.
+    HIT=''; PROBED=0; REFUSED_HERE=0
     for S in $SUBJECTS; do
         [ -f "$work/base.$S.d/p.out" ] || continue
         for TOK in $VALUES; do
@@ -249,30 +268,47 @@ while IFS="$TAB" read -r V CLASS; do
             run "$work/fc" "$D/p.out" "$work/$S.id" "$V=$VAL"
             if [ ! -f "$D/p.out" ]; then
                 N_REFUSED=$((N_REFUSED + 1))
+                REFUSED_HERE=$((REFUSED_HERE + 1))
                 continue
             fi
+            PROBED=$((PROBED + 1))
             if ! cmp -s "$D/p.out" "$work/base.$S.d/p.out"; then
-                HIT="$S $TOK"
-                break
+                HIT=yes
+                N_PAIRS=$((N_PAIRS + 1))
+                printf '%s\t%s\t%s\t%s\n' "$V" "$CLASS" "$S" "$TOK" >> "$work/affecting.txt"
+                printf '    %-28s %-9s CODE-AFFECTING (%s %s)\n' "$V" "$CLASS" "$S" "$TOK"
             fi
         done
-        [ -n "$HIT" ] && break
     done
     if [ -n "$HIT" ]; then
         N_AFFECTING=$((N_AFFECTING + 1))
-        printf '%s\t%s\t%s\n' "$V" "$CLASS" "$HIT" >> "$work/affecting.txt"
-        printf '    %-28s %-9s CODE-AFFECTING (%s)\n' "$V" "$CLASS" "$HIT"
         SEEN=$((SEEN + 1))
         if [ "$CLASS" = inert ]; then
-            bad "$V is registered 'inert' -- a claim that no byte moves, which buys it the cache -- but it moves bytes on $HIT"
+            bad "$V is registered 'inert' -- a claim that no byte moves, which buys it the cache -- but it moves bytes"
+        fi
+    elif [ "$PROBED" -eq 0 ]; then
+        # NOT INERT -- UNMEASURED. `DUO_BENCH_BACKEND` accepts only the literal
+        # `direct`, so every value this gate probes makes the compiler refuse
+        # and no comparison ever happens. Counting that as "inert" would report
+        # a byte-identity result that was never observed, which is the exact
+        # species of claim this gate exists to stop making.
+        N_UNMEASURED=$((N_UNMEASURED + 1))
+        printf '%s\n' "$V" >> "$work/unmeasured.txt"
+        printf '    %-28s %-9s UNMEASURED (refused all %d probe(s))\n' "$V" "$CLASS" "$REFUSED_HERE"
+        SEEN=$((SEEN + 1))
+        if [ "$CLASS" = affects ]; then
+            ok "$V could not be measured, and is registered 'affects' -- it declines the cache without needing a measurement"
+        else
+            bad "$V refused every probed value, so its '$CLASS' registration rests on no comparison this gate made"
         fi
     else
         N_INERT=$((N_INERT + 1))
     fi
+    N_ACCEPTED=$((N_ACCEPTED + PROBED))
 done < "$work/rows.tsv"
 
-printf '    measured: %d code-affecting, %d inert on these subjects, %d refused compile\n' \
-    "$N_AFFECTING" "$N_INERT" "$N_REFUSED"
+printf '    measured: %d code-affecting variable(s) over %d (subject,value) pair(s), %d inert over %d accepted probe(s), %d unmeasured (refused every value), %d refusal(s) total\n' \
+    "$N_AFFECTING" "$N_PAIRS" "$N_INERT" "$N_ACCEPTED" "$N_UNMEASURED" "$N_REFUSED"
 
 # ---------------------------------------------------------------------------
 # §3 THE PROPERTY. A warm cache never answers a code-affecting arm with the
@@ -295,8 +331,12 @@ while IFS="$TAB" read -r V CLASS S TOK; do
     # A cache root that holds exactly one thing: the V-unset artifact.
     WARM="$work/warm.root"; rm -rf "$WARM"
     rm -rf "$work/wa" "$work/wb" "$work/wf" "$work/freshb"
+    if [ ! -f "$work/$S.id" ]; then
+        bad "$V: §3 was handed subject '$S', which is not a file -- HARNESS fault, not a cache verdict"
+        continue
+    fi
     run "$WARM" "$work/wa/p.out" "$work/$S.id"
-    [ -f "$work/wa/p.out" ] || { bad "$V: warm-root baseline compile failed"; continue; }
+    [ -f "$work/wa/p.out" ] || { bad "$V: warm-root baseline compile failed: $(tail -1 "$work/wa/p.out.log" 2>/dev/null)"; continue; }
 
     # Independently, B's own correct artifact -- what the warm arm SHOULD equal.
     run "$work/freshb" "$work/wf/p.out" "$work/$S.id" "$V=$VAL"
@@ -329,7 +369,7 @@ done < "$work/affecting.txt"
 printf '\n  §4 non-vacuity -- §3 must have had a real population\n'
 SEEN=$((SEEN + 1))
 if [ "$N_AFFECTING" -gt 0 ]; then
-    ok "§3 ran against $N_AFFECTING measured code-affecting variable(s), not an empty set"
+    ok "§3 ran against $N_PAIRS (subject,value) pair(s) across $N_AFFECTING variable(s), not an empty set"
 else
     bad "ZERO variables measured code-affecting -- §3 asserted nothing; the subjects no longer reach any environment-controlled decision and this gate is vacuous"
 fi
@@ -401,8 +441,8 @@ if [ "$SEEN" -eq 0 ]; then
     exit 1
 fi
 if [ "$FAILED" -eq 0 ]; then
-    printf 'envcache gate: PASS (%d probe(s)) %d registry rows, %d measured code-affecting, warm cache distinct on every one\n' \
-        "$SEEN" "$ROWS" "$N_AFFECTING"
+    printf 'envcache gate: PASS (%d probe(s)) %d registry rows, %d code-affecting variable(s) over %d (subject,value) pair(s), warm cache distinct on every pair\n' \
+        "$SEEN" "$ROWS" "$N_AFFECTING" "$N_PAIRS"
     exit 0
 fi
 printf 'envcache gate: FAIL (%d probe(s)) %d violation(s) -- the artifact cache does not answer for every code-affecting environment variable\n' \
