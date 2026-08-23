@@ -104,7 +104,21 @@ DECLARED='gate/architecture-roadmap.sh gate/coverage.sh'
 #     `posix gate: PASS — 1 shell gate(s) parse under dash; control refused`
 #     and exited 0, having examined nothing but itself. Its own header is
 #     about controls that cannot fail, which is the finding.
-KNOWNVACUOUS='gate/posix.sh'
+#   gate/researchgap.sh — invisible until the launcher fix below. It execs
+#     `tools/node/dev/gapc0`, which the plant did not provide, so it died at
+#     126 and was scored SOUND. With the stub present it REACHES its
+#     measurement, finds nothing, prints nothing and exits 0. Confirmed by
+#     hand on a scaffold containing only the gate, a silent `gapc0` and an
+#     empty git repo: rc=0, no output.
+KNOWNVACUOUS='gate/posix.sh gate/researchgap.sh'
+
+# ── crashed under HOLLOW before reaching a measurement ─────────────────────
+# NOT a conviction and NOT a pass: the harness never observed these decide
+# anything. Both die on a prerequisite the plant does not know to supply
+# (`tools/node/dev/grammar` semantics, and a layering manifest reader). Each
+# is a stub away from a real verdict, and until then the honest report is that
+# they are unmeasured. Lines here are meant to be deleted.
+KNOWNUNPROVEN='gate/grammar-projection.sh gate/layering-controls.sh'
 
 # `gate/all.sh` is a RUNNER, not a gate: it executes every file here, so under
 # a plant it would recurse into this one. Excluded by role, and named so the
@@ -122,8 +136,6 @@ elif command -v gtimeout >/dev/null 2>&1; then
   runner='gtimeout'
 else
   runner=''
-  printf 'vacuity: NOTE no timeout(1) — a gate that hangs under a plant will hang this harness.\n' >&2
-  printf 'vacuity:   TIMEOUT cannot be distinguished from "still running"; install coreutils.\n' >&2
 fi
 
 # `$1/.say` receives the gate's own last line of output, which is what makes a
@@ -149,10 +161,38 @@ trap 'cleanup; exit 129' HUP
 say_file="$scratch/say"
 
 
+# THE RUNNER IS PROBED, NOT ASSUMED, and this is not defensive habit — it is a
+# defect this file already committed. A review asked for `-k` (TERM then KILL)
+# so a gate trapping TERM cannot hang the harness. Correct advice for GNU
+# coreutils; the `timeout` first on PATH here is a PERL SCRIPT that rejects the
+# switch and exits 25. Every plant then returned 25, every gate looked non-zero
+# on both, and the whole report would have been a uniform silent SOUND — the
+# instrument reporting 46 facts it had not measured, in the file written to
+# forbid exactly that. The canary self-test below caught it.
+#
+# So each capability is DEMONSTRATED on a command with a known answer before it
+# is used, and a runner that cannot pass its own probe is discarded rather than
+# trusted.
+killarg=''
+if [ -n "$runner" ]; then
+  if ! "$runner" 5 true >/dev/null 2>&1; then
+    printf 'vacuity: NOTE `%s` failed a trivial probe (`%s 5 true`); ignoring it.\n' "$runner" "$runner" >&2
+    runner=''
+  elif "$runner" -k 1 5 true >/dev/null 2>&1; then
+    killarg='-k 10'
+  else
+    printf 'vacuity: NOTE `%s` has no -k; a gate that traps TERM is bounded by TERM alone.\n' "$runner" >&2
+  fi
+fi
+if [ -z "$runner" ]; then
+  printf 'vacuity: NOTE no usable timeout(1) — a gate that hangs under a plant hangs this harness;\n' >&2
+  printf 'vacuity:   TIMEOUT cannot be distinguished from "still running". Install coreutils.\n' >&2
+fi
+
 run_bounded() {
   # $1 dir, $2 relative gate path -> echoes exit code, or 124 for timeout
   if [ -n "$runner" ]; then
-    ( cd "$1" && "$runner" "$PER_GATE_TIMEOUT" sh "$2" >"$say_file" 2>&1 </dev/null )
+    ( cd "$1" && "$runner" $killarg "$PER_GATE_TIMEOUT" sh "$2" >"$say_file" 2>&1 </dev/null )
   else
     ( cd "$1" && sh "$2" >"$say_file" 2>&1 </dev/null )
   fi
@@ -204,6 +244,30 @@ build_hollow() {
   # has to decide what an empty answer means.
   printf '#!/bin/sh\nexit 0\n' > "$1/zig-out/bin/idol" || return 1
   chmod +x "$1/zig-out/bin/idol" || return 1
+
+  # A LAUNCHER IS NOT A SUBJECT, and conflating the two is how this harness
+  # handed out unearned SOUND verdicts. ELEVEN gates open with
+  #
+  #     exec "$ROOT/tools/node/dev/idol-lock" -- "$0" "$@"
+  #
+  # and the plant did not provide it, so the exec failed, the gate exited
+  # non-zero WITHOUT EVER REACHING ITS MEASUREMENT, and this file scored that
+  # as proof of non-vacuity. It is the exact error being hunted: a red for the
+  # wrong reason, credited as evidence. A vacuous check sitting behind a lock
+  # wrapper was invisible.
+  #
+  # So the launcher PASSES THROUGH — `IDOL_LOCK_HELD=1` is the real tool's own
+  # contract for "already held, just exec" (tools/node/dev/idol-lock:54), and
+  # setting it is what stops the gate re-execing itself forever.
+  printf '#!/bin/sh\n[ "$1" = "--" ] && shift\nIDOL_LOCK_HELD=1 exec "$@"\n' > "$1/tools/node/dev/idol-lock" || return 1
+  chmod +x "$1/tools/node/dev/idol-lock" || return 1
+
+  # DATA SOURCES, by contrast, EXIST AND ANSWER NOTHING — that is HOLLOW's
+  # whole premise, and a gate has to decide what an empty answer means.
+  for t in build-mode gapc gapc0 grammar census hostcensus repository; do
+    printf '#!/bin/sh\nexit 0\n' > "$1/tools/node/dev/$t" || return 1
+    chmod +x "$1/tools/node/dev/$t" || return 1
+  done
   ( cd "$1" && git init -q . >/dev/null 2>&1 ) || true
   return 0
 }
@@ -212,6 +276,12 @@ verdict_of() {
   # $1 empty rc, $2 hollow rc
   if [ "$1" = "124" ] || [ "$2" = "124" ]; then echo TIMEOUT; return; fi
   if [ "$1" = "0" ] || [ "$2" = "0" ]; then echo VACUOUS; return; fi
+  # A CRASH UNDER HOLLOW PROVES NOTHING. HOLLOW is the plant built so the gate
+  # can actually RUN — every prerequisite present, every answer empty. If it
+  # still dies on 126/127/128+, the measurement was never reached, so this
+  # harness has not observed the gate deciding anything and must not claim it
+  # did. UNPROVEN is its own state precisely so it cannot be read as SOUND.
+  case "$(grade "$2")" in crash) echo UNPROVEN; return ;; esac
   echo SOUND
 }
 
@@ -315,7 +385,7 @@ done
 
 # ═══ MEASURE ═══════════════════════════════════════════════════════════════
 sound=0; vacuous=0; declared=0; timedout=0; skipped=0
-vacuous_names=''; timeout_names=''; declared_sound=''; crashes=''; newvacuous=''
+vacuous_names=''; timeout_names=''; declared_sound=''; crashes=''; newvacuous=''; unproven=0; unproven_names=''
 
 oldifs=$IFS; IFS='
 '
@@ -339,6 +409,17 @@ for g in $gates; do
   is_declared=0
   case " $DECLARED " in *" $g "*) is_declared=1 ;; esac
 
+  # A DECLARATION EXEMPTS AN INTENTIONAL GREEN, NEVER A HANG. This branch used
+  # to `continue` before the TIMEOUT case could count, so `TIMEOUT_CEILING=0`
+  # was unenforceable for report-only gates and a newly hanging
+  # architecture-roadmap still let the harness exit 0.
+  if [ "$is_declared" -eq 1 ] && [ "$v" = "TIMEOUT" ]; then
+    timedout=$((timedout + 1)); timeout_names="$timeout_names ${g#gate/}(declared)"
+    printf '  %-38s TIMEOUT   empty=%-3s hollow=%-3s  (declared, but a hang is not a declaration)\n' "${g#gate/}" "$re" "$rh"
+    IFS='
+'
+    continue
+  fi
   if [ "$is_declared" -eq 1 ]; then
     declared=$((declared + 1))
     if [ "$v" = "SOUND" ]; then
@@ -356,6 +437,9 @@ for g in $gates; do
       sound=$((sound + 1))
       if [ "$ge" = crash ] || [ "$gh" = crash ]; then crashes="$crashes ${g#gate/}"; fi
       printf '  %-38s SOUND     empty=%-3s(%s) hollow=%-3s(%s)\n' "${g#gate/}" "$re" "$ge" "$rh" "$gh" ;;
+    UNPROVEN)
+      unproven=$((unproven + 1)); unproven_names="$unproven_names ${g#gate/}"
+      printf '  %-38s UNPROVEN  empty=%-3s hollow=%-3s(crash)  <- never reached its measurement\n' "${g#gate/}" "$re" "$rh" ;;
     TIMEOUT)
       timedout=$((timedout + 1)); timeout_names="$timeout_names ${g#gate/}"
       printf '  %-38s TIMEOUT   empty=%-3s hollow=%-3s  (hanging is not noticing)\n' "${g#gate/}" "$re" "$rh" ;;
@@ -371,10 +455,11 @@ for g in $gates; do
 done
 IFS=$oldifs
 
-printf 'vacuity: %s gate(s) enumerated — %s sound, %s VACUOUS, %s declared report-only, %s timeout, %s runner(s) excluded\n' \
-  "$total" "$sound" "$vacuous" "$declared" "$timedout" "$skipped"
+printf 'vacuity: %s gate(s) enumerated — %s sound, %s VACUOUS, %s UNPROVEN, %s declared report-only, %s timeout, %s runner(s) excluded\n' \
+  "$total" "$sound" "$vacuous" "$unproven" "$declared" "$timedout" "$skipped"
 [ -n "$vacuous_names" ] && printf 'vacuity: VACUOUS:%s\n' "$vacuous_names"
 [ -n "$timeout_names" ] && printf 'vacuity: TIMEOUT:%s\n' "$timeout_names"
+[ -n "$unproven_names" ] && printf 'vacuity: UNPROVEN (crashed under HOLLOW before measuring; not credited as sound):%s\n' "$unproven_names"
 [ -n "$declared_sound" ] && printf 'vacuity: exemption no longer needed:%s\n' "$declared_sound"
 [ -n "$untracked" ] && printf 'vacuity: UNTRACKED gate(s) present and examined (they execute under gate/all.sh):%s\n' "$untracked"
 [ -n "$crashes" ] && printf 'vacuity: non-zero by CRASH rather than refusal (weaker, still not a false clean):%s\n' "$crashes"
@@ -387,6 +472,12 @@ printf 'vacuity: %s gate(s) enumerated — %s sound, %s VACUOUS, %s declared rep
 TIMEOUT_CEILING=${VACUITY_TIMEOUT_CEILING:-0}
 
 rc=0
+for u in $unproven_names; do
+  case " $KNOWNUNPROVEN " in
+    *" gate/$u "*) ;;
+    *) printf 'vacuity: NEW UNPROVEN GATE — %s crashed under HOLLOW before measuring; supply its prerequisite or record it\n' "$u" >&2; rc=1 ;;
+  esac
+done
 if [ -n "$newvacuous" ]; then
   printf 'vacuity: NEW VACUOUS GATE(S) —%s — a gate that stays green with no subject is reporting a fact it did not measure\n' "$newvacuous" >&2
   rc=1
