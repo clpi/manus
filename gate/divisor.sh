@@ -187,8 +187,82 @@ ID
   fi
 done
 
+# ─── §6 ONE PRODUCER, and it is a RATCHET rather than an assertion ─────────
+# §1-§5 prove the obligation is COLLECTED. They cannot see whether it is
+# collected in one place or five, and five is how it broke: the membership set
+# `{/, //, %}` was spelled independently at the guard site, three times in
+# `native_backend.zig`, and once in `demand.zig`. Adding `.idiv` to ONE of those
+# five repairs the wrong answer and leaves the condition that produced it, so a
+# gate that stops at §1 would go green on a tree that is still one enum-split
+# away from the same defect.
+#
+# What this asserts is therefore STRUCTURAL: the realization consumers must ASK,
+# and the two producers must EXIST. `gate/layers.manifest` forbids a BACKEND
+# importing SEMA, so the one obligation cannot be one declaration — the IR side
+# states it over `BinOpTag`, the meaning side over `ast.BinOp`, and the unit test
+# `divisor obligation: IR and relation law agree` is what keeps them equal.
+predicate='requiresNonzeroDivisor'
+
+# A SPELLING IS CODE, NOT PROSE, AND IT IS THE EXACT SET. Two refinements this
+# check needs in order to measure what it claims:
+#
+#   * comment lines are stripped. The repair's own commentary QUOTES the
+#     retired list (`used to read tag == .div or tag == .mod`), and a gate that
+#     counts its own explanation is measuring itself — `gate/all.sh` records the
+#     same convention for its citation census.
+#   * a SUPERSET is a different question. `dnir_lower.zig`'s width lattice reads
+#     `.lshift, .rshift, .div, .idiv, .mod, .pow => .int64`, which is about how
+#     wide a result is, not about who owes a divisor; `.pow` is in it and owes
+#     nothing. So the match requires the set to END at `.mod`.
+spellings() {
+  sed 's|//.*||' "$1" 2>/dev/null | grep -cE '\.div, \.idiv, \.mod *=>|tag == \.div' || true
+}
+
+for f in src/dnir_lower.zig src/native_backend.zig; do
+  spelled=$(spellings "$f")
+  asks=$(grep -c "$predicate" "$f" 2>/dev/null || true)
+  if [ "${spelled:-0}" -ne 0 ]; then
+    bad "§6 $f spells the divisor set ${spelled} time(s) instead of asking \`$predicate\`. That is the shape the defect came in: a hand-kept member list at a consumer, which an enum split silently falsifies."
+  elif [ "${asks:-0}" -eq 0 ]; then
+    bad "§6 $f neither spells nor asks the obligation — it has stopped consulting it at all"
+  else
+    note "§6 $f: asks the obligation ${asks} time(s), spells it 0 times"
+  fi
+done
+
+# THE IR PRODUCER, and that its switch is EXHAUSTIVE. Exhaustiveness is the
+# structural half of the repair: an `if` chain lets a new tag slip through
+# silently, which is exactly what happened, while a switch makes the compiler
+# demand an answer. `tests.zig` line 97 records that the same tag split DID
+# break exhaustive switches and that those were reported.
+if ! grep -q "pub fn $predicate" src/native_ir.zig; then
+  bad "§6 src/native_ir.zig has no \`$predicate\` — the IR-side producer is gone"
+elif ! grep -q '\.band, \.bor, \.bxor, \.shl, \.shr => false' src/native_ir.zig; then
+  bad "§6 $predicate is no longer an exhaustive switch; a tag added to BinOpTag can slip through without deciding whether it divides"
+else
+  note "§6 src/native_ir.zig: IR producer present, switch exhaustive"
+fi
+
+# THE SEMA PRODUCER, for `sema` and `demand`, over `ast.BinOp`.
+if ! grep -q 'divisor_nonzero' src/demand_projection.zig; then
+  bad '§6 src/demand_projection.zig has no `divisor_nonzero` — the relation-law producer is gone'
+else
+  note '§6 src/demand_projection.zig: relation-law producer present'
+fi
+
+# `demand.zig` keeps ONE occurrence: the arm that holds the switch exhaustive,
+# which routes to the same discharge helper and so cannot answer differently.
+# A CEILING, not a target — lower it if the arm ever becomes unnecessary.
+DEMAND_CEILING=1
+demand_spellings=$(spellings src/demand.zig)
+if [ "${demand_spellings:-0}" -gt "$DEMAND_CEILING" ]; then
+  bad "§6 src/demand.zig spells the divisor set ${demand_spellings} time(s), ceiling $DEMAND_CEILING"
+else
+  note "§6 src/demand.zig: ${demand_spellings} spelling(s), ceiling $DEMAND_CEILING"
+fi
+
 if [ "$fail" -eq 0 ]; then
-  note 'DIVISOR OK — all three relations collect the obligation they are owed.'
+  note 'DIVISOR OK — all three relations collect the obligation they are owed, and one producer states it.'
   exit 0
 fi
 note 'DIVISOR BLOCKED.'
