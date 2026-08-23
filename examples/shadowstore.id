@@ -1,0 +1,20 @@
+# A module table that OWNS field storage (poke writes it) AND is shadowed.
+# expect: 7 99 7
+cell: { x: i64 }
+bank = { x = 1 }
+
+poke: i64 = ()
+  bank.x = 7
+  bank.x
+
+bump: i64 = ()
+  bank: cell = { x = 5 }
+  bank.x = 99
+  bank.x
+
+read: i64 = ()
+  bank.x
+
+print(poke())
+print(bump())
+print(read())
