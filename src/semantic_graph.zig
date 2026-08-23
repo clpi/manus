@@ -2428,6 +2428,17 @@ pub const SemanticGraph = struct {
         return self.findUniqueByNameOfKind(name, .func);
     }
 
+    /// Exact relation identity already published for this declaration.
+    /// Entry selection is one semantic consumer: a requested source spelling
+    /// is resolved while the declaration is still available, then only this id
+    /// crosses into realization. Names remain diagnostics and physical input;
+    /// they never become the selected relation identity.
+    pub fn relationForDeclaration(self: *const SemanticGraph, declaration: *const ast.FuncDecl) ?id {
+        const relation = self.findFuncDecl(declaration) orelse return null;
+        if (!self.callable(relation)) return null;
+        return relation;
+    }
+
     /// Relation selected for a checked application. Producer is the unique
     /// `.binding` edge from the occurrence to a func/relation entity.
     pub fn applicationRelation(self: *const SemanticGraph, occurrence: id) ?id {

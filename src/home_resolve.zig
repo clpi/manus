@@ -394,22 +394,22 @@ pub fn homeSymbol(alloc: std.mem.Allocator, home: []const u8, name: []const u8) 
     return out.toOwnedSlice(alloc);
 }
 
-/// THE LAW AND ITS TWO EXEMPTIONS, IN ONE PLACE, FOR ONE RELATION.
+/// THE LAW AND ITS FOREIGN-BOUNDARY EXEMPTION, IN ONE PLACE, FOR ONE RELATION.
 ///
 /// `homeSymbol` above is the STRING. This is the DECISION of whether a relation
 /// gets it, and it exists because the decision was about to be made twice: once
 /// in `dnir_lower` (which names every definition and every same-home callee) and
 /// once in `main` (which names the process entry for `-Wl,-e` and for the f64
-/// exit coercion). Two copies of an exemption list is how a definer and a caller
+/// exit coercion). Two copies of a linkage decision is how a definer and a caller
 /// stop agreeing, which is the exact failure this whole law exists to prevent.
 ///
 ///   * `foreign` — the name a FOREIGN BOUNDARY declares, from `@ffi(n)` or
 ///     `@comp.c.export(n)`. At a foreign boundary the name is not ours to
 ///     choose: the declaration IS the name. HPLS §34 — internal ABI is
 ///     realization; only foreign boundaries require foreign ABI.
-///   * `main` — the process entry, whose name belongs to the C runtime.
-///
-/// Nothing else. In particular "the program has one file" is NOT an exemption:
+/// Nothing else. The physical process root is not a source relation and never
+/// enters this function; a source relation named `main` remains `(home, name)`
+/// like every other relation. In particular "the program has one file" is NOT an exemption:
 /// a law with a special case for small programs stops being true exactly when a
 /// second file arrives.
 ///
@@ -428,7 +428,6 @@ pub fn relationSymbol(
     foreign: ?[]const u8,
 ) ![]const u8 {
     if (foreign) |declared| return alloc.dupe(u8, declared);
-    if (std.mem.eql(u8, name, "main")) return alloc.dupe(u8, "main");
     const h = home orelse return alloc.dupe(u8, name);
     if (h.len == 0) return alloc.dupe(u8, name);
     return homeSymbol(alloc, h, name);
@@ -572,20 +571,20 @@ test "home_resolve: the symbol is a function of home AND name" {
     try std.testing.expect(!std.mem.eql(u8, a, b));
 }
 
-test "home_resolve: the law has exactly two exemptions" {
+test "home_resolve: only a declared foreign boundary escapes home identity" {
     const alloc = std.testing.allocator;
     // The ordinary case: identity is `(home, name)`.
     const ordinary = try relationSymbol(alloc, "compiler.record", "field", null);
     defer alloc.free(ordinary);
     try std.testing.expectEqualStrings("idol_compiler_record__field", ordinary);
 
-    // EXEMPTION 1 — the process entry. `main` belongs to the C runtime, in
-    // every home, including a home that also declares ordinary relations.
-    const entry = try relationSymbol(alloc, "compiler.host", "main", null);
-    defer alloc.free(entry);
-    try std.testing.expectEqualStrings("main", entry);
+    // A source relation named `main` is ordinary. The physical process root is
+    // selected separately and owns the bare C-runtime symbol.
+    const named_main = try relationSymbol(alloc, "compiler.host", "main", null);
+    defer alloc.free(named_main);
+    try std.testing.expectEqualStrings("idol_compiler_host__main", named_main);
 
-    // EXEMPTION 2 — a foreign boundary. The declaration IS the name, and it
+    // The one exemption — a foreign boundary. The declaration IS the name, and it
     // wins over the home even for a relation the home would otherwise mangle.
     const foreign = try relationSymbol(alloc, "compiler.lexer", "tokenize", "duo_lexer_tokenize");
     defer alloc.free(foreign);

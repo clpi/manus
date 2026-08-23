@@ -579,7 +579,7 @@ const usage =
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
     \\  --shared-memory   enable WASM shared memory (-matomics -mbulk-memory; wasm32-wasi only)
     \\  --link <lib>      link against a C library (e.g. --link raylib; repeatable)
-    \\  --entry <name>    native-exe linker entry symbol (default: @export, sole zero-arg fn, or main)
+    \\  --entry <name>    select an exact source relation (default: root program, then compatibility entry)
     \\  -v, --verbose     show C compiler warnings (run only; off by default)
     \\  --trace           show compiler pipeline steps and timings
     \\  --trace-rich      pipeline tree with timing bars (implies --trace; use with -v)
@@ -3363,38 +3363,6 @@ fn run_child_process(io: Io, argv: []const []const u8, label: []const u8, quiet:
     }
 }
 
-/// The LINKER SYMBOL for the relation `abi` selected as the process entry.
-///
-/// One function rather than an inline expression because two consumers need the
-/// identical answer — `-Wl,-e,_<sym>` in `link_native_object` and
-/// `Arm64Compiler.needsProcessExitF64Coerce`, which compares this against the
-/// DNIR function name to decide whether the entry's f64 result is coerced to an
-/// exit code. If those two disagreed the link would succeed and the program
-/// would exit with the wrong number.
-///
-/// The home is derived from the module's own path by `home_resolve.homeOfPath`
-/// — the SAME derivation `SemanticGraph.home` runs — and a path with no
-/// derivable home falls back to the bare spelling, which is what
-/// `home_resolve.relationSymbol` does with a null home anyway.
-fn entrySymbol(
-    alloc: std.mem.Allocator,
-    io: Io,
-    src_path: []const u8,
-    mod: *const ast.Module,
-    relation: []const u8,
-) []const u8 {
-    for (mod.body.stmts) |*stmt| {
-        if (stmt.* != .func_decl) continue;
-        const fd = &stmt.func_decl;
-        if (fd.path.len != 1 or !std.mem.eql(u8, fd.path[0], relation)) continue;
-        const home = home_resolve.homeOfPath(alloc, io, src_path) catch null;
-        return dnir_lower.funcExportName(alloc, home, fd) catch relation;
-    }
-    // A file-scope tail is the program: there is no declaration, the physical
-    // entry is synthesized as `main`, and `main` is the exemption anyway.
-    return relation;
-}
-
 fn link_native_object(
     alloc: std.mem.Allocator,
     io: Io,
@@ -4956,7 +4924,7 @@ fn do_compile(
 
         var graph = semantic_graph.SemanticGraph.init(alloc);
         defer graph.deinit();
-        _ = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+        const root = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
         var lowering: dnir_lower.Diagnostic = .{};
         const lowered = dnir_lower.lowerModuleWithGraphObserved(alloc, &ps.mod, &graph, &lowering) catch |err| {
             term.err("C99 realizer: graph-to-DNIR refused ({s})", .{@errorName(err)});
@@ -4966,8 +4934,13 @@ fn do_compile(
         defer native_ir.deinitModule(alloc, lowered);
 
         var diagnostic: c_backend.Diagnostic = .{};
-        const entry = native_backend.abi(&ps.mod, entry_override);
-        const source = c_backend.emitSource(alloc, lowered, entry, &diagnostic) catch |err| {
+        const selected_entry = try native_backend.selectProcessEntry(&ps.mod, &graph, root, entry_override);
+        const entry_symbol = if (selected_entry) |entry|
+            try native_backend.processEntrySymbol(alloc, &graph, entry)
+        else
+            null;
+        defer if (entry_symbol) |symbol| alloc.free(symbol);
+        const source = c_backend.emitSource(alloc, lowered, entry_symbol, &diagnostic) catch |err| {
             term.err("C99 realizer: no realization ({s})", .{@errorName(err)});
             if (diagnostic.note()) |why| term.hint("refused at: {s}", .{why});
             if (diagnostic.functionName()) |name| term.hint("in relation: {s}", .{name});
@@ -5024,7 +4997,7 @@ fn do_compile(
     if (std.mem.eql(u8, target, "wasm32-wasi") and !load_chunk and !lib_mode) {
         var wasm_graph = semantic_graph.SemanticGraph.init(alloc);
         defer wasm_graph.deinit();
-        _ = try wasm_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+        const wasm_root = try wasm_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
         // THE SAME DEMAND PRUNE THE DIRECT EXECUTABLE PATH APPLIES. The whole
         // value of this target is that its stdout can be diffed against the
         // AArch64 build's, and a transform applied to one column and not the
@@ -5035,7 +5008,12 @@ fn do_compile(
         defer wasm_demand.deinit();
         try demand.prune(alloc, &ps.mod, &wasm_demand);
         var wasm_diagnostic: wasm_backend.Diagnostic = .{};
-        const wasm_entry = native_backend.abi(&ps.mod, entry_override);
+        const selected_entry = try native_backend.selectProcessEntry(&ps.mod, &wasm_graph, wasm_root, entry_override);
+        const wasm_entry = if (selected_entry) |entry|
+            try native_backend.processEntrySymbol(alloc, &wasm_graph, entry)
+        else
+            null;
+        defer if (wasm_entry) |symbol| alloc.free(symbol);
         const wasm_bytes = wasm_backend.emitWasmModule(alloc, &ps.mod, wasm_entry, &wasm_graph, &wasm_diagnostic) catch |e| {
             term.err("wasm32-wasi: no native realization ({s})", .{@errorName(e)});
             if (wasm_diagnostic.note()) |why| term.hint("refused at: {s}", .{why});
@@ -5086,22 +5064,19 @@ fn do_compile(
             std.process.exit(1);
         } else {
             if (native_backend.isNativeExecutableTarget(mt)) {
-                if (native_backend.abi(&ps.mod, entry_override)) |entry_relation| {
-                    // THE ENTRY IS A RELATION, AND `-Wl,-e` WANTS A SYMBOL.
-                    //
-                    // `abi` answers which RELATION is the process entry —
-                    // `main`, or a sole zero-arg function, or `--entry <name>`.
-                    // Under the mangling law that relation's symbol is
-                    // `idol_<home>__<name>` unless it is `main` or a declared
-                    // foreign boundary, so the linker flag and the f64 exit
-                    // coercion below must both name the SYMBOL. Asked through
-                    // the same `funcExportName` the definition went through, so
-                    // there is no second exemption list to drift.
-                    //
-                    // MEASURED before this existed: `run: i64 = ()` in
-                    // `lib/pkg/ent.id` emitted `_idol_pkg_ent__run` and the
-                    // link asked for `_run` — `Undefined symbol: _run`.
-                    const entry = entrySymbol(alloc, io, src_path, &ps.mod, entry_relation);
+                var direct_graph = semantic_graph.SemanticGraph.init(alloc);
+                defer direct_graph.deinit();
+                const direct_root = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+                if (try native_backend.selectProcessEntry(&ps.mod, &direct_graph, direct_root, entry_override)) |selected_entry| {
+                    // ENTRY IDENTITY PRECEDES LINKAGE. A root and an ordinary
+                    // source relation named `main` are distinct graph entities;
+                    // only the root owns the bare process symbol. `--entry`
+                    // selects an exact relation id, whose physical spelling is
+                    // then derived from the same home/linkage law as its DNIR
+                    // definition. The linker flag and f64 exit coercion consume
+                    // that one symbol projection.
+                    const entry = try native_backend.processEntrySymbol(alloc, &direct_graph, selected_entry);
+                    defer alloc.free(entry);
                     // A NATIVE `main` DOES NOT INITIALISE THE LUA RUNTIME. The
                     // legacy AST/Lua C bridge's main opens with `package = lua_package_init()`;
                     // the direct backend emits no equivalent, and it cannot --
@@ -5211,9 +5186,6 @@ fn do_compile(
                     // objects — which is the whole intended change.
                     const too_many_modules = runtime_needing_modules > 0 and runtime_linked_modules.len > 1;
                     if (too_many_modules) link_refusal = runtime_needing_modules;
-                    var direct_graph = semantic_graph.SemanticGraph.init(alloc);
-                    defer direct_graph.deinit();
-                    _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
                     // TIER-0: an unobserved computation must not execute. The proof
                     // obligation is stated in `demand.zig`; nothing is removed unless
                     // all five parts of it are discharged. Applied at ALL THREE direct
@@ -5238,10 +5210,11 @@ fn do_compile(
                     // RUNG 1 -- ELIMINATE THE OBSERVATION, and this is the one
                     // site in the tree where the fact that pays is true.
                     //
-                    // `main: i64` returns to a PROCESS and a process exit status
-                    // is EIGHT BITS, so the demanded projection of the entry's
-                    // result is `low_bits 8` and 56 of its 64 carried bits reach
-                    // no observer. The comment above already argues why THIS lift
+                    // A compatibility relation selected as the process entry
+                    // returns to a PROCESS and a process exit status is EIGHT
+                    // BITS, so the demanded projection of the entry's result is
+                    // `low_bits 8` and 56 of its 64 carried bits reach no observer.
+                    // The comment above already argues why THIS lift
                     // is the closed world and the dylib/obj lifts below are not:
                     // they exist to be read from outside, and a foreign reader
                     // takes the whole register. So the world fact is passed here
@@ -5265,7 +5238,15 @@ fn do_compile(
                     // emitted in full. MEASURED, w6, whole-process cycles:
                     // 4,630,978 with no observer, 108,363,341 with one, 23.4x,
                     // same exit byte, and the observer never asked for a value.
-                    _ = try obseq.applyToEntry(alloc, &ps.mod, &direct_graph, global_observer_demand.world(observation.ordinary_executable));
+                    switch (selected_entry) {
+                        .relation => {
+                            _ = try obseq.applyToEntry(alloc, &ps.mod, &direct_graph, global_observer_demand.world(observation.ordinary_executable));
+                        },
+                        // The physical root is the file-scope program, not the
+                        // unrelated source relation that `applyToEntry` still
+                        // recognizes by its compatibility spelling.
+                        .root => {},
+                    }
                     // RUNG 3 -- REDUCE THE COMPLEXITY CLASS, AT THE LOOP
                     // RATHER THAN AT THE RELATION.
                     //

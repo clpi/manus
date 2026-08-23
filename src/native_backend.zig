@@ -14,6 +14,7 @@ const home_resolve = @import("home_resolve.zig");
 const table_apply = @import("table_apply.zig");
 const const_table = @import("const_table.zig");
 const region_graph = @import("region_graph.zig");
+const demand_projection = @import("demand_projection.zig");
 
 pub const Error = error{
     UnsupportedTarget,
@@ -716,34 +717,87 @@ fn findModuleFunction(mod: *const ast.Module, name: []const u8) ?*const ast.Func
     return null;
 }
 
-/// Linker ABI name for a native executable. Not a source binding.
-/// `@export`, a declared `main`, and `--entry` are deliberate. A file-scope
-/// tail is the program: physical `main` without a source `main`. A sole
-/// zero-arg function is an inference only when there is no file-scope body.
-pub fn abi(mod: *const ast.Module, want: ?[]const u8) ?[]const u8 {
+/// Semantic process-entry selection. The physical root and a source relation
+/// named `main` are different identities even though older paths represented
+/// both with the text `main`.
+pub const ProcessEntry = union(enum) {
+    /// The module program: file-scope execution and its tail result.
+    root: semantic_graph.id,
+    /// An ordinary source relation selected explicitly or by compatibility.
+    relation: semantic_graph.id,
+};
+
+fn relationProcessEntry(
+    graph: *const semantic_graph.SemanticGraph,
+    declaration: *const ast.FuncDecl,
+) Error!ProcessEntry {
+    return .{ .relation = graph.relationForDeclaration(declaration) orelse
+        return error.SemanticFactsInvalid };
+}
+
+/// Select the semantic process entry after graph lift.
+///
+/// An explicit request resolves to the exact relation id. Without one, a
+/// module program is authoritative and wins over every compatibility relation,
+/// including a source relation spelled `main`. Only a body-less module retains
+/// the historical export / named-main / sole-zero-arg inference ladder.
+pub fn selectProcessEntry(
+    mod: *const ast.Module,
+    graph: *const semantic_graph.SemanticGraph,
+    root: semantic_graph.id,
+    want: ?[]const u8,
+) Error!?ProcessEntry {
     if (want) |name| {
         const fd = findModuleFunction(mod, name) orelse return null;
         if (!isZeroArgEntryFunction(fd)) return null;
-        return name;
+        return try relationProcessEntry(graph, fd);
     }
-    var sole: ?[]const u8 = null;
+    if (mod.program()) return .{ .root = root };
+
+    var sole: ?*const ast.FuncDecl = null;
     var sole_count: usize = 0;
-    var named_main: ?[]const u8 = null;
+    var named_main: ?*const ast.FuncDecl = null;
 
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
         if (!isZeroArgEntryFunction(fd)) continue;
 
-        if (std.mem.eql(u8, fd.path[0], "main")) named_main = fd.path[0];
-        if (funcExportName(fd) != null) return fd.path[0];
-        sole = fd.path[0];
+        if (std.mem.eql(u8, fd.path[0], "main")) named_main = fd;
+        if (funcExportName(fd) != null) return try relationProcessEntry(graph, fd);
+        sole = fd;
         sole_count += 1;
     }
-    if (named_main) |m| return m;
-    if (mod.program()) return "main";
-    if (sole_count == 1) return sole;
+    if (named_main) |declaration| return try relationProcessEntry(graph, declaration);
+    if (sole_count == 1) return try relationProcessEntry(graph, sole.?);
     return null;
+}
+
+/// Physical linker symbol for one already-selected semantic entry. The root is
+/// the ABI-owned `main`; an ordinary relation, even one named `main`, follows
+/// the same home/linkage law as every other source relation.
+pub fn processEntrySymbol(
+    alloc: std.mem.Allocator,
+    graph: *const semantic_graph.SemanticGraph,
+    entry: ProcessEntry,
+) Error![]const u8 {
+    return switch (entry) {
+        .root => |entity| blk: {
+            const node = graph.get(entity) orelse return error.SemanticFactsInvalid;
+            if (node.kind != .module) return error.SemanticFactsInvalid;
+            break :blk try alloc.dupe(u8, "main");
+        },
+        .relation => |entity| blk: {
+            const node = graph.get(entity) orelse return error.SemanticFactsInvalid;
+            if (!graph.callable(entity)) return error.SemanticFactsInvalid;
+            const raw = node.ast_ref orelse return error.SemanticFactsInvalid;
+            const declaration: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
+            break :blk dnir_lower.funcExportName(alloc, graph.selfHome(), declaration) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => return error.SemanticFactsInvalid,
+            };
+        },
+    };
 }
 
 pub const CostKind = enum {
@@ -10731,7 +10785,6 @@ test "native backend: shc bind example keeps the helper off the process" {
     parser.idol_mode = true;
     var module = try parser.parse_module();
     try std.testing.expect(module.program());
-    try std.testing.expectEqualStrings("main", abi(&module, null).?);
     var checked = Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
@@ -10774,7 +10827,6 @@ test "native backend: shc write example is egress not exit" {
     var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
     defer output.deinit(alloc);
     try expectWriteEgress(output.asm_text);
-    try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
 
 test "native backend: shc read example is ingress not exit" {
@@ -10806,7 +10858,6 @@ test "native backend: shc read example is ingress not exit" {
     var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
     defer output.deinit(alloc);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _idol_io_read_stdin") != null);
-    try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
 
 test "native backend: shc arg example is root argv not a call" {
@@ -10840,7 +10891,6 @@ test "native backend: shc arg example is root argv not a call" {
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _idol_os_arg") != null);
     try expectWriteEgress(output.asm_text);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "b.eq") != null);
-    try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
 
 test "native backend: shc env example is root table not getenv call" {
@@ -10874,7 +10924,6 @@ test "native backend: shc env example is root table not getenv call" {
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _getenv") != null);
     try expectWriteEgress(output.asm_text);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "b.eq") != null);
-    try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
 
 test "native backend: shc cwd example is root directory not getcwd call" {
@@ -10909,7 +10958,6 @@ test "native backend: shc cwd example is root directory not getcwd call" {
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _getcwd") == null);
     try expectWriteEgress(output.asm_text);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "b.eq") != null);
-    try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
 
 test "native backend: shc compose example is ingress to egress not status" {
@@ -10943,7 +10991,6 @@ test "native backend: shc compose example is ingress to egress not status" {
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _idol_io_read_stdin") != null);
     try expectWriteEgress(output.asm_text);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "b.eq") != null);
-    try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
 
 test "native backend: shc path example is subject read not a pointer" {
@@ -10977,7 +11024,6 @@ test "native backend: shc path example is subject read not a pointer" {
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "bl _idol_io_read_path") != null);
     try expectWriteEgress(output.asm_text);
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "b.eq") != null);
-    try std.testing.expectEqualStrings("main", abi(&module, null).?);
 }
 
 test "native backend: character walk uses at not a slice malloc" {
@@ -11320,7 +11366,7 @@ test "native backend: checked result pack retains order through machine lineage"
         for (output.symbols) |symbol| {
             if (!symbol.defined or symbol.section != 1) continue;
             if (std.mem.endsWith(u8, symbol.name, "__pair")) pair_start = symbol.offset;
-            if (std.mem.eql(u8, symbol.name, "main")) main_start = symbol.offset;
+            if (std.mem.eql(u8, symbol.name, "idol_result_pack_lineage__main")) main_start = symbol.offset;
         }
         try std.testing.expectEqual(@as(u32, 8), (main_start orelse return error.TestExpectedEqual) -
             (pair_start orelse return error.TestExpectedEqual));
@@ -11974,131 +12020,161 @@ test "native backend: no mandatory main — run() entry compiles" {
     try std.testing.expect(std.mem.indexOf(u8, listing, "_main") == null);
 }
 
-test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
+fn immediateReturn(function: dnir.Function) ?i64 {
+    for (function.blocks) |block| {
+        for (block.instrs) |instruction| {
+            if (instruction.op != .ret) continue;
+            return switch (instruction.lhs) {
+                .i64 => |value| value,
+                else => null,
+            };
+        }
+    }
+    return null;
+}
+
+fn dnirFunction(module: dnir.Module, name: []const u8) ?dnir.Function {
+    for (module.functions) |function| {
+        if (std.mem.eql(u8, function.name, name)) return function;
+    }
+    return null;
+}
+
+test "native backend: root and source main retain distinct entry identities" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     var lex = Lexer.init(
-        \\@export
-        \\fun entry(): i64
-        \\    1
-        \\end
-        \\other(): i64
-        \\    2
-        \\end
-    , "entry.id");
+        \\main: i64 = ()
+        \\    41
+        \\7
+    , "entry/collision.id");
     var parser = Parser.init(&lex, alloc);
     parser.idol_mode = true;
-    const mod = try parser.parse_module();
-    try std.testing.expectEqualStrings("entry", abi(&mod, null).?);
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.idol_mode = true;
+    try sem.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    table_apply.normalizeModule(alloc, &mod, &sem.type_map);
+    const root = try graph.liftModuleWithCheckedCalls(&mod, &sem, mod.file);
 
-    var lex2 = Lexer.init(
-        \\run(): i64
-        \\    42
-        \\end
-    , "sole.id");
-    var parser2 = Parser.init(&lex2, alloc);
-    parser2.idol_mode = true;
-    const mod2 = try parser2.parse_module();
-    try std.testing.expectEqualStrings("run", abi(&mod2, null).?);
+    const selected_root = (try selectProcessEntry(&mod, &graph, root, null)).?;
+    try std.testing.expect(selected_root == .root);
+    try std.testing.expectEqual(root, selected_root.root);
+    const root_symbol = try processEntrySymbol(alloc, &graph, selected_root);
+    defer alloc.free(root_symbol);
+    try std.testing.expectEqualStrings("main", root_symbol);
 
-    var lex3 = Lexer.init(
-        \\a(): i64
-        \\    1
-        \\end
-        \\b(): i64
-        \\    2
-        \\end
-    , "ambiguous.id");
-    var parser3 = Parser.init(&lex3, alloc);
-    parser3.idol_mode = true;
-    const mod3 = try parser3.parse_module();
-    try std.testing.expect(abi(&mod3, null) == null);
+    const selected_relation = (try selectProcessEntry(&mod, &graph, root, "main")).?;
+    try std.testing.expect(selected_relation == .relation);
+    try std.testing.expect(selected_relation.relation != root);
+    const relation_symbol = try processEntrySymbol(alloc, &graph, selected_relation);
+    defer alloc.free(relation_symbol);
+    try std.testing.expectEqualStrings("idol_entry_collision__main", relation_symbol);
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        processEntrySymbol(alloc, &graph, .{ .root = selected_relation.relation }),
+    );
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        processEntrySymbol(alloc, &graph, .{ .relation = root }),
+    );
 
-    var lex4 = Lexer.init(
-        \\a(): i64
-        \\    1
-        \\end
-        \\b(): i64
-        \\    2
-        \\end
-    , "override.id");
-    var parser4 = Parser.init(&lex4, alloc);
-    parser4.idol_mode = true;
-    const mod4 = try parser4.parse_module();
-    try std.testing.expectEqualStrings("b", abi(&mod4, "b").?);
-    try std.testing.expect(abi(&mod4, "missing") == null);
-
-    var lex5 = Lexer.init(
-        \\run(): f64
-        \\    42.0
-        \\end
-    , "f64_entry.id");
-    var parser5 = Parser.init(&lex5, alloc);
-    parser5.idol_mode = true;
-    const mod5 = try parser5.parse_module();
-    try std.testing.expectEqualStrings("run", abi(&mod5, null).?);
+    const lowered = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    try std.testing.expectEqual(@as(?i64, 7), immediateReturn(dnirFunction(lowered, root_symbol).?));
+    try std.testing.expectEqual(@as(?i64, 41), immediateReturn(dnirFunction(lowered, relation_symbol).?));
 }
 
-// The sole-zero-arg-function rule is an inference. When the module has a
-// file-scope BODY, that body is the program, and promoting a helper to the
-// process entry silently deletes it — `print("before"); print(w())` produced no
-// output at all and exited 42. This is the regression test for that: same sole
-// function, with and without a body.
-test "native backend: sole-zero-arg entry is refused when a file-scope body exists" {
+test "native backend: body-less modules retain relation entry compatibility" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // No file-scope body: the inference is sound, and still applies.
-    var lex_lib = Lexer.init(
-        \\w(): i64
+    var lex = Lexer.init(
+        \\run: i64 = ()
         \\    42
-        \\end
-    , "libshaped.id");
-    var parser_lib = Parser.init(&lex_lib, alloc);
-    parser_lib.idol_mode = true;
-    const mod_lib = try parser_lib.parse_module();
-    try std.testing.expectEqualStrings("w", abi(&mod_lib, null).?);
+    , "entry/sole.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.idol_mode = true;
+    try sem.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    table_apply.normalizeModule(alloc, &mod, &sem.type_map);
+    const root = try graph.liftModuleWithCheckedCalls(&mod, &sem, mod.file);
+    const selected = (try selectProcessEntry(&mod, &graph, root, null)).?;
+    try std.testing.expect(selected == .relation);
+    const symbol = try processEntrySymbol(alloc, &graph, selected);
+    defer alloc.free(symbol);
+    try std.testing.expectEqualStrings("idol_entry_sole__run", symbol);
+    try std.testing.expect((try selectProcessEntry(&mod, &graph, root, "missing")) == null);
+}
 
-    // Same sole function, but the file-scope statements ARE the program.
-    var lex_script = Lexer.init(
-        \\w(): i64
-        \\    42
-        \\end
-        \\print("before")
-        \\print(w())
-    , "script.id");
-    var parser_script = Parser.init(&lex_script, alloc);
-    parser_script.idol_mode = true;
-    const mod_script = try parser_script.parse_module();
-    try std.testing.expectEqualStrings("main", abi(&mod_script, null).?);
+test "native backend: internal i64 result stays whole before deployment" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
 
-    // A DECLARED entry still wins over the body — `main` is deliberate.
-    var lex_main = Lexer.init(
-        \\main(): i64
-        \\    0
-        \\end
-        \\print("side effect")
-    , "declared_main.id");
-    var parser_main = Parser.init(&lex_main, alloc);
-    parser_main.idol_mode = true;
-    const mod_main = try parser_main.parse_module();
-    try std.testing.expectEqualStrings("main", abi(&mod_main, null).?);
+    var lex = Lexer.init(
+        \\answer: i64 = ()
+        \\    300
+        \\check: i64 = ()
+        \\    if answer() == 300
+        \\        7
+        \\    else
+        \\        9
+    , "entry/full.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.idol_mode = true;
+    try sem.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    table_apply.normalizeModule(alloc, &mod, &sem.type_map);
+    const root = try graph.liftModuleWithCheckedCalls(&mod, &sem, mod.file);
+    const selected = (try selectProcessEntry(&mod, &graph, root, "check")).?;
+    try std.testing.expect(selected == .relation);
+    const lowered = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    try std.testing.expectEqual(@as(?i64, 300), immediateReturn(dnirFunction(lowered, "idol_entry_full__answer").?));
+    try std.testing.expectEqual(@as(?i64, 7), immediateReturn(dnirFunction(lowered, "idol_entry_full__check").?));
+}
 
-    var lex_keep = Lexer.init(
-        \\main: i64 = ()
-        \\    7
-        \\0
-    , "keep.id");
-    var parser_keep = Parser.init(&lex_keep, alloc);
-    parser_keep.idol_mode = true;
-    const mod_keep = try parser_keep.parse_module();
-    try std.testing.expectEqualStrings("main", abi(&mod_keep, null).?);
+test "native backend: deployment truncates the root result only at its observer" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
 
-    // As does an explicit --entry override.
-    try std.testing.expectEqualStrings("w", abi(&mod_script, "w").?);
+    var lex = Lexer.init("300", "entry/deployment.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.idol_mode = true;
+    try sem.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    table_apply.normalizeModule(alloc, &mod, &sem.type_map);
+    const root = try graph.liftModuleWithCheckedCalls(&mod, &sem, mod.file);
+    const selected = (try selectProcessEntry(&mod, &graph, root, null)).?;
+    try std.testing.expect(selected == .root);
+    const lowered = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    try std.testing.expectEqual(@as(?i64, 300), immediateReturn(dnirFunction(lowered, "main").?));
+    const deployment: demand_projection.Projection = .{ .low_bits = 8 };
+    try std.testing.expectEqual(@as(?i64, 44), deployment.apply(300));
 }
 
 test "native backend: f64 process entry coerces d0 to x0 exit code" {
@@ -13511,7 +13587,7 @@ test "native backend emits assembly listing for arithmetic" {
     var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
     defer assembly.deinit(alloc);
     const asm_text = assembly.assembly;
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _main") != null);
+    try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _idol_native__main") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "mul x") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tret\n") != null);
 }
@@ -13655,9 +13731,9 @@ test "native backend assembly lists helper call labels" {
     var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
     defer assembly.deinit(alloc);
     const asm_text = assembly.assembly;
-    // `native.id` is home `native`; `main` is the entry and is exempt.
+    // `native.id` is home `native`; a source relation named `main` is ordinary.
     try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _idol_native__add") != null);
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _main") != null);
+    try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _idol_native__main") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tbl _idol_native__add\n") != null);
 }
 
@@ -13695,7 +13771,7 @@ test "native backend lowers source print to host egress and retains physical pri
     try liftCheckedTestGraph(&mod, &sem, &graph);
     var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
     defer assembly.deinit(alloc);
-    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, ".globl _main") != null);
+    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, ".globl _idol_native__main") != null);
     try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "bl _printf") != null);
 
     // The subject-first spelling of the same egress, in a module with the same
@@ -14041,7 +14117,7 @@ test "unused immediate bindings do not demand register or stack places" {
         \\    v21 = 1
         \\    v0 + v21
     ;
-    var minimal_lex = Lexer.init(minimal_source, "unused-binding-minimal.id");
+    var minimal_lex = Lexer.init(minimal_source, "pass11-spill-proof.id");
     var minimal_parser = Parser.init(&minimal_lex, alloc);
     minimal_parser.idol_mode = true;
     var minimal_mod = try minimal_parser.parse_module();

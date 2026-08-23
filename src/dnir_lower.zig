@@ -608,8 +608,9 @@ fn collectModuleGlobals(alloc: std.mem.Allocator, mod: *const ast.Module) Error!
 ///
 /// WHAT IS REGISTERED, AND WHY EACH CONDITION IS LOAD-BEARING:
 ///
-///   THE MODULE HAS A BODY TO RUN (`program() and !wrap()`, the same predicate
-///   that decides whether `root` is emitted at all). A field's initial content
+///   THE MODULE HAS A BODY TO RUN (`program()`, the same predicate that decides
+///   whether `root` is emitted at all). A source relation named `main` is an
+///   ordinary home-owned relation and cannot replace that body. A field's initial content
 ///   is a STORE the module body executes, not a load-time word — see
 ///   `owned_keys`. A library module has no body to run, so registering its
 ///   fields would give every reader a zero that nothing ever wrote. Those keep
@@ -636,7 +637,7 @@ fn collectModuleTableFieldGlobals(
     mod: *const ast.Module,
     out: *ModuleGlobals,
 ) Error!void {
-    if (!(mod.program() and !wrap(mod))) return;
+    if (!mod.program()) return;
     for (mod.body.stmts) |*stmt| {
         switch (stmt.*) {
             .assign => |as| for (as.targets, 0..) |t, i| {
@@ -2450,7 +2451,7 @@ fn lowerModuleFromGraph(
             return err;
         };
     }
-    const want = mod.program() and !wrap(mod);
+    const want = mod.program();
     if (want) {
         const module_id = if (require_graph_facts)
             (home(graph) orelse return invalidGraphFacts(diagnostic, @src(), "missing-function-id"))
@@ -2717,8 +2718,9 @@ fn foreignBoundaryName(fd: *const ast.FuncDecl) ?[]const u8 {
 /// ONE AUTHORITY, TWO SIDES. `home_resolve.relationSymbol` decides; the CALLER
 /// side (`entity_linkage` for a foreign target, below) and the DEFINER side
 /// (this, for everything else) both go through it, so they agree by
-/// construction rather than by test. The exemptions live there too and are
-/// exactly two — the process entry and a declared foreign boundary.
+/// construction rather than by test. Only a declared foreign boundary escapes
+/// home identity. The physical process root is synthesized separately and a
+/// source relation named `main` remains ordinary.
 ///
 /// The dotted spelling for a method (`Vec.xplus`) is the NAME half, unchanged;
 /// `native_backend.linkerSymbolName` still folds its dot to an underscore.
@@ -2752,16 +2754,6 @@ fn countModuleFunctions(mod: *const ast.Module) usize {
         if (shouldIncludeFuncDecl(&stmt.func_decl)) n += 1;
     }
     return n;
-}
-
-fn wrap(mod: *const ast.Module) bool {
-    for (mod.body.stmts) |*stmt| {
-        if (stmt.* != .func_decl) continue;
-        const fd = &stmt.func_decl;
-        if (fd.path.len == 1 and std.mem.eql(u8, fd.path[0], "main") and shouldIncludeFuncDecl(fd))
-            return true;
-    }
-    return false;
 }
 
 fn home(graph: *const semantic_graph.SemanticGraph) ?semantic_graph.id {
@@ -13599,7 +13591,7 @@ test "dnir_lower: main returns f64 kernel tail" {
     try std.testing.expect(dnir.moduleIsNativeDirectReady(m));
     var main_fn: ?dnir.Function = null;
     for (m.functions) |f| {
-        if (std.mem.eql(u8, f.name, "main")) main_fn = f;
+        if (std.mem.eql(u8, f.name, "idol_main_f64__main")) main_fn = f;
     }
     const main = main_fn orelse return error.TestUnexpectedResult;
     try std.testing.expect(main.ret == .f64);
@@ -14828,7 +14820,7 @@ test "dnir_lower: checked ordinary calls consume graph facts" {
     var count: usize = 0;
     var mov_args: usize = 0;
     for (module.functions) |function| {
-        if (!std.mem.eql(u8, function.name, "main")) continue;
+        if (!std.mem.eql(u8, function.name, "idol_ordinary_application__main")) continue;
         var instruction_index: u32 = 0;
         for (function.blocks[0].instrs) |instruction| {
             const current_index = instruction_index;
@@ -14896,7 +14888,7 @@ test "dnir_lower: graph pack adjusts one result into several bindings" {
     var stores: usize = 0;
     var saw_nil_fill = false;
     for (module.functions) |function| {
-        if (!std.mem.eql(u8, function.name, "main")) continue;
+        if (!std.mem.eql(u8, function.name, "idol_one_many_pack__main")) continue;
         for (function.blocks[0].instrs) |instruction| {
             if (instruction.op == .call_direct) calls += 1;
             if (instruction.op == .store_local) {
@@ -14955,7 +14947,7 @@ test "dnir_lower: graph pack adjusts one result into several local declarations"
     var stores: usize = 0;
     var saw_nil_fill = false;
     for (module.functions) |function| {
-        if (!std.mem.eql(u8, function.name, "main")) continue;
+        if (!std.mem.eql(u8, function.name, "idol_one_many_local_pack__main")) continue;
         for (function.blocks[0].instrs) |instruction| {
             if (instruction.op == .call_direct) calls += 1;
             if (instruction.op == .store_local) {
@@ -15000,7 +14992,7 @@ test "dnir_lower: checked multi-operand call retains ABI staging" {
     var mov_args: usize = 0;
     var found = false;
     for (module.functions) |function| {
-        if (!std.mem.eql(u8, function.name, "main")) continue;
+        if (!std.mem.eql(u8, function.name, "idol_multi_application__main")) continue;
         var instruction_index: u32 = 0;
         for (function.blocks[0].instrs) |instruction| {
             if (instruction.op == .mov_arg) mov_args += 1;
@@ -15055,7 +15047,7 @@ test "dnir_lower: checked scalar ABI boundaries retain staging" {
     var fp_moves: usize = 0;
     var calls: usize = 0;
     for (module.functions) |function| {
-        if (!std.mem.eql(u8, function.name, "main")) continue;
+        if (!std.mem.eql(u8, function.name, "idol_scalar_boundary__main")) continue;
         var instruction_index: u32 = 0;
         for (function.blocks[0].instrs) |instruction| {
             if (instruction.op == .mov_arg) gp_moves += 1;
@@ -15166,10 +15158,9 @@ test "dnir_lower: graph orders callees before callers" {
     var idx_main: ?usize = null;
     for (m.functions, 0..) |f, i| {
         // `graph-order.id` is home `graph-order`, and a symbol is an
-        // identifier, so the hyphen folds: `idol_graph_order__distance2`.
-        // `main` is the process entry and keeps its name.
+        // identifier, so the hyphen folds for both ordinary relations.
         if (std.mem.eql(u8, f.name, "idol_graph_order__distance2")) idx_distance = i;
-        if (std.mem.eql(u8, f.name, "main")) idx_main = i;
+        if (std.mem.eql(u8, f.name, "idol_graph_order__main")) idx_main = i;
         try std.testing.expect(f.id != null);
     }
     try std.testing.expect(idx_distance != null and idx_main != null);
