@@ -10,6 +10,8 @@ make: pair = ()
   print(7)
   { left = 41, right = 42 }
 
-main: i64 = ()
+_answer: i64 = ()
   result: pair = make()
   result.left
+
+_answer()
