@@ -3,240 +3,235 @@
 #
 # GAP-134 / law.grammar.one. `ext/tree-sitter-idol/grammar.js` is an EDITOR
 # PROJECTION and must consume the one grammar-fact owner. It does not: it
-# carries its own binding-power ladder, authored in scripts/treesitter_emit.id
-# and compared there against a section of docs/spec/grammar.md that no longer
-# exists. Two authored ladders that must merely "agree" is the shape
-# docs/spec/law.md §4 forbids.
-#
-# This gate does not repair that. It makes the disagreement EXACT, and it
-# fails closed on any disagreement that is not already pinned.
+# carries its own binding-power ladder, authored in scripts/treesitter_emit.id.
+# Two authored ladders that must merely "agree" is the shape docs/spec/law.md
+# §4 forbids. This gate does not repair that. It makes the disagreement EXACT
+# and fails closed on any disagreement that is not already pinned.
 #
 # TWO INPUTS, AND THE OWNER SIDE IS THE PRODUCTION ONE.
 #
-#   src/grammar_role_table.zig     the owner's generated bridge — one row per
-#                                  producer slot carrying identity, SPELLING,
-#                                  infix face, precedence and associativity
+#   src/grammar_role_table.zig       the owner's generated bridge — one row per
+#                                    producer slot carrying identity, SPELLING,
+#                                    infix face, precedence and associativity
 #   ext/tree-sitter-idol/grammar.js  the editor projection under test
 #
-# The first version of this gate took spelling from `src/lexer.zig`'s switch.
-# That was the HOST DIFFERENTIAL ORACLE, not the production authority: if the
-# production lexer changed an operator spelling and the oracle did not follow,
-# the gate would have reported AGREEMENT while the compiler and the editor
-# actually disagreed. Spelling now has one producer, `lib/compiler/token.id`,
-# and `src/lexer.zig` answers `spelling()` out of the SAME generated row this
-# gate reads. The two cannot disagree; there is nothing left to drift.
-#
-# `gate/grammar-projection.sh` is what makes reading a generated `.zig` file
-# an act of reading the owner: it regenerates privately and fails unless the
+# An earlier version took spelling from `src/lexer.zig`'s switch. That was the
+# host differential oracle, not the production authority: had the production
+# lexer changed a spelling without the oracle following, this gate would have
+# reported AGREEMENT while the compiler and the editor actually disagreed.
+# Spelling now has one producer, `lib/compiler/token.id`, and `src/lexer.zig`
+# answers `spelling()` out of the SAME generated row read here. Reading a
+# generated file is an act of reading the owner precisely because
+# `gate/grammar-projection.sh` regenerates privately and fails unless the
 # tracked bytes are identical.
 #
-# Nothing in this file names an operator, a level, or an associativity.
+# WHY THE SCANS ARE REPEATED INLINE. Substring search, line walk, field split
+# and numeric scan want to be four shared relations. They cannot be:
+# `gate/vocabulary.sh` refuses every new module-scope declaration that takes
+# parameters, and the only door it leaves — an underscore-private name —
+# `gate/idiom.id` forbids in `.id` source under LAW-ONE. A relation nested in
+# an enclosing body would be the way out and does not lower
+# (`DNB001 ... missing: func-body`). A relation with NO parameters is lawful in
+# both directions, so the structure below is zero-parameter relations and the
+# primitives are written out where they are used. `lib/compiler/token.id`
+# `zigrow` carries the same duplication for the same reason. Fold them into
+# shared relations when the freeze lifts (GAP-224).
 #
 # Run: idol run gate/treesitter/agreement.id
 # Exit 0 agreement is exactly the pinned baseline
 #      1 a divergence appeared, or a pinned one is gone and the pin is stale
 #      3 a reader returned nothing, which is how a broken gate reports success
 
-_ownerfile = "src/grammar_role_table.zig"
-_tsfile = "ext/tree-sitter-idol/grammar.js"
-_pinfile = "gate/treesitter/agreement.baseline"
-
-# 1-based index of `needle` in `hay` at or after `from`, or 0.
-_at: i64 = (hay: str, needle: str, from: i64)
-  size = hay:len()
-  want = needle:len()
-  i = from
-  found = 0
-  while i + want - 1 <= size and found == 0
-    j = 1
-    ok = true
-    while j <= want and ok
-      if hay:byte(i + j - 1) != needle:byte(j)
-        ok = false
-      j = j + 1
-    if ok
-      found = i
-    i = i + 1
-  found
-
-# index of the next line break at or after `from`, or size + 1
-_brk: i64 = (text: str, from: i64)
-  size = text:len()
-  i = from
-  while i <= size and text:byte(i) != 10
-    i = i + 1
-  i
-
-# the run of bytes at `from` up to but excluding the first byte equal to `stop`
-_upto: str = (text: str, from: i64, stop: i64)
-  size = text:len()
-  i = from
-  while i <= size and text:byte(i) != stop
-    i = i + 1
-  text:sub(from, i - 1)
-
-# leading decimal value of `s`, or -1 when it does not start with a digit
-_num: i64 = (s: str)
-  size = s:len()
-  i = 1
-  v = 0
-  seen = false
-  going = true
-  while i <= size and going
-    c = s:byte(i)
-    if c >= 48 and c <= 57
-      v = v * 10 + c - 48
-      seen = true
-    else
-      going = false
-    i = i + 1
-  out = 0 - 1
-  if seen
-    out = v
-  out
-
-# the nth space-separated field of a row, 1-based, "" past the end
-_field: str = (row: str, n: i64)
-  size = row:len()
-  got = ""
-  seen = 0
-  start = 1
-  i = 1
-  while i <= size + 1
-    over = i > size
-    cut = over
-    if !over
-      cut = row:byte(i) == 32
-    if cut
-      if i > start
-        seen = seen + 1
-        if seen == n
-          got = row:sub(start, i - 1)
-      start = i + 1
-    i = i + 1
-  got
-
-# ── the owner's infix table ──────────────────────────────────────────────────
+# ── the editor projection's operator table ───────────────────────────────────
 #
-# One row of the generated bridge per producer slot. Only the infix ones are
-# carried forward, as `<spelling> <precedence> <associativity>`. Every field
-# comes off the SAME row, so no join can pair one identity's spelling with
-# another's binding power.
+# One line per binary row tree-sitter declares: `<spelling> <level> <side>`.
+# `side` is `none` where tree-sitter writes a bare `prec(` and resolves no
+# conflict, which is how it spells what the owner calls `nonassoc`.
 
-_ownertable: str = (own: str)
-  size = own:len()
-  out = ""
-  i = 1
-  while i <= size
-    e = _brk(own, i)
-    row = own:sub(i, e - 1)
-    if _at(row, ".kind = .", 1) > 0 and _at(row, ".infix = true", 1) > 0
-      m = _at(row, ".spell = \"", 1)
-      spell = ""
-      if m > 0
-        spell = _upto(row, m + 10, 34)
-      p = _at(row, ".precedence = ", 1)
-      prec = 0
-      if p > 0
-        prec = _num(row:sub(p + 14, e - 1))
-      a = _at(row, ".assoc = .", 1)
-      assoc = "none"
-      if a > 0
-        assoc = _upto(row, a + 10, 44)
-      if spell:len() > 0
-        out = "{out}{spell} {prec} {assoc}\n"
-    i = e + 1
-  out
-
-# ── the editor projection's infix table ──────────────────────────────────────
-#
-# One line per row tree-sitter declares: `<spelling> <level> <side>`.
-
-_tstable: str = (ts: str)
+editor(): str
+  ts = "ext/tree-sitter-idol/grammar.js":read()
   size = ts:len()
-  out = ""
-  i = 1
   mark = "seq($.expression, '"
-  while i <= size
-    e = _brk(ts, i)
-    row = ts:sub(i, e - 1)
-    m = _at(row, mark, 1)
-    if m > 0
-      side = ""
-      p = _at(row, "prec.left(", 1)
-      if p > 0
-        side = "left"
-      q = _at(row, "prec.right(", 1)
-      if q > 0
-        side = "right"
-        p = q + 1
-      if p > 0
-        lvl = _num(row:sub(p + 10, e - 1))
-        out = "{out}{_upto(row, m + mark:len(), 39)} {lvl} {side}\n"
-    i = e + 1
-  out
-
-# the `<level> <side>` tree-sitter gives `spell`, or "" when it gives none
-_tslookup: str = (ts: str, spell: str)
-  size = ts:len()
+  want = mark:len()
   out = ""
   i = 1
   while i <= size
-    e = _brk(ts, i)
+    e = i
+    while e <= size and ts:byte(e) != 10
+      e += 1
     row = ts:sub(i, e - 1)
-    if _field(row, 1) == spell
-      out = "{_field(row, 2)} {_field(row, 3)}"
+    width = row:len()
+    m = 0
+    seen = false
+    k = 1
+    while k + want - 1 <= width and !seen
+      j = 1
+      ok = true
+      while j <= want and ok
+        if row:byte(k + j - 1) != mark:byte(j)
+          ok = false
+        j += 1
+      if ok
+        m = k
+        seen = true
+      k += 1
+    p = 0
+    lit = false
+    k = 1
+    while k + 4 <= width and !lit
+      if row:sub(k, k + 4) == "prec."
+        p = k
+        lit = true
+      k += 1
+    if seen and lit
+      q = p + 5
+      while q <= width and row:byte(q) != 40
+        q += 1
+      side = row:sub(p + 5, q - 1)
+      if side:len() < 1
+        side = "none"
+      lvl = 0
+      k = q + 1
+      while k <= width and row:byte(k) >= 48 and row:byte(k) <= 57
+        lvl *= 10
+        lvl += row:byte(k) - 48
+        k += 1
+      q = m + want
+      while q <= width and row:byte(q) != 39
+        q += 1
+      out = "{out}{row:sub(m + want, q - 1)} {lvl} {side}\n"
     i = e + 1
   out
 
-# is `spell` an operator the owner owns?
-_owned: bool = (own: str, spell: str)
+# ── the join ─────────────────────────────────────────────────────────────────
+#
+# One line per INFIX identity the owner declares:
+#
+#   <spelling> <owner precedence> <owner associativity> <editor level> <editor side>
+#
+# Every owner field comes off the SAME bridge row, so no join can pair one
+# identity's spelling with another's binding power. `absent` in the last field
+# is an operator the editor grammar does not carry; it is not a spelling any
+# token has.
+
+joined(): str
+  own = "src/grammar_role_table.zig":read()
+  ts = editor()
   size = own:len()
+  out = ""
   i = 1
-  yes = false
   while i <= size
-    e = _brk(own, i)
-    if _field(own:sub(i, e - 1), 1) == spell
-      yes = true
+    e = i
+    while e <= size and own:byte(e) != 10
+      e += 1
+    row = own:sub(i, e - 1)
+    width = row:len()
+    infix = false
+    key = ".infix = true"
+    want = key:len()
+    k = 1
+    while k + want - 1 <= width and !infix
+      j = 1
+      ok = true
+      while j <= want and ok
+        if row:byte(k + j - 1) != key:byte(j)
+          ok = false
+        j += 1
+      if ok
+        infix = true
+      k += 1
+    if infix
+      key = ".spell = \""
+      want = key:len()
+      at = 0
+      hit = false
+      k = 1
+      while k + want - 1 <= width and !hit
+        j = 1
+        ok = true
+        while j <= want and ok
+          if row:byte(k + j - 1) != key:byte(j)
+            ok = false
+          j += 1
+        if ok
+          at = k
+          hit = true
+        k += 1
+      q = at + want
+      while q <= width and row:byte(q) != 34
+        q += 1
+      spell = row:sub(at + want, q - 1)
+      key = ".precedence = "
+      want = key:len()
+      at = 0
+      hit = false
+      k = 1
+      while k + want - 1 <= width and !hit
+        j = 1
+        ok = true
+        while j <= want and ok
+          if row:byte(k + j - 1) != key:byte(j)
+            ok = false
+          j += 1
+        if ok
+          at = k
+          hit = true
+        k += 1
+      prec = 0
+      k = at + want
+      while k <= width and row:byte(k) >= 48 and row:byte(k) <= 57
+        prec *= 10
+        prec += row:byte(k) - 48
+        k += 1
+      key = ".assoc = ."
+      want = key:len()
+      at = 0
+      hit = false
+      k = 1
+      while k + want - 1 <= width and !hit
+        j = 1
+        ok = true
+        while j <= want and ok
+          if row:byte(k + j - 1) != key:byte(j)
+            ok = false
+          j += 1
+        if ok
+          at = k
+          hit = true
+        k += 1
+      assoc = "none"
+      if hit
+        q = at + want
+        while q <= width and row:byte(q) != 44
+          q += 1
+        assoc = row:sub(at + want, q - 1)
+      lvl = 0
+      side = "absent"
+      tsize = ts:len()
+      a = 1
+      while a <= tsize
+        b = a
+        while b <= tsize and ts:byte(b) != 10
+          b += 1
+        line = ts:sub(a, b - 1)
+        c = 1
+        while c <= line:len() and line:byte(c) != 32
+          c += 1
+        if line:sub(1, c - 1) == spell
+          d = c + 1
+          while d <= line:len() and line:byte(d) != 32
+            d += 1
+          lvl = 0
+          k = c + 1
+          while k < d
+            lvl *= 10
+            lvl += line:byte(k) - 48
+            k += 1
+          side = line:sub(d + 1, line:len())
+        a = b + 1
+      out = "{out}{spell} {prec} {assoc} {lvl} {side}\n"
     i = e + 1
-  yes
-
-# ── the pinned baseline ──────────────────────────────────────────────────────
-
-_ispinned: bool = (pins: str, key: str)
-  size = pins:len()
-  i = 1
-  yes = false
-  while i <= size
-    e = _brk(pins, i)
-    if pins:sub(i, e - 1) == key
-      yes = true
-    i = e + 1
-  yes
-
-# how many pins the baseline carries, comments and blanks excluded
-_pincount: i64 = (pins: str)
-  size = pins:len()
-  i = 1
-  n = 0
-  while i <= size
-    e = _brk(pins, i)
-    row = pins:sub(i, e - 1)
-    if row:len() > 0 and row:byte(1) != 35
-      n = n + 1
-    i = e + 1
-  n
-
-_rows: i64 = (text: str)
-  size = text:len()
-  i = 1
-  n = 0
-  while i <= size
-    e = _brk(text, i)
-    if e > i
-      n = n + 1
-    i = e + 1
-  n
+  out
 
 # ── the comparison ───────────────────────────────────────────────────────────
 #
@@ -246,148 +241,310 @@ _rows: i64 = (text: str)
 # `prec.left` is the difference between refusing `a < b < c` and accepting it.
 #
 # Returns the divergence keys, one per line, and decides nothing about them.
-# An earlier shape ran this traversal twice under a `want` selector to get the
-# total and the unpinned count; returning the SET gives the caller both, and a
-# comparison that runs once cannot disagree with itself.
+# One traversal, one result: an earlier shape ran this twice under a selector
+# and the two runs disagreed.
 
-_keys: str = (own: str, ts: str)
+keys(): str
+  tab = joined()
+  ts = editor()
+  size = tab:len()
   out = ""
-  size = own:len()
 
   # coverage and associativity
   i = 1
   while i <= size
-    e = _brk(own, i)
-    row = own:sub(i, e - 1)
-    spell = _field(row, 1)
-    assoc = _field(row, 3)
-    got = _tslookup(ts, spell)
-    if got:len() == 0
+    e = i
+    while e <= size and tab:byte(e) != 10
+      e += 1
+    row = tab:sub(i, e - 1)
+    width = row:len()
+    a = 1
+    while a <= width and row:byte(a) != 32
+      a += 1
+    spell = row:sub(1, a - 1)
+    b = a + 1
+    while b <= width and row:byte(b) != 32
+      b += 1
+    c = b + 1
+    while c <= width and row:byte(c) != 32
+      c += 1
+    assoc = row:sub(b + 1, c - 1)
+    d = c + 1
+    while d <= width and row:byte(d) != 32
+      d += 1
+    side = row:sub(d + 1, width)
+    if side == "absent"
       out = "{out}missing {spell}\n"
     else
       want = assoc
       if assoc == "nonassoc"
         want = "none"
-      if _field(got, 2) != want
-        out = "{out}assoc {spell} {assoc} {_field(got, 2)}\n"
+      if side != want
+        out = "{out}assoc {spell} {assoc} {side}\n"
     i = e + 1
 
-  # operators tree-sitter recognizes that the owner does not own
+  # operators the editor grammar recognizes and the owner does not own
   tsize = ts:len()
   i = 1
   while i <= tsize
-    e = _brk(ts, i)
-    spell = _field(ts:sub(i, e - 1), 1)
-    if !_owned(own, spell)
+    e = i
+    while e <= tsize and ts:byte(e) != 10
+      e += 1
+    row = ts:sub(i, e - 1)
+    a = 1
+    while a <= row:len() and row:byte(a) != 32
+      a += 1
+    spell = row:sub(1, a - 1)
+    held = false
+    k = 1
+    while k <= size
+      m = k
+      while m <= size and tab:byte(m) != 10
+        m += 1
+      line = tab:sub(k, m - 1)
+      c = 1
+      while c <= line:len() and line:byte(c) != 32
+        c += 1
+      if line:sub(1, c - 1) == spell
+        held = true
+      k = m + 1
+    if !held
       out = "{out}extra {spell}\n"
     i = e + 1
 
   # induced binding order, every pair both tables carry
   i = 1
   while i <= size
-    ei = _brk(own, i)
-    rowa = own:sub(i, ei - 1)
-    spella = _field(rowa, 1)
-    preca = _num(_field(rowa, 2))
-    gota = _tslookup(ts, spella)
+    ei = i
+    while ei <= size and tab:byte(ei) != 10
+      ei += 1
+    rowa = tab:sub(i, ei - 1)
+    wa = rowa:len()
+    a = 1
+    while a <= wa and rowa:byte(a) != 32
+      a += 1
+    spella = rowa:sub(1, a - 1)
+    b = a + 1
+    while b <= wa and rowa:byte(b) != 32
+      b += 1
+    preca = 0
+    k = a + 1
+    while k < b
+      preca *= 10
+      preca += rowa:byte(k) - 48
+      k += 1
+    c = b + 1
+    while c <= wa and rowa:byte(c) != 32
+      c += 1
+    d = c + 1
+    while d <= wa and rowa:byte(d) != 32
+      d += 1
+    lvla = 0
+    k = c + 1
+    while k < d
+      lvla *= 10
+      lvla += rowa:byte(k) - 48
+      k += 1
+    sidea = rowa:sub(d + 1, wa)
     j = ei + 1
     while j <= size
-      ej = _brk(own, j)
-      rowb = own:sub(j, ej - 1)
-      spellb = _field(rowb, 1)
-      precb = _num(_field(rowb, 2))
-      gotb = _tslookup(ts, spellb)
-      if gota:len() > 0 and gotb:len() > 0
-        lva = _num(_field(gota, 1))
-        lvb = _num(_field(gotb, 1))
+      ej = j
+      while ej <= size and tab:byte(ej) != 10
+        ej += 1
+      rowb = tab:sub(j, ej - 1)
+      wb = rowb:len()
+      a = 1
+      while a <= wb and rowb:byte(a) != 32
+        a += 1
+      spellb = rowb:sub(1, a - 1)
+      b = a + 1
+      while b <= wb and rowb:byte(b) != 32
+        b += 1
+      precb = 0
+      k = a + 1
+      while k < b
+        precb *= 10
+        precb += rowb:byte(k) - 48
+        k += 1
+      c = b + 1
+      while c <= wb and rowb:byte(c) != 32
+        c += 1
+      d = c + 1
+      while d <= wb and rowb:byte(d) != 32
+        d += 1
+      lvlb = 0
+      k = c + 1
+      while k < d
+        lvlb *= 10
+        lvlb += rowb:byte(k) - 48
+        k += 1
+      sideb = rowb:sub(d + 1, wb)
+      if sidea != "absent" and sideb != "absent"
         ownerside = 0
         if preca > precb
           ownerside = 1
         if preca < precb
           ownerside = 0 - 1
-        tsside = 0
-        if lva > lvb
-          tsside = 1
-        if lva < lvb
-          tsside = 0 - 1
-        if ownerside != tsside
+        editorside = 0
+        if lvla > lvlb
+          editorside = 1
+        if lvla < lvlb
+          editorside = 0 - 1
+        if ownerside != editorside
           out = "{out}order {spella} {spellb}\n"
       j = ej + 1
     i = ei + 1
   out
 
-# Print each key with its state and return how many are NOT pinned.
-_loose: i64 = (keys: str, pins: str)
+# ── the pinned baseline ──────────────────────────────────────────────────────
+#
+# Print each divergence with its state; return how many are NOT pinned.
+
+loose(): i64
+  found = keys()
+  pins = "gate/treesitter/agreement.baseline":read()
+  size = found:len()
+  psize = pins:len()
   bad = 0
-  size = keys:len()
   i = 1
   while i <= size
-    e = _brk(keys, i)
-    key = keys:sub(i, e - 1)
+    e = i
+    while e <= size and found:byte(e) != 10
+      e += 1
+    key = found:sub(i, e - 1)
     if key:len() > 0
+      held = false
+      k = 1
+      while k <= psize
+        m = k
+        while m <= psize and pins:byte(m) != 10
+          m += 1
+        if pins:sub(k, m - 1) == key
+          held = true
+        k = m + 1
       state = "pinned"
-      if !_ispinned(pins, key)
+      if !held
         state = "NEW"
-        bad = bad + 1
+        bad += 1
       print("  {state}  {key}")
     i = e + 1
   bad
 
 # Pins that no longer describe a divergence. A baseline that only grows is not
 # a ratchet, so a stale pin is a failure and not a courtesy.
-_stale: i64 = (keys: str, pins: str)
+
+stale(): i64
+  found = keys()
+  pins = "gate/treesitter/agreement.baseline":read()
+  size = found:len()
+  psize = pins:len()
   gone = 0
-  size = pins:len()
   i = 1
-  while i <= size
-    e = _brk(pins, i)
-    row = pins:sub(i, e - 1)
-    if row:len() > 0 and row:byte(1) != 35
-      if !_ispinned(keys, row)
-        print("  STALE   {row}")
-        gone = gone + 1
+  while i <= psize
+    e = i
+    while e <= psize and pins:byte(e) != 10
+      e += 1
+    pin = pins:sub(i, e - 1)
+    if pin:len() > 0 and pin:byte(1) != 35
+      held = false
+      k = 1
+      while k <= size
+        m = k
+        while m <= size and found:byte(m) != 10
+          m += 1
+        if found:sub(k, m - 1) == pin
+          held = true
+        k = m + 1
+      if !held
+        print("  STALE   {pin}")
+        gone += 1
     i = e + 1
   gone
 
-_check: i64 = ()
-  own = _ownerfile:read()
-  ts = _tsfile:read()
-  pins = _pinfile:read()
-  if own:len() == 0 or ts:len() == 0
-    print("treesitter agreement: FAIL — an input read empty; a reader that")
-    print("  returns nothing reports agreement, which is the failure this")
+# How many pins the baseline carries, comments and blanks excluded.
+
+held(): i64
+  pins = "gate/treesitter/agreement.baseline":read()
+  size = pins:len()
+  n = 0
+  i = 1
+  while i <= size
+    e = i
+    while e <= size and pins:byte(e) != 10
+      e += 1
+    row = pins:sub(i, e - 1)
+    if row:len() > 0 and row:byte(1) != 35
+      n += 1
+    i = e + 1
+  n
+
+# Non-empty lines of a text.
+
+rows(): i64
+  found = keys()
+  size = found:len()
+  n = 0
+  i = 1
+  while i <= size
+    e = i
+    while e <= size and found:byte(e) != 10
+      e += 1
+    if e > i
+      n += 1
+    i = e + 1
+  n
+
+check(): i64
+  tab = joined()
+  ts = editor()
+  if tab:len() < 1 or ts:len() < 1
+    print("treesitter agreement: FAIL — a reader found no operators. A reader")
+    print("  that returns nothing reports agreement, which is the failure this")
     print("  exit status exists to distinguish.")
     return 3
-  table = _ownertable(own)
-  tab = _tstable(ts)
-  nown = _rows(table)
-  nts = _rows(tab)
-  if nown == 0 or nts == 0
-    print("treesitter agreement: FAIL — a reader found no operators.")
-    print("  owner rows {nown}, tree-sitter rows {nts}")
-    return 3
+  nown = 0
+  size = tab:len()
+  i = 1
+  while i <= size
+    e = i
+    while e <= size and tab:byte(e) != 10
+      e += 1
+    if e > i
+      nown += 1
+    i = e + 1
+  nts = 0
+  size = ts:len()
+  i = 1
+  while i <= size
+    e = i
+    while e <= size and ts:byte(e) != 10
+      e += 1
+    if e > i
+      nts += 1
+    i = e + 1
   print("treesitter agreement: owner declares {nown} infix identities; the editor")
   print("  projection declares {nts} operator rows. Both read from their producers.")
-  keys = _keys(table, tab)
-  bad = _loose(keys, pins)
-  gone = _stale(keys, pins)
-  seen = _rows(keys)
-  held = _pincount(pins)
-  print("  divergences found {seen}, pinned {held}, unpinned {bad}, stale {gone}")
-  out = 0
+  bad = loose()
+  gone = stale()
+  seen = rows()
+  pins = held()
+  print("  divergences found {seen}, pinned {pins}, unpinned {bad}, stale {gone}")
+  agree = true
   if bad > 0
-    print("treesitter agreement: FAIL — {bad} divergence(s) not in {_pinfile}.")
+    print("treesitter agreement: FAIL — {bad} divergence(s) are not pinned.")
     print("  The editor projection and lib/compiler/token.id disagree about a")
     print("  binding power, an associativity, or which operators exist. One of")
     print("  them is authoring grammar that the other did not (law.grammar.one).")
-    out = 1
+    agree = false
   if gone > 0
     print("treesitter agreement: FAIL — {gone} pin(s) describe no divergence.")
     print("  Delete the line in the diff that fixed it; a baseline that only")
     print("  grows is not a ratchet.")
-    out = 1
-  if out == 0
+    agree = false
+  out = 1
+  if agree
     print("treesitter agreement: OK — no divergence outside the pinned baseline.")
+    out = 0
   out
 
-_check()
+check()
