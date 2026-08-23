@@ -2,9 +2,9 @@
 # Native arm64 lowering of the `<<` / `>>` operators (LSL / ASR) via
 # src/native_backend.zig. No C, no LLVM — direct machine code.
 
-shifted: i64 = ()
+_shifted: i64 = ()
   a = 1 << 4
   b = 256 >> 3
   a + b
 
-shifted()
+_shifted()

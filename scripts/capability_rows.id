@@ -333,7 +333,7 @@ slot: str = (path: str)
 # one function was the whole of this file's concatlit contribution.
 probetext: str = (duo: str, tprefix: str)
   lines = {
-    "exitmatch() \\{",
+    "exitmatch() \{",
     " [ \"$1\" = \"$2\" ] && [ ! -s \"$3\" ] && [ ! -s \"$4\" ]",
     "\\}",
     "if [ \"$1\" = --oracle-control ]; then",
@@ -744,7 +744,7 @@ main: i64 = ()
   print("  D described (first line states intent) · P parsed (`duo fmt` on a copy)")
   print("  S `duo check` · G `duo graph` names the capability · C C backend ran AND")
   print("  matched its declared value · N `--backend=direct` ran · W both backends")
-  print("  agree (or an exit oracle matched `# expect-exit:`) · H `std.compiler.parser`")
+  print("  agree (or an exit oracle matched `# expect-exit:`) · H hosted compiler parser")
   print("  accepts it — the Duo-written front end, not the Zig one")
   print("")
 

@@ -495,7 +495,7 @@ spill: bool = (path: str, body: str)
   f:close()
   true
 
-project: i64 = ()
+_project: i64 = ()
   zigout = "src/grammar_role_table.zig"
   idout = "lib/token/grammarrole.id"
   if !spill(zigout, zigbody())
@@ -508,4 +508,4 @@ project: i64 = ()
   print("wrote {idout}")
   0
 
-project()
+_project()

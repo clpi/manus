@@ -4,10 +4,10 @@
 twice: i64 = (value: i64)
   value * 2
 
-answer: i64 = ()
+_answer: i64 = ()
   value = twice(20)
   if value == 40
     return 42
   1
 
-answer()
+_answer()

@@ -57,22 +57,22 @@ outtext: str = (bin: str)
 # A typed exit oracle observes one process outcome: the exact status and no
 # output on either channel. The files are retained from that one execution so
 # checking the status cannot accidentally execute the subject a second time.
-exitmatch: bool = (want: str, actual: i64, out: str, err: str)
+_exitmatch: bool = (want: str, actual: i64, out: str, err: str)
   actual:to(str) == want and script.status("test ! -s " .. out) == 0 and script.status("test ! -s " .. err) == 0
 
-exitcontrols: bool = ()
+_exitcontrols: bool = ()
   out = work .. "/exit-control.stdout"
   err = work .. "/exit-control.stderr"
   script.fs_write(out, "")
   script.fs_write(err, "")
-  if !exitmatch("7", 7, out, err)
+  if !_exitmatch("7", 7, out, err)
     return false
   script.fs_write(out, "noise")
-  if exitmatch("7", 7, out, err)
+  if _exitmatch("7", 7, out, err)
     return false
   script.fs_write(out, "")
   script.fs_write(err, "noise")
-  if exitmatch("7", 7, out, err)
+  if _exitmatch("7", 7, out, err)
     return false
   true
 
@@ -164,7 +164,7 @@ main: i64 = ()
       bounded = cand .. " " .. bound .. " "
 
   std.script.run("rm -rf " .. work .. " && mkdir -p " .. work)
-  if !exitcontrols()
+  if !_exitcontrols()
     fail("exit-oracle controls failed: matching status with stdout/stderr must refuse")
 
   for i, src in listfiles(corpus)
@@ -197,7 +197,7 @@ main: i64 = ()
   # corpus: they pin self-hosting capabilities with no differential twin.
   for i, src in listfiles(corpus .. "/native_only")
     name = stem(src)
-    expected = std.script.chomp(std.script.capture("sed -n 's/^# expect-exit: *\\([0-9][0-9]*\\).*/\\1/p' " .. src .. " | head -1"))
+    expected = script.chomp(script.capture("sed -n 's/^# expect-exit: *\\([0-9][0-9]*\\).*/\\1/p' " .. src .. " | head -1"))
     if expected == ""
       fail(name .. ": native_only file has no '# expect-exit: N' header")
     else
@@ -207,8 +207,8 @@ main: i64 = ()
       else
         out = bin .. ".stdout"
         err = bin .. ".stderr"
-        actual = std.script.status(bounded .. bin .. " >" .. out .. " 2>" .. err)
-        if !exitmatch(expected, actual, out, err)
+        actual = script.status(bounded .. bin .. " >" .. out .. " 2>" .. err)
+        if !_exitmatch(expected, actual, out, err)
           fail(name .. ": expected exit " .. expected .. " with empty stdout/stderr, got " .. actual:to(str) .. " (native_only)")
         else
           agree = agree + 1

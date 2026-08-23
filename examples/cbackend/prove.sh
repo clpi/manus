@@ -24,7 +24,7 @@ if grep -Eq '^[[:space:]]*main[[:space:]]*[:=]' "$fixture"; then
 fi
 
 locked "$compiler" graph "$fixture" >"$scratch/graph.json"
-answer_rows=$(grep -Eo '"id":[0-9]+,"kind":"func","name":"answer"' "$scratch/graph.json" || true)
+answer_rows=$(grep -Eo '"id":[0-9]+,"kind":"func","name":"_answer"' "$scratch/graph.json" || true)
 test "$(printf '%s\n' "$answer_rows" | grep -c .)" -eq 1
 answer_id=$(printf '%s\n' "$answer_rows" | sed -E 's/^"id":([0-9]+),.*/\1/')
 grep -Eq '"relation":'"$answer_id"',"caller":0' "$scratch/graph.json"
@@ -85,7 +85,7 @@ cmp "$scratch/direct-poison.o" "$scratch/bench-direct.o"
 
 nm -g "$scratch/direct-poison.o" >"$scratch/direct.symbols"
 grep -Eq '[[:space:]]_main$' "$scratch/direct.symbols"
-grep -Eq '[[:space:]]_idol_.*__answer$' "$scratch/direct.symbols"
+grep -Eq '[[:space:]]_idol_.*___answer$' "$scratch/direct.symbols"
 if grep -Eq '[[:space:]]_idol_.*__main$' "$scratch/direct.symbols"; then
     echo "direct object retained a source-main relation beside the physical ABI main" >&2
     exit 1
