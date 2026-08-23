@@ -852,6 +852,34 @@ pub const Origin = struct {
     binding: id,
 };
 
+/// The value one module binding was initialized from, joined once at semantic
+/// ingress to the exact module place that decides whether that value remains
+/// current.
+///
+/// This is deliberately not `EdgeKind.binding`.  That edge answers the other
+/// direction and the other question: a use-occurrence value names the binding
+/// it reads.  Here the binding names the value its defining occurrence
+/// produced.  Keeping the two relations distinct is what prevents a later use
+/// from being mistaken for the definition merely because both values have the
+/// same descriptor and spelling.
+pub const BindingInitialization = struct {
+    binding: id,
+    value: id,
+    place: u32,
+};
+
+/// Three producer-coverage states for `BindingInitialization`.
+///
+/// `unvisited` is outside this bounded producer's current domain. `invalid`
+/// means the producer claimed the binding but its row was removed or damaged;
+/// consumers must refuse rather than reconstruct from a name. `known` carries
+/// the exact ids.
+pub const BindingInitializationState = union(enum) {
+    unvisited,
+    invalid,
+    known: BindingInitialization,
+};
+
 /// The two censuses of one relation body, produced as a PAIR.
 ///
 /// `place.Census` is keyed to one body and `region.Census`'s refinements index
@@ -939,6 +967,11 @@ pub const SemanticGraph = struct {
     exact_i64_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
     source_quote_facts: std.ArrayListUnmanaged(SourceQuoteFact) = .empty,
     source_quote_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
+    binding_initializations: std.ArrayListUnmanaged(BindingInitialization) = .empty,
+    binding_initialization_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
+    /// Producer-domain certificate. A set bit with no valid row is damage, not
+    /// permission for a consumer to fall back to a name-keyed constant table.
+    binding_initialization_candidates: std.DynamicBitSetUnmanaged = .{},
     owned_descriptors: std.ArrayListUnmanaged(*types.ResolvedType) = .empty,
     aggregate_access_relation: ?id = null,
     application_rows: std.ArrayListUnmanaged(u32) = .empty,
@@ -1055,6 +1088,9 @@ pub const SemanticGraph = struct {
         self.exact_i64_rows.deinit(self.alloc);
         self.source_quote_facts.deinit(self.alloc);
         self.source_quote_rows.deinit(self.alloc);
+        self.binding_initializations.deinit(self.alloc);
+        self.binding_initialization_rows.deinit(self.alloc);
+        self.binding_initialization_candidates.deinit(self.alloc);
         for (self.owned_descriptors.items) |descriptor| self.alloc.destroy(descriptor);
         self.owned_descriptors.deinit(self.alloc);
         self.application_rows.deinit(self.alloc);
@@ -1639,6 +1675,78 @@ pub const SemanticGraph = struct {
         const fact = self.exact_i64_facts.items[row];
         if (fact.value != value or self.get(value) == null) return null;
         return fact.content;
+    }
+
+    /// Exact module place by its census identity. The array position is only a
+    /// physical acceleration: every read rechecks `Place.id` before answering.
+    pub fn modulePlace(self: *const SemanticGraph, site: u32) ?*const place.Place {
+        const census = if (self.places) |*known| known else return null;
+        if (site >= census.places.items.len) return null;
+        const found = &census.places.items[site];
+        if (found.id != site) return null;
+        return found;
+    }
+
+    /// The initializer value and place produced for one exact module binding.
+    /// A claimed-but-damaged row is distinct from an occurrence outside the
+    /// current producer domain, so a realization cannot turn missing graph
+    /// knowledge into permission to consult `ModuleConsts` by spelling.
+    pub fn bindingInitialization(self: *const SemanticGraph, binding: id) BindingInitializationState {
+        if (binding >= self.binding_initialization_candidates.bit_length or
+            !self.binding_initialization_candidates.isSet(binding))
+        {
+            return .unvisited;
+        }
+        const row = self.binding_initialization_rows.get(binding) orelse return .invalid;
+        if (row >= self.binding_initializations.items.len) return .invalid;
+        const fact = self.binding_initializations.items[row];
+        if (fact.binding != binding) return .invalid;
+        const binding_node = self.get(binding) orelse return .invalid;
+        if (binding_node.kind != .local or binding_node.scope != self.module_root) return .invalid;
+        const value_node = self.get(fact.value) orelse return .invalid;
+        if (value_node.kind != .value or value_node.scope != self.module_root) return .invalid;
+        if (binding_node.descriptor) |binding_descriptor| {
+            const value_descriptor = value_node.descriptor orelse return .invalid;
+            if (!binding_descriptor.eql(value_descriptor)) return .invalid;
+        }
+        if (self.modulePlace(fact.place) == null) return .invalid;
+        return .{ .known = fact };
+    }
+
+    fn publishBindingInitialization(
+        self: *SemanticGraph,
+        binding: id,
+        value: id,
+        site: u32,
+    ) !void {
+        try self.requireOpen();
+        const binding_node = self.get(binding) orelse return error.InvalidBindingInitialization;
+        if (binding_node.kind != .local or binding_node.scope != self.module_root)
+            return error.InvalidBindingInitialization;
+        const value_node = self.get(value) orelse return error.InvalidBindingInitialization;
+        if (value_node.kind != .value or value_node.scope != self.module_root)
+            return error.InvalidBindingInitialization;
+        if (binding_node.descriptor) |binding_descriptor| {
+            const value_descriptor = value_node.descriptor orelse
+                return error.InvalidBindingInitialization;
+            if (!binding_descriptor.eql(value_descriptor))
+                return error.InvalidBindingInitialization;
+        }
+        if (self.modulePlace(site) == null) return error.InvalidBindingInitialization;
+        if (self.binding_initialization_candidates.bit_length < self.nodes.items.len) {
+            try self.binding_initialization_candidates.resize(self.alloc, self.nodes.items.len, false);
+        }
+        if (self.binding_initialization_candidates.isSet(binding))
+            return error.DuplicateBindingInitialization;
+        self.binding_initialization_candidates.set(binding);
+        const row = try coordinateForLength(self.binding_initializations.items.len);
+        try self.binding_initializations.append(self.alloc, .{
+            .binding = binding,
+            .value = value,
+            .place = site,
+        });
+        errdefer _ = self.binding_initializations.pop();
+        try self.binding_initialization_rows.putNoClobber(self.alloc, binding, row);
     }
 
     /// THE VALUE AN OCCURRENCE IS, asked with the occurrence.
@@ -4030,7 +4138,7 @@ pub const SemanticGraph = struct {
     /// Lift module fully including call sites (Phase 1 complete lift).
     pub fn liftModuleWithCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
         const mod_id = try self.liftModuleCalls(mod, file);
-        try self.liftLiteralFacts(file, mod_id, &mod.body);
+        try self.liftLiteralFacts(file, mod_id, &mod.body, true);
         return mod_id;
     }
 
@@ -4075,16 +4183,56 @@ pub const SemanticGraph = struct {
     /// A `.func_expr` body is NOT swept: `findFuncDecl` keys on
     /// `*const ast.FuncDecl` and a lambda has no such entity, so its literals
     /// have no scope to be parented to that is not a lie.
+    fn liftBindingInitialization(
+        self: *SemanticGraph,
+        scope: id,
+        statement: *const ast.Stmt,
+        name: []const u8,
+        initializer: *const Expr,
+    ) !void {
+        // The correspondence is value-generic. This first producer domain is
+        // deliberately the exact-integer subset because it has an existing
+        // machine consumer; quote content can reuse the same fact later.
+        if (self.module_root != scope) return;
+        const value = self.valueByAst(initializer) orelse return;
+        if (self.exactI64(value) == null) return;
+
+        // Name lookup is lawful only here at the source-resolution boundary.
+        // The stored answer is three exact identities, and no consumer repeats
+        // either lookup.
+        const binding = self.resolveBindingInScope(scope, name) orelse return;
+        const binding_node = self.get(binding) orelse return;
+        if (binding_node.kind != .local or binding_node.scope != self.module_root) return;
+
+        // Prove the transitional name projection found this exact definition,
+        // not another binding with the same spelling, before storing its place
+        // identity. A later rebind therefore cannot publish a rival row.
+        const bound_place = self.placeNamed(name) orelse return;
+        if (bound_place.binding != statement or bound_place.init != initializer) return;
+        if (bound_place.shape != .scalar or bound_place.region != .module) return;
+        try self.publishBindingInitialization(binding, value, bound_place.id);
+    }
+
     fn liftLiteralFacts(
         self: *SemanticGraph,
         file: []const u8,
         scope: id,
         block: *const ast.Block,
+        direct_module: bool,
     ) anyerror!void {
         for (block.stmts) |*stmt| {
             switch (stmt.*) {
-                .local_decl => |*ld| for (ld.inits) |seed| try self.liftLiteralFactsInExpr(file, scope, seed),
-                .const_decl => |*cd| try self.liftLiteralFactsInExpr(file, scope, cd.val),
+                .local_decl => |*ld| {
+                    for (ld.inits) |seed| try self.liftLiteralFactsInExpr(file, scope, seed);
+                    if (direct_module) for (ld.names, 0..) |*name, i| {
+                        if (i >= ld.inits.len) break;
+                        try self.liftBindingInitialization(scope, stmt, name.ident, ld.inits[i]);
+                    };
+                },
+                .const_decl => |*cd| {
+                    try self.liftLiteralFactsInExpr(file, scope, cd.val);
+                    if (direct_module) try self.liftBindingInitialization(scope, stmt, cd.ident, cd.val);
+                },
                 .global_decl => |*gd| for (gd.inits) |seed| try self.liftLiteralFactsInExpr(file, scope, seed),
                 .assign => |*asg| {
                     for (asg.targets) |target| try self.liftLiteralFactsInExpr(file, scope, target);
@@ -4093,52 +4241,52 @@ pub const SemanticGraph = struct {
                 .call_stmt => |*cs| try self.liftLiteralFactsInExpr(file, scope, cs.expr),
                 .expr_stmt => |*es| try self.liftLiteralFactsInExpr(file, scope, es.expr),
                 .ret => |*r| for (r.vals) |value| try self.liftLiteralFactsInExpr(file, scope, value),
-                .do_block => |*d| try self.liftLiteralFacts(file, scope, &d.body),
+                .do_block => |*d| try self.liftLiteralFacts(file, scope, &d.body, false),
                 .while_loop => |*w| {
                     try self.liftLiteralFactsInExpr(file, scope, w.cond);
-                    try self.liftLiteralFacts(file, scope, &w.body);
+                    try self.liftLiteralFacts(file, scope, &w.body, false);
                 },
                 .repeat_loop => |*r| {
-                    try self.liftLiteralFacts(file, scope, &r.body);
+                    try self.liftLiteralFacts(file, scope, &r.body, false);
                     try self.liftLiteralFactsInExpr(file, scope, r.cond);
                 },
                 .if_stmt => |*i| {
                     if (i.binding) |b| try self.liftLiteralFactsInExpr(file, scope, b.expr);
                     try self.liftLiteralFactsInExpr(file, scope, i.cond);
-                    try self.liftLiteralFacts(file, scope, &i.then);
+                    try self.liftLiteralFacts(file, scope, &i.then, false);
                     for (i.elseifs) |*ei| {
                         try self.liftLiteralFactsInExpr(file, scope, ei.cond);
-                        try self.liftLiteralFacts(file, scope, &ei.body);
+                        try self.liftLiteralFacts(file, scope, &ei.body, false);
                     }
-                    if (i.else_body) |*eb| try self.liftLiteralFacts(file, scope, eb);
+                    if (i.else_body) |*eb| try self.liftLiteralFacts(file, scope, eb, false);
                 },
                 .num_for => |*nf| {
                     try self.liftLiteralFactsInExpr(file, scope, nf.start);
                     try self.liftLiteralFactsInExpr(file, scope, nf.stop);
                     if (nf.step) |step| try self.liftLiteralFactsInExpr(file, scope, step);
-                    try self.liftLiteralFacts(file, scope, &nf.body);
+                    try self.liftLiteralFacts(file, scope, &nf.body, false);
                 },
                 .gen_for => |*g| {
                     for (g.iters) |iter| try self.liftLiteralFactsInExpr(file, scope, iter);
-                    try self.liftLiteralFacts(file, scope, &g.body);
+                    try self.liftLiteralFacts(file, scope, &g.body, false);
                 },
                 .try_stmt => |*t| {
-                    try self.liftLiteralFacts(file, scope, &t.body);
-                    for (t.catches) |*cc| try self.liftLiteralFacts(file, scope, &cc.body);
-                    for (t.defers) |*d| try self.liftLiteralFacts(file, scope, &d.body);
+                    try self.liftLiteralFacts(file, scope, &t.body, false);
+                    for (t.catches) |*cc| try self.liftLiteralFacts(file, scope, &cc.body, false);
+                    for (t.defers) |*d| try self.liftLiteralFacts(file, scope, &d.body, false);
                 },
-                .defer_stmt => |*d| try self.liftLiteralFacts(file, scope, &d.body),
+                .defer_stmt => |*d| try self.liftLiteralFacts(file, scope, &d.body, false),
                 .match_stmt => |*m| {
                     try self.liftLiteralFactsInExpr(file, scope, m.scrutinee);
                     for (m.arms) |*arm| {
                         if (arm.pattern == .literal) try self.liftLiteralFactsInExpr(file, scope, arm.pattern.literal);
                         if (arm.guard) |guard| try self.liftLiteralFactsInExpr(file, scope, guard);
-                        try self.liftLiteralFacts(file, scope, &arm.body);
+                        try self.liftLiteralFacts(file, scope, &arm.body, false);
                     }
                 },
                 .func_decl => |*fd| {
                     const nested = self.findFuncDecl(fd) orelse continue;
-                    try self.liftLiteralFacts(file, nested, &fd.func.body);
+                    try self.liftLiteralFacts(file, nested, &fd.func.body, false);
                 },
                 else => {},
             }
@@ -4209,7 +4357,7 @@ pub const SemanticGraph = struct {
                 for (me.arms) |*arm| {
                     if (arm.pattern == .literal) try self.liftLiteralFactsInExpr(file, scope, arm.pattern.literal);
                     if (arm.guard) |guard| try self.liftLiteralFactsInExpr(file, scope, guard);
-                    try self.liftLiteralFacts(file, scope, &arm.body);
+                    try self.liftLiteralFacts(file, scope, &arm.body, false);
                 }
             },
             .list_comp => |lc| {
@@ -5202,7 +5350,7 @@ pub const SemanticGraph = struct {
         // occurrence it names and this sweep reaches only what nothing else
         // does. Running it inside `liftModuleCalls` would have made the sweep
         // the owner of every checked operand literal instead.
-        try self.liftLiteralFacts(file, module, &mod.body);
+        try self.liftLiteralFacts(file, module, &mod.body, true);
         return module;
     }
 
@@ -8897,6 +9045,74 @@ test "semantic_graph: one module binding owns checked value origin and survives 
     }
     try std.testing.expect(module_origin_seen);
     try std.testing.expect(shadow_origin_seen);
+}
+
+test "semantic_graph: module binding names its initializer value and exact place" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\const fixed: i64 = 41
+        \\moving: i64 = 1
+        \\moving = 2
+        \\take: i64 = (value: i64)
+        \\    value
+        \\readfixed: i64 = ()
+        \\    take(fixed)
+        \\readmoving: i64 = ()
+        \\    take(moving)
+        \\readliteral: i64 = ()
+        \\    take(7)
+    ;
+    var lexer = Lexer.init(source, "binding-initializer.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const module_id = try graph.liftModuleWithCheckedCalls(
+        &module,
+        &checked,
+        "binding-initializer.id",
+    );
+
+    for ([_][]const u8{ "fixed", "moving" }) |name| {
+        const binding = graph.resolveInHome(module_id, name, .local) orelse
+            return error.TestExpectedEqual;
+        const initialization = switch (graph.bindingInitialization(binding)) {
+            .known => |fact| fact,
+            .unvisited, .invalid => return error.TestExpectedEqual,
+        };
+        try std.testing.expectEqual(binding, initialization.binding);
+        try std.testing.expect(graph.exactI64(initialization.value) != null);
+        const value = graph.get(initialization.value) orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(module_id, value.scope.?);
+        const p = graph.modulePlace(initialization.place) orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(place.Shape.scalar, p.shape);
+        if (std.mem.eql(u8, name, "fixed")) {
+            try std.testing.expectEqual(@as(i64, 41), graph.exactI64(initialization.value).?);
+            try std.testing.expectEqual(place.Tri.no, p.facts.mutation);
+            try std.testing.expectEqual(place.Tri.yes, p.facts.immutability);
+            try std.testing.expectEqual(place.Tri.yes, p.facts.contents_known);
+        } else {
+            try std.testing.expectEqual(@as(i64, 1), graph.exactI64(initialization.value).?);
+            try std.testing.expectEqual(place.Tri.yes, p.facts.mutation);
+            try std.testing.expectEqual(place.Tri.no, p.facts.immutability);
+            try std.testing.expectEqual(place.Tri.no, p.facts.contents_known);
+        }
+    }
+
+    const fixed = graph.resolveInHome(module_id, "fixed", .local).?;
+    const saved_row = graph.binding_initialization_rows.fetchRemove(fixed) orelse
+        return error.TestExpectedEqual;
+    try std.testing.expect(graph.bindingInitialization(fixed) == .invalid);
+    try graph.binding_initialization_rows.putNoClobber(alloc, saved_row.key, saved_row.value);
 }
 
 test "semantic_graph: nested application name publishes checked module descriptor" {
