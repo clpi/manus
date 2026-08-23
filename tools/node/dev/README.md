@@ -80,9 +80,37 @@ declares the enabled project servers:
 
 - `idol` — required; repository status/head/orient (`tools/mcp/native.id`,
   native backend, `idol run`).
-- `idol-native` — semantic-graph server from the sibling `idol-native`
-  checkout: `check`, `symbols`, `graph`, `run`, `gates`, `orient`, `sim`,
-  `explain`, `fmt`, `asm` (`tools/mcp/server.id` on that tree's `bin/idol`).
+- `idol-native` — semantic-graph server from the exact clean `idol-native`
+  worktree supplied by absolute `IDOL_NATIVE_ROOT`: `check`, `symbols`,
+  `graph`, `run`, `gates`, `orient`, `sim`, `explain`, `fmt`, `asm`
+  (`tools/mcp/server.id` on that tree's `bin/idol`). The manifest binds the
+  native commit, tree, entry digest, compiler-artifact digest, and authority
+  projection. Missing, dirty, untracked, stale, or damaged roots refuse before
+  native code starts; there is no sibling-directory fallback. The protected
+  native main currently projects the Idol authority revision recorded in the
+  manifest, which is provenance rather than a claim of current-law equivalence.
+
+For example, against the exact admitted checkout:
+
+```sh
+IDOL_NATIVE_ROOT=/absolute/path/to/idol-native ./tools/node/dev/probe-mcp
+IDOL_NATIVE_ROOT=/absolute/path/to/idol-native ./tools/node/dev/generate-configs
+```
+
+Generated MCP commands retain that explicit root input and invoke
+`tools/node/dev/mcp-pair`, so every later client start repeats the clean
+revision/tree/digest validation, forms a private exact checkout, and
+cold-compiles that snapshot's server with the current Idol compiler. The
+resulting server receives the snapshot's exact paired native artifact as
+`IDOL_BIN`; the probe executes a real `check` tool request so that artifact is
+a measured dependency rather than a manifest-only citation. Later edits to the
+supplied checkout cannot move the running server onto different bytes.
+
+The launcher currently supplies the exact artifact as an already-quoted shell
+token because the protected native server interpolates `IDOL_BIN` into a shell
+command without quoting it. This is a path-safe transport bridge, not closure
+of native shell/path semantics; it can be deleted only when the native server
+applies tools without reconstructing an unquoted shell command.
 
 The retired pre-rename transports (`idol-bench`, `idol-lsp`, `zls`) were
 removed: their legacy-syntax sources predated the C-backend retirement and
