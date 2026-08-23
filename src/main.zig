@@ -849,8 +849,8 @@ fn mainInner(init: std.process.Init) !void {
     forwarded_program_args = forwarded_args.items;
     if (args.len > 0) self_argv0 = args[0];
 
-    if (no_cache and !std.mem.eql(u8, cmd, "compile") and !std.mem.eql(u8, cmd, "run")) {
-        term.err("--no-cache is valid only with compile or run", .{});
+    if (no_cache and !std.mem.eql(u8, cmd, "compile")) {
+        term.err("--no-cache is valid only with compile", .{});
         std.process.exit(2);
     }
 
@@ -1147,7 +1147,7 @@ fn mainInner(init: std.process.Init) !void {
     if (std.mem.eql(u8, cmd, "compile")) {
         try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, global_bench_profile_cli, null, link_flags.items, entry_override, !no_cache);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override, !no_cache);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override, true);
     } else if (std.mem.eql(u8, cmd, "check")) {
         try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{}, entry_override, true);
     } else if (std.mem.eql(u8, cmd, "fmt")) {
