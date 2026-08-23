@@ -10825,12 +10825,12 @@ pub const CodeGen = struct {
 
     fn emit_dense_literal_elem(self: *CodeGen, expr: *const ast.Expr, elem: NativeDenseElem) E!void {
         switch (expr.*) {
-            .int_lit => self.p("{d}", .{expr.int_lit.val}),
+            .int_lit => self.emit_c_int_literal(expr.int_lit.val),
             .float_lit => self.p("{e}", .{expr.float_lit.val}),
             .quoted => try self.emit_c_string_literal(expr.quoted.val),
             .unop => |u| switch (u.op) {
                 .neg => switch (u.operand.*) {
-                    .int_lit => self.p("{d}", .{-u.operand.int_lit.val}),
+                    .int_lit => self.emit_c_int_literal(ast.negatedIntLiteral(u.operand.int_lit.val)),
                     .float_lit => self.p("{e}", .{-u.operand.float_lit.val}),
                     else => unreachable,
                 },
@@ -12484,10 +12484,10 @@ pub const CodeGen = struct {
 
     fn expr_is_int(self: *CodeGen, e: *const ast.Expr, val: i64) bool {
         _ = self;
-        if (e.* == .int_lit) return e.int_lit.val == val;
-        if (e.* == .unop and e.unop.op == .neg and e.unop.operand.* == .int_lit)
-            return e.unop.operand.int_lit.val == -val;
-        return false;
+        // Was `e.unop.operand.int_lit.val == -val` — host negation of the
+        // WANTED value, which panics on `INT_MIN`. Ask the one producer for the
+        // literal's exact value instead of negating anything here.
+        return (ast.intLiteralValue(e) orelse return false) == val;
     }
 
     fn expr_is_name(self: *CodeGen, e: *const ast.Expr, name: []const u8) bool {
@@ -13524,7 +13524,7 @@ pub const CodeGen = struct {
                                 };
                                 self.p(", ", .{});
                                 switch (v.*) {
-                                    .int_lit => |il| self.p("{d}", .{il.val}),
+                                    .int_lit => |il| self.emit_c_int_literal(il.val),
                                     .float_lit => |fl| self.p("{e}", .{fl.val}),
                                     else => self.p("0", .{}),
                                 }
@@ -15594,7 +15594,10 @@ pub const CodeGen = struct {
                 // (the count wraps mod 32) and any literal that does not fit in
                 // 32 bits, so give integer literals explicit 64-bit width.
                 if (want == .i64 and e.* == .int_lit) {
-                    self.p("INT64_C({d})", .{e.int_lit.val});
+                    if (e.int_lit.val == std.math.minInt(i64))
+                        self.emit_c_int_literal(e.int_lit.val)
+                    else
+                        self.p("INT64_C({d})", .{e.int_lit.val});
                     return;
                 }
                 try self.emit_expr(e);
@@ -16613,7 +16616,7 @@ pub const CodeGen = struct {
             .nil => self.p("NULL", .{}),
             .true_lit => self.p("true", .{}),
             .false_lit => self.p("false", .{}),
-            .int_lit => |v| self.p("{d}", .{v.val}),
+            .int_lit => |v| self.emit_c_int_literal(v.val),
             .float_lit => |v| self.p("{e}", .{v.val}),
             .quoted => |v| {
                 self.p("\"", .{});
@@ -19204,6 +19207,25 @@ pub const CodeGen = struct {
                 },
             }
         }
+    }
+
+    /// AN i64 AS A C INTEGER CONSTANT — exact at `INT_MIN`.
+    ///
+    /// C has no negative integer constants. `-9223372036854775808` is unary
+    /// minus over the magnitude `9223372036854775808`, which exceeds
+    /// `LLONG_MAX`, so the standard gives that token an unsigned type and the
+    /// conversion back to `int64_t` is implementation-defined (clang says
+    /// `-Wimplicitly-unsigned-literal`). Write it the way `<stdint.h>` writes
+    /// `INT64_MIN` — one below the largest representable value — so the emitted
+    /// constant is exactly `INT_MIN` under every C implementation, with no
+    /// silent wrap through an unsigned intermediate. The form is already
+    /// `long long`, so it needs no `INT64_C` wrapper.
+    fn emit_c_int_literal(self: *CodeGen, v: i64) void {
+        if (v == std.math.minInt(i64)) {
+            self.p("(-9223372036854775807LL - 1)", .{});
+            return;
+        }
+        self.p("{d}", .{v});
     }
 
     fn emit_c_string_literal(self: *CodeGen, s: []const u8) E!void {

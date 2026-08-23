@@ -4764,7 +4764,7 @@ pub const SemanticGraph = struct {
             }
             if (ident) |name| {
                 if (val) |expr| {
-                    if (checkedIntLiteral(expr)) |content| {
+                    if (ast.intLiteralValue(expr)) |content| {
                         const value = try self.addChild(foreign_module, .{
                             .kind = .value,
                             .span = .{ .file = file, .start = expr.loc().line, .end = expr.loc().col },
@@ -4781,16 +4781,6 @@ pub const SemanticGraph = struct {
         }
     }
 
-    fn checkedIntLiteral(expr: *const Expr) ?i64 {
-        return switch (expr.*) {
-            .int_lit => |i| i.val,
-            .unop => |u| blk: {
-                if (u.op != .neg or u.operand.* != .int_lit) break :blk null;
-                break :blk -u.operand.int_lit.val;
-            },
-            else => null,
-        };
-    }
 
     fn liftForeignConstantFieldSites(
         self: *SemanticGraph,

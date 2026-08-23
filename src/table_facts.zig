@@ -25,18 +25,6 @@ const Error = std.mem.Allocator.Error;
 /// is independent of width.
 pub const select_chain_max: i64 = 32;
 
-/// The exact constant-index predicate shared by this fact collector. Deliberately
-/// narrow: widening it requires the access realizer to widen in the same change.
-pub fn constIndex(expr: *const ast.Expr) ?i64 {
-    return switch (expr.*) {
-        .int_lit => |value| value.val,
-        .unop => |unary| blk: {
-            if (unary.op != .neg or unary.operand.* != .int_lit) break :blk null;
-            break :blk -unary.operand.int_lit.val;
-        },
-        else => null,
-    };
-}
 
 pub const Representation = enum {
     absent,
@@ -239,7 +227,7 @@ fn recordBinding(
     errdefer alloc.free(values);
     var known = true;
     for (init.table.fields, 0..) |field, index| {
-        if (constIndex(field.positional)) |value| {
+        if (ast.intLiteralValue(field.positional)) |value| {
             values[index] = value;
         } else {
             known = false;
@@ -311,7 +299,7 @@ fn noteIndex(
     write: bool,
     seen: *Seen,
 ) Error!void {
-    if (constIndex(key)) |index| {
+    if (ast.intLiteralValue(key)) |index| {
         try seen.put(alloc, index, {});
         if (index < 1 or index > @as(i64, fact.width)) fact.const_index_out_of_range = true;
         if (write) fact.write_const = true else fact.read_const = true;

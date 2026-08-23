@@ -541,7 +541,7 @@ fn reflect(op: ast.BinOp) ast.BinOp {
 
 fn domainFrom(ctx: *Ctx, subject: semantic_identity.id, op: ast.BinOp, operand: *const ast.Expr) Refinement {
     var out = Refinement{ .subject = .{ .one = subject } };
-    if (intLit(operand)) |k| {
+    if (ast.intLiteralValue(operand)) |k| {
         switch (op) {
             // NORMALISED TO INCLUSIVE. `< 4` and `<= 3` are one refinement.
             .lt => out.upper = if (std.math.sub(i64, k, 1)) |v| .{ .at = v } else |_| return .{},
@@ -577,16 +577,6 @@ fn domainFrom(ctx: *Ctx, subject: semantic_identity.id, op: ast.BinOp, operand: 
     return .{};
 }
 
-fn intLit(e: *const ast.Expr) ?i64 {
-    return switch (e.*) {
-        .int_lit => |l| l.val,
-        .unop => |u| switch (u.op) {
-            .neg => if (intLit(u.operand)) |v| (std.math.negate(v) catch null) else null,
-            else => null,
-        },
-        else => null,
-    };
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The controls. Each one is a fact that must MOVE when the program changes, and

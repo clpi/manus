@@ -1749,7 +1749,7 @@ pub fn moduleConstTableKind(
     var all_int = true;
     var all_text = true;
     for (tbl.table.fields) |fld| {
-        if (intLiteralStep(fld.positional) == null) all_int = false;
+        if (ast.intLiteralValue(fld.positional) == null) all_int = false;
         if (!quotedIsModuleTextConst(fld.positional)) all_text = false;
     }
     // One kind or the other, never a mixture: a slot whose holding depends on
@@ -1814,7 +1814,7 @@ fn collectModuleConsts(
         // wrong answer that still compiles; refusing to record it makes the
         // reference resolve through storage instead.
         if (!moduleConstIsStable(mod, n, stmt.* == .assign)) continue;
-        if (intLiteralStep(v)) |iv| {
+        if (ast.intLiteralValue(v)) |iv| {
             try map.put(alloc, try alloc.dupe(u8, n), iv);
             continue;
         }
@@ -1834,7 +1834,7 @@ fn collectModuleConsts(
                 .named => |x| x,
                 else => continue,
             };
-            if (intLiteralStep(nf.val)) |fv| {
+            if (ast.intLiteralValue(nf.val)) |fv| {
                 const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ n, nf.key });
                 try map.put(alloc, key, fv);
                 continue;
@@ -1853,7 +1853,7 @@ fn collectModuleConsts(
                 pos += 1;
                 const key = try std.fmt.allocPrint(alloc, "{s}.{d}", .{ n, pos });
                 switch (kind) {
-                    .int => try map.put(alloc, key, intLiteralStep(fld.positional).?),
+                    .int => try map.put(alloc, key, ast.intLiteralValue(fld.positional).?),
                     .text => try out.strs.put(alloc, key, fld.positional.quoted.val),
                 }
             }
@@ -6011,17 +6011,6 @@ fn branchIsValueGuard(block: *const ast.Block) bool {
     return !tail_result_demand.isVoidShapedCall(e);
 }
 
-fn intLiteralStep(expr: *const ast.Expr) ?i64 {
-    return switch (expr.*) {
-        .int_lit => |i| i.val,
-        .unop => |u| blk: {
-            if (u.op != .neg or u.operand.* != .int_lit) break :blk null;
-            break :blk -u.operand.int_lit.val;
-        },
-        else => null,
-    };
-}
-
 /// THE TRUTH OF A CONDITION WHOSE OPERANDS ARE BOTH LITERAL, or null.
 ///
 /// gap[213] measured what its absence costs: `if 3 > 100` emitted `mov x9,#3`,
@@ -6071,7 +6060,7 @@ fn constIntValue(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr)
     // binding to the value entity its initializer became, so the graph cannot
     // answer for `ring` and this must not pretend otherwise.
     //
-    // THE AST RE-PARSE IS GONE FROM THIS SITE. `if (intLiteralStep(e)) |v|
+    // THE AST RE-PARSE IS GONE FROM THIS SITE. `if (ast.intLiteralValue(e)) |v|
     // return v;` stood here as a fallback; with `exact_i64` reaching 98.4% of
     // the corpus's integer literal tokens it is a rival authority that answers
     // for the same shapes the graph already owns. Whether the remaining 1.6%
@@ -6162,7 +6151,7 @@ fn lowerFoldedConditionLineage(ctx: *LowerCtx, expr: *const Expr) Error!void {
 }
 
 fn resolveIntStep(ctx: *LowerCtx, step: *const ast.Expr) Error!i64 {
-    if (intLiteralStep(step)) |v| return v;
+    if (ast.intLiteralValue(step)) |v| return v;
     if (step.* == .name) {
         if (ctx.const_ints.get(step.name.ident)) |v| return v;
     }
@@ -6490,7 +6479,7 @@ fn exprRuntimeIndexes(expr: *const ast.Expr, tables: *const TableNames) bool {
     return switch (expr.*) {
         .index => |ix| blk: {
             if (ix.obj.* == .name and tables.has(ix.obj.name.ident) and
-                intLiteralStep(ix.key) == null) break :blk true;
+                ast.intLiteralValue(ix.key) == null) break :blk true;
             break :blk exprRuntimeIndexes(ix.obj, tables) or exprRuntimeIndexes(ix.key, tables);
         },
         .field => |f| exprRuntimeIndexes(f.obj, tables),
@@ -7332,7 +7321,7 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
             try ctx.ptr_slots.put(ctx.alloc, slot, {})
         else
             _ = ctx.ptr_slots.remove(slot);
-        if (intLiteralStep(value)) |n| {
+        if (ast.intLiteralValue(value)) |n| {
             const gop = try ctx.const_ints.getOrPut(ctx.alloc, name);
             if (!gop.found_existing) gop.key_ptr.* = try ctx.alloc.dupe(u8, name);
             // The COMPILE-TIME copy of the binding's value has to be the value
@@ -7364,7 +7353,7 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
     if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
     if (exprIsBoolish(ctx, value)) try ctx.bool_slots.put(ctx.alloc, slot, {});
     if (pointer_store) try ctx.ptr_slots.put(ctx.alloc, slot, {});
-    if (intLiteralStep(value)) |n| {
+    if (ast.intLiteralValue(value)) |n| {
         const gop = try ctx.const_ints.getOrPut(ctx.alloc, name);
         if (!gop.found_existing) gop.key_ptr.* = try ctx.alloc.dupe(u8, name);
         gop.value_ptr.* = n;
@@ -7761,7 +7750,7 @@ fn worseUse(a: TableUse, b: TableUse) TableUse {
 /// non-literal assignment, so it would answer for a variable that has since
 /// moved. A wrong element is a wrong answer that still compiles.
 fn constIndexOf(key: *const ast.Expr) ?i64 {
-    return intLiteralStep(key);
+    return ast.intLiteralValue(key);
 }
 
 fn tableUseInExpr(expr: *const ast.Expr, name: []const u8) TableUse {
@@ -8051,14 +8040,14 @@ fn constTableValues(ctx: *LowerCtx, table: *const ast.Expr) Error!?[]i64 {
     var n: usize = 0;
     for (table.table.fields) |fld| {
         if (fld != .positional) return null;
-        if (intLiteralStep(fld.positional) == null) return null;
+        if (ast.intLiteralValue(fld.positional) == null) return null;
         n += 1;
     }
     if (n == 0) return null;
     const out = try ctx.alloc.alloc(i64, n);
     var i: usize = 0;
     for (table.table.fields) |fld| {
-        out[i] = intLiteralStep(fld.positional).?;
+        out[i] = ast.intLiteralValue(fld.positional).?;
         i += 1;
     }
     return out;
@@ -8381,7 +8370,7 @@ fn staticTableLen(ctx: *const LowerCtx, name: []const u8) ?i64 {
 /// which is why "check the wide path too" was not a small change until now.
 fn guardedTableIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const ast.Expr) Error!dnir.Value {
     const len = staticTableLen(ctx, table_name) orelse return try lowerExpr(ctx, key_expr);
-    if (intLiteralStep(key_expr)) |k| {
+    if (ast.intLiteralValue(key_expr)) |k| {
         if (k < 1 or k > len) return bail(ctx.diagnostic, @src());
         return .{ .i64 = k };
     }
@@ -8488,7 +8477,7 @@ fn lowerIndexAssignTarget(
         return;
     }
 
-    if (intLiteralStep(key_expr)) |n| {
+    if (ast.intLiteralValue(key_expr)) |n| {
         const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ table_name, n });
         defer ctx.alloc.free(key);
         const slot = ctx.locals.get(key) orelse return bail(ctx.diagnostic, @src());
@@ -9185,14 +9174,14 @@ fn placeElement(ctx: *LowerCtx, name: []const u8, key: *const Expr) ?dnir.Value 
     const fields = init.table.fields;
     // §19 CONSTANT INDEX — the per-access half, separate from the place-wide
     // determinacy `residencyRefusal` already checked.
-    const k = intLiteralStep(key) orelse return null;
+    const k = ast.intLiteralValue(key) orelse return null;
     // TABLES ARE 1-INDEXED. `t(0)` is out of range as surely as `t(len + 1)`,
     // and folding either to `fields[k - 1]` is the wrong-answer class this
     // whole ruling exists to avoid.
     if (k < 1 or k > @as(i64, @intCast(fields.len))) return null;
     const f = fields[@intCast(k - 1)];
     if (f != .positional) return null;
-    const v = intLiteralStep(f.positional) orelse return null;
+    const v = ast.intLiteralValue(f.positional) orelse return null;
     return dnir.Value{ .i64 = v };
 }
 
@@ -9218,7 +9207,7 @@ fn placeFold(ctx: *LowerCtx, expr: *const Expr) ?dnir.Value {
             const p = absentModulePlace(ctx, n.ident) orelse return null;
             if (p.shape != .scalar) return null;
             const init = p.init orelse return null;
-            const v = intLiteralStep(init) orelse return null;
+            const v = ast.intLiteralValue(init) orelse return null;
             return dnir.Value{ .i64 = v };
         },
         .call => |c| {
@@ -9579,7 +9568,7 @@ fn lowerExprCons(
         .if_expr => |ie| try lowerIfExpr(ctx, ie),
         .unop => |u| blk: {
             if (u.op == .neg and u.operand.* == .int_lit) {
-                break :blk dnir.Value{ .i64 = -u.operand.int_lit.val };
+                break :blk dnir.Value{ .i64 = ast.negatedIntLiteral(u.operand.int_lit.val) };
             }
             // `#s` on a known `str` is C `strlen` — a plain libc call, no
             // dynamic length probe and no boxed value. Any other `#` operand
@@ -9707,7 +9696,7 @@ fn lowerExprCons(
                 });
                 break :blk dnir.Value{ .temp = t };
             }
-            const n = intLiteralStep(ix.key) orelse
+            const n = ast.intLiteralValue(ix.key) orelse
                 break :blk try lowerDynamicIndex(ctx, ix.obj.name.ident, ix.key);
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ ix.obj.name.ident, n });
             defer ctx.alloc.free(key);
@@ -11821,7 +11810,7 @@ fn nonNegWidth(widths: *const NonNegEnv, e: *const ast.Expr) ?u8 {
                 // and the case split is the whole soundness of the arm.
                 .rshift => {
                     const x = nonNegWidth(widths, b.lhs);
-                    const k = intLiteralStep(b.rhs) orelse break :blk x;
+                    const k = ast.intLiteralValue(b.rhs) orelse break :blk x;
                     if (k < 0 or k > 63) break :blk null;
                     const shift: u8 = @intCast(k);
                     // A known `[0,2^w)` value loses `k` width bits. An
@@ -11836,7 +11825,7 @@ fn nonNegWidth(widths: *const NonNegEnv, e: *const ast.Expr) ?u8 {
                 },
                 .lshift => {
                     const x = nonNegWidth(widths, b.lhs) orelse break :blk null;
-                    const k = intLiteralStep(b.rhs) orelse break :blk null;
+                    const k = ast.intLiteralValue(b.rhs) orelse break :blk null;
                     if (k < 0 or k > 63) break :blk null;
                     break :blk x + @as(u8, @intCast(k));
                 },
@@ -12015,7 +12004,7 @@ fn nonZeroSlotOfCondition(ctx: *const LowerCtx, cond: *const ast.Expr) ?u32 {
     if (b.op != .neq) return null;
     const named: *const ast.Expr, const other: *const ast.Expr =
         if (b.lhs.* == .name) .{ b.lhs, b.rhs } else if (b.rhs.* == .name) .{ b.rhs, b.lhs } else return null;
-    const zero = intLiteralStep(other) orelse return null;
+    const zero = ast.intLiteralValue(other) orelse return null;
     if (zero != 0) return null;
     // A name that is shadowed by a fused body literal, or that is not a local
     // at all, has no slot to key the fact on.
@@ -16366,4 +16355,43 @@ test "dnir_lower: the quote face has ONE producer, and its reach is total over m
     };
     try std.testing.expect(byte_faces >= 2);
     try std.testing.expect(text_faces >= 4);
+}
+
+test "dnir_lower: a module const of INT_MIN lowers instead of crashing the compiler" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // THE REPORTED P0-A DEFECT, verbatim. `collectModuleConsts` read this
+    // binding through `intLiteralStep`, whose `-u.operand.int_lit.val` was bare
+    // host negation, and `idol run` died with
+    //
+    //     thread N panic: integer overflow
+    //     src/dnir_lower.zig:5970:42: in intLiteralStep
+    //                 break :blk -u.operand.int_lit.val;
+    //
+    // on a program whose only unusual feature is a valid i64 constant.
+    const src =
+        \\floor = -9223372036854775808
+        \\near = -9223372036854775807
+        \\main: i64 = ()
+        \\    if floor < near return 0
+        \\    1
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "floor.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const mod = try parser.parse_module();
+    _ = try lowerModule(alloc, &mod);
+
+    // The recorded constant is the exact value the source wrote, so the fold
+    // that reads it cannot silently disagree with the program.
+    const bound = switch (mod.body.stmts[0]) {
+        .local_decl => |d| d.inits[0],
+        .const_decl => |d| d.val,
+        .global_decl => |d| d.inits[0],
+        .assign => |a| a.values[0],
+        else => return error.UnexpectedStatement,
+    };
+    try std.testing.expectEqual(@as(?i64, std.math.minInt(i64)), ast.intLiteralValue(bound));
 }

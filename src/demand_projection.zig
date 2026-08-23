@@ -296,20 +296,6 @@ fn lowMaskBits(m: i64) ?u6 {
     return @intCast(k);
 }
 
-fn intLiteral(e: *const ast.Expr) ?i64 {
-    return switch (e.*) {
-        .int_lit => |x| x.val,
-        .unop => |u| switch (u.op) {
-            .neg => blk: {
-                const inner = intLiteral(u.operand) orelse break :blk null;
-                if (inner == std.math.minInt(i64)) break :blk null;
-                break :blk -inner;
-            },
-            else => null,
-        },
-        else => null,
-    };
-}
 
 /// THE DEMAND DERIVATIVE. Given that `e`'s value is observed only through `h`,
 /// return the projection of `n` that suffices to determine `h(e)`.
@@ -359,9 +345,9 @@ pub fn projectionOfName(h: Projection, e: *const ast.Expr, n: []const u8) Projec
                             // 2^min(j,k) — this is the width-narrowing rule and
                             // it is the same identity, not a special case.
                             if (b.op == .band) {
-                                if (intLiteral(b.rhs)) |m| if (lowMaskBits(m)) |j|
+                                if (ast.intLiteralValue(b.rhs)) |m| if (lowMaskBits(m)) |j|
                                     return projectionOfName(.{ .low_bits = @min(j, k) }, b.lhs, n);
-                                if (intLiteral(b.lhs)) |m| if (lowMaskBits(m)) |j|
+                                if (ast.intLiteralValue(b.lhs)) |m| if (lowMaskBits(m)) |j|
                                     return projectionOfName(.{ .low_bits = @min(j, k) }, b.rhs, n);
                             }
                             return Projection.join(
@@ -373,9 +359,9 @@ pub fn projectionOfName(h: Projection, e: *const ast.Expr, n: []const u8) Projec
                             // `x & (2^k - 1)` observed wholly demands exactly
                             // the low k bits of x. THE narrowing rule.
                             if (b.op == .band) {
-                                if (intLiteral(b.rhs)) |m| if (lowMaskBits(m)) |k|
+                                if (ast.intLiteralValue(b.rhs)) |m| if (lowMaskBits(m)) |k|
                                     return projectionOfName(.{ .low_bits = k }, b.lhs, n);
-                                if (intLiteral(b.lhs)) |m| if (lowMaskBits(m)) |k|
+                                if (ast.intLiteralValue(b.lhs)) |m| if (lowMaskBits(m)) |k|
                                     return projectionOfName(.{ .low_bits = k }, b.rhs, n);
                             }
                             return Projection.join(
@@ -407,9 +393,9 @@ pub fn projectionOfName(h: Projection, e: *const ast.Expr, n: []const u8) Projec
                 // PROJECTION, not of x. Against any other literal the
                 // comparison needs every bit.
                 .eq, .neq => {
-                    if (intLiteral(b.rhs)) |v| if (v == 0)
+                    if (ast.intLiteralValue(b.rhs)) |v| if (v == 0)
                         return projectionOfName(.nonzero, b.lhs, n);
-                    if (intLiteral(b.lhs)) |v| if (v == 0)
+                    if (ast.intLiteralValue(b.lhs)) |v| if (v == 0)
                         return projectionOfName(.nonzero, b.rhs, n);
                     return Projection.join(
                         projectionOfName(.whole, b.lhs, n),
@@ -675,7 +661,12 @@ fn exprDomainDepth(e: *const ast.Expr, depth: u8) Domain {
             .neg => {
                 const a = exprDomainDepth(u.operand, depth + 1);
                 if (a.status != .fact) return Domain.nothing_known;
-                return clampI64(Domain.range(-a.hi, -a.lo, "negation"));
+                // `-INT_MIN` has no i64, and bare `-` PANICKED the compiler on
+                // a range that reached it. A bound that cannot be represented
+                // is not a fact — law.md §1 keeps unknown and zero distinct.
+                const lo = std.math.negate(a.hi) catch return Domain.nothing_known;
+                const hi = std.math.negate(a.lo) catch return Domain.nothing_known;
+                return clampI64(Domain.range(lo, hi, "negation"));
             },
             else => return Domain.nothing_known,
         },
@@ -1401,14 +1392,14 @@ fn selectDomain(root: *const ast.Block, b: *const ast.Block, idx: usize, v: []co
 
 /// `p = <literal>` or `p = p <op> <literal>`. Anything else refuses.
 fn updateFormOf(v: *const ast.Expr, name: []const u8) ?Update {
-    if (intLiteral(v)) |lit| return .{ .store = lit };
+    if (ast.intLiteralValue(v)) |lit| return .{ .store = lit };
     if (v.* != .binop) return null;
     const b = v.binop;
     // The accumulator must be the LEFT operand and appear exactly once.
     if (b.lhs.* != .name) return null;
     if (!std.mem.eql(u8, b.lhs.name.ident, name)) return null;
     if (mentions(b.rhs, name)) return null;
-    const k = intLiteral(b.rhs) orelse return null;
+    const k = ast.intLiteralValue(b.rhs) orelse return null;
     return .{ .accumulate = .{ .op = b.op, .k = k } };
 }
 
@@ -1602,7 +1593,7 @@ fn initialDomain(
                 }
                 if (!touches) continue;
                 if (a.targets.len != 1 or a.values.len != 1) return .nothing_known;
-                const v = intLiteral(a.values[0]) orelse return .nothing_known;
+                const v = ast.intLiteralValue(a.values[0]) orelse return .nothing_known;
                 d = Domain.exact(v, "literal initialiser before the loop");
             },
             .local_decl => |decl| {
@@ -1612,7 +1603,7 @@ fn initialDomain(
                 };
                 const j = idx orelse continue;
                 if (decl.names.len != decl.inits.len) return .nothing_known;
-                const v = intLiteral(decl.inits[j]) orelse return .nothing_known;
+                const v = ast.intLiteralValue(decl.inits[j]) orelse return .nothing_known;
                 d = Domain.exact(v, "literal declaration before the loop");
             },
             // A nested construct could write `name` in a way this scan cannot

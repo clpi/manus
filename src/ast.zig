@@ -504,6 +504,73 @@ pub fn quotedLiteralIsByteSequence(quote: Quote) bool {
     return quote == .bytes;
 }
 
+/// THE VALUE OF A WRITTEN INTEGER MAGNITUDE UNDER UNARY MINUS. Total; exact.
+///
+/// The lexer accumulates the written decimal/hex magnitude UNSIGNED and hands
+/// the 64-bit pattern over in `int_lit.val` (`lib/compiler/lexer.id` `read_num`,
+/// mirrored by `src/lexer.zig`; gap[024]). So the text `9223372036854775808`
+/// arrives as the pattern `0x8000000000000000`, and `-9223372036854775808`
+/// arrives as `.neg` over it.
+///
+/// Negation over that domain is TOTAL, and its one fixed point is the exact
+/// answer rather than a wrap: 2^63 is not an i64 value, so the only literal
+/// that can reach `-2^63` under unary minus is the magnitude `2^63`, whose
+/// negation IS `INT_MIN`. `std.math.negate` refuses it — it reads the pattern
+/// as a signed value that was already negative — and bare `-v` PANICKED the
+/// whole compiler on `x: i64 = -9223372036854775808`, a valid i64 declaration.
+/// c0 `law.number.projection`: "an unannotated integer literal retains its
+/// exact integer value"; `law.effect.order` forbids "backend decided trap
+/// semantics"; `law.ub.zero`: "numeric law is fully defined".
+pub fn negatedIntLiteral(written: i64) i64 {
+    return if (written == std.math.minInt(i64)) written else -written;
+}
+
+/// THE ONE PRODUCER of "the exact i64 this literal expression denotes", or null
+/// when the expression is not an integer literal or the value is not an i64.
+///
+/// Six copies of this predicate had been written independently — in `sema`,
+/// `semantic_graph`, `dnir_lower`, `table_facts`, `region` and
+/// `demand_projection` — and they disagreed three ways at `INT_MIN`: panic,
+/// decline, or answer. `law.fact.producer.one`: one authoritative producer.
+///
+/// Depth matters and the two depths are different facts. Directly under the
+/// minus sits a WRITTEN MAGNITUDE, where negation is total (above). Deeper, the
+/// operand is already a computed i64, where `-INT_MIN` is a real overflow and
+/// the honest answer is "not known" — law.md §1: "Unknown, absent, false, zero,
+/// empty, and not-asked are distinct."
+pub fn intLiteralValue(expr: *const Expr) ?i64 {
+    return switch (expr.*) {
+        .int_lit => |lit| lit.val,
+        .unop => |u| if (u.op == .neg) switch (u.operand.*) {
+            .int_lit => |lit| negatedIntLiteral(lit.val),
+            else => std.math.negate(intLiteralValue(u.operand) orelse return null) catch null,
+        } else null,
+        else => null,
+    };
+}
+
+test "ast: -9223372036854775808 is INT_MIN, not a panic" {
+    const test_loc = Loc{ .file = "ast.zig", .line = 1, .col = 1 };
+    var magnitude = Expr{ .int_lit = .{ .loc = test_loc, .val = std.math.minInt(i64) } };
+    var negated = Expr{ .unop = .{ .loc = test_loc, .op = .neg, .operand = &magnitude } };
+    try std.testing.expectEqual(@as(?i64, std.math.minInt(i64)), intLiteralValue(&negated));
+
+    // The bare magnitude keeps the pattern the lexer produced.
+    try std.testing.expectEqual(@as(?i64, std.math.minInt(i64)), intLiteralValue(&magnitude));
+
+    // One level deeper the operand is a computed value, and 2^63 has no i64.
+    var twice = Expr{ .unop = .{ .loc = test_loc, .op = .neg, .operand = &negated } };
+    try std.testing.expectEqual(@as(?i64, null), intLiteralValue(&twice));
+
+    // Ordinary literals are unaffected.
+    var ordinary = Expr{ .int_lit = .{ .loc = test_loc, .val = 42 } };
+    var minus = Expr{ .unop = .{ .loc = test_loc, .op = .neg, .operand = &ordinary } };
+    try std.testing.expectEqual(@as(?i64, -42), intLiteralValue(&minus));
+    try std.testing.expectEqual(@as(?i64, std.math.maxInt(i64)), intLiteralValue(&Expr{
+        .int_lit = .{ .loc = test_loc, .val = std.math.maxInt(i64) },
+    }));
+}
+
 pub const Expr = union(enum) {
     nil: Loc,
     true_lit: Loc,

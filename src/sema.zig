@@ -1133,17 +1133,6 @@ pub const Sema = struct {
         return .{ .home = entry, .decl = found orelse return null };
     }
 
-    fn intLiteralFromModuleConst(expr: *const Expr) ?i64 {
-        return switch (expr.*) {
-            .int_lit => |i| i.val,
-            .unop => |u| blk: {
-                if (u.op != .neg or u.operand.* != .int_lit) break :blk null;
-                break :blk -u.operand.int_lit.val;
-            },
-            else => null,
-        };
-    }
-
     fn moduleScopeIntConstant(mod: *const ast.Module, name: []const u8) ?i64 {
         for (mod.body.stmts) |*stmt| {
             var ident: ?[]const u8 = null;
@@ -1175,7 +1164,7 @@ pub const Sema = struct {
             }
             if (ident) |n| {
                 if (!std.mem.eql(u8, n, name)) continue;
-                if (val) |v| return intLiteralFromModuleConst(v);
+                if (val) |v| return ast.intLiteralValue(v);
             }
         }
         return null;
@@ -1545,27 +1534,13 @@ pub const Sema = struct {
         };
     }
 
-    /// The literal value of `e` when it is an integer literal, or the negation of
-    /// one — `-1` is a unary minus over `1`, and a range check that missed that
-    /// would pass every negative literal into an unsigned descriptor.
-    fn intLiteralValue(e: *const ast.Expr) ?i64 {
-        return switch (e.*) {
-            .int_lit => |l| l.val,
-            .unop => |u| if (u.op == .neg) blk: {
-                const inner = intLiteralValue(u.operand) orelse break :blk null;
-                break :blk -inner;
-            } else null,
-            else => null,
-        };
-    }
-
     /// The literal, when it provably does not fit the annotation. Null means
     /// either "fits" or "not a literal" — this never guesses at a computed value,
     /// which is a range-fact question for the checker, not a lexical one.
     fn literalOutOfRange(ann: RT, e: *const ast.Expr) ?i64 {
         const lo = intMin(ann) orelse return null;
         const hi = intMax(ann) orelse return null;
-        const v = intLiteralValue(e) orelse return null;
+        const v = ast.intLiteralValue(e) orelse return null;
         if (v < lo or v > hi) return v;
         return null;
     }
@@ -16478,4 +16453,34 @@ test "sema: RESOLUTION-PERMUTATION resolveUniqueForeignRelations does not first-
 
     try testing.expect(try s.resolveUniqueForeignRelations(loc, "nosuch", &.{}) == null);
     try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: INT_MIN is a value under an i64 demand, and a diagnostic under a narrower one" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // THE REPORTED P0-A DEFECT, at its check-time face. `literalOutOfRange`
+    // read the literal through a private copy of `intLiteralValue` that
+    // negated with bare host `-`, so a VALID i64 declaration crashed the
+    // compiler with `panic: integer overflow` at sema.zig:1488 before it could
+    // decide anything. c0 `law.number.projection`: "an unannotated integer
+    // literal retains its exact integer value"; `law.effect.order` rejects
+    // "backend decided trap semantics".
+    const held = try runIdolSema("x: i64 = -9223372036854775808\n", &arena);
+    try testing.expectEqual(@as(u32, 0), held.errors);
+
+    // The same literal against a width that cannot hold it is a structured
+    // refusal, not a crash and not a wrap.
+    var narrow_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer narrow_arena.deinit();
+    const narrow = try runIdolSema("x: u32 = -9223372036854775808\n", &narrow_arena);
+    try testing.expectEqual(@as(u32, 1), narrow.errors);
+    try testing.expect(std.mem.indexOf(u8, narrow.diagnostics.items[0].message, "u32") != null);
+
+    // Negative control: the literal one above INT_MIN never reached the
+    // overflow and must keep behaving exactly as it did.
+    var near_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer near_arena.deinit();
+    const near = try runIdolSema("x: i64 = -9223372036854775807\n", &near_arena);
+    try testing.expectEqual(@as(u32, 0), near.errors);
 }
