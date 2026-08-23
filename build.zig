@@ -373,6 +373,10 @@ pub fn build(b: *std.Build) void {
         "ad8a9c6eb8b55f724c7b914639be3ba6f76c0507",
     });
     source_zero_cmd.setCwd(b.path("."));
+    // The pre-commit hook runs the canonical preflight, which needs the built
+    // compiler; unsequenced it aborted with "idol not built -- commit blocked"
+    // and the added-line firewall examined nothing.
+    source_zero_cmd.step.dependOn(b.getInstallStep());
 
     const no_ansi_reports_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/assert_no_ansi_reports.id" });
     no_ansi_reports_cmd.setCwd(b.path("."));
@@ -388,7 +392,20 @@ pub fn build(b: *std.Build) void {
     gpu_bench_cmd.step.dependOn(b.getInstallStep());
     const gpu_bench_step = b.step("gpu-bench", "Run idol vs GPU Metal benchmark");
     gpu_bench_step.dependOn(&gpu_bench_cmd.step);
-    test_step.dependOn(&gpu_bench_cmd.step);
+    // NOT in `test_step`, and the contradiction it resolves was load-bearing.
+    // `scripts/run_gpu_benchmark.id` declares in its own header "Requirements:
+    // macOS with a Metal-capable GPU, Xcode command line tools ... OPT-IN --
+    // not part of the CI gate", while this line wired it into the aggregate
+    // suite. Two statements about the same step, one of them false.
+    //
+    // The header is the one that survives: the script shells out to `xcrun`
+    // and a Metal shader host (`examples/metal_compute.m`), so it cannot be a
+    // host-portable gate, and a benchmark is not an assertion about the
+    // compiler in any case. Note what the attachment was actually buying --
+    // it has been failing on a COMPILER refusal (DNB011 `chomp`
+    // unresolved-application-facts, via the `std.` spellings GAP-157 forbids),
+    // which means it has never reached a GPU from `zig build test` at all.
+    // `zig build gpu-bench` still runs it on a host that has one.
 
     const bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/run_benchmark.id" });
     bench_cmd.setCwd(b.path("."));
@@ -613,6 +630,14 @@ pub fn build(b: *std.Build) void {
     // Public safety pre-scan
     const public_safety_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/public_safety_scan.id" });
     public_safety_cmd.setCwd(b.path("."));
+    // WITHOUT THIS THE SCAN NEVER RAN. It invokes `./zig-out/bin/idol` by
+    // path but declared no dependency on the install step, so in a clean tree
+    // `zig build test` raced it against the compiler build and it died with
+    // `FileNotFound` — reported as a step failure, which reads exactly like a
+    // finding. GAP-220 already recorded that this scan passes VACUOUSLY in a
+    // git-archive mirror; this is the second way it produced an answer that
+    // was not a measurement. It passes (exit 0) once the binary exists.
+    public_safety_cmd.step.dependOn(b.getInstallStep());
     const public_safety_step = b.step("public-safety", "Scan tracked files for secrets and personal paths");
     public_safety_step.dependOn(&public_safety_cmd.step);
 
@@ -656,9 +681,56 @@ pub fn build(b: *std.Build) void {
     const world_launch_step = b.step("world-launch", "launcher world admission and cache separation");
     world_launch_step.dependOn(&world_launch_cmd.step);
 
+    // THE DEFAULTS CENSUS OWNS ITS OWN SUBJECT, and that is the only way it can
+    // be in `zig build test` at all.
+    //
+    // `gate/defaults.sh` refuses unless the compiler it censuses is a
+    // source-built ReleaseFast artifact, derived from the binary by
+    // `tools/node/dev/build-mode` rather than asserted by the caller. That
+    // requirement is correct and stays: the gate publishes a SUBJECT line
+    // carrying the artifact's sha256 and build mode, and a census of capability
+    // BOUNDARIES taken against a Debug build is a census of a different
+    // artifact than the one that ships.
+    //
+    // But `zig build test` with no flags is Debug, and `defaults_cmd` depended
+    // on the ordinary install step, so the aggregate suite could not go green
+    // under its own default invocation no matter what the compiler did — the
+    // step failed on the build mode of the binary before it examined one row.
+    // (Measured: `zig build defaults-gate -Doptimize=ReleaseFast` passes with
+    // rows=21.) A permanently-red step asserts nothing.
+    //
+    // Rather than weaken the gate (make it conditional on the top-level
+    // optimize mode, which silently drops the census from every default run) or
+    // detach it, the census is given the artifact it requires. `idol-census` is
+    // built ReleaseFast and stripped FROM THE SAME SOURCES as the compiler
+    // under test and installed beside it, and `IDOL_BIN` points the gate at it.
+    //
+    // WHAT THE SUITE NOW ASSERTS THAT IT DID NOT BEFORE: that the 21-row
+    // default-operand and descriptor census holds against a ReleaseFast
+    // compiler built from the working tree, on every `zig build test` — not
+    // only on the ReleaseFast invocation nobody ran. The cost is one extra
+    // optimized compiler build per clean run.
+    const census_exe = b.addExecutable(.{
+        .name = "idol-census",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = .fast,
+            // `build-mode` derives ReleaseFast from an EMPTY debug symbol
+            // table, and `.strip` is what empties it. The two must move
+            // together or the gate refuses its own subject.
+            .strip = true,
+        }),
+    });
+    linkProductionKeywordClassify(b, census_exe.root_module);
+    addDirectRuntimeObjects(b, census_exe.root_module);
+    const census_install = b.addInstallArtifact(census_exe, .{});
+
     const defaults_cmd = b.addSystemCommand(&.{ "sh", "gate/defaults.sh" });
     defaults_cmd.setCwd(b.path("."));
+    defaults_cmd.setEnvironmentVariable("IDOL_BIN", "./zig-out/bin/idol-census");
     defaults_cmd.step.dependOn(b.getInstallStep());
+    defaults_cmd.step.dependOn(&census_install.step);
     const defaults_step = b.step("defaults-gate", "census function and descriptor defaults across parse, check, direct, and run");
     defaults_step.dependOn(&defaults_cmd.step);
     test_step.dependOn(&defaults_cmd.step);
