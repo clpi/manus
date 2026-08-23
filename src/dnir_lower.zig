@@ -715,7 +715,6 @@ fn moduleFieldStorageBase(ctx: *const LowerCtx, name: []const u8) bool {
     return false;
 }
 
-
 // ════════════════════════════════════════════════════════════════════════════
 // MODULE-BINDING REGISTER PROMOTION ACROSS A LOOP
 //
@@ -7003,7 +7002,13 @@ fn sameIndex(a: *const ast.Expr, b: *const ast.Expr) bool {
 fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     if (applicationResultIs(ctx, expr, .str)) return true;
     return switch (expr.*) {
-        .quoted => true,
+        // Quote syntax is not a type. The semantic producer distinguishes
+        // text from byte-sequence faces and publishes the value descriptor;
+        // checked lowering consumes that fact and fails closed when it is
+        // absent or damaged. Reading `.quoted` as unconditionally text here
+        // was the rival AST classifier that kept single-quoted bytes and an
+        // unpublished quote indistinguishable at this decision.
+        .quoted => graphTextConst(ctx.graph, expr),
         // `..` ALWAYS produces text, including where one side is a number —
         // which is the shape `"{a} {b}"` desugars to. Requiring both sides to
         // be str was what made every interpolation of an integer answer "not a
@@ -15716,6 +15721,53 @@ test "dnir_lower: a global byte-sequence literal keeps its element descriptor" {
         const text = Expr{ .quoted = .{ .loc = loc, .val = "ab", .quote = q } };
         try std.testing.expect(typeOfGlobal(.inferred, &text) == .str);
     }
+}
+
+test "dnir_lower: checked quote classification fails closed on damaged graph descriptor" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\entry: str = ()
+        \\    "left" .. "right"
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "quote-damage.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "quote-damage.id");
+
+    // Positive control: the checked producer-to-consumer path accepts the
+    // ordinary text concat before the fact is damaged.
+    const baseline = try lowerModuleWithGraph(alloc, &module, &graph);
+    defer dnir.deinitModule(alloc, baseline);
+
+    const tail = module.body.stmts[0].func_decl.func.body.tail_expr orelse
+        return error.TestExpectedEqual;
+    try std.testing.expect(tail.* == .binop and tail.binop.op == .concat);
+    const left = tail.binop.lhs;
+    const value = graph.sourceQuoteValue(left) orelse return error.TestExpectedEqual;
+    try std.testing.expect(graph.get(value).?.descriptor.? == .str);
+
+    // Damage control: only the graph descriptor changes. The AST remains a
+    // double-quoted face, so the retired `.quoted => true` fallback would keep
+    // this green. The graph consumer must instead refuse the inconsistent
+    // operand before any DNIR or machine realization is published.
+    const saved = graph.nodes.items[value].descriptor;
+    graph.nodes.items[value].descriptor = .i64;
+    defer graph.nodes.items[value].descriptor = saved;
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.UnsupportedConstruct,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("concat", diagnostic.note().?);
 }
 
 test "dnir_lower: the quote face has ONE producer, and its reach is total over module bindings" {
