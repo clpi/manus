@@ -414,29 +414,37 @@ exit 7
   _self_rc=$?
   [ "$_self_rc" -eq 2 ] || return 1
 
-  # A normal exit 143 and SIGTERM are distinct even though shells commonly
-  # project both to status 143. The out-of-band event must make this a changed
+  # A normal exit 154 and signal 26 are distinct even though shells commonly
+  # project both to status 154. This is the exact typed-oracle collision in
+  # native_only/result_pack_pointer.id. The out-of-band event makes it changed
   # semantic observation rather than comparing the status integers equal.
-  printf '#!/bin/sh\nexit 143\n# ordinary\n' >"$_self/exit143"
-  printf '#!/bin/sh\nkill -TERM $$\n# signal\n' >"$_self/signal15"
-  chmod +x "$_self/exit143" "$_self/signal15"
-  compare_subjects "$_self/exit143" "$_self/signal15" \
+  printf '#!/bin/sh\nexit 154\n# ordinary\n' >"$_self/exit154"
+  printf '#!/bin/sh\nkill -26 $$\n# signal\n' >"$_self/signal26"
+  printf '#!/bin/sh\nprintf partial\nkill -26 $$\n# partial signal\n' >"$_self/partial26"
+  chmod +x "$_self/exit154" "$_self/signal26" "$_self/partial26"
+  compare_subjects "$_self/exit154" "$_self/signal26" \
+    "$_self/list" "$_self/source" >/dev/null 2>&1
+  _self_rc=$?
+  [ "$_self_rc" -eq 1 ] || return 1
+  compare_subjects "$_self/exit154" "$_self/partial26" \
     "$_self/list" "$_self/source" >/dev/null 2>&1
   _self_rc=$?
   [ "$_self_rc" -eq 1 ] || return 1
 
-  # A timed-out arm is infrastructure and its private process group is reaped.
+  # Ordinary exit 124 remains an answer; watchdog 124 is infrastructure and
+  # its private process group is reaped.
+  printf '#!/bin/sh\nexit 124\n# ordinary\n' >"$_self/exit124"
   printf '#!/bin/sh\nsleep 10\n# timeout\n' >"$_self/timeout"
-  chmod +x "$_self/timeout"
+  chmod +x "$_self/exit124" "$_self/timeout"
   _self_old_tmo=$TMO
   TMO=1
-  compare_subjects "$_self/base" "$_self/timeout" \
+  compare_subjects "$_self/exit124" "$_self/timeout" \
     "$_self/list" "$_self/source" >/dev/null 2>&1
   _self_rc=$?
   TMO=$_self_old_tmo
   [ "$_self_rc" -eq 2 ] || return 1
 
-  echo "differential: selftest PASS — sibling-mirror null row, per-arm cwd, real row survives normalisation, one observation, comparator damage, zero-subject, signal and timeout controls"
+  echo "differential: selftest PASS — sibling-mirror null row, per-arm cwd, real row survives normalisation, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
   return 0
 }
 
