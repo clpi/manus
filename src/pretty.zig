@@ -692,27 +692,35 @@ pub const PrettyPrinter = struct {
                 try self.printExpr(x.rhs, tight | bounds.rhs);
             },
             .unop => |x| {
-                // `@` IS NOT A PREFIX OPERATOR YOU CAN JUXTAPOSE. It is written
-                // `@(expr)` (comptime eval) or `@{ … }` (the elided pack), and
-                // both parse by the DELIMITER, not by adjacency: `@` followed
-                // by a name reads as a directive path, and `@` followed by a
-                // number does not lex at all. So printing the operand bare gave
-                // `@64` for `@(64)` and `@comp.for(…)` for `@(@comp.for(…))` —
-                // reprints the parser will not take back. The delimiter is part
-                // of the spelling and has to be reprinted with it.
+                // `@` IS NOT A PREFIX OPERATOR YOU CAN JUXTAPOSE. It parses by
+                // the DELIMITER, not by adjacency: `@` followed by a name reads
+                // as a directive path, and `@` followed by a number does not lex
+                // at all. So printing the operand bare gave `@64` for `@(64)` and
+                // `@comp.for(…)` for `@(@comp.for(…))` — reprints the parser will
+                // not take back. The delimiter is part of the spelling and has to
+                // be reprinted with it.
+                //
+                // gap[223]. A table operand USED TO TAKE A SECOND ARM that wrote
+                // the sigil bare, on the reasoning that "the brace IS the
+                // delimiter here, and wrapping it in parens would change which
+                // reader gets it (`parse_pack` with the elided stance, not a
+                // table literal inside a comptime eval)". `law.injection.only`
+                // retired that reader: fd85e7b8 made `parse_macro_call_expr`
+                // refuse a glued `{` outright, so there is no elided stance left
+                // for the bare form to preserve — and the arm went on printing it
+                // anyway. `x = @({ a = 1 })` checked clean, formatted to
+                // `x = @{ a = 1 }`, and then refused with "injection '@{ … }' has
+                // no derived-world fact yet". The canonical formatter converted a
+                // legal file into an illegal one, which is the corruption mode
+                // GAP-203 named in advance when it said closing the parser half
+                // alone would do exactly this.
+                //
+                // ONE arm now. `@(expr)` is the only spelling of comptime eval
+                // the parser accepts, and a pack is an ordinary operand of it.
                 if (x.op == .compile) {
-                    if (x.operand.* == .table) {
-                        // `@{ … }` — the brace IS the delimiter here, and
-                        // wrapping it in parens would change which reader gets
-                        // it (`parse_pack` with the elided stance, not a table
-                        // literal inside a comptime eval).
-                        try self.write("@");
-                        try self.printExpr(x.operand, tight_operand_position);
-                    } else {
-                        try self.write("@(");
-                        try self.printExpr(x.operand, 0);
-                        try self.write(")");
-                    }
+                    try self.write("@(");
+                    try self.printExpr(x.operand, 0);
+                    try self.write(")");
                     return;
                 }
                 const op_str = switch (x.op) {
@@ -2365,6 +2373,48 @@ test "pretty: a descriptor under an attribute line still parses back" {
     const src =
         \\@derive(Display, Eq)
         \\Vec2: { x: f64, y: f64 }
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: gap[223] comptime eval over a pack keeps its parens" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `x = @({ a = 1 })` — comptime eval of an ordinary pack, two live faces
+    // composed. It checked clean, and `idol fmt` reprinted it `x = @{ a = 1 }`,
+    // which the parser then refused: "injection '@{ … }' has no derived-world
+    // fact yet". The canonical formatter turned a legal file into an illegal
+    // one, exactly as GAP-203 said closing the parser half alone would.
+    //
+    // The assertion that matters is the ROUND TRIP, not the spelling. A
+    // spelling assertion passes against any printer that happens to avoid the
+    // bytes; `expectIdempotent` reprints the reprint, so it can only pass if
+    // the parser takes the output back.
+    const src =
+        \\x = @({ a = 1 })
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
+    try testing.expect(std.mem.indexOf(u8, out, "@{") == null);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: gap[223] the paren arm is still load-bearing for a non-pack" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // NEGATIVE CONTROL on the repair's direction. The two arms were merged
+    // toward the PARENTHESISED one; merging them the other way is the older
+    // defect, where `@(64)` printed bare gave `@64` — which does not lex — and
+    // `@(@comp.for(…))` gave `@comp.for(…)`. Deleting the bare arm must not be
+    // read as licence to delete the parens.
+    const src =
+        \\x = @(64)
         \\
     ;
     const out = try fmtCanonical(alloc, src);
