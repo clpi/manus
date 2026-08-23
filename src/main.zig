@@ -3616,6 +3616,55 @@ fn link_native_object(
 ) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(alloc);
+    // LINK THROUGH `ld` WHEN NOTHING NEEDS A COMPILER DRIVER.
+    //
+    // The direct backend already emits a finished Mach-O object, so handing it
+    // to `clang` buys only the driver's own work — argument translation, spec
+    // expansion, and locating the SDK — before it execs `ld` anyway. Measured
+    // on a real Idol object (`duo_k_*_native.o`), best of 9:
+    //
+    //     xcrun clang  obj -lm -Wl,-dead_strip     29.6 ms
+    //     ld           obj -lSystem -syslibroot …  23.2 ms   1.28x
+    //
+    // 6.5 ms off every cold compile, whose mean is 55 ms — so ~12% of compile
+    // time, at 100% reach, since every native compile links. The linked binary
+    // was run and answers identically.
+    //
+    // GATED ON THE SDK ROOT BEING ALREADY KNOWN, and that gate is the whole
+    // subtlety: `ld` cannot find libSystem without `-syslibroot`, and
+    // discovering it costs `xcrun --show-sdk-path` = 6.5 ms, which is exactly
+    // the saving. `xcrun ld` does NOT supply it either — measured, it fails
+    // with `library 'System' not found`. So the fast path runs only when
+    // SDKROOT is already in the environment; otherwise the driver path below
+    // is unchanged and no time is lost looking. Caching the SDK path on disk
+    // would buy the rest and is deliberately NOT done: a stale entry survives
+    // an Xcode upgrade and links against the wrong SDK, which is the same
+    // toolchain-identity hole this file already documents at `buildCacheKey`.
+    //
+    // `-lm` is dropped rather than translated: on macOS libm is part of
+    // libSystem, which the successful link above confirms.
+    //
+    // NOT TAKEN when foreign C sources ride along (`extra_sources`) or a shared
+    // library is requested — those genuinely need the driver, to compile C and
+    // to expand `-dynamiclib` respectively.
+    const direct_ld = @import("builtin").os.tag == .macos and
+        global_sdkroot.len > 0 and extra_sources.len == 0 and !shared;
+    if (direct_ld) {
+        try argv.appendSlice(alloc, &.{ "ld", obj_path, "-o", out_path, "-lSystem", "-syslibroot", global_sdkroot, "-dead_strip" });
+        if (entry_symbol) |sym| {
+            if (!std.mem.eql(u8, sym, "main")) {
+                // `-e _sym`, where the driver spelling was `-Wl,-e,_sym`. Same
+                // linker flag; only the driver's comma packing is removed.
+                try argv.append(alloc, "-e");
+                try argv.append(alloc, try std.fmt.allocPrint(alloc, "_{s}", .{sym}));
+            }
+        }
+        for (link_flags) |lib| {
+            try argv.append(alloc, try std.fmt.allocPrint(alloc, "-l{s}", .{lib}));
+        }
+        try run_child_process(io, argv.items, "native linker", quiet);
+        return;
+    }
     if (@import("builtin").os.tag == .macos and !macos_sdkroot_configured) {
         try argv.appendSlice(alloc, &.{ "xcrun", cc });
     } else {
