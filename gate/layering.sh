@@ -76,26 +76,23 @@ while [ $# -gt 0 ]; do
 done
 
 # ================================================================ ENUMERATION ==
-# Enumeration is FILESYSTEM-FIRST, deliberately, and not `git ls-files`.
-# Two reasons, both learned the hard way:
-#   * `git ls-files` returns ZERO in a `git archive` mirror, and 44 gates in
-#     this repository once reported clean while reading nothing (GAP-220).
-#   * `git ls-files` does not see an untracked file. A new, not-yet-added
-#     module is exactly where a forbidden edge gets routed, and the gate must
-#     see it BEFORE it is committed, not after.
-# The filesystem sees both.
+# gate/subject.sh is the one subject owner. A no-Git archive mirror is not
+# evidence, and a candidate module is examined once it is staged/tracked. The
+# prior filesystem-first path made layering the third incompatible answer to
+# "what tree is being judged" and admitted sufficiently large archive mirrors.
 units="$tmp/units.txt"
-enum_via=find
-if ! ( cd "$root" && find src -maxdepth 1 -name '*.zig' -type f -print 2>/dev/null ) \
-        | LC_ALL=C sort >"$units"; then
-    : >"$units"
+subject="$here/subject.sh"
+[ -x "$subject" ] || die "gate/subject.sh is missing or not executable."
+if ! (cd "$root" && sh "$subject" 'src/*.zig') >"$tmp/units.raw"; then
+    die "compiler-unit enumeration failed (GAP-201/GAP-220)."
 fi
+LC_ALL=C sort "$tmp/units.raw" >"$units"
+enum_via=subject
 n_units=$(LC_ALL=C awk 'END { print NR }' "$units")
 [ "$n_units" -gt 0 ] || die "ZERO compiler units enumerated (GAP-201). Examining nothing is a failure, not a clean report."
 [ "$n_units" -ge "$MIN_UNITS" ] || die "only $n_units units via $enum_via, floor $MIN_UNITS (GAP-201/GAP-220). Enumeration is broken."
 
-have_git=no
-git -C "$root" rev-parse --git-dir >/dev/null 2>&1 && have_git=yes
+have_git=yes
 
 # ======================================================= L1: LAYER DIRECTION ==
 lmap="$tmp/lmap.txt"

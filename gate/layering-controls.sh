@@ -36,7 +36,7 @@ mkclone() {
     git clone --quiet --shared --no-checkout "$root" "$d"
     git -C "$d" checkout --quiet HEAD -- .
     mkdir -p "$d/gate"
-    for g in layering.sh layers.manifest layering.rules layering.baseline \
+    for g in layering.sh subject.sh layers.manifest layering.rules layering.baseline \
              generated.manifest relation-ownership.baseline; do
         cp "$here/$g" "$d/gate/$g"
     done
@@ -99,7 +99,8 @@ echo "-- L1: the manifest must be load-bearing --"
 
 C=$(mkclone)
 printf 'const std = @import("std");\nconst sema = @import("sema.zig");\n' >"$C/src/sneaky_helper.zig"
-expect_fail "a NEW, still-UNTRACKED src/*.zig with no layer -- the cheapest way to route a forbidden edge" \
+git -C "$C" add src/sneaky_helper.zig
+expect_fail "a NEW staged src/*.zig with no layer -- the cheapest way to route a forbidden edge" \
     "$C/gate/layering.sh" --static-only
 rm -rf "$C"
 
