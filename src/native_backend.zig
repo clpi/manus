@@ -3594,7 +3594,7 @@ const Arm64Compiler = struct {
                         const irhs = try self.evalDnirValue(temps, ins.rhs);
                         const idst = preferred_result orelse try self.allocReg();
                         if (preferred_result != null) self.claimReg(idst);
-                        try self.emitCompareOrBinop(idst, ilhs, irhs, ins.binop, ins.ty);
+                        try self.emitCompareOrBinop(idst, ilhs, irhs, ins.binop, ins.ty, ins.divisor_nonneg);
                         if (ilhs != idst and !Arm64Compiler.regIsPinned(pinned, ilhs)) self.releaseReg(ilhs);
                         if (irhs != idst and !Arm64Compiler.regIsPinned(pinned, irhs)) self.releaseReg(irhs);
                         if (ins.result) |t| try temps.put(self.alloc, t, idst);
@@ -3635,7 +3635,7 @@ const Arm64Compiler = struct {
                     const rhs = try self.evalDnirValue(temps, ins.rhs);
                     const dst = preferred_result orelse try self.allocReg();
                     if (preferred_result != null) self.claimReg(dst);
-                    try self.emitCompareOrBinop(dst, lhs, rhs, ins.binop, ins.ty);
+                    try self.emitCompareOrBinop(dst, lhs, rhs, ins.binop, ins.ty, ins.divisor_nonneg);
                     if (lhs != dst and !Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
                     if (rhs != dst and !Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
@@ -4864,6 +4864,7 @@ const Arm64Compiler = struct {
         rhs: u5,
         op: dnir.BinOpTag,
         ty: native_types.ResolvedType,
+        divisor_nonneg: bool,
     ) Error!void {
         if (comparisonCondition(op)) |condition| {
             try self.emitCompareResult(dst, lhs, rhs, condition);
@@ -4873,7 +4874,7 @@ const Arm64Compiler = struct {
             try self.emitBinopW32(dst, lhs, rhs, op);
             return;
         }
-        try self.emitCompareOrBinopWide(dst, lhs, rhs, op);
+        try self.emitCompareOrBinopWide(dst, lhs, rhs, op, divisor_nonneg);
         _ = try self.emitNarrowFit(dst, dst, ty);
     }
 
@@ -5530,12 +5531,89 @@ const Arm64Compiler = struct {
     /// power-of-two divisor — which is what the corpus actually contains —
     /// drops from `sdiv`+`msub` to a single `and` or `asr`, and that
     /// realization is only lawful BECAUSE the law is floored.
-    fn emitFlooredDivRem(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag) Error!void {
-        const q = try self.allocReg();
+    /// `IDOL_UNSAFE_TRUNC_DIVREM=1` — A MEASUREMENT PROBE, NOT AN OPTIMIZATION,
+    /// AND IT EMITS A WRONG ANSWER BY CONSTRUCTION.
+    ///
+    /// Set it and the six-instruction sign correction below is simply not
+    /// emitted: `//` becomes bare `sdiv` and `%` becomes `sdiv`+`msub`, which
+    /// is C's TRUNCATED division and not this language's FLOORED division. On
+    /// operands whose signs agree the two agree, so a kernel that only ever
+    /// divides non-negative values answers identically under both — and that is
+    /// exactly the arm needed to price the fixup without first having to build
+    /// the analysis that would legitimately remove it.
+    ///
+    /// It is deliberately spelled `UNSAFE` and deliberately has no source-level
+    /// surface. Anything that reads this flag as a feature has read it wrong;
+    /// the only claim it can support is "the fixup costs N", and the answer to
+    /// a mixed-sign program under it is a defect this backend already had a
+    /// gate against (`(0-7) // 10` answers 0 here and -1 in the law).
+    fn truncDivRemProbe() bool {
+        return std.c.getenv("IDOL_UNSAFE_TRUNC_DIVREM") != null;
+    }
+
+    /// `IDOL_PROBE_NONNEG_DIVISOR=1` — the CHEAP FIXUP, priced before the
+    /// analysis that would make it lawful was written.
+    ///
+    /// When the DIVISOR is positive the correction stops needing a sign
+    /// broadcast and stops needing the `r == 0` select. The floored remainder
+    /// then takes the divisor's sign, which is positive, so:
+    ///
+    ///     sdiv q, x, y ; msub r, q, y, x ; add t, r, y ; cmp r, #0 ; csel d, t, r, lt
+    ///
+    /// and for `//` the same shape with `sub t, q, #1` and a select on `q`.
+    /// Five instructions against eight, and — the part that matters on a serial
+    /// chain — TWO dependent steps after `msub` instead of five.
+    ///
+    /// `r == 0` needs no special case here, which is the whole reason the
+    /// divisor's sign is worth proving: the general form needs it because
+    /// `0 ^ y` is negative for negative `y`, and a positive `y` cannot produce
+    /// that. A NEGATIVE divisor under this flag answers wrong, which is why it
+    /// is a probe and not a realization until a proof selects it.
+    fn nonNegDivisorProbe() bool {
+        return std.c.getenv("IDOL_PROBE_NONNEG_DIVISOR") != null;
+    }
+
+    fn emitFlooredDivRem(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag, divisor_nonneg: bool) Error!void {
+        // EVERY TEMPORARY HERE EXCLUDES `dst`, and the exclusion is load-bearing
+        // rather than tidy. `dst` is already claimed on entry, so plain
+        // `allocReg` reaches the spill ladder in `allocRegExcluding` with `dst`
+        // a legal victim; `spillReg` then stores it and leaves the owning slot
+        // still mapped to that register, and the next `ensureRegLive(dst)`
+        // reloads the PRE-DIVISION value straight over the quotient this
+        // function just computed. Nothing in the sequence below reloads `dst`,
+        // which is why the hazard was latent and not observed — a later
+        // instruction in the same function is what collects it. The
+        // constant-divisor path already allocates this way for the same reason.
+        const q = try self.allocRegExcluding(dst);
         try self.emitSdivReg(q, lhs, rhs);
-        const r = try self.allocReg();
+        // THE UNSOUND CEILING PROBE IS TESTED FIRST, so that it stays a
+        // CEILING. Ordered the other way, a divisor the pass has proved takes
+        // the cheap form and the probe never runs — which silently turns the
+        // headroom arm into the shipped arm and makes the two agree.
+        if (truncDivRemProbe()) {
+            if (op == .mod) {
+                try self.emitMsubReg(dst, q, rhs, lhs);
+            } else {
+                try self.emitMovReg(dst, q);
+            }
+            self.releaseReg(q);
+            return;
+        }
+        if (divisor_nonneg or nonNegDivisorProbe()) {
+            const r2 = try self.allocRegExcluding(dst);
+            try self.emitMsubReg(r2, q, rhs, lhs);
+            const t2 = try self.allocRegExcluding(dst);
+            if (op == .mod) try self.emitAddReg(t2, r2, rhs) else try self.emitSubImm(t2, q, 1);
+            try self.emitCmpZero(r2);
+            try self.emitCselReg(dst, t2, if (op == .mod) r2 else q, .lt);
+            self.releaseReg(t2);
+            self.releaseReg(r2);
+            self.releaseReg(q);
+            return;
+        }
+        const r = try self.allocRegExcluding(dst);
         try self.emitMsubReg(r, q, rhs, lhs);
-        const s = try self.allocReg();
+        const s = try self.allocRegExcluding(dst);
         try self.emitEorReg(s, r, rhs);
         try self.emitAsrImm(s, s, 63);
         if (op == .mod) {
@@ -5553,13 +5631,13 @@ const Arm64Compiler = struct {
         self.releaseReg(q);
     }
 
-    fn emitCompareOrBinopWide(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag) Error!void {
+    fn emitCompareOrBinopWide(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: dnir.BinOpTag, divisor_nonneg: bool) Error!void {
         switch (op) {
             .add => try self.emitAddReg(dst, lhs, rhs),
             .sub => try self.emitSubReg(dst, lhs, rhs),
             .mul => try self.emitMulReg(dst, lhs, rhs),
             .div => try self.emitSdivReg(dst, lhs, rhs),
-            .idiv, .mod => try self.emitFlooredDivRem(dst, lhs, rhs, op),
+            .idiv, .mod => try self.emitFlooredDivRem(dst, lhs, rhs, op, divisor_nonneg),
             // Bitwise and shift, register forms. AArch64 encodes all five with
             // the same field layout as add/sub, so they share one emitter.
             .band => try self.emitBitReg(0x8a000000, "and", dst, lhs, rhs),
@@ -7291,7 +7369,7 @@ const Arm64Compiler = struct {
         const a = if (lhs_is_dest) old else try self.evalDnirValue(temps, plan.op.lhs);
         const b = if (rhs_is_dest) old else try self.evalDnirValue(temps, plan.op.rhs);
         const dst = try self.allocRegExcluding(old);
-        try self.emitCompareOrBinop(dst, a, b, plan.op.binop, plan.op.ty);
+        try self.emitCompareOrBinop(dst, a, b, plan.op.binop, plan.op.ty, plan.op.divisor_nonneg);
         if (a != old and !Arm64Compiler.regIsPinned(pinned, a)) self.releaseReg(a);
         if (b != old and !Arm64Compiler.regIsPinned(pinned, b)) self.releaseReg(b);
 
@@ -13287,7 +13365,7 @@ test "native backend: every DNIR integer binop selects its exact machine operati
         compiler.used_regs[9] = true;
         compiler.used_regs[10] = true;
         compiler.used_regs[11] = true;
-        try compiler.emitCompareOrBinop(9, 10, 11, case.op, .i64);
+        try compiler.emitCompareOrBinop(9, 10, 11, case.op, .i64, false);
         try std.testing.expectEqualStrings(case.assembly, compiler.asm_text.items);
     }
 }

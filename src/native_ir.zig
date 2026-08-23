@@ -191,6 +191,15 @@ pub const Instr = struct {
     /// First flattened DNIR instruction whose emitted bytes belong to this
     /// application realization. Present exactly when an application id is.
     realization_start: ?u32 = null,
+    /// `.idiv` / `.mod` ONLY: the DIVISOR of this operation is proved
+    /// non-negative, so the floored correction may take its cheap form.
+    ///
+    /// A FACT, not a realization. It says nothing about which instructions a
+    /// backend emits and a backend that ignores it stays correct — the general
+    /// correction computes the same answer, it just pays five more dependent
+    /// steps for it. Producer: `dnir_lower.nonNegativeNames`. Consumer:
+    /// `native_backend.emitFlooredDivRem`.
+    divisor_nonneg: bool = false,
     result: ?u32 = null,
     lhs: Value = .void,
     rhs: Value = .void,

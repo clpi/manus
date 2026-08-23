@@ -3294,6 +3294,37 @@ pub const LowerCtx = struct {
     /// an outer binding of the same name means exactly what it meant before and
     /// after. `gate/collection.sh`'s shadow row is the check.
     fused_literals: std.StringHashMapUnmanaged(i64) = .empty,
+    /// SLOTS PROVED NON-ZERO ON EVERY PATH REACHING THE CURRENT LOWERING POINT.
+    ///
+    /// The only consumer is `emitDivisorZeroTrap`, and it exists because the
+    /// guard that function emits was being emitted TWICE against the same
+    /// register and the same zero. `while b != 0` already tests `b`, branches
+    /// out of the loop when it is zero, and reaches the body only when it is
+    /// not; `a % b` in that body then emitted a second `cmp b, #0` plus a
+    /// branch plus an inline `abort` block, all of it dominated by a test that
+    /// had just settled the identical question.
+    ///
+    /// A fact enters here from ONE place — the head of a `while x != 0` body —
+    /// and leaves on ANY definition of the slot, which `emit` applies
+    /// centrally: `b = a % b` kills `b`'s fact at the store, so the NEXT
+    /// division by `b` is guarded again.
+    ///
+    /// PUBLISHING AFTER A GUARD THIS PASS ITSELF EMITTED WAS TRIED AND IS NOT
+    /// SOUND, which is why it is absent. `if c { x = a / d }` then `y = b / d`
+    /// would elide the second guard on the strength of a proof that only holds
+    /// on the path through the `if`. The loop-head fact does not have that
+    /// defect: it is retracted by `defer` at the end of the body, and every
+    /// merge INSIDE the body is a merge of paths that all passed the head test.
+    ///
+    /// The set is SLOT-KEYED, not name-keyed, because a slot is what a
+    /// definition and a `dnir.Value` both carry; a name that has been rebound
+    /// to a different slot is a different fact and correctly misses.
+    nonzero_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// Names whose every value this function can hold lies in [0, 2^63), keyed
+    /// to the width that bounds them. Computed ONCE per function by
+    /// `nonNegativeNames`; the only consumer is the divisor-sign question in
+    /// `lowerBinop`. Keys are borrowed from the AST, which outlives lowering.
+    nonneg_names: NonNegEnv = .empty,
     next_temp: u32 = 0,
     locals: std.StringHashMapUnmanaged(u32) = .empty,
     instrs: std.ArrayList(dnir.Instr) = .empty,
@@ -3355,6 +3386,8 @@ pub const LowerCtx = struct {
         self.loop_breaks.deinit(self.alloc);
         self.loop_heads.deinit(self.alloc);
         self.instrs.deinit(self.alloc);
+        self.nonzero_slots.deinit(self.alloc);
+        self.nonneg_names.deinit(self.alloc);
         self.absent_applications.deinit(self.alloc);
     }
 
@@ -3364,7 +3397,20 @@ pub const LowerCtx = struct {
         return t;
     }
 
+    /// KILLING A NON-ZERO FACT IS DONE HERE AND NOWHERE ELSE.
+    ///
+    /// Every slot this lowering ever defines is defined by an instruction that
+    /// passes through `emit`, so this one line is the whole invalidation rule
+    /// and there is no second place for a new instruction kind to forget it. A
+    /// slot that is written is a slot whose value is no longer the one the
+    /// guard proved, whatever was written into it.
     fn emit(self: *LowerCtx, instr: dnir.Instr) Error!void {
+        if (self.nonzero_slots.count() != 0) {
+            if (instr.result) |r| _ = self.nonzero_slots.remove(r);
+            for (instr.pack_results) |pr| if (pr.temp) |t| {
+                _ = self.nonzero_slots.remove(t);
+            };
+        }
         try self.instrs.append(self.alloc, instr);
     }
 };
@@ -3550,6 +3596,22 @@ fn lowerFunction(
     // advancing the cursor the first temps alias the parameters, and the backend's
     // single slot->register map silently rebinds a parameter to a temp's register.
     ctx.next_temp = param_slot_cursor;
+
+    // THE DIVISOR-SIGN PASS. Run once, over the whole body, before a single
+    // instruction is emitted — it is flow-insensitive, so there is nothing for
+    // lowering order to invalidate and nothing to recompute.
+    {
+        const names = try alloc.alloc([]const u8, fd.func.params.len);
+        defer alloc.free(names);
+        for (fd.func.params, 0..) |par, i| names[i] = par.name;
+        var foreign: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer foreign.deinit(alloc);
+        var gt = module_globals.types.keyIterator();
+        while (gt.next()) |k| try foreign.append(alloc, k.*);
+        var ci = module_consts.ints.keyIterator();
+        while (ci.next()) |k| try foreign.append(alloc, k.*);
+        ctx.nonneg_names = try nonNegativeNames(alloc, &fd.func.body, names, foreign.items);
+    }
 
     // §12 TAIL, armed only for a flat scalar frame. `param_slot_cursor` counts
     // the slots actually assigned above, so this equality IS the test for "one
@@ -4761,6 +4823,21 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             const cond = try lowerExpr(ctx, ws.cond);
             const fail_idx = ctx.instrs.items.len;
             try ctx.emit(.{ .op = .br, .lhs = cond, .branch_target = 0, .branch_condition = .when_false });
+            // `while b != 0` HAS ALREADY DECIDED WHETHER `b` IS ZERO. The branch
+            // above leaves the loop when it is, so the body below is reached
+            // only when it is not — which is precisely the question a divisor
+            // guard inside the body would ask a second time. Publish the fact;
+            // `emit` retracts it the moment the body writes the slot.
+            const proved: ?u32 = nonZeroSlotOfCondition(ctx, ws.cond);
+            const already_proved = if (proved) |sl| ctx.nonzero_slots.contains(sl) else false;
+            if (proved) |sl| {
+                if (!already_proved) try ctx.nonzero_slots.put(ctx.alloc, sl, {});
+            }
+            defer if (proved) |sl| {
+                // Outside the loop the name is ZERO, not non-zero. The fact is
+                // scoped to the body and must not outlive it.
+                if (!already_proved) _ = ctx.nonzero_slots.remove(sl);
+            };
             // A loop body is never an implicit-tail position: its last statement
             // runs once per iteration, not once per call. Propagating
             // `allow_return` here makes `tryEmitTailDemandReturn` end the body
@@ -10528,6 +10605,281 @@ fn refitValue(ctx: *LowerCtx, v: dnir.Value, ty: RT) Error!dnir.Value {
     return .{ .temp = t };
 }
 
+/// ════════════════════════════════════════════════════════════════════════════
+/// THE SIGN OF A DIVISOR, PROVED — and NOT the sign of a dividend.
+/// ════════════════════════════════════════════════════════════════════════════
+///
+/// `emitFlooredDivRem` pays eight instructions and a five-deep dependency chain
+/// after `msub` to turn the chip's TRUNCATED remainder into the law's FLOORED
+/// one. Both of those costs collapse if the DIVISOR is known positive: the
+/// floored remainder then takes a positive sign, the correction is `r < 0 ? r+y
+/// : r`, and the `r == 0` select that the general form cannot do without stops
+/// being reachable at all. Five instructions, two dependent steps.
+///
+/// NOTHING HERE PROVES ANYTHING ABOUT THE DIVIDEND, and that is a decision, not
+/// an omission. Dropping the fixup entirely needs BOTH signs, and the dividend
+/// in the kernel that motivated this is `a = i` inside `while i <= n · i = i+1`
+/// — an ascending counter with no static bound. §"overflow wrap realized"
+/// (constitution) makes `+` on i64 WRAP, so an unbounded ascending counter is
+/// not provably non-negative and any analysis that said it was would be
+/// asserting a no-overflow law this language does not have. The measured
+/// difference is 1.17x for the divisor-only proof against 1.34x for the
+/// unsound full removal, and the 0.17x that separates them is the price of
+/// staying inside the law.
+///
+/// ════════════════════════════════════════════════════════════════════════════
+/// THE LATTICE IS A WIDTH, NOT A BIT
+/// ════════════════════════════════════════════════════════════════════════════
+///
+/// A name maps to `w` meaning "every value this name ever holds lies in
+/// [0, 2^w)". `w` is what makes `+` admissible WITHOUT a no-overflow
+/// assumption: `[0,2^a) + [0,2^b) ⊆ [0,2^(max(a,b)+1))`, and the moment that
+/// exponent would pass 63 the fact is DROPPED rather than assumed. So
+/// `(i*7+3) % 10000 + 1` is proved (the `%` caps it at 14 bits, `+1` at 15)
+/// and `i = i + 1` is NOT (the width climbs past 63 and the name goes to top),
+/// which is exactly the discrimination the law requires. A plain "is it
+/// non-negative" boolean cannot make it: it has to either admit `+` and be
+/// wrong about the counter, or refuse `+` and be useless on the kernel.
+///
+/// `%` IS THE RULE THAT PAYS. Floored remainder takes the sign of the DIVISOR
+/// and is bounded by it, so `x % d` is in `[0, d)` for any dividend at all —
+/// the one operator here whose result width is known from one operand. That is
+/// what closes the loop-carried cycle `b = a % b`: `b`'s width is a fixpoint of
+/// `w -> max(entry_width, w)`, and it settles at the entry width.
+///
+/// FLOW-INSENSITIVE ON PURPOSE. One width per name for the whole body, joined
+/// over every assignment to it, so the answer does not depend on where in the
+/// body it is asked and there is no per-point state for a later reordering to
+/// invalidate. That is a weaker analysis than a flow-sensitive one and it is
+/// the one that composes with a single-pass lowerer.
+///
+/// ASCENDING ITERATION FROM BOTTOM. Every assigned name starts at `[0, 2^0)` —
+/// the set `{0}` — and only ever widens. The result at the fixpoint
+/// over-approximates every value the name can hold; a name that never settles
+/// inside 63 bits, or that is written by a form this pass does not model, is
+/// simply absent from the answer and its divisions keep the general fixup.
+/// Parameters are never in the answer: their value comes from a caller.
+const nonneg_top: u8 = 64;
+const nonneg_rounds: usize = 96;
+
+fn nonNegWidthOfLit(v: i64) ?u8 {
+    if (v < 0) return null;
+    var w: u8 = 0;
+    var n: u64 = @intCast(v);
+    while (n != 0) : (n >>= 1) w += 1;
+    return w;
+}
+
+fn nonNegJoin(a: ?u8, b: ?u8) ?u8 {
+    const x = a orelse return null;
+    const y = b orelse return null;
+    return @max(x, y);
+}
+
+const NonNegEnv = std.StringHashMapUnmanaged(u8);
+
+/// The width of `e`, or null when this pass cannot bound it below 2^63.
+fn nonNegWidth(widths: *const NonNegEnv, e: *const ast.Expr) ?u8 {
+    const w: ?u8 = switch (e.*) {
+        .int_lit => |i| nonNegWidthOfLit(i.val),
+        .true_lit, .false_lit => 1,
+        .name => |n| widths.get(n.ident),
+        // NO UNARY IS ADMITTED. `-x` and `~x` both MAKE a sign bit, and `not x`
+        // is only 0/1 if its lowering says so — a fact this pass would be
+        // guessing at rather than reading.
+        .unop => null,
+        .binop => |b| blk: {
+            switch (b.op) {
+                // Bounded growth, checked below against 63.
+                .add => break :blk if (nonNegJoin(nonNegWidth(widths, b.lhs), nonNegWidth(widths, b.rhs))) |m| m + 1 else null,
+                .mul => {
+                    const x = nonNegWidth(widths, b.lhs) orelse break :blk null;
+                    const y = nonNegWidth(widths, b.rhs) orelse break :blk null;
+                    break :blk @as(u8, x) + @as(u8, y);
+                },
+                // The floored remainder takes the sign of the DIVISOR and is
+                // bounded by it. The dividend is not consulted and does not
+                // need to be — this is the only rule here that reads one
+                // operand, and it is why the analysis reaches anything at all.
+                .mod => break :blk nonNegWidth(widths, b.rhs),
+                // `a // b` and `a / b` with `a` in [0,2^w) and `b` positive
+                // land in [0,2^w). `b` positive is `b` non-negative plus the
+                // divisor guard, which has already refused zero on this path.
+                .idiv, .div => {
+                    const x = nonNegWidth(widths, b.lhs) orelse break :blk null;
+                    _ = nonNegWidth(widths, b.rhs) orelse break :blk null;
+                    break :blk x;
+                },
+                // A clear sign bit in EITHER operand clears it in the result,
+                // and the narrower bound is the one that survives.
+                .band => {
+                    const x = nonNegWidth(widths, b.lhs);
+                    const y = nonNegWidth(widths, b.rhs);
+                    if (x == null) break :blk y;
+                    if (y == null) break :blk x;
+                    break :blk @min(x.?, y.?);
+                },
+                .bor, .bxor => break :blk nonNegJoin(nonNegWidth(widths, b.lhs), nonNegWidth(widths, b.rhs)),
+                // LOGICAL shift right (`lsr`). A shift of AT LEAST ONE clears
+                // the top bit whatever it held, which is the only case where
+                // this rule proves anything the operand did not already have —
+                // and `x >> 0` is the IDENTITY, so a negative operand stays
+                // negative through it. Written without that case split first,
+                // and the case split is the whole soundness of the arm.
+                .rshift => {
+                    const x = nonNegWidth(widths, b.lhs);
+                    const k = intLiteralStep(b.rhs) orelse break :blk x;
+                    if (k < 0 or k > 63) break :blk null;
+                    // A 64-bit word shifted right by `k` lands below 2^(64-k).
+                    const from_shift: u8 = @intCast(64 - k);
+                    const bound: u8 = if (x) |w| @min(w, from_shift) else if (k >= 1) from_shift else break :blk null;
+                    const shifted: i64 = @as(i64, bound) - k;
+                    break :blk if (shifted > 0) @as(u8, @intCast(shifted)) else 0;
+                },
+                .lshift => {
+                    const x = nonNegWidth(widths, b.lhs) orelse break :blk null;
+                    const k = intLiteralStep(b.rhs) orelse break :blk null;
+                    if (k < 0 or k > 63) break :blk null;
+                    break :blk x + @as(u8, @intCast(k));
+                },
+                // A comparison answers 0 or 1.
+                .eq, .neq, .lt, .gt, .leq, .geq => break :blk 1,
+                else => break :blk null,
+            }
+        },
+        else => null,
+    };
+    const width = w orelse return null;
+    if (width > 63) return null;
+    return width;
+}
+
+/// One pass of the transfer function over every assignment in `blk`.
+/// `changed` is set when a name's width grew. `unmodeled` is set when the body
+/// contains a construct this pass does not model, which discards everything.
+fn nonNegScanBlock(
+    alloc: std.mem.Allocator,
+    widths: *NonNegEnv,
+    blk: *const ast.Block,
+    changed: *bool,
+    unmodeled: *bool,
+) Error!void {
+    for (blk.stmts) |st| switch (st) {
+        .local_decl => |d| {
+            if (d.names.len != d.inits.len) {
+                for (d.names) |n| try nonNegRaise(alloc, widths, n.ident, changed);
+                continue;
+            }
+            for (d.names, d.inits) |n, init| try nonNegObserve(alloc, widths, n.ident, nonNegWidth(widths, init), changed);
+        },
+        .assign => |a| {
+            if (a.targets.len != a.values.len) {
+                for (a.targets) |t| if (t.* == .name) try nonNegRaise(alloc, widths, t.name.ident, changed);
+                continue;
+            }
+            for (a.targets, a.values) |t, v| {
+                if (t.* != .name) continue;
+                try nonNegObserve(alloc, widths, t.name.ident, nonNegWidth(widths, v), changed);
+            }
+        },
+        // A name bound by any of these takes a value this pass does not model.
+        .global_decl => |d| for (d.names) |n| try nonNegRaise(alloc, widths, n.ident, changed),
+        .num_for => |f| {
+            try nonNegRaise(alloc, widths, f.var_name, changed);
+            try nonNegScanBlock(alloc, widths, &f.body, changed, unmodeled);
+        },
+        .gen_for => |f| {
+            for (f.vars) |v| try nonNegRaise(alloc, widths, v, changed);
+            try nonNegScanBlock(alloc, widths, &f.body, changed, unmodeled);
+        },
+        .while_loop => |w| try nonNegScanBlock(alloc, widths, &w.body, changed, unmodeled),
+        .repeat_loop => |r| try nonNegScanBlock(alloc, widths, &r.body, changed, unmodeled),
+        .do_block => |d| try nonNegScanBlock(alloc, widths, &d.body, changed, unmodeled),
+        .if_stmt => |f| {
+            if (f.binding) |b| try nonNegRaise(alloc, widths, b.name, changed);
+            try nonNegScanBlock(alloc, widths, &f.then, changed, unmodeled);
+            for (f.elseifs) |ei| try nonNegScanBlock(alloc, widths, &ei.body, changed, unmodeled);
+            if (f.else_body) |eb| try nonNegScanBlock(alloc, widths, &eb, changed, unmodeled);
+        },
+        // A nested function body can rebind names this one holds, and this pass
+        // does not follow it. Refuse the WHOLE function rather than answer for
+        // the part of it that is visible.
+        .func_decl => unmodeled.* = true,
+        .match_stmt, .try_stmt, .defer_stmt, .goto_stmt, .label_stmt => unmodeled.* = true,
+        else => {},
+    };
+}
+
+fn nonNegRaise(alloc: std.mem.Allocator, widths: *NonNegEnv, name: []const u8, changed: *bool) Error!void {
+    const gop = try widths.getOrPut(alloc, name);
+    if (gop.found_existing and gop.value_ptr.* >= nonneg_top) return;
+    gop.value_ptr.* = nonneg_top;
+    changed.* = true;
+}
+
+fn nonNegObserve(alloc: std.mem.Allocator, widths: *NonNegEnv, name: []const u8, w: ?u8, changed: *bool) Error!void {
+    const width = w orelse return nonNegRaise(alloc, widths, name, changed);
+    const gop = try widths.getOrPut(alloc, name);
+    if (!gop.found_existing) {
+        gop.value_ptr.* = width;
+        changed.* = true;
+        return;
+    }
+    if (gop.value_ptr.* >= width) return;
+    gop.value_ptr.* = width;
+    changed.* = true;
+}
+
+/// The names whose every value lies in [0, 2^63). Caller owns the map; keys are
+/// borrowed from the AST and outlive it here.
+fn nonNegativeNames(
+    alloc: std.mem.Allocator,
+    body: *const ast.Block,
+    params: []const []const u8,
+    foreign: []const []const u8,
+) Error!NonNegEnv {
+    var widths: NonNegEnv = .empty;
+    errdefer widths.deinit(alloc);
+    var changed = true;
+    var unmodeled = false;
+    // A PARAMETER IS TOP AND STAYS TOP. Seeding it before the first scan is
+    // what keeps `a = param` from entering the answer on round one and never
+    // being corrected: this lattice only widens, and top is already the top.
+    for (params) |p| try widths.put(alloc, p, nonneg_top);
+    // ...AND SO IS EVERY NAME THIS FUNCTION DOES NOT OWN. A module global is
+    // written by other relations this pass never looks at, and a module
+    // constant is not in the body's assignment list at all — reading either as
+    // "assigned only where I can see" would answer for a value another
+    // function chose. Both are seeded at top, and the lattice only widens, so
+    // neither can be talked back down.
+    for (foreign) |p| try widths.put(alloc, p, nonneg_top);
+    var round: usize = 0;
+    while (changed and !unmodeled and round < nonneg_rounds) : (round += 1) {
+        changed = false;
+        try nonNegScanBlock(alloc, &widths, body, &changed, &unmodeled);
+    }
+    // Not converged, or a construct this pass does not model: answer nothing.
+    if (unmodeled or changed) {
+        widths.deinit(alloc);
+        return .empty;
+    }
+    // Only the settled, bounded names are an answer.
+    var out: NonNegEnv = .empty;
+    errdefer out.deinit(alloc);
+    var it = widths.iterator();
+    while (it.next()) |e| if (e.value_ptr.* < nonneg_top) try out.put(alloc, e.key_ptr.*, e.value_ptr.*);
+    widths.deinit(alloc);
+    return out;
+}
+
+/// `IDOL_FLOOR_FIXUP_ALWAYS=1` — THE SEVERING CONTROL. Set it and no divisor is
+/// ever reported non-negative, so every division emits the general eight
+/// instruction correction exactly as this compiler did before this pass
+/// existed.
+fn floorFixupForced() bool {
+    return std.c.getenv("IDOL_FLOOR_FIXUP_ALWAYS") != null;
+}
+
 /// law §62 — `x / y` and `x % y` where `y` is zero AT RUN TIME.
 ///
 /// AArch64 `sdiv` does not fault: it answers 0. That is a property of the chip,
@@ -10549,8 +10901,53 @@ fn refitValue(ctx: *LowerCtx, v: dnir.Value, ty: RT) Error!dnir.Value {
 /// Cost is one `cmp` and one conditional branch per division whose divisor is
 /// not a nonzero constant. A constant nonzero divisor — every `/ 2`, `/ 8`,
 /// `% 10` in the corpus — pays nothing at all.
+/// THE SLOT A CONDITION PROVES NON-ZERO, or null.
+///
+/// Exactly `x != 0` and `0 != x`, where `x` names a local. Deliberately not
+/// `x > 0` or `x < 0`: those prove non-zero too, but they are not what a
+/// division guard's redundancy came from and admitting them would widen the
+/// rule past the evidence that justifies it. Nothing here inspects the
+/// LOWERED condition — a lowered comparison is a temp holding a boolean, and
+/// the operand identity this needs is only in the source expression.
+fn nonZeroSlotOfCondition(ctx: *const LowerCtx, cond: *const ast.Expr) ?u32 {
+    const b = switch (cond.*) {
+        .binop => |bb| bb,
+        else => return null,
+    };
+    if (b.op != .neq) return null;
+    const named: *const ast.Expr, const other: *const ast.Expr =
+        if (b.lhs.* == .name) .{ b.lhs, b.rhs } else if (b.rhs.* == .name) .{ b.rhs, b.lhs } else return null;
+    const zero = intLiteralStep(other) orelse return null;
+    if (zero != 0) return null;
+    // A name that is shadowed by a fused body literal, or that is not a local
+    // at all, has no slot to key the fact on.
+    if (ctx.fused_literals.contains(named.name.ident)) return null;
+    if (ctx.const_ints.contains(named.name.ident)) return null;
+    return ctx.locals.get(named.name.ident);
+}
+
+/// `IDOL_DIVZERO_GUARD_ALWAYS=1` — THE SEVERING CONTROL for the elimination
+/// above. Set it and every division emits its guard again, exactly as this
+/// compiler did before `nonzero_slots` existed, so the two arms differ in this
+/// one decision and in nothing else. It is read per call rather than cached
+/// because the cost is one `getenv` per division in a compiler that is not the
+/// thing being measured.
+fn divisorGuardForced() bool {
+    return std.c.getenv("IDOL_DIVZERO_GUARD_ALWAYS") != null;
+}
+
 fn emitDivisorZeroTrap(ctx: *LowerCtx, divisor: dnir.Value) Error!void {
     if (divisor == .i64 and divisor.i64 != 0) return;
+
+    // ALREADY DECIDED. A dominating `while d != 0`, or a guard this pass
+    // emitted earlier in the same straight-line region, has settled it; the
+    // trap below would compare the same register against the same zero and
+    // could not fire. Deleting it removes a compare, a branch, a second branch
+    // over the trap, and the six-word `abort` block that was laid out INLINE
+    // between the loop header and the loop body.
+    if (divisor == .local and !divisorGuardForced()) {
+        if (ctx.nonzero_slots.contains(divisor.local)) return;
+    }
 
     const ok = ctx.freshTemp();
     try ctx.emit(.{ .op = .binop, .result = ok, .binop = .neq, .lhs = divisor, .rhs = .{ .i64 = 0 } });
@@ -10635,6 +11032,11 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
         .lhs = a,
         .rhs = b,
         .ty = result_ty,
+        // The divisor's sign is asked of the SOURCE expression, not of the
+        // lowered value: a `dnir.Value` is a slot or an immediate and carries
+        // no derivation, while the width lattice is keyed on names.
+        .divisor_nonneg = !f64_op and (tag == .idiv or tag == .mod) and
+            !floorFixupForced() and nonNegWidth(&ctx.nonneg_names, rhs) != null,
     });
     return .{ .temp = t };
 }
