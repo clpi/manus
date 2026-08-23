@@ -81,8 +81,14 @@ seed: bool = ()
 foreign: bool = (path: str)
   path:len() >= 4 and path:sub(1, 4) == "ext/"
 
+# THIRD DEFECT, off-by-one: "benchmarks/" is ELEVEN characters, so the guard
+# `path:len() >= 12 and path:sub(1, 12) == "benchmarks/"` compared a 12-char
+# substring against an 11-char literal and could never be true. The historical
+# exemption this gate declares for benchmarks/ was dead code, and all 160
+# tracked benchmarks/ paths were being judged. The sibling vendor/ clause is
+# 7/7 and was always correct, which is why only benchmarks/ leaked.
 historical: bool = (path: str)
-  path:len() >= 12 and path:sub(1, 12) == "benchmarks/" or path:len() >= 7 and path:sub(1, 7) == "vendor/"
+  path:len() >= 11 and path:sub(1, 11) == "benchmarks/" or path:len() >= 7 and path:sub(1, 7) == "vendor/"
 
 owned: bool = (path: str)
   !foreign(path) and !historical(path)
@@ -132,6 +138,15 @@ tail: bool = (name: str)
     i = i - 1
   i == 0 or alpha(name:sub(i, i)) or name:sub(i, i) == "_"
 
+# A stem is mashed when it decomposes into TWO OR MORE canonical words, not
+# merely two. The single-cut form of this test could only see a 2-word mash:
+# it missed `zerohistorycensus` (zero + history + census) because no one cut
+# leaves two known halves — "zero" | "historycensus" and "zerohistory" |
+# "census" each have one unknown side. Segment the whole stem instead.
+# `reach` is a flag string: reach:sub(k + 1, k + 1) is "1" when the prefix of
+# length k is a concatenation of known words. reach:sub(1, 1) is the empty
+# prefix. known(name) already returned false, so a "1" at n + 1 can only come
+# from two or more segments.
 mash: bool = (name: str)
   if known(name)
     return false
@@ -142,14 +157,19 @@ mash: bool = (name: str)
       return true
   if n < 4
     return false
-  i = 2
-  while i <= n - 1
-    left = name:sub(1, i - 1)
-    right = name:sub(i, n)
-    if left:len() >= 2 and right:len() >= 2 and known(left) and known(right)
-      return true
-    i = i + 1
-  false
+  reach = "1"
+  j = 1
+  while j <= n
+    flag = "0"
+    i = 1
+    while i <= j
+      if reach:sub(i, i) == "1" and known(name:sub(i, j))
+        flag = "1"
+        break
+      i += 1
+    reach = "{reach}{flag}"
+    j += 1
+  reach:sub(n + 1, n + 1) == "1"
 
 member: bool = (hay: str, word: str)
   m = word:len()
@@ -226,8 +246,45 @@ mediatorhome: bool = (name: str)
     return false
   member(mediatorhomes, name)
 
-filename: bool = (where: str)
+# `filename` was itself a mashed compound (file + name) by this gate's own
+# law — the repaired gate rejected the diff that repairs it. Decomposed to
+# the single canonical word `file`: "this where names a file".
+file: bool = (where: str)
   where:len() > 0 and where:sub(where:len(), where:len()) != ":"
+
+# Three subject kinds reach verdict(), and they are not the same subject:
+#   "lib/compiler/graph.id"     a file leaf        canonical.md §26
+#   "lib/compiler/graph.id:"    a directory part   canonical.md §27
+#   "lib/compiler/graph.id:12"  a token on a line  canonical.md §25
+# file() only separates the first two, so judge() — which passes
+# "{path}:{no}" — had every identifier occurrence on an added line judged as
+# though it were a file leaf. The §26 stem patterns are anchored to `\.id$`
+# and the §27 patterns to a whole directory component; they classify a
+# DECLARED path component, not an occurrence. Applying them to line tokens
+# rejected `view(edges) = ()` — the exact decomposition AGENTS.md prescribes
+# as the canonical remedy for `viewedges` — because `edges` is on the §26
+# plural-cardinality list. A gate that rejects the remedy it demands cannot
+# be satisfied. Line tokens keep the §25 lexical shape (sep, numeric tail)
+# and mash review, which is the scope AGENTS.md states for added lines.
+lineref: bool = (where: str)
+  n = where:len()
+  if n == 0
+    return false
+  colon = 0
+  i = n
+  while i >= 1
+    if where:sub(i, i) == ":"
+      colon = i
+      break
+    i -= 1
+  if colon == 0 or colon == n
+    return false
+  i = colon + 1
+  while i <= n
+    if !digit(where:sub(i, i))
+      return false
+    i += 1
+  true
 
 verdict: i64 = (where: str, name: str)
   hits = 0
@@ -242,7 +299,7 @@ verdict: i64 = (where: str, name: str)
   if mash(name)
     print("{where}  [PATH-SEMANTICS-BLOCKED]  mashed compound `{name}` — decompose the owner")
     hits = hits + 1
-  if filename(where)
+  if file(where) and !lineref(where)
     if rolestem(name)
       print("{where}  [law.identity.role]  role-noun stem `{name}` — subject + relation; docs/spec/canonical.md §26")
       hits = hits + 1
@@ -258,7 +315,7 @@ verdict: i64 = (where: str, name: str)
     if histstem(name)
       print("{where}  [law.source.not.proof]  history/showcase stem `{name}` — isolate or delete; docs/spec/canonical.md §26")
       hits = hits + 1
-  if !filename(where) and name:len() > 0
+  if !file(where) and name:len() > 0
     if orghome(name)
       print("{where}  [law.std.zero]  organizational namespace `{name}` — layout/home projection; docs/spec/canonical.md §27")
       hits = hits + 1
@@ -374,6 +431,18 @@ wide: bool = (code: str)
     i = i + 1
   false
 
+# FOURTH DEFECT, line-arm false positive. tail() is a PATH-STEM taxonomy law
+# ("graph2" — version is provenance; canonical.md §26). judge() applied it to
+# every glyph token on an added line, so it rejected bare numeric literals
+# (`10`, `11`) — which are not names at all — and every primitive width type
+# (`i64`, `u8`, `f64`), which are language-reserved, not project-controlled
+# path components. Since AGENTS.md mandates the binding face
+# `name: descriptor = (args) body`, that made the line arm reject essentially
+# every Idol line the project writes: i64 alone appears 3920 times in lib/.
+# Nobody hit it because the pre-commit hook never runs this gate (it calls
+# `idol check`, not `idol run`), so the two defects masked each other.
+widths = " i8 i16 i32 i64 u8 u16 u32 u64 f16 f32 f64 usize isize "
+
 judge: i64 = (path: str, no: i64, line: str)
   code = peel(line)
   hits = 0
@@ -389,7 +458,7 @@ judge: i64 = (path: str, no: i64, line: str)
       while i <= n and glyph(code:sub(i, i))
         i = i + 1
       token = code:sub(start, i - 1)
-      if token:len() >= 2
+      if token:len() >= 2 and !digit(token:sub(1, 1)) and !member(widths, token)
         hits = hits + verdict("{path}:{no}", token)
     else
       i = i + 1
@@ -460,13 +529,46 @@ diff: i64 = (body: str)
     i = i + 1
   hits
 
+# GAP-201: a gate that examines zero subjects must fail, never pass.
+count: i64 = (body: str)
+  total = 0
+  line = ""
+  nl = string.char(10)
+  n = body:len()
+  i = 1
+  while i <= n + 1
+    c = nl
+    if i <= n
+      c = body:sub(i, i)
+    if c == nl
+      if line:len() > 0
+        total += 1
+      line = ""
+    else
+      line = "{line}{c}"
+    i += 1
+  total
+
 tree: i64 = (body: str)
   if body:len() == 0
     print("gate/path: empty tree listing on stdin")
     return 3
+  if count(body) == 0
+    print("gate/path: tree listing carried zero paths — GAP-201")
+    return 3
   hits = list(body)
-  print("gate/path: {hits} finding(s) on tracked project paths  [tree: pass]")
-  hits
+  # THE COUNT IS NOT THE EXIT STATUS. Returning `hits` made the process exit
+  # the finding count truncated mod 256, so 256, 512 or 768 findings all exit
+  # 0 and read as a clean pass — and the banner said `[tree: pass]`
+  # unconditionally regardless. Measured on the real tree: 2265 findings,
+  # exit 217, banner "pass". A survey that reports its own volume as success
+  # is worse than no survey. One finding is a failure; the count goes in the
+  # message where a reader can see it.
+  if hits == 0
+    print("gate/path: 0 finding(s) on tracked project paths  [tree: pass]")
+    return 0
+  print("gate/path: {hits} finding(s) on tracked project paths  [tree: FAIL]")
+  1
 
 # Decode IDOLGATE section protocol from input body.
 feed: i64 = (body: str)
@@ -522,6 +624,9 @@ feed: i64 = (body: str)
     return 3
   if m == "tree"
     return tree(a)
+  if count(a) + count(b) == 0
+    print("gate/path: staged sections carried zero subjects — GAP-201")
+    return 3
   total = 0
   if a:len() > 0
     total = total + list(a)
