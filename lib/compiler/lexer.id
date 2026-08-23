@@ -1,5 +1,7 @@
 # compiler.lexer
-# Duo-native lexer implementation
+# Idol-native lexer implementation. The tracked C bridge is regenerated from
+# this source after compiler-runtime changes so its private extraction boundary
+# remains byte-identical to the active projector.
 
 # Slice is the subject's :sub / :len. Do not alias `str` into a binding —
 # C emit materializes that as a text literal and then table-walks `.sub`.
