@@ -714,6 +714,359 @@ fn moduleFieldStorageBase(ctx: *const LowerCtx, name: []const u8) bool {
     return false;
 }
 
+
+// ════════════════════════════════════════════════════════════════════════════
+// MODULE-BINDING REGISTER PROMOTION ACROSS A LOOP
+//
+// A module-scope binding is ONE `__DATA,__bss` word (`ModuleGlobals`), so every
+// read is `adrp`+`add`+`ldr` and every write `adrp`+`add`+`str`. Inside a loop
+// that is per ITERATION: the integer-mix kernel spelled at file scope reloads
+// its induction variable three times and its accumulator twice per trip, 24 of
+// 37 loop-body instructions being global address arithmetic, against 16 for the
+// identical program written inside a relation.
+//
+// This pass keeps such a binding in a register FOR THE LENGTH OF ONE LOOP:
+// one `load_global` before the head, one `store_global` after the exit, and
+// nothing in between. It is implemented by putting the name into `ctx.locals`
+// for the duration of the loop, because `ctx.locals` is consulted BEFORE
+// `ctx.module_globals` at every one of the six sites that decide storage
+// (`lowerAssignTarget`, the `.name` read arm, `storePackName`,
+// `tryEmitTailAssignStorageReturn`, and the two compound-target arms). There is
+// therefore no second decision site to keep in agreement with the first.
+//
+// ═══ WHY IT IS LAWFUL, AND WHERE EACH OBLIGATION IS DISCHARGED ══════════════
+//
+// Promotion claims: for every entry state, the promoted loop and the original
+// agree on (a) the binding's value everywhere anything can read it, (b) every
+// observable effect and its order, (c) termination, (d) traps, and (e) the
+// BLOCK VALUE of the statement, which is what the process exit status is made
+// of.
+//
+//   P1 NOTHING ELSE RUNS DURING THE LOOP. `promotableStmt`/`promotableExpr`
+//      admit only integer arithmetic, comparison, `if`, nested `while`,
+//      `break`, `continue`, and assignment to a bare name. No call, no method
+//      call, no `print`, no field, no index, no table, no string, no `req`.
+//      So the ONLY code that can read or write the word between the preload
+//      and the write-back is the loop body itself, and every one of its reads
+//      and writes is redirected to the register. This is what stands in for an
+//      escape/alias fact — see the note below on why no such fact exists.
+//
+//   P2 NO EXIT SKIPS THE WRITE-BACK. `return` is not admitted, so the only
+//      ways out of the region are the head's failing test and `break`, and
+//      BOTH are patched to `end_idx`, which is the index the write-back is
+//      emitted at. `continue` targets `head_idx`, which is inside.
+//
+//   P3 THE RING IS THE RING. Only a binding whose `ModuleGlobals` type is
+//      exactly `.i64` is promoted. `typeOfGlobal` publishes `.i8`/`.u8`/… for
+//      a declared narrow width, and a narrow word truncates on every store,
+//      so a register-resident copy would run a different machine. Same
+//      obligation as `loop_closure`'s L2, and refused the same way.
+//
+//   P4 NO SHADOW. `local_decl`/`const_decl`/`global_decl` are not admitted in
+//      the region, so nothing can rebind the name to a different slot while
+//      the promotion is live and leave the write-back describing a stale one.
+//      A name already in `ctx.locals` is not a module binding here at all and
+//      is never considered (`promotableBindingName`).
+//
+//   P5 THE TABLE IS NOT ITS FIELDS. A name that also owns module-scope field
+//      storage (`M` where `M.x` has a word) is refused: this pass names whole
+//      bindings and that one is named one level down.
+//
+//   P6 THE BLOCK'S VALUE DOES NOT MOVE. The `while` statement is still a
+//      `while`; nothing is replaced and no store is written in its slot. This
+//      is the GAP-215 obligation (`ast.Stmt.assign.closed_loop`) and the
+//      reason this pass discharges it trivially where `loop_closure` had to
+//      carry a fact for it.
+//
+//   P7 A TRAP OR A DIVERGENCE EXPOSES NOTHING. A division trap ends the
+//      process before any observer runs, and a loop that does not terminate
+//      has no exit at which the word could be read. Neither is a state this
+//      pass has to publish, and both are checked as controls rather than
+//      assumed.
+//
+// ═══ THE FACT THAT IS MISSING ══════════════════════════════════════════════
+//
+// P1 SHOULD have been a published place fact. `src/place.zig` publishes
+// `mutation`, `escape`, `immutability`, `alias`, `contents_known` and
+// `bind_origin` on place rows, and graph export v10 emits them — but
+// `bindPlace` returns early on `candidateShape(...) == .unknown`
+// (`src/place.zig:551`), and `candidateShape` answers `.collection`/`.record`
+// only. A SCALAR module binding therefore has NO PLACE ROW AT ALL, and `idol
+// graph` prints `"places":[]` for exactly the kernels that carry this cost.
+// So there is no `escape` and no `alias` to consult for `i` or `acc`, and
+// there is no per-place "which calls may touch this word" summary anywhere in
+// the tree either. P1 is a property of the REGION rather than of the place,
+// which is why it is discharged by refusing every construct that could run
+// other code — and why the admitted shape is deliberately tiny.
+
+/// SEVERING CONTROL. `true` is the shipped behaviour; `DUO_NO_MODULE_PROMOTE`
+/// restores the previous lowering exactly, which is what makes the negative
+/// control a control rather than a second measurement.
+pub var module_promote_enabled: bool = true;
+
+/// ADMISSION DIAGNOSTIC (`DUO_MODULE_PROMOTE_DIAG`). One line per `while` this
+/// pass looks at, naming what it kept or why it kept nothing.
+///
+/// IT EXISTS BECAUSE THE ALTERNATIVE WAS A BINARY DIFF. Without it the only way
+/// to see whether the pass fired on a given program was to compile the program
+/// twice and compare the emitted bytes — and that answer is wrong in both
+/// directions. It reports a difference where there is none (two arms written to
+/// DIFFERENT output names differ in the Mach-O UUID alone, measured: 308 bytes,
+/// zero of them in `__text`), and it reports NO difference for three separate
+/// reasons that are not each other: the loop was folded away before this pass
+/// ran, the names never had `__DATA,__bss` words to begin with, or the region
+/// was refused. A transform whose firing can only be inferred from a byte
+/// comparison cannot be kept honest, so the reason is published instead.
+pub var module_promote_diag: bool = false;
+
+/// Why one `while` kept nothing, or that it kept something. The diagnostic's
+/// vocabulary; also the exhaustive list of ways `planPromotions` answers zero.
+const PromotionVerdict = enum {
+    /// `DUO_NO_MODULE_PROMOTE` — the pass is severed.
+    severed,
+    /// The loop's condition or body contains a construct outside the admitted
+    /// region: a call, a `return`, a declaration, a field, an index, a string.
+    region_shape,
+    /// The region is admitted, but no name in it is a full-ring module binding
+    /// with storage. THE COMMON CASE, and the one that looks like a failure and
+    /// is not: a module-scope binding gets a `__bss` word only when it is
+    /// declared WITH A TYPE (`collectModuleGlobals`' `.local_decl` arm) or when
+    /// a RELATION in the module also assigns it (the `.assign` arm, via
+    /// `moduleFunctionsAssignName`). A bare `i = 0` at module scope in a file
+    /// with no relations is neither, so it is already register-resident and
+    /// there is nothing here to promote.
+    no_module_binding,
+    /// More distinct bindings than `max_promoted_bindings`.
+    budget,
+    admitted,
+};
+/// Bindings kept in registers for ONE loop. The direct backend gives a
+/// loop-carried slot a callee-saved home (`native_backend.planGpStackLocals`
+/// pass 1) and has a finite number of them; promoting without a bound would
+/// push the rest of the loop onto the frame and trade one memory form for
+/// another.
+const max_promoted_bindings = 6;
+
+const Promotion = struct {
+    /// The `ModuleGlobals` storage key, not the AST spelling — the same string
+    /// every other `store_global` site uses, so it outlives lowering.
+    name: []const u8,
+    slot: u32,
+    written: bool,
+};
+
+/// THE ADMITTED REGION SHAPE — see P1. Anything not named here refuses the
+/// whole loop, so the pass fails closed on every construct it has not been
+/// reasoned about.
+fn promotableExpr(e: *const ast.Expr) bool {
+    return switch (e.*) {
+        .int_lit, .true_lit, .false_lit, .name => true,
+        .binop => |b| switch (b.op) {
+            // `pow` and `concat` reach a runtime helper; `matmul`, `pipeline`
+            // and `contains` are applications. None of them is arithmetic that
+            // cannot call.
+            .add,
+            .sub,
+            .mul,
+            .div,
+            .idiv,
+            .mod,
+            .band,
+            .bor,
+            .bxor,
+            .lshift,
+            .rshift,
+            .eq,
+            .neq,
+            .lt,
+            .gt,
+            .leq,
+            .geq,
+            .@"and",
+            .@"or",
+            => promotableExpr(b.lhs) and promotableExpr(b.rhs),
+            else => false,
+        },
+        .unop => |u| switch (u.op) {
+            .neg, .not, .bnot => promotableExpr(u.operand),
+            // `len` is `s:len()` and `compile` is a meta application.
+            else => false,
+        },
+        else => false,
+    };
+}
+
+fn promotableBlock(b: *const ast.Block) bool {
+    // A tail expression is the block's VALUE. A loop body's tail is lowered by
+    // a different path than its statements, and P6 is about not moving values
+    // around, so it is refused rather than reasoned about.
+    if (b.tail_expr != null) return false;
+    for (b.stmts) |*s| {
+        if (!promotableStmt(s)) return false;
+    }
+    return true;
+}
+
+fn promotableStmt(s: *const ast.Stmt) bool {
+    return switch (s.*) {
+        .assign => |a| blk: {
+            // A closed loop's residue is value-less (GAP-215) and is not a
+            // source assignment; this pass runs before any such rewrite and
+            // should never see one.
+            if (a.closed_loop) break :blk false;
+            if (a.targets.len != a.values.len) break :blk false;
+            for (a.targets) |t| {
+                if (t.* != .name) break :blk false;
+            }
+            for (a.values) |v| {
+                if (!promotableExpr(v)) break :blk false;
+            }
+            break :blk true;
+        },
+        .if_stmt => |f| blk: {
+            // `if name = expr` binds a name — P4.
+            if (f.binding != null) break :blk false;
+            if (!promotableExpr(f.cond)) break :blk false;
+            if (!promotableBlock(&f.then)) break :blk false;
+            for (f.elseifs) |ei| {
+                if (!promotableExpr(ei.cond)) break :blk false;
+                if (!promotableBlock(&ei.body)) break :blk false;
+            }
+            if (f.else_body) |eb| {
+                if (!promotableBlock(&eb)) break :blk false;
+            }
+            break :blk true;
+        },
+        .while_loop => |w| promotableExpr(w.cond) and promotableBlock(&w.body),
+        .brk, .cont => true,
+        else => false,
+    };
+}
+
+/// A name this pass may keep in a register: a module binding with storage, of
+/// the full ring (P3), not shadowed by a local (P4), and not the base of
+/// module-scope field storage (P5).
+fn promotableBindingName(ctx: *const LowerCtx, name: []const u8) bool {
+    if (ctx.locals.get(name) != null) return false;
+    if (ctx.fused_literals.get(name) != null) return false;
+    if (moduleFieldStorageBase(ctx, name)) return false;
+    const ty = ctx.module_globals.types.get(name) orelse return false;
+    return ty == .i64;
+}
+
+const PromoScan = struct {
+    found: [max_promoted_bindings][]const u8 = undefined,
+    written: [max_promoted_bindings]bool = @splat(false),
+    len: usize = 0,
+    /// More distinct bindings than the budget. The loop keeps NONE of them —
+    /// an arbitrary four out of six is a decision nobody can read off the
+    /// emitted text later.
+    overflow: bool = false,
+
+    fn note(self: *PromoScan, name: []const u8, is_write: bool) void {
+        for (self.found[0..self.len], 0..) |n, i| {
+            if (std.mem.eql(u8, n, name)) {
+                if (is_write) self.written[i] = true;
+                return;
+            }
+        }
+        if (self.len == self.found.len) {
+            self.overflow = true;
+            return;
+        }
+        self.found[self.len] = name;
+        self.written[self.len] = is_write;
+        self.len += 1;
+    }
+};
+
+fn scanPromotableExpr(ctx: *const LowerCtx, e: *const ast.Expr, scan: *PromoScan) void {
+    switch (e.*) {
+        .name => |n| if (promotableBindingName(ctx, n.ident)) scan.note(n.ident, false),
+        .binop => |b| {
+            scanPromotableExpr(ctx, b.lhs, scan);
+            scanPromotableExpr(ctx, b.rhs, scan);
+        },
+        .unop => |u| scanPromotableExpr(ctx, u.operand, scan),
+        else => {},
+    }
+}
+
+fn scanPromotableBlock(ctx: *const LowerCtx, b: *const ast.Block, scan: *PromoScan) void {
+    for (b.stmts) |*s| scanPromotableStmt(ctx, s, scan);
+}
+
+fn scanPromotableStmt(ctx: *const LowerCtx, s: *const ast.Stmt, scan: *PromoScan) void {
+    switch (s.*) {
+        .assign => |a| {
+            for (a.values) |v| scanPromotableExpr(ctx, v, scan);
+            for (a.targets) |t| {
+                if (t.* == .name and promotableBindingName(ctx, t.name.ident))
+                    scan.note(t.name.ident, true);
+            }
+        },
+        .if_stmt => |f| {
+            scanPromotableExpr(ctx, f.cond, scan);
+            scanPromotableBlock(ctx, &f.then, scan);
+            for (f.elseifs) |ei| {
+                scanPromotableExpr(ctx, ei.cond, scan);
+                scanPromotableBlock(ctx, &ei.body, scan);
+            }
+            if (f.else_body) |eb| scanPromotableBlock(ctx, &eb, scan);
+        },
+        .while_loop => |w| {
+            scanPromotableExpr(ctx, w.cond, scan);
+            scanPromotableBlock(ctx, &w.body, scan);
+        },
+        else => {},
+    }
+}
+
+/// Decide the promotions for one `while`. Returns how many entries of `out`
+/// were filled; the caller emits the preloads and installs the shadows.
+fn planPromotions(ctx: *LowerCtx, ws: anytype, out: *[max_promoted_bindings]Promotion) usize {
+    const n = planPromotionsInner(ctx, ws, out);
+    return n;
+}
+
+fn reportVerdict(verdict: PromotionVerdict, out: []const Promotion, line: u32) void {
+    if (!module_promote_diag) return;
+    if (verdict != .admitted) {
+        std.debug.print("[module-promote] line {d}: kept 0 — {s}\n", .{ line, @tagName(verdict) });
+        return;
+    }
+    std.debug.print("[module-promote] line {d}: kept {d}", .{ line, out.len });
+    for (out) |p| std.debug.print(" {s}{s}", .{ p.name, if (p.written) "(rw)" else "(r)" });
+    std.debug.print("\n", .{});
+}
+
+fn planPromotionsInner(ctx: *LowerCtx, ws: anytype, out: *[max_promoted_bindings]Promotion) usize {
+    const line: u32 = ws.cond.loc().line;
+    if (!module_promote_enabled) {
+        reportVerdict(.severed, out[0..0], line);
+        return 0;
+    }
+    if (!promotableExpr(ws.cond) or !promotableBlock(&ws.body)) {
+        reportVerdict(.region_shape, out[0..0], line);
+        return 0;
+    }
+    var scan: PromoScan = .{};
+    scanPromotableExpr(ctx, ws.cond, &scan);
+    scanPromotableBlock(ctx, &ws.body, &scan);
+    if (scan.overflow) {
+        reportVerdict(.budget, out[0..0], line);
+        return 0;
+    }
+    var n: usize = 0;
+    for (scan.found[0..scan.len], 0..) |name, i| {
+        const key = ctx.module_globals.storageKey(name) orelse continue;
+        out[n] = .{ .name = key, .slot = ctx.freshTemp(), .written = scan.written[i] };
+        n += 1;
+    }
+    reportVerdict(if (n == 0) .no_module_binding else .admitted, out[0..n], line);
+    return n;
+}
+
 fn registerTableFieldGlobals(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -4391,6 +4744,16 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             }
         },
         .while_loop => |ws| {
+            // MODULE-BINDING REGISTER PROMOTION. The preloads sit BEFORE
+            // `head_idx`, so the back edge re-runs the test and not the load;
+            // the write-backs sit AT `end_idx`, which is where both the failing
+            // test and every `break` are patched to land (P2).
+            var promo: [max_promoted_bindings]Promotion = undefined;
+            const promo_len = planPromotions(ctx, ws, &promo);
+            for (promo[0..promo_len]) |p| {
+                try ctx.emit(.{ .op = .load_global, .result = p.slot, .field = p.name, .ty = .i64 });
+                try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, p.name), p.slot);
+            }
             try ctx.loop_breaks.append(ctx.alloc, std.ArrayListUnmanaged(u32).empty);
             const head_idx: u32 = @intCast(ctx.instrs.items.len);
             try ctx.loop_heads.append(ctx.alloc, head_idx);
@@ -4411,6 +4774,24 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             defer breaks.deinit(ctx.alloc);
             for (breaks.items) |br_idx| {
                 ctx.instrs.items[br_idx].branch_target = end_idx;
+            }
+            for (promo[0..promo_len]) |p| {
+                // Retire the shadow FIRST, so nothing after the loop can reach
+                // the register instead of the word.
+                if (ctx.locals.fetchRemove(p.name)) |kv| ctx.alloc.free(kv.key);
+                // `lowerAssignTarget`'s local arm records a literal store in
+                // `const_ints`; the `store_global` arm it replaced records
+                // nothing. Dropping the entry keeps everything AFTER the loop
+                // reading exactly what it read before this pass existed.
+                if (ctx.const_ints.fetchRemove(p.name)) |kv| ctx.alloc.free(kv.key);
+                if (p.written) {
+                    try ctx.emit(.{
+                        .op = .store_global,
+                        .field = p.name,
+                        .lhs = .{ .local = p.slot },
+                        .ty = .i64,
+                    });
+                }
             }
         },
         .num_for => |nf| try lowerNumFor(ctx, nf),

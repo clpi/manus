@@ -164,6 +164,20 @@ fn apply_env_flags(init: std.process.Init) void {
             if (env_value_truthy(v)) te.setMetaDispatchStrict(true);
         }
     }
+    // SEVERING CONTROL for module-binding register promotion
+    // (`dnir_lower.module_promote_enabled`). Set it and the direct backend
+    // emits exactly what it emitted before the pass existed, which is the only
+    // way a promotion measurement has a negative control rather than a second
+    // subject.
+    if (map.get("DUO_NO_MODULE_PROMOTE")) |v| {
+        if (env_value_truthy(v)) dnir_lower.module_promote_enabled = false;
+    }
+    // ADMISSION DIAGNOSTIC. One line per `while` the promotion pass examines,
+    // so that "did it fire, and if not why not" is answerable without
+    // compiling the program twice and diffing the bytes.
+    if (map.get("DUO_MODULE_PROMOTE_DIAG")) |v| {
+        if (env_value_truthy(v)) dnir_lower.module_promote_diag = true;
+    }
     if (map.get("DUO_GRAPH")) |v| {
         if (env_value_truthy(v)) graph_diag_enabled = true;
     }
