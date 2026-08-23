@@ -1147,6 +1147,19 @@ const Arm64Compiler = struct {
     /// Last instruction that reads each DNIR value/slot id. The map is shared
     /// by both register files; physical file selection is a separate fact.
     value_free_at: std.AutoHashMapUnmanaged(u32, u32) = .empty,
+    /// Value ids with a READ THIS COMPILER CANNOT ATTRIBUTE to the definition
+    /// immediately before it. See `computeTightReads`, which fills it, and
+    /// `singleReaderByTightDef`, which is the only thing that asks.
+    loose_read_values: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// Census `IDOL_TIGHTDEF_REPORT` prints: compare/branch pairs the tight-def
+    /// fact admitted that `value_free_at` alone refused.
+    tightdef_admitted: u32 = 0,
+    /// SEVERING CONTROL for the tight-def fact. `IDOL_NO_TIGHTDEF=1` restores
+    /// the `value_free_at`-only test. Any `IDOL_*` name this compiler reads is
+    /// `.affects` by default in `main.behaviourEnvClass`, so setting it to `0`
+    /// on the other arm declines the build cache on BOTH sides and neither arm
+    /// can be handed the other's artifact.
+    tightdef: bool = true,
     fp_abi_passthrough: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// Loop-invariant immediate hoisting (FTCFTW debt (1); GAP-172 / GAP-169).
     /// A `.i64` constant used inside a loop is otherwise re-materialized by a
@@ -1337,6 +1350,7 @@ const Arm64Compiler = struct {
         self.fp_locals.deinit(self.alloc);
         self.fp_temps.deinit(self.alloc);
         self.value_free_at.deinit(self.alloc);
+        self.loose_read_values.deinit(self.alloc);
         self.imm_hoist.deinit(self.alloc);
         self.hoist_plan.deinit(self.alloc);
         self.hoist_preheader.deinit(self.alloc);
@@ -1807,6 +1821,14 @@ const Arm64Compiler = struct {
         // against a real pass that emits none of it, so the measurement would be
         // of a different function.
         probe.const_licence = self.const_licence;
+        // …AND THAT INCLUDES THE SEVERING CONTROL. `tightdef` decides which
+        // compare/branch pairs fuse, which decides how many value registers the
+        // body claims. A probe that fused where the real pass would not measured
+        // a DIFFERENT function's callee-save set, and the mismatch surfaced as
+        // `callee_touched & ~callee_save_plan != 0` — a refusal of a program the
+        // unsevered arm compiles. The severing arm would then have been
+        // measured against a REFUSAL rather than against the code it severs.
+        probe.tightdef = self.tightdef;
         if (self.graph_const_bases.count() != 0) {
             var last_symbol: u32 = 0;
             var bases = self.graph_const_bases.iterator();
@@ -1960,6 +1982,146 @@ const Arm64Compiler = struct {
             else => {},
         };
         return false;
+    }
+
+    /// Does this instruction WRITE the value id `t`?
+    ///
+    /// `mov_arg`/`fp_mov_arg` are excluded because their `result` carries a
+    /// PHYSICAL ABI register slot (0..7), not a value id — the same aliasing
+    /// the emit loop's ownership rebind already guards against, and treating a
+    /// slot number as a definition would make a live value look dead.
+    fn instructionDefinesId(ins: dnir.Instr, t: u32) bool {
+        switch (ins.op) {
+            .mov_arg, .fp_mov_arg => {},
+            else => if (ins.result) |r| {
+                if (r == t) return true;
+            },
+        }
+        for (ins.pack_results) |result| {
+            const temp = result.temp orelse continue;
+            if (temp == t) return true;
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------
+    // THE TIGHT-DEFINITION FACT — "this definition's ONLY reader is the next
+    // instruction", asked of the FUNCTION instead of guessed from an index.
+    //
+    // `value_free_at` answers a different question: the last index at which an
+    // ID is mentioned anywhere. Every peephole that wants "single reader"
+    // asks it as `last == flat_idx + 1`, and that stands in for the fact only
+    // while ids are unique. `dnir_lower`'s LOOP UNROLLER REUSES THEM: the four
+    // copies it makes of a body all name the compare's boolean `t7`, so `t7`'s
+    // last mention is in copy FOUR and copies one through three refuse a fusion
+    // whose precondition they actually satisfy.
+    //
+    // MEASURED, on a 4x-unrolled loop with an unpredictable branch
+    // (`s ^= s<<13 / s ^= s>>7 / s ^= s<<17 ; if s&1 == 0 then t += 3`, 5e7
+    // trips, min of 4, four interleaved trials, both arms from ONE compiler
+    // with only `IDOL_NO_TIGHTDEF` between them, artifact checksums
+    // 7ffc97a6… and b60b021c… and the same answer 74991183 from both:
+    //
+    //     value_free_at only   0.1856 0.1870 0.1865 0.1855 s
+    //     tight-def fact       0.1742 0.1784 0.1779 0.1781 s   1.046x
+    //
+    // Three of four copies emitted `cmp ; cset ; cmp #0 ; b.eq` where the
+    // fourth emitted `cmp ; b.ne`. The two erased instructions sit BETWEEN the
+    // compare and the branch that mispredicts on it, so what they cost is
+    // resolution latency on every mispredict, not issue slots — which is why
+    // this reads 1.049x where removing the same two instructions from a
+    // predictable loop reads 1.000x.
+    //
+    // WHAT MAKES IT SOUND. A read at position `q` reads THIS definition only if
+    // control can arrive at `q` with this definition as the last write of the
+    // id. So an id is TIGHT when, for every read of it in the function:
+    //
+    //   * the read is not at the start of a block (a block start is entered,
+    //     not fallen into), and
+    //   * the instruction immediately before it DEFINES the id, and
+    //   * NOTHING BRANCHES TO the read's own index — otherwise the preceding
+    //     definition can be skipped and the read sees an older one.
+    //
+    // Under those three, every read of a tight id reads the definition
+    // immediately above it. Our compare's definition therefore has exactly one
+    // reader — the branch immediately below it — which is the precondition the
+    // index comparison was standing in for.
+    //
+    // The fact is computed ONCE per function next to `value_free_at` rather
+    // than re-derived per candidate, and it does NOT alter `value_free_at`
+    // itself: shortening live ranges globally would change register allocation
+    // in every function, which is a different change with its own measurement
+    // to earn.
+    //
+    // REACH, COUNTED AND NOT ASSUMED. `IDOL_TIGHTDEF_REPORT` over the whole
+    // corpus — every `.id` under `examples/`, `lib/` and `scripts/` outside
+    // `compile_fail/`, 921 files, 231 of which reach this backend — admits
+    // ZERO pairs. Not one corpus program has both an unrolled loop and a
+    // compare feeding a branch inside it. So this changes no byte of any
+    // artifact the corpus builds today, and the 0-difference corpus answer
+    // check that accompanies it proves the absence of a regression rather than
+    // the presence of a win. What it is worth is 1.046x on the shape above,
+    // which the default 4x unroller manufactures out of any such loop.
+    // ------------------------------------------------------------------
+    fn computeTightReads(self: *Arm64Compiler, f: dnir.Function) Error!void {
+        self.loose_read_values.clearRetainingCapacity();
+        var targets: std.AutoHashMapUnmanaged(u32, void) = .empty;
+        defer targets.deinit(self.alloc);
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if (ins.op != .br) continue;
+                try targets.put(self.alloc, ins.branch_target, {});
+            }
+        }
+        const Sink = struct {
+            set: *std.AutoHashMapUnmanaged(u32, void),
+            alloc: std.mem.Allocator,
+            prev: ?dnir.Instr,
+            entered: bool,
+            failed: bool = false,
+            fn note(s: *@This(), id: u32) void {
+                const attributable = !s.entered and if (s.prev) |p|
+                    Arm64Compiler.instructionDefinesId(p, id)
+                else
+                    false;
+                if (attributable) return;
+                s.set.put(s.alloc, id, {}) catch {
+                    s.failed = true;
+                };
+            }
+        };
+        var idx: u32 = 0;
+        for (f.blocks) |b| {
+            for (b.instrs, 0..) |ins, p| {
+                var sink: Sink = .{
+                    .set = &self.loose_read_values,
+                    .alloc = self.alloc,
+                    .prev = if (p == 0) null else b.instrs[p - 1],
+                    .entered = targets.contains(idx),
+                };
+                forEachOperandId(ins, &sink, Sink.note);
+                if (sink.failed) return error.OutOfMemory;
+                idx += 1;
+            }
+        }
+    }
+
+    /// Census only: this fusion was admitted by the tight-def fact and would
+    /// have been refused by the index test alone.
+    fn countTightDefAdmission(self: *Arm64Compiler, ins: dnir.Instr, flat_idx: u32) void {
+        const t = ins.result orelse return;
+        const last = self.value_free_at.get(t) orelse return;
+        if (last != flat_idx + 1) self.tightdef_admitted += 1;
+    }
+
+    /// Is `t`'s definition at `flat_idx` read ONLY by the instruction at
+    /// `flat_idx + 1`? `value_free_at` answers it directly when ids are unique;
+    /// the tight-def fact answers it when the unroller has reused them.
+    fn singleReaderByTightDef(self: *const Arm64Compiler, t: u32, flat_idx: u32) bool {
+        const last = self.value_free_at.get(t) orelse return false;
+        if (last == flat_idx + 1) return true;
+        if (!self.tightdef) return false;
+        return !self.loose_read_values.contains(t);
     }
 
     /// Last instruction index that reads each id, widened so that no live range
@@ -2627,6 +2789,7 @@ const Arm64Compiler = struct {
         self.gp_home_regs = @splat(false);
         self.gp_call_home_regs = 0;
         try self.computeValueLastUse(f);
+        try self.computeTightReads(f);
         self.synth_value_next = maxDnirValueId(f) +| 1;
         self.imm_hoist.clearRetainingCapacity();
         self.hoist_preheader.clearRetainingCapacity();
@@ -3198,15 +3361,19 @@ const Arm64Compiler = struct {
                 }
                 var extra_consumed: u32 = 0;
                 if (ifconv) |plan| {
+                    if (fuse_branch or fuse_named) self.countTightDefAdmission(ins, flat_idx);
                     try self.emitIfConverted(&temps, &pinned, plan, &branch_patches);
                     extra_consumed = plan.extra;
                 } else if (ifconv2) |plan| {
+                    if (fuse_branch or fuse_named) self.countTightDefAdmission(ins, flat_idx);
                     try self.emitIfConvertedTwoSided(&temps, &pinned, plan, &branch_patches);
                     extra_consumed = plan.extra;
                 } else if (fuse_branch) {
+                    self.countTightDefAdmission(ins, flat_idx);
                     try self.emitFusedCompareBranch(&temps, &pinned, ins, b.instrs[bi + 1], &branch_patches);
                     extra_consumed = 1;
                 } else if (fuse_named) {
+                    self.countTightDefAdmission(ins, flat_idx);
                     try self.emitFusedCompareBranch(&temps, &pinned, ins, b.instrs[bi + 2], &branch_patches);
                     extra_consumed = 2;
                 } else if (fuse_madd) {
@@ -7174,8 +7341,12 @@ const Arm64Compiler = struct {
         // widened live range (loop-crossing) or a second consumer leaves the
         // last-use index past the branch, and the conservative answer is to
         // keep the materialized boolean rather than erase a value still read.
-        const last = self.value_free_at.get(t) orelse return false;
-        return last == flat_idx + 1;
+        //
+        // ASKED OF THE FUNCTION, not only of the index: the unroller reuses
+        // value ids, so `value_free_at` reports copy four's read for copy one's
+        // boolean and refuses three of every four fusible pairs. See
+        // `computeTightReads`.
+        return self.singleReaderByTightDef(t, flat_idx);
     }
 
     // ------------------------------------------------------------------
@@ -7326,9 +7497,9 @@ const Arm64Compiler = struct {
         }
         if (br.lhs != .local or br.lhs.local != l) return false;
 
-        // The comparison result's only reader is the naming store.
-        const last = self.value_free_at.get(t) orelse return false;
-        if (last != flat_idx + 1) return false;
+        // The comparison result's only reader is the naming store — asked of
+        // the function, for the reason `compareBranchFusible` states.
+        if (!self.singleReaderByTightDef(t, flat_idx)) return false;
 
         var reads: u32 = 0;
         var writes: u32 = 0;
@@ -9329,6 +9500,12 @@ fn emitArm64FromDnirLicensed(
         .const_licence = licence,
     };
     if (std.c.getenv("IDOL_IFCONV_TRACE") != null) compiler.ifconv_trace = true;
+    // The tight-def fact's SEVERING CONTROL. Read as a VALUE, not a presence,
+    // so both arms of a measurement can carry the name and both decline the
+    // build cache — see the `tightdef` field.
+    if (std.c.getenv("IDOL_NO_TIGHTDEF")) |raw| {
+        if (std.mem.eql(u8, std.mem.span(raw), "1")) compiler.tightdef = false;
+    }
     if (m.graph) |graph| {
         if (graph.gateTransportModule()) {
             compiler.gate_transport = true;
@@ -9355,6 +9532,12 @@ fn emitArm64FromDnirLicensed(
                 compiler.ifconv_refused_lineage,
             },
         );
+    }
+    // TIGHT-DEF CENSUS. Off unless asked for: how many compare/branch pairs in
+    // a real program the fact admits that the index test alone refused,
+    // reported rather than asserted.
+    if (std.c.getenv("IDOL_TIGHTDEF_REPORT") != null) {
+        std.debug.print("tightdef admitted={d}\n", .{compiler.tightdef_admitted});
     }
     var output = try compiler.finish();
     output.graph = m.graph;
