@@ -1441,8 +1441,9 @@ pub const Result = union(enum) {
 
 /// Q1 + Q2 — **THE PROJECTION IS A FACT, AND THIS IS WHERE IT IS EARNED.**
 ///
-/// `main: i64` in a sealed executable returns to a process, and a process exit
-/// status is EIGHT BITS. MEASURED, and it is the whole license: a `main`
+/// A selected relation in a sealed executable returns to a process, and a
+/// process exit status is EIGHT BITS. MEASURED, and it is the whole license: a
+/// relation
 /// returning 500,000,500,000 exits 32, which is its low byte. So the demanded
 /// projection of the entry's result is `low_bits 8` and every distinction above
 /// bit 7 is unobservable.
@@ -1450,8 +1451,11 @@ pub const Result = union(enum) {
 /// `recurrence.zig`'s O9 says the call site owes two proofs and this function
 /// discharges both:
 ///
-///   (a) THIS RELATION IS THE ENTRY. One-segment path spelled `main`, no
-///       parameters, no varargs.
+///   (a) THIS RELATION IS THE ENTRY. The caller supplies the exact selected
+///       graph relation id; while the declaration is still available this
+///       boundary verifies that the graph maps it to that same id. No source
+///       spelling selects entry identity here. The relation has no parameters
+///       or varargs.
 ///   (b) NOTHING IN THE MODULE APPLIES IT. Checked against the graph's own
 ///       application facts, and an UNRESOLVED application anywhere in the
 ///       module is a refusal — an application this function cannot name may be
@@ -1461,26 +1465,24 @@ pub const Result = union(enum) {
 /// and is not reimplemented here.
 pub fn entryProjection(
     fd: *const ast.FuncDecl,
-    graph: ?*const semantic_graph.SemanticGraph,
+    graph: *const semantic_graph.SemanticGraph,
+    selected_relation: semantic_graph.id,
     world: observation.World,
 ) union(enum) { projection: Projection, refused: Refusal } {
-    if (fd.path.len != 1 or !std.mem.eql(u8, fd.path[0], "main"))
-        return .{ .refused = .not_entry };
     if (fd.func.params.len != 0 or fd.func.vararg or fd.func.vararg_name != null)
         return .{ .refused = .not_entry };
 
     if (demand_projection.observationRefusal(world) != null)
         return .{ .refused = .observer_refused };
 
-    if (graph) |g| {
-        const entry = g.findFunc("main") orelse return .{ .refused = .not_entry };
-        if (unresolvedInReach(g, entry))
+    if (!graph.callable(selected_relation)) return .{ .refused = .not_entry };
+    if (graph.relationForDeclaration(fd) != selected_relation) return .{ .refused = .not_entry };
+    if (unresolvedInReach(graph, selected_relation))
+        return .{ .refused = .unresolved_application };
+    for (graph.applications()) |fact| {
+        const callee = graph.applicationRelation(fact.application) orelse
             return .{ .refused = .unresolved_application };
-        for (g.applications()) |fact| {
-            const callee = g.applicationRelation(fact.application) orelse
-                return .{ .refused = .unresolved_application };
-            if (callee == entry) return .{ .refused = .entry_applied };
-        }
+        if (callee == selected_relation) return .{ .refused = .entry_applied };
     }
     return .{ .projection = .{ .low_bits = 8 } };
 }
@@ -1831,8 +1833,30 @@ pub fn closeRelation(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
     mod: ?*const ast.Module,
-    graph: ?*const semantic_graph.SemanticGraph,
+    graph: *const semantic_graph.SemanticGraph,
+    selected_relation: semantic_graph.id,
     world: observation.World,
+    bound: Bound,
+) !Result {
+    var census = Census{ .examined = 1 };
+
+    const h: Projection = switch (entryProjection(fd, graph, selected_relation, world)) {
+        .refused => |r| return refuse(&census, r),
+        .projection => |p| p,
+    };
+    return closeProjectedRelation(alloc, fd, mod, graph, selected_relation, h, bound);
+}
+
+/// Internal algorithm kernel. Entry identity and observer projection have
+/// already been proven by `closeRelation`; direct callers are unit tests of the
+/// recurrence algebra, not another entry-selection route.
+fn closeProjectedRelation(
+    alloc: std.mem.Allocator,
+    fd: *const ast.FuncDecl,
+    mod: ?*const ast.Module,
+    graph: ?*const semantic_graph.SemanticGraph,
+    selected_relation: ?semantic_graph.id,
+    h: Projection,
     bound: Bound,
 ) !Result {
     var census = Census{ .examined = 1 };
@@ -1846,10 +1870,6 @@ pub fn closeRelation(
     if (qenv != null) quotient_synth.install(&qenv.?);
     defer if (qenv != null) quotient_synth.uninstall();
 
-    const h: Projection = switch (entryProjection(fd, graph, world)) {
-        .refused => |r| return refuse(&census, r),
-        .projection => |p| p,
-    };
     census.demanded_bits = switch (h) {
         .low_bits => |k| k,
         else => 64,
@@ -1866,7 +1886,7 @@ pub fn closeRelation(
     const pro = Prologue{
         .alloc = alloc,
         .graph = graph,
-        .entry = if (graph) |g| g.findFunc("main") else null,
+        .entry = selected_relation,
     };
     const shape = readMachine(&fd.func, &m, pro) orelse return refuse(&census, .no_loop);
     const loop = shape.loop.while_loop;
@@ -2044,7 +2064,7 @@ fn refuse(census: *Census, r: Refusal) Result {
 /// compiles with or without a producer, and with none every call refuses
 /// exactly as it did.
 fn callValueInRing(ctx: *const anyopaque, call: *const ast.Expr, args: []const i64) ?i64 {
-    const env: *quotient_synth.Env = @constCast(@ptrCast(@alignCast(ctx)));
+    const env: *quotient_synth.Env = @ptrCast(@alignCast(@constCast(ctx)));
     const c = switch (call.*) {
         .call => |x| x,
         else => return null,
@@ -2064,14 +2084,16 @@ fn callValueInRing(ctx: *const anyopaque, call: *const ast.Expr, args: []const i
 pub fn applyToEntry(
     alloc: std.mem.Allocator,
     mod: *ast.Module,
-    graph: ?*const semantic_graph.SemanticGraph,
+    graph: *const semantic_graph.SemanticGraph,
+    selected_relation: semantic_graph.id,
     world: observation.World,
 ) !?Outcome {
+    if (!graph.callable(selected_relation)) return null;
     for (mod.body.stmts) |*st| {
         if (st.* != .func_decl) continue;
         const fd = &st.func_decl;
-        if (fd.path.len != 1 or !std.mem.eql(u8, fd.path[0], "main")) continue;
-        const r = try closeRelation(alloc, fd, mod, graph, world, .{});
+        if (graph.relationForDeclaration(fd) != selected_relation) continue;
+        const r = try closeRelation(alloc, fd, mod, graph, selected_relation, world, .{});
         switch (r) {
             .refused => return null,
             .closed => |out| {
@@ -2363,7 +2385,7 @@ test "obseq: W6 closes to a FIXED POINT, and the answer matches a real loop" {
     var b = Build.init();
     defer b.deinit();
     const fd = w6Decl(&b, 20000000);
-    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
+    const r = try closeProjectedRelation(testing.allocator, &fd, null, null, null, .{ .low_bits = 8 }, .{});
     const out = switch (r) {
         .refused => |x| {
             std.debug.print("refused: {s}\n", .{@tagName(x.refusal)});
@@ -2392,7 +2414,7 @@ test "obseq: the closed value is right at EVERY trip count past mu" {
     var n: i64 = 4;
     while (n <= 4096) : (n *= 2) {
         const fd = w6Decl(&b, n);
-        const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
+        const r = try closeProjectedRelation(testing.allocator, &fd, null, null, null, .{ .low_bits = 8 }, .{});
         switch (r) {
             .refused => return error.TestUnexpectedResult,
             .closed => |o| try testing.expectEqual(
@@ -2410,7 +2432,7 @@ test "obseq: Q7 — a loop that may run fewer than mu times is REFUSED" {
     var b = Build.init();
     defer b.deinit();
     const fd = w6Decl(&b, 3);
-    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
+    const r = try closeProjectedRelation(testing.allocator, &fd, null, null, null, .{ .low_bits = 8 }, .{});
     switch (r) {
         .closed => return error.TestUnexpectedResult,
         .refused => |x| try testing.expectEqual(Refusal.trips_below_mu, x.refusal),
@@ -2563,38 +2585,29 @@ test "obseq: the information floor is derived from the DEMANDED bits" {
 // ---- Q1/Q2: the fact is earned, not defaulted ----
 
 test "obseq: Q2 — an open world refuses, and it refuses by ROSTER" {
-    var b = Build.init();
-    defer b.deinit();
-    const fd = w6Decl(&b, 20000000);
+    var fx = try compose(src_selected_main);
+    defer fx.deinit();
+    var graph = semantic_graph.SemanticGraph.init(testing.allocator);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&fx.mod, fx.mod.file);
+    const fd = mainOf(&fx.mod);
+    const selected = graph.relationForDeclaration(fd) orelse return error.TestUnexpectedResult;
     // `World{}` has no `closed_world`, so `foreign` is in the roster and a
     // foreign caller takes the whole register.
-    switch (entryProjection(&fd, null, observation.World{})) {
+    switch (entryProjection(fd, &graph, selected, observation.World{})) {
         .projection => return error.TestUnexpectedResult,
         .refused => |r| try testing.expectEqual(Refusal.observer_refused, r),
     }
     // Adding a debugger demand to the CLOSED world refuses it too: a debugger
     // reads the value, not the exit byte.
     const watched = observation.ordinary_executable.with(.debugger_demanded);
-    switch (entryProjection(&fd, null, watched)) {
+    switch (entryProjection(fd, &graph, selected, watched)) {
         .projection => return error.TestUnexpectedResult,
         .refused => |r| try testing.expectEqual(Refusal.observer_refused, r),
     }
-    switch (entryProjection(&fd, null, observation.ordinary_executable)) {
+    switch (entryProjection(fd, &graph, selected, observation.ordinary_executable)) {
         .refused => return error.TestUnexpectedResult,
         .projection => |p| try testing.expect(p.eql(.{ .low_bits = 8 })),
-    }
-}
-
-test "obseq: Q1 — a relation that is not the entry gets no quotient" {
-    var b = Build.init();
-    defer b.deinit();
-    var fd = w6Decl(&b, 20000000);
-    const path = b.a().alloc([]const u8, 1) catch unreachable;
-    path[0] = "helper";
-    fd.path = path;
-    switch (entryProjection(&fd, null, observation.ordinary_executable)) {
-        .projection => return error.TestUnexpectedResult,
-        .refused => |r| try testing.expectEqual(Refusal.not_entry, r),
     }
 }
 
@@ -2608,7 +2621,7 @@ test "obseq: a PERIODIC contracted orbit falls to the delegated exact index" {
     var b = Build.init();
     defer b.deinit();
     const fd = pairDecl(&b, 20000000, 1103515245, 6364136223);
-    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
+    const r = try closeProjectedRelation(testing.allocator, &fd, null, null, null, .{ .low_bits = 8 }, .{});
     const out = switch (r) {
         .refused => |x| {
             std.debug.print("refused: {s}\n", .{@tagName(x.refusal)});
@@ -2750,7 +2763,7 @@ test "obseq: D2 — 65,536 exact states against FOUR in the quotient" {
     try testing.expectEqual(@as(u32, 4), c.lambda);
 
     // And it still answers, through the delegated exact index.
-    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
+    const r = try closeProjectedRelation(testing.allocator, &fd, null, null, null, .{ .low_bits = 8 }, .{});
     switch (r) {
         .refused => return error.TestUnexpectedResult,
         .closed => |o| {
@@ -2780,7 +2793,7 @@ test "obseq: a randomized differential over the whole admitted grammar" {
         // reaches fixed points) and two (which do not).
         const solo = t % 2 == 0;
         const fd = if (solo) soloDecl(&b, n, ca, cb) else pairDecl(&b, n, ca, cb);
-        const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{ .max_steps = 1024 });
+        const r = try closeProjectedRelation(testing.allocator, &fd, null, null, null, .{ .low_bits = 8 }, .{ .max_steps = 1024 });
         switch (r) {
             .refused => refused += 1,
             .closed => |o| {
@@ -2835,7 +2848,7 @@ test "obseq: Q5 — a body that reads bits above the quotient is REFUSED" {
             .body = outer,
         },
     };
-    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
+    const r = try closeProjectedRelation(testing.allocator, &fd, null, null, null, .{ .low_bits = 8 }, .{});
     switch (r) {
         .closed => return error.TestUnexpectedResult,
         .refused => {},
@@ -2871,7 +2884,7 @@ test "obseq: a NON-quotientable body still closes when it is a fixed point" {
             .body = outer,
         },
     };
-    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{});
+    const r = try closeProjectedRelation(testing.allocator, &fd, null, null, null, .{ .low_bits = 8 }, .{});
     switch (r) {
         .refused => return error.TestUnexpectedResult,
         .closed => |o| try testing.expectEqual(@as(i64, (12345 & 240) & 0xff), o.value),
@@ -2884,26 +2897,11 @@ test "obseq: §43 — the retention budget is structural, and overflow REFUSES" 
     const fd = w6Decl(&b, 20000000);
     // A budget of two steps cannot hold a five-step orbit. The answer is a
     // refusal, never a truncated closure.
-    const r = try closeRelation(testing.allocator, &fd, null, null, observation.ordinary_executable, .{ .max_steps = 2 });
+    const r = try closeProjectedRelation(testing.allocator, &fd, null, null, null, .{ .low_bits = 8 }, .{ .max_steps = 2 });
     switch (r) {
         .closed => return error.TestUnexpectedResult,
         .refused => |x| try testing.expectEqual(Refusal.budget, x.refusal),
     }
-}
-
-test "obseq: the transform rewrites the entry body and nothing else" {
-    var b = Build.init();
-    defer b.deinit();
-    const fd = w6Decl(&b, 20000000);
-    const stmts = b.a().alloc(ast.Stmt, 1) catch unreachable;
-    stmts[0] = .{ .func_decl = fd };
-    var mod = ast.Module{ .file = "t", .body = b.block(stmts, null) };
-    const out = (try applyToEntry(b.a(), &mod, null, observation.ordinary_executable)).?;
-    try testing.expectEqual(@as(i64, @intCast(w6Oracle(20000000) & 0xff)), out.value);
-    const after = &mod.body.stmts[0].func_decl.func.body;
-    try testing.expectEqual(@as(usize, 0), after.stmts.len);
-    try testing.expect(after.tail_expr != null);
-    try testing.expectEqual(out.value, after.tail_expr.?.int_lit.val);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2938,11 +2936,124 @@ fn compose(src: []const u8) !Composed {
 }
 
 fn mainOf(mod: *const ast.Module) *const ast.FuncDecl {
+    return declOf(mod, "main");
+}
+
+fn declOf(mod: *const ast.Module, name: []const u8) *const ast.FuncDecl {
     for (mod.body.stmts) |*s| {
         if (s.* != .func_decl) continue;
-        if (std.mem.eql(u8, s.func_decl.path[0], "main")) return &s.func_decl;
+        if (s.func_decl.path.len == 1 and std.mem.eql(u8, s.func_decl.path[0], name))
+            return &s.func_decl;
     }
     unreachable;
+}
+
+fn expectClosedBody(fd: *const ast.FuncDecl, value: i64) !void {
+    try testing.expectEqual(@as(usize, 0), fd.func.body.stmts.len);
+    try testing.expect(fd.func.body.tail_expr != null);
+    try testing.expectEqual(value, fd.func.body.tail_expr.?.int_lit.val);
+}
+
+const src_selected_check =
+    \\main: i64 = ()
+    \\    41
+    \\
+    \\check: i64 = ()
+    \\    x = 12345
+    \\    i = 0
+    \\    while i < 20000000
+    \\        x = x ~ (x * 1103515245)
+    \\        x = x + 12345
+    \\        i = i + 1
+    \\    x
+;
+
+const src_selected_main =
+    \\check: i64 = ()
+    \\    73
+    \\
+    \\main: i64 = ()
+    \\    x = 12345
+    \\    i = 0
+    \\    while i < 20000000
+    \\        x = x ~ (x * 1103515245)
+    \\        x = x + 12345
+    \\        i = i + 1
+    \\    x
+;
+
+test "obseq: selected graph relation id rewrites non-main and leaves decoy main" {
+    var fx = try compose(src_selected_check);
+    defer fx.deinit();
+    var graph = semantic_graph.SemanticGraph.init(testing.allocator);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&fx.mod, fx.mod.file);
+
+    const selected_fd = declOf(&fx.mod, "check");
+    const selected = graph.relationForDeclaration(selected_fd) orelse
+        return error.TestUnexpectedResult;
+    const decoy = mainOf(&fx.mod);
+    const decoy_tail = decoy.func.body.tail_expr.?;
+    const out = (try applyToEntry(fx.arena.allocator(), &fx.mod, &graph, selected, observation.ordinary_executable)).?;
+
+    try testing.expectEqual(@as(i64, @intCast(w6Oracle(20000000) & 0xff)), out.value);
+    try expectClosedBody(selected_fd, out.value);
+    try testing.expect(decoy.func.body.tail_expr.? == decoy_tail);
+    try testing.expectEqual(@as(i64, 41), decoy.func.body.tail_expr.?.int_lit.val);
+}
+
+test "obseq: explicitly selected main relation id closes only main" {
+    var fx = try compose(src_selected_main);
+    defer fx.deinit();
+    var graph = semantic_graph.SemanticGraph.init(testing.allocator);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&fx.mod, fx.mod.file);
+
+    const selected_fd = mainOf(&fx.mod);
+    const selected = graph.relationForDeclaration(selected_fd) orelse
+        return error.TestUnexpectedResult;
+    const decoy = declOf(&fx.mod, "check");
+    const out = (try applyToEntry(fx.arena.allocator(), &fx.mod, &graph, selected, observation.ordinary_executable)).?;
+
+    try testing.expectEqual(@as(i64, @intCast(w6Oracle(20000000) & 0xff)), out.value);
+    try expectClosedBody(selected_fd, out.value);
+    try testing.expectEqual(@as(i64, 73), decoy.func.body.tail_expr.?.int_lit.val);
+}
+
+test "obseq: root and corrupt relation ids fail closed without touching decoy main" {
+    var fx = try compose(
+        \\main: i64 = ()
+        \\    41
+        \\
+        \\7
+    );
+    defer fx.deinit();
+    var graph = semantic_graph.SemanticGraph.init(testing.allocator);
+    defer graph.deinit();
+    const root = try graph.liftModuleWithCalls(&fx.mod, fx.mod.file);
+    const decoy = mainOf(&fx.mod);
+    const before = decoy.func.body.tail_expr.?;
+
+    try testing.expect((try applyToEntry(testing.allocator, &fx.mod, &graph, root, observation.ordinary_executable)) == null);
+    try testing.expect(decoy.func.body.tail_expr.? == before);
+    try testing.expect((try applyToEntry(testing.allocator, &fx.mod, &graph, std.math.maxInt(semantic_graph.id), observation.ordinary_executable)) == null);
+    try testing.expect(decoy.func.body.tail_expr.? == before);
+}
+
+test "obseq: selected relation must match the declaration graph identity" {
+    var fx = try compose(src_selected_check);
+    defer fx.deinit();
+    var graph = semantic_graph.SemanticGraph.init(testing.allocator);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&fx.mod, fx.mod.file);
+
+    const check_fd = declOf(&fx.mod, "check");
+    const main_id = graph.relationForDeclaration(mainOf(&fx.mod)) orelse
+        return error.TestUnexpectedResult;
+    switch (entryProjection(check_fd, &graph, main_id, observation.ordinary_executable)) {
+        .projection => return error.TestUnexpectedResult,
+        .refused => |r| try testing.expectEqual(Refusal.not_entry, r),
+    }
 }
 
 /// The oracle for `step(x) = (x ~ (x*1103515245)) + 12345` iterated — the SAME
@@ -2976,14 +3087,14 @@ test "obseq: a loop body that APPLIES a user relation closes to a fixed point" {
     const fd = mainOf(&fx.mod);
 
     // WITHOUT the relation table — this module exactly as it shipped.
-    switch (try closeRelation(testing.allocator, fd, null, null, observation.ordinary_executable, .{})) {
+    switch (try closeProjectedRelation(testing.allocator, fd, null, null, null, .{ .low_bits = 8 }, .{})) {
         .closed => return error.TestUnexpectedResult,
         .refused => |x| try testing.expectEqual(Refusal.body_not_admitted, x.refusal),
     }
 
     // WITH it. The answer is checked against a loop run for real in Zig, not
     // against this module's own algebra.
-    const r = try closeRelation(testing.allocator, fd, &fx.mod, null, observation.ordinary_executable, .{});
+    const r = try closeProjectedRelation(testing.allocator, fd, &fx.mod, null, null, .{ .low_bits = 8 }, .{});
     const out = switch (r) {
         .refused => return error.TestUnexpectedResult,
         .closed => |o| o,
@@ -3018,7 +3129,7 @@ test "obseq: the closed value is right at EVERY trip count, through the call" {
         , .{trips});
         var fx = try compose(src);
         defer fx.deinit();
-        const r = try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{});
+        const r = try closeProjectedRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, null, .{ .low_bits = 8 }, .{});
         switch (r) {
             .refused => return error.TestUnexpectedResult,
             .closed => |o| try testing.expectEqual(
@@ -3047,7 +3158,7 @@ test "obseq: a callee the law refuses leaves the loop alone" {
         \\    x
     );
     defer fx.deinit();
-    switch (try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{})) {
+    switch (try closeProjectedRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, null, .{ .low_bits = 8 }, .{})) {
         .closed => return error.TestUnexpectedResult,
         .refused => |x| try testing.expectEqual(Refusal.body_not_admitted, x.refusal),
     }
@@ -3068,7 +3179,7 @@ test "obseq: an EFFECT in the callee leaves the loop alone" {
         \\    x
     );
     defer fx.deinit();
-    switch (try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{})) {
+    switch (try closeProjectedRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, null, .{ .low_bits = 8 }, .{})) {
         .closed => return error.TestUnexpectedResult,
         .refused => |x| try testing.expectEqual(Refusal.body_not_admitted, x.refusal),
     }
@@ -3092,7 +3203,7 @@ test "obseq: a REBOUND callee name is not a relation" {
         \\    x
     );
     defer fx.deinit();
-    switch (try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{})) {
+    switch (try closeProjectedRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, null, .{ .low_bits = 8 }, .{})) {
         .closed => return error.TestUnexpectedResult,
         .refused => |x| try testing.expect(x.refusal != .disagreement),
     }
@@ -3120,7 +3231,7 @@ const src_pair_call =
 test "obseq: a periodic orbit through a call reaches the delegated family" {
     var fx = try compose(src_pair_call);
     defer fx.deinit();
-    const r = try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{});
+    const r = try closeProjectedRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, null, .{ .low_bits = 8 }, .{});
     switch (r) {
         .closed => |o| {
             // Only reachable with `patches/recurrence-contracted-key-and-call.patch`
@@ -3167,7 +3278,7 @@ test "obseq: a prologue that FOLDS is a prologue that is a literal" {
         \\    x
     );
     defer fx.deinit();
-    const r = try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{});
+    const r = try closeProjectedRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, null, .{ .low_bits = 8 }, .{});
     const out = switch (r) {
         .refused => return error.TestUnexpectedResult,
         .closed => |o| o,
@@ -3188,7 +3299,7 @@ test "obseq: a prologue that FOLDS is a prologue that is a literal" {
         \\    x
     );
     defer lit.deinit();
-    const r2 = try closeRelation(testing.allocator, mainOf(&lit.mod), &lit.mod, null, observation.ordinary_executable, .{});
+    const r2 = try closeProjectedRelation(testing.allocator, mainOf(&lit.mod), &lit.mod, null, null, .{ .low_bits = 8 }, .{});
     switch (r2) {
         .refused => return error.TestUnexpectedResult,
         .closed => |o| try testing.expectEqual(out.value, o.value),
@@ -3220,7 +3331,7 @@ test "obseq: a prologue the fold cannot run REFUSES rather than guessing" {
     }) |src| {
         var fx = try compose(src);
         defer fx.deinit();
-        switch (try closeRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, observation.ordinary_executable, .{})) {
+        switch (try closeProjectedRelation(testing.allocator, mainOf(&fx.mod), &fx.mod, null, null, .{ .low_bits = 8 }, .{})) {
             .closed => return error.TestUnexpectedResult,
             .refused => |x| try testing.expectEqual(Refusal.no_loop, x.refusal),
         }
