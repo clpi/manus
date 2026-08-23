@@ -1,0 +1,150 @@
+# gate/layers.manifest — which layer each compiler translation unit belongs to.
+#
+# gate/layering.sh enforces dependency DIRECTION from this file. Classification
+# is checked in, not inferred from filenames: `native_ir.zig` and
+# `native_backend.zig` share a prefix and sit in different layers, and
+# `wasm_semantic.zig` is a backend opcode table while `semantic_graph.zig` is
+# sema. A prefix rule would get both wrong.
+#
+# COVERAGE IS MANDATORY. Every tracked src/*.zig must appear here exactly once.
+# A new compiler file with no classification FAILS the gate. That is deliberate:
+# the cheapest way to defeat a direction rule is to add an unclassified file and
+# route the forbidden edge through it.
+#
+# LAYERS, in dependency order (each may depend only on layers above it):
+#   TOKEN    bytes -> tokens. Owns lexical identity. Owns no meaning.
+#   AST      tokens -> tree. Owns shape. Owns NO semantic relation identity.
+#   SEMA     tree -> meaning. Owns relations, homes, regions, demand, tables.
+#   IR       the settled contract handed to a backend: resolved types, DNIR,
+#            target and representation facts. Deliberately NOT sema: a backend
+#            reading `types.zig` is reading a decided answer, not re-deriving
+#            one, and that distinction is the whole point of the firewall.
+#   BACKEND  IR -> emitted artifact (c, direct/native, wasm).
+#   RUNTIME  host-side execution surface.
+#   FOREIGN  C ingestion.
+#   DRIVER   CLI, tests, diagnostics, evidence. Depends on everything.
+
+TOKEN    lexer.zig
+TOKEN    lexer_bridge.zig
+TOKEN    lexer_dispatch.zig
+TOKEN    lexer_differential.zig
+TOKEN    source_cursor.zig
+TOKEN    token_view.zig
+TOKEN    token_semantic.zig
+TOKEN    token_classify_gen.zig
+TOKEN    keyword_bridge.zig
+TOKEN    lexical_identity.zig
+TOKEN    grammar_roles.zig
+TOKEN    grammar_role_table.zig
+
+AST      parser.zig
+AST      ast.zig
+AST      pretty.zig
+AST      macro_expand.zig
+AST      directives.zig
+AST      legacy_directives.zig
+AST      meta_directives.zig
+AST      meta_module.zig
+
+SEMA     sema.zig
+SEMA     semantic_graph.zig
+SEMA     semantic_algebra.zig
+SEMA     semantic_identity.zig
+SEMA     subject_home.zig
+SEMA     home_resolve.zig
+SEMA     relation.zig
+SEMA     collection_relation.zig
+SEMA     place.zig
+SEMA     region.zig
+SEMA     region_graph.zig
+SEMA     escape.zig
+SEMA     arc.zig
+SEMA     mono.zig
+SEMA     comptime.zig
+SEMA     demand.zig
+SEMA     demand_projection.zig
+SEMA     observer_demand.zig
+SEMA     observation.zig
+SEMA     obseq.zig
+SEMA     eqspace.zig
+SEMA     recurrence.zig
+SEMA     loop_closure.zig
+SEMA     quotient_synth.zig
+SEMA     transform_engine.zig
+SEMA     async_lower.zig
+SEMA     tail_result_demand.zig
+SEMA     tail_result_model.zig
+SEMA     conversion_law.zig
+SEMA     type_diff.zig
+SEMA     graph_query.zig
+SEMA     abi_specialize.zig
+SEMA     abi_resource.zig
+SEMA     wiring.zig
+SEMA     dynamic_boundary.zig
+SEMA     derive_eval.zig
+SEMA     derive_registry.zig
+SEMA     derive_bundles.zig
+SEMA     floor_derive.zig
+SEMA     table_facts.zig
+SEMA     table_apply.zig
+SEMA     const_table.zig
+SEMA     proof_carrying.zig
+SEMA     assumption_guard.zig
+
+IR       types.zig
+IR       native_ir.zig
+IR       representation_manifest.zig
+IR       backend_identity.zig
+IR       target_model.zig
+
+BACKEND  codegen.zig
+BACKEND  c_backend.zig
+BACKEND  c_signatures.zig
+BACKEND  sql_to_c.zig
+BACKEND  pipeline_gen.zig
+BACKEND  schema_gen.zig
+BACKEND  ml_kernels.zig
+BACKEND  meta_codegen.zig
+BACKEND  meta_dispatch.zig
+BACKEND  lua_metamethod.zig
+BACKEND  native_backend.zig
+BACKEND  dnir_lower.zig
+BACKEND  dnir_hardware.zig
+BACKEND  native_bootstrap.zig
+BACKEND  native_barrier_checks.zig
+BACKEND  jit.zig
+BACKEND  c_layout_verify.zig
+BACKEND  wasm_backend.zig
+BACKEND  wasm_semantic.zig
+BACKEND  wasm_semantic_gen.zig
+BACKEND  wasm_decode_differential.zig
+
+RUNTIME  idol_io_runtime.zig
+RUNTIME  idol_str_runtime.zig
+RUNTIME  host_run.zig
+RUNTIME  shell_host.zig
+RUNTIME  shell_session.zig
+RUNTIME  launch_role.zig
+RUNTIME  sim.zig
+RUNTIME  sim_pipeline.zig
+
+FOREIGN  c_frontend.zig
+FOREIGN  c_header_parse.zig
+FOREIGN  c_sim_import.zig
+FOREIGN  foreign_adapter.zig
+FOREIGN  foreign_transpile.zig
+
+DRIVER   main.zig
+DRIVER   tests.zig
+DRIVER   property_tests.zig
+DRIVER   term.zig
+DRIVER   debug_trace.zig
+DRIVER   explain_pipeline.zig
+DRIVER   module_names.zig
+DRIVER   build_framework.zig
+DRIVER   benchmark_evidence.zig
+DRIVER   evidence_record.zig
+DRIVER   knowledge_snapshot.zig
+DRIVER   optimization_outcome.zig
+DRIVER   repair_candidate.zig
+DRIVER   git_preservation.zig

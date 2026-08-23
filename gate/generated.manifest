@@ -1,0 +1,27 @@
+# gate/generated.manifest — files that are PROJECTIONS, and who projects them.
+#
+# A generated file edited by hand is the most durable kind of wrong answer in
+# this repository: the edit works, the tests pass, and the next generator run
+# silently deletes it. Worse, the hand edit becomes the de facto authority
+# while the generator -- the actual source of truth -- keeps saying something
+# else.
+#
+# THE RULE, enforced by gate/layering.sh:
+#   (1) A generated file must still carry its do-not-edit marker. Deleting the
+#       marker is the first move of anyone about to author inside one.
+#   (2) A diff that touches a generated file must touch its generator in the
+#       same diff. If the generator did not change, the projection had no
+#       reason to.
+#
+# FORMAT:  <generated-path>\t<generator-path>\t<marker-substring>
+
+src/lexer_tokenize.c	lib/compiler/lexer.id	do not edit
+src/keyword_classify.c	src/token_classify_gen.zig	do not edit by hand
+lib/token/classify.id	src/token_classify_gen.zig	do not edit by hand
+src/grammar_role_table.zig	lib/compiler/token.id	do not edit by hand
+lib/token/grammarrole.id	lib/compiler/token.id	do not edit by hand
+lib/wasm/opcode_lookup.id	src/wasm_semantic_gen.zig	do not edit by hand
+lib/wasm/ward_mvp_opcodes.id	src/wasm_semantic_gen.zig	do not edit by hand
+ext/tree-sitter-idol/grammar.js	scripts/treesitter_emit.id	GENERATED
+tools/wasm/src/duo_keyword_classify.c	src/token_classify_gen.zig	do not edit by hand
+tools/lsp/src/duo_keyword_classify.c	src/token_classify_gen.zig	do not edit by hand

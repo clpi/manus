@@ -1,0 +1,30 @@
+# gate/layering.rules — forbidden dependency directions.
+#
+# Layers are ordered TOKEN -> AST -> SEMA -> IR -> BACKEND. A layer may depend
+# upward (a backend may read IR; sema may read the AST). Downward reaches are
+# what this file forbids, because a downward reach is a layer recovering by
+# hand something the layer above it was supposed to hand over.
+#
+# THE ONE THAT MOTIVATES THE FILE: a backend that imports AST or Sema is not
+# consuming a decided answer, it is re-deriving meaning at emission time. That
+# is where a "the compiler is wrong" diagnosis comes from -- two places decide
+# the same thing and disagree.
+#
+# IR IS DELIBERATELY NOT SEMA. `types.zig` and `native_ir.zig` are the settled
+# contract handed to a backend. A backend reading them is reading an answer.
+# See gate/layers.manifest.
+#
+# FORMAT: <from-layer> <to-layer>
+
+BACKEND AST
+BACKEND SEMA
+AST     SEMA
+AST     BACKEND
+IR      AST
+IR      SEMA
+IR      BACKEND
+SEMA    BACKEND
+TOKEN   AST
+TOKEN   SEMA
+TOKEN   IR
+TOKEN   BACKEND

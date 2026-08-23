@@ -1,0 +1,22 @@
+# gate/relation-ownership.baseline — semantic relation identity owned by the
+# AST layer. Pinned EXACTLY.
+#
+# THE LAW: the parser owns shape. It does not own semantic relation identity.
+# Today it does anyway -- src/parser.zig:202 keeps a `relation_edges` map and
+# src/parser.zig:2884 MINTS the semantic symbol as `"{name}__{level}"`. The
+# real authority is src/relation.zig (`Id` at :320, `Names` at :354), and
+# src/parser.zig:2941 already records the consequence: an edge declared in
+# another module is not in the parser's map, so `mod.decode(u64)(v)` does not
+# resolve. gap[025].
+#
+# The count below is the exact number of relation-identity tokens in each
+# AST-layer file. It is a ceiling AND a floor: adding relation ownership to
+# the parser fails, and paying it down fails until the number is re-pinned.
+#
+# Tokens counted: relation_edge relation_id RelationId relation_family
+#                 relation_symbol
+#
+# Measured 2026-08-22 at idol@40de041c. Denominator: 8 AST-layer files
+# (gate/layers.manifest), of which 1 carries any relation identity at all.
+
+src/parser.zig	14
