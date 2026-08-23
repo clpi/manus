@@ -332,7 +332,7 @@ fn graphNameDescriptor(ctx: *const LowerCtx, expr: *const Expr) GraphNameDescrip
 
 /// Collect top-level constant bindings so a function body can fold them.
 ///
-/// `N = 3` and the canonical enum form `Kind = @{ eof = 0, ident = 1 }` are
+/// `n = 3` and the literal enum form `kind = { eof = 0, ident = 1 }` are
 /// module-level values; nothing registered them as locals, so `Kind.ident`
 /// inside a function resolved to a runtime field load and failed with DNB007.
 /// Both spellings are compile-time constants and belong as immediates.
@@ -1736,7 +1736,8 @@ pub fn moduleConstTableKind(
     name: []const u8,
     value: *const Expr,
 ) ?ModuleTableKind {
-    // `@{ … }` parses as `.compile` wrapping the table; unwrap before reading.
+    // `@({ … })` — comptime eval of a pack — arrives as `.compile` wrapping
+    // the table; unwrap before reading. A descriptor is the bare table.
     const tbl = switch (value.*) {
         .table => value,
         .unop => |u| if (u.op == .compile and u.operand.* == .table) u.operand else return null,
@@ -1822,8 +1823,10 @@ fn collectModuleConsts(
             try out.strs.put(alloc, try alloc.dupe(u8, n), v.quoted.val);
             continue;
         }
-        // `@{ ... }` is the canonical descriptor spelling and parses as a
-        // `.compile` unop wrapping the table, so unwrap before reading fields.
+        // A descriptor is a bare `{ ... }`. `@({ ... })` is comptime eval of a
+        // pack and parses as a `.compile` unop wrapping the table, so unwrap
+        // before reading fields. The sigil was the descriptor spelling until
+        // `law.injection.only` retired it (fd85e7b8); it no longer parses.
         const tbl = switch (v.*) {
             .table => v,
             .unop => |u| if (u.op == .compile and u.operand.* == .table) u.operand else continue,
@@ -3607,7 +3610,7 @@ pub const LowerCtx = struct {
     /// which is the only place a representation decision may be taken.
     body: ?*const ast.Block = null,
     /// Module-level integer constants, keyed `Name` or `Name.field`. Populated
-    /// from top-level `N = <int>` and `N = @{ f = <int>, ... }` bindings, which
+    /// from top-level `n = <int>` and `n = { f = <int>, ... }` bindings, which
     /// are otherwise invisible inside a function body.
     module_consts: *const ModuleConsts = &empty_module_consts,
     module_globals: *const ModuleGlobals = &empty_module_globals,

@@ -7131,7 +7131,7 @@ pub const Sema = struct {
         }
     }
 
-    /// Field type from a descriptor alias (`Vec: @{ x: i32 }`) for static member access.
+    /// Field type from a descriptor alias (`vec: { x: i32 }`) for static member access.
     /// Whether `alias_name` names a record with a CLOSED field set that does
     /// not contain `field_name`. Distinguishes "this record lacks the field"
     /// from "this alias is not a record at all", which `field_type_of_alias`

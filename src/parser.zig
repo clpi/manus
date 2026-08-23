@@ -870,9 +870,11 @@ pub const Parser = struct {
     }
 
     /// `@` with nothing after it to name: the BARE anchor of §2, as opposed to
-    /// every prefix spelling (`@comp.…`, `@c.emit`, `@{ … }`), which reads a
-    /// name or a table. Argument-list closers only — the position §20 writes
-    /// it in — so this cannot reinterpret an existing attribute.
+    /// every prefix spelling (`@comp.…`, `@c.emit`), which reads a NAME. A
+    /// glued `{` is refused outright — `law.injection.only` rules that shape
+    /// world-deriving and the derived-world fact does not exist yet (gap[203]).
+    /// Argument-list closers only — the position §20 writes it in — so this
+    /// cannot reinterpret an existing attribute.
     fn at_is_bare_anchor(self: *Parser) ParseError!bool {
         const saved = self.lex.saveState();
         const saved_line = self.prev_line;
@@ -4715,11 +4717,14 @@ pub const Parser = struct {
         return ast.Stmt{ .do_block = .{ .loc = loc, .body = .{ .loc = loc, .stmts = try stmts.toOwnedSlice(self.alloc) } } };
     }
 
-    /// Lower `Name: @{ Red, Green, Blue }` or `Name: @{ x: f64, y: f64 }`.
+    /// Lower `name: { red, green, blue }` or `name: { x: f64, y: f64 }` — the
+    /// copula descriptor. Sigil-free since fd85e7b8; the reader is the same one
+    /// the retired `@{ … }` face reached, minus the gate that kept it
+    /// unreachable without the sigil.
     fn stmt_from_descriptor(self: *Parser, name: []const u8, loc: ast.Loc) ParseError!ast.Stmt {
         const parsed = try self.parse_descriptor_table();
         if (parsed.entries.len == 0) {
-            term.locErr(loc, "descriptor @{{ }} must contain at least one entry", .{});
+            term.locErr(loc, "descriptor '{s}: {{ }}' must contain at least one entry", .{name});
             return ParseError.UnexpectedToken;
         }
 
@@ -7259,16 +7264,24 @@ pub const Parser = struct {
             _ = try self.expect(.rparen);
             return self.new_expr(.{ .unop = .{ .loc = l, .op = .compile, .operand = operand } });
         }
-        // `@{ … }` — c0 §43 `anchor.brace`: "the same form, name recovered from
-        // the enclosing descriptor". So this is NOT a third brace mechanism and
-        // it does not get a reader of its own; it is `parse_pack` with the
-        // subject-elided stance, and the enclosing descriptor is the name.
+        // `@{ … }` — REFUSED. This block used to read the pack here and justify
+        // it with c0 §43 `anchor.brace`: "the same form, name recovered from
+        // the enclosing descriptor". That authority was replaced by its own
+        // negation and the citation outlived it — `grep -n 'anchor\.'
+        // docs/spec/constitution.md` answers only `anchor.recover` and
+        // `anchor.apply`, and both say `@{ … }` DERIVES A WORLD while a
+        // descriptor is `name{ … }` or plain `{ … }` (GAP-203).
         //
         // The transitional `.compile` wrapper preserves existing physical
         // behavior until graph/world/stage facts replace this compatibility
         // route. Where there is no enclosing descriptor, `home` is null and
         // the pack is honestly anonymous — §43 says the name is RECOVERED from
         // context, and at top level there is no context to recover it from.
+        //
+        // The corpus dependency the old comment named — "the 25 measured
+        // `= @{ … }` sites in the tree are frozen constant tables that depend
+        // on the staging" — is gone: fd85e7b8 migrated all 69 lines across 36
+        // files, and gate/world-face-zero.sh §3 holds the corpus at zero.
         if ((try self.pk()).kind == .lbrace) {
             term.locErr(l, "injection '@{{ … }}' has no derived-world fact yet", .{});
             term.locHint(l, "law.injection.only rules the sigil EXCLUSIVELY world-deriving, and the graph carries no derived world: WorldFact records home/reach/members with no parent and no fact deltas, so nothing can represent the injection. If a DESCRIPTOR was meant, law.expect.apply denies 'p: point = @{{ x, y }}' by name — write the pack '{{ … }}', the applied form 'name{{ … }}', or the case-set copula 'name: {{ a, b, c }}' for a keywordless enum", .{});
@@ -7673,7 +7686,8 @@ pub const Parser = struct {
                         break;
                     }
                     if (after_colon.kind == .at) {
-                        // name : @{ ... } — descriptor declaration; don't consume
+                        // name : @… — the RETIRED descriptor face. Not consumed
+                        // here; the statement reader refuses it by name below.
                         self.lex.restoreState(saved);
                         break;
                     }
@@ -7994,10 +8008,12 @@ pub const Parser = struct {
         return args.toOwnedSlice(self.alloc);
     }
 
-    /// The ONE brace reader. Every stance of `{ … }` — anonymous value, applied
-    /// pack, elided-subject pack — reads the same bytes through here and differs
-    /// only in the `Pack` stance it is handed. c0 §43: there are not two brace
-    /// forms to choose between, so there is not a second reader to choose either.
+    /// The ONE brace reader. Both stances of `{ … }` — anonymous value and
+    /// applied pack — read the same bytes through here and differ only in the
+    /// `Pack` stance it is handed. There are not two brace forms to choose
+    /// between, so there is not a second reader to choose either. (A third
+    /// stance, the sigil-elided pack, was retired with the face that spelled
+    /// it; see `ast.Pack`.)
     fn parse_table(self: *Parser) ParseError!*ast.Expr {
         return self.parse_pack(.{});
     }
@@ -11436,7 +11452,6 @@ test "apply-one: a bare pack is anonymous — no subject, so no application" {
     const t = mod.body.stmts[0].assign.values[0];
     try testing.expect(t.* == .table);
     try testing.expect(!t.table.pack.applied);
-    try testing.expect(!t.table.pack.elided);
     try testing.expect(t.table.pack.home == null);
 }
 

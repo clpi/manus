@@ -5,7 +5,9 @@
 # Canonical form per GRAMMAR_SPEC GR-001 and the idiom rules:
 #   * functions are value bindings — `name = (params): ret ... end`
 #   * no `fun`, no `then`, no `do` (deprecated; `duo fmt #canonical` strips them)
-#   * enums are `@{}` descriptors, not keywords and not module-level constants
+#   * enums are copula descriptors — `kind: { eof, ident }` — not keywords and
+#     not module-level constants. (They were written `@{}` until
+#     `law.injection.only` retired that face; the sigil is world-deriving.)
 #   * `if`/`elseif` rather than `match`/`case` (also the faster lowering)
 #   * named field projection (`t.kind`), never `t[1]`
 #   * `@comp.assert` carries constraints; `@comp.why` carries optimization intent
@@ -24,7 +26,7 @@ Kind: { eof, ident, number, punct }
 #     value (`@comp.assert(t.len >= 1)`) is a misuse and is rejected.
 #   * It also cannot yet fold a descriptor field projection:
 #     `@comp.assert(Kind.eof == 0)` fails to compile even though `Kind` is a
-#     `@{}` descriptor with literal fields. Only literal expressions fold.
+#     descriptor with literal fields. Only literal expressions fold.
 #
 # So the kind-encoding constraints below are stated as invariants rather than
 # assertions. Making them machine-checked needs descriptor constant folding in

@@ -8,7 +8,7 @@
 # `point{ x = 3.0, y = 4.0 }` reported `call to undeclared function 'point'`.
 #
 # WHY A SECOND FILE and not more rows in `examples/pack/apply.id`. That file
-# carries `kind = @{ eof = 0, ident = 1 }`, and a top-level function with a
+# carries `kind = { eof = 0, ident = 1 }`, and a top-level function with a
 # non-`any` return type in the same file makes its `print(kind.ident)` emit
 # `lua_to_display_str(1)` — an `int` where a `lua_Value` is wanted. MEASURED on
 # the pre-GAP-092 compiler (`HEAD~1`, built in isolation), so it is a

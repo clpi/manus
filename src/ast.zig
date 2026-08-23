@@ -33,12 +33,19 @@ pub const InvocationForm = enum {
 
 /// c0 §44 `law.pack.shape` — "a BRACED ARGUMENT NEED NOT MATERIALIZE A TABLE".
 ///
-/// `{ … }` is one construct with three stances, and they are stances of the SAME
-/// form rather than three mechanisms (c0 §43 `anchor.brace`):
+/// `{ … }` is one construct with two stances, and they are stances of the SAME
+/// form rather than two mechanisms:
 ///
-///     { x = 1 }         an anonymous structured value      applied=0 elided=0
-///     point{ x = 1 }    the pack of an application         applied=1 elided=0
-///     @{ x = 1 }        the same, subject name elided      applied=1 elided=1
+///     { x = 1 }         an anonymous structured value      applied=0
+///     point{ x = 1 }    the pack of an application         applied=1
+///
+/// THERE WAS A THIRD ROW — `@{ x = 1 }`, "the same, subject name elided",
+/// carried by an `elided` flag beside `applied`. `law.injection.only` rules the
+/// sigil EXCLUSIVELY world-deriving, fd85e7b8 made the parser refuse the
+/// descriptor reading, and the flag was left behind with ZERO producers: no
+/// path ever set it, and its only remaining mention was a test asserting it was
+/// false. A stance no reader can enter is not a stance, and a teaching row for
+/// a spelling the compiler refuses is worse than no row (gap[223]).
 ///
 /// The FIELDS were never the missing facts — `TableField.named` already carries a
 /// label, field ORDER already carries position, `.spread` and `.indexed` already
@@ -49,12 +56,10 @@ pub const Pack = struct {
     /// Written in APPLICATION position: this brace is a subject's argument pack,
     /// not a free-standing value. Distinguishes `f{ x = 1 }` from `f({ x = 1 })`.
     applied: bool = false,
-    /// `@{ … }` — the subject NAME is elided and the enclosing descriptor
-    /// supplies it. Not a third mechanism; `home` is where the name comes from.
-    elided: bool = false,
     /// The enclosing descriptor this parse was reading for, when there was one.
-    /// Null at top level, where `@{ … }` has no name to recover and is honestly
-    /// the anonymous pack.
+    /// Null at top level. Unlike `elided`, this one still has a producer:
+    /// `parse_pack` reads `descriptor_home`, which the copula descriptor reader
+    /// sets while it is reading a body.
     home: ?[]const u8 = null,
     /// law.pack.shape: "physical representation is selected AFTER semantic
     /// resolution". `undecided` is the resting state and the only value the

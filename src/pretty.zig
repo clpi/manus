@@ -1283,19 +1283,19 @@ pub const PrettyPrinter = struct {
                 }
                 if (ad.target) |target| {
                     if (target == .record) {
-                        // A `..Parent` SPREAD has nowhere to live in a record
+                        // A `..parent` SPREAD has nowhere to live in a record
                         // TYPE, so printing this through `printTypeExpr` — the
                         // bare `{ … }` — silently deleted every inherited
-                        // field. `Derived: @{ ..Base, y: i64 }` came back as
-                        // `Derived: { y: i64 }`, and `x` was simply gone.
+                        // field. `derived: { ..base, y: i64 }` came back as
+                        // `derived: { y: i64 }`, and `x` was simply gone.
                         //
-                        // The spread is only spellable on the DESCRIPTOR face,
-                        // so a descriptor with parents is written `@{ … }`.
-                        // Without parents the two faces build the identical
-                        // tree, and the bare one is used because `@{` is not
-                        // accepted after an attribute line (`@derive(…)` above
-                        // `Vec2: { … }`) — writing it there produced a file
-                        // that no longer parsed.
+                        // So the spread is written out HERE rather than
+                        // delegated. It used to be written on the sigil face,
+                        // which was then the only one that could spell a
+                        // parent; `law.injection.only` retired that face and
+                        // the copula reader takes `..parent` directly, so both
+                        // arms below are sigil-free and differ only in whether
+                        // there is a parent to write.
                         const parents = ad.parent != null or ad.extra_parents.len > 0;
                         if (!parents) {
                             try self.print("{s}: ", .{ad.name});
@@ -2342,8 +2342,8 @@ test "pretty: a descriptor spread round-trips with no sigil" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    // `Derived: @{ ..Base, y: i64 }` was reprinted `Derived: { y: i64 }`.
-    // The `..Base` spread vanished, so the reprinted record lost field `x`
+    // `derived: { ..base, y: i64 }` was reprinted `derived: { y: i64 }`.
+    // The `..base` spread vanished, so the reprinted record lost field `x`
     // entirely — and still checked clean.
     const src =
         \\Base: { x: i64 }
@@ -2351,10 +2351,11 @@ test "pretty: a descriptor spread round-trips with no sigil" {
         \\
     ;
     const out = try fmtCanonical(alloc, src);
-    // The parent-bearing descriptor keeps the `@{ … }` face, which is the only
-    // one that can spell a spread. A descriptor with no parents builds the
-    // identical tree either way and is written bare — `@{` is not accepted
-    // after an attribute line, so emitting it unconditionally broke files.
+    // Both faces are sigil-free. The parent-bearing one is written out by hand
+    // because `printTypeExpr` has nowhere to put a `..parent`; the one with no
+    // parents delegates. Neither may emit `@{` — gate/world-face-zero.sh §4
+    // holds that, because a reprint the parser refuses is the defect this whole
+    // family of tests exists to catch.
     try testing.expectEqualStrings(
         \\Base: { x: i64 }
         \\Derived: { ..Base, y: i64 }
@@ -2367,9 +2368,9 @@ test "pretty: a descriptor under an attribute line still parses back" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    // `@derive(…)` above a descriptor: the `@{` face is rejected here, so the
-    // printer must write the bare one. Reprinting the reprint is the assertion
-    // that matters — it is what caught the over-application.
+    // `@derive(…)` above a descriptor. Reprinting the reprint is the assertion
+    // that matters — it is what caught the over-application when the printer
+    // still had a sigil face to over-apply.
     const src =
         \\@derive(Display, Eq)
         \\Vec2: { x: f64, y: f64 }

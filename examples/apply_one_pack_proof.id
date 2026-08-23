@@ -65,7 +65,7 @@ main = ()
     # drift apart.
     print(second{ x = 1.0, y = 9.0 })
 
-    # ROW 5 — `@{ … }`. c0 §43 `anchor.brace` recovers the elided name from the
+    # ROW 5 — the retired `@{ … }` face. It recovered an elided name from the
     # ENCLOSING DESCRIPTOR; at top level there is none, so the pack is honestly
     # anonymous and `@` is doing its OTHER job, staging. Not a third mechanism:
     # one reader, a different stance.

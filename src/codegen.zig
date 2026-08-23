@@ -203,7 +203,7 @@ pub const CodeGen = struct {
     dense_table_cap: ?[]const u8 = null,
     /// Module-scope dense literal tables (1-based positional keys) lowered to native C arrays.
     native_dense_module_tables: std.StringHashMapUnmanaged(NativeDenseModuleTable) = .empty,
-    /// Module-scope literal DESCRIPTORS — `Kind = @{ eof = 0, ident = 1 }` — the
+    /// Module-scope literal DESCRIPTORS — `kind = { eof = 0, ident = 1 }` — the
     /// keyed twin of `native_dense_module_tables`. Every field is a scalar
     /// literal and the name is only ever read as `Kind.field`, so the whole
     /// binding is a compile-time constant map: no storage, and each projection
@@ -5537,8 +5537,12 @@ pub const CodeGen = struct {
                 self.expr_is_native_scalar(ie.then_expr) and
                 self.expr_is_native_scalar(ie.else_expr),
             .unop => |un| blk: {
-                // `Kind = @{ eof = 0, ident = 1 }` — the canonical enum
-                // descriptor. dnir_lower.collectModuleConsts already folds this
+                // `kind = { eof = 0, ident = 1 }` — a literal enum descriptor.
+                // (The canonical spelling of a keywordless enum is the case-set
+                // copula `kind: { eof, ident }`, which lifts a real
+                // `enum_shape`; this bind form stays readable because the
+                // corpus still holds constant tables written that way.)
+                // dnir_lower.collectModuleConsts already folds this
                 // exact shape into module constants (its doc names it), but the
                 // gate in front rejected every `.compile` unop outright, so the
                 // canonical spelling disqualified its module. Same drift as
@@ -9181,7 +9185,7 @@ pub const CodeGen = struct {
                 else => {},
             }
         }
-        // Module-scope record aliases (e.g. `Point: @{ x: f64, y: f64 }`) must
+        // Module-scope record aliases (e.g. `point: { x: f64, y: f64 }`) must
         // emit typedefs even when only referenced via typed table literals.
         var alias_it = self.record_aliases.iterator();
         while (alias_it.next()) |entry| {
@@ -11042,8 +11046,11 @@ pub const CodeGen = struct {
         return std.mem.eql(u8, nd.module_cname, self.current_module_cname);
     }
 
-    /// `@{ … }` is a `.compile` unop wrapping a table literal; a bare `{ … }`
-    /// is the table itself. Both spell the same descriptor.
+    /// A descriptor is a bare `{ … }` — the table itself. `@({ … })` is
+    /// comptime evaluation OF a pack and arrives as a `.compile` unop wrapping
+    /// it, so the wrapper is unwrapped here rather than being a second
+    /// descriptor spelling. It was one until `law.injection.only` retired the
+    /// sigil face (fd85e7b8); `@{ … }` no longer parses at all.
     fn descriptor_table_expr(e: *const ast.Expr) ?*const ast.Expr {
         if (e.* == .table) return e;
         if (e.* == .unop and e.unop.op == .compile and e.unop.operand.* == .table) return e.unop.operand;

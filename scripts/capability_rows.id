@@ -254,7 +254,7 @@ rows = {
 # plus a NO FIXTURE line is what an undecided capability is worth.
 # The graph fact a tokenizer would have to carry is its TOKEN DESCRIPTOR.
 # Not `enum_shape`, which was the first key here and read `—`: the token
-# kinds in these fixtures are written `Kind = @{ eof = 0, … }`, a data
+# kinds in these fixtures are written `kind = { eof = 0, … }`, a data
 # descriptor, and the graph lifts an `enum_shape` only for the inline
 # case-set form. That is a real difference between two spellings of the
 # same idea, and it belongs in the caseset row rather than being papered

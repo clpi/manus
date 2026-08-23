@@ -23,7 +23,7 @@
 # Pinned on the substring `has no field` plus the label `z`, so rewording the
 # sentence does not move the fixture.
 
-# `@{ … }` was WORLD INJECTION all along (§54 `law.injection.only`), and §43
+# `@{ … }` is WORLD INJECTION (§54 `law.injection.only`), and §43
 # `anchor.recover` retired its use as a descriptor sigil in as many words:
 # "a descriptor is an ordinary table `{ … }`". The spelling below is the
 # non-retired one and the diagnostic is byte-identical under both, which is
