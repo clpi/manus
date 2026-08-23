@@ -3768,28 +3768,33 @@ pub const SemanticGraph = struct {
         // must carry an `exact_i64` (`flatAccessAnswerIsKnown`), and
         // realization consults this same predicate, so the two cannot drift.
         if (p.shape != .collection) return false;
-        // THE REMAINING REFUSALS ARE FACTS, NOT MISSING FACTS. Re-measured over
-        // the whole corpus (813 modules, 15 of which contain any attempt at
-        // all) with a per-place cause tag on every degradation site in
-        // `place.zig`: of 77 admission attempts, 5 admit, 48 stop on the
-        // mutation clause below and 24 on the escape clause, and EVERY ONE OF
-        // THE 72 IS A TRUE NEGATIVE.
+        // THE REMAINING REFUSALS ARE FACTS, NOT MISSING FACTS. RE-MEASURED AT
+        // 09b20611: 1010 tracked `.id`, 22 of which contain any attempt at
+        // all, 99 attempts, 19 admit, and EVERY ONE OF THE 80 REJECTS IS A
+        // TRUE NEGATIVE. (The `5 -> 23` and `5 -> 53` deltas in the widening
+        // paragraph below were taken BEFORE 7c304127 deleted the place's
+        // duplicate `contents_known` clause; their baseline of 5 admits is now
+        // 19. The refusals they record are unaffected — both widenings still
+        // publish answers the programs' own assertions refute.)
         //
-        //   all 48   `mutation = .yes` set by `writeTarget`'s index arm — the
-        //            module really does execute `t[k] = v` on this place
-        //            (`symtab_native` 21, `simultaneous_assign_proof` 12,
-        //            `swap` 6, `table_mutable_store` 4, `projection_index_assign`
-        //            2, `codegen_native` 2, `nested_while_reduction` 1).
-        //            `markAllUnknown`, the whole-census sledgehammer, tagged
-        //            ZERO of them: no reject here comes from an unmodelled
-        //            statement.
-        //   18 of 24 `escape = .unknown` from `for x in xs`, whose body assigns
-        //            the loop variable and thereby writes the table. The place
-        //            walk records NO mutation for that write, so escape is the
-        //            only fact standing between this predicate and a wrong
-        //            answer.
-        //    6 of 24 `escape = .unknown` from `sort(xs, 1, 10)` — an in-place
-        //            quicksort that mutates through the parameter.
+        //   all 56   the mutation/immutability line below — the module really
+        //            does execute `t[k] = v` on this place (`symtab_native` 22,
+        //            `simultaneous_assign_proof` 12, `swap` 6,
+        //            `table_mutable_store` 5, `projection_index_assign` 3,
+        //            `codegen_native` 3, `nested_while_reduction` 3,
+        //            `typed_array_bracket_assign` 1, `untyped_assign` 1).
+        //            ALL-CLAUSE ATTRIBUTION, and it matters: both halves of
+        //            that `or` reject all 56, so deleting either half alone
+        //            admits nothing. `markAllUnknown`, the whole-census
+        //            sledgehammer, tagged ZERO of them: no reject here comes
+        //            from an unmodelled statement.
+        //   all 24   `escape = .unknown`, and escape is their SOLE blocker.
+        //            18 from `for x in xs`, whose body assigns the loop
+        //            variable and thereby writes the table — the place walk
+        //            records NO mutation for that write, so escape is the only
+        //            fact standing between this predicate and a wrong answer.
+        //            6 from `sort(xs, 1, 10)`, an in-place quicksort that
+        //            mutates through the parameter.
         //
         // BOTH WIDENINGS WERE BUILT AND MEASURED, and both are refusals. Making
         // iteration non-escaping moved admits 5 -> 23 and published
@@ -3802,16 +3807,66 @@ pub const SemanticGraph = struct {
         // 100 -> 0, `nested_while_reduction` 15 -> 0, `codegen_native` 2 -> 0)
         // return the wrong answer.
         //
-        // THE MISSING PIECE IS NOT A PLACE FACT, IT IS A PLACE INCARNATION.
+        // A PLACE INCARNATION WOULD BE CORRECT AND WOULD HAVE ONE CONSUMER.
+        //
         // Every clause here is whole-binding because `AggregateFact.place` is
         // `.one(site)` and `boundAggregateAtPlace` returns null when two
         // aggregates share a place. The graph can name the collection at a site
-        // but not its CONTENTS BETWEEN TWO WRITES, and that is exactly what the
-        // 72 need. No relaxation of this predicate can substitute, because
-        // `dnir_lower` asks it TWO questions at two granularities: per-read
-        // (`foldAggregateAccess`) and whole-place (`immutableNestedAggregateRoot`
-        // gating static residency). A per-member or per-point answer would
-        // license deleting the storage of a table that is written at runtime.
+        // but not its CONTENTS BETWEEN TWO WRITES. That reading is right, and
+        // the paragraph that used to stand here concluded from it that an
+        // ordered-incarnation model was the missing piece. IT WAS SIZED BEFORE
+        // BEING BUILT, and the size is the refutation.
+        //
+        // RE-MEASURED AT 09b20611 WITH ALL-CLAUSE ATTRIBUTION — every clause
+        // evaluated for every attempt, not just the first one that returns,
+        // because deleting a clause moves its rejects to the next one:
+        //
+        //   1010 tracked `.id`; 22 of them contain ANY admission attempt.
+        //   99 attempts. 19 admit.
+        //   56 blocked by the mutation/immutability line — and BY BOTH HALVES
+        //      of it. Not one of the 56 is blocked by `mutation` alone, so
+        //      deleting that half admits ZERO rows. The earlier "48 stop on
+        //      the mutation clause" was a first-clause tally of one `or`.
+        //   24 blocked by `escape`, and by escape ALONE.
+        //
+        // THE INCARNATION CEILING, DERIVED FROM FACTS THIS GRAPH ALREADY
+        // PUBLISHES. A store-forwarding incarnation can carry contents through
+        // a write only when the write is straight-line, constant-indexed and
+        // singular — `Access.depth == 0`, `const_index`, `mult = exact 1`, all
+        // three already on every access row of the v9+ export. Reads behind
+        // only such writes, over the whole written population (24 writes, 60
+        // reads): ELEVEN, in THREE files. `examples/demand/swap.id` (5) and
+        // `examples/simultaneous_assign_proof.id` (5) both REFUSE at the direct
+        // backend with DNB001 `ret-type:any`, so folding them changes no
+        // machine text at all. The remainder is `examples/projection_index_
+        // assign.id`: ONE read, two of its three attempts, in a five-line
+        // program that already answers 42 correctly.
+        //
+        // The 24 escape rejects are not reachable either: all four of their
+        // files (`boring/quicksort`, `boring/sort/quick`,
+        // `direct_table_iteration`, `table/iterate`) also refuse DNB001, and
+        // their blocker is loop-carried or interprocedural rather than a
+        // missing incarnation.
+        //
+        // So the whole model — ordered incarnations, dominating-read
+        // resolution, per-incarnation member contents, store forwarding — buys
+        // ONE READ IN ONE FILE and no correctness change anywhere. A correct
+        // architecture with one consumer is the producer-hollow pattern this
+        // tree keeps measuring, and the measurement is the deliverable.
+        //
+        // WHAT WOULD MOVE THE NUMBER, so the next lane does not re-derive it:
+        // the ceiling is set by the WRITES, not by this predicate. 13 of the
+        // 24 writes carry a non-constant index or sit at loop depth, and every
+        // read after one of them is unanswerable by any content model. Widening
+        // the yield means either exact keys for loop-variable writes (a
+        // recurrence fact, not a place fact) or more corpus programs of this
+        // shape at all — 988 of the 1010 files reach this predicate ZERO times.
+        //
+        // AND ONE COST THE MODEL DOES NOT YET HAVE A FACT FOR: resolving a read
+        // to its dominating incarnation needs the read's POSITION, and
+        // `ApplicationFact` carries none. The census points live on
+        // `place.Access`; nothing corresponds an access to the application that
+        // performs it. That correspondence would have to be built first.
         if (p.facts.mutation != .no or p.facts.immutability != .yes) return false;
         if (p.facts.alias != .no or p.facts.escape != .no) return false;
         return switch (p.bindCount()) {
@@ -6099,6 +6154,13 @@ pub const SemanticGraph = struct {
             try buf.appendSlice(alloc, @tagName(p.shape));
             try buf.appendSlice(alloc, "\",\"region\":\"");
             try buf.appendSlice(alloc, @tagName(p.region));
+            // DECLARATION OR ASSIGNMENT. Two relation bodies that write `M.x`
+            // export identical rows under v9 — same shape, same region, same
+            // accesses — while one of them declares its own `M` and the other
+            // writes the module's. A reader adjudicating which storage a field
+            // write reaches cannot get there from any other published key.
+            try buf.appendSlice(alloc, "\",\"bind_origin\":\"");
+            try buf.appendSlice(alloc, @tagName(p.bind_origin));
             try buf.appendSlice(alloc, "\",\"determinacy\":\"");
             try buf.appendSlice(alloc, @tagName(p.facts.determinacy));
             try buf.appendSlice(alloc, "\",\"mutation\":\"");
@@ -6478,7 +6540,16 @@ pub const SemanticGraph = struct {
         // published at all AND whether realization may fold it. The bump is what
         // lets a v8 reader know it was not being told, rather than read a
         // missing key as agreement.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":9,\"file\":\"");
+        //
+        // version 10: `places[]` rows gain `bind_origin`. Version 9 published
+        // every place fact a realization reads EXCEPT whether the binding
+        // statement declared the name or assigned to one the enclosing scope
+        // already owns, and those two answers select different STORAGE for the
+        // same spelling. Measured at 09b20611: a module table owning field
+        // storage and shadowed by a relation-local declaration answered the
+        // shadow's write from the module's word, and no v9 export distinguished
+        // the shadow from a plain module write.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":10,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         if (source_hash) |h| {
@@ -7290,7 +7361,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     defer parsed.deinit();
     // The schema went to 8 in `2918277e` and this assertion was not moved with
     // it. The other writeJson test in this file already asserts 8.
-    try std.testing.expectEqual(@as(i64, 9), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 10), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
     try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
@@ -7667,7 +7738,7 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Color\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Red\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"storage_class\"") == null);
-    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":9") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":10") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"home\":") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"scope\":") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"scope\":\"module\"") == null);

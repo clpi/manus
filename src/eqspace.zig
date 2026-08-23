@@ -729,7 +729,7 @@ test "eqspace: the workload comes from the PLACE, and is null without one" {
     // Without a complete access census there is no `q`, and §84 forbids
     // inventing one. This is the executable statement that the place entity is
     // load-bearing rather than decorative.
-    var p = place.Place{ .id = 0, .name = "s", .binding = undefined, .shape = .unknown, .region = .function, .init = null };
+    var p = place.Place{ .id = 0, .name = "s", .binding = undefined, .shape = .unknown, .region = .function, .bind_origin = .declaration, .init = null };
     defer p.deinit(testing.allocator);
     p.facts.extent = .{ .exact = 64 };
     try testing.expectEqual(@as(?Workload, null), Workload.fromPlace(&p, 256));
@@ -742,7 +742,7 @@ test "eqspace: the workload comes from the PLACE, and is null without one" {
 }
 
 test "eqspace: an UNKNOWN multiplicity yields no workload, so nothing is ranked" {
-    var p = place.Place{ .id = 0, .name = "s", .binding = undefined, .shape = .unknown, .region = .function, .init = null };
+    var p = place.Place{ .id = 0, .name = "s", .binding = undefined, .shape = .unknown, .region = .function, .bind_origin = .declaration, .init = null };
     defer p.deinit(testing.allocator);
     p.facts.extent = .{ .exact = 64 };
     try p.accesses.append(testing.allocator, .{ .kind = .bind, .point = 0, .depth = 0, .mult = .{ .exact = 1 }, .const_index = true });

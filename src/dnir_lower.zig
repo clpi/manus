@@ -656,10 +656,54 @@ fn collectModuleTableFieldGlobals(
     }
 }
 
+/// THE MODULE'S TABLE IS NOT EVERY BINDING THAT SPELLS ITS NAME.
+///
+/// A relation that DECLARES its own `M` owns a different entity that merely
+/// shares a spelling, and `M.x` inside it means that entity's field. The graph
+/// already says so: the relation's body census carries the binding, and
+/// `place.BindOrigin` now says whether the census recorded a DECLARATION or an
+/// assignment — the distinction it computed and discarded until this consumer
+/// needed it.
+///
+/// The distinction is load-bearing in BOTH directions, which is why a bare
+/// "does this body bind the name" test will not do. A bare `M = { … }` in a
+/// relation ASSIGNS to the module binding — measured: `g = 1` at module scope,
+/// `g = 5` in a relation, a second relation reading `g` answers 5 — and it
+/// also produces a body place. Diverting it to a frame slot would turn a
+/// module write into a local one. Only the DECLARATION is a shadow.
+///
+/// Module scope is exempt for the same reason `walkBindingAssigns` exempts the
+/// owner: at module scope the declaration IS this binding.
+fn bodyDeclaresBinding(ctx: *const LowerCtx, name: []const u8) bool {
+    const owner = ctx.function orelse return false;
+    const owner_node = ctx.graph.get(owner) orelse return false;
+    if (owner_node.scope == null) return false;
+    const body = ctx.graph.bodyOf(owner) orelse return false;
+    const p = body.places.find(name) orelse return false;
+    return p.bind_origin == .declaration;
+}
+
+/// The module word behind `<base>.<field>`, or null when this body declares its
+/// own `base`.
+///
+/// ONE CONSULT, NOT FOUR. `ctx.module_globals` is keyed by SPELLING, and four
+/// separate sites — the record-literal explosion, its assign face, the field
+/// write target and the field read — each looked a dotted key up directly. A
+/// shadow therefore had to be defended against four times, and it was defended
+/// against nowhere: measured at 09b20611, a module table owning field storage
+/// and shadowed by a relation-local declaration answered the shadow's write
+/// from the module's word (`0 99 99`; the identical program with the shadow
+/// spelled differently answers `0 99 7`).
+fn moduleFieldWord(ctx: *const LowerCtx, base: []const u8, key: []const u8) ?RT {
+    if (bodyDeclaresBinding(ctx, base)) return null;
+    return ctx.module_globals.types.get(key);
+}
+
 /// Does `name` own module-scope FIELD storage — i.e. is there any `name.f`
 /// word? Asked at every bare mention of the name, because the fields being
 /// storage is exactly what leaves the whole table without a value.
 fn moduleFieldStorageBase(ctx: *const LowerCtx, name: []const u8) bool {
+    if (bodyDeclaresBinding(ctx, name)) return false;
     var it = ctx.module_globals.types.keyIterator();
     while (it.next()) |k| {
         const key = k.*;
@@ -3782,7 +3826,7 @@ fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
                     target.field.field,
                 }) catch "";
                 if (fkey.len > 0 and ctx.locals.get(fkey) == null) {
-                    if (ctx.module_globals.types.get(fkey)) |gty| {
+                    if (moduleFieldWord(ctx, target.field.obj.name.ident, fkey)) |gty| {
                         const t = ctx.freshTemp();
                         try ctx.emit(.{
                             .op = .load_global,
@@ -3964,7 +4008,7 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
     // this key in scope it minted one, so `M.x = 1` in a relation body wrote a
     // register the module body could not see and the module body's own write
     // went to a different register still — two stores describing one field.
-    if (ctx.module_globals.types.get(fk)) |gty| {
+    if (moduleFieldWord(ctx, obj.name.ident, fk)) |gty| {
         try ctx.emit(.{
             .op = .store_global,
             .field = ctx.module_globals.storageKey(fk).?,
@@ -7209,7 +7253,10 @@ fn lowerRecordLiteralFields(ctx: *LowerCtx, prefix: []const u8, table: *const as
         // emitted here is the whole of the initialization. Minting a local
         // beside the word instead would leave module scope reading a register
         // and every relation reading a zero.
-        if (ctx.module_globals.types.get(fk)) |gty| {
+        // The base is the OUTERMOST segment: `o.i.x` belongs to the binding
+        // `o`, so a body that declares its own `o` owns the whole chain.
+        const base = prefix[0 .. std.mem.indexOfScalar(u8, prefix, '.') orelse prefix.len];
+        if (moduleFieldWord(ctx, base, fk)) |gty| {
             const gv = try lowerExpr(ctx, nf.val);
             try ctx.emit(.{
                 .op = .store_global,
@@ -11320,7 +11367,7 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         if (ctx.module_consts.strs.get(key)) |sv| return .{ .str = sv };
         // A WRITTEN module-scope table field is READ FROM ITS STORAGE, never
         // folded and never resolved to a frame slot of some other body.
-        if (ctx.module_globals.types.get(key)) |gty| {
+        if (moduleFieldWord(ctx, fld.obj.name.ident, key)) |gty| {
             const t = ctx.freshTemp();
             try ctx.emit(.{
                 .op = .load_global,

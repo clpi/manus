@@ -139,6 +139,12 @@ pub const Place = struct {
     binding: *const ast.Stmt,
     shape: Shape,
     region: Region,
+    /// Declaration or assignment — see `BindOrigin`. `binding` carries the
+    /// statement this came from, but a statement TAG is provenance: reading
+    /// `.assign` off it in a consumer would make the AST spelling of the
+    /// binding the authority a second time, which is the defect this fact
+    /// exists to end.
+    bind_origin: BindOrigin,
     init: ?*const ast.Expr,
     facts: Facts = .{},
     accesses: std.ArrayListUnmanaged(Access) = .empty,
@@ -501,7 +507,17 @@ fn markAllUnknown(ctx: *Ctx) !void {
     }
 }
 
-const BindMode = enum { declaration, assignment };
+/// WHETHER A BINDING STATEMENT DECLARES THE NAME OR ASSIGNS TO ONE THE
+/// ENCLOSING SCOPE ALREADY OWNS. The census computed this to decide which
+/// access to record and then threw it away, so no consumer could ask it.
+///
+/// It is a DIFFERENT question from every fact already on a place. A relation
+/// that writes `M.x` and a relation that DECLARES its own `M` and writes `M.x`
+/// produce the same spelling, the same shape and the same accesses; only this
+/// separates them, and a realization that resolves `M.x` to storage by spelling
+/// alone answers the second one from the first one's word.
+pub const BindOrigin = enum { declaration, assignment };
+const BindMode = BindOrigin;
 
 fn bindOrRebind(
     ctx: *Ctx,
@@ -525,7 +541,7 @@ fn bindOrRebind(
         return;
     }
     if (ctx.foreign) return;
-    try bindPlace(ctx, name, stmt, point, init, typ);
+    try bindPlace(ctx, name, stmt, point, init, typ, mode);
 }
 
 fn candidateShape(init: ?*const ast.Expr, typ: ast.TypeExpr) Shape {
@@ -550,6 +566,7 @@ fn bindPlace(
     point: u32,
     init: ?*const ast.Expr,
     typ: ast.TypeExpr,
+    origin: BindOrigin,
 ) !void {
     const shape = candidateShape(init, typ);
     if (shape == .unknown) return;
@@ -560,6 +577,7 @@ fn bindPlace(
         .binding = stmt,
         .shape = shape,
         .region = ctx.region,
+        .bind_origin = origin,
         .init = init,
     };
     p.facts.lifetime = if (ctx.region == .module) .module else .function;
