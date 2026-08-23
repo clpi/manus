@@ -425,6 +425,19 @@ pub const HomeLoader = struct {
     load: *const fn (ctx: *anyopaque, alias: []const u8) ?ForeignHome,
 };
 
+/// Checked source-boundary contribution to one callable's graph linkage fact.
+/// This is produced while the declaration is resolved, then copied onto the
+/// callable id by `semantic_graph`; consumers must not inspect attributes.
+pub const CallableOrigin = enum { idol, c };
+pub const CallableExposure = enum { internal, compat_export, c_export, c_import };
+pub const CallableLinkage = struct {
+    origin: CallableOrigin,
+    exposure: CallableExposure,
+    /// Exact compatibility-boundary override. Null means the callable's own
+    /// checked name participates in graph/home symbol derivation.
+    symbol_override: ?[]const u8 = null,
+};
+
 const Diagnostic = struct {
     loc: ast.Loc,
     message: []const u8,
@@ -472,6 +485,9 @@ pub const Sema = struct {
     /// Unique module callables by source name. Null marks an overloaded spelling
     /// that cannot identify a declaration without overload resolution.
     callable_defs: std.StringHashMapUnmanaged(?*const ast.FuncDecl) = .{},
+    /// One checked linkage contribution per declaration occurrence. The key is
+    /// provenance only; graph lift replaces it with the callable's exact id.
+    callable_linkages: std.AutoHashMapUnmanaged(*const ast.FuncDecl, CallableLinkage) = .empty,
     /// CROSS-HOME CALLABLE SPACE. `callable_defs` above holds exactly THIS
     /// module's bare-name relations and is `clearRetainingCapacity`'d per
     /// `check_module`, so a dotted callee had no key and never reached
@@ -829,6 +845,11 @@ pub const Sema = struct {
         return self.type_map.get(expr);
     }
 
+    /// Source-resolution-owned linkage contribution for one exact declaration.
+    pub fn callableLinkage(self: *const Sema, declaration: *const ast.FuncDecl) ?CallableLinkage {
+        return self.callable_linkages.get(declaration);
+    }
+
     /// Callable identity established for this exact application. Absence means
     /// unresolved or dynamic; consumers must not replace it with name lookup.
     pub fn applicationFact(self: *const Sema, expr: *const Expr) ?ApplicationFact {
@@ -842,7 +863,20 @@ pub const Sema = struct {
     /// it reads freed stack on the second lookup, which is the kind of bug that
     /// answers correctly until the frame layout changes.
     fn homeNamed(self: *Sema, spelling: []const u8) ?ForeignHome {
-        if (self.foreign_homes.get(spelling)) |cached| return cached;
+        if (self.foreign_homes.getPtr(spelling)) |cached| {
+            if (cached.*) |entry| {
+                // `check_module` retires occurrence-owned linkage rows while
+                // the parsed-home cache intentionally survives. Revalidate a
+                // cached home in the new check epoch so its exact declaration
+                // facts are republished; otherwise the second module can
+                // resolve the home but graph lift sees no callable linkage.
+                if (!self.check_foreign_module_boundaries(entry.module)) {
+                    cached.* = null;
+                    return null;
+                }
+            }
+            return cached.*;
+        }
         const loader = self.home_loader orelse return null;
         var answer = loader.load(loader.ctx, spelling);
         if (answer) |entry| {
@@ -1398,6 +1432,7 @@ pub const Sema = struct {
         }
         self.overloads.deinit(self.alloc);
         self.callable_defs.deinit(self.alloc);
+        self.callable_linkages.deinit(self.alloc);
         self.home_roots.deinit(self.alloc);
         var ha_it = self.home_aliases.iterator();
         while (ha_it.next()) |entry| {
@@ -2442,6 +2477,35 @@ pub const Sema = struct {
         return true;
     }
 
+    fn note_callable_linkage(self: *Sema, fd: *const ast.FuncDecl) !void {
+        if (directives.boundaryAttributeError(fd.attributes, if (fd.path.len == 1) fd.path[0] else null) != null)
+            return;
+
+        var fact = CallableLinkage{ .origin = .idol, .exposure = .internal };
+        for (fd.attributes) |attr| {
+            if (std.mem.eql(u8, attr.name, "ffi")) {
+                fact = .{
+                    .origin = .c,
+                    .exposure = .c_import,
+                    .symbol_override = directives.attrText(attr.args),
+                };
+                break;
+            }
+            if (std.mem.eql(u8, attr.name, "export")) {
+                fact.exposure = .compat_export;
+                break;
+            }
+            if (std.mem.eql(u8, attr.name, "c.export") or
+                std.mem.eql(u8, attr.name, "comp.c.export"))
+            {
+                fact.exposure = .c_export;
+                fact.symbol_override = directives.attrText(attr.args);
+                break;
+            }
+        }
+        try self.callable_linkages.put(self.alloc, fd, fact);
+    }
+
     /// A parsed foreign home bypasses recursive semantic checking, so perform
     /// the same declaration-ingress quarantine before the home can publish any
     /// relation or descriptor. This is intentionally only a syntax/ownership
@@ -2451,7 +2515,14 @@ pub const Sema = struct {
         for (mod.body.stmts) |*stmt| switch (stmt.*) {
             .func_decl => |*fd| {
                 const fallback = if (fd.path.len == 1) fd.path[0] else null;
-                if (!self.check_boundary_declaration(fd.loc, fd.attributes, fallback)) valid = false;
+                if (!self.check_boundary_declaration(fd.loc, fd.attributes, fallback)) {
+                    valid = false;
+                } else {
+                    self.note_callable_linkage(fd) catch {
+                        self.err(fd.loc, "could not retain checked callable linkage", .{});
+                        valid = false;
+                    };
+                }
             },
             .alias_def => |*ad| {
                 if (!self.check_boundary_declaration(ad.loc, ad.attributes, ad.name)) valid = false;
@@ -2492,6 +2563,7 @@ pub const Sema = struct {
         self.alias_defs.clearRetainingCapacity();
         self.generic_func_arities.clearRetainingCapacity();
         self.callable_defs.clearRetainingCapacity();
+        self.callable_linkages.clearRetainingCapacity();
         self.applications.clearRetainingCapacity();
         self.foreign_module_int_constants.clearRetainingCapacity();
         self.clearHomeAliases();
@@ -5776,7 +5848,9 @@ pub const Sema = struct {
     fn check_func_decl(self: *Sema, fd: *ast.FuncDecl) SemaError!void {
         const fb = &fd.func;
         const fallback = if (fd.path.len == 1) fd.path[0] else null;
-        _ = self.check_boundary_declaration(fd.loc, fd.attributes, fallback);
+        if (self.check_boundary_declaration(fd.loc, fd.attributes, fallback)) {
+            try self.note_callable_linkage(fd);
+        }
         self.seed_method_self_param_type(fd);
         const has_vararg = fb.vararg or fb.vararg_name != null;
         var all_typed = true;
@@ -16057,14 +16131,14 @@ test "sema: admitted migration boundary spellings retain target-specific arity" 
     }
 }
 
-test "sema: same symbol on two declarations remains GAP-211 rather than syntax closure" {
+test "sema: duplicate physical symbols are not resolved by syntax order" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // This patch owns only per-declaration migration ingress. It does not mint
-    // graph-owned linkage identity or claim that two declarations cannot name
-    // the same physical symbol. GAP-211 remains the P0 owner of that collision.
+    // Sema publishes both exact declaration contributions. It neither first-
+    // wins nor guesses which one owns the symbol; graph/native linkage
+    // validation rejects their physical collision before artifact emission.
     const s = try checkSource(
         alloc,
         "@c.export(\"shared\")\nfirst: i64 = ()\n  1\n@c.export(\"shared\")\nsecond: i64 = ()\n  2\n",
@@ -16197,6 +16271,59 @@ test "sema: foreign constant occurrence retention respects alias shadow redeclar
     const replacement = replacement_module.body.stmts[1].func_decl.func.body.tail_expr orelse return error.TestExpectedEqual;
     try checked.check_module(&replacement_module);
     try testing.expect(checked.foreignModuleIntConstant(replacement) == null);
+    try testing.expectEqual(@as(usize, 1), loader.calls);
+}
+
+test "sema: cached foreign home republishes callable linkage in a new check epoch" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const foreign_module = try alloc.create(ast.Module);
+    var foreign_lexer = Lexer.init(
+        "@ffi(\"llabs\")\nforeign_abs: i64 = (n: i64)\n  0\n",
+        "dep.id",
+    );
+    var foreign_parser = Parser.init(&foreign_lexer, alloc);
+    foreign_parser.idol_mode = true;
+    foreign_module.* = try foreign_parser.parse_module();
+    const foreign_decl = &foreign_module.body.stmts[0].func_decl;
+
+    const Loader = struct {
+        module: *ast.Module,
+        calls: usize = 0,
+
+        fn load(raw: *anyopaque, spelling: []const u8) ?ForeignHome {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            if (!std.mem.eql(u8, spelling, "dep")) return null;
+            self.calls += 1;
+            return .{ .home = "dep", .path = "dep.id", .module = self.module };
+        }
+    };
+
+    var loader = Loader{ .module = foreign_module };
+    var checked = Sema.init(alloc);
+    // The arena owns the test Sema; source_path below is a borrowed fixture
+    // spelling, so do not run the production deinitializer over it.
+    checked.idol_mode = true;
+    checked.source_path = "first.id";
+    checked.home_loader = .{ .ctx = &loader, .load = Loader.load };
+    try testing.expect(checked.homeNamed("dep") != null);
+    try testing.expectEqual(CallableExposure.c_import, checked.callableLinkage(foreign_decl).?.exposure);
+    try testing.expectEqual(@as(usize, 1), loader.calls);
+
+    var next_lexer = Lexer.init("probe: i64 = ()\n  0\n", "next.id");
+    var next_parser = Parser.init(&next_lexer, alloc);
+    next_parser.idol_mode = true;
+    var next_module = try next_parser.parse_module();
+    checked.source_path = "next.id";
+    try checked.check_module(&next_module);
+    try testing.expect(checked.callableLinkage(foreign_decl) == null);
+
+    // The host loader is not called again, but the cached module is checked in
+    // this epoch and republishes its exact declaration contribution.
+    try testing.expect(checked.homeNamed("dep") != null);
+    try testing.expectEqual(CallableExposure.c_import, checked.callableLinkage(foreign_decl).?.exposure);
     try testing.expectEqual(@as(usize, 1), loader.calls);
 }
 

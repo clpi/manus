@@ -598,8 +598,10 @@ schema, digest, path = sys.argv[1:]
 try:
     graph = json.load(open(path))
     law = graph["root_source_law"]
-    if graph["version"] != 11:
+    if graph["version"] != 12:
         raise ValueError("graph schema version")
+    if graph.get("callable_linkages") != []:
+        raise ValueError("empty probe callable-linkage projection")
     if law != {"card": "one", "family": "idol", "schema": schema, "sha256": digest}:
         raise ValueError("root source-law projection")
 except Exception:

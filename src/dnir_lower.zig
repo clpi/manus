@@ -2212,11 +2212,7 @@ fn lowerModuleFromGraph(
     require_graph_facts: bool,
 ) Error!dnir.Module {
     try validateAggregateFacts(graph, diagnostic);
-    // THE HOME THIS MODULE IS. Read once, here, and handed to every place that
-    // names a symbol, so a definition and a same-home call site cannot be
-    // computed from two different answers.
     const self_home = graph.selfHome();
-
     // ORDER MATTERS. The globals are collected FIRST and then removed from the
     // constant pool: a name that is written is not a constant, and leaving it in
     // both would let a read fold to the initializer while a write went to
@@ -2280,37 +2276,29 @@ fn lowerModuleFromGraph(
         entity_linkage.deinit(alloc);
     }
     for (graph.nodes.items, 0..) |node, i| {
-        if (node.result_descriptor == null) continue;
+        const entity: semantic_graph.id = @intCast(i);
+        if (node.kind != .func or !graph.callable(entity)) continue;
         const raw = node.ast_ref orelse continue;
         const declaration: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
         const slot = try declarations.getOrPut(alloc, declaration);
         if (slot.found_existing) return invalidGraphFacts(diagnostic, @src(), "function-provenance-collision");
-        slot.value_ptr.* = @intCast(i);
+        slot.value_ptr.* = entity;
     }
     var decl_it = declarations.iterator();
     while (decl_it.next()) |entry| {
         const fd = entry.key_ptr.*;
         const entity_id = entry.value_ptr.*;
-        // THE MANGLING LAW, BOTH SIDES, THROUGH ONE FUNCTION.
-        //
-        // A relation is realized as `idol_<home>__<name>`. The only thing that
-        // differs between the two arms is WHICH home: a foreign target's home
-        // is the one sema resolved and the graph carried here as
-        // `foreign_home`; this module's own is `selfHome`. Both then call
-        // `home_resolve.relationSymbol`, so the caller cannot spell a symbol
-        // the definer would not.
-        //
-        // The `else` arm was `funcExportName(alloc, fd)` with no home at all —
-        // the bare spelling — which is why `lib/compiler/record.id` exported
-        // `_field` and collided with every other home naming a relation
-        // `field`. That arm is the DEFINER side of the law, and it is what this
-        // change lands.
-        const export_name = if (graph.foreignHome(entity_id)) |h| blk: {
-            // THE `c` WORLD IS A FOREIGN BOUNDARY: roster members link as their
-            // C names (`abs`), not `idol_c__abs` mangling.
-            if (std.mem.eql(u8, h, "c")) break :blk try alloc.dupe(u8, fd.path[0]);
-            break :blk try home_resolve.homeSymbol(alloc, h, fd.path[0]);
-        } else try funcExportName(alloc, self_home, fd);
+        const export_name = if (graph.callableLinkage(entity_id)) |linkage|
+            try alloc.dupe(u8, linkage.symbol)
+        else if (graph.requiresCallableLinkage())
+            return invalidGraphFacts(diagnostic, @src(), "missing-callable-linkage")
+        else if (graph.foreignHome(entity_id)) |foreign_home|
+            if (std.mem.eql(u8, foreign_home, "c"))
+                try alloc.dupe(u8, fd.path[0])
+            else
+                try home_resolve.homeSymbol(alloc, foreign_home, fd.path[0])
+        else
+            try funcExportName(alloc, self_home, fd);
         errdefer alloc.free(export_name);
         const slot = try entity_linkage.getOrPut(alloc, entity_id);
         if (slot.found_existing) {
@@ -2336,11 +2324,18 @@ fn lowerModuleFromGraph(
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
-        if (!shouldIncludeFuncDecl(fd)) continue;
+        if (!shouldIncludeFuncDecl(fd, graph)) continue;
         if (!functionEligible(fd, records.items, graph, mod)) continue;
         const slots = f64AbiParamSlots(fd, records.items) orelse continue;
         if (slots == 0 or slots > 8) continue;
-        const key = try funcExportName(alloc, self_home, fd);
+        const entity = declarations.get(fd) orelse
+            return invalidGraphFacts(diagnostic, @src(), "missing-function-id");
+        const key = if (graph.callableLinkage(entity)) |linkage|
+            try alloc.dupe(u8, linkage.symbol)
+        else if (graph.requiresCallableLinkage())
+            return invalidGraphFacts(diagnostic, @src(), "missing-callable-linkage")
+        else
+            try funcExportName(alloc, self_home, fd);
         if (fp_params.contains(key)) {
             alloc.free(key);
             continue;
@@ -2387,13 +2382,25 @@ fn lowerModuleFromGraph(
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
-        if (!shouldIncludeFuncDecl(fd)) continue;
+        if (!shouldIncludeFuncDecl(fd, graph)) continue;
         if (!functionEligible(fd, records.items, graph, mod)) continue;
         const rec_name = recordReturnNameForDecl(records.items, graph, fd) orelse continue;
-        const export_name = try funcExportName(alloc, self_home, fd);
-        defer alloc.free(export_name);
-        if (func_record_returns.contains(export_name)) continue;
-        const key = try alloc.dupe(u8, export_name);
+        const entity = declarations.get(fd) orelse
+            return invalidGraphFacts(diagnostic, @src(), "missing-function-id");
+        const linkage_symbol = if (graph.callableLinkage(entity)) |linkage|
+            linkage.symbol
+        else if (graph.requiresCallableLinkage())
+            return invalidGraphFacts(diagnostic, @src(), "missing-callable-linkage")
+        else
+            null;
+        const fallback_name = if (linkage_symbol == null)
+            try funcExportName(alloc, self_home, fd)
+        else
+            null;
+        defer if (fallback_name) |name| alloc.free(name);
+        const symbol = linkage_symbol orelse fallback_name.?;
+        if (func_record_returns.contains(symbol)) continue;
+        const key = try alloc.dupe(u8, symbol);
         const value = alloc.dupe(u8, rec_name) catch |err| {
             alloc.free(key);
             return err;
@@ -2409,7 +2416,7 @@ fn lowerModuleFromGraph(
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
-        if (!shouldIncludeFuncDecl(fd)) continue;
+        if (!shouldIncludeFuncDecl(fd, graph)) continue;
         // Name the function that was refused. "the counts do not match" is a
         // true statement about a module and a useless one about a fix: every
         // one of these bails means exactly one declaration was ineligible, and
@@ -2494,7 +2501,7 @@ fn lowerModuleFromGraph(
     // so it destroyed the better diagnostic in the failing case and forbade the
     // legal one. HPLS §99: consumed but no candidate generated — the empty
     // module reached lowering and no realization was ever proposed for it.
-    const expected = countModuleFunctions(mod) + @as(usize, @intFromBool(want));
+    const expected = countModuleFunctions(mod, graph) + @as(usize, @intFromBool(want));
     if (functions.items.len != expected)
         return bailWith(diagnostic, @src(), skipped orelse "?");
 
@@ -2737,9 +2744,33 @@ pub fn funcExportName(
     return home_resolve.relationSymbol(alloc, self_home, name, foreignBoundaryName(fd));
 }
 
-fn shouldIncludeFuncDecl(fd: *const ast.FuncDecl) bool {
+fn declarationLinkage(
+    graph: *const semantic_graph.SemanticGraph,
+    fd: *const ast.FuncDecl,
+) ?*const semantic_graph.CallableLinkage {
+    const relation = graph.relationForDeclaration(fd) orelse return null;
+    return graph.callableLinkage(relation);
+}
+
+fn declarationIsForeignBoundary(
+    graph: *const semantic_graph.SemanticGraph,
+    fd: *const ast.FuncDecl,
+) bool {
+    if (declarationLinkage(graph, fd)) |linkage| return linkage.exposure != .internal;
+    if (graph.requiresCallableLinkage()) return false;
+    return foreignBoundaryName(fd) != null;
+}
+
+fn shouldIncludeFuncDecl(fd: *const ast.FuncDecl, graph: *const semantic_graph.SemanticGraph) bool {
     if (fd.is_local) return false;
-    if (funcFfiName(fd.attributes) != null) return false;
+    if (declarationLinkage(graph, fd)) |linkage| {
+        if (linkage.exposure == .c_import) return false;
+    } else if (graph.requiresCallableLinkage()) {
+        // The entity-linkage preflight refuses the missing row before this
+        // predicate is consumed. Do not let the source attribute decide that a
+        // damaged checked declaration should disappear from the denominator.
+        return true;
+    } else if (funcFfiName(fd.attributes) != null) return false;
     if (fd.path.len == 1 and !fd.method) return true;
     if (fd.method and fd.path.len >= 2) return true;
     // §3 — math.add = (a, b) … static module members (dot, not colon).
@@ -2747,11 +2778,11 @@ fn shouldIncludeFuncDecl(fd: *const ast.FuncDecl) bool {
     return false;
 }
 
-fn countModuleFunctions(mod: *const ast.Module) usize {
+fn countModuleFunctions(mod: *const ast.Module, graph: *const semantic_graph.SemanticGraph) usize {
     var n: usize = 0;
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
-        if (shouldIncludeFuncDecl(&stmt.func_decl)) n += 1;
+        if (shouldIncludeFuncDecl(&stmt.func_decl, graph)) n += 1;
     }
     return n;
 }
@@ -2975,7 +3006,7 @@ fn functionEligible(
         // Mixed GP/FP indirect returns are lowered through x8 + per-field
         // stores (see native_backend ret_record indirect arm). Foreign-boundary
         // mixed indirect shapes stay refused until the C ABI path exists.
-        if (foreignBoundaryName(fd) != null and recordKindsMixed(rec) and
+        if (declarationIsForeignBoundary(graph, fd) and recordKindsMixed(rec) and
             recordReturnIsIndirectFields(rec.fields.len, true)) return false;
         // An f64 record rides v0..v7 as a homogeneous float aggregate; there is
         // no indirect form for it here, so its own eight stays a hard limit.
@@ -3008,7 +3039,7 @@ fn functionEligible(
         return true;
     }
     if (fd.func.ret_type == .tuple) {
-        if (foreignBoundaryName(fd) != null or fd.func.ret_type.tuple.len == 0 or
+        if (declarationIsForeignBoundary(graph, fd) or fd.func.ret_type.tuple.len == 0 or
             fd.func.ret_type.tuple.len > max_reg_record_fields) return false;
         for (fd.func.ret_type.tuple) |item| if (gpPackType(item) == null) return false;
     } else if (!isFloatType(fd.func.ret_type) and !isIntType(fd.func.ret_type) and !isBoolType(fd.func.ret_type) and
@@ -4094,7 +4125,13 @@ fn lowerFunction(
     const ret_rec = findRecordName(records, fd.func.ret_type);
     const ret_record_name = if (ret_rec) |r| try alloc.dupe(u8, r.name) else null;
     errdefer if (ret_record_name) |record| alloc.free(record);
-    const export_name = try funcExportName(alloc, graph.selfHome(), fd);
+    const graph_linkage = if (id) |entity| graph.callableLinkage(entity) else null;
+    if (graph.requiresCallableLinkage() and graph_linkage == null)
+        return invalidGraphFacts(diagnostic, @src(), "missing-callable-linkage");
+    const export_name = if (graph_linkage) |linkage|
+        try alloc.dupe(u8, linkage.symbol)
+    else
+        try funcExportName(alloc, graph.selfHome(), fd);
     errdefer alloc.free(export_name);
     if (std.mem.indexOf(u8, export_name, "parse_factor") != null) {
         for (owned_instrs) |ins| {
@@ -4114,11 +4151,10 @@ fn lowerFunction(
         .ret_pack = ret_pack,
         .params = owned_params,
         .ret_record = ret_record_name,
-        // The SAME declaration that already exempted this relation from home
-        // mangling two lines up (`funcExportName` consults `foreignBoundaryName`)
-        // also decides its result convention. Reading it once, here, is what
-        // makes "the name is C's" and "the ABI is C's" impossible to hold apart.
-        .foreign_boundary = foreignBoundaryName(fd) != null,
+        .foreign_boundary = if (graph_linkage) |linkage|
+            linkage.exposure != .internal
+        else
+            foreignBoundaryName(fd) != null,
         .is_float_kernel = blk: {
             const slots = f64AbiParamSlots(fd, records) orelse break :blk false;
             break :blk slots > 0 and slots <= 8;
@@ -7417,6 +7453,32 @@ fn linkageForTarget(ctx: *LowerCtx, target: semantic_graph.id) Error![]const u8 
         invalidGraphFacts(ctx.diagnostic, @src(), "missing-application-target");
 }
 
+/// Register the physical boundary selected by the callable's graph fact.
+/// `foreign_home` is residence, not C origin: a local `@ffi` declaration has
+/// no foreign home, while an Idol relation imported from another home does.
+/// Keeping both cases here prevents every call shape from rebuilding that
+/// distinction independently.
+fn ensureTargetExtern(
+    ctx: *LowerCtx,
+    target: semantic_graph.id,
+    callee: []const u8,
+) Error!void {
+    if (ctx.graph.callableLinkage(target)) |linkage| {
+        if (linkage.exposure == .c_import) {
+            if (linkage.origin != .c or !std.mem.eql(u8, linkage.symbol, callee)) {
+                return invalidGraphFacts(ctx.diagnostic, @src(), "application-link-symbol");
+            }
+            try ensureExtern(ctx, "c", linkage.symbol, linkage.symbol);
+            return;
+        }
+    } else if (ctx.graph.requiresCallableLinkage()) {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "missing-callable-linkage");
+    }
+    if (ctx.graph.foreignHome(target)) |foreign_home| {
+        try ensureExtern(ctx, foreign_home, callee, callee);
+    }
+}
+
 fn checkedRecordForApplication(
     ctx: *LowerCtx,
     application: *const semantic_graph.ApplicationFact,
@@ -7444,9 +7506,7 @@ fn lowerCheckedRecordCall(
     const relation = try applicationRelation(ctx, application);
     const target = try applicationTarget(ctx, application);
     const callee = try linkageForTarget(ctx, target);
-    if (ctx.graph.foreignHome(target)) |foreign_home| {
-        try ensureExtern(ctx, foreign_home, callee, callee);
-    }
+    try ensureTargetExtern(ctx, target, callee);
     const result = try checkedApplicationResult(ctx, application);
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
@@ -7516,9 +7576,7 @@ fn lowerCheckedRecordCallAssign(
     const relation = try applicationRelation(ctx, application);
     const target = try applicationTarget(ctx, application);
     const callee = try linkageForTarget(ctx, target);
-    if (ctx.graph.foreignHome(target)) |foreign_home| {
-        try ensureExtern(ctx, foreign_home, callee, callee);
-    }
+    try ensureTargetExtern(ctx, target, callee);
     const result = try checkedApplicationResult(ctx, application);
     // THE BINDING NEEDS A NAME, NOT A VALUE. Everything downstream that has
     // to recognise `name` as a record region -- `loadFieldFromOpaquePath`,
@@ -10196,9 +10254,7 @@ fn lowerCheckedPackCall(
     const target = try applicationTarget(ctx, application);
     const relation = try applicationRelation(ctx, application);
     const callee = try linkageForTarget(ctx, target);
-    if (ctx.graph.foreignHome(target)) |foreign_home| {
-        try ensureExtern(ctx, foreign_home, callee, callee);
-    }
+    try ensureTargetExtern(ctx, target, callee);
 
     var operand_storage: [max_direct_scalar_args]CheckedScalarOperand = undefined;
     const operands = try checkedScalarOperands(ctx, application, &operand_storage, true);
@@ -10271,9 +10327,7 @@ fn lowerCheckedScalarCall(
     // defined symbols nor among the externs and report DNB007 `undefined
     // symbol` — the correct observation with no way to act on it. Registering
     // the extern here is the only place that knows the target is foreign.
-    if (ctx.graph.foreignHome(target)) |h| {
-        try ensureExtern(ctx, h, callee, callee);
-    }
+    try ensureTargetExtern(ctx, target, callee);
     const descriptor = try publishedDescriptor(ctx, application);
     if (try checkedRecordForApplication(ctx, application)) |record| {
         return try lowerCheckedRecordCall(ctx, application, record, consumption);

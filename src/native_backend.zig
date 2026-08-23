@@ -677,33 +677,11 @@ fn returnsFloat(t: ast.TypeExpr) bool {
     return isFloatAnnotation(t);
 }
 
-fn funcFfiName(attrs: []const ast.Attribute) ?[]const u8 {
-    for (attrs) |attr| {
-        if (!std.mem.eql(u8, attr.name, "ffi")) continue;
-        const raw = attr.args orelse return null;
-        if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') return raw[1 .. raw.len - 1];
-        return raw;
-    }
-    return null;
-}
-
-fn funcExportName(fd: *const ast.FuncDecl) ?[]const u8 {
-    for (fd.attributes) |attr| {
-        if (std.mem.eql(u8, attr.name, "export")) return fd.path[0];
-        if (!std.mem.eql(u8, attr.name, "c.export")) continue;
-        const raw = attr.args orelse return fd.path[0];
-        if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') return raw[1 .. raw.len - 1];
-        return raw;
-    }
-    return null;
-}
-
 /// Zero-arg i64/void/f64 module function suitable as a native executable entry.
 /// f64 entries coerce to i64 exit codes at link time via `fcvtzs x0, d0`.
 fn isZeroArgEntryFunction(fd: *const ast.FuncDecl) bool {
     if (fd.path.len != 1 or fd.method or fd.is_local) return false;
     if (fd.func.params.len != 0) return false;
-    if (funcFfiName(fd.attributes) != null) return false;
     return returnsInteger(fd.func.ret_type) or returnsVoid(fd.func.ret_type) or returnsFloat(fd.func.ret_type);
 }
 
@@ -736,9 +714,13 @@ pub const ProcessEntryError = error{
 fn relationProcessEntry(
     graph: *const semantic_graph.SemanticGraph,
     declaration: *const ast.FuncDecl,
-) ProcessEntryError!ProcessEntry {
-    return .{ .relation = graph.relationForDeclaration(declaration) orelse
-        return error.SemanticFactsInvalid };
+) ProcessEntryError!?ProcessEntry {
+    const relation = graph.relationForDeclaration(declaration) orelse
+        return error.SemanticFactsInvalid;
+    const linkage = graph.callableLinkage(relation) orelse
+        return error.SemanticFactsInvalid;
+    if (linkage.exposure == .c_import) return null;
+    return .{ .relation = relation };
 }
 
 /// Select the semantic process entry after graph lift.
@@ -758,26 +740,29 @@ pub fn selectProcessEntry(
     if (want) |name| {
         const fd = findModuleFunction(mod, name) orelse return error.InvalidProcessEntry;
         if (!isZeroArgEntryFunction(fd)) return error.InvalidProcessEntry;
-        return try relationProcessEntry(graph, fd);
+        return (try relationProcessEntry(graph, fd)) orelse error.InvalidProcessEntry;
     }
     if (mod.program()) return .{ .root = graph_root };
 
-    var sole: ?*const ast.FuncDecl = null;
+    var sole: ?ProcessEntry = null;
     var sole_count: usize = 0;
-    var named_main: ?*const ast.FuncDecl = null;
+    var named_main: ?ProcessEntry = null;
 
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
         if (!isZeroArgEntryFunction(fd)) continue;
 
-        if (std.mem.eql(u8, fd.path[0], "main")) named_main = fd;
-        if (funcExportName(fd) != null) return try relationProcessEntry(graph, fd);
-        sole = fd;
+        const selected = (try relationProcessEntry(graph, fd)) orelse continue;
+        if (std.mem.eql(u8, fd.path[0], "main")) named_main = selected;
+        const linkage = graph.callableLinkage(selected.relation) orelse
+            return error.SemanticFactsInvalid;
+        if (linkage.exposure != .internal) return selected;
+        sole = selected;
         sole_count += 1;
     }
-    if (named_main) |declaration| return try relationProcessEntry(graph, declaration);
-    if (sole_count == 1) return try relationProcessEntry(graph, sole.?);
+    if (named_main) |selected| return selected;
+    if (sole_count == 1) return sole.?;
     return null;
 }
 
@@ -795,19 +780,9 @@ pub fn processEntrySymbol(
             break :blk try alloc.dupe(u8, "main");
         },
         .relation => |entity| blk: {
-            // TRANSITIONAL LINKAGE BRIDGE: selection already carries the exact
-            // graph relation id, but linkage/origin/ABI facts are not graph
-            // columns yet. Delete this `ast_ref` cast when that producer lands;
-            // DNIR definition emission and this consumer must then read the
-            // same graph fact, with no declaration/text fallback.
-            const node = graph.get(entity) orelse return error.SemanticFactsInvalid;
-            if (!graph.callable(entity)) return error.SemanticFactsInvalid;
-            const raw = node.ast_ref orelse return error.SemanticFactsInvalid;
-            const declaration: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
-            break :blk dnir_lower.funcExportName(alloc, graph.selfHome(), declaration) catch |err| switch (err) {
-                error.OutOfMemory => return error.OutOfMemory,
-                else => return error.SemanticFactsInvalid,
-            };
+            const linkage = graph.callableLinkage(entity) orelse
+                return error.SemanticFactsInvalid;
+            break :blk try alloc.dupe(u8, linkage.symbol);
         },
     };
 }
@@ -6322,7 +6297,10 @@ const Arm64Compiler = struct {
     }
 
     fn ensureExternalSymbol(self: *Arm64Compiler, symbol_name: []const u8) Error!void {
-        if (self.definedSymbolOffset(symbol_name) != null) return;
+        // One physical spelling cannot be both defined here and imported. A
+        // prior silent return let a local export named `puts` capture an exact
+        // C-import application before relocation was emitted.
+        if (self.definedSymbolOffset(symbol_name) != null) return error.DuplicateSymbol;
         if (self.extern_symbols.contains(symbol_name)) return;
         if (self.symbolOffset(symbol_name)) |_| return error.DuplicateSymbol;
         const owned_name = try self.alloc.dupe(u8, symbol_name);
@@ -8364,20 +8342,9 @@ const Arm64Compiler = struct {
             // the *program* was outside the subset, when lowering had in fact
             // fully succeeded and only relocation failed; that misdirects every
             // investigation to the wrong phase.
-            // A well-known libc/libm name is not an undefined symbol, it is an
-            // EXTERNAL one that nothing registered. `puts` and `llabs` reach
-            // patchCalls as plain direct calls -- the emitter registers an
-            // extern when it knows it is emitting one, and these arrive through
-            // paths that do not -- so relocation failed on a symbol the linker
-            // would have resolved without complaint. c_signatures already knows
-            // the set; consulting it here turns three DNB007s into links.
-            if (c_signatures.c_call_result_type(patch.target) != null) {
-                try self.ensureExternalSymbol(patch.target);
-                if (self.extern_symbols.get(patch.target)) |sym_index| {
-                    try self.relocations.append(self.alloc, .{ .offset = patch.offset, .symbol_index = sym_index });
-                    continue;
-                }
-            }
+            // No spelling-based libc rescue. Every lawful external call has
+            // already registered an exact DNIR extern row; recreating one here
+            // would let a damaged graph/lowering schedule emit successfully.
             // The symbol name was behind DUO_DNIR_TRACE, so the largest row in
             // the bail histogram (6 programs) said only "undefined symbol" and
             // named nothing. Every other refusal path reports unconditionally
@@ -8876,6 +8843,17 @@ fn validateDnirApplications(
     defer link_symbols.deinit(alloc);
     for (module.functions) |function| {
         const id = function.id orelse continue;
+        if (graph.isModuleRoot(id)) {
+            if (!std.mem.eql(u8, function.name, "main"))
+                return invalidFactsWith(diagnostic, @src(), "root-link-symbol");
+        } else if (graph.callableLinkage(id)) |graph_linkage| {
+            if (graph_linkage.exposure == .c_import)
+                return invalidFactsWith(diagnostic, @src(), "callable-import-definition");
+            if (!std.mem.eql(u8, graph_linkage.symbol, function.name))
+                return invalidFactsWith(diagnostic, @src(), "function-link-symbol");
+        } else if (graph.requiresCallableLinkage()) {
+            return invalidFactsWith(diagnostic, @src(), "missing-callable-linkage");
+        }
         const symbol_slot = try link_symbols.getOrPut(alloc, function.name);
         if (symbol_slot.found_existing) return invalidFactsWith(diagnostic, @src(), "duplicate-link-symbol");
         const target = try targets.getOrPut(alloc, id);
@@ -8884,6 +8862,22 @@ fn validateDnirApplications(
             .id = id,
             .linkage = function.name,
         };
+    }
+
+    // Undefined linker inputs are a physical projection of graph-owned
+    // callable linkage. Validate the projection itself: the machine emitter
+    // must not be able to recreate a removed row merely because libc happens
+    // to contain a symbol with the same spelling.
+    var extern_symbols: std.StringHashMapUnmanaged(void) = .empty;
+    defer extern_symbols.deinit(alloc);
+    for (module.externs) |external| {
+        if (external.symbol.len == 0)
+            return invalidFactsWith(diagnostic, @src(), "invalid-callable-extern");
+        const slot = try extern_symbols.getOrPut(alloc, external.symbol);
+        if (slot.found_existing)
+            return invalidFactsWith(diagnostic, @src(), "duplicate-callable-extern");
+        if (link_symbols.contains(external.symbol))
+            return invalidFactsWith(diagnostic, @src(), "callable-link-symbol-collision");
     }
 
     for (module.functions) |function| {
@@ -9067,11 +9061,16 @@ fn validateDnirApplications(
                     }
                     continue;
                 }
-                // A CROSS-HOME TARGET IS NOT IN `module.functions` AND MUST NOT
-                // BE. `targets` above is built from the functions THIS module
-                // defines, so a relation living in another home could only ever
-                // be `missing-application-target` — the validator had no way to
-                // say "absent here, and correctly so".
+                const target_linkage = graph.callableLinkage(target_id);
+                if (graph.requiresCallableLinkage() and target_linkage == null) {
+                    return invalidFactsWith(diagnostic, @src(), "missing-callable-linkage");
+                }
+
+                // A CROSS-HOME TARGET OR C IMPORT IS NOT IN `module.functions`
+                // AND MUST NOT BE. `foreign_home` records residence; the
+                // callable linkage fact independently records C origin. A local
+                // `@ffi` target therefore reaches this branch without inventing
+                // a synthetic foreign home.
                 //
                 // IT STILL VALIDATES, in the one way that is available: the
                 // symbol the emitter chose must be the symbol the MANGLING LAW
@@ -9079,21 +9078,34 @@ fn validateDnirApplications(
                 // link target for a relation this module cannot see the body
                 // of, and it is two-sided — an emitter that invents a symbol,
                 // or a lift that loses the home, both fail here.
-                if (graph.foreignHome(target_id)) |foreign_home| {
-                    const node = graph.get(target_id) orelse
-                        return invalidFactsWith(diagnostic, @src(), "missing-application-target");
-                    const relation_name = node.name orelse
-                        return invalidFactsWith(diagnostic, @src(), "missing-application-target");
-                    // THE `c` WORLD IS A FOREIGN BOUNDARY: members link as their
-                    // C names (`abs`), not `idol_c__abs` mangling.
-                    const want = if (std.mem.eql(u8, foreign_home, "c"))
-                        try alloc.dupe(u8, relation_name)
-                    else blk: {
-                        break :blk try home_resolve.homeSymbol(alloc, foreign_home, relation_name);
-                    };
-                    defer alloc.free(want);
-                    if (!std.mem.eql(u8, want, instruction.callee)) {
-                        return invalidFactsWith(diagnostic, @src(), "application-link-symbol");
+                const c_import = if (target_linkage) |linkage|
+                    linkage.exposure == .c_import
+                else
+                    false;
+                if (c_import or graph.foreignHome(target_id) != null) {
+                    if (target_linkage) |linkage| {
+                        if (linkage.exposure == .c_import and linkage.origin != .c)
+                            return invalidFactsWith(diagnostic, @src(), "callable-origin");
+                        if (!std.mem.eql(u8, linkage.symbol, instruction.callee))
+                            return invalidFactsWith(diagnostic, @src(), "application-link-symbol");
+                        if (!extern_symbols.contains(linkage.symbol))
+                            return invalidFactsWith(diagnostic, @src(), "missing-callable-extern");
+                    } else {
+                        const foreign_home = graph.foreignHome(target_id) orelse
+                            return invalidFactsWith(diagnostic, @src(), "missing-application-target");
+                        const node = graph.get(target_id) orelse
+                            return invalidFactsWith(diagnostic, @src(), "missing-application-target");
+                        const relation_name = node.name orelse
+                            return invalidFactsWith(diagnostic, @src(), "missing-application-target");
+                        const want = if (std.mem.eql(u8, foreign_home, "c"))
+                            try alloc.dupe(u8, relation_name)
+                        else
+                            try home_resolve.homeSymbol(alloc, foreign_home, relation_name);
+                        defer alloc.free(want);
+                        if (!std.mem.eql(u8, want, instruction.callee))
+                            return invalidFactsWith(diagnostic, @src(), "application-link-symbol");
+                        if (!extern_symbols.contains(want))
+                            return invalidFactsWith(diagnostic, @src(), "missing-callable-extern");
                     }
                     const foreign_use = try seen.getOrPut(alloc, application.application);
                     if (foreign_use.found_existing) {
@@ -11554,8 +11566,6 @@ test "native backend: callee spelling cannot redirect a checked application" {
 
     const module = try dnir_lower.lowerModuleWithGraph(alloc, &ast_module, &graph);
     try validateDnirApplications(alloc, module, &graph, &diagnostic);
-    var baseline = try emitArm64FromDnir(alloc, module, null, &diagnostic);
-    defer baseline.deinit(alloc);
     var identified: ?*dnir.Instr = null;
     for (module.functions) |function| {
         for (function.blocks) |block| {
@@ -11600,7 +11610,7 @@ test "native backend: callee spelling cannot redirect a checked application" {
         error.SemanticFactsInvalid,
         validateDnirApplications(alloc, module, &graph, &diagnostic),
     );
-    try std.testing.expectEqualStrings("duplicate-link-symbol", diagnostic.note().?);
+    try std.testing.expectEqualStrings("function-link-symbol", diagnostic.note().?);
     other.name = other_name;
 
     other.id = selected_id;
@@ -11608,7 +11618,7 @@ test "native backend: callee spelling cannot redirect a checked application" {
         error.SemanticFactsInvalid,
         validateDnirApplications(alloc, module, &graph, &diagnostic),
     );
-    try std.testing.expectEqualStrings("function-fact-collision", diagnostic.note().?);
+    try std.testing.expectEqualStrings("function-link-symbol", diagnostic.note().?);
     other.id = other_id;
 
     // Repeated projection from the same exact ids is deterministic.
@@ -11633,7 +11643,7 @@ test "native backend: callee spelling cannot redirect a checked application" {
         error.SemanticFactsInvalid,
         validateDnirApplications(alloc, module, &graph, &diagnostic),
     );
-    try std.testing.expectEqualStrings("missing-application-target", diagnostic.note().?);
+    try std.testing.expectEqualStrings("missing-callable-linkage", diagnostic.note().?);
     selected.id = selected_id;
 
     instruction.callee = "impostor";
@@ -11644,28 +11654,18 @@ test "native backend: callee spelling cannot redirect a checked application" {
     );
     try std.testing.expectEqualStrings("application-link-symbol", diagnostic.note().?);
 
-    // A physical symbol may be renamed when the exact target identity moves
-    // with it. The semantic relation remains the graph-selected relation.
+    // Renaming both physical DNIR faces is still damage: the graph fact is the
+    // sole owner of linkage, so target identity does not grant a backend
+    // permission to invent an alias.
     instruction.callee = "observe_alias";
     selected.name = "observe_alias";
     try std.testing.expect(std.meta.eql(relation_before, instruction.relation.?));
     try std.testing.expect(std.meta.eql(selected.id.?, selected_id));
-    try validateDnirApplications(alloc, module, &graph, &diagnostic);
-
-    var renamed = try emitArm64FromDnir(alloc, module, null, &diagnostic);
-    defer renamed.deinit(alloc);
-    try std.testing.expectEqualSlices(u8, baseline.text, renamed.text);
-    // The lawful symbol on the left; the hand-written alias on the right is
-    // set straight onto the DNIR, which is the point of the row — a physical
-    // rename that carries the target identity with it changes no semantics.
-    try std.testing.expect(std.mem.indexOf(u8, baseline.asm_text, "bl _idol_callee_mismatch__observe") != null);
-    try std.testing.expect(std.mem.indexOf(u8, renamed.asm_text, "bl _observe_alias") != null);
-    try std.testing.expectEqual(baseline.lineage.len, renamed.lineage.len);
-    try std.testing.expectEqual(@as(usize, 1), renamed.lineage.len);
-    try std.testing.expect(std.meta.eql(baseline.lineage[0].relation, renamed.lineage[0].relation));
-    try std.testing.expect(std.meta.eql(baseline.lineage[0].application, renamed.lineage[0].application));
-    try std.testing.expect(std.meta.eql(baseline.lineage[0].value, renamed.lineage[0].value));
-    try std.testing.expect(std.meta.eql(baseline.lineage[0].caller, renamed.lineage[0].caller));
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("function-link-symbol", diagnostic.note().?);
 }
 
 test "native backend: checked call result descriptor does not select argument ABI" {
@@ -12130,6 +12130,14 @@ test "native backend: root and source main retain distinct entry identities" {
     defer dnir.deinitModule(alloc, lowered);
     try std.testing.expectEqual(@as(?i64, 7), immediateReturn(dnirFunction(lowered, root_symbol).?));
     try std.testing.expectEqual(@as(?i64, 41), immediateReturn(dnirFunction(lowered, relation_symbol).?));
+
+    // Selected entry identity is insufficient without its graph-owned linkage
+    // fact. The native boundary must not cast `ast_ref` and recover the symbol.
+    _ = graph.callable_linkage_rows.remove(selected_relation.relation);
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        processEntrySymbol(alloc, &graph, selected_relation),
+    );
 }
 
 test "native backend: body-less modules retain relation entry compatibility" {
@@ -13134,7 +13142,7 @@ test "native backend authority-false physical loop oracle retains continue break
     try std.testing.expectEqual(@as(u32, 0xfeedfacf), std.mem.readInt(u32, object[0..4], .little));
 }
 
-test "native backend refuses source foreign call without graph lineage and retains relocation oracle" {
+test "native backend: graph linkage owns source C import and relocation" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -13143,26 +13151,92 @@ test "native backend refuses source foreign call without graph lineage and retai
 
     var lex = Lexer.init(
         \\@ffi("llabs")
-        \\fun llabs(n: i64): i64
+        \\llabs: i64 = (n: i64)
+        \\    0
         \\
-        \\main(): i64
-        \\    x = llabs(-37)
-        \\    x + 5
-        \\end
+        \\x = llabs(-37)
+        \\x + 5
+        \\
     , "native.id");
     var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
-    try expectCheckedTestSemanticFailure(
-        alloc,
-        &mod,
-        &sem,
-        "missing-application-target",
-        null,
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    const external = graph.relationForDeclaration(&mod.body.stmts[0].func_decl).?;
+    const linkage = graph.callableLinkage(external).?;
+    try std.testing.expectEqual(semantic_graph.CallableOrigin.c, linkage.origin);
+    try std.testing.expectEqual(semantic_graph.CallableExposure.c_import, linkage.exposure);
+    try std.testing.expectEqualStrings("llabs", linkage.symbol);
+
+    var checked_diagnostic: Diagnostic = .{};
+    var lowered = try dnir_lower.lowerModuleWithGraphObserved(alloc, &mod, &graph, &checked_diagnostic.lowering);
+    defer dnir.deinitModule(alloc, lowered);
+    try validateDnirApplications(alloc, lowered, &graph, &checked_diagnostic);
+    try std.testing.expectEqual(@as(usize, 1), lowered.externs.len);
+    try std.testing.expectEqualStrings("llabs", lowered.externs[0].symbol);
+
+    // A c_import identity is never a definition, even when no application
+    // would otherwise force the validator to inspect its target.
+    const lowered_functions: []dnir.Function = @constCast(lowered.functions);
+    var root_function: ?*dnir.Function = null;
+    for (lowered_functions) |*function| {
+        if (function.id) |id| {
+            if (graph.isModuleRoot(id)) root_function = function;
+        }
+    }
+    const damaged_definition = root_function orelse return error.TestExpectedEqual;
+    const root_id = damaged_definition.id;
+    const root_name = damaged_definition.name;
+    damaged_definition.id = external;
+    damaged_definition.name = linkage.symbol;
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, lowered, &graph, &checked_diagnostic),
     );
+    try std.testing.expectEqualStrings("callable-import-definition", checked_diagnostic.note().?);
+    damaged_definition.id = root_id;
+    damaged_definition.name = root_name;
+
+    var c_call: ?*dnir.Instr = null;
+    for (lowered.functions) |function| {
+        for (function.blocks) |block| {
+            const instructions: []dnir.Instr = @constCast(block.instrs);
+            for (instructions) |*instruction| {
+                if (instruction.target != null and instruction.target.? == external) c_call = instruction;
+            }
+        }
+    }
+    const call = c_call orelse return error.TestExpectedEqual;
+    const callee = call.callee;
+    call.callee = "labs";
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, lowered, &graph, &checked_diagnostic),
+    );
+    try std.testing.expectEqualStrings("application-link-symbol", checked_diagnostic.note().?);
+    call.callee = callee;
+
+    // Removing only the physical projection cannot be repaired from the known
+    // libc spelling. The exact graph-required extern row is mandatory.
+    const externs = lowered.externs;
+    lowered.externs = &.{};
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        validateDnirApplications(alloc, lowered, &graph, &checked_diagnostic),
+    );
+    try std.testing.expectEqualStrings("missing-callable-extern", checked_diagnostic.note().?);
+    lowered.externs = externs;
+
+    var checked_output = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer checked_output.deinit(alloc);
+    try std.testing.expect(std.mem.indexOf(u8, checked_output.assembly, "bl _llabs") != null);
 
     const instructions = [_]dnir.Instr{
         .{ .op = .@"const", .result = 0, .lhs = .{ .i64 = -37 }, .ty = .i64 },
@@ -13195,7 +13269,7 @@ test "native backend refuses source foreign call without graph lineage and retai
     try std.testing.expect(std.mem.indexOf(u8, object, "_llabs") != null);
 }
 
-test "native backend refuses source foreign string call and retains cstring relocation oracle" {
+test "native backend: graph linkage owns source C string import" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -13204,26 +13278,31 @@ test "native backend refuses source foreign string call and retains cstring relo
 
     var lex = Lexer.init(
         \\@ffi("puts")
-        \\fun puts(s: str): i64
-        \\
-        \\main(): i64
-        \\    puts("Hello")
+        \\puts: i64 = (s: str)
         \\    0
-        \\end
+        \\
+        \\puts("Hello")
+        \\0
+        \\
     , "native.id");
     var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
     var mod = try parser.parse_module();
     var sem = Sema.init(alloc);
     defer sem.deinit();
+    sem.idol_mode = true;
     try sem.check_module(&mod);
 
-    try expectCheckedTestSemanticFailure(
-        alloc,
-        &mod,
-        &sem,
-        "missing-application-target",
-        null,
-    );
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    const external = graph.relationForDeclaration(&mod.body.stmts[0].func_decl).?;
+    const linkage = graph.callableLinkage(external).?;
+    try std.testing.expectEqual(semantic_graph.CallableExposure.c_import, linkage.exposure);
+    try std.testing.expectEqualStrings("puts", linkage.symbol);
+    var checked_output = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer checked_output.deinit(alloc);
+    try std.testing.expect(std.mem.indexOf(u8, checked_output.assembly, "bl _puts") != null);
 
     const instructions = [_]dnir.Instr{
         .{ .op = .@"const", .result = 0, .lhs = .{ .str = "Hello" }, .ty = .str },
@@ -13290,6 +13369,50 @@ test "native backend refuses source foreign string call and retains cstring relo
     defer alloc.free(object);
     try std.testing.expect(std.mem.indexOf(u8, object, "__cstring") != null);
     try std.testing.expect(std.mem.indexOf(u8, object, "_puts") != null);
+}
+
+test "native backend: C import cannot be captured by a local export" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\@ffi("puts")
+        \\foreign_puts: i64 = (s: str)
+        \\    0
+        \\@comp.c.export("puts")
+        \\local_puts: i64 = (s: str)
+        \\    77
+        \\
+        \\foreign_puts("sentinel")
+        \\0
+    ;
+    var lexer = Lexer.init(source, "link-collision.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&module, &checked, &graph);
+
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(
+        error.SemanticFactsInvalid,
+        emitAssemblyWithGraphLineageObserved(
+            alloc,
+            &module,
+            "native-asm",
+            &graph,
+            &diagnostic,
+        ),
+    );
+    try std.testing.expectEqualStrings("callable-link-symbol-collision", diagnostic.note().?);
 }
 
 test "native backend emits shared object input for exported function without main" {

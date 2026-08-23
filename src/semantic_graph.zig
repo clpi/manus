@@ -864,6 +864,20 @@ pub const Body = struct {
     regions: region.Census,
 };
 
+pub const CallableOrigin = enum { idol, c };
+pub const CallableExposure = enum { internal, compat_export, c_export, c_import };
+
+/// One graph-owned linkage decision keyed by the exact callable identity.
+/// `symbol` is a physical projection selected once from checked source
+/// boundary facts plus the callable's home; backends may validate or consume
+/// it, but may not reconstruct it from attributes or names.
+pub const CallableLinkage = struct {
+    callable: id,
+    origin: CallableOrigin,
+    exposure: CallableExposure,
+    symbol: []const u8,
+};
+
 pub const SemanticGraph = struct {
     alloc: std.mem.Allocator,
     /// Coordinate assigned only by an owning `History`. The semantic entity
@@ -1006,6 +1020,12 @@ pub const SemanticGraph = struct {
     draws: std.ArrayListUnmanaged(Draw) = .empty,
     /// `place[value]` for application values, ascending by value id.
     origins: std.ArrayListUnmanaged(Origin) = .empty,
+    callable_linkages: std.ArrayListUnmanaged(CallableLinkage) = .empty,
+    callable_linkage_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
+    /// Set only by checked lift. A manually assembled/bootstrap graph may have
+    /// no linkage column; a checked graph may never reinterpret missing rows as
+    /// permission to reconstruct them.
+    callable_linkage_required: bool = false,
     pub fn init(alloc: std.mem.Allocator) SemanticGraph {
         return .{ .alloc = alloc, .launch_worlds = subject_home.injectedWorlds() };
     }
@@ -1055,6 +1075,9 @@ pub const SemanticGraph = struct {
         self.world_members.deinit(self.alloc);
         self.draws.deinit(self.alloc);
         self.origins.deinit(self.alloc);
+        for (self.callable_linkages.items) |fact| self.alloc.free(fact.symbol);
+        self.callable_linkages.deinit(self.alloc);
+        self.callable_linkage_rows.deinit(self.alloc);
         if (self.home) |h| self.alloc.free(h);
     }
 
@@ -2460,6 +2483,59 @@ pub const SemanticGraph = struct {
         const relation = self.findFuncDecl(declaration) orelse return null;
         if (!self.callable(relation)) return null;
         return relation;
+    }
+
+    pub fn callableLinkage(self: *const SemanticGraph, entity: id) ?*const CallableLinkage {
+        const row = self.callable_linkage_rows.get(entity) orelse return null;
+        if (row >= self.callable_linkages.items.len) return null;
+        const fact = &self.callable_linkages.items[row];
+        if (fact.callable != entity or !self.callable(entity)) return null;
+        return fact;
+    }
+
+    pub fn requiresCallableLinkage(self: *const SemanticGraph) bool {
+        return self.callable_linkage_required;
+    }
+
+    fn publishCallableLinkage(
+        self: *SemanticGraph,
+        entity: id,
+        checked: sema.CallableLinkage,
+    ) !void {
+        try self.requireOpen();
+        const node = self.get(entity) orelse return error.InvalidCallableLinkageFact;
+        if (!self.callable(entity)) return error.InvalidCallableLinkageFact;
+        const name = node.name orelse return error.InvalidCallableLinkageFact;
+        if (self.callable_linkage_rows.contains(entity)) return error.DuplicateCallableLinkageFact;
+
+        const symbol = switch (checked.exposure) {
+            .internal => blk: {
+                const owner_home = node.foreign_home orelse self.home;
+                if (owner_home) |home| break :blk try home_resolve_mod.homeSymbol(self.alloc, home, name);
+                break :blk try self.alloc.dupe(u8, name);
+            },
+            .compat_export, .c_export => try self.alloc.dupe(u8, checked.symbol_override orelse name),
+            .c_import => try self.alloc.dupe(u8, checked.symbol_override orelse
+                return error.InvalidCallableLinkageFact),
+        };
+        errdefer self.alloc.free(symbol);
+        const row = try coordinateForLength(self.callable_linkages.items.len);
+        try self.callable_linkages.append(self.alloc, .{
+            .callable = entity,
+            .origin = switch (checked.origin) {
+                .idol => .idol,
+                .c => .c,
+            },
+            .exposure = switch (checked.exposure) {
+                .internal => .internal,
+                .compat_export => .compat_export,
+                .c_export => .c_export,
+                .c_import => .c_import,
+            },
+            .symbol = symbol,
+        });
+        errdefer _ = self.callable_linkages.pop();
+        try self.callable_linkage_rows.putNoClobber(self.alloc, entity, row);
     }
 
     /// Relation selected for a checked application. Producer is the unique
@@ -4812,6 +4888,9 @@ pub const SemanticGraph = struct {
                 .name = param.name,
             });
         }
+        const checked_linkage = checked.callableLinkage(fd) orelse
+            return error.MissingCallableLinkageFact;
+        try self.publishCallableLinkage(func_id, checked_linkage);
         const foreign_type_name = switch (fd.func.ret_type) {
             .named => |n| n,
             else => null,
@@ -5101,6 +5180,20 @@ pub const SemanticGraph = struct {
             } else |_| {}
         }
         const module = try self.liftModuleCalls(mod, file);
+        self.callable_linkage_required = true;
+
+        // Resolution owns boundary classification. Lift it onto the exact
+        // callable ids before any application or effect consumer can run.
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const declaration = &stmt.func_decl;
+            if (declaration.path.len != 1) continue;
+            const relation = self.relationForDeclaration(declaration) orelse
+                return error.MissingCallableLinkageFact;
+            const linkage = checked.callableLinkage(declaration) orelse
+                return error.MissingCallableLinkageFact;
+            try self.publishCallableLinkage(relation, linkage);
+        }
 
         const candidate_limit = self.application_candidates.bit_length;
         var candidate: usize = 0;
@@ -5172,7 +5265,7 @@ pub const SemanticGraph = struct {
         try self.publishBindingAdjustmentsInBlock(checked, file, &mod.body);
         try self.liftForeignConstantFieldSites(checked, &mod.body, file, module);
         try self.liftCaptureEdges(mod);
-        try self.publishApplicationEffects(mod);
+        try self.publishApplicationEffects();
         // AFTER the effect fixpoint, deliberately. That pass blocks a relation
         // on any `.member` edge inside it, and a world's member edges are the
         // graph's record of exactly the reach it means. Publishing worlds first
@@ -5424,57 +5517,6 @@ pub const SemanticGraph = struct {
         callees_len: u32 = 0,
     };
 
-    /// Declarations whose body is a placeholder for a symbol outside this
-    /// module. `@ffi("llabs")` lifts as an ordinary `func` node with an
-    /// ordinary body — MEASURED: the graph for `@ffi("llabs") absval: i64 =
-    /// (n) 0` publishes a normal application bound to a normal callable, and
-    /// nothing in the graph records that applying it runs `llabs`. So this one
-    /// fact has to come from the declaration, which is why the effect pass
-    /// takes the AST module it was lifted from.
-    fn declarationIsForeign(fd: *const ast.FuncDecl) bool {
-        for (fd.attributes) |attribute| {
-            for ([_][]const u8{ "ffi", "extern", "foreign", "import" }) |name| {
-                if (std.mem.eql(u8, attribute.name, name)) return true;
-            }
-        }
-        return false;
-    }
-
-    fn markForeignDeclarations(
-        self: *SemanticGraph,
-        block: *const ast.Block,
-        foreign: *std.DynamicBitSetUnmanaged,
-    ) void {
-        for (block.stmts) |*stmt| {
-            switch (stmt.*) {
-                .func_decl => |*fd| {
-                    if (declarationIsForeign(fd)) {
-                        if (self.findFuncDecl(fd)) |entity| {
-                            if (entity < foreign.bit_length) foreign.set(entity);
-                        }
-                    }
-                    self.markForeignDeclarations(&fd.func.body, foreign);
-                },
-                .if_stmt => |*i| {
-                    self.markForeignDeclarations(&i.then, foreign);
-                    for (i.elseifs) |*ei| self.markForeignDeclarations(&ei.body, foreign);
-                    if (i.else_body) |*eb| self.markForeignDeclarations(eb, foreign);
-                },
-                .while_loop => |*w| self.markForeignDeclarations(&w.body, foreign),
-                .repeat_loop => |*r| self.markForeignDeclarations(&r.body, foreign),
-                .do_block => |*d| self.markForeignDeclarations(&d.body, foreign),
-                .num_for => |*nf| self.markForeignDeclarations(&nf.body, foreign),
-                .gen_for => |*g| self.markForeignDeclarations(&g.body, foreign),
-                .try_stmt => |*t| {
-                    self.markForeignDeclarations(&t.body, foreign);
-                    for (t.catches) |*cc| self.markForeignDeclarations(&cc.body, foreign);
-                },
-                .defer_stmt => |*d| self.markForeignDeclarations(&d.body, foreign),
-                else => {},
-            }
-        }
-    }
-
     /// THE ONE EXCEPTION TO "AN UNRESOLVED CANDIDATE IS NEVER EFFECT-FREE".
     ///
     /// `s:len()` and `s:byte(i)` lower through dedicated bootstrap rules rather
@@ -5572,7 +5614,7 @@ pub const SemanticGraph = struct {
     /// honest answer and not a sentinel.
     ///
     /// A relation is EFFECT-FREE when all of these hold:
-    ///   1. it is not a foreign declaration (`declarationIsForeign`);
+    ///   1. its callable linkage origin is not C;
     ///   2. every application candidate whose caller is this relation RESOLVED
     ///      to a published fact — an unresolved candidate is a call the graph
     ///      could not identify, and `print("hi")` is measured to be exactly
@@ -5596,13 +5638,16 @@ pub const SemanticGraph = struct {
     /// and reads no world member cannot be exercising authority either. When
     /// authority acquires evidence of its own — a capability fact rather than
     /// the absence of one — it separates from this and gets its own predicate.
-    fn publishApplicationEffects(self: *SemanticGraph, mod: *const ast.Module) !void {
+    fn publishApplicationEffects(self: *SemanticGraph) !void {
         const node_count = self.nodes.items.len;
         if (node_count == 0) return;
 
         var foreign = try std.DynamicBitSetUnmanaged.initEmpty(self.alloc, node_count);
         defer foreign.deinit(self.alloc);
-        self.markForeignDeclarations(&mod.body, &foreign);
+        for (self.callable_linkages.items) |fact| {
+            if (fact.origin != .c) continue;
+            if (fact.callable < foreign.bit_length) foreign.set(fact.callable);
+        }
 
         var rows: std.ArrayListUnmanaged(EffectRow) = .empty;
         defer rows.deinit(self.alloc);
@@ -6533,6 +6578,36 @@ pub const SemanticGraph = struct {
         try buf.append(alloc, ']');
     }
 
+    fn appendCallableLinkagesJson(
+        self: *const SemanticGraph,
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+    ) !void {
+        try buf.appendSlice(alloc, ",\"callable_linkages\":[");
+        for (self.callable_linkages.items, 0..) |fact, i| {
+            const published = self.callableLinkage(fact.callable) orelse
+                return error.InvalidCallableLinkageFact;
+            if (published.callable != fact.callable or
+                published.origin != fact.origin or
+                published.exposure != fact.exposure or
+                !std.mem.eql(u8, published.symbol, fact.symbol))
+            {
+                return error.InvalidCallableLinkageFact;
+            }
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"callable\":");
+            try appendJsonInt(buf, alloc, fact.callable);
+            try buf.appendSlice(alloc, ",\"origin\":\"");
+            try buf.appendSlice(alloc, @tagName(fact.origin));
+            try buf.appendSlice(alloc, "\",\"exposure\":\"");
+            try buf.appendSlice(alloc, @tagName(fact.exposure));
+            try buf.appendSlice(alloc, "\",\"symbol\":\"");
+            try jsonEscapeAppend(buf, alloc, fact.symbol);
+            try buf.appendSlice(alloc, "\"}");
+        }
+        try buf.append(alloc, ']');
+    }
+
     fn appendMembersJson(
         self: *const SemanticGraph,
         buf: *std.ArrayListUnmanaged(u8),
@@ -6601,7 +6676,10 @@ pub const SemanticGraph = struct {
         // the shadow from a plain module write.
         // version 11: exact `root_source_law` edition. Imported source positions
         // need their own source/home facts before mixed-law closure can be claimed.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":11,\"file\":\"");
+        // version 12: `callable_linkages`. Version 11 forced every graph/tool
+        // consumer to rederive physical origin/exposure/symbol from declaration
+        // spellings even though checked realization consumed the graph fact.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":12,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         switch (self.root_source_law_edition) {
@@ -6794,7 +6872,9 @@ pub const SemanticGraph = struct {
             }
             try out.append(alloc, '}');
         }
-        try out.appendSlice(alloc, "],\"unresolved_applications\":[");
+        try out.append(alloc, ']');
+        try self.appendCallableLinkagesJson(out, alloc);
+        try out.appendSlice(alloc, ",\"unresolved_applications\":[");
         var first_unresolved = true;
         var candidates = self.application_candidates.iterator(.{});
         while (candidates.next()) |candidate| {
@@ -7451,6 +7531,81 @@ test "semantic_graph: checked subject application retains relation and value ide
     try std.testing.expectEqual(@as(usize, 1), matching_shapes);
 }
 
+test "semantic_graph: checked callable linkage is one id keyed fact" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\ordinary: i64 = ()
+        \\    1
+        \\@export
+        \\compat: i64 = ()
+        \\    2
+        \\@c.export("idol_api")
+        \\public: i64 = ()
+        \\    3
+        \\@ffi("llabs")
+        \\external: i64 = (n: i64)
+        \\    0
+    ;
+    var lexer = Lexer.init(source, "linkage.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    checked.source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "linkage.id");
+    try std.testing.expect(graph.requiresCallableLinkage());
+
+    const ordinary = graph.relationForDeclaration(&module.body.stmts[0].func_decl).?;
+    const compat = graph.relationForDeclaration(&module.body.stmts[1].func_decl).?;
+    const public = graph.relationForDeclaration(&module.body.stmts[2].func_decl).?;
+    const external = graph.relationForDeclaration(&module.body.stmts[3].func_decl).?;
+    const ordinary_fact = graph.callableLinkage(ordinary).?;
+    const expected_ordinary = if (graph.selfHome()) |owner|
+        try home_resolve_mod.homeSymbol(alloc, owner, "ordinary")
+    else
+        try alloc.dupe(u8, "ordinary");
+    defer alloc.free(expected_ordinary);
+    try std.testing.expectEqualStrings(expected_ordinary, ordinary_fact.symbol);
+    try std.testing.expectEqual(CallableOrigin.idol, ordinary_fact.origin);
+    try std.testing.expectEqual(CallableExposure.internal, ordinary_fact.exposure);
+    try std.testing.expectEqualStrings("compat", graph.callableLinkage(compat).?.symbol);
+    try std.testing.expectEqual(CallableExposure.compat_export, graph.callableLinkage(compat).?.exposure);
+    try std.testing.expectEqualStrings("idol_api", graph.callableLinkage(public).?.symbol);
+    try std.testing.expectEqual(CallableExposure.c_export, graph.callableLinkage(public).?.exposure);
+    try std.testing.expectEqualStrings("llabs", graph.callableLinkage(external).?.symbol);
+    try std.testing.expectEqual(CallableOrigin.c, graph.callableLinkage(external).?.origin);
+    try std.testing.expectEqual(CallableExposure.c_import, graph.callableLinkage(external).?.exposure);
+
+    var json: std.ArrayListUnmanaged(u8) = .empty;
+    defer json.deinit(alloc);
+    try graph.writeJson(alloc, "linkage.id", &json, null);
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqual(@as(i64, 12), parsed.value.object.get("version").?.integer);
+    const exported = parsed.value.object.get("callable_linkages").?.array.items;
+    try std.testing.expectEqual(@as(usize, 4), exported.len);
+    try std.testing.expectEqual(@as(i64, external), exported[3].object.get("callable").?.integer);
+    try std.testing.expectEqualStrings("c", exported[3].object.get("origin").?.string);
+    try std.testing.expectEqualStrings("c_import", exported[3].object.get("exposure").?.string);
+    try std.testing.expectEqualStrings("llabs", exported[3].object.get("symbol").?.string);
+
+    // Damaging the id->row index cannot recover a symbol from the declaration.
+    _ = graph.callable_linkage_rows.remove(ordinary);
+    try std.testing.expect(graph.callableLinkage(ordinary) == null);
+    try std.testing.expect(graph.requiresCallableLinkage());
+}
+
 test "semantic_graph: nested positional access owns aggregate member and result packs" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -7525,7 +7680,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 11), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 12), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
     try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
