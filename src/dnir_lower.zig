@@ -6088,8 +6088,18 @@ fn constIntValue(graph: *const semantic_graph.SemanticGraph, e: *const ast.Expr)
                 .bxor => l ^ r,
                 .lshift => if (r >= 0 and r < 64) l << @intCast(r) else null,
                 .rshift => if (r >= 0 and r < 64) l >> @intCast(r) else null,
-                .idiv, .div => if (r == 0) null else @divFloor(l, r),
-                .mod => if (r == 0) null else @mod(l, r),
+                // `@divFloor(INT_MIN, -1)` and `@mod(INT_MIN, -1)` overflow
+                // the host and abort the compiler. A trap is not a value —
+                // `comptime.zig` already refuses this pair for exactly that
+                // reason, and this fold had only the divide-by-zero half.
+                .idiv, .div => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
+                    null
+                else
+                    @divFloor(l, r),
+                .mod => if (r == 0 or (r == -1 and l == std.math.minInt(i64)))
+                    null
+                else
+                    @mod(l, r),
                 else => null,
             };
         },

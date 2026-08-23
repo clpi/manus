@@ -936,6 +936,10 @@ fn apply(op: Op, x: u64, y: u64, c: Cong) u64 {
             const a: i64 = @bitCast(x);
             const b: i64 = @bitCast(y);
             if (b == 0) break :blk 0;
+            // `@mod(INT_MIN, -1)` overflows through its `@divFloor`; the
+            // mathematical remainder is 0, and the sibling `.divi` arm above
+            // already carries the same guard.
+            if (b == -1) break :blk 0;
             var r = @mod(a, b); // floored, matching the surface language
             if (r != 0 and ((r < 0) != (b < 0))) r += b;
             break :blk @bitCast(r);

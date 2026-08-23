@@ -18281,12 +18281,15 @@ pub const CodeGen = struct {
                             self.p("{d}", .{lv *% rv});
                             return;
                         },
-                        .idiv => if (rv != 0) {
-                            self.p("{d}", .{@divFloor(lv, rv)});
+                        // `INT_MIN / -1` and `INT_MIN % -1` overflow the host
+                        // and abort the compiler. Declining to fold leaves the
+                        // C compiler holding the same operation it always did.
+                        .idiv => if (rv != 0 and !(rv == -1 and lv == std.math.minInt(i64))) {
+                            self.emit_c_int_literal(@divFloor(lv, rv));
                             return;
                         },
-                        .mod => if (rv != 0) {
-                            self.p("{d}", .{@mod(lv, rv)});
+                        .mod => if (rv != 0 and !(rv == -1 and lv == std.math.minInt(i64))) {
+                            self.emit_c_int_literal(@mod(lv, rv));
                             return;
                         },
                         .band => {
