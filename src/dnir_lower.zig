@@ -12072,7 +12072,7 @@ fn emitDivisorZeroTrap(ctx: *LowerCtx, divisor: dnir.Value) Error!void {
 ///
 /// It is `pub` and it is NAMED because the two enums it joins sit on opposite
 /// sides of the layering firewall, so the divisor-nonzero obligation cannot be
-/// one declaration: `dnir.divisorNonzero` states it over the tag for the
+/// one declaration: `BinOpTag.requiresNonzeroDivisor` states it over the tag for the
 /// realization consumers, `demand_projection.Law.divisor_nonzero` states it
 /// over the relation for the meaning consumers, and this projection is what
 /// lets `tests.zig` prove the two agree instead of assuming it. That test is
@@ -12137,7 +12137,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
     // updated with it. Floor division then reached a bare `sdiv`, which on
     // AArch64 ANSWERS 0 rather than faulting, so an opaque runtime zero divisor
     // through `//` returned 0 and exited 0 while `/` and `%` on the SAME
-    // divisor aborted. `dnir.divisorNonzero` is the one obligation the three
+    // divisor aborted. `BinOpTag.requiresNonzeroDivisor` is the one obligation the three
     // share, stated beside the tags whose relation law it belongs to; every
     // realization consumer asks it and none of them keeps a list.
     //
@@ -12146,7 +12146,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
     // already and must not be given a fault instead. The OPERANDS decide that,
     // not the obligation — which is why this reads the operands separately and
     // does not fold the float case into the law.
-    if (!f64_op and dnir.divisorNonzero(tag)) try emitDivisorZeroTrap(ctx, b);
+    if (!f64_op and tag.requiresNonzeroDivisor()) try emitDivisorZeroTrap(ctx, b);
     var result_ty: RT = if (f64_op) .f64 else .any;
     if (!f64_op) {
         if (unsignedComparison(ctx, op, lhs, rhs)) |conv| {

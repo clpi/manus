@@ -7324,9 +7324,9 @@ const Arm64Compiler = struct {
         if (ins.application != null or ins.relation != null or ins.value != null) return false;
         if (ins.result == null) return false;
         // Division is the trapping one, and WHICH tags those are is
-        // `dnir.divisorNonzero`'s answer, not a list kept here. See the
+        // `BinOpTag.requiresNonzeroDivisor`'s answer, not a list kept here. See the
         // admission rule above.
-        return !dnir.divisorNonzero(ins.binop);
+        return !ins.binop.requiresNonzeroDivisor();
     }
 
     /// Recognize `br when_x C -> J ; <one ALU op> ; store_local L ;
@@ -7591,8 +7591,8 @@ const Arm64Compiler = struct {
         if (ins.op != .binop) return false;
         // Only the divisor-obligation tags reach here: everything else was
         // already answered by `ifConvArmOpAdmissible` above. The obligation is
-        // `dnir.divisorNonzero`'s to state; this asks it.
-        if (!dnir.divisorNonzero(ins.binop)) return false;
+        // `BinOpTag.requiresNonzeroDivisor`'s to state; this asks it.
+        if (!ins.binop.requiresNonzeroDivisor()) return false;
         if (ins.ty == .f64 or self.cur_func_float) return false;
         if (self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs)) return false;
         if (ins.application != null or ins.relation != null or ins.value != null) return false;
@@ -7699,7 +7699,7 @@ const Arm64Compiler = struct {
             }
             if (!self.ifConvArmOpAdmissibleTwoSided(op)) {
                 self.ifconv_refusal = switch (op.op) {
-                    .binop => if (dnir.divisorNonzero(op.binop))
+                    .binop => if (op.binop.requiresNonzeroDivisor())
                         "arm-op-trapping"
                     else if (op.binop == .mul)
                         "arm-op-latency"

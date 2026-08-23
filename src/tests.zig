@@ -121,7 +121,7 @@ test {
 /// consumers (`sema`, `demand`) hold an `ast.BinOp`, the realization consumers
 /// (`dnir_lower`, `native_backend`) hold a `dnir.BinOpTag`, and a BACKEND may
 /// not import SEMA. So it is declared twice — `demand_projection.Law
-/// .divisor_nonzero` and `native_ir.divisorNonzero` — and this is the runner
+/// .divisor_nonzero` and `native_ir.BinOpTag.requiresNonzeroDivisor` — and this is the runner
 /// that makes the two declarations one fact rather than two hopes.
 ///
 /// IT EXISTS BECAUSE THE DRIFT ALREADY HAPPENED AND NOTHING NOTICED. `//` used
@@ -146,7 +146,7 @@ test "divisor obligation: IR and relation law agree" {
         if (dnir_lower.binopTagOf(op)) |tag| {
             // A relation this substrate realizes as a binop. The two
             // declarations answer for the same relation and must agree.
-            try std.testing.expectEqual(law, dnir.divisorNonzero(tag));
+            try std.testing.expectEqual(law, tag.requiresNonzeroDivisor());
         } else {
             // A relation with no tag still may not owe a divisor silently: it
             // would be an obligation with no realization consumer able to see
@@ -163,7 +163,7 @@ test "divisor obligation: IR and relation law agree" {
     try std.testing.expect(demand_projection.lawsOf(.div).divisor_nonzero);
     try std.testing.expect(demand_projection.lawsOf(.idiv).divisor_nonzero);
     try std.testing.expect(demand_projection.lawsOf(.mod).divisor_nonzero);
-    try std.testing.expect(dnir.divisorNonzero(.div));
-    try std.testing.expect(dnir.divisorNonzero(.idiv));
-    try std.testing.expect(dnir.divisorNonzero(.mod));
+    try std.testing.expect(dnir.BinOpTag.requiresNonzeroDivisor(.div));
+    try std.testing.expect(dnir.BinOpTag.requiresNonzeroDivisor(.idiv));
+    try std.testing.expect(dnir.BinOpTag.requiresNonzeroDivisor(.mod));
 }

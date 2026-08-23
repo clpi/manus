@@ -549,7 +549,7 @@ pub const Law = packed struct {
     /// case is not an exception to the law but a different relation: IEEE-754
     /// DEFINES `x / 0.0`, so the operands, not the obligation, decide.
     ///
-    /// `native_ir.divisorNonzero` is THE SAME OBLIGATION over the DNIR tag, for
+    /// `native_ir.BinOpTag.requiresNonzeroDivisor` is THE SAME OBLIGATION over the DNIR tag, for
     /// the realization consumers. It is a second declaration and not a second
     /// authority: `gate/layers.manifest` forbids a BACKEND importing SEMA, so
     /// the one fact cannot be one declaration, and `tests.zig` `"divisor
