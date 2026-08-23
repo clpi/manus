@@ -251,5 +251,36 @@ grep -q '@(64)' "$work/fmt_scalar.id" || {
     fail "§4 the formatter dropped the parens from '@(64)' — the reprint does not lex"
 }
 
-printf 'world-face-zero gate: PASS — sigil free (4 retired spellings refused by name, 4 migrated spellings admitted, 0 live corpus sites, formatter sigil-free)\n'
+# ------------------------------------------------------------- §5 SELF-HOST
+# TWO FRONTIERS, ONE LAW. `lib/compiler/parser.id` is a parser in this tree, and
+# it read the retired face for two days after the Zig one stopped: its
+# descriptor slot peeked for `kindat` and SWALLOWED the sigil before testing for
+# the brace, so `point: @{ x: i64 }` and `point: { x: i64 }` projected the
+# identical `(descriptor …)`. One frontier refused what the other silently
+# accepted, which is worse than either answer alone.
+#
+# Lexical, because the self-host parser cannot be EXECUTED at this subject —
+# `parse_status` refuses with `DNB011 … unresolved-application-facts` on the
+# cross-home application, so there is no way to drive it and read a verdict.
+# `gate/architecture-negative.sh` already polices retired productions in this
+# exact file the same way, for the same reason.
+selfhost="$root/lib/compiler/parser.id"
+[ -r "$selfhost" ] || fail "§5 missing self-host parser: $selfhost"
+# `dt` is the descriptor-slot lookahead specifically. The other three `kindat`
+# tests in this file are the anchor suffix and `@` directives, which are live
+# faces and must survive — so the row names the slot rather than the token.
+if grep -q 'dt\.kind == token\.kindat' "$selfhost"; then
+    grep -n 'dt\.kind == token\.kindat' "$selfhost" >&2
+    fail "§5 the self-host parser consumes the sigil in the descriptor slot again — the two frontiers disagree about law.injection.only"
+fi
+# POSITIVE CONTROL: the row must SEE the production it forbids, or it is a grep
+# that passes because its pattern rotted.
+printf '            dt = lexer.peek(lx)\n            if dt.kind == token.kindat\n' >"$work/selfhost_plant.id"
+grep -q 'dt\.kind == token\.kindat' "$work/selfhost_plant.id" || fail "§5 control: the row does not match the production it forbids"
+# and it must DECLINE the three live `@` faces the file still needs.
+printf '    if t.kind == token.kindat\n        return proj_directive(lx)\n' >"$work/selfhost_live.id"
+grep -q 'dt\.kind == token\.kindat' "$work/selfhost_live.id" && fail "§5 control: the row convicts the live directive face; it would delete a face the language has"
+grep -q 'token\.kindat' "$selfhost" || fail "§5 subject: the self-host parser has NO kindat test at all — the anchor and directive faces are gone, and this row is reading a file that no longer parses '@'"
+
+printf 'world-face-zero gate: PASS — sigil free (4 retired spellings refused by name, 4 migrated spellings admitted, 0 live corpus sites, formatter sigil-free, both frontiers agree)\n'
 printf 'world-face-zero gate: NOTE — a free sigil is not a closed algebra; 0 of 5 world faces compile (gap[203])\n'

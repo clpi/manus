@@ -1840,14 +1840,22 @@ proj_stmt: str = (lx: lexer)
             bst = lexer.save_state(lx)
             _n = lexer.next(lx)
             _c = lexer.next(lx)
-            # `span: { start: u32, ... }` and the staged `@{ ... }` form. `:` is
-            # IS, so a brace on the right is a DESCRIPTOR declaration, not a
-            # typed binding — this is the primary data-declaration form and the
-            # parser had no production for it at all.
+            # `span: { start: u32, ... }`. `:` is IS, so a brace on the right
+            # is a DESCRIPTOR declaration, not a typed binding — this is the
+            # primary data-declaration form and the parser had no production
+            # for it at all.
+            #
+            # It USED TO ACCEPT A STAGED `@{ ... }` in the same slot, peeking
+            # for `kindat` and swallowing it before the brace test, so both
+            # spellings projected the identical `(descriptor ...)`.
+            # `law.injection.only` rules the sigil EXCLUSIVELY world-deriving
+            # and fd85e7b8 made the Zig parser refuse the descriptor reading —
+            # which left the two frontiers disagreeing about the law, with this
+            # one silently accepting what the other names as a world injection.
+            # The sigil is not consumed here any more; `@` in this slot falls
+            # to `proj_type` and the statement fails, which is the answer the
+            # other frontier already gives.
             dt = lexer.peek(lx)
-            if dt.kind == token.kindat
-                _at = lexer.next(lx)
-                dt = lexer.peek(lx)
             if dt.kind == token.kindlbrace
                 _lb = lexer.next(lx)
                 return "(descriptor " .. t.text .. " " .. proj_desc_body(lx) .. ")"
