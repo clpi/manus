@@ -136,13 +136,23 @@ fi
 # adds a file to the scaffold is not a clean plant, and any gate globbing the
 # root would have been handed a subject this harness invented. Nothing may
 # exist in a scaffold except what the plant deliberately put there.
-say_file=$(mktemp) || exit 2
-trap 'rm -f -- "$say_file"' EXIT
+# ONE SCRATCH PARENT, torn down on EXIT AND ON SIGNALS. Every scaffold and the
+# transcript live under it, so there is no path — normal, refusing, or
+# interrupted — that leaves a planted tree behind. Per-scaffold `rm -rf` calls
+# remain, because 44 gates x 2 plants should not all sit on disk at once.
+scratch=$(mktemp -d) || { echo "vacuity: cannot allocate scratch" >&2; exit 2; }
+cleanup() { rm -rf -- "$scratch"; }
+trap 'cleanup' EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 129' HUP
+say_file="$scratch/say"
+
 
 run_bounded() {
   # $1 dir, $2 relative gate path -> echoes exit code, or 124 for timeout
   if [ -n "$runner" ]; then
-    ( cd "$1" && $runner "$PER_GATE_TIMEOUT" sh "$2" >"$say_file" 2>&1 </dev/null )
+    ( cd "$1" && "$runner" "$PER_GATE_TIMEOUT" sh "$2" >"$say_file" 2>&1 </dev/null )
   else
     ( cd "$1" && sh "$2" >"$say_file" 2>&1 </dev/null )
   fi
@@ -164,7 +174,14 @@ grade() {
     0) echo green ;;
     124) echo timeout ;;
     126|127) echo crash ;;
-    *) if [ "$1" -ge 128 ] 2>/dev/null; then echo crash; else echo refused; fi ;;
+    # NO SWALLOWED COMPARISON. This read `[ "$1" -ge 128 ] 2>/dev/null`, and a
+    # `2>/dev/null` hiding a failed test that then falls through to a benign
+    # default is the exact anti-pattern this whole file polices — in the
+    # function that grades the policing. The exit status is matched as text
+    # instead, so there is no error to hide.
+    1[3-9][0-9]|1[2][89]|2[0-9][0-9]) echo crash ;;
+    *[!0-9]*) echo "nonnumeric($1)" ;;
+    *) echo refused ;;
   esac
 }
 
@@ -204,7 +221,7 @@ verdict_of() {
 # run, that its own verdict function can say VACUOUS at all. Two canaries: one
 # that examines nothing and exits 0, one that refuses when its subject is
 # absent. Misclassify either and nothing below is printed.
-canary=$(mktemp -d) || exit 2
+canary=$(mktemp -d "$scratch/canary.XXXXXX") || exit 2
 mkdir -p "$canary/probe/gate"
 cat > "$canary/probe/gate/hollowcanary.sh" <<'CANARY'
 #!/bin/sh
@@ -224,7 +241,8 @@ chmod +x "$canary/probe/gate/"*.sh
 
 self_fail=0
 for c in hollowcanary soundcanary; do
-  ce=$(mktemp -d); ch=$(mktemp -d)
+  ce=$(mktemp -d "$scratch/ce.XXXXXX") || { self_fail=1; continue; }
+  ch=$(mktemp -d "$scratch/ch.XXXXXX") || { rm -rf "$ce"; self_fail=1; continue; }
   mkdir -p "$ce/gate" "$ch/gate"
   cp "$canary/probe/gate/$c.sh" "$ce/gate/$c.sh"
   cp "$canary/probe/gate/$c.sh" "$ch/gate/$c.sh"
@@ -266,6 +284,13 @@ fi
 gates=$(find gate -name '*.sh' -type f 2>/dev/null | sed 's|^\./||' | sort)
 tracked=$(git ls-files -- 'gate/*.sh' 'gate/*/*.sh' 2>/dev/null | sort)
 untracked=''
+# NEWLINE-SAFE. `for g in $gates` splits on spaces too; LAW-ONE forbids a space
+# in a path, so today this changes nothing, but a split path would be planted
+# as two nonexistent files and the plant failure is fatal, not silent. Making
+# it exact costs one variable. The reviewer's suggested `"${untracked} …"` was
+# a no-op: that right-hand side was already fully quoted.
+oldifs=$IFS; IFS='
+'
 for g in $gates; do
   case "
 $tracked
@@ -273,6 +298,7 @@ $tracked
 $g
 "*) ;; *) untracked="$untracked ${g#gate/}" ;; esac
 done
+IFS=$oldifs
 total=0
 for g in $gates; do total=$((total + 1)); done
 # A census of zero subjects is this gate's own defect class.
@@ -291,11 +317,14 @@ done
 sound=0; vacuous=0; declared=0; timedout=0; skipped=0
 vacuous_names=''; timeout_names=''; declared_sound=''; crashes=''; newvacuous=''
 
+oldifs=$IFS; IFS='
+'
 for g in $gates; do
+  IFS=$oldifs
   case " $RUNNERS " in *" $g "*) skipped=$((skipped + 1)); printf '  %-38s RUNNER (excluded by role)\n' "${g#gate/}"; continue ;; esac
 
-  e=$(mktemp -d) || exit 2
-  h=$(mktemp -d) || exit 2
+  e=$(mktemp -d "$scratch/e.XXXXXX") || exit 2
+  h=$(mktemp -d "$scratch/h.XXXXXX") || exit 2
   if ! build_empty "$e" "$g" || ! build_hollow "$h" "$g"; then
     printf 'vacuity: could not plant %s — a plant that fails to apply is not a pass\n' "$g" >&2
     rm -rf "$e" "$h"; exit 2
@@ -337,7 +366,10 @@ for g in $gates; do
       printf '  %-38s VACUOUS   empty=%-3s hollow=%-3s%s\n' "${g#gate/}" "$re" "$rh" "$known"
       printf '  %-38s   it said: %s\n' "" "$whichsay" ;;
   esac
+  IFS='
+'
 done
+IFS=$oldifs
 
 printf 'vacuity: %s gate(s) enumerated — %s sound, %s VACUOUS, %s declared report-only, %s timeout, %s runner(s) excluded\n' \
   "$total" "$sound" "$vacuous" "$declared" "$timedout" "$skipped"
