@@ -19,7 +19,7 @@ tok: { kind: i64, start: i64, len: i64 }
 
 # Non-keyword kinds. `classify.id` covers only the 54 reserved words, so these
 # two live here and are deliberately outside the canonical keyword range.
-KIND_NAME = 0
+kindname = 0
 KIND_NUMBER = 1
 
 digit: i64 = (c: i64)
@@ -52,23 +52,23 @@ classify_word: i64 = (src: str, start: i64, len: i64)
     b0 = src:byte(start)
     if len == 2
         if b0 == 105 and src:byte(start + 1) == 102
-            return Classify.KIND_IF
+            return Classify.kindif
         if b0 == 100 and src:byte(start + 1) == 111
-            return Classify.KIND_DO
+            return Classify.kinddo
     if len == 3
         if b0 == 101 and src:byte(start + 1) == 110 and src:byte(start + 2) == 100
-            return Classify.KIND_END
+            return Classify.kindend
         if b0 == 97 and src:byte(start + 1) == 110 and src:byte(start + 2) == 100
-            return Classify.KIND_AND
+            return Classify.kindand
         if b0 == 102 and src:byte(start + 1) == 117 and src:byte(start + 2) == 110
-            return Classify.KIND_FUN
+            return Classify.kindfun
     if len == 5
         if b0 == 108 and src:byte(start + 1) == 111 and src:byte(start + 4) == 108
-            return Classify.KIND_LOCAL
+            return Classify.kindlocal
     if len == 6
         if b0 == 114 and src:byte(start + 1) == 101 and src:byte(start + 5) == 110
-            return Classify.KIND_RETURN
-    KIND_NAME
+            return Classify.kindreturn
+    kindname
 
 nexttoken: tok = (src: str, pos: i64)
     n = src:len()

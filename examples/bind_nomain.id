@@ -71,62 +71,62 @@ unresolved: i64 = (src: str, file: str, family: i64, report: bool)
   # mutual recursion between top-level declarations is the normal case.
   while true
     t = lexer.next(lx)
-    if t.kind == token.KIND_EOF
+    if t.kind == token.kindeof
       break
-    if t.kind == token.KIND_NAME
+    if t.kind == token.kindname
       nxt = lexer.peek(lx)
       binds = false
-      if nxt.kind == token.KIND_ASSIGN
+      if nxt.kind == token.kindassign
         binds = true
       # Multiple assignment binds every name on the left:
       # `ok, result = pcall(f)`. Walk the comma list and accept it only
       # if it actually reaches `=`, so a call argument list is not
       # mistaken for a binding site.
-      if nxt.kind == token.KIND_COMMA
+      if nxt.kind == token.kindcomma
         st = lexer.save_state(lx)
         walking = true
         while walking
           walking = false
           a = lexer.next(lx)
-          if a.kind == token.KIND_COMMA
+          if a.kind == token.kindcomma
             b = lexer.next(lx)
-            if b.kind == token.KIND_NAME
-              if lexer.peek(lx).kind == token.KIND_ASSIGN
+            if b.kind == token.kindname
+              if lexer.peek(lx).kind == token.kindassign
                 binds = true
-              else(lexer.peek(lx).kind == token.KIND_COMMA)
+              else(lexer.peek(lx).kind == token.kindcomma)
                 walking = true
         lexer.restore_state(lx, st)
-      if nxt.kind == token.KIND_LPAREN and kind != token.KIND_DOT and kind != token.KIND_COLON
+      if nxt.kind == token.kindlparen and kind != token.kinddot and kind != token.kindcolon
         binds = true
       # `span: { ... }` is a descriptor DECLARATION and binds the name.
       # FF-22 retired `type X = { ... }` in favour of this shape axis
       # form, and migrating lib/std to it made every such name unresolved
       # until the binder learned the new spelling — the ratchet caught it
       # in the same commit.
-      if nxt.kind == token.KIND_COLON and t.loc.col == 1
+      if nxt.kind == token.kindcolon and t.loc.col == 1
         binds = true
       # `n: i64 = 5` — a typed local binding, at any indentation. The
       # column-1 rule above only covers descriptor declarations, so every
       # typed local read as unresolved. Distinguished from a method call
       # (`obj:m()`) by looking past the type for the `=`, which is the
       # same discriminator proj_stmt uses.
-      if nxt.kind == token.KIND_COLON and t.loc.col != 1
+      if nxt.kind == token.kindcolon and t.loc.col != 1
         cst = lexer.save_state(lx)
         c = lexer.next(lx)
         ty = lexer.next(lx)
-        if ty.kind == token.KIND_NAME or ty.kind >= token.KIND_I8 and ty.kind <= token.KIND_STR
-          if lexer.peek(lx).kind == token.KIND_ASSIGN
+        if ty.kind == token.kindname or ty.kind >= token.kindi8 and ty.kind <= token.kindstr
+          if lexer.peek(lx).kind == token.kindassign
             binds = true
         lexer.restore_state(lx, cst)
       # `spawn(fn: any, ...args)` — a NAMED vararg parameter binds too.
-      if kind == token.KIND_DOTS
+      if kind == token.kinddots
         binds = true
-      if kind == token.KIND_FUN or kind == token.KIND_FUNCTION or kind == token.KIND_FOR
+      if kind == token.kindfun or kind == token.kindfunction or kind == token.kindfor
         binds = true
       # `concept Allocator ... end` declares the protocol's name.
-      if kind == token.KIND_CONCEPT
+      if kind == token.kindconcept
         binds = true
-      if kind == token.KIND_LPAREN or kind == token.KIND_COMMA
+      if kind == token.kindlparen or kind == token.kindcomma
         binds = true
       if binds
         bound = add(bound, t.text)
@@ -138,13 +138,13 @@ unresolved: i64 = (src: str, file: str, family: i64, report: bool)
   prev_kind: i64 = 0
   while true
     t = lexer.next(lx2)
-    if t.kind == token.KIND_EOF
+    if t.kind == token.kindeof
       break
-    if t.kind == token.KIND_NAME
-      skip = kind == token.KIND_DOT or kind == token.KIND_COLON or prev_kind == token.KIND_AT
+    if t.kind == token.kindname
+      skip = kind == token.kinddot or kind == token.kindcolon or prev_kind == token.kindat
       if !skip
         nxt = lexer.peek(lx2)
-        if nxt.kind != token.KIND_ASSIGN and !has(bound, t.text) and !has(refs, t.text)
+        if nxt.kind != token.kindassign and !has(bound, t.text) and !has(refs, t.text)
           refs = add(refs, t.text)
           count = count + 1
           if report

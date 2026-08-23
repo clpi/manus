@@ -41,23 +41,23 @@ pos_of: i64 = (packed: i64)
 
 # ── Token kinds ─────────────────────────────────────────────────────────────
 
-KIND_EOF = 0
+kindeof = 0
 KIND_INT = 1
-KIND_NAME = 2
-KIND_LPAREN = 3
-KIND_RPAREN = 4
-KIND_PLUS = 5
-KIND_MINUS = 6
-KIND_STAR = 7
-KIND_SLASH = 8
-KIND_EQ = 9
-KIND_NEQ = 10
-KIND_LT = 11
-KIND_GT = 12
-KIND_LEQ = 13
-KIND_GEQ = 14
-KIND_TRUE = 26
-KIND_FALSE = 27
+kindname = 2
+kindlparen = 3
+kindrparen = 4
+kindplus = 5
+kindminus = 6
+kindstar = 7
+kindslash = 8
+kindeq = 9
+kindneq = 10
+kindlt = 11
+kindgt = 12
+kindleq = 13
+kindgeq = 14
+kindtrue = 26
+kindfalse = 27
 
 # ── Tokenizer ───────────────────────────────────────────────────────────────
 
@@ -101,36 +101,36 @@ next_tok: i64 = (src: str, pos: i64)
     i = skip_spaces(src, pos)
     n = src:len()
     if i > n
-        return pk(KIND_EOF, i)
+        return pk(kindeof, i)
     c = src:byte(i)
     if c == 40
-        return pk(KIND_LPAREN, i + 1)
+        return pk(kindlparen, i + 1)
     if c == 41
-        return pk(KIND_RPAREN, i + 1)
+        return pk(kindrparen, i + 1)
     if c == 43
-        return pk(KIND_PLUS, i + 1)
+        return pk(kindplus, i + 1)
     if c == 45
-        return pk(KIND_MINUS, i + 1)
+        return pk(kindminus, i + 1)
     if c == 42
-        return pk(KIND_STAR, i + 1)
+        return pk(kindstar, i + 1)
     if c == 47
-        return pk(KIND_SLASH, i + 1)
+        return pk(kindslash, i + 1)
     if c == 61
         if i + 1 <= n and src:byte(i + 1) == 61
-            return pk(KIND_EQ, i + 2)
-        return pk(KIND_EOF, i + 1)
+            return pk(kindeq, i + 2)
+        return pk(kindeof, i + 1)
     if c == 33
         if i + 1 <= n and src:byte(i + 1) == 61
-            return pk(KIND_NEQ, i + 2)
-        return pk(KIND_EOF, i + 1)
+            return pk(kindneq, i + 2)
+        return pk(kindeof, i + 1)
     if c == 60
         if i + 1 <= n and src:byte(i + 1) == 61
-            return pk(KIND_LEQ, i + 2)
-        return pk(KIND_LT, i + 1)
+            return pk(kindleq, i + 2)
+        return pk(kindlt, i + 1)
     if c == 62
         if i + 1 <= n and src:byte(i + 1) == 61
-            return pk(KIND_GEQ, i + 2)
-        return pk(KIND_GT, i + 1)
+            return pk(kindgeq, i + 2)
+        return pk(kindgt, i + 1)
     if is_digit(c) == 1
         num = read_number(src, i)
         return pk(KIND_INT, pos_of(num))
@@ -140,7 +140,7 @@ next_tok: i64 = (src: str, pos: i64)
         name_end = pos_of(name)
         kw = classify_keyword(src, i, name_len)
         return pk(kw, name_end)
-    pk(KIND_EOF, i + 1)
+    pk(kindeof, i + 1)
 
 # ── Character-level expression parser (L1) ───────────────────────────────────
 
@@ -213,17 +213,17 @@ parse_primary: i64 = (src: str, pos: i64)
     if kind == KIND_INT
         num = read_number(src, skip_spaces(src, pos))
         return pk(val_of(num), after)
-    if kind == KIND_LPAREN
+    if kind == kindlparen
         inner = parse_expr_tok(src, after)
         iv = val_of(inner)
         ip = pos_of(inner)
         tok2 = next_tok(src, ip)
-        if val_of(tok2) == KIND_RPAREN
+        if val_of(tok2) == kindrparen
             return pk(iv, pos_of(tok2))
         return pk(iv, ip)
-    if kind == KIND_TRUE
+    if kind == kindtrue
         return pk(1, after)
-    if kind == KIND_FALSE
+    if kind == kindfalse
         return pk(0, after)
     pk(0, after)
 
@@ -237,19 +237,19 @@ parse_term_tok: i64 = (src: str, pos: i64)
     while cont == 1
         tok = next_tok(src, i)
         kind = val_of(tok)
-        if kind == KIND_STAR
+        if kind == kindstar
             i = pos_of(tok)
             rhs = parse_primary(src, i)
             acc = acc * val_of(rhs)
             i = pos_of(rhs)
-        if kind == KIND_SLASH
+        if kind == kindslash
             i = pos_of(tok)
             rhs2 = parse_primary(src, i)
             rv = val_of(rhs2)
             if rv != 0
                 acc = acc / rv
             i = pos_of(rhs2)
-        if kind != KIND_STAR and kind != KIND_SLASH
+        if kind != kindstar and kind != kindslash
             cont = 0
     pk(acc, i)
 
@@ -263,17 +263,17 @@ parse_expr_tok: i64 = (src: str, pos: i64)
     while cont == 1
         tok = next_tok(src, i)
         kind = val_of(tok)
-        if kind == KIND_PLUS
+        if kind == kindplus
             i = pos_of(tok)
             rhs = parse_term_tok(src, i)
             acc += val_of(rhs)
             i = pos_of(rhs)
-        if kind == KIND_MINUS
+        if kind == kindminus
             i = pos_of(tok)
             rhs2 = parse_term_tok(src, i)
             acc -= val_of(rhs2)
             i = pos_of(rhs2)
-        if kind != KIND_PLUS and kind != KIND_MINUS
+        if kind != kindplus and kind != kindminus
             cont = 0
     pk(acc, i)
 
@@ -286,37 +286,37 @@ parse_cmp: i64 = (src: str, pos: i64)
     i = pos_of(left)
     tok = next_tok(src, i)
     kind = val_of(tok)
-    if kind == KIND_EQ
+    if kind == kindeq
         i = pos_of(tok)
         rhs = parse_expr_tok(src, i)
         if lv == val_of(rhs)
             return pk(1, pos_of(rhs))
         return pk(0, pos_of(rhs))
-    if kind == KIND_NEQ
+    if kind == kindneq
         i = pos_of(tok)
         rhs = parse_expr_tok(src, i)
         if lv != val_of(rhs)
             return pk(1, pos_of(rhs))
         return pk(0, pos_of(rhs))
-    if kind == KIND_LT
+    if kind == kindlt
         i = pos_of(tok)
         rhs = parse_expr_tok(src, i)
         if lv < val_of(rhs)
             return pk(1, pos_of(rhs))
         return pk(0, pos_of(rhs))
-    if kind == KIND_GT
+    if kind == kindgt
         i = pos_of(tok)
         rhs = parse_expr_tok(src, i)
         if lv > val_of(rhs)
             return pk(1, pos_of(rhs))
         return pk(0, pos_of(rhs))
-    if kind == KIND_LEQ
+    if kind == kindleq
         i = pos_of(tok)
         rhs = parse_expr_tok(src, i)
         if lv <= val_of(rhs)
             return pk(1, pos_of(rhs))
         return pk(0, pos_of(rhs))
-    if kind == KIND_GEQ
+    if kind == kindgeq
         i = pos_of(tok)
         rhs = parse_expr_tok(src, i)
         if lv >= val_of(rhs)

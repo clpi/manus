@@ -47,18 +47,18 @@ word_kind: i64 = (src: str, start: i64, len: i64)
     b0 = src:byte(start)
     if len == 2
         if b0 == 105 and src:byte(start + 1) == 102
-            return Classify.KIND_IF
+            return Classify.kindif
         if b0 == 100 and src:byte(start + 1) == 111
-            return Classify.KIND_DO
+            return Classify.kinddo
     if len == 3
         if b0 == 101 and src:byte(start + 1) == 110 and src:byte(start + 2) == 100
-            return Classify.KIND_END
+            return Classify.kindend
     if len == 5
         if b0 == 119 and src:byte(start + 1) == 104 and src:byte(start + 4) == 101
-            return Classify.KIND_WHILE
+            return Classify.kindwhile
     if len == 8
         if b0 == 102 and src:byte(start + 1) == 117 and src:byte(start + 7) == 110
-            return Classify.KIND_FUNCTION
+            return Classify.kindfunction
     KIND_OTHER
 
 # Next word-or-symbol span. Non-word bytes are returned as single-byte spans so
@@ -89,11 +89,11 @@ max_depth: i64 = (src: str)
         s: span = nextspan(src, pos)
         if s.kind == 0 - 1
             return best
-        if s.kind == Classify.KIND_IF or s.kind == Classify.KIND_WHILE or s.kind == Classify.KIND_FUNCTION
+        if s.kind == Classify.kindif or s.kind == Classify.kindwhile or s.kind == Classify.kindfunction
             depth += 1
             if depth > best
                 best = depth
-        if s.kind == Classify.KIND_END
+        if s.kind == Classify.kindend
             if depth == 0
                 return 0 - 1
             depth -= 1

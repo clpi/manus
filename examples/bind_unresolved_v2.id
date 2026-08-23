@@ -13,23 +13,23 @@ unresolved: i64 = (src: str, file: str, family: i64, report: bool)
   kind: i64 = 0
   while true
     t = lexer.next(lx)
-    if t.kind == token.KIND_EOF
+    if t.kind == token.kindeof
       break
-    if t.kind == token.KIND_NAME
+    if t.kind == token.kindname
       nxt = lexer.peek(lx)
       binds = false
-      if nxt.kind == token.KIND_COMMA
+      if nxt.kind == token.kindcomma
         st = lexer.save_state(lx)
         walking = true
         while walking
           walking = false
           a = lexer.next(lx)
-          if a.kind == token.KIND_COMMA
+          if a.kind == token.kindcomma
             b = lexer.next(lx)
-            if b.kind == token.KIND_NAME
-              if lexer.peek(lx).kind == token.KIND_ASSIGN
+            if b.kind == token.kindname
+              if lexer.peek(lx).kind == token.kindassign
                 binds = true
-              else(lexer.peek(lx).kind == token.KIND_COMMA)
+              else(lexer.peek(lx).kind == token.kindcomma)
                 walking = true
         lexer.restore_state(lx, st)
       if binds

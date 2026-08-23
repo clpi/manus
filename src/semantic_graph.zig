@@ -9319,7 +9319,7 @@ test "semantic_graph: cross-home tail constant publishes exactI64" {
     const from = "examples/cross_home_constant.id";
     const src =
         \\main: i64 = ()
-        \\    token.KIND_EOF
+        \\    token.kindeof
     ;
     var lex = Lexer.init(src, from);
     var parser = Parser.init(&lex, alloc);

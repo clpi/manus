@@ -48,11 +48,11 @@ nodes: str = (src: str, file: str, family: i64)
   acc = "|"
   while true
     t = lexer.next(lx)
-    if t.kind == token.KIND_EOF
+    if t.kind == token.kindeof
       break
-    if t.kind == token.KIND_NAME and t.loc.col == 1
+    if t.kind == token.kindname and t.loc.col == 1
       nxt = lexer.peek(lx)
-      if nxt.kind == token.KIND_ASSIGN or nxt.kind == token.KIND_LPAREN or nxt.kind == token.KIND_COLON
+      if nxt.kind == token.kindassign or nxt.kind == token.kindlparen or nxt.kind == token.kindcolon
         acc = add(acc, t.text)
   acc
 
@@ -66,7 +66,7 @@ dead: i64 = (src: str, file: str, family: i64, report: bool)
   col: i64 = 0
   while true
     t = lexer.next(lx)
-    if t.kind == token.KIND_EOF
+    if t.kind == token.kindeof
       break
     # gap[025]: a RECEIVER FACE is a reference. `self:_fail(2)` calls the
     # top-level `_fail`, so excluding names after `:` made every converted
@@ -78,7 +78,7 @@ dead: i64 = (src: str, file: str, family: i64, report: bool)
     # `a:m()` now also marks a same-named top-level binding as used, so the
     # query can MISS a dead private — it can no longer invent one, which is
     # the failure that would delete live code.
-    if t.kind == token.KIND_NAME and kind != token.KIND_DOT
+    if t.kind == token.kindname and kind != token.kinddot
       # a declaration site is not a use of itself
       decl = t.loc.col == 1
       if !decl

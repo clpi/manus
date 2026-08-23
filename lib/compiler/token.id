@@ -3,131 +3,128 @@
 
 loc: { file: str, line: i64, col: i64 }
 
-KIND_NAME = 0
-KIND_INT_LIT = 1
-KIND_FLOAT_LIT = 2
+kindname = 0
+kindintlit = 1
+kindfloatlit = 2
 # Slot 3 is unpublished. Not an identity. Do not renumber 4–113.
 
 # Keywords from classify.id
-KIND_AND = 4
-KIND_BREAK = 5
-KIND_CONTINUE = 6
-KIND_DO = 7
-KIND_ELSE = 8
-KIND_ELSEIF = 9
-KIND_END = 10
-KIND_FALSE = 11
-KIND_FOR = 12
-KIND_FUNCTION = 13
-KIND_FUN = 14
-KIND_GLOBAL = 15
-KIND_GOTO = 16
-KIND_IF = 17
-KIND_IN = 18
-KIND_LOCAL = 19
-KIND_NIL = 20
-KIND_NOT = 21
-KIND_OR = 22
-KIND_REPEAT = 23
-KIND_RETURN = 24
-KIND_THEN = 25
-KIND_TRUE = 26
-KIND_UNTIL = 27
-KIND_WHILE = 28
-KIND_CONST = 29
-KIND_ENUM = 30
-KIND_I8 = 31
-KIND_I16 = 32
-KIND_I32 = 33
-KIND_I64 = 34
-KIND_U8 = 35
-KIND_U16 = 36
-KIND_U32 = 37
-KIND_U64 = 38
-KIND_F32 = 39
-KIND_F64 = 40
-KIND_BOOL = 41
-KIND_VOID = 42
-KIND_STR = 43
-KIND_MATCH = 44
-KIND_TRY = 45
-KIND_CATCH = 46
-KIND_DEFER = 47
-KIND_ASYNC = 48
-KIND_AWAIT = 49
-KIND_CONCEPT = 50
-KIND_ALIAS = 51
-KIND_PRIVATE = 52
-KIND_EXTENDS = 53
-KIND_MACRO = 54
-KIND_COMPTIME = 55
-KIND_BY = 56
-KIND_LET = 57
+kindand = 4
+kindbreak = 5
+kindcontinue = 6
+kinddo = 7
+kindelse = 8
+kindelseif = 9
+kindend = 10
+kindfalse = 11
+kindfor = 12
+kindfunction = 13
+kindfun = 14
+kindglobal = 15
+kindgoto = 16
+kindif = 17
+kindin = 18
+kindlocal = 19
+kindnil = 20
+kindnot = 21
+kindor = 22
+kindrepeat = 23
+kindreturn = 24
+kindthen = 25
+kindtrue = 26
+kinduntil = 27
+kindwhile = 28
+kindconst = 29
+kindenum = 30
+kindi8 = 31
+kindi16 = 32
+kindi32 = 33
+kindi64 = 34
+kindu8 = 35
+kindu16 = 36
+kindu32 = 37
+kindu64 = 38
+kindf32 = 39
+kindf64 = 40
+kindbool = 41
+kindvoid = 42
+kindstr = 43
+kindmatch = 44
+kindtry = 45
+kindcatch = 46
+kinddefer = 47
+kindasync = 48
+kindawait = 49
+kindconcept = 50
+kindalias = 51
+kindprivate = 52
+kindextends = 53
+kindmacro = 54
+kindcomptime = 55
+kindby = 56
+kindlet = 57
 
 # Single-char punctuation
-KIND_LPAREN = 58
-KIND_RPAREN = 59
-KIND_LBRACKET = 60
-KIND_RBRACKET = 61
-KIND_LBRACE = 62
-KIND_RBRACE = 63
-KIND_PLUS = 64
-KIND_MINUS = 65
-KIND_STAR = 66
-KIND_SLASH = 67
-KIND_PERCENT = 68
-KIND_CARET = 69
-KIND_HASH = 70
-KIND_AMP = 71
-KIND_PIPE = 72
-KIND_LT = 73
-KIND_GT = 74
-KIND_ASSIGN = 75
-KIND_TILDE = 76
-KIND_SEMI = 77
-KIND_COLON = 78
-KIND_COMMA = 79
-KIND_DOT = 80
-KIND_AT = 81
-KIND_QUESTION = 82
-KIND_BANG = 83
-KIND_BACKTICK = 84
+kindlparen = 58
+kindrparen = 59
+kindlbracket = 60
+kindrbracket = 61
+kindlbrace = 62
+kindrbrace = 63
+kindplus = 64
+kindminus = 65
+kindstar = 66
+kindslash = 67
+kindpercent = 68
+kindcaret = 69
+kindhash = 70
+kindamp = 71
+kindpipe = 72
+kindlt = 73
+kindgt = 74
+kindassign = 75
+kindtilde = 76
+kindsemi = 77
+kindcolon = 78
+kindcomma = 79
+kinddot = 80
+kindat = 81
+kindquestion = 82
+kindbang = 83
+kindbacktick = 84
 
 # Multi-char operators
-KIND_CONCAT = 85
-KIND_DOTS = 86
-KIND_HASH_HASH = 87
-KIND_EQ = 88
-KIND_NEQ = 89
-KIND_LEQ = 90
-KIND_GEQ = 91
-KIND_LSHIFT = 92
-KIND_RSHIFT = 93
-KIND_IDIV = 94
-KIND_DCOLON = 95
-KIND_ARROW = 96
-KIND_PIPE_GT = 97
-KIND_FAT_ARROW = 98
-KIND_PLUS_ASSIGN = 99
-KIND_MINUS_ASSIGN = 100
-KIND_STAR_ASSIGN = 101
-KIND_SLASH_ASSIGN = 102
-KIND_PERCENT_ASSIGN = 103
-KIND_CARET_ASSIGN = 104
-KIND_TEXT_LIT = 105
-KIND_BYTES_LIT = 106
-KIND_COMPAT_TEXT_LIT = 107
-KIND_COMPAT_LONG_TEXT_LIT = 108
-KIND_EOF = 109
-KIND_SHEBANG = 110
-KIND_COMMENT = 111
-KIND_COMPAT_COMMENT = 112
-KIND_COMPAT_LONG_COMMENT = 113
+kindconcat = 85
+kinddots = 86
+kindhashhash = 87
+kindeq = 88
+kindneq = 89
+kindleq = 90
+kindgeq = 91
+kindlshift = 92
+kindrshift = 93
+kindidiv = 94
+kinddcolon = 95
+kindarrow = 96
+kindpipegt = 97
+kindfatarrow = 98
+kindplusassign = 99
+kindminusassign = 100
+kindstarassign = 101
+kindslashassign = 102
+kindpercentassign = 103
+kindcaretassign = 104
+kindtextlit = 105
+kindbyteslit = 106
+kindcompattextlit = 107
+kindcompatlongtextlit = 108
+kindeof = 109
+kindshebang = 110
+kindcomment = 111
+kindcompatcomment = 112
+kindcompatlongcomment = 113
 
 token: { kind: i64, loc: loc, text: str, int_val: i64, float_val: f64 }
-
-is_type_keyword: bool = (kind: i64)
-  kind >= KIND_I8 and kind <= KIND_STR
 
 # ---------------------------------------------------------------------------
 # GRAMMAR-ROLE FACTS — the one executable owner (GAP-134, law.grammar.one).
@@ -136,170 +133,170 @@ is_type_keyword: bool = (kind: i64)
 
 # may this identity open an expression
 rolebeginexpr: bool = (kind: i64)
-  if (kind >= KIND_NAME and kind <= KIND_FLOAT_LIT) or kind == KIND_FALSE or kind == KIND_NIL
+  if (kind >= kindname and kind <= kindfloatlit) or kind == kindfalse or kind == kindnil
     return true
-  if kind == KIND_NOT or kind == KIND_TRUE or kind == KIND_AWAIT
+  if kind == kindnot or kind == kindtrue or kind == kindawait
     return true
-  if kind == KIND_COMPTIME or kind == KIND_LPAREN or kind == KIND_LBRACE
+  if kind == kindcomptime or kind == kindlparen or kind == kindlbrace
     return true
-  if kind == KIND_MINUS or kind == KIND_HASH or kind == KIND_TILDE
+  if kind == kindminus or kind == kindhash or kind == kindtilde
     return true
-  if kind == KIND_AT or kind == KIND_BANG or kind == KIND_DOTS
+  if kind == kindat or kind == kindbang or kind == kinddots
     return true
-  if kind == KIND_HASH_HASH or kind == KIND_PIPE or kind == KIND_DOT
+  if kind == kindhashhash or kind == kindpipe or kind == kinddot
     return true
-  if kind == KIND_COLON or kind == KIND_IF or kind == KIND_MATCH
+  if kind == kindcolon or kind == kindif or kind == kindmatch
     return true
-  if kind == KIND_FUNCTION or kind == KIND_FUN or is_type_keyword(kind)
+  if kind == kindfunction or kind == kindfun or roledescriptor(kind)
     return true
-  if (kind >= KIND_TEXT_LIT and kind <= KIND_COMPAT_LONG_TEXT_LIT)
+  if (kind >= kindtextlit and kind <= kindcompatlongtextlit)
     return true
   false
 
 # prefix (unary) position
 roleprefix: bool = (kind: i64)
-  if kind == KIND_NOT or kind == KIND_AWAIT or kind == KIND_COMPTIME
+  if kind == kindnot or kind == kindawait or kind == kindcomptime
     return true
-  if kind == KIND_LPAREN or kind == KIND_MINUS or kind == KIND_HASH
+  if kind == kindlparen or kind == kindminus or kind == kindhash
     return true
-  if kind == KIND_TILDE or kind == KIND_BANG or kind == KIND_HASH_HASH
+  if kind == kindtilde or kind == kindbang or kind == kindhashhash
     return true
   false
 
 # postfix position
 rolepostfix: bool = (kind: i64)
-  if kind == KIND_DOT
+  if kind == kinddot
     return true
   false
 
 # parameter-slot marker
 roleparameter: bool = (kind: i64)
-  if kind == KIND_COLON
+  if kind == kindcolon
     return true
   false
 
 # literal payload identity
 roleliteral: bool = (kind: i64)
-  if kind == KIND_INT_LIT or kind == KIND_FLOAT_LIT or (kind >= KIND_TEXT_LIT and kind <= KIND_COMPAT_LONG_TEXT_LIT)
+  if kind == kindintlit or kind == kindfloatlit or (kind >= kindtextlit and kind <= kindcompatlongtextlit)
     return true
   false
 
 # quoted payload identity (text / bytes / compat)
 rolequoted: bool = (kind: i64)
-  if (kind >= KIND_TEXT_LIT and kind <= KIND_COMPAT_LONG_TEXT_LIT)
+  if (kind >= kindtextlit and kind <= kindcompatlongtextlit)
     return true
   false
 
 # projection face (dot / bracket / colon)
 roleprojection: bool = (kind: i64)
-  if kind == KIND_LBRACKET or kind == KIND_COLON or kind == KIND_DOT
+  if kind == kindlbracket or kind == kindcolon or kind == kinddot
     return true
   false
 
 # may this identity open a callable body
 rolebodystart: bool = (kind: i64)
-  if (kind >= KIND_NAME and kind <= KIND_FLOAT_LIT) or (kind >= KIND_BREAK and kind <= KIND_DO) or (kind >= KIND_FALSE and kind <= KIND_FUN)
+  if (kind >= kindname and kind <= kindfloatlit) or (kind >= kindbreak and kind <= kinddo) or (kind >= kindfalse and kind <= kindfun)
     return true
-  if kind == KIND_IF or kind == KIND_NIL or kind == KIND_NOT
+  if kind == kindif or kind == kindnil or kind == kindnot
     return true
-  if kind == KIND_RETURN or kind == KIND_TRUE or kind == KIND_WHILE
+  if kind == kindreturn or kind == kindtrue or kind == kindwhile
     return true
-  if kind == KIND_MATCH or kind == KIND_LPAREN or kind == KIND_LBRACE
+  if kind == kindmatch or kind == kindlparen or kind == kindlbrace
     return true
-  if kind == KIND_MINUS or kind == KIND_HASH or kind == KIND_PIPE
+  if kind == kindminus or kind == kindhash or kind == kindpipe
     return true
-  if kind == KIND_AT or (kind >= KIND_TEXT_LIT and kind <= KIND_COMPAT_LONG_TEXT_LIT)
+  if kind == kindat or (kind >= kindtextlit and kind <= kindcompatlongtextlit)
     return true
   false
 
 # primitive descriptor identity
 roledescriptor: bool = (kind: i64)
-  if (kind >= KIND_I8 and kind <= KIND_STR)
+  if (kind >= kindi8 and kind <= kindstr)
     return true
   false
 
 # match-pattern start
 rolepattern: bool = (kind: i64)
-  if (kind >= KIND_NAME and kind <= KIND_FLOAT_LIT) or kind == KIND_FALSE or kind == KIND_NIL
+  if (kind >= kindname and kind <= kindfloatlit) or kind == kindfalse or kind == kindnil
     return true
-  if kind == KIND_TRUE or kind == KIND_LBRACKET or kind == KIND_LBRACE
+  if kind == kindtrue or kind == kindlbracket or kind == kindlbrace
     return true
-  if kind == KIND_MINUS or kind == KIND_DOTS or (kind >= KIND_TEXT_LIT and kind <= KIND_COMPAT_LONG_TEXT_LIT)
+  if kind == kindminus or kind == kinddots or (kind >= kindtextlit and kind <= kindcompatlongtextlit)
     return true
   false
 
 # canonical tooling may not WRITE this spelling
 rolecompatonly: bool = (kind: i64)
-  if kind == KIND_AND or kind == KIND_DO or (kind >= KIND_ELSEIF and kind <= KIND_FALSE)
+  if kind == kindand or kind == kinddo or (kind >= kindelseif and kind <= kindfalse)
     return true
-  if kind == KIND_FUNCTION or kind == KIND_FUN or kind == KIND_LOCAL
+  if kind == kindfunction or kind == kindfun or kind == kindlocal
     return true
-  if kind == KIND_NIL or kind == KIND_OR or kind == KIND_THEN
+  if kind == kindnil or kind == kindor or kind == kindthen
     return true
-  if kind == KIND_TRUE or kind == KIND_CONST or kind == KIND_LET
+  if kind == kindtrue or kind == kindconst or kind == kindlet
     return true
-  if kind == KIND_HASH or kind == KIND_BACKTICK or kind == KIND_CONCAT
+  if kind == kindhash or kind == kindbacktick or kind == kindconcat
     return true
-  if kind == KIND_HASH_HASH or kind == KIND_COMPAT_TEXT_LIT or kind == KIND_COMPAT_LONG_TEXT_LIT
+  if kind == kindhashhash or kind == kindcompattextlit or kind == kindcompatlongtextlit
     return true
-  if kind == KIND_COMPAT_COMMENT or kind == KIND_COMPAT_LONG_COMMENT
+  if kind == kindcompatcomment or kind == kindcompatlongcomment
     return true
   false
 
 # Pratt binding power
 roleprecedence: i64 = (kind: i64)
-  if kind == KIND_CARET
+  if kind == kindcaret
     return 23
-  if (kind >= KIND_STAR and kind <= KIND_PERCENT) or kind == KIND_AT or kind == KIND_IDIV
+  if (kind >= kindstar and kind <= kindpercent) or kind == kindat or kind == kindidiv
     return 19
-  if kind == KIND_PLUS or kind == KIND_MINUS
+  if kind == kindplus or kind == kindminus
     return 17
-  if kind == KIND_CONCAT
+  if kind == kindconcat
     return 16
-  if kind == KIND_LSHIFT or kind == KIND_RSHIFT
+  if kind == kindlshift or kind == kindrshift
     return 13
-  if kind == KIND_AMP
+  if kind == kindamp
     return 11
-  if kind == KIND_DOT
+  if kind == kinddot
     return 10
-  if kind == KIND_NOT or kind == KIND_TILDE or kind == KIND_BANG
+  if kind == kindnot or kind == kindtilde or kind == kindbang
     return 9
-  if kind == KIND_PIPE
+  if kind == kindpipe
     return 7
-  if kind == KIND_IN or kind == KIND_LT or kind == KIND_GT
+  if kind == kindin or kind == kindlt or kind == kindgt
     return 6
-  if (kind >= KIND_EQ and kind <= KIND_GEQ)
+  if (kind >= kindeq and kind <= kindgeq)
     return 6
-  if kind == KIND_AND
+  if kind == kindand
     return 4
-  if kind == KIND_OR
+  if kind == kindor
     return 2
-  if kind == KIND_ASSIGN or kind == KIND_PIPE_GT or (kind >= KIND_PLUS_ASSIGN and kind <= KIND_CARET_ASSIGN)
+  if kind == kindassign or kind == kindpipegt or (kind >= kindplusassign and kind <= kindcaretassign)
     return 1
   0
 
 # associativity: 0 none, 1 left, 2 right, 3 nonassoc
 roleassoc: i64 = (kind: i64)
-  if kind == KIND_IN or kind == KIND_LT or kind == KIND_GT
+  if kind == kindin or kind == kindlt or kind == kindgt
     return 3
-  if (kind >= KIND_EQ and kind <= KIND_GEQ)
+  if (kind >= kindeq and kind <= kindgeq)
     return 3
-  if kind == KIND_CARET or kind == KIND_ASSIGN or kind == KIND_CONCAT
+  if kind == kindcaret or kind == kindassign or kind == kindconcat
     return 2
-  if (kind >= KIND_PLUS_ASSIGN and kind <= KIND_CARET_ASSIGN)
+  if (kind >= kindplusassign and kind <= kindcaretassign)
     return 2
-  if kind == KIND_AND or kind == KIND_OR or (kind >= KIND_PLUS and kind <= KIND_PERCENT)
+  if kind == kindand or kind == kindor or (kind >= kindplus and kind <= kindpercent)
     return 1
-  if kind == KIND_AMP or kind == KIND_PIPE or kind == KIND_TILDE
+  if kind == kindamp or kind == kindpipe or kind == kindtilde
     return 1
-  if kind == KIND_AT or (kind >= KIND_LSHIFT and kind <= KIND_IDIV) or kind == KIND_PIPE_GT
+  if kind == kindat or (kind >= kindlshift and kind <= kindidiv) or kind == kindpipegt
     return 1
   0
 
 # Host bridge spelling per physical producer slot. Provenance only:
 # recognition keys on the ordinal, never on this text. "." is the
 # unpublished slot that must never acquire a role.
-KINDZIG = "name int_lit float_lit . kw_and kw_break kw_continue kw_do kw_else kw_elseif kw_end kw_false kw_for kw_function kw_fun kw_global kw_goto kw_if kw_in kw_local kw_nil kw_not kw_or kw_repeat kw_return kw_then kw_true kw_until kw_while kw_const kw_enum kw_i8 kw_i16 kw_i32 kw_i64 kw_u8 kw_u16 kw_u32 kw_u64 kw_f32 kw_f64 kw_bool kw_void kw_str kw_match kw_try kw_catch kw_defer kw_async kw_await kw_concept kw_alias kw_private kw_extends kw_macro kw_comptime kw_by kw_let lparen rparen lbracket rbracket lbrace rbrace plus minus star slash percent caret hash amp pipe lt gt assign tilde semi colon comma dot at question bang backtick concat dots hash_hash eq neq leq geq lshift rshift idiv dcolon arrow pipe_gt fat_arrow plus_assign minus_assign star_assign slash_assign percent_assign caret_assign text_lit bytes_lit compat_text_lit compat_long_text_lit eof shebang comment compat_comment compat_long_comment "
+kindzig = "name int_lit float_lit . kw_and kw_break kw_continue kw_do kw_else kw_elseif kw_end kw_false kw_for kw_function kw_fun kw_global kw_goto kw_if kw_in kw_local kw_nil kw_not kw_or kw_repeat kw_return kw_then kw_true kw_until kw_while kw_const kw_enum kw_i8 kw_i16 kw_i32 kw_i64 kw_u8 kw_u16 kw_u32 kw_u64 kw_f32 kw_f64 kw_bool kw_void kw_str kw_match kw_try kw_catch kw_defer kw_async kw_await kw_concept kw_alias kw_private kw_extends kw_macro kw_comptime kw_by kw_let lparen rparen lbracket rbracket lbrace rbrace plus minus star slash percent caret hash amp pipe lt gt assign tilde semi colon comma dot at question bang backtick concat dots hash_hash eq neq leq geq lshift rshift idiv dcolon arrow pipe_gt fat_arrow plus_assign minus_assign star_assign slash_assign percent_assign caret_assign text_lit bytes_lit compat_text_lit compat_long_text_lit eof shebang comment compat_comment compat_long_comment "
 
 # ---------------------------------------------------------------------------
 # GENERATED PROJECTIONS (GAP-134 bridge, law.bridge.death).
@@ -312,8 +309,8 @@ KINDZIG = "name int_lit float_lit . kw_and kw_break kw_continue kw_do kw_else kw
 #   idol run lib/compiler/token.id
 # ---------------------------------------------------------------------------
 
-ROLESLOTCOUNT = 114
-ROLEIDENTITYCOUNT = 113
+roleslotcount = 114
+roleidentitycount = 113
 
 assocname: str = (kind: i64)
   a = roleassoc(kind)
@@ -327,15 +324,15 @@ assocname: str = (kind: i64)
 
 # Host bridge spelling for one physical slot. Provenance, never recognition.
 zigname: str = (kind: i64)
-  n = KINDZIG:len()
+  n = kindzig:len()
   i = 1
   seen = 0
   start = 1
   out = ""
   while i <= n
-    if KINDZIG:byte(i) == 32
+    if kindzig:byte(i) == 32
       if seen == kind
-        out = KINDZIG:sub(start, i - 1)
+        out = kindzig:sub(start, i - 1)
       seen = seen + 1
       start = i + 1
     i = i + 1
@@ -376,11 +373,11 @@ zigrow: str = (kind: i64)
 
 zigbody: str = ()
   # A module constant reaches interpolation only through a local
-  # binding: `"{ROLESLOTCOUNT}"` refuses DNB001 concat, `n = …` then
+  # binding: `"{roleslotcount}"` refuses DNB001 concat, `n = …` then
   # `"{n}"` does not. Bootstrap subset limit, not a grammar fact.
-  slots = ROLESLOTCOUNT
-  ids = ROLEIDENTITYCOUNT
-  eof = KIND_EOF
+  slots = roleslotcount
+  ids = roleidentitycount
+  eof = kindeof
   s = "// GENERATED from lib/compiler/token.id — do not edit by hand.\n"
   s = "{s}// Regenerate: idol run lib/compiler/token.id\n"
   s = "{s}// One executable grammar-fact owner (law.grammar.one). This table is\n"
@@ -411,7 +408,7 @@ zigbody: str = ()
   s = "{s}pub const kind_eof: usize = {eof};\n\n"
   s = "{s}pub const rows = [slot_count]RoleRow\{\n"
   k = 0
-  while k < ROLESLOTCOUNT
+  while k < roleslotcount
     s = "{s}{zigrow(k)}"
     k = k + 1
   "{s}\};\n"
@@ -448,15 +445,15 @@ rolebit: i64 = (which: i64, kind: i64)
 tabletext: str = (name: str, which: i64)
   s = "{name} = \{\n"
   k = 0
-  while k < ROLESLOTCOUNT
+  while k < roleslotcount
     s = "{s}  {rolebit(which, k)},\n"
     k = k + 1
   "{s}\}\n"
 
 idbody: str = ()
-  slots = ROLESLOTCOUNT
-  ids = ROLEIDENTITYCOUNT
-  eof = KIND_EOF
+  slots = roleslotcount
+  ids = roleidentitycount
+  eof = kindeof
   s = "# GENERATED from lib/compiler/token.id — do not edit by hand.\n"
   s = "{s}# Regenerate: idol run lib/compiler/token.id\n"
   s = "{s}# Grammar-role projection of the one Idol grammar-fact owner.\n\n"

@@ -184,12 +184,12 @@ eval: i64 = (src: str)
 # Mutual recursion with parse_expr_tok, exactly as in the character version.
 parse_factor_tok: i64 = (lx: lexer)
     t = lexer.next(lx)
-    if t.kind == token.KIND_INT_LIT
+    if t.kind == token.kindintlit
         return t.int_val
-    if t.kind == token.KIND_LPAREN
+    if t.kind == token.kindlparen
         v = parse_expr_tok(lx)
         c = lexer.peek(lx)
-        if c.kind == token.KIND_RPAREN
+        if c.kind == token.kindrparen
             _d = lexer.next(lx)
         return v
     0
@@ -200,10 +200,10 @@ parse_term_tok: i64 = (lx: lexer)
     cont = 1
     while cont == 1
         p = lexer.peek(lx)
-        if p.kind == token.KIND_STAR
+        if p.kind == token.kindstar
             _a = lexer.next(lx)
             acc = acc * parse_factor_tok(lx)
-        elseif p.kind == token.KIND_SLASH
+        elseif p.kind == token.kindslash
             _b = lexer.next(lx)
             rhs = parse_factor_tok(lx)
             if rhs != 0
@@ -218,10 +218,10 @@ parse_expr_tok: i64 = (lx: lexer)
     cont = 1
     while cont == 1
         p = lexer.peek(lx)
-        if p.kind == token.KIND_PLUS
+        if p.kind == token.kindplus
             _a = lexer.next(lx)
             acc += parse_term_tok(lx)
-        elseif p.kind == token.KIND_MINUS
+        elseif p.kind == token.kindminus
             _b = lexer.next(lx)
             acc -= parse_term_tok(lx)
         else
@@ -244,23 +244,23 @@ eval_tokens: i64 = (src: str, family: i64)
 # beyond the strings being built.
 
 is_assign_kind: bool = (k: i64)
-    if k == token.KIND_ASSIGN or k == token.KIND_PLUS_ASSIGN or k == token.KIND_MINUS_ASSIGN
+    if k == token.kindassign or k == token.kindplusassign or k == token.kindminusassign
         return true
-    if k == token.KIND_STAR_ASSIGN or k == token.KIND_SLASH_ASSIGN or k == token.KIND_PERCENT_ASSIGN
+    if k == token.kindstarassign or k == token.kindslashassign or k == token.kindpercentassign
         return true
-    if k == token.KIND_CARET_ASSIGN
+    if k == token.kindcaretassign
         return true
     false
 
 is_type_kind: bool = (k: i64)
-    if k == token.KIND_NAME
+    if k == token.kindname
         return true
-    if k >= token.KIND_I8 and k <= token.KIND_STR
+    if k >= token.kindi8 and k <= token.kindstr
         return true
     false
 
 is_string_kind: bool = (k: i64)
-    k == token.KIND_TEXT_LIT or k == token.KIND_BYTES_LIT or k == token.KIND_COMPAT_TEXT_LIT or k == token.KIND_COMPAT_LONG_TEXT_LIT
+    k == token.kindtextlit or k == token.kindbyteslit or k == token.kindcompattextlit or k == token.kindcompatlongtextlit
 
 # Mark the parse failed. `lx` is the lexer (a table on this path), so the flag
 # persists through the recursion and is readable by `parse_status`.
@@ -285,7 +285,7 @@ stalled: bool = (lx: lexer, before: i64, peeked: bool)
     # and gets dropped: a file whose last line is a bare name and which lacks a
     # trailing newline lost that statement. Every enclosing loop already
     # terminates on EOF, so refusing to fire here cannot reintroduce a spin.
-    if lexer.peek(lx).kind == token.KIND_EOF
+    if lexer.peek(lx).kind == token.kindeof
         return false
     lx.pos == before and lx.has_peeked == peeked
 
@@ -325,7 +325,7 @@ parse_error_line: i64 = (src: str, file: str, family: i64)
 # by proj_stmt: proj_stmt returns "" to mean "end of block", so a trailing `x =
 # 1;` would consume the `;`, hit EOF, return "" and be reported as an error.
 skipsemi = (lx: lexer)
-    while lexer.peek(lx).kind == token.KIND_SEMI
+    while lexer.peek(lx).kind == token.kindsemi
         _s = lexer.next(lx)
 
 # Two-token lookahead, via the lexer's own save/restore state.
@@ -350,14 +350,14 @@ is_descriptor_kind: bool = (k: i64)
 
 # Cursor on `:`. True when `: name (` is a method/face call, not a type slot.
 colon_is_method_call_lx: bool = (lx: lexer)
-    if lexer.peek(lx).kind != token.KIND_COLON
+    if lexer.peek(lx).kind != token.kindcolon
         return false
     st = lexer.save_state(lx)
     _c = lexer.next(lx)
     m = lexer.peek(lx)
     p2 = peek2(lx)
-    is_ty = m.kind == token.KIND_NAME or is_descriptor_kind(m.kind)
-    is_call = p2.kind == token.KIND_LPAREN
+    is_ty = m.kind == token.kindname or is_descriptor_kind(m.kind)
+    is_call = p2.kind == token.kindlparen
     lexer.restore_state(lx, st)
     is_ty and is_call
 
@@ -366,11 +366,11 @@ colon_is_method_call_lx: bool = (lx: lexer)
 # `prev_before_lp` is the token kind immediately before this `(`, or EOF when
 # unknown — used to exclude `if (flag)` / `while (flag)` condition groups.
 header_signal_lx: bool = (lx: lexer, allow_untyped_comma: bool, offside_col: i64, prev_before_lp: i64)
-    if lexer.peek(lx).kind != token.KIND_LPAREN
+    if lexer.peek(lx).kind != token.kindlparen
         return false
     st = lexer.save_state(lx)
     lp = lexer.next(lx)
-    if lexer.peek(lx).kind == token.KIND_LPAREN
+    if lexer.peek(lx).kind == token.kindlparen
         lexer.restore_state(lx, st)
         return false
     depth = 1
@@ -385,49 +385,49 @@ header_signal_lx: bool = (lx: lexer, allow_untyped_comma: bool, offside_col: i64
     has_table_literal_arg = false
     has_infix_operator = false
     rparen_line = 0
-    prev_kind = token.KIND_EOF
+    prev_kind = token.kindeof
     while depth > 0
         t = lexer.next(lx)
-        if t.kind == token.KIND_EOF
+        if t.kind == token.kindeof
             lexer.restore_state(lx, st)
             return false
         if depth == 1 and bracket_depth == 0 and brace_depth == 0 and token.grammarrole.roleliteral(t.kind)
             has_literal_arg = true
-        if t.kind == token.KIND_DOTS
+        if t.kind == token.kinddots
             typed_or_vararg = true
-        if t.kind == token.KIND_COMMA and depth == 1
-            if prev_kind == token.KIND_EOF
+        if t.kind == token.kindcomma and depth == 1
+            if prev_kind == token.kindeof
                 lexer.restore_state(lx, st)
                 return false
             has_comma = true
-        if t.kind == token.KIND_COLON and depth == 1 and bracket_depth == 0 and brace_depth == 0 and prev_kind == token.KIND_NAME
+        if t.kind == token.kindcolon and depth == 1 and bracket_depth == 0 and brace_depth == 0 and prev_kind == token.kindname
             if !colon_is_method_call_lx(lx)
                 typed_or_vararg = true
-        if t.kind == token.KIND_FUN or t.kind == token.KIND_FUNCTION
+        if t.kind == token.kindfun or t.kind == token.kindfunction
             if depth == 1 and bracket_depth == 0 and brace_depth == 0 and !typed_or_vararg
                 lexer.restore_state(lx, st)
                 return false
-        if t.kind == token.KIND_LPAREN
+        if t.kind == token.kindlparen
             depth += 1
-        elseif t.kind == token.KIND_RPAREN
+        elseif t.kind == token.kindrparen
             depth -= 1
             if depth == 0
                 rparen_line = t.loc.line
-        elseif t.kind == token.KIND_LBRACKET
+        elseif t.kind == token.kindlbracket
             bracket_depth += 1
-        elseif t.kind == token.KIND_RBRACKET
+        elseif t.kind == token.kindrbracket
             if bracket_depth > 0
                 bracket_depth -= 1
-        elseif t.kind == token.KIND_LBRACE
+        elseif t.kind == token.kindlbrace
             if depth == 1 and bracket_depth == 0 and brace_depth == 0
                 has_table_literal_arg = true
             brace_depth += 1
-        elseif t.kind == token.KIND_RBRACE
+        elseif t.kind == token.kindrbrace
             if brace_depth > 0
                 brace_depth -= 1
-        if depth == 1 and bracket_depth == 0 and brace_depth == 0 and t.kind != token.KIND_LPAREN and t.kind != token.KIND_RPAREN
+        if depth == 1 and bracket_depth == 0 and brace_depth == 0 and t.kind != token.kindlparen and t.kind != token.kindrparen
             depth1_tokens += 1
-            if t.kind == token.KIND_NAME
+            if t.kind == token.kindname
                 depth1_names += 1
             if is_infix_kind(t.kind)
                 has_infix_operator = true
@@ -444,47 +444,47 @@ header_signal_lx: bool = (lx: lexer, allow_untyped_comma: bool, offside_col: i64
     if has_table_literal_arg and !typed_or_vararg
         lexer.restore_state(lx, st)
         return false
-    if after.kind == token.KIND_COLON
+    if after.kind == token.kindcolon
         ty = lexer.peek(lx)
         ty2 = peek2(lx)
-        if (ty.kind == token.KIND_NAME or is_descriptor_kind(ty.kind)) and ty2.kind != token.KIND_LPAREN
+        if (ty.kind == token.kindname or is_descriptor_kind(ty.kind)) and ty2.kind != token.kindlparen
             lexer.restore_state(lx, st)
             return true
-    if typed_or_vararg or after.kind == token.KIND_ARROW or after.kind == token.KIND_ASSIGN
+    if typed_or_vararg or after.kind == token.kindarrow or after.kind == token.kindassign
         lexer.restore_state(lx, st)
         return true
     if allow_untyped_comma and has_comma
-        if after.kind == token.KIND_EOF
+        if after.kind == token.kindeof
             lexer.restore_state(lx, st)
             return false
-        if after.kind == token.KIND_COLON
+        if after.kind == token.kindcolon
             ty = lexer.peek(lx)
             ty2 = peek2(lx)
-            if ty.kind != token.KIND_NAME and !is_descriptor_kind(ty.kind)
+            if ty.kind != token.kindname and !is_descriptor_kind(ty.kind)
                 lexer.restore_state(lx, st)
                 return false
-            if ty2.kind == token.KIND_LPAREN
+            if ty2.kind == token.kindlparen
                 lexer.restore_state(lx, st)
                 return false
             lexer.restore_state(lx, st)
             return true
-        if is_infix_kind(after.kind) or after.kind == token.KIND_DOT
+        if is_infix_kind(after.kind) or after.kind == token.kinddot
             lexer.restore_state(lx, st)
             return false
         lexer.restore_state(lx, st)
         return true
-    if after.kind == token.KIND_COLON
+    if after.kind == token.kindcolon
         ty = lexer.peek(lx)
         ty2 = peek2(lx)
-        if ty.kind != token.KIND_NAME and !is_descriptor_kind(ty.kind)
+        if ty.kind != token.kindname and !is_descriptor_kind(ty.kind)
             lexer.restore_state(lx, st)
             return false
-        if ty2.kind == token.KIND_LPAREN
+        if ty2.kind == token.kindlparen
             lexer.restore_state(lx, st)
             return false
         lexer.restore_state(lx, st)
         return true
-    if is_infix_kind(after.kind) or after.kind == token.KIND_COMMA
+    if is_infix_kind(after.kind) or after.kind == token.kindcomma
         lexer.restore_state(lx, st)
         return false
     if depth1_tokens == 1 and depth1_names == 1 and !typed_or_vararg and !has_comma
@@ -501,7 +501,7 @@ header_signal_lx: bool = (lx: lexer, allow_untyped_comma: bool, offside_col: i64
             if after.loc.col <= offside_col
                 lexer.restore_state(lx, st)
                 return false
-            if prev_before_lp == token.KIND_IF or prev_before_lp == token.KIND_ELSEIF or prev_before_lp == token.KIND_ELSE or prev_before_lp == token.KIND_WHILE or prev_before_lp == token.KIND_UNTIL or prev_before_lp == token.KIND_FOR or prev_before_lp == token.KIND_MATCH
+            if prev_before_lp == token.kindif or prev_before_lp == token.kindelseif or prev_before_lp == token.kindelse or prev_before_lp == token.kindwhile or prev_before_lp == token.kinduntil or prev_before_lp == token.kindfor or prev_before_lp == token.kindmatch
                 lexer.restore_state(lx, st)
                 return false
     if !allow_untyped_comma and !typed_or_vararg
@@ -520,11 +520,11 @@ header_signal_lx: bool = (lx: lexer, allow_untyped_comma: bool, offside_col: i64
 statement_header_signal_lx: bool = (lx: lexer, name: token, allow_untyped_comma: bool)
     st = lexer.save_state(lx)
     _n = lexer.next(lx)
-    if lexer.peek(lx).kind != token.KIND_LPAREN
+    if lexer.peek(lx).kind != token.kindlparen
         lexer.restore_state(lx, st)
         return false
     _lp = lexer.next(lx)
-    found = header_signal_lx(lx, allow_untyped_comma, name.loc.col, token.KIND_EOF)
+    found = header_signal_lx(lx, allow_untyped_comma, name.loc.col, token.kindeof)
     lexer.restore_state(lx, st)
     found
 
@@ -556,7 +556,7 @@ quote: str = (s: str)
 is_lambda_head: bool = (lx: lexer)
     # Typed/untyped-annotation signals only — not the full header recognizer.
     # Keeps `(a, b)` in the bare-lambda arm separate from `(x: t): r`.
-    paren_header_signal_lx(lx, false, token.KIND_EOF)
+    paren_header_signal_lx(lx, false, token.kindeof)
 
 # The unannotated value-form: `() f(1)` and `(a, b) a < b`.
 #
@@ -572,31 +572,31 @@ is_bare_lambda_head: bool = (lx: lexer)
     plain = true
     empty = false
     rparen_line = 0
-    if lexer.peek(lx).kind == token.KIND_RPAREN
+    if lexer.peek(lx).kind == token.kindrparen
         empty = true
     depth = 1
     while depth > 0
         t = lexer.next(lx)
-        if t.kind == token.KIND_EOF
+        if t.kind == token.kindeof
             plain = false
             break
-        if t.kind == token.KIND_RPAREN
+        if t.kind == token.kindrparen
             depth -= 1
             if depth == 0
                 rparen_line = t.loc.line
-        elseif t.kind == token.KIND_LPAREN
+        elseif t.kind == token.kindlparen
             depth += 1
             plain = false
-        elseif t.kind == token.KIND_NAME
+        elseif t.kind == token.kindname
             names += 1
-        elseif t.kind == token.KIND_COMMA
+        elseif t.kind == token.kindcomma
             commas += 1
         else
             plain = false
     offside_single = false
     if plain and names == 1 and commas == 0 and !empty and lx.stmt_col != 0
         after = lexer.peek(lx)
-        if after.kind != token.KIND_EOF and after.loc.line != rparen_line and after.loc.col > lx.stmt_col
+        if after.kind != token.kindeof and after.loc.line != rparen_line and after.loc.col > lx.stmt_col
             offside_single = true
     lexer.restore_state(lx, st)
     if empty
@@ -631,17 +631,17 @@ params_have_colon: bool = (lx: lexer)
     found = false
     while depth > 0
         t = lexer.next(lx)
-        if t.kind == token.KIND_EOF break
-        if t.kind == token.KIND_LPAREN
+        if t.kind == token.kindeof break
+        if t.kind == token.kindlparen
             depth += 1
             at_slot_start = false
-        elseif t.kind == token.KIND_RPAREN
+        elseif t.kind == token.kindrparen
             depth -= 1
             at_slot_start = false
-        elseif t.kind == token.KIND_COMMA and depth == 1
+        elseif t.kind == token.kindcomma and depth == 1
             at_slot_start = true
-        elseif t.kind == token.KIND_NAME and depth == 1 and at_slot_start
-            if lexer.peek(lx).kind == token.KIND_COLON
+        elseif t.kind == token.kindname and depth == 1 and at_slot_start
+            if lexer.peek(lx).kind == token.kindcolon
                 _c = lexer.next(lx)
                 # gap[046]: a FACE CALL in argument position spells the same
                 # three tokens a typed parameter does — NAME ':' NAME — so
@@ -660,7 +660,7 @@ params_have_colon: bool = (lx: lexer)
                 # the scan rather than by answering false — a bare declaration
                 # whose first parameter type is applied still matches on its
                 # return colon below.
-                if lexer.peek(lx).kind == token.KIND_NAME and peek2(lx).kind == token.KIND_LPAREN
+                if lexer.peek(lx).kind == token.kindname and peek2(lx).kind == token.kindlparen
                     at_slot_start = false
                 else
                     found = true
@@ -677,7 +677,7 @@ params_have_colon: bool = (lx: lexer)
     # lambda does not match — that colon is inside the group.
     if !found and depth == 0
         rk = lexer.peek(lx).kind
-        if rk == token.KIND_COLON or rk == token.KIND_ARROW
+        if rk == token.kindcolon or rk == token.kindarrow
             found = true
     lexer.restore_state(lx, st)
     found
@@ -686,7 +686,7 @@ params_have_colon: bool = (lx: lexer)
 proj_param: str = (lx: lexer)
     n = lexer.next(lx)
     p = "(param " .. n.text
-    if lexer.peek(lx).kind == token.KIND_COLON
+    if lexer.peek(lx).kind == token.kindcolon
         _c = lexer.next(lx)
         p = p .. " " .. proj_type(lx)
     p .. ")"
@@ -696,10 +696,10 @@ proj_params: str = (lx: lexer)
     acc = ""
     while true
         t = lexer.peek(lx)
-        if t.kind == token.KIND_RPAREN
+        if t.kind == token.kindrparen
             _r = lexer.next(lx)
             return acc
-        if t.kind == token.KIND_EOF
+        if t.kind == token.kindeof
             markerr(lx)
             return acc
         before: i64 = lx.pos
@@ -708,14 +708,14 @@ proj_params: str = (lx: lexer)
         if stalled(lx, before, peeked)
             markerr(lx)
             return acc
-        if lexer.peek(lx).kind == token.KIND_COMMA
+        if lexer.peek(lx).kind == token.kindcomma
             _c = lexer.next(lx)
 
 # Type reference: primitive keyword kinds or a NAME (record type).
 # ONE type, optionally dotted: `i64`, `lexer`, `str`.
 #
 # This used to loop while the next token was a type kind, and `is_type_kind`
-# accepts KIND_NAME — so a return type ran on into the body and swallowed its
+# accepts kindname — so a return type ran on into the body and swallowed its
 # first token. `add(a: i64): i64 a end` projected `(ret i64 a)` with the body
 # gone. It survived because the only typed cases in the corpus used the
 # `= expr` body form, where `=` is not a type kind and stopped the run; every
@@ -735,7 +735,7 @@ proj_type_atom: str = (lx: lexer)
     # spelled `(str, i64)` and was the next production-parser-accepts /
     # self-hosted-parser-rejects file after `then`, so this closes the last
     # `tools` divergence that is not a deny-list construct.
-    if t.kind == token.KIND_LPAREN
+    if t.kind == token.kindlparen
         lexer.next(lx)
         acc = "(tuple"
         more = true
@@ -746,10 +746,10 @@ proj_type_atom: str = (lx: lexer)
                 more = false
             else
                 acc = "{acc} {inner}"
-                if lexer.peek(lx).kind == token.KIND_COMMA
+                if lexer.peek(lx).kind == token.kindcomma
                     lexer.next(lx)
                 else
-                    if lexer.peek(lx).kind != token.KIND_RPAREN
+                    if lexer.peek(lx).kind != token.kindrparen
                         markerr(lx)
                     else
                         lexer.next(lx)
@@ -759,7 +759,7 @@ proj_type_atom: str = (lx: lexer)
         return ""
     _n = lexer.next(lx)
     acc = t.text
-    while lexer.peek(lx).kind == token.KIND_DOT
+    while lexer.peek(lx).kind == token.kinddot
         _d = lexer.next(lx)
         seg = lexer.peek(lx)
         if is_type_kind(seg.kind) == false
@@ -787,10 +787,10 @@ proj_type_atom: str = (lx: lexer)
 # failure position is structurally visible.
 proj_type: str = (lx: lexer)
     acc = proj_type_atom(lx)
-    if acc != "" and lexer.peek(lx).kind == token.KIND_PIPE
+    if acc != "" and lexer.peek(lx).kind == token.kindpipe
         s = "(union {acc}"
         more = true
-        while more and lexer.peek(lx).kind == token.KIND_PIPE
+        while more and lexer.peek(lx).kind == token.kindpipe
             lexer.next(lx)
             nxt = proj_type_atom(lx)
             if nxt == ""
@@ -834,10 +834,10 @@ proj_body: str = (lx: lexer)
     while true
         skipsemi(lx)
         t = lexer.peek(lx)
-        if t.kind == token.KIND_END
+        if t.kind == token.kindend
             _e = lexer.next(lx)
             return acc
-        if t.kind == token.KIND_EOF
+        if t.kind == token.kindeof
             if acc == ""
                 markerr(lx)
             return acc
@@ -870,10 +870,10 @@ proj_block: str = (lx: lexer)
     while more
         skipsemi(lx)
         t = lexer.peek(lx)
-        if t.kind == token.KIND_END
+        if t.kind == token.kindend
             lexer.next(lx)
             more = false
-        elseif t.kind == token.KIND_EOF
+        elseif t.kind == token.kindeof
             markerr(lx)
             more = false
         else
@@ -891,7 +891,7 @@ proj_body_until_else: str = (lx: lexer)
     while true
         skipsemi(lx)
         t = lexer.peek(lx)
-        if t.kind == token.KIND_ELSE or t.kind == token.KIND_ELSEIF or t.kind == token.KIND_END or t.kind == token.KIND_EOF
+        if t.kind == token.kindelse or t.kind == token.kindelseif or t.kind == token.kindend or t.kind == token.kindeof
             return acc
         before: i64 = lx.pos
         peeked = lx.has_peeked
@@ -904,7 +904,7 @@ proj_body_until_else: str = (lx: lexer)
 # `first` is the peeked token: either the 'fun'/'function' keyword (consumed,
 # then the NAME is read) or the bare-declaration NAME itself.
 proj_fun_decl: str = (lx: lexer, first: token)
-    if first.kind == token.KIND_FUN or first.kind == token.KIND_FUNCTION
+    if first.kind == token.kindfun or first.kind == token.kindfunction
         _k = lexer.next(lx)
         n = lexer.next(lx)
     else
@@ -917,11 +917,11 @@ proj_fun_decl: str = (lx: lexer, first: token)
     s = s .. ")"
     if ret_intro(lx)
         s = s .. " (ret " .. proj_type(lx) .. ")"
-    if lexer.peek(lx).kind == token.KIND_ASSIGN
+    if lexer.peek(lx).kind == token.kindassign
         _e = lexer.next(lx)
         e = proj_expr(lx)
         t = lexer.next(lx)
-        if t.kind != token.KIND_END
+        if t.kind != token.kindend
             markerr(lx)
         return s .. " " .. e .. ")"
     # A BODILESS declaration: `@ffi("SSL_CTX_new")` then
@@ -934,16 +934,16 @@ proj_fun_decl: str = (lx: lexer, first: token)
     # on a later line at column 1 is the next top-level construct, not this
     # declaration's body.
     nxt = lexer.peek(lx)
-    if nxt.kind == token.KIND_EOF
+    if nxt.kind == token.kindeof
         return s .. ")"
-    if nxt.loc.line != first.loc.line and nxt.loc.col == 1 and nxt.kind != token.KIND_END
+    if nxt.loc.line != first.loc.line and nxt.loc.col == 1 and nxt.kind != token.kindend
         return s .. ")"
     s .. " " .. proj_body(lx) .. ")"
 
 # fun '(' params ')' (':' type)? body 'end' — anonymous, expression position.
 proj_fun_expr: str = (lx: lexer)
     _f = lexer.next(lx)
-    if lexer.peek(lx).kind != token.KIND_LPAREN
+    if lexer.peek(lx).kind != token.kindlparen
         markerr(lx)
         return "(error)"
     _lp = lexer.next(lx)
@@ -973,7 +973,7 @@ proj_fun_expr: str = (lx: lexer)
 # should type, not what a parser must read. Measured — `then` alone was 6 of
 # the 9 files where the production parser accepted and this one rejected.
 skipthen = (lx: lexer)
-    if lexer.peek(lx).kind == token.KIND_THEN
+    if lexer.peek(lx).kind == token.kindthen
         lexer.next(lx)
 
 # The RETURN-TYPE introducer, either spelling, consumed. `:` is the copula and
@@ -1005,7 +1005,7 @@ skipthen = (lx: lexer)
 # made. Both should land; only one of them is mine.
 ret_intro: bool = (lx: lexer)
     k = lexer.peek(lx).kind
-    hit = k == token.KIND_COLON or k == token.KIND_ARROW
+    hit = k == token.kindcolon or k == token.kindarrow
     if hit
         lexer.next(lx)
     hit
@@ -1019,7 +1019,7 @@ proj_if: str = (lx: lexer)
     while true
         skipsemi(lx)
         t = lexer.peek(lx)
-        if t.kind == token.KIND_ELSEIF
+        if t.kind == token.kindelseif
             _e = lexer.next(lx)
             c2 = proj_expr(lx)
             skipthen(lx)
@@ -1028,17 +1028,17 @@ proj_if: str = (lx: lexer)
             if b != ""
                 s = s .. " " .. b
             s = s .. ")"
-        elseif t.kind == token.KIND_ELSE
+        elseif t.kind == token.kindelse
             _e = lexer.next(lx)
             s = s .. " (else"
             b = proj_body_until_else(lx)
             if b != ""
                 s = s .. " " .. b
             s = s .. ")"
-        elseif t.kind == token.KIND_END
+        elseif t.kind == token.kindend
             _e = lexer.next(lx)
             return s .. ")"
-        elseif t.kind == token.KIND_EOF
+        elseif t.kind == token.kindeof
             markerr(lx)
             return s .. ")"
         else
@@ -1068,7 +1068,7 @@ proj_while: str = (lx: lexer)
 # `do` is optional in .id and mandatory in .lua; the lexer feeds both, so the
 # loop forms accept it and drop it rather than projecting it.
 skipdo = (lx: lexer)
-    if lexer.peek(lx).kind == token.KIND_DO
+    if lexer.peek(lx).kind == token.kinddo
         _d = lexer.next(lx)
 
 # for NAME '=' expr ',' expr (',' expr)? body 'end'   # numeric
@@ -1081,18 +1081,18 @@ skipdo = (lx: lexer)
 proj_for: str = (lx: lexer)
     _f = lexer.next(lx)
     n1 = lexer.next(lx)
-    if n1.kind != token.KIND_NAME
+    if n1.kind != token.kindname
         markerr(lx)
         return "(for (error))"
-    if lexer.peek(lx).kind == token.KIND_ASSIGN
+    if lexer.peek(lx).kind == token.kindassign
         _a = lexer.next(lx)
         start = proj_expr(lx)
-        if lexer.peek(lx).kind != token.KIND_COMMA
+        if lexer.peek(lx).kind != token.kindcomma
             markerr(lx)
             return "(for (error))"
         _c = lexer.next(lx)
         rng = "(range " .. start .. " " .. proj_expr(lx)
-        if lexer.peek(lx).kind == token.KIND_COMMA
+        if lexer.peek(lx).kind == token.kindcomma
             _c2 = lexer.next(lx)
             rng = rng .. " " .. proj_expr(lx)
         rng = rng .. ")"
@@ -1103,14 +1103,14 @@ proj_for: str = (lx: lexer)
             s = s .. " " .. body
         return s .. ")"
     names = n1.text
-    while lexer.peek(lx).kind == token.KIND_COMMA
+    while lexer.peek(lx).kind == token.kindcomma
         _c = lexer.next(lx)
         nx = lexer.next(lx)
-        if nx.kind != token.KIND_NAME
+        if nx.kind != token.kindname
             markerr(lx)
             return "(forin (error))"
         names = names .. " " .. nx.text
-    if lexer.peek(lx).kind != token.KIND_IN
+    if lexer.peek(lx).kind != token.kindin
         markerr(lx)
         return "(forin (error))"
     _i = lexer.next(lx)
@@ -1126,12 +1126,12 @@ proj_for: str = (lx: lexer)
 proj_return: str = (lx: lexer)
     _r = lexer.next(lx)
     t = lexer.peek(lx)
-    if t.kind == token.KIND_END or t.kind == token.KIND_ELSE or t.kind == token.KIND_ELSEIF or t.kind == token.KIND_EOF
+    if t.kind == token.kindend or t.kind == token.kindelse or t.kind == token.kindelseif or t.kind == token.kindeof
         return "(return)"
     # `return nil, Error.Truncated` — correlated packs are the error idiom, so
     # a single-value return would reject most failure paths in the stdlib.
     vals = proj_expr(lx)
-    while lexer.peek(lx).kind == token.KIND_COMMA
+    while lexer.peek(lx).kind == token.kindcomma
         _c = lexer.next(lx)
         vals = vals .. " " .. proj_expr(lx)
     "(return " .. vals .. ")"
@@ -1141,7 +1141,7 @@ proj_assign: str = (lx: lexer, t: token)
     _n = lexer.next(lx)
     op = lexer.next(lx)
     rhs = proj_expr(lx)
-    if op.kind == token.KIND_ASSIGN
+    if op.kind == token.kindassign
         return "(assign " .. t.text .. " " .. rhs .. ")"
     "(assign-op " .. op.text .. " " .. t.text .. " " .. rhs .. ")"
 
@@ -1149,14 +1149,14 @@ proj_assign: str = (lx: lexer, t: token)
 proj_decl: str = (lx: lexer)
     kw = lexer.next(lx)
     n = lexer.next(lx)
-    if n.kind != token.KIND_NAME
+    if n.kind != token.kindname
         markerr(lx)
         return "(error)"
     s = "(" .. kw.text .. " " .. n.text
-    if lexer.peek(lx).kind == token.KIND_COLON
+    if lexer.peek(lx).kind == token.kindcolon
         _c = lexer.next(lx)
         s = s .. " " .. proj_type(lx)
-    if lexer.peek(lx).kind == token.KIND_ASSIGN
+    if lexer.peek(lx).kind == token.kindassign
         _a = lexer.next(lx)
         s = s .. " " .. proj_expr(lx)
     s .. ")"
@@ -1172,13 +1172,13 @@ proj_repeat: str = (lx: lexer)
     while true
         skipsemi(lx)
         t = lexer.peek(lx)
-        if t.kind == token.KIND_UNTIL
+        if t.kind == token.kinduntil
             _u = lexer.next(lx)
             s = "(repeat"
             if acc != ""
                 s = s .. " " .. acc
             return s .. " (until " .. proj_expr(lx) .. "))"
-        if t.kind == token.KIND_EOF
+        if t.kind == token.kindeof
             markerr(lx)
             return "(repeat (error))"
         st = proj_stmt(lx)
@@ -1202,9 +1202,9 @@ proj_target_or_expr: str = (lx: lexer)
     # parse the whole thing rather than trying to resume mid-expression.
     st = lexer.save_state(lx)
     first = proj_postfix(lx)
-    if lexer.peek(lx).kind == token.KIND_COMMA
+    if lexer.peek(lx).kind == token.kindcomma
         targets = first
-        while lexer.peek(lx).kind == token.KIND_COMMA
+        while lexer.peek(lx).kind == token.kindcomma
             _c = lexer.next(lx)
             targets = targets .. " " .. proj_postfix(lx)
         if !is_assign_kind(lexer.peek(lx).kind)
@@ -1228,18 +1228,18 @@ proj_target_or_expr: str = (lx: lexer)
             lexer.restore_state(lx, st)
             return tail_pack(lx, proj_expr(lx))
         op = lexer.next(lx)
-        if op.kind != token.KIND_ASSIGN
+        if op.kind != token.kindassign
             markerr(lx)
             return "(error)"
         vals = proj_expr(lx)
-        while lexer.peek(lx).kind == token.KIND_COMMA
+        while lexer.peek(lx).kind == token.kindcomma
             _c2 = lexer.next(lx)
             vals = vals .. " " .. proj_expr(lx)
         return "(assign-multi (targets " .. targets .. ") (values " .. vals .. "))"
     if is_assign_kind(lexer.peek(lx).kind)
         op = lexer.next(lx)
         rhs = proj_expr(lx)
-        if op.kind == token.KIND_ASSIGN
+        if op.kind == token.kindassign
             return "(assign " .. first .. " " .. rhs .. ")"
         return "(assign-op " .. op.text .. " " .. first .. " " .. rhs .. ")"
     lexer.restore_state(lx, st)
@@ -1259,12 +1259,12 @@ proj_directive: str = (lx: lexer)
         t = lexer.peek(lx)
         if t.loc.line != line
             return s .. ")"
-        if t.kind == token.KIND_NAME
+        if t.kind == token.kindname
             _n = lexer.next(lx)
             s = s .. " " .. t.text
-        elseif t.kind == token.KIND_DOT
+        elseif t.kind == token.kinddot
             _d = lexer.next(lx)
-        elseif t.kind == token.KIND_LPAREN
+        elseif t.kind == token.kindlparen
             s = join(s, proj_arglist(lx))
         elseif is_string_kind(t.kind)
             _n = lexer.next(lx)
@@ -1278,10 +1278,10 @@ proj_arglist: str = (lx: lexer)
     acc = ""
     while true
         t = lexer.peek(lx)
-        if t.kind == token.KIND_RPAREN
+        if t.kind == token.kindrparen
             _r = lexer.next(lx)
             return acc
-        if t.kind == token.KIND_EOF
+        if t.kind == token.kindeof
             markerr(lx)
             return acc
         before: i64 = lx.pos
@@ -1290,7 +1290,7 @@ proj_arglist: str = (lx: lexer)
         if stalled(lx, before, peeked)
             markerr(lx)
             return acc
-        if lexer.peek(lx).kind == token.KIND_COMMA
+        if lexer.peek(lx).kind == token.kindcomma
             _c = lexer.next(lx)
 
 # '{' key (('=' | value)) (',' ...)* '}' — descriptor / table literal.
@@ -1298,10 +1298,10 @@ proj_desc_body: str = (lx: lexer)
     s = "(desc"
     while true
         t = lexer.peek(lx)
-        if t.kind == token.KIND_RBRACE
+        if t.kind == token.kindrbrace
             _r = lexer.next(lx)
             return s .. ")"
-        if t.kind == token.KIND_EOF
+        if t.kind == token.kindeof
             markerr(lx)
             return s .. ")"
         # A NAME is only a key when `=` or `:` follows it; `{ a, b }` is two
@@ -1309,9 +1309,9 @@ proj_desc_body: str = (lx: lexer)
         # alone consumed the name and then projected the *next* element as its
         # value, silently shifting every entry.
         keyed = false
-        if t.kind == token.KIND_NAME
+        if t.kind == token.kindname
             k2 = peek2(lx)
-            if k2.kind == token.KIND_ASSIGN or k2.kind == token.KIND_COLON
+            if k2.kind == token.kindassign or k2.kind == token.kindcolon
                 keyed = true
         # A STRING-literal key in the unbracketed `k = v` slot:
         # `{ "what is metaprogramming" = [[ ... ]] }`. Not Lua-legal and not
@@ -1324,17 +1324,17 @@ proj_desc_body: str = (lx: lexer)
         strkey = false
         if is_string_kind(t.kind)
             k2 = peek2(lx)
-            if k2.kind == token.KIND_ASSIGN
+            if k2.kind == token.kindassign
                 strkey = true
         # `{ [0] = "trace", [k] = v }` — a computed key.
-        if t.kind == token.KIND_LBRACKET
+        if t.kind == token.kindlbracket
             _lb = lexer.next(lx)
             k = proj_expr(lx)
             rb = lexer.next(lx)
-            if rb.kind != token.KIND_RBRACKET
+            if rb.kind != token.kindrbracket
                 markerr(lx)
                 return s .. ")"
-            if lexer.peek(lx).kind == token.KIND_ASSIGN
+            if lexer.peek(lx).kind == token.kindassign
                 _e = lexer.next(lx)
             s = s .. " (key " .. k .. " " .. proj_expr(lx) .. ")"
         elseif strkey
@@ -1357,7 +1357,7 @@ proj_desc_body: str = (lx: lexer)
             if stalled(lx, before, peeked)
                 markerr(lx)
                 return s .. ")"
-        if lexer.peek(lx).kind == token.KIND_COMMA
+        if lexer.peek(lx).kind == token.kindcomma
             _c = lexer.next(lx)
 
 # Precedence-climbing expression projection, highest level first.
@@ -1365,7 +1365,7 @@ proj_expr: str = (lx: lexer)
     left = proj_and(lx)
     while true
         t = lexer.peek(lx)
-        if t.kind == token.KIND_OR
+        if t.kind == token.kindor
             _o = lexer.next(lx)
             left = "(or " .. left .. " " .. proj_and(lx) .. ")"
         else
@@ -1375,7 +1375,7 @@ proj_and: str = (lx: lexer)
     left = proj_cmp(lx)
     while true
         t = lexer.peek(lx)
-        if t.kind == token.KIND_AND
+        if t.kind == token.kindand
             _a = lexer.next(lx)
             left = "(and " .. left .. " " .. proj_cmp(lx) .. ")"
         else
@@ -1406,19 +1406,19 @@ proj_and: str = (lx: lexer)
 # the ladder's `else` arm did.
 cmp_op: str = (k: i64)
     op = ""
-    if k == token.KIND_EQ
+    if k == token.kindeq
         op = "="
-    elseif k == token.KIND_NEQ
+    elseif k == token.kindneq
         # `!=` used to fold into `=` here, so `a != b` and `a == b` projected
         # to the identical s-expression and no proof could tell them apart.
         op = "!="
-    elseif k == token.KIND_LEQ
+    elseif k == token.kindleq
         op = "<="
-    elseif k == token.KIND_GEQ
+    elseif k == token.kindgeq
         op = ">="
-    elseif k == token.KIND_LT
+    elseif k == token.kindlt
         op = "<"
-    elseif k == token.KIND_GT
+    elseif k == token.kindgt
         op = ">"
     op
 
@@ -1438,21 +1438,21 @@ proj_cmp: str = (lx: lexer)
 # full of mixed masks and shifts and would be silently mis-parsed.
 proj_bor: str = (lx: lexer)
     left = proj_bxor(lx)
-    while lexer.peek(lx).kind == token.KIND_PIPE
+    while lexer.peek(lx).kind == token.kindpipe
         _o = lexer.next(lx)
         left = "(| " .. left .. " " .. proj_bxor(lx) .. ")"
     left
 
 proj_bxor: str = (lx: lexer)
     left = proj_band(lx)
-    while lexer.peek(lx).kind == token.KIND_TILDE
+    while lexer.peek(lx).kind == token.kindtilde
         _o = lexer.next(lx)
         left = "(~ " .. left .. " " .. proj_band(lx) .. ")"
     left
 
 proj_band: str = (lx: lexer)
     left = proj_shift(lx)
-    while lexer.peek(lx).kind == token.KIND_AMP
+    while lexer.peek(lx).kind == token.kindamp
         _o = lexer.next(lx)
         left = "(& " .. left .. " " .. proj_shift(lx) .. ")"
     left
@@ -1461,10 +1461,10 @@ proj_shift: str = (lx: lexer)
     left = proj_add(lx)
     while true
         t = lexer.peek(lx)
-        if t.kind == token.KIND_LSHIFT
+        if t.kind == token.kindlshift
             _o = lexer.next(lx)
             left = "(<< " .. left .. " " .. proj_add(lx) .. ")"
-        elseif t.kind == token.KIND_RSHIFT
+        elseif t.kind == token.kindrshift
             _o = lexer.next(lx)
             left = "(>> " .. left .. " " .. proj_add(lx) .. ")"
         else
@@ -1474,13 +1474,13 @@ proj_add: str = (lx: lexer)
     left = proj_term(lx)
     while true
         t = lexer.peek(lx)
-        if t.kind == token.KIND_PLUS
+        if t.kind == token.kindplus
             _o = lexer.next(lx)
             left = "(+ " .. left .. " " .. proj_term(lx) .. ")"
-        elseif t.kind == token.KIND_MINUS
+        elseif t.kind == token.kindminus
             _o = lexer.next(lx)
             left = "(- " .. left .. " " .. proj_term(lx) .. ")"
-        elseif t.kind == token.KIND_CONCAT
+        elseif t.kind == token.kindconcat
             _o = lexer.next(lx)
             left = "(.. " .. left .. " " .. proj_term(lx) .. ")"
         else
@@ -1490,16 +1490,16 @@ proj_term: str = (lx: lexer)
     left = proj_unary(lx)
     while true
         t = lexer.peek(lx)
-        if t.kind == token.KIND_STAR
+        if t.kind == token.kindstar
             _o = lexer.next(lx)
             left = "(* " .. left .. " " .. proj_unary(lx) .. ")"
-        elseif t.kind == token.KIND_SLASH
+        elseif t.kind == token.kindslash
             _o = lexer.next(lx)
             left = "(/ " .. left .. " " .. proj_unary(lx) .. ")"
-        elseif t.kind == token.KIND_IDIV
+        elseif t.kind == token.kindidiv
             _o = lexer.next(lx)
             left = "(// " .. left .. " " .. proj_unary(lx) .. ")"
-        elseif t.kind == token.KIND_PERCENT
+        elseif t.kind == token.kindpercent
             _o = lexer.next(lx)
             left = "(% " .. left .. " " .. proj_unary(lx) .. ")"
         else
@@ -1507,19 +1507,19 @@ proj_term: str = (lx: lexer)
 
 proj_unary: str = (lx: lexer)
     t = lexer.peek(lx)
-    if t.kind == token.KIND_MINUS
+    if t.kind == token.kindminus
         _o = lexer.next(lx)
         return "(- " .. proj_unary(lx) .. ")"
-    if t.kind == token.KIND_NOT
+    if t.kind == token.kindnot
         _o = lexer.next(lx)
         return "(!" .. proj_unary(lx) .. ")"
-    if t.kind == token.KIND_HASH
+    if t.kind == token.kindhash
         _o = lexer.next(lx)
         return "(len " .. proj_unary(lx) .. ")"
     # Prefix `~` is bitwise NOT. It shares a token with the infix XOR handled in
     # proj_bxor; position decides, which is why the infix level cannot simply
     # consume it.
-    if t.kind == token.KIND_TILDE
+    if t.kind == token.kindtilde
         _o = lexer.next(lx)
         return "(bnot " .. proj_unary(lx) .. ")"
     proj_pow(lx)
@@ -1529,7 +1529,7 @@ proj_unary: str = (lx: lexer)
 # the right gives both.
 proj_pow: str = (lx: lexer)
     base = proj_postfix(lx)
-    if lexer.peek(lx).kind == token.KIND_CARET
+    if lexer.peek(lx).kind == token.kindcaret
         _o = lexer.next(lx)
         return "(^ " .. base .. " " .. proj_unary(lx) .. ")"
     base
@@ -1538,24 +1538,24 @@ proj_postfix: str = (lx: lexer)
     base = proj_primary(lx)
     while true
         t = lexer.peek(lx)
-        if t.kind == token.KIND_LPAREN
+        if t.kind == token.kindlparen
             base = "(call " .. join(base, proj_arglist(lx)) .. ")"
         elseif is_string_kind(t.kind)
             _s = lexer.next(lx)
             base = "(call " .. base .. " " .. quote(t.text) .. ")"
-        elseif t.kind == token.KIND_DOT
+        elseif t.kind == token.kinddot
             _d = lexer.next(lx)
             n = lexer.next(lx)
             base = "(dot " .. base .. " " .. n.text .. ")"
-        elseif t.kind == token.KIND_LBRACKET
+        elseif t.kind == token.kindlbracket
             _lb = lexer.next(lx)
             idx = proj_expr(lx)
             rb = lexer.next(lx)
-            if rb.kind != token.KIND_RBRACKET
+            if rb.kind != token.kindrbracket
                 markerr(lx)
                 return "(error)"
             base = "(index " .. base .. " " .. idx .. ")"
-        elseif t.kind == token.KIND_COLON
+        elseif t.kind == token.kindcolon
             # `obj:m(args)`. The receiver is projected separately from the
             # name so a later pass can see the implicit self without
             # re-deriving it from a dotted path.
@@ -1569,13 +1569,13 @@ proj_postfix: str = (lx: lexer)
                 sl = lexer.next(lx)
                 base = head .. " " .. quote(sl.text) .. ")"
             else
-                if lexer.peek(lx).kind != token.KIND_LPAREN
+                if lexer.peek(lx).kind != token.kindlparen
                     markerr(lx)
                     return "(error)"
                 # `join`, not concatenation: a no-argument call must project as
                 # `(method obj m)`, not `(method obj m )`.
                 base = join(head, proj_arglist(lx)) .. ")"
-        elseif t.kind == token.KIND_AT
+        elseif t.kind == token.kindat
             _a = lexer.next(lx)
             an = lexer.next(lx)
             base = "(anchor " .. base .. " " .. an.text .. ")"
@@ -1584,13 +1584,13 @@ proj_postfix: str = (lx: lexer)
 
 proj_primary: str = (lx: lexer)
     t = lexer.peek(lx)
-    if t.kind == token.KIND_INT_LIT or t.kind == token.KIND_FLOAT_LIT
+    if t.kind == token.kindintlit or t.kind == token.kindfloatlit
         _n = lexer.next(lx)
         return t.text
     if is_string_kind(t.kind)
         _n = lexer.next(lx)
         return quote(t.text)
-    if t.kind == token.KIND_NAME or t.kind == token.KIND_TRUE or t.kind == token.KIND_FALSE or t.kind == token.KIND_NIL
+    if t.kind == token.kindname or t.kind == token.kindtrue or t.kind == token.kindfalse or t.kind == token.kindnil
         _n = lexer.next(lx)
         return t.text
     # Type names are ordinary values. LAW-STRATA spells specialization as
@@ -1600,24 +1600,24 @@ proj_primary: str = (lx: lexer)
     if is_type_kind(t.kind)
         _n = lexer.next(lx)
         return t.text
-    if t.kind == token.KIND_IF
+    if t.kind == token.kindif
         return proj_if(lx)
-    if t.kind == token.KIND_DOTS
+    if t.kind == token.kinddots
         _d = lexer.next(lx)
         return "(varargs)"
     # `@` directives appear in expression position too: `return @c.emit(...)`,
     # `@as(i64, x)`. Same projection as the statement form.
-    if t.kind == token.KIND_AT
+    if t.kind == token.kindat
         return proj_directive(lx)
     # A leading `.` is a lens on the ambient subject: `.pos`, `map(.name)`.
-    if t.kind == token.KIND_DOT
+    if t.kind == token.kinddot
         _d = lexer.next(lx)
         n = lexer.next(lx)
-        if n.kind != token.KIND_NAME
+        if n.kind != token.kindname
             markerr(lx)
             return "(error)"
         return "(lens " .. n.text .. ")"
-    if t.kind == token.KIND_FUN or t.kind == token.KIND_FUNCTION
+    if t.kind == token.kindfun or t.kind == token.kindfunction
         return proj_fun_expr(lx)
     # The compact value form has a single-expression body and NO `end`:
     # `f = (x) g(x)`, `spawn(() run(c))`. The annotated form is a block that
@@ -1626,7 +1626,7 @@ proj_primary: str = (lx: lexer)
     # Annotated first: `(): void` has empty parens, so the bare test matches it
     # too, and taking the bare path meant the `: void` was never read and the
     # body was parsed as a single expression instead of a block.
-    if t.kind == token.KIND_LPAREN and is_bare_lambda_head(lx) and !is_lambda_head(lx)
+    if t.kind == token.kindlparen and is_bare_lambda_head(lx) and !is_lambda_head(lx)
         head_line = t.loc.line
         params = proj_params_from_lparen(lx)
         # Layout decides the body shape, which is the canon's own rule: a
@@ -1644,7 +1644,7 @@ proj_primary: str = (lx: lexer)
         if params != ""
             return "(lambda (params " .. params .. ") " .. body .. ")"
         return "(lambda (params) " .. body .. ")"
-    if t.kind == token.KIND_LPAREN and is_lambda_head(lx)
+    if t.kind == token.kindlparen and is_lambda_head(lx)
         # FF-1: `(x: t): r ... end` with no keyword. This is the canonical
         # function form, and the parser could not read it — including in
         # lib/compiler/parser.id itself after its own FF-1 migration.
@@ -1672,30 +1672,30 @@ proj_primary: str = (lx: lexer)
             # sits inside an `if`, and its terminator is on the next line and
             # belongs to the `if`. Eating that closed the wrong block and ran the
             # enclosing function to EOF.
-            if lexer.peek(lx).kind == token.KIND_END and lexer.peek(lx).loc.line == head_line
+            if lexer.peek(lx).kind == token.kindend and lexer.peek(lx).loc.line == head_line
                 _e = lexer.next(lx)
             return s2 .. " " .. e2 .. ")"
         body = proj_body(lx)
         if body != ""
             return s2 .. " " .. body .. ")"
         return s2 .. ")"
-    if t.kind == token.KIND_LPAREN
+    if t.kind == token.kindlparen
         _lp = lexer.next(lx)
         e = proj_expr(lx)
         c = lexer.next(lx)
-        if c.kind == token.KIND_RPAREN
+        if c.kind == token.kindrparen
             return e
         markerr(lx)
         return "(error)"
-    if t.kind == token.KIND_LBRACE
+    if t.kind == token.kindlbrace
         _lb = lexer.next(lx)
         return proj_desc_body(lx)
     # `[float]` — a sequence type in field position, e.g. `wq: [float]`.
-    if t.kind == token.KIND_LBRACKET
+    if t.kind == token.kindlbracket
         _lb = lexer.next(lx)
         inner = proj_expr(lx)
         rb = lexer.next(lx)
-        if rb.kind != token.KIND_RBRACKET
+        if rb.kind != token.kindrbracket
             markerr(lx)
             return "(error)"
         return "(seq " .. inner .. ")"
@@ -1705,7 +1705,7 @@ proj_primary: str = (lx: lexer)
     #
     # It must come after every keyword-specific arm above, not before: placed
     # earlier it swallowed `fun(a) a end` as a call to `fun` and cost 3 files.
-    if is_member_name(t) and peek2(lx).kind == token.KIND_LPAREN
+    if is_member_name(t) and peek2(lx).kind == token.kindlparen
         _n = lexer.next(lx)
         return t.text
     _n = lexer.next(lx)
@@ -1719,13 +1719,13 @@ proj_primary: str = (lx: lexer)
 # a tail — a comma list anywhere else is an error, which keeps a bare `a, b`
 # rejected.
 tail_pack: str = (lx: lexer, first: str)
-    if lexer.peek(lx).kind != token.KIND_COMMA
+    if lexer.peek(lx).kind != token.kindcomma
         return first
     acc = first
-    while lexer.peek(lx).kind == token.KIND_COMMA
+    while lexer.peek(lx).kind == token.kindcomma
         _c = lexer.next(lx)
         acc = acc .. " " .. proj_expr(lx)
-    if lexer.peek(lx).kind == token.KIND_END
+    if lexer.peek(lx).kind == token.kindend
         return "(pack " .. acc .. ")"
     markerr(lx)
     "(error)"
@@ -1742,10 +1742,10 @@ proj_concept: str = (lx: lexer)
     s = "(concept " .. n.text
     while true
         t = lexer.peek(lx)
-        if t.kind == token.KIND_END
+        if t.kind == token.kindend
             _e = lexer.next(lx)
             return s .. ")"
-        if t.kind == token.KIND_EOF
+        if t.kind == token.kindeof
             markerr(lx)
             return s .. ")"
         # A `fun`-prefixed signature. The corpus writes concept members bare
@@ -1754,13 +1754,13 @@ proj_concept: str = (lx: lexer)
         # output for lib/mem.id was unreadable here — a P2 CANONICAL
         # CLOSURE failure with the identical shape as `->` itself. Skipping the
         # keyword costs nothing: the signature grammar after it is the same.
-        if lexer.peek(lx).kind == token.KIND_FUN or lexer.peek(lx).kind == token.KIND_FUNCTION
+        if lexer.peek(lx).kind == token.kindfun or lexer.peek(lx).kind == token.kindfunction
             lexer.next(lx)
         nm = lexer.next(lx)
         if !is_member_name(nm)
             markerr(lx)
             return s .. ")"
-        if lexer.peek(lx).kind != token.KIND_LPAREN
+        if lexer.peek(lx).kind != token.kindlparen
             markerr(lx)
             return s .. ")"
         _lp = lexer.next(lx)
@@ -1776,34 +1776,34 @@ proj_concept: str = (lx: lexer)
 proj_stmt: str = (lx: lexer)
     t = lexer.peek(lx)
     lx.stmt_col = t.loc.col
-    if t.kind == token.KIND_EOF
+    if t.kind == token.kindeof
         return ""
-    if t.kind == token.KIND_END or t.kind == token.KIND_ELSE or t.kind == token.KIND_ELSEIF
+    if t.kind == token.kindend or t.kind == token.kindelse or t.kind == token.kindelseif
         return ""
-    if t.kind == token.KIND_FUN or t.kind == token.KIND_FUNCTION
+    if t.kind == token.kindfun or t.kind == token.kindfunction
         return proj_fun_decl(lx, t)
-    if t.kind == token.KIND_IF
+    if t.kind == token.kindif
         return proj_if(lx)
-    if t.kind == token.KIND_WHILE
+    if t.kind == token.kindwhile
         return proj_while(lx)
-    if t.kind == token.KIND_FOR
+    if t.kind == token.kindfor
         return proj_for(lx)
-    if t.kind == token.KIND_RETURN
+    if t.kind == token.kindreturn
         return proj_return(lx)
-    if t.kind == token.KIND_AT
+    if t.kind == token.kindat
         return proj_directive(lx)
-    if t.kind == token.KIND_BREAK
+    if t.kind == token.kindbreak
         _b = lexer.next(lx)
         return "(break)"
-    if t.kind == token.KIND_REPEAT
+    if t.kind == token.kindrepeat
         return proj_repeat(lx)
-    if t.kind == token.KIND_CONCEPT
+    if t.kind == token.kindconcept
         return proj_concept(lx)
     # Retired: statement-initial `type X = …` and `(typedecl … (type …))` alias
     # projections (GAP-049; law.md descriptor axis). `type` is an ordinary name;
     # descriptors declare as `Name: { … }` or nominal `Name: T` once parser hole
     # gap[097] closes. Do not reintroduce typedecl or `(type …)` wrappers here.
-    if t.kind == token.KIND_DO
+    if t.kind == token.kinddo
         _d = lexer.next(lx)
         body = proj_block(lx)
         if body != ""
@@ -1814,7 +1814,7 @@ proj_stmt: str = (lx: lexer)
     # the projection after `kw.text`, so `const k = 5` projects `(const k 5)`
     # with no new arm. gap[046] §6 ranked const and defer last on cheapness
     # grounds and that was right: this is the whole change.
-    if t.kind == token.KIND_LOCAL or t.kind == token.KIND_GLOBAL or t.kind == token.KIND_CONST
+    if t.kind == token.kindlocal or t.kind == token.kindglobal or t.kind == token.kindconst
         return proj_decl(lx)
     # `defer <stmt>` — one statement, deferred to scope exit. Projected with the
     # deferred statement NESTED rather than flattened, because a flat
@@ -1822,13 +1822,13 @@ proj_stmt: str = (lx: lexer)
     # undeferred call and the whole meaning of the construct is the edge
     # between them. That is the same defect class as the `nn { }` tear-off in
     # gap[046] §3: acceptance with the structure thrown away.
-    if t.kind == token.KIND_DEFER
+    if t.kind == token.kinddefer
         lexer.next(lx)
         inner = proj_stmt(lx)
         return "(defer {inner})"
-    if t.kind == token.KIND_NAME
+    if t.kind == token.kindname
         t2 = peek2(lx)
-        if t2.kind == token.KIND_COLON
+        if t2.kind == token.kindcolon
             # `n: i64 = 5` — a binding carrying its shape. `:` is IS, `=` is
             # HOLDS, and the statement level has to read both.
             #
@@ -1845,14 +1845,14 @@ proj_stmt: str = (lx: lexer)
             # typed binding — this is the primary data-declaration form and the
             # parser had no production for it at all.
             dt = lexer.peek(lx)
-            if dt.kind == token.KIND_AT
+            if dt.kind == token.kindat
                 _at = lexer.next(lx)
                 dt = lexer.peek(lx)
-            if dt.kind == token.KIND_LBRACE
+            if dt.kind == token.kindlbrace
                 _lb = lexer.next(lx)
                 return "(descriptor " .. t.text .. " " .. proj_desc_body(lx) .. ")"
             ty = proj_type(lx)
-            if lexer.peek(lx).kind == token.KIND_ASSIGN
+            if lexer.peek(lx).kind == token.kindassign
                 _a = lexer.next(lx)
                 return "(bind " .. t.text .. " " .. ty .. " " .. proj_expr(lx) .. ")"
             lexer.restore_state(lx, bst)
@@ -1867,13 +1867,13 @@ proj_stmt: str = (lx: lexer)
             # why this read as a face defect rather than a missing production
             # (gap[029]).
             return tail_pack(lx, proj_expr(lx))
-        if t2.kind == token.KIND_LPAREN
+        if t2.kind == token.kindlparen
             if statement_header_signal_lx(lx, t, false)
                 return proj_fun_decl(lx, t)
             return tail_pack(lx, proj_expr(lx))
         if is_assign_kind(t2.kind)
             return proj_assign(lx, t)
-        if t2.kind == token.KIND_DOT or t2.kind == token.KIND_LBRACKET or t2.kind == token.KIND_COMMA
+        if t2.kind == token.kinddot or t2.kind == token.kindlbracket or t2.kind == token.kindcomma
             return proj_target_or_expr(lx)
         return tail_pack(lx, proj_expr(lx))
     tail_pack(lx, proj_expr(lx))
@@ -1884,7 +1884,7 @@ proj_program_lx: str = (lx: lexer)
     while true
         skipsemi(lx)
         t = lexer.peek(lx)
-        if t.kind == token.KIND_EOF
+        if t.kind == token.kindeof
             if acc == ""
                 return "(program)"
             return "(program " .. acc .. ")"

@@ -1135,7 +1135,7 @@ pub const Sema = struct {
         return null;
     }
 
-    /// Exact integer constant from a foreign module field read (`token.KIND_EOF`).
+    /// Exact integer constant from a foreign module field read (`token.kindeof`).
     /// Resolution stays in sema/graph; lowering must not re-open sibling files.
     pub fn foreignModuleIntConstant(self: *const Sema, expr: *const Expr) ?i64 {
         if (expr.* != .field) return null;
