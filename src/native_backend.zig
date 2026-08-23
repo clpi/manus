@@ -4887,6 +4887,194 @@ const Arm64Compiler = struct {
         return @intCast(n);
     }
 
+    /// THE MULTIPLIER, SHIFT AND FIXUP SHAPE that turn `x // k` and `x % k`
+    /// into a high multiply for a CONSTANT non-power-of-two divisor, or null
+    /// when this backend has no sound one.
+    ///
+    /// `m` is the multiplier as it is MATERIALIZED — a 64-bit pattern. The
+    /// EFFECTIVE multiplier is that pattern read UNSIGNED, so when the top bit
+    /// is set `m` is a negative i64 and the effective value is `m + 2^64`.
+    /// `smulh` computes the high half of the SIGNED product, so the sequence
+    /// adds the dividend back to recover the unsigned-multiplier product:
+    /// `floor((m + 2^64)*n / 2^64) = smulh(m, n) + n`. That is what
+    /// `add_dividend` names, and it is a property of the multiplier's
+    /// magnitude, never a choice.
+    const FlooredMagic = struct {
+        m: i64,
+        shift: u6,
+        add_dividend: bool,
+    };
+
+    /// THE SHIFTED HIGH PRODUCT IS NOT THE FLOORED QUOTIENT, and the whole
+    /// design of the emitted sequence follows from exactly how it differs.
+    ///
+    /// Write `S(n) = floor(Meff*n / 2^(64+s))` — what `smulh`, the optional
+    /// `add`, and one `asr` compute. Granlund-Montgomery / Warren choose
+    /// `(Meff, s)` so the TRUNCATING quotient is `S(n) + [S(n) < 0]`. Idol's
+    /// law is FLOORED (`law.numeric.floor`, `docs/rulings.md`), so the naive
+    /// port of that sequence is a silent wrong answer for negative dividends,
+    /// which is why the literature's shape is not what this emits.
+    ///
+    /// Chasing the two definitions through each other gives the exact
+    /// relation, and it is much sharper than "truncate then fix up":
+    ///
+    ///     S(n) = floor(n/k) - [n < 0 AND k divides n]
+    ///
+    /// — the shifted product IS the floored quotient everywhere except at
+    /// NEGATIVE EXACT MULTIPLES of the divisor, where it is one lower. So the
+    /// residue `v = n - k*S(n)` lies in `[0, k]`, equals the floored remainder
+    /// everywhere, and equals `k` — a value a remainder can never take — in
+    /// precisely the one case where `S` is short by one. ONE COMPARE against
+    /// the divisor register that `msub` already needed distinguishes them:
+    ///
+    ///     idiv:  q = S + (v == k)
+    ///     mod:   r = (v == k) ? 0 : v
+    ///
+    /// That is why this costs a `cmp` and a `csinc`/`csel` and not the five
+    /// instruction sign-disagreement fixup `emitFlooredDivRem` pays: the SIGN
+    /// OF THE DIVISOR IS KNOWN HERE, so the correction collapses to an
+    /// equality test the multiply's own residue already carries.
+    ///
+    /// SCOPE: `k >= 3`, not a power of two. `k == 1` and powers of two have
+    /// single-instruction realizations above and must not reach this. A
+    /// NEGATIVE constant divisor is refused — the relation above is derived for
+    /// `k > 0` and the mirrored one is a different proof, so it keeps the
+    /// unchanged `sdiv` path rather than an unproved sequence.
+    fn magicFlooredDivisor(k: i64) ?FlooredMagic {
+        if (k < 3) return null;
+        if (powerOfTwoShift(k) != null) return null;
+        const ak: u128 = @intCast(k);
+        const two63: u128 = @as(u128, 1) << 63;
+        const rem63 = two63 % ak;
+        if (rem63 + 1 > two63) return null;
+        const anc: u128 = two63 - 1 - rem63;
+        if (anc == 0) return null;
+        var p: u32 = 63;
+        var q1: u128 = two63 / anc;
+        var r1: u128 = two63 - q1 * anc;
+        var q2: u128 = two63 / ak;
+        var r2: u128 = two63 - q2 * ak;
+        while (true) {
+            p += 1;
+            if (p > 127) return null;
+            q1 *= 2;
+            r1 *= 2;
+            if (r1 >= anc) {
+                q1 += 1;
+                r1 -= anc;
+            }
+            q2 *= 2;
+            r2 *= 2;
+            if (r2 >= ak) {
+                q2 += 1;
+                r2 -= ak;
+            }
+            const delta = ak - r2;
+            if (!(q1 < delta or (q1 == delta and r1 == 0))) break;
+        }
+        const meff: u128 = q2 + 1;
+        if (meff == 0 or meff >= (@as(u128, 1) << 64)) return null;
+        if (p < 64 or p - 64 > 63) return null;
+        const cand = FlooredMagic{
+            .m = @bitCast(@as(u64, @intCast(meff))),
+            .shift = @intCast(p - 64),
+            .add_dividend = meff >= (@as(u128, 1) << 63),
+        };
+        if (!flooredMagicSound(k, cand)) return null;
+        return cand;
+    }
+
+    /// THE PROOF, RUN. Not a spot check and not the search's own opinion of
+    /// itself: this re-derives `S(n) = floor(n/k) - [n<0 AND k|n]` from
+    /// `(m, shift)` alone, over the WHOLE i64 dividend range, in arithmetic
+    /// wide enough that nothing wraps.
+    ///
+    /// It is exhaustive without enumerating 2^64 dividends because the error
+    /// term is LINEAR. Writing `n = q*k + r` with `0 <= r < k`,
+    ///
+    ///     Meff*n / 2^e = q + (q*delta + Meff*r) / 2^e,   delta = Meff*k - 2^e
+    ///
+    /// so `S(n) = q + floor(A/2^e)` with `A = q*delta + Meff*r` AFFINE in both
+    /// `q` and `r`. The requirement is `floor(A/2^e) = -[q < 0 AND r = 0]`, and
+    /// an affine function over a rectangle attains its extremes at corners — so
+    /// checking the corners of the realizable `(q, r)` region PROVES every
+    /// dividend at once. The `r = 0` edge is checked separately because its
+    /// target is a different constant.
+    ///
+    /// A magic that fails here is REFUSED, not repaired: `magicFlooredDivisor`
+    /// returns null and the divisor keeps the unchanged `sdiv` realization. So
+    /// no search bug can become a wrong answer; it can only cost a divide.
+    fn flooredMagicSound(k: i64, mg: FlooredMagic) bool {
+        const W = i256;
+        const kk: W = k;
+        if (kk < 2) return false;
+        const meff: W = @as(W, @as(u64, @bitCast(mg.m)));
+        if (mg.add_dividend != (meff >= (@as(W, 1) << 63))) return false;
+        const e: u9 = 64 + @as(u9, mg.shift);
+        const two_e: W = @as(W, 1) << @intCast(e);
+        const delta: W = meff * kk - two_e;
+        if (delta < 1) return false;
+
+        const nmin: W = -(@as(W, 1) << 63);
+        const nmax: W = (@as(W, 1) << 63) - 1;
+        const qmin: W = @divFloor(nmin, kk);
+        const qmax: W = @divFloor(nmax, kk);
+        if (qmin > qmax) return false;
+        const rlo: W = nmin - qmin * kk;
+        const rhi: W = nmax - qmax * kk;
+
+        // `r = 0`: the target is `floor(q*delta / 2^e) = -[q < 0]`.
+        const q0lo: W = if (rlo == 0) qmin else qmin + 1;
+        if (q0lo <= qmax) {
+            if (q0lo < 0 and q0lo * delta < -two_e) return false;
+            if (qmax > 0 and qmax * delta > two_e - 1) return false;
+        }
+
+        // `r >= 1`: the target is `floor(A / 2^e) = 0`, i.e. `0 <= A < 2^e`.
+        var lo_seen = false;
+        var lo: W = 0;
+        const rstart: W = if (rlo > 1) rlo else 1;
+        if (rstart <= kk - 1) {
+            lo = qmin * delta + meff * rstart;
+            lo_seen = true;
+        }
+        if (qmin + 1 <= qmax) {
+            const v = (qmin + 1) * delta + meff;
+            if (!lo_seen or v < lo) lo = v;
+            lo_seen = true;
+        }
+        if (lo_seen and lo < 0) return false;
+
+        var hi_seen = false;
+        var hi: W = 0;
+        const rend: W = if (rhi < kk - 1) rhi else kk - 1;
+        if (rend >= 1) {
+            hi = qmax * delta + meff * rend;
+            hi_seen = true;
+        }
+        if (qmax - 1 >= qmin) {
+            const v = (qmax - 1) * delta + meff * (kk - 1);
+            if (!hi_seen or v > hi) hi = v;
+            hi_seen = true;
+        }
+        if (hi_seen and hi > two_e - 1) return false;
+        return true;
+    }
+
+    /// THE EMITTED SEQUENCE MODELLED EXACTLY, in the same wrapping i64 the
+    /// machine uses. Exists so a test can compare it against `@divFloor` and
+    /// `@mod` on dividends the proof reasons about abstractly — the proof and
+    /// the emitter are two authorities and this is what keeps them one.
+    fn flooredMagicAnswer(k: i64, mg: FlooredMagic, n: i64, want_mod: bool) i64 {
+        const prod: i128 = @as(i128, mg.m) * @as(i128, n);
+        var t: i64 = @truncate(prod >> 64);
+        if (mg.add_dividend) t = t +% n;
+        if (mg.shift > 0) t = t >> mg.shift;
+        const v: i64 = n -% t *% k;
+        if (want_mod) return if (v == k) 0 else v;
+        return if (v == k) t +% 1 else t;
+    }
+
     /// The CANDIDATE PREDICATE. Non-null exactly when `ins.rhs` is a literal
     /// AND `emitBinopConst` has a realization for that (op, value) pair. Kept
     /// separate from the emitter so the two cannot disagree: a value this
@@ -4935,12 +5123,24 @@ const Arm64Compiler = struct {
     /// plus the pure re-encodings `add/sub #imm12`, `and/orr/eor #bitmask` and
     /// `lsl/lsr/asr #sh`, which change no value at all.
     ///
-    /// A NEGATIVE OR NON-POWER-OF-TWO CONSTANT DIVISOR IS NOT HERE. It has a
-    /// cheaper realization than the general one — the sign of the divisor is
-    /// known, so the floor correction reduces to one `cmp`/`csel` — but that is
-    /// a shorter SEQUENCE, not a single instruction, and this function's
-    /// contract with `emitBinopConst` is one realization per admitted pair.
-    /// `emitBinopFlooredConstDivisor` carries it instead.
+    /// A POSITIVE NON-POWER-OF-TWO CONSTANT DIVISOR IS NOW HERE TOO, and it is
+    /// the one admitted pair whose realization is a SEQUENCE rather than an
+    /// instruction. That was the standing reason to exclude it, and it was the
+    /// wrong reason: this function's contract is "the emitter has a realization
+    /// for this pair", and `emitBinopFlooredConstDivisor` is that realization.
+    /// What it costs is `smulh` plus five to eight ALU instructions; what it
+    /// replaces is `sdiv`, which no amount of instruction count makes up for.
+    ///
+    /// `magicFlooredDivisor` is the admission, and it REFUSES rather than
+    /// guesses: it re-derives the multiplier's soundness over the whole i64
+    /// dividend range and returns null if the proof does not close, so a
+    /// divisor it cannot prove keeps the unchanged `sdiv` path. That is why
+    /// calling it here and again in the emitter cannot make the two disagree.
+    ///
+    /// A NEGATIVE CONSTANT DIVISOR IS STILL NOT HERE. The relation the
+    /// sequence rests on — `shifted product = floor(n/k) - [n<0 AND k|n]` — is
+    /// derived for `k > 0`; the mirrored statement for `k < 0` is a different
+    /// proof, and an unproved sequence is worth less than the divide it saves.
     fn constBinopRealization(ins: dnir.Instr) ?i64 {
         if (comparisonCondition(ins.binop) != null) return null;
         const k: i64 = switch (ins.rhs) {
@@ -4951,8 +5151,8 @@ const Arm64Compiler = struct {
             .add, .sub => if (k == 0 or (k > 0 and k <= 4095) or (k < 0 and k >= -4095)) k else null,
             .mul => if (k == 0 or k == 1 or powerOfTwoShift(k) != null) k else null,
             .div => if (k == 1) k else null,
-            .idiv => if (k == 1 or powerOfTwoShift(k) != null) k else null,
-            .mod => if (k == 1 or k == -1 or powerOfTwoShift(k) != null) k else null,
+            .idiv => if (k == 1 or powerOfTwoShift(k) != null or magicFlooredDivisor(k) != null) k else null,
+            .mod => if (k == 1 or k == -1 or powerOfTwoShift(k) != null or magicFlooredDivisor(k) != null) k else null,
             .band => if (k == 0 or k == -1 or lowMaskWidth(k) != null) k else null,
             .bor => if (k == 0 or lowMaskWidth(k) != null) k else null,
             .bxor => if (k == 0 or k == -1 or lowMaskWidth(k) != null) k else null,
@@ -5063,6 +5263,69 @@ const Arm64Compiler = struct {
         );
     }
 
+    /// FLOOR DIVISION AND FLOORED REMAINDER over a POSITIVE CONSTANT divisor
+    /// that is not a power of two — the multiply-high realization whose
+    /// derivation lives on `magicFlooredDivisor`.
+    ///
+    ///     mov   m, #M                 ; 1-4, and off the dependency chain
+    ///     smulh t, m, x
+    ///     add   t, t, x               ; only when M's top bit is set
+    ///     asr   t, t, #s              ; only when s > 0
+    ///     mov   d, #k                 ; the divisor `msub` and `cmp` both read
+    ///     msub  v, t, d, x            ; v = x - k*S(x), in [0, k]
+    ///     cmp   v, d
+    ///     idiv: csinc dst, t, t, ne   ; S + (v == k)
+    ///     mod:  csel  dst, xzr, v, eq ; (v == k) ? 0 : v
+    ///
+    /// NO `sdiv`. Against the `sdiv`+`msub`+five-instruction floor fixup this
+    /// replaces, the instruction COUNT is roughly a wash and the dependency
+    /// chain is not: every instruction here is a 1-to-4 cycle ALU or multiply
+    /// op, and the `mov` chain that materializes `M` depends on nothing, so it
+    /// issues in parallel with whatever produced the dividend.
+    ///
+    /// `dst` IS WRITTEN LAST AND ONLY ONCE, which is what makes `dst == lhs`
+    /// safe: the dividend's final read is the `msub`, two instructions earlier.
+    ///
+    /// `msub`'s product wraps and that is not a defect. `S*k` may exceed i64,
+    /// but `x - S*k` is exact modulo 2^64 and its TRUE value is in `[0, k]`, so
+    /// the low 64 bits are the answer.
+    fn emitBinopFlooredConstDivisor(
+        self: *Arm64Compiler,
+        dst: u5,
+        lhs: u5,
+        k: i64,
+        mg: FlooredMagic,
+        op: dnir.BinOpTag,
+    ) Error!void {
+        // `allocRegExcluding(dst)` AND NOT `allocReg`. Allocation may SPILL a
+        // claimed register to make room, and `dst` is claimed by the caller —
+        // so plain `allocReg` can choose it as the victim. The spill would
+        // leave `dst` mapped to a stack slot holding the value it had BEFORE
+        // this sequence, and the next `ensureRegLive(dst)` would reload that
+        // over the quotient written below. Excluding it is free; it is the
+        // last write of the sequence and never a source.
+        const rm = try self.allocRegExcluding(dst);
+        try self.emitMovImm(rm, mg.m);
+        const rt = try self.allocRegExcluding(dst);
+        try self.emitSmulhReg(rt, rm, lhs);
+        self.releaseReg(rm);
+        if (mg.add_dividend) try self.emitAddReg(rt, rt, lhs);
+        if (mg.shift > 0) try self.emitAsrImm(rt, rt, mg.shift);
+        const rd = try self.allocRegExcluding(dst);
+        try self.emitMovImm(rd, k);
+        const rv = try self.allocRegExcluding(dst);
+        try self.emitMsubReg(rv, rt, rd, lhs);
+        try self.emitCmpReg(rv, rd);
+        if (op == .idiv) {
+            try self.emitCincEqReg(dst, rt);
+        } else {
+            try self.emitCselZeroEqReg(dst, rv);
+        }
+        self.releaseReg(rv);
+        self.releaseReg(rd);
+        self.releaseReg(rt);
+    }
+
     /// Realize `dst = lhs op k`. Only reached for pairs `constBinopRealization`
     /// admitted, so the final `unreachable` is a contract between the two, not
     /// a guess about the operand.
@@ -5128,7 +5391,12 @@ const Arm64Compiler = struct {
             // floor division means, and the logical one would answer a huge
             // positive number for a negative x.
             .idiv => {
-                if (k == 1) try self.emitMovReg(dst, lhs) else try self.emitAsrImm(dst, lhs, powerOfTwoShift(k).?);
+                if (k == 1)
+                    try self.emitMovReg(dst, lhs)
+                else if (powerOfTwoShift(k)) |sh|
+                    try self.emitAsrImm(dst, lhs, sh)
+                else
+                    try self.emitBinopFlooredConstDivisor(dst, lhs, k, magicFlooredDivisor(k).?, .idiv);
             },
             // `x % ±1 = 0`; `x % 2^n = x & (2^n - 1)` under FLOORED law, for
             // every x, with no range fact. Under the truncating law this file
@@ -5139,8 +5407,10 @@ const Arm64Compiler = struct {
             .mod => {
                 if (k == 1 or k == -1)
                     try self.emitMovImm(dst, 0)
+                else if (powerOfTwoShift(k)) |sh|
+                    try self.emitLogicalLowMask(0x92400000, "and", dst, lhs, sh)
                 else
-                    try self.emitLogicalLowMask(0x92400000, "and", dst, lhs, powerOfTwoShift(k).?);
+                    try self.emitBinopFlooredConstDivisor(dst, lhs, k, magicFlooredDivisor(k).?, .mod);
             },
             .band => {
                 if (k == 0) {
@@ -7094,6 +7364,42 @@ const Arm64Compiler = struct {
         try self.ensureRegLive(lhs);
         try self.ensureRegLive(rhs);
         try self.emitFmt(0x9ac00c00 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "sdiv x{d}, x{d}, x{d}", .{ dst, lhs, rhs });
+    }
+
+    /// `smulh xd, xn, xm` — the HIGH 64 bits of the signed 128-bit product.
+    /// Same 3-source encoding as `mul` with the `U` bit clear and `o0` set
+    /// (bit 22), Ra forced to `xzr`. The one instruction that makes a constant
+    /// divisor cheaper than `sdiv`.
+    fn emitSmulhReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
+        try self.ensureRegLive(lhs);
+        try self.ensureRegLive(rhs);
+        try self.emitFmt(0x9b407c00 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "smulh x{d}, x{d}, x{d}", .{ dst, lhs, rhs });
+    }
+
+    /// `csinc xd, xn, xn, ne` — `xd = xn + (Z ? 1 : 0)`, spelled `cinc xd, xn,
+    /// eq` by the alias. CSEL's encoding with bit 10 set. Emitted in the long
+    /// form so the text a reader assembles is the text this encodes.
+    ///
+    /// Flag-safe for the same reason `emitCselReg` is: `ensureRegLive` can only
+    /// add a reload, and a load does not write NZCV.
+    fn emitCincEqReg(self: *Arm64Compiler, dst: u5, src: u5) Error!void {
+        try self.ensureRegLive(src);
+        try self.emitFmt(
+            0x9a800400 | (@as(u32, src) << 16) | (@as(u32, @intFromEnum(Condition.ne)) << 12) | (@as(u32, src) << 5) | @as(u32, dst),
+            "csinc x{d}, x{d}, x{d}, ne",
+            .{ dst, src, src },
+        );
+    }
+
+    /// `csel xd, xzr, xm, eq` — `xd = Z ? 0 : xm`. `xzr` is register 31 in the
+    /// Rn field; CSEL has no SP-encoding ambiguity there.
+    fn emitCselZeroEqReg(self: *Arm64Compiler, dst: u5, m: u5) Error!void {
+        try self.ensureRegLive(m);
+        try self.emitFmt(
+            encodeCsel(dst, 31, m, .eq),
+            "csel x{d}, xzr, x{d}, eq",
+            .{ dst, m },
+        );
     }
 
     fn emitMsubReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, acc: u5) Error!void {
@@ -13443,4 +13749,112 @@ test "carried locals past the home budget still go to the frame" {
     // …and the bank is still fully used, so the frame is the overflow rather
     // than the default.
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "str x28, [sp") != null);
+}
+
+/// THE CORRECTNESS OBLIGATION OF THE CONSTANT-DIVISOR SEQUENCE, DISCHARGED
+/// AGAINST THE LAW ITSELF.
+///
+/// `@divFloor` and `@mod` are Zig's names for what `law.numeric.floor` says
+/// `//` and `%` mean, so they are the ORACLE here — not a table of expected
+/// numbers a reader would have to trust, and not the emitter's own opinion.
+/// `flooredMagicAnswer` models the emitted instruction sequence in the same
+/// wrapping i64 the machine uses, so a disagreement here is a wrong answer
+/// this backend would have shipped.
+///
+/// THE DIVIDEND SET IS CHOSEN, not sampled. The relation the sequence rests on
+/// — `S(n) = floor(n/k) - [n < 0 AND k | n]` — has its extremes exactly at the
+/// ends of the quotient range and at the ends of the remainder range, so the
+/// set walks `n = q*k + r` for `q` at both extremes and `r` at both ends of
+/// `[0, k)`, plus INT_MIN, INT_MAX, zero and both signs of one, plus a
+/// pseudorandom spread that would catch anything the reasoning missed.
+fn expectMagicAgreesWithLaw(k: i64) !void {
+    const mg = Arm64Compiler.magicFlooredDivisor(k) orelse return error.NoMagic;
+    const nmin: i64 = std.math.minInt(i64);
+    const nmax: i64 = std.math.maxInt(i64);
+
+    const check = struct {
+        fn one(kk: i64, m: Arm64Compiler.FlooredMagic, n: i64) !void {
+            try std.testing.expectEqual(@divFloor(n, kk), Arm64Compiler.flooredMagicAnswer(kk, m, n, false));
+            try std.testing.expectEqual(@mod(n, kk), Arm64Compiler.flooredMagicAnswer(kk, m, n, true));
+        }
+    }.one;
+
+    for ([_]i64{ nmin, nmin + 1, nmin + 2, -2, -1, 0, 1, 2, nmax - 2, nmax - 1, nmax }) |n| try check(k, mg, n);
+
+    const qmin: i64 = @divFloor(nmin, k);
+    const qmax: i64 = @divFloor(nmax, k);
+    const qs = [_]i64{ qmin, qmin + 1, qmin + 2, -2, -1, 0, 1, 2, qmax - 2, qmax - 1, qmax };
+    for (qs) |q| {
+        if (q < qmin or q > qmax) continue;
+        const base: i128 = @as(i128, q) * @as(i128, k);
+        var r: i64 = 0;
+        while (r < k and r < 4) : (r += 1) {
+            const n: i128 = base + r;
+            if (n >= nmin and n <= nmax) try check(k, mg, @intCast(n));
+            const n2: i128 = base + k - 1 - r;
+            if (n2 >= nmin and n2 <= nmax) try check(k, mg, @intCast(n2));
+        }
+    }
+
+    var s: u64 = 0x243f6a8885a308d3 ^ @as(u64, @bitCast(k));
+    var i: u32 = 0;
+    while (i < 4000) : (i += 1) {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        try check(k, mg, @bitCast(s));
+    }
+}
+
+test "constant divisor magic answers the floored law on every boundary dividend" {
+    var k: i64 = 3;
+    while (k <= 600) : (k += 1) {
+        if (Arm64Compiler.powerOfTwoShift(k) != null) continue;
+        try expectMagicAgreesWithLaw(k);
+    }
+    // The ends of the admitted range and the shapes that have historically
+    // broken magic-number searches: one below and one above a power of two,
+    // a divisor larger than half the dividend range, and the largest i64.
+    for ([_]i64{
+        3,
+        7,
+        9,
+        10,
+        100,
+        1000,
+        65535,
+        65537,
+        1000000007,
+        (@as(i64, 1) << 31) - 1,
+        (@as(i64, 1) << 32) + 1,
+        (@as(i64, 1) << 62) - 1,
+        (@as(i64, 1) << 62) + 1,
+        (@as(i64, 1) << 62) + (@as(i64, 1) << 61),
+        std.math.maxInt(i64) - 1,
+        std.math.maxInt(i64),
+    }) |k2| {
+        if (Arm64Compiler.powerOfTwoShift(k2) != null) continue;
+        try expectMagicAgreesWithLaw(k2);
+    }
+}
+
+test "constant divisor magic is exhaustive over a dense dividend window" {
+    var k: i64 = 3;
+    while (k <= 40) : (k += 1) {
+        if (Arm64Compiler.powerOfTwoShift(k) != null) continue;
+        const mg = Arm64Compiler.magicFlooredDivisor(k).?;
+        var n: i64 = -300000;
+        while (n <= 300000) : (n += 1) {
+            try std.testing.expectEqual(@divFloor(n, k), Arm64Compiler.flooredMagicAnswer(k, mg, n, false));
+            try std.testing.expectEqual(@mod(n, k), Arm64Compiler.flooredMagicAnswer(k, mg, n, true));
+        }
+    }
+}
+
+test "the divisors this realization refuses keep the sdiv path" {
+    // A power of two has a ONE-instruction realization and must not reach the
+    // multiply; 1 and 0 and every negative divisor are outside the derivation.
+    for ([_]i64{ -9223372036854775807 - 1, -1000000, -7, -2, -1, 0, 1, 2, 4, 8, 1024, (@as(i64, 1) << 62) }) |k| {
+        try std.testing.expectEqual(@as(?Arm64Compiler.FlooredMagic, null), Arm64Compiler.magicFlooredDivisor(k));
+    }
 }
