@@ -384,6 +384,21 @@ pub const Live = struct {
 // O2 + O3 — inertness of an expression
 // ---------------------------------------------------------------------------
 
+/// O2 for one application of a relation that `law.relation.property` says owes
+/// a NON-ZERO DIVISOR.
+///
+/// The obligation is discharged here only the one way this walk can see: the
+/// divisor is a literal and it is not zero. Every other divisor — a name, a
+/// call result, a value read out of the world — is `may_trap`, because
+/// `dnir_lower` emits a real guard for it and a guard that can fire is a fault.
+/// The chip not faulting on its own is the reason to refuse a possibly-zero
+/// divisor, never a reason to allow one.
+fn divisorObligationBlocker(opts: Options, lhs: *const ast.Expr, rhs: *const ast.Expr) ?Blocker {
+    const d = intLiteralOf(rhs) orelse return .may_trap;
+    if (d == 0) return .may_trap;
+    return inert(opts, lhs);
+}
+
 /// `null` when the expression is inert: it computes a value, cannot fault, and
 /// touches nothing outside itself. Otherwise the obligation it fails.
 ///
@@ -399,15 +414,14 @@ pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
         // is one this walk may KILL is a separate question, answered by O1.
         .name => null,
 
-        .binop => |b| switch (b.op) {
-            // THE trapping arithmetic. Admitted only against a literal divisor
-            // that is provably non-zero; `sdiv` not faulting today is the
-            // reason to exclude it, not a reason to allow it.
-            .div, .idiv, .mod => blk: {
-                const d = intLiteralOf(b.rhs) orelse break :blk .may_trap;
-                if (d == 0) break :blk .may_trap;
-                break :blk inert(opts, b.lhs);
-            },
+        // THE trapping arithmetic, and WHICH relations those are is
+        // `law.relation.property`'s answer, never a list kept here. This arm
+        // used to spell `.div, .idiv, .mod` itself; the identical hand-kept
+        // list in `dnir_lower.lowerBinop` was missing `.idiv` and let an opaque
+        // runtime zero through `//` answer 0 instead of faulting.
+        .binop => |b| if (demand_projection.lawsOf(b.op).divisor_nonzero)
+            divisorObligationBlocker(opts, b.lhs, b.rhs)
+        else switch (b.op) {
             // Wrapping ALU and comparison — no fault, no memory, no world.
             .add, .sub, .mul, .band, .bor, .bxor, .lshift, .rshift, .eq, .neq, .lt, .gt, .leq, .geq, .@"and", .@"or" => inert(opts, b.lhs) orelse inert(opts, b.rhs),
             // `concat` MATERIALISES, and materialising a value no observer
@@ -431,6 +445,12 @@ pub fn inert(opts: Options, e: *const ast.Expr) ?Blocker {
             // `matmul` and `pipeline` are applications, `contains` is a search
             // over a place, `pow` is a runtime call on this backend.
             .matmul, .pipeline, .contains, .pow => .unsupported_shape,
+            // UNREACHABLE WHILE THE LAW HOLDS, and it answers the same thing
+            // anyway. Named so this switch stays exhaustive — a new `BinOp`
+            // still has to be classified here — without becoming a second list
+            // that could disagree with the law about the answer. Only about
+            // which operators arrive, and the law owns that.
+            .div, .idiv, .mod => divisorObligationBlocker(opts, b.lhs, b.rhs),
         },
 
         .unop => |u| switch (u.op) {

@@ -526,6 +526,37 @@ pub const Law = packed struct {
     /// Can produce zero from a nonzero left operand. If false, the relation
     /// PRESERVES the `nonzero` projection unconditionally.
     can_zero_nonzero: bool = true,
+    /// THE RELATION IS UNDEFINED AT A ZERO RIGHT OPERAND, so every application
+    /// of it carries a divisor-nonzero PROOF OBLIGATION that something must
+    /// discharge — a compile-time refusal, a dominating fact, or a runtime
+    /// guard — before the application may be realized.
+    ///
+    /// ONE OBLIGATION FOR `/`, `//` AND `%`, and it is theirs BY RELATION LAW,
+    /// not by an operator list a consumer keeps. Every consumer that spelled
+    /// its own list got a different one and one of them was WRONG: the runtime
+    /// guard in `dnir_lower.lowerBinop` read `tag == .div or tag == .mod`, so
+    /// `//` reached a bare `sdiv`, and AArch64 `sdiv` ANSWERS 0 rather than
+    /// faulting. Measured: an opaque runtime zero through `7 // d` printed `0`
+    /// and exited 0, while `7 / d` and `7 % d` on the identical divisor
+    /// aborted. A wrong answer, and a fourth outcome `soundness.md` §1 says
+    /// does not exist.
+    ///
+    /// IT IS A LAW AND NOT A REALIZATION. It says an obligation EXISTS; it does
+    /// not say how any consumer discharges it. `sema` discharges the literal
+    /// case with a diagnostic, `dnir_lower` discharges the opaque case with a
+    /// guard it may elide against a dominating non-zero fact, and `demand`
+    /// reads it as "this statement can fault, so it is not dead". The float
+    /// case is not an exception to the law but a different relation: IEEE-754
+    /// DEFINES `x / 0.0`, so the operands, not the obligation, decide.
+    ///
+    /// `native_ir.divisorNonzero` is THE SAME OBLIGATION over the DNIR tag, for
+    /// the realization consumers. It is a second declaration and not a second
+    /// authority: `gate/layers.manifest` forbids a BACKEND importing SEMA, so
+    /// the one fact cannot be one declaration, and `tests.zig` `"divisor
+    /// obligation: IR and relation law agree"` walks every `ast.BinOp` through
+    /// `dnir_lower.binopTagOf` and fails if the two ever answer differently.
+    /// That test is what this defect did not have.
+    divisor_nonzero: bool = false,
 };
 
 pub fn lawsOf(op: ast.BinOp) Law {
@@ -539,7 +570,10 @@ pub fn lawsOf(op: ast.BinOp) Law {
         .bor => .{ .pure = true, .commutative = true, .associative = true, .idempotent = true, .bit_local = true, .ring_hom_mod_2k = true, .monotone_nonneg = true, .can_zero_nonzero = false },
         .band => .{ .pure = true, .commutative = true, .associative = true, .idempotent = true, .bit_local = true, .ring_hom_mod_2k = true, .has_absorbing = true, .can_zero_nonzero = true },
         .bxor => .{ .pure = true, .commutative = true, .associative = true, .bit_local = true, .ring_hom_mod_2k = true, .can_zero_nonzero = true },
-        .div, .idiv, .mod => .{ .commutative = false },
+        // The three relations whose right operand may not be zero. They are
+        // listed together HERE, once, so that no consumer has to list them at
+        // all — see `divisor_nonzero`.
+        .div, .idiv, .mod => .{ .commutative = false, .divisor_nonzero = true },
         else => .{},
     };
 }
@@ -563,6 +597,10 @@ pub fn composeLaws(outer: Law, inner: Law) Law {
         .monotone_nonneg = outer.monotone_nonneg and inner.monotone_nonneg,
         .has_absorbing = false,
         .can_zero_nonzero = outer.can_zero_nonzero or inner.can_zero_nonzero,
+        // An obligation ANYWHERE in the composite is an obligation on the
+        // composite. Unlike the algebraic rows above, this one joins by OR:
+        // dropping it would be claiming a proof nobody performed.
+        .divisor_nonzero = outer.divisor_nonzero or inner.divisor_nonzero,
     };
 }
 

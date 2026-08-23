@@ -12066,6 +12066,49 @@ fn emitDivisorZeroTrap(ctx: *LowerCtx, divisor: dnir.Value) Error!void {
     ctx.instrs.items[skip].branch_target = @intCast(ctx.instrs.items.len);
 }
 
+/// THE ONE PLACE A SOURCE RELATION MEETS ITS DNIR TAG. `null` is a relation
+/// with no tag — an application, a runtime helper, a shape this substrate does
+/// not realize as a binop — and the caller refuses it.
+///
+/// It is `pub` and it is NAMED because the two enums it joins sit on opposite
+/// sides of the layering firewall, so the divisor-nonzero obligation cannot be
+/// one declaration: `dnir.divisorNonzero` states it over the tag for the
+/// realization consumers, `demand_projection.Law.divisor_nonzero` states it
+/// over the relation for the meaning consumers, and this projection is what
+/// lets `tests.zig` prove the two agree instead of assuming it. That test is
+/// the machinery this defect lacked — the guard list and the tag set drifted
+/// apart with nothing running that could notice.
+pub fn binopTagOf(op: ast.BinOp) ?dnir.BinOpTag {
+    return switch (op) {
+        .add => .add,
+        .sub => .sub,
+        .mul => .mul,
+        .div => .div,
+        // `//` KEEPS ITS OWN IDENTITY. This read `.div, .idiv => .div`, which
+        // is where floor division was lost: the two operators became one tag
+        // and the backend then emitted `sdiv` for both. `(0-7) // 10` answered
+        // 0; the law answers -1. HPLS §92 — the host may not define relation
+        // law — and §4: the optimizer uses the LAW, so the tag has to be able
+        // to carry it. Splitting them is also what dropped `//`'s divisor
+        // guard, because that guard was keyed on the tag set this switch
+        // produces rather than on the obligation itself.
+        .idiv => .idiv,
+        .mod => .mod,
+        .eq => .eq,
+        .neq => .neq,
+        .lt => .lt,
+        .gt => .gt,
+        .leq => .leq,
+        .geq => .geq,
+        .band => .band,
+        .bor => .bor,
+        .bxor => .bxor,
+        .lshift => .shl,
+        .rshift => .shr,
+        else => null,
+    };
+}
+
 fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const ast.Expr) Error!dnir.Value {
     if (op == .concat and concatOperandOk(ctx, lhs) and concatOperandOk(ctx, rhs) and
         (exprIsStr(ctx, lhs) or exprIsStr(ctx, rhs)))
@@ -12081,39 +12124,29 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
     // Selected BEFORE either operand is lowered: an unsupported operator has to
     // refuse without having emitted the operands' instructions, which is what
     // the struct-literal field order used to guarantee.
-    const tag: dnir.BinOpTag = switch (op) {
-        .add => .add,
-        .sub => .sub,
-        .mul => .mul,
-        .div => .div,
-        // `//` KEEPS ITS OWN IDENTITY. This read `.div, .idiv => .div`, which
-        // is where floor division was lost: the two operators became one tag
-        // and the backend then emitted `sdiv` for both. `(0-7) // 10` answered
-        // 0; the law answers -1. HPLS §92 — the host may not define relation
-        // law — and §4: the optimizer uses the LAW, so the tag has to be able
-        // to carry it.
-        .idiv => .idiv,
-        .mod => .mod,
-        .eq => .eq,
-        .neq => .neq,
-        .lt => .lt,
-        .gt => .gt,
-        .leq => .leq,
-        .geq => .geq,
-        .band => .band,
-        .bor => .bor,
-        .bxor => .bxor,
-        .lshift => .shl,
-        .rshift => .shr,
-        else => return bailWith(ctx.diagnostic, @src(), @tagName(op)),
-    };
+    const tag: dnir.BinOpTag = binopTagOf(op) orelse
+        return bailWith(ctx.diagnostic, @src(), @tagName(op));
     const t = ctx.freshTemp();
     var a = try lowerExpr(ctx, lhs);
     var b = try lowerExpr(ctx, rhs);
+    // WHICH RELATIONS OWE A NON-ZERO DIVISOR IS NOT DECIDED HERE. This line
+    // used to read `tag == .div or tag == .mod` — a hand-kept operator list,
+    // at the emission site, over the DNIR enum — and that is the whole defect.
+    // `//` used to LOWER to `.div`, so the list covered it by accident; when
+    // `//` was given its own tag so it could carry floor law, the list was not
+    // updated with it. Floor division then reached a bare `sdiv`, which on
+    // AArch64 ANSWERS 0 rather than faulting, so an opaque runtime zero divisor
+    // through `//` returned 0 and exited 0 while `/` and `%` on the SAME
+    // divisor aborted. `dnir.divisorNonzero` is the one obligation the three
+    // share, stated beside the tags whose relation law it belongs to; every
+    // realization consumer asks it and none of them keeps a list.
+    //
     // Integer division only. IEEE-754 DEFINES `x / 0.0` as ±inf and §62 lists
     // infinities among the defined outcomes, so the float path has an answer
-    // already and must not be given a fault instead.
-    if (!f64_op and (tag == .div or tag == .idiv or tag == .mod)) try emitDivisorZeroTrap(ctx, b);
+    // already and must not be given a fault instead. The OPERANDS decide that,
+    // not the obligation — which is why this reads the operands separately and
+    // does not fold the float case into the law.
+    if (!f64_op and dnir.divisorNonzero(tag)) try emitDivisorZeroTrap(ctx, b);
     var result_ty: RT = if (f64_op) .f64 else .any;
     if (!f64_op) {
         if (unsignedComparison(ctx, op, lhs, rhs)) |conv| {

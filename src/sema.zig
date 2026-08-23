@@ -19,6 +19,7 @@ const tail_result_demand = @import("tail_result_demand.zig");
 const wiring = @import("wiring.zig");
 const collection_relation = @import("collection_relation.zig");
 const authority_projection = @import("authority_projection.zig");
+const demand_projection = @import("demand_projection.zig");
 
 const callable_brace_error = "c0 §43 law.brace: braced application requires a descriptor subject; this subject resolved in callable space, not descriptor space, and ordinary callable application uses parentheses";
 
@@ -5307,7 +5308,13 @@ pub const Sema = struct {
     /// separation is by how the divisor is WRITTEN — `0` versus `0.0` — which
     /// is the one signal available before gap[065]'s `i64 / i64 : f64` typing
     /// is repaired.
+    /// WHICH relations this applies to is `law.relation.property`'s
+    /// `divisor_nonzero`, not the spelling table below. The table answers only
+    /// how to NAME the relation in the message; asking it which relations owe a
+    /// non-zero divisor is how `dnir_lower` came to omit `//` from its own copy
+    /// of the same list and let an opaque runtime zero return 0.
     fn check_literal_zero_divisor(self: *Sema, loc: ast.Loc, op: ast.BinOp, rhs: *const ast.Expr) void {
+        if (!demand_projection.lawsOf(op).divisor_nonzero) return;
         const spelling: []const u8 = switch (op) {
             .div => "/",
             .idiv => "//",

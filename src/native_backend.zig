@@ -7323,12 +7323,10 @@ const Arm64Compiler = struct {
         if (self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs)) return false;
         if (ins.application != null or ins.relation != null or ins.value != null) return false;
         if (ins.result == null) return false;
-        return switch (ins.binop) {
-            .add, .sub, .mul, .band, .bor, .bxor, .shl, .shr => true,
-            .eq, .neq, .lt, .gt, .leq, .geq => true,
-            // Division is the trapping one. See the admission rule above.
-            .div, .idiv, .mod => false,
-        };
+        // Division is the trapping one, and WHICH tags those are is
+        // `dnir.divisorNonzero`'s answer, not a list kept here. See the
+        // admission rule above.
+        return !dnir.divisorNonzero(ins.binop);
     }
 
     /// Recognize `br when_x C -> J ; <one ALU op> ; store_local L ;
@@ -7591,10 +7589,10 @@ const Arm64Compiler = struct {
         if (ins.op == .binop and ins.binop == .mul and constBinopRealization(ins) == null) return false;
         if (self.ifConvArmOpAdmissible(ins)) return true;
         if (ins.op != .binop) return false;
-        switch (ins.binop) {
-            .div, .idiv, .mod => {},
-            else => return false,
-        }
+        // Only the divisor-obligation tags reach here: everything else was
+        // already answered by `ifConvArmOpAdmissible` above. The obligation is
+        // `dnir.divisorNonzero`'s to state; this asks it.
+        if (!dnir.divisorNonzero(ins.binop)) return false;
         if (ins.ty == .f64 or self.cur_func_float) return false;
         if (self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs)) return false;
         if (ins.application != null or ins.relation != null or ins.value != null) return false;
@@ -7701,11 +7699,12 @@ const Arm64Compiler = struct {
             }
             if (!self.ifConvArmOpAdmissibleTwoSided(op)) {
                 self.ifconv_refusal = switch (op.op) {
-                    .binop => switch (op.binop) {
-                        .div, .idiv, .mod => "arm-op-trapping",
-                        .mul => "arm-op-latency",
-                        else => "arm-op-shape",
-                    },
+                    .binop => if (dnir.divisorNonzero(op.binop))
+                        "arm-op-trapping"
+                    else if (op.binop == .mul)
+                        "arm-op-latency"
+                    else
+                        "arm-op-shape",
                     .load_index, .store_index, .load_field, .store_field, .alloc_slots => "arm-op-trapping",
                     else => "arm-op-shape",
                 };

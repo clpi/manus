@@ -86,6 +86,45 @@ pub const BinOpTag = enum {
     shr,
 };
 
+/// THE DIVISOR-NONZERO OBLIGATION, for the three relations that carry it.
+///
+/// `/`, `//` and `%` are UNDEFINED at a zero right operand, so every
+/// application of one owes a proof that its divisor is not zero. Something must
+/// discharge that: `sema` refuses the literal case with a diagnostic,
+/// `dnir_lower` emits a runtime guard for the case it cannot decide (and elides
+/// it against a dominating non-zero fact), and `native_backend` refuses to
+/// speculate one onto a path a branch was protecting. Three discharges, ONE
+/// obligation, and it is stated HERE — beside the tags whose relation law it
+/// belongs to — so that no consumer has to spell the operator list at all.
+///
+/// EVERY CONSUMER THAT SPELLED ITS OWN LIST GOT A DIFFERENT ONE, AND ONE OF
+/// THEM WAS WRONG. `dnir_lower.lowerBinop` guarded on `tag == .div or
+/// tag == .mod`. That list predates `idiv` existing as a tag: `//` used to
+/// lower to `.div`, so it was covered by accident, and splitting the tags out
+/// so `//` could carry floor law silently dropped its guard. AArch64 `sdiv`
+/// does not fault — it ANSWERS 0 — so `7 // d` with an opaque runtime zero `d`
+/// printed 0 and exited 0 while `7 / d` and `7 % d` on the same divisor
+/// aborted. Not a missing diagnostic: a wrong answer, and the fourth outcome
+/// `docs/spec/soundness.md` §1 says does not exist.
+///
+/// IT IS AN OBLIGATION, NOT A REALIZATION — it says a proof is owed, never how
+/// one is discharged or what any backend emits. And it is not the float
+/// question: IEEE-754 DEFINES `x / 0.0` as ±inf, so the OPERANDS excuse the
+/// guard on the float path, not the law. A consumer asks both.
+///
+/// `demand_projection.Law.divisor_nonzero` is the same obligation over
+/// `ast.BinOp`, for the consumers on the meaning side of the layering firewall
+/// (`gate/layers.manifest`: a BACKEND may not import SEMA). The two cannot be
+/// one declaration, so `tests.zig` `"divisor obligation: IR and relation law
+/// agree"` makes them agree by execution rather than by hope — the check that
+/// would have caught this defect the day the tag was split.
+pub fn divisorNonzero(tag: BinOpTag) bool {
+    return switch (tag) {
+        .div, .idiv, .mod => true,
+        .add, .sub, .mul, .eq, .neq, .lt, .gt, .leq, .geq, .band, .bor, .bxor, .shl, .shr => false,
+    };
+}
+
 pub const BranchCondition = enum {
     unconditional,
     when_true,

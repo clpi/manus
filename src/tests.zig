@@ -111,3 +111,59 @@ test {
     // so those executable controls are part of the ordinary unit-test root.
     _ = @import("main.zig");
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE DIVISOR-NONZERO OBLIGATION, ACROSS THE LAYERING FIREWALL
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// `/`, `//` and `%` are undefined at a zero divisor, and that one obligation
+/// has to be readable from BOTH sides of `gate/layers.manifest`: the meaning
+/// consumers (`sema`, `demand`) hold an `ast.BinOp`, the realization consumers
+/// (`dnir_lower`, `native_backend`) hold a `dnir.BinOpTag`, and a BACKEND may
+/// not import SEMA. So it is declared twice — `demand_projection.Law
+/// .divisor_nonzero` and `native_ir.divisorNonzero` — and this is the runner
+/// that makes the two declarations one fact rather than two hopes.
+///
+/// IT EXISTS BECAUSE THE DRIFT ALREADY HAPPENED AND NOTHING NOTICED. `//` used
+/// to lower to the `.div` tag; the guard site's hand-kept list, `tag == .div or
+/// tag == .mod`, covered it by accident. Giving `//` its own tag so it could
+/// carry floor law dropped it out of that list, and AArch64 `sdiv` answers 0
+/// instead of faulting, so an opaque runtime zero through `//` returned 0 with
+/// exit 0. The tag split DID break exhaustive switches, and those the compiler
+/// reported (see the `wasm_backend.zig` note above); an `if` comparing two tags
+/// is not a switch, so nothing reported this one. A set equality is what an
+/// exhaustiveness check cannot give you, and it is what this asserts.
+test "divisor obligation: IR and relation law agree" {
+    const ast = @import("ast.zig");
+    const dnir = @import("native_ir.zig");
+    const dnir_lower = @import("dnir_lower.zig");
+    const demand_projection = @import("demand_projection.zig");
+
+    var carriers: usize = 0;
+    inline for (@typeInfo(ast.BinOp).@"enum".fields) |field| {
+        const op: ast.BinOp = @enumFromInt(field.value);
+        const law = demand_projection.lawsOf(op).divisor_nonzero;
+        if (dnir_lower.binopTagOf(op)) |tag| {
+            // A relation this substrate realizes as a binop. The two
+            // declarations answer for the same relation and must agree.
+            try std.testing.expectEqual(law, dnir.divisorNonzero(tag));
+        } else {
+            // A relation with no tag still may not owe a divisor silently: it
+            // would be an obligation with no realization consumer able to see
+            // it. `pow` is the live example and it does NOT carry one today.
+            try std.testing.expect(!law);
+        }
+        if (law) carriers += 1;
+    }
+
+    // AND THE SET IS NOT EMPTY, which is the failure a pure agreement check
+    // cannot see: two declarations that both say "nothing owes anything" agree
+    // perfectly and guard nothing. Exactly `/`, `//`, `%`.
+    try std.testing.expectEqual(@as(usize, 3), carriers);
+    try std.testing.expect(demand_projection.lawsOf(.div).divisor_nonzero);
+    try std.testing.expect(demand_projection.lawsOf(.idiv).divisor_nonzero);
+    try std.testing.expect(demand_projection.lawsOf(.mod).divisor_nonzero);
+    try std.testing.expect(dnir.divisorNonzero(.div));
+    try std.testing.expect(dnir.divisorNonzero(.idiv));
+    try std.testing.expect(dnir.divisorNonzero(.mod));
+}
