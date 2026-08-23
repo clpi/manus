@@ -803,6 +803,27 @@ const Arm64Compiler = struct {
     /// promotes nothing, so every DNIR-only entry point keeps today's emission
     /// byte for byte.
     const_licence: ?*const const_table.Licence = null,
+    /// The resident graph this DNIR projection carries coordinates into, when
+    /// it carries any. W8 (two-sided if-conversion) reads `ApplicationFact`
+    /// from here rather than re-deriving effect from instruction shape; a null
+    /// graph is "no fact published", which is a refusal and not a licence.
+    graph: ?*const semantic_graph.SemanticGraph = null,
+    /// Why the last two-sided if-conversion candidate was refused, for the
+    /// census `IDOL_IFCONV_REPORT` prints. Purely diagnostic.
+    ifconv_refusal: []const u8 = "",
+    ifconv_admitted: u32 = 0,
+    ifconv_refused_trap: u32 = 0,
+    ifconv_refused_effect_unknown: u32 = 0,
+    ifconv_refused_lineage: u32 = 0,
+    ifconv_refused_diverge: u32 = 0,
+    ifconv_refused_cap: u32 = 0,
+    ifconv_refused_latency: u32 = 0,
+    ifconv_candidates: u32 = 0,
+    ifconv_trace: bool = false,
+    /// First value id past everything the function being compiled uses. W8's
+    /// select needs a carrier id that belongs to no local and no temp; see
+    /// `emitIfConvertedTwoSided`.
+    synth_value_next: u32 = 0,
     /// Promoted tables of the function being compiled: `alloc_slots` result temp
     /// -> the `__TEXT,__const` symbol its base address relocates against.
     /// Cleared per function.
@@ -1492,6 +1513,7 @@ const Arm64Compiler = struct {
     }
 
     fn compileDnirModule(self: *Arm64Compiler, m: dnir.Module) Error!void {
+        self.graph = m.graph;
         try self.emitAsmHeader();
         for (m.dense_tables) |table| {
             if (table.elem_ty != .i64 or table.values.len == 0) return self.refuse(@src());
@@ -2475,6 +2497,7 @@ const Arm64Compiler = struct {
         self.gp_home_regs = @splat(false);
         self.gp_call_home_regs = 0;
         try self.computeValueLastUse(f);
+        self.synth_value_next = maxDnirValueId(f) +| 1;
         self.imm_hoist.clearRetainingCapacity();
         self.hoist_preheader.clearRetainingCapacity();
         self.hoist_depth = 0;
@@ -3021,11 +3044,34 @@ const Arm64Compiler = struct {
                     self.ifConversionArm(f, b.instrs[bi..], flat_idx, null, 0)
                 else
                     null;
+                // W8: the same three condition shapes, with BOTH arms present.
+                // Tried only after W7 declines, so a one-sided `if` keeps the
+                // emission it has today byte for byte.
+                const ifconv2: ?TwoSidedPlan = if (ifconv != null)
+                    null
+                else if (fuse_branch)
+                    self.ifConversionTwoSided(f, b.instrs[bi + 1 ..], flat_idx + 1, ins, 1)
+                else if (fuse_named)
+                    self.ifConversionTwoSided(f, b.instrs[bi + 2 ..], flat_idx + 2, ins, 2)
+                else if (ins.op == .br and ins.branch_condition != .unconditional)
+                    self.ifConversionTwoSided(f, b.instrs[bi..], flat_idx, null, 0)
+                else
+                    null;
                 // DNIR instructions this iteration consumes BEYOND `ins`. Each
                 // one still gets a code offset below so branch targets resolve.
+                if (self.ifconv_refusal.len != 0) {
+                    self.ifconv_candidates += 1;
+                    if (self.ifconv_trace) {
+                        std.debug.print("  ifconv2 refuse {s} @{d} in {s}\n", .{ self.ifconv_refusal, flat_idx, f.name });
+                    }
+                    self.ifconv_refusal = "";
+                }
                 var extra_consumed: u32 = 0;
                 if (ifconv) |plan| {
                     try self.emitIfConverted(&temps, &pinned, plan, &branch_patches);
+                    extra_consumed = plan.extra;
+                } else if (ifconv2) |plan| {
+                    try self.emitIfConvertedTwoSided(&temps, &pinned, plan, &branch_patches);
                     extra_consumed = plan.extra;
                 } else if (fuse_branch) {
                     try self.emitFusedCompareBranch(&temps, &pinned, ins, b.instrs[bi + 1], &branch_patches);
@@ -6964,6 +7010,53 @@ const Arm64Compiler = struct {
         }
     }
 
+    /// Does any branch FROM OUTSIDE `[window_lo, window_hi]` land inside
+    /// `[lo, hi]`?
+    ///
+    /// `dnirBranchLandsWithin` cannot answer this question for a two-sided
+    /// window, and the difference is not a detail: the window's OWN conditional
+    /// branch targets the else arm, which is inside the window by construction.
+    /// Asking the one-sided question refuses every two-sided `if` there is.
+    /// What actually has to hold is that no branch the fold does not erase
+    /// lands on an index the fold collapses.
+    fn dnirBranchIntoWindow(f: dnir.Function, lo: u32, hi: u32, window_lo: u32, window_hi: u32) bool {
+        var idx: u32 = 0;
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                defer idx += 1;
+                if (ins.op != .br) continue;
+                if (idx >= window_lo and idx <= window_hi) continue;
+                if (ins.branch_target >= lo and ins.branch_target <= hi) return true;
+            }
+        }
+        return false;
+    }
+
+    /// The largest value id this function mentions, over every id-bearing
+    /// field of every instruction. Locals and temps share one counter, so
+    /// `max + 1` is a value id that names neither.
+    fn maxDnirValueId(f: dnir.Function) u32 {
+        var top: u32 = 0;
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if (ins.result) |r| top = @max(top, r);
+                const fixed = [_]dnir.Value{ ins.lhs, ins.rhs, ins.third };
+                for (fixed) |v| switch (v) {
+                    .local, .temp => |slot| top = @max(top, slot),
+                    else => {},
+                };
+                for (ins.vals) |v| switch (v) {
+                    .local, .temp => |slot| top = @max(top, slot),
+                    else => {},
+                };
+                for (ins.pack_results) |pr| {
+                    if (pr.temp) |t| top = @max(top, t);
+                }
+            }
+        }
+        return top;
+    }
+
     /// Does any branch in the function land strictly inside `[lo, hi]`? A fold
     /// that erases instructions must not erase a landing site: every consumed
     /// index collapses onto one code offset, so a branch INTO the window would
@@ -7233,6 +7326,545 @@ const Arm64Compiler = struct {
             self.gp_reg_owner[dst] = t;
         }
         try self.compileDnirInstr(temps, pinned, plan.store, branch_patches, null);
+    }
+
+    // ------------------------------------------------------------------
+    // W8 — TWO-SIDED IF-CONVERSION.
+    //
+    // W7 above converts `if c \n L = <op>`, a branch with ONE arm. The shape
+    // that carries the measured cost is the branch with TWO:
+    //
+    //     if x % 2 == 0        cmp/b.ne  -> else
+    //         x = x // 2       asr ; mov ; b join
+    //     else
+    //         x = 3 * x + 1    madd ; mov
+    //
+    // Both arms assign ONE binding, so the whole `if` is a select between two
+    // values — `csel`.
+    //
+    // GAP-205 names this branch as collatz's ENTIRE remaining gap to clang -O2
+    // (1.47x, with the arithmetic already equal: `and #1`, `asr #1`, `madd`).
+    // THAT IS MEASURED HERE AND IT IS WRONG. Converting collatz's branch and
+    // changing nothing else makes the kernel SLOWER, 1.53x -> 1.70x, because
+    // the select makes the expensive arm's latency loop-carried. The full
+    // ladder is in `ifConvArmOpAdmissibleTwoSided`, which is where the
+    // profitability rule that declines collatz lives.
+    //
+    // The transform is kept, and measured, because on the shape it is actually
+    // for — an unpredictable branch with CHEAP arms — it is worth 3.02x
+    // (`sel.id`: 0.1703s branchy, 0.0564s converted, 5e7 iterations, min of 9,
+    // both from this same compiler with only this flag between them).
+    //
+    // SOUNDNESS. Converting executes BOTH arms, so everything W7's admission
+    // rule refuses is refused here for the same reasons and one more besides:
+    //
+    //   - EFFECTS. An arm may contain no application at all. Where an
+    //     instruction DOES carry application lineage the graph's
+    //     `ApplicationFact.effect` is consulted (`armInstrEffectAdmissible`)
+    //     and only `.none` licenses anything; `.unknown` is "nobody published
+    //     a fact", which is a refusal. Such an instruction is then STILL
+    //     refused, because collapsing the window erases the realization row
+    //     the module's `application-realization-count` check requires — the
+    //     fact would license the speculation, the emitter cannot yet carry the
+    //     lineage. Both refusals are counted separately (`IDOL_IFCONV_REPORT`).
+    //   - TRAPS. `div`/`idiv`/`mod` and every indexed or field access stay out
+    //     of the whitelist. A speculated arm must not be able to fault, and
+    //     that is also why this transform does NOT interact with the div-by-zero
+    //     trap block: an arm that could reach one is never admitted.
+    //   - DIVERGENCE. The window is straight-line by construction: anything
+    //     other than the exact `br / ops / store / br / ops / store` shape
+    //     refuses, and `dnirBranchLandsWithin` refuses a branch INTO it.
+    //   - ALLOCATION. `alloc_slots` is not in the whitelist.
+    //   - f64. `fcsel` is a different encoding and is not emitted here.
+    //
+    // THE JOIN. Both arms must store to the SAME local with the same
+    // descriptor. The converted form performs that store EXACTLY ONCE, through
+    // the ordinary `store_local` path, so a binding read after the join reads
+    // from where it always did and a register-homed local stays homed. This is
+    // the failure mode a prior loop transform here shipped: semantically
+    // profitable, and it moved the value the process exits with.
+    //
+    // PROFITABILITY. Each arm is capped at `if_conv_arm_op_cap` ALU operations,
+    // so conversion pays at most that many extra executed instructions per
+    // iteration (the arm that would not have run) plus one `csel`, and saves
+    // one branch. At the ~4 IPC this backend's scalar streams measure that is
+    // under a cycle against ~13 cycles per mispredict, so the break-even
+    // misprediction rate is a few percent. The cap is the bound: a longer arm's
+    // cost grows while the saving stays capped at one mispredict. Idol still
+    // publishes no edge-probability fact, so nothing here is profile-driven.
+    // ------------------------------------------------------------------
+
+    /// Ops admitted in ONE arm. Two is not a tuning knob: it is the length of
+    /// `3 * x + 1` (a `mul` and an `add`, which the `madd` fusion then folds
+    /// back into one instruction), and the bound the profitability argument
+    /// above is stated against.
+    const if_conv_arm_op_cap: u32 = 2;
+
+    /// Master switch for W8. The SEVERING control flips this to `false` and
+    /// rebuilds: the branch comes back, and so does the timing.
+    const two_sided_if_conversion = true;
+
+    const TwoSidedPlan = struct {
+        cmp: ?dnir.Instr,
+        br: dnir.Instr,
+        then_ops: []const dnir.Instr,
+        then_store: dnir.Instr,
+        else_ops: []const dnir.Instr,
+        else_store: dnir.Instr,
+        extra: u32,
+    };
+
+    /// W8's arm whitelist: W7's, plus the ONE widening two-sided conversion
+    /// needs and can justify.
+    ///
+    /// W7 refuses `div`/`idiv`/`mod` outright, and its reason is exact:
+    /// "division is THE trapping arithmetic... this backend's `sdiv` happens
+    /// not to fault on zero today, which is precisely why it must be excluded
+    /// — the exclusion has to survive a future divide check."
+    ///
+    /// That reason is about the DIVIDE INSTRUCTION, and `constBinopRealization`
+    /// answers exactly when no divide instruction is emitted. `x // 2` is
+    /// `asr xd, xn, #1` — an identity over the full i64 domain under floored
+    /// law, needing no range fact, and containing nothing that can fault now or
+    /// under any future divide check, because there is no divide left in it.
+    /// A divisor that is not a literal, or a literal that reaches `sdiv`, is
+    /// still refused; the rule is "this arm emits no trapping instruction",
+    /// not "this divisor looks safe".
+    ///
+    /// It is also the widening the measured shape needs: collatz's then-arm IS
+    /// `x = x // 2`, and without this the whole kernel refuses.
+    fn ifConvArmOpAdmissibleTwoSided(self: *const Arm64Compiler, ins: dnir.Instr) bool {
+        // THE LATENCY GUARD, AND IT IS MEASURED, NOT ASSUMED.
+        //
+        // One-sided conversion speculates an arm the branch might have skipped.
+        // TWO-SIDED conversion converts a CONTROL dependence into a DATA
+        // dependence: after the fold the select cannot retire until BOTH arms
+        // have, so both arms' latency lands on whatever path the selected value
+        // is on — and when that value is loop-carried, on the recurrence, every
+        // iteration. The branchy form paid the expensive arm only on the
+        // fraction of iterations that took it.
+        //
+        // MEASURED ON COLLATZ, the kernel this transform was written for
+        // (2e6 seeds, min of 6, each variant hand-written in asm and answering
+        // 277182223; clang -O2 = 1.000x):
+        //
+        //     branchy, `madd` for 3*x+1        1.531x
+        //     csel,    `madd` for 3*x+1        1.714x   <- CONVERSION LOSES
+        //     csel,    3*x as `add x,x,x lsl 1` 1.377x
+        //      + `tst` for the parity test      1.337x
+        //      + `csinc` folding the +1         0.998x  <- parity
+        //
+        // `madd`'s ~3-cycle latency on a 2-3 cycle recurrence is the whole
+        // reversal: with a one-cycle shifted add in its place the SAME
+        // conversion is a win. So the admissible arm is one whose realization
+        // is single-cycle ALU work, and a hardware multiply is refused. A
+        // multiply by a constant that `constBinopRealization` turns into a
+        // `mov`/`lsl` is not a hardware multiply and stays admitted.
+        //
+        // WHAT WOULD REPLACE THIS RULE with something better is a fact Idol
+        // does not publish: whether the assigned binding is on a recurrence,
+        // and what the branch's misprediction rate is. `ApplicationFact` has
+        // neither. Until it does, "the speculated arm must be as cheap as the
+        // branch it replaces" is the bound that can actually be checked.
+        if (ins.op == .binop and ins.binop == .mul and constBinopRealization(ins) == null) return false;
+        if (self.ifConvArmOpAdmissible(ins)) return true;
+        if (ins.op != .binop) return false;
+        switch (ins.binop) {
+            .div, .idiv, .mod => {},
+            else => return false,
+        }
+        if (ins.ty == .f64 or self.cur_func_float) return false;
+        if (self.valueIsFp(ins.lhs) or self.valueIsFp(ins.rhs)) return false;
+        if (ins.application != null or ins.relation != null or ins.value != null) return false;
+        if (ins.result == null) return false;
+        return constBinopRealization(ins) != null;
+    }
+
+    /// THE GRAPH'S EFFECT FACT, for one instruction of a speculated arm.
+    ///
+    /// An instruction with no application lineage denotes no relation
+    /// application: there is no call to speculate and nothing to ask about.
+    /// One that DOES carry lineage is decided by the graph and by nothing else
+    /// — `.none` is the only answer that licenses executing it on a path the
+    /// branch was protecting. `.unknown` is the honest "no fact was published"
+    /// and refuses; a null graph refuses for the same reason.
+    ///
+    /// AND `.none` IS NOT ENOUGH, WHICH IS MEASURED AND NOT ARGUED. The five
+    /// conditions `publishApplicationEffects` closes over are about
+    /// OBSERVABILITY — foreign declarations, unresolved calls, captures, world
+    /// members. None of them is about TERMINATION. A relation whose whole body
+    /// is `while i > 0 \n i = i + 1` satisfies every one of them, and
+    /// `idol graph` publishes `effect: none, authority: none` for its
+    /// application (control 3, `c3_diverge.id`). Speculating it hangs the
+    /// process, and the effect card says go ahead.
+    ///
+    /// So the fact this transform needs — "this arm terminates" — is a fact
+    /// Idol does not publish. `dnirInstrIsCall` below refuses on that ground
+    /// explicitly, rather than leaving the safety to the lineage rule that
+    /// happens to catch the same instructions for an unrelated reason.
+    fn armInstrEffectAdmissible(self: *const Arm64Compiler, ins: dnir.Instr) bool {
+        const application = ins.application orelse return true;
+        const graph = self.graph orelse return false;
+        const fact = graph.application(application) orelse return false;
+        return fact.effect == .none and fact.authority == .none;
+    }
+
+    /// An applied relation. No published fact answers whether one terminates,
+    /// so none may be speculated whatever its effect card says.
+    fn dnirInstrIsCall(ins: dnir.Instr) bool {
+        return switch (ins.op) {
+            .call_direct, .call_extern => true,
+            else => false,
+        };
+    }
+
+    /// One arm's operation list, checked as a straight-line chain of pure
+    /// integer ALU work whose intermediate values die inside the arm.
+    ///
+    /// `ops` are the instructions strictly between the arm's entry and its
+    /// terminating `store_local`; `at` is the flat index of `ops[0]`.
+    fn ifConvArmChainAdmissible(
+        self: *Arm64Compiler,
+        ops: []const dnir.Instr,
+        at: u32,
+        store: dnir.Instr,
+    ) bool {
+        if (ops.len > if_conv_arm_op_cap) {
+            self.ifconv_refusal = "arm-op-cap";
+            return false;
+        }
+        if (store.op != .store_local) {
+            self.ifconv_refusal = "arm-tail-not-store";
+            return false;
+        }
+        if (store.ty == .f64) {
+            self.ifconv_refusal = "f64";
+            return false;
+        }
+        if (store.application != null or store.relation != null or store.value != null) {
+            self.ifconv_refusal = "store-lineage";
+            return false;
+        }
+        if (store.result == null) {
+            self.ifconv_refusal = "store-no-local";
+            return false;
+        }
+        if (self.valueIsFp(.{ .local = store.result.? })) {
+            self.ifconv_refusal = "f64";
+            return false;
+        }
+
+        for (ops, 0..) |op, i| {
+            // THE FACT FIRST, so a refusal names the missing fact rather than
+            // the shape that happens to imply it.
+            if (!self.armInstrEffectAdmissible(op)) {
+                self.ifconv_refusal = "effect-not-none";
+                self.ifconv_refused_effect_unknown += 1;
+                return false;
+            }
+            // AND THE FACT THAT IS NOT PUBLISHED AT ALL. See
+            // `armInstrEffectAdmissible`: `effect: none` is measured to hold
+            // for a relation that never returns.
+            if (dnirInstrIsCall(op)) {
+                self.ifconv_refusal = "no-termination-fact";
+                self.ifconv_refused_diverge += 1;
+                return false;
+            }
+            if (op.application != null or op.relation != null or op.value != null) {
+                // Effect-free by the graph, and still refused: the collapsed
+                // window emits no realization row for it.
+                self.ifconv_refusal = "arm-op-lineage";
+                self.ifconv_refused_lineage += 1;
+                return false;
+            }
+            if (!self.ifConvArmOpAdmissibleTwoSided(op)) {
+                self.ifconv_refusal = switch (op.op) {
+                    .binop => switch (op.binop) {
+                        .div, .idiv, .mod => "arm-op-trapping",
+                        .mul => "arm-op-latency",
+                        else => "arm-op-shape",
+                    },
+                    .load_index, .store_index, .load_field, .store_field, .alloc_slots => "arm-op-trapping",
+                    else => "arm-op-shape",
+                };
+                if (std.mem.eql(u8, self.ifconv_refusal, "arm-op-trapping")) {
+                    self.ifconv_refused_trap += 1;
+                } else if (std.mem.eql(u8, self.ifconv_refusal, "arm-op-latency")) {
+                    self.ifconv_refused_latency += 1;
+                }
+                return false;
+            }
+            const t = op.result.?;
+            const consumer_at: u32 = at + @as(u32, @intCast(i)) + 1;
+            // Every intermediate value dies at the next instruction of this
+            // arm; the last one dies at the store. A wider live range means the
+            // value is read outside the window, and the window is collapsing.
+            const last = self.value_free_at.get(t) orelse {
+                self.ifconv_refusal = "arm-value-no-range";
+                return false;
+            };
+            if (last != consumer_at) {
+                self.ifconv_refusal = "arm-value-escapes";
+                return false;
+            }
+            if (i + 1 < ops.len) {
+                const nx = ops[i + 1];
+                const feeds = (nx.lhs == .temp and nx.lhs.temp == t) or
+                    (nx.rhs == .temp and nx.rhs.temp == t);
+                if (!feeds) {
+                    self.ifconv_refusal = "arm-not-a-chain";
+                    return false;
+                }
+            } else {
+                if (store.lhs != .temp or store.lhs.temp != t) {
+                    self.ifconv_refusal = "arm-store-reads-elsewhere";
+                    return false;
+                }
+            }
+        }
+
+        if (ops.len == 0) {
+            // A ZERO-OP ARM (`x = 5`, `x = y`) is admitted, but only for a
+            // value that is already in hand: an immediate or another local.
+            // A temp would be a value produced OUTSIDE the arm whose live
+            // range this window is not entitled to reason about.
+            switch (store.lhs) {
+                .i64, .local => {},
+                else => {
+                    self.ifconv_refusal = "arm-empty-store-source";
+                    return false;
+                },
+            }
+            if (self.valueIsFp(store.lhs)) {
+                self.ifconv_refusal = "f64";
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// Recognize
+    ///
+    ///     br when_x C -> E ; <then ops> ; store_local L ; br -> J
+    ///     E: <else ops> ; store_local L ; J:
+    ///
+    /// `at` is the flat index of `body[0]`, which must be the conditional
+    /// branch. Returns the plan, or null with `ifconv_refusal` set.
+    fn ifConversionTwoSided(
+        self: *Arm64Compiler,
+        f: dnir.Function,
+        body: []const dnir.Instr,
+        at: u32,
+        cmp: ?dnir.Instr,
+        consumed_before: u32,
+    ) ?TwoSidedPlan {
+        self.ifconv_refusal = "";
+        if (!two_sided_if_conversion) return null;
+        if (self.cur_func_float) return null;
+        if (body.len < 4) return null;
+        const br = body[0];
+        if (br.op != .br) return null;
+        switch (br.branch_condition) {
+            .when_true, .when_false => {},
+            .unconditional => return null,
+        }
+
+        // ---- STRUCTURE FIRST, AND SILENTLY. Everything down to the join test
+        // is deciding whether this branch is a two-sided `if` AT ALL. A loop's
+        // back edge and a guard clause reach here too, and counting them as
+        // declined conversions makes the census a count of branches rather than
+        // a count of decisions. Only past the join test does a refusal get a
+        // name and a tally.
+        //
+        // The conditional branch's target is where the ELSE arm starts, and
+        // that fixes the length of the THEN arm exactly.
+        if (br.branch_target < at + 3) return null;
+        const then_ops_len_wide = br.branch_target - at - 3;
+        if (then_ops_len_wide >= body.len) return null;
+        const n_then: usize = @intCast(then_ops_len_wide);
+        if (body.len < n_then + 3) return null;
+
+        const then_store = body[1 + n_then];
+        const then_join = body[2 + n_then];
+        if (then_join.op != .br or then_join.branch_condition != .unconditional) return null;
+        const join_idx = then_join.branch_target;
+        if (join_idx < at + 4 + n_then) return null;
+        const else_ops_len_wide = join_idx - at - 4 - @as(u32, @intCast(n_then));
+        if (else_ops_len_wide >= body.len) return null;
+        const n_else: usize = @intCast(else_ops_len_wide);
+        const window_len = 4 + n_then + n_else;
+        if (body.len < window_len) return null;
+        const else_store = body[3 + n_then + n_else];
+
+        // ---- FROM HERE IT IS A TWO-SIDED `if`, and every exit is a decision.
+        if (then_ops_len_wide > if_conv_arm_op_cap or else_ops_len_wide > if_conv_arm_op_cap) {
+            self.ifconv_refusal = "arm-op-cap";
+            self.ifconv_refused_cap += 1;
+            return null;
+        }
+
+        const then_ops = body[1 .. 1 + n_then];
+        const else_ops = body[3 + n_then .. 3 + n_then + n_else];
+
+        if (!self.ifConvArmChainAdmissible(then_ops, at + 1, then_store)) return null;
+        if (!self.ifConvArmChainAdmissible(else_ops, at + 3 + @as(u32, @intCast(n_then)), else_store)) return null;
+
+        // ONE BINDING, ONE DESCRIPTOR. Two arms that assign different locals
+        // are two selects, and two that assign the same local at different
+        // widths disagree about what the store means.
+        if (then_store.result.? != else_store.result.?) {
+            self.ifconv_refusal = "arms-assign-different-bindings";
+            return null;
+        }
+        if (!std.meta.eql(then_store.ty, else_store.ty)) {
+            self.ifconv_refusal = "arms-disagree-on-descriptor";
+            return null;
+        }
+
+        // Nothing may branch INTO the window: every consumed index collapses
+        // onto one code offset, so a landing site inside it arrives somewhere
+        // the window never meant.
+        // The window physically begins at the HEAD instruction the driver is
+        // holding, which is `consumed_before` indices before this branch when a
+        // compare (or a compare and its naming store) was folded in. Only the
+        // head keeps a code offset that means what it meant: every other index
+        // in the window collapses onto the offset PAST it, so a branch to any
+        // of them would arrive after the whole `if` instead of inside it.
+        const window_lo = at - consumed_before;
+        const window_hi = at + @as(u32, @intCast(window_len)) - 1;
+        if (dnirBranchIntoWindow(f, window_lo + 1, window_hi, window_lo, window_hi)) {
+            self.ifconv_refusal = "branch-into-window";
+            return null;
+        }
+
+        self.ifconv_refusal = "";
+        return .{
+            .cmp = cmp,
+            .br = br,
+            .then_ops = then_ops,
+            .then_store = then_store,
+            .else_ops = else_ops,
+            .else_store = else_store,
+            .extra = consumed_before + @as(u32, @intCast(window_len)) - 1,
+        };
+    }
+
+    /// Emit one arm's ALU chain unconditionally, answering with the register
+    /// holding the value the arm would have stored.
+    ///
+    /// THE `madd` FUSION IS DELIBERATELY NOT APPLIED HERE. `mulAddFusible`
+    /// would fold `mul ; add` into one `madd`, which is FEWER INSTRUCTIONS and
+    /// MORE LATENCY — and latency is what the guard in
+    /// `ifConvArmOpAdmissibleTwoSided` refuses. Folding here would reintroduce
+    /// a hardware multiply into a speculated arm through the back door, for a
+    /// `x * 4 + 1` the whitelist admitted only because the multiply reduces to
+    /// a shift. Instruction count is not the axis this window is bounded on.
+    fn emitIfConvArm(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *std.AutoHashMapUnmanaged(u32, u5),
+        ops: []const dnir.Instr,
+        store: dnir.Instr,
+        branch_patches: *std.ArrayList(DnirBranchPatch),
+        owned: *bool,
+    ) Error!u5 {
+        if (ops.len == 0) {
+            owned.* = false;
+            return try self.evalDnirValue(temps, store.lhs);
+        }
+        for (ops) |op| {
+            try self.compileDnirInstr(temps, pinned, op, branch_patches, null);
+            const t = op.result.?;
+            if (temps.get(t)) |r| {
+                if (r >= 9 and r < 29 and r != platform_reserved_reg and !self.gp_home_regs[r]) {
+                    self.gp_reg_owner[r] = t;
+                }
+            }
+        }
+        const last = ops[ops.len - 1].result.?;
+        owned.* = true;
+        return temps.get(last) orelse return self.refuseWith(@src(), "ifconv-arm-value-lost");
+    }
+
+    /// Emit the `csel` form of a recognized two-sided `if`.
+    ///
+    /// ORDER IS LOAD-BEARING, exactly as in `emitIfConverted`: both arms are
+    /// computed first (either may write NZCV — a comparison arm is `cmp`+`cset`
+    /// — and a spill may be emitted for either), THEN the condition's `cmp`,
+    /// then the select. Between the two only `ensureRegLive`'s `ldr` may
+    /// appear, and a load does not touch the flags.
+    fn emitIfConvertedTwoSided(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *std.AutoHashMapUnmanaged(u32, u5),
+        plan: TwoSidedPlan,
+        branch_patches: *std.ArrayList(DnirBranchPatch),
+    ) Error!void {
+        var then_owned = false;
+        var else_owned = false;
+        const rt = try self.emitIfConvArm(temps, pinned, plan.then_ops, plan.then_store, branch_patches, &then_owned);
+        // The then-arm's register must survive the else-arm's allocations. It
+        // does because `emitIfConvArm` leaves it claimed (`allocReg` sets
+        // `used_regs`) and no sweep runs inside a collapsed window — the driver
+        // sweeps once per CONSUMED index, after this emitter returns.
+        const re = try self.emitIfConvArm(temps, pinned, plan.else_ops, plan.else_store, branch_patches, &else_owned);
+
+        // The destination. Reusing the then-arm's own scratch is free — `csel`
+        // writes its destination and `xd == xn` is legal — but only when that
+        // register belongs to this window. A zero-op arm answers with somebody
+        // else's home or pinned register, and writing there is the clobber.
+        const dst = if (then_owned and rt >= 9 and rt < 29 and rt != platform_reserved_reg and
+            !self.gp_home_regs[rt] and !Arm64Compiler.regIsPinned(pinned, rt))
+            rt
+        else
+            try self.allocRegExcluding(rt);
+
+        // The condition. Nothing below this line may write the flags.
+        var then_cond: Condition = undefined;
+        if (plan.cmp) |c| {
+            const clhs = try self.evalDnirValue(temps, c.lhs);
+            const crhs = try self.evalDnirValue(temps, c.rhs);
+            try self.emitCmpReg(clhs, crhs);
+            if (clhs != rt and clhs != re and clhs != dst and !Arm64Compiler.regIsPinned(pinned, clhs)) self.releaseReg(clhs);
+            if (crhs != rt and crhs != re and crhs != dst and !Arm64Compiler.regIsPinned(pinned, crhs)) self.releaseReg(crhs);
+            then_cond = comparisonCondition(c.binop).?;
+        } else {
+            const cr = try self.evalDnirValue(temps, plan.br.lhs);
+            try self.emitCmpZero(cr);
+            if (cr != rt and cr != re and cr != dst and !Arm64Compiler.regIsPinned(pinned, cr)) self.releaseReg(cr);
+            then_cond = .ne;
+        }
+        // `br when_false -> else` leaves the THEN arm on the condition being
+        // true; `when_true -> else` is its mirror.
+        if (plan.br.branch_condition == .when_true) then_cond = invertCondition(then_cond);
+
+        try self.emitCselReg(dst, rt, re, then_cond);
+
+        // Release whatever the select consumed and this window owns.
+        if (re != dst and else_owned and !Arm64Compiler.regIsPinned(pinned, re)) self.releaseReg(re);
+        if (!else_owned and re != dst and !self.gp_home_regs[re] and !Arm64Compiler.regIsPinned(pinned, re)) self.releaseReg(re);
+        if (rt != dst and then_owned and !Arm64Compiler.regIsPinned(pinned, rt)) self.releaseReg(rt);
+        if (!then_owned and rt != dst and !self.gp_home_regs[rt] and !Arm64Compiler.regIsPinned(pinned, rt)) self.releaseReg(rt);
+
+        // THE STORE, ONCE, through the ordinary path — the binding keeps its
+        // home or its frame slot exactly as it had it. This fold changes WHAT
+        // is stored, never WHERE.
+        // The store reads a SYNTHETIC value id rather than either arm's own
+        // temp. Locals and temps share one id counter, so a zero-op arm has no
+        // temp of its own to borrow and the local's id is not one; a fresh id
+        // past every id this function uses belongs to nobody. It carries no
+        // `value_free_at` entry, so the driver's next sweep retires `dst`
+        // immediately after the store — which is exactly its live range.
+        var store = plan.then_store;
+        const carrier = self.synth_value_next;
+        self.synth_value_next += 1;
+        store.lhs = .{ .temp = carrier };
+        try temps.put(self.alloc, carrier, dst);
+        if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
+            self.gp_reg_owner[dst] = carrier;
+        }
+        try self.compileDnirInstr(temps, pinned, store, branch_patches, null);
+        self.ifconv_admitted += 1;
     }
 
     /// Peephole precondition for folding `mul -> T ; add(T, c) -> D` into a
@@ -8452,6 +9084,7 @@ fn emitArm64FromDnirLicensed(
         .entry = entry,
         .const_licence = licence,
     };
+    if (std.c.getenv("IDOL_IFCONV_TRACE") != null) compiler.ifconv_trace = true;
     if (m.graph) |graph| {
         if (graph.gateTransportModule()) {
             compiler.gate_transport = true;
@@ -8460,6 +9093,25 @@ fn emitArm64FromDnirLicensed(
     }
     defer compiler.deinit();
     try compiler.compileDnirModule(m);
+    // W8 CENSUS. Off unless asked for: the counts are how the population of
+    // convertible and refused branches gets reported honestly rather than
+    // asserted.
+    if (std.c.getenv("IDOL_IFCONV_REPORT") != null) {
+        std.debug.print(
+            "ifconv2 two_sided_ifs={d} admitted={d} refused={d} (arm_op_cap={d} latency={d} trap={d} effect_not_none={d} no_termination_fact={d} lineage={d})\n",
+            .{
+                compiler.ifconv_admitted + compiler.ifconv_candidates,
+                compiler.ifconv_admitted,
+                compiler.ifconv_candidates,
+                compiler.ifconv_refused_cap,
+                compiler.ifconv_refused_latency,
+                compiler.ifconv_refused_trap,
+                compiler.ifconv_refused_effect_unknown,
+                compiler.ifconv_refused_diverge,
+                compiler.ifconv_refused_lineage,
+            },
+        );
+    }
     var output = try compiler.finish();
     output.graph = m.graph;
     output.unrealized = unrealizedApplicationCount(m);
@@ -12132,13 +12784,22 @@ test "native backend lowers if elseif else branches" {
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tcmp x") != null);
     var cmp_count: usize = 0;
     var branch_count: usize = 0;
+    var select_count: usize = 0;
     var lines = std.mem.splitScalar(u8, asm_text, '\n');
     while (lines.next()) |line| {
         if (std.mem.startsWith(u8, line, "\tcmp x")) cmp_count += 1;
         if (std.mem.startsWith(u8, line, "\tb.") and std.mem.indexOf(u8, line, ".Lduo_") != null) branch_count += 1;
+        if (std.mem.startsWith(u8, line, "\tcsel x")) select_count += 1;
     }
     try std.testing.expect(cmp_count >= 3);
-    try std.testing.expect(branch_count >= 3);
+    // THREE CONDITIONS, THREE REALIZATIONS — as a branch OR as a select.
+    //
+    // This read `branch_count >= 3` and was pinning the LOWERING rather than
+    // the fact. The chain's last rung (`elseif n > 10 \n out = 17 \n else \n
+    // out = 19`) is a two-sided `if` over one binding, so W8 realizes it as a
+    // `csel` and that rung stops being a branch. Counting both is what the
+    // test meant: every condition is still decided, and none is dropped.
+    try std.testing.expect(branch_count + select_count >= 3);
 
     var object = try emitCheckedTestObject(alloc, &mod, &graph);
     defer object.deinit(alloc);
