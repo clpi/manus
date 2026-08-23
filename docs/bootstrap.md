@@ -70,7 +70,11 @@ before parser SHC. Physical producer slot 3 remains
 unpublished and fails closed; it is not a token identity.
 Parser long-bracket reconstruction is deleted (level in `int_val`).
 `GAP-134` now has generated roles (separate semantic identity count and physical
-slot span, `body_start`, infix). Canonical `return` is the first live
+slot span, `body_start`, infix). The same owner now also generates the relation
+and prefix identities plus the infix, update, and glued source-face facts.
+`src/ast.zig` aliases that generated ontology; parser recognition and the
+pretty-printer consume it rather than maintaining token-to-operation and
+operation-to-token maps. Canonical `return` is the first live
 `begin_expr` consumer; match-arm discovery now consumes `pattern` through the
 same immutable view without save/scan/restore; body-start and header-infix are
 also role-owned. The gap is not closed. Porting the host
@@ -93,7 +97,7 @@ sentinel, or query-then-mutate helpers as Idol semantic architecture.
 | Lexer ABI schema | HOST OWNED (bridge) | `RECORD_SLOTS` / `lexErrorFromCode` / `tokenKindFromOrdinal` deleted. Consumer queries `recordslots()` / `field*()` / `rejectionname()` / `kindname()` / `kindcount()`; `bindKindSchema` binds ordinals once. `bindKindSchema` is a deletion-gated bridge (`law.bridge.death`): endpoint is token-role-id, not producer-name → runtime bind → host enum. Remaining: host `TokenKind` enum, `duo_lexer_*` / `useDuoTokens` names (`law.schema.one`, `law.magic.zero`, GAP-107). |
 | Lexical identity | IDOL OWNED, GAP-145 OPEN | Text/bytes/compat/long, `#` comment, shebang, `--` / `--[[` comments, and reserved backtick cross `tokenize()`. Long-text delimiter level is `int_val`; parser no longer scans `[[`. Producer, host-token, and AST `string_lit` identities are deleted; physical slot 3 is unpublished. AST `.quoted` retains exact quote provenance without a text/bytes taxonomy. Tree-sitter and semantic quote/source-law consumers remain. Do not start parser SHC. |
 | Token/span | IDOL OWNED | Exact token content spans are projected through the generated-C physical bridge; the host retains a temporary parser representation. |
-| Grammar roles | IDOL OWNED, GAP-134 partial | `lib/compiler/token.id` is the **one executable grammar-fact owner** (`law.grammar.one`): token identities and every role, precedence and associativity fact. It emits `src/grammar_role_table.zig` (host bridge the production parser reads, `law.bridge.death`) and `lib/token/grammarrole.id` (Idol projection). `src/grammar_roles.zig` is accessors only and holds no fact; `src/grammar_role_gen.zig` and `src/emit_grammar_role.zig` are deleted. `zig build grammar-projection` (on `test`) fails unless both artifacts regenerate byte-identically. Canonical `return` observes `begin_expr` and match-arm discovery observes `pattern` through the immutable production token view. The first consumer exposed and repaired an incomplete producer domain rather than adding a parser-local exception. Independent one-row damage makes `return 99` or a consecutive integer match arm refuse. NOT closure: these are two bounded lookahead decisions, `docs/spec/grammar.md` still does not generate the parser, Tree-sitter is still a second authored grammar, and the parser `BinOp` map remains reconstruction debt. |
+| Grammar roles | IDOL OWNED, GAP-134 partial | `lib/compiler/token.id` is the **one executable grammar-fact owner** (`law.grammar.one`): token identities; roles; precedence and associativity; relation and prefix identity; and infix, update, and glued source faces. It emits `src/grammar_role_table.zig` (host bridge the production parser reads, `law.bridge.death`) and `lib/token/grammarrole.id` (Idol projection). `src/grammar_roles.zig` is accessors only and holds no fact; `src/ast.zig` aliases the generated relation ontology. The former parser infix/update/glued/unary maps and the pretty-printer's authored inverse are deleted; totality and injectivity of the generated inverse are compile-time checked. `src/grammar_role_gen.zig` and `src/emit_grammar_role.zig` are deleted. `zig build grammar-projection` (on `test`) fails unless both artifacts regenerate byte-identically. Canonical `return` observes `begin_expr` and match-arm discovery observes `pattern` through the immutable production token view. The first consumer exposed and repaired an incomplete producer domain rather than adding a parser-local exception. Independent one-row damage makes `return 99` or a consecutive integer match arm refuse. NOT closure: only bounded recognition decisions consume these facts; `docs/spec/grammar.md` still does not generate the parser; Tree-sitter still contains authored literal/comment recognition; the host `TokenKind` bridge remains; and parser recognition is still host-executed. |
 | Parser recognition | HOST OWNED | `src/parser.zig` still decides expressions, bindings, and source structure. `parse_module` installs the producer pack when missing (`route()`); header recognition is one `headerSignal` over that pack. Match-arm discovery now walks the same immutable view and no longer saves, scans, and restores the lexer. Not parser SHC. |
 | Binding/scope | HOST OWNED | Production binding and scope construction remain in the host parser and semantic producer. The graph now retains one module binding id across declaration, reassignment, checked application operands and shadowing controls; checked names nested in application operand expression trees publish an exact value → binding → descriptor route. Nested function/block bodies are outside that bounded producer domain. |
 | Semantic construction | HOST OWNED | The graph work is an improving host implementation, not executed compiler-B source. |
@@ -118,7 +122,9 @@ For the fail-closed lexer transfer:
   grammar.md as the generatable owner and moving another bounded recognition
   decision onto generated facts. Header recognition is one
   `headerSignal` over the producer pack (snapshot walk deleted); Pratt
-  left/right come from roles; BinOp map remains.
+  left/right, relation identity, unary identity, and update/glued faces come
+  from the generated owner. The handwritten operation maps are gone; the
+  recognizer that consumes those facts remains host-executed.
   Replace the temporary host enum/name ABI only after compiler B consumes the
   same source-law contract directly.
 
