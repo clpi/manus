@@ -15,6 +15,32 @@
 //! depended on. And a boolean is not reversible: a backend reading `true` had
 //! no way back to the binding that was proved or to the width that proved it.
 //!
+//! THIS IS NOT A NEW FOREIGN AUTHORITY, AND ITS DEATH IS WITNESSED
+//! (`law.bridge.death`). No producer is created here: the lattice already ran
+//! in this compiler, in `dnir_lower.zig`, in Zig. What moved is WHERE ITS
+//! ANSWER LIVES — out of a lowering-local map and onto `SemanticGraph.ranges`
+//! — and the whole point of the move is that the fact is now expressible to a
+//! consumer that is not this host.
+//!
+//!     HOST OWNER BEFORE   `dnir_lower.nonNegativeNames` -> `LowerCtx`,
+//!                         invisible to every projection but one backend
+//!     HOST OWNER NOW      this file, publishing `SemanticGraph.ranges`
+//!     IDOL OWNER AFTER    the range producer in `.id`, once relation-level
+//!                         fixpoint analysis is expressible — the graph column
+//!                         and its readers do not move when it lands, because
+//!                         `SemanticGraph.ranges` is already the authority and
+//!                         this file is already only its producer
+//!     NEXT HOST BOUNDARY  `nonNegScanBlock` walks `ast.Stmt` directly. That
+//!                         AST walk is the deletion condition: when the region
+//!                         census carries the assignment set this pass needs,
+//!                         the walk goes and the transfer function is all that
+//!                         is left to transfer.
+//!
+//! DELETION IS OBSERVABLE, not asserted: `gate/divisor.sh` and
+//! `IDOL_FLOOR_FIXUP_ALWAYS` both read the published fact rather than this
+//! file, so an Idol producer that publishes the same column passes them
+//! unchanged and this file's absence is the proof it was a bridge.
+//!
 //! IT IS NOT A PLACE FACT, WHICH WAS MEASURED AND NOT ASSUMED. `place.Facts`
 //! was tried first and it loses the answer: §6 says a scalar is not minted as
 //! a place, so `b: i64 = 2` has no place at all and its bound has nowhere to

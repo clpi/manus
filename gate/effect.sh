@@ -2,12 +2,12 @@
 # gate/effect.sh — the CENSUS and the COUNTERFACTUAL for
 # `ApplicationFact.effect`.
 #
-# WHY THIS EXISTS. The effect fact shipped with exactly one published value.
-# Measured at debad1df over `examples`: 1331 applications, 1043 `none`, 288
-# `unknown`, and `one` ZERO. A fact whose positive case is unreachable is not
-# an effect fact — it can prove innocence and it can shrug, and it can never
-# say WHICH observation stands in the way of a transformation. Two numbers
-# have to hold for that not to come back, and they are opposite in direction:
+# WHY THIS EXISTS. The effect fact shipped with exactly one published value:
+# `one` was UNREACHABLE, and `--census-only` on the commit before this gate
+# prints the zero. A fact whose positive case cannot occur is not an effect
+# fact — it can prove innocence and it can shrug, and it can never say WHICH
+# observation stands in the way of a transformation. Two numbers have to hold
+# for that not to come back, and they are opposite in direction:
 #
 #   `one` MUST NOT COLLAPSE TO ZERO. That is the defect this gate was written
 #   against, and it is the state the tree was in.
@@ -19,9 +19,16 @@
 #
 # AND THE CENSUS IS NOT ENOUGH. A card can be published, counted, projected to
 # JSON and read by nobody. The COUNTERFACTUAL removes the fact and NOTHING
-# else — `IDOL_EFFECT_SEVER=1` severs `publishApplicationEffects` at the
-# producer — and requires the artifact to change. If the two arms are byte
-# identical the fact is decoration, whatever the census says.
+# else — `IDOL_EFFECT_SEVER=1` suppresses the `effect` writes in
+# `publishApplicationEffects` — and requires the artifact to change. If the two
+# arms are byte identical the fact is decoration, whatever the census says.
+#
+# IT SEVERS ONE FACT, WHICH IT DID NOT ALWAYS DO. The sever was an early return
+# from the publication loop, so it also suppressed the `authority = .none`
+# write; `effectFreeApplications` reads BOTH cards, so the control was removing
+# two facts and attributing the difference to one. Measured: that inflated the
+# changed-module count by one. A control that severs more than it names proves
+# nothing about the thing it names.
 #
 # THE SUBJECT IS CORPUS CODE, NOT A FIXTURE WRITTEN FOR THE GATE.
 # `examples/demand/tail.id` was already in the tree and already checks every
@@ -29,9 +36,10 @@
 # declare module-scope vocabulary the declaration freeze refuses, and would
 # have measured a program that exists to be measured.
 #
-# ITS SCOPE IS ONE MODULE AND THE POPULATION IS MEASURED. Over `examples lib`,
-# 244 modules reach the direct backend and severing the effect fact changes
-# the emitted assembly of 54 of them; 190 are unchanged. Reproduce with:
+# ITS SCOPE IS ONE MODULE, AND THE POPULATION IS MEASURED RATHER THAN QUOTED.
+# The subject below is one of the modules the fact reaches; the size of that
+# set is not written down here, because a number in a comment rots on its own
+# while the runner keeps passing. Measure it:
 #
 #   for f in $(find examples lib -name '*.id'); do
 #     idol compile "$f" --emit asm -o a.s
@@ -39,8 +47,8 @@
 #     cmp -s a.s b.s || echo "$f"
 #   done
 #
-# The gate checks one of the 54 rather than all of them because two compiles
-# of the whole corpus is a two-minute gate, and the floor below fails just as
+# The gate checks ONE of them rather than all because two compiles of the whole
+# corpus is a two-minute gate, and the runner comparison below fails just as
 # loudly when the last consumer is deleted.
 #
 # IT COUNTS RATHER THAN ASSERTS wherever it can, like `gate/coverage.sh`: the
@@ -60,15 +68,15 @@ idol=${IDOL:-$repo/zig-out/bin/idol}
 corpus=${EFFECT_CORPUS:-examples}
 subject=examples/demand/tail.id
 
-# THE FLOORS, measured on this tree and stated as inequalities.
-#   `examples`:      1331 applications, none 1043, one 123, unknown 165
-#   `examples lib`:  5071 applications, none 3707, one 166, unknown 1198
-# The base debad1df measures the same corpus at 1331 / 1043 / ZERO / 288 —
-# same applications, same `none`, and every positive card paid for out of
-# `unknown`.
+# THE FLOORS. These are the ONLY census numbers this file states, and they are
+# inequalities rather than equalities so ordinary corpus growth does not rot
+# them. `gate/effect.sh --census-only` prints what the tree actually measures;
+# nothing above repeats it.
+#
 # `MIN_NONE` is the reversal control for moving `publishApplicationEffects`
 # after `publishApplicationWorlds`: that reordering must not have taken a
-# single proof of unobservability away.
+# single proof of unobservability away. It is pinned at the value the base
+# measured, so a positive card bought by giving up a `none` fails here.
 MIN_APPS=${EFFECT_MIN_APPS:-1200}
 MIN_NONE=${EFFECT_MIN_NONE:-1043}
 MIN_ONE=${EFFECT_MIN_ONE:-100}

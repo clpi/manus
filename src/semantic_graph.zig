@@ -5921,10 +5921,11 @@ pub const SemanticGraph = struct {
     }
 
     /// Publication of `ApplicationFact.effect` severed at the producer, for the
-    /// counterfactual control. Every application reads `unknown`; nothing else
-    /// in the compiler changes. `IDOL_EFFECT_SEVER` is classed `.affects` in
-    /// `main.behaviourEnvClass` because it does change the artifact — that is
-    /// the entire point of a severing control.
+    /// counterfactual control. Every application reads `effect: unknown` and
+    /// NOTHING ELSE MOVES — `authority` is still published, which is what makes
+    /// the control isolate one fact instead of two. `IDOL_EFFECT_SEVER` is
+    /// classed `.affects` in `main.behaviourEnvClass` because it does change
+    /// the artifact — that is the entire point of a severing control.
     fn effectSevered() bool {
         return std.c.getenv("IDOL_EFFECT_SEVER") != null;
     }
@@ -6267,12 +6268,19 @@ pub const SemanticGraph = struct {
             }
         }
 
-        if (effectSevered()) return;
+        // THE SEVER GUARDS THE EFFECT WRITES AND NOTHING ELSE.
+        //
+        // It was an early `return` from this whole loop, which also suppressed
+        // the `authority = .none` write below — and `effectFreeApplications`
+        // reads BOTH cards, so the counterfactual was removing two facts and
+        // attributing the difference to one. A control that severs more than
+        // it names proves nothing about the thing it names.
+        const severed = effectSevered();
 
         for (self.application_facts.items) |*fact| {
             const callee = self.applicationRelation(fact.application) orelse continue;
             if (callee < effect_free.bit_length and effect_free.isSet(callee)) {
-                fact.effect = .none;
+                if (!severed) fact.effect = .none;
                 // NOT AN UNCONDITIONAL WRITE, because this pass now runs AFTER
                 // `publishApplicationWorlds` and that pass owns
                 // `authority = .one(c_world)` for a foreign-world application.
@@ -6280,10 +6288,15 @@ pub const SemanticGraph = struct {
                 // reversal would otherwise have this one erase an exact
                 // authority identity with `none`, which is a wrong fact and not
                 // a lost one.
+                //
+                // AND IT IS OUTSIDE THE SEVER, deliberately: authority is a
+                // different fact with different evidence, and the control is
+                // for the effect card.
                 if (fact.authority == .unknown) fact.authority = .none;
                 continue;
             }
             if (callee >= node_count) continue;
+            if (severed) continue;
             // AUTHORITY IS NOT WRITTEN HERE. `publishApplicationWorlds` owns
             // `authority = .one(c_world)` and `law.fact.producer.one` means one
             // of us writes it, not both. Effect and authority rode the same
