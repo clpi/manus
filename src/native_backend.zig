@@ -12226,7 +12226,7 @@ test "native backend: deployment truncates the root result only at its observer"
     const lowered = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph);
     defer dnir.deinitModule(alloc, lowered);
     try std.testing.expectEqual(@as(?i64, 300), immediateReturn(dnirFunction(lowered, "main").?));
-    try std.testing.expectEqual(@as(u8, 44), @as(u8, @truncate(@as(i64, 300))));
+    try std.testing.expectEqual(@as(u8, 44), @as(u8, @intCast(@as(i64, 300) & 0xff)));
 }
 
 test "native backend: f64 process entry coerces d0 to x0 exit code" {
