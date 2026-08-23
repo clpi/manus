@@ -243,6 +243,123 @@ rolecompatonly: bool = (kind: i64)
     return true
   false
 
+# ---------------------------------------------------------------------------
+# RELATION IDENTITY — one operation ontology, several source faces.
+#
+# `a + b`, `a += b` and the adjacency-glued `a >>= b` are THREE SOURCE FACES
+# of ONE relation. They therefore read ONE fact: `_relationname`. A face is a
+# separate fact (`_roleinfix` / `_roleupdate` / `_roleglue`) because it says WHERE
+# the relation is applied, never WHICH relation it is. "." means this identity
+# denotes no relation; it is not a relation spelled ".".
+# ---------------------------------------------------------------------------
+
+# The relation ontology itself, in one order. The host enum generated from
+# this row IS the physical encoding of these identities; the AST layer only
+# aliases it, because relation identity is not the tree's to own
+# (gate/layers.manifest). A name here that no slot claims fails the
+# bijection control in src/grammar_roles.zig.
+_relationorder = "add sub mul div idiv mod pow band bor bxor lshift rshift concat eq neq lt gt leq geq and or contains matmul pipeline "
+
+# The prefix relations, same ownership.
+_prefixorder = "neg not len bnot compile "
+
+_relationname: str = (kind: i64)
+  if kind == kindplus or kind == kindplusassign
+    return "add"
+  if kind == kindminus or kind == kindminusassign
+    return "sub"
+  if kind == kindstar or kind == kindstarassign
+    return "mul"
+  if kind == kindslash or kind == kindslashassign
+    return "div"
+  if kind == kindpercent or kind == kindpercentassign
+    return "mod"
+  if kind == kindcaret or kind == kindcaretassign
+    return "pow"
+  if kind == kindidiv
+    return "idiv"
+  if kind == kindamp
+    return "band"
+  if kind == kindpipe
+    return "bor"
+  if kind == kindtilde
+    return "bxor"
+  if kind == kindlshift
+    return "lshift"
+  if kind == kindrshift
+    return "rshift"
+  if kind == kindconcat
+    return "concat"
+  if kind == kindeq
+    return "eq"
+  if kind == kindneq
+    return "neq"
+  if kind == kindlt
+    return "lt"
+  if kind == kindgt
+    return "gt"
+  if kind == kindleq
+    return "leq"
+  if kind == kindgeq
+    return "geq"
+  if kind == kindand
+    return "and"
+  if kind == kindor
+    return "or"
+  if kind == kindin
+    return "contains"
+  if kind == kindat
+    return "matmul"
+  if kind == kindpipegt
+    return "pipeline"
+  "."
+
+# Prefix relation of this identity. `-` and `~` carry BOTH a prefix and an
+# infix relation, which is why the two are separate facts and not one map.
+_unaryname: str = (kind: i64)
+  if kind == kindnot or kind == kindbang
+    return "not"
+  if kind == kindhash
+    return "len"
+  if kind == kindhashhash or kind == kindcomptime
+    return "compile"
+  if kind == kindminus
+    return "neg"
+  if kind == kindtilde
+    return "bnot"
+  "."
+
+# infix face: this identity applies its relation between two operands
+_roleinfix: bool = (kind: i64)
+  if kind == kindor or kind == kindand or kind == kindin
+    return true
+  if kind == kindlt or kind == kindgt or (kind >= kindeq and kind <= kindgeq)
+    return true
+  if kind == kindpipe or kind == kindtilde or kind == kindamp
+    return true
+  if kind == kindlshift or kind == kindrshift or kind == kindconcat
+    return true
+  if (kind >= kindplus and kind <= kindcaret) or kind == kindidiv
+    return true
+  if kind == kindat or kind == kindpipegt
+    return true
+  false
+
+# compound-update face carried by ONE identity (`+=`)
+_roleupdate: bool = (kind: i64)
+  if kind >= kindplusassign and kind <= kindcaretassign
+    return true
+  false
+
+# compound-update face formed by an ADJACENT `=` (`>>=` is `>>` then `=`).
+# The lexer mints no token for these, so the face is a grammar fact.
+_roleglue: bool = (kind: i64)
+  if kind == kindrshift or kind == kindlshift or kind == kindpipe
+    return true
+  if kind == kindamp or kind == kindtilde
+    return true
+  false
+
 # Pratt binding power
 roleprecedence: i64 = (kind: i64)
   if kind == kindcaret
@@ -322,24 +439,58 @@ assocname: str = (kind: i64)
     return "nonassoc"
   "none"
 
-# Host bridge spelling for one physical slot. Provenance, never recognition.
-zigname: str = (kind: i64)
-  n = kindzig:len()
+# The nth space-separated _word of a row. One splitter for every ordered row
+# in this file: slot spellings, relation order, prefix order.
+_word: str = (row: str, n: i64)
+  size = row:len()
   i = 1
   seen = 0
   start = 1
   out = ""
-  while i <= n
-    if kindzig:byte(i) == 32
-      if seen == kind
-        out = kindzig:sub(start, i - 1)
+  while i <= size
+    if row:byte(i) == 32
+      if seen == n
+        out = row:sub(start, i - 1)
       seen = seen + 1
       start = i + 1
     i = i + 1
   out
 
+# Host bridge spelling for one physical slot. Provenance, never recognition.
+_zigname: str = (kind: i64)
+  _word(kindzig, kind)
+
+# How many words an ordered row carries.
+_wordcount: i64 = (row: str)
+  size = row:len()
+  i = 1
+  seen = 0
+  while i <= size
+    if row:byte(i) == 32
+      seen = seen + 1
+    i = i + 1
+  seen
+
+# One generated host enum over an ordered relation row.
+_zigenum: str = (name: str, row: str)
+  s = "pub const {name} = enum \{\n"
+  n = _wordcount(row)
+  k = 0
+  while k < n
+    s = "{s}    {_zigescape(_word(row, k))},\n"
+    k = k + 1
+  "{s}\};\n\n"
+
+# Host-bridge spelling of one relation identity. Two relation names collide
+# with a host keyword and take the escaped face there; the identity is the
+# same either way, and the escape is provenance, not a second name.
+_zigescape: str = (name: str)
+  if name == "and" or name == "or"
+    return "@\"{name}\""
+  name
+
 zigrow: str = (kind: i64)
-  z = zigname(kind)
+  z = _zigname(kind)
   if z == "."
     return "    .\{ .kind = null \},\n"
   s = "    .\{ .kind = .{z}"
@@ -369,6 +520,18 @@ zigrow: str = (kind: i64)
     s = "{s}, .assoc = .{assocname(kind)}"
   if rolecompatonly(kind)
     s = "{s}, .compat_only = true"
+  r = _relationname(kind)
+  if r != "."
+    s = "{s}, .relation = .{_zigescape(r)}"
+  u = _unaryname(kind)
+  if u != "."
+    s = "{s}, .unary = .{_zigescape(u)}"
+  if _roleinfix(kind)
+    s = "{s}, .infix = true"
+  if _roleupdate(kind)
+    s = "{s}, .update = true"
+  if _roleglue(kind)
+    s = "{s}, .glue = true"
   "{s} \},\n"
 
 zigbody: str = ()
@@ -385,6 +548,11 @@ zigbody: str = ()
   s = "{s}// Idol owner and regenerate. Editing this file by hand is a second\n"
   s = "{s}// producer of one grammar fact.\n"
   s = "{s}const lexer = @import(\"lexer.zig\");\n\n"
+  s = "{s}// Relation identity lives in the TOKEN layer. src/ast.zig ALIASES these\n"
+  s = "{s}// two enums; it does not restate them. gate/layers.manifest: the AST\n"
+  s = "{s}// layer owns shape and no semantic relation identity.\n"
+  s = "{s}{_zigenum(\"Relation\", _relationorder)}"
+  s = "{s}{_zigenum(\"Prefix\", _prefixorder)}"
   s = "{s}pub const Associativity = enum(u8) \{\n"
   s = "{s}    none = 0,\n    left = 1,\n    right = 2,\n    nonassoc = 3,\n\};\n\n"
   s = "{s}pub const RoleRow = struct \{\n"
@@ -402,6 +570,11 @@ zigbody: str = ()
   s = "{s}    precedence: i8 = 0,\n"
   s = "{s}    assoc: Associativity = .none,\n"
   s = "{s}    compat_only: bool = false,\n"
+  s = "{s}    relation: ?Relation = null,\n"
+  s = "{s}    unary: ?Prefix = null,\n"
+  s = "{s}    infix: bool = false,\n"
+  s = "{s}    update: bool = false,\n"
+  s = "{s}    glue: bool = false,\n"
   s = "{s}\};\n\n"
   s = "{s}pub const slot_count: usize = {slots};\n"
   s = "{s}pub const identity_count: usize = {ids};\n"
@@ -440,7 +613,26 @@ rolebit: i64 = (which: i64, kind: i64)
     return roleprecedence(kind)
   if which == 12
     return roleassoc(kind)
+  if which == 13 and _roleinfix(kind)
+    return 1
+  if which == 14 and _roleupdate(kind)
+    return 1
+  if which == 15 and _roleglue(kind)
+    return 1
   0
+
+# Relation identities as one space-separated slot row. "." is "no relation",
+# the same unpublished face `kindzig` uses; recognition keys on the ordinal.
+_nametext: str = (name: str, which: i64)
+  s = "{name} = \""
+  k = 0
+  while k < roleslotcount
+    if which == 0
+      s = "{s}{_relationname(k)} "
+    else
+      s = "{s}{_unaryname(k)} "
+    k = k + 1
+  "{s}\"\n"
 
 tabletext: str = (name: str, which: i64)
   s = "{name} = \{\n"
@@ -473,6 +665,11 @@ idbody: str = ()
   s = "{s}{tabletext(\"compatonly\", 10)}"
   s = "{s}{tabletext(\"precedence\", 11)}"
   s = "{s}{tabletext(\"assoc\", 12)}"
+  s = "{s}{tabletext(\"_infix\", 13)}"
+  s = "{s}{tabletext(\"_update\", 14)}"
+  s = "{s}{tabletext(\"_glue\", 15)}"
+  s = "{s}{_nametext(\"_relationtext\", 0)}"
+  s = "{s}{_nametext(\"_unarytext\", 1)}"
   s = "{s}\nrolebeginexpr: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and beginexpr[kind + 1] > 0\n"
   s = "{s}\nroleprefix: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and prefix[kind + 1] > 0\n"
   s = "{s}\nrolepostfix: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and postfix[kind + 1] > 0\n"
@@ -485,6 +682,15 @@ idbody: str = ()
   s = "{s}\nrolecompatonly: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and compatonly[kind + 1] > 0\n"
   s = "{s}\nroleprecedence: i64 = (kind: i64)\n  if kind < 0 or kind >= rolecount\n    0\n  else\n    precedence[kind + 1]\n"
   s = "{s}\nroleassoc: i64 = (kind: i64)\n  if kind < 0 or kind >= rolecount\n    0\n  else\n    assoc[kind + 1]\n"
+  s = "{s}\n_roleinfix: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _infix[kind + 1] > 0\n"
+  s = "{s}\n_roleupdate: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _update[kind + 1] > 0\n"
+  s = "{s}\n_roleglue: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _glue[kind + 1] > 0\n"
+  s = "{s}\n_slotword: str = (row: str, kind: i64)\n"
+  s = "{s}  n = row:len()\n  i = 1\n  seen = 0\n  start = 1\n  out = \".\"\n"
+  s = "{s}  while i <= n\n    if row:byte(i) == 32\n      if seen == kind\n        out = row:sub(start, i - 1)\n"
+  s = "{s}      seen = seen + 1\n      start = i + 1\n    i = i + 1\n  out\n"
+  s = "{s}\n_rolerelation: str = (kind: i64)\n  _slotword(_relationtext, kind)\n"
+  s = "{s}\n_roleunary: str = (kind: i64)\n  _slotword(_unarytext, kind)\n"
   s
 
 spill: bool = (path: str, body: str)

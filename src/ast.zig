@@ -246,36 +246,17 @@ pub const TypeExpr = union(enum) {
 
 // ── Expressions ───────────────────────────────────────────────────────────────
 
-pub const BinOp = enum {
-    add,
-    sub,
-    mul,
-    div,
-    idiv,
-    mod,
-    pow,
-    band,
-    bor,
-    bxor,
-    lshift,
-    rshift,
-    concat,
-    eq,
-    neq,
-    lt,
-    gt,
-    leq,
-    geq,
-    @"and",
-    @"or",
-    contains,
-    /// Infix `@` — matrix multiply (`a @ b`), distinct from prefix `@macro`.
-    matmul,
-    /// Pipeline operator `|>` — `x |> f` desugars to `f(x)`.
-    pipeline,
-};
+/// Relation identity is NOT the tree's to own (gate/layers.manifest: "AST
+/// owns shape. Owns NO semantic relation identity"). These are ALIASES of the
+/// one grammar owner's ontology, generated from `lib/compiler/token.id` into
+/// `src/grammar_role_table.zig`. The row that gives `.plus` its binding power
+/// is the row that names its relation `add`, so a tree node and a parser
+/// decision cannot come to different conclusions about which operation
+/// occurred. `matmul` is infix `@` (distinct from prefix `@macro`);
+/// `pipeline` is `|>`, where `x |> f` desugars to `f(x)`.
+pub const BinOp = @import("grammar_role_table.zig").Relation;
 
-pub const UnOp = enum { neg, not, len, bnot, compile };
+pub const UnOp = @import("grammar_role_table.zig").Prefix;
 
 pub const TableField = union(enum) {
     indexed: struct { key: *Expr, val: *Expr }, // [expr] = expr

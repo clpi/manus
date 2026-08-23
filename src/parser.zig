@@ -4351,14 +4351,7 @@ pub const Parser = struct {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
-                const op: ?ast.UnOp = switch (tok.kind) {
-                    .kw_not, .bang => .not,
-                    .hash => .len,
-                    .hash_hash, .kw_comptime => .compile,
-                    .minus => .neg,
-                    .tilde => .bnot,
-                    else => null,
-                };
+                const op: ?ast.UnOp = grammar_roles.unaryRelation(tok.kind);
                 if (op) |uop| {
                     if (tok.kind == .kw_not and self.idol_mode)
                         term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
@@ -5504,34 +5497,16 @@ pub const Parser = struct {
 
     // ── Pratt expression parser ───────────────────────────────────────────────
 
+    /// WHICH RELATION, asked of the grammar owner rather than rebuilt here.
+    ///
+    /// This was 24 arms naming an operation per token identity — a second
+    /// operation ontology sitting beside the one `lib/compiler/token.id`
+    /// already owned, and one that had to agree with the precedence table two
+    /// lines below it. `ast.BinOp` is now the physical encoding of the owner's
+    /// relation identity; adding an operator changes the owner and its
+    /// generated projection, not this function.
     pub fn infixBinOp(kind: TK) ?ast.BinOp {
-        return switch (kind) {
-            .kw_or => .@"or",
-            .kw_and => .@"and",
-            .lt => .lt,
-            .gt => .gt,
-            .leq => .leq,
-            .geq => .geq,
-            .eq => .eq,
-            .neq => .neq,
-            .kw_in => .contains,
-            .pipe => .bor,
-            .tilde => .bxor,
-            .amp => .band,
-            .lshift => .lshift,
-            .rshift => .rshift,
-            .concat => .concat,
-            .plus => .add,
-            .minus => .sub,
-            .star => .mul,
-            .slash => .div,
-            .idiv => .idiv,
-            .percent => .mod,
-            .caret => .pow,
-            .at => .matmul,
-            .pipe_gt => .pipeline,
-            else => null,
-        };
+        return grammar_roles.infixRelation(kind);
     }
 
     fn infix_prec(kind: TK) ?struct { op: ast.BinOp, left: u8, right: u8 } {
@@ -5567,14 +5542,7 @@ pub const Parser = struct {
     /// `src/lexer_tokenize.c` does not move, which is the point: this is a
     /// grammar fact, not a lexical one.
     fn peek_glued_assign(self: *Parser, op: Token) ParseError!?ast.BinOp {
-        const bop: ast.BinOp = switch (op.kind) {
-            .rshift => .rshift,
-            .lshift => .lshift,
-            .pipe => .bor,
-            .amp => .band,
-            .tilde => .bxor,
-            else => return null,
-        };
+        const bop = grammar_roles.gluedRelation(op.kind) orelse return null;
         const saved = self.lex.saveState();
         defer self.lex.restoreState(saved);
         _ = try self.adv();
@@ -5585,16 +5553,10 @@ pub const Parser = struct {
         return bop;
     }
 
+    /// `+=` and `+` request the SAME relation; the owner records the face, so
+    /// this is one observation and not a sixth spelling of `add`.
     fn compound_assign_op(kind: TK) ?ast.BinOp {
-        return switch (kind) {
-            .plus_assign => .add,
-            .minus_assign => .sub,
-            .star_assign => .mul,
-            .slash_assign => .div,
-            .percent_assign => .mod,
-            .caret_assign => .pow,
-            else => null,
-        };
+        return grammar_roles.updateRelation(kind);
     }
 
     fn parse_expr(self: *Parser) ParseError!*ast.Expr {
@@ -5632,14 +5594,7 @@ pub const Parser = struct {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
-                const op: ?ast.UnOp = switch (tok.kind) {
-                    .kw_not, .bang => .not,
-                    .hash => .len,
-                    .hash_hash, .kw_comptime => .compile,
-                    .minus => .neg,
-                    .tilde => .bnot,
-                    else => null,
-                };
+                const op: ?ast.UnOp = grammar_roles.unaryRelation(tok.kind);
                 if (op) |uop| {
                     if (tok.kind == .kw_not and self.idol_mode)
                         term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});

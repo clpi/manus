@@ -470,41 +470,41 @@ pub const PrettyPrinter = struct {
     /// the condition the parser would re-associate it.
     const tight_operand_position: u8 = unary_parens_bit | 20;
 
-    /// The spelling map's inverse, and NOT a precedence table. It answers only
-    /// "which token is this operator written with"; every binding power still
-    /// comes from `grammar_roles` THROUGH it, so the printer reads the
-    /// parser's own authority rather than a copy of it. `test "pretty: every
-    /// BinOp round-trips through the grammar"` pins it against
-    /// `Parser.infixBinOp`, which is what the deleted precedence table never
-    /// had and why it was free to drift.
+    /// Which token an operator is written with — INVERTED from the grammar
+    /// owner, not authored beside it.
+    ///
+    /// This was 24 hand-written arms whose only job was to agree with
+    /// `Parser.infixBinOp`'s 24 arms, and a test existed solely to check that
+    /// agreement. Both maps are now one fact in `lib/compiler/token.id`:
+    /// the row that gives `.plus` its binding power is the row that says
+    /// `.plus` writes `add`, so the inverse is a derivation and the two
+    /// cannot disagree. Totality and injectivity are enforced at COMPILE
+    /// TIME below, so an operator the owner names no token for, or two
+    /// identities claiming one relation, is a build failure rather than a
+    /// silently wrong parenthesis.
     fn tokenFor(op: BinOp) lexer.TokenKind {
-        return switch (op) {
-            .@"or" => .kw_or,
-            .@"and" => .kw_and,
-            .lt => .lt,
-            .gt => .gt,
-            .leq => .leq,
-            .geq => .geq,
-            .eq => .eq,
-            .neq => .neq,
-            .contains => .kw_in,
-            .bor => .pipe,
-            .bxor => .tilde,
-            .band => .amp,
-            .lshift => .lshift,
-            .rshift => .rshift,
-            .concat => .concat,
-            .add => .plus,
-            .sub => .minus,
-            .mul => .star,
-            .div => .slash,
-            .idiv => .idiv,
-            .mod => .percent,
-            .pow => .caret,
-            .matmul => .at,
-            .pipeline => .pipe_gt,
-        };
+        return infix_token[@backingInt(op)];
     }
+
+    const relation_count = @typeInfo(BinOp).@"enum".field_names.len;
+
+    const infix_token: [relation_count]lexer.TokenKind = blk: {
+        var m: [relation_count]lexer.TokenKind = undefined;
+        var named: [relation_count]bool = @splat(false);
+        for (grammar_roles.rows) |r| {
+            const kind = r.kind orelse continue;
+            if (!r.infix) continue;
+            const rel = r.relation orelse continue;
+            const i = @backingInt(rel);
+            if (named[i]) @compileError("two token identities claim one infix relation");
+            named[i] = true;
+            m[i] = kind;
+        }
+        for (named, 0..) |ok, i| {
+            if (!ok) @compileError("the grammar owner names no infix token for " ++ @typeInfo(BinOp).@"enum".field_names[i]);
+        }
+        break :blk m;
+    };
 
     /// The bounds for an operator's two operands, derived from `grammar_roles`
     /// the same way `Parser.infix_prec` derives the parser's binding powers.
@@ -2138,11 +2138,11 @@ fn fmtGrouped(alloc: std.mem.Allocator, src: []const u8) ![]u8 {
 }
 
 test "pretty: every BinOp round-trips through the grammar" {
-    // `tokenFor` is the only new map, and a map that must agree with another
-    // map is the shape of the original defect. This pins it: for every operator
-    // the printer can write, the token it names must be the token the PARSER
-    // reads back as that same operator. A typo here would silently give some
-    // operator another's binding powers.
+    // `tokenFor` is no longer a map — it is the compile-time inverse of the
+    // grammar owner's `relation` fact, and the parser reads the same fact
+    // forward. This is the runtime witness that the two directions compose to
+    // the identity, which is the property the deleted pair of hand-written
+    // switches could only be TESTED for.
     const Parser = @import("parser.zig").Parser;
     inline for (@typeInfo(BinOp).@"enum".field_names) |nm| {
         const op: BinOp = @field(BinOp, nm);
