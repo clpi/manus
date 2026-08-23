@@ -917,7 +917,7 @@ jitbail: i64 = (why: str, op: i64, pos: i64)
 # this revision — the `jit` table the compiler builds holds only
 # on/off/flush/status/version/version_num/opt/os/arch. `src/probe_jit.id`, run
 # at this revision, answers `arch=nil` / `jit: mmap refused` / `jit result=-1
-# expect 42`. Correcting the arch string alone would have moved the failure
+# expected result 42`. Correcting the arch string alone would have moved the failure
 # from a silent `false` to a nil call on `jitm.alloc`.
 #
 # So both halves are checked, separately, and each names itself. The arch test
