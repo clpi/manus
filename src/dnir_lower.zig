@@ -11677,11 +11677,16 @@ fn nonNegWidth(widths: *const NonNegEnv, e: *const ast.Expr) ?u8 {
                     const x = nonNegWidth(widths, b.lhs);
                     const k = intLiteralStep(b.rhs) orelse break :blk x;
                     if (k < 0 or k > 63) break :blk null;
-                    // A 64-bit word shifted right by `k` lands below 2^(64-k).
-                    const from_shift: u8 = @intCast(64 - k);
-                    const bound: u8 = if (x) |w| @min(w, from_shift) else if (k >= 1) from_shift else break :blk null;
-                    const shifted: i64 = @as(i64, bound) - k;
-                    break :blk if (shifted > 0) @as(u8, @intCast(shifted)) else 0;
+                    const shift: u8 = @intCast(k);
+                    // A known `[0,2^w)` value loses `k` width bits. An
+                    // otherwise unknown 64-bit word shifted by at least one
+                    // first gains the 64-bit unsigned bound, then loses those
+                    // same `k` bits. The old transfer formed `64-k` and then
+                    // subtracted `k` AGAIN; for `x >> 1` it published width 62
+                    // instead of 63, which let a following `+ 1` falsely prove
+                    // a divisor non-negative at the INT64_MIN boundary.
+                    const source_width: u8 = x orelse if (shift >= 1) 64 else break :blk null;
+                    break :blk if (shift >= source_width) 0 else source_width - shift;
                 },
                 .lshift => {
                     const x = nonNegWidth(widths, b.lhs) orelse break :blk null;
@@ -15701,6 +15706,63 @@ test "dnir_lower: runtime floor divisor preserves the integer zero trap" {
             }
         };
         try std.testing.expect(saw_half and !saw_half_trap);
+    }
+}
+
+test "dnir_lower: logical shift width does not license a negative floor divisor" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // `-1 >> 1` is the logical value INT64_MAX. Adding one wraps to
+    // INT64_MIN, so this divisor is not non-negative and must keep the general
+    // floored correction. This is the exact edge that a twice-subtracted shift
+    // width incorrectly admitted.
+    {
+        const src =
+            \\answer: i64 = ()
+            \\    x: i64 = -1
+            \\    d: i64 = (x >> 1) + 1
+            \\    1 // d
+        ;
+        var lex = @import("lexer.zig").Lexer.init(src, "floor-shift-boundary.id");
+        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        parser.idol_mode = true;
+        const mod = try parser.parse_module();
+        const lowered = try lowerModule(alloc, &mod);
+
+        var saw_floor = false;
+        for (lowered.functions) |function| for (function.blocks) |block| for (block.instrs) |instruction| {
+            if (instruction.op != .binop or instruction.binop != .idiv) continue;
+            saw_floor = true;
+            try std.testing.expect(!instruction.divisor_nonneg);
+        };
+        try std.testing.expect(saw_floor);
+    }
+
+    // The repair is not a wholesale disable. A positive constant divisor
+    // still bounds `%`, the following `+ 1` remains below 2^63, and the floor
+    // application therefore keeps its cheaper non-negative-divisor form.
+    {
+        const src =
+            \\answer: i64 = ()
+            \\    x: i64 = -1
+            \\    d: i64 = (x % 100) + 1
+            \\    1 // d
+        ;
+        var lex = @import("lexer.zig").Lexer.init(src, "floor-positive-bound.id");
+        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        parser.idol_mode = true;
+        const mod = try parser.parse_module();
+        const lowered = try lowerModule(alloc, &mod);
+
+        var saw_floor = false;
+        for (lowered.functions) |function| for (function.blocks) |block| for (block.instrs) |instruction| {
+            if (instruction.op != .binop or instruction.binop != .idiv) continue;
+            saw_floor = true;
+            try std.testing.expect(instruction.divisor_nonneg);
+        };
+        try std.testing.expect(saw_floor);
     }
 }
 
