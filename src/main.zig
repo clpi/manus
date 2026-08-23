@@ -349,13 +349,49 @@ fn surveyBehaviourEnv(map: anytype) void {
     while (it.next()) |entry| {
         const name = entry.key_ptr.*;
         if (!std.mem.startsWith(u8, name, "DUO_") and !std.mem.startsWith(u8, name, "IDOL_")) continue;
-        // A falsy or empty value sets nothing, so it changes nothing. This is
-        // the same predicate every reader above applies, so a variable exported
-        // as `0` costs neither behaviour nor cache.
-        if (!env_value_truthy(entry.value_ptr.*)) continue;
+        // `.affects` is presence-based. Several physical controls deliberately
+        // read `getenv(...) != null`, and `IDOL_HOME_BUDGET=0` is a meaningful
+        // zero-budget request. Interpreting their values here would therefore
+        // let a warm default artifact answer a different physical compile.
         if (behaviourEnvClass(name) != .affects) continue;
         global_unmodelled_behaviour_env = true;
         return;
+    }
+}
+
+test "unmodelled behaviour environment declines cache on presence" {
+    global_unmodelled_behaviour_env = false;
+    defer global_unmodelled_behaviour_env = false;
+
+    const Case = struct {
+        name: []const u8,
+        value: []const u8,
+        declines: bool,
+    };
+    const cases = [_]Case{
+        // A zero home budget is an exact physical request, not false.
+        .{ .name = "IDOL_HOME_BUDGET", .value = "0", .declines = true },
+        // Legacy severing controls read presence, including a value of zero.
+        .{ .name = "IDOL_DIVZERO_GUARD_ALWAYS", .value = "0", .declines = true },
+        // An unclassified future control must fail closed even when empty.
+        .{ .name = "IDOL_FUTURE_PHYSICAL_CONTROL", .value = "", .declines = true },
+        // Classified reporting and key-modelled controls retain their policy.
+        .{ .name = "DUO_TRACE", .value = "1", .declines = false },
+        .{ .name = "IDOL_UNROLL", .value = "8", .declines = false },
+    };
+
+    // Damage control: the old truthiness filter classifies both required zero
+    // controls as false and therefore makes the two `declines = true` rows fail.
+    try std.testing.expect(!env_value_truthy("0"));
+
+    for (cases) |case| {
+        var map = std.process.Environ.Map.init(std.testing.allocator);
+        defer map.deinit();
+        try map.put(case.name, case.value);
+
+        global_unmodelled_behaviour_env = false;
+        surveyBehaviourEnv(&map);
+        try std.testing.expectEqual(case.declines, global_unmodelled_behaviour_env);
     }
 }
 
