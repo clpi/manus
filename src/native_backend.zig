@@ -124,12 +124,20 @@ pub const Diagnostic = struct {
     /// Take the lowering's occurrence AND its relation face TOGETHER.
     ///
     /// The occurrence alone was promoted here, which left the backend wrapper
-    /// naming the lowering's application beside the backend's own (absent)
-    /// relation — half of one cause and half of another. A cause crosses this
-    /// seam whole or not at all, and it crosses only when this side has not
-    /// already bound one of its own.
+    /// naming the lowering's application beside the backend's own absent
+    /// relation, and `formatDirectCause` then patched the hole from the
+    /// lowering — a borrow across two causes that were never checked to be the
+    /// same one. THE OCCURRENCE IS WHAT DECIDES. Same occurrence and the two
+    /// sides are describing one refusal, so the face completes it; a different
+    /// occurrence is a different cause and nothing crosses.
     pub fn adoptLoweringCause(self: *Diagnostic) void {
-        if (self.application != null or self.relation != null) return;
+        if (self.application) |bound| {
+            const lowered = self.lowering.application orelse return;
+            if (bound != lowered) return;
+            if (self.relation == null) self.relation = self.lowering.relation;
+            return;
+        }
+        if (self.relation != null) return;
         self.application = self.lowering.application;
         self.relation = self.lowering.relation;
     }
@@ -157,6 +165,24 @@ pub const Diagnostic = struct {
 
 fn occurrenceFace(graph: *const semantic_graph.SemanticGraph, entity: semantic_graph.id) ?[]const u8 {
     const node = graph.get(entity) orelse return null;
+    // THE GRAPH IS ASKED FIRST. This read the SPELLING out of `ast_ref` and
+    // only consulted the relation when there was no AST pointer, which inverts
+    // the one law this whole file is enforcing: the graph knows which relation
+    // an occurrence denotes, and the syntax only knows what was typed. They
+    // differ exactly where it matters — `tokenizer = rule` then
+    // `tokenizer(source)` resolves to relation `token`, and the spelling says
+    // `tokenizer`, which `ApplicationFact.applied` exists to keep apart. A
+    // refusal that names the applied binding instead of the relation sends the
+    // reader to the wrong declaration.
+    //
+    // The syntax face remains, below, for the occurrence the graph could NOT
+    // resolve — which is most of what this projection is asked about, and the
+    // only case where a spelling is the best answer available.
+    if (graph.applicationRelation(entity)) |relation_id| {
+        if (graph.get(relation_id)) |relation| {
+            if (relation.name) |name| return name;
+        }
+    }
     if (node.ast_ref) |raw| {
         const expr: *const ast.Expr = @ptrCast(@alignCast(raw));
         return switch (expr.*) {
@@ -232,22 +258,30 @@ pub fn directDiagnostic(err: Error, target: []const u8) DirectDiag {
 
 /// ONE refusal, ONE cause, ALL THREE of its fields.
 ///
-/// A compile carries two diagnostics — the backend's own and the lowering's —
-/// and `formatDirectCause` used to choose between them THREE TIMES
-/// INDEPENDENTLY: `missing` preferred the lowering, while `application` and
-/// `relation` preferred the backend. When both sides had recorded something,
-/// the emitted DNB011 named the occurrence of one cause and the missing fact of
-/// the other, in one sentence that reads as a single finding. That is the same
-/// defect `scripts/native_census.id` records at the top of the file — "one
-/// program, three causes, one line of output" — reached by splicing rather than
-/// by check order, and it is worse, because the spliced line describes a
-/// refusal that never happened.
+/// A compile carries two diagnostics — the backend's own and `diag.lowering` —
+/// and these were three independent `orelse` choices across them: `missing`
+/// preferred the lowering while `application` and `relation` preferred the
+/// backend. A compile that recorded something on each side emitted the
+/// occurrence of one refusal beside the missing fact of another, in one
+/// sentence that reads as a single finding. That is the defect
+/// `scripts/native_census.id` opens with — "one program, three causes, one
+/// line of output" — reached by splicing instead of by check order, and worse,
+/// because the spliced line describes a refusal that never happened.
 ///
-/// The lowering side wins when it recorded a note, because on that path the
-/// backend's own record is the WRAPPER (`graph-dnir-facts`) and the lowering
-/// note is the finding being wrapped. A field the selected cause does not have
-/// is reported absent — `application: unknown`, `missing: unspecified` — and is
-/// never filled in from the other side (`law.fallback.zero`).
+/// THE SIDE THAT RECORDED THE REFUSAL OWNS THE CAUSE, and the backend's own
+/// record wins whenever it has one. `diag.lowering` can hold a note from an
+/// attempt lowering RECOVERED from — a `bail` some `tryLower…` caught and fell
+/// back past — so a rule that simply prefers the lowering note promotes a
+/// cause that did not happen. Measured on `examples/call_shape_demo.id`: the
+/// backend refuses with `application-realization-count` while a stale
+/// `missing-application-id` still sits on the lowering.
+///
+/// ONE OCCURRENCE MAY BE DESCRIBED BY BOTH SIDES, and completing it is not
+/// splicing. `dnir_lower.applicationTarget` refuses occurrence 4 having bound
+/// its face, and the backend wraps that refusal having bound the same
+/// occurrence 4 with no face; the two halves are one cause and the equality of
+/// the occurrence is the proof. A face is borrowed ONLY across that equality —
+/// never to fill a hole in a cause the other side is not talking about.
 const Cause = struct {
     missing: ?[]const u8 = null,
     application: ?semantic_graph.id = null,
@@ -256,16 +290,25 @@ const Cause = struct {
 
 fn selectedCause(diagnostic: ?*const Diagnostic) Cause {
     const diag = diagnostic orelse return .{};
-    if (diag.lowering.note() != null) return .{
+    var cause: Cause = if (diag.note() != null or diag.application != null) .{
+        .missing = diag.note(),
+        .application = diag.application,
+        .relation = diag.relation,
+    } else .{
         .missing = diag.lowering.note(),
         .application = diag.lowering.application,
         .relation = diag.lowering.relation,
     };
-    return .{
-        .missing = diag.note(),
-        .application = diag.application,
-        .relation = diag.relation,
-    };
+    if (cause.relation == null) {
+        if (cause.application) |occurrence| {
+            if (diag.relation != null and diag.application != null and diag.application.? == occurrence) {
+                cause.relation = diag.relation;
+            } else if (diag.lowering.application != null and diag.lowering.application.? == occurrence) {
+                cause.relation = diag.lowering.relation;
+            }
+        }
+    }
+    return cause;
 }
 
 /// `law.crash.first`: DNB001/DNB011 name application, missing fact, consumer, producer.
@@ -11261,71 +11304,91 @@ test "native backend: DNB011 names application missing fact consumer producer" {
     try std.testing.expect(std.mem.indexOf(u8, opaque_msg, "application: unknown") != null);
     try std.testing.expect(std.mem.indexOf(u8, opaque_msg, "missing: unspecified") != null);
 
+    // THE LOWERING CAUSE CROSSING THE SEAM, in the seam's own order: the
+    // lowering records its finding, then the backend adopts the occurrence and
+    // relation as a unit and records the note it was carrying. This block used
+    // to poke the lowering note in AFTER the backend record and rely on
+    // `formatDirectCause` to prefer it — a shape the real seam never produces.
     var wrapped: Diagnostic = .{};
-    wrapped.application = 3;
-    try std.testing.expect(invalidFactsWith(&wrapped, @src(), "graph-dnir-facts") == error.SemanticFactsInvalid);
     const fact = "missing-application-id";
     @memcpy(wrapped.lowering.note_buffer[0..fact.len], fact);
     wrapped.lowering.note_len = fact.len;
     wrapped.lowering.application = 3;
+    wrapped.lowering.relation = "observe";
+    wrapped.adoptLoweringCause();
+    try std.testing.expect(
+        invalidFactsWith(&wrapped, @src(), wrapped.lowering.note() orelse "graph-dnir-facts") == error.SemanticFactsInvalid,
+    );
     const promoted = formatDirectCause(error.SemanticFactsInvalid, "native-object", &buf, &wrapped);
     try std.testing.expectEqualStrings(
-        "DNB011 application: 3 missing: missing-application-id consumer: native realization producer: graph",
+        "DNB011 application: 3 relation: observe missing: missing-application-id consumer: native realization producer: graph",
         promoted,
     );
 }
 
 test "native backend: DNB011 reports one cause, never two spliced together" {
-    // THE NEGATIVE CONTROL FOR `selectedCause`. Both sides record a cause and
-    // they are DIFFERENT causes: the backend bound occurrence 8127 / `write`,
-    // the lowering refused occurrence 3 / `byte` for a missing application id.
-    // Before cause selection this printed `application: 8127 relation: write
-    // missing: missing-application-id` — the occurrence of one refusal and the
-    // missing fact of another, in a sentence that reads as a finding about a
-    // single call.
+    // THE NEGATIVE CONTROL. The backend refuses on occurrence 8127 / `write`
+    // while `diagnostic.lowering` still holds occurrence 3 / `byte` from an
+    // attempt lowering RECOVERED from. Before the repair the three fields were
+    // chosen independently and this printed `application: 8127 relation: write
+    // missing: missing-application-id` — this refusal's occurrence beside a
+    // missing fact from a refusal that never happened. The stale lowering note
+    // is exactly the shape measured on `examples/call_shape_demo.id`.
     var diagnostic: Diagnostic = .{};
-    diagnostic.application = 8127;
-    diagnostic.relation = "write";
-    try std.testing.expect(invalidFactsWith(&diagnostic, @src(), "platform-output-witness") == error.SemanticFactsInvalid);
-
-    const lowering_note = "missing-application-id";
-    @memcpy(diagnostic.lowering.note_buffer[0..lowering_note.len], lowering_note);
-    diagnostic.lowering.note_len = lowering_note.len;
+    const stale = "missing-application-id";
+    @memcpy(diagnostic.lowering.note_buffer[0..stale.len], stale);
+    diagnostic.lowering.note_len = stale.len;
     diagnostic.lowering.application = 3;
     diagnostic.lowering.relation = "byte";
 
+    diagnostic.application = 8127;
+    diagnostic.relation = "write";
+    try std.testing.expect(invalidFactsWith(&diagnostic, @src(), "application-realization-count") == error.SemanticFactsInvalid);
+
     var buf: [256]u8 = undefined;
     try std.testing.expectEqualStrings(
-        "DNB011 application: 3 relation: byte missing: missing-application-id consumer: native realization producer: graph",
+        "DNB011 application: 8127 relation: write missing: application-realization-count consumer: native realization producer: graph",
         formatDirectCause(error.SemanticFactsInvalid, "native-object", &buf, &diagnostic),
     );
 
-    // AND THE OTHER DIRECTION. With no lowering note the backend's own cause is
-    // selected WHOLE — its occurrence, its relation, its missing fact — rather
-    // than borrowing the lowering's occurrence to fill a gap.
-    var backend_only: Diagnostic = .{};
-    backend_only.application = 8127;
-    backend_only.relation = "write";
-    try std.testing.expect(invalidFactsWith(&backend_only, @src(), "platform-output-witness") == error.SemanticFactsInvalid);
-    backend_only.lowering.application = 3;
-    backend_only.lowering.relation = "byte";
-    try std.testing.expectEqualStrings(
-        "DNB011 application: 8127 relation: write missing: platform-output-witness consumer: native realization producer: graph",
-        formatDirectCause(error.SemanticFactsInvalid, "native-object", &buf, &backend_only),
-    );
+    // AND THE STALE CAUSE DOES NOT CROSS THE SEAM EITHER. Occurrence 3 is not
+    // occurrence 8127, so adopting leaves this refusal exactly as it was.
+    diagnostic.adoptLoweringCause();
+    try std.testing.expectEqual(@as(?semantic_graph.id, 8127), diagnostic.application);
+    try std.testing.expectEqualStrings("write", diagnostic.relation.?);
 
-    // A CAUSE WITH NO OCCURRENCE STAYS WITHOUT ONE. The lowering recorded the
-    // finding, so the lowering is the cause, and its absent occurrence is
-    // reported absent instead of being filled from the backend's.
+    // A CAUSE WITH NO OCCURRENCE STAYS WITHOUT ONE. `adoptLoweringCause` is the
+    // only way the lowering's occurrence crosses, and it declines when this
+    // side has already bound one — so a backend refusal that bound nothing
+    // reports nothing rather than borrowing (`law.fallback.zero`).
     var unbound: Diagnostic = .{};
-    unbound.application = 8127;
-    try std.testing.expect(invalidFactsWith(&unbound, @src(), "graph-dnir-facts") == error.SemanticFactsInvalid);
-    @memcpy(unbound.lowering.note_buffer[0..lowering_note.len], lowering_note);
-    unbound.lowering.note_len = lowering_note.len;
+    unbound.lowering.application = 3;
+    unbound.lowering.relation = "byte";
+    try std.testing.expect(invalidFactsWith(&unbound, @src(), "platform-output-witness") == error.SemanticFactsInvalid);
     try std.testing.expectEqualStrings(
-        "DNB011 application: unknown missing: missing-application-id consumer: native realization producer: graph",
+        "DNB011 application: unknown missing: platform-output-witness consumer: native realization producer: graph",
         formatDirectCause(error.SemanticFactsInvalid, "native-object", &buf, &unbound),
     );
+
+    // AND THE PAIR CROSSES WHOLE OR NOT AT ALL. Adopting only the occurrence
+    // left this refusal naming the lowering's application beside the backend's
+    // absent relation — half of one cause and half of another.
+    unbound.adoptLoweringCause();
+    try std.testing.expectEqual(@as(?semantic_graph.id, 3), unbound.application);
+    try std.testing.expectEqualStrings("byte", unbound.relation.?);
+
+    // ONE OCCURRENCE, TWO HALVES OF THE SAME CAUSE. This is the live shape —
+    // `examples/native_print_smoke.id` refuses in `dnir_lower.applicationTarget`
+    // on occurrence 4 while the backend has bound occurrence 4 with no face —
+    // and it is NOT a splice, because the occurrences are equal. Refusing to
+    // complete it dropped `relation: puts` from eight corpus refusals.
+    var same: Diagnostic = .{};
+    same.application = 4;
+    same.lowering.application = 4;
+    same.lowering.relation = "puts";
+    same.adoptLoweringCause();
+    try std.testing.expectEqual(@as(?semantic_graph.id, 4), same.application);
+    try std.testing.expectEqualStrings("puts", same.relation.?);
 }
 
 test "native backend: caller diagnostics are isolated and observed attempts reset" {

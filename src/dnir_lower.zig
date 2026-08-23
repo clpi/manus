@@ -91,6 +91,24 @@ fn invalidGraphFacts(diagnostic: *Diagnostic, site: std.builtin.SourceLocation, 
 
 fn applicationFace(graph: *const semantic_graph.SemanticGraph, entity: semantic_graph.id) ?[]const u8 {
     const node = graph.get(entity) orelse return null;
+    // THE GRAPH IS ASKED FIRST. This read the SPELLING out of `ast_ref` and
+    // only consulted the relation when there was no AST pointer, which inverts
+    // the one law this whole file is enforcing: the graph knows which relation
+    // an occurrence denotes, and the syntax only knows what was typed. They
+    // differ exactly where it matters — `tokenizer = rule` then
+    // `tokenizer(source)` resolves to relation `token`, and the spelling says
+    // `tokenizer`, which `ApplicationFact.applied` exists to keep apart. A
+    // refusal that names the applied binding instead of the relation sends the
+    // reader to the wrong declaration.
+    //
+    // The syntax face remains, below, for the occurrence the graph could NOT
+    // resolve — which is most of what this projection is asked about, and the
+    // only case where a spelling is the best answer available.
+    if (graph.applicationRelation(entity)) |relation_id| {
+        if (graph.get(relation_id)) |relation| {
+            if (relation.name) |name| return name;
+        }
+    }
     if (node.ast_ref) |raw| {
         const expr: *const Expr = @ptrCast(@alignCast(raw));
         return switch (expr.*) {
@@ -102,11 +120,6 @@ fn applicationFace(graph: *const semantic_graph.SemanticGraph, entity: semantic_
             .method_call => |mc| mc.method,
             else => node.name,
         };
-    }
-    if (graph.application(entity)) |fact| {
-        const relation_id = graph.applicationRelation(fact.application) orelse return node.name;
-        const relation = graph.get(relation_id) orelse return node.name;
-        return relation.name;
     }
     return node.name;
 }
