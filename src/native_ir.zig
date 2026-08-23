@@ -533,6 +533,22 @@ fn calleeIsModuleLocal(m: Module, callee: []const u8) bool {
     return false;
 }
 
+/// THIS MODULE WAS LOWERED WITH GRAPH FACTS REQUIRED.
+///
+/// Derived, never stored. `dnir_lower.lowerModuleWithGraphObserved` computes
+/// `require_graph_facts = !graph.gateTransportModule()` from the SAME fact on
+/// the SAME graph the module already carries, so asking it here adds no second
+/// owner, no new field, and nothing that can drift from the lowering that
+/// produced the instructions (`law.fact.producer.one`).
+///
+/// A module with no resident graph is not "unchecked by default" — it is a
+/// hand-built physical fixture with no application universe at all, and the
+/// per-instruction rules below already say what such a module may contain.
+fn moduleIsChecked(m: Module) bool {
+    const graph = m.graph orelse return false;
+    return !graph.gateTransportModule();
+}
+
 /// True when every instruction is in the direct-backend subset.
 pub fn moduleIsNativeDirectReady(m: Module) bool {
     // NO `if (m.functions.len == 0) return false;` HERE. Readiness is a
@@ -543,6 +559,7 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
     // backend refused, one layer below the same conflation in
     // `dnir_lower.lowerModuleFromGraph`. Both had to go for
     // `lib/compiler/application.id` to build.
+    const checked = moduleIsChecked(m);
     for (m.functions) |f| {
         for (f.blocks) |b| {
             for (b.instrs) |i| {
@@ -553,6 +570,24 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                 if ((fact_count == 3) != (i.realization_start != null)) return false;
                 if (i.op == .call_direct) {
                     if (i.application == null) {
+                        // CALLEE TEXT IS NOT AN IDENTITY. On the checked path a
+                        // direct call with no application occurrence is not
+                        // ready, whatever its callee spells — GAP-137's
+                        // 2026-08-10 preservation gate in the exact words it
+                        // was written in: "an empty application census cannot
+                        // authorize an identity-free `call_direct` or
+                        // callee-text selection".
+                        //
+                        // `calleeIsModuleLocal` alone stood here, and the
+                        // escape it granted was backwards. The instruction it
+                        // admitted was the one whose callee the module ALSO
+                        // declares — precisely the ordinary module call that
+                        // must carry an occurrence — while the GAP-155
+                        // bootstrap faces that legitimately have no published
+                        // application (`text:tail()` and friends) name symbols
+                        // no module declares, so the escape never covered them.
+                        // It selected by spelling and protected nothing.
+                        if (checked) return false;
                         if (!calleeIsModuleLocal(m, i.callee)) return false;
                         continue;
                     }
@@ -563,6 +598,17 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     if (graph.application(application) == null) return false;
                     if (graph.applicationRelation(application) != relation or
                         graph.applicationSubject(application) != i.subject) return false;
+                    // THE SELECTED CALLABLE AND THE OCCURRENCE'S OWN
+                    // PROVENANCE, asked on the checked path for the same reason
+                    // relation/subject already are: a realization that reaches
+                    // machine emission without them has nothing to answer
+                    // "which declaration ran" and "where did it come from"
+                    // with, and the only remaining answer would be `i.callee`.
+                    // Both are read from the graph — DNIR stores no copy.
+                    if (checked) {
+                        if (graph.applicationTarget(application) != i.target) return false;
+                        if (graph.applicationProvenance(application) == null) return false;
+                    }
                     const results = graph.applicationResults(application) orelse return false;
                     if (results.len == 0 or results[0] != value) return false;
                     if (results.len == 1) {
@@ -715,6 +761,39 @@ test "native_ir: single ret function ready" {
     };
     const m = Module{ .functions = &.{f} };
     try std.testing.expect(moduleIsNativeDirectReady(m));
+}
+
+test "native_ir: a checked module refuses an identity-free call_direct whose callee it declares" {
+    // THE NEGATIVE CONTROL FOR DELETING `calleeIsModuleLocal` ON THE CHECKED
+    // PATH. This exact module was READY before the deletion — the callee spells
+    // a function the module declares, which is all the old escape asked — and
+    // it is precisely the ordinary module call GAP-137 requires to carry an
+    // occurrence. `helper` is declared here so the name test would succeed if
+    // it were still consulted.
+    var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const caller_blocks = [_]Block{
+        .{ .instrs = &.{
+            .{ .op = .call_direct, .callee = "helper" },
+            .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+        } },
+    };
+    const helper_blocks = [_]Block{.{ .instrs = &.{.{ .op = .ret, .lhs = .{ .i64 = 0 } }} }};
+    const functions = [_]Function{
+        .{ .name = "caller", .ret = .i64, .blocks = &caller_blocks },
+        .{ .name = "helper", .ret = .i64, .blocks = &helper_blocks },
+    };
+
+    // Checked: the module carries a resident graph and does not request the
+    // gate-transport waiver, so `require_graph_facts` was true when it lowered.
+    try std.testing.expect(!graph.gateTransportModule());
+    try std.testing.expect(!moduleIsNativeDirectReady(.{ .graph = &graph, .functions = &functions }));
+
+    // UNCHECKED IS STILL UNCHECKED. Without a resident graph there is no
+    // application universe to require an occurrence from, and the bounded
+    // name escape still admits the instruction. Deleting the escape everywhere
+    // would have been a different change with a different measurement.
+    try std.testing.expect(moduleIsNativeDirectReady(.{ .functions = &functions }));
 }
 
 test "native_ir: resident graph empty application census refuses direct call" {
