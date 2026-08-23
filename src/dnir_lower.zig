@@ -10047,6 +10047,89 @@ fn checkedGpPackResultType(
     };
 }
 
+/// The current value of one checked module binding, through semantic identity:
+///
+///     use value -> binding -> initializer value -> exact_i64
+///                              \\-> module place stability
+///
+/// This is the first `ModuleConsts.ints` deletion domain. The caller already
+/// holds the exact binding id published on the application operand, so a name
+/// lookup here would be a rival semantic decision. A producer-domain row that
+/// is missing or damaged refuses; a binding that is lawfully mutable is
+/// realized through its exact physical module word inside this decision.
+const BindingI64Decision = union(enum) {
+    /// This operand is outside the bounded binding-initializer producer domain.
+    unvisited,
+    /// The graph selected the value; no later name-based semantic fallback is
+    /// permitted. The physical value may be an immediate or an exact load.
+    value: dnir.Value,
+};
+
+fn checkedBindingI64(
+    ctx: *LowerCtx,
+    operand: *const CheckedScalarOperand,
+) Error!BindingI64Decision {
+    if (operand.descriptor != .i64) return .unvisited;
+    const binding = operand.binding orelse return .unvisited;
+    const initialization = switch (ctx.graph.bindingInitialization(binding)) {
+        .unvisited => return .unvisited,
+        .invalid => return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer"),
+        .known => |fact| fact,
+    };
+    const p = ctx.graph.modulePlace(initialization.place) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-place");
+    if (p.shape != .scalar or p.region != .module or p.init == null)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-place");
+
+    // Unknown is not false and not permission to use the initializer. These
+    // are the exact f9 scalar-place facts whose absence formerly forced every
+    // consumer to run a new assignment census.
+    if (p.facts.mutation == .unknown or
+        p.facts.immutability == .unknown or
+        p.facts.contents_known == .unknown or
+        p.facts.determinacy == .unknown or
+        p.facts.alias == .unknown)
+    {
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-place");
+    }
+    const initializer_current = p.facts.mutation == .no and
+        p.facts.immutability == .yes and
+        p.facts.contents_known == .yes and
+        p.facts.determinacy == .exact and
+        p.facts.alias == .no;
+    const one_binding = switch (p.bindCount()) {
+        .exact => |count| count == 1,
+        .bounded, .unknown => return invalidGraphFacts(
+            ctx.diagnostic,
+            @src(),
+            "binding-initializer-place",
+        ),
+    };
+    if (initializer_current and one_binding) {
+        // `escape` is deliberately not a blocker. f9 defines a module scalar
+        // as escaped when a relation body names it; this very checked operand
+        // is such a read. Scalar reads copy the ring element, and immutability
+        // plus known contents proves every such copy equals the initializer.
+        const exact = ctx.graph.exactI64(initialization.value) orelse
+            return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-value");
+        return .{ .value = .{ .i64 = exact } };
+    }
+
+    // A known non-current initializer must use the one physical module word.
+    // Returning `null` here used to fall through to `ModuleConsts.ints`, which
+    // converted a graph-known runtime value back into the initializer merely
+    // because the spelling remained in a legacy map. Missing storage therefore
+    // refuses; it is not permission to reconstruct another semantic answer.
+    const name = try checkedOperandName(ctx, operand);
+    const ty = ctx.module_globals.types.get(name) orelse
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-storage");
+    if (ty != .i64)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-storage");
+    const temp = ctx.freshTemp();
+    try ctx.emit(.{ .op = .load_global, .result = temp, .field = name, .ty = ty });
+    return .{ .value = .{ .temp = temp } };
+}
+
 /// ONE PHYSICAL ARGUMENT SLOT, AND THE SEMANTIC LINEAGE IT REALIZES.
 ///
 /// THE GENERAL LAW: one semantic value realizes as 0..N physical components,
@@ -10192,6 +10275,14 @@ fn evaluateCheckedScalarOperands(
         }
         if (count >= storage.len) {
             return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
+        }
+        switch (try checkedBindingI64(ctx, operand)) {
+            .unvisited => {},
+            .value => |value| {
+                storage[count] = wholeOperandSlot(operand, value);
+                count += 1;
+                continue;
+            },
         }
         if (try lowerOpaqueRecordLocalArg(ctx, operand.expression)) |materialized| {
             storage[count] = wholeOperandSlot(operand, materialized);
@@ -13876,6 +13967,171 @@ test "dnir_lower: checked module operand consumes graph binding edge" {
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
     );
     try std.testing.expectEqualStrings("application-operand-binding", diagnostic.note().?);
+}
+
+test "dnir_lower: immutable module integer operand consumes binding initializer fact" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\const fixed: i64 = 41
+        \\moving: i64 = 1
+        \\moving = 2
+        \\take: i64 = (value: i64)
+        \\    value
+        \\readfixed: i64 = ()
+        \\    take(fixed)
+        \\readmoving: i64 = ()
+        \\    take(moving)
+        \\readliteral: i64 = ()
+        \\    take(7)
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "binding-initializer.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const module_id = try graph.liftModuleWithCheckedCalls(
+        &module,
+        &checked,
+        "binding-initializer.id",
+    );
+
+    const fixed_binding = graph.resolveInHome(module_id, "fixed", .local) orelse
+        return error.TestExpectedEqual;
+    const moving_binding = graph.resolveInHome(module_id, "moving", .local) orelse
+        return error.TestExpectedEqual;
+    const fixed_initialization = switch (graph.bindingInitialization(fixed_binding)) {
+        .known => |fact| fact,
+        .unvisited, .invalid => return error.TestExpectedEqual,
+    };
+    const moving_initialization = switch (graph.bindingInitialization(moving_binding)) {
+        .known => |fact| fact,
+        .unvisited, .invalid => return error.TestExpectedEqual,
+    };
+    try std.testing.expectEqual(@as(i64, 41), graph.exactI64(fixed_initialization.value).?);
+    try std.testing.expectEqual(@as(i64, 1), graph.exactI64(moving_initialization.value).?);
+    try std.testing.expectEqual(
+        place.Tri.yes,
+        graph.modulePlace(moving_initialization.place).?.facts.mutation,
+    );
+
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    var fixed_argument: ?dnir.Value = null;
+    var moving_argument: ?dnir.Value = null;
+    for (lowered.functions) |function| {
+        const destination = if (std.mem.endsWith(u8, function.name, "__readfixed"))
+            &fixed_argument
+        else if (std.mem.endsWith(u8, function.name, "__readmoving"))
+            &moving_argument
+        else
+            continue;
+        for (function.blocks[0].instrs) |instruction| {
+            if (instruction.op == .mov_arg and instruction.result == 0) {
+                destination.* = instruction.lhs;
+                break;
+            }
+        }
+    }
+    try std.testing.expect(std.meta.eql(dnir.Value{ .i64 = 41 }, fixed_argument.?));
+    // Mutation/current-value is a place decision. The initialization row still
+    // exists, but the operand must arrive from storage rather than as `1`.
+    try std.testing.expect(switch (moving_argument.?) {
+        .i64 => false,
+        else => true,
+    });
+
+    // Decision-changing damage control. ModuleConsts still contains the source
+    // spelling `fixed -> 41`; changing only graph-owned exact content must
+    // change the staged DNIR immediate, proving this checked-operand path never
+    // consults that rival map.
+    const exact_row = graph.exact_i64_rows.get(fixed_initialization.value) orelse
+        return error.TestExpectedEqual;
+    const saved_content = graph.exact_i64_facts.items[exact_row].content;
+    graph.exact_i64_facts.items[exact_row].content = 99;
+    const changed = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, changed);
+    var changed_argument: ?dnir.Value = null;
+    for (changed.functions) |function| {
+        if (!std.mem.endsWith(u8, function.name, "__readfixed")) continue;
+        for (function.blocks[0].instrs) |instruction| {
+            if (instruction.op == .mov_arg and instruction.result == 0) {
+                changed_argument = instruction.lhs;
+                break;
+            }
+        }
+    }
+    try std.testing.expect(std.meta.eql(dnir.Value{ .i64 = 99 }, changed_argument.?));
+    graph.exact_i64_facts.items[exact_row].content = saved_content;
+
+    // Missing claimed row is damage, not an invitation to rediscover 41 by
+    // name. The candidate bit remains as the producer-domain certificate.
+    const removed = graph.binding_initialization_rows.fetchRemove(fixed_binding) orelse
+        return error.TestExpectedEqual;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("binding-initializer", diagnostic.note().?);
+    try graph.binding_initialization_rows.putNoClobber(alloc, removed.key, removed.value);
+
+    // An unrelated exact value cannot impersonate the initializer. This is a
+    // real exact-i64 application operand rather than an invalid node kind; the
+    // query's module-root scope check must reject it before realization.
+    const init_row = graph.binding_initialization_rows.get(fixed_binding).?;
+    const saved_value = graph.binding_initializations.items[init_row].value;
+    var unrelated_exact_value: ?semantic_graph.id = null;
+    for (graph.exact_i64_facts.items) |fact| {
+        if (fact.content != 7) continue;
+        const node = graph.get(fact.value) orelse continue;
+        if (node.kind != .value or node.scope == module_id) continue;
+        unrelated_exact_value = fact.value;
+        break;
+    }
+    graph.binding_initializations.items[init_row].value = unrelated_exact_value orelse
+        return error.TestExpectedEqual;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("binding-initializer", diagnostic.note().?);
+    graph.binding_initializations.items[init_row].value = saved_value;
+
+    // Unknown stability is also a refusal. A consumer may not collapse it to
+    // immutable merely because both initializer content and source name exist.
+    const fixed_place = @constCast(graph.modulePlace(fixed_initialization.place).?);
+    const saved_mutation = fixed_place.facts.mutation;
+    fixed_place.facts.mutation = .unknown;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("binding-initializer-place", diagnostic.note().?);
+    fixed_place.facts.mutation = saved_mutation;
+
+    // A graph-known runtime binding cannot fall through to the legacy
+    // `ModuleConsts.ints` entry for the same spelling. `fixed` deliberately
+    // has no physical module word, so damaging only its stability to a known
+    // mutable state must refuse at the storage boundary instead of staging 41.
+    const saved_immutability = fixed_place.facts.immutability;
+    fixed_place.facts.immutability = .no;
+    diagnostic.reset();
+    try std.testing.expectError(
+        error.GraphFactsInvalid,
+        lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
+    );
+    try std.testing.expectEqualStrings("binding-initializer-storage", diagnostic.note().?);
+    fixed_place.facts.immutability = saved_immutability;
 }
 
 test "dnir_lower: interpolation consumes nested graph value descriptor" {
