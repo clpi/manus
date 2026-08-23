@@ -34,13 +34,16 @@ function idol_decl(L,   nm, rest) {
 }
 
 # MODE=file : every input line is a source line.
-# MODE=diff : only `+` added lines count, and only when the source byte that
-#             follows the `+` is in column 1 (i.e. not a space) -- an indented
-#             added line is not a module-scope declaration.
+# MODE=diff : added and removed column-one declarations are paired by exact
+#             path, conservative declaration kind, and name. An unchanged
+#             identity whose value/body was edited is existing vocabulary, as
+#             gate/vocabulary.sh promises; an added identity, rename, or kind
+#             change remains blocked. Indented lines are never module scope.
 {
     if (MODE == "diff") {
         if ($0 ~ /^\+\+\+ /) { f = $2; sub(/^b\//, "", f); FNAMEX = f; next }
-        if ($0 !~ /^\+/) next
+        if ($0 ~ /^--- / || $0 !~ /^[+-]/) next
+        sign = substr($0, 1, 1)
         L = substr($0, 2)
         if (L ~ /^[ \t]/) next
     } else {
@@ -51,5 +54,30 @@ function idol_decl(L,   nm, rest) {
     if (r == "") next
     split(r, p, "\t")
     if (p[2] ~ /^_/) next
-    print p[1] "\t" p[2] "\t" FNAMEX
+    if (MODE != "diff") {
+        print p[1] "\t" p[2] "\t" FNAMEX
+        next
+    }
+    key = p[1] SUBSEP p[2] SUBSEP FNAMEX
+    if (sign == "-") {
+        removed[key]++
+        next
+    }
+    added_n++
+    added_key[added_n] = key
+    added_kind[added_n] = p[1]
+    added_name[added_n] = p[2]
+    added_file[added_n] = FNAMEX
+}
+
+END {
+    if (MODE != "diff") exit
+    for (i = 1; i <= added_n; i++) {
+        key = added_key[i]
+        if (removed[key] > 0) {
+            removed[key]--
+            continue
+        }
+        print added_kind[i] "\t" added_name[i] "\t" added_file[i]
+    }
 }

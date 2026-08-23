@@ -8,9 +8,9 @@
 #   is the corpus side and it is not restated here.
 #
 #   This gate owns the AUTHORITY side, in `src/`, which that ledger explicitly
-#   does not touch. Its own header names the defect -- "src/legacy_directives.zig
-#   nevertheless calls the dotted `@comp.*` forms canonical" -- without gating
-#   it. These three rules gate it.
+#   does not touch. Compatibility aliases and positive source teaching can keep
+#   a retired family authoritative after its `@comp.*` uses reach zero. These
+#   four rules gate that residue.
 #
 # THE LAW. docs/metaprogramming.md: metaprogramming operates on graph-owned
 # identities, relations, facts, dependencies, demands, laws, worlds, provenance
@@ -22,7 +22,7 @@
 # docs/spec/canonical.md 25 lists `@(comp|host|runtime).` as a hard lexical
 # reject pattern.
 #
-# THREE RULES:
+# FOUR RULES:
 #   (B) CATALOG. Dotted directive entries in src/meta_module.zig may not EXCEED
 #       the pinned budget. The ledger next door counts `.id` source only, so the
 #       Zig-side catalog -- three spellings per operation, `comp.`/`meta.`/
@@ -36,6 +36,11 @@
 #       directive namespace. The parser used to answer `@ctz` with "deprecated,
 #       use @comp.bit.ctz instead", which made the compiler the loudest
 #       publisher of the namespace its own law retires.
+#   (F) REMOVED FAMILY. The text `contains` relation now carries its own
+#       compile-time contraction and dynamic realization. None of the three
+#       former `*.str.contains` catalog aliases or source faces may return,
+#       even if another catalog row is deleted to keep the gross budget
+#       unchanged.
 #
 # NON-NEGOTIABLES, learned from gate/admission.sh and GAP-201/GAP-220:
 #   * A CEILING WITHOUT A FLOOR REPORTS CLEAN WHEN IT BREAKS. Rule (B) was
@@ -58,7 +63,7 @@
 #     at 1642 against a true 1586.
 #
 # USAGE:
-#   sh gate/directive/authority.sh              controls + the three rules
+#   sh gate/directive/authority.sh              controls + the four rules
 #   sh gate/directive/authority.sh --control    controls only, plus the compiler
 #                                               measurement behind lib/jit.id
 set -eu
@@ -70,17 +75,20 @@ root=${DIRECTIVEAUTHORITYROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && p
 cd "$root" || exit 2
 
 # ---------------------------------------------------------------- constants --
-# Pinned 2026-08-23 against idol@debad1df.
+# Pinned 2026-08-23 by the executable rule below.
 #
-# DENOMINATOR, because a numerator alone is a rumour: 569 dotted rows in
-# src/meta_module.zig, three spellings per operation, i.e. ~190 distinct
+# DENOMINATOR, because a numerator alone is a rumour: 566 dotted rows in
+# src/meta_module.zig, generally three compatibility spellings per operation,
+# i.e. about 189 distinct
 # operations behind them.
 CATALOG_FILE=src/meta_module.zig
-CATALOG_BUDGET=569
+CATALOG_BUDGET=566
 
 CATALOG_RE='\\.public = "(comp|meta|compiler)\\.'
 CANONICAL_RE='\\.canonical'
 RECOMMEND_RE='deprecated, use @'
+REMOVED_ALIAS_RE='\\.public = "(comp|meta|compiler)\\.str\\.contains"'
+REMOVED_FACE_RE='@(comp|meta|compiler)\\.str\\.contains'
 
 viol=0
 fail() { viol=$((viol + 1)); printf '  FAIL %s\n' "$*"; }
@@ -143,8 +151,12 @@ probe 'canonical/declin' "$CANONICAL_RE" '    .{ .public = "ctz", .compatibility
 probe 'canonical/prose'  "$CANONICAL_RE" 'the retired namespace is not canonical'                           0
 probe 'recommend/hit'    "$RECOMMEND_RE" 'warning: @ctz is deprecated, use @comp.bit.ctz instead'           1
 probe 'recommend/declin' "$RECOMMEND_RE" '@{s} is retained compatibility syntax; no canonical Idol spelling' 0
+probe 'alias/hit'        "$REMOVED_ALIAS_RE" '    .{ .public = "comp.str.contains", .internal = "__strcontains" },' 1
+probe 'alias/decline'    "$REMOVED_ALIAS_RE" '    .{ .public = "comp.str.countlines", .internal = "__strcountlines" },' 0
+probe 'face/hit'         "$REMOVED_FACE_RE"  '@meta.str.contains(haystack, needle)' 1
+probe 'face/decline'     "$REMOVED_FACE_RE"  'needle in haystack' 0
 [ "$viol" -eq 0 ] || { printf '%s: CONTROLS FAILED (%s)\n' "$prog" "$viol"; exit 2; }
-ok '8 pattern controls: every pattern sees its defect and declines the lawful face'
+ok '12 pattern controls: every pattern sees its defect and declines the lawful face'
 
 # --------------------------------------------------------- compiler control --
 # The measurement behind lib/jit.id's note. Statement-position and
@@ -226,6 +238,21 @@ if [ "$rec" -gt 0 ]; then
   fail "(E) $rec diagnostic(s) recommend a directive namespace -- name a retired spelling, never prescribe one"
 else
   ok '(E) no diagnostic recommends a directive namespace'
+fi
+
+removed_aliases=$(count_re "$REMOVED_ALIAS_RE" "$CATALOG_FILE")
+subjects="$tmp/id-subjects"
+sh gate/subject.sh '*.id' >"$subjects" || die 'rule F: Idol source enumeration failed'
+removed_faces=0
+while IFS= read -r source; do
+  assert_read F "$source"
+  n=$(count_re "$REMOVED_FACE_RE" "$source")
+  removed_faces=$((removed_faces + n))
+done <"$subjects"
+if [ "$removed_aliases" -gt 0 ] || [ "$removed_faces" -gt 0 ]; then
+  fail "(F) removed text-contains directive returned: $removed_aliases catalog alias(es), $removed_faces source face(s) -- use the ordinary contains relation"
+else
+  ok '(F) text contains has no directive-catalog alias or source face'
 fi
 
 if [ "$viol" -eq 0 ]; then

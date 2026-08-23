@@ -18,7 +18,7 @@ FRAGS = @comp.match("HasXY|Ordered", fun(c)
 )
 
 LINES = @comp.str.countlines(FRAGS)
-HAS_SUBSET = @comp.str.contains(FRAGS, "subset pair")
+HAS_SUBSET = "subset pair" in FRAGS
 
 ok = LINES >= 7 and HAS_SUBSET
 print("=== match → derive.power cascade ===")

@@ -32,9 +32,9 @@ choose2_count = count_semis(CHOOSE2)
 choose3_count = count_semis(CHOOSE3)
 expanded_count = count_semis(EXPANDED)
 
-has_first_pair = @comp.str.contains(CHOOSE2, "pair_vector")
-has_last_pair = @comp.str.contains(CHOOSE2, "point_ray")
-has_triple = @comp.str.contains(CHOOSE3, "pair_vector_point")
+has_first_pair = "pair_vector" in CHOOSE2
+has_last_pair = "point_ray" in CHOOSE2
+has_triple = "pair_vector_point" in CHOOSE3
 ok = choose2_count == 6 and choose3_count == 4 and expanded_count == 0 and has_first_pair and has_last_pair and has_triple
 
 print("=== @comp.choose showcase ===")

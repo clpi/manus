@@ -4633,8 +4633,7 @@ pub const Sema = struct {
                     {
                         return .str;
                     }
-                    if (std.mem.eql(u8, bn, "__strcontains") or
-                        std.mem.eql(u8, bn, "__strstartswith") or
+                    if (std.mem.eql(u8, bn, "__strstartswith") or
                         std.mem.eql(u8, bn, "__strendswith") or
                         std.mem.eql(u8, bn, "__streq"))
                         return .bool;

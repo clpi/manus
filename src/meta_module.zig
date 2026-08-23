@@ -578,9 +578,6 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "comp.agent.multiplier", .internal = "__metaagentmultiplier" },
     .{ .public = "compiler.agent.multiplier", .internal = "__metaagentmultiplier" },
     .{ .public = "meta.agent.multiplier", .internal = "__metaagentmultiplier" },
-    .{ .public = "meta.str.contains", .internal = "__strcontains" },
-    .{ .public = "comp.str.contains", .internal = "__strcontains" },
-    .{ .public = "compiler.str.contains", .internal = "__strcontains" },
     .{ .public = "meta.str.starts.with", .internal = "__strstartswith" },
     .{ .public = "comp.str.starts.with", .internal = "__strstartswith" },
     .{ .public = "compiler.str.starts.with", .internal = "__strstartswith" },
@@ -1192,7 +1189,6 @@ pub fn catalogCategory(path: []const u8) []const u8 {
         std.mem.startsWith(u8, path, "meta.agent.") or
         std.mem.startsWith(u8, path, "comp.agent.") or
         std.mem.startsWith(u8, path, "compiler.agent.") or
-        std.mem.eql(u8, path, "meta.str.contains") or
         std.mem.eql(u8, path, "meta.str.starts.with") or
         std.mem.eql(u8, path, "meta.str.ends.with") or
         std.mem.eql(u8, path, "meta.str.countlines") or

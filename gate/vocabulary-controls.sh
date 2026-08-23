@@ -66,6 +66,33 @@ cat >"$tmp/body.diff" <<'EOF'
 EOF
 expect_pass "body-only change" "$gate" --diff "$tmp/body.diff"
 
+cat >"$tmp/existing.diff" <<'EOF'
+--- a/examples/probe.id
++++ b/examples/probe.id
+@@ -1 +1 @@
+-answer: bool = @comp.str.contains(text, "needle")
++answer: bool = "needle" in text
+EOF
+expect_pass "existing binding value changes without declaring vocabulary" "$gate" --diff "$tmp/existing.diff"
+
+cat >"$tmp/rename.diff" <<'EOF'
+--- a/examples/probe.id
++++ b/examples/probe.id
+@@ -1 +1 @@
+-old_answer = 41
++new_answer = 42
+EOF
+expect_fail "renaming an existing binding still declares a new identity" "$gate" --diff "$tmp/rename.diff"
+
+cat >"$tmp/kind-change.diff" <<'EOF'
+--- a/examples/probe.id
++++ b/examples/probe.id
+@@ -1 +1 @@
+-project = 41
++project: i64 = (value: i64)
+EOF
+expect_fail "changing an existing name to a relation still declares a new identity kind" "$gate" --diff "$tmp/kind-change.diff"
+
 cat >"$tmp/statement.diff" <<'EOF'
 --- a/examples/probe.id
 +++ b/examples/probe.id

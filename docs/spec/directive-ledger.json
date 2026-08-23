@@ -1,15 +1,15 @@
 {
   "subject": "every @comp.* directive form at a CODE position in tracked .id source",
-  "why": "Current metaprogramming law admits no compiler-directive syntax: metaprogramming operates on graph identities, facts, dependencies, demand, worlds, provenance and transformations. src/legacy_directives.zig nevertheless labels the dotted @comp.* forms `canonical` and maps the older underscore spellings onto them. This ledger is the inventory that conflict requires, and gate/directive.sh is its ratchet.",
-  "counting": "CODE POSITIONS ONLY. `#` comments are stripped before matching, because prose describing a directive is not a use of it \u2014 counting comments reported 1063 where the code figure is 824. Forms may not end in a dot; an earlier census produced phantom forms like `@comp.define...` by capturing sentence punctuation.",
+  "why": "Current metaprogramming law admits no compiler-directive syntax: metaprogramming operates on graph identities, facts, dependencies, demand, worlds, provenance and transformations. Compatibility parsing still maps dotted @comp.* forms onto string-dispatched internal handlers. This ledger inventories that second control plane, and gate/directive.sh prevents a removed form or use from returning.",
+  "counting": "CODE POSITIONS ONLY. `#` comments are stripped before matching, because prose describing a directive is not a use of it. Forms may not end in a dot; an earlier census produced phantom forms like `@comp.define...` by capturing sentence punctuation.",
   "totals": {
-    "code_occurrences": 824,
-    "distinct_forms": 109,
+    "code_occurrences": 807,
+    "distinct_forms": 108,
     "files": 133,
     "by_disposition": {
       "evidence": 12,
       "foreign": 9,
-      "relation": 57,
+      "relation": 56,
       "stage": 7,
       "target": 1,
       "transformation": 23
@@ -81,12 +81,6 @@
       "files": 10,
       "disposition": "foreign",
       "rationale": "generated-C / ABI escape; realization + origin + linkage facts, never semantic selection"
-    },
-    "@comp.str.contains": {
-      "code_occurrences": 17,
-      "files": 10,
-      "disposition": "relation",
-      "rationale": "ordinary text relation"
     },
     "@comp.interpolate": {
       "code_occurrences": 16,

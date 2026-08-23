@@ -3,9 +3,9 @@
 #
 # Current metaprogramming law admits NO compiler-directive syntax: metaprogramming
 # operates on graph identities, facts, dependencies, demand, worlds, provenance and
-# transformations. src/legacy_directives.zig nevertheless calls the dotted `@comp.*`
-# forms "canonical" and maps the older underscore spellings onto them, so the tree
-# carries a second semantic control plane of 109 forms across 133 files.
+# transformations. Compatibility parsing still maps dotted `@comp.*` forms onto
+# string-dispatched internal handlers, so the tree carries a second semantic
+# control plane whose live denominator is the executable count printed below.
 #
 # This gate does not delete that plane — migration is per-form semantic work recorded
 # in docs/spec/directive-ledger.json. It stops the plane GROWING, which is the part a
@@ -19,9 +19,8 @@
 #                migration progress.
 #
 # COUNTS ARE CODE POSITIONS ONLY. `#` comments are stripped before matching, because
-# prose describing a directive is not a use of one: counting comment text reported
-# 1063 occurrences where the code figure is 824. Forms may not end in a dot — an
-# earlier census captured sentence punctuation and invented phantom forms such as
+# prose describing a directive is not a use of one. Forms may not end in a dot —
+# an earlier census captured sentence punctuation and invented phantom forms such as
 # `@comp.define...` and `@comp.agent.`.
 #
 # ZERO SUBJECTS IS A FAILURE, NOT A PASS. A census that enumerates nothing proves

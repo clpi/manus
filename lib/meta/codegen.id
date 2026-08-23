@@ -75,7 +75,7 @@ nfold_hint: str = ()
   "@meta.nfold({ concepts... }, fn) — O(types^k); @meta.derive.nfold({ ... }, Derive)"
 
 str_contains_hint: str = ()
-  "@meta.str.contains(haystack, needle) — native strstr / comptime fold, no lua_str_find"
+  "needle in haystack — ordinary text relation with native and compile-time realizations"
 
 str_prefix_suffix_hint: str = ()
   "@meta.str.starts.with(s, prefix) / @meta.str.ends.with(s, suffix) — native C predicates / comptime fold"

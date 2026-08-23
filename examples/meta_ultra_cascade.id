@@ -29,7 +29,7 @@ ZIP_DEEP = @comp.match("i32|f64", fun(m)
 )
 
 ULTRA_LINES = @comp.str.countlines(ULTRA)
-ZIP_HAS = @comp.str.contains(ZIP_DEEP, "i32_add") and @comp.str.contains(ZIP_DEEP, "f64_mul")
+ZIP_HAS = "i32_add" in ZIP_DEEP and "f64_mul" in ZIP_DEEP
 
 ok = ULTRA_LINES == 14 and ZIP_HAS
 print("=== ultra cascade (match→power→each→template) ===")

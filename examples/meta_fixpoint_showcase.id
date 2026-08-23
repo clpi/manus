@@ -5,7 +5,7 @@ result = @comp.fixpoint("start", fun(state)
 , 3)
 
 LINES = @comp.str.countlines(result)
-ok = LINES == 3 and @comp.str.contains(result, "iter0")
+ok = LINES == 3 and "iter0" in result
 print("=== @comp.fixpoint (3 iterations) ===")
 print("line_count = " .. to(str)(LINES))
 print("RESULT fixpoint_iter_ok = " .. to(str)(ok))

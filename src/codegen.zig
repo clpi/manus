@@ -2328,7 +2328,7 @@ pub const CodeGen = struct {
         if (e.* == .binop) {
             const b = e.binop;
             switch (b.op) {
-                .eq, .neq, .lt, .gt, .leq, .geq => return .bool,
+                .eq, .neq, .lt, .gt, .leq, .geq, .contains => return .bool,
                 else => {},
             }
             const lt = self.expr_type(b.lhs);
@@ -3179,7 +3179,6 @@ pub const CodeGen = struct {
             std.mem.eql(u8, name, "__derivepower") or
             std.mem.eql(u8, name, "__deriveproduct"))
             return .str;
-        if (std.mem.eql(u8, name, "__strcontains")) return .bool;
         if (std.mem.eql(u8, name, "__strstartswith") or
             std.mem.eql(u8, name, "__strendswith") or
             std.mem.eql(u8, name, "__streq"))
@@ -18459,7 +18458,26 @@ pub const CodeGen = struct {
                 // ─────────────────────────────────────────────────────────
                 const lt = self.expr_type(b.lhs);
                 const rt = self.expr_type(b.rhs);
-                if (try self.try_emit_lua_and_or_ternary(b)) {
+                if (b.op == .contains and lt == .str and rt == .str) {
+                    // `needle in text` is the ordinary `contains` relation.
+                    // The retired `@comp.str.contains(text, needle)` spelling
+                    // selected `__strcontains` from a directive-name catalog;
+                    // preserve its compile-time contraction and its dynamic
+                    // C-string realization on the relation identity instead.
+                    if (self.fold_meta_string_expr(b.rhs)) |text| {
+                        if (self.fold_meta_string_expr(b.lhs)) |needle| {
+                            self.p("{s}", .{if (std.mem.indexOf(u8, text, needle) != null) "true" else "false"});
+                            return;
+                        }
+                    }
+                    const needle_c = self.expr_is_native_cstr(b.lhs);
+                    const text_c = self.expr_is_native_cstr(b.rhs);
+                    self.p("(strstr(", .{});
+                    try self.emitTextContainsOperand(b.rhs, text_c);
+                    self.p(", ", .{});
+                    try self.emitTextContainsOperand(b.lhs, needle_c);
+                    self.p(") != NULL)", .{});
+                } else if (try self.try_emit_lua_and_or_ternary(b)) {
                     return;
                 } else if (try self.try_emit_native_tonumber_or(b)) {
                     return;
@@ -19433,20 +19451,6 @@ pub const CodeGen = struct {
     }
 
     fn maybe_emit_meta_bool_call(self: *CodeGen, name: []const u8, args: []const *ast.Expr) E!bool {
-        if (std.mem.eql(u8, name, "__strcontains") and args.len == 2 and args[1].* == .quoted) {
-            if (self.fold_meta_string_expr(args[0])) |source| {
-                self.p("{s}", .{if (std.mem.indexOf(u8, source, args[1].quoted.val) != null) "true" else "false"});
-                return true;
-            }
-            if (self.expr_is_native_cstr(args[0])) {
-                self.p("({{ const char* _duo_s = ", .{});
-                try self.emit_expr(args[0]);
-                self.p("; strstr(_duo_s, \"", .{});
-                try self.emit_string_escaped(args[1].quoted.val);
-                self.p("\") != NULL; }})", .{});
-                return true;
-            }
-        }
         if (std.mem.eql(u8, name, "__strstartswith") and args.len == 2) {
             if (self.fold_meta_string_expr(args[0])) |source| {
                 const prefix = self.fold_meta_string_expr(args[1]) orelse return false;
@@ -22228,6 +22232,16 @@ pub const CodeGen = struct {
             self.p(")", .{});
         }
         self.p(")", .{});
+    }
+
+    fn emitTextContainsOperand(self: *CodeGen, value: *const ast.Expr, native_cstr: bool) !void {
+        if (native_cstr) {
+            try self.emit_expr(value);
+        } else {
+            self.p("lua_to_str(", .{});
+            try self.emit_as_lua_value(value);
+            self.p(")", .{});
+        }
     }
 
     fn expr_is_raw_c_intrinsic(_: *CodeGen, e: *const ast.Expr) bool {
@@ -35104,6 +35118,38 @@ test "codegen: comptime str intrinsics fold to native literals" {
     try testing.expect(std.mem.indexOf(u8, output, "const char* joined = \"a|b|c\"") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value eq = ") == null);
     try testing.expect(std.mem.indexOf(u8, output, "const char* joined = lua_to_str(lua_tbl_concat(") == null);
+}
+
+test "codegen: text contains uses the ordinary relation face" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local generated: str = __strjoin({"du", "o"}, "")
+        \\local yes: bool = "uo" in "duo"
+        \\local no: bool = "zz" in "duo"
+        \\function has(haystack: str, needle: str): bool
+        \\  return needle in haystack
+        \\end
+        \\print(yes, no, has(generated, "uo"))
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "bool yes = true") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool no = false") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "strstr(haystack, needle) != NULL") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__strcontains") == null);
 }
 
 test "codegen: __comptimeproduct folds concept cartesian product to native c string" {

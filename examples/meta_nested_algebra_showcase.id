@@ -37,9 +37,9 @@ CASCADE = @comp.each(SUBSETS, fun(frag)
 TD_N = @comp.str.countlines(TYPEDEFS)
 CASCADE_N = @comp.str.countlines(CASCADE)
 
-has_i32_add = @comp.str.contains(PAIRS, "i32_add")
-has_i64_mul = @comp.str.contains(PAIRS, "i64_mul")
-has_f64_mul = @comp.str.contains(PAIRS, "f64_mul")
+has_i32_add = "i32_add" in PAIRS
+has_i64_mul = "i64_mul" in PAIRS
+has_f64_mul = "f64_mul" in PAIRS
 
 ok = TD_N == 3 and has_i32_add and has_i64_mul and has_f64_mul and CASCADE_N == 7
 print("=== nested algebra showcase ===")
