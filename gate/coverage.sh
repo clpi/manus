@@ -105,22 +105,48 @@ JQ
 # purpose: it shares no code, no lift and no assumption with the producer, so
 # when it disagrees with the graph the disagreement is information.
 cat > "$work/lex.awk" <<'AWK'
+# ONE PASS, STRING STATE FIRST. The previous version ran
+# `sub(/#.*$/, "", line)` BEFORE recognising strings, so a `#` inside a
+# string literal truncated the line. MEASURED: `s = "tag#1"` counted 0
+# quoted strings instead of 1, and `y = f("a#b", 42)` counted 0 integers
+# instead of 1 — the denominator silently lost the string AND every token
+# after it on that line. `#` opens a comment only OUTSIDE a string, so
+# string state must be tracked before the comment is cut, not after.
+# WHAT THIS RATIO IS, AND IS NOT. Two limits survive the scanner repair
+# below and neither is fixable here, so do not quote `exact_i64` reach as
+# corpus coverage:
+#
+#   THE DENOMINATOR ONLY COUNTS FILES THAT LIFT. This scanner runs inside
+#   the `if "$idol" graph "$src" && jq ...` block, so a refused file
+#   contributes to NEITHER side. The ratio is "of literals in files that
+#   already lift", not "of literals in the corpus". At the time of writing
+#   4655 application candidates are BLOCKING, and none of their files are
+#   in this denominator.
+#
+#   THE TWO SIDES COUNT DIFFERENT POPULATIONS. The numerator is
+#   `.exact_i64|length` from the graph export, which may include DERIVED
+#   exact values; the denominator counts literal TOKENS in source. A
+#   producer that publishes an exact value for a computed result raises the
+#   numerator against a denominator that never had a token for it.
+#
+# The honest decomposition is four separate measurements — literal
+# occurrence coverage, derived exact-value coverage, consumer reach, and
+# transformation enablement — and this row is only the first, bounded to
+# lifted files.
+BEGIN { sq = sprintf("%c", 39) }   # a single quote, without shell-quoting hazards
 {
-  line = $0
-  sub(/#.*$/, "", line)
-  n = split(line, ch, "")
-  q = 0; b = 0; i = 1
+  n = split($0, ch, "")
+  i = 1; instr = 0; inby = 0; q = 0; b = 0; t = ""
   while (i <= n) {
     c = ch[i]
-    if (c == "\\") { i += 2; continue }
-    if (c == "\"") { q++ }
-    else if (c == "'") { b++ }
+    if (c == "\\" && (instr || inby)) { i += 2; continue }
+    if (!instr && !inby && c == "#") break
+    if (!inby && c == "\"") { instr = !instr; if (!instr) q++; i++; continue }
+    if (!instr && c == sq) { inby = !inby; if (!inby) b++; i++; continue }
+    if (!instr && !inby) t = t c
     i++
   }
-  quoted += int(q / 2) + int(b / 2)
-  t = line
-  gsub(/"[^"]*"/, " ", t)
-  gsub(/'[^']*'/, " ", t)
+  quoted += q + b
   m = split(t, tok, /[^0-9A-Za-z_.]+/)
   for (j = 1; j <= m; j++) if (tok[j] ~ /^[0-9]+$/) ints++
 }
