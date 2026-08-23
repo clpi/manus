@@ -11905,7 +11905,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
     // Integer division only. IEEE-754 DEFINES `x / 0.0` as ±inf and §62 lists
     // infinities among the defined outcomes, so the float path has an answer
     // already and must not be given a fault instead.
-    if (!f64_op and (tag == .div or tag == .mod)) try emitDivisorZeroTrap(ctx, b);
+    if (!f64_op and (tag == .div or tag == .idiv or tag == .mod)) try emitDivisorZeroTrap(ctx, b);
     var result_ty: RT = if (f64_op) .f64 else .any;
     if (!f64_op) {
         if (unsignedComparison(ctx, op, lhs, rhs)) |conv| {
@@ -15595,6 +15595,62 @@ test "dnir_lower: a nine-field record return is eligible, a nine-field param is 
         parser.idol_mode = true;
         const mod = try parser.parse_module();
         try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
+    }
+}
+
+test "dnir_lower: runtime floor divisor preserves the integer zero trap" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    {
+        const src =
+            \\floor: i64 = (n: i64, d: i64)
+            \\    n // d
+        ;
+        var lex = @import("lexer.zig").Lexer.init(src, "floorzero.id");
+        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        parser.idol_mode = true;
+        const mod = try parser.parse_module();
+        const lowered = try lowerModule(alloc, &mod);
+
+        var saw_floor = false;
+        var saw_floor_guard = false;
+        var saw_floor_trap = false;
+        for (lowered.functions) |function| for (function.blocks) |block| for (block.instrs) |instruction| {
+            if (instruction.op == .binop and instruction.binop == .idiv) saw_floor = true;
+            if (instruction.op == .binop and instruction.binop == .neq and
+                instruction.rhs == .i64 and instruction.rhs.i64 == 0)
+            {
+                saw_floor_guard = true;
+            }
+            if (instruction.op == .hw_unary and std.mem.eql(u8, instruction.field, trap_abort_tag)) {
+                saw_floor_trap = true;
+            }
+        };
+        try std.testing.expect(saw_floor and saw_floor_guard and saw_floor_trap);
+    }
+
+    {
+        const src =
+            \\half: i64 = (n: i64)
+            \\    n // 2
+        ;
+        var lex = @import("lexer.zig").Lexer.init(src, "half.id");
+        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        parser.idol_mode = true;
+        const mod = try parser.parse_module();
+        const lowered = try lowerModule(alloc, &mod);
+
+        var saw_half = false;
+        var saw_half_trap = false;
+        for (lowered.functions) |function| for (function.blocks) |block| for (block.instrs) |instruction| {
+            if (instruction.op == .binop and instruction.binop == .idiv) saw_half = true;
+            if (instruction.op == .hw_unary and std.mem.eql(u8, instruction.field, trap_abort_tag)) {
+                saw_half_trap = true;
+            }
+        };
+        try std.testing.expect(saw_half and !saw_half_trap);
     }
 }
 
