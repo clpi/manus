@@ -59,6 +59,38 @@ pub const RecordDesc = struct {
     widths: []const ?types.ResolvedType = &.{},
 };
 
+/// WHY A DIVISOR IS KNOWN NON-NEGATIVE — a reference into the graph, and the
+/// reversal procedure for each arm.
+///
+/// THREE STATES, NOT A BOOLEAN. `unknown` is "nothing was proved", which is not
+/// "the divisor is negative" and not "the question was not asked". The other
+/// two are proofs that differ in how much of themselves they carry.
+pub const DivisorSign = union(enum) {
+    /// Nothing proved. The general floored correction is emitted.
+    unknown,
+    /// The divisor IS a bound name, and this is the exact graph entity of its
+    /// binding. REVERSES BY LOOKUP: `graph.nonNegativeWidth(binding)` returns
+    /// the width the graph published, and the entity itself carries the scope,
+    /// the descriptor and the provenance that produced it.
+    binding: semantic_graph.id,
+    /// The divisor is not a bare name — a literal, or arithmetic over bound
+    /// names — and `width` bounds it: every value lies in `[0, 2^width)`.
+    /// REVERSES BY RE-DERIVATION: `range.widthOfExpr` over
+    /// `SemanticGraph.ranges` and the same divisor expression answers this
+    /// number again. Both ends of that reversal are graph-owned — the column
+    /// is the graph's and the derivation is `range.zig`'s, shared with the
+    /// producer so there is no second copy of it — and the field saves the
+    /// walk rather than owning the fact.
+    derived: u8,
+
+    /// Is the cheap floored correction licensed. The two proof arms are one
+    /// answer HERE and stay two facts on the instruction, so a consumer that
+    /// wants the width or the place still has it.
+    pub fn proved(self: DivisorSign) bool {
+        return self != .unknown;
+    }
+};
+
 pub const BinOpTag = enum {
     add,
     sub,
@@ -238,15 +270,28 @@ pub const Instr = struct {
     /// First flattened DNIR instruction whose emitted bytes belong to this
     /// application realization. Present exactly when an application id is.
     realization_start: ?u32 = null,
-    /// `.idiv` / `.mod` ONLY: the DIVISOR of this operation is proved
+    /// `.idiv` / `.mod` ONLY: WHY the DIVISOR of this operation is proved
     /// non-negative, so the floored correction may take its cheap form.
     ///
     /// A FACT, not a realization. It says nothing about which instructions a
     /// backend emits and a backend that ignores it stays correct — the general
     /// correction computes the same answer, it just pays five more dependent
-    /// steps for it. Producer: `dnir_lower.nonNegativeNames`. Consumer:
-    /// `native_backend.emitFlooredDivRem`.
-    divisor_nonneg: bool = false,
+    /// steps for it.
+    ///
+    /// IT WAS A BOOLEAN AND THE BOOLEAN WAS THE DEFECT. `divisor_nonneg: bool`
+    /// named its producer as `dnir_lower.nonNegativeNames` — a name-keyed map
+    /// inside a lowering context, invisible to the C, Wasm, JIT, interpreter
+    /// and tooling projections that lower from the same graph, with no stated
+    /// invalidation and no way back from `true` to anything. §12: DNIR may
+    /// carry a physical encoding OVER graph ids and facts; it may not own the
+    /// fact.
+    ///
+    /// PRODUCER: `semantic_graph.publishBindingRanges`, publishing
+    /// `SemanticGraph.ranges` keyed by binding entity.
+    /// CONSUMER: `native_backend.emitFlooredDivRem`.
+    /// This field is the compact derived encoding between them, and
+    /// `dnir.DivisorSign` states how each arm reverses to the fact.
+    divisor: DivisorSign = .unknown,
     result: ?u32 = null,
     lhs: Value = .void,
     rhs: Value = .void,

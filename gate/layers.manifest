@@ -55,6 +55,7 @@ SEMA     home_resolve.zig
 SEMA     relation.zig
 SEMA     collection_relation.zig
 SEMA     place.zig
+SEMA     range.zig
 SEMA     region.zig
 SEMA     region_graph.zig
 SEMA     escape.zig

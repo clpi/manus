@@ -820,6 +820,32 @@ pub const Draw = struct {
     world: Card,
 };
 
+/// A PROVED BOUND on every value one exact entity holds.
+///
+/// `subject` is the local or parameter binding entity, not a name and not a
+/// place: §6 refuses to mint a scalar as a place, so `b: i64 = 2` has no place
+/// and its bound would have had nowhere to live. It has a binding entity, and
+/// that is the subject a range is about.
+///
+/// PRODUCER: `publishBindingRanges`, once per lift, over `range.widthsOf`.
+/// There is no second one; the lattice that used to run inside `dnir_lower`
+/// and die with its lowering context is gone.
+///
+/// INVALIDATION: the relation body's statement list, and the set of names
+/// bound at module scope. The analysis is flow-insensitive, so no lowering
+/// order, instruction schedule or register decision can move it — which is the
+/// dependency statement the lowering-local version could not make.
+///
+/// CONSUMERS: `dnir_lower` asks for the sign of a divisor and carries the
+/// ANSWER'S SUBJECT — this entity id — into DNIR, so `native_backend` reverses
+/// it here instead of trusting a boolean. Every other projection reads the
+/// same column off the same graph.
+pub const RangeFact = struct {
+    subject: id,
+    /// Every value of `subject` lies in `[0, 2^nonneg_width)`.
+    nonneg_width: u8,
+};
+
 /// The place one application VALUE reads, keyed by the exact value entity.
 ///
 /// `p:add(q)` and `q:add(p)` published BYTE-IDENTICAL normalised graphs: both
@@ -1051,6 +1077,9 @@ pub const SemanticGraph = struct {
     world_members: std.ArrayListUnmanaged(id) = .empty,
     /// `world[application]`, ascending by application id.
     draws: std.ArrayListUnmanaged(Draw) = .empty,
+    /// PROVED BOUNDS, keyed by the exact binding entity. §2 lists ranges among
+    /// the facts this graph carries; this is the column.
+    ranges: std.ArrayListUnmanaged(RangeFact) = .empty,
     /// `place[value]` for application values, ascending by value id.
     origins: std.ArrayListUnmanaged(Origin) = .empty,
     callable_linkages: std.ArrayListUnmanaged(CallableLinkage) = .empty,
@@ -1110,6 +1139,7 @@ pub const SemanticGraph = struct {
         self.worlds.deinit(self.alloc);
         self.world_members.deinit(self.alloc);
         self.draws.deinit(self.alloc);
+        self.ranges.deinit(self.alloc);
         self.origins.deinit(self.alloc);
         for (self.callable_linkages.items) |fact| self.alloc.free(fact.symbol);
         self.callable_linkages.deinit(self.alloc);
@@ -3266,6 +3296,103 @@ pub const SemanticGraph = struct {
 
     /// The place and region censuses of one relation body. Idempotent: a second
     /// lift is a no-op, so a graph lifted twice does not get two censuses.
+    /// THE ONE WRITE SITE for `SemanticGraph.ranges`.
+    ///
+    /// One relation body at a time: settle `range.widthsOf` over it, then key
+    /// each proved name to EVERY local or parameter entity of that name inside
+    /// the relation. Several entities can share a name — sibling blocks bind
+    /// distinct identities — and the lattice is flow-insensitive, so its claim
+    /// is about the name across the whole body and therefore about each of
+    /// them. Publishing on one and not the others would make the fact depend
+    /// on which binding a consumer happened to reach.
+    fn publishBindingRanges(self: *SemanticGraph, mod: *const ast.Module) !void {
+        // Imported HERE rather than at module scope: `range` is also a local
+        // binding name in this file (packed member ranges, refinement ranges),
+        // and a module-scope alias would shadow six of them.
+        const value_range = @import("range.zig");
+        if (self.ranges.items.len > 0) return;
+        const outer = try value_range.outerNames(self.alloc, mod);
+        defer self.alloc.free(outer);
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len != 1) continue;
+            const relation = self.findFuncDecl(fd) orelse continue;
+            var widths = try value_range.widthsOf(self.alloc, &fd.func, outer);
+            defer widths.deinit(self.alloc);
+            if (widths.count() == 0) continue;
+            for (self.nodes.items, 0..) |node, i| {
+                if (node.kind != .local and node.kind != .param) continue;
+                const name = node.name orelse continue;
+                const entity = std.math.cast(id, i) orelse break;
+                if (self.enclosingCallable(node.scope orelse continue) != relation) continue;
+                const width = widths.get(name) orelse continue;
+                try self.ranges.append(self.alloc, .{ .subject = entity, .nonneg_width = width });
+            }
+        }
+    }
+
+    /// The proved bound on one entity, or null for UNKNOWN — which is not
+    /// "negative", not "zero" and not "unbounded".
+    pub fn nonNegativeWidth(self: *const SemanticGraph, subject: id) ?u8 {
+        for (self.ranges.items) |fact| {
+            if (fact.subject == subject) return fact.nonneg_width;
+        }
+        return null;
+    }
+
+    /// The proved bound on a divisor-shaped EXPRESSION inside one relation.
+    ///
+    /// THE DERIVATION STAYS IN SEMA, and the layering gate is what said so:
+    /// `dnir_lower` asking `range.widthOfExpr` itself was a BACKEND importing
+    /// SEMA to re-derive meaning at emission time, which is how two places come
+    /// to decide the same thing and disagree. The backend asks here; the answer
+    /// is derived once, over this graph's own `ranges` column, by the same
+    /// `range.zig` derivation the producer settled the lattice with.
+    pub fn nonNegativeWidthOfExpr(
+        self: *const SemanticGraph,
+        relation: id,
+        expr: *const Expr,
+    ) ?u8 {
+        const value_range = @import("range.zig");
+        var reach = RangeReach{ .graph = self, .relation = relation };
+        return value_range.widthOfExpr(reach.lookup(), expr);
+    }
+
+    /// One relation's view of `ranges`, as the name lookup `range.widthOfExpr`
+    /// takes. It reads the published column and holds nothing.
+    const RangeReach = struct {
+        graph: *const SemanticGraph,
+        relation: id,
+
+        fn lookup(self: *const RangeReach) @import("range.zig").Lookup {
+            return .{ .ctx = self, .of = widthOfName };
+        }
+
+        fn widthOfName(ctx: *const anyopaque, name: []const u8) ?u8 {
+            const self: *const RangeReach = @ptrCast(@alignCast(ctx));
+            const subject = self.graph.bindingNamedIn(self.relation, name) orelse return null;
+            return self.graph.nonNegativeWidth(subject);
+        }
+    };
+
+    /// The local or parameter entity a name denotes inside one relation, for a
+    /// consumer that has a source name and needs the exact subject a range is
+    /// keyed to. Several entities can share the name; they carry the same
+    /// width by construction, so the first is an exact answer to "which
+    /// subject" and not a choice between different facts.
+    pub fn bindingNamedIn(self: *const SemanticGraph, relation: id, name: []const u8) ?id {
+        for (self.nodes.items, 0..) |node, i| {
+            if (node.kind != .local and node.kind != .param) continue;
+            const held = node.name orelse continue;
+            if (!std.mem.eql(u8, held, name)) continue;
+            const entity = std.math.cast(id, i) orelse return null;
+            if (self.enclosingCallable(node.scope orelse continue) != relation) continue;
+            return entity;
+        }
+        return null;
+    }
+
     pub fn liftBodies(self: *SemanticGraph, mod: *const ast.Module) !void {
         try self.requireOpen();
         if (self.bodies.items.len > 0) return;
@@ -3599,6 +3726,9 @@ pub const SemanticGraph = struct {
         try self.liftBindingsInStmts(file, mod_id, mod.body.stmts);
         try self.liftPlaces(mod);
         try self.liftBodies(mod);
+        // AFTER the bindings, because a range is keyed by binding entity and
+        // there is nothing to key it to before `liftBindingsInStmts` has run.
+        try self.publishBindingRanges(mod);
         try self.liftAggregates(mod, mod_id);
         return mod_id;
     }
@@ -6863,6 +6993,18 @@ pub const SemanticGraph = struct {
             // world-drawing occurrence at all: measured, 381 draws name a world
             // and 0 of them have an `ApplicationFact`. See `applicationEffect`.
             try appendCardJson(buf, alloc, "effect", self.applicationEffect(draw.application));
+            try buf.append(alloc, '}');
+        }
+        // RANGES ARE PROJECTED, which is the point of moving them here. The
+        // proof used to be a boolean on one backend's instruction and no other
+        // realization could see it; every projection reads this column.
+        try buf.appendSlice(alloc, "],\"ranges\":[");
+        for (self.ranges.items, 0..) |fact, i| {
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"subject\":");
+            try appendJsonInt(buf, alloc, fact.subject);
+            try buf.appendSlice(alloc, ",\"nonneg_width\":");
+            try appendJsonInt(buf, alloc, fact.nonneg_width);
             try buf.append(alloc, '}');
         }
         try buf.appendSlice(alloc, "],\"origins\":[");
