@@ -21,125 +21,27 @@
 # implementation and a mixed one is not, so a grid without mixtures would have
 # reported this backend clean.
 #
-# The C backend is the oracle. Every row is judged by comparing VALUES from
-# both backends, never by "it compiled" — a bail is reported separately and is
-# not a failure here, because a refusal is honest and a wrong answer is not.
+# A generated C twin compiled by clang is the oracle. Every row is judged by
+# one complete execution from each arm: event, exit status, stdout, and stderr.
+# A typed direct DNB refusal is a bail. Compiler transport, limiter, or C
+# toolchain failure is infrastructure, never an unexamined row presented as a
+# clean refusal. The compiler and oracle identities are printed on every run.
 #
 # MISCOMPILE_CEILING ratchets DOWNWARD. It shipped at 4 # the gap[056]
 # family # and reached 0 the same day, so the gate is now a floor at zero:
 # ANY wrong answer fails it, and a future fix that lowers it further should do
 # so in the same commit — the mirror of how NATIVE_FLOOR ratchets up.
 
-capture: str = (shellline: str)
-    gatecap(shellline)
-
-chomp: str = (text: str)
-    if text == nil or text:len() == 0
-        return ""
-    n = text:len()
-    while n > 0
-        c = text:byte(n)
-        if c != 10 and c != 13 and c != 32 and c != 9
-            break
-        n -= 1
-    text:sub(1, n)
-
-cap: str = (shellline: str)
-    chomp(gatecap(shellline))
-
-status: i64 = (cmd: str)
-    cap("( {cmd} ) >/dev/null 2>&1; echo $?"):to(i64)
-
-sh: str = (cmd: str)
-    root = os.env["DUO_ROOT"] or "."
-    capture("cd '{root}' && {cmd}")
-
-tonum: i64 = (out: str)
-    n: i64 = out:len()
-    while n > 0 and (out:byte(n) == 10 or out:byte(n) == 32)
-        n -= 1
-    (out:sub(1, n)):to(i64)
-
-# One shell pass builds the grid, compiles each shape both ways, runs both, and
-# prints four counts. Duo parses numbers, not process output.
+# One shell pass builds the grid, compiles each shape both ways, and observes
+# each artifact exactly once under the shared native limiter. The final framed
+# verdict is the only shell fact the Idol root projects into its process exit.
 #
-# Each row is `params|call|unused`. For every row three bodies are generated:
+# Each row carries Idol and C parameter/call/condition faces. For every row
+# three bodies are generated:
 #   1. no comparison, constant i64 return   — isolates plain argument passing
 #   2. comparison, i64 return               — argument passing + fcmp
 #   3. comparison, str return               — the return-classification path
-# The shell program is ONE long-bracket literal. It was a 19-line `..` chain,
-# which put 37 hits on audit100's `concatlit` row — a gate that enforces the
-# deny table has no business violating it, and §0.7 is explicit: `..` joins
-# existing string BINDINGS, interpolation does the rest. A long bracket also
-# deletes a whole class of quoting bug, since the shell's own `"` and `$` need
-# no escaping inside one.
-program = [[
-duo=./zig-out/bin/idol; d=/tmp/duo_abi_matrix; rm -rf $d; mkdir -p $d; i=0;
-for ps in 'a: i64|f(7)' 'a: f64|f(3.5)' 'a: i64, b: f64|f(7, 3.5)' \
-          'a: f64, b: i64|f(3.5, 7)' 'a: f64, b: f64|f(3.5, 1.5)' \
-          'a: i64, b: f64, c: i64, d: f64|f(1, 2.5, 3, 4.5)' \
-          'a: f64, b: i64, c: f64|f(2.5, 9, 1.5)';
-  P=${ps%%|*}; A=${ps##*|}
-  case "$P" in 'a: f64'*) C='a > 1.0';; *) C='a > 1';; esac
-  i=$((i+1)); printf 'f(%s): i64\n    return 42\nend\n\nmain(): i64\n    return %s\nend\n' "$P" "$A" > $d/t$i.id
-  i=$((i+1)); printf 'f(%s): i64\n    if %s return 9 end\n    return 1\nend\n\nmain(): i64\n    return %s\nend\n' "$P" "$C" "$A" > $d/t$i.id
-  i=$((i+1)); printf 'f(%s): str\n    if %s return "yes" end\n    return "no"\nend\n\nmain(): i64\n    return #%s\nend\n' "$P" "$C" "$A" > $d/t$i.id
-done
-ok=0; wrong=0; bail=0; noc=0
-for f in $d/t*.id;
-  if $duo compile "$f" -o $d/c.bin >/dev/null 2>&1; then cv=$($d/c.bin; echo $?); else noc=$((noc+1)); continue; fi
-  if $duo compile backend:len()=direct "$f" -o $d/x.bin >/dev/null 2>&1; then dv=$($d/x.bin; echo $?); else bail=$((bail+1)); continue; fi
-  if [ "$cv" = "$dv" ]; then ok=$((ok+1)); else wrong=$((wrong+1)); echo "$(basename $f) c=$cv direct=$dv" >> $d/wrong.txt; fi
-done
-echo "$ok $wrong $bail $noc"
-]]
-
-sweep: str = ()
-    sh(program)
-
+# The shell program is one ordinary string literal. Literal braces are escaped
+# because Idol interpolation must not consume the shell's own parameter syntax.
 main: i64 = ()
-    counts = sweep()
-    if counts:len() == 0
-        print("abi_matrix: FAIL — sweep produced no output; the grid did not run")
-        return 3
-
-    ok: i64 = tonum(counts:match("^%d+"))
-    r1 = counts:gsub("^%d+%s+", "")
-    wrong: i64 = tonum(r1:match("^%d+"))
-    r2 = r1:gsub("^%d+%s+", "")
-    bail: i64 = tonum(r2:match("^%d+"))
-    r3 = r2:gsub("^%d+%s+", "")
-    noc: i64 = tonum(r3:match("^%d+"))
-
-    total: i64 = ok + wrong + bail
-    # Positive control. Every zero here is reported by a gate that could equally
-    # be broken, and a grid that judged nothing would print a clean 0 wrong.
-    if total == 0
-        print("abi_matrix: FAIL — 0 shapes were judged; the grid is broken, not clean")
-        return 3
-
-    okstr = ok:to(str)
-    wrongstr = wrong:to(str)
-    bailstr = bail:to(str)
-    nocstr = noc:to(str)
-    print("ABI shape matrix (generated call shapes, C backend as oracle)")
-    print("  agree         {okstr}   both backends returned the same value")
-    print("  MISCOMPILE    {wrongstr}   direct compiled and answered WRONG")
-    print("  bail          {bailstr}   direct refused — honest, not a failure")
-    print("  no oracle     {nocstr}   C could not build the shape; judged by nothing")
-
-    if wrong > 0
-        print("")
-        print(sh("cat /tmp/duo_abi_matrix/wrong.txt 2>/dev/null"))
-
-    ceiling: i64 = (os.env["MISCOMPILE_CEILING"] or "0"):to(i64)
-    if wrong > ceiling
-        ceilstr = ceiling:to(str)
-        print("abi_matrix: FAIL — {wrongstr} wrong answers exceeds the ceiling {ceilstr}")
-        return 1
-    if wrong < ceiling
-        ceilstr = ceiling:to(str)
-        print("abi_matrix: PASS — {wrongstr} wrong, BELOW the ceiling {ceilstr}. Lower MISCOMPILE_CEILING in this commit.")
-        return 0
-    print("abi_matrix: PASS ({wrongstr} known wrong at the ceiling; see gap[056])")
-    0
+    gatecap("set -u\nexec 3>&1\nexec 1>&2\nidol=$\{IDOL:-./zig-out/bin/idol\}\nnative=$\{IDOL_NATIVE:-../idol-native\}\nlimiter=$\{ABI_MATRIX_LIMITER:-$native/gate/run_limited.pl\}\nlimit=$\{ABI_MATRIX_TIMEOUT:-30\}\nceiling=$\{MISCOMPILE_CEILING:-0\}\ndamage=$\{ABI_MATRIX_DAMAGE:-none\}\n\ncase $limit in ''|*[!0-9]*|0) printf '%s\\n' 'abi_matrix: infrastructure — timeout must be a positive decimal'; printf '%s\\n' 'abi_matrix_verdict=3'; printf '%s\\n' '3' >&3; exit 0;; esac\ncase $ceiling in ''|*[!0-9]*) printf '%s\\n' 'abi_matrix: infrastructure — ceiling must be a nonnegative decimal'; printf '%s\\n' 'abi_matrix_verdict=3'; printf '%s\\n' '3' >&3; exit 0;; esac\ncase $damage in none|wrong|zero) :;; *) printf '%s\\n' 'abi_matrix: infrastructure — unknown damage control'; printf '%s\\n' 'abi_matrix_verdict=3'; printf '%s\\n' '3' >&3; exit 0;; esac\n\nif [ ! -x \"$idol\" ] || [ ! -f \"$limiter\" ]; then\n  printf '%s\\n' 'abi_matrix: infrastructure — compiler or shared limiter absent'\n  printf '%s\\n' 'abi_matrix_verdict=3'\n  printf '%s\\n' '3' >&3\n  exit 0\nfi\nclang=$\{CC:-\}\nif [ -z \"$clang\" ]; then clang=$(xcrun --find clang 2>/dev/null || true); fi\nxcrun=$(command -v xcrun 2>/dev/null || true)\nif [ ! -x \"$clang\" ] || [ ! -x \"$xcrun\" ]; then\n  printf '%s\\n' 'abi_matrix: infrastructure — clang absent'\n  printf '%s\\n' 'abi_matrix_verdict=3'\n  printf '%s\\n' '3' >&3\n  exit 0\nfi\n\nd=$(mktemp -d \"$\{TMPDIR:-/tmp\}/idol-abi.XXXXXX\") || \{\n  printf '%s\\n' 'abi_matrix: infrastructure — private work creation failed'\n  printf '%s\\n' 'abi_matrix_verdict=3'\n  printf '%s\\n' '3' >&3\n  exit 0\n\}\ntrap 'rm -rf \"$d\"' EXIT HUP INT TERM\n\nhash256() \{ shasum -a 256 \"$1\" | awk '\{print $1\}'; \}\nidolhash=$(hash256 \"$idol\") || idolhash=unavailable\nclanghash=$(hash256 \"$clang\") || clanghash=unavailable\nxcrunhash=$(hash256 \"$xcrun\") || xcrunhash=unavailable\nlimiterhash=$(hash256 \"$limiter\") || limiterhash=unavailable\n\nobserve() \{\n  tag=$1\n  shift\n  event=$d/$tag.event\n  out=$d/$tag.stdout\n  err=$d/$tag.stderr\n  record=$d/$tag.record\n  rm -f \"$event\" \"$out\" \"$err\" \"$record\"\n  perl \"$limiter\" \"$limit\" \"$event\" \"$@\" </dev/null >\"$out\" 2>\"$err\"\n  rc=$?\n  kind=missing\n  if [ -s \"$event\" ]; then kind=$(sed -n '1p' \"$event\"); fi\n  printf '%s\\t%s\\n' \"$kind\" \"$rc\" >\"$record\"\n\}\n\nrows=$d/rows\nif [ \"$damage\" = zero ]; then\n  : >\"$rows\"\nelse\n  cat >\"$rows\" <<'ROWS'\na: i64|f(7)|a > 1|int64_t a|7|a > 1\na: f64|f(3.5)|a > 1.0|double a|3.5|a > 1.0\na: i64, b: f64|f(7, 3.5)|a > 1|int64_t a, double b|7, 3.5|a > 1\na: f64, b: i64|f(3.5, 7)|a > 1.0|double a, int64_t b|3.5, 7|a > 1.0\na: f64, b: f64|f(3.5, 1.5)|a > 1.0|double a, double b|3.5, 1.5|a > 1.0\na: i64, b: f64, c: i64, d: f64|f(1, 2.5, 3, 4.5)|a > 1|int64_t a, double b, int64_t c, double d|1, 2.5, 3, 4.5|a > 1\na: f64, b: i64, c: f64|f(2.5, 9, 1.5)|a > 1.0|double a, int64_t b, double c|2.5, 9, 1.5|a > 1.0\nROWS\nfi\n\nseen=0\nagree=0\nwrong=0\nbail=0\ninfra=0\n: >\"$d/wrong\"\n: >\"$d/infra\"\n\nwhile IFS='|' read -r iparams icall icond cparams ccall ccond; do\n  [ -n \"$iparams\" ] || continue\n\n  seen=$((seen + 1))\n  src=$d/t$seen.id\n  csrc=$d/t$seen.c\n  dbin=$d/t$seen.direct\n  cbin=$d/t$seen.clang\n  cvalue=42\n  if [ \"$damage\" = wrong ] && [ \"$seen\" -eq 1 ]; then cvalue=43; fi\n  printf 'f(%s): i64\\n    return 42\\nend\\n\\nmain(): i64\\n    return %s\\nend\\n' \"$iparams\" \"$icall\" >\"$src\"\n  printf '#include <stdint.h>\\nint64_t f(%s) \{ return %s; \}\\nint main(void) \{ return (int)f(%s); \}\\n' \"$cparams\" \"$cvalue\" \"$ccall\" >\"$csrc\"\n\n  observe dc$seen \"$idol\" compile --no-cache --backend=direct \"$src\" -o \"$dbin\"\n  IFS=$(printf '\\t') read -r dck dcrc <\"$d/dc$seen.record\"\n  observe cc$seen \"$xcrun\" --sdk macosx \"$clang\" -std=c11 -O2 \"$csrc\" -o \"$cbin\"\n  IFS=$(printf '\\t') read -r cck ccrc <\"$d/cc$seen.record\"\n  if [ \"$cck\" != ok ] || [ \"$ccrc\" -ne 0 ] || [ ! -x \"$cbin\" ]; then\n    infra=$((infra + 1))\n    printf 't%s compile direct=%s/%s clang=%s/%s\\n' \"$seen\" \"$dck\" \"$dcrc\" \"$cck\" \"$ccrc\" >>\"$d/infra\"\n  elif [ \"$dck\" = ok ] && [ \"$dcrc\" -ne 0 ] && grep -q 'DNB' \"$d/dc$seen.stderr\"; then\n    bail=$((bail + 1))\n  elif [ \"$dck\" != ok ] || [ \"$dcrc\" -ne 0 ] || [ ! -x \"$dbin\" ]; then\n    infra=$((infra + 1))\n    printf 't%s compile direct=%s/%s clang=%s/%s\\n' \"$seen\" \"$dck\" \"$dcrc\" \"$cck\" \"$ccrc\" >>\"$d/infra\"\n  else\n    observe dr$seen \"$dbin\"\n    IFS=$(printf '\\t') read -r drk drrc <\"$d/dr$seen.record\"\n    observe cr$seen \"$cbin\"\n    IFS=$(printf '\\t') read -r crk crrc <\"$d/cr$seen.record\"\n    case $drk in ok|timeout|signal:*) :;; *) infra=$((infra + 1)); printf 't%s runtime direct=%s/%s\\n' \"$seen\" \"$drk\" \"$drrc\" >>\"$d/infra\"; continue;; esac\n    case $crk in ok|timeout|signal:*) :;; *) infra=$((infra + 1)); printf 't%s runtime clang=%s/%s\\n' \"$seen\" \"$crk\" \"$crrc\" >>\"$d/infra\"; continue;; esac\n    if [ \"$drk\" = ok ] && [ \"$crk\" = ok ] && [ \"$drrc\" -eq \"$crrc\" ] && [ ! -s \"$d/dr$seen.stdout\" ] && [ ! -s \"$d/dr$seen.stderr\" ] && [ ! -s \"$d/cr$seen.stdout\" ] && [ ! -s \"$d/cr$seen.stderr\" ]; then\n      agree=$((agree + 1))\n    else\n      wrong=$((wrong + 1))\n      printf 't%s direct=%s/%s/%s/%s clang=%s/%s/%s/%s\\n' \"$seen\" \"$drk\" \"$drrc\" \"$(wc -c <\"$d/dr$seen.stdout\" | tr -d ' ')\" \"$(wc -c <\"$d/dr$seen.stderr\" | tr -d ' ')\" \"$crk\" \"$crrc\" \"$(wc -c <\"$d/cr$seen.stdout\" | tr -d ' ')\" \"$(wc -c <\"$d/cr$seen.stderr\" | tr -d ' ')\" >>\"$d/wrong\"\n    fi\n  fi\n\n  seen=$((seen + 1))\n  src=$d/t$seen.id\n  csrc=$d/t$seen.c\n  dbin=$d/t$seen.direct\n  cbin=$d/t$seen.clang\n  printf 'f(%s): i64\\n    if %s return 9 end\\n    return 1\\nend\\n\\nmain(): i64\\n    return %s\\nend\\n' \"$iparams\" \"$icond\" \"$icall\" >\"$src\"\n  printf '#include <stdint.h>\\nint64_t f(%s) \{ if (%s) return 9; return 1; \}\\nint main(void) \{ return (int)f(%s); \}\\n' \"$cparams\" \"$ccond\" \"$ccall\" >\"$csrc\"\n\n  observe dc$seen \"$idol\" compile --no-cache --backend=direct \"$src\" -o \"$dbin\"\n  IFS=$(printf '\\t') read -r dck dcrc <\"$d/dc$seen.record\"\n  observe cc$seen \"$xcrun\" --sdk macosx \"$clang\" -std=c11 -O2 \"$csrc\" -o \"$cbin\"\n  IFS=$(printf '\\t') read -r cck ccrc <\"$d/cc$seen.record\"\n  if [ \"$cck\" != ok ] || [ \"$ccrc\" -ne 0 ] || [ ! -x \"$cbin\" ]; then\n    infra=$((infra + 1))\n    printf 't%s compile direct=%s/%s clang=%s/%s\\n' \"$seen\" \"$dck\" \"$dcrc\" \"$cck\" \"$ccrc\" >>\"$d/infra\"\n  elif [ \"$dck\" = ok ] && [ \"$dcrc\" -ne 0 ] && grep -q 'DNB' \"$d/dc$seen.stderr\"; then\n    bail=$((bail + 1))\n  elif [ \"$dck\" != ok ] || [ \"$dcrc\" -ne 0 ] || [ ! -x \"$dbin\" ]; then\n    infra=$((infra + 1))\n    printf 't%s compile direct=%s/%s clang=%s/%s\\n' \"$seen\" \"$dck\" \"$dcrc\" \"$cck\" \"$ccrc\" >>\"$d/infra\"\n  else\n    observe dr$seen \"$dbin\"\n    IFS=$(printf '\\t') read -r drk drrc <\"$d/dr$seen.record\"\n    observe cr$seen \"$cbin\"\n    IFS=$(printf '\\t') read -r crk crrc <\"$d/cr$seen.record\"\n    case $drk in ok|timeout|signal:*) :;; *) infra=$((infra + 1)); printf 't%s runtime direct=%s/%s\\n' \"$seen\" \"$drk\" \"$drrc\" >>\"$d/infra\"; continue;; esac\n    case $crk in ok|timeout|signal:*) :;; *) infra=$((infra + 1)); printf 't%s runtime clang=%s/%s\\n' \"$seen\" \"$crk\" \"$crrc\" >>\"$d/infra\"; continue;; esac\n    if [ \"$drk\" = ok ] && [ \"$crk\" = ok ] && [ \"$drrc\" -eq \"$crrc\" ] && [ ! -s \"$d/dr$seen.stdout\" ] && [ ! -s \"$d/dr$seen.stderr\" ] && [ ! -s \"$d/cr$seen.stdout\" ] && [ ! -s \"$d/cr$seen.stderr\" ]; then\n      agree=$((agree + 1))\n    else\n      wrong=$((wrong + 1))\n      printf 't%s direct=%s/%s/%s/%s clang=%s/%s/%s/%s\\n' \"$seen\" \"$drk\" \"$drrc\" \"$(wc -c <\"$d/dr$seen.stdout\" | tr -d ' ')\" \"$(wc -c <\"$d/dr$seen.stderr\" | tr -d ' ')\" \"$crk\" \"$crrc\" \"$(wc -c <\"$d/cr$seen.stdout\" | tr -d ' ')\" \"$(wc -c <\"$d/cr$seen.stderr\" | tr -d ' ')\" >>\"$d/wrong\"\n    fi\n  fi\n\n  seen=$((seen + 1))\n  src=$d/t$seen.id\n  csrc=$d/t$seen.c\n  dbin=$d/t$seen.direct\n  cbin=$d/t$seen.clang\n  printf 'f(%s): str\\n    if %s return \"yes\" end\\n    return \"no\"\\nend\\n\\nmain(): i64\\n    return %s:len()\\nend\\n' \"$iparams\" \"$icond\" \"$icall\" >\"$src\"\n  printf '#include <stdint.h>\\n#include <string.h>\\nconst char *f(%s) \{ if (%s) return \"yes\"; return \"no\"; \}\\nint main(void) \{ return (int)strlen(f(%s)); \}\\n' \"$cparams\" \"$ccond\" \"$ccall\" >\"$csrc\"\n\n  observe dc$seen \"$idol\" compile --no-cache --backend=direct \"$src\" -o \"$dbin\"\n  IFS=$(printf '\\t') read -r dck dcrc <\"$d/dc$seen.record\"\n  observe cc$seen \"$xcrun\" --sdk macosx \"$clang\" -std=c11 -O2 \"$csrc\" -o \"$cbin\"\n  IFS=$(printf '\\t') read -r cck ccrc <\"$d/cc$seen.record\"\n  if [ \"$cck\" != ok ] || [ \"$ccrc\" -ne 0 ] || [ ! -x \"$cbin\" ]; then\n    infra=$((infra + 1))\n    printf 't%s compile direct=%s/%s clang=%s/%s\\n' \"$seen\" \"$dck\" \"$dcrc\" \"$cck\" \"$ccrc\" >>\"$d/infra\"\n  elif [ \"$dck\" = ok ] && [ \"$dcrc\" -ne 0 ] && grep -q 'DNB' \"$d/dc$seen.stderr\"; then\n    bail=$((bail + 1))\n  elif [ \"$dck\" != ok ] || [ \"$dcrc\" -ne 0 ] || [ ! -x \"$dbin\" ]; then\n    infra=$((infra + 1))\n    printf 't%s compile direct=%s/%s clang=%s/%s\\n' \"$seen\" \"$dck\" \"$dcrc\" \"$cck\" \"$ccrc\" >>\"$d/infra\"\n  else\n    observe dr$seen \"$dbin\"\n    IFS=$(printf '\\t') read -r drk drrc <\"$d/dr$seen.record\"\n    observe cr$seen \"$cbin\"\n    IFS=$(printf '\\t') read -r crk crrc <\"$d/cr$seen.record\"\n    case $drk in ok|timeout|signal:*) :;; *) infra=$((infra + 1)); printf 't%s runtime direct=%s/%s\\n' \"$seen\" \"$drk\" \"$drrc\" >>\"$d/infra\"; continue;; esac\n    case $crk in ok|timeout|signal:*) :;; *) infra=$((infra + 1)); printf 't%s runtime clang=%s/%s\\n' \"$seen\" \"$crk\" \"$crrc\" >>\"$d/infra\"; continue;; esac\n    if [ \"$drk\" = ok ] && [ \"$crk\" = ok ] && [ \"$drrc\" -eq \"$crrc\" ] && [ ! -s \"$d/dr$seen.stdout\" ] && [ ! -s \"$d/dr$seen.stderr\" ] && [ ! -s \"$d/cr$seen.stdout\" ] && [ ! -s \"$d/cr$seen.stderr\" ]; then\n      agree=$((agree + 1))\n    else\n      wrong=$((wrong + 1))\n      printf 't%s direct=%s/%s/%s/%s clang=%s/%s/%s/%s\\n' \"$seen\" \"$drk\" \"$drrc\" \"$(wc -c <\"$d/dr$seen.stdout\" | tr -d ' ')\" \"$(wc -c <\"$d/dr$seen.stderr\" | tr -d ' ')\" \"$crk\" \"$crrc\" \"$(wc -c <\"$d/cr$seen.stdout\" | tr -d ' ')\" \"$(wc -c <\"$d/cr$seen.stderr\" | tr -d ' ')\" >>\"$d/wrong\"\n    fi\n  fi\ndone <\"$rows\"\n\nif [ \"$(hash256 \"$idol\" || true)\" != \"$idolhash\" ] || [ \"$(hash256 \"$clang\" || true)\" != \"$clanghash\" ] || [ \"$(hash256 \"$xcrun\" || true)\" != \"$xcrunhash\" ] || [ \"$(hash256 \"$limiter\" || true)\" != \"$limiterhash\" ]; then\n  infra=$((infra + 1))\n  printf '%s\\n' 'input moved during measurement' >>\"$d/infra\"\nfi\n\nprintf 'ABI shape matrix (generated Idol versus generated C/clang)\\n'\nprintf '  subject-count %s\\n' \"$seen\"\nprintf '  agree         %s\\n' \"$agree\"\nprintf '  MISCOMPILE    %s\\n' \"$wrong\"\nprintf '  bail          %s\\n' \"$bail\"\nprintf '  infrastructure %s\\n' \"$infra\"\nprintf '  idol-sha256   %s\\n' \"$idolhash\"\nprintf '  clang         %s\\n' \"$clang\"\nprintf '  clang-sha256  %s\\n' \"$clanghash\"\nprintf '  xcrun-sha256  %s\\n' \"$xcrunhash\"\nprintf '  limiter-sha256 %s\\n' \"$limiterhash\"\nif [ -s \"$d/wrong\" ]; then cat \"$d/wrong\"; fi\nif [ -s \"$d/infra\" ]; then cat \"$d/infra\"; fi\n\nverdict=0\nif [ \"$seen\" -ne 21 ]; then verdict=3\nelif [ \"$infra\" -ne 0 ]; then verdict=3\nelif [ $((agree + wrong)) -eq 0 ]; then verdict=3\nelif [ \"$wrong\" -gt \"$ceiling\" ]; then verdict=1\nelif [ \"$wrong\" -lt \"$ceiling\" ]; then verdict=3\nfi\nprintf 'abi_matrix_verdict=%s\\n' \"$verdict\"\nprintf '%s\\n' \"$verdict\" >&3\nexit 0\n"):to(i64)
