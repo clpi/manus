@@ -63,7 +63,7 @@ n_lines=$(LC_ALL=C awk 'END { print NR + 0 }' "$cand")
 if [ "$n_new" -gt 0 ]; then
     note "new module-scope declarations whose semantic reach is not graph-proven:"
     LC_ALL=C awk -F'\t' '{ printf "  %-12s %-28s %s\n", $1, $2, $3 }' "$new" >&2
-    die "SEMANTIC-VOCABULARY-BLOCKED: $n_new declaration(s). The current compiler does not export a trustworthy public semantic vocabulary delta, so admission fails closed. No word-list edit can waive this. Private `_` declarations, nested bindings, root applications, and body-only changes remain available."
+    die "SEMANTIC-VOCABULARY-BLOCKED: $n_new declaration(s). The current compiler does not export a trustworthy public semantic vocabulary delta, so admission fails closed. No word-list edit can waive this. Underscore-prefixed private declarations, nested bindings, root applications, and body-only changes remain available."
 fi
 
 note "$prog: $n_lines diff lines examined; 0 unproven module-scope declarations."
