@@ -189,18 +189,39 @@ else
     bad "unclassified names default to '$DEFAULT_CLASS' -- a name nobody classified would be CACHED"
 fi
 
-# Ground truth: what the compiler actually reads out of the environment.
-grep -rhoE '(std\.c\.getenv|posix\.getenv|map\.get|env\.get|getEnvVarOwned|getenv)\([[:space:]]*"(DUO|IDOL)_[A-Z0-9_]+"' \
-    "$root/src" 2>/dev/null | sed 's/.*"\(.*\)"/\1/' | sort -u > "$work/read.txt"
+# GROUND TRUTH, AND THE PATTERN IS NOT PREFIX-BOUND. A `(DUO|IDOL)_` scan is
+# STRUCTURALLY BLIND to the inputs that carry no prefix, and one of them was
+# live: `SDKROOT` selects the platform SDK, changes the emitted Mach-O by 53
+# bytes at LC_BUILD_VERSION, and was served out of a warm cache with `(cached)`
+# printed. No amount of care inside a prefixed table reaches it.
+#
+# So the scan matches ANY upper-case name inside an env read, and §1 requires
+# every one to be classified. For unprefixed names this gate IS the closure:
+# `surveyBehaviourEnv` cannot fail closed on them at runtime -- a rule that
+# declined on any unclassified name would decline on PATH -- so an unprefixed
+# code-affecting input has to be modelled in the key, and the only thing that
+# can notice a new one is this enumeration.
+grep -rhoE '(std\.c\.getenv|posix\.getenv|environ_map\.get|map\.get|env\.get|getEnvVarOwned|getenv)\([[:space:]]*"[A-Z][A-Z0-9_]*"' \
+    "$root/src" 2>/dev/null | sed 's/.*"\(.*\)"/\1/' | sort -u > "$work/read.raw"
+# Names that appear in an env-read shape inside GENERATED C or inside a comment
+# quoting generated C, not in the compiler's own reads. Each is pinned with the
+# file that emits it so the exclusion is auditable rather than a denylist.
+cat > "$work/notenv.txt" <<'NOTENV'
+DUO
+IDOLPROBE
+K
+NOTENV
+sort -u "$work/notenv.txt" -o "$work/notenv.txt"
+comm -23 "$work/read.raw" "$work/notenv.txt" > "$work/read.txt"
 READ_N=$(grep -c . "$work/read.txt" || true)
 cut -f1 "$work/rows.tsv" | sort -u > "$work/classified.txt"
 
 MISSING=$(comm -23 "$work/read.txt" "$work/classified.txt")
 SEEN=$((SEEN + 1))
 if [ -n "$MISSING" ]; then
-    bad "read from the environment but absent from the registry: $(printf '%s' "$MISSING" | tr '\n' ' ')"
+    bad "read from the environment but absent from the registry: $(printf '%s' "$MISSING" | tr '\n' ' ') -- an unprefixed one cannot fail closed at runtime, so an unclassified name here is an OPEN hole, not a conservative one"
 else
-    ok "all $READ_N variable(s) read in src/ are classified in the registry"
+    ok "all $READ_N variable(s) read in src/ are classified -- including $(grep -vcE '^(DUO|IDOL)_' "$work/read.txt" || true) that carry no DUO_/IDOL_ prefix"
 fi
 
 printf '    registry: %d classified, %d read in src/, default=%s\n' \

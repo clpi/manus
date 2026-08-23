@@ -99,6 +99,9 @@ const token_classify_gen = @import("token_classify_gen.zig");
 const authority_projection = @import("authority_projection.zig");
 
 var macos_sdkroot_configured = false;
+/// The platform SDK this compile targets, captured from `SDKROOT`. Empty when
+/// unset. Enters the build cache key; see `apply_env_flags` and `buildCacheKey`.
+var global_sdkroot: []const u8 = "";
 var compiler_lib_root: ?[]const u8 = null;
 var forwarded_program_args: []const []const u8 = &.{};
 /// argv[0], recorded so the build cache key can include the compiler's own
@@ -348,6 +351,26 @@ const behaviour_env_table = [_]BehaviourEnvRow{
         // Set by `build.zig:291` for the C-realizer build step and never read
         // by the compiler; listed so that step keeps its cache.
         .{ "IDOL_C_REALIZER_COMPILER", .inert },
+        // ---- NO PREFIX, AND THAT IS EXACTLY WHY THEY ARE LISTED ----
+        // `surveyBehaviourEnv` can only decline on the two prefixes: it walks
+        // the whole environment, and a rule that declined on any unclassified
+        // NAME would decline on `PATH`. So for unprefixed inputs the closure is
+        // not the runtime default -- it is this table plus `gate/envcache.sh`
+        // §1, which enumerates every env read in `src/` regardless of prefix
+        // and FAILS on one that is not classified here. The ratchet is the
+        // gate; the rows below are what the gate ratchets against.
+        //
+        // A code-affecting unprefixed input must therefore be `.modelled` --
+        // hashed into the key -- because declining is not available to it.
+        .{ "SDKROOT", .modelled },
+        // Selects `scratch.root()`, which is WHERE the cache lives. It chooses
+        // which cache answers, never what the artifact contains, and hashing it
+        // would give every TMPDIR its own entry for identical bytes.
+        .{ "TMPDIR", .inert },
+        .{ "NO_COLOR", .inert },
+        // Read only by `token_classify_gen`, reached from `token-tables emit`,
+        // which writes a generated source file and compiles nothing.
+        .{ "EMIT_CLASSIFY_C", .inert },
 };
 
 fn behaviourEnvClass(name: []const u8) BehaviourEnvClass {
@@ -390,9 +413,17 @@ test "the census names every DUO_/IDOL_ variable the compiler reads" {
             }
         }
     }
+    // An unprefixed row must never be `.affects`: `surveyBehaviourEnv` only
+    // reaches the two prefixes, so `.affects` on an unprefixed name would be a
+    // decline that never happens -- a classification that reads as protection
+    // and provides none. Such an input must be `.modelled` instead.
     for (behaviour_env_table) |row| {
-        try std.testing.expect(std.mem.startsWith(u8, row[0], "DUO_") or
-            std.mem.startsWith(u8, row[0], "IDOL_"));
+        const prefixed = std.mem.startsWith(u8, row[0], "DUO_") or
+            std.mem.startsWith(u8, row[0], "IDOL_");
+        if (!prefixed and row[1] == .affects) {
+            std.debug.print("unprefixed row {s} is .affects, which cannot decline\n", .{row[0]});
+            return error.UnprefixedAffectsCannotDecline;
+        }
     }
     // The fail-closed default is the whole repair; assert it here so a refactor
     // that turns the linear scan into a lookup returning `.inert` on miss is
@@ -485,8 +516,12 @@ test "an unmodelled behaviour variable declines the cache on PRESENCE" {
         .{ .name = "DUO_TRACE", .value = "1", .declines = false },
         .{ .name = "IDOL_UNROLL", .value = "8", .declines = false },
         .{ .name = "IDOL_UNROLL", .value = "0", .declines = false },
-        // A variable outside both prefixes is not this survey's business.
+        // An unprefixed name never declines -- the survey cannot, since it
+        // would have to decline on PATH too. Unprefixed code-affecting inputs
+        // are covered by being HASHED (see SDKROOT) and by gate/envcache.sh §1
+        // refusing an unclassified env read, not by this predicate.
         .{ .name = "TMPDIR", .value = "/tmp", .declines = false },
+        .{ .name = "SDKROOT", .value = "/x.sdk", .declines = false },
     };
 
     // DAMAGE CONTROL. The predicate this test replaced answers false for every
@@ -770,6 +805,31 @@ fn mainInner(init: std.process.Init) !void {
     apply_env_flags(init);
     if (init.environ_map.get("SDKROOT")) |sdkroot| {
         macos_sdkroot_configured = sdkroot.len > 0;
+        // NOT EVERY CODE-AFFECTING VARIABLE WEARS THE PREFIX, and this one is
+        // why the `DUO_`/`IDOL_` survey is a floor and not a closure. `SDKROOT`
+        // selects the platform SDK -- it is the difference between `clang` and
+        // `xcrun clang` at :3559 and :5931 -- and it changes the emitted
+        // Mach-O.
+        //
+        // MEASURED on the landed presence fix, one source, same output
+        // basename, cache root carrying the SDKROOT-unset entry:
+        //
+        //   arm A  SDKROOT unset                     LC_BUILD_VERSION minos 26.0
+        //   arm B  SDKROOT=.../MacOSX15.4.sdk fresh  LC_BUILD_VERSION minos 15.4
+        //          53 bytes differ -- so it is code-affecting
+        //   arm C  same SDKROOT, warm cache          BYTE-IDENTICAL TO ARM A,
+        //          and the compiler printed `✓ (cached)`
+        //
+        // HASHED, NOT DECLINED, and the distinction is the point. `SDKROOT` is
+        // exported for whole sessions by ordinary toolchain setups, so
+        // declining on presence would disable the cache for everyone who builds
+        // under one -- the fail-closed rule that is right for a severing flag
+        // nobody exports is wrong for an ambient toolchain identity. A modelled
+        // value costs nothing and puts the two SDKs in two keyspaces.
+        //
+        // Repair spelling taken from `6845d47d` on reconcile/shadow-clean,
+        // which found and measured this independently.
+        global_sdkroot = sdkroot;
     }
     const io = init.io;
     const args = try init.minimal.args.toSlice(alloc);
@@ -4864,6 +4924,15 @@ fn buildCacheKey(
     // itself. Three separate lanes have been bitten by this exact shape.
     const promote_key: u8 = if (dnir_lower.module_promote_enabled) 1 else 0;
     h.update(std.mem.asBytes(&promote_key));
+    // ...AND THE PLATFORM SDK. Seventh defect at this site, and the first that
+    // the `DUO_`/`IDOL_` survey was STRUCTURALLY unable to catch: `SDKROOT`
+    // carries neither prefix, so no amount of care in `behaviourEnvClass`
+    // would have reached it. See `apply_env_flags` for the measurement. The
+    // length is hashed alongside the bytes so an unset value and an empty one
+    // cannot collide with a set one by concatenation.
+    const sdk_len: u64 = @intCast(global_sdkroot.len);
+    h.update(std.mem.asBytes(&sdk_len));
+    h.update(global_sdkroot);
     const worlds = launchWorlds(src_path);
     for (worlds.slice()) |w| h.update(subject_home.homeName(w));
     h.update(std.mem.asBytes(&worlds.len));
