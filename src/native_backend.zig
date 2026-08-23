@@ -121,6 +121,19 @@ pub const Diagnostic = struct {
         self.relation = occurrenceFace(graph, occurrence);
     }
 
+    /// Take the lowering's occurrence AND its relation face TOGETHER.
+    ///
+    /// The occurrence alone was promoted here, which left the backend wrapper
+    /// naming the lowering's application beside the backend's own (absent)
+    /// relation — half of one cause and half of another. A cause crosses this
+    /// seam whole or not at all, and it crosses only when this side has not
+    /// already bound one of its own.
+    pub fn adoptLoweringCause(self: *Diagnostic) void {
+        if (self.application != null or self.relation != null) return;
+        self.application = self.lowering.application;
+        self.relation = self.lowering.relation;
+    }
+
     pub fn remember(self: *Diagnostic, detail: []const u8) void {
         self.record(@src(), detail);
     }
@@ -217,6 +230,44 @@ pub fn directDiagnostic(err: Error, target: []const u8) DirectDiag {
     };
 }
 
+/// ONE refusal, ONE cause, ALL THREE of its fields.
+///
+/// A compile carries two diagnostics — the backend's own and the lowering's —
+/// and `formatDirectCause` used to choose between them THREE TIMES
+/// INDEPENDENTLY: `missing` preferred the lowering, while `application` and
+/// `relation` preferred the backend. When both sides had recorded something,
+/// the emitted DNB011 named the occurrence of one cause and the missing fact of
+/// the other, in one sentence that reads as a single finding. That is the same
+/// defect `scripts/native_census.id` records at the top of the file — "one
+/// program, three causes, one line of output" — reached by splicing rather than
+/// by check order, and it is worse, because the spliced line describes a
+/// refusal that never happened.
+///
+/// The lowering side wins when it recorded a note, because on that path the
+/// backend's own record is the WRAPPER (`graph-dnir-facts`) and the lowering
+/// note is the finding being wrapped. A field the selected cause does not have
+/// is reported absent — `application: unknown`, `missing: unspecified` — and is
+/// never filled in from the other side (`law.fallback.zero`).
+const Cause = struct {
+    missing: ?[]const u8 = null,
+    application: ?semantic_graph.id = null,
+    relation: ?[]const u8 = null,
+};
+
+fn selectedCause(diagnostic: ?*const Diagnostic) Cause {
+    const diag = diagnostic orelse return .{};
+    if (diag.lowering.note() != null) return .{
+        .missing = diag.lowering.note(),
+        .application = diag.lowering.application,
+        .relation = diag.lowering.relation,
+    };
+    return .{
+        .missing = diag.note(),
+        .application = diag.application,
+        .relation = diag.relation,
+    };
+}
+
 /// `law.crash.first`: DNB001/DNB011 name application, missing fact, consumer, producer.
 /// Category prose is the fallback when the attempt recorded no cause.
 pub fn formatDirectCause(
@@ -230,15 +281,10 @@ pub fn formatDirectCause(
     if (!causal) {
         return std.fmt.bufPrint(buf, "{s}: {s}", .{ d.code, d.message }) catch d.message;
     }
-    const missing = if (diagnostic) |diag|
-        diag.lowering.note() orelse diag.note()
-    else
-        null;
-    const application = if (diagnostic) |diag|
-        diag.application orelse diag.lowering.application
-    else
-        null;
-    const relation = if (diagnostic) |diag| diag.relation orelse diag.lowering.relation else null;
+    const cause = selectedCause(diagnostic);
+    const missing = cause.missing;
+    const application = cause.application;
+    const relation = cause.relation;
     const producer: []const u8 = if (err == error.SemanticFactsInvalid)
         "graph"
     else
@@ -9402,7 +9448,7 @@ fn emitArm64ModuleWithGraph(
         return switch (e) {
             error.OutOfMemory => error.OutOfMemory,
             error.GraphFactsInvalid => blk: {
-                if (diagnostic.application == null) diagnostic.application = diagnostic.lowering.application;
+                diagnostic.adoptLoweringCause();
                 break :blk invalidFactsWith(
                     diagnostic,
                     @src(),
@@ -9410,7 +9456,7 @@ fn emitArm64ModuleWithGraph(
                 );
             },
             error.UnsupportedConstruct => blk: {
-                if (diagnostic.application == null) diagnostic.application = diagnostic.lowering.application;
+                diagnostic.adoptLoweringCause();
                 break :blk recordRefusalWith(
                     diagnostic,
                     @src(),
@@ -11226,6 +11272,59 @@ test "native backend: DNB011 names application missing fact consumer producer" {
     try std.testing.expectEqualStrings(
         "DNB011 application: 3 missing: missing-application-id consumer: native realization producer: graph",
         promoted,
+    );
+}
+
+test "native backend: DNB011 reports one cause, never two spliced together" {
+    // THE NEGATIVE CONTROL FOR `selectedCause`. Both sides record a cause and
+    // they are DIFFERENT causes: the backend bound occurrence 8127 / `write`,
+    // the lowering refused occurrence 3 / `byte` for a missing application id.
+    // Before cause selection this printed `application: 8127 relation: write
+    // missing: missing-application-id` — the occurrence of one refusal and the
+    // missing fact of another, in a sentence that reads as a finding about a
+    // single call.
+    var diagnostic: Diagnostic = .{};
+    diagnostic.application = 8127;
+    diagnostic.relation = "write";
+    try std.testing.expect(invalidFactsWith(&diagnostic, @src(), "platform-output-witness") == error.SemanticFactsInvalid);
+
+    const lowering_note = "missing-application-id";
+    @memcpy(diagnostic.lowering.note_buffer[0..lowering_note.len], lowering_note);
+    diagnostic.lowering.note_len = lowering_note.len;
+    diagnostic.lowering.application = 3;
+    diagnostic.lowering.relation = "byte";
+
+    var buf: [256]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "DNB011 application: 3 relation: byte missing: missing-application-id consumer: native realization producer: graph",
+        formatDirectCause(error.SemanticFactsInvalid, "native-object", &buf, &diagnostic),
+    );
+
+    // AND THE OTHER DIRECTION. With no lowering note the backend's own cause is
+    // selected WHOLE — its occurrence, its relation, its missing fact — rather
+    // than borrowing the lowering's occurrence to fill a gap.
+    var backend_only: Diagnostic = .{};
+    backend_only.application = 8127;
+    backend_only.relation = "write";
+    try std.testing.expect(invalidFactsWith(&backend_only, @src(), "platform-output-witness") == error.SemanticFactsInvalid);
+    backend_only.lowering.application = 3;
+    backend_only.lowering.relation = "byte";
+    try std.testing.expectEqualStrings(
+        "DNB011 application: 8127 relation: write missing: platform-output-witness consumer: native realization producer: graph",
+        formatDirectCause(error.SemanticFactsInvalid, "native-object", &buf, &backend_only),
+    );
+
+    // A CAUSE WITH NO OCCURRENCE STAYS WITHOUT ONE. The lowering recorded the
+    // finding, so the lowering is the cause, and its absent occurrence is
+    // reported absent instead of being filled from the backend's.
+    var unbound: Diagnostic = .{};
+    unbound.application = 8127;
+    try std.testing.expect(invalidFactsWith(&unbound, @src(), "graph-dnir-facts") == error.SemanticFactsInvalid);
+    @memcpy(unbound.lowering.note_buffer[0..lowering_note.len], lowering_note);
+    unbound.lowering.note_len = lowering_note.len;
+    try std.testing.expectEqualStrings(
+        "DNB011 application: unknown missing: missing-application-id consumer: native realization producer: graph",
+        formatDirectCause(error.SemanticFactsInvalid, "native-object", &buf, &unbound),
     );
 }
 
