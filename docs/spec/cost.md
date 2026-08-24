@@ -335,8 +335,14 @@ quoted from generated output are **C**, not Duo.
 ### Specified and NOT implemented
 
 - **TAIL is not implemented, and the failure mode is a SIGSEGV.** A textbook
-  tail call compiles to a real call: the direct backend emits a 48-byte frame,
-  `bl` to itself, restore, `ret`. Positive control at depth 1000 prints `1000`;
+  tail call compiles to a real call: the direct backend emits a frame,
+  `bl` to itself, restore, `ret`. The frame was 48 bytes when this was written
+  and is **112** (`sub sp, sp, #0x70`) at idol d3affe8a, so the depth a given
+  stack survives has fallen by more than half since. Measured there: depth 100
+  answers 100; depth 100,000 exits **139**. The emitted shape is the textbook
+  one — `bl` to self immediately followed by epilogue and `ret` — which is
+  exactly the sequence a proper tail call replaces with a frame restore and a
+  `b`. Positive control at depth 1000 prints `1000`;
   at depth 5,000,000 the binary exits **139**. The fault contract says "No SIGSEGV as
   an API" and there is no depth metering and no routed `error.depth` today.
 - **No deallocation is emitted, at any tier.** Zero `free` call sites appear in
@@ -350,12 +356,21 @@ quoted from generated output are **C**, not Duo.
   frees either. The §3 table's row is right about the count and optimistic about
   the lifetime.
 - **OVFL is not checked.** `i64` maximum plus one prints `-9223372036854775808`,
-  exit 0. §12 says checked is the default.
-- **Integer division by zero is not a fault and not a truncation.** `7 / 0` with
-  both operands `i64` prints **9218868437227405312** — the bit pattern of IEEE
-  `+inf` read as an integer; measured, the operands went through the float path
-  and the result was reinterpreted. This is a wrong answer with a green exit
-  code, and it is the worst row on this page.
+  exit 0. §12 says checked is the default. Re-confirmed at idol d3affe8a — this
+  row still holds, unlike the division row above it.
+- **Integer division by zero now FAULTS, and this row is corrected.** It used
+  to read: "`7 / 0` with both operands `i64` prints **9218868437227405312** —
+  the bit pattern of IEEE `+inf` read as an integer … a wrong answer with a
+  green exit code, and it is the worst row on this page." Re-measured at idol
+  d3affe8a: `7 / 0` produces **no output and exits 134**, and `7 % 0` likewise;
+  under `--backend=wasm` it is `wasm trap: unreachable instruction executed`.
+  Both realizations fail closed, so the wrong answer is gone.
+  What remains is a DIAGNOSTIC gap, not a correctness one: neither realization
+  NAMES the fault. Direct aborts with an empty stderr and Wasm reports a
+  generic `unreachable`, so a program that divides by zero and one that trips
+  any other trap are indistinguishable to its caller. SIGABRT is a deliberate
+  fault rather than a SIGSEGV, so the "No SIGSEGV as an API" contract is not
+  violated by it.
   This sentence used to read "B-4 says `i64/i64` truncates". **`§12 B-4` does not
   exist**: this line was the only citation of it in `docs/spec/`, six corpus
   files quote it, and no document in either tree defines it. Its `%` clause is

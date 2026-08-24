@@ -2374,9 +2374,34 @@ fn appendAggregateWords(
     }
 }
 
+/// True when the relation this application lives in was evaluated whole at
+/// compile time and therefore realizes none of its own applications.
+///
+/// LAWFUL NONEXECUTION IS A FACT ABOUT THE READER, and the dense table's
+/// existence is a question about readers. `native_backend.unrealizedApplicationCount`
+/// already subtracts these applications from the realization count; without the
+/// same subtraction here a folded relation left behind a `__TEXT,__const` row
+/// with no `load_index` reading it, and `realization_validate` refused the
+/// module with `aggregate-dense-table-unused` — correctly, since an emitted
+/// table nothing reads is exactly what that check is for.
+fn applicationCallerFolded(
+    functions: []const dnir.Function,
+    graph: *const semantic_graph.SemanticGraph,
+    application: semantic_graph.id,
+) bool {
+    const caller = graph.applicationCaller(application) orelse return false;
+    for (functions) |function| {
+        const id = function.id orelse continue;
+        if (id != caller) continue;
+        return function.folded_to_constant;
+    }
+    return false;
+}
+
 fn collectDenseTables(
     alloc: std.mem.Allocator,
     graph: *const semantic_graph.SemanticGraph,
+    functions: []const dnir.Function,
     diagnostic: *Diagnostic,
 ) Error![]const dnir.DenseTable {
     var tables: std.ArrayListUnmanaged(dnir.DenseTable) = .empty;
@@ -2408,6 +2433,7 @@ fn collectDenseTables(
                     return invalidGraphFacts(diagnostic, @src(), "aggregate-result-pack");
                 if (results.len != 1)
                     return invalidGraphFacts(diagnostic, @src(), "aggregate-access-pack-arity");
+                if (applicationCallerFolded(functions, graph, application.application)) continue;
                 if (graph.exactI64(results[0]) == null) {
                     runtime_access = true;
                     break;
@@ -2833,7 +2859,7 @@ fn lowerModuleFromGraph(
     const owned_globals = try globals.toOwnedSlice(alloc);
     errdefer alloc.free(owned_globals);
 
-    const owned_dense_tables = try collectDenseTables(alloc, graph, diagnostic);
+    const owned_dense_tables = try collectDenseTables(alloc, graph, owned_functions, diagnostic);
     errdefer {
         for (owned_dense_tables) |table| alloc.free(table.values);
         alloc.free(owned_dense_tables);
@@ -4004,6 +4030,9 @@ pub const LowerCtx = struct {
     /// are otherwise invisible inside a function body.
     module_consts: *const ModuleConsts = &empty_module_consts,
     module_globals: *const ModuleGlobals = &empty_module_globals,
+    /// Root lowering owns module-scope declarations; function lowering owns
+    /// lexical locals. The two scopes may share spelling, but never storage.
+    module_root: bool = false,
     /// Names bound to compile-time-known i64 literals (for numeric for step, etc.).
     const_ints: std.StringHashMapUnmanaged(i64) = .empty,
     /// THE RESULT NAME OF A FUSED BODY RELATION, WHEN THE ELEMENT IT NAMES IS A
@@ -4564,6 +4593,7 @@ fn root(
         .relation_edges = relation_edges,
         .module_consts = module_consts,
         .module_globals = module_globals,
+        .module_root = true,
         .ret_record = null,
     };
     defer ctx.deinit();
@@ -5376,6 +5406,26 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             if (try lowerOneToManyPackDeclaration(ctx, ld.names, ld.inits)) return;
             if (ld.names.len != ld.inits.len and ld.inits.len == 1) return bail(ctx.diagnostic, @src());
             for (ld.names, 0..) |*ln, i| {
+                // A declaration introduces a lexical binding regardless of
+                // its representation or width.  Publishing the local slot
+                // before lowering the initializer is load-bearing when a
+                // module binding has the same spelling: without it, the
+                // initializer falls through lowerAssignTarget's module-global
+                // arm and writes the wrong storage.  Narrow-width handling
+                // below only qualifies this already-published binding; it must
+                // never be the condition that creates the binding.
+                var local_slot: ?u32 = null;
+                if (!ctx.module_root) {
+                    local_slot = ctx.locals.get(ln.ident) orelse blk: {
+                        const fresh = ctx.freshTemp();
+                        const owned = try ctx.alloc.dupe(u8, ln.ident);
+                        ctx.locals.put(ctx.alloc, owned, fresh) catch |err| {
+                            ctx.alloc.free(owned);
+                            return err;
+                        };
+                        break :blk fresh;
+                    };
+                }
                 // The declared width has to be on record BEFORE the initializer
                 // is lowered, because the initializer's store is the first place
                 // it applies: `h: u8 = 300` is 44 under `--backend=c`, which
@@ -5383,7 +5433,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                 // `lowerAssignTarget` would have left exactly the first store
                 // unrefitted — a wrong answer visible only on the declaration.
                 if (narrowIntOfType(ln.typ)) |width| {
-                    const slot = ctx.locals.get(ln.ident) orelse blk: {
+                    const slot = local_slot orelse blk: {
                         const fresh = ctx.freshTemp();
                         const owned = try ctx.alloc.dupe(u8, ln.ident);
                         ctx.locals.put(ctx.alloc, owned, fresh) catch |err| {
@@ -17480,6 +17530,72 @@ test "dnir_lower: a module const of INT_MIN lowers instead of crashing the compi
     try std.testing.expectEqual(@as(?i64, std.math.minInt(i64)), ast.intLiteralValue(bound));
 }
 
+test "dnir_lower: same-spelled local shadows module storage by binding" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\ring: i64 = 0
+        \\set: i64 = ()
+        \\    ring = 7
+        \\    0
+        \\shadow: i64 = ()
+        \\    ring: i64 = 5
+        \\    ring
+        \\main: i64 = ()
+        \\    shadow()
+        \\    set()
+        \\    ring
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "gap228-shadow.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "gap228-shadow.id");
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+
+    var saw_shadow = false;
+    var saw_local_store = false;
+    var saw_wrong_global_store = false;
+    var saw_main_global_read = false;
+    for (lowered.functions) |function| {
+        if (!std.mem.eql(u8, function.name, "main")) {
+            saw_shadow = true;
+            var function_has_local = false;
+            var function_has_global_ring = false;
+            for (function.blocks) |block| for (block.instrs) |instruction| {
+                if (instruction.op == .store_local) function_has_local = true;
+                if (instruction.op == .store_global and
+                    std.mem.eql(u8, instruction.field, "ring")) function_has_global_ring = true;
+            };
+            if (function_has_local) {
+                saw_local_store = true;
+                saw_wrong_global_store = function_has_global_ring;
+            }
+        }
+        if (std.mem.eql(u8, function.name, "main")) {
+            for (function.blocks) |block| for (block.instrs) |instruction| {
+                if (instruction.op == .load_global and
+                    std.mem.eql(u8, instruction.field, "ring")) saw_main_global_read = true;
+            };
+        }
+    }
+    try std.testing.expect(saw_shadow);
+    try std.testing.expect(saw_local_store);
+    try std.testing.expect(!saw_wrong_global_store);
+    // Negative control: the module binding remains real storage for a caller
+    // after the local shadow's scope ends.
+    try std.testing.expect(saw_main_global_read);
+}
+
 /// One module, lifted the way `lowerModuleFromGraph`'s callers lift it, so a
 /// test asks the same graph the compiler asks — places included.
 fn testLiftedGlobals(
@@ -17566,4 +17682,197 @@ test "dnir_lower: a written module aggregate keeps its word and stays refused" {
     const p = graph.placeNamed("mm") orelse return error.MissingPlace;
     try std.testing.expect(place.residencyRefusal(p) != .none);
     try std.testing.expectEqual(place.Residency.static, place.ruledResidency(p));
+}
+
+// A RUNTIME INDEX INTO A KNOWN TABLE FOLDS, AND IT FOLDS OFF THE GRAPH.
+//
+// The measured gap this pins: `while i <= 4 : s += t[i]` over a table whose
+// contents AND index range are both compile-time known cost 30 machine
+// instructions, while the identical loop with the table removed cost 2. The
+// fold recognizer had been keyed on the retired `t(i)` application face;
+// `comptime.foldRelationBody` refused ANY body carrying a published aggregate
+// projection, so the canonical `t[i]` face lost the fold entirely.
+//
+// FOUR ROWS, AND THE LAST TWO ARE THE POINT.
+//
+//   * the loop folds — one `ret 10` and no dense table, which is the
+//     two-instruction machine floor `gate/collapse.sh` pins at 2;
+//   * a WRITTEN table does not fold, and keeps its `load_index`;
+//   * an OUT-OF-RANGE trip count does not fold, because the running program
+//     would have trapped and a fold that answers is a different program;
+//   * the initializer EXPRESSION is poisoned to `.nil` with the graph facts
+//     intact and the fold still answers 10. That is the whole reason the
+//     admission exists: `Evaluator.eval`'s `.index` arm reads `exactI64` off
+//     the member VALUE, so the source table is provenance and never the
+//     second authority on its own contents.
+test "dnir_lower: a runtime index into a determined table folds from graph facts" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const table_apply = @import("table_apply.zig");
+
+    const Case = struct {
+        name: []const u8,
+        source: []const u8,
+        folds: bool,
+        answer: i64,
+    };
+    const cases = [_]Case{
+        .{
+            .name = "determined.id",
+            .folds = true,
+            .answer = 10,
+            .source =
+            \\main: i64 = ()
+            \\    t = (1, 2, 3, 4, 5, 6, 7, 8)
+            \\    s = 0
+            \\    i = 1
+            \\    while i <= 4
+            \\        s += t[i]
+            \\        i += 1
+            \\    s
+            ,
+        },
+        .{
+            // Duplicates everywhere but slot 1, so an off-by-one index answers
+            // 30 and the correct read answers 22. A fold that is fast and
+            // wrong is visible in the CONSTANT, not only in the count.
+            .name = "offbyone.id",
+            .folds = true,
+            .answer = 22,
+            .source =
+            \\main: i64 = ()
+            \\    t = (1, 7, 7, 7, 9, 7, 7, 7)
+            \\    s = 0
+            \\    i = 1
+            \\    while i <= 4
+            \\        s += t[i]
+            \\        i += 1
+            \\    s
+            ,
+        },
+        .{
+            .name = "written.id",
+            .folds = false,
+            .answer = 0,
+            .source =
+            \\main: i64 = ()
+            \\    t: [4]i64 = {1, 2, 3, 4}
+            \\    t[2] = 50
+            \\    s = 0
+            \\    i = 1
+            \\    while i <= 4
+            \\        s += t[i]
+            \\        i += 1
+            \\    s
+            ,
+        },
+        .{
+            .name = "outofrange.id",
+            .folds = false,
+            .answer = 0,
+            .source =
+            \\main: i64 = ()
+            \\    t = (1, 2, 3)
+            \\    s = 0
+            \\    i = 1
+            \\    while i <= 5
+            \\        s += t[i]
+            \\        i += 1
+            \\    s
+            ,
+        },
+    };
+
+    for (cases) |case| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var lexer = Lexer.init(case.source, case.name);
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        table_apply.normalizeModule(alloc, &module, &checked.type_map);
+
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, module.file);
+
+        var access: ?*const semantic_graph.ApplicationFact = null;
+        for (graph.applications()) |application| {
+            if (graph.aggregateAccess(application.application)) |fact| access = fact;
+        }
+        // The folding rows must have a published projection — that is the fact
+        // the admission is keyed on. A refusing row need not: `written.id`'s
+        // table is mutated, and the graph declines to publish the access at
+        // all rather than publishing one this fold would have to re-check.
+        if (case.folds) try std.testing.expect(access != null);
+
+        const lowered = try lowerModuleWithGraph(alloc, &module, &graph);
+        defer dnir.deinitModule(alloc, lowered);
+
+        var entry: ?dnir.Function = null;
+        for (lowered.functions) |function| {
+            if (std.mem.eql(u8, function.name, "main")) entry = function;
+        }
+        const main_fn = entry orelse return error.TestExpectedEqual;
+
+        if (!case.folds) {
+            try std.testing.expect(!main_fn.folded_to_constant);
+            var saw_load = false;
+            for (main_fn.blocks) |block| {
+                for (block.instrs) |instruction| {
+                    if (instruction.op == .load_index) saw_load = true;
+                }
+            }
+            try std.testing.expect(saw_load);
+            continue;
+        }
+
+        // THE FOLDED FORM, not merely the answer: one instruction, a `ret`
+        // carrying the constant, and no dense table left behind for a reader
+        // that no longer exists.
+        try std.testing.expect(main_fn.folded_to_constant);
+        try std.testing.expectEqual(@as(usize, 1), main_fn.blocks.len);
+        try std.testing.expectEqual(@as(usize, 1), main_fn.blocks[0].instrs.len);
+        try std.testing.expectEqual(dnir.Op.ret, main_fn.blocks[0].instrs[0].op);
+        try std.testing.expectEqual(dnir.Value{ .i64 = case.answer }, main_fn.blocks[0].instrs[0].lhs);
+        try std.testing.expectEqual(@as(usize, 0), lowered.dense_tables.len);
+
+        // THE GRAPH IS THE AUTHORITY ON THE CONTENTS. Poison the initializer
+        // expression, keep every graph fact, and require the same constant.
+        var table: ?semantic_graph.id = null;
+        var row: usize = 0;
+        while (row < graph.aggregateCount()) : (row += 1) {
+            const aggregate_fact = graph.aggregateAt(row) orelse continue;
+            if (!graph.aggregateIsSoleImmutableBinding(aggregate_fact.aggregate)) continue;
+            try std.testing.expect(table == null);
+            table = aggregate_fact.aggregate;
+        }
+        const aggregate = table orelse return error.TestExpectedEqual;
+        const initializer = @constCast(graph.valueExpression(aggregate) orelse
+            return error.TestExpectedEqual);
+        const saved = initializer.*;
+        initializer.* = .{ .nil = saved.loc() };
+        const relowered = try lowerModuleWithGraph(alloc, &module, &graph);
+        defer dnir.deinitModule(alloc, relowered);
+        initializer.* = saved;
+
+        var relowered_entry: ?dnir.Function = null;
+        for (relowered.functions) |function| {
+            if (std.mem.eql(u8, function.name, "main")) relowered_entry = function;
+        }
+        const relowered_main = relowered_entry orelse return error.TestExpectedEqual;
+        try std.testing.expect(relowered_main.folded_to_constant);
+        try std.testing.expectEqual(@as(usize, 1), relowered_main.blocks[0].instrs.len);
+        try std.testing.expectEqual(
+            dnir.Value{ .i64 = case.answer },
+            relowered_main.blocks[0].instrs[0].lhs,
+        );
+    }
 }

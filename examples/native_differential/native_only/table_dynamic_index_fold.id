@@ -1,0 +1,81 @@
+# expect-exit: 0
+#
+# A RUNTIME INDEX INTO A DETERMINED TABLE IS A COMPILE-TIME CONSTANT, AND THE
+# ANSWER IS WHAT PROVES THE FOLD IS THE RIGHT ONE.
+#
+# `table_dynamic_index.id` next door measures the shape; this file measures the
+# ANSWERS a wrong fold would get wrong. Every relation here is a zero-operand
+# body over a table whose contents and index range are both known, so each one
+# should collapse to `mov`/`ret` — but each is also chosen so that an off-by-one
+# index, a bound read as the table's length, or an initializer read in place of
+# the written value produces a DIFFERENT number, not the same one faster.
+#
+#   `_shifted`  every slot but the first holds 7 or 9, so reading 1..4 answers
+#               22 and reading 2..5 answers 30. A fold whose key is off by one
+#               is a wrong ANSWER here, which is the only way to see it.
+#   `_partial`  the loop starts at 2 and stops at 4 while the table holds 6
+#               elements, so a fold that assumes "sum the table" answers 210.
+#   `_chained`  `v[w[k]]` — both tables determined, the inner projection's
+#               result is the outer's key.
+#   `_written`  the one that must NOT fold. `m[2] = 50` makes the binding
+#               mutable, `aggregateIsSoleImmutableBinding` refuses, and the
+#               loop runs. Answering 10 here would mean the fold read the
+#               initializer and erased the write.
+#
+# EXIT STATUS IS THE ASSERTION: 0, or the number of the check that failed.
+
+_shifted: i64 = ()
+    t = (1, 7, 7, 7, 9, 7, 7, 7)
+    s = 0
+    i = 1
+    while i <= 4
+        s += t[i]
+        i += 1
+    s
+
+_partial: i64 = ()
+    u = (10, 20, 30, 40, 50, 60)
+    s = 0
+    i = 2
+    while i <= 4
+        s += u[i]
+        i += 1
+    s
+
+_chained: i64 = ()
+    w = (3, 1, 4, 2)
+    v = (10, 20, 30, 40)
+    s = 0
+    i = 1
+    while i <= 4
+        s += v[w[i]]
+        i += 1
+    s
+
+_written: i64 = ()
+    m: [4]i64 = {1, 2, 3, 4}
+    m[2] = 50
+    s = 0
+    i = 1
+    while i <= 4
+        s += m[i]
+        i += 1
+    s
+
+# The verdict relation is applied at file scope. `main` cannot be declared —
+# gate/vocabulary.sh refuses a new module-scope name whose semantic reach is
+# not graph-proven — and the "sole zero-arg relation" entry ladder cannot
+# choose among five zero-arg helpers. A file-scope application makes the
+# module a program, so its root is the entry and the tail is the verdict.
+_check: i64 = ()
+    if _shifted() != 22
+        return 1
+    if _partial() != 90
+        return 2
+    if _chained() != 100
+        return 3
+    if _written() != 58
+        return 4
+    0
+
+_check()

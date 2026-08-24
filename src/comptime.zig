@@ -1855,6 +1855,134 @@ fn exprHasNoApplication(e: *const ast.Expr) bool {
     };
 }
 
+/// Whether this published computed projection can be answered from GRAPH FACTS
+/// ALONE, with no reference to the initializer expression.
+///
+/// The subject must be a sole immutable binding — `aggregateIsSoleImmutableBinding`
+/// is where the mutation and escape clauses live, and it is the same predicate
+/// `dnir_lower` consults before selecting a static dense realization, so the
+/// fold and the realization cannot drift — and every member must carry an
+/// exact i64. Anything else (a nested aggregate member, a member with no
+/// exact content, a written or escaping table) answers false and the whole
+/// fold refuses.
+///
+/// Deliberately the SAME shape `Evaluator.eval`'s `.index` arm re-checks. This
+/// one decides ADMISSION and that one decides the READ; both fail closed, and
+/// asking here keeps a body that cannot possibly fold from spending the budget.
+fn projectionIsGraphAnswerable(
+    graph: *const semantic_graph.SemanticGraph,
+    occurrence: semantic_graph.id,
+) bool {
+    const access = graph.aggregateAccess(occurrence) orelse return false;
+    if (access.application != occurrence) return false;
+    const subject = graph.applicationSubject(occurrence) orelse return false;
+    if (!graph.aggregateIsSoleImmutableBinding(subject)) return false;
+    const members = graph.aggregateMembers(subject) orelse return false;
+    if (members.len == 0) return false;
+    for (members) |member| {
+        const node = graph.get(member) orelse return false;
+        const descriptor = node.descriptor orelse return false;
+        if (descriptor != .i64) return false;
+        if (graph.exactI64(member) == null) return false;
+    }
+    return true;
+}
+
+/// Every `[]` occurrence in the body carries one of `sites`.
+///
+/// The graph half of the bijection is `applicationsInCaller`; this is the AST
+/// half. An `[]` with no published projection would reach `Evaluator.eval`'s
+/// AST table lookup, which reads the initializer — the second authority this
+/// admission exists to exclude — so one unmatched occurrence refuses the fold.
+fn everyIndexHasSite(b: *const ast.Block, sites: []const graph_query.EffectFreeSite) bool {
+    var walk: IndexWalk = .{ .sites = sites };
+    return walk.block(b);
+}
+
+const IndexWalk = struct {
+    sites: []const graph_query.EffectFreeSite,
+
+    fn covered(self: *const IndexWalk, e: *const ast.Expr) bool {
+        for (self.sites) |site| if (site.expr == e) return true;
+        return false;
+    }
+
+    fn block(self: *IndexWalk, b: *const ast.Block) bool {
+        for (b.stmts) |*st| if (!self.stmt(st)) return false;
+        if (b.tail_expr) |te| return self.expr(te);
+        return true;
+    }
+
+    fn stmt(self: *IndexWalk, st: *const ast.Stmt) bool {
+        return switch (st.*) {
+            .local_decl => |d| for (d.inits) |e| {
+                if (!self.expr(e)) break false;
+            } else true,
+            .assign => |a| blk: {
+                for (a.targets) |e| if (!self.expr(e)) break :blk false;
+                for (a.values) |e| if (!self.expr(e)) break :blk false;
+                break :blk true;
+            },
+            .while_loop => |w| self.expr(w.cond) and self.block(&w.body),
+            .num_for => |f| self.expr(f.start) and self.expr(f.stop) and
+                (if (f.step) |s| self.expr(s) else true) and self.block(&f.body),
+            .do_block => |d| self.block(&d.body),
+            .if_stmt => |f| blk: {
+                if (!self.expr(f.cond)) break :blk false;
+                if (!self.block(&f.then)) break :blk false;
+                for (f.elseifs) |ei| {
+                    if (!self.expr(ei.cond)) break :blk false;
+                    if (!self.block(&ei.body)) break :blk false;
+                }
+                break :blk if (f.else_body) |eb| self.block(&eb) else true;
+            },
+            .ret => |r| for (r.vals) |e| {
+                if (!self.expr(e)) break false;
+            } else true,
+            .expr_stmt => |e| self.expr(e.expr),
+            .call_stmt => |e| self.expr(e.expr),
+            .brk, .cont => true,
+            // An unenumerated statement can hold an `[]` this walk would not
+            // see, so it is a refusal and not a pass.
+            else => false,
+        };
+    }
+
+    fn expr(self: *IndexWalk, e: *const ast.Expr) bool {
+        return switch (e.*) {
+            .index => |ix| self.covered(e) and self.expr(ix.obj) and self.expr(ix.key),
+            .call => |c| blk: {
+                if (!self.expr(c.func)) break :blk false;
+                for (c.args) |a| if (!self.expr(a)) break :blk false;
+                break :blk true;
+            },
+            .method_call => |m| blk: {
+                if (!self.expr(m.obj)) break :blk false;
+                for (m.args) |a| if (!self.expr(a)) break :blk false;
+                break :blk true;
+            },
+            .binop => |b| self.expr(b.lhs) and self.expr(b.rhs),
+            .unop => |u| self.expr(u.operand),
+            .if_expr => |ie| self.expr(ie.cond) and self.expr(ie.then_expr) and
+                self.expr(ie.else_expr),
+            .field => |f| self.expr(f.obj),
+            .table => |t| for (t.fields) |field| {
+                const ok = switch (field) {
+                    .positional => |value| self.expr(value),
+                    .named => |named| self.expr(named.val),
+                    .indexed => |indexed| self.expr(indexed.key) and self.expr(indexed.val),
+                    else => false,
+                };
+                if (!ok) break false;
+            } else true,
+            .name, .int_lit, .float_lit, .true_lit, .false_lit, .quoted, .nil => true,
+            // Same rule as the statement arm: an unenumerated expression may
+            // hide an `[]`, so it refuses.
+            else => false,
+        };
+    }
+};
+
 /// A BODY THAT IS ALREADY ITS ANSWER HAS FOLDED, AND SAYING SO IS NOT A
 /// COURTESY — IT IS THE APPLICATION ACCOUNTING.
 ///
@@ -1983,26 +2111,69 @@ pub fn foldRelationBody(
     defer arena.deinit();
     const scratch = arena.allocator();
 
-    // A graph-owned projection must retain one inspectable realization until
-    // the fold publishes an equivalence witness that names every eliminated
-    // application. `Function.folded_to_constant` is only a presence bit and
-    // cannot prove that a damaged projection still corresponds to the final
-    // return value. Ordinary lowering already contracts an exact projection
-    // to a constant and the backend coalesces it into the return register, so
-    // refusing this broader fold preserves the two-instruction machine floor
-    // while keeping Native and Wasm validation load-bearing.
-    if (relation) |entity| {
+    // A GRAPH-OWNED PROJECTION IS FOLDED FROM THE GRAPH OR NOT AT ALL.
+    //
+    // This clause used to refuse ANY body containing a computed projection,
+    // because a fold that reads the table out of the SOURCE AST is a second
+    // authority on contents the graph already owns. That refusal is what made
+    // the canonical `[]` face 15x worse than the retired `()` face it
+    // replaced: `while i <= 4 : s += t[i]` over a table whose contents and
+    // index range are both compile-time known cost 30 instructions where the
+    // same loop without a table costs 2.
+    //
+    // The narrow version keeps the reason and drops the over-reach. Every
+    // aggregate access published in this relation must be one the GRAPH can
+    // answer by itself — a sole immutable binding (`aggregateIsSoleImmutableBinding`
+    // carries the mutation and escape clauses) whose members are all exact
+    // i64 — and each one is handed to the evaluator as an application site, so
+    // `Evaluator.eval`'s `.index` arm reads `exactI64` off the member VALUE and
+    // never the initializer expression. A projection the graph cannot answer,
+    // or an `[]` occurrence with no published projection at all, refuses the
+    // whole fold: the evaluator would otherwise fall back to its AST table
+    // lookup for that one read, which is exactly the second authority.
+    //
+    // The realization accounting is unchanged and already covers this:
+    // `native_backend.unrealizedApplicationCount` subtracts every application
+    // published inside a `folded_to_constant` relation, projections included,
+    // and `dnir_lower.collectDenseTables` no longer emits a dense row whose
+    // only readers were folded away.
+    const projection_sites: []const graph_query.EffectFreeSite = blk: {
+        const entity = relation orelse break :blk &.{};
+        var found: std.ArrayListUnmanaged(graph_query.EffectFreeSite) = .empty;
         for (graph.applicationsInCaller(entity)) |application| {
-            if (graph.aggregateAccess(application) != null) return null;
+            if (graph.aggregateAccess(application) == null) continue;
+            if (!projectionIsGraphAnswerable(graph, application)) return null;
+            const node = graph.get(application) orelse return null;
+            const raw = node.ast_ref orelse return null;
+            found.append(scratch, .{
+                .expr = @ptrCast(@alignCast(raw)),
+                .occurrence = application,
+                .callee = null,
+            }) catch return null;
         }
-    }
+        if (found.items.len == 0) break :blk &.{};
+        // THE AST HALF OF THE SAME BIJECTION. An `[]` the graph did not publish
+        // has no site, and the evaluator would answer it off the AST.
+        if (!everyIndexHasSite(&fb.body, found.items)) return null;
+        break :blk found.items;
+    };
+    const projection_work: ?ApplicationWork = if (projection_sites.len == 0)
+        null
+    else
+        .{ .graph = graph, .sites = projection_sites };
 
     if (bodyHasNoApplication(&fb.body)) {
+        // A LOOPLESS BODY IS LEFT WHERE IT WAS. Ordinary lowering already
+        // contracts an exact projection to a constant and the backend
+        // coalesces it into the return register, so `t = (1,2,3,4) ; t[2]` is
+        // already at the two-instruction floor and folding it here would only
+        // move which pass gets the credit.
         if (!bodyHasLoop(&fb.body)) return constantAnswer(graph, &fb.body);
         return runFold(fb, .{}, .{
             .step_limit = fold_step_limit,
             .alloc = scratch,
             .native_fold = true,
+            .application_work = projection_work,
         });
     }
 
@@ -2105,12 +2276,25 @@ pub fn foldRelationBody(
         slot.value_ptr.* = .{ .func = .{ .body = &declaration.func } };
     }
 
+    // THE PROJECTION SITES TRAVEL WITH THE CLOSURE'S. `effectFreeClosure` omits
+    // a projection whose result the graph has already answered, and an omitted
+    // site is an `[]` the evaluator would read off the AST. Today the closure's
+    // own AST/graph bijection refuses such a body before this line, so the
+    // union is the same set; carrying it explicitly means that agreement is
+    // stated here rather than relied upon from two files away. A duplicate
+    // carrying the SAME occurrence is what `Evaluator.workItem` already
+    // tolerates; two occurrences for one expression is a disagreement and it
+    // refuses.
+    var merged: std.ArrayListUnmanaged(graph_query.EffectFreeSite) = .empty;
+    merged.appendSlice(scratch, closure.sites) catch return null;
+    merged.appendSlice(scratch, projection_sites) catch return null;
+
     const scopes = [_]std.StringHashMapUnmanaged(Value){scope};
     return runFold(fb, .{ .scopes = &scopes }, .{
         .step_limit = fold_step_limit,
         .alloc = scratch,
         .native_fold = true,
-        .application_work = .{ .graph = graph, .sites = closure.sites },
+        .application_work = .{ .graph = graph, .sites = merged.items },
     });
 }
 
