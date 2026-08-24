@@ -36,11 +36,11 @@ if [ "${1:-}" = "--selftest" ]; then
         exit 1
     fi
     printf 'parser_slice selftest: PASS missing compiler fails closed\n'
-    if PARSER_SLICE_EXPECT_RELATION=not_kinds "$0" >/dev/null 2>&1; then
-        printf 'parser_slice selftest: FAIL relation damage was accepted\n'
+    if PARSER_SLICE_EXPECT_CODE=not_dnb001 "$0" >/dev/null 2>&1; then
+        printf 'parser_slice selftest: FAIL diagnostic damage was accepted\n'
         exit 1
     fi
-    printf 'parser_slice selftest: PASS relation damage fails closed\n'
+    printf 'parser_slice selftest: PASS diagnostic damage fails closed\n'
     exit 0
 fi
 
@@ -50,8 +50,8 @@ idol-parser-module     bound    lib/compiler/parser.id       L1-L3 Idol parser s
 role-projection-fed    bound    lib/token/grammarrole.id     roles emitted for consumers
 host-parser-debt       open     src/parser.zig               most recognition still host-owned
 idol-parser-execution   open     lib/compiler/parser.id       direct execution refuses DNB001 at lowerModuleFromGraph
-token-view-execution    open     lib/compiler/token_view.id    direct execution refuses DNB011 at emitArm64ModuleWithGraph
-bare-lambda-offside     bound    lib/compiler/parser.id       single-name (a) uses stmt_col layout
+token-view-execution    open     lib/compiler/token_view.id    direct execution refuses DNB001 graph-dnir-unsupported at lowerExprCons
+bare-function-syntax    bound    examples/syntax_bare_fun_smoke.id    canonical bare-function and offside fixture
 '
 
 MODE=check
@@ -70,7 +70,7 @@ printf 'parser_slice gate: first parser ownership transfer\n\n'
 probe_refusal() {
     _name=$1
     _file=$2
-    _expected=$3
+    _expected=${PARSER_SLICE_EXPECT_CODE:-$3}
     _dir=$(mktemp -d "${TMPDIR:-/tmp}/idol-parser-slice.XXXXXX") || {
         bad "$_name: unable to create private probe directory"
         return
@@ -89,41 +89,33 @@ probe_refusal() {
     fi
 }
 
-# The token-view refusal is not a generic backend bucket.  It is one exact
-# graph application whose producer is currently absent: the dynamic `kinds`
-# projection (application 27 in the current pinned subject).  Keep that
-# relation visible in the evidence so a different DNB011 cannot silently
-# satisfy the parser-slice ledger.  PARSER_SLICE_EXPECT_RELATION is only used
-# by the self-test to damage this control; a damaged expectation must fail.
-probe_token_view_kinds() {
+# The token-view refusal is a current-head graph-realization refusal. Keep the
+# exact diagnostic class and bail site visible so a different backend error
+# cannot silently satisfy the parser-slice ledger.
+probe_token_view_refusal() {
     _dir=$(mktemp -d "${TMPDIR:-/tmp}/idol-parser-kinds.XXXXXX") || {
-        bad 'token-view-kinds-facts: unable to create private probe directory'
+        bad 'token-view-refusal: unable to create private probe directory'
         return
     }
-    _obj=$_dir/token_view_kinds.o
-    _out=$_dir/token_view_kinds.out
+    _obj=$_dir/token_view.o
+    _out=$_dir/token_view.out
     _rc=0
     "$IDOLABS" compile --backend=direct --emit obj -o "$_obj" "$SRC/lib/compiler/token_view.id" >"$_out" 2>&1 || _rc=$?
-    _relation=${PARSER_SLICE_EXPECT_RELATION:-kinds}
     if [ "$_rc" -ne 0 ] \
-        && grep -q 'DNB011 application: 27 relation: kinds' "$_out" \
-        && grep -q 'missing: unresolved-application-facts' "$_out" \
-        && grep -q 'bail site: emitArm64ModuleWithGraph()' "$_out" \
+        && grep -q 'DNB001' "$_out" \
+        && grep -q 'graph-dnir-unsupported' "$_out" \
+        && grep -q 'bail site: lowerExprCons()' "$_out" \
         && [ ! -s "$_obj" ]; then
-        if [ "$_relation" = kinds ]; then
-            ok 'token-view-kinds-facts: application 27 relation kinds refuses at graph producer'
-        else
-            bad "token-view-kinds-facts: damaged expectation unexpectedly accepted ($_relation)"
-        fi
+        ok 'token-view-refusal: DNB001 graph-dnir-unsupported refusal'
     else
-        bad 'token-view-kinds-facts: exact graph refusal witness changed'
+        bad 'token-view-refusal: exact current-head refusal witness changed'
     fi
 }
 
 probe_refusal parser-execution lib/compiler/parser.id DNB001
-probe_refusal token-view-execution lib/compiler/token_view.id DNB011
+probe_refusal token-view-execution lib/compiler/token_view.id DNB001
 SEEN=$((SEEN + 1))
-probe_token_view_kinds
+probe_token_view_refusal
 
 PARSER="$SRC/src/parser.zig"
 SEEN=$((SEEN + 1))
@@ -147,11 +139,11 @@ else
     bad 'lib/compiler/lexer.id: missing'
 fi
 
-FIXTURE="benchmarks/canonical/parser/bare_lambda_offside.id"
+FIXTURE="examples/syntax_bare_fun_smoke.id"
 SEEN=$((SEEN + 1))
 if [ -f "$FIXTURE" ]; then
-    ok 'bare_lambda_offside.id: present'
-    grep -q 'f: i64 = (a)' "$FIXTURE" && ok 'fixture: canonical offside shape' || bad 'fixture: canonical offside shape missing'
+    ok 'syntax_bare_fun_smoke.id: present'
+    grep -q 'add: i64 = (x: i64, y: i64)' "$FIXTURE" && ok 'fixture: canonical bare-function shape' || bad 'fixture: canonical bare-function shape missing'
     SEEN=$((SEEN + 1))
 else
     bad "bare_lambda_offside.id: missing at $FIXTURE"
