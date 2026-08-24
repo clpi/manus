@@ -169,7 +169,10 @@ pub const verticals = [_]Vertical{
         \\main: i64 = ()
         \\    twice(20) + twice(1)
         ,
-        .expect = .{ .int = .leak, .text = .absent, .name = .leak, .relation = .leak, .reference = .leak },
+        // The integer call result is now graph-owned through the whole-body
+        // fold.  Keep this expectation pinned to the measured realization:
+        // poisoning AST provenance leaves its bytes unchanged.
+        .expect = .{ .int = .sovereign, .text = .absent, .name = .leak, .relation = .leak, .reference = .leak },
     },
     .{
         .name = "projection",
@@ -189,7 +192,9 @@ pub const verticals = [_]Vertical{
         \\    p = { x = 4, y = 9 }
         \\    p.x * p.y
         ,
-        .expect = .{ .int = .leak, .text = .absent, .name = .sovereign, .relation = .leak, .reference = .leak },
+        // Field integer values use the same graph-backed constant path as
+        // calls; the old leak pin survived the implementation fix.
+        .expect = .{ .int = .sovereign, .text = .absent, .name = .sovereign, .relation = .leak, .reference = .leak },
     },
     .{
         .name = "pack",
