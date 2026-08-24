@@ -302,6 +302,11 @@ pub const Instr = struct {
     field: []const u8 = "",
     binop: BinOpTag = .add,
     ty: RT = .any,
+    /// Graph-derived byte-sequence observation on an egress instruction.
+    /// This is a compact realization encoding, not a second type identity:
+    /// the producer is `types.isQuotedByteSequence` in lowering and consumers
+    /// must refuse until a pointer-plus-extent carrier exists.
+    byte_sequence: bool = false,
     /// Record type name for init/load/store.
     record: []const u8 = "",
     /// Third ABI slot for 3-field record returns.

@@ -208,15 +208,18 @@ O(n) worst case**, not O(1) — the guarantee is expected-time with a keyed,
 SipHash-class function whose key is a world fact (§12 HASH). **An unfused
 pipeline allocates once per stage**, because fusion is best-effort.
 
-**This table is the specification. Seven of its rows are wrong about this tree
+**This table is the specification. Six of its rows are wrong about this tree
 today**, and §7 gives each one a measurement: integer arithmetic does not
-unwind on overflow or divide-by-zero, the tail-call row is false and fails as a
-segmentation fault, the interpolation row undercounts nothing but omits that
-nothing is freed, the two `release` rows describe machinery that does not
-exist, the sealed-descriptor construction row is untestable because the
-constructor does not compile, and the anonymous-table row is a hashed table
+unwind on overflow or divide-by-zero, the interpolation row undercounts nothing
+but omits that nothing is freed, the two `release` rows describe machinery that
+does not exist, the sealed-descriptor construction row is untestable because
+the constructor does not compile, and the anonymous-table row is a hashed table
 rather than a struct. Do not budget from this table against the current
 binary. Budget from §7.
+
+The tail-call row was the seventh and is no longer wrong under the direct
+backend — see §7, which also states the shapes it still declines and the
+non-tail row's `error.depth`, which remains unbuilt.
 
 ---
 
@@ -323,6 +326,41 @@ quoted from generated output are **C**, not Duo.
 - **Sealed descriptors get flat layout.** A two-field sealed descriptor becomes
   a C struct of two `int64_t`, returned by value, with field reads compiled as
   direct member access. E5's layout half is real.
+- **TAIL holds under the direct backend, and the shape it declines is named.**
+  The emitted form for a call in tail position is now `restore the frame; b
+  <callee>` — no `bl`, no caller-save block, x30 left holding the caller's
+  return address so the callee returns straight past the frame that jumped to
+  it. Measured at idol f2c7e67c: depths 100, 1,000, 100,000 and 1,000,000 each
+  answer correctly, and `examples/table/tailcall.id`'s ten million frames
+  answer `10000000` in 0.06s of user time where the same binary under
+  `IDOL_NO_TAILCALL=1` exits **139**. MUTUAL tail calls are included — the two
+  relations may carry different frame sizes, because each tears down its own
+  before the jump. Over the 257 corpus programs that compile to assembly the
+  emitted instruction count falls by 751 (-1.19%) and **no program grows**.
+
+  The transform is PHYSICAL and lives in `native_backend.zig`, not in lowering:
+  the application is still realized, still names the same target, and still
+  publishes its machine-lineage row; only the stack discipline changes. (The
+  DNIR-level rewrite `dnir_lower.tryEmitSelfTail` predates it, declines every
+  checked application by design, and therefore fires on nothing in a
+  graph-lifted module.)
+
+  DECLINED, AND EACH DECLINE COSTS ONE ORDINARY CALL: a callee with more than
+  eight general-purpose argument slots (the ninth is a memory argument whose
+  home is above the caller's frame, so the frame cannot be given back before it
+  is written); an f64 argument, result, or kernel; a record or result-pack
+  return, or one that leaves through x8; a callee whose return descriptor
+  differs from the caller's, since the caller still owes the narrowing; a
+  foreign (`@comp.c.export`) boundary on either side; a callee this compilation
+  does not hold the declaration of, which includes every call leaving the
+  object; and gate transport. `IDOL_NO_TAILCALL=1` severs the whole transform
+  and `IDOL_TAILCALL_REPORT=1` counts what it admitted.
+
+  THE NON-TAIL ROW IS STILL UNBUILT. There is no depth metering and no routed
+  `error.depth`, so genuine non-tail recursion deep enough to exhaust the stack
+  is still a SIGSEGV rather than a named fault, and the fault contract's "No
+  SIGSEGV as an API" is still owed there. §12's tail-call guarantee no longer
+  stands behind that hole; nothing else has moved.
 - **The direct ARM64 backend has no heap opcode.** Its only allocation
   instruction is `alloc_slots`, and that arm lowers to a stack-pointer offset
   (`src/native_backend.zig`). The only fixed runtime symbols it can branch to
@@ -334,17 +372,6 @@ quoted from generated output are **C**, not Duo.
 
 ### Specified and NOT implemented
 
-- **TAIL is not implemented, and the failure mode is a SIGSEGV.** A textbook
-  tail call compiles to a real call: the direct backend emits a frame,
-  `bl` to itself, restore, `ret`. The frame was 48 bytes when this was written
-  and is **112** (`sub sp, sp, #0x70`) at idol d3affe8a, so the depth a given
-  stack survives has fallen by more than half since. Measured there: depth 100
-  answers 100; depth 100,000 exits **139**. The emitted shape is the textbook
-  one — `bl` to self immediately followed by epilogue and `ret` — which is
-  exactly the sequence a proper tail call replaces with a frame restore and a
-  `b`. Positive control at depth 1000 prints `1000`;
-  at depth 5,000,000 the binary exits **139**. The fault contract says "No SIGSEGV as
-  an API" and there is no depth metering and no routed `error.depth` today.
 - **No deallocation is emitted, at any tier.** Zero `free` call sites appear in
   the user region of the generated C (0 below line 5900 of a 6039-line output;
   the 45 in the file are all inside the runtime's own rehash and string-pool

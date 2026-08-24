@@ -1058,6 +1058,23 @@ const Arm64Compiler = struct {
     /// what a `ret` should do — see the `.ret` arm.
     cur_func_ret: native_types.ResolvedType = .any,
     cur_func_name: ?[]const u8 = null,
+    /// Every function in the module being compiled, borrowed for the length of
+    /// `compileDnirModule`. §12 TAIL needs the CALLEE's declaration to decide
+    /// whether a call in tail position may reuse this frame — its return
+    /// descriptor, its result convention, and how many argument slots it reads
+    /// — and a caller cannot answer any of those from the call site. Empty
+    /// means "no module in hand" (the DNIR-only entry points and the unit
+    /// tests), and an empty roster admits no tail call at all, so those paths
+    /// keep today's emission byte for byte.
+    cur_module_functions: []const dnir.Function = &.{},
+    /// SEVERING CONTROL for §12 TAIL. `IDOL_NO_TAILCALL=1` restores the
+    /// `bl`-then-epilogue emission for every call in tail position. Read once
+    /// per process; `main.behaviourEnvClass` treats any `IDOL_*` this compiler
+    /// reads as `.affects`, so the two arms decline each other's build cache.
+    tailcall: bool = true,
+    /// Calls this compilation realized as a jump rather than a frame. Census
+    /// only — `IDOL_TAILCALL_REPORT` prints it.
+    tailcall_admitted: u32 = 0,
     /// When set, this function's f64 return is coerced to i64 for process exit.
     entry: ?[]const u8 = null,
     cur_func_ret_record: ?ScalRecordDesc = null,
@@ -1749,6 +1766,9 @@ const Arm64Compiler = struct {
         // `moduleIsNativeDirectReady`, and again here. When an entry IS
         // demanded the error is exactly as before.
         if (m.functions.len == 0 and self.entry != null) return error.MissingMain;
+        // §12 TAIL reads the CALLEE's declaration out of here. Borrowed for the
+        // length of this call; `m` outlives it.
+        self.cur_module_functions = m.functions;
         for (m.functions) |f| {
             // `dnirNeedsCalleeSave` decides whether to MEASURE, and it is a census
             // of DNIR names -- the same census `probeCalleeSaveUse`'s own comment
@@ -1890,6 +1910,13 @@ const Arm64Compiler = struct {
         // unsevered arm compiles. The severing arm would then have been
         // measured against a REFUSAL rather than against the code it severs.
         probe.tightdef = self.tightdef;
+        // …AND SO DOES §12 TAIL. A tail call emits no caller-save block and no
+        // result marshaling, so admitting one in the probe and not in the real
+        // pass (or the reverse) measures a different function's callee-save set
+        // — the same divergence `tightdef` is copied here to avoid. Both the
+        // control and the roster it reads have to cross.
+        probe.tailcall = self.tailcall;
+        probe.cur_module_functions = self.cur_module_functions;
         if (self.graph_const_bases.count() != 0) {
             var last_symbol: u32 = 0;
             var bases = self.graph_const_bases.iterator();
@@ -3426,6 +3453,11 @@ const Arm64Compiler = struct {
                 // when T's only reader is that add (FTCFTW debt (2)).
                 const fuse_madd = !fuse_branch and !fuse_named and ins.op == .binop and bi + 1 < b.instrs.len and
                     self.mulAddFusible(ins, b.instrs[bi + 1], flat_idx);
+                // §12 TAIL: `call_direct -> T ; ret T` is a JUMP, not a frame.
+                // The pair is folded into `restore the frame; b <callee>` — see
+                // `tailCallFusible` for every ground on which it is declined.
+                const fuse_tail = ins.op == .call_direct and bi + 1 < b.instrs.len and
+                    self.tailCallFusible(f, ins, b.instrs[bi + 1], flat_idx + 1);
                 // W7: the whole one-sided `if` becomes `csel`, on top of
                 // whichever of the three condition shapes reached here.
                 const ifconv: ?IfConvPlan = if (fuse_branch)
@@ -3477,6 +3509,9 @@ const Arm64Compiler = struct {
                     extra_consumed = 2;
                 } else if (fuse_madd) {
                     try self.emitFusedMulAdd(&temps, &pinned, ins, b.instrs[bi + 1]);
+                    extra_consumed = 1;
+                } else if (fuse_tail) {
+                    try self.emitTailCallDirect(&temps, &pinned, ins);
                     extra_consumed = 1;
                 } else {
                     const preferred_result = if (bi + 1 < b.instrs.len)
@@ -3585,6 +3620,11 @@ const Arm64Compiler = struct {
                     tail_terminates = false;
                     flat_idx += 1;
                 }
+                // A JUMP OUT OF THE FUNCTION IS A TERMINATOR. `tail_terminates`
+                // is read from the op above, which is `call_direct` and is not
+                // one; the `ret` that would have said so was consumed. Without
+                // this the function reports "falls off the end" and refuses.
+                if (fuse_tail) tail_terminates = true;
                 // Release hoist registers once emission has passed a loop latch.
                 self.immHoistExit(flat_idx);
             }
@@ -6834,6 +6874,195 @@ const Arm64Compiler = struct {
         try self.emit(0xd65f03c0, "ret");
     }
 
+    /// §12 TAIL — `b <symbol>`. A BRANCH to another function, not a call: x30
+    /// is left holding OUR caller's return address, so the callee's `ret`
+    /// returns past us and this frame never comes back.
+    ///
+    /// Registered as an ordinary call patch. `b` and `bl` differ only in the
+    /// top six bits and share the imm26 field, so relocation is the same
+    /// arithmetic — see `patchCalls`, which now keeps whichever opcode was
+    /// emitted here instead of writing BL over it.
+    fn emitTailB(self: *Arm64Compiler, target: []const u8) Error!void {
+        const offset: u32 = @intCast(self.code.items.len);
+        const link_name = try linkerSymbolName(self.alloc, target);
+        defer self.alloc.free(link_name);
+        const owned_target = try self.alloc.dupe(u8, link_name);
+        errdefer self.alloc.free(owned_target);
+        try self.emitFmt(0x14000000, "b _{s}", .{link_name});
+        try self.call_patches.append(self.alloc, .{ .offset = offset, .target = owned_target });
+        self.pending_arg_regs = 0;
+    }
+
+    /// §12 TAIL — realize a call in tail position as a JUMP into the callee.
+    ///
+    /// THE ARGUMENTS ARE ALREADY WHERE THE CALLEE READS THEM, and that is the
+    /// answer to the staging question. Every one of them was written into
+    /// x0..x7 by `mov_arg` while this frame still stood; `restoreStackFrame`
+    /// moves `sp` and reloads x19..x28 and touches nothing else, so the
+    /// tear-down cannot reach a staged argument and none of them needs to
+    /// survive it anywhere but where it already is. No shuffle, no scratch
+    /// area, no second copy.
+    ///
+    /// The one shape that would need somewhere in between is a NINTH argument,
+    /// whose home is memory ABOVE this frame — and `tailCallFusible` refuses
+    /// that outright rather than inventing a staging area for it.
+    ///
+    /// `emitSaveCallerRegs` is not emitted at all, and must not be: it exists
+    /// to carry values ACROSS a call, and nothing here comes back.
+    fn emitTailCallDirect(
+        self: *Arm64Compiler,
+        temps: *std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *const std.AutoHashMapUnmanaged(u32, u5),
+        ins: dnir.Instr,
+    ) Error!void {
+        if (ins.lhs != .void) {
+            const arg_reg = try self.evalDnirValue(temps, ins.lhs);
+            if (arg_reg != 0) {
+                try self.preserveArgReg(temps, pinned, 0);
+                try self.emitMovReg(0, arg_reg);
+            }
+            self.releaseDnirTemp(pinned, ins.lhs, arg_reg);
+        }
+        // EXACTLY WHAT THE PROLOGUE DID, IN REVERSE, and it is the same call
+        // `ret` makes one line before its own `ret` — the frame region, then
+        // the callee-saved bank `emitSaveCalleeRegs` actually saved. Sharing
+        // the function is the point: a tear-down that drifted from the ordinary
+        // return's would hand the callee a stack pointer no `ret` agrees with.
+        try self.restoreStackFrame();
+        try self.emitTailB(ins.callee);
+        self.returned = true;
+        self.tailcall_admitted += 1;
+    }
+
+    /// GP argument slots `g` reads, counted the way the prologue assigns them:
+    /// one 8-byte word per scalar parameter and one per exploded field of a
+    /// scalar record parameter. Null when a parameter names a record this
+    /// compilation has no descriptor for, which is not a count of anything.
+    fn gpArgSlotCount(self: *const Arm64Compiler, g: dnir.Function) ?u32 {
+        var slots: u32 = 0;
+        for (g.params) |p| {
+            var k: u32 = 1;
+            if (p.record) |rec_name| {
+                const rec = scalRecordDesc(self.scal_records, rec_name) orelse return null;
+                k = @intCast(rec.field_names.len);
+            }
+            slots += k;
+        }
+        return slots;
+    }
+
+    fn moduleFunctionNamed(self: *const Arm64Compiler, name: []const u8) ?dnir.Function {
+        for (self.cur_module_functions) |g| {
+            if (std.mem.eql(u8, g.name, name)) return g;
+        }
+        return null;
+    }
+
+    /// §12 TAIL's ADMISSION, asked at the point of emission because two of its
+    /// grounds are only knowable there: whether this call staged anything into
+    /// the outgoing memory area, and what this frame still owes on the way out.
+    ///
+    /// The transform is physical and nothing else. The application is still
+    /// realized, still a call to the same target with the same arguments, and
+    /// still publishes its lineage row over the bytes emitted for it; only the
+    /// stack discipline changes. That is why this lives here and not in
+    /// `dnir_lower`, where the same rewrite would be a GRAPH transformation
+    /// (replacing an application with a branch) and needs a transform entity
+    /// and a witness — which is exactly why `dnir_lower.tryEmitSelfTail`
+    /// declines every checked application and, in a graph-lifted module, fires
+    /// on nothing at all.
+    ///
+    /// Every ground below is a REFUSAL, and the cost of each refusal is one
+    /// ordinary call — today's emission, byte for byte.
+    fn tailCallFusible(
+        self: *const Arm64Compiler,
+        f: dnir.Function,
+        ins: dnir.Instr,
+        next: dnir.Instr,
+        ret_index: u32,
+    ) bool {
+        if (!self.tailcall) return false;
+        if (ins.op != .call_direct or next.op != .ret) return false;
+        // Gate transport spills parameters to the frame and runs a raised home
+        // budget; it is a bootstrap transport, not a place to prove a new stack
+        // discipline. Declined, and it pays one ordinary call for that.
+        if (self.gate_transport) return false;
+        // THE CALL'S RESULT MUST BE THE ANSWER, UNCHANGED. Anything between the
+        // two — a narrowing refit, a record copy-out from x0..x7, a second pack
+        // member — is work this frame still owes, and a frame that still owes
+        // work cannot be given away.
+        const result = ins.result orelse return false;
+        const returns_the_call = switch (next.lhs) {
+            .temp => |t| t == result,
+            else => false,
+        };
+        if (!returns_the_call) return false;
+        if (ins.pack_results.len != 0 or ins.record.len != 0 or ins.field.len != 0) return false;
+        // The `ret` is CONSUMED and emits no bytes of its own, so it must carry
+        // no lineage to publish. Nothing lowers a `ret` with application facts
+        // today; if that ever changes, this declines rather than dropping a row.
+        if (next.application != null or next.relation != null or next.value != null) return false;
+        // ONE REGISTER FILE. The f64 arms stage through d0..d7 and return
+        // through d0 under their own conventions, and `restoreStackFrame` says
+        // nothing about d8..d15. A tail call across the FP boundary is a
+        // separate proof; this is not it.
+        if (ins.ty == .f64 or next.ty == .f64) return false;
+        if (self.cur_func_float or self.cur_func_ret_float or self.cur_func_ret == .f64) return false;
+        // WHAT THIS FRAME STILL OWES ON THE WAY OUT. A record result leaves
+        // through a buffer this frame owns or through x8; a pack leaves in
+        // several registers; the entry relation may owe a coercion for process
+        // exit. Each is a real obligation and none of them survives the frame.
+        if (self.cur_func_ret_record != null or self.cur_func_ret_pack.len != 0) return false;
+        if (self.cur_func_ret_f64_record != null or self.cur_ret_indirect_reg != null) return false;
+        if (self.needsProcessExitF64Coerce()) return false;
+        // STACKED ARGUMENTS — THE REFUSAL CONDITION, STATED.
+        //
+        // A ninth GP argument does not travel in a register. It is written into
+        // an OUTGOING MEMORY AREA that this call site opens BELOW the current
+        // frame (`emitPushVarargs`), and the callee reads it from just above
+        // its own. Reusing this frame means giving that region back before the
+        // branch, so the argument would have to be written into the INCOMING
+        // area instead — which requires the incoming area to be at least as
+        // large as the outgoing one AND requires every word to be written after
+        // the tear-down, from values that lived in the frame that just went
+        // away. Neither is free and neither is proved here.
+        //
+        // So: a call in tail position that staged ANY stacked argument is
+        // refused. `pending_vararg_count` is exactly that question — `mov_arg`
+        // routes every slot at or past 8 into it — and it is asked at emission
+        // because it is the call site's own fact, not the callee's.
+        if (self.pending_vararg_count != 0) return false;
+        // THE CALLEE'S DECLARATION, not the call site's spelling. A caller
+        // cannot read a convention off a symbol name (`AGENTS.md`), so a callee
+        // this compilation does not hold the declaration of is refused —
+        // including every call that leaves this object.
+        const g = self.moduleFunctionNamed(ins.callee) orelse return false;
+        // A boundary that answers on C's convention is not ours to jump into
+        // on Idol's, in either direction.
+        if (g.foreign_boundary or f.foreign_boundary) return false;
+        if (g.is_float_kernel or g.ret == .f64) return false;
+        if (g.ret_record != null or g.ret_pack.len != 0) return false;
+        // THE CALLEE NARROWS ITS OWN RESULT ON ITS OWN `ret`, and that is only
+        // OUR answer when the two descriptors are the same one. A caller
+        // declaring i32 over a callee declaring i64 still owes the truncation
+        // `emitMovRegFit` would have emitted, so it keeps its call.
+        if (!std.meta.eql(g.ret, f.ret)) return false;
+        // Belt and braces over `pending_vararg_count`: a callee that reads a
+        // ninth slot must never be jumped to from a site that staged eight.
+        const slots = self.gpArgSlotCount(g) orelse return false;
+        if (slots > 8) return false;
+        // NOTHING MAY BRANCH TO THE `ret` WE ARE ABOUT TO CONSUME. A consumed
+        // instruction's code offset is the byte AFTER the bytes this iteration
+        // emitted — here, after the jump — so a branch aimed at it would land
+        // on whatever the emitter puts next, which is the next function.
+        for (f.blocks) |b| {
+            for (b.instrs) |other| {
+                if (other.op == .br and other.branch_target == ret_index) return false;
+            }
+        }
+        return true;
+    }
+
     fn emitBl(self: *Arm64Compiler, target: []const u8) Error!void {
         const offset: u32 = @intCast(self.code.items.len);
         const link_name = try linkerSymbolName(self.alloc, target);
@@ -8819,7 +9048,15 @@ const Arm64Compiler = struct {
                 const imm = @divTrunc(diff, 4);
                 if (imm < -(1 << 25) or imm >= (1 << 25)) return error.BranchOutOfRange;
                 const imm26: u32 = @intCast(@as(i32, @intCast(imm)) & 0x03ff_ffff);
-                const word = 0x94000000 | imm26;
+                // KEEP THE OPCODE THAT WAS EMITTED. This wrote a literal
+                // `0x94000000` — BL — over whatever word sat at the patch site,
+                // which was harmless while `emitBl` was the only producer and
+                // silently turned a §12 TAIL `b` back into a call the moment
+                // one existed. Both forms are `op | imm26` with the same imm26
+                // field, so the top six bits are the whole difference and they
+                // belong to the emitter, not to relocation.
+                const emitted = std.mem.readInt(u32, self.code.items[patch.offset..][0..4], .little);
+                const word = (emitted & 0xfc00_0000) | imm26;
                 std.mem.writeInt(u32, self.code.items[patch.offset..][0..4], word, .little);
                 continue;
             }
@@ -9504,6 +9741,10 @@ fn emitArm64FromDnirLicensed(
     if (std.c.getenv("IDOL_NO_TIGHTDEF")) |raw| {
         if (std.mem.eql(u8, std.mem.span(raw), "1")) compiler.tightdef = false;
     }
+    // §12 TAIL's SEVERING CONTROL, read the same way and for the same reason.
+    if (std.c.getenv("IDOL_NO_TAILCALL")) |raw| {
+        if (std.mem.eql(u8, std.mem.span(raw), "1")) compiler.tailcall = false;
+    }
     if (m.graph) |graph| {
         if (graph.gateTransportModule()) {
             compiler.gate_transport = true;
@@ -9538,6 +9779,11 @@ fn emitArm64FromDnirLicensed(
     // reported rather than asserted.
     if (std.c.getenv("IDOL_TIGHTDEF_REPORT") != null) {
         std.debug.print("tightdef admitted={d}\n", .{compiler.tightdef_admitted});
+    }
+    // §12 TAIL CENSUS: how many calls in tail position this module realized as
+    // a jump. Off unless asked for.
+    if (std.c.getenv("IDOL_TAILCALL_REPORT") != null) {
+        std.debug.print("tailcall admitted={d}\n", .{compiler.tailcall_admitted});
     }
     var output = try compiler.finish();
     output.graph = m.graph;
@@ -10059,11 +10305,17 @@ fn expectLineageCallTarget(
         break;
     }
 
+    // ONE CONTROL TRANSFER, TO THE NAMED TARGET — and `bl` is not the only
+    // form it takes. §12 TAIL realizes an application in tail position as `b`,
+    // which is the SAME transfer to the SAME target over the same imm26 field;
+    // only x30 differs, and x30 is the frame question, not the identity one.
+    // Scanning for BL alone read a lawful tail realization as no call at all.
     var call_count: usize = 0;
     var offset: u32 = lineage.text_start;
     while (offset + 4 <= lineage.text_end) : (offset += 4) {
         const word = std.mem.readInt(u32, output.text[offset..][0..4], .little);
-        if (word & 0xfc00_0000 != 0x9400_0000) continue;
+        const op = word & 0xfc00_0000;
+        if (op != 0x9400_0000 and op != 0x1400_0000) continue;
         const shifted: i32 = @bitCast((word & 0x03ff_ffff) << 6);
         const destination = @as(i64, offset) + @as(i64, shifted >> 6) * 4;
         try std.testing.expectEqual(@as(i64, target_offset orelse return error.TestExpectedEqual), destination);
@@ -10531,6 +10783,158 @@ test "native backend: nested compact checked calls retain direct region use and 
     try std.testing.expect(inner.text_end <= outer.text_start);
 }
 
+test "native backend: a call in tail position is a jump, not a frame (§12 TAIL)" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // `_tail` is the textbook fixture: one arm returns, the other calls itself
+    // in tail position. `_grow` is the CONTROL — the same self-call with its
+    // result used as an operand, which is not in tail position and must keep
+    // its frame.
+    const source =
+        \\_tail: i64 = (n: i64, acc: i64)
+        \\    if n <= 0
+        \\        return acc
+        \\    return _tail(n - 1, acc + 1)
+        \\_grow: i64 = (n: i64)
+        \\    if n <= 0
+        \\        return 0
+        \\    return n + _grow(n - 1)
+    ;
+    var lexer = Lexer.init(source, "tailform.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&module, &checked, &graph);
+    var assembly = try emitCheckedTestAssembly(alloc, &module, &graph, null);
+    defer assembly.deinit(alloc);
+    const text = assembly.assembly;
+
+    const tail_symbol = "_idol_tailform___tail";
+    const grow_symbol = "_idol_tailform___grow";
+
+    // THE FORM, IN THREE PARTS.
+    //
+    // (1) A JUMP TO THE TARGET, and (2) NO CALL TO IT. Both halves are the
+    // assertion: `b` present while `bl` also survived somewhere would mean the
+    // frame is still being pushed on some path.
+    const jump = "\tb " ++ tail_symbol ++ "\n";
+    const jump_at = std.mem.indexOf(u8, text, jump) orelse return error.TestExpectedEqual;
+    try std.testing.expect(std.mem.indexOf(u8, text, "\tbl " ++ tail_symbol ++ "\n") == null);
+    // The jump REPLACES the return; nothing may follow it on that path.
+    try std.testing.expect(std.mem.indexOf(u8, text, jump) == std.mem.lastIndexOf(u8, text, jump));
+
+    // (3) THE FRAME IS GIVEN BACK BEFORE THE BRANCH, not after it and not by
+    // the callee. The instruction immediately preceding the jump must be the
+    // `add sp, sp, #N` that undoes this function's own `sub sp, sp, #N` — the
+    // same tear-down its ordinary `ret` performs. A jump emitted with the
+    // frame still standing is the defect this pins: it would run, answer
+    // correctly at depth 100, and grow the stack forever.
+    const before_jump = text[0..jump_at];
+    const restore_at = std.mem.lastIndexOf(u8, before_jump, "\tadd sp, sp, #") orelse
+        return error.TestExpectedEqual;
+    const after_restore = before_jump[restore_at..];
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, after_restore, "\n"));
+    // …and it gives back exactly what the prologue took.
+    const claim_at = std.mem.indexOf(u8, text, "\tsub sp, sp, #") orelse return error.TestExpectedEqual;
+    const claimed = text[claim_at + "\tsub sp, sp, #".len ..];
+    const released = after_restore["\tadd sp, sp, #".len..];
+    const claimed_end = std.mem.indexOfScalar(u8, claimed, '\n') orelse return error.TestExpectedEqual;
+    const released_end = std.mem.indexOfScalar(u8, released, '\n') orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings(claimed[0..claimed_end], released[0..released_end]);
+
+    // THE ARGUMENTS ARE ALREADY STAGED when the frame goes back. Both of them
+    // are written into the argument registers before the tear-down, which is
+    // the whole reason the tear-down cannot destroy them.
+    const tail_start = std.mem.indexOf(u8, text, tail_symbol ++ ":\n") orelse
+        return error.TestExpectedEqual;
+    const staging = text[tail_start..restore_at];
+    try std.testing.expect(std.mem.lastIndexOf(u8, staging, "\tmov x0, x") != null);
+    try std.testing.expect(std.mem.lastIndexOf(u8, staging, "\tmov x1, x") != null);
+
+    // THE CONTROL. `_grow`'s self-call is an operand of `+`, so it is NOT in
+    // tail position: it keeps its `bl` and never becomes a jump. Without this
+    // half the test above passes just as well for a compiler that turned every
+    // call into a branch.
+    try std.testing.expect(std.mem.indexOf(u8, text, "\tbl " ++ grow_symbol ++ "\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "\tb " ++ grow_symbol ++ "\n") == null);
+}
+
+test "native backend: a tail jump relocates as B and not as BL" {
+    var diagnostic: Diagnostic = .{};
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // THE ASSEMBLY TEXT IS NOT THE ARTIFACT. `patchCalls` resolves every call
+    // patch by writing an opcode over the branch site, and it used to write a
+    // literal BL there — which would have turned this jump back into a call in
+    // the BYTES while the `.s` file went on saying `b`. Only a byte-level
+    // oracle can tell those two apart, so this is that oracle.
+    const source =
+        \\_tail: i64 = (n: i64, acc: i64)
+        \\    if n <= 0
+        \\        return acc
+        \\    return _tail(n - 1, acc + 1)
+        \\main: i64 = (seed: i64)
+        \\    _tail(seed, 0)
+    ;
+    var lexer = Lexer.init(source, "tailbytes.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "tailbytes.id");
+
+    var output = try emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic);
+    defer output.deinit(alloc);
+
+    var target_offset: ?u32 = null;
+    for (output.symbols) |symbol| {
+        if (!symbol.defined or symbol.section != 1) continue;
+        if (!std.mem.eql(u8, symbol.name, "idol_tailbytes___tail")) continue;
+        target_offset = symbol.offset;
+    }
+    const target = target_offset orelse return error.TestExpectedEqual;
+
+    var jumps: usize = 0;
+    var calls: usize = 0;
+    var offset: u32 = 0;
+    while (offset + 4 <= output.text.len) : (offset += 4) {
+        const word = std.mem.readInt(u32, output.text[offset..][0..4], .little);
+        const op = word & 0xfc00_0000;
+        if (op != 0x1400_0000 and op != 0x9400_0000) continue;
+        const shifted: i32 = @bitCast((word & 0x03ff_ffff) << 6);
+        const destination = @as(i64, offset) + @as(i64, shifted >> 6) * 4;
+        if (destination != @as(i64, target)) continue;
+        if (op == 0x1400_0000) jumps += 1 else calls += 1;
+    }
+    // `_tail`'s own recursion is a jump; `main`'s application of it is NOT in
+    // tail position (its result is bound and returned through main's own
+    // frame convention) or is, and either way exactly one of each reaches the
+    // target here: the self-recursion never as BL, and never zero jumps.
+    try std.testing.expect(jumps >= 1);
+    try std.testing.expectEqual(@as(usize, 0), calls);
+}
+
 test "native backend: checked subject fact reaches object bytes" {
     var diagnostic: Diagnostic = .{};
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
@@ -10598,7 +11002,9 @@ test "native backend: checked subject fact reaches object bytes" {
     const main_start = std.mem.indexOf(u8, output.asm_text, "_main:\n") orelse
         return error.TestExpectedEqual;
     // `machine-lineage.id` is home `machine-lineage`; the hyphen folds.
-    const call_offset = std.mem.indexOf(u8, output.asm_text[main_start..], "bl _idol_machine_lineage__observe") orelse
+    // The application is in tail position, so §12 TAIL realizes it as `b`; the
+    // three staged argument registers are the point here and they are unmoved.
+    const call_offset = std.mem.indexOf(u8, output.asm_text[main_start..], "b _idol_machine_lineage__observe") orelse
         return error.TestExpectedEqual;
     const call_staging = output.asm_text[main_start .. main_start + call_offset];
     try std.testing.expect(std.mem.indexOf(u8, call_staging, "mov x0") != null);
@@ -13192,7 +13598,9 @@ test "native backend physical oracle retains qualified link symbol and two-regis
     try std.testing.expect(std.mem.indexOf(u8, output.asm_text, "_math_add") != null);
     const main_start = std.mem.indexOf(u8, output.asm_text, "_main:\n") orelse
         return error.TestExpectedEqual;
-    const call_offset = std.mem.indexOf(u8, output.asm_text[main_start..], "bl _math_add") orelse
+    // `main` returns `math.add(a, b)` directly — a tail position, so the
+    // transfer is `b` and the two argument moves still have to be right.
+    const call_offset = std.mem.indexOf(u8, output.asm_text[main_start..], "b _math_add") orelse
         return error.TestExpectedEqual;
     const staging = output.asm_text[main_start .. main_start + call_offset];
     try std.testing.expect(std.mem.indexOf(u8, staging, "mov x0") != null);
@@ -13308,7 +13716,7 @@ test "native backend stages two call-result arguments from distinct registers" {
     const main_start = std.mem.indexOf(u8, output.asm_text, "_main:\n") orelse
         return error.TestExpectedEqual;
     const tail = output.asm_text[main_start..];
-    const call_g = std.mem.indexOf(u8, tail, "bl _g") orelse return error.TestExpectedEqual;
+    const call_g = std.mem.indexOf(u8, tail, "b _g") orelse return error.TestExpectedEqual;
     const staging = tail[0..call_g];
     // The final argument staged into x1 must read a register that is not the
     // same one x0's argument was moved from. Find the last `mov x0, xN` and
@@ -14717,7 +15125,11 @@ test "native backend assembly lists helper call labels" {
     try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _idol_native__add") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _idol_native__main") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _main\n") == null);
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tbl _idol_native__add\n") != null);
+    // `main`'s whole body IS `add(1, 2)`, so the application is in tail
+    // position and §12 TAIL realizes it as a jump: the frame goes back first
+    // and x30 still names main's caller, so `add` returns straight past it.
+    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tb _idol_native__add\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tbl _idol_native__add\n") == null);
 }
 
 // Source `print` reaches machine code, and it reaches the SAME machine code as

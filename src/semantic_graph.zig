@@ -4855,7 +4855,15 @@ pub const SemanticGraph = struct {
                 try self.liftLiteralFactsInExpr(file, scope, b.lhs);
                 try self.liftLiteralFactsInExpr(file, scope, b.rhs);
             },
-            .unop => |u| try self.liftLiteralFactsInExpr(file, scope, u.operand),
+            .unop => |u| {
+                try self.liftLiteralFactsInExpr(file, scope, u.operand);
+                // A negated literal is a derived exact value in its own
+                // occurrence. Publish that graph row as well as the operand
+                // row so consumers can read a module initializer through its
+                // exact expression identity without re-evaluating AST syntax.
+                if (ast.intLiteralValue(expr)) |content|
+                    try self.addExactI64Value(file, scope, expr, content);
+            },
             .table => |t| for (t.fields) |field| switch (field) {
                 .indexed => |entry| {
                     try self.liftLiteralFactsInExpr(file, scope, entry.key);

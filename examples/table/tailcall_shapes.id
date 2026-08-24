@@ -1,0 +1,109 @@
+# CONTROL: §12 TAIL, measured by ANSWERS and by DEPTH at once.
+#
+# `tailcall.id` next door measures the guarantee's headline: ten million frames
+# of ONE textbook self-call. This file measures the shapes where a tail call is
+# easy to get WRONG rather than easy to get slow, and every one of them is
+# chosen so that a wrong frame reuse produces a DIFFERENT NUMBER, not the same
+# number faster.
+#
+#   1  `_selftail`  the plain shape, a million deep.
+#   2  `_order`     the new arguments are computed FROM the frame that is about
+#      `_swap`      to be given back, so they must all be evaluated BEFORE any
+#   3               parameter is overwritten. `_swap(n, a, b) -> (n-1, b, a)`
+#                   written in place reads the slot it just clobbered and
+#                   answers a duplicated pair; 3,5 after seven exchanges must
+#                   come back 5003 and not 3003.
+#   4  `_odd`       MUTUAL tail calls, a million deep, and the two relations
+#      `_even`      have DIFFERENT frame sizes — each tears down its own before
+#                   the jump, or the stack walks.
+#   5  `_wide`      the callee takes MORE arguments than the caller (`_start`
+#                   has one, `_wide` has five). The frame is still reused,
+#                   because all five arguments travel in registers.
+#   6  `_nine`      NINE general-purpose arguments, so the ninth is a MEMORY
+#                   argument whose home is ABOVE the caller's frame. The frame
+#                   may NOT be reused here; the call stays a call and must
+#                   still answer.
+#   7  `_sum`       a self-call that is NOT in tail position — its result is an
+#                   operand of `+`. It must keep its frame, and 300 is
+#                   deliberately shallow because it really does push 300.
+#   8  `_arm`       one arm of the conditional is a tail call and the other is
+#                   not, inside one relation.
+#
+# STDOUT AND EXIT STATUS ARE THE SAME VERDICT: 0 when every check answered, or
+# the number of the first check that did not.
+# expect: 0
+
+_selftail: i64 = (n: i64, acc: i64)
+  if n <= 0
+    return acc
+  return _selftail(n - 1, acc + 1)
+
+_order: i64 = (n: i64, a: i64, b: i64)
+  if n <= 0
+    return a - b
+  return _order(n - 1, b, a * 3 + 1)
+
+_swap: i64 = (n: i64, a: i64, b: i64)
+  if n <= 0
+    return a * 1000 + b
+  return _swap(n - 1, b, a)
+
+_even: i64 = (n: i64, acc: i64)
+  if n <= 0
+    return acc + 1
+  return _odd(n - 1, acc + 3)
+
+_odd: i64 = (n: i64, acc: i64)
+  if n <= 0
+    return acc
+  return _even(n - 1, acc + 2)
+
+_wide: i64 = (n: i64, a: i64, b: i64, c: i64, d: i64)
+  if n <= 0
+    return a + b * 2 + c * 3 + d * 4
+  return _wide(n - 1, a + 1, b + 2, c + 3, d + 4)
+
+_start: i64 = (n: i64)
+  return _wide(n, 0, 0, 0, 0)
+
+_nine: i64 = (a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, i: i64)
+  if a <= 0
+    return b + c + d + e + f + g + h + i
+  return _nine(a - 1, b + 1, c, d, e, f, g, h, i)
+
+_sum: i64 = (n: i64)
+  if n <= 0
+    return 0
+  return n + _sum(n - 1)
+
+_dbl: i64 = (x: i64)
+  return x + x
+
+_arm: i64 = (n: i64, acc: i64)
+  if n <= 0
+    return acc
+  if n % 2 == 0
+    return _arm(n - 1, acc + 1)
+  return _dbl(_arm(n - 1, acc + 1)) - _arm(n - 1, acc + 1)
+
+_check: i64 = ()
+  if _selftail(1000000, 0) != 1000000
+    return 1
+  if _order(21, 7, 2) != -1180980
+    return 2
+  if _swap(7, 3, 5) != 5003
+    return 3
+  if _odd(1000000, 0) != 2500000
+    return 4
+  if _start(100000) != 3000000
+    return 5
+  if _nine(3, 1, 2, 3, 4, 5, 6, 7, 8) != 39
+    return 6
+  if _sum(300) != 45150
+    return 7
+  if _arm(9, 0) != 9
+    return 8
+  return 0
+
+_verdict = _check()
+print("{_verdict}")

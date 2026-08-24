@@ -13673,7 +13673,12 @@ fn lowerPrint(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
     if (try lowerPrintFormat(ctx, arg, true)) |v| return v;
     const v = try lowerExpr(ctx, arg);
     const ty: RT = if (exprIsStr(ctx, arg) or holds(ctx, v)) .str else if (exprIsF64Value(ctx, arg)) .f64 else .i64;
-    try ctx.emit(.{ .op = .print_value, .lhs = v, .ty = ty });
+    try ctx.emit(.{
+        .op = .print_value,
+        .lhs = v,
+        .ty = ty,
+        .byte_sequence = exprIsByteSequence(ctx, arg),
+    });
     return .void;
 }
 
@@ -17472,6 +17477,10 @@ test "dnir_lower: module positional integer tables require graph facts" {
     checked.idol_mode = true;
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
+    // The graph lift consumes checked callable-linkage facts.  This test is a
+    // graph-fact control, so run the authoritative Sema producer rather than
+    // relying on the former permissive lift to reconstruct a relation.
+    try checked.check_module(&mod);
     _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "module_const_table_graph.id");
     const table = switch (mod.body.stmts[0]) {
         .global_decl => |d| d.inits[0],

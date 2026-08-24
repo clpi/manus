@@ -2111,6 +2111,10 @@ fn externRefusal(e: *Emitter, callee: []const u8) Error {
 /// line ending, where a valueless write is NOTHING AT ALL rather than an empty
 /// call.
 fn emitPrint(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
+    // A byte sequence is not an integer-shaped pointer. Until the shared
+    // carrier preserves base, extent, element law, and lifetime, the lawful
+    // cross-backend result is the same named refusal as direct lowering.
+    if (ins.byte_sequence) return e.refuse("print-byte-sequence");
     const nonl = std.mem.eql(u8, ins.field, "nonl");
     switch (ins.ty) {
         .str => {
@@ -2129,6 +2133,31 @@ fn emitPrint(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
             try b.call(helperIndex(.write_cstr));
         },
     }
+}
+
+test "wasm backend refuses byte-sequence print without an extent carrier" {
+    var diagnostic: Diagnostic = .{};
+    var emitter = Emitter{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diagnostic,
+        .module = .{ .functions = &.{}, .globals = &.{} },
+        .types = .{ .alloc = std.testing.allocator },
+        .strings = .{ .alloc = std.testing.allocator },
+    };
+    defer emitter.deinit();
+    var buffer = Buf{ .alloc = std.testing.allocator };
+    defer buffer.deinit();
+    const instruction = dnir.Instr{
+        .op = .print_value,
+        .lhs = .{ .str = "abc" },
+        .ty = .i64,
+        .byte_sequence = true,
+    };
+    try std.testing.expectError(
+        error.UnsupportedProgram,
+        emitPrint(&emitter, &buffer, instruction),
+    );
+    try std.testing.expectEqualStrings("print-byte-sequence", diagnostic.note().?);
 }
 
 // ---------------------------------------------------------------------------
