@@ -636,16 +636,23 @@ another owner.
    which was newer than the earlier section in the same file. An agent who reads
    the top half implements work already done.
 
-   So every OPEN gap carries a `## CURRENT FRONTIER` block immediately after its
-   metadata header — one `**Field:**` per line, machine-read:
-   `**Frontier:**` what actually blocks today; `**Crossed:**` what must NOT be
-   redone; `**Next:**` the next executable step; `**Verify:**` a COMMAND, never a
-   count; `**Blocked on:**` the gaps that own the prerequisites. Every dated
-   measurement that a later section overturns sits below an explicit
-   `## Superseded observations` boundary, and the boundary text says what the
-   sections below are still good for — usually a ruling, never the state of the
-   tree. Do not delete history; this tree preserves research by ancestry. Stop
-   interleaving it.
+   The machine-read answer is the `idol.gap.frontier.v1` block —
+   `<!-- idol-gap-frontier:v1:begin -->`, one fenced JSON object, within the top
+   twelve lines and before the first section. `gate/frontier.sh` owns its
+   contract and fails closed: exactly the six fields, `status` agreeing with an
+   unambiguous `**Status:** OPEN` header, non-empty `current_blockers`, and every
+   `superseded_observations` entry resolving to a real local heading anchor. It
+   self-tests against planted damage. Do not invent a second frontier convention
+   beside it; extend that gate instead.
+
+   Two habits complete it. First, the PROSE that supports the block belongs in a
+   clearly subordinate section — say what is already CROSSED so the next agent
+   does not redo it, and give a COMMAND rather than a count for every claim.
+   Second, group the purely dated measurements under an explicit
+   `## Superseded observations` boundary whose intro says what those sections are
+   still good for, which is usually a ruling and never the state of the tree.
+   Anchors must keep resolving, so move sections, never rename or delete them:
+   this tree preserves research by ancestry. Stop interleaving it.
 4. Serialize builds and benchmarks through `tools/node/dev/idol-lock`. Until a
    world-backed Idol coordinator is admitted, do not teach a `std.script` or
    MCP text wrapper as canonical authority. A concurrent benchmark is not
