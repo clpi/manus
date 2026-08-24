@@ -2041,6 +2041,21 @@ pub fn foldRelationBody(
                 else => continue,
             };
             if (interceptedSpelling(name)) continue;
+            // AN INITIALIZER IS NOT A VALUE WHEN SOMETHING WRITES THE BINDING.
+            //
+            // This loop reads `ring = 0` at file scope and binds `ring` to 0 for
+            // the whole fold. That is the binding's value only while nothing
+            // rebinds it; a module binding a relation ADVANCES holds whatever
+            // the program advanced it to, and folding a body that reads one
+            // answers the initializer. Measured: `ring = 0` with `bump` that
+            // increments it and `lure()` whose body is `peek()` folded to 0
+            // where the program answers 1 — a silent wrong answer on
+            // `--backend=direct`, and the read-side face of gaps/GAP-225.md.
+            //
+            // The graph knows, now that the lift relates the write to the
+            // binding instead of minting a same-spelled local for it. Before
+            // that it could not have been asked: the write was invisible.
+            if (graph.moduleBindingWritten(name)) continue;
             const so_far = [_]std.StringHashMapUnmanaged(Value){scope};
             const value = evalWithBindings(init, .{ .scopes = &so_far }, .{
                 .step_limit = fold_step_limit,

@@ -332,6 +332,15 @@ const behaviour_env_table = [_]BehaviourEnvRow{
     // that does not is decorative, and proving it is not is what this
     // control is for.
     .{ "IDOL_EFFECT_SEVER", .affects },
+    // THE MUTATION COUNTERFACTUAL. Severs `publishApplicationMutations` at the
+    // producer: every application reads `mutation: unknown`, and the two
+    // consumers that read the column — the effect derivation and the fold's
+    // module-binding scope — fall back to what they answered before the column
+    // existed. Measured with it set: a relation whose body bumps a module
+    // binding folds to the binding's initializer, which is the wrong answer
+    // gaps/GAP-225.md is about. `.affects` for the same reason as the row
+    // above: it changes the artifact, and a fact that does not is decorative.
+    .{ "IDOL_MUTATION_SEVER", .affects },
     .{ "IDOL_FLOOR_FIXUP_ALWAYS", .affects },
     .{ "IDOL_UNSAFE_TRUNC_DIVREM", .affects },
     .{ "IDOL_HOME_BUDGET", .affects },

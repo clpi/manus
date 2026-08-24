@@ -820,6 +820,54 @@ pub const Draw = struct {
     world: Card,
 };
 
+/// HOW MANY MODULE-SCOPE BINDINGS ONE APPLICATION CAN REACH A WRITE TO.
+///
+/// `Card` cannot carry this: it stops at `one`, and `_reset` writes three. The
+/// four states are distinct and none is a sentinel for another — `unknown` is
+/// "this pass could not follow the body", `none` is the POSITIVE claim "no
+/// module binding is written", `one` names the exact binding, and `many` packs
+/// the exact set. A boolean `mutates` would collapse the first two, which is
+/// the collapse that produced GAP-225 in the effect column.
+pub const MutationCard = union(enum) {
+    unknown,
+    none,
+    one: id,
+    /// Packed into `SemanticGraph.mutation_places`, ascending.
+    many: FactRange,
+
+    pub fn name(self: MutationCard) []const u8 {
+        return switch (self) {
+            .unknown => "unknown",
+            .none => "none",
+            .one => "one",
+            .many => "many",
+        };
+    }
+};
+
+/// THE CLOSURE OF `BindingMutation` OVER THE CALL GRAPH, keyed by the exact
+/// application occurrence — the same key `Draw` uses, for the same reason: an
+/// occurrence that reaches a write frequently has no `ApplicationFact` at all,
+/// so a field on that struct could not reach it.
+///
+/// IT IS A SECOND COLUMN AND NOT A REPLACEMENT. `BindingMutation` is what the
+/// LIFT saw: this relation's body assigns this exact binding. It is a positive
+/// row, so the absence of one means `none` and `unknown` at once — "writes
+/// nothing" and "this pass could not follow the callees" are the same silence,
+/// and they license opposite decisions. This column says which.
+///
+/// IT IS NOT A WORLD AND MUST NOT BECOME ONE. `Draw` answers "which world does
+/// this occurrence reach"; a module binding is not an injected world and
+/// confers no ambient authority, so the answer here is a BINDING. Folding the
+/// two columns together would read every relation that bumps a counter as
+/// exercising world authority. The columns stay distinct and admissibility is
+/// DERIVED from the set — see `publishApplicationEffects`, which is the
+/// derivation.
+pub const MutationClosure = struct {
+    application: id,
+    place: MutationCard,
+};
+
 /// A PROVED BOUND on every value one exact entity holds.
 ///
 /// `subject` is the local or parameter binding entity, not a name and not a
@@ -1089,6 +1137,11 @@ pub const SemanticGraph = struct {
     world_members: std.ArrayListUnmanaged(id) = .empty,
     /// `world[application]`, ascending by application id.
     draws: std.ArrayListUnmanaged(Draw) = .empty,
+    /// `mutation[application]`, ascending by application id — the closure of
+    /// `binding_mutations` over the call graph, with its cardinality.
+    mutation_closure: std.ArrayListUnmanaged(MutationClosure) = .empty,
+    /// The packed bindings a `MutationCard.many` names.
+    mutation_places: std.ArrayListUnmanaged(id) = .empty,
     /// PROVED BOUNDS, keyed by the exact binding entity. §2 lists ranges among
     /// the facts this graph carries; this is the column.
     ranges: std.ArrayListUnmanaged(RangeFact) = .empty,
@@ -1153,6 +1206,8 @@ pub const SemanticGraph = struct {
         self.worlds.deinit(self.alloc);
         self.world_members.deinit(self.alloc);
         self.draws.deinit(self.alloc);
+        self.mutation_closure.deinit(self.alloc);
+        self.mutation_places.deinit(self.alloc);
         self.ranges.deinit(self.alloc);
         self.origins.deinit(self.alloc);
         self.binding_mutations.deinit(self.alloc);
@@ -3224,11 +3279,166 @@ pub const SemanticGraph = struct {
         try self.publishSourceQuote(value, quote);
     }
 
+    /// EVERY NAME A SCOPE BINDS, IN TWO SWEEPS, AND THE ORDER IS THE POINT.
+    ///
+    /// The single-sweep version walked into a `.func_decl` the moment it
+    /// reached one, so a relation body was lifted against however much of the
+    /// module happened to be declared ABOVE it. `place.zig`'s `ForeignReach`
+    /// records the same finding on the other axis: "module-scope order does not
+    /// decide whether a relation reaches a word, so the question is answered
+    /// before the walk begins". Deciding whether `_pos = _pos + 1` writes the
+    /// module's `_pos` or mints a relation-local needs the module's bindings to
+    /// ALREADY EXIST, and with one sweep that answer depended on which side of
+    /// the relation the `global` was written on.
+    ///
+    /// So: sweep one binds everything at this scope; sweep two descends into
+    /// the callables. The rule holds at every level, so a relation nested in a
+    /// relation sees its enclosing body's bindings for the same reason.
     fn liftBindingsInStmts(
         self: *SemanticGraph,
         file: []const u8,
         scope: id,
         stmts: []ast.Stmt,
+    ) !void {
+        // THE SHADOW ROSTER, ANSWERED BEFORE THE WALK. A bare-name assignment
+        // is a write to the module binding it names UNLESS this body declares
+        // that name itself, and a declaration may sit anywhere in the body —
+        // including below the assignment. Collecting the roster first is what
+        // makes the answer independent of statement order, and it is the same
+        // reason `place.zig` answers `ForeignReach` before its own walk.
+        var declared: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer declared.deinit(self.alloc);
+        if (self.module_root != scope) try collectDeclaredNames(self.alloc, &declared, stmts);
+        try self.liftBindingsAtScope(file, scope, stmts, declared.items);
+        try self.liftBindingsInCallables(file, scope, stmts);
+    }
+
+    /// Every name `stmts` DECLARES, excluding bare-name assignment — which is
+    /// precisely the question a shadow adjudication turns on. Nested callables
+    /// are skipped: their declarations are their own scope's.
+    fn collectDeclaredNames(
+        alloc: std.mem.Allocator,
+        out: *std.ArrayListUnmanaged([]const u8),
+        stmts: []ast.Stmt,
+    ) !void {
+        for (stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| for (ld.names) |*n| try noteName(alloc, out, n.ident),
+                .const_decl => |*cd| try noteName(alloc, out, cd.ident),
+                .global_decl => |*gd| for (gd.names) |*n| try noteName(alloc, out, n.ident),
+                .do_block => |*d| try collectDeclaredNames(alloc, out, d.body.stmts),
+                .while_loop => |*w| try collectDeclaredNames(alloc, out, w.body.stmts),
+                .repeat_loop => |*r| try collectDeclaredNames(alloc, out, r.body.stmts),
+                .num_for => |*nf| {
+                    try noteName(alloc, out, nf.var_name);
+                    try collectDeclaredNames(alloc, out, nf.body.stmts);
+                },
+                .gen_for => |*g| {
+                    for (g.vars) |v| try noteName(alloc, out, v);
+                    try collectDeclaredNames(alloc, out, g.body.stmts);
+                },
+                .if_stmt => |*i| {
+                    if (i.binding) |binding| try noteName(alloc, out, binding.name);
+                    try collectDeclaredNames(alloc, out, i.then.stmts);
+                    for (i.elseifs) |*ei| try collectDeclaredNames(alloc, out, ei.body.stmts);
+                    if (i.else_body) |*eb| try collectDeclaredNames(alloc, out, eb.stmts);
+                },
+                .try_stmt => |*t| {
+                    try collectDeclaredNames(alloc, out, t.body.stmts);
+                    for (t.catches) |*cc| try collectDeclaredNames(alloc, out, cc.body.stmts);
+                },
+                .defer_stmt => |*d| try collectDeclaredNames(alloc, out, d.body.stmts),
+                else => {},
+            }
+        }
+    }
+
+    fn noteName(
+        alloc: std.mem.Allocator,
+        out: *std.ArrayListUnmanaged([]const u8),
+        name: []const u8,
+    ) !void {
+        for (out.items) |existing| if (std.mem.eql(u8, existing, name)) return;
+        try out.append(alloc, name);
+    }
+
+    /// TRUE WHEN THIS BARE-NAME ASSIGNMENT IS A WRITE TO A MODULE BINDING, and
+    /// the write has been recorded when it returns true.
+    ///
+    /// Fails toward MINTING A LOCAL only where the module has no such binding
+    /// at all, so no assignment loses an entity it used to have. Where the
+    /// module DOES bind the name and this body does not, the module binding is
+    /// what the program means and the shadow entity was the wrong answer.
+    fn noteModuleWrite(
+        self: *SemanticGraph,
+        scope: id,
+        declared: []const []const u8,
+        name: []const u8,
+    ) !bool {
+        const root = self.module_root orelse return false;
+        // The module's own body binds; it does not write somebody else's word.
+        if (scope == root) return false;
+        // A GENUINE SHADOW STAYS DISTINCT. This is the control acceptance §3
+        // asks for: a body that declares `_pos` owns its own `_pos`, and the
+        // module's is a different entity that this assignment does not touch.
+        for (declared) |existing| if (std.mem.eql(u8, existing, name)) return false;
+        // A parameter of the same spelling is already that binding.
+        for (self.nested.of(scope)) |child| {
+            const node = self.get(child) orelse continue;
+            if (node.kind != .local and node.kind != .param) continue;
+            const child_name = node.name orelse continue;
+            if (std.mem.eql(u8, child_name, name)) return false;
+        }
+        const binding = self.resolveBindingInScope(root, name) orelse return false;
+        const binding_node = self.get(binding) orelse return false;
+        if (binding_node.scope != root) return false;
+        const relation = self.enclosingCallable(scope) orelse return false;
+        try self.publishBindingMutation(relation, binding);
+        return true;
+    }
+
+    /// Sweep two: the callables declared under `stmts`, whatever block they sit
+    /// in. Separate from sweep one so no relation body is lifted before the
+    /// scope enclosing it has finished binding its own names.
+    fn liftBindingsInCallables(
+        self: *SemanticGraph,
+        file: []const u8,
+        scope: id,
+        stmts: []ast.Stmt,
+    ) anyerror!void {
+        for (stmts) |*stmt| {
+            switch (stmt.*) {
+                .func_decl => |*fd| {
+                    if (self.findFuncDecl(fd)) |nested_id| {
+                        try self.liftBindingsInStmts(file, nested_id, fd.func.body.stmts);
+                    }
+                },
+                .do_block => |*d| try self.liftBindingsInCallables(file, scope, d.body.stmts),
+                .while_loop => |*w| try self.liftBindingsInCallables(file, scope, w.body.stmts),
+                .repeat_loop => |*r| try self.liftBindingsInCallables(file, scope, r.body.stmts),
+                .num_for => |*nf| try self.liftBindingsInCallables(file, scope, nf.body.stmts),
+                .gen_for => |*g| try self.liftBindingsInCallables(file, scope, g.body.stmts),
+                .if_stmt => |*i| {
+                    try self.liftBindingsInCallables(file, scope, i.then.stmts);
+                    for (i.elseifs) |*ei| try self.liftBindingsInCallables(file, scope, ei.body.stmts);
+                    if (i.else_body) |*eb| try self.liftBindingsInCallables(file, scope, eb.stmts);
+                },
+                .try_stmt => |*t| {
+                    try self.liftBindingsInCallables(file, scope, t.body.stmts);
+                    for (t.catches) |*cc| try self.liftBindingsInCallables(file, scope, cc.body.stmts);
+                },
+                .defer_stmt => |*d| try self.liftBindingsInCallables(file, scope, d.body.stmts),
+                else => {},
+            }
+        }
+    }
+
+    fn liftBindingsAtScope(
+        self: *SemanticGraph,
+        file: []const u8,
+        scope: id,
+        stmts: []ast.Stmt,
+        declared: []const []const u8,
     ) !void {
         for (stmts) |*stmt| {
             switch (stmt.*) {
@@ -3263,6 +3473,10 @@ pub const SemanticGraph = struct {
                 ),
                 .global_decl => |*gd| {
                     for (gd.names) |*lname| {
+                        // `global x = …` INSIDE a relation writes the module's
+                        // word — `place.zig` records the same reading in
+                        // `reachStmt`. It is a write, not a second binding.
+                        if (try self.noteModuleWrite(scope, declared, lname.ident)) continue;
                         try self.noteLocalBinding(
                             file,
                             scope,
@@ -3276,57 +3490,38 @@ pub const SemanticGraph = struct {
                 .assign => |*asg| {
                     for (asg.targets) |target| {
                         if (target.* != .name) continue;
-                        // Assignment reuses the binding that lexical scope
-                        // already resolves.  The old lift unconditionally
-                        // minted a relation-local entity here, so `_pos =
-                        // _pos + 1` both wrote and read an invented `_pos`
-                        // instead of the module binding declared above it.
-                        //
-                        // Declarations and parameters have already been
-                        // lifted in source order and therefore win normally;
-                        // only an exact module-owned binding publishes a
-                        // mutation row.  A genuinely new name still falls
-                        // through and creates the relation-local binding it
-                        // denotes.
-                        if (self.resolveBindingInScope(scope, target.name.ident)) |binding| {
-                            const module = self.module_root orelse return error.InvalidBindingMutation;
-                            const binding_node = self.get(binding) orelse return error.InvalidBindingMutation;
-                            if (binding_node.scope == module) {
-                                if (self.enclosingCallable(scope)) |relation| {
-                                    try self.publishBindingMutation(relation, binding);
-                                }
-                            }
-                            continue;
-                        }
+                        // THE SHADOW ENTITY DIES HERE. A bare-name assignment
+                        // whose name the module binds and this body does not is
+                        // a WRITE to that binding; minting a same-spelled local
+                        // in this relation is what made the two indistinguishable
+                        // (gaps/GAP-225.md).
+                        if (try self.noteModuleWrite(scope, declared, target.name.ident)) continue;
                         try self.noteLocalBinding(file, scope, target.name.ident, target.loc(), null, null);
                     }
                 },
-                .do_block => |*d| try self.liftBindingsInStmts(file, scope, d.body.stmts),
-                .while_loop => |*w| try self.liftBindingsInStmts(file, scope, w.body.stmts),
-                .repeat_loop => |*r| try self.liftBindingsInStmts(file, scope, r.body.stmts),
+                .do_block => |*d| try self.liftBindingsAtScope(file, scope, d.body.stmts, declared),
+                .while_loop => |*w| try self.liftBindingsAtScope(file, scope, w.body.stmts, declared),
+                .repeat_loop => |*r| try self.liftBindingsAtScope(file, scope, r.body.stmts, declared),
                 .if_stmt => |*i| {
-                    try self.liftBindingsInStmts(file, scope, i.then.stmts);
-                    for (i.elseifs) |*ei| try self.liftBindingsInStmts(file, scope, ei.body.stmts);
-                    if (i.else_body) |*eb| try self.liftBindingsInStmts(file, scope, eb.stmts);
+                    try self.liftBindingsAtScope(file, scope, i.then.stmts, declared);
+                    for (i.elseifs) |*ei| try self.liftBindingsAtScope(file, scope, ei.body.stmts, declared);
+                    if (i.else_body) |*eb| try self.liftBindingsAtScope(file, scope, eb.stmts, declared);
                 },
                 .num_for => |*nf| {
                     try self.noteLocalBinding(file, scope, nf.var_name, nf.loc, null, null);
-                    try self.liftBindingsInStmts(file, scope, nf.body.stmts);
+                    try self.liftBindingsAtScope(file, scope, nf.body.stmts, declared);
                 },
                 .gen_for => |*g| {
                     for (g.vars) |v| try self.noteLocalBinding(file, scope, v, g.loc, null, null);
-                    try self.liftBindingsInStmts(file, scope, g.body.stmts);
+                    try self.liftBindingsAtScope(file, scope, g.body.stmts, declared);
                 },
-                .func_decl => |*fd| {
-                    if (self.findFuncDecl(fd)) |nested_id| {
-                        try self.liftBindingsInStmts(file, nested_id, fd.func.body.stmts);
-                    }
-                },
+                // `.func_decl` IS SWEEP TWO'S. Descending here is exactly the
+                // order dependence `liftBindingsInStmts` split the walk to end.
                 .try_stmt => |*t| {
-                    try self.liftBindingsInStmts(file, scope, t.body.stmts);
-                    for (t.catches) |*cc| try self.liftBindingsInStmts(file, scope, cc.body.stmts);
+                    try self.liftBindingsAtScope(file, scope, t.body.stmts, declared);
+                    for (t.catches) |*cc| try self.liftBindingsAtScope(file, scope, cc.body.stmts, declared);
                 },
-                .defer_stmt => |*d| try self.liftBindingsInStmts(file, scope, d.body.stmts),
+                .defer_stmt => |*d| try self.liftBindingsAtScope(file, scope, d.body.stmts, declared),
                 else => {},
             }
         }
@@ -5660,6 +5855,12 @@ pub const SemanticGraph = struct {
         // control for the reversal is `effect none`, which must not move:
         // 1027/1317 on `examples`, 3646/5005 on `examples lib`.
         try self.publishApplicationWorlds(file);
+        // MUTATION BEFORE EFFECT, because effect DERIVES from it. The mutation
+        // column is the evidence; the effect card is the consequence. Reversing
+        // them would have the consequence published before its evidence exists,
+        // which is exactly how `effect: none` came to be a claim about world
+        // observation masquerading as a claim about observability.
+        try self.publishApplicationMutations();
         try self.publishApplicationEffects();
         try self.verifyCheckedApplicationOperandPacks(checked);
         // LAST, so every application operand has already claimed the literal
@@ -5978,6 +6179,193 @@ pub const SemanticGraph = struct {
         if (site < existing) row.site = site;
     }
 
+    /// MUTATION, FOR EVERY APPLICATION OCCURRENCE — the closure over the call
+    /// graph of the DIRECT writes the lift recorded in `SemanticGraph.writes`.
+    ///
+    /// WHY THIS IS A COLUMN AND NOT A FIELD ON `ApplicationFact`. The same
+    /// reason `Draw` is: the occurrences that reach a write are frequently ones
+    /// with no `ApplicationFact` at all, so a field there could not reach them.
+    /// `law.md` §20-21.
+    ///
+    /// WHY IT IS NOT A `Draw`, WHICH IS THE ARCHITECTURAL LINE. A world SUPPLIES
+    /// facts and confers reach; a module binding does neither. `_pos` is one
+    /// `__DATA` word this file's own relations agree to share, and reading a
+    /// write to it as an ambient-world draw would say every relation that bumps
+    /// a counter exercises world authority. World draw, binding mutation and
+    /// the effect consequence are THREE columns, and admissibility is derived
+    /// from them rather than read off any one of them.
+    ///
+    /// THE LATTICE IS LEAST AND `unknown` IS TOP. A relation whose body this
+    /// pass cannot follow — an unresolved callee, a foreign body — reaches
+    /// `.unknown`, which is not `.none` and not `.many`: it is the absence of
+    /// an answer, and every consumer must refuse on it. `.none` is the POSITIVE
+    /// claim that no module binding is written, and the whole of GAP-225 is
+    /// what happens when a pass publishes a positive claim it did not prove.
+    fn publishApplicationMutations(self: *SemanticGraph) !void {
+        const node_count = self.nodes.items.len;
+        if (node_count == 0) return;
+        if (mutationSevered()) return;
+
+        const reach = try self.alloc.alloc(std.ArrayListUnmanaged(id), node_count);
+        defer {
+            for (reach) |*list| list.deinit(self.alloc);
+            self.alloc.free(reach);
+        }
+        for (reach) |*list| list.* = .empty;
+
+        var opaque_body = try std.DynamicBitSetUnmanaged.initEmpty(self.alloc, node_count);
+        defer opaque_body.deinit(self.alloc);
+
+        // SEED ONE: the lift's direct writes.
+        for (self.binding_mutations.items) |write| {
+            if (write.relation >= node_count) continue;
+            try noteBinding(self.alloc, &reach[write.relation], write.binding);
+        }
+
+        // SEED TWO: a body whose callees this graph cannot name. A foreign
+        // body is the same case — its writes are somebody else's source.
+        for (self.callable_linkages.items) |fact| {
+            if (fact.origin != .c) continue;
+            if (fact.callable < node_count) opaque_body.set(fact.callable);
+        }
+
+        var edges: std.ArrayListUnmanaged(struct { caller: id, callee: id }) = .empty;
+        defer edges.deinit(self.alloc);
+        var candidate: usize = 0;
+        while (candidate < self.application_candidates.bit_length) : (candidate += 1) {
+            if (!self.application_candidates.isSet(candidate)) continue;
+            const site = std.math.cast(id, candidate) orelse break;
+            const node = self.get(site) orelse continue;
+            const caller = self.enclosingCallable(node.scope orelse continue) orelse continue;
+            if (caller >= node_count) continue;
+            const callee = self.applicationRelation(site) orelse {
+                // AN UNRESOLVED CALL IS NOT A PROOF OF PURITY. The string faces
+                // `publishApplicationEffects` exempts are exempt here for the
+                // same measured reason: they lower through bootstrap rules
+                // rather than a published relation id, and a string is
+                // immutable, so no module binding is reachable through one.
+                if (!self.unobservableStringFace(site)) opaque_body.set(caller);
+                continue;
+            };
+            if (callee >= node_count) {
+                opaque_body.set(caller);
+                continue;
+            }
+            try edges.append(self.alloc, .{ .caller = caller, .callee = callee });
+        }
+
+        var spread = true;
+        while (spread) {
+            spread = false;
+            for (edges.items) |edge| {
+                if (opaque_body.isSet(edge.callee) and !opaque_body.isSet(edge.caller)) {
+                    opaque_body.set(edge.caller);
+                    spread = true;
+                }
+                for (reach[edge.callee].items) |binding| {
+                    if (hasBinding(reach[edge.caller].items, binding)) continue;
+                    try noteBinding(self.alloc, &reach[edge.caller], binding);
+                    spread = true;
+                }
+            }
+        }
+
+        candidate = 0;
+        while (candidate < self.application_candidates.bit_length) : (candidate += 1) {
+            if (!self.application_candidates.isSet(candidate)) continue;
+            const site = std.math.cast(id, candidate) orelse break;
+            const card: MutationCard = card: {
+                const callee = self.applicationRelation(site) orelse {
+                    if (self.unobservableStringFace(site)) break :card .none;
+                    break :card .unknown;
+                };
+                if (callee >= node_count) break :card .unknown;
+                if (opaque_body.isSet(callee)) break :card .unknown;
+                const bindings = reach[callee].items;
+                if (bindings.len == 0) break :card .none;
+                if (bindings.len == 1) break :card .{ .one = bindings[0] };
+                const start = self.mutation_places.items.len;
+                try self.mutation_places.appendSlice(self.alloc, bindings);
+                break :card .{ .many = try factRange(start, bindings.len) };
+            };
+            try self.mutation_closure.append(self.alloc, .{ .application = site, .place = card });
+        }
+    }
+
+    fn hasBinding(list: []const id, binding: id) bool {
+        for (list) |existing| if (existing == binding) return true;
+        return false;
+    }
+
+    fn noteBinding(
+        alloc: std.mem.Allocator,
+        list: *std.ArrayListUnmanaged(id),
+        binding: id,
+    ) !void {
+        if (hasBinding(list.items, binding)) return;
+        try list.append(alloc, binding);
+    }
+
+    /// The module-scope bindings one application can reach a write to.
+    /// `.unknown` when nothing decided — never a claim that it writes nothing.
+    pub fn mutation(self: *const SemanticGraph, occurrence: id) MutationCard {
+        for (self.mutation_closure.items) |row| {
+            if (row.application == occurrence) return row.place;
+        }
+        return .unknown;
+    }
+
+    /// TRUE WHEN SOME RELATION IN THIS MODULE WRITES THE MODULE-SCOPE BINDING
+    /// SPELLED `name`.
+    ///
+    /// The question a consumer asks before treating a module binding's
+    /// initializer as the binding's VALUE. `comptime.foldRelationBody` bound
+    /// every module-scope initializer it could evaluate into the fold's scope
+    /// and read the answer back as a constant — sound for a binding nothing
+    /// writes, and a WRONG ANSWER for one a relation advances. Measured before
+    /// this query existed: `ring = 0` with a `bump` that increments it, and a
+    /// zero-operand relation whose whole body is `peek()`, folded to 0 where
+    /// the program answers 1.
+    ///
+    /// NAME-KEYED because that is the face a fold's scope is built in, and the
+    /// lookup is at the source-resolution boundary where a name is lawful. The
+    /// answer is derived from exact binding entities, never from spellings.
+    pub fn moduleBindingWritten(self: *const SemanticGraph, name: []const u8) bool {
+        if (mutationSevered()) return false;
+        const root = self.module_root orelse return false;
+        for (self.binding_mutations.items) |write| {
+            const binding = self.get(write.binding) orelse continue;
+            if (binding.scope != root) continue;
+            const binding_name = binding.name orelse continue;
+            if (std.mem.eql(u8, binding_name, name)) return true;
+        }
+        return false;
+    }
+
+    /// The exact bindings a card names, whatever its arity. Empty for `.none`
+    /// and for `.unknown` — the two are distinguished by the CARD, and a
+    /// consumer that reads only this slice is reading the wrong question.
+    pub fn mutationPlaces(self: *const SemanticGraph, card: MutationCard, one: *[1]id) []const id {
+        return switch (card) {
+            .unknown, .none => &.{},
+            .one => |binding| blk: {
+                one[0] = binding;
+                break :blk one[0..1];
+            },
+            .many => |range| self.mutation_places.items[range.start .. range.start + range.len],
+        };
+    }
+
+    /// Publication of the mutation column severed at the producer, for the
+    /// counterfactual control. Every application reads `mutation: unknown` and
+    /// nothing else moves — `writes` is still lifted, `effect` is still
+    /// published by its own pass off whatever the severed column says.
+    /// `IDOL_MUTATION_SEVER` is classed `.affects` in `main.behaviourEnvClass`
+    /// because it changes the artifact, which is the point of the control.
+    fn mutationSevered() bool {
+        return std.c.getenv("IDOL_MUTATION_SEVER") != null;
+    }
+
     /// Publication of `ApplicationFact.effect` severed at the producer, for the
     /// counterfactual control. Every application reads `effect: unknown` and
     /// NOTHING ELSE MOVES — `authority` is still published, which is what makes
@@ -6188,17 +6576,6 @@ pub const SemanticGraph = struct {
             if (edge.kind == .capture) groundRow(&rows.items[row], edge.to);
         }
 
-        // Condition 5: a relation that writes a module binding reaches an
-        // observable place owned outside its frame.  The binding lift already
-        // resolved both coordinates; consuming the sparse row here avoids a
-        // second name walk and gives the positive effect card the exact binding
-        // identity it must preserve.
-        for (self.binding_mutations.items) |mutation| {
-            const row = row_of.get(mutation.relation) orelse continue;
-            rows.items[row].blocked = true;
-            groundRow(&rows.items[row], mutation.binding);
-        }
-
         // THE DRAW ROWS, which is where the positive evidence actually lives.
         //
         // `publishApplicationWorlds` runs before this pass now and keys one
@@ -6217,6 +6594,46 @@ pub const SemanticGraph = struct {
             const row = row_of.get(holder) orelse continue;
             rows.items[row].blocked = true;
             if (self.worldObservesOutside(world)) groundRow(&rows.items[row], world);
+        }
+
+        // THE MUTATION COLUMN, WHICH IS THE SIXTH GROUND AND WAS MISSING.
+        //
+        // The five grounds above answer ONE question — "does this body observe
+        // the outside world" — and `effect: none` was published as though the
+        // answer were "does this body perform an observable action". A write to
+        // a module-scope binding is observable to every later relation that
+        // reads that binding, and it is none of the five: not a C linkage, not
+        // a capture (the binding is not captured, it is named), not a static
+        // member, not an unresolved call, and not a blocked callee. The lift
+        // hid it further by minting a same-spelled local, so the graph could
+        // not see the write at all. gaps/GAP-225.md.
+        //
+        // THE DERIVATION, and it is a derivation rather than a fold: mutation
+        // BLOCKS (a mutating relation is not provably unobservable) and it
+        // GROUNDS at the exact binding written (which observation stands in the
+        // way). Blocking alone would publish `unknown` and lose the name of the
+        // place; grounding alone would license the transform. World draw and
+        // binding mutation stay separate columns and both feed this one card.
+        for (self.mutation_closure.items) |row| {
+            const callee = self.applicationRelation(row.application) orelse continue;
+            const target = row_of.get(callee) orelse continue;
+            switch (row.place) {
+                .none => {},
+                .unknown => rows.items[target].blocked = true,
+                .one => |binding| {
+                    rows.items[target].blocked = true;
+                    groundRow(&rows.items[target], binding);
+                },
+                .many => |range| {
+                    rows.items[target].blocked = true;
+                    // The FIRST binding in lift order. `Card` holds one site and
+                    // the exact set is already published in the mutation column,
+                    // so naming one here loses nothing a consumer cannot recover.
+                    if (range.len > 0) {
+                        groundRow(&rows.items[target], self.mutation_places.items[range.start]);
+                    }
+                },
+            }
         }
 
         // Condition 2: an unresolved candidate is a call the graph could not
@@ -7078,6 +7495,30 @@ pub const SemanticGraph = struct {
             try appendCardJson(buf, alloc, "effect", self.applicationEffect(draw.application));
             try buf.append(alloc, '}');
         }
+        // MUTATION AND ITS EVIDENCE, BOTH PROJECTED, and they are two columns
+        // because they answer two questions. `writes` is what the LIFT saw:
+        // this relation's body assigns this exact module binding. `mutations`
+        // is the CLOSURE over the call graph, keyed by the occurrence, and is
+        // what a consumer reads. A reader given only the second cannot tell a
+        // direct write from a reached one; given only the first it has to walk
+        // the call graph itself, which is the reconstruction this column
+        // exists to end.
+        try buf.appendSlice(alloc, "],\"mutation_closure\":[");
+        for (self.mutation_closure.items, 0..) |row, i| {
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"application\":");
+            try appendJsonInt(buf, alloc, row.application);
+            try buf.appendSlice(alloc, ",\"mutation\":{\"card\":\"");
+            try buf.appendSlice(alloc, row.place.name());
+            try buf.append(alloc, '"');
+            var one: [1]id = undefined;
+            const bindings = self.mutationPlaces(row.place, &one);
+            if (bindings.len > 0) {
+                try buf.appendSlice(alloc, ",\"bindings\":");
+                try appendIdsJson(buf, alloc, bindings);
+            }
+            try buf.appendSlice(alloc, "}}");
+        }
         // RANGES ARE PROJECTED, which is the point of moving them here. The
         // proof used to be a boolean on one backend's instruction and no other
         // realization could see it; every projection reads this column.
@@ -7102,12 +7543,12 @@ pub const SemanticGraph = struct {
             try buf.append(alloc, '}');
         }
         try buf.appendSlice(alloc, "],\"mutations\":[");
-        for (self.binding_mutations.items, 0..) |mutation, i| {
+        for (self.binding_mutations.items, 0..) |write, i| {
             if (i > 0) try buf.append(alloc, ',');
             try buf.appendSlice(alloc, "{\"relation\":");
-            try appendJsonInt(buf, alloc, mutation.relation);
+            try appendJsonInt(buf, alloc, write.relation);
             try buf.appendSlice(alloc, ",\"binding\":");
-            try appendJsonInt(buf, alloc, mutation.binding);
+            try appendJsonInt(buf, alloc, write.binding);
             try buf.append(alloc, '}');
         }
         try buf.append(alloc, ']');
@@ -7314,7 +7755,15 @@ pub const SemanticGraph = struct {
         // version 13: `mutations`. Version 12 could publish a module place as
         // mutated but could not identify which relation wrote its binding, so
         // the effect producer treated those relations as unobservable.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":13,\"file\":\"");
+        //
+        // version 14: `mutation_closure`. Version 13's `mutations` rows are
+        // POSITIVE only — a row says a relation writes a binding, and the
+        // absence of one is `none` and `unknown` at the same time. A reader
+        // cannot tell "this relation writes nothing" from "this pass could not
+        // follow its callees", and those license opposite decisions. The
+        // closure column carries the cardinality explicitly, keyed by the
+        // application, so `unknown != absent != none`. gaps/GAP-225.md.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":14,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         switch (self.root_source_law_edition) {
