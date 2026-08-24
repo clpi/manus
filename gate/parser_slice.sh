@@ -36,6 +36,11 @@ if [ "${1:-}" = "--selftest" ]; then
         exit 1
     fi
     printf 'parser_slice selftest: PASS missing compiler fails closed\n'
+    if PARSER_SLICE_EXPECT_RELATION=not_kinds "$0" >/dev/null 2>&1; then
+        printf 'parser_slice selftest: FAIL relation damage was accepted\n'
+        exit 1
+    fi
+    printf 'parser_slice selftest: PASS relation damage fails closed\n'
     exit 0
 fi
 
@@ -84,8 +89,41 @@ probe_refusal() {
     fi
 }
 
+# The token-view refusal is not a generic backend bucket.  It is one exact
+# graph application whose producer is currently absent: the dynamic `kinds`
+# projection (application 27 in the current pinned subject).  Keep that
+# relation visible in the evidence so a different DNB011 cannot silently
+# satisfy the parser-slice ledger.  PARSER_SLICE_EXPECT_RELATION is only used
+# by the self-test to damage this control; a damaged expectation must fail.
+probe_token_view_kinds() {
+    _dir=$(mktemp -d "${TMPDIR:-/tmp}/idol-parser-kinds.XXXXXX") || {
+        bad 'token-view-kinds-facts: unable to create private probe directory'
+        return
+    }
+    _obj=$_dir/token_view_kinds.o
+    _out=$_dir/token_view_kinds.out
+    _rc=0
+    "$IDOLABS" compile --backend=direct --emit obj -o "$_obj" "$SRC/lib/compiler/token_view.id" >"$_out" 2>&1 || _rc=$?
+    _relation=${PARSER_SLICE_EXPECT_RELATION:-kinds}
+    if [ "$_rc" -ne 0 ] \
+        && grep -q 'DNB011 application: 27 relation: kinds' "$_out" \
+        && grep -q 'missing: unresolved-application-facts' "$_out" \
+        && grep -q 'bail site: emitArm64ModuleWithGraph()' "$_out" \
+        && [ ! -s "$_obj" ]; then
+        if [ "$_relation" = kinds ]; then
+            ok 'token-view-kinds-facts: application 27 relation kinds refuses at graph producer'
+        else
+            bad "token-view-kinds-facts: damaged expectation unexpectedly accepted ($_relation)"
+        fi
+    else
+        bad 'token-view-kinds-facts: exact graph refusal witness changed'
+    fi
+}
+
 probe_refusal parser-execution lib/compiler/parser.id DNB001
 probe_refusal token-view-execution lib/compiler/token_view.id DNB011
+SEEN=$((SEEN + 1))
+probe_token_view_kinds
 
 PARSER="$SRC/src/parser.zig"
 SEEN=$((SEEN + 1))
