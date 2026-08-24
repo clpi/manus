@@ -45,6 +45,10 @@
 #
 # ═══ WHAT IT ASSERTS ═══════════════════════════════════════════════════════
 #
+#   §0  THE BYTE COMPARISON IS MEANINGFUL AT ALL. Every section below reads
+#       an object digest, and a digest is evidence only if the emission is
+#       reproducible and only if the digest can still move. Both halves are
+#       measured before anything else runs.
 #   §1  BOTH copying transforms actually fire. A gate that measures a
 #       transform that never runs is measuring nothing, and this one would
 #       have passed vacuously for as long as `tryEmitVectorReductionPrologue`
@@ -88,6 +92,48 @@ obj() {
     [ -s "$_out" ] || return 1
     shasum -a 256 "$_out" | cut -d' ' -f1
 }
+
+# ═══ §0  THE DIGEST IS EVIDENCE ════════════════════════════════════════════
+#
+# "BYTES IDENTICAL" ON A NONDETERMINISTIC ARTIFACT IS LUCK, NOT EVIDENCE, and
+# every other section here compares digests. So the comparison proves itself
+# first, in both directions.
+#
+# REPRODUCIBLE. The same subject emitted twice, into two DIFFERENT output
+# paths, must give one digest. Two different paths rather than two runs to one
+# path, because the failure worth catching is an output path baked into the
+# artifact: a gate that plants its subject in a fresh scratch directory per arm
+# would then see every byte move and read it as a realization change. Measured
+# here over the whole example corpus at this head — 219 emitted objects, two
+# independent sweeps into different directories, 219 identical.
+#
+# STILL SENSITIVE. The same SOURCE compiled from a different SOURCE path must
+# give a DIFFERENT digest, because home mangling puts the source path in every
+# symbol (`_idol_<mangled path>__main`). That is the one real path hazard in
+# this tree, it is a fact about identity rather than noise, and stating it as a
+# required difference is what stops §2 and §4 from passing on two artifacts
+# that are equal for an uninteresting reason.
+
+det_a=$work/deta; det_b=$work/detb
+mkdir -p "$det_a" "$det_b" || exit 64
+d1=$(obj "$unroll_subject" "$det_a/same.o") || {
+    echo "gate/occurrence/copy.sh: §0 subject refuses" >&2; exit 64; }
+d2=$(obj "$unroll_subject" "$det_b/othername.o") || {
+    echo "gate/occurrence/copy.sh: §0 subject refuses" >&2; exit 64; }
+if [ "$d1" = "$d2" ]; then
+    note "ok  §0a emission reproduces across two output paths"
+else
+    bad "§0a NONDETERMINISTIC emission — every byte comparison below is luck"
+fi
+
+cp "$unroll_subject" "$det_a/moved.id" || exit 64
+d3=$(obj "$det_a/moved.id" "$det_a/moved.o") || {
+    echo "gate/occurrence/copy.sh: §0 moved subject refuses" >&2; exit 64; }
+if [ "$d3" != "$d1" ]; then
+    note "ok  §0b the digest still moves when the SOURCE path does (home mangling)"
+else
+    bad "§0b the digest did not move for a different source path — it is not measuring the artifact"
+fi
 
 # ═══ §1  BOTH COPYING TRANSFORMS FIRE ══════════════════════════════════════
 
