@@ -38,6 +38,15 @@ if [ "${IDOL_LOCK_HELD:-0}" != 1 ]; then
 fi
 idol=${IDOL_BIN:-"$root/zig-out/bin/idol"}
 
+# SIGKILL LEAVES THIS DIRECTORY BEHIND, and that is the accepted outcome. `trap`
+# cannot catch signal 9, so a killed run leaks one `idol-byte-stable.XXXXXX`
+# under TMPDIR until the OS reclaims it (per-user `/var/folders/.../T`, swept by
+# `periodic daily`). A startup sweep of the prefix is deliberately REFUSED: gates
+# in this tree run concurrently from several worktrees under one TMPDIR, each
+# holding a repo-local lock that says nothing about the others, so a sweep would
+# delete a live sibling's working directory and corrupt its run. Leaking a few
+# kilobytes the OS already collects is the cheaper failure. 32 of the 35
+# temp-using gates here use this exact pattern and none sweeps.
 work=$(mktemp -d "${TMPDIR:-/tmp}/idol-byte-stable.XXXXXX")
 cleanup() { rm -rf "$work"; }
 trap cleanup EXIT INT TERM
