@@ -1,0 +1,35 @@
+# gate/lower/fallback.baseline — measured pins for gate/lower/fallback.sh.
+#
+# One row per SHC transfer subject: the exact number of
+# `duo_fatal("unlowered native call")` sites that `idol dump-c <file> --lib`
+# emits, or REFUSED when the route fails closed instead.
+#
+# Measured at dec7d509 (origin/main) with a debug-built ./zig-out/bin/idol.
+#
+# These are not a budget. Every nonzero row is a body the SHC transfer route
+# replaces with a runtime abort while exiting 0, and every one of them must
+# reach 0 or REFUSED before the source it names can execute inside a compiler.
+# The three on lib/compiler/token_view.id are the GAP-134 parser-slice
+# prerequisite; the 291 on lib/compiler/parser.id are why that file is a
+# shadow authority and not a transfer candidate.
+0	lib/compiler/application.id
+0	lib/compiler/arm64.id
+REFUSED	lib/compiler/arm64check.id
+17	lib/compiler/bind.id
+0	lib/compiler/comptime.id
+REFUSED	lib/compiler/emit_c.id
+0	lib/compiler/fmt.id
+5	lib/compiler/graph.id
+0	lib/compiler/lexer.id
+0	lib/compiler/macho.id
+0	lib/compiler/monolith.id
+291	lib/compiler/parser.id
+0	lib/compiler/profile.id
+0	lib/compiler/reader.id
+0	lib/compiler/record.id
+3	lib/compiler/rewrite.id
+REFUSED	lib/compiler/symbol.id
+REFUSED	lib/compiler/token.id
+3	lib/compiler/token_view.id
+0	lib/token/classify.id
+0	lib/token/grammarrole.id

@@ -66,7 +66,16 @@ fi
 subjects=0
 bad=0
 failed=""
-for gate in gate/*.sh; do
+# `gate/*.sh` ALONE IS THE SAME DEFECT ONE DIRECTORY DOWN. This file asked the
+# strictest shell whether every gate in the home can be read, and then
+# enumerated 43 of the 49 that were there. `law.path.name` forbids kebab-case,
+# so gates are actively being DECOMPOSED out of this glob's view: GAP-134's own
+# lane moved `gate/treesitter-agreement.sh` to `gate/treesitter/agreement.sh`
+# and silently removed it from this measurement. Four of the six it could not
+# see -- treesitter/agreement, directive/authority, identity/retired,
+# wasm/global -- are on `zig build test`, and `gate/all.sh` has always run
+# `gate/*.sh gate/*/*.sh`. The enumerations now agree.
+for gate in gate/*.sh gate/*/*.sh; do
     [ -r "$gate" ] || continue
     subjects=$((subjects + 1))
     if ! err=$($strict -n "$gate" 2>&1); then
