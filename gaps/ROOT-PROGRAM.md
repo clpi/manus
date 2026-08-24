@@ -3,12 +3,21 @@
 **Status:** OPEN · **Filed:** 2026-08-23
 **Kind:** projection · **Normative for:** nothing — this is a projection of `gaps/GAP-*.md`
 **Derived, not authored:** the membership below is a reading of the gaps; the
-gaps are the authority and this file is stale the moment one of them moves.
+gaps are the authority.
 **Not the per-gap frontier.** Each gap states its own machine-read frontier in
 an `idol.gap.frontier.v1` block that `gate/frontier.sh` validates and fails
-closed on. This file is an UNGATED reading ACROSS gaps, which is exactly why it
-carries a derivation command instead of a census, and why it must never be
-cited where a gap's own frontier block answers the question.
+closed on. This file is a reading ACROSS gaps, which is why it carries a
+derivation command instead of a census, and why it must never be cited where a
+gap's own frontier block answers the question.
+**The membership is checked against the gaps, not trusted.**
+`gate/frontier.sh` reads this file's program rosters and its reclassification
+table and compares both against the live `GAP-*.md` headers on disk: a gap named
+here must exist; a gap listed under a program must still be selected by the
+active-P0 census unless the line marks it `(not P0)`; and a gap in the
+reclassification table must NOT be selected. So dispatch cannot silently point
+at closed or reopened work — that is a gate failure, not a stale paragraph. What
+the gate does NOT check, and what therefore remains a reading, is WHICH program
+a gap belongs to and the narrative under each heading.
 
 ## Why this exists
 
@@ -60,12 +69,17 @@ the `.call` / `.method_call` split; its identity half is crossed and gated by
 name purge only.
 
 **2 Application/Graph Sovereignty** — `GAP-124`, `GAP-137`, `GAP-201`,
-`GAP-202`, `GAP-113`, `GAP-125`, `GAP-132`, `GAP-153`, `GAP-161`, `GAP-165`.
+`GAP-202`, `GAP-113`, `GAP-125`, `GAP-132`, `GAP-153`, `GAP-161`, `GAP-165`,
+`GAP-221`, `GAP-225`.
 `GAP-201` is the umbrella that owns the remaining bridge inventory; `GAP-137`
 owns one fact being optional and fail-open and is one row from closed;
 `GAP-202` owns making the one application algebra complete enough that scalar
 multiplication needs no subsystem of its own. `GAP-132` is the sharpest live
-defect in the program and reproduces in one command.
+defect in the program and reproduces in one command. `GAP-221` and `GAP-225` are
+both the same shape one level down — a fact the graph does not publish
+(per-body binding origin; a module-global write as an effect) read off a
+spelling instead. `GAP-221`'s wrong ANSWER is crossed; its deletion witness and
+its pin are not.
 
 **3 Demand + Laws** — `GAP-187` (root, research), `GAP-149`, `GAP-138`.
 `GAP-187` declares `Kind: research_gap` and its own C0 block calls it "the P0
@@ -89,11 +103,15 @@ because `std.` reaches are vocabulary that should arrive through layout/home/
 world projection, and its remaining bulk is `std.script.*` whose canonical
 targets are vocabulary-blocked.
 
-**6 Realization One** — `GAP-121`, `GAP-126`, `GAP-130`, `GAP-148`, `GAP-151`,
-`GAP-174`, `GAP-204`, `GAP-205`, `GAP-207`.
+**6 Realization One** — `GAP-121`, `GAP-126`, `GAP-130`, `GAP-144`, `GAP-148`,
+`GAP-151`, `GAP-174`, `GAP-204`, `GAP-205`, `GAP-207`.
 `GAP-148` reproduces exactly (`spilled_regs` still keyed by a physical register).
 `GAP-174` is one law with two realizations and only one migrated. `GAP-207` is a
-live silent wrong answer — see below.
+live silent wrong answer — see below. `GAP-144` owns runtime-sized table
+realization and `GAP-169` (not P0) routes to it by name; its rejection half is crossed
+and its construction half is unstarted, so it is the growable-table hole rather
+than a duplicate of `GAP-148`, which is register spilling and fixed-frame value
+locations and covers none of it.
 
 **7 Foreign One** — `GAP-107`, `GAP-141`, `GAP-154`, `GAP-166`, `GAP-211`.
 `GAP-141`'s security headline is crossed and gated with a real damage control.
@@ -176,11 +194,35 @@ commit. Neither was superseded.
 | `GAP-123` | CLOSED | `ace5f7d5` deleted `scripts/duo_lock.id`; `97753361` rerouted AGENTS item 4 to `tools/node/dev/idol-lock`; pinned by `tools/node/dev/census/convergence` |
 | `GAP-135` | SUPERSEDED | `3cd3f07b` "revert gap[126]: remove textual relation reconstruction" |
 | `GAP-142` | SUPERSEDED | `gate/admission.id` + `gate/admission.sh` + `evidence/mop/merge/readiness.md`; every adjudicated branch retired |
-| `GAP-144` | SUPERSEDED | `5f08600a` "audit: reject name-selected table lowering" |
-| `GAP-221` | SUPERSEDED | `5b93df17` "Binding origin: a shadowed field write no longer finds the module's word", verified by running `examples/shadowstore.id` |
 
 Each carries its evidence in its own file. No gap was reclassified on the
 strength of its own prose.
+
+## Two proposed reclassifications withdrawn, and why
+
+`GAP-144` and `GAP-221` were proposed for SUPERSEDED in this pass and are NOT.
+Both proposals had a true measurement under them and drew the wrong verdict from
+it, in the same way: **a gap's headline going quiet is not its closure
+condition.**
+
+- `GAP-144` — the rejected branch really is out of the tree
+  (`git grep -n 'collectIndexedNames' -- src/` is empty). But rejecting a
+  name-selected implementation is not supplying a graph-authoritative one, and
+  the receiving owner named in the proposal, `GAP-148`, is register spilling and
+  fixed-frame value locations. It carries none of `GAP-144`'s eight
+  required-boundary items and none of its six negative controls, and
+  `gaps/GAP-169.md` routes "runtime-sized table realization" AT `GAP-144` by
+  name. Superseding it would have dropped a P0 obligation and dangled that
+  pointer.
+- `GAP-221` — `examples/shadowstore.id` really does answer `7 99 7` on a fresh
+  build. But this gap's stated deletion witness is unmet, and NOTHING pins the
+  answer: `git grep -n shadowstore -- gate/ build.zig tests/ tools/ scripts/` is
+  empty, so a re-regression would be silent. One manual run at one revision is
+  the evidentiary shape that produced the false SUPERSEDED reading of `GAP-207`,
+  which is the live wrong answer this same pass found.
+
+Both now carry gated `idol.gap.frontier.v1` blocks that say which half is
+crossed, so the measurement is kept and the obligation is not.
 
 ## Everything else stays OPEN
 
