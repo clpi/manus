@@ -4,7 +4,11 @@
 # `duo_fatal("unlowered native call")` sites that `idol dump-c <file> --lib`
 # emits, or REFUSED when the route fails closed instead.
 #
-# Measured at dec7d509 (origin/main) with a debug-built ./zig-out/bin/idol.
+# Measured at dec7d509 (origin/main) with ./zig-out/bin/idol built from that
+# revision. Build mode is not the sensitive axis: a ReleaseFast build of the
+# same revision reproduces every row exactly. REVISION is -- the tracked stale
+# out/bin/idol reports lib/compiler/parser.id as REFUSED where this revision
+# reports 291, and the gate calls that a CLASS CHANGE rather than agreeing.
 #
 # These are not a budget. Every nonzero row is a body the SHC transfer route
 # replaces with a runtime abort while exiting 0, and every one of them must

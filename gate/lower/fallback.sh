@@ -109,7 +109,16 @@ if [ "$negative" != 0 ]; then
     printf 'lower fallback control: FAIL — a file with only local calls measured %s, not 0\n' "$negative" >&2
     exit 3
 fi
-printf 'lower fallback control: PASS — planted cross-module call counted %s; local-only file counted 0\n' "$positive"
+# NAME THE MEASURING COMPILER (`law.evidence.subject.one`). These pins are a
+# property of the compiler that produced them, and the failure they cause when
+# that compiler is the wrong one is indistinguishable from a real regression
+# unless the run says which one it used. Measured both ways at dec7d509: debug
+# and ReleaseFast agree exactly, so build mode is NOT the sensitive axis --
+# REVISION is. The tracked, stale `out/bin/idol` reports lib/compiler/parser.id
+# as REFUSED where this revision reports 291, and this gate correctly calls
+# that a CLASS CHANGE rather than agreeing with it.
+printf 'lower fallback control: PASS — planted cross-module call counted %s; local-only file counted 0 (compiler %s)\n' \
+    "$positive" "$IDOL"
 
 # ============================== THE SUBJECTS ===============================
 # gate/subject.sh owns the GAP-201 ruling that zero subjects is a FAILURE and
