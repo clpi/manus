@@ -357,16 +357,48 @@ pub fn measure(alloc: std.mem.Allocator, v: Vertical, kind: poison.Kind) !Row {
         .note = "baseline-refused",
     };
 
-    // Control 1 — determinism. Two realizations of the SAME tree and the SAME
-    // graph must agree, or no later difference can be attributed to the damage.
-    const repeat = emitBytes(alloc, &subject.module, &subject.graph);
-    if (!sameBytes(baseline, repeat)) return .{
+    // Control 1 — determinism, in two strengths, because byte comparison is not
+    // safe by default and a lane in this tree has already been unable to
+    // separate a real effect from build noise.
+    //
+    // (a) SAME tree, SAME graph. Catches anything that varies per emission.
+    // (b) An INDEPENDENT lift of the same source: a second parse, a second
+    //     `Sema`, a second graph, all at different addresses with a different
+    //     allocation history. This is the one that matters, because the cheap
+    //     repeat cannot see order that depends on POINTER VALUES — a
+    //     `AutoHashMap` keyed by `*Expr` iterates in an order the addresses
+    //     decide, and those move between runs. If (b) agrees, no such order
+    //     reached the object for this subject.
+    //
+    // Cross-PROCESS and cross-output-path stability is measured separately, by
+    // `gate/byte/stable.sh`, which drives the real CLI: object bytes are stable
+    // and path-independent, while linked executables are basename-sensitive
+    // (ad-hoc signature identity + LC_UUID). This gate compares OBJECTS, which
+    // is the half that is safe to diff.
+    if (!sameBytes(baseline, emitBytes(alloc, &subject.module, &subject.graph))) return .{
         .vertical = v.name,
         .kind = kind,
         .sites = 0,
         .verdict = .blocked,
         .note = "nondeterministic-baseline",
     };
+    {
+        var twin = std.heap.ArenaAllocator.init(alloc);
+        const independent = lift(twin.allocator(), v) catch return .{
+            .vertical = v.name,
+            .kind = kind,
+            .sites = 0,
+            .verdict = .blocked,
+            .note = "independent-lift-refused",
+        };
+        if (!sameBytes(baseline, emitBytes(twin.allocator(), &independent.module, &independent.graph))) return .{
+            .vertical = v.name,
+            .kind = kind,
+            .sites = 0,
+            .verdict = .blocked,
+            .note = "address-dependent-baseline",
+        };
+    }
 
     const sites = try poison.poisonModule(alloc, &subject.module, kind);
     if (sites == 0) return .{
@@ -456,18 +488,34 @@ pub fn measureReference(alloc: std.mem.Allocator, v: Vertical) !Row {
         .verdict = .blocked,
         .note = "baseline-refused",
     };
-    // Control 1, the same one `measure` runs. Without it a nondeterministic
+    // Control 1, both strengths, as in `measure`. Without it a nondeterministic
     // object would classify as `leak`, and since EVERY reference expectation is
     // currently `leak`, the whole test would pass with a stale ledger while
     // measuring nothing at all.
-    const repeat = emitBytes(alloc, &subject.module, &subject.graph);
-    if (!sameBytes(baseline, repeat)) return .{
+    if (!sameBytes(baseline, emitBytes(alloc, &subject.module, &subject.graph))) return .{
         .vertical = v.name,
         .kind = kind,
         .sites = 0,
         .verdict = .blocked,
         .note = "nondeterministic-baseline",
     };
+    {
+        var twin = std.heap.ArenaAllocator.init(alloc);
+        const independent = lift(twin.allocator(), v) catch return .{
+            .vertical = v.name,
+            .kind = kind,
+            .sites = 0,
+            .verdict = .blocked,
+            .note = "independent-lift-refused",
+        };
+        if (!sameBytes(baseline, emitBytes(twin.allocator(), &independent.module, &independent.graph))) return .{
+            .vertical = v.name,
+            .kind = kind,
+            .sites = 0,
+            .verdict = .blocked,
+            .note = "address-dependent-baseline",
+        };
+    }
     var sites: usize = 0;
     for (subject.graph.nodes.items) |*node| {
         if (node.ast_ref != null) {
