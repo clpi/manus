@@ -10,29 +10,29 @@
 #
 # WHAT THIS GATE MEASURES, and why it is not a style check.
 #
-# In a pure-native module (`!moduleNeedsLuaRuntime()`), src/codegen.zig:17698
-# lowers a qualified call whose callee body is not at file scope to
+# Before this gate's repair, a pure-native module
+# (`!moduleNeedsLuaRuntime()`) lowered a qualified call whose callee body was
+# not at file scope to
 #
 #     duo_fatal("unlowered native call")
 #
-# and the command EXITS 0 with EMPTY STDERR. So the route reports success while
-# replacing the body of the transferred decision with a runtime abort. That is
-# a silent fallback (`law.fallback.zero`) at the one seam a self-host transfer
-# must survive, and nothing in this tree measured it.
+# and the command exited 0 with empty stderr. The production emitter now
+# refuses that unknown realization before it can be accepted as a transfer.
+# This gate keeps the old marker as a zero ceiling and pins every affected
+# subject in the REFUSED class until a real cross-home realization replaces it.
 #
-# The refusal machinery already exists and is already correct one arm over:
+# The refusal machinery already existed one arm over:
 # lib/compiler/emit_c.id refuses with "codegen refused a reference to a module
 # it cannot find". UNKNOWN module refuses; KNOWN module, non-local body aborts
-# silently. This gate pins that asymmetry so it cannot spread, and so the day
-# it is repaired the pins fall and say so.
+# silently. This gate now pins the symmetric fail-closed result so the old
+# behavior cannot return under another qualified spelling.
 #
 # CONSEQUENCE THIS GATE EXISTS TO KEEP VISIBLE (GAP-134 / GAP-145): the one
 # grammar-fact owner is unreachable from Idol. lib/compiler/token_view.id — the
-# immutable token view GAP-134 names as the parser-slice prerequisite — emits
-# one abort for each of its `token.grammarrole.*` consumers and no other. Its
-# pinned row below is that count; this sentence does not restate it. An Idol
-# parser recognition decision therefore either aborts at runtime or inlines its
-# own copy of the grammar facts, and the second is the fourth grammar authority
+# immutable token view GAP-134 names as the parser-slice prerequisite — now
+# refuses rather than claiming to emit those consumers. An Idol parser
+# recognition decision therefore still needs a real cross-home realization;
+# inlining its own grammar facts remains the fourth grammar authority
 # `law.grammar.one` forbids.
 #
 # THE RATCHET. Every subject is pinned by exact measured class in
@@ -88,6 +88,10 @@ measure() {
         return 0
     fi
     if [ "$status" = 1 ] && grep -q 'codegen refused' "$work/err"; then
+        if [ -s "$work/out.c" ]; then
+            printf 'UNTRUSTED\n'
+            return 0
+        fi
         printf 'REFUSED\n'
         return 0
     fi
@@ -125,9 +129,16 @@ case $positive in
         exit 3
         ;;
     UNTRUSTED)
-        printf 'lower fallback control: FAIL — a planted cross-module call did not produce a lawful outcome; the compiler under test is not measurable\n' >&2
+        printf 'lower fallback control: FAIL — a planted cross-module call did not produce a lawful refusal with empty stdout; the compiler under test is not measurable\n' >&2
         sed -n '1,5p' "$work/err" >&2
         exit 3
+        ;;
+    REFUSED)
+        if ! grep -q 'codegen refused an application whose callee is not realized' "$work/err"; then
+            printf 'lower fallback control: FAIL — the planted cross-module call refused for another reason\n' >&2
+            sed -n '1,5p' "$work/err" >&2
+            exit 3
+        fi
         ;;
 esac
 
@@ -145,6 +156,19 @@ negative=$(measure "$work/negative.id")
 if [ "$negative" != 0 ]; then
     printf 'lower fallback control: FAIL — a file with only local calls measured %s, not 0\n' "$negative" >&2
     sed -n '1,5p' "$work/err" >&2
+    exit 3
+fi
+if [ ! -s "$work/out.c" ]; then
+    printf 'lower fallback control: FAIL — a successful local-only transfer emitted an empty artifact\n' >&2
+    exit 3
+fi
+if ! command -v "${CC:-cc}" >/dev/null 2>&1; then
+    printf 'lower fallback control: NOT MEASURED — C syntax checker is unavailable: %s\n' "${CC:-cc}" >&2
+    exit 3
+fi
+if ! "${CC:-cc}" -std=c11 -fsyntax-only "$work/out.c" >"$work/cc.out" 2>"$work/cc.err"; then
+    printf 'lower fallback control: FAIL — the local-only transfer artifact does not compile\n' >&2
+    sed -n '1,5p' "$work/cc.err" >&2
     exit 3
 fi
 if [ "$positive" = REFUSED ]; then

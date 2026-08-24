@@ -17689,14 +17689,17 @@ pub const CodeGen = struct {
                             try self.emitDirectNamedFuncCall(expr);
                             return;
                         }
-                        // `Alias.fn(args)` where Alias came from `req`: emit a
-                        // direct call to the module's mangled symbol. Without
-                        // this a pure-native module had no lowering for any
-                        // qualified call and fell through to duo_fatal, which is
-                        // what blocked a Duo code generator from calling stdlib
-                        // primitives such as std.emit.
-                        self.p("duo_fatal(\"unlowered native call\")", .{});
-                        return;
+                        // A full-native translation unit has no dynamic
+                        // application path. Replacing an application whose
+                        // callee body is absent from this artifact with a
+                        // successful runtime abort made `dump-c --lib` report a
+                        // transfer while deleting the callee's behavior. The
+                        // physical realization is unknown here, so preserve
+                        // that answer as a compile refusal.
+                        term.locErr(c.func.loc(), "this application has no emitted callee body in the C transfer artifact", .{});
+                        term.locHint(c.func.loc(), "emit or link the callee with witnessed application lineage before using this transfer", .{});
+                        self.noalloc_violation = "codegen refused an application whose callee is not realized";
+                        return error.NoAllocViolation;
                     }
                     const invoke_result_rt = self.expr_type(expr);
                     if (rt_accepts_lua_value_coercion(invoke_result_rt)) {
