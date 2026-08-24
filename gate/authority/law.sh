@@ -78,10 +78,11 @@
 #
 # EXCLUDED, and named rather than left implicit:
 #   * `gaps/**` -- GAP ledgers are dated obligation records, not active law
-#     projections, and they are owned by a different lane. `gaps/RESEARCH-
-#     SPINE.md` DOES still name the constitution as the sole semantic law; it
-#     is a real residue, it is out of this gate's declared scope, and it is
-#     recorded here so the hole is visible rather than discovered.
+#     projections. The one real residue this exclusion was hiding,
+#     `gaps/RESEARCH-SPINE.md` naming the constitution as the sole semantic
+#     law, has been repaired; the exclusion stands on the ledger/projection
+#     distinction alone, not on a known-divergence waiver. A ledger that
+#     starts declaring a role is a finding for whoever owns it.
 #   * `research/**`, `vendor/**`, `ext/**`, `benchmarks/**`, `out/**` --
 #     historical, foreign, or build output. Not active law.
 #   * `evidence/**` and the debt registers -- measurement artifacts. They quote

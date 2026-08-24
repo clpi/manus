@@ -4,7 +4,9 @@
 **Kind:** research_gap projection · **Normative for:** nothing — this is a projection of C0
 **Enforced by:** `tools/node/dev/gapc0` (fails closed)
 
-C0 (`docs/spec/constitution.md`) is the sole semantic law. §14 closes the semantic
+`docs/spec/law.md` is the sole supreme compact law; C0
+(`docs/spec/constitution.md`) is its structured long-form expansion and the
+stable `law.*` identity owner. §14 closes the semantic
 kind set; §15 pins the mechanism delta to zeros; `law.injection.only` reserves
 `@{ … }` for world injection. A research GAP that needs a new kind, registry,
 syntax, keyword, or operator to mean what it says is not a GAP — it is a
