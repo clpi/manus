@@ -22,10 +22,11 @@ pub const CommandOutput = struct {
 
 pub const SatisfiesHook = *const fn (ctx: ?*anyopaque, type_expr: *const ast.Expr, concept_name: []const u8) ?bool;
 
-/// Exact graph application work admitted by the effect/authority query for one
-/// native whole-body fold. Each site already carries the occurrence id its
-/// graph producer published; `expr` is only the evaluator walk's provenance
-/// key for selecting that carried work item.
+/// Exact graph work admitted for one native whole-body fold. Each application
+/// site already carries the occurrence id its graph producer published; every
+/// evaluator work item also carries the value id the graph published for its
+/// expression. `expr` is only the evaluator walk's provenance key for selecting
+/// those carried identities.
 ///
 /// Delete the expression key when the evaluator itself is scheduled from graph
 /// value/application ids rather than from `ast.FuncBody`.
@@ -247,6 +248,7 @@ pub const Evaluator = struct {
     const WorkItem = struct {
         expr: *const ast.Expr,
         application: ?semantic_graph.id,
+        value: ?semantic_graph.id,
     };
 
     const LocalBinding = struct {
@@ -360,6 +362,7 @@ pub const Evaluator = struct {
         const work = self.options.application_work orelse return .{
             .expr = expr,
             .application = null,
+            .value = null,
         };
         var application: ?semantic_graph.id = null;
         for (work.sites) |site| {
@@ -368,7 +371,11 @@ pub const Evaluator = struct {
                 return error.UnsupportedExpression;
             application = site.occurrence;
         }
-        return .{ .expr = expr, .application = application };
+        return .{
+            .expr = expr,
+            .application = application,
+            .value = work.graph.valueByAst(expr),
+        };
     }
 
     pub fn eval(self: *Evaluator, expr: *const ast.Expr) EvalError!Value {
@@ -398,6 +405,31 @@ pub const Evaluator = struct {
         if (self.depth >= max_eval_depth) return error.StepLimitExceeded;
         self.depth += 1;
         defer self.depth -= 1;
+        // THE PUBLISHED VALUE SURVIVES INTO THE WORK ITEM. A native whole-body
+        // fold used to seed module constants by evaluating their initializer
+        // AST again. Poisoning `const fixed = 41` after graph publication then
+        // changed a checked `take(fixed)` tail from 41 to -42 even though the
+        // graph's initializer value still carried exact content 41. Asking the
+        // carried id first makes the initializer and a derived exact result one
+        // semantic value all the way into the fold; there is no evaluator-local
+        // constant registry to agree with it.
+        //
+        // The whole expression is asked before its children. This preserves
+        // INT_MIN: the graph publishes -9223372036854775808 on the negation's
+        // result value, so the host never attempts to materialize and negate
+        // the unrepresentable positive magnitude.
+        if (self.options.native_fold) {
+            if (self.options.application_work) |graph_work| {
+                if (work_item.value) |value| {
+                    if (graph_work.graph.exactI64(value)) |content|
+                        return .{ .int = content };
+                    // A checked integer literal with a published value but a
+                    // missing exact row is damaged graph state, not permission
+                    // to recover content from `int_lit.val`.
+                    if (expr.* == .int_lit) return error.UnsupportedExpression;
+                }
+            }
+        }
         return switch (expr.*) {
             .nil => .nil,
             .true_lit => .{ .bool = true },
@@ -2009,6 +2041,11 @@ pub fn foldRelationBody(
                 .step_limit = fold_step_limit,
                 .alloc = scratch,
                 .native_fold = true,
+                // Even before the closure's application sites are built, this
+                // initializer has an exact graph value. Carry it through the
+                // same evaluator work item used below; an empty site slice says
+                // only that no application is admitted in this sub-evaluation.
+                .application_work = .{ .graph = graph, .sites = &.{} },
             }) catch continue;
             switch (value) {
                 .int, .float, .bool, .string => {},

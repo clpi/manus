@@ -12553,6 +12553,57 @@ test "native backend emits arm64 Mach-O object for constant main" {
     try std.testing.expect(std.mem.indexOf(u8, artifact.bytes, "\xc0\x03\x5f\xd6") != null);
 }
 
+test "native backend: immutable module literal tail consumes graph identity after AST poison" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\const fixed: i64 = 41
+        \\take: i64 = (value: i64)
+        \\    value
+        \\main: i64 = ()
+        \\    take(fixed)
+    ;
+    var lexer = Lexer.init(source, "module-literal-tail.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&module, &checked, &graph);
+    var baseline = try emitCheckedTestObject(alloc, &module, &graph);
+    defer baseline.deinit(alloc);
+
+    const fixed_initializer = module.body.stmts[0].const_decl.val;
+    try std.testing.expectEqual(@as(?i64, 41), graph.exactI64OfExpr(fixed_initializer));
+    const poison = @import("poison.zig");
+    try std.testing.expectEqual(@as(usize, 1), try poison.poisonModule(alloc, &module, .int));
+    try std.testing.expectEqual(@as(?i64, 41), graph.exactI64OfExpr(fixed_initializer));
+
+    var frozen = try emitCheckedTestObject(alloc, &module, &graph);
+    defer frozen.deinit(alloc);
+    try std.testing.expectEqualSlices(u8, baseline.bytes, frozen.bytes);
+
+    var poisoned_checked = Sema.init(alloc);
+    defer poisoned_checked.deinit();
+    poisoned_checked.idol_mode = true;
+    try poisoned_checked.check_module(&module);
+    var poisoned_graph = semantic_graph.SemanticGraph.init(alloc);
+    defer poisoned_graph.deinit();
+    try liftCheckedTestGraph(&module, &poisoned_checked, &poisoned_graph);
+    try std.testing.expectEqual(@as(?i64, -42), poisoned_graph.exactI64OfExpr(fixed_initializer));
+    var relifted = try emitCheckedTestObject(alloc, &module, &poisoned_graph);
+    defer relifted.deinit(alloc);
+    try std.testing.expect(!std.mem.eql(u8, baseline.bytes, relifted.bytes));
+}
+
 test "native backend refuses source length2 short-circuit absent physical lowering" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
