@@ -1,0 +1,22 @@
+# gate/occurrence/copy.sh §1b subject — the ONE duplicating transform that is
+# on by default. `dnir_lower.tryEmitVectorReductionPrologue` recognizes exactly
+# this shape and emits a NEON group-sum ahead of it; the scalar loop below then
+# lowers unchanged and finishes the remainder. One source loop, two physical
+# occurrences.
+#
+# THE SEED IS READ OUT OF THE ENVIRONMENT so the sum cannot be folded. A table
+# of literals summed over a literal range is settled at compile time and the
+# vector arm never runs, which would make the gate pass on an answer no lane
+# produced. `os.env` is a length the compiler cannot read, and §3 checks that
+# the answer MOVES when the variable is set.
+check(): i64
+  tbl = { 1, 2, 3, 4, 5, 6, 7, 8 }
+  tbl[1] = os.env["IDOLVECSEED"]:len()
+  acc = 0
+  idx = 1
+  while idx <= 8
+    acc = acc + tbl[idx]
+    idx = idx + 1
+  return acc
+main(): i64
+  return check()

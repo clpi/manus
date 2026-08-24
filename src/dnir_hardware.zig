@@ -24,23 +24,39 @@ pub const SCHEMA_VERSION = "dnir-hardware-v0";
 /// `gate/claim.sh` §1 measures and `gate/capability.sh` §1 declines to treat as
 /// evidence. `.vector` costs three lines the day `hw_simd` lands.
 ///
-/// `.vector` WAS CONSIDERED AND DECLINED AGAIN, with a measurement rather than a
-/// preference. The one vector producer this compiler contains —
-/// `dnir_lower.tryEmitVectorReductionPrologue`, which drives
-/// `native_backend.emitVecReduceAddI64` — is called from two sites and BOTH read
-/// `if (false) try tryEmitVectorReductionPrologue(...)`, so it has been
-/// unreachable since the commit that introduced it. Censused across 224
-/// Idol-built Mach-O artifacts in idol-native, vector ARITHMETIC instructions
-/// emitted: zero. The only `.2d` any of them contains is `movi.2d v0, #0`
-/// zeroing a stack table. A tier for a producer that no program can reach is the
-/// same scenery the deletion removed, one level up.
+/// `.vector` IS STILL DECLINED, BUT THE REASON PRINTED HERE WAS STALE AND IS
+/// CORRECTED. This paragraph said the one vector producer this compiler
+/// contains — `dnir_lower.tryEmitVectorReductionPrologue`, which drives
+/// `native_backend.emitVecReduceAddI64` — "is called from two sites and BOTH
+/// read `if (false) try tryEmitVectorReductionPrologue(...)`, so it has been
+/// unreachable since the commit that introduced it". THAT IS NO LONGER TRUE.
+/// The two tokens were introduced in `168b6afe` and removed in `d58101bd`;
+/// both call sites (`dnir_lower.zig:4882`, `:6138`) are live plain `try`, and
+/// the producer FIRES ON THE DEFAULT BUILD WITH NO ENV VAR. Measured at
+/// `dec7d509` on `gate/occurrence/reduce.id`:
 ///
-/// Built with those two tokens removed and nothing else (measured differential,
-/// two compilers from one source snapshot), the producer fires and is correct:
-/// `benchmarks/simd/id/red.id` agrees at nine sweep points and goes 2.02 cyc/el
-/// to 1.00 cyc/el. So the variant's admit partner is two tokens away — but the
-/// tokens are in a file this change does not own, and a tier that lands first
-/// would spend a release describing a capability the compiler still refuses.
+///     add.2d  v16, v16, v17
+///     addp.2d d16, v16
+///
+/// THE CENSUS NUMBER SURVIVES; ITS CAUSE DOES NOT. Re-run at `dec7d509` over
+/// every `examples/**/*.id` this compiler can emit — 219 of 547 — assembly
+/// containing vector ARITHMETIC (`add`/`sub`/`mul`/`addp`/`fadd`/`fmul` on
+/// `.2d`/`.4s`/`.8h`/`.16b`/`.2s`): **zero of 219**. Not because the producer
+/// is unreachable, but because no example carries the shape it recognizes: a
+/// literal-bounded `acc = acc + tbl[idx]` over a MEMORY-BACKED positional
+/// table. An all-literal table over a literal range folds before lowering, and
+/// a register-exploded table is declined outright, so the recognizer needs a
+/// store the compiler cannot settle. `gate/occurrence/reduce.id` is the only
+/// subject in the tree that supplies one, and `gate/occurrence/copy.sh` §1b
+/// fails if the producer stops emitting `add.2d`.
+///
+/// SO THE DECLINATION NOW RESTS ON THE RULE ABOVE AND NOTHING ELSE: no
+/// intrinsic RETURNS `.vector` and no check REFUSES on it. The reduction is a
+/// producer of vector TEXT, not of a tier: it rides `hw_unary` with
+/// `hw == .none` and its selection lives in `Instr.field`, so `intrinsicOfOp`
+/// below answers `null` for it and it contributes no `Descriptor` to
+/// `collectModuleDescriptors`. Landing the variant before its admit partner
+/// would restore exactly the `f(x) == f(x)` comparison the deletion removed.
 pub const Tier = enum {
     /// Bit ops, fences, yield — every native target.
     scalar,
