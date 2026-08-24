@@ -40,13 +40,10 @@
 #      publish termination" is not merely premature but unsound. The FIRST
 #      admission test on an if-conversion arm is `armInstrEffectAdmissible`:
 #      `effect == .none and authority == .none`. Measured below: relations
-#      whose body does nothing but assign module-scope `global`s publish
-#      `effect: none`. `publishApplicationEffects` blocks on a foreign body, a
-#      `.capture` edge, a `.member` read and an unresolved call -- and a write
-#      to a module-scope binding is none of those, because the lift mints a
-#      FRESH scope-local entity for it instead of an edge to the module
-#      binding. So `effect: none` answers "does this observe the outside
-#      world", and does not answer "can this mutate".
+#      whose body assigns module-scope `global`s used to publish `effect:
+#      none`. The graph now publishes exact relation -> binding mutation rows,
+#      and this gate requires those rows to agree with an independent source
+#      census before accepting the effect cards derived from them.
 #
 #      With the lineage rule gone and a termination fact published, the two
 #      surviving `no-termination-fact` arms in `lib/compiler/comptime.id` --
@@ -77,7 +74,7 @@ MIN_MUTATORS=${SPECULATION_MIN_MUTATORS:-5}
 
 # THE NAMED WITNESS, and it is a PIN rather than a discovery.
 #
-# Everything below turns on there being an arm the termination ground actually
+# Everything below turns on there being an arm the mutation effect actually
 # refuses. Discovering that set by scanning the corpus means a module that
 # stops compiling, or stops reaching arm64, or stops emitting its census line,
 # SILENTLY empties it -- and the module and candidate floors above are far too
@@ -168,12 +165,12 @@ LC_ALL=C grep -qx -- "$WITNESS" "$work/files" ||
 witness_row=$(LC_ALL=C awk -F'\t' -v w="$WITNESS" '$1 == w { print $2 }' "$work/rows")
 [ -n "$witness_row" ] ||
     die "the named witness $WITNESS emitted no ifconv2 census line. It stopped compiling, stopped reaching arm64, or stopped reporting -- and a census that skipped it would have reported a clean refutation having measured nothing."
-witness_term=$(printf '%s\n' "$witness_row" |
+witness_effect=$(printf '%s\n' "$witness_row" |
     LC_ALL=C awk '{ n = split($0, a, /[ ()]+/)
-        for (i = 1; i <= n; i++) { split(a[i], kv, "="); if (kv[1] == "no_termination_fact") print kv[2] + 0 } }')
-[ "${witness_term:-0}" -ge 1 ] ||
-    die "the named witness $WITNESS no longer carries a no-termination-fact refusal (${witness_term:-0}). Either the transform changed or the source did; re-derive this gate's argument rather than letting it pass on an empty population."
-printf '%-28s %8s\n' "witness refusals" "$witness_term"
+        for (i = 1; i <= n; i++) { split(a[i], kv, "="); if (kv[1] == "effect_not_none") print kv[2] + 0 } }')
+[ "${witness_effect:-0}" -ge 1 ] ||
+    die "the named witness $WITNESS carries no effect-not-none refusal (${witness_effect:-0}). The mutation fact stopped governing speculation."
+printf '%-28s %8s\n' "witness mutation refusals" "$witness_effect"
 
 if [ "$mode" = census ]; then
     note "speculation: --census-only -- the counterfactual and the hazard were SKIPPED, not passed."
@@ -187,16 +184,14 @@ fi
 LC_ALL=C awk -F'\t' '$2 !~ /no_termination_fact=0 / { print $1 }' "$work/rows" >"$work/subjects"
 subjects=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/subjects")
 
-if [ "$term_n" -eq 0 ]; then
-    die "no arm in [$corpus] is refused for want of a termination fact, yet the named witness was required to carry one above. The two readings disagree, and one of them is a bug."
-fi
-
-[ "$subjects" -gt 0 ] || die "the census counted $term_n no-termination-fact refusal(s) but named no module carrying one. The row filter and the counter disagree."
-
 changed=0
 reached=0
 would=0
-while IFS= read -r src; do
+if [ "$term_n" -eq 0 ]; then
+    note "speculation: termination counterfactual has zero subjects because the earlier mutation effect now refuses the witness; skipped, not passed."
+else
+    [ "$subjects" -gt 0 ] || die "the census counted $term_n no-termination-fact refusal(s) but named no module carrying one. The row filter and the counter disagree."
+    while IFS= read -r src; do
     [ -n "$src" ] || continue
     IDOL_IFCONV_REPORT=1 "$idol" compile "$src" --emit asm \
         -o "$work/base.s" 2>"$work/base.report" >/dev/null ||
@@ -230,11 +225,12 @@ while IFS= read -r src; do
     # because a measuring instrument on the production path is a way for an
     # inherited environment to silently delete a safety refusal. That is a
     # claim about the code, so it is CHECKED rather than argued.
-    cmp -s "$work/base.s" "$work/assumed.s" || {
-        note "  ARTIFACT MOVED under the assumption: $src"
-        changed=$((changed + 1))
-    }
-done <"$work/subjects"
+        cmp -s "$work/base.s" "$work/assumed.s" || {
+            note "  ARTIFACT MOVED under the assumption: $src"
+            changed=$((changed + 1))
+        }
+    done <"$work/subjects"
+fi
 printf '%-28s %8s\n' "counterfactual subjects" "$subjects"
 printf '%-28s %8s\n' "  control reached" "$reached"
 printf '%-28s %8s\n' "  would admit" "$would"
@@ -248,14 +244,32 @@ printf '%-28s %8s\n' "artifacts changed" "$changed"
 # effect card their applications carry. A row here is a relation the graph
 # positively asserts is unobservable and whose body writes module state.
 : >"$work/mutators"
+: >"$work/allsource"
 : >"$work/allmut"
+: >"$work/allgraphmut"
+: >"$work/missingmut"
+: >"$work/extramut"
 while IFS= read -r src; do
     [ -n "$src" ] || continue
     grep -q '^global[ 	]' "$src" 2>/dev/null || continue
-    LC_ALL=C awk -f "$extract" "$src" | cut -f1 | LC_ALL=C sort -u >"$work/mutrel"
+    LC_ALL=C awk -f "$extract" "$src" | LC_ALL=C sort -u >"$work/mutpair"
+    cut -f1 "$work/mutpair" | LC_ALL=C sort -u >"$work/mutrel"
     [ -s "$work/mutrel" ] || continue
-    cat "$work/mutrel" >>"$work/allmut"
+    cat "$work/mutpair" >>"$work/allsource"
     "$idol" graph "$src" >"$work/g.json" 2>/dev/null || continue
+    cat "$work/mutpair" >>"$work/allmut"
+    jq -e 'has("mutations") and (.mutations | type == "array")' "$work/g.json" >/dev/null 2>&1 ||
+        die "$src graph export has no mutations array; absence is not proof of no mutation."
+    jq -r '(reduce .nodes[] as $n ({}; .[$n.id|tostring] = $n.name)) as $nm
+           | .mutations[]
+           | [($nm[.relation|tostring] // "?"), ($nm[.binding|tostring] // "?")]
+           | @tsv' "$work/g.json" 2>/dev/null | LC_ALL=C sort -u >"$work/graphmut" ||
+        die "$src mutation projection could not be read."
+    cat "$work/graphmut" >>"$work/allgraphmut"
+    LC_ALL=C comm -23 "$work/mutpair" "$work/graphmut" |
+        LC_ALL=C awk -v f="$src" 'NF { print f "\t" $0 }' >>"$work/missingmut"
+    LC_ALL=C comm -13 "$work/mutpair" "$work/graphmut" |
+        LC_ALL=C awk -v f="$src" 'NF { print f "\t" $0 }' >>"$work/extramut"
     jq -r '(reduce .nodes[] as $n ({}; .[$n.id|tostring] = $n.name)) as $nm
            | .applications[]
            | select(.effect.card == "none")
@@ -266,18 +280,36 @@ while IFS= read -r src; do
 done <"$work/files"
 
 mutators=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/mutators")
+allsource=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/allsource")
 allmut=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/allmut")
-printf '%-28s %8s\n' "global-mutating relations" "$allmut"
+graphmut=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/allgraphmut")
+missingmut=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/missingmut")
+extramut=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/extramut")
+printf '%-28s %8s\n' "source mutation pairs" "$allsource"
+printf '%-28s %8s\n' "  graph-measured pairs" "$allmut"
+printf '%-28s %8s\n' "graph mutation facts" "$graphmut"
+printf '%-28s %8s\n' "  source facts missing" "$missingmut"
+printf '%-28s %8s\n' "  extra graph facts" "$extramut"
 printf '%-28s %8s\n' "  ...publishing effect none" "$mutators"
 LC_ALL=C awk -F'\t' '{ printf "    %-34s %s\n", $2, $1 }' "$work/mutators" >&2
 
-[ "$mutators" -ge "$MIN_MUTATORS" ] ||
-    die "only $mutators relation(s) both assign a module-scope global and publish effect none, floor $MIN_MUTATORS. Either the corpus lost the witness or the effect fact learned to see mutation -- and in the second case this gate's whole argument has to be re-derived rather than kept passing."
+[ "$allmut" -ge "$MIN_MUTATORS" ] ||
+    die "only $allmut source relation/binding mutation pair(s), floor $MIN_MUTATORS. The corpus lost the positive population; a zero graph result would be vacuous."
+[ "$missingmut" -eq 0 ] ||
+    die "$missingmut source mutation fact(s) are absent from the graph. The producer lost a module-binding write."
+[ "$extramut" -eq 0 ] ||
+    die "$extramut graph mutation fact(s) have no source witness. The producer invented a write or crossed a shadow."
+[ "$mutators" -eq 0 ] ||
+    die "$mutators relation(s) write module bindings yet publish effect none. Mutation is observable; see gaps/GAP-225.md."
 
 # ==================================================================== THE RULE
 if [ "$would" -eq 0 ]; then
-    note "speculation: $term_n arm(s) refused on termination, $term_masked of them ALSO refused by the independent lineage ground, and $would would be admitted by a real producer."
-    note "speculation: DO NOT BUILD THE TERMINATION PRODUCER. It would govern nothing."
+    if [ "$term_n" -eq 0 ]; then
+        note "speculation: module-binding mutation is now the earlier refusal; termination remains downstream and was not measured."
+    else
+        note "speculation: $term_n arm(s) refused on termination, $term_masked of them ALSO refused by the independent lineage ground, and $would would be admitted by a real producer."
+        note "speculation: DO NOT BUILD THE TERMINATION PRODUCER. It would govern nothing."
+    fi
     note "speculation: SPECULATION OK."
     exit 0
 fi

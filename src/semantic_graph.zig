@@ -878,6 +878,18 @@ pub const Origin = struct {
     binding: id,
 };
 
+/// One relation writes one exact module-scope binding.
+///
+/// This is a sparse graph fact rather than a boolean on the relation or on an
+/// application.  A binding id preserves the identity of the place being
+/// changed; absence of a row is only consumed after the body lift that owns
+/// this column has completed.  Several rows may share either coordinate when a
+/// relation writes several bindings or several relations write one binding.
+pub const BindingMutation = struct {
+    relation: id,
+    binding: id,
+};
+
 /// The value one module binding was initialized from, joined once at semantic
 /// ingress to the exact module place that decides whether that value remains
 /// current.
@@ -1082,6 +1094,8 @@ pub const SemanticGraph = struct {
     ranges: std.ArrayListUnmanaged(RangeFact) = .empty,
     /// `place[value]` for application values, ascending by value id.
     origins: std.ArrayListUnmanaged(Origin) = .empty,
+    /// Exact module-binding writes, in source lift order.
+    binding_mutations: std.ArrayListUnmanaged(BindingMutation) = .empty,
     callable_linkages: std.ArrayListUnmanaged(CallableLinkage) = .empty,
     callable_linkage_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
     /// Set only by checked lift. A manually assembled/bootstrap graph may have
@@ -1141,6 +1155,7 @@ pub const SemanticGraph = struct {
         self.draws.deinit(self.alloc);
         self.ranges.deinit(self.alloc);
         self.origins.deinit(self.alloc);
+        self.binding_mutations.deinit(self.alloc);
         for (self.callable_linkages.items) |fact| self.alloc.free(fact.symbol);
         self.callable_linkages.deinit(self.alloc);
         self.callable_linkage_rows.deinit(self.alloc);
@@ -3150,6 +3165,31 @@ pub const SemanticGraph = struct {
         });
     }
 
+    /// Publish one exact write to a binding owned by this module.
+    ///
+    /// The binding and relation have already been resolved by the lexical lift;
+    /// this function validates those ids and never repeats resolution from a
+    /// spelling.  Repeated writes by one relation to one binding are one sparse
+    /// fact, not one row per source statement.
+    fn publishBindingMutation(self: *SemanticGraph, relation: id, binding: id) !void {
+        if (!self.callable(relation)) return error.InvalidBindingMutation;
+        const module = self.module_root orelse return error.InvalidBindingMutation;
+        const node = self.get(binding) orelse return error.InvalidBindingMutation;
+        if (node.kind != .local or node.scope != module) return error.InvalidBindingMutation;
+        for (self.binding_mutations.items) |fact| {
+            if (fact.relation == relation and fact.binding == binding) return;
+        }
+        try self.binding_mutations.append(self.alloc, .{
+            .relation = relation,
+            .binding = binding,
+        });
+    }
+
+    /// Sparse module-binding mutation facts in source lift order.
+    pub fn bindingMutations(self: *const SemanticGraph) []const BindingMutation {
+        return self.binding_mutations.items;
+    }
+
     fn bindingDescriptor(self: *SemanticGraph, typ: ast.TypeExpr) ?types.ResolvedType {
         const descriptor = types.resolve(typ, null, self.alloc) catch return null;
         if (descriptor == .any) return null;
@@ -3236,6 +3276,28 @@ pub const SemanticGraph = struct {
                 .assign => |*asg| {
                     for (asg.targets) |target| {
                         if (target.* != .name) continue;
+                        // Assignment reuses the binding that lexical scope
+                        // already resolves.  The old lift unconditionally
+                        // minted a relation-local entity here, so `_pos =
+                        // _pos + 1` both wrote and read an invented `_pos`
+                        // instead of the module binding declared above it.
+                        //
+                        // Declarations and parameters have already been
+                        // lifted in source order and therefore win normally;
+                        // only an exact module-owned binding publishes a
+                        // mutation row.  A genuinely new name still falls
+                        // through and creates the relation-local binding it
+                        // denotes.
+                        if (self.resolveBindingInScope(scope, target.name.ident)) |binding| {
+                            const module = self.module_root orelse return error.InvalidBindingMutation;
+                            const binding_node = self.get(binding) orelse return error.InvalidBindingMutation;
+                            if (binding_node.scope == module) {
+                                if (self.enclosingCallable(scope)) |relation| {
+                                    try self.publishBindingMutation(relation, binding);
+                                }
+                            }
+                            continue;
+                        }
                         try self.noteLocalBinding(file, scope, target.name.ident, target.loc(), null, null);
                     }
                 },
@@ -5853,7 +5915,7 @@ pub const SemanticGraph = struct {
         /// A blocked relation is never effect-free and never becomes so.
         blocked: bool = false,
         /// THE EVIDENCE THAT AN OBSERVATION EXISTS, which `blocked` cannot
-        /// carry and never could. `blocked` is one boolean over five conditions
+        /// carry and never could. `blocked` is one boolean over six conditions
         /// of two OPPOSITE kinds: four of them are absences of evidence (a
         /// foreign body, an unresolved call), and the graph learns nothing from
         /// them; the draw rows and the capture edges are evidence that the
@@ -6059,16 +6121,17 @@ pub const SemanticGraph = struct {
     ///      that shape (a `.call` node in `unresolved_applications`);
     ///   3. every callee it does resolve is itself effect-free;
     ///   4. it captures nothing — a `.capture` edge is the graph's own record
-    ///      of reaching outside the frame, which is where a write to somebody
-    ///      else's binding would show up;
-    ///   5. nothing inside it reads a static `.member` — the injected world
+    ///      of reaching outside the frame;
+    ///   5. it writes no module binding — `binding_mutations` names the exact
+    ///      binding rather than treating an assignment as a fresh local;
+    ///   6. nothing inside it reads a static `.member` — the injected world
     ///      arrives as member edges, so this is where `env`/`arg`/`clock` land.
     ///
     /// The fixpoint is LEAST: nothing starts effect-free and a relation is only
     /// promoted once all of its callees already are, so a recursive relation is
     /// never promoted at all. That is a missed fact. The opposite error — a
     /// greatest fixpoint that starts optimistic — publishes "pure" about
-    /// something impure the moment any of the five conditions is incomplete,
+    /// something impure the moment any of the six conditions is incomplete,
     /// and this tree has shipped two silent miscompiles already.
     ///
     /// AUTHORITY rides on the same evidence deliberately: a relation that
@@ -6106,7 +6169,7 @@ pub const SemanticGraph = struct {
         }
         if (rows.items.len == 0) return;
 
-        // Condition 5, then 4: a member read or a capture blocks the relation
+        // Condition 6, then 4: a member read or a capture blocks the relation
         // it sits inside, whichever relation that is.
         //
         // A CAPTURE ALSO GROUNDS THE EFFECT, and a member does not. The two
@@ -6123,6 +6186,17 @@ pub const SemanticGraph = struct {
             const row = row_of.get(holder) orelse continue;
             rows.items[row].blocked = true;
             if (edge.kind == .capture) groundRow(&rows.items[row], edge.to);
+        }
+
+        // Condition 5: a relation that writes a module binding reaches an
+        // observable place owned outside its frame.  The binding lift already
+        // resolved both coordinates; consuming the sparse row here avoids a
+        // second name walk and gives the positive effect card the exact binding
+        // identity it must preserve.
+        for (self.binding_mutations.items) |mutation| {
+            const row = row_of.get(mutation.relation) orelse continue;
+            rows.items[row].blocked = true;
+            groundRow(&rows.items[row], mutation.binding);
         }
 
         // THE DRAW ROWS, which is where the positive evidence actually lives.
@@ -7027,6 +7101,15 @@ pub const SemanticGraph = struct {
             try appendJsonInt(buf, alloc, origin.binding);
             try buf.append(alloc, '}');
         }
+        try buf.appendSlice(alloc, "],\"mutations\":[");
+        for (self.binding_mutations.items, 0..) |mutation, i| {
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"relation\":");
+            try appendJsonInt(buf, alloc, mutation.relation);
+            try buf.appendSlice(alloc, ",\"binding\":");
+            try appendJsonInt(buf, alloc, mutation.binding);
+            try buf.append(alloc, '}');
+        }
         try buf.append(alloc, ']');
     }
 
@@ -7228,7 +7311,10 @@ pub const SemanticGraph = struct {
         // version 12: `callable_linkages`. Version 11 forced every graph/tool
         // consumer to rederive physical origin/exposure/symbol from declaration
         // spellings even though checked realization consumed the graph fact.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":12,\"file\":\"");
+        // version 13: `mutations`. Version 12 could publish a module place as
+        // mutated but could not identify which relation wrote its binding, so
+        // the effect producer treated those relations as unobservable.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":13,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         switch (self.root_source_law_edition) {
@@ -8190,7 +8276,7 @@ test "semantic_graph: checked callable linkage is one id keyed fact" {
     try graph.writeJson(alloc, "linkage.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 12), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 13), parsed.value.object.get("version").?.integer);
     const exported = parsed.value.object.get("callable_linkages").?.array.items;
     try std.testing.expectEqual(@as(usize, 4), exported.len);
     try std.testing.expectEqual(@as(i64, external), exported[3].object.get("callable").?.integer);
@@ -8278,7 +8364,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 12), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 13), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
     try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
@@ -8787,7 +8873,7 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Color\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Red\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"storage_class\"") == null);
-    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":12") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":13") != null);
     try std.testing.expectEqualStrings(
         "unknown",
         parsed.value.object.get("root_source_law").?.object.get("card").?.string,
@@ -9638,6 +9724,83 @@ test "semantic_graph: checked application publishes binding to relation and para
     try std.testing.expectEqual(@as(usize, 1), param_users.items.len);
     try std.testing.expectEqual(subject, param_users.items[0]);
     try std.testing.expectEqual(Card{ .one = param_id }, g.valueOrigin(subject));
+}
+
+test "semantic_graph: module mutation keeps binding identity and local shadow" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\global counter: i64 = 0
+        \\write: i64 = ()
+        \\    counter = counter + 1
+        \\    counter
+        \\shadow: i64 = ()
+        \\    counter: i64 = 7
+        \\    counter = counter + 1
+        \\    counter
+        \\entry: i64 = ()
+        \\    write()
+        \\shadowentry: i64 = ()
+        \\    shadow()
+    ;
+    var lexer = Lexer.init(source, "module-mutation.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const home = try graph.liftModuleWithCheckedCalls(&module, &checked, "module-mutation.id");
+
+    const module_binding = graph.resolveInHome(home, "counter", .local) orelse
+        return error.TestExpectedEqual;
+    const write = graph.resolveInHome(home, "write", .func) orelse
+        return error.TestExpectedEqual;
+    const shadow = graph.resolveInHome(home, "shadow", .func) orelse
+        return error.TestExpectedEqual;
+    const entry = graph.resolveInHome(home, "entry", .func) orelse
+        return error.TestExpectedEqual;
+    const shadow_entry = graph.resolveInHome(home, "shadowentry", .func) orelse
+        return error.TestExpectedEqual;
+
+    var same_named: usize = 0;
+    var shadow_binding: ?id = null;
+    for (graph.nodes.items, 0..) |node, coordinate| {
+        if (node.kind != .local or node.name == null) continue;
+        if (!std.mem.eql(u8, node.name.?, "counter")) continue;
+        same_named += 1;
+        if (node.scope == shadow) shadow_binding = @intCast(coordinate);
+    }
+    // The module binding and the explicit shadow are distinct.  The assignment
+    // in `write` must not manufacture a third binding.
+    try std.testing.expectEqual(@as(usize, 2), same_named);
+    try std.testing.expect(shadow_binding != null);
+    try std.testing.expect(shadow_binding.? != module_binding);
+
+    const mutations = graph.bindingMutations();
+    try std.testing.expectEqual(@as(usize, 1), mutations.len);
+    try std.testing.expectEqual(write, mutations[0].relation);
+    try std.testing.expectEqual(module_binding, mutations[0].binding);
+
+    const calls = graph.applicationsIn(entry);
+    try std.testing.expectEqual(@as(usize, 1), calls.len);
+    const effect = graph.applicationEffect(calls[0]);
+    try std.testing.expectEqual(Card{ .one = module_binding }, effect);
+    const shadow_calls = graph.applicationsIn(shadow_entry);
+    try std.testing.expectEqual(@as(usize, 1), shadow_calls.len);
+    try std.testing.expectEqual(Card.none, graph.applicationEffect(shadow_calls[0]));
+
+    var json: std.ArrayListUnmanaged(u8) = .empty;
+    defer json.deinit(alloc);
+    try graph.writeJson(alloc, "module-mutation.id", &json, null);
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"version\":13") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"mutations\":[{") != null);
 }
 
 test "semantic_graph: one module binding owns checked value origin and survives shadowing" {
