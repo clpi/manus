@@ -271,6 +271,12 @@ const op_br_if: u8 = 0x0d;
 const op_br_table: u8 = 0x0e;
 const op_return: u8 = 0x0f;
 const op_call: u8 = 0x10;
+/// §12 TAIL on WebAssembly. `return_call` is the tail-call proposal's direct
+/// form: it tears the caller's activation down and enters the callee in its
+/// place, exactly as the AArch64 backend's `restore the frame; b <callee>` does.
+/// IT IS NOT IN THE MVP. `emitFromDnir` will not emit it unless
+/// `IDOL_WASM_TAILCALL=1` says so — see `Emitter.wasm_tailcall`.
+const op_return_call: u8 = 0x12;
 const op_drop: u8 = 0x1a;
 const op_select: u8 = 0x1b;
 const op_local_get: u8 = 0x20;
@@ -545,6 +551,21 @@ const Emitter = struct {
     /// printed a pointer.
     pending_va: [max_varargs]?dnir.Value = @splat(null),
     pending_va_n: u32 = 0,
+    /// §12 TAIL on WebAssembly — WHETHER 0x12 MAY BE EMITTED AT ALL.
+    ///
+    /// DEFAULT OFF, AND THAT IS A POLICY POSITION RATHER THAN A LIMITATION.
+    /// The MVP has no `return_call`. Emitting one narrows the set of runtimes
+    /// that will accept this compiler's output — wabt's `wasm-validate` rejects
+    /// it without `--enable-tail-call`, and the in-tree engine
+    /// (`tools/wasm/src/engine.id`) exits 70 on an opcode it does not implement.
+    /// Which runtimes must accept the output is not a fact this file can settle
+    /// on its own, so the instrument is built and left severed:
+    /// `IDOL_WASM_TAILCALL=1` arms it, and everything else about the emitted
+    /// module is byte for byte what it is today.
+    wasm_tailcall: bool = false,
+    /// Calls this module realized as `return_call`. Census only —
+    /// `IDOL_WASM_TAILCALL_REPORT` prints it.
+    tailcall_admitted: u32 = 0,
     /// Depth of `$again` from the body currently being emitted, for the
     /// dispatch loop. Zero outside one.
     again_depth: u32 = 0,
@@ -765,6 +786,12 @@ pub fn emitFromDnir(
         .strings = .{ .alloc = alloc },
     };
     defer e.deinit();
+    // The severing control, read as a VALUE and not a presence, so both arms of
+    // a measurement can carry the name and both decline each other's build
+    // cache — the same rule `IDOL_NO_TAILCALL` obeys in `native_backend.zig`.
+    if (std.c.getenv("IDOL_WASM_TAILCALL")) |raw| {
+        if (std.mem.eql(u8, std.mem.span(raw), "1")) e.wasm_tailcall = true;
+    }
     if (realization_validate.aggregateSchedule(m)) |failure| {
         return e.refuse(failure.note);
     }
@@ -866,6 +893,12 @@ pub fn emitFromDnir(
     // ---- 6. The runtime, into the reserved slots.
     try emitHelpers(&e);
 
+    // §12 TAIL CENSUS on WebAssembly: how many calls in tail position this
+    // module realized as `return_call`. Off unless asked for, and always zero
+    // while `wasm_tailcall` is severed.
+    if (std.c.getenv("IDOL_WASM_TAILCALL_REPORT") != null) {
+        std.debug.print("wasm tailcall admitted={d}\n", .{e.tailcall_admitted});
+    }
     return assemble(&e, start_index);
 }
 
@@ -1094,7 +1127,18 @@ fn emitFunctionBody(e: *Emitter, f: dnir.Function) Error![]u8 {
     e.in_dispatch = has_branch;
     if (!has_branch) {
         e.pending_n = 0;
-        for (instrs) |ins| try emitInstr(e, &b, ins, flat);
+        var i: usize = 0;
+        while (i < instrs.len) : (i += 1) {
+            // §12 TAIL. A function with no `br` has no branch target at all, so
+            // the `ret` this consumes is provably unreachable from anywhere but
+            // the call above it.
+            if (i + 1 < instrs.len and wasmTailCallFusible(e, instrs[i], instrs[i + 1])) {
+                try emitWasmTailCall(e, &b, instrs[i]);
+                i += 1;
+                continue;
+            }
+            try emitInstr(e, &b, instrs[i], flat);
+        }
         // A DNIR function terminates on `ret`; falling off the end is what the
         // AArch64 backend refuses at the same point. This traps rather than
         // returning whatever the stack held.
@@ -1177,6 +1221,15 @@ fn emitDispatch(e: *Emitter, b: *Buf, flat: Flat) Error!void {
         var terminated = false;
         while (idx < stop) : (idx += 1) {
             const ins = flat.instrs[idx];
+            // §12 TAIL. `idx + 1 < stop` keeps the lookahead inside THIS block,
+            // and every branch target is a block leader, so the `ret` consumed
+            // here is one nothing can jump to.
+            if (idx + 1 < stop and wasmTailCallFusible(e, ins, flat.instrs[idx + 1])) {
+                try emitWasmTailCall(e, b, ins);
+                idx += 1;
+                terminated = true;
+                continue;
+            }
             try emitInstr(e, b, ins, flat);
             if (ins.op == .ret or ins.op == .ret_record) terminated = true;
             if (ins.op == .br and ins.branch_condition == .unconditional) terminated = true;
@@ -1881,6 +1934,86 @@ fn pushStagedArgs(e: *Emitter, b: *Buf, ins: dnir.Instr, want: []const SlotType)
         const v = e.pending[i] orelse return e.refuse("call-arg-gap");
         try pushValueTyped(e, b, v, want[i]);
     }
+}
+
+/// §12 TAIL on WebAssembly — the SAME `call_direct -> T ; ret T` shape the
+/// AArch64 backend converts, asked with wasm's own admission rule.
+///
+/// MOST OF `native_backend.tailCallFusible`'s ELEVEN GROUNDS ARE VACUOUS HERE,
+/// and it is worth saying which and why rather than porting a refusal that
+/// refuses nothing. The ninth-argument refusal is about a memory argument whose
+/// home is above the caller's frame — WebAssembly passes operands on a typed
+/// stack and has no such home. The x8 indirect-result refusal, the d0..d7
+/// register-file refusal and the callee-saved tear-down are all AArch64
+/// physics. What is left is the part that was never about registers:
+///
+///   THE CALL'S RESULT MUST BE THE ANSWER, UNCHANGED. Anything between the two
+///   — a narrowing refit, a record copy-out, an `f64.convert_i64_s` — is work
+///   this frame still owes, and `return_call` has no "after" to do it in.
+///
+/// plus one rule wasm adds and AArch64 does not have to state: THE CALLEE'S
+/// RESULT TYPES MUST EQUAL THIS FUNCTION'S, exactly, or the module does not
+/// validate. Both slices are in hand (`FuncSig.results` and `cur_results`), so
+/// the check is the whole of the wasm-level obligation.
+///
+/// NOTHING MAY BRANCH TO THE `ret` WE CONSUME, and here that is FREE rather
+/// than an O(n^2) scan. `leadersOf` already makes every branch target a block
+/// leader, so a `ret` anything jumps to is the FIRST instruction of its block;
+/// both call sites bound the lookahead by the block's own `stop`, so a `ret`
+/// that is a leader can never be the `next` this sees.
+fn wasmTailCallFusible(e: *const Emitter, ins: dnir.Instr, next: dnir.Instr) bool {
+    if (!e.wasm_tailcall) return false;
+    if (ins.op != .call_direct or next.op != .ret) return false;
+    const result = ins.result orelse return false;
+    const returns_the_call = switch (next.lhs) {
+        .temp => |t| t == result,
+        else => false,
+    };
+    if (!returns_the_call) return false;
+    if (ins.pack_results.len != 0 or ins.record.len != 0 or ins.field.len != 0) return false;
+    // The `ret` is CONSUMED and emits no bytes of its own, so it must carry no
+    // lineage to publish.
+    if (next.application != null or next.relation != null or next.value != null) return false;
+    const sig = e.func_sig.get(ins.callee) orelse return false;
+    if (sig.results.len != e.cur_results.len) return false;
+    for (sig.results, e.cur_results) |have, want| {
+        if (have != want) return false;
+    }
+    // THE CALLEE NARROWS ITS OWN RESULT ON ITS OWN `ret`, and that is only OUR
+    // answer when the two descriptors are the same one. `SlotType` collapses
+    // `i8`, `i32` and `i64` into one entry, so the slice comparison above cannot
+    // see the difference and `emitNarrowFit` — which `.ret` emits and a
+    // `return_call` cannot — is exactly what the difference costs.
+    const g = wasmModuleFunction(e.module, ins.callee) orelse return false;
+    if (!std.meta.eql(g.ret, e.cur_ret)) return false;
+    return true;
+}
+
+fn wasmModuleFunction(m: dnir.Module, name: []const u8) ?dnir.Function {
+    for (m.functions) |f| {
+        if (std.mem.eql(u8, f.name, name)) return f;
+    }
+    return null;
+}
+
+/// `return_call $callee` — the operands, then the frame, then the jump.
+///
+/// THE FRAME IS GIVEN BACK AFTER THE OPERANDS ARE PUSHED, which is the same
+/// order `.ret` uses and is the order the shadow stack requires: an argument
+/// may be a value loaded FROM this frame, and `emitFrameRestore` is a single
+/// `global.set` of the stack pointer that writes no memory — so the read has
+/// already happened and the bytes are not disturbed until the callee allocates
+/// over them, by which time the operands are on WebAssembly's own stack, out of
+/// linear memory entirely.
+fn emitWasmTailCall(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
+    const idx = e.func_index.get(ins.callee) orelse return e.refuse("call-target-unknown");
+    const sig = e.func_sig.get(ins.callee) orelse return e.refuse("call-signature-unknown");
+    try pushStagedArgs(e, b, ins, sig.params);
+    clearStaged(e);
+    try emitFrameRestore(e, b);
+    try b.byte(op_return_call);
+    try b.u32v(idx);
+    e.tailcall_admitted += 1;
 }
 
 fn emitCallDirect(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {

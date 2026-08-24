@@ -10,3 +10,9 @@ tail: i64 = (n: i64, acc: i64)
 
 a = tail(10000000, 0)
 print("{a}")
+# The explicit `0` tail, for the reason bytes.id and invalid.id carry theirs:
+# `print` is void-shaped, so `blockTailResult` walks back to the last
+# value-carrying binding and the MODULE's result became `a`. 10000000 & 0xFF
+# is 128, so this file printed exactly what its oracle demanded and still
+# contradicted it on the exit status. Same defect nul.id carried.
+0

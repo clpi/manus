@@ -1075,6 +1075,34 @@ const Arm64Compiler = struct {
     /// Calls this compilation realized as a jump rather than a frame. Census
     /// only — `IDOL_TAILCALL_REPORT` prints it.
     tailcall_admitted: u32 = 0,
+    /// SEVERING CONTROL for §12 `error.depth`. `IDOL_NO_DEPTH=1` restores the
+    /// unmetered prologue — and with it the SIGSEGV — for every function.
+    /// Read the same way and for the same reason as `tailcall`.
+    depth_meter: bool = true,
+    /// The module functions whose prologue meters the stack, by name. Computed
+    /// ONCE per module in `compileDnirModule` from the DNIR call graph, so the
+    /// probe pass and the real pass are handed the SAME answer and emit the
+    /// same bytes — the premise `probeCalleeSaveUse` is built on.
+    depth_metered_names: std.StringHashMapUnmanaged(void) = .empty,
+    /// Whether the function about to be compiled is one of them. Set by
+    /// `compileDnirModule` from the map above and COPIED INTO THE PROBE, so the
+    /// two passes emit the same prologue. Every other entry point into
+    /// `compileDnirFunction` — object mode, the DNIR-only unit tests — leaves it
+    /// false and keeps today's emission byte for byte; none of them has an entry
+    /// to run the initializer either, so a check there would test a zero limit.
+    next_func_metered: bool = false,
+    /// Whether ANY function in this module is metered. A module that meters
+    /// nothing emits no initializer either, so its artifact is byte for byte
+    /// what it is today.
+    depth_module_meters: bool = false,
+    /// Functions this compilation metered. Census only — `IDOL_DEPTH_REPORT`.
+    depth_metered_count: u32 = 0,
+    /// The `__DATA,__bss` word holding the lowest `sp` a metered prologue may
+    /// stand on, interned on first demand. ZERO IS THE DISABLED VALUE and it is
+    /// what a zerofill word already holds: `sp` is never zero, so a module whose
+    /// entry never ran the initializer (object mode, a library, a unit test)
+    /// takes the in-range branch every time and behaves exactly as it does now.
+    depth_limit_sym: ?u32 = null,
     /// When set, this function's f64 return is coerced to i64 for process exit.
     entry: ?[]const u8 = null,
     cur_func_ret_record: ?ScalRecordDesc = null,
@@ -1403,6 +1431,9 @@ const Arm64Compiler = struct {
         // Keys are borrowed; the symbol NAMES are owned and freed with the
         // symbol list, so only the containers go here.
         self.globals.deinit(self.alloc);
+        // Keys are the module's own function names, borrowed for the length of
+        // `compileDnirModule` exactly as `cur_module_functions` is.
+        self.depth_metered_names.deinit(self.alloc);
         self.global_syms.deinit(self.alloc);
         self.global_init.deinit(self.alloc);
         self.global_words.deinit(self.alloc);
@@ -1769,6 +1800,13 @@ const Arm64Compiler = struct {
         // §12 TAIL reads the CALLEE's declaration out of here. Borrowed for the
         // length of this call; `m` outlives it.
         self.cur_module_functions = m.functions;
+        // §12 `error.depth` — which frames are metered, decided ONCE for the
+        // whole module and BEFORE any function is probed. Both passes read this
+        // map, so both emit the same prologue: `probeCalleeSaveUse`'s premise is
+        // that they differ only in which `str`/`ldr` pairs the prologue holds,
+        // and a check present in one and absent from the other would measure a
+        // different function.
+        try self.computeDepthMeteredSet(m.functions);
         for (m.functions) |f| {
             // `dnirNeedsCalleeSave` decides whether to MEASURE, and it is a census
             // of DNIR names -- the same census `probeCalleeSaveUse`'s own comment
@@ -1779,6 +1817,7 @@ const Arm64Compiler = struct {
             // reaches x19 and the check below refuses a correct program. Measure
             // every function: the probe already answers `callee_save_all` when it
             // cannot compile, and a leaf that touches nothing still plans 0.
+            self.next_func_metered = self.depth_metered_names.contains(f.name);
             const plan = self.probeFunctionPlan(f);
             self.callee_save_plan = plan.callee_save;
             self.gp_call_home_budget = plan.home_budget;
@@ -1916,6 +1955,12 @@ const Arm64Compiler = struct {
         // — the same divergence `tightdef` is copied here to avoid. Both the
         // control and the roster it reads have to cross.
         probe.tailcall = self.tailcall;
+        // …AND SO DOES §12 `error.depth`, for the third time and the same
+        // reason: five prologue instructions present in one pass and absent from
+        // the other measure a different function's callee-save set.
+        probe.depth_meter = self.depth_meter;
+        probe.depth_module_meters = self.depth_module_meters;
+        probe.next_func_metered = self.next_func_metered;
         probe.cur_module_functions = self.cur_module_functions;
         if (self.graph_const_bases.count() != 0) {
             var last_symbol: u32 = 0;
@@ -2951,6 +2996,16 @@ const Arm64Compiler = struct {
         const scalar_body_has_call = if (!f.is_float_kernel) dnirFunctionHasCall(f) else false;
         self.cur_func_has_call = scalar_body_has_call or dnirFunctionHasCall(f);
         self.eval_pinned = &pinned;
+        // §12 `error.depth`. The initializer runs ONCE, at the top of the
+        // process entry and before anything has been pushed, so the `sp` it
+        // reads is the deepest this process will ever stand on. The check goes
+        // ahead of the callee-save bank for the same reason: it must answer for
+        // the frame this function is ABOUT to take, not the one it has taken.
+        // A module that meters NOTHING emits neither, so its artifact is byte
+        // for byte what it is today — which is most of the corpus.
+        const is_entry = if (self.entry) |e| std.mem.eql(u8, e, f.name) else false;
+        if (self.depth_meter and self.depth_module_meters and is_entry) try self.emitDepthLimitInit();
+        if (self.depth_meter and self.next_func_metered) try self.emitDepthCheck();
         // `dnirNeedsCalleeSave` no longer decides here: it gates the PROBE (see
         // `compileDnirModule`), and the probe's answer is the plan. An empty plan
         // emits nothing at all.
@@ -7063,6 +7118,327 @@ const Arm64Compiler = struct {
         return true;
     }
 
+    // ===================== §12 `error.depth` =====================
+    //
+    // WHAT THE FAULT IS. `docs/spec/cost.md`'s non-tail-recursion row reads
+    // "metered `error.depth`, routed", and its fault contract reads "No SIGSEGV
+    // as an API". Before this, a non-tail recursion deep enough to walk off the
+    // stack died at exit 139 with an EMPTY stderr: the process was killed by the
+    // guard page, and nothing in the artifact had an opinion about it. The
+    // hardware was already detecting the fault perfectly. What was missing was
+    // its NAME.
+    //
+    // WHERE THE LIMIT COMES FROM, and it is the actual one. `emitDepthLimitInit`
+    // asks the kernel for `RLIMIT_STACK` at process entry and subtracts it from
+    // the `sp` the entry stood on, so the metered limit tracks `ulimit -s`
+    // rather than a number this compiler made up. A fixed budget would have been
+    // one instruction cheaper and WRONG IN BOTH DIRECTIONS: too large under
+    // `ulimit -s 1024` (the guard page still wins, and the fault is still
+    // unnamed), too small under `ulimit -s 65536` (a program the user
+    // deliberately gave room to would start faulting — the exact regression this
+    // work must not cause).
+    //
+    // WHY NOT A GUARD-PAGE HANDLER, which would have cost ZERO instructions.
+    // Naming a SIGSEGV requires `sigaltstack` + `sigaction` installed before
+    // `main` and a handler that decides whether the faulting address is the
+    // stack's guard region. That is a RUNTIME, and this backend deliberately has
+    // none: `docs/spec/cost.md` records that its only fixed runtime symbols are
+    // `printf` and `puts`, and every other branch target is a user callee. A
+    // handler would put a second entry point, an import, and a signal-safe
+    // writer into every artifact this backend emits. The metered form buys the
+    // same name for five instructions in the prologues of the few functions that
+    // can recurse at all, and nothing anywhere else.
+    //
+    // WHY NOT A DEPTH COUNTER, which is what the fault is NAMED after. A counter
+    // is a load, an add, a store and a compare on the way in and a second
+    // read-modify-write on EVERY way out, including every early `return` — and
+    // it measures the wrong thing, because what runs out is bytes, not levels.
+    // `sp` is the counter, the machine maintains it for free, and one `cmp`
+    // reads it.
+
+    /// §12 `error.depth` — the static half of `tailCallFusible`, asked of the
+    /// DNIR alone.
+    ///
+    /// `tailCallFusible` is asked at the point of EMISSION because two of its
+    /// grounds are only knowable there. This asks every other ground — the two
+    /// declarations and the module roster — before a byte is emitted, which is
+    /// when the metering decision has to be made, because the check it decides
+    /// goes in the PROLOGUE.
+    ///
+    /// It is deliberately the WEAKER predicate. It admits everything
+    /// `tailCallFusible` admits and possibly more, and `keepsAFrameInCycle`
+    /// reads it NEGATED, so erring here costs metering that was not needed
+    /// (instructions) and never metering that was. The one direction it can be
+    /// wrong in is a call this admits and emission then declines: that frame is
+    /// metered by nobody, which is exactly today's behaviour for that shape and
+    /// is recorded as a residual rather than hidden.
+    fn tailCallStaticallyAdmissible(
+        self: *const Arm64Compiler,
+        f: dnir.Function,
+        ins: dnir.Instr,
+        next: dnir.Instr,
+        ret_index: u32,
+    ) bool {
+        if (!self.tailcall) return false;
+        if (self.gate_transport) return false;
+        if (ins.op != .call_direct or next.op != .ret) return false;
+        const result = ins.result orelse return false;
+        const returns_the_call = switch (next.lhs) {
+            .temp => |t| t == result,
+            else => false,
+        };
+        if (!returns_the_call) return false;
+        if (ins.pack_results.len != 0 or ins.record.len != 0 or ins.field.len != 0) return false;
+        if (next.application != null or next.relation != null or next.value != null) return false;
+        if (ins.ty == .f64 or next.ty == .f64) return false;
+        if (f.is_float_kernel or f.ret == .f64 or f.foreign_boundary) return false;
+        if (f.ret_record != null or f.ret_pack.len != 0) return false;
+        const g = self.moduleFunctionNamed(ins.callee) orelse return false;
+        if (g.foreign_boundary or g.is_float_kernel or g.ret == .f64) return false;
+        if (g.ret_record != null or g.ret_pack.len != 0) return false;
+        if (!std.meta.eql(g.ret, f.ret)) return false;
+        const slots = self.gpArgSlotCount(g) orelse return false;
+        if (slots > 8) return false;
+        for (f.blocks) |b| {
+            for (b.instrs) |other| {
+                if (other.op == .br and other.branch_target == ret_index) return false;
+            }
+        }
+        return true;
+    }
+
+    /// Does `f` hold a call to a cycle co-member that KEEPS ITS FRAME?
+    ///
+    /// A tail call is a jump — `examples/table/tailcall.id` runs ten million
+    /// levels in constant stack — so metering the textbook tail-recursive shape
+    /// would put a compare and a branch in the hottest loop this language has,
+    /// ten million times, to test a pointer that never moves. Only a recursive
+    /// call that is not in tail position, or one in tail position the transform
+    /// will not take, can exhaust anything.
+    fn keepsAFrameInCycle(
+        self: *const Arm64Compiler,
+        f: dnir.Function,
+        cycle: *const std.StringHashMapUnmanaged(void),
+    ) bool {
+        var flat_idx: u32 = 0;
+        for (f.blocks) |b| {
+            var bi: usize = 0;
+            while (bi < b.instrs.len) : ({
+                bi += 1;
+                flat_idx += 1;
+            }) {
+                const ins = b.instrs[bi];
+                if (ins.op != .call_direct) continue;
+                if (!cycle.contains(ins.callee)) continue;
+                if (bi + 1 >= b.instrs.len) return true;
+                if (!self.tailCallStaticallyAdmissible(f, ins, b.instrs[bi + 1], flat_idx + 1)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// The metered set: every module function that can reach ITSELF and holds a
+    /// recursive call that keeps its frame.
+    ///
+    /// Reachability is exact rather than conservative because this IR has no
+    /// indirect call. `native_ir.Op` carries `call_direct` and `call_extern` and
+    /// nothing else, so every edge out of a function names its callee, and a
+    /// module with no cycle through `f` bounds every chain through `f` by the
+    /// number of functions in the module. A hundred distinct frames is not a
+    /// stack exhaustion; a hundred thousand copies of one frame is.
+    ///
+    /// Transitive closure by repeated relaxation over an n x n bit matrix. n is
+    /// the function count of ONE module, and the largest in this tree is in the
+    /// low hundreds, so the cubic bound is not worth an SCC pass to avoid.
+    fn computeDepthMeteredSet(self: *Arm64Compiler, functions: []const dnir.Function) Error!void {
+        self.depth_metered_names.clearRetainingCapacity();
+        self.depth_module_meters = false;
+        if (!self.depth_meter) return;
+        const n = functions.len;
+        if (n == 0) return;
+        const reach = try self.alloc.alloc(bool, n * n);
+        defer self.alloc.free(reach);
+        @memset(reach, false);
+        for (functions, 0..) |f, i| {
+            for (f.blocks) |b| {
+                for (b.instrs) |ins| {
+                    if (ins.op != .call_direct) continue;
+                    for (functions, 0..) |g, j| {
+                        if (std.mem.eql(u8, g.name, ins.callee)) reach[i * n + j] = true;
+                    }
+                }
+            }
+        }
+        var changed = true;
+        while (changed) {
+            changed = false;
+            var k: usize = 0;
+            while (k < n) : (k += 1) {
+                var i: usize = 0;
+                while (i < n) : (i += 1) {
+                    if (!reach[i * n + k]) continue;
+                    var j: usize = 0;
+                    while (j < n) : (j += 1) {
+                        if (reach[k * n + j] and !reach[i * n + j]) {
+                            reach[i * n + j] = true;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        var cycle: std.StringHashMapUnmanaged(void) = .empty;
+        defer cycle.deinit(self.alloc);
+        for (functions, 0..) |f, i| {
+            if (reach[i * n + i]) try cycle.put(self.alloc, f.name, {});
+        }
+        if (cycle.count() == 0) return;
+        for (functions) |f| {
+            if (!cycle.contains(f.name)) continue;
+            if (!self.keepsAFrameInCycle(f, &cycle)) continue;
+            try self.depth_metered_names.put(self.alloc, f.name, {});
+        }
+        self.depth_module_meters = self.depth_metered_names.count() != 0;
+    }
+
+    /// The `__DATA,__bss` word holding the metered limit, interned on demand.
+    fn depthLimitSymbol(self: *Arm64Compiler) Error!u32 {
+        if (self.depth_limit_sym) |idx| return idx;
+        // `.` cannot occur in an Idol binding name and is legal in a Mach-O
+        // label, so this word cannot collide with `internGlobal`'s namespace for
+        // any program and the `.s` face still assembles.
+        const idx = try self.internGlobal("idol.depth.limit");
+        self.depth_limit_sym = idx;
+        return idx;
+    }
+
+    /// SYS_write to fd 2, then the SAME abort `emitTrapAbort` raises.
+    ///
+    /// The exit code is 134 and NOT a fresh ordinary one, deliberately. A
+    /// module's answer becomes its process exit status truncated to a byte
+    /// (`_sum(300)` exits 45150 & 0xff = 158), so NO ordinary code is
+    /// unambiguous in this language — the name has to live on stderr, and once
+    /// it does, the status may as well agree with every other deliberate fault
+    /// this backend raises rather than inventing a second convention.
+    ///
+    /// Control never leaves this block, which is what makes clobbering
+    /// x0/x1/x2/x16 safe here for exactly the reason `emitTrapAbort` states.
+    fn emitDepthFault(self: *Arm64Compiler) Error!void {
+        const msg = "idol: error.depth: stack exhausted by non-tail recursion (§12; raise `ulimit -s`, or make the recursion a tail call)\n";
+        const sym = try self.internString(msg);
+        const movz = struct {
+            fn word(reg: u5, imm: u16) u32 {
+                return 0xd2800000 | (@as(u32, imm) << 5) | @as(u32, reg);
+            }
+        }.word;
+        try self.emitFmt(movz(0, 2), "mov x0, #{d}", .{2});
+        try self.emitAdrpAdd(1, sym);
+        try self.emitFmt(movz(2, @intCast(msg.len)), "mov x2, #{d}", .{msg.len});
+        try self.emitFmt(movz(16, 4), "mov x16, #{d}", .{4});
+        try self.emit(0xd4001001, "svc #0x80");
+        try self.emitTrapAbort();
+    }
+
+    /// The metered prologue: FIVE instructions on the path that is taken.
+    ///
+    ///     adrp x16, limit@PAGE
+    ///     add  x16, x16, limit@PAGEOFF
+    ///     ldr  x16, [x16]
+    ///     cmp  sp, x16
+    ///     b.hi .Lok              ; unsigned: still above the floor
+    ///     <fault>                ; cold, jumped over, never executed
+    ///   .Lok:
+    ///
+    /// `cmp sp, x16` reads the stack pointer DIRECTLY — SUBS accepts SP as its
+    /// first operand in the extended-register form — so no scratch register is
+    /// moved and no value is spilled to make room for one. x16 is IP0, which the
+    /// ABI reserves for exactly this and which `claimReg` never hands out, so the
+    /// probe pass and the real pass measure the same callee-saved set with the
+    /// check present in both.
+    ///
+    /// THE UNSIGNED COMPARE IS THE ONE THAT IS RIGHT. A stack address is a
+    /// pointer, not a number with a sign; `b.gt` would let a limit above
+    /// 0x7fff… through as "below". `hi` is the same choice, for the same reason,
+    /// that `emitIndexBoundsCheck` makes.
+    ///
+    /// ZERO IS THE DISABLED LIMIT and it is what a zerofill word already holds,
+    /// so a module whose entry never ran the initializer takes `b.hi` every time
+    /// — `sp` is never zero — and behaves exactly as it does now.
+    fn emitDepthCheck(self: *Arm64Compiler) Error!void {
+        const sym = try self.depthLimitSymbol();
+        try self.emitAdrpAdd(16, sym);
+        try self.emitFmt(0xf9400000 | (@as(u32, 16) << 5) | 16, "ldr x{d}, [x{d}]", .{ 16, 16 });
+        try self.emit(0xeb3063ff, "cmp sp, x16");
+        const cond: u32 = @intFromEnum(Condition.hi);
+        const branch_off: u32 = @intCast(self.code.items.len);
+        try self.emitFmt(0x54000000 | cond, "b.hi .Lduo_depth_ok_{d}", .{self.depth_metered_count});
+        try self.emitDepthFault();
+        // The fault block is jumped over by the SAME branch that tests the
+        // limit, exactly as `emitIndexBoundsCheck` jumps its trap — no second
+        // unconditional branch, and the cold bytes cost nothing at run time.
+        const over: u32 = (@as(u32, @intCast(self.code.items.len)) - branch_off) / 4;
+        if (over >= (1 << 18)) return self.refuse(@src());
+        std.mem.writeInt(
+            u32,
+            self.code.items[branch_off..][0..4],
+            0x54000000 | (over << 5) | cond,
+            .little,
+        );
+        try self.asm_text.print(self.alloc, ".Lduo_depth_ok_{d}:\n", .{self.depth_metered_count});
+        self.depth_metered_count += 1;
+    }
+
+    /// Run ONCE, at the top of the process entry: publish the lowest `sp` a
+    /// metered prologue may stand on.
+    ///
+    ///     limit = sp_at_entry - (min(RLIMIT_STACK.rlim_cur, 8 MiB when absurd
+    ///                                or unavailable) - 64 KiB)
+    ///
+    /// `getrlimit` is BSD syscall 194 and answers into a two-word buffer; Darwin
+    /// reports failure in the CARRY flag, so the fallback is a `csel` and not a
+    /// branch. The 64 KiB margin is what the fault block itself and the frame
+    /// that trips the check stand on, and it is generous by an order of
+    /// magnitude over the largest prologue this backend emits.
+    ///
+    /// x0 and x1 are the syscall's argument registers AND the entry's incoming
+    /// `argc`/`argv`, so both are saved and reloaded around it. Everything else
+    /// this touches is x16/x17 (IP0/IP1), which no allocation reaches.
+    fn emitDepthLimitInit(self: *Arm64Compiler) Error!void {
+        const sym = try self.depthLimitSymbol();
+        const movz = struct {
+            fn word(reg: u5, imm: u16, shift: u2) u32 {
+                return 0xd2800000 | (@as(u32, shift) << 21) | (@as(u32, imm) << 5) | @as(u32, reg);
+            }
+        }.word;
+        // getrlimit(RLIMIT_STACK = 3, &buf) into a 32-byte scratch that also
+        // parks argc/argv.
+        try self.emit(0xd10083ff, "sub sp, sp, #32");
+        try self.emitStrSp(0, 16);
+        try self.emitStrSp(1, 24);
+        try self.emitFmt(movz(0, 3, 0), "mov x0, #{d}", .{3});
+        try self.emit(0x910003e1, "mov x1, sp");
+        try self.emitFmt(movz(16, 194, 0), "mov x16, #{d}", .{194});
+        try self.emit(0xd4001001, "svc #0x80");
+        try self.emitFmt(0xf9400000 | (@as(u32, 31) << 5) | 17, "ldr x17, [sp]", .{});
+        try self.emitLdrSp(0, 16);
+        try self.emitLdrSp(1, 24);
+        try self.emit(0x910083ff, "add sp, sp, #32");
+        // 8 MiB, the Darwin main-thread default, as the fallback for both the
+        // failed call (carry set) and an rlim_cur at or past 2 GiB — which is how
+        // RLIM_INFINITY arrives and is not a budget anything can stand on.
+        try self.emitFmt(movz(16, 0x80, 1), "mov x16, #{d}", .{0x800000});
+        try self.emit(0x9a912211, "csel x17, x16, x17, cs");
+        try self.emit(0xd35ffe2f, "lsr x15, x17, #31");
+        try self.emit(0xf10001ff, "cmp x15, #0");
+        try self.emit(0x9a911211, "csel x17, x16, x17, ne");
+        // Reserve the margin, then floor = sp - budget.
+        try self.emit(0xd1404231, "sub x17, x17, #16, lsl #12");
+        try self.emit(0x910003f0, "mov x16, sp");
+        try self.emit(0xcb110210, "sub x16, x16, x17");
+        try self.emitAdrpAdd(17, sym);
+        try self.emitFmt(0xf9000000 | (@as(u32, 17) << 5) | 16, "str x{d}, [x{d}]", .{ 16, 17 });
+    }
+
     fn emitBl(self: *Arm64Compiler, target: []const u8) Error!void {
         const offset: u32 = @intCast(self.code.items.len);
         const link_name = try linkerSymbolName(self.alloc, target);
@@ -9745,6 +10121,12 @@ fn emitArm64FromDnirLicensed(
     if (std.c.getenv("IDOL_NO_TAILCALL")) |raw| {
         if (std.mem.eql(u8, std.mem.span(raw), "1")) compiler.tailcall = false;
     }
+    // §12 `error.depth`'s SEVERING CONTROL. `IDOL_NO_DEPTH=1` restores the
+    // unmetered prologue, and with it the unnamed SIGSEGV, so the two arms of
+    // "does the meter cost anything / does it catch anything" are one binary.
+    if (std.c.getenv("IDOL_NO_DEPTH")) |raw| {
+        if (std.mem.eql(u8, std.mem.span(raw), "1")) compiler.depth_meter = false;
+    }
     if (m.graph) |graph| {
         if (graph.gateTransportModule()) {
             compiler.gate_transport = true;
@@ -9784,6 +10166,15 @@ fn emitArm64FromDnirLicensed(
     // a jump. Off unless asked for.
     if (std.c.getenv("IDOL_TAILCALL_REPORT") != null) {
         std.debug.print("tailcall admitted={d}\n", .{compiler.tailcall_admitted});
+    }
+    // §12 `error.depth` CENSUS: how many of this module's functions carry the
+    // metered prologue. Off unless asked for. The number that matters is how
+    // FEW: it is the whole cost argument.
+    if (std.c.getenv("IDOL_DEPTH_REPORT") != null) {
+        std.debug.print(
+            "depth metered={d} of {d}\n",
+            .{ compiler.depth_metered_count, m.functions.len },
+        );
     }
     var output = try compiler.finish();
     output.graph = m.graph;

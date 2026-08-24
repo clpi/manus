@@ -218,8 +218,10 @@ rather than a struct. Do not budget from this table against the current
 binary. Budget from §7.
 
 The tail-call row was the seventh and is no longer wrong under the direct
-backend — see §7, which also states the shapes it still declines and the
-non-tail row's `error.depth`, which remains unbuilt.
+backend — see §7, which also states the shapes it still declines. The non-tail
+row's `error.depth` is now METERED and NAMED under the direct backend and is
+still not ROUTED, because there is no unwinding to route it through; §7 gives
+the measurement, the cost, and the three shapes it does not reach.
 
 ---
 
@@ -356,11 +358,106 @@ quoted from generated output are **C**, not Duo.
   object; and gate transport. `IDOL_NO_TAILCALL=1` severs the whole transform
   and `IDOL_TAILCALL_REPORT=1` counts what it admitted.
 
-  THE NON-TAIL ROW IS STILL UNBUILT. There is no depth metering and no routed
-  `error.depth`, so genuine non-tail recursion deep enough to exhaust the stack
-  is still a SIGSEGV rather than a named fault, and the fault contract's "No
-  SIGSEGV as an API" is still owed there. §12's tail-call guarantee no longer
-  stands behind that hole; nothing else has moved.
+  WASM DOES NOT CONVERT BY DEFAULT, AND THAT IS A POLICY POSITION. The wasm
+  backend can now emit `return_call` (0x12) for the same
+  `call_direct -> T ; ret T` shape, admitted by wasm's own rule — the callee's
+  result types must equal this function's, and the callee's declared return
+  descriptor must equal this one's, since a `return_call` has no "after" in
+  which to emit the narrowing refit `ret` emits. Measured at idol cdc104b1 +
+  this work, `examples/table/tailcall.id` under `--backend=wasm`: depth 100
+  answers 100 either way; depths 100,000 and TEN MILLION are
+  `wasm trap: call stack exhausted`, exit 134, under the MVP emission and
+  ANSWER `100000` / `10000000` with `return_call`. Installed wasmtime 47.0.3
+  accepts 0x12 with no flag.
+  It is SEVERED BY DEFAULT because emitting it changes WHICH RUNTIMES ACCEPT
+  THE OUTPUT, and that is not a fact this backend can settle alone: `0x12` is
+  not in the MVP, wabt's `wasm-validate` rejects it without
+  `--enable-tail-call`, and the in-tree engine `tools/wasm/src/engine.id` exits
+  70 on an opcode it does not implement (and its `block`-end scanner would
+  mis-skip the funcidx, which is worse than refusing). `IDOL_WASM_TAILCALL=1`
+  arms it; with it unset the emitted bytes are IDENTICAL to before over all 190
+  corpus modules that compile to wasm. What the decision needs is a statement of
+  the accepted-runtime set, and if that set keeps wabt or the in-tree engine in
+  it, the engine needs `return_call` in three places (opcode constant, the
+  `himm` immediate table, and the `block` forward-end scanner) before the
+  default can move.
+
+  THE NON-TAIL ROW IS BUILT AND IS NOT ROUTED. There is now depth metering and
+  a NAMED fault; there is no unwinding, so `error.depth` is terminal rather
+  than routed and the §3 row's "routed" is still owed. What the fault does:
+  writes `idol: error.depth: stack exhausted by non-tail recursion …` to fd 2
+  and raises SIGABRT, exiting 134 — the same status every other deliberate
+  fault this backend raises. It is NOT a fresh ordinary exit code on purpose: a
+  module's answer becomes its process exit status truncated to a byte
+  (`_sum(300)` exits 45150 & 0xff = 158), so no ordinary code is unambiguous in
+  this language and the NAME has to live on stderr. The fault contract's "No
+  SIGSEGV as an API" is met for this row; SIGABRT is deliberate, as the division
+  row above already records.
+
+  WHERE THE LIMIT COMES FROM, and it is the real one. The process entry asks the
+  kernel for `RLIMIT_STACK` (BSD syscall 194, failure in the carry flag),
+  subtracts a 64 KiB margin, and publishes `sp_at_entry - budget` into one
+  `__DATA,__bss` word. A fixed budget would have been wrong in BOTH directions,
+  and both are measured. Base is idol cdc104b1; `_sum(n) = n + _sum(n-1)`:
+
+      ulimit -s   depth    before                 after
+      2048        20,000   139, empty stderr      134, error.depth NAMED
+      2048        60,000   139, empty stderr      134, error.depth NAMED
+      8176        20,000   200010000, exit 16     200010000, exit 16
+      8176        60,000   1800030000, exit 48    1800030000, exit 48
+      8176       100,000   139, empty stderr      134, error.depth NAMED
+      65520       60,000   1800030000, exit 48    1800030000, exit 48
+      65520      100,000   5000050000, exit 80    5000050000, exit 80
+
+  Every row that answered before answers identically after, and every row that
+  died unnamed now has a name. The last row is the one a fixed 8 MiB budget
+  would have broken: a user who raised `ulimit -s` to run a deep recursion keeps
+  it.
+
+  ONLY FRAMES THAT CAN RECURSE ARE METERED, and that is the whole cost argument.
+  A function is metered iff it can reach ITSELF in the module call graph — exact,
+  because `native_ir.Op` has no indirect call — AND holds a recursive call that
+  KEEPS ITS FRAME, i.e. one not in tail position or one the §12 TAIL transform
+  will not take. Metering the textbook tail-recursive shape would have put a
+  compare and a branch in `tailcall.id`'s ten-million-iteration loop to test a
+  pointer that never moves; measured, `tailcall.id` meters 0 of its 2 functions
+  and still answers `10000000` in 0.01s of user time.
+  MEASURED over the corpus: 27 metered functions across the 255 programs that
+  compile to assembly, and 245 of those 255 are BYTE FOR BYTE unchanged. The
+  emitted instruction count goes 62,191 -> 62,650, +459 (+0.74%) — but 12 of the
+  17 instructions each metered function gains are the COLD fault block, jumped
+  over by the same branch that tests the limit, so the taken path gains FIVE:
+
+      adrp x16, limit@PAGE ; add x16, x16, limit@PAGEOFF ; ldr x16, [x16]
+      cmp sp, x16 ; b.hi .Lok
+
+  `cmp sp, x16` reads the stack pointer directly, so no scratch register moves;
+  x16 is IP0, which `claimReg` never hands out, so the probe pass and the real
+  pass still measure the same callee-saved set. The DYNAMIC cost, measured on
+  the worst metered shape in the corpus — `examples/fib.id`, naive fib(40), 331
+  million calls of a five-instruction body — is 0.438s -> 0.452s, **+3.2%**, and
+  it is paid by nothing that does not genuinely non-tail recurse.
+  A GUARD PAGE WOULD HAVE COST ZERO and was not taken: naming a SIGSEGV needs
+  `sigaltstack` + `sigaction` installed before `main` and a signal-safe handler,
+  i.e. a RUNTIME, and this backend deliberately has none (see the row below —
+  its only fixed runtime symbols are `printf` and `puts`). A DEPTH COUNTER, which
+  is what the fault is named after, was not taken either: it costs a
+  read-modify-write on every way IN and every way OUT including every early
+  `return`, and it measures levels where what runs out is bytes.
+  `IDOL_NO_DEPTH=1` severs the whole thing and produces BYTE-IDENTICAL assembly
+  to cdc104b1; `IDOL_DEPTH_REPORT=1` counts what it metered.
+
+  THREE RESIDUALS, NAMED RATHER THAN HIDDEN. (1) `error.depth` is terminal, not
+  routed — §3's row says "routed" and there is no unwinding to route it through.
+  (2) `--emit asm` and `--emit obj` are handed `entry = null`, so those faces
+  carry the metered prologues WITHOUT the initializer; the limit word is then
+  zero, `sp` is never zero, and the check is inert — today's behaviour, and the
+  same divergence `needsProcessExitF64Coerce` already has on those faces. The
+  same applies to a metered function in a linked LIBRARY object, whose limit word
+  is a separate local symbol nothing initializes. (3) A syntactically-tail
+  recursive call that the emitter then DECLINES (the emission-state grounds
+  `tailCallFusible` checks and the static predicate cannot) leaves its function
+  unmetered; that frame is metered by nobody and still exhausts unnamed.
 - **The direct ARM64 backend has no heap opcode.** Its only allocation
   instruction is `alloc_slots`, and that arm lowers to a stack-pointer offset
   (`src/native_backend.zig`). The only fixed runtime symbols it can branch to

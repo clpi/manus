@@ -305,6 +305,15 @@ const behaviour_env_table = [_]BehaviourEnvRow{
     .{ "IDOL_IFCONV_REPORT", .inert },
     .{ "IDOL_IFCONV_TRACE", .inert },
     .{ "IDOL_TIGHTDEF_REPORT", .inert },
+    // Census names. They PRINT and emit nothing, so they are inert for the
+    // same reason `IDOL_IFCONV_REPORT` is, and must not decline the cache: a
+    // measurement that cannot be taken warm is a measurement of the cold path.
+    // Their SEVERING siblings — `IDOL_NO_DEPTH`, `IDOL_WASM_TAILCALL` — are
+    // deliberately absent, so the fail-closed default classifies them
+    // `.affects` and the two arms decline each other's cache, exactly as
+    // `IDOL_NO_TAILCALL` does.
+    .{ "IDOL_DEPTH_REPORT", .inert },
+    .{ "IDOL_WASM_TAILCALL_REPORT", .inert },
     .{ "IDOL_TRACE", .inert },
     // Not read by the compiler at all — build harness and lock plumbing.
     // Listed so an ordinary gate run does not lose the cache to a name the
