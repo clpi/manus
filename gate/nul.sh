@@ -51,6 +51,11 @@
 #       control: it fails on every commit before the repair.
 #   §1b The same value bound at MODULE scope, whose determinacy has a different
 #       producer and was still answering 1 after §1 first went green.
+#   §1c The same value bound AND MEASURED at module scope — the shape
+#       `examples/table/str/nul.id` carries. Its `:len()` is lowered by
+#       `root`, which builds the one context in `dnir_lower.zig`
+#       with no enclosing block, so the determined-length fact had nothing to
+#       read and this face was still answering 1 after §1b went green.
 #   §2  The two realizations AGREE, byte for byte on stdout. Agreement alone is
 #       not correctness — that is how this defect survived — so §1 owns the
 #       answer and §2 owns the agreement, separately.
@@ -216,6 +221,34 @@ if build modscope; then
   [ "$mdirect" = "$wantmod" ] || bad "§1b direct module scope: got '$mdirect', the oracle says '$wantmod'"
   [ "$mwasm" = "$wantmod" ] || bad "§1b wasm module scope: got '$mwasm', the oracle says '$wantmod'"
   [ "$mdirect" != "$wantmod" ] || [ "$mwasm" != "$wantmod" ] || note "§1b module scope, both realizations: $mdirect"
+fi
+
+# ─── §1c bound AND MEASURED at module scope ────────────────────────────────
+# A THIRD PRODUCER, AND THE ONE THE CORPUS ROW USES. §1 measures inside a
+# relation body and §1b measures a module binding FROM a relation body; both are
+# lowered by `lowerFunction`, which hands `determinedTextLen` the enclosing
+# block it needs. `examples/table/str/nul.id` does neither — the `:len()` itself
+# sits at file scope, so it is lowered by `root`, the one LowerCtx
+# built with no `body`. That absent block was read as an absent FACT, so every
+# module-scope name fell through to the NUL scan and this shape printed 1 and
+# exited 1 on both realizations while §1 and §1b were already green.
+#
+# THE EXIT STATUS IS CHECKED, NOT ONLY THE BYTES. `print(…)` is void-shaped, so
+# the module's result walks back to the last value-carrying binding: the answer
+# is the exit status here as well as the stdout, and `run` above reports a
+# non-zero status as its own failure.
+cat > "$work/entry.id" <<'ID'
+s = "a\0b"
+n = s:len()
+print("{n}")
+0
+ID
+if build entry; then
+  run '§1c direct' "$work/entry.bin";           edirect=$ans
+  run '§1c wasm' "$wasmrun" "$work/entry.wasm"; ewasm=$ans
+  [ "$edirect" = '3' ] || bad "§1c direct, bound and measured at module scope: got '$edirect', the oracle says '3'"
+  [ "$ewasm" = '3' ] || bad "§1c wasm, bound and measured at module scope: got '$ewasm', the oracle says '3'"
+  [ "$edirect" != '3' ] || [ "$ewasm" != '3' ] || note "§1c module-scope read, both realizations: $edirect"
 fi
 
 # ─── §2 the two realizations agree ─────────────────────────────────────────
@@ -393,8 +426,8 @@ fi
 # reader sees a green line and believes something ran.
 if [ "$measured" -eq 0 ]; then
   bad '§0 measured ZERO programs — every subject failed to build, so nothing above is a finding'
-elif [ "$measured" -lt 5 ]; then
-  bad "§0 measured only $measured of 5 subjects"
+elif [ "$measured" -lt 6 ]; then
+  bad "§0 measured only $measured of 6 subjects"
 else
   note "§0 measured $measured subjects on both realizations"
 fi

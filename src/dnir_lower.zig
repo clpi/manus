@@ -8549,7 +8549,30 @@ fn determinedTextLen(ctx: *LowerCtx, expr: *const ast.Expr) ?i64 {
         return @intCast(bytes.len);
     };
     if (slot < ctx.param_slots) return null;
-    const body = ctx.body orelse return null;
+    // NO ENCLOSING BLOCK MEANS THE MODULE ENTRY, AND ITS SLOTS ARE THE MODULE'S
+    // OWN BINDINGS. `root` (the file-scope process entry) builds its context
+    // without a `body`
+    // (there are only two `LowerCtx` constructions in this file, and it is the
+    // one that omits it), so the one-binding scan below had nothing to walk and
+    // this returned `null` for EVERY module-scope name. That is a missing
+    // measurement read as a missing fact, and it is the whole reason
+    // `examples/table/str/nul.id` — `s = "a\0b"` bound AND measured at file
+    // scope — still answered 1 on both realizations after the relation-body
+    // face was repaired: `s` has a module slot, so the lookup above found one
+    // and fell into this arm instead of reaching the module-const arm that
+    // already held the right answer.
+    //
+    // The module binding has its OWN one-write proof and it is the STRONGER of
+    // the two. `ModuleConsts.strs` is gated on `moduleConstIsStable`, which
+    // counts every write to the name in the module INCLUDING the ones inside
+    // relation bodies; `textBindInBlock` sees only the block handed to it. So
+    // asking the module fact here is not a widening — a name a relation
+    // rebinds never entered that map, and a name bound twice at file scope
+    // never entered it either.
+    const body = ctx.body orelse {
+        const bytes = ctx.module_consts.strs.get(name) orelse return null;
+        return @intCast(bytes.len);
+    };
     var found: TextBind = .{};
     textBindInBlock(body, name, &found);
     if (found.opaque_bind or found.writes != 1) return null;
@@ -15975,6 +15998,61 @@ test "dnir_lower: call result class comes from graph descriptor" {
     try std.testing.expect(saw_integer);
     try std.testing.expect(saw_string);
     try std.testing.expect(saw_length);
+}
+
+test "dnir_lower: the module ENTRY carries a determined length too" {
+    // THE ANSWER IS THE ASSERTION, NOT THE COMPILE.
+    //
+    // `examples/table/str/nul.id` binds AND measures at file scope, so the
+    // `:len()` is lowered by `root` — the one `LowerCtx` in this file built
+    // without a `body` block. `determinedTextLen` read that missing
+    // block as a missing FACT and returned null for every module-scope name, so
+    // the length fell through to `str_len`, which is a scan to the first NUL in
+    // both realizations. Measured before this repair: the fixture printed 1 and
+    // exited 1, on direct AND on Wasm, wanting 3.
+    //
+    // The sibling test above proves the RELATION-body face. This one is a
+    // separate producer of the same fact and was still wrong after that one
+    // went green, which is exactly why it is its own subject.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\s = "a\0b"
+        \\n = s:len()
+        \\n
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "entry_len.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&mod);
+    const m = try lowerModule(alloc, &mod);
+
+    var saw_entry = false;
+    for (m.functions) |f| {
+        if (!std.mem.eql(u8, f.name, "main")) continue;
+        saw_entry = true;
+        var scans: usize = 0;
+        var carried_three = false;
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if (ins.op == .str_len) scans += 1;
+                for ([_]dnir.Value{ ins.lhs, ins.rhs }) |v| {
+                    if (v == .i64 and v.i64 == 3) carried_three = true;
+                }
+            }
+        }
+        // No scan, AND the answer 3 is present as an immediate. Asserting only
+        // the absence of `str_len` would pass on an entry that computed
+        // nothing at all.
+        try std.testing.expectEqual(@as(usize, 0), scans);
+        try std.testing.expect(carried_three);
+    }
+    try std.testing.expect(saw_entry);
 }
 
 test "dnir_lower: a determined length is carried, an undetermined one is scanned" {
