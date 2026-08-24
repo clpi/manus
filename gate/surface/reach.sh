@@ -269,8 +269,7 @@ for target in .metal .cuda .webgpu .nosuchdevice; do
     printf '  @device(%-14s run exit=%s\n' "$target)" "$a"
     dev_answers="$dev_answers $a"
 done
-uniq_answers=$(printf '%s\n' $dev_answers | sort -u | grep -c .)
-if [ "$uniq_answers" -eq 1 ] && [ "${dev_answers# }" = "42 42 42 42" ]; then
+if [ "${dev_answers# }" = "42 42 42 42" ]; then
     printf '  verdict  every device target answers 42 — @device selects no realization\n'
 else
     note "§2b @device answers diverged ($dev_answers) — the directive is no longer inert"
@@ -326,7 +325,7 @@ while IFS= read -r c; do
     ( cd "$cli" && "$idol" "$c" t.id >cmd.log 2>&1 </dev/null )
     grep -q "unknown command" "$cli/cmd.log" && dead="$dead $c"
 done <"$work/cmds"
-printf '  commands documented by `idol help`: %s\n' "$ncmd"
+printf '  commands documented by "idol help": %s\n' "$ncmd"
 if [ -n "$dead" ]; then
     printf '  DEAD — documented, never dispatched:%s\n' "$dead"
 else
@@ -408,5 +407,7 @@ else
 fi
 
 [ "$fail" -eq 0 ] || exit 1
+nsys=0
+for sys in $systems; do nsys=$((nsys + 1)); done
 printf 'surface/reach: pass — %s subjects across %s subsystems, census matches ledger\n' \
-    "$total_subjects" "$(printf '%s\n' $systems | grep -c .)"
+    "$total_subjects" "$nsys"
