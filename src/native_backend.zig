@@ -957,6 +957,15 @@ const Arm64Compiler = struct {
     /// number that decides whether publishing a termination fact would change a
     /// single decision. See `gate/speculation.sh`.
     ifconv_refused_diverge_masked: u32 = 0,
+    /// UNDER `IDOL_TERMINATION_ASSUME=1` ONLY: arms that reached the END of the
+    /// admission chain carrying an assumed-terminating call. This is the number
+    /// a termination producer would be worth, and it is measured WITHOUT the
+    /// compiler ever admitting one — see `terminationAssumed`.
+    ifconv_termination_would_admit: u32 = 0,
+    /// Per-arm: this chain contains a call that only got past the termination
+    /// ground because the control assumed it away. Reset at the top of
+    /// `ifConvArmChainAdmissible`; it makes the successful return REFUSE.
+    ifconv_assumed_call: bool = false,
     ifconv_refused_cap: u32 = 0,
     ifconv_refused_latency: u32 = 0,
     ifconv_candidates: u32 = 0,
@@ -7940,12 +7949,31 @@ const Arm64Compiler = struct {
     /// `ifconv_refused_diverge_masked` says why: an independent ground already
     /// refuses the same arms.
     ///
-    /// IT IS A CONTROL AND NEVER A POLICY. It is read from the environment,
-    /// by value, so both arms of a measurement carry the name and neither is
-    /// silently the default; nothing in the tree sets it. Assuming termination
+    /// IT CANNOT ADMIT ANYTHING, AND THAT IS THE WHOLE DESIGN. The first
+    /// version of this control let the assumed arm fall through to the
+    /// remaining grounds and, had they all passed, would have CONVERTED. That
+    /// put a measuring instrument on the production path: any compiler process
+    /// that inherited the name would have silently lost the refusal for every
+    /// compilation, which is the same class of defect as an environment
+    /// variable the artifact cache does not answer for. Assuming termination
     /// about a relation that diverges is exactly the miscompile the refusal
-    /// above exists to prevent, which is why the assumption is a measuring
-    /// instrument rather than a flag anyone may turn on.
+    /// exists to prevent, so the assumption may never reach an admission.
+    ///
+    /// What it does instead: the arm chain CONTINUES past the termination
+    /// ground so the next ground can be observed, and `ifconv_assumed_call`
+    /// makes the successful return refuse with `termination-would-admit`. The
+    /// flag can therefore only ever turn one refusal into a different refusal.
+    /// The artifact is inert by CONSTRUCTION, and `gate/speculation.sh` still
+    /// byte-compares both arms, because a control whose inertness is only
+    /// argued is a control nobody checked.
+    ///
+    /// So the reading is a COUNTER, not a diff: `termination_would_admit` is
+    /// how many arms a real producer would have unblocked. Zero means the
+    /// producer would govern nothing.
+    ///
+    /// Read by VALUE, so both arms of a measurement carry the name and neither
+    /// is silently the default. Nothing in the tree sets it; `main.zig`
+    /// classifies it `.affects` so the artifact cache answers for it.
     fn terminationAssumed() bool {
         const raw = std.c.getenv("IDOL_TERMINATION_ASSUME") orelse return false;
         return std.mem.eql(u8, std.mem.span(raw), "1");
@@ -7962,6 +7990,7 @@ const Arm64Compiler = struct {
         at: u32,
         store: dnir.Instr,
     ) bool {
+        self.ifconv_assumed_call = false;
         if (ops.len > if_conv_arm_op_cap) {
             self.ifconv_refusal = "arm-op-cap";
             return false;
@@ -7998,7 +8027,7 @@ const Arm64Compiler = struct {
             // AND THE FACT THAT IS NOT PUBLISHED AT ALL. See
             // `armInstrEffectAdmissible`: `effect: none` is measured to hold
             // for a relation that never returns.
-            if (dnirInstrIsCall(op) and !terminationAssumed()) {
+            if (dnirInstrIsCall(op)) {
                 self.ifconv_refusal = "no-termination-fact";
                 self.ifconv_refused_diverge += 1;
                 // AND WHETHER THAT REFUSAL WAS LOAD-BEARING. The lineage rule
@@ -8010,7 +8039,12 @@ const Arm64Compiler = struct {
                 if (op.application != null or op.relation != null or op.value != null) {
                     self.ifconv_refused_diverge_masked += 1;
                 }
-                return false;
+                // THE CONTROL DOES NOT RETURN HERE; it carries. See
+                // `terminationAssumed`: continuing lets the NEXT ground be
+                // observed, and the carry flag guarantees the chain still
+                // refuses even if every remaining ground passes.
+                if (!terminationAssumed()) return false;
+                self.ifconv_assumed_call = true;
             }
             if (op.application != null or op.relation != null or op.value != null) {
                 // Effect-free by the graph, and still refused: the collapsed
@@ -8082,6 +8116,14 @@ const Arm64Compiler = struct {
                 self.ifconv_refusal = "f64";
                 return false;
             }
+        }
+        // THE ASSUMPTION NEVER ADMITS. Every other ground passed, so a real
+        // termination producer WOULD have unblocked this arm: count it, and
+        // refuse anyway.
+        if (self.ifconv_assumed_call) {
+            self.ifconv_refusal = "termination-would-admit";
+            self.ifconv_termination_would_admit += 1;
+            return false;
         }
         return true;
     }
@@ -9348,7 +9390,7 @@ fn emitArm64FromDnirLicensed(
     // asserted.
     if (std.c.getenv("IDOL_IFCONV_REPORT") != null) {
         std.debug.print(
-            "ifconv2 two_sided_ifs={d} admitted={d} refused={d} (arm_op_cap={d} latency={d} trap={d} effect_not_none={d} no_termination_fact={d} no_termination_fact_masked={d} lineage={d})\n",
+            "ifconv2 two_sided_ifs={d} admitted={d} refused={d} (arm_op_cap={d} latency={d} trap={d} effect_not_none={d} no_termination_fact={d} no_termination_fact_masked={d} termination_would_admit={d} lineage={d})\n",
             .{
                 compiler.ifconv_admitted + compiler.ifconv_candidates,
                 compiler.ifconv_admitted,
@@ -9359,6 +9401,7 @@ fn emitArm64FromDnirLicensed(
                 compiler.ifconv_refused_effect_unknown,
                 compiler.ifconv_refused_diverge,
                 compiler.ifconv_refused_diverge_masked,
+                compiler.ifconv_termination_would_admit,
                 compiler.ifconv_refused_lineage,
             },
         );

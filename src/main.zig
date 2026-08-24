@@ -336,6 +336,17 @@ const behaviour_env_table = [_]BehaviourEnvRow{
     .{ "IDOL_UNSAFE_TRUNC_DIVREM", .affects },
     .{ "IDOL_HOME_BUDGET", .affects },
     .{ "IDOL_NO_TIGHTDEF", .affects },
+    // THE TERMINATION COUNTERFACTUAL, and it runs the OPPOSITE WAY to
+    // `IDOL_EFFECT_SEVER` above. There is no termination producer to sever, so
+    // the control ASSUMES the strongest answer the fact could give — every
+    // applied relation terminates — and `gate/speculation.sh` requires the
+    // artifact to come out UNCHANGED. `.affects` is the right row even though
+    // the measured answer is "no bytes move": the classification is a claim
+    // about what the flag can reach, not about what one corpus measured, and
+    // this one reaches an if-conversion admission decision. A `.inert` row
+    // here would be the mistake `IDOL_PROBE_NONNEG_DIVISOR` records — a claim
+    // about the flag made from a program that never got to it.
+    .{ "IDOL_TERMINATION_ASSUME", .affects },
     // MEASURED, not assumed: with a RUNTIME divisor this flag replaces the
     // eight-instruction floored correction with a five-instruction one, and
     // it was classified `.inert` here until the byte comparison was run on a
