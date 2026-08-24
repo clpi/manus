@@ -47,7 +47,6 @@
 ///   @comp.sql           — SQL DDL to C struct
 ///   @comp.lua           — compile-time Lua execution
 ///   @comp.schema        — schema generation
-///   @comp.codegen       — raw codegen injection
 ///   @comp.ffi           — FFI generation
 ///   @comp.wasm          — embed WASM bytes as const uint8_t[] (module directive)
 ///   @comp.make.type     — type construction
@@ -394,9 +393,6 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "meta.foreign", .internal = "__foreign" },
     .{ .public = "comp.foreign", .internal = "__foreign" },
     .{ .public = "compiler.foreign", .internal = "__foreign" },
-    .{ .public = "meta.codegen", .internal = "__codegen" },
-    .{ .public = "comp.codegen", .internal = "__codegen" },
-    .{ .public = "compiler.codegen", .internal = "__codegen" },
     .{ .public = "meta.schema", .internal = "__schema" },
     .{ .public = "comp.schema", .internal = "__schema" },
     .{ .public = "compiler.schema", .internal = "__schema" },
@@ -661,9 +657,6 @@ const directives = [_]DirectiveEntry{
     .{ .public = "meta.foreign", .canonical = "foreign" },
     .{ .public = "comp.foreign", .canonical = "foreign" },
     .{ .public = "compiler.foreign", .canonical = "foreign" },
-    .{ .public = "meta.codegen", .canonical = "codegen" },
-    .{ .public = "comp.codegen", .canonical = "codegen" },
-    .{ .public = "compiler.codegen", .canonical = "codegen" },
     .{ .public = "meta.embed.json", .canonical = "embed.json" },
     .{ .public = "comp.embed.json", .canonical = "embed.json" },
     .{ .public = "compiler.embed.json", .canonical = "embed.json" },
@@ -898,7 +891,6 @@ pub fn isModuleDirective(name: []const u8) bool {
     const bare_aliases = [_][]const u8{
         "pipeline",
         "foreign",
-        "codegen",
         "wasm",
         "sql",
         "lua",
@@ -1216,8 +1208,6 @@ pub fn catalogCategory(path: []const u8) []const u8 {
         std.mem.startsWith(u8, path, "comp.rewrite.") or
         std.mem.eql(u8, path, "meta.foreign") or
         std.mem.eql(u8, path, "comp.foreign") or
-        std.mem.eql(u8, path, "meta.codegen") or
-        std.mem.eql(u8, path, "comp.codegen") or
         std.mem.eql(u8, path, "meta.ffi") or
         std.mem.eql(u8, path, "comp.ffi"))
         return "transform";

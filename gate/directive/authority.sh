@@ -10,7 +10,7 @@
 #   This gate owns the AUTHORITY side, in `src/`, which that ledger explicitly
 #   does not touch. Compatibility aliases and positive source teaching can keep
 #   a retired family authoritative after its `@comp.*` uses reach zero. These
-#   four rules gate that residue.
+#   five rules gate that residue.
 #
 # THE LAW. docs/metaprogramming.md: metaprogramming operates on graph-owned
 # identities, relations, facts, dependencies, demands, laws, worlds, provenance
@@ -22,7 +22,7 @@
 # docs/spec/canonical.md 25 lists `@(comp|host|runtime).` as a hard lexical
 # reject pattern.
 #
-# FOUR RULES:
+# FIVE RULES:
 #   (B) CATALOG. Dotted directive entries in src/meta_module.zig may not EXCEED
 #       the pinned budget. The ledger next door counts `.id` source only, so the
 #       Zig-side catalog -- three spellings per operation, `comp.`/`meta.`/
@@ -41,6 +41,10 @@
 #       former `*.str.contains` catalog aliases or source faces may return,
 #       even if another catalog row is deleted to keep the gross budget
 #       unchanged.
+#   (G) DORMANT FAMILY. `codegen` had six dotted rows, one bare classifier and
+#       two catalog-category branches, but zero tracked source faces, no
+#       `__codegen` consumer and no module-registration branch. None may return:
+#       a catalog entry with no semantic producer is still host authority.
 #
 # NON-NEGOTIABLES, learned from gate/admission.sh and GAP-201/GAP-220:
 #   * A CEILING WITHOUT A FLOOR REPORTS CLEAN WHEN IT BREAKS. Rule (B) was
@@ -63,7 +67,7 @@
 #     at 1642 against a true 1586.
 #
 # USAGE:
-#   sh gate/directive/authority.sh              controls + the four rules
+#   sh gate/directive/authority.sh              controls + the five rules
 #   sh gate/directive/authority.sh --control    controls only, plus the compiler
 #                                               measurement behind lib/jit.id
 set -eu
@@ -77,18 +81,22 @@ cd "$root" || exit 2
 # ---------------------------------------------------------------- constants --
 # Pinned 2026-08-23 by the executable rule below.
 #
-# DENOMINATOR, because a numerator alone is a rumour: 566 dotted rows in
+# DENOMINATOR, because a numerator alone is a rumour: 560 dotted rows in
 # src/meta_module.zig, generally three compatibility spellings per operation,
-# i.e. about 189 distinct
+# i.e. about 187 distinct
 # operations behind them.
 CATALOG_FILE=src/meta_module.zig
-CATALOG_BUDGET=566
+CATALOG_BUDGET=560
 
 CATALOG_RE='\\.public = "(comp|meta|compiler)\\.'
 CANONICAL_RE='\\.canonical'
 RECOMMEND_RE='deprecated, use @'
 REMOVED_ALIAS_RE='\\.public = "(comp|meta|compiler)\\.str\\.contains"'
 REMOVED_FACE_RE='@(comp|meta|compiler)\\.str\\.contains'
+DORMANT_NAME_RE='"((meta|comp|compiler)\\.)?codegen"'
+DORMANT_INTERNAL_RE='"__codegen"'
+DORMANT_FACE_RE='@(codegen|(comp|meta|compiler)\\.codegen)([^a-z0-9.]|$)'
+DORMANT_REALIZER_RE='(register(Codegen|codegen)|eql\\(u8, name, "codegen"\\))'
 
 viol=0
 fail() { viol=$((viol + 1)); printf '  FAIL %s\n' "$*"; }
@@ -155,8 +163,16 @@ probe 'alias/hit'        "$REMOVED_ALIAS_RE" '    .{ .public = "comp.str.contain
 probe 'alias/decline'    "$REMOVED_ALIAS_RE" '    .{ .public = "comp.str.countlines", .internal = "__strcountlines" },' 0
 probe 'face/hit'         "$REMOVED_FACE_RE"  '@meta.str.contains(haystack, needle)' 1
 probe 'face/decline'     "$REMOVED_FACE_RE"  'needle in haystack' 0
+probe 'dormant/name'     "$DORMANT_NAME_RE" '    .{ .public = "comp.codegen", .internal = "__codegen" },' 1
+probe 'dormant/name-no'  "$DORMANT_NAME_RE" '    .{ .public = "comp.pipeline", .internal = "__pipeline" },' 0
+probe 'dormant/hook'     "$DORMANT_INTERNAL_RE" 'const handler = "__codegen";' 1
+probe 'dormant/hook-no'  "$DORMANT_INTERNAL_RE" 'const handler = "__schema";' 0
+probe 'dormant/face'     "$DORMANT_FACE_RE" '@compiler.codegen("payload")' 1
+probe 'dormant/face-no'  "$DORMANT_FACE_RE" '@compiler.schema("payload")' 0
+probe 'dormant/realize'  "$DORMANT_REALIZER_RE" 'else if (std.mem.eql(u8, name, "codegen")) {' 1
+probe 'dormant/real-no'  "$DORMANT_REALIZER_RE" 'else if (std.mem.eql(u8, name, "pipeline")) {' 0
 [ "$viol" -eq 0 ] || { printf '%s: CONTROLS FAILED (%s)\n' "$prog" "$viol"; exit 2; }
-ok '12 pattern controls: every pattern sees its defect and declines the lawful face'
+ok '20 pattern controls: every pattern sees its defect and declines the lawful face'
 
 # --------------------------------------------------------- compiler control --
 # The measurement behind lib/jit.id's note. Statement-position and
@@ -253,6 +269,30 @@ if [ "$removed_aliases" -gt 0 ] || [ "$removed_faces" -gt 0 ]; then
   fail "(F) removed text-contains directive returned: $removed_aliases catalog alias(es), $removed_faces source face(s) -- use the ordinary contains relation"
 else
   ok '(F) text contains has no directive-catalog alias or source face'
+fi
+
+dormant_names=$(count_re "$DORMANT_NAME_RE" "$CATALOG_FILE")
+zig_subjects="$tmp/zig-subjects"
+sh gate/subject.sh 'src/*.zig' >"$zig_subjects" || die 'rule G: compiler source enumeration failed'
+dormant_internal=0
+while IFS= read -r source; do
+  assert_read G "$source"
+  n=$(count_re "$DORMANT_INTERNAL_RE" "$source")
+  dormant_internal=$((dormant_internal + n))
+done <"$zig_subjects"
+dormant_faces=0
+while IFS= read -r source; do
+  n=$(count_re "$DORMANT_FACE_RE" "$source")
+  dormant_faces=$((dormant_faces + n))
+done <"$subjects"
+realizer=src/meta_directives.zig
+assert_read G "$realizer"
+dormant_realizers=$(count_re "$DORMANT_REALIZER_RE" "$realizer")
+if [ "$dormant_names" -gt 0 ] || [ "$dormant_internal" -gt 0 ] || \
+   [ "$dormant_faces" -gt 0 ] || [ "$dormant_realizers" -gt 0 ]; then
+  fail "(G) dormant codegen directive returned: $dormant_names host name(s), $dormant_internal internal hook(s), $dormant_faces source face(s), $dormant_realizers realizer(s)"
+else
+  ok '(G) dormant codegen directive has no host name, hook, source face or realizer'
 fi
 
 if [ "$viol" -eq 0 ]; then
