@@ -623,6 +623,25 @@ another owner.
 3. Record numbered obligations in the existing `gaps/GAP-*.md` authority. Use
    `tools/node/dev/gap reserve`; do not create a second tracker or hand-allocate
    a number.
+
+   **An OPEN gap must not narrate a fossil and a blocker in one voice.** A gap
+   accumulates dated measurements and, read top-down, the oldest speaks first.
+   `gaps/GAP-134.md` described a transitional host grammar owner and surviving
+   parser `BinOp` maps four hundred lines above the section recording that both
+   were gone; the living implementation was newer than the closure narrative,
+   which was newer than the earlier section in the same file. An agent who reads
+   the top half implements work already done.
+
+   So every OPEN gap carries a `## CURRENT FRONTIER` block immediately after its
+   metadata header — one `**Field:**` per line, machine-read:
+   `**Frontier:**` what actually blocks today; `**Crossed:**` what must NOT be
+   redone; `**Next:**` the next executable step; `**Verify:**` a COMMAND, never a
+   count; `**Blocked on:**` the gaps that own the prerequisites. Every dated
+   measurement that a later section overturns sits below an explicit
+   `## Superseded observations` boundary, and the boundary text says what the
+   sections below are still good for — usually a ruling, never the state of the
+   tree. Do not delete history; this tree preserves research by ancestry. Stop
+   interleaving it.
 4. Serialize builds and benchmarks through `tools/node/dev/idol-lock`. Until a
    world-backed Idol coordinator is admitted, do not teach a `std.script` or
    MCP text wrapper as canonical authority. A concurrent benchmark is not
