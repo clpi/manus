@@ -78,8 +78,16 @@ printf 'main: i64 = ()\n    7\n' >"$work/pos.id"
 "$idol" compile --backend=direct "$work/pos.id" -o "$work/pos.out" >"$work/pos.log" 2>&1 </dev/null \
     || broke "C1 positive control did not compile; see $work/pos.log"
 [ -s "$work/pos.out" ] || broke "C1 positive control compiled but wrote no artifact"
-"$idol" run --backend=direct "$work/pos.id" >"$work/pos.run" 2>&1 </dev/null
-[ $? -eq 7 ] || broke "C1 positive control did not execute to 7"
+# The status is NAMED rather than read as `$?` on the next line. `$?` is
+# correct today — fault-injecting a program that exits 8 does break this
+# control — but it is correct only because nothing sits between the two
+# lines, and a control that silently stops observing when a line is inserted
+# above it is the exact failure this gate exists to catch.
+"$idol" run --backend=direct -o "$work/pos.run.out" "$work/pos.id" \
+    >"$work/pos.run" 2>&1 </dev/null
+pos_status=$?
+[ "$pos_status" -eq 7 ] \
+    || broke "C1 positive control executed to $pos_status, not 7; see $work/pos.run"
 
 # C2 NEGATIVE — the instrument can observe a refusal, BY NAME. Exit status
 # alone is not enough: a broken parser also exits non-zero.
