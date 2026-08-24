@@ -58,6 +58,9 @@
 #       `__TEXT,__cstring` / S_CSTRING_LITERALS, and only a module with an
 #       interior NUL moves to its own `__TEXT,__conststr` / S_REGULAR section.
 #       The representation choice is a CONSEQUENCE OF A FACT, not a new default.
+#   §3b The digest §3's byte claim rests on, measured in BOTH directions: the
+#       same source twice is identical, one added NUL is not. A comparison that
+#       cannot tell two programs apart confirms nothing.
 #   §4  The boundary, pinned as answers rather than prose: what an embedded NUL
 #       still does to `print`, `:sub`, `..` and `==` in BOTH realizations. Each
 #       row is a known LOSS against the oracle, and the gate fails if one
@@ -215,6 +218,50 @@ if build plain; then
   else
     note '§3 otool absent — section placement not measured on this host'
   fi
+fi
+
+# ─── §3b the digest comparison itself, in BOTH directions ──────────────────
+# A BYTE CLAIM NEEDS A LIVE COMPARISON. §3 reads the section by name; the claim
+# that a NUL-free module is otherwise UNTOUCHED is a claim about bytes, and a
+# digest that cannot tell two different programs apart would confirm it
+# vacuously. So both directions are measured here, with no baseline compiler
+# needed:
+#
+#   1. the same source compiled twice, into two different output paths, is
+#      byte-identical — the output path is not baked in, so a difference below
+#      is a difference in the PROGRAM;
+#   2. the same source with one interior NUL added is NOT byte-identical — the
+#      literal-coalescing decision is a function of the literals, so it must be
+#      visible in the artifact.
+#
+# The SOURCE path is held fixed across all three, because home mangling puts it
+# into symbols: arm 1's two runs share one source file, and arm 2's subject sits
+# beside it under the same stem length. A comparison across two scratch
+# directories would differ in every byte and measure nothing.
+if command -v shasum >/dev/null 2>&1; then
+  printf 'main: i64 = ()\n  s: str = "abc"\n  print(s:len())\n  0\n' > "$work/dgone.id"
+  printf 'main: i64 = ()\n  s: str = "a\\0c"\n  print(s:len())\n  0\n' > "$work/dgtwo.id"
+  ok=1
+  for m in dgone dgtwo; do
+    "$idol" compile --no-cache --emit=obj -o "$work/$m.a.o" "$work/$m.id" >/dev/null 2>&1 || ok=0
+  done
+  "$idol" compile --no-cache --emit=obj -o "$work/dgone.b.o" "$work/dgone.id" >/dev/null 2>&1 || ok=0
+  if [ "$ok" -eq 0 ]; then
+    bad '§3b the digest subjects did not compile — the byte claim is unmeasured, which is not the same as confirmed'
+  else
+    d1=$(shasum -a 256 "$work/dgone.a.o" | cut -d' ' -f1)
+    d2=$(shasum -a 256 "$work/dgone.b.o" | cut -d' ' -f1)
+    d3=$(shasum -a 256 "$work/dgtwo.a.o" | cut -d' ' -f1)
+    if [ "$d1" != "$d2" ]; then
+      bad '§3b the SAME source compiled twice into two output paths differs — realization is not deterministic here, so no byte-identity claim in this tree is readable'
+    elif [ "$d1" = "$d3" ]; then
+      bad '§3b adding an interior NUL changed NOTHING in the object — the digest cannot see the decision it is being used to confirm'
+    else
+      note '§3b digest live in both directions: same source twice -> identical, one added NUL -> different'
+    fi
+  fi
+else
+  note '§3b shasum absent — the digest control did not run'
 fi
 
 # ─── §4 the boundary, pinned as answers ────────────────────────────────────
