@@ -6482,7 +6482,12 @@ fn lowerFoldedConditionLineage(ctx: *LowerCtx, expr: *const Expr) Error!void {
 }
 
 fn resolveIntStep(ctx: *LowerCtx, step: *const ast.Expr) Error!i64 {
-    if (ast.intLiteralValue(step)) |v| return v;
+    // The graph owns literal content after publication.  Re-reading an
+    // integer literal here made numeric-for lowering a semantic AST backedge:
+    // poisoning the tree after lift could change the physical step while the
+    // published value fact remained unchanged.  Do not retain an AST fallback;
+    // absence of the graph fact is an honest refusal.
+    if (ctx.graph.exactI64OfExpr(step)) |v| return v;
     if (step.* == .name) {
         if (ctx.const_ints.get(step.name.ident)) |v| return v;
     }
@@ -13739,6 +13744,52 @@ test "dnir_lower: numeric for" {
         if (ins.op == .br and ins.branch_target < m.functions[0].blocks[0].instrs.len) saw_back = true;
     }
     try std.testing.expect(saw_inc and saw_back);
+}
+
+test "dnir_lower: numeric-for step is graph-owned after AST poison" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    sum = 0
+        \\    for i = 0, 8, 2
+        \\        sum += i
+        \\    end
+        \\    sum
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "num_for_step_graph.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var step: ?*ast.Expr = null;
+    for (mod.body.stmts) |*statement| switch (statement.*) {
+        .func_decl => |*decl| for (decl.func.body.stmts) |*nested| switch (nested.*) {
+            .num_for => |*loop| step = loop.step,
+            else => {},
+        },
+        else => {},
+    };
+    const step_expr = step orelse return error.TestUnexpectedResult;
+    try std.testing.expect(step_expr.* == .int_lit);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&mod, mod.file);
+    try std.testing.expectEqual(@as(?i64, 2), graph.exactI64OfExpr(step_expr));
+    var diagnostic: Diagnostic = .{};
+    var ctx: LowerCtx = undefined;
+    ctx.graph = &graph;
+    ctx.diagnostic = &diagnostic;
+    ctx.const_ints = .empty;
+    const before = try resolveIntStep(&ctx, step_expr);
+    // Damage only the source tree. The graph's exactI64 fact and occurrence
+    // remain unchanged, so a graph-owned consumer must retain the step 2.
+    step_expr.int_lit.val = 7;
+    const after = try resolveIntStep(&ctx, step_expr);
+    try std.testing.expectEqual(@as(i64, 2), before);
+    try std.testing.expectEqual(@as(i64, 2), after);
 }
 
 test "dnir_lower: f64 local in integer main" {
