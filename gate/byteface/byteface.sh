@@ -268,6 +268,27 @@ main: i64 = ()
     0
 IDL
 
+# ── BYTE EGRESS: THE FACE THE COMPILER ITSELF RECOMMENDS ───────────────────
+#
+# `src/parser.zig` tells people, in a hint on a real diagnostic, that "a
+# payload that is all braces and no holes -- JSON, a C body, an awk program --
+# belongs in the byte face `'…'`". Writing bytes to a byte stream needs no
+# textual law, so this is the one consuming position where the byte face must
+# ANSWER rather than refuse -- and the literal spelling always did, while the
+# BOUND spelling printed a decimal address at exit 0. The recommended idiom
+# was the broken one.
+run_subject 'byte payload written, unnamed' answer '{"a":1}' <<'IDL'
+main: i64 = ()
+    stdout:write('{"a":1}')
+    0
+IDL
+run_subject 'byte payload written, bound' answer '{"a":1}' <<'IDL'
+main: i64 = ()
+    j = '{"a":1}'
+    stdout:write(j)
+    0
+IDL
+
 # ── the negative controls: what must NOT have moved ────────────────────────
 #
 # A repair that refuses everything is not a repair. Each of these is a shape
@@ -299,6 +320,18 @@ run_subject 'interpolated integer' answer 'a 1 b' <<'IDL'
 main: i64 = ()
     k = 1
     print("a {k} b")
+    0
+IDL
+run_subject 'bound text written' answer hello <<'IDL'
+main: i64 = ()
+    j = "hello"
+    stdout:write(j)
+    0
+IDL
+run_subject 'bound integer written' answer 7 <<'IDL'
+main: i64 = ()
+    n = 7
+    stdout:write(n)
     0
 IDL
 

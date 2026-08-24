@@ -13304,7 +13304,36 @@ fn lowerWrite(ctx: *LowerCtx, args: []const *ast.Expr) Error!dnir.Value {
     const arg = args[0];
     if (try lowerPrintFormat(ctx, arg, false)) |v| return v;
     const v = try lowerExpr(ctx, arg);
-    const ty: RT = if (exprIsStr(ctx, arg) or holds(ctx, v)) .str else if (exprIsF64Value(ctx, arg)) .f64 else .i64;
+    // WRITING BYTES TO A BYTE STREAM NEEDS NO TEXTUAL LAW, which is why the
+    // byte face belongs on the `.str` side of this selection and not in the
+    // `else` (GAP-145 `law.text.byte`, and the same third-arm defect as
+    // GAP-207 one relation over). The `else .i64` was reached for a bound
+    // byte sequence and `print_value` rendered the `const char*` as a decimal
+    // address, at exit 0, with no diagnostic:
+    //
+    //     stdout:write('{"a":1}')            {"a":1}
+    //     j = '{"a":1}' ; stdout:write(j)    4371891320
+    //
+    // The literal spelling already answered correctly, because it lowers to a
+    // `.str` value and `holds` sees it; only the BOUND spelling fell through.
+    // Two spellings of one fact, and the compiler's own parser hint tells
+    // people to reach for exactly this face -- "a payload that is all braces
+    // and no holes belongs in the byte face `'…'`" -- so the recommended
+    // idiom was the one that printed a pointer.
+    //
+    // `print` is deliberately NOT changed with it: it refuses a byte sequence
+    // at the native-scalar precheck for BOTH spellings already, and refusing
+    // is the answer there because `print` is line-oriented text egress.
+    //
+    // Embedded NUL is out of scope and stays out: this egress is a
+    // NUL-terminated `const char*` and would truncate. That is
+    // `wip/nulrep-20260823`'s subject, not this selection's.
+    const ty: RT = if (exprIsStr(ctx, arg) or exprIsByteSequence(ctx, arg) or holds(ctx, v))
+        .str
+    else if (exprIsF64Value(ctx, arg))
+        .f64
+    else
+        .i64;
     try ctx.emit(.{ .op = .print_value, .lhs = v, .ty = ty, .field = "nonl" });
     return .void;
 }
