@@ -101,7 +101,16 @@ for root in $corpus; do
     exit 64
   }
 done
-sort < "$work/corpus.raw" > "$work/corpus"
+# AND THE SORT IS GUARDED TOO. `sort` can emit part of its input and then fail
+# — a full temp volume is the ordinary way — and its status is the last one in
+# this pipeline, so an unguarded `sort` hands the loop below a TRUNCATED corpus
+# with `n` and `lifted` both comfortably positive. No floor below can see that,
+# because a smaller corpus is exactly what a smaller corpus looks like.
+sort < "$work/corpus.raw" > "$work/corpus" || {
+  printf 'application: ordering the corpus failed — a partial list is not the corpus, and every count below it would be taken over the part that survived
+' >&2
+  exit 64
+}
 
 : > "$work/exports"
 lifted=0; refused=0; n=0; firstrefused=''; firstsay=''
@@ -113,9 +122,10 @@ while IFS= read -r src; do
     lifted=$((lifted + 1))
   else
     # THE FIRST REFUSAL IS QUOTED. A systemic refusal — a compiler that
-    # answers nothing for every input — and a corpus with a handful of known
-    # hard files produce the same counter, and only the diagnostic separates
-    # them. Kept to one line so it stays readable at 98 refusals.
+    # answers nothing for every input — and a corpus with a few known-hard
+    # files produce the same counter, and only the diagnostic separates them.
+    # Kept to one line, because the count it sits beside is whatever
+    # `sh gate/application.sh` reports today and is not written down here.
     if [ -z "$firstrefused" ]; then
       firstrefused=$src
       firstsay=$(tr -d '\r' < "$work/say" | grep -v '^[[:space:]]*$' | head -1 | cut -c1-96)
