@@ -19,6 +19,7 @@
 #   gate/vocabulary.sh  fail-closed module-declaration freeze; no word registry
 #   gate/layering.sh    dependency direction, projections, relation ownership
 #   gate/directive.sh   @comp.* namespace closure: no new form, no new use
+#   gate/frontier.sh    required OPEN gaps have one current machine-readable frontier
 #
 # Each has controls in both directions. This script is not server enforcement:
 # a candidate-owned hook or workflow can weaken itself. A protected-base
@@ -75,6 +76,13 @@ if [ "$run_gates" = yes ]; then
     if ! sh "$here/directive.sh"; then
         rc=1
     fi
+    # This is also a WHOLE-TREE gate. Historical gap evidence remains in place;
+    # the current frontier must be unique, early, structurally valid, and link
+    # back to the observations it supersedes.
+    printf '\n--- gate/frontier.sh ---\n' >&2
+    if ! sh "$here/frontier.sh"; then
+        rc=1
+    fi
 fi
 
 if [ "$run_controls" = yes ]; then
@@ -84,6 +92,10 @@ if [ "$run_controls" = yes ]; then
             rc=1
         fi
     done
+    printf '\n--- gate/frontier.sh --selftest ---\n' >&2
+    if ! sh "$here/frontier.sh" --selftest; then
+        rc=1
+    fi
 fi
 
 printf '\n' >&2
