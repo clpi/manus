@@ -267,7 +267,11 @@ pub const verticals = [_]Vertical{
         \\main: i64 = ()
         \\    away(-5)
         ,
-        .expect = .{ .int = .leak, .text = .absent, .name = .sovereign, .relation = .absent, .reference = .leak },
+        // `text` damages the `@ffi("abs")` ARGUMENT and `name` damages the
+        // attribute name itself; both are `sovereign`, so the emitted foreign
+        // symbol comes from `graph.callableLinkage` and not from
+        // `dnir_lower.foreignBoundaryName` reading the declaration.
+        .expect = .{ .int = .leak, .text = .sovereign, .name = .sovereign, .relation = .absent, .reference = .leak },
     },
 };
 
@@ -317,6 +321,22 @@ fn sameBytes(a: ?[]const u8, b: ?[]const u8) bool {
     return std.mem.eql(u8, a.?, b.?);
 }
 
+/// Realize the tree as if it were the source: a fresh `Sema` over the damaged
+/// module, a fresh graph, a fresh object. Null when the damaged program no
+/// longer checks or no longer lowers — which is itself an observable
+/// difference from a baseline that produced bytes.
+fn recheck(alloc: std.mem.Allocator, v: Vertical, module: *ast.Module) ?[]const u8 {
+    var checked = Sema.init(alloc);
+    checked.idol_mode = true;
+    checked.worlds = subject_home.injectedWorlds();
+    checked.check_module(module) catch return null;
+    if (checked.errors != 0) return null;
+    table_apply.normalizeModule(alloc, module, &checked.type_map);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    _ = graph.liftModuleWithCheckedCalls(module, &checked, v.file) catch return null;
+    return emitBytes(alloc, module, &graph);
+}
+
 /// One (vertical, poison class) measurement. Allocations live in the caller's
 /// arena; two full graphs and up to four object images are retained on purpose
 /// so the comparison never reuses a freed buffer.
@@ -360,18 +380,17 @@ pub fn measure(alloc: std.mem.Allocator, v: Vertical, kind: poison.Kind) !Row {
     // THE MEASUREMENT. Same published graph, damaged tree.
     const frozen = emitBytes(alloc, &subject.module, &subject.graph);
 
-    // Control 2 — observability. A graph lifted from the DAMAGED tree must
-    // realize differently, or the damage was semantically invisible and the
-    // frozen comparison above proved nothing.
-    var control_graph = semantic_graph.SemanticGraph.init(alloc);
-    const control: ?[]const u8 = if (control_graph.liftModuleWithCheckedCalls(
-        &subject.module,
-        &subject.checked,
-        v.file,
-    )) |_|
-        emitBytes(alloc, &subject.module, &control_graph)
-    else |_|
-        null;
+    // Control 2 — observability. COMPILE THE DAMAGED PROGRAM: re-check it from
+    // scratch and lift a second graph from the damaged tree, then realize that.
+    // Those bytes must differ from the baseline, or the damage was semantically
+    // invisible and the frozen comparison above proved nothing.
+    //
+    // The re-CHECK is not optional, and reusing the original `Sema` is what
+    // made this control too weak to see an `@ffi("abs")` argument: sema had
+    // already resolved the foreign boundary before the damage, so a control
+    // that consumed the old `Sema` reported the damage unobservable when what
+    // was actually unobserved was everything sema decides.
+    const control: ?[]const u8 = recheck(alloc, v, &subject.module);
     if (sameBytes(control, baseline)) return .{
         .vertical = v.name,
         .kind = kind,
@@ -436,6 +455,18 @@ pub fn measureReference(alloc: std.mem.Allocator, v: Vertical) !Row {
         .sites = 0,
         .verdict = .blocked,
         .note = "baseline-refused",
+    };
+    // Control 1, the same one `measure` runs. Without it a nondeterministic
+    // object would classify as `leak`, and since EVERY reference expectation is
+    // currently `leak`, the whole test would pass with a stale ledger while
+    // measuring nothing at all.
+    const repeat = emitBytes(alloc, &subject.module, &subject.graph);
+    if (!sameBytes(baseline, repeat)) return .{
+        .vertical = v.name,
+        .kind = kind,
+        .sites = 0,
+        .verdict = .blocked,
+        .note = "nondeterministic-baseline",
     };
     var sites: usize = 0;
     for (subject.graph.nodes.items) |*node| {

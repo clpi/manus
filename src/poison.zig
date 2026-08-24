@@ -134,6 +134,29 @@ fn ident(d: *Damage, slot: *[]const u8) std.mem.Allocator.Error!void {
     d.sites += 1;
 }
 
+/// FOREIGN BOUNDARY IDENTITY LIVES HERE, and it was the one place the walk
+/// missed. `dnir_lower.foreignBoundaryName` selects the emitted symbol by
+/// reading `attr.name` (`ffi`, `export`, `c.export`) and `attr.args` (`"abs"`)
+/// straight off the declaration, so a walk that damaged only the path and body
+/// let the `foreign` vertical report `sovereign` while the backend was still
+/// reconstructing foreign identity from the tree. The attribute NAME is an
+/// identifier and belongs to `.name`; its ARGUMENT is quoted source text and
+/// belongs to `.text`, which also gives the `foreign` fixture its first `text`
+/// site.
+fn attributes(d: *Damage, list: []ast.Attribute) std.mem.Allocator.Error!void {
+    for (list) |*attr| {
+        try ident(d, &attr.name);
+        if (d.kind == .text) {
+            if (attr.args) |args| {
+                if (args.len != 0) {
+                    attr.args = try poisonBytes(d.alloc, args);
+                    d.sites += 1;
+                }
+            }
+        }
+    }
+}
+
 fn funcBody(d: *Damage, f: *ast.FuncBody) std.mem.Allocator.Error!void {
     for (f.params) |*p| {
         try ident(d, &p.name);
@@ -145,11 +168,17 @@ fn funcBody(d: *Damage, f: *ast.FuncBody) std.mem.Allocator.Error!void {
 fn stmt(d: *Damage, s: *ast.Stmt) std.mem.Allocator.Error!void {
     switch (s.*) {
         .local_decl => |*x| {
-            for (x.names) |*n| try ident(d, &n.ident);
+            for (x.names) |*n| {
+                try ident(d, &n.ident);
+                try attributes(d, n.attributes);
+            }
             for (x.inits) |e| try expr(d, e);
         },
         .global_decl => |*x| {
-            for (x.names) |*n| try ident(d, &n.ident);
+            for (x.names) |*n| {
+                try ident(d, &n.ident);
+                try attributes(d, n.attributes);
+            }
             for (x.inits) |e| try expr(d, e);
         },
         .const_decl => |*x| {
@@ -195,6 +224,7 @@ fn stmt(d: *Damage, s: *ast.Stmt) std.mem.Allocator.Error!void {
         },
         .func_decl => |*x| {
             for (x.path) |*seg| try ident(d, seg);
+            try attributes(d, x.attributes);
             try funcBody(d, &x.func);
         },
         .ret => |*x| for (x.vals) |e| try expr(d, e),
@@ -207,15 +237,18 @@ fn stmt(d: *Damage, s: *ast.Stmt) std.mem.Allocator.Error!void {
         },
         .alias_def => |*x| {
             try ident(d, &x.name);
+            try attributes(d, x.attributes);
             for (x.fields) |*f| {
                 try ident(d, &f.name);
                 if (f.default_val) |v| try expr(d, v);
             }
             for (x.methods) |*m| {
                 for (m.path) |*seg| try ident(d, seg);
+                try attributes(d, m.attributes);
                 try funcBody(d, &m.func);
             }
         },
+        .directive => |*x| try attributes(d, (&x.attr)[0..1]),
         else => {},
     }
 }
