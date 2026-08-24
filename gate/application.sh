@@ -37,6 +37,40 @@
 # is published anywhere. The `unattributed` row is the honesty column: a site
 # the reader cannot parse is counted as its own cause, never folded into a
 # neighbouring one.
+#
+# ═══ WHY THIS FILE REFUSES INSTEAD OF PRINTING AN EMPTY TABLE ══════════════
+#
+# THIS GATE SHIPPED VACUOUS AND `gate/vacuity.sh` CONVICTED IT. Under the
+# HOLLOW plant — a compiler that runs, exits 0 and answers nothing, beside
+# empty `examples/` and `lib/` homes — every step below succeeded and the gate
+# exited 0 on the line `reporting only (… measured 0)`. Nothing had been
+# measured. `find` matched no file, the lift loop ran zero times, the
+# classifier read an empty export list, and a histogram over no sites printed
+# as a histogram with no findings. That is this repository's one recurring
+# defect: ABSENCE OF A SUBJECT INDISTINGUISHABLE FROM ABSENCE OF A VIOLATION.
+#
+# It matters more here than in a lexical firewall, because this gate is the
+# instrument behind a published coverage claim and a published cause ranking.
+# A vacuous run does not merely fail to find work; it certifies a wall it never
+# looked at.
+#
+# So four SUBJECT FLOORS are asserted, each naming a distinct thing that must
+# exist before any number below it means anything:
+#
+#   1. every named corpus root RESOLVES        (a skipped root is a smaller corpus
+#                                               reported under the same name)
+#   2. the corpus enumerates at least one `.id`
+#   3. at least one file LIFTS to a graph export
+#   4. the lifted exports PARSE, and `fact_coverage` reports at least one
+#      application CANDIDATE — the denominator of the ratio this gate prints
+#
+# WHAT IS DELIBERATELY NOT A FLOOR: the size of the histogram. Requiring
+# unpublished sites to exist would be a control that needs the defect to
+# survive, and it would turn red the day the wall closes — the gate would be
+# unturnable-green and then permanently unturnable-red, which is the same lie
+# with the sign flipped. Zero unpublished candidates over a real corpus with a
+# real denominator is a legitimate clean answer, and this gate reports it.
+# What may never be legitimate is zero SUBJECTS.
 set -u
 repo=$(unset CDPATH; cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo" || exit 64
@@ -48,20 +82,44 @@ command -v python3 >/dev/null 2>&1 || { echo "application: python3 absent" >&2; 
 work=$(mktemp -d -t idolapplication) || exit 64
 trap 'rm -rf "$work"' EXIT INT TERM
 
+# FLOOR 1. A named root that does not resolve is not an empty root — it is a
+# census silently taken over a different corpus than the one it names, and the
+# totals line claims agreement with `gate/coverage.sh` over exactly this list.
+#
+# NO `2>/dev/null` ON THE ENUMERATION. Item 1 on `gate/vacuity.sh`'s list of
+# convicted instruments is a swept-away `find` error read downstream as a count
+# of zero. `find` returns non-zero when any path errored, so the status is the
+# answer and the diagnostic stays on stderr where a reader can see it.
+: > "$work/corpus.raw"
 for root in $corpus; do
-  [ -d "$root" ] || continue
-  find "$root" -name '*.id' -type f 2>/dev/null
-done | sort > "$work/corpus"
+  [ -d "$root" ] || {
+    printf 'application: corpus root %s does not resolve — a census that skips a named root reports a smaller corpus under the same name\n' "$root" >&2
+    exit 64
+  }
+  find "$root" -name '*.id' -type f >> "$work/corpus.raw" || {
+    printf 'application: enumeration under %s errored — an enumeration that failed is not an empty corpus\n' "$root" >&2
+    exit 64
+  }
+done
+sort < "$work/corpus.raw" > "$work/corpus"
 
 : > "$work/exports"
-lifted=0; refused=0; n=0
+lifted=0; refused=0; n=0; firstrefused=''; firstsay=''
 while IFS= read -r src; do
   n=$((n + 1))
   out="$work/$n.json"
-  if "$idol" graph "$src" > "$out" 2>/dev/null && [ -s "$out" ]; then
+  if "$idol" graph "$src" > "$out" 2>"$work/say" && [ -s "$out" ]; then
     printf '%s\t%s\n' "$src" "$out" >> "$work/exports"
     lifted=$((lifted + 1))
   else
+    # THE FIRST REFUSAL IS QUOTED. A systemic refusal — a compiler that
+    # answers nothing for every input — and a corpus with a handful of known
+    # hard files produce the same counter, and only the diagnostic separates
+    # them. Kept to one line so it stays readable at 98 refusals.
+    if [ -z "$firstrefused" ]; then
+      firstrefused=$src
+      firstsay=$(tr -d '\r' < "$work/say" | grep -v '^[[:space:]]*$' | head -1 | cut -c1-96)
+    fi
     rm -f "$out"
     refused=$((refused + 1))
   fi
@@ -69,6 +127,19 @@ done < "$work/corpus"
 
 printf 'gate/application.sh: corpus %s file(s) under [%s]; %s lifted, %s refused\n' \
   "$n" "$corpus" "$lifted" "$refused"
+[ -z "$firstrefused" ] || printf 'gate/application.sh: first refusal %s: %s\n' \
+  "$firstrefused" "${firstsay:-(silent)}"
+
+# FLOOR 2 and FLOOR 3, before a single number is printed. A table computed over
+# no file is not a clean table.
+if [ "$n" -eq 0 ]; then
+  printf 'application: enumerated ZERO .id file(s) under [%s] — a scan with no subject is not a clean sweep\n' "$corpus" >&2
+  exit 64
+fi
+if [ "$lifted" -eq 0 ]; then
+  printf 'application: %s corpus file(s) and NOT ONE lifted to a graph export — the classifier would attribute nothing and call it agreement\n' "$n" >&2
+  exit 64
+fi
 
 APPLICATION_HOMES="c iter math meta os result string table testing io" \
 APPLICATION_RATCHET="$work/ratchet" \
@@ -179,12 +250,19 @@ homes_seen = collections.Counter()
 names = collections.defaultdict(collections.Counter)
 sites = open(os.environ["APPLICATION_SITES"], "w") if os.environ.get("APPLICATION_SITES") else None
 
+parsed = 0
+unparsed = []
 for row in open(exports):
     f, path = row.rstrip("\n").split("\t")
     try:
         d = json.load(open(path))
-    except Exception:
+    except Exception as e:
+        # AN EXPORT THAT LIFTED AND THEN DID NOT PARSE IS NOT A FILE WITH NO
+        # FINDINGS. The shell counted it as `lifted`, so dropping it here makes
+        # the reported denominator larger than the set actually classified.
+        unparsed.append((f, "%s: %s" % (type(e).__name__, e)))
         continue
+    parsed += 1
     for k, v in d.get("fact_coverage", {}).items():
         tot[k] += v
     nodes = {x["id"]: x for x in d["nodes"]}
@@ -195,9 +273,18 @@ for row in open(exports):
                 if x["kind"] in ("local", "param") and x.get("name"))
     for cid in d.get("unresolved_applications", []):
         node = nodes.get(cid)
-        if node is None:
-            continue
         outcome = "blocking" if cid in blocking else "bootstrap"
+        if node is None:
+            # A NODE ID THE COMPILER MINTED AND THE EXPORT DID NOT CARRY. The
+            # site exists — `unresolved_applications` named it — so dropping it
+            # would shrink this table below the count the compiler published,
+            # silently. It goes to the honesty column with its own note.
+            hist["unattributed"] += 1
+            faces[("unattributed", outcome)] += 1
+            names["unattributed"]["<no-node>"] += 1
+            if sites is not None:
+                sites.write("%s\t-\t-\tunattributed\t%s\n" % (f, outcome))
+            continue
         site = read_site(f, node.get("line"), node.get("col"))
         note = ""
         if site is None:
@@ -275,6 +362,34 @@ for row in open(exports):
 
 cand = tot["candidates"]
 unpub = tot["bootstrap"] + tot["blocking"]
+
+# ── FLOOR 4: the denominator is a subject, and it has to exist ─────────────
+# Everything below prints a share of `unpub` and a ratio over `cand`. Both
+# guards already read `if cand else 0`, which turns a missing denominator into
+# a printed `0.0%` — a number the reader cannot distinguish from a measured
+# one. So the absence is raised here instead of being formatted away.
+#
+# `parsed` and `unparsed` are separate from the shell's `lifted`: the shell
+# counted a non-empty file, this counts a file that was actually read. A gap
+# between them means the table was computed over fewer modules than the header
+# line reports, which is the same class of lie one level down.
+floor = []
+if parsed == 0:
+    floor.append("not one graph export parsed; the classifier read nothing")
+if unparsed:
+    floor.append("%d lifted export(s) did not parse, first %s (%s)"
+                 % (len(unparsed), unparsed[0][0], unparsed[0][1]))
+if cand == 0:
+    floor.append("fact_coverage reports ZERO application candidates; the "
+                 "coverage ratio and every share below would divide by a "
+                 "denominator that was never measured")
+if floor:
+    sys.stderr.write("application: SUBJECT FLOOR — a table over no subject is "
+                     "not a clean table\n")
+    for line in floor:
+        sys.stderr.write("application:   %s\n" % line)
+    raise SystemExit(64)
+
 print()
 print("== TOTALS (must match gate/coverage.sh over the same corpus) ==")
 print("candidates %d  published %d (%.1f%%)  bootstrap %d  blocking %d"
