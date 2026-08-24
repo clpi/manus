@@ -12679,6 +12679,51 @@ test "native backend physical oracle retains qualified link symbol and two-regis
     try std.testing.expect(std.mem.indexOf(u8, object, "_math_add") != null);
 }
 
+test "native backend unroll copy shape has four machine operations and zero semantic lineage" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    const alloc = std.testing.allocator;
+    const once_instructions = [_]dnir.Instr{
+        .{ .op = .@"const", .result = 0, .lhs = .{ .i64 = 20 }, .ty = .i64 },
+        .{ .op = .@"const", .result = 1, .lhs = .{ .i64 = 22 }, .ty = .i64 },
+        .{ .op = .binop, .result = 2, .lhs = .{ .temp = 0 }, .rhs = .{ .temp = 1 }, .binop = .add, .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .temp = 2 }, .ty = .i64 },
+    };
+    const four_instructions = [_]dnir.Instr{
+        .{ .op = .@"const", .result = 0, .lhs = .{ .i64 = 20 }, .ty = .i64 },
+        .{ .op = .@"const", .result = 1, .lhs = .{ .i64 = 22 }, .ty = .i64 },
+        // The research unroller copies these exact physical ids verbatim.
+        .{ .op = .binop, .result = 2, .lhs = .{ .temp = 0 }, .rhs = .{ .temp = 1 }, .binop = .add, .ty = .i64 },
+        .{ .op = .binop, .result = 2, .lhs = .{ .temp = 0 }, .rhs = .{ .temp = 1 }, .binop = .add, .ty = .i64 },
+        .{ .op = .binop, .result = 2, .lhs = .{ .temp = 0 }, .rhs = .{ .temp = 1 }, .binop = .add, .ty = .i64 },
+        .{ .op = .binop, .result = 2, .lhs = .{ .temp = 0 }, .rhs = .{ .temp = 1 }, .binop = .add, .ty = .i64 },
+        .{ .op = .ret, .lhs = .{ .temp = 2 }, .ty = .i64 },
+    };
+    const once_blocks = [_]dnir.Block{.{ .instrs = &once_instructions }};
+    const four_blocks = [_]dnir.Block{.{ .instrs = &four_instructions }};
+    const once_functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &once_blocks }};
+    const four_functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &four_blocks }};
+    const once_module = dnir.Module{ .functions = &once_functions };
+    const four_module = dnir.Module{ .functions = &four_functions };
+
+    var diagnostic: Diagnostic = .{};
+    var once = try emitArm64FromDnir(alloc, once_module, null, &diagnostic);
+    defer once.deinit(alloc);
+    var four = try emitArm64FromDnir(alloc, four_module, null, &diagnostic);
+    defer four.deinit(alloc);
+
+    // Three extra DNIR copies become three distinct four-byte AArch64
+    // instructions. They still produce ZERO machine-lineage rows because the
+    // graph has supplied no original or derived application/value occurrence.
+    try std.testing.expectEqual(once.text.len + 3 * @sizeOf(u32), four.text.len);
+    try std.testing.expectEqual(@as(usize, 0), once.lineage.len);
+    try std.testing.expectEqual(@as(usize, 0), four.lineage.len);
+
+    // This is a damage control, not an alternate lineage registry. Delete it
+    // when the graph-owned unroll transform makes four distinct derived
+    // occurrences queryable through the existing MachineLineage projection.
+}
+
 // Regression: a two-argument call whose BOTH operands are prior call results
 // must stage the two arguments from DISTINCT source registers. The mov_arg
 // ownership recorder once read `result` (a PHYSICAL ABI slot 0/1 for mov_arg) as

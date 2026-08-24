@@ -5584,6 +5584,80 @@ test "dnir_lower: runtime unroll is research opt-in pending graph transform iden
     try std.testing.expectEqual(@as(u32, 16), unrollFactorFromText("99"));
 }
 
+test "dnir_lower: unroll copies have physical positions but no derived occurrences" {
+    // EXECUTABLE CENSUS FOR THE RESEARCH UNROLLER'S DELETION CONDITION.
+    // One lowered body position is copied four times. Branch destinations move
+    // with each physical copy, while the result/local ids are copied verbatim
+    // and no graph occurrence survives. An instruction index is not semantic
+    // identity; this test therefore records the ambiguity instead of minting a
+    // lowering-owned transform/occurrence vocabulary to conceal it.
+    // Remaining consumers are `emitUnrolledWhilePrologue`, which appends these
+    // copies, and `Arm64Compiler`, which observes their reused physical ids.
+    const factor: usize = 4;
+    const body = [_]dnir.Instr{
+        .{
+            .op = .binop,
+            .result = 12,
+            .binop = .add,
+            .lhs = .{ .local = 4 },
+            .rhs = .{ .i64 = 1 },
+        },
+        .{
+            .op = .br,
+            .lhs = .{ .temp = 12 },
+            .branch_target = 2,
+            .branch_condition = .when_true,
+        },
+    };
+    var copies: [body.len * factor]dnir.Instr = undefined;
+    for (0..factor) |copy| {
+        const offset: u32 = @intCast(copy * body.len);
+        for (body, 0..) |instruction, instruction_index| {
+            copies[copy * body.len + instruction_index] =
+                unrollPhysicalCopy(instruction, offset);
+        }
+    }
+
+    try std.testing.expectEqual(@as(usize, 4), copies.len / body.len);
+    for (0..factor) |copy| {
+        const binop = copies[copy * body.len];
+        const branch = copies[copy * body.len + 1];
+        // SAME PHYSICAL VALUE IDS in all four copies.
+        try std.testing.expectEqual(@as(?u32, 12), binop.result);
+        try std.testing.expectEqual(@as(u32, 4), binop.lhs.local);
+        try std.testing.expectEqual(@as(u32, 12), branch.lhs.temp);
+        // DISTINCT PHYSICAL POSITIONS/DESTINATIONS, not distinct occurrences.
+        try std.testing.expectEqual(@as(u32, @intCast(2 + copy * body.len)), branch.branch_target);
+        try std.testing.expect(binop.relation == null);
+        try std.testing.expect(binop.application == null);
+        try std.testing.expect(binop.value == null);
+        try std.testing.expect(binop.subject == null);
+    }
+
+    // Damage controls: the research copy range must refuse as soon as any
+    // existing semantic coordinate reaches it. The first control establishes
+    // the positive physical shape; each later arm changes only one fact.
+    try std.testing.expect(unrollRangeIsCopyable(&body, 0, body.len));
+    var identified = body;
+    identified[0].relation = 1;
+    try std.testing.expect(!unrollRangeIsCopyable(&identified, 0, identified.len));
+    identified = body;
+    identified[0].application = 2;
+    try std.testing.expect(!unrollRangeIsCopyable(&identified, 0, identified.len));
+    identified = body;
+    identified[0].value = 3;
+    try std.testing.expect(!unrollRangeIsCopyable(&identified, 0, identified.len));
+    identified = body;
+    identified[0].subject = 4;
+    try std.testing.expect(!unrollRangeIsCopyable(&identified, 0, identified.len));
+
+    // Delete this census only when the graph producer supplies one exact
+    // transform id plus original and per-copy application/value occurrence ids,
+    // and `MachineLineage` carries those same ids into object ranges. Until then
+    // the ordinary compiler keeps this transform off and the research arm stays
+    // fail-closed.
+}
+
 /// A slot that holds a plain full-width integer and nothing else. An induction
 /// variable that is secretly an f64, a `str` descriptor, a pointer, a bool or a
 /// declared-narrow binding is not one this arithmetic reasons about.
@@ -5876,13 +5950,26 @@ fn unrollRangeIsCopyable(instrs: []const dnir.Instr, start: u32, end: u32) bool 
             .@"const", .store_local, .binop, .br => {},
             else => return false,
         }
-        if (in.application != null or in.aggregate != null or in.target != null) return false;
+        if (in.relation != null or in.application != null or in.value != null or in.subject != null) return false;
+        if (in.aggregate != null or in.target != null) return false;
         if (in.realization_start != null) return false;
         if (in.vals.len != 0 or in.pack_results.len != 0) return false;
         if (in.callee.len != 0 or in.field.len != 0 or in.record.len != 0 or in.req_alias.len != 0) return false;
         if (in.op == .br and (in.branch_target < start or in.branch_target > end)) return false;
     }
     return true;
+}
+
+/// Copy one already-lowered instruction to another PHYSICAL schedule position.
+/// This deliberately adjusts only a branch destination. It does not manufacture
+/// a transformation id or derived semantic occurrence: lowering is not their
+/// producer. `unrollRangeIsCopyable` therefore refuses every instruction that
+/// already carries a semantic coordinate. The executable census above pins the
+/// remaining same-origin/same-occurrence ambiguity until the graph owns it.
+fn unrollPhysicalCopy(instruction: dnir.Instr, offset: u32) dnir.Instr {
+    var copied = instruction;
+    if (copied.op == .br) copied.branch_target += offset;
+    return copied;
 }
 
 /// Emit the unrolled main loop AHEAD of the ordinary loop lowering, so the
@@ -6028,9 +6115,7 @@ fn emitUnrolledWhilePrologue(ctx: *LowerCtx, ws: anytype) Error!void {
         const offset: u32 = @as(u32, @intCast(ctx.instrs.items.len)) - body_start;
         var i = body_start;
         while (i < body_end) : (i += 1) {
-            var instruction = ctx.instrs.items[i];
-            if (instruction.op == .br) instruction.branch_target += offset;
-            try ctx.emit(instruction);
+            try ctx.emit(unrollPhysicalCopy(ctx.instrs.items[i], offset));
         }
     }
 
