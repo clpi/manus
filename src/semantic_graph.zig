@@ -10805,3 +10805,66 @@ test "semantic_graph: cross-home tail constant publishes exactI64" {
     }
     try std.testing.expect(saw);
 }
+
+test "semantic_graph: cross-home application exposes the exact missing body boundary" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var foreign_lex = Lexer.init(
+        \\read: i64 = (subject: { value: i64 })
+        \\    subject.value
+    , "lib/compiler/reader.id");
+    var foreign_parser = Parser.init(&foreign_lex, alloc);
+    foreign_parser.idol_mode = true;
+    const foreign_module = try alloc.create(ast.Module);
+    foreign_module.* = try foreign_parser.parse_module();
+
+    var root_lex = Lexer.init(
+        \\grab: i64 = (d: { value: i64 })
+        \\    compiler.reader.read(d)
+    , "cross-home.id");
+    var root_parser = Parser.init(&root_lex, alloc);
+    root_parser.idol_mode = true;
+    var root_module = try root_parser.parse_module();
+
+    const TestLoader = struct {
+        module: *const ast.Module,
+
+        fn load(raw: *anyopaque, spelling: []const u8) ?sema.ForeignHome {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            if (!std.mem.eql(u8, spelling, "compiler.reader")) return null;
+            return .{
+                .home = "compiler.reader",
+                .path = "lib/compiler/reader.id",
+                .module = self.module,
+            };
+        }
+    };
+    var loader: TestLoader = .{ .module = foreign_module };
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    checked.home_loader = .{ .ctx = &loader, .load = TestLoader.load };
+    try checked.check_module(&root_module);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&root_module, &checked, "cross-home.id");
+
+    try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
+    const occurrence = graph.applications()[0].application;
+    const target = graph.applicationTarget(occurrence) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings("compiler.reader", graph.foreignHome(target) orelse return error.TestExpectedEqual);
+    const linkage = graph.callableLinkage(target) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings("idol_compiler_reader__read", linkage.symbol);
+
+    // This is the exact remaining transfer boundary. The checked caller knows
+    // the target and its one physical symbol, but no executable body is owned
+    // by this graph incarnation. A real cross-home realization must replace
+    // this null with the target's graph-owned body/schedule before C emission
+    // may stop refusing; spelling-based embedding is not an alternative.
+    try std.testing.expect(graph.bodyOf(target) == null);
+}
