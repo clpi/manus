@@ -17,6 +17,28 @@
 #   consumer in the tree actually reads, and the positive work must be paid
 #   for out of `unknown`.
 #
+# THAT SECOND RULE WAS CORRECTED ONCE, ON PURPOSE, AND THE CORRECTION IS THE
+# WHOLE OF gaps/GAP-225.md. It is right about a REORDERING — moving the effect
+# pass after the worlds pass must not cost a proof — and wrong as a general
+# law, because it assumes every `none` in the census was a proof. Some were
+# not. `publishApplicationEffects` blocked on a C linkage, a `.capture`, a
+# static `.member`, an unresolved candidate and a blocked callee, and a write
+# to a module-scope binding is none of the five; the lift hid it further by
+# minting a fresh same-spelled local per relation instead of naming the
+# binding. So a relation whose body advanced a parser cursor published `none`,
+# and `comptime.foldRelationBody` — which reads that card — replaced its
+# caller with a constant and deleted the write. Measured, `--backend=direct`:
+# a program answering 2 answered 0.
+#
+# `none` FELL BY 25 ON `examples` WHEN THAT WAS REPAIRED, and every one of the
+# 25 became `one` naming the binding written. `MIN_NONE` below moved down by
+# exactly that, ONCE, with this paragraph as the argument. Moving it again
+# needs its own argument; a lane that lowers it to make a census pass is doing
+# the thing the rule above exists to stop. The floor still catches a LOSS, and
+# the anti-regression ratchet for the repair itself is not here at all — it is
+# `gate/speculation.sh`, whose "...publishing effect none" row must stay at
+# zero and is immune to ordinary corpus growth in a way a ceiling here is not.
+#
 # AND THE CENSUS IS NOT ENOUGH. A card can be published, counted, projected to
 # JSON and read by nobody. The COUNTERFACTUAL removes the fact and NOTHING
 # else — `IDOL_EFFECT_SEVER=1` suppresses the `effect` writes in
@@ -76,10 +98,17 @@ subject=examples/demand/tail.id
 # `MIN_NONE` is the reversal control for moving `publishApplicationEffects`
 # after `publishApplicationWorlds`: that reordering must not have taken a
 # single proof of unobservability away. It is pinned at the value the base
-# measured, so a positive card bought by giving up a `none` fails here.
+# measured, so a positive card bought by giving up a `none` fails here — with
+# the one documented exception above, where 25 of those `none`s were not
+# proofs and the census moved 1043 -> 1018 / 123 -> 148 on `examples`.
+#
+# `MIN_ONE` rose with it, and that is the half that makes the exception
+# checkable: the mutation repair does not merely stop saying `none`, it names
+# the binding written. A change that took the 25 out of `none` and left them in
+# `unknown` would pass a lowered `MIN_NONE` and fail here.
 MIN_APPS=${EFFECT_MIN_APPS:-1200}
-MIN_NONE=${EFFECT_MIN_NONE:-1043}
-MIN_ONE=${EFFECT_MIN_ONE:-100}
+MIN_NONE=${EFFECT_MIN_NONE:-1018}
+MIN_ONE=${EFFECT_MIN_ONE:-148}
 
 command -v jq >/dev/null 2>&1 || { echo "effect: jq not on PATH" >&2; exit 64; }
 [ -x "$idol" ] || { echo "effect: no compiler at $idol (set IDOL=)" >&2; exit 64; }

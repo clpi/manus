@@ -52,6 +52,19 @@
 #      advances a module-scope cursor. The missing fact at those sites is not
 #      termination. It is MUTATION.
 #
+#   4. THE SECOND READING, because the mutation fact took the population away
+#      from the ground it was measuring. Those two arms no longer reach the
+#      termination refusal at all -- `effect-not-none` refuses them first --
+#      so a counterfactual over "the modules that carry a termination refusal"
+#      now has no subjects, and skipping it is the vacuous pass
+#      `gate/vacuity.sh` exists to convict. Every reading below is therefore
+#      taken TWICE: once on the compiler, and once with `IDOL_MUTATION_SEVER=1`,
+#      which removes the mutation column and NOTHING else. Severed, the
+#      population comes back, and that is where the termination counterfactual
+#      is run -- both of its arms severed, so the only variable is still the
+#      termination assumption. The same second reading is what tells a zero in
+#      the hazard census from a census that examined nothing.
+#
 # USAGE:
 #   gate/speculation.sh                census + counterfactual + hazard
 #   gate/speculation.sh --census-only  census only (stated, not silent)
@@ -114,6 +127,7 @@ done | LC_ALL=C sort >"$work/files"
 
 # ======================================================================= CENSUS
 : >"$work/rows"
+: >"$work/severed"
 modules=0
 while IFS= read -r src; do
     [ -n "$src" ] || continue
@@ -122,6 +136,10 @@ while IFS= read -r src; do
     [ -n "$line" ] || continue
     modules=$((modules + 1))
     printf '%s\t%s\n' "$src" "$line" >>"$work/rows"
+    cut=$(IDOL_MUTATION_SEVER=1 IDOL_IFCONV_REPORT=1 "$idol" compile "$src" --emit asm -o /dev/null 2>&1 |
+        grep '^ifconv2 ' | head -1)
+    [ -n "$cut" ] || continue
+    printf '%s\t%s\n' "$src" "$cut" >>"$work/severed"
 done <"$work/files"
 
 [ "$modules" -gt 0 ] || die "ZERO modules reached the arm64 census over [$corpus]. Examining nothing is not a pass."
@@ -129,7 +147,7 @@ done <"$work/files"
 sum() { LC_ALL=C awk -F'\t' -v k="$1" '{
     n = split($2, a, /[ ()]+/)
     for (i = 1; i <= n; i++) { split(a[i], kv, "="); if (kv[1] == k) t += kv[2] }
-} END { print t + 0 }' "$work/rows"; }
+} END { print t + 0 }' "${2:-$work/rows}"; }
 
 candidates=$(sum two_sided_ifs)
 admitted=$(sum admitted)
@@ -141,6 +159,9 @@ effect_n=$(sum effect_not_none)
 term_n=$(sum no_termination_fact)
 term_masked=$(sum no_termination_fact_masked)
 lineage=$(sum lineage)
+cut_effect=$(sum effect_not_none "$work/severed")
+cut_term=$(sum no_termination_fact "$work/severed")
+cut_masked=$(sum no_termination_fact_masked "$work/severed")
 
 note "speculation census over [$corpus] -- $modules module(s) reached arm64"
 printf '%-28s %8s\n' "two-sided if candidates" "$candidates"
@@ -153,6 +174,10 @@ printf '%-28s %8s\n' "  effect-not-none" "$effect_n"
 printf '%-28s %8s\n' "  no-termination-fact" "$term_n"
 printf '%-28s %8s\n' "    of which masked" "$term_masked"
 printf '%-28s %8s\n' "  arm-op-lineage" "$lineage"
+printf '%-28s %8s\n' "mutation SEVERED:" ""
+printf '%-28s %8s\n' "  effect-not-none" "$cut_effect"
+printf '%-28s %8s\n' "  no-termination-fact" "$cut_term"
+printf '%-28s %8s\n' "    of which masked" "$cut_masked"
 
 [ "$modules" -ge "$MIN_MODULES" ] || die "only $modules module(s) reached arm64, floor $MIN_MODULES. The corpus stopped lowering; a census over nothing says nothing."
 [ "$candidates" -ge "$MIN_CANDIDATES" ] || die "only $candidates two-sided if candidate(s), floor $MIN_CANDIDATES. The population this measurement is about has collapsed, and every conclusion below is about a different tree."
@@ -165,12 +190,37 @@ LC_ALL=C grep -qx -- "$WITNESS" "$work/files" ||
 witness_row=$(LC_ALL=C awk -F'\t' -v w="$WITNESS" '$1 == w { print $2 }' "$work/rows")
 [ -n "$witness_row" ] ||
     die "the named witness $WITNESS emitted no ifconv2 census line. It stopped compiling, stopped reaching arm64, or stopped reporting -- and a census that skipped it would have reported a clean refutation having measured nothing."
-witness_effect=$(printf '%s\n' "$witness_row" |
-    LC_ALL=C awk '{ n = split($0, a, /[ ()]+/)
-        for (i = 1; i <= n; i++) { split(a[i], kv, "="); if (kv[1] == "effect_not_none") print kv[2] + 0 } }')
+witness_of() { printf '%s\n' "$1" |
+    LC_ALL=C awk -v k="$2" '{ n = split($0, a, /[ ()]+/)
+        for (i = 1; i <= n; i++) { split(a[i], kv, "="); if (kv[1] == k) print kv[2] + 0 } }'; }
+witness_cut_row=$(LC_ALL=C awk -F'\t' -v w="$WITNESS" '$1 == w { print $2 }' "$work/severed")
+[ -n "$witness_cut_row" ] ||
+    die "the named witness $WITNESS emitted no ifconv2 census line with the mutation column severed. The control did not reach it, so nothing below can be attributed to the fact."
+witness_effect=$(witness_of "$witness_row" effect_not_none)
+witness_term=$(witness_of "$witness_row" no_termination_fact)
+witness_cut_term=$(witness_of "$witness_cut_row" no_termination_fact)
+printf '%-28s %8s\n' "witness mutation refusals" "${witness_effect:-0}"
+printf '%-28s %8s\n' "witness term refusals" "${witness_term:-0}"
+printf '%-28s %8s\n' "  ...with mutation severed" "${witness_cut_term:-0}"
+
+# THE ARM IS STILL THERE, SOMETHING ELSE REFUSES IT, AND THE SOMETHING ELSE IS
+# THIS FACT. Three checks, because any one alone is indistinguishable from the
+# subject having left the corpus:
+#
+#   the witness carries an EFFECT refusal            the population is present
+#   severing mutation brings the TERM refusal back   the effect card is why
+#   the witness reaches NO termination ground        the order is the safe one
+#
+# `left = left + _term()` against `left = left - _term()` is the arm.
+# `armInstrEffectAdmissible` refuses it now that `_term` publishes
+# `effect: one(_bad)` instead of `effect: none`, which is the ground that
+# should have been standing in front of it from the beginning (GAP-225).
 [ "${witness_effect:-0}" -ge 1 ] ||
     die "the named witness $WITNESS carries no effect-not-none refusal (${witness_effect:-0}). The mutation fact stopped governing speculation."
-printf '%-28s %8s\n' "witness mutation refusals" "$witness_effect"
+[ "${witness_cut_term:-0}" -ge 1 ] ||
+    die "severing the mutation column did not bring a no-termination-fact refusal back to $WITNESS (${witness_cut_term:-0}). The control reaches no decision, so the published arm's readings cannot be attributed to the fact. Check semantic_graph.mutationSevered."
+[ "${witness_term:-0}" -eq 0 ] ||
+    die "the named witness $WITNESS still reaches the termination ground (${witness_term:-0} refusal(s)). The effect card is supposed to refuse a call-carrying arm first; one that gets past it is an arm whose mutation the graph did not see."
 
 if [ "$mode" = census ]; then
     note "speculation: --census-only -- the counterfactual and the hazard were SKIPPED, not passed."
@@ -178,25 +228,39 @@ if [ "$mode" = census ]; then
 fi
 
 # ================================================= COUNTERFACTUAL: ASSUME IT
-# Only the modules the refusal actually fired in can move, because
-# `terminationAssumed()` guards exactly that one branch. Compiling the rest of
-# the corpus twice would measure the compiler's determinism, not this fact.
-LC_ALL=C awk -F'\t' '$2 !~ /no_termination_fact=0 / { print $1 }' "$work/rows" >"$work/subjects"
+#
+# RUN IN THE SEVERED ARM, AND SKIPPED NOWHERE. Only the modules the refusal
+# actually fired in can move, because `terminationAssumed()` guards exactly
+# that one branch -- and on the compiler as it stands, none do: the mutation
+# effect refuses first and `no_termination_fact` is 0 corpus-wide. This used to
+# print "skipped, not passed", which is honest and is still a gate that stopped
+# measuring the thing it exists to measure.
+#
+# The refutation is a real question whatever refuses first, because "publish
+# termination" is still a thing a lane can propose. So the subjects are taken
+# from the SEVERED census -- the exact condition under which the ground has a
+# population -- and BOTH arms carry `IDOL_MUTATION_SEVER=1`, so the only
+# variable is the termination assumption. What it measures is unchanged: assume
+# the strongest answer the fact could ever give, and require the artifact to be
+# identical.
+LC_ALL=C awk -F'\t' '$2 !~ /no_termination_fact=0 / { print $1 }' "$work/severed" >"$work/subjects"
 subjects=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/subjects")
 
 changed=0
 reached=0
 would=0
-if [ "$term_n" -eq 0 ]; then
-    note "speculation: termination counterfactual has zero subjects because the earlier mutation effect now refuses the witness; skipped, not passed."
+[ "$term_n" -eq 0 ] ||
+    die "$term_n arm(s) reach the termination ground on the UNSEVERED compiler. The effect card is supposed to refuse a call-carrying arm first; anything that gets past it is an arm whose mutation the graph did not see, and this gate's argument has to be re-derived rather than kept passing."
+if [ "$cut_term" -eq 0 ]; then
+    die "no arm in [$corpus] is refused for want of a termination fact even with the mutation column severed, yet the named witness was required to carry one above. The two readings disagree, and one of them is a bug."
 else
-    [ "$subjects" -gt 0 ] || die "the census counted $term_n no-termination-fact refusal(s) but named no module carrying one. The row filter and the counter disagree."
+    [ "$subjects" -gt 0 ] || die "the severed census counted $cut_term no-termination-fact refusal(s) but named no module carrying one. The row filter and the counter disagree."
     while IFS= read -r src; do
     [ -n "$src" ] || continue
-    IDOL_IFCONV_REPORT=1 "$idol" compile "$src" --emit asm \
+    IDOL_MUTATION_SEVER=1 IDOL_IFCONV_REPORT=1 "$idol" compile "$src" --emit asm \
         -o "$work/base.s" 2>"$work/base.report" >/dev/null ||
         die "$src did not compile in the baseline arm."
-    IDOL_TERMINATION_ASSUME=1 IDOL_IFCONV_REPORT=1 "$idol" compile "$src" --emit asm \
+    IDOL_MUTATION_SEVER=1 IDOL_TERMINATION_ASSUME=1 IDOL_IFCONV_REPORT=1 "$idol" compile "$src" --emit asm \
         -o "$work/assumed.s" 2>"$work/assumed.report" >/dev/null ||
         die "$src did not compile with termination ASSUMED. The control must change a DECISION, not break the compiler."
 
@@ -244,6 +308,7 @@ printf '%-28s %8s\n' "artifacts changed" "$changed"
 # effect card their applications carry. A row here is a relation the graph
 # positively asserts is unobservable and whose body writes module state.
 : >"$work/mutators"
+: >"$work/cutmutators"
 : >"$work/allsource"
 : >"$work/allmut"
 : >"$work/allgraphmut"
@@ -277,6 +342,17 @@ while IFS= read -r src; do
         LC_ALL=C sort -u >"$work/free" || continue
     LC_ALL=C comm -12 "$work/mutrel" "$work/free" 2>/dev/null |
         LC_ALL=C awk -v f="$src" 'NF { print f "\t" $0 }' >>"$work/mutators"
+    # AND THE SAME INTERSECTION WITH THE COLUMN SEVERED. `mutators` must be
+    # zero, and a zero from a scan that examined nothing looks the same. This
+    # is the row that has to be NONZERO for the zero above to mean anything.
+    IDOL_MUTATION_SEVER=1 "$idol" graph "$src" >"$work/cut.json" 2>/dev/null || continue
+    jq -r '(reduce .nodes[] as $n ({}; .[$n.id|tostring] = $n.name)) as $nm
+           | .applications[]
+           | select(.effect.card == "none")
+           | ($nm[.relation|tostring] // "?")' "$work/cut.json" 2>/dev/null |
+        LC_ALL=C sort -u >"$work/cutfree" || continue
+    LC_ALL=C comm -12 "$work/mutrel" "$work/cutfree" 2>/dev/null |
+        LC_ALL=C awk -v f="$src" 'NF { print f "\t" $0 }' >>"$work/cutmutators"
 done <"$work/files"
 
 mutators=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/mutators")
@@ -285,12 +361,14 @@ allmut=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/allmut")
 graphmut=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/allgraphmut")
 missingmut=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/missingmut")
 extramut=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/extramut")
+cutmutators=$(LC_ALL=C awk 'END { print NR + 0 }' "$work/cutmutators")
 printf '%-28s %8s\n' "source mutation pairs" "$allsource"
 printf '%-28s %8s\n' "  graph-measured pairs" "$allmut"
 printf '%-28s %8s\n' "graph mutation facts" "$graphmut"
 printf '%-28s %8s\n' "  source facts missing" "$missingmut"
 printf '%-28s %8s\n' "  extra graph facts" "$extramut"
 printf '%-28s %8s\n' "  ...publishing effect none" "$mutators"
+printf '%-28s %8s\n' "  ...severed, effect none" "$cutmutators"
 LC_ALL=C awk -F'\t' '{ printf "    %-34s %s\n", $2, $1 }' "$work/mutators" >&2
 
 [ "$allmut" -ge "$MIN_MUTATORS" ] ||
@@ -299,19 +377,18 @@ LC_ALL=C awk -F'\t' '{ printf "    %-34s %s\n", $2, $1 }' "$work/mutators" >&2
     die "$missingmut source mutation fact(s) are absent from the graph. The producer lost a module-binding write."
 [ "$extramut" -eq 0 ] ||
     die "$extramut graph mutation fact(s) have no source witness. The producer invented a write or crossed a shadow."
+[ "$cutmutators" -ge "$MIN_MUTATORS" ] ||
+    die "with the mutation column severed only $cutmutators relation(s) publish effect none about a body that writes module state, floor $MIN_MUTATORS. The control reaches no decision, so the published arm's zero proves nothing. Check semantic_graph.mutationSevered."
 [ "$mutators" -eq 0 ] ||
     die "$mutators relation(s) write module bindings yet publish effect none. Mutation is observable; see gaps/GAP-225.md."
 
 # ==================================================================== THE RULE
 if [ "$would" -eq 0 ]; then
-    if [ "$term_n" -eq 0 ]; then
-        note "speculation: module-binding mutation is now the earlier refusal; termination remains downstream and was not measured."
-    else
-        note "speculation: $term_n arm(s) refused on termination, $term_masked of them ALSO refused by the independent lineage ground, and $would would be admitted by a real producer."
-        note "speculation: DO NOT BUILD THE TERMINATION PRODUCER. It would govern nothing."
-    fi
+    note "speculation: $term_n arm(s) reach the termination ground on the compiler; $cut_term reach it with the mutation column severed, $cut_masked of those ALSO refused by the independent lineage ground, and $would would be admitted by a real producer."
+    note "speculation: MODULE-BINDING MUTATION IS NOW THE EARLIER REFUSAL. $allsource source mutation pair(s), $graphmut in the graph, $cutmutators publishing effect none with the column severed and $mutators with it published."
+    note "speculation: DO NOT BUILD THE TERMINATION PRODUCER. It would govern nothing."
     note "speculation: SPECULATION OK."
     exit 0
 fi
 
-die "a real producer would now unblock $would if-conversion arm(s) ($term_n refused on termination, $term_masked of them masked). That is a consumer, and it arrived while $mutators relation(s) in this corpus still publish effect none about a body that writes module-scope state. The FIRST admission test on an arm is that same effect card, so publishing termination here admits speculation that runs a mutation twice. The mutation fact comes first -- see gaps/GAP-225.md."
+die "a real producer would now unblock $would if-conversion arm(s) ($cut_term refused on termination in the severed arm, $cut_masked of them masked). That is a consumer. Re-derive this gate's argument against the current effect and mutation columns before building it -- gaps/GAP-225.md is the ordering the last derivation turned on."

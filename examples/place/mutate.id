@@ -1,0 +1,95 @@
+# @corpus current
+# gap[225] proof: A RELATION THAT WRITES A MODULE BINDING IS NOT UNOBSERVABLE,
+# and the graph published that it was.
+#
+# `publishApplicationEffects` blocks a relation on five grounds — a C linkage
+# origin, a `.capture` edge, a static `.member` read, an unresolved application
+# candidate, and a callee already blocked. A write to a module-scope binding is
+# none of the five, and it could not become one by accident: the LIFT minted a
+# fresh scope-local entity for `ring = 1` inside `bump` instead of relating the
+# assignment to the module binding it names. So the graph could not tell a
+# write to `ring` from a relation-local of the same spelling, and published
+# `effect: none` — the POSITIVE claim that no observation is reachable.
+#
+# `comptime.foldRelationBody` reads that card through
+# `graph_query.effectFreeCalleeClosure` and replaces a zero-operand relation's
+# whole body with its value. `probe`'s value IS 7 whether or not the write
+# happens, so the fold answers correctly and DELETES the write on the way past.
+# Measured on `--backend=direct` before the fact existed, and reproducible
+# today with `IDOL_MUTATION_SEVER=1`, which severs the mutation column and
+# nothing else:
+#
+#     ring = 0   with the fact          ring = 1     the program's answer
+#     ring = 0   with it severed        ring = 0     the write was erased
+#
+# THE TWO CHECKS BELOW ARE NOT THE SAME CHECK. `probe` answering 7 is what a
+# correct fold and a miscompiled fold BOTH produce — it is the negative
+# control, and a fixture with only that row would have passed throughout the
+# defect. `ring` is the observation the fold was licensed to erase.
+#
+# Verified BY VALUE. Both bindings are `global` and both relations are
+# zero-parameter because the declaration freeze admits exactly those two forms
+# (`gaps/GAP-224.md`); nothing about the defect turns on either spelling.
+
+global ring: i64 = 0
+
+# THE MUTATOR. Its answer does not read `ring`, so the fold can evaluate the
+# body to a constant with no unbound name to decline on — which is what makes
+# the erased write reachable rather than hypothetical.
+bump(): i64
+  ring = 1
+  7
+
+# ZERO OPERANDS AND ONE APPLICATION: the exact shape `foldRelationBody` folds.
+probe(): i64
+  bump()
+
+# THE CHECKS LIVE IN A RELATION because a module-scope `if` carries no tail
+# and the native-scalar precheck refuses `block-tail-no-return`. Nothing about
+# the defect turns on that either.
+# THE NEGATIVE CONTROL, and the lift needs it as much as the fixture does. A
+# body that DECLARES its own `ring` owns a DISTINCT entity, and an assignment
+# inside it is not a write to the module's word. Collapsing the shadow entities
+# is the repair; collapsing this one too would be the opposite defect, and the
+# graph says which happened: `idol graph examples/place/mutate.id | jq` shows
+# TWO entities named `ring` — one at module scope, one under `shadow` — and the
+# `writes` column names the module one, from `bump`, and only that one.
+#
+# THE GRAPH CONTROL IS CHECKED, THE STORAGE ONE IS NOT, and the difference is a
+# separate defect. `shadow()` answering 5 is checked below; `ring` still being
+# 1 afterwards is NOT, because realization gives the shadowing declaration the
+# module's `__DATA` word and the module binding reads 5. That is independent of
+# every fact this file is about — reduce it to
+#
+#     global ring: i64 = 0
+#     shadow(): i64
+#       ring: i64 = 5
+#       ring
+#     print(shadow())
+#     print(ring)      -> 5, and the answer is 0
+#
+# where `writes` is EMPTY and the graph still holds two distinct entities. The
+# lift is right and the storage decision is not; see gaps/GAP-228.md.
+shadow(): i64
+  ring: i64 = 5
+  ring
+
+check(): i64
+  got: i64 = probe()
+  if got != 7
+    print("place mutate: probe did not answer 7, it answered")
+    print(got)
+    return 1
+  if ring != 1
+    print("place mutate: the module write was ERASED, ring is")
+    print(ring)
+    return 2
+  hid: i64 = shadow()
+  if hid != 5
+    print("place mutate: the shadowing local did not answer 5, it answered")
+    print(hid)
+    return 3
+  print("place mutate: OK")
+  0
+
+check()
