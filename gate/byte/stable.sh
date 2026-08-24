@@ -15,7 +15,10 @@
 #               code-signed, the signature's Identifier IS the output basename,
 #               the CDHash covers it, and `ld` derives LC_UUID from the output
 #               path. Two identical programs written to `a.out` and `b.out`
-#               differ in ~52 bytes and always will.
+#               differ, and always will. NO BYTE COUNT IS WRITTEN DOWN: §4
+#               asserts only that they DIFFER, so a figure here would be prose
+#               the runner does not defend and could drift with the toolchain.
+#               `codesign -dvvv` and the load commands give it for a given one.
 #   SOURCE      the SOURCE path is mangled into every symbol
 #               (`_idol_private_tmp_..._arith__main`), so the same program read
 #               from two directories, or under two filenames, emits different
@@ -33,8 +36,10 @@
 # comparison that must still be able to SEE a difference:
 #
 #   §1 SUBJECTS    the corpus is enumerated and a zero refuses.
-#   §2 OBJECT      same source path, separate processes, DIFFERENT output names
-#                  -> bytes must be IDENTICAL.
+#   §2 OBJECT      same source path, separate processes, DIFFERENT output
+#                  BASENAMES *and* a DIFFERENT output DIRECTORY -> bytes must be
+#                  IDENTICAL on both dimensions, which is what "path
+#                  independent" has to mean to be usable.
 #   §3 DIRECTORY   linked executable, same basename, different directory ->
 #                  bytes must be IDENTICAL.
 #   §4 CONTROL     linked executable, DIFFERENT basenames -> bytes must DIFFER.
@@ -64,13 +69,23 @@ trap cleanup EXIT INT TERM
 fail() { printf 'byte/stable gate: FAIL %s\n' "$1" >&2; exit 1; }
 [ -x "$idol" ] || fail "compiler is not executable: $idol"
 
+# AN UNSUPPORTED HOST IS A REFUSAL, NOT A SKIP. The first version of this file
+# printed `SKIP` and exited 0 here, which is indistinguishable from a measured
+# baseline to the only thing that reads it: `gate/all.sh` discards gate output
+# (`sh "$gate" >/dev/null 2>&1`) and counts every zero exit as a pass. There is
+# no skip protocol in that runner to opt into. So on a host where the direct
+# backend emits no artifact to compare, this gate has NOT MEASURED its subject
+# and says so with a refusal status, exactly as `gate/taint.sh:20` already does
+# for the same class of fact ("counterfactual interposition currently requires
+# Darwin"). No gate in this home exits 0 for a host it could not measure; the
+# four that print SKIP do so only under an explicit `--census-only` /
+# `--static-only` flag, where the CALLER asked for the reduced run.
 case $(uname -s)/$(uname -m) in
     Darwin/arm64) : ;;
     *)
-        # The direct backend emits AArch64 Mach-O and nothing else, so there is
-        # no artifact to compare anywhere else. Say so rather than pass.
-        printf 'byte/stable gate: SKIP -- direct-native artifacts exist only on Darwin/arm64\n'
-        exit 0
+        printf 'byte/stable gate: FAIL — direct-native artifacts exist only on Darwin/arm64; this host emits nothing to compare and the baseline is NOT MEASURED (uname: %s/%s)\n' \
+            "$(uname -s)" "$(uname -m)" >&2
+        exit 2
         ;;
 esac
 
@@ -87,7 +102,7 @@ plant arith 'main: i64 = ()
     x = 6
     y = 7
     x * y + 3'
-plant call 'twice(n: i64): i64
+plant call 'twice: i64 = (n: i64)
     n + n
 
 main: i64 = ()
@@ -116,16 +131,31 @@ sum() { shasum -a 256 "$1" | cut -d' ' -f1; }
 # ------------------------------------------------------------------ §2 OBJECT
 # `--no-cache` because the build cache would hand back the same file and the
 # comparison would be measuring the cache, not the emitter.
+#
+# THE OUTPUT PATH HAS TWO DIMENSIONS AND BOTH ARE EXERCISED. An earlier version
+# varied only the BASENAME, with both objects written into one directory, and
+# then the header claimed output-PATH independence — a claim one dimension wider
+# than the measurement. If object emission ever started folding in the parent
+# directory (the linker already does, for `LC_UUID`), that gate would still have
+# passed while every consumer following its advice compared noisy objects. So
+# each subject is emitted three times: two basenames in one directory, and the
+# first basename again in a DIFFERENT directory. All three must be identical.
+mkdir -p "$work/objA" "$work/objB"
 objects=0
 for s in $subjects; do
-    "$idol" compile --no-cache --emit obj -o "$work/alpha.o" "$work/src/$s.id" >/dev/null 2>&1 ||
+    "$idol" compile --no-cache --emit obj -o "$work/objA/alpha.o" "$work/src/$s.id" >/dev/null 2>&1 ||
         fail "§2 $s: object emission failed"
-    "$idol" compile --no-cache --emit obj -o "$work/verylongerdifferentname.o" "$work/src/$s.id" >/dev/null 2>&1 ||
+    "$idol" compile --no-cache --emit obj -o "$work/objA/verylongerdifferentname.o" "$work/src/$s.id" >/dev/null 2>&1 ||
         fail "§2 $s: object emission failed on the second name"
-    a=$(sum "$work/alpha.o")
-    b=$(sum "$work/verylongerdifferentname.o")
+    "$idol" compile --no-cache --emit obj -o "$work/objB/alpha.o" "$work/src/$s.id" >/dev/null 2>&1 ||
+        fail "§2 $s: object emission failed in the second output directory"
+    a=$(sum "$work/objA/alpha.o")
+    b=$(sum "$work/objA/verylongerdifferentname.o")
+    c=$(sum "$work/objB/alpha.o")
     [ "$a" = "$b" ] ||
-        fail "§2 $s: OBJECT BYTES ARE NOT STABLE across processes/output names ($a vs $b) -- every lane diffing objects is now measuring noise"
+        fail "§2 $s: OBJECT BYTES ARE NOT STABLE across processes/output BASENAMES ($a vs $b) -- every lane diffing objects is now measuring noise"
+    [ "$a" = "$c" ] ||
+        fail "§2 $s: OBJECT BYTES DEPEND ON THE OUTPUT DIRECTORY ($a vs $c) -- this gate's header claims path independence and it is no longer true; re-measure before any lane diffs objects from two directories"
     objects=$((objects + 1))
 done
 [ "$objects" -eq "$count" ] || fail "§2 measured $objects of $count subjects"
@@ -185,7 +215,7 @@ cp "$work/src/arith.id" "$work/aa/zzzzzzzzzz.id"
 nm "$work/s1.o" 2>/dev/null | grep -q '_aa_arith__' ||
     fail "§5 the emitted symbol does not carry the source path; the byte difference above has some OTHER cause and the header is wrong"
 
-printf 'byte/stable gate: %d subject(s). object bytes: stable across processes and output paths.\n' "$count"
+printf 'byte/stable gate: %d subject(s). object bytes: stable across processes, output basenames and output directories.\n' "$count"
 printf 'byte/stable gate: executable bytes: basename-sensitive (ad-hoc signature identity + LC_UUID).\n'
 printf 'byte/stable gate: source path is mangled into every symbol -- hold it FIXED across arms.\n'
 printf 'byte/stable gate: OK.\n'
