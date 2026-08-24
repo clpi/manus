@@ -788,6 +788,35 @@ pub const FuncDecl = struct {
     is_local: bool,
     func: FuncBody,
     attributes: []Attribute = &.{},
+
+    /// A zero-operand module relation whose result a process can EXIT with.
+    /// `f64` is admitted because the link step coerces it (`fcvtzs x0, d0`).
+    ///
+    /// ONE DEFINITION. `native_backend.isZeroArgEntryFunction` is this function
+    /// — entry eligibility decides both which relation an executable may be
+    /// pointed at and which relation owns the bare process symbol, and two
+    /// spellings of that predicate is how those two answers drift apart.
+    pub fn processEntryEligible(self: *const FuncDecl) bool {
+        if (self.path.len != 1 or self.method or self.is_local) return false;
+        if (self.func.params.len != 0) return false;
+        return switch (self.func.ret_type) {
+            .named => |n| @import("std").mem.eql(u8, n, "i32") or
+                @import("std").mem.eql(u8, n, "i64") or
+                @import("std").mem.eql(u8, n, "u32") or
+                @import("std").mem.eql(u8, n, "u64") or
+                @import("std").mem.eql(u8, n, "void") or
+                self.func.ret_type.is_float(),
+            else => false,
+        };
+    }
+
+    /// Is this the relation spelled `main` AND eligible to be the process?
+    /// The spelling alone is not the fact: `main: i64 = (x: i64)` is an
+    /// ordinary relation that happens to share a word with the C runtime.
+    pub fn namesProcessEntry(self: *const FuncDecl) bool {
+        if (!self.processEntryEligible()) return false;
+        return @import("std").mem.eql(u8, self.path[0], "main");
+    }
 };
 
 pub const Stmt = union(enum) {
@@ -943,10 +972,25 @@ pub const Module = struct {
     /// opposed to declarations that only bind. The tail is the program.
     pub fn program(self: *const Module) bool {
         if (self.body.tail_expr != null) return true;
-        for (self.body.stmts) |*stmt| switch (stmt.*) {
+        for (self.body.stmts, 0..) |*stmt, at| switch (stmt.*) {
+            // A MODULE-SCOPE `name = expr` IS A BINDING, NOT EXECUTION.
+            //
+            // idol has no `local` keyword, so the untyped spelling of a module
+            // binding parses as `.assign` — the same node a relation body
+            // produces — while the annotated spelling `name: T = expr` parses
+            // as `.local_decl`, which this predicate has always read as a
+            // declaration. Counting one and not the other made the ANNOTATION
+            // decide whether the file is a program.
+            //
+            // Measured (gap[228]): `m = 7` beside `main: i64 = () m` selected
+            // the root over `main` in `selectProcessEntry`, and the root has
+            // no tail, so the process exited 0 with no diagnostic; the
+            // identical file spelled `m: i64 = 7` exited 7. Every expression
+            // over such a binding collapsed the same way, because the relation
+            // computing it was simply never called.
+            .assign => if (!self.assignOnlyBinds(at)) return true,
             .call_stmt,
             .expr_stmt,
-            .assign,
             .do_block,
             .while_loop,
             .repeat_loop,
@@ -961,6 +1005,92 @@ pub const Module = struct {
             else => {},
         };
         return false;
+    }
+
+    /// Is the file-scope assignment at `at` the DECLARATION of its names, and
+    /// nothing more?
+    ///
+    /// Only the FIRST binding of a bare name qualifies, so this arm says
+    /// exactly what the `.local_decl` arm says and no more:
+    ///
+    ///   * a target that is not a bare name (`M.x = 1`, `xs[1] = 2`) writes
+    ///     into something that already exists — execution;
+    ///   * a name this module already bound above is a REBINDING the module
+    ///     body has to run to be correct — execution;
+    ///   * `closed_loop` marks an assignment a loop closure put here in place
+    ///     of a `while` (GAP-215). It carries a loop's residue, never a
+    ///     declaration.
+    fn assignOnlyBinds(self: *const Module, at: usize) bool {
+        const a = self.body.stmts[at].assign;
+        if (a.closed_loop) return false;
+        if (a.targets.len == 0) return false;
+        for (a.targets) |t| {
+            if (t.* != .name) return false;
+            if (self.bindsNameBefore(at, t.name.ident)) return false;
+        }
+        return true;
+    }
+
+    /// Does any file-scope statement STRICTLY BEFORE `at` bind `ident`?
+    fn bindsNameBefore(self: *const Module, at: usize, ident: []const u8) bool {
+        const eql = @import("std").mem.eql;
+        for (self.body.stmts[0..at]) |*stmt| switch (stmt.*) {
+            .local_decl => |ld| for (ld.names) |n| {
+                if (eql(u8, n.ident, ident)) return true;
+            },
+            .global_decl => |gd| for (gd.names) |n| {
+                if (eql(u8, n.ident, ident)) return true;
+            },
+            .const_decl => |cd| if (eql(u8, cd.ident, ident)) return true,
+            .func_decl => |fd| if (fd.path.len == 1 and eql(u8, fd.path[0], ident)) return true,
+            .assign => |a| for (a.targets) |t| {
+                if (t.* == .name and eql(u8, t.name.ident, ident)) return true;
+            },
+            else => {},
+        };
+        return false;
+    }
+
+    /// THE PROCESS ENTRY THIS SOURCE MODULE OFFERS, and null when it offers
+    /// none.
+    ///
+    /// WHY THIS IS A MODULE QUESTION AND NOT A NAME QUESTION. The symbol law in
+    /// `home_resolve.zig` says a relation is `(home, name)` and lists the
+    /// process entry as its first foreign-boundary exemption: `main` is the C
+    /// runtime's name, not ours. The exemption used to be applied by comparing
+    /// the NAME to `"main"` inside `relationSymbol`, and that was wrong in one
+    /// direction — a module that is ITSELF the program already owns the bare
+    /// symbol through its root, so a relation named `main` beside file-scope
+    /// execution produced the symbol twice in one object.
+    ///
+    /// Deleting the exemption instead of narrowing it lost the other direction,
+    /// and this is the measurement: with `helper` and `main` in one home,
+    /// `--emit obj` emitted `_idol_<home>__helper _idol_<home>__main` and NO
+    /// `_main` at all, so `ld -r` over two independent programs each declaring
+    /// `main` merged cleanly, rc 0. Home qualification exists to remove the
+    /// collisions two homes must not have; it deliberately KEEPS this one,
+    /// because two programs cannot share a process entry.
+    ///
+    /// So the exemption is narrowed, not deleted: a source relation named
+    /// `main` owns the bare process symbol exactly when the module root does
+    /// NOT — which is to say, exactly when that relation IS the process. One
+    /// object, one `main`, in every artifact kind.
+    ///
+    /// `native_backend.selectProcessEntry` may still select some OTHER relation
+    /// as an executable's entry (`--entry r`, or the sole zero-arg relation of
+    /// a body-less module). That is a LINK-LINE choice, carried by `-Wl,-e`,
+    /// and it does not rename the relation: an object is not a program, so a
+    /// library that happens to hold one zero-arg relation must not start
+    /// exporting `_main`.
+    pub fn sourceProcessEntry(self: *const Module) ?*const FuncDecl {
+        if (self.program()) return null;
+        for (self.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (!fd.namesProcessEntry()) continue;
+            return fd;
+        }
+        return null;
     }
 };
 

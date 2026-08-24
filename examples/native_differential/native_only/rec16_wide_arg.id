@@ -1,0 +1,162 @@
+# expect-exit: 99
+#
+# A RECORD PARAMETER'S FIELDS ARE GENERAL-PURPOSE WORDS, AND THE NINTH ONE
+# STACKS.
+#
+# A record crossing a call is exploded into one word per field. Eight of those
+# ride x0..x7; the rest travel in the caller's outgoing argument area at
+# [sp,#(i-8)*8] and the callee homes them out of its incoming frame — exactly
+# the stack-argument extension an ordinary `i64` operand past the eighth
+# already took. `functionEligibleReason` capped record fields at the register
+# file and gave as its ground that "its fields are never stacked", which was
+# never true of the mechanism: the caller's `mov_arg` and the callee prologue's
+# `slot_cursor` both key on the SLOT INDEX, and neither asks whether the word
+# came from a record field or from a scalar operand. Only the predicate stood
+# between them, and it took `lexer` and `parser` down with it.
+#
+# EXIT STATUS IS THE ASSERTION. Every check answers 0, or a distinct nonzero
+# code naming the exact field that came back wrong — so an argument register
+# shifted by one fails this file instead of printing a plausible number.
+#
+# TWO THINGS ARE DELIBERATELY AVOIDED HERE, both because they are SEPARATE live
+# defects that would mask this one:
+#   * reading record fields and calling `print` in the same body (the third
+#     field then reads back as the second);
+#   * spending a MODULE-LEVEL record global as an argument from inside a
+#     relation (its fields are not resident in that relation's scope, and the
+#     lowering refuses by name at any width, including four).
+
+_wide: {
+    a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64,
+    i: i64, j: i64, k: i64, l: i64, m: i64, n: i64, o: i64, p: i64
+}
+
+_quad: { a: i64, b: i64, c: i64, d: i64 }
+
+_dozen: {
+    a: i64, b: i64, c: i64, d: i64, e: i64, f: i64,
+    g: i64, h: i64, i: i64, j: i64, k: i64, l: i64
+}
+
+# i8 beside i64: every field this backend puts in a scalar record occupies one
+# 8-byte slot whatever its declared width, so the _narrow ones must survive the
+# frame round trip with their sign intact.
+_narrow: {
+    a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64,
+    i: i8, j: i8, k: i8, l: i64
+}
+
+# A `str` in the TENTH slot — the second stacked word — is an address like any
+# other and must arrive as one.
+_texted: {
+    a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, i: i64,
+    s: str
+}
+
+# SIXTEEN FIELDS, EACH ASSERTED. Eight argument registers plus the eight stack
+# slots the outgoing block carries is the whole budget, so this is the widest
+# record the convention carries — and the seventeenth is still refused, by
+# name, in `functionEligibleReason`.
+_all16: i64 = (v: _wide)
+  if v.a != 101 return 1
+  if v.b != 102 return 2
+  if v.c != 103 return 3
+  if v.d != 104 return 4
+  if v.e != 105 return 5
+  if v.f != 106 return 6
+  if v.g != 107 return 7
+  if v.h != 108 return 8
+  if v.i != 109 return 9
+  if v.j != 110 return 10
+  if v.k != 111 return 11
+  if v.l != 112 return 12
+  if v.m != 113 return 13
+  if v.n != 114 return 14
+  if v.o != 115 return 15
+  if v.p != 116 return 16
+  return 0
+
+# A RECORD FOLLOWED BY SCALARS. The scalars continue the SAME slot cursor, so
+# `x` is slot 12 and lands on the stack beside the record's own tail.
+_rec_then_scalars: i64 = (v: _dozen, x: i64, y: i64, z: i64)
+  if v.a != 201 return 21
+  if v.h != 208 return 22
+  if v.l != 212 return 23
+  if x != 301 return 24
+  if y != 302 return 25
+  if z != 303 return 26
+  return 0
+
+# SCALARS FIRST, so the record STARTS at slot 2 and the register/stack seam
+# falls INSIDE it: `v.g` is the last register field and `v.h` the first stacked
+# one.
+_scalars_then_rec: i64 = (x: i64, y: i64, v: _dozen)
+  if x != 301 return 31
+  if y != 302 return 32
+  if v.a != 201 return 33
+  if v.g != 207 return 34
+  if v.h != 208 return 35
+  if v.l != 212 return 36
+  return 0
+
+# TWO RECORDS — sixteen slots between them, and the seam falls inside the
+# SECOND one: `w.d` is the last register field and `w.e` the first stacked
+# field, so the two records must agree on a single running slot cursor.
+_two_recs: i64 = (u: _quad, w: _dozen)
+  if u.a != 401 return 41
+  if u.d != 404 return 42
+  if w.a != 201 return 43
+  if w.d != 204 return 44
+  if w.e != 205 return 45
+  if w.l != 212 return 46
+  return 0
+
+_narrow_fields: i64 = (v: _narrow)
+  if v.a != 501 return 51
+  if v.h != 508 return 52
+  if v.i != -3 return 53
+  if v.j != 127 return 54
+  if v.k != -128 return 55
+  if v.l != 987654321 return 56
+  return 0
+
+_str_tail: i64 = (v: _texted)
+  if v.a != 601 return 61
+  if v.i != 609 return 62
+  if v.s != "stacked" return 63
+  return 0
+
+# TWO CALL LEVELS. `_outer16` has the sixteen words homed in its own frame and
+# must hand them on, which means re-staging eight of them into a NEW outgoing
+# block rather than forwarding a register file it no longer owns.
+_inner16: i64 = (v: _wide)
+  return _all16(v)
+
+_outer16: i64 = (v: _wide)
+  if v.p != 116 return 71
+  return _inner16(v)
+
+_main: i64 = ()
+  w: _wide = { a = 101, b = 102, c = 103, d = 104, e = 105, f = 106, g = 107, h = 108, i = 109, j = 110, k = 111, l = 112, m = 113, n = 114, o = 115, p = 116 }
+  d12: _dozen = { a = 201, b = 202, c = 203, d = 204, e = 205, f = 206, g = 207, h = 208, i = 209, j = 210, k = 211, l = 212 }
+  q4: _quad = { a = 401, b = 402, c = 403, d = 404 }
+  n12: _narrow = { a = 501, b = 502, c = 503, d = 504, e = 505, f = 506, g = 507, h = 508, i = -3, j = 127, k = -128, l = 987654321 }
+  t10: _texted = { a = 601, b = 602, c = 603, d = 604, e = 605, f = 606, g = 607, h = 608, i = 609, s = "stacked" }
+  r: i64 = _all16(w)
+  if r != 0 return r
+  r = _rec_then_scalars(d12, 301, 302, 303)
+  if r != 0 return r
+  r = _scalars_then_rec(301, 302, d12)
+  if r != 0 return r
+  r = _two_recs(q4, d12)
+  if r != 0 return r
+  r = _narrow_fields(n12)
+  if r != 0 return r
+  r = _str_tail(t10)
+  if r != 0 return r
+  r = _outer16(w)
+  if r != 0 return r
+  # 99, NOT 0: zero is also what a harness that never ran the binary
+  # would observe, so the success answer has to be a value only this body
+  # can produce.
+  return 99

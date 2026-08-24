@@ -1,4 +1,10 @@
-# expect: 40
+# expect-exit: 40
+#
+# `expect-exit`, NOT `expect`. `# expect:` is the STDOUT oracle
+# (gate/expect.sh:688); this program prints nothing and delivers 40 as its
+# exit status, so the stdout oracle compared `40` against an empty stdout and
+# reported CONTRADICT on both realizations while both were answering
+# correctly. Measured: stdout 0 bytes, rc 40, direct and Wasm alike.
 # One ordinary workload exercises both newly graph-owned flat projection
 # routes: the exact key contracts to the exact result, while the parameter key
 # retains one bounds-checked dense load. Native and Wasm must consume the same

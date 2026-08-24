@@ -23543,10 +23543,18 @@ pub const CodeGen = struct {
         return e.* == .field and self.expr_is_dynamic_table(e.field.obj);
     }
 
-    /// `a(i) = v` — the CANONICAL index-assign spelling, in PLACE position.
+    /// `a(i) = v` — the RETIRED index-assign spelling, in PLACE position.
     ///
-    /// Demagix ruled that `a[i]` canonicalizes to `a(i)` (762e2bff, 6065 ->
-    /// 2804 sites) and `src/table_apply.zig` converges the READ back onto
+    /// CURRENT LAW: `[]` is computed projection and `()` is ordinary
+    /// application. `a(i)` as an index is RETIRED — the direct-native path
+    /// refuses it (`DNB001 assign-target` on a write, `DNB011
+    /// unresolved-application-facts` on a read) and `src/pretty.zig` no longer
+    /// rewrites `a[i]` into it. This function survives only so that the retired
+    /// AST/Lua backend can still lower legacy sources that were written under
+    /// the old ruling (762e2bff, which had canonicalized 6065 -> 2804 sites the
+    /// other way); nothing generates the spelling any more.
+    ///
+    /// `src/table_apply.zig` converges the READ back onto
     /// `.index`. It converts nothing in place position that its two
     /// recognizers cannot see: `calleeIsArray` needs sema to have resolved the
     /// callee to `.array`, and `nameIsPositionalTable` needs a bare name bound
@@ -23556,7 +23564,8 @@ pub const CodeGen = struct {
     /// place fell through `emit_lvalue` to `emit_expr`, emitting
     /// `({ … lua_invoke(__fn, 1, duo_args); }) = v` and
     /// "error: expression is not assignable". Measured: `xs = {} / xs(1) = "A"`
-    /// refused on BOTH backends while the retired `xs[1] = "A"` ran, and
+    /// refused on BOTH backends while `xs[1] = "A"` — the canonical spelling —
+    /// ran, and
     /// `lib/mem.id` could not be `req`d at all because its arena and pool
     /// allocators write `self._bufs(self._bufs:len() + 1) = new_buf`.
     ///

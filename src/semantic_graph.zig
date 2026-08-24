@@ -2772,10 +2772,21 @@ pub const SemanticGraph = struct {
         return self.callable_linkage_required;
     }
 
+    /// `owns_process_symbol` is `ast.Module.sourceProcessEntry` already asked,
+    /// by the ONE caller that has the declaring module in hand. The process
+    /// entry is the symbol law's first foreign-boundary exemption — `main`
+    /// belongs to the C runtime — and it is a fact about the MODULE, not about
+    /// the spelling, so it cannot be recomputed from `name` here.
+    ///
+    /// It is threaded in rather than looked up because the definer and every
+    /// caller must reach the same answer from the same function: the definer
+    /// asks about its own module, `liftForeignRelation` asks about the resolved
+    /// foreign module, and both call `sourceProcessEntry`.
     fn publishCallableLinkage(
         self: *SemanticGraph,
         entity: id,
         checked: sema.CallableLinkage,
+        owns_process_symbol: bool,
     ) !void {
         try self.requireOpen();
         const node = self.get(entity) orelse return error.InvalidCallableLinkageFact;
@@ -2785,6 +2796,7 @@ pub const SemanticGraph = struct {
 
         const symbol = switch (checked.exposure) {
             .internal => blk: {
+                if (owns_process_symbol) break :blk try self.alloc.dupe(u8, name);
                 const owner_home = node.foreign_home orelse self.home;
                 if (owner_home) |home| break :blk try home_resolve_mod.homeSymbol(self.alloc, home, name);
                 break :blk try self.alloc.dupe(u8, name);
@@ -5471,7 +5483,16 @@ pub const SemanticGraph = struct {
         }
         const checked_linkage = checked.callableLinkage(fd) orelse
             return error.MissingCallableLinkageFact;
-        try self.publishCallableLinkage(func_id, checked_linkage);
+        // THE CALLER'S HALF OF THE PROCESS-ENTRY EXEMPTION. The definer decides
+        // from its own module; a cross-home reference must reach the same
+        // answer, so it asks the same question of the module that home IS.
+        // `resolvedHome` is absent only when the home never resolved, in which
+        // case there is no definition to disagree with.
+        const foreign_owns_process = if (checked.resolvedHome(home)) |resolved|
+            resolved.module.sourceProcessEntry() == fd
+        else
+            false;
+        try self.publishCallableLinkage(func_id, checked_linkage, foreign_owns_process);
         const foreign_type_name = switch (fd.func.ret_type) {
             .named => |n| n,
             else => null,
@@ -5765,6 +5786,10 @@ pub const SemanticGraph = struct {
 
         // Resolution owns boundary classification. Lift it onto the exact
         // callable ids before any application or effect consumer can run.
+        // Asked ONCE for the module, not once per declaration: the answer is a
+        // property of the file (does its ROOT own the bare process symbol?) and
+        // asking per relation would invite the name-only test this replaces.
+        const source_entry = mod.sourceProcessEntry();
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .func_decl) continue;
             const declaration = &stmt.func_decl;
@@ -5773,7 +5798,7 @@ pub const SemanticGraph = struct {
                 return error.MissingCallableLinkageFact;
             const linkage = checked.callableLinkage(declaration) orelse
                 return error.MissingCallableLinkageFact;
-            try self.publishCallableLinkage(relation, linkage);
+            try self.publishCallableLinkage(relation, linkage, source_entry == declaration);
         }
 
         const candidate_limit = self.application_candidates.bit_length;

@@ -570,6 +570,38 @@ fn typeOfGlobal(t: ast.TypeExpr, init: ?*const Expr) RT {
     };
 }
 
+/// §18 RESIDENCY, ASKED BY THE STORAGE DECISION ITSELF.
+///
+/// `ModuleGlobals` registers ONE `__DATA` word per name. That is the right
+/// shape for a scalar and no shape at all for a COLLECTION: one word cannot
+/// hold three elements, so `constGlobalInit` has nothing to compute and the
+/// whole module was refused `global-init-not-constant:<name>` — a refusal whose
+/// NAME is not its reason, because `(10, 20, 30)` is as constant as `7`.
+///
+/// The census already answers the real question. `residencyRefusal(p) == .none`
+/// is the proof that the aggregate needs no location anywhere: bound once,
+/// never mutated, never aliased, never escaped, every access at a determined
+/// index, contents the literal (`place.zig:230`). A binding with that proof is
+/// read as an IMMEDIATE per element — by `ModuleConsts` for the folded keys and
+/// by `placeElement` for the residency route — and registering a word for it is
+/// wrong in both directions: the word cannot be initialized, and
+/// `absentModulePlace` declines any name `ModuleGlobals` has taken, so the very
+/// fact that says the storage is unnecessary becomes unreachable from the read
+/// site.
+///
+/// FAIL-CLOSED IS PRESERVED BECAUSE THE PROOF IS. `place.analyzeModule` walks
+/// relation bodies too (`place.zig:614` -> `walkForeignBody`), so a module
+/// table any relation writes — `M = { A = 3 }` with `M.A = 9` — carries
+/// `mutation != .no`, earns `Refusal.mutated`, keeps its word, and keeps
+/// refusing. This admits only what §18 has already proved absent.
+fn moduleBindingIsAbsentAggregate(
+    graph: *const semantic_graph.SemanticGraph,
+    name: []const u8,
+) bool {
+    const p = graph.placeNamed(name) orelse return false;
+    return place.residencyRefusal(p) == .none;
+}
+
 fn collectModuleGlobals(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
@@ -597,6 +629,9 @@ fn collectModuleGlobals(
                 // Function-body assigns to the same name are `store_global`, not
                 // a reason to drop the binding — asm_for resetting `_p2` must
                 // not erase `global _p2` from the map other functions read.
+                //
+                // EXCEPT WHERE §18 RULES THE BINDING PHYSICALLY ABSENT.
+                if (moduleBindingIsAbsentAggregate(graph, n.ident)) continue;
                 const init: ?*const Expr = if (i < gd.inits.len) gd.inits[i] else null;
                 try out.types.put(alloc, n.ident, typeOfGlobal(n.typ, init));
                 try out.order.append(alloc, .{ .name = n.ident, .init = init });
@@ -1876,6 +1911,35 @@ fn exprIsByteSequence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
 
 pub const ModuleTableKind = enum { int, text };
 
+/// Graph-backed form used by lowering.  The public wrapper below is retained
+/// for the codegen admission call, which has no graph handle yet.  Integer
+/// content is a graph fact: an absent fact is not permission to fall back to
+/// the mutable AST spelling.
+fn moduleConstTableKindGraph(
+    graph: *const semantic_graph.SemanticGraph,
+    require_graph_facts: bool,
+    mod: *const ast.Module,
+    name: []const u8,
+    value: *const Expr,
+) ?ModuleTableKind {
+    const tbl = switch (value.*) {
+        .table => value,
+        .unop => |u| if (u.op == .compile and u.operand.* == .table) u.operand else return null,
+        else => return null,
+    };
+    if (tbl.table.fields.len == 0) return null;
+    for (tbl.table.fields) |fld| if (fld != .positional) return null;
+    var all_int = true;
+    var all_text = true;
+    for (tbl.table.fields) |fld| {
+        if (constIndexOf(graph, require_graph_facts, fld.positional) == null) all_int = false;
+        if (!graphTextConst(graph, fld.positional)) all_text = false;
+    }
+    if (all_int == all_text) return null;
+    if (@backingInt(tableUseInBlock(graph, require_graph_facts, &mod.body, name, tbl)) > @backingInt(TableUse.dyn_read)) return null;
+    return if (all_int) .int else .text;
+}
+
 pub fn moduleConstTableKind(
     mod: *const ast.Module,
     name: []const u8,
@@ -1902,7 +1966,7 @@ pub fn moduleConstTableKind(
     // the index is what no consumer downstream can read correctly.
     if (all_int == all_text) return null;
     // Written, rebound, shadowed or passed on -> nothing may be assumed.
-    if (@backingInt(tableUseInBlock(&mod.body, name, tbl)) > @backingInt(TableUse.dyn_read)) return null;
+    if (@backingInt(tableUseInBlock(null, false, &mod.body, name, tbl)) > @backingInt(TableUse.dyn_read)) return null;
     return if (all_int) .int else .text;
 }
 
@@ -1910,6 +1974,7 @@ fn collectModuleConsts(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
     graph: *const semantic_graph.SemanticGraph,
+    require_graph_facts: bool,
 ) Error!ModuleConsts {
     var out: ModuleConsts = .{};
     errdefer out.deinit(alloc);
@@ -1960,7 +2025,7 @@ fn collectModuleConsts(
         // wrong answer that still compiles; refusing to record it makes the
         // reference resolve through storage instead.
         if (!moduleConstIsStable(mod, n, stmt.* == .assign)) continue;
-        if (ast.intLiteralValue(v)) |iv| {
+        if (graph.exactI64OfExpr(v)) |iv| {
             try map.put(alloc, try alloc.dupe(u8, n), iv);
             continue;
         }
@@ -1977,12 +2042,29 @@ fn collectModuleConsts(
             .unop => |u| if (u.op == .compile and u.operand.* == .table) u.operand else continue,
             else => continue,
         };
+        // A FIELD SOMETHING WRITES IS NOT A CONSTANT.
+        //
+        // `moduleConstIsStable` above counts writes to the BINDING (`M = …`);
+        // it cannot see `M.A = 9`, so a table whose fields a relation writes
+        // still had every field folded to its literal. That was masked for as
+        // long as such a table also got FIELD STORAGE, because the
+        // reconciliation in `lowerModuleFromGraph` deletes a const whose key
+        // owns a word. `registerTableFieldGlobals` only registers fields for a
+        // module with a body to run, so a module of bindings plus relations —
+        // the shape `Module.program()` now classifies correctly — got no
+        // storage and answered the stale literal instead. Measured: `M = { A =
+        // 3 }`, a relation writing `M.A = 9`, and a later read answering 3.
+        //
+        // Declining to record it is the fail-closed half: where storage exists
+        // the read resolves through the word, and where it does not the read
+        // has no fact to answer from and refuses.
+        if (try moduleHasFieldWrite(&mod.body, stmt, n)) continue;
         for (tbl.table.fields) |fld| {
             const nf = switch (fld) {
                 .named => |x| x,
                 else => continue,
             };
-            if (ast.intLiteralValue(nf.val)) |fv| {
+            if (graph.exactI64OfExpr(nf.val)) |fv| {
                 const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ n, nf.key });
                 try map.put(alloc, key, fv);
                 continue;
@@ -1995,13 +2077,13 @@ fn collectModuleConsts(
         // Positional elements recorded under exactly the keys
         // `lowerDynamicIndex` spells. The VERDICT is the shared one, so what is
         // recorded here and what the precheck admits cannot drift apart.
-        if (moduleConstTableKind(mod, n, v)) |kind| {
+        if (moduleConstTableKindGraph(graph, require_graph_facts, mod, n, v)) |kind| {
             var pos: i64 = 0;
             for (tbl.table.fields) |fld| {
                 pos += 1;
                 const key = try std.fmt.allocPrint(alloc, "{s}.{d}", .{ n, pos });
                 switch (kind) {
-                    .int => try map.put(alloc, key, ast.intLiteralValue(fld.positional).?),
+                    .int => try map.put(alloc, key, constIndexOf(graph, require_graph_facts, fld.positional) orelse return error.UnsupportedConstruct),
                     .text => try out.strs.put(alloc, key, fld.positional.quoted.val),
                 }
             }
@@ -2422,7 +2504,7 @@ fn lowerModuleFromGraph(
             }
         }
     }
-    var module_consts = try collectModuleConsts(alloc, mod, graph);
+    var module_consts = try collectModuleConsts(alloc, mod, graph, require_graph_facts);
     defer module_consts.deinit(alloc);
     {
         var it = module_globals.types.keyIterator();
@@ -2600,15 +2682,23 @@ fn lowerModuleFromGraph(
         // true statement about a module and a useless one about a fix: every
         // one of these bails means exactly one declaration was ineligible, and
         // which one is the entire finding.
-        if (!functionEligible(fd, records.items, graph, mod)) {
+        if (functionEligibleReason(fd, records.items, graph, mod)) |reason| {
             // The WHOLE path, not `path[0]`. A spliced `req` module contributes
             // `os.exit`, `os.clock`, `os.time` … and every one of them reported
             // as plain `os`, so the row named a module where the finding is one
             // declaration inside it.
-            if (skipped == null) skipped = if (fd.path.len > 0)
-                try std.mem.join(alloc, ".", fd.path)
-            else
-                "?";
+            //
+            // AND THE REASON. The predicate knows exactly which ABI or subset
+            // limit refused the declaration; reporting only the name made the
+            // reader rediscover it by bisecting the subject by hand.
+            if (skipped == null) {
+                const path = if (fd.path.len > 0)
+                    try std.mem.join(alloc, ".", fd.path)
+                else
+                    try alloc.dupe(u8, "?");
+                defer alloc.free(path);
+                skipped = try std.fmt.allocPrint(alloc, "{s}: {s}", .{ path, reason });
+            }
             continue;
         }
         const function = declarations.get(fd) orelse if (require_graph_facts)
@@ -3206,15 +3296,24 @@ fn typeIsScalarCaseSet(mod: *const ast.Module, typ: ast.TypeExpr) bool {
     return false;
 }
 
-fn functionEligible(
+/// WHY a declaration was refused, not merely THAT it was.
+///
+/// `functionEligible` answered a bare bool, so `lowerModuleFromGraph`'s
+/// count check could only name the skipped relation — the reason was computed
+/// here and thrown away, and recovering it cost a manual bisection of the
+/// subject down to the one declaration this predicate had already identified.
+/// Returns `null` when the declaration is lowerable; otherwise a stable phrase
+/// naming the specific ABI or subset limit that refused it.
+fn functionEligibleReason(
     fd: *const ast.FuncDecl,
     recs: []const dnir.RecordDesc,
     graph: *const semantic_graph.SemanticGraph,
     mod: *const ast.Module,
-) bool {
-    if (fd.func.vararg or fd.func.vararg_name != null) return false;
+) ?[]const u8 {
+    if (fd.func.vararg or fd.func.vararg_name != null) return "vararg relation";
     if (recordForTypeExpr(recs, fd.func.ret_type, graph)) |rec| {
-        if (rec.fields.len == 0 or rec.fields.len > max_record_fields) return false;
+        if (rec.fields.len == 0) return "record return with no fields";
+        if (rec.fields.len > max_record_fields) return "record return wider than 32 fields";
         // The caller-side indirect buffer understands a mixed exact shape, but
         // this backend does not yet have mixed GP/FP stores for an INDIRECT
         // callee return. Keep only that case refused. A two-word C result and
@@ -3224,11 +3323,13 @@ fn functionEligible(
         // stores (see native_backend ret_record indirect arm). Foreign-boundary
         // mixed indirect shapes stay refused until the C ABI path exists.
         if (declarationIsForeignBoundary(graph, fd) and recordKindsMixed(rec) and
-            recordReturnIsIndirectFields(rec.fields.len, true)) return false;
+            recordReturnIsIndirectFields(rec.fields.len, true))
+            return "foreign-boundary mixed GP/FP indirect record return";
         // An f64 record rides v0..v7 as a homogeneous float aggregate; there is
         // no indirect form for it here, so its own eight stays a hard limit.
         if (isF64Record(recs, fd.func.ret_type)) |_| {
-            if (rec.fields.len > max_reg_record_fields) return false;
+            if (rec.fields.len > max_reg_record_fields)
+                return "f64 record return wider than the 8 float result registers";
         }
         for (fd.func.params) |p| {
             // A record PARAMETER is still one field per argument register —
@@ -3243,7 +3344,8 @@ fn functionEligible(
                     }
                 }
                 if (all_f64) {
-                    if (r.fields.len > max_reg_record_fields) return false;
+                    if (r.fields.len > max_reg_record_fields)
+                        return "f64 record parameter wider than the 8 float argument registers";
                     continue;
                 }
                 continue;
@@ -3251,27 +3353,33 @@ fn functionEligible(
             if (isFloatType(p.typ)) continue;
             if (p.typ == .named) continue;
             if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ) and
-                !typeIsScalarCaseSet(mod, p.typ)) return false;
+                !typeIsScalarCaseSet(mod, p.typ)) return "record-returning relation has a parameter of unsupported type";
         }
-        return true;
+        return null;
     }
     if (fd.func.ret_type == .tuple) {
-        if (declarationIsForeignBoundary(graph, fd) or fd.func.ret_type.tuple.len == 0 or
-            fd.func.ret_type.tuple.len > max_reg_record_fields) return false;
-        for (fd.func.ret_type.tuple) |item| if (gpPackType(item) == null) return false;
+        if (declarationIsForeignBoundary(graph, fd)) return "tuple return across a foreign boundary";
+        if (fd.func.ret_type.tuple.len == 0) return "empty tuple return";
+        if (fd.func.ret_type.tuple.len > max_reg_record_fields)
+            return "tuple return wider than the 8 result registers";
+        for (fd.func.ret_type.tuple) |item| if (gpPackType(item) == null)
+            return "tuple return element is not a general-purpose word";
     } else if (!isFloatType(fd.func.ret_type) and !isIntType(fd.func.ret_type) and !isBoolType(fd.func.ret_type) and
         !isStrType(fd.func.ret_type) and !isVoidType(fd.func.ret_type) and !typeIsPtr(fd.func.ret_type) and
         !typeIsScalarCaseSet(mod, fd.func.ret_type) and
-        fd.func.ret_type != .inferred) return false;
+        fd.func.ret_type != .inferred) return "unsupported return type";
     // AAPCS64 assigns the result and argument register classes independently.
     // Determine the parameter file from parameter descriptors, never from the
     // result descriptor.
     if (f64AbiParamSlots(fd, recs)) |slots| {
-        if (slots > 0) return slots <= 8;
+        if (slots > 0) return if (slots <= 8)
+            null
+        else
+            "f64 parameter file wider than the 8 float argument registers";
     }
     var gp_slots: usize = 0;
     for (fd.func.params) |p| {
-        if (isFloatType(p.typ)) return false;
+        if (isFloatType(p.typ)) return "f64 parameter mixed with general-purpose parameters";
         if (recordForTypeExpr(recs, p.typ, graph)) |r| {
             var all_f64 = r.fields.len > 0;
             for (r.kinds) |k| {
@@ -3280,7 +3388,7 @@ fn functionEligible(
                     break;
                 }
             }
-            if (all_f64) return false;
+            if (all_f64) return "all-f64 record parameter mixed with general-purpose parameters";
         }
         if (recordForTypeExpr(recs, p.typ, graph)) |r| {
             // Wide module tables (`lexer`, …) cross calls as one opaque handle,
@@ -3298,24 +3406,76 @@ fn functionEligible(
             } else {
                 gp_slots += r.fields.len;
             }
-            // A record parameter is homed from the argument registers only; its
-            // fields are never stacked, so it must fit inside x0..x7.
-            if (gp_slots > max_reg_record_fields) return false;
+            // A RECORD FIELD IS A GENERAL-PURPOSE WORD AND ITS BUDGET IS THE
+            // GENERAL-PURPOSE BUDGET. This read `max_reg_record_fields` and
+            // said "its fields are never stacked" — but nothing about a record
+            // field makes it unstackable. It is exploded into one word per
+            // slot, exactly like a scalar operand, and the slot index is the
+            // only thing either end consults: the caller's `mov_arg` already
+            // routes slot >= 8 into the outgoing argument block, and the
+            // callee prologue's `slot_cursor` — which counts record fields,
+            // not parameters — already homes slot >= 8 from the incoming
+            // frame. Both ends were slot-generic before this line was; the
+            // eight was the refusal, not the mechanism.
+            //
+            // MEASURED: `lexer.peek_char(self: lexer)` and
+            // `parser.parse_factor_tok(lx: lexer)` — the two relations between
+            // the direct backend and compiler B — take one fourteen-field
+            // record each and were refused here, taking both modules with
+            // them.
+            //
+            // `max_direct_scalar_args` is the same sixteen a scalar operand
+            // gets (eight registers plus the eight stack slots the backend's
+            // outgoing block can carry) and for the same physical reason, so
+            // the two budgets are now one budget rather than two numbers that
+            // can drift apart.
+            if (gp_slots > max_direct_scalar_args)
+                return "record parameter fields overflow the 16 general-purpose argument slots";
             continue;
         }
+        // A SCALAR IS A SCALAR WHATEVER ITS SPELLING. `i64`, `bool`, `str`,
+        // `ptr` and a payload-free case set are all `.named` type expressions,
+        // so the `p.typ == .named` catch-all that used to stand FIRST here
+        // swallowed every one of them and capped them at `max_reg_record_fields`
+        // — the eight ARGUMENT REGISTERS — before the `max_direct_scalar_args`
+        // line below could ever be reached. `max_direct_scalar_args` was raised
+        // to sixteen precisely to admit "a general order-k linear recurrence
+        // passing k coefficients + k seeds + N" (see its doc comment), and that
+        // relation takes ten `i64` parameters, so the limit it was written for
+        // was the one shape it could not reach: the ninth `i64` parameter was
+        // refused as an "opaque handle" and the whole module went with it.
+        //
         // `ptr` rides x0..x7 like an i64 — it is the base address of a
-        // memory-backed positional table (SH-04).
+        // memory-backed positional table (SH-04) — and, like an i64, it rides
+        // a stack slot past the eighth. `.pointer` already took this path, so
+        // `ptr` and `*T` had different argument budgets for the same word.
+        if (isIntType(p.typ) or isBoolType(p.typ) or isStrType(p.typ) or typeIsPtr(p.typ) or
+            typeIsScalarCaseSet(mod, p.typ))
+        {
+            gp_slots += 1;
+            if (gp_slots > max_direct_scalar_args) return "more than 16 general-purpose arguments";
+            continue;
+        }
+        // What is left is a named type this backend does not model as a word:
+        // a module table or other opaque handle. It crosses in a register only.
         if (p.typ == .named) {
             gp_slots += 1;
-            if (gp_slots > max_reg_record_fields) return false;
+            if (gp_slots > max_reg_record_fields)
+                return "opaque handle parameter overflows the 8 argument registers";
             continue;
         }
-        if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ) and
-            !typeIsScalarCaseSet(mod, p.typ)) return false;
-        gp_slots += 1;
-        if (gp_slots > max_direct_scalar_args) return false;
+        return "parameter of unsupported type";
     }
-    return true;
+    return null;
+}
+
+fn functionEligible(
+    fd: *const ast.FuncDecl,
+    recs: []const dnir.RecordDesc,
+    graph: *const semantic_graph.SemanticGraph,
+    mod: *const ast.Module,
+) bool {
+    return functionEligibleReason(fd, recs, graph, mod) == null;
 }
 
 const GraphFieldFact = struct {
@@ -4349,18 +4509,6 @@ fn lowerFunction(
     else
         try funcExportName(alloc, graph.selfHome(), fd);
     errdefer alloc.free(export_name);
-    if (std.mem.indexOf(u8, export_name, "parse_factor") != null) {
-        for (owned_instrs) |ins| {
-            switch (ins.op) {
-                .call_direct, .init_record, .load_field => std.debug.print(
-                    "PF {s} rec={s} field={s} req={s}\n",
-                    .{ @tagName(ins.op), ins.record, ins.field, ins.req_alias },
-                ),
-                else => {},
-            }
-        }
-    }
-
     return .{
         .name = export_name,
         .ret = resolveType(fd.func.ret_type),
@@ -7099,7 +7247,11 @@ fn reduceStep(st: *const ast.Stmt) ?ReduceStep {
 }
 
 /// `idx = idx + 1` in either operand order.
-fn stepIsIncrementOfOne(st: *const ast.Stmt, idx: []const u8) bool {
+///
+/// The AST supplies only the operation shape and name identity. The increment
+/// literal's content is the graph's exact-i64 fact; absence refuses the
+/// specialization rather than re-reading mutable syntax.
+fn stepIsIncrementOfOne(graph: *const semantic_graph.SemanticGraph, st: *const ast.Stmt, idx: []const u8) bool {
     const a = switch (st.*) {
         .assign => |x| x,
         else => return false,
@@ -7113,24 +7265,27 @@ fn stepIsIncrementOfOne(st: *const ast.Stmt, idx: []const u8) bool {
     };
     if (b.op != .add) return false;
     if (identOf(b.lhs)) |l| {
-        if (std.mem.eql(u8, l, idx) and b.rhs.* == .int_lit and b.rhs.int_lit.val == 1) return true;
+        if (std.mem.eql(u8, l, idx) and graph.exactI64OfExpr(b.rhs) == @as(?i64, 1)) return true;
     }
     if (identOf(b.rhs)) |r| {
-        if (std.mem.eql(u8, r, idx) and b.lhs.* == .int_lit and b.lhs.int_lit.val == 1) return true;
+        if (std.mem.eql(u8, r, idx) and graph.exactI64OfExpr(b.lhs) == @as(?i64, 1)) return true;
     }
     return false;
 }
 
 /// Inclusive last index of `while idx <= N` / `while idx < N`, or null.
-fn loopUpperBound(cond: *const ast.Expr, idx: []const u8) ?i64 {
+///
+/// The graph owns literal content after publication. The condition's AST is
+/// retained only for its shape (left operand and comparison operator); the
+/// bound value must come from the exact-i64 fact for the right-hand occurrence.
+fn loopUpperBound(graph: *const semantic_graph.SemanticGraph, cond: *const ast.Expr, idx: []const u8) ?i64 {
     const b = switch (cond.*) {
         .binop => |x| x,
         else => return null,
     };
     const l = identOf(b.lhs) orelse return null;
     if (!std.mem.eql(u8, l, idx)) return null;
-    if (b.rhs.* != .int_lit) return null;
-    const n = b.rhs.int_lit.val;
+    const n = graph.exactI64OfExpr(b.rhs) orelse return null;
     return switch (b.op) {
         .leq => n,
         .lt => n - 1,
@@ -7147,18 +7302,18 @@ fn loopUpperBound(cond: *const ast.Expr, idx: []const u8) ?i64 {
 /// element and produce a wrong answer that still compiles — the exact failure
 /// mode this beachhead is required to avoid. The preceding statement is the one
 /// place where the literal is provably the current value.
-fn literalBindingOf(st: *const ast.Stmt, name: []const u8) ?i64 {
+fn literalBindingOf(graph: *const semantic_graph.SemanticGraph, st: *const ast.Stmt, name: []const u8) ?i64 {
     switch (st.*) {
         .assign => |a| {
             if (a.targets.len != 1 or a.values.len != 1) return null;
             const t = identOf(a.targets[0]) orelse return null;
             if (!std.mem.eql(u8, t, name)) return null;
-            return if (a.values[0].* == .int_lit) a.values[0].int_lit.val else null;
+            return graph.exactI64OfExpr(a.values[0]);
         },
         .local_decl => |d| {
             if (d.names.len != 1 or d.inits.len != 1) return null;
             if (!std.mem.eql(u8, d.names[0].ident, name)) return null;
-            return if (d.inits[0].* == .int_lit) d.inits[0].int_lit.val else null;
+            return graph.exactI64OfExpr(d.inits[0]);
         },
         else => return null,
     }
@@ -7225,13 +7380,13 @@ fn tryEmitVectorReductionPrologue(ctx: *LowerCtx, stmts: []const ast.Stmt, at: u
     if (ws.body.stmts.len != 2) return;
 
     const step = reduceStep(&ws.body.stmts[0]) orelse return;
-    if (!stepIsIncrementOfOne(&ws.body.stmts[1], step.idx)) return;
+    if (!stepIsIncrementOfOne(ctx.graph, &ws.body.stmts[1], step.idx)) return;
     if (std.mem.eql(u8, step.acc, step.idx)) return;
     if (std.mem.eql(u8, step.acc, step.tbl)) return;
     if (std.mem.eql(u8, step.idx, step.tbl)) return;
 
-    const hi = loopUpperBound(ws.cond, step.idx) orelse return;
-    const lo = literalBindingOf(&stmts[at - 1], step.idx) orelse return;
+    const hi = loopUpperBound(ctx.graph, ws.cond, step.idx) orelse return;
+    const lo = literalBindingOf(ctx.graph, &stmts[at - 1], step.idx) orelse return;
     if (lo < 1 or hi < lo) return;
 
     const base_slot = ctx.locals.get(step.tbl) orelse return;
@@ -8105,11 +8260,12 @@ fn worseUse(a: TableUse, b: TableUse) TableUse {
 /// a name's last literal binding and is never invalidated by a later
 /// non-literal assignment, so it would answer for a variable that has since
 /// moved. A wrong element is a wrong answer that still compiles.
-fn constIndexOf(key: *const ast.Expr) ?i64 {
+fn constIndexOf(graph: ?*const semantic_graph.SemanticGraph, require_graph_facts: bool, key: *const ast.Expr) ?i64 {
+    if (require_graph_facts) return if (graph) |g| g.exactI64OfExpr(key) else null;
     return ast.intLiteralValue(key);
 }
 
-fn tableUseInExpr(expr: *const ast.Expr, name: []const u8) TableUse {
+fn tableUseInExpr(graph: ?*const semantic_graph.SemanticGraph, require_graph_facts: bool, expr: *const ast.Expr, name: []const u8) TableUse {
     return switch (expr.*) {
         .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => .none,
         .semantic, .semantic_scope => .none,
@@ -8118,17 +8274,17 @@ fn tableUseInExpr(expr: *const ast.Expr, name: []const u8) TableUse {
             // The READ face. `t(k)` and `t[k]` are the same node by the time
             // lowering sees them (`table_apply.zig` canonicalizes the call form),
             // so this one arm covers both spellings.
-            const in_key = tableUseInExpr(ix.key, name);
+            const in_key = tableUseInExpr(graph, require_graph_facts, ix.key, name);
             if (ix.obj.* == .name and std.mem.eql(u8, ix.obj.name.ident, name)) {
-                const here: TableUse = if (constIndexOf(ix.key) != null) .const_read else .dyn_read;
+                const here: TableUse = if (constIndexOf(graph, require_graph_facts, ix.key) != null) .const_read else .dyn_read;
                 break :blk worseUse(here, in_key);
             }
-            break :blk worseUse(tableUseInExpr(ix.obj, name), in_key);
+            break :blk worseUse(tableUseInExpr(graph, require_graph_facts, ix.obj, name), in_key);
         },
-        .field => |f| tableUseInExpr(f.obj, name),
+        .field => |f| tableUseInExpr(graph, require_graph_facts, f.obj, name),
         .call => |c| blk: {
-            var u = tableUseInExpr(c.func, name);
-            for (c.args) |a| u = worseUse(u, tableUseInExpr(a, name));
+            var u = tableUseInExpr(graph, require_graph_facts, c.func, name);
+            for (c.args) |a| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, a, name));
             break :blk u;
         },
         .method_call => |m| blk: {
@@ -8149,60 +8305,60 @@ fn tableUseInExpr(expr: *const ast.Expr, name: []const u8) TableUse {
                 if (shape.subject.* == .name and
                     std.mem.eql(u8, shape.subject.name.ident, name))
                 {
-                    break :blk worseUse(.const_read, tableUseInExpr(shape.body, name));
+                    break :blk worseUse(.const_read, tableUseInExpr(graph, require_graph_facts, shape.body, name));
                 }
             }
-            var u = tableUseInExpr(m.obj, name);
-            for (m.args) |a| u = worseUse(u, tableUseInExpr(a, name));
+            var u = tableUseInExpr(graph, require_graph_facts, m.obj, name);
+            for (m.args) |a| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, a, name));
             break :blk u;
         },
-        .binop => |b| worseUse(tableUseInExpr(b.lhs, name), tableUseInExpr(b.rhs, name)),
-        .unop => |u| tableUseInExpr(u.operand, name),
-        .try_expr => |x| tableUseInExpr(x.operand, name),
-        .unwrap_expr => |x| tableUseInExpr(x.operand, name),
-        .await_expr => |x| tableUseInExpr(x.operand, name),
-        .quote => |q| tableUseInExpr(q.expr, name),
-        .unquote => |q| tableUseInExpr(q.expr, name),
-        .contains_expr => |c| worseUse(tableUseInExpr(c.lhs, name), tableUseInExpr(c.rhs, name)),
+        .binop => |b| worseUse(tableUseInExpr(graph, require_graph_facts, b.lhs, name), tableUseInExpr(graph, require_graph_facts, b.rhs, name)),
+        .unop => |u| tableUseInExpr(graph, require_graph_facts, u.operand, name),
+        .try_expr => |x| tableUseInExpr(graph, require_graph_facts, x.operand, name),
+        .unwrap_expr => |x| tableUseInExpr(graph, require_graph_facts, x.operand, name),
+        .await_expr => |x| tableUseInExpr(graph, require_graph_facts, x.operand, name),
+        .quote => |q| tableUseInExpr(graph, require_graph_facts, q.expr, name),
+        .unquote => |q| tableUseInExpr(graph, require_graph_facts, q.expr, name),
+        .contains_expr => |c| worseUse(tableUseInExpr(graph, require_graph_facts, c.lhs, name), tableUseInExpr(graph, require_graph_facts, c.rhs, name)),
         .if_expr => |ie| worseUse(
-            tableUseInExpr(ie.cond, name),
-            worseUse(tableUseInExpr(ie.then_expr, name), tableUseInExpr(ie.else_expr, name)),
+            tableUseInExpr(graph, require_graph_facts, ie.cond, name),
+            worseUse(tableUseInExpr(graph, require_graph_facts, ie.then_expr, name), tableUseInExpr(graph, require_graph_facts, ie.else_expr, name)),
         ),
         .sequence => |s| blk: {
             var u: TableUse = .none;
-            for (s.exprs) |e| u = worseUse(u, tableUseInExpr(e, name));
+            for (s.exprs) |e| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, e, name));
             break :blk u;
         },
         .range => |r| blk: {
-            var u = worseUse(tableUseInExpr(r.start, name), tableUseInExpr(r.end, name));
-            if (r.step) |st| u = worseUse(u, tableUseInExpr(st, name));
+            var u = worseUse(tableUseInExpr(graph, require_graph_facts, r.start, name), tableUseInExpr(graph, require_graph_facts, r.end, name));
+            if (r.step) |st| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, st, name));
             break :blk u;
         },
         .macro_call => |mc| blk: {
             var u: TableUse = .none;
-            for (mc.args) |a| u = worseUse(u, tableUseInExpr(a, name));
+            for (mc.args) |a| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, a, name));
             break :blk u;
         },
         .table => |t| blk: {
             var u: TableUse = .none;
             for (t.fields) |fld| {
                 u = worseUse(u, switch (fld) {
-                    .positional => |v| tableUseInExpr(v, name),
-                    .named => |nf| tableUseInExpr(nf.val, name),
-                    .semantic => |sf| tableUseInExpr(sf.val, name),
-                    .spread => |sp| tableUseInExpr(sp, name),
-                    .indexed => |ix| worseUse(tableUseInExpr(ix.key, name), tableUseInExpr(ix.val, name)),
+                    .positional => |v| tableUseInExpr(graph, require_graph_facts, v, name),
+                    .named => |nf| tableUseInExpr(graph, require_graph_facts, nf.val, name),
+                    .semantic => |sf| tableUseInExpr(graph, require_graph_facts, sf.val, name),
+                    .spread => |sp| tableUseInExpr(graph, require_graph_facts, sp, name),
+                    .indexed => |ix| worseUse(tableUseInExpr(graph, require_graph_facts, ix.key, name), tableUseInExpr(graph, require_graph_facts, ix.val, name)),
                 });
             }
             break :blk u;
         },
         .match_expr => |m| blk: {
-            var u = tableUseInExpr(m.scrutinee, name);
+            var u = tableUseInExpr(graph, require_graph_facts, m.scrutinee, name);
             for (m.arms) |arm| {
-                if (arm.guard) |g| u = worseUse(u, tableUseInExpr(g, name));
+                if (arm.guard) |g| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, g, name));
                 // A pattern that BINDS this name shadows the table from here on.
                 if (patternBinds(arm.pattern, name)) break :blk .opaque_use;
-                u = worseUse(u, tableUseInBlock(&arm.body, name, m.scrutinee));
+                u = worseUse(u, tableUseInBlock(graph, require_graph_facts, &arm.body, name, m.scrutinee));
             }
             break :blk u;
         },
@@ -8250,13 +8406,13 @@ fn targetWrites(target: *const ast.Expr, name: []const u8) bool {
 /// same name — a second declaration, a reassignment, a loop variable, a pattern
 /// capture — replaces the table and is `.opaque_use`. Identity is by POINTER,
 /// not by name, so "the binding" cannot be confused with a later one.
-fn tableUseInBlock(block: *const ast.Block, name: []const u8, bound: *const ast.Expr) TableUse {
+fn tableUseInBlock(graph: ?*const semantic_graph.SemanticGraph, require_graph_facts: bool, block: *const ast.Block, name: []const u8, bound: *const ast.Expr) TableUse {
     var u: TableUse = .none;
     for (block.stmts) |*s| {
-        u = worseUse(u, tableUseInStmt(s, name, bound));
+        u = worseUse(u, tableUseInStmt(graph, require_graph_facts, s, name, bound));
         if (u == .opaque_use) return u;
     }
-    if (block.tail_expr) |t| u = worseUse(u, tableUseInExpr(t, name));
+    if (block.tail_expr) |t| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, t, name));
     return u;
 }
 
@@ -8404,43 +8560,45 @@ fn determinedTextLen(ctx: *LowerCtx, expr: *const ast.Expr) ?i64 {
 /// Uses contributed by a name/value binding pair. `.none` for the one pair that
 /// IS this binding; `.opaque_use` for any other pair that binds the name.
 fn bindingPairUse(
+    graph: ?*const semantic_graph.SemanticGraph,
+    require_graph_facts: bool,
     n: []const u8,
     init: ?*const ast.Expr,
     name: []const u8,
     bound: *const ast.Expr,
 ) TableUse {
-    const init_use: TableUse = if (init) |e| tableUseInExpr(e, name) else .none;
+    const init_use: TableUse = if (init) |e| tableUseInExpr(graph, require_graph_facts, e, name) else .none;
     if (!std.mem.eql(u8, n, name)) return init_use;
     if (init) |e| if (e == bound) return .none;
     return .opaque_use;
 }
 
-fn tableUseInStmt(stmt: *const ast.Stmt, name: []const u8, bound: *const ast.Expr) TableUse {
+fn tableUseInStmt(graph: ?*const semantic_graph.SemanticGraph, require_graph_facts: bool, stmt: *const ast.Stmt, name: []const u8, bound: *const ast.Expr) TableUse {
     return switch (stmt.*) {
         .local_decl => |d| blk: {
             var u: TableUse = .none;
             for (d.names, 0..) |n, i| {
                 const init: ?*const ast.Expr = if (i < d.inits.len) d.inits[i] else null;
-                u = worseUse(u, bindingPairUse(n.ident, init, name, bound));
+                u = worseUse(u, bindingPairUse(graph, require_graph_facts, n.ident, init, name, bound));
             }
             // An initializer with no name of its own is still evaluated.
             if (d.inits.len > d.names.len) {
-                for (d.inits[d.names.len..]) |e| u = worseUse(u, tableUseInExpr(e, name));
+                for (d.inits[d.names.len..]) |e| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, e, name));
             }
             break :blk u;
         },
         .const_decl => |d| blk: {
             if (std.mem.eql(u8, d.ident, name)) break :blk .opaque_use;
-            break :blk tableUseInExpr(d.val, name);
+            break :blk tableUseInExpr(graph, require_graph_facts, d.val, name);
         },
         .global_decl => |d| blk: {
             var u: TableUse = .none;
             for (d.names, 0..) |n, i| {
                 const init: ?*const ast.Expr = if (i < d.inits.len) d.inits[i] else null;
-                u = worseUse(u, bindingPairUse(n.ident, init, name, bound));
+                u = worseUse(u, bindingPairUse(graph, require_graph_facts, n.ident, init, name, bound));
             }
             if (d.inits.len > d.names.len) {
-                for (d.inits[d.names.len..]) |e| u = worseUse(u, tableUseInExpr(e, name));
+                for (d.inits[d.names.len..]) |e| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, e, name));
             }
             break :blk u;
         },
@@ -8449,54 +8607,54 @@ fn tableUseInStmt(stmt: *const ast.Stmt, name: []const u8, bound: *const ast.Exp
             for (a.targets, 0..) |t, i| {
                 const val: ?*const ast.Expr = if (i < a.values.len) a.values[i] else null;
                 if (t.* == .name) {
-                    u = worseUse(u, bindingPairUse(t.name.ident, val, name, bound));
+                    u = worseUse(u, bindingPairUse(graph, require_graph_facts, t.name.ident, val, name, bound));
                     continue;
                 }
                 // `t(k) = …` / `t.f = …` mutate the table in place.
                 if (targetWrites(t, name)) break :blk .opaque_use;
-                u = worseUse(u, tableUseInExpr(t, name));
-                if (val) |v| u = worseUse(u, tableUseInExpr(v, name));
+                u = worseUse(u, tableUseInExpr(graph, require_graph_facts, t, name));
+                if (val) |v| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, v, name));
             }
             if (a.values.len > a.targets.len) {
-                for (a.values[a.targets.len..]) |e| u = worseUse(u, tableUseInExpr(e, name));
+                for (a.values[a.targets.len..]) |e| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, e, name));
             }
             break :blk u;
         },
-        .call_stmt => |c| tableUseInExpr(c.expr, name),
-        .expr_stmt => |c| tableUseInExpr(c.expr, name),
-        .do_block => |d| tableUseInBlock(&d.body, name, bound),
-        .while_loop => |w| worseUse(tableUseInExpr(w.cond, name), tableUseInBlock(&w.body, name, bound)),
-        .repeat_loop => |r| worseUse(tableUseInBlock(&r.body, name, bound), tableUseInExpr(r.cond, name)),
+        .call_stmt => |c| tableUseInExpr(graph, require_graph_facts, c.expr, name),
+        .expr_stmt => |c| tableUseInExpr(graph, require_graph_facts, c.expr, name),
+        .do_block => |d| tableUseInBlock(graph, require_graph_facts, &d.body, name, bound),
+        .while_loop => |w| worseUse(tableUseInExpr(graph, require_graph_facts, w.cond, name), tableUseInBlock(graph, require_graph_facts, &w.body, name, bound)),
+        .repeat_loop => |r| worseUse(tableUseInBlock(graph, require_graph_facts, &r.body, name, bound), tableUseInExpr(graph, require_graph_facts, r.cond, name)),
         .if_stmt => |f| blk: {
             var u: TableUse = .none;
             if (f.binding) |b| {
                 if (std.mem.eql(u8, b.name, name)) break :blk .opaque_use;
-                u = worseUse(u, tableUseInExpr(b.expr, name));
+                u = worseUse(u, tableUseInExpr(graph, require_graph_facts, b.expr, name));
             }
-            u = worseUse(u, tableUseInExpr(f.cond, name));
-            u = worseUse(u, tableUseInBlock(&f.then, name, bound));
+            u = worseUse(u, tableUseInExpr(graph, require_graph_facts, f.cond, name));
+            u = worseUse(u, tableUseInBlock(graph, require_graph_facts, &f.then, name, bound));
             for (f.elseifs) |ei| {
-                u = worseUse(u, tableUseInExpr(ei.cond, name));
-                u = worseUse(u, tableUseInBlock(&ei.body, name, bound));
+                u = worseUse(u, tableUseInExpr(graph, require_graph_facts, ei.cond, name));
+                u = worseUse(u, tableUseInBlock(graph, require_graph_facts, &ei.body, name, bound));
             }
-            if (f.else_body) |eb| u = worseUse(u, tableUseInBlock(&eb, name, bound));
+            if (f.else_body) |eb| u = worseUse(u, tableUseInBlock(graph, require_graph_facts, &eb, name, bound));
             break :blk u;
         },
         .num_for => |n| blk: {
             if (std.mem.eql(u8, n.var_name, name)) break :blk .opaque_use;
-            var u = worseUse(tableUseInExpr(n.start, name), tableUseInExpr(n.stop, name));
-            if (n.step) |st| u = worseUse(u, tableUseInExpr(st, name));
-            break :blk worseUse(u, tableUseInBlock(&n.body, name, bound));
+            var u = worseUse(tableUseInExpr(graph, require_graph_facts, n.start, name), tableUseInExpr(graph, require_graph_facts, n.stop, name));
+            if (n.step) |st| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, st, name));
+            break :blk worseUse(u, tableUseInBlock(graph, require_graph_facts, &n.body, name, bound));
         },
         .gen_for => |g| blk: {
             for (g.vars) |v| if (std.mem.eql(u8, v, name)) break :blk .opaque_use;
             var u: TableUse = .none;
-            for (g.iters) |e| u = worseUse(u, tableUseInExpr(e, name));
-            break :blk worseUse(u, tableUseInBlock(&g.body, name, bound));
+            for (g.iters) |e| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, e, name));
+            break :blk worseUse(u, tableUseInBlock(graph, require_graph_facts, &g.body, name, bound));
         },
         .ret => |r| blk: {
             var u: TableUse = .none;
-            for (r.vals) |e| u = worseUse(u, tableUseInExpr(e, name));
+            for (r.vals) |e| u = worseUse(u, tableUseInExpr(graph, require_graph_facts, e, name));
             break :blk u;
         },
         .brk, .cont, .goto_stmt, .label_stmt => .none,
@@ -8517,7 +8675,7 @@ fn tableUseInStmt(stmt: *const ast.Stmt, name: []const u8, bound: *const ast.Exp
             if (fd.func.vararg_name) |vn| {
                 if (std.mem.eql(u8, vn, name)) break :blk .none;
             }
-            break :blk tableUseInBlock(&fd.func.body, name, bound);
+            break :blk tableUseInBlock(graph, require_graph_facts, &fd.func.body, name, bound);
         },
         // Same rule as the expression walker: an unmodeled statement is not
         // evidence of absence.
@@ -8537,14 +8695,14 @@ fn constTableValues(ctx: *LowerCtx, table: *const ast.Expr) Error!?[]i64 {
     var n: usize = 0;
     for (table.table.fields) |fld| {
         if (fld != .positional) return null;
-        if (ast.intLiteralValue(fld.positional) == null) return null;
+        if (constIndexOf(ctx.graph, ctx.require_graph_facts, fld.positional) == null) return null;
         n += 1;
     }
     if (n == 0) return null;
     const out = try ctx.alloc.alloc(i64, n);
     var i: usize = 0;
     for (table.table.fields) |fld| {
-        out[i] = ast.intLiteralValue(fld.positional).?;
+        out[i] = constIndexOf(ctx.graph, ctx.require_graph_facts, fld.positional).?;
         i += 1;
     }
     return out;
@@ -8559,7 +8717,7 @@ fn constTableValues(ctx: *LowerCtx, table: *const ast.Expr) Error!?[]i64 {
 /// restored tables to their initial values every trip.
 fn noteConstTable(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!TableUse {
     const body = ctx.body orelse return .opaque_use;
-    const use = tableUseInBlock(body, name, table);
+    const use = tableUseInBlock(ctx.graph, ctx.require_graph_facts, body, name, table);
     if (use == .opaque_use) return use;
     const values = (try constTableValues(ctx, table)) orelse return .opaque_use;
     errdefer ctx.alloc.free(values);
@@ -8585,7 +8743,7 @@ fn constTableRead(ctx: *LowerCtx, expr: *const ast.Expr) Error!?dnir.Value {
     const ix = expr.index;
     if (ix.obj.* != .name) return null;
     const values = ctx.const_tables.get(ix.obj.name.ident) orelse return null;
-    const k = constIndexOf(ix.key) orelse return null;
+    const k = constIndexOf(ctx.graph, ctx.require_graph_facts, ix.key) orelse return null;
     if (k < 1 or k > @as(i64, @intCast(values.len))) return bail(ctx.diagnostic, @src());
     return dnir.Value{ .i64 = values[@intCast(k - 1)] };
 }
@@ -8616,7 +8774,7 @@ fn noteStrTable(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!
         if (fld != .positional) return;
         if (!exprIsStr(ctx, fld.positional)) return;
     }
-    if (@backingInt(tableUseInBlock(body, name, table)) > @backingInt(TableUse.dyn_read)) return;
+    if (@backingInt(tableUseInBlock(ctx.graph, ctx.require_graph_facts, body, name, table)) > @backingInt(TableUse.dyn_read)) return;
     const key = try ctx.alloc.dupe(u8, name);
     errdefer ctx.alloc.free(key);
     try ctx.str_tables.put(ctx.alloc, key, {});
@@ -10382,8 +10540,16 @@ fn homogeneousF64Record(rec: dnir.RecordDesc) bool {
 fn recordForGraphOperand(ctx: *const LowerCtx, value: semantic_graph.id) ?dnir.RecordDesc {
     if (ctx.graph.descriptorShape(value, 0)) |shape| {
         for (ctx.records) |rec| {
+            // THE ARGUMENT BUDGET, NOT THE REGISTER FILE. This is an OPERAND
+            // question — "are this record's fields resident so the call can
+            // spend them" — and an operand's general-purpose budget is
+            // `max_direct_scalar_args`: eight registers plus the eight stack
+            // slots the outgoing block carries. Bounding it at the register
+            // file made a nine-field record operand invisible here, so the
+            // caller fell through to the opaque-handle arm and asked the
+            // backend for a `v.a` that the exploded form never gave a region.
             if (rec.semantic_shape == shape and !homogeneousF64Record(rec) and
-                rec.fields.len > 0 and rec.fields.len <= max_reg_record_fields and
+                rec.fields.len > 0 and rec.fields.len <= max_direct_scalar_args and
                 checkedRecordResultSupported(rec))
             {
                 return rec;
@@ -10393,7 +10559,7 @@ fn recordForGraphOperand(ctx: *const LowerCtx, value: semantic_graph.id) ?dnir.R
     const node = ctx.graph.get(value) orelse return null;
     const descriptor = node.descriptor orelse return null;
     const rec = recordForDescriptor(ctx.records, descriptor, ctx.graph) orelse return null;
-    if (homogeneousF64Record(rec) or rec.fields.len > max_reg_record_fields) return null;
+    if (homogeneousF64Record(rec) or rec.fields.len > max_direct_scalar_args) return null;
     return rec;
 }
 
@@ -10484,7 +10650,13 @@ fn checkedScalarOperand(
                 if (ctx.locals.get(expression.name.ident)) |_| {
                     effective = .any;
                 } else if (recordForDescriptor(ctx.records, descriptor, ctx.graph)) |rec| {
-                    if (rec.fields.len == 0 or rec.fields.len > max_reg_record_fields) {
+                    // THE SHAPE IS ADMITTED AGAINST THE ARGUMENT BUDGET, and
+                    // that budget is `max_direct_scalar_args` — the eight
+                    // argument registers plus the eight stack slots a record's
+                    // exploded fields ride exactly as scalar operands do. See
+                    // `functionEligibleReason`; these two must name the same
+                    // number or a call the callee accepts is refused here.
+                    if (rec.fields.len == 0 or rec.fields.len > max_direct_scalar_args) {
                         return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
                     }
                     effective = .any;
@@ -10492,7 +10664,13 @@ fn checkedScalarOperand(
                     effective = .any;
                 }
             } else if (recordForDescriptor(ctx.records, descriptor, ctx.graph)) |rec| {
-                if (rec.fields.len == 0 or rec.fields.len > max_reg_record_fields) {
+                // Same budget as the `.name` arm above, for the same reason: a
+                // record operand FORWARDED from an enclosing relation's own
+                // record parameter reaches here (its fields are resident as
+                // `p.field` locals, so `ctx.locals.get("p")` misses), and
+                // bounding it at the register file refused `outer(p) ->
+                // inner(p)` for any record the callee would have accepted.
+                if (rec.fields.len == 0 or rec.fields.len > max_direct_scalar_args) {
                     return invalidGraphFacts(ctx.diagnostic, @src(), "application-operand-abi");
                 }
                 if (expression.* == .field) {
@@ -10765,13 +10943,20 @@ fn evaluateCheckedScalarOperands(
         // homes its parameter from (`rec.fields`, one register each). The two
         // ends read the same list, which is why they cannot drift.
         if (operandRecordStorage(ctx, operand.*)) |rec| {
-            // THE REGISTER FILE IS THE BOUND, and it is the same bound the
-            // CALLEE applies when it homes the parameter (`functionEligible`
-            // refuses a record parameter past `max_reg_record_fields`, because
-            // record fields have no stack-argument extension). Stating it here
-            // in the same terms is what keeps a record that the callee would
-            // refuse from being staged by the caller as if it fit.
-            if (count + rec.fields.len <= max_reg_record_fields) {
+            // THE GENERAL-PURPOSE ARGUMENT BUDGET IS THE BOUND, and it is the
+            // same bound the CALLEE applies when it homes the parameter
+            // (`functionEligibleReason` admits a record parameter up to
+            // `max_direct_scalar_args`, because a record field is a
+            // general-purpose word and takes the same stack-argument extension
+            // a scalar operand takes). Stating it here in the same terms is
+            // what keeps a record that the callee would refuse from being
+            // staged by the caller as if it fit.
+            //
+            // The physical extension is `stageCheckedScalarOperands` emitting
+            // `mov_arg` at slot >= 8 and `native_backend` flushing those slots
+            // to the outgoing argument area; neither cares that the word came
+            // from a record field rather than from a scalar operand.
+            if (count + rec.fields.len <= max_direct_scalar_args) {
                 for (rec.fields, 0..) |fname, fi| {
                     // EVERY FIELD OF AN EXPANDED RECORD IS A GENERAL-PURPOSE
                     // SLOT, AND THAT IS THE CALLEE'S OWN ACCOUNTING, not a
@@ -11108,15 +11293,20 @@ fn env(expr: *const ast.Expr) bool {
 /// The environment is a PLACE, not only a value, so `env(k)` has to be writable
 /// as well as readable. All three spellings that name the same edge reach here:
 ///
-///     env("K")     = v     canonical — `os` is injected, so the anchor adds
-///                          nothing (only reachable once sema admits bare `env`)
+///     env("K")     = v     application of the `env` relation; `os` is injected,
+///                          so the anchor adds nothing (only reachable once sema
+///                          admits bare `env`)
 ///     os.env("K")  = v     lawful where the anchor genuinely disambiguates
-///     os.env["K"]  = v     legacy bracket accessor
+///     os.env["K"]  = v     computed projection of the `os.env` pack
 ///
 /// A LOCAL named `env` or `os` shadows the projection. That guard is not
-/// hypothetical: `a[i]` canonicalizes to `a(i)`, so `env(k) = v` is also exactly
-/// how a positional table named `env` is written to, and without the check a
-/// local table store would be silently rewritten into a `setenv` call.
+/// hypothetical: legacy sources written under the retired ruling that `a[i]`
+/// canonicalizes to `a(i)` spell a positional-table store as `env(k) = v` too,
+/// and without the check such a local table store would be silently rewritten
+/// into a `setenv` call. Under the current law `[]` is computed projection and
+/// `()` is ordinary application, so the `.call` arm below is the RELATION face
+/// and the `.index` arm is the PACK face; neither is a canonicalization of the
+/// other.
 fn envPlaceKey(ctx: *const LowerCtx, expr: *const ast.Expr) ?*const ast.Expr {
     switch (expr.*) {
         .index => |ix| {
@@ -13941,6 +14131,51 @@ test "dnir_lower: numeric-for step is graph-owned after AST poison" {
     try std.testing.expectEqual(@as(i64, 2), after);
 }
 
+test "dnir_lower: vector reduction bound is graph-owned after AST poison" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    i = 1
+        \\    while i <= 8
+        \\        i = i + 1
+        \\    end
+        \\    i
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "vector_bound_graph.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var cond: ?*ast.Expr = null;
+    for (mod.body.stmts) |*statement| switch (statement.*) {
+        .func_decl => |*decl| for (decl.func.body.stmts) |*nested| switch (nested.*) {
+            .while_loop => |*loop| cond = loop.cond,
+            else => {},
+        },
+        else => {},
+    };
+    const condition = cond orelse return error.TestUnexpectedResult;
+    const rhs = switch (condition.*) {
+        .binop => |b| b.rhs,
+        else => return error.TestUnexpectedResult,
+    };
+    try std.testing.expect(rhs.* == .int_lit);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&mod, mod.file);
+    try std.testing.expectEqual(@as(?i64, 8), graph.exactI64OfExpr(rhs));
+    const before = loopUpperBound(&graph, condition, "i") orelse return error.TestUnexpectedResult;
+    // Damage only the source tree. The graph's exact-i64 fact remains the
+    // bound consumed by the vector recognizer.
+    rhs.int_lit.val = 7;
+    const after = loopUpperBound(&graph, condition, "i") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(@as(i64, 8), before);
+    try std.testing.expectEqual(@as(i64, 8), after);
+}
+
 test "dnir_lower: f64 local in integer main" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -14276,7 +14511,7 @@ test "dnir_lower: main returns f64 kernel tail" {
     try std.testing.expect(dnir.moduleIsNativeDirectReady(m));
     var main_fn: ?dnir.Function = null;
     for (m.functions) |f| {
-        if (std.mem.eql(u8, f.name, "idol_main_f64__main")) main_fn = f;
+        if (std.mem.eql(u8, f.name, "main")) main_fn = f;
     }
     const main = main_fn orelse return error.TestUnexpectedResult;
     try std.testing.expect(main.ret == .f64);
@@ -16057,7 +16292,7 @@ test "dnir_lower: graph pack adjusts one result into several bindings" {
     var stores: usize = 0;
     var saw_nil_fill = false;
     for (module.functions) |function| {
-        if (!std.mem.eql(u8, function.name, "idol_one_many_pack__main")) continue;
+        if (!std.mem.eql(u8, function.name, "main")) continue;
         for (function.blocks[0].instrs) |instruction| {
             if (instruction.op == .call_direct) calls += 1;
             if (instruction.op == .store_local) {
@@ -16116,7 +16351,7 @@ test "dnir_lower: graph pack adjusts one result into several local declarations"
     var stores: usize = 0;
     var saw_nil_fill = false;
     for (module.functions) |function| {
-        if (!std.mem.eql(u8, function.name, "idol_one_many_local_pack__main")) continue;
+        if (!std.mem.eql(u8, function.name, "main")) continue;
         for (function.blocks[0].instrs) |instruction| {
             if (instruction.op == .call_direct) calls += 1;
             if (instruction.op == .store_local) {
@@ -16329,7 +16564,7 @@ test "dnir_lower: graph orders callees before callers" {
         // `graph-order.id` is home `graph-order`, and a symbol is an
         // identifier, so the hyphen folds for both ordinary relations.
         if (std.mem.eql(u8, f.name, "idol_graph_order__distance2")) idx_distance = i;
-        if (std.mem.eql(u8, f.name, "idol_graph_order__main")) idx_main = i;
+        if (std.mem.eql(u8, f.name, "main")) idx_main = i;
         try std.testing.expect(f.id != null);
     }
     try std.testing.expect(idx_distance != null and idx_main != null);
@@ -16728,7 +16963,7 @@ test "dnir_lower: ret_record carries every field in DESCRIPTOR order" {
     try std.testing.expect(saw);
 }
 
-test "dnir_lower: a nine-field record return is eligible, a nine-field param is not" {
+test "dnir_lower: a record parameter's fields ride the general-purpose argument budget, not the register file" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -16746,15 +16981,70 @@ test "dnir_lower: a nine-field record return is eligible, a nine-field param is 
         try std.testing.expectEqual(@as(usize, 2), m.functions.len);
     }
 
-    // Nine fields PASSED: still one field per argument register, and there is
-    // no ninth. Refusing beats exploding past x7 into caller garbage.
+    // Nine fields PASSED. This asserted a REFUSAL, on the stated ground that "a
+    // record parameter is homed from the argument registers only; its fields
+    // are never stacked". The second half was never true of the mechanism: a
+    // record field is exploded into one general-purpose word per slot, the
+    // caller's `mov_arg` routes slot >= 8 into the outgoing argument block, and
+    // the callee prologue's `slot_cursor` — which counts exploded fields, not
+    // parameters — homes slot >= 8 out of the incoming frame. Only this
+    // predicate stood between the two ends.
     {
         const src = wide ++ "take(v: big): i64\n    return v.a\nend\nmain(): i64\n    0\nend\n";
         var lex = @import("lexer.zig").Lexer.init(src, "wideparam.id");
         var parser = @import("parser.zig").Parser.init(&lex, alloc);
         parser.idol_mode = true;
         const mod = try parser.parse_module();
+        const m = try lowerModule(alloc, &mod);
+        try std.testing.expectEqual(@as(usize, 2), m.functions.len);
+    }
+
+    // SIXTEEN is the budget and it is the SCALAR budget, deliberately: eight
+    // argument registers plus the eight stack slots the backend's outgoing
+    // block carries. A record field spends one of those exactly as an `i64`
+    // operand does, so the two cannot be different numbers.
+    {
+        const sixteen = "wide16: { a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, " ++
+            "i: i64, j: i64, k: i64, l: i64, m: i64, n: i64, o: i64, p: i64 }\n";
+        const src = sixteen ++ "take(v: wide16): i64\n    return v.p\nend\nmain(): i64\n    0\nend\n";
+        var lex = @import("lexer.zig").Lexer.init(src, "wide16param.id");
+        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        parser.idol_mode = true;
+        const mod = try parser.parse_module();
+        const m = try lowerModule(alloc, &mod);
+        try std.testing.expectEqual(@as(usize, 2), m.functions.len);
+    }
+
+    // SEVENTEEN still refuses, and the refusal still NAMES the limit rather
+    // than reporting a bare "unsupported". Past sixteen the seventeenth word
+    // has nowhere physical to go — `pending_varargs` is eight slots — so this
+    // is the mechanism's edge and not a policy.
+    {
+        const seventeen = "wide17: { a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, " ++
+            "i: i64, j: i64, k: i64, l: i64, m: i64, n: i64, o: i64, p: i64, q: i64 }\n";
+        const src = seventeen ++ "take(v: wide17): i64\n    return v.q\nend\nmain(): i64\n    0\nend\n";
+        var lex = @import("lexer.zig").Lexer.init(src, "wide17param.id");
+        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        parser.idol_mode = true;
+        const mod = try parser.parse_module();
         try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
+
+        const fd = for (mod.body.stmts) |*st| {
+            if (st.* == .func_decl and std.mem.eql(u8, st.func_decl.path[0], "take")) break &st.func_decl;
+        } else return error.TestUnexpectedResult;
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCalls(&mod, "wide17param.id");
+        var records: std.ArrayList(dnir.RecordDesc) = .empty;
+        defer records.deinit(alloc);
+        try collectRecordsFromGraph(alloc, &records, &graph);
+        try collectRecordsFromModuleAliases(alloc, &records, &mod);
+        const reason = functionEligibleReason(fd, records.items, &graph, &mod) orelse
+            return error.TestUnexpectedResult;
+        try std.testing.expectEqualStrings(
+            "record parameter fields overflow the 16 general-purpose argument slots",
+            reason,
+        );
     }
 }
 
@@ -17033,6 +17323,46 @@ test "dnir_lower: the quote face has ONE producer, and its reach is total over m
     try std.testing.expect(text_faces >= 4);
 }
 
+test "dnir_lower: module positional integer tables require graph facts" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\global xs = { 10, 20 }
+        \\main: i64 = ()
+        \\    0
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "module_const_table_graph.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+
+    // Positive control: after the producer runs, the graph-backed verdict
+    // recognizes the positional integer table.
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "module_const_table_graph.id");
+    const table = switch (mod.body.stmts[0]) {
+        .global_decl => |d| d.inits[0],
+        else => return error.UnexpectedStatement,
+    };
+    try std.testing.expectEqual(ModuleTableKind.int, moduleConstTableKindGraph(&graph, true, &mod, "xs", table));
+
+    // Mutating the source tree cannot change the graph-owned content fact.
+    table.table.fields[0].positional.int_lit.val = 99;
+    try std.testing.expectEqual(ModuleTableKind.int, moduleConstTableKindGraph(&graph, true, &mod, "xs", table));
+    try std.testing.expectEqual(@as(?i64, 10), graph.exactI64OfExpr(table.table.fields[0].positional));
+
+    // Negative control: a graph that was never given the literal facts must
+    // fail closed, rather than re-reading the AST and admitting the table.
+    var missing = semantic_graph.SemanticGraph.init(alloc);
+    defer missing.deinit();
+    try std.testing.expectEqual(@as(?ModuleTableKind, null), moduleConstTableKindGraph(&missing, true, &mod, "xs", table));
+}
+
 test "dnir_lower: a module const of INT_MIN lowers instead of crashing the compiler" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -17070,4 +17400,92 @@ test "dnir_lower: a module const of INT_MIN lowers instead of crashing the compi
         else => return error.UnexpectedStatement,
     };
     try std.testing.expectEqual(@as(?i64, std.math.minInt(i64)), ast.intLiteralValue(bound));
+}
+
+/// One module, lifted the way `lowerModuleFromGraph`'s callers lift it, so a
+/// test asks the same graph the compiler asks — places included.
+fn testLiftedGlobals(
+    alloc: std.mem.Allocator,
+    graph: *semantic_graph.SemanticGraph,
+    mod: *ast.Module,
+    src: []const u8,
+    file: []const u8,
+) !ModuleGlobals {
+    var lex = @import("lexer.zig").Lexer.init(src, file);
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    mod.* = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(mod);
+    _ = try graph.liftModuleWithCheckedCalls(mod, &checked, file);
+    return collectModuleGlobals(alloc, mod, graph);
+}
+
+test "dnir_lower: a module collection §18 rules absent takes no __DATA word" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // THE DEFECT, VERBATIM. `global k = 7` lowered and answered; the collection
+    // beside it — as constant as the scalar, element for element — was refused
+    // `DNB001 lowerModuleFromGraph() — global-init-not-constant:t`, because
+    // `ModuleGlobals` registered ONE i64 word for a THREE-element binding and
+    // `constGlobalInit` then had no word-sized value to compute. The refusal's
+    // name was not its reason: nothing about `(10, 20, 30)` is non-constant.
+    const src =
+        \\global t = (10, 20, 30)
+        \\global k = 7
+        \\main: i64 = ()
+        \\    t[2] + k
+    ;
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    var mod: ast.Module = undefined;
+    var globals = try testLiftedGlobals(alloc, &graph, &mod, src, "absent_collection.id");
+    defer globals.deinit(alloc);
+
+    // No word, so no load-time value is owed and the module is not refused.
+    try std.testing.expect(!globals.has("t"));
+    // The scalar beside it is untouched: a module scalar IS one word.
+    try std.testing.expect(globals.has("k"));
+
+    // AND THE CENSUS IS THE REASON, not the spelling. `residencyRefusal` is the
+    // published proof that the aggregate needs no location anywhere; the
+    // storage decision consumes exactly that fact.
+    const p = graph.placeNamed("t") orelse return error.MissingPlace;
+    try std.testing.expectEqual(place.Shape.collection, p.shape);
+    try std.testing.expectEqual(place.Refusal.none, place.residencyRefusal(p));
+    try std.testing.expectEqual(place.Residency.absent, place.ruledResidency(p));
+}
+
+test "dnir_lower: a written module aggregate keeps its word and stays refused" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // THE NEGATIVE CONTROL FOR THE ABOVE, and the containment `05882930`
+    // landed. A relation writes `M.A`, so `M` is not absent, keeps its word,
+    // and every read of it must still fail closed rather than answer the stale
+    // literal 3. Admitting this shape is the wrong-answer class the whole
+    // residency route exists to avoid.
+    const src =
+        \\global mm = { a = 3 }
+        \\bump: i64 = ()
+        \\    mm.a = 9
+        \\    mm.a
+        \\main: i64 = ()
+        \\    mm.a
+    ;
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    var mod: ast.Module = undefined;
+    var globals = try testLiftedGlobals(alloc, &graph, &mod, src, "written_aggregate.id");
+    defer globals.deinit(alloc);
+
+    try std.testing.expect(globals.has("mm"));
+    const p = graph.placeNamed("mm") orelse return error.MissingPlace;
+    try std.testing.expect(place.residencyRefusal(p) != .none);
+    try std.testing.expectEqual(place.Residency.static, place.ruledResidency(p));
 }

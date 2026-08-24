@@ -599,22 +599,36 @@ pub const PrettyPrinter = struct {
             .semantic => |x| try self.print("@{s}", .{x.op}),
             .semantic_scope => try self.write("@"),
             .index => |x| {
-                // DEMAGIX §4/§27: `[]` is compatibility syntax. Dynamic keyed
-                // projection is the ordinary application face, so canonical
-                // Idol writes `a(i)` and `a[i]` normalizes to it.
+                // `[]` IS COMPUTED PROJECTION AND `()` IS ORDINARY APPLICATION.
+                // They are DIFFERENT operators under the current law, so `a[i]`
+                // prints as `a[i]` in every mode, canonical family included.
                 //
-                // The equivalence is not assumed: `table_apply.zig` already
-                // converges `t(key)` onto the SAME `.index` node this prints,
-                // so both spellings reach one application occurrence. And the
-                // conversion is only kept when `idol check` still passes on the
-                // result — §29 requires the semantics be preserved rather than
-                // the brackets be textually replaced.
+                // This site used to write `(`/`)` in the canonical face, on the
+                // retired ruling that `a[i]` canonicalizes to `a(i)` (762e2bff).
+                // That ruling is gone: call-shaped indexing is REFUSED now —
+                // `DNB001 assign-target` for a write, `DNB011
+                // unresolved-application-facts` for a read — so the rewrite made
+                // `idol fmt` turn a compiling program into a non-compiling one.
+                // Measured on idol 05882930: `w: [4]i64 = {1,2,3,4}` /
+                // `w[2] = 9` compiled, `idol fmt` reprinted it as `w(2) = 9`,
+                // and the same file then refused with DNB001. A formatter that
+                // breaks the build is not formatting, and HPLS §94 forbids
+                // canonical tooling from generating retired syntax.
+                //
+                // THE REVERSE REWRITE IS NOT DONE HERE EITHER. `do_fmt` runs the
+                // lexer and the parser and nothing else — no sema, no type_map —
+                // so a `.call` node carries no fact about whether its callee is a
+                // pack or a relation. `table_apply.normalizeModule` can converge
+                // `t(key)` onto `.index` only because the COMPILE path hands it
+                // `sem.type_map`. Without types, `f(x)` is a genuine application
+                // and an index in the same shape, and rewriting on a guess would
+                // turn a relation call into a projection. The printer leaves
+                // `.call` alone; a stale `a(i)` is the compiler's diagnostic to
+                // raise, not the formatter's to silently reinterpret.
                 try self.printExpr(x.obj, bound_always);
-                const open_c = if (self.mode == .idol and self.canonical) "(" else "[";
-                const close_c = if (self.mode == .idol and self.canonical) ")" else "]";
-                try self.write(open_c);
+                try self.write("[");
                 try self.printExpr(x.key, 0);
-                try self.write(close_c);
+                try self.write("]");
             },
             .field => |x| {
                 try self.printExpr(x.obj, bound_always);
@@ -2671,4 +2685,58 @@ test "pretty: parameter default values survive" {
     const out = try fmtCanonical(alloc, src);
     try testing.expectEqualStrings(src, out);
     try expectIdempotent(alloc, src);
+}
+
+test "pretty: a computed projection keeps its brackets" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // THE FORMATTER ENFORCED A RETIRED LAW AND BROKE THE BUILD. This printer
+    // wrote `(`/`)` for a `.index` node in the canonical face, on the ruling
+    // that `a[i]` canonicalizes to `a(i)` (762e2bff). That ruling is retired:
+    // `[]` is computed projection, `()` is ordinary application, and
+    // call-shaped indexing is REFUSED — `DNB001 assign-target` on a write,
+    // `DNB011 unresolved-application-facts` on a read.
+    //
+    // Measured on idol 05882930, before the fix: the source below compiled,
+    // `idol fmt` rewrote both sites to `w(2)`/`w(3)`, and the SAME FILE then
+    // refused with DNB001. A formatter is not permitted to turn a compiling
+    // program into a non-compiling one, and HPLS §94 forbids canonical tooling
+    // from generating retired syntax in those words.
+    //
+    // Both positions are asserted, because the read and the write reach the
+    // printer by different statement paths and only the read had a witness.
+    const src =
+        \\main: i64 = ()
+        \\  w: [4]i64 = { 1, 2, 3, 4 }
+        \\  w[2] = 9
+        \\  w[2] + w[3]
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
+    // The spelling assertion is not redundant with the round trip here: `w(2)`
+    // still PARSES, so a printer that emits it is a fixed point too. Only the
+    // byte check can see the retired face.
+    try testing.expect(std.mem.indexOf(u8, out, "w(2)") == null);
+    try testing.expect(std.mem.indexOf(u8, out, "w(3)") == null);
+    try expectIdempotent(alloc, src);
+
+    // A GENUINE APPLICATION IS LEFT ALONE. `do_fmt` runs the lexer and the
+    // parser and nothing else, so a `.call` carries no fact saying whether its
+    // callee is a pack or a relation — `table_apply` can only converge `t(key)`
+    // onto `.index` because the compile path hands it `sem.type_map`. Rewriting
+    // `()` into `[]` on a guess would turn a relation call into a projection,
+    // so the printer does not guess in either direction.
+    const app =
+        \\id: i64 = (n: i64)
+        \\  n
+        \\main: i64 = ()
+        \\  id(2)
+        \\
+    ;
+    const app_out = try fmtCanonical(alloc, app);
+    try testing.expectEqualStrings(app, app_out);
+    try testing.expect(std.mem.indexOf(u8, app_out, "id[2]") == null);
+    try expectIdempotent(alloc, app);
 }

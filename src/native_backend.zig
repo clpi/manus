@@ -788,10 +788,13 @@ fn returnsFloat(t: ast.TypeExpr) bool {
 
 /// Zero-arg i64/void/f64 module function suitable as a native executable entry.
 /// f64 entries coerce to i64 exit codes at link time via `fcvtzs x0, d0`.
+///
+/// ONE DEFINITION, in `ast.zig`, because the SAME predicate decides which
+/// relation owns the bare process symbol (`Module.sourceProcessEntry`) and
+/// which relation `--entry` may point a link line at. A second copy here is how
+/// those two answers stop agreeing.
 fn isZeroArgEntryFunction(fd: *const ast.FuncDecl) bool {
-    if (fd.path.len != 1 or fd.method or fd.is_local) return false;
-    if (fd.func.params.len != 0) return false;
-    return returnsInteger(fd.func.ret_type) or returnsVoid(fd.func.ret_type) or returnsFloat(fd.func.ret_type);
+    return fd.processEntryEligible();
 }
 
 fn findModuleFunction(mod: *const ast.Module, name: []const u8) ?*const ast.FuncDecl {
@@ -3277,9 +3280,14 @@ const Arm64Compiler = struct {
                         // AAPCS64 stack argument: the ninth and later GP params
                         // arrive in the caller's outgoing area, which now sits
                         // just above this frame (callee-saves + locals + spill).
-                        // A record parameter is never stacked (the lowering keeps
-                        // records inside x0..x7), so each stacked slot is one
-                        // scalar word at [sp, #(callee_save+frame)+(slot-8)*8].
+                        // EVERY STACKED SLOT IS ONE 8-BYTE WORD, whatever it is
+                        // a slot OF: `slot_cursor` counts a record parameter's
+                        // exploded fields alongside scalar parameters, and every
+                        // field this backend puts in a scalar record occupies 8
+                        // bytes at an 8-byte stride (i64, bool, a narrow int
+                        // widened on entry, and str-as-address alike). So the
+                        // home is [sp, #(callee_save+frame)+(slot-8)*8] and the
+                        // provenance of the word never enters the address.
                         const frame_total: u32 = @as(u32, self.callee_save_bytes) + @as(u32, self.stack_frame_bytes);
                         const off: u32 = frame_total + (slot - 8) * 8;
                         if (off > 32760) return self.refuse(@src());
@@ -3576,12 +3584,16 @@ const Arm64Compiler = struct {
                 try self.patchB(p.patch_off, target_off);
             }
         }
-        if (!self.returned) return self.refuse(@src());
+        // NAME THE FUNCTION. Both refusals below are about ONE function's
+        // instruction stream, and the compiler is holding its name in
+        // `cur_func_name`; reporting a bare source location made the reader
+        // bisect the subject to find out which one.
+        if (!self.returned) return self.refuseWith(@src(), self.cur_func_name orelse "?");
         // Falling off the end of a function is never recoverable at runtime:
         // execution continues into whatever symbol the linker placed next
         // (here, straight into _duo_keyword_classify → SIGSEGV). Refuse instead
         // of emitting it, so the honest DNB001 path reports the gap.
-        if (!tail_terminates) return self.refuse(@src());
+        if (!tail_terminates) return self.refuseWith(@src(), self.cur_func_name orelse "?");
         self.eval_pinned = null;
         self.cur_func_has_call = false;
     }
@@ -11654,7 +11666,7 @@ test "native backend: checked result pack retains order through machine lineage"
         for (output.symbols) |symbol| {
             if (!symbol.defined or symbol.section != 1) continue;
             if (std.mem.endsWith(u8, symbol.name, "__pair")) pair_start = symbol.offset;
-            if (std.mem.eql(u8, symbol.name, "idol_result_pack_lineage__main")) main_start = symbol.offset;
+            if (std.mem.eql(u8, symbol.name, "main")) main_start = symbol.offset;
         }
         try std.testing.expectEqual(@as(u32, 8), (main_start orelse return error.TestExpectedEqual) -
             (pair_start orelse return error.TestExpectedEqual));
@@ -12404,6 +12416,136 @@ test "native backend: root and source main retain distinct entry identities" {
     );
 }
 
+// gap[229]. THE ONE COLLISION HOME QUALIFICATION DELIBERATELY KEEPS.
+//
+// Home qualification exists to remove the collisions two homes must not have:
+// `record.id` and a second module both naming a relation `field` used to export
+// `_field` twice and `ld -r` answered `duplicate symbol '_field'`. It keeps
+// exactly one collision on purpose — two programs cannot share a process entry
+// — and for a while it did not:
+//
+//     helper: i64 = ()
+//         7
+//     main: i64 = ()
+//         helper()
+//
+//   before  --emit obj  ->  _idol_<home>__helper  _idol_<home>__main
+//   after   --emit obj  ->  _idol_<home>__helper  _main
+//
+// With the mangled spelling there was NO `_main` in the object at all, so
+// `ld -r` over two independent programs each declaring `main` merged cleanly,
+// rc 0, two process entries, no diagnostic.
+//
+// The exemption is narrow and this test is what pins the boundary of it:
+// `helper` is one line above `main` in the SAME home and stays qualified, so
+// the row cannot pass by the law being off for the whole module.
+test "native backend: the process entry owns the C runtime name and nothing else does" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\helper: i64 = ()
+        \\    7
+        \\main: i64 = ()
+        \\    helper()
+    , "entry/exempt.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.idol_mode = true;
+    try sem.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    table_apply.normalizeModule(alloc, &mod, &sem.type_map);
+    const root = try graph.liftModuleWithCheckedCalls(&mod, &sem, mod.file);
+
+    // The module has no file-scope execution, so the ROOT is not the program
+    // and the relation named `main` is the process.
+    try std.testing.expect(!mod.program());
+    try std.testing.expect(mod.sourceProcessEntry() != null);
+    const selected = (try selectProcessEntry(&mod, &graph, root, null)).?;
+    try std.testing.expect(selected == .relation);
+    const symbol = try processEntrySymbol(alloc, &graph, selected);
+    defer alloc.free(symbol);
+    try std.testing.expectEqualStrings("main", symbol);
+
+    // ...and the neighbour one line above it does NOT escape its home.
+    const helper = graph.relationForDeclaration(
+        findModuleFunction(&mod, "helper").?,
+    ).?;
+    try std.testing.expectEqualStrings(
+        "idol_entry_exempt__helper",
+        graph.callableLinkage(helper).?.symbol,
+    );
+
+    // DEFINER AND CALLER READ THE SAME FACT. `main` calls `helper`, and the
+    // lowered object must carry exactly the two symbols above — the definition
+    // named `main`, and no second spelling of it left behind.
+    const lowered = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    var saw_entry = false;
+    for (lowered.functions) |function| {
+        if (std.mem.eql(u8, function.name, "main")) saw_entry = true;
+        try std.testing.expect(!std.mem.endsWith(u8, function.name, "__main"));
+    }
+    try std.testing.expect(saw_entry);
+}
+
+// The exemption is a MODULE fact, not a spelling. Three neighbours of the test
+// above, each one token away from it, each keeping its home:
+//
+//   * `main` that takes an operand is not eligible to be a process at all;
+//   * `main` beside file-scope execution loses to the ROOT, which is the
+//     program and already owns the bare symbol (see `entry/collision.id`);
+//   * the sole zero-arg relation of a body-less module may still be selected as
+//     an EXECUTABLE's entry, but that is a `-Wl,-e` choice on a link line and
+//     must not rename the relation — a library object is not a program.
+test "native backend: the process-entry exemption is a module fact, not the spelling" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const Case = struct { src: []const u8, file: []const u8, symbol: []const u8 };
+    const cases = [_]Case{
+        .{ .src = 
+        \\main: i64 = (n: i64)
+        \\    n + 1
+        , .file = "entry/operand.id", .symbol = "idol_entry_operand__main" },
+        .{ .src = 
+        \\main: i64 = ()
+        \\    41
+        \\7
+        , .file = "entry/program.id", .symbol = "idol_entry_program__main" },
+    };
+
+    for (cases) |case| {
+        var lex = Lexer.init(case.src, case.file);
+        var parser = Parser.init(&lex, alloc);
+        parser.idol_mode = true;
+        var mod = try parser.parse_module();
+        var sem = Sema.init(alloc);
+        defer sem.deinit();
+        sem.idol_mode = true;
+        try sem.check_module(&mod);
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        table_apply.normalizeModule(alloc, &mod, &sem.type_map);
+        _ = try graph.liftModuleWithCheckedCalls(&mod, &sem, mod.file);
+
+        try std.testing.expect(mod.sourceProcessEntry() == null);
+        const relation = graph.relationForDeclaration(
+            findModuleFunction(&mod, "main").?,
+        ).?;
+        try std.testing.expectEqualStrings(
+            case.symbol,
+            graph.callableLinkage(relation).?.symbol,
+        );
+    }
+}
+
 test "native backend: body-less modules retain relation entry compatibility" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -12433,6 +12575,135 @@ test "native backend: body-less modules retain relation entry compatibility" {
         error.InvalidProcessEntry,
         selectProcessEntry(&mod, &graph, root, "missing"),
     );
+}
+
+// gap[228]. THE ANNOTATION MUST NOT DECIDE WHICH IDENTITY IS THE PROCESS.
+//
+// idol has no `local` keyword, so `m = 7` at module scope parses as `.assign`
+// — the same node a relation body produces — while `m: i64 = 7` parses as
+// `.local_decl`. `Module.program()` read the second as a declaration and the
+// first as EXECUTION, so the untyped spelling made the module a program, the
+// root won `selectProcessEntry`, and the root has no tail: the process exited
+// 0 and the source `main` was never called. There was no diagnostic — `idol
+// check` reported success and both realizations agreed on 0.
+//
+// The observable was reported as "an untyped module binding reads as 0": every
+// expression over `m` collapsed, because the relation computing it did not
+// run. `sha.id`'s `m = 4294967295` mask is the field report.
+test "native backend: an untyped module binding is a declaration, not the program" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\m = 7
+        \\main: i64 = ()
+        \\    m
+    , "entry/untyped_binding.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+
+    // The binding is an `.assign`, not a `.local_decl` — the shape that used to
+    // be read as execution.
+    try std.testing.expect(mod.body.stmts[0] == .assign);
+    try std.testing.expect(!mod.program());
+
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.idol_mode = true;
+    try sem.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    table_apply.normalizeModule(alloc, &mod, &sem.type_map);
+    const root = try graph.liftModuleWithCheckedCalls(&mod, &sem, mod.file);
+
+    const selected = (try selectProcessEntry(&mod, &graph, root, null)).?;
+    try std.testing.expect(selected == .relation);
+    const symbol = try processEntrySymbol(alloc, &graph, selected);
+    defer alloc.free(symbol);
+    // The module is not a program, so this relation IS the process and owns the
+    // C runtime's name. `entry/collision.id` one test above is the other side:
+    // there the ROOT is the program, so the relation named `main` is ordinary
+    // and mangles. One object, one `main`, either way.
+    try std.testing.expectEqualStrings("main", symbol);
+
+    const lowered = try dnir_lower.lowerModuleWithGraph(alloc, &mod, &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    // The answer, and no valueless root standing in front of it. 7, not the
+    // 0 the root returned while it held the entry. Exactly ONE function carries
+    // the process symbol — the relation — because the root was not emitted.
+    try std.testing.expectEqual(@as(?i64, 7), immediateReturn(dnirFunction(lowered, symbol).?));
+    var carriers: usize = 0;
+    for (lowered.functions) |function| {
+        if (std.mem.eql(u8, function.name, "main")) carriers += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), carriers);
+
+    // PARITY. The annotated spelling of the same binding answers identically —
+    // that equality is the whole content of the fix.
+    var typed_lex = Lexer.init(
+        \\m: i64 = 7
+        \\main: i64 = ()
+        \\    m
+    , "entry/typed_binding.id");
+    var typed_parser = Parser.init(&typed_lex, alloc);
+    typed_parser.idol_mode = true;
+    var typed_mod = try typed_parser.parse_module();
+    try std.testing.expectEqual(typed_mod.program(), mod.program());
+}
+
+// The three shapes a module-scope `.assign` is still EXECUTION, so the fix
+// above cannot be read as "module-scope assignment never runs".
+test "native backend: a module-scope assignment that is not a first binding is still the program" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const Case = struct { src: []const u8, file: []const u8 };
+    const programs = [_]Case{
+        // A REBINDING. The second store is a value the module body must run to
+        // be correct; only the first binding is a declaration.
+        .{ .src = 
+        \\m = 7
+        \\m = 8
+        \\main: i64 = ()
+        \\    m
+        , .file = "entry/rebound.id" },
+        // A WRITE THROUGH A FIELD names something that already exists.
+        .{ .src = 
+        \\M =
+        \\  x = 1
+        \\M.x = 2
+        \\main: i64 = ()
+        \\    M.x
+        , .file = "entry/field_write.id" },
+        // A TAIL is the program by GAP-155's ruling, binding or no binding.
+        .{ .src = 
+        \\m = 7
+        \\m
+        , .file = "entry/tail.id" },
+    };
+    for (programs) |case| {
+        var lex = Lexer.init(case.src, case.file);
+        var parser = Parser.init(&lex, alloc);
+        parser.idol_mode = true;
+        var mod = try parser.parse_module();
+        try std.testing.expect(mod.program());
+    }
+
+    // And the declaration verdict is not a blanket one either: a module of
+    // bindings alone is not a program.
+    var lex = Lexer.init(
+        \\m = 7
+        \\n = 9
+        \\main: i64 = ()
+        \\    m * n
+    , "entry/two_bindings.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    try std.testing.expect(!mod.program());
 }
 
 test "native backend: internal i64 result stays whole before deployment" {
@@ -14114,7 +14385,7 @@ test "native backend emits assembly listing for arithmetic" {
     var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
     defer assembly.deinit(alloc);
     const asm_text = assembly.assembly;
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _idol_native__main") != null);
+    try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _main") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "mul x") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tret\n") != null);
 }
@@ -14321,9 +14592,14 @@ test "native backend assembly lists helper call labels" {
     var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
     defer assembly.deinit(alloc);
     const asm_text = assembly.assembly;
-    // `native.id` is home `native`; a source relation named `main` is ordinary.
+    // `native.id` is home `native`. `main(seed: i64)` TAKES AN OPERAND, so it
+    // is not eligible to be the process at all and is an ordinary relation of
+    // this home — one parameter away from the `.globl _main` the two tests
+    // above and below pin. That is the whole content of the narrowed
+    // process-entry exemption: the spelling `main` is not the fact.
     try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _idol_native__add") != null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _idol_native__main") != null);
+    try std.testing.expect(std.mem.indexOf(u8, asm_text, ".globl _main\n") == null);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tbl _idol_native__add\n") != null);
 }
 
@@ -14361,7 +14637,7 @@ test "native backend lowers source print to host egress and retains physical pri
     try liftCheckedTestGraph(&mod, &sem, &graph);
     var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
     defer assembly.deinit(alloc);
-    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, ".globl _idol_native__main") != null);
+    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, ".globl _main") != null);
     try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "bl _printf") != null);
 
     // The subject-first spelling of the same egress, in a module with the same
@@ -14559,6 +14835,84 @@ test "WP-04: i64 record field assign with binop" {
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
     try liftCheckedTestGraph(&mod, &sem, &graph);
+    var object = try emitCheckedTestObject(alloc, &mod, &graph);
+    defer object.deinit(alloc);
+    try std.testing.expect(object.bytes.len > 0);
+}
+
+test "WP-04: a sixteen-field record parameter stacks its overflow fields" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // SIXTEEN FIELDS: eight in x0..x7 and eight in the caller's outgoing
+    // argument area. `functionEligibleReason` refused this outright — "record
+    // parameter fields overflow the 8 argument registers" — on the ground that
+    // a record's fields are never stacked. They are; a field is a
+    // general-purpose word and the slot index is the only thing either end
+    // reads.
+    //
+    // THE ASSERTION IS ON THE EMITTED FORM, not on "it compiled". A budget
+    // raised without the two ends agreeing about WHERE the ninth word lives
+    // still links, still exits, and answers with caller garbage — which is the
+    // failure mode this whole area keeps producing. So: the caller must open a
+    // 64-byte outgoing block (eight overflow words) and write the sixteenth to
+    // its last slot, and the callee must read that same slot back.
+    //
+    // `forward` EXISTS TO KEEP A CALL SITE. `main` takes no operands and its
+    // body folds to a constant (lawful nonexecution), so a module whose only
+    // application lives in `main` emits a callee and no caller at all — the
+    // half of the seam this test is about would simply not be in the listing.
+    // A relation that takes an operand does not fold.
+    const source =
+        \\big: { a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, i: i64, j: i64, k: i64, l: i64, m: i64, n: i64, o: i64, p: i64 }
+        \\last(v: big): i64
+        \\    return v.p
+        \\end
+        \\forward(v: big): i64
+        \\    return last(v)
+        \\end
+        \\main(): i64
+        \\    w: big = { a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8, i = 9, j = 10, k = 11, l = 12, m = 13, n = 14, o = 15, p = 116 }
+        \\    forward(w)
+        \\end
+    ;
+    var lex = Lexer.init(source, "wide_record_param.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.idol_mode = true;
+    try sem.check_module(&mod);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+
+    var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer assembly.deinit(alloc);
+
+    // The outgoing block is exactly eight words: sixteen slots less the eight
+    // that ride registers.
+    try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, "sub sp, sp, #64") != null);
+
+    // Slot 15 — the sixteenth field — is written by the caller and read by the
+    // callee at the same displacement, (15 - 8) * 8.
+    var wrote_last_slot = false;
+    var read_last_slot = false;
+    var lines = std.mem.splitScalar(u8, assembly.assembly, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (!std.mem.endsWith(u8, line, ", [sp, #56]")) continue;
+        if (std.mem.startsWith(u8, line, "str x")) wrote_last_slot = true;
+        if (std.mem.startsWith(u8, line, "ldr x")) read_last_slot = true;
+    }
+    try std.testing.expect(wrote_last_slot);
+    try std.testing.expect(read_last_slot);
+
     var object = try emitCheckedTestObject(alloc, &mod, &graph);
     defer object.deinit(alloc);
     try std.testing.expect(object.bytes.len > 0);

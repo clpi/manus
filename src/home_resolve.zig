@@ -407,9 +407,24 @@ pub fn homeSymbol(alloc: std.mem.Allocator, home: []const u8, name: []const u8) 
 ///     `@comp.c.export(n)`. At a foreign boundary the name is not ours to
 ///     choose: the declaration IS the name. HPLS §34 — internal ABI is
 ///     realization; only foreign boundaries require foreign ABI.
-/// Nothing else. The physical process root is not a source relation and never
-/// enters this function; a source relation named `main` remains `(home, name)`
-/// like every other relation. In particular "the program has one file" is NOT an exemption:
+/// Nothing else HERE. The other exemption — THE PROCESS ENTRY, whose name
+/// belongs to the C runtime — is not a property of `(home, name)` and so cannot
+/// be decided by this function: it depends on whether the MODULE's own root is
+/// the program. `ast.Module.sourceProcessEntry` answers that, and
+/// `semantic_graph.publishCallableLinkage` is where the answer is applied, once,
+/// for the definer and for every caller alike.
+///
+/// THIS FUNCTION USED TO TEST THE NAME (`name == "main" -> "main"`) and that was
+/// wrong in one direction: a module that is ITSELF the program already exports
+/// the bare symbol from its root, so a relation named `main` beside file-scope
+/// execution produced `main` twice in one object. Deleting the test instead of
+/// narrowing it was wrong in the other, and measured: with `helper` and `main`
+/// in one home, `--emit obj` emitted no `_main` at all, so `ld -r` over two
+/// independent programs each declaring `main` merged cleanly with rc 0. Home
+/// qualification removes the collisions two homes must not have and KEEPS
+/// exactly this one, because two programs cannot share a process entry.
+///
+/// In particular "the program has one file" is NOT an exemption:
 /// a law with a special case for small programs stops being true exactly when a
 /// second file arrives.
 ///
@@ -571,15 +586,18 @@ test "home_resolve: the symbol is a function of home AND name" {
     try std.testing.expect(!std.mem.eql(u8, a, b));
 }
 
-test "home_resolve: only a declared foreign boundary escapes home identity" {
+test "home_resolve: only a declared foreign boundary escapes home identity here" {
     const alloc = std.testing.allocator;
     // The ordinary case: identity is `(home, name)`.
     const ordinary = try relationSymbol(alloc, "compiler.record", "field", null);
     defer alloc.free(ordinary);
     try std.testing.expectEqualStrings("idol_compiler_record__field", ordinary);
 
-    // A source relation named `main` is ordinary. The physical process root is
-    // selected separately and owns the bare C-runtime symbol.
+    // A source relation named `main` is ordinary TO THIS FUNCTION. Whether it
+    // is the process is a fact about its MODULE, not about `(home, name)`, so
+    // `ast.Module.sourceProcessEntry` decides it and
+    // `semantic_graph.publishCallableLinkage` applies it — see
+    // `native_backend.zig`, "the process entry owns the C runtime name".
     const named_main = try relationSymbol(alloc, "compiler.host", "main", null);
     defer alloc.free(named_main);
     try std.testing.expectEqualStrings("idol_compiler_host__main", named_main);
