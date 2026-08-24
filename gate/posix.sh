@@ -20,7 +20,13 @@
 # the strictest shell present whether every gate in the home can even be read.
 set -u
 
-root=$(unset CDPATH; cd -- "$(dirname -- "$0")/.." && pwd) || exit 2
+here=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd) || exit 2
+root=$(unset CDPATH; cd -- "$here/.." && pwd) || exit 2
+# THE SWEEPER'S OWN ROOT-RELATIVE PATH, resolved HERE and not later. The floor
+# below has to exclude this file from its own population, and a path derived
+# after the `cd` would be resolved against the wrong directory — the first
+# attempt did exactly that and made a `cd` fail with a shell error.
+self=${here#"$root"/}/$(basename -- "$0")
 cd "$root" || exit 2
 
 # Strictest first. bash-as-sh is the WEAKEST answer here and says so, because a
@@ -63,21 +69,40 @@ if $strict -n "$control" 2>/dev/null; then
     exit 1
 fi
 
+# THE POPULATION MUST BE ABLE TO REACH ZERO, and the one guarded below could
+# not. The floor asks `subjects -eq 0`, and `gate/posix.sh` IS one of the
+# gates this loop enumerates, so in every tree where the file exists to run at
+# all, `subjects` is at least 1. The GAP-201 guard was STRUCTURALLY
+# UNREACHABLE — written down, cited, and incapable of firing.
+#
+# WIDENING THE GLOB DID NOT TOUCH THIS, and the two repairs are worth keeping
+# apart. The paragraph below fixed an UNDER-MEASUREMENT: the sweep could not
+# see six of its subjects. This fixes a floor that cannot reach zero, and a
+# floor that cannot reach zero over 43 subjects still cannot reach zero over
+# 52. `gate/vacuity.sh` planted this gate alone in an otherwise empty tree,
+# after the widening, and got
+#
+#     posix gate: PASS — 1 shell gate(s) parse under dash; control refused
+#
+# a clean sweep over a home holding nothing but the sweeper. So PEERS is the
+# guarded quantity: subjects other than this file. That count reaches zero
+# exactly when the gate home is not there, which is the fact worth refusing
+# on. Every gate found is still parsed, this file included; only the FLOOR
+# moved, so it now fires everywhere the old one would have, and in one case
+# the old one could not.
+#
+# `$self` is the root-relative path resolved at the top of this file, not the
+# literal `gate/posix.sh`: a copy of this file at another depth must still be
+# recognised as the sweeper rather than counting itself as a peer and refilling
+# the hole.
 subjects=0
+peers=0
 bad=0
 failed=""
-# `gate/*.sh` ALONE IS THE SAME DEFECT ONE DIRECTORY DOWN. This file asked the
-# strictest shell whether every gate in the home can be read, and then
-# enumerated 43 of the 49 that were there. `law.path.name` forbids kebab-case,
-# so gates are actively being DECOMPOSED out of this glob's view: GAP-134's own
-# lane moved `gate/treesitter-agreement.sh` to `gate/treesitter/agreement.sh`
-# and silently removed it from this measurement. Four of the six it could not
-# see -- treesitter/agreement, directive/authority, identity/retired,
-# wasm/global -- are on `zig build test`, and `gate/all.sh` has always run
-# `gate/*.sh gate/*/*.sh`. The enumerations now agree.
 for gate in gate/*.sh gate/*/*.sh; do
     [ -r "$gate" ] || continue
     subjects=$((subjects + 1))
+    [ "$gate" = "$self" ] || peers=$((peers + 1))
     if ! err=$($strict -n "$gate" 2>&1); then
         bad=$((bad + 1))
         failed="$failed $gate"
@@ -86,9 +111,12 @@ for gate in gate/*.sh gate/*/*.sh; do
 done
 
 # A gate that examined zero subjects must FAIL (GAP-201). Vacuous green is the
-# failure mode this whole file is about.
-if [ "$subjects" -eq 0 ]; then
-    printf 'posix gate: FAIL enumerated zero shell gates — NOT MEASURED\n' >&2
+# failure mode this whole file is about, and the only count that can answer
+# for it is the one this file does not supply itself.
+if [ "$peers" -eq 0 ]; then
+    printf 'posix gate: FAIL enumerated %s shell gate(s), none besides %s — NOT MEASURED\n' \
+        "$subjects" "$self" >&2
+    printf 'posix gate:   a parse sweep whose only subject is the sweeper has measured nothing\n' >&2
     exit 2
 fi
 
@@ -103,6 +131,6 @@ if [ "$bad" -ne 0 ]; then
     exit 1
 fi
 
-printf 'posix gate: PASS — %s shell gate(s) parse under %s; control refused\n' \
-    "$subjects" "$strict"
+printf 'posix gate: PASS — %s shell gate(s) parse under %s, %s of them besides %s; control refused\n' \
+    "$subjects" "$strict" "$peers" "$self"
 exit 0

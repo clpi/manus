@@ -91,45 +91,31 @@ cd "$root" || { echo "vacuity: cannot enter root" >&2; exit 2; }
 # three are gone and they are measured like everything else.
 DECLARED='gate/architecture-roadmap.sh gate/coverage.sh'
 
-# ── convicted, and not repaired in the change that added this harness ──────
+# ── convicted, and not yet repaired ────────────────────────────────────────
 # A NAMED list, not a count. `gate/all.sh` ratchets on bare numbers, which is
 # enough for a citation census but not here: a bare ceiling of 1 is satisfied
 # just as well by a DIFFERENT gate going vacuous while this one is fixed, and
 # a substitution is precisely the drift worth catching. Vacuous-and-listed is
 # reported; vacuous-and-unlisted is fatal. Lines here are meant to be deleted.
 #
-#   gate/posix.sh — has a GAP-201 `subjects -eq 0` guard, and that guard is
-#     STRUCTURALLY UNREACHABLE: the gate enumerates `gate/*.sh`, and it is
-#     itself one of them, so `subjects` is never 0. Planted alone it reported
-#     `posix gate: PASS — 1 shell gate(s) parse under dash; control refused`
-#     and exited 0, having examined nothing but itself. Its own header is
-#     about controls that cannot fail, which is the finding.
-#   gate/researchgap.sh — invisible until the launcher fix below. It execs
-#     `tools/node/dev/gapc0`, which the plant did not provide, so it died at
-#     126 and was scored SOUND. With the stub present it REACHES its
-#     measurement, finds nothing, prints nothing and exits 0.
-#
-#     RE-VERIFIED BY HAND, and the contrast is the whole finding — run
-#     `sh gate/researchgap.sh` in this tree and again on a scaffold holding
-#     only the gate, a silent `gapc0` and an empty git repo:
-#
-#       real tree     `gapc0: … GAPs in range, … research GAPs C0-checked,
-#                      0 violations`                                  rc=0
-#       empty tree    (no output whatsoever)                          rc=0
-#
-#     One census examined every GAP in the tree; the other examined none.
-#     The gate reports the same verdict for both, so nothing it prints or
-#     returns can tell a reader which of the two happened. That is this
-#     harness's invariant stated in one gate.
-KNOWNVACUOUS='gate/posix.sh gate/researchgap.sh'
+# IT IS EMPTY, AND THAT IS THE POINT. It shipped holding `gate/posix.sh` and
+# `gate/researchgap.sh`, and "no NEW convictions" is a weaker property than
+# "no convictions" — it lets a standing lie stand forever so long as nobody
+# adds another. Both were repaired; the reasoning survives in each gate's own
+# header, where a reader looking at the gate will meet it. Adding a name back
+# is not forbidden, but it is now the edit that has to be argued for.
+KNOWNVACUOUS=''
 
 # ── crashed under HOLLOW before reaching a measurement ─────────────────────
 # NOT a conviction and NOT a pass: the harness never observed these decide
-# anything. Both die on a prerequisite the plant does not know to supply
-# (`tools/node/dev/grammar` semantics, and a layering manifest reader). Each
-# is a stub away from a real verdict, and until then the honest report is that
-# they are unmeasured. Lines here are meant to be deleted.
-KNOWNUNPROVEN='gate/grammar-projection.sh gate/layering-controls.sh'
+# anything. Also empty now, and one of the two entries was this file's own
+# fault — `gate/grammar-projection.sh` died at ENOTDIR on a stub the plant
+# mis-shaped (see `build_hollow`), and `gate/layering-controls.sh` died at 128
+# inside `git clone` under `set -e`, which grades as a signal. Neither had ever
+# been observed deciding anything, and the first turned out to be hiding a
+# VACUOUS verdict rather than a sound one, which is exactly why UNPROVEN may
+# never be read as SOUND. Lines here are meant to be deleted.
+KNOWNUNPROVEN=''
 
 # `gate/all.sh` is a RUNNER, not a gate: it executes every file here, so under
 # a plant it would recurse into this one. Excluded by role, and named so the
@@ -275,10 +261,48 @@ build_hollow() {
 
   # DATA SOURCES, by contrast, EXIST AND ANSWER NOTHING — that is HOLLOW's
   # whole premise, and a gate has to decide what an empty answer means.
-  for t in build-mode gapc gapc0 grammar census hostcensus repository; do
-    printf '#!/bin/sh\nexit 0\n' > "$1/tools/node/dev/$t" || return 1
-    chmod +x "$1/tools/node/dev/$t" || return 1
+  #
+  # THE STUB SET IS DERIVED FROM THE REAL TOOL HOME, because a hand-written
+  # list of names was WRONG and the wrongness bought an unearned label. The
+  # list read `build-mode gapc gapc0 grammar census hostcensus repository`.
+  # `grammar` and `census` are DIRECTORIES in this repo, so the plant dropped a
+  # REGULAR FILE exactly where `tools/node/dev/grammar/emit` had to be;
+  # `gate/grammar-projection.sh` resolved through it, got ENOTDIR, died at 126
+  # before its first check, and this harness recorded UNPROVEN. That is an
+  # honest label for a defect that belonged to the PLANT, not the gate — and
+  # the gate underneath it turned out to be a pass-through that HOLLOW would
+  # have convicted outright. A plant that cannot reach a gate's measurement
+  # hides whatever the measurement would have said. `gapc` was named too and
+  # does not exist at all.
+  #
+  # So the set is enumerated, not declared: every executable under the real
+  # `tools/node/dev` is reproduced at its own relative path as a program that
+  # runs, succeeds, and says nothing. A tool added, moved, or turned into a
+  # directory needs no edit here, and cannot silently drop out of the plant.
+  # `idol-lock` is the one exclusion and keeps the pass-through written above,
+  # because a launcher is not a subject.
+  #
+  # NO `2>/dev/null` ON THIS SCAN. Item 1 of this file's own list of convicted
+  # instruments is a swept-away error read as a count of zero, and a plant that
+  # enumerated nothing would produce a scaffold with no tools at all — every
+  # gate would then die on a missing prerequisite and be scored CRASH, which is
+  # not a conviction. So the home is asserted, `find` keeps its stderr, and an
+  # empty enumeration is a fatal plant failure rather than an empty plant.
+  [ -d tools/node/dev ] || return 1
+  devtools=$(find tools/node/dev -type f -perm -u+x | sort)
+  [ -n "$devtools" ] || return 1
+  plant_rc=0
+  plant_ifs=$IFS
+  IFS='
+'
+  for t in $devtools; do
+    case $t in tools/node/dev/idol-lock) continue ;; esac
+    mkdir -p "$1/${t%/*}" || { plant_rc=1; break; }
+    printf '#!/bin/sh\nexit 0\n' > "$1/$t" || { plant_rc=1; break; }
+    chmod +x "$1/$t" || { plant_rc=1; break; }
   done
+  IFS=$plant_ifs
+  [ "$plant_rc" -eq 0 ] || return 1
   ( cd "$1" && git init -q . >/dev/null 2>&1 ) || true
   return 0
 }

@@ -9,11 +9,47 @@
 # takes tracked files only, so no cache travels with it.
 #
 # Both directions. A positive control that passes is reported as a failure.
+#
+# ═══ THE SUBSTRATE IS ASSERTED, NOT ASSUMED ════════════════════════════════
+#
+# `gate/vacuity.sh` recorded this file UNPROVEN — it never observed the gate
+# decide anything, under either plant. Under `set -e` the first `mkclone` died
+# inside `git clone` (128: not a repository) or, with a repository present but
+# empty, inside the `checkout HEAD` that follows it (128 again: no such ref).
+# 128 is the shell's signal range, so both plants graded as a CRASH, and a
+# crash is not a measurement. A gate that DIES is not a gate that NOTICED.
+#
+# Every prerequisite a clone needs is therefore named and refused with 2,
+# before any clone is attempted: the gate under test, the rule files copied
+# into each clone, a real work tree with a resolvable HEAD, and a non-empty
+# population of the units the controls damage.
+#
+# Exit 0 = every control decided the right way. 1 = a control failed. 2 = the
+# substrate could not support the controls, so none of them ran.
 
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 gate="$here/layering.sh"
+self="$here/$(basename -- "$0")"
+
+refuse() {
+    printf 'layering-controls: FAIL — %s\n' "$*" >&2
+    exit 2
+}
+
+[ -x "$gate" ] || refuse "no executable gate under test at $gate"
+for f in subject.sh layers.manifest layering.rules layering.baseline \
+         generated.manifest relation-ownership.baseline; do
+    [ -r "$here/$f" ] || refuse "gate/$f absent — every clone would carry an incomplete rule set"
+done
+[ "$(git -C "$root" rev-parse --is-inside-work-tree 2>/dev/null || echo no)" = true ] ||
+    refuse "$root is not a git work tree — cloning it cannot produce a substrate"
+git -C "$root" rev-parse --verify --quiet HEAD >/dev/null ||
+    refuse "$root has no HEAD commit — a clone of it checks out nothing to damage"
+units=$(git -C "$root" ls-files -- 'src/*.zig' | grep -c . || true)
+[ "${units:-0}" -gt 0 ] ||
+    refuse "zero tracked src/*.zig in $root — the controls would damage nothing (GAP-201)"
 
 # Each clone is a full checkout of the repo, so the scratch root goes next to
 # the repo rather than on ${TMPDIR}, which is typically the boot volume and
@@ -250,7 +286,20 @@ EOF
 expect_fail "two projections edited by hand, neither generator touched" \
     "$gate" --diff "$tmp/twoorphans.diff"
 
+# A CONTROL HARNESS THAT RAN NO CONTROLS IS NOT A PASS. `fail -eq 0` is
+# satisfied exactly as well by zero controls as by all of them, so the number
+# that actually ran is compared against the number this file declares. The
+# expected count is NOT written down: it is recounted from the source on every
+# run, so adding or deleting a control needs no bookkeeping, while a control
+# that is commented out, short-circuited, or skipped past is fatal.
+declared=$(grep -cE '^expect_(fail|pass) "' -- "$self" || true)
+ran=$((pass + fail))
+[ "${declared:-0}" -gt 0 ] ||
+    refuse "could not recount the controls declared in $self"
+[ "$ran" -eq "$declared" ] ||
+    refuse "$ran of the $declared controls declared in this file actually ran"
+
 echo
-echo "=== controls: $pass passed, $fail failed ==="
+echo "=== controls: $pass passed, $fail failed, $declared declared and all run ==="
 [ "$fail" -eq 0 ] || exit 1
 exit 0
