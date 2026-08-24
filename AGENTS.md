@@ -377,11 +377,15 @@ computed places remain negative controls. Semantic classification, a
 graph-owned canonicalizer, and formatting for this equivalence remain blocked
 by `GAP-145`, `GAP-134`, and `GAP-124`.
 
-Today direct execution over a non-empty diff refuses at DNB001 `concat`.
-Until that implementation gap closes, use a static added-line scan only as
-explicitly nonsemantic migration pressure; do not report it as an executable
-Idol gate or a semantic verdict. The intended serialized command, once direct
-execution is repaired, is:
+That blocker is CLEARED. This paragraph used to say direct execution over a
+non-empty diff refuses at DNB001 `concat`, and told every agent not to report
+the gate as executable. Measured at `dec7d509` with a freshly built
+`zig-out/bin/idol`, a 1640-line unified diff on stdin is scanned and judged:
+findings are reported with `[control: pass]` and the gate exits 1, while a diff
+that earns no finding exits 0. Do not take that on this file's word either --
+pipe a diff through it. The gate still makes a LEXICAL added-line judgement, so
+it remains nonsemantic migration pressure rather than a semantic verdict; what
+changed is that it runs. The serialized command is:
 
     repo="$(git rev-parse --show-toplevel)"
  gate="$(mktemp -t idolgate)" && trap 'rm -f "$gate"' EXIT
