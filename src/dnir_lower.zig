@@ -3765,6 +3765,10 @@ pub const LowerCtx = struct {
     f64_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// Local slots holding `str` (a `const char*`), so `#s` can lower to strlen.
     str_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// How many leading slots are this relation's operands. `determinedTextLen`
+    /// needs it because its safety comes from a scan of THE BODY, and an
+    /// operand is bound by the CALLER, where the body cannot see it.
+    param_slots: u32 = 0,
     /// Positional tables whose every element is text — `{ "M", "CM", … }` —
     /// and which the rest of the body only READS. `t(k)` on one of these is a
     /// `str` at every index, constant or not.
@@ -4155,6 +4159,10 @@ fn lowerFunction(
     // advancing the cursor the first temps alias the parameters, and the backend's
     // single slot->register map silently rebinds a parameter to a temp's register.
     ctx.next_temp = param_slot_cursor;
+    // Slots below this are the relation's OPERANDS. A whole-body scan cannot
+    // see an operand's binding, so "the body binds this name exactly once"
+    // does not describe a parameter — see `determinedTextLen`.
+    ctx.param_slots = param_slot_cursor;
 
 
     // §12 TAIL, armed only for a flat scalar frame. `param_slot_cursor` counts
@@ -8252,6 +8260,131 @@ fn tableUseInBlock(block: *const ast.Block, name: []const u8, bound: *const ast.
     return u;
 }
 
+/// What a whole-body scan learned about the bindings of one name.
+///
+/// `writes` counts BINDINGS, not mentions: a read cannot change what a name
+/// holds, and refusing on reads would leave the fact unusable — `s:len()` is
+/// itself a read. `opaque` is the honest third answer for a statement shape
+/// this scan does not model, which is neither "bound here" nor "not bound
+/// here" and must not be read as either.
+const TextBind = struct {
+    writes: u32 = 0,
+    literal: ?[]const u8 = null,
+    opaque_bind: bool = false,
+
+    fn note(self: *TextBind, init: ?*const ast.Expr) void {
+        self.writes += 1;
+        if (init) |e| {
+            if (e.* == .quoted) {
+                self.literal = e.quoted.val;
+                return;
+            }
+        }
+        self.literal = null;
+    }
+};
+
+fn textBindInBlock(block: *const ast.Block, name: []const u8, out: *TextBind) void {
+    for (block.stmts) |*st| textBindInStmt(st, name, out);
+}
+
+fn textBindInStmt(stmt: *const ast.Stmt, name: []const u8, out: *TextBind) void {
+    switch (stmt.*) {
+        .local_decl => |d| for (d.names, 0..) |n, i| {
+            if (!std.mem.eql(u8, n.ident, name)) continue;
+            out.note(if (i < d.inits.len) d.inits[i] else null);
+        },
+        .global_decl => |d| for (d.names, 0..) |n, i| {
+            if (!std.mem.eql(u8, n.ident, name)) continue;
+            out.note(if (i < d.inits.len) d.inits[i] else null);
+        },
+        .const_decl => |d| if (std.mem.eql(u8, d.ident, name)) out.note(d.val),
+        .assign => |a| for (a.targets, 0..) |t, i| {
+            if (t.* != .name) continue;
+            if (!std.mem.eql(u8, t.name.ident, name)) continue;
+            out.note(if (i < a.values.len) a.values[i] else null);
+        },
+        .do_block => |d| textBindInBlock(&d.body, name, out),
+        .while_loop => |w| textBindInBlock(&w.body, name, out),
+        .repeat_loop => |r| textBindInBlock(&r.body, name, out),
+        .if_stmt => |f| {
+            if (f.binding) |b| if (std.mem.eql(u8, b.name, name)) out.note(b.expr);
+            textBindInBlock(&f.then, name, out);
+            for (f.elseifs) |ei| textBindInBlock(&ei.body, name, out);
+            if (f.else_body) |eb| textBindInBlock(&eb, name, out);
+        },
+        // A LOOP VARIABLE IS BOUND ONCE PER TRIP, and never to a literal this
+        // scan can read. Counting it as a binding is what keeps `for s = …`
+        // from inheriting an outer `s = "abc"`.
+        .num_for => |n| {
+            if (std.mem.eql(u8, n.var_name, name)) out.note(null);
+            textBindInBlock(&n.body, name, out);
+        },
+        .gen_for => |g| {
+            for (g.vars) |v| if (std.mem.eql(u8, v, name)) out.note(null);
+            textBindInBlock(&g.body, name, out);
+        },
+        // Statement shapes that bind nothing at this scope.
+        .call_stmt,
+        .expr_stmt,
+        .ret,
+        .brk,
+        .cont,
+        .goto_stmt,
+        .label_stmt,
+        .cinclude,
+        .directive,
+        => {},
+        // EVERYTHING ELSE IS `opaque`, AND THAT IS THE POINT. A nested
+        // relation, a match arm, a `try`/`defer` body or a definition form may
+        // bind this name in a way the arms above do not describe, and an
+        // unmodeled shape read as "no binding" is exactly how a determined fact
+        // becomes a wrong answer. The scan says so instead of guessing.
+        else => out.opaque_bind = true,
+    }
+}
+
+/// The byte length of `expr` when the program already determines every byte of
+/// it — `null` when it does not, and the length must be measured at run time.
+///
+/// THIS IS THE FACT THAT WAS MISSING. `:len()` lowered unconditionally to
+/// `str_len`, which is a SCAN TO THE FIRST NUL in both realizations
+/// (`native_backend` inline loop, `wasm_backend` `helperStrlen`). For a
+/// literal that is not a length at all, it is a C representation detail
+/// answering a semantic question: `"a\0b":len()` measured 1 on the direct
+/// backend and 1 on Wasm — agreeing, and both wrong, where Lua 5.4 §3.4.7 and
+/// `docs/spec/text.md` say 3. Nothing about the source was unknown; the length
+/// was simply never carried.
+///
+/// A literal answers for itself. A NAME answers only when the body binds it
+/// EXACTLY ONCE, to a literal, and the name is not an operand — one binding is
+/// what makes the fact hold at every reachable read, including inside a loop
+/// and on both sides of a branch. Two bindings mean the answer depends on which
+/// one ran, so there is no fact, and the scan is what MEASURES that rather than
+/// assuming it. This is the same safety `noteConstTable` takes from
+/// `tableUseInBlock`, narrowed to the one question a length needs.
+fn determinedTextLen(ctx: *LowerCtx, expr: *const ast.Expr) ?i64 {
+    if (expr.* == .quoted) return @intCast(expr.quoted.val.len);
+    if (expr.* != .name) return null;
+    const name = expr.name.ident;
+    const slot = ctx.locals.get(name) orelse {
+        // NO LOCAL OF THIS NAME, so the module binding is what the name reaches.
+        // `ModuleConsts.strs` is already gated on `moduleConstIsStable`, which
+        // is the same one-binding proof the body scan below performs — it
+        // counts every write in the module INCLUDING the ones inside relation
+        // bodies — so an entry here is a determined value by construction.
+        const bytes = ctx.module_consts.strs.get(name) orelse return null;
+        return @intCast(bytes.len);
+    };
+    if (slot < ctx.param_slots) return null;
+    const body = ctx.body orelse return null;
+    var found: TextBind = .{};
+    textBindInBlock(body, name, &found);
+    if (found.opaque_bind or found.writes != 1) return null;
+    const bytes = found.literal orelse return null;
+    return @intCast(bytes.len);
+}
+
 /// Uses contributed by a name/value binding pair. `.none` for the one pair that
 /// IS this binding; `.opaque_use` for any other pair that binds the name.
 fn bindingPairUse(
@@ -11572,6 +11705,14 @@ fn lowerSubjectCall(
             }
         }
         if (std.mem.eql(u8, mc.method, "len") and mc.args.len == 0) {
+            // THE LENGTH IS CARRIED WHEN THE PROGRAM ALREADY DETERMINES IT.
+            // `str_len` is a scan to the first NUL in both realizations, so a
+            // determined value must never reach it: `"a\0b":len()` answered 1
+            // on direct and 1 on Wasm — agreement, and both wrong.
+            if (determinedTextLen(ctx, mc.obj)) |n| {
+                if (consumption == .discard) return .void;
+                return .{ .i64 = n };
+            }
             const base = try lowerExpr(ctx, mc.obj);
             if (consumption == .discard) {
                 try ctx.emit(.{ .op = .str_len, .lhs = base });
@@ -13119,6 +13260,9 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 std.mem.eql(u8, f.field, "len") and
                 c.args.len == 1)
             {
+                // Same one fact as the `:len()` face above: a determined value
+                // owes its carried length, not a NUL scan.
+                if (determinedTextLen(ctx, c.args[0])) |n| return .{ .i64 = n };
                 const base = try lowerExpr(ctx, c.args[0]);
                 const t = ctx.freshTemp();
                 try ctx.emit(.{ .op = .str_len, .result = t, .lhs = base });
@@ -15530,13 +15674,20 @@ test "dnir_lower: call result class comes from graph descriptor" {
         \\count: i64 = ()
         \\    1
         \\label: str = "ok"
-        \\length: i64 = (seed: i64)
-        \\    label:len()
+        \\length: i64 = (seed: str)
+        \\    label:len() + seed:len()
         \\floating: f64 = ()
         \\    measure()
         \\integer: i64 = (seed: i64)
         \\    count()
     ;
+    // THE LENGTH SUBJECT IS AN OPERAND, and it has to be. `label` is a module
+    // text constant, so `label:len()` is a DETERMINED length that
+    // `determinedTextLen` now carries instead of scanning — the whole point of
+    // that repair. Reading `saw_length` off a folded length would make this
+    // test assert that an eliminated computation still happens, which is HPLS
+    // §2 exactly: a true fact making the better realization fail. `seed` keeps
+    // one length genuinely unknown, so the str path below is still measured.
     var lex = @import("lexer.zig").Lexer.init(src, "result_query.id");
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
@@ -15573,6 +15724,61 @@ test "dnir_lower: call result class comes from graph descriptor" {
     try std.testing.expect(saw_integer);
     try std.testing.expect(saw_string);
     try std.testing.expect(saw_length);
+}
+
+test "dnir_lower: a determined length is carried, an undetermined one is scanned" {
+    // `str_len` IS A SCAN TO THE FIRST NUL in both realizations, so a value
+    // whose bytes the program already fixes must never reach it. Measured
+    // before the repair, `"a\0b":len()` answered 1 on the direct backend and 1
+    // on Wasm — agreeing with each other and with neither Lua 5.4 §3.4.7 nor
+    // `docs/spec/text.md`, which both make it 3.
+    //
+    // The refusal half is the same finding. `two` binds its name twice, so
+    // which literal is live depends on which branch ran; there is no length
+    // fact, and the scan must survive. A fold there would be the same wrong
+    // answer arriving from the repair instead of the defect.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\held: str = "a\0b"
+        \\one: i64 = ()
+        \\    s: str = "a\0b"
+        \\    s:len()
+        \\module: i64 = ()
+        \\    held:len()
+        \\two: i64 = (pick: i64)
+        \\    s: str = "a\0b"
+        \\    if pick > 0
+        \\        s = "longer"
+        \\    s:len()
+        \\operand: i64 = (s: str)
+        \\    s:len()
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "carried_len.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&mod);
+    const m = try lowerModule(alloc, &mod);
+
+    for (m.functions) |f| {
+        var scans: usize = 0;
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if (ins.op == .str_len) scans += 1;
+            }
+        }
+        const carried = std.mem.eql(u8, f.name, "one") or std.mem.eql(u8, f.name, "module");
+        if (carried) {
+            try std.testing.expectEqual(@as(usize, 0), scans);
+        } else if (std.mem.eql(u8, f.name, "two") or std.mem.eql(u8, f.name, "operand")) {
+            try std.testing.expect(scans >= 1);
+        }
+    }
 }
 
 test "dnir_lower: checked subject call retains semantic facts" {

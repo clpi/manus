@@ -513,6 +513,7 @@ fn emitObjectModeWithGraphLineage(
         output.relocations,
         output.bss_size,
         output.global_data,
+        output.cstring_coalescable,
     );
     errdefer alloc.free(bytes);
 
@@ -687,6 +688,24 @@ const Arm64Output = struct {
     text: []u8,
     asm_text: []u8,
     cstring: []u8 = &.{},
+    /// Whether the literal blob may be handed to the linker as
+    /// `S_CSTRING_LITERALS`.
+    ///
+    /// THE BLOB CANNOT ANSWER THIS ITSELF, which is the whole defect. Written
+    /// out, one literal `"a\0b"` and two literals `"a"`, `"b"` are the SAME
+    /// FOUR BYTES `61 00 62 00`; the boundary between literals is a fact the
+    /// emitter holds and the byte stream does not carry. `S_CSTRING_LITERALS`
+    /// invites ld to re-derive that boundary by splitting at every NUL, so it
+    /// answered "two literals" and `Lduo_str_N` came out pointing at `a\0`
+    /// with somebody else's string behind it. MEASURED before this field
+    /// existed, `s = "a\0b"`: `s:byte(3)` was 108 — the `l` of the adjacent
+    /// `len=%lld` format — where the same program on Wasm, whose data segment
+    /// is not resplit, answered 98.
+    ///
+    /// So the section type states the fact: literals are coalescable only when
+    /// none of them contains an interior NUL, and a module that has one keeps
+    /// its blob in a plain `S_REGULAR` section that ld copies whole.
+    cstring_coalescable: bool = true,
     /// Bytes of `__TEXT,__const` — determined positional tables that became
     /// read-only data instead of being built word by word at run time.
     ///
@@ -1395,8 +1414,26 @@ const Arm64Compiler = struct {
 
         var cstring: std.ArrayList(u8) = .empty;
         errdefer cstring.deinit(self.alloc);
+        // ONE INTERIOR NUL ANYWHERE DISQUALIFIES THE WHOLE BLOB, because the
+        // blob is what ld splits — it does not know which entry the NUL came
+        // from. `Arm64Output.cstring_coalescable` states why.
+        var coalescable = true;
+        for (self.strings.items) |s| {
+            if (std.mem.indexOfScalar(u8, s.bytes, 0) != null) coalescable = false;
+        }
         if (self.strings.items.len > 0) {
-            try self.asm_text.appendSlice(self.alloc, "\n.section __TEXT,__cstring\n");
+            // The ASM FACE SAYS THE SAME THING THE OBJECT DOES. `.cstring`
+            // is the assembler directive for `S_CSTRING_LITERALS`; a blob that
+            // must not be resplit is plain `S_REGULAR` read-only data, and
+            // `__TEXT,__conststr` is a section of its own so it cannot collide
+            // with the `__TEXT,__const` the determined tables already own.
+            try self.asm_text.appendSlice(
+                self.alloc,
+                if (coalescable)
+                    "\n.section __TEXT,__cstring\n"
+                else
+                    "\n.section __TEXT,__conststr\n",
+            );
             var str_off: u32 = 0;
             for (self.strings.items) |s| {
                 self.symbols.items[s.symbol_index].offset = @intCast(self.code.items.len + str_off);
@@ -1534,6 +1571,7 @@ const Arm64Compiler = struct {
             .text = text,
             .asm_text = asm_text,
             .cstring = cstring_bytes,
+            .cstring_coalescable = coalescable,
             .const_data = const_bytes,
             .symbols = symbols,
             .relocations = relocations,
@@ -9601,7 +9639,7 @@ fn bssBaseAddr(text_len: usize, cstring_len: usize, const_len: usize) usize {
 }
 
 fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []const u8, symbols: []const Symbol, relocations: []const Relocation, bss_size: u64) Error![]u8 {
-    return emitMachOArm64ObjectWithConst(alloc, text, cstring, &.{}, symbols, relocations, bss_size, &.{});
+    return emitMachOArm64ObjectWithConst(alloc, text, cstring, &.{}, symbols, relocations, bss_size, &.{}, true);
 }
 
 fn emitMachOArm64ObjectWithConst(
@@ -9621,6 +9659,11 @@ fn emitMachOArm64ObjectWithConst(
     /// address derived from `bssBaseAddr`, and every symbol `n_value` stamped in
     /// `finish` are untouched by the choice.
     global_data: []const u8,
+    /// Whether the literal blob may be handed over as `S_CSTRING_LITERALS` —
+    /// see `Arm64Output.cstring_coalescable`. False keeps the blob in its own
+    /// `S_REGULAR` section, which ld copies whole instead of resplitting at
+    /// every NUL.
+    cstring_coalescable: bool,
 ) Error![]u8 {
     const segment_size: usize = 72;
     const section_size: usize = 80;
@@ -9729,9 +9772,13 @@ fn emitMachOArm64ObjectWithConst(
     try appendU32(&out, alloc, 0);
     try appendU32(&out, alloc, 0);
 
-    // section 2: __TEXT,__cstring (string literals)
+    // section 2: the string-literal blob. `__TEXT,__cstring` /
+    // S_CSTRING_LITERALS when no literal carries an interior NUL — which is
+    // every NUL-free module, byte for byte as before — and its own
+    // `__TEXT,__conststr` / S_REGULAR section when one does, so ld copies the
+    // blob whole instead of re-deriving literal boundaries it cannot see.
     if (has_cstring) {
-        try appendName16(&out, alloc, "__cstring");
+        try appendName16(&out, alloc, if (cstring_coalescable) "__cstring" else "__conststr");
         try appendName16(&out, alloc, "__TEXT");
         try appendU64(&out, alloc, cstring_addr); // addr (immediately after __text in VM)
         try appendU64(&out, alloc, cstring.len); // size
@@ -9739,7 +9786,7 @@ fn emitMachOArm64ObjectWithConst(
         try appendU32(&out, alloc, 0); // align (byte)
         try appendU32(&out, alloc, 0); // reloff
         try appendU32(&out, alloc, 0); // nreloc
-        try appendU32(&out, alloc, 0x2); // S_CSTRING_LITERALS
+        try appendU32(&out, alloc, if (cstring_coalescable) 0x2 else 0x0); // S_CSTRING_LITERALS / S_REGULAR
         try appendU32(&out, alloc, 0);
         try appendU32(&out, alloc, 0);
         try appendU32(&out, alloc, 0);
