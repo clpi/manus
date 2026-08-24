@@ -1883,27 +1883,32 @@ fn exprHasNoApplication(e: *const ast.Expr) bool {
 /// Deliberately the NARROWEST shape that carries the fact: one statement-free
 /// tail integer literal, or a lone `return <int literal>`. A wider recognizer
 /// here would be a second constant folder beside `runFold`.
-fn constantAnswer(b: *const ast.Block) ?i64 {
-    if (b.stmts.len == 0) {
-        const tail = b.tail_expr orelse return null;
-        return switch (tail.*) {
-            .int_lit => |lit| lit.val,
-            else => null,
-        };
-    }
-    if (b.stmts.len == 1 and b.tail_expr == null) {
-        switch (b.stmts[0]) {
-            .ret => |r| {
-                if (r.vals.len != 1) return null;
-                return switch (r.vals[0].*) {
-                    .int_lit => |lit| lit.val,
-                    else => null,
-                };
-            },
-            else => return null,
+///
+/// The shape remains syntax provenance, but the CONTENT does not. The literal
+/// occurrence carries one graph value id, and that value carries the exact i64.
+/// If either link is absent the fold refuses; `int_lit.val` is never a fallback
+/// after graph publication.
+fn constantAnswer(graph: *const semantic_graph.SemanticGraph, b: *const ast.Block) ?i64 {
+    const expression: *const ast.Expr = blk: {
+        if (b.stmts.len == 0) {
+            const tail = b.tail_expr orelse return null;
+            if (tail.* != .int_lit) return null;
+            break :blk tail;
         }
-    }
-    return null;
+        if (b.stmts.len == 1 and b.tail_expr == null) {
+            switch (b.stmts[0]) {
+                .ret => |r| {
+                    if (r.vals.len != 1) return null;
+                    if (r.vals[0].* != .int_lit) return null;
+                    break :blk r.vals[0];
+                },
+                else => return null,
+            }
+        }
+        return null;
+    };
+    const value = graph.valueByAst(expression) orelse return null;
+    return graph.exactI64(value);
 }
 
 /// True when the body contains a loop. This fold declines loops because it has
@@ -1993,7 +1998,7 @@ pub fn foldRelationBody(
     }
 
     if (bodyHasNoApplication(&fb.body)) {
-        if (!bodyHasLoop(&fb.body)) return constantAnswer(&fb.body);
+        if (!bodyHasLoop(&fb.body)) return constantAnswer(graph, &fb.body);
         return runFold(fb, .{}, .{
             .step_limit = fold_step_limit,
             .alloc = scratch,
@@ -2834,6 +2839,83 @@ test "comptime eval: a table receiver is refused, so no mutation is swallowed" {
         \\    t:insert(4)
         \\    t:len()
     ));
+}
+
+test "comptime eval: application-free constant answer consumes graph value after AST poison" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const table_apply = @import("table_apply.zig");
+    const poison = @import("poison.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\answer: i64 = ()
+        \\    41
+    ;
+    var lexer = Lexer.init(source, "constant-answer.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    table_apply.normalizeModule(alloc, &module, &checked.type_map);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const home = try graph.liftModuleWithCheckedCalls(&module, &checked, "constant-answer.id");
+    const answer = graph.resolveInHome(home, "answer", .func) orelse
+        return error.TestExpectedEqual;
+    const declaration = graph_query.relationDeclaration(&graph, answer) orelse
+        return error.TestExpectedEqual;
+    const tail = declaration.func.body.tail_expr orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(?i64, 41), graph.exactI64OfExpr(tail));
+    try std.testing.expectEqual(
+        @as(?i64, 41),
+        foldRelationBody(alloc, &graph, answer, &declaration.func),
+    );
+
+    try std.testing.expectEqual(@as(usize, 1), try poison.poisonModule(alloc, &module, .int));
+    try std.testing.expectEqual(@as(?i64, 41), graph.exactI64OfExpr(tail));
+    try std.testing.expectEqual(
+        @as(?i64, 41),
+        foldRelationBody(alloc, &graph, answer, &declaration.func),
+    );
+
+    // Damage the exact row while the poisoned AST still says -42. The fold
+    // must refuse, not recover that content from the literal face.
+    const tail_value = graph.valueByAst(tail) orelse return error.TestExpectedEqual;
+    const exact_row = graph.exact_i64_rows.get(tail_value) orelse return error.TestExpectedEqual;
+    const saved_exact_value = graph.exact_i64_facts.items[exact_row].value;
+    graph.exact_i64_facts.items[exact_row].value = std.math.maxInt(semantic_graph.id);
+    try std.testing.expectEqual(
+        @as(?i64, null),
+        foldRelationBody(alloc, &graph, answer, &declaration.func),
+    );
+    graph.exact_i64_facts.items[exact_row].value = saved_exact_value;
+
+    var relifted_checked = Sema.init(alloc);
+    defer relifted_checked.deinit();
+    relifted_checked.idol_mode = true;
+    try relifted_checked.check_module(&module);
+    var relifted_graph = semantic_graph.SemanticGraph.init(alloc);
+    defer relifted_graph.deinit();
+    const relifted_home = try relifted_graph.liftModuleWithCheckedCalls(
+        &module,
+        &relifted_checked,
+        "constant-answer.id",
+    );
+    const relifted_answer = relifted_graph.resolveInHome(relifted_home, "answer", .func) orelse
+        return error.TestExpectedEqual;
+    const relifted_declaration = graph_query.relationDeclaration(&relifted_graph, relifted_answer) orelse
+        return error.TestExpectedEqual;
+    try std.testing.expectEqual(
+        @as(?i64, -42),
+        foldRelationBody(alloc, &relifted_graph, relifted_answer, &relifted_declaration.func),
+    );
 }
 
 test "comptime eval: effect closure carries aggregate projection occurrence" {
