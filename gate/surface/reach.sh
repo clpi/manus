@@ -169,10 +169,19 @@ printf '  built after       %s (last commit touching src/, build.zig)\n' \
 # Before any per-subsystem row: measure whether a consumer can reach a library
 # module AT ALL. Two sibling files, one calling the other, nothing exotic.
 #
-# This is the fact that holds every `lib/` subsystem below at or under L2
-# regardless of how well-owned its graph is — and `lib/compiler/monolith.id` already records
-# it in its own header ("Cross-module references don't work, so everything is
-# inlined"). Measured, not quoted.
+# IT IS NOW A PER-ROUTE ANSWER, and that is the change this section records.
+# The C TRANSFER route (`dump-c --lib`) realizes the reached partition into the
+# same translation unit and emits a direct call; `gate/lower/fallback.sh` links
+# and runs two of them. The DIRECT backend — the canonical one, and the one
+# every level below is derived from — still cannot: it names the callee's
+# symbol correctly and fails at the LINK line, because nothing compiles the
+# reached partition into an object for it.
+#
+# So `sib_verdict` stays keyed on `direct`, deliberately: the fact that holds
+# every `lib/` subsystem below at or under L2 is the DIRECT one, and
+# `lib/compiler/monolith.id` still records it in its own header ("Cross-module
+# references don't work, so everything is inlined"). Measured, not quoted, and
+# the day the direct link line closes this section says so on its own.
 mkdir -p "$work/sib" "$work/run" || broke "cannot create probe dirs"
 printf 'twice: i64 = (n: i64)\n    n + n\n' >"$work/sib/helper.id"
 printf 'main: i64 = ()\n    helper.twice(21)\n' >"$work/sib/user.id"
@@ -189,19 +198,31 @@ sib_verdict=UNREACHABLE
 printf '%s\n' '== §1 cross-module consumer =================================================='
 printf '  direct   exit=%s  %s\n' "$sib_direct" "$(grep -m1 -e 'Undefined symbols' -e 'error:' "$work/sib/d.log" | sed 's/^ *//' | cut -c1-72)"
 printf '  c        exit=%s  %s\n' "$sib_c" "$(grep -m1 'refused at:' "$work/sib/c.log" | sed 's/^ *//' | cut -c1-72)"
-printf '  dump-c   exit=%s  %s\n' "$sib_dump" "$(grep -c 'unlowered native call' "$work/sib/dump.c" | sed 's/^/duo_fatal("unlowered native call") x/')"
-printf '  verdict  library modules are %s from a consumer\n' "$sib_verdict"
+sib_dump_state=UNREALIZED
+if [ "$sib_dump" -eq 0 ] && grep -q 'helper__twice' "$work/sib/dump.c" &&
+    ! grep -q 'unlowered native call' "$work/sib/dump.c"; then
+    sib_dump_state=REALIZED
+fi
+printf '  dump-c   exit=%s  callee %s in the transfer unit\n' "$sib_dump" "$sib_dump_state"
+printf '  verdict  library modules are %s from a consumer on the DIRECT backend\n' "$sib_verdict"
 
 if [ "$sib_direct" -eq 0 ]; then
-    note "§1 cross-module linking now WORKS — every library row below is stale; re-derive the ledger"
+    note "§1 cross-module linking now WORKS ON DIRECT — every library row below is stale; re-derive the ledger"
 else
     grep -q 'Undefined symbols' "$work/sib/d.log" \
         || note "§1 direct refused the consumer WITHOUT a link error; the named cause changed"
     grep -q 'call-target-not-in-module' "$work/sib/c.log" \
         || note "§1 the C99 realizer lost its named cause 'call-target-not-in-module'"
-    grep -q 'unlowered native call' "$work/sib/dump.c" \
-        || note "§1 dump-c no longer emits duo_fatal for the unlinked callee"
 fi
+# THIS ROW USED TO DEMAND `duo_fatal("unlowered native call")` IN THE EMITTED C,
+# and that was the DEFECT, not the cause: `dump-c` exited 0 with empty stderr
+# while the consumer's body became a runtime abort, so this gate was asserting
+# that the silent fallback still happened. It stopped being true twice — first
+# when the abort became a refusal, then when the callee became a real call —
+# and the assertion follows the cause both times. `gate/lower/fallback.sh` owns
+# the ratchet; this row owns the statement that the two routes now differ.
+[ "$sib_dump_state" = REALIZED ] \
+    || note "§1 the C transfer route no longer realizes the sibling callee; gate/lower/fallback.sh has the detail"
 
 # ========================= §2 SUBSYSTEM ENUMERATION =========================
 # Subjects are TRACKED files only — an untracked scratch file is not surface
