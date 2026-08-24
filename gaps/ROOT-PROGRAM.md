@@ -4,6 +4,11 @@
 **Kind:** projection · **Normative for:** nothing — this is a projection of `gaps/GAP-*.md`
 **Derived, not authored:** the membership below is a reading of the gaps; the
 gaps are the authority and this file is stale the moment one of them moves.
+**Not the per-gap frontier.** Each gap states its own machine-read frontier in
+an `idol.gap.frontier.v1` block that `gate/frontier.sh` validates and fails
+closed on. This file is an UNGATED reading ACROSS gaps, which is exactly why it
+carries a derivation command instead of a census, and why it must never be
+cited where a gap's own frontier block answers the question.
 
 ## Why this exists
 
