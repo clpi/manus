@@ -141,7 +141,7 @@ measure() {
     return 0
 }
 
-# ============================= THREE CONTROLS ==============================
+# ============================== FIVE CONTROLS ==============================
 # A reader that reports zero on everything agrees with a clean tree and with a
 # broken tree alike. `scripts/grammarconvergence.id` exited 0 on a fully
 # damaged owner for exactly that reason, so this file proves it can see the
@@ -255,6 +255,82 @@ if ! grep -q 'codegen refused an application whose callee is not realized' "$wor
     exit 3
 fi
 
+# C4 CLOSURE IS TRANSITIVE OR IT IS NOT CLOSURE. `root` applies `mid`, `mid`
+# applies `deep`, and only `root` is the file being compiled. Realizing what the
+# ENTRY applies and stopping there leaves `mid`'s body naming a symbol nothing
+# defined.
+#
+# MEASURED before the transitive walk existed, and it is why this control is
+# here rather than in a comment: `emit_embedded_module` caught the nested
+# refusal, the driver warned, and `dump-c --lib` EXITED 0 having written
+# `return lua_mul(__attribute__((visibility("default"))) …` — a function
+# truncated mid-expression under a success exit. The count was zero. Only
+# building the artifact catches that, so this control builds and runs it.
+mkdir -p "$work/tri" || exit 3
+cat >"$work/tri/deep.id" <<'PROBE'
+plus: i64 = (n: i64)
+  n + 1
+PROBE
+cat >"$work/tri/mid.id" <<'PROBE'
+twice: i64 = (n: i64)
+  deep.plus(n) * 2
+PROBE
+cat >"$work/tri/root.id" <<'PROBE'
+quad: i64 = (n: i64)
+  mid.twice(n)
+PROBE
+transitive=$(measure "$work/tri/root.id")
+transitive_art=$(artclass)
+if [ "$transitive" != 0 ] || [ "$transitive_art" != CLEAN ]; then
+    printf 'lower fallback control: FAIL — a three-partition chain answered %s/%s, not 0/CLEAN\n' "$transitive" "$transitive_art" >&2
+    sed -n '1,5p' "$work/err" >&2
+    sed -n '1,5p' "$work/cc.err" >&2
+    exit 3
+fi
+cp "$work/out.c" "$work/tri/root.c"
+cat >"$work/tri/main.c" <<'DRIVER'
+#include <stdio.h>
+#include <stdint.h>
+int64_t quad(int64_t n);
+int main(void) { printf("%lld\n", (long long)quad(20)); return 0; }
+DRIVER
+if ! "$CCBIN" -std=c11 -o "$work/tri/bin" "$work/tri/root.c" "$work/tri/main.c" >"$work/tri/link.err" 2>&1; then
+    printf 'lower fallback control: FAIL — the three-partition artifact does not link\n' >&2
+    sed -n '1,5p' "$work/tri/link.err" >&2
+    exit 3
+fi
+transitive_run=$("$work/tri/bin" 2>/dev/null)
+if [ "$transitive_run" != 42 ]; then
+    printf 'lower fallback control: FAIL — the three-partition chain ran and answered %s, not 42\n' "$transitive_run" >&2
+    exit 3
+fi
+
+# C5 A REACHED PARTITION THAT CANNOT BE REALIZED IS A REFUSAL, NOT A WARNING.
+# Same shape as C4 with `mid` applying a home that resolves to nothing. The
+# route must fail closed WITH EMPTY STDOUT: a partial artifact under a nonzero
+# exit is `measure`'s UNTRUSTED class and would be reported as unmeasurable
+# rather than as this control passing.
+mkdir -p "$work/bad" || exit 3
+cat >"$work/bad/mid.id" <<'PROBE'
+twice: i64 = (n: i64)
+  nosuchhome.nosuchrelation(n) * 2
+PROBE
+cat >"$work/bad/root.id" <<'PROBE'
+quad: i64 = (n: i64)
+  mid.twice(n)
+PROBE
+nested=$(measure "$work/bad/root.id")
+if [ "$nested" != REFUSED ]; then
+    printf 'lower fallback control: FAIL — a chain through an unrealizable partition answered %s, not REFUSED\n' "$nested" >&2
+    sed -n '1,5p' "$work/err" >&2
+    exit 3
+fi
+if ! grep -q 'cannot realize the source partition this program reaches' "$work/err"; then
+    printf 'lower fallback control: FAIL — the unrealizable partition was not named in the refusal\n' >&2
+    sed -n '1,5p' "$work/err" >&2
+    exit 3
+fi
+
 # NAME THE MEASURING COMPILER (`law.evidence.subject.one`). These pins are a
 # property of the compiler that produced them, and the failure they cause when
 # that compiler is the wrong one is indistinguishable from a real regression
@@ -262,7 +338,7 @@ fi
 # ReleaseFast agree on every row, so build mode is NOT the sensitive axis --
 # REVISION is. The tracked, stale `out/bin/idol` disagrees with a fresh build
 # on these rows, and this gate calls that a CLASS CHANGE rather than agreeing.
-printf 'lower fallback control: PASS — planted cross-module call realized, compiled, linked and answered 21; local-only file 0/CLEAN; unresolvable application REFUSED (compiler %s, cc %s)\n' \
+printf 'lower fallback control: PASS — planted cross-module call answered 21; three-partition chain answered 42; local-only file 0/CLEAN; unresolvable application and unrealizable partition both REFUSED (compiler %s, cc %s)\n' \
     "$IDOL" "$CCBIN"
 
 # ==================== EXECUTED CROSS-HOME EVIDENCE =========================

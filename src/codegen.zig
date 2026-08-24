@@ -7425,7 +7425,7 @@ pub const CodeGen = struct {
             try self.emit_required_modules(mod);
             // Realization closes over what RESOLUTION reached, not only over
             // what `req` named. See `emit_reached_partitions`.
-            try self.emit_reached_partitions();
+            if (self.checked_sema) |checked| try self.emit_reached_partitions(checked);
         }
         if (self.moduleNeedsLuaRuntime()) {
             try self.emit_closure_structs(self.all_closures.items);
@@ -24798,6 +24798,60 @@ pub const CodeGen = struct {
         }
     }
 
+    /// THE HOST ANSWER TO "IS THIS SPELLING A HOME?", FOR ONE EMBEDDED
+    /// PARTITION, ROOTED AT THAT PARTITION'S OWN PATH.
+    ///
+    /// WHY THE ENTRY'S LOADER CANNOT BE REUSED, and it is a `path != identity`
+    /// question rather than a convenience one. `home_resolve.resolve` searches
+    /// the SIBLING DIRECTORY FIRST, and a sibling is a sibling OF THE FILE THAT
+    /// WROTE THE SPELLING. Handing an embedded partition the entry's loader
+    /// would resolve its `c.f(x)` against the ENTRY's directory: in the common
+    /// case both files share one directory and the answer is accidentally
+    /// right, and in the case where they do not it silently selects a
+    /// DIFFERENT FILE with the same home spelling. A resolver that answers
+    /// correctly only when two paths happen to coincide is not a resolver.
+    ///
+    /// NOT A SECOND RESOLVER. The only question is answered by
+    /// `home_resolve.resolve`, the same function `src/main.zig`'s entry loader
+    /// calls with the same roots. What differs is the PARSE, deliberately: an
+    /// embedded partition must be read through this file's embed route
+    /// (`openEmbedLexer` / `routeEmbedThroughDuoLexer`), which is the route the
+    /// rest of `emit_embedded_module` already uses and the one whose dialect
+    /// selection its comments record as load-bearing.
+    ///
+    /// PARSE ONLY, NEVER CHECK — the same contract the entry loader states. A
+    /// foreign home contributes one thing: the declaration a dotted callee
+    /// names. And a candidate that does not parse is simply not a home: it
+    /// returns null, the site stays unresolved, and the refusal the author sees
+    /// is about the application, not about a file they did not name.
+    const EmbedHomeLoader = struct {
+        cg: *CodeGen,
+        from: []const u8,
+
+        fn load(raw: *anyopaque, alias: []const u8) ?sema.ForeignHome {
+            const self: *EmbedHomeLoader = @ptrCast(@alignCast(raw));
+            const cg = self.cg;
+            const source = home_resolve.resolve(
+                cg.alloc,
+                cg.io,
+                .{ .from = self.from, .stdlib_root = cg.stdlib_root },
+                alias,
+            ) orelse return null;
+            const path = source.path;
+            // A partition is not its own foreign home.
+            if (std.mem.eql(u8, path, self.from)) return null;
+            const src = Io.Dir.readFileAlloc(Io.Dir.cwd(), cg.io, path, cg.alloc, .unlimited) catch return null;
+            var lex = openEmbedLexer(src, path);
+            if (!routeEmbedThroughDuoLexer(cg.alloc, &lex, src, path)) return null;
+            var parser = @import("parser.zig").Parser.init(&lex, cg.alloc);
+            parser.idol_mode = lex.family == lexer_bridge.family_canon;
+            const mod = cg.alloc.create(ast.Module) catch return null;
+            mod.* = parser.parse_module() catch return null;
+            const home = home_resolve.homeOfPath(cg.alloc, cg.io, path) catch return null;
+            return .{ .home = home, .path = path, .module = mod };
+        }
+    };
+
     /// REALIZATION CLOSES OVER WHAT RESOLUTION REACHED.
     ///
     /// `emit_required_modules` above embeds a partition named by `req`, the
@@ -24835,10 +24889,9 @@ pub const CodeGen = struct {
     /// partition contributes its relations; the ones nothing calls are dropped
     /// downstream. FTCFTW's "Idol pays no runtime cost for source partitions"
     /// is preserved by that, not by refusing to realize.
-    fn emit_reached_partitions(self: *CodeGen) E!void {
+    fn emit_reached_partitions(self: *CodeGen, checked: *const sema.Sema) E!void {
         if (!self.idol_mode) return;
         if (self.src_path.len == 0) return;
-        const checked = self.checked_sema orelse return;
 
         // Collect before embedding: `emit_embedded_module` runs a whole nested
         // check, which can add rows to `foreign_homes` and invalidate an
@@ -24879,14 +24932,28 @@ pub const CodeGen = struct {
             const cname = try self.module_c_name(row.home);
             defer self.alloc.free(cname);
             if (!self.emit_embedded_module(cname, row.path)) {
-                // NOT A HARD EXIT HERE, and that is deliberate rather than lax.
-                // The call sites into this partition are the thing that must not
-                // pass silently, and they will not: with nothing embedded,
-                // `try_emit_reached_home_call` declines and every one of them
-                // reaches the unrealized-application refusal, which is LOCATED
-                // at the application. Refusing here instead would name the file
-                // and lose the site.
-                term.warn("cannot realize the source partition this program reaches: {s} (home {s})", .{ row.path, row.home });
+                // FAIL CLOSED, AND THE FIRST VERSION OF THIS DID NOT.
+                //
+                // It warned and continued, on the reasoning that the call sites
+                // would refuse on their own. They do not always get the chance.
+                // MEASURED on three partitions, `root -> mid -> deep`, before
+                // the transitive walk below existed: `mid`'s own application
+                // refused WHILE ITS BODY WAS BEING EMITTED, `emit_embedded_module`
+                // caught the error and returned false, this loop warned, and
+                // `dump-c --lib` EXITED 0 having written
+                //
+                //     static inline int64_t …mid__twice(int64_t n) {
+                //         return lua_mul(__attribute__((visibility("default"))) …
+                //
+                // — a function truncated mid-expression, under a success exit.
+                // That is the exact class this whole change exists to remove,
+                // reintroduced one layer down. A partition that cannot be
+                // realized is a refusal here, whatever its call sites would
+                // have said later.
+                term.err("cannot realize the source partition this program reaches: {s} (home {s})", .{ row.path, row.home });
+                term.hint("compile it on its own to see the refusal: idol dump-c {s} --lib", .{row.path});
+                self.noalloc_violation = "codegen refused an application whose callee is not realized";
+                return error.NoAllocViolation;
             }
         }
     }
@@ -26547,6 +26614,20 @@ pub const CodeGen = struct {
         subsem.lua55_mode = lex.source_law == .lua;
         subsem.idol_mode = lex.family == lexer_bridge.family_canon;
         subsem.next_closure_id = self.next_closure_id;
+        // A PARTITION REACHES ITS OWN SIBLINGS, NOT THE ENTRY'S.
+        //
+        // This check had no home loader at all, so a partition the entry
+        // reached could resolve nothing of its own: `sema.foreignRelation`
+        // returns null the moment `home_loader` is absent, no `ApplicationFact`
+        // was published for its calls, and realization one level down had no
+        // fact to key on. Rooted at THIS partition's path — see
+        // `EmbedHomeLoader` for why the entry's loader is not reusable.
+        subsem.source_path = self.alloc.dupe(u8, path) catch {
+            term.err("emit_embedded_module: oom recording source path for {s}", .{path});
+            return false;
+        };
+        var embed_loader = EmbedHomeLoader{ .cg = self, .from = subsem.source_path.? };
+        subsem.home_loader = .{ .ctx = &embed_loader, .load = EmbedHomeLoader.load };
         subsem.check_module(&submod) catch |e| {
             term.err("emit_embedded_module: sema failed for {s}: {}", .{ path, e });
             return false;
@@ -26597,10 +26678,20 @@ pub const CodeGen = struct {
             term.err("emit_embedded_module: comptime scope setup failed for {s}", .{path});
             return false;
         };
+        // THE CHECKED SEMANTICS OF THE PARTITION BEING EMITTED, not of the
+        // entry. Every consumer of `checked_sema` in this file asks a question
+        // ABOUT THE MODULE IT IS EMITTING — which home a spelling names, which
+        // declaration an application selected, what a cross-home constant
+        // evaluates to — and while a partition's body is being emitted the
+        // answer is that partition's. Leaving the entry's installed is why the
+        // embedded body's own cross-home applications resolved to nothing.
+        const old_checked_sema = self.checked_sema;
+        self.checked_sema = &subsem;
         const old_req_bindings = self.req_module_bindings;
         self.req_module_bindings = .{};
         const old_alias_defs = self.alias_defs.clone(self.alloc) catch self.alias_defs;
         defer {
+            self.checked_sema = old_checked_sema;
             if (self.comptime_scopes.items.len > 0) {
                 var partition_comptime = self.comptime_scopes.pop().?;
                 partition_comptime.deinit(self.alloc);
@@ -26637,6 +26728,16 @@ pub const CodeGen = struct {
             term.err("emit_embedded_module: req dependency embed failed for {s}", .{path});
             return false;
         }
+        // AND THE PARTITIONS THIS PARTITION REACHES, before any of its bodies
+        // are emitted. Closure is transitive or it is not closure: `root` calls
+        // `mid`, `mid` calls `deep`, and realizing only what `root` applies
+        // leaves `mid`'s body naming a symbol nothing defined. Recursion
+        // terminates on `embedded_module_paths`, which is written before this
+        // point for every partition already in the unit.
+        self.emit_reached_partitions(&subsem) catch |e| {
+            term.err("emit_embedded_module: reached partition realization failed for {s}: {}", .{ path, e });
+            return false;
+        };
         // Copy submodule type map into main type map so codegen can resolve types
         // for submodule expressions.
         var type_it = subsem.type_map.iterator();
