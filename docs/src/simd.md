@@ -1,8 +1,9 @@
 # Vector and SIMD realization
 
 This page is an architectural projection, not a source API or type catalog. The
-sole law is [`docs/spec/constitution.md`](../spec/constitution.md), and new
-canonical source uses `.id`.
+supreme law is [`docs/spec/law.md`](../spec/law.md) and
+[`docs/spec/constitution.md`](../spec/constitution.md) is its structured
+expansion; new canonical source uses `.id`.
 
 Vectorization is normally a realization of demanded semantics, not a separate
 relation namespace. The graph preserves the operation, values, descriptors,

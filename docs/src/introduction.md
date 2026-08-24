@@ -6,7 +6,8 @@ canonical project-owned source uses `.id`. The historical `.id` family and
 the physical bootstrap `duo` command are migration artifacts, not source or
 naming templates.
 
-The sole semantic law is `docs/spec/constitution.md`. It is structured law
+The supreme law is `docs/spec/law.md`; `docs/spec/constitution.md` is its
+structured expansion and stable `law.*` identity owner. Both are structured law
 documentation while lexical closure blocks a truthful `constitution.id`.
 `CLAUDE.md` and this book are projections; conflicts make the projection
 defective.

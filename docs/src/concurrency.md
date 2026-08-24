@@ -1,8 +1,9 @@
 # Concurrency, effects, and worlds
 
 This page states current Idol architecture without admitting a source API. The
-sole law is [`docs/spec/constitution.md`](../spec/constitution.md); canonical
-source uses `.id`.
+supreme law is [`docs/spec/law.md`](../spec/law.md) and
+[`docs/spec/constitution.md`](../spec/constitution.md) is its structured
+expansion; canonical source uses `.id`.
 
 Concurrency is not owned by a library namespace. It is expressed through
 semantic relations, dependencies, worlds, effects, values, demands, and

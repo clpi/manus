@@ -1,6 +1,7 @@
 # Idol grammar-role projection
 
-The sole semantic law is [`docs/spec/constitution.md`](constitution.md). This
+The supreme law is [`docs/spec/law.md`](law.md) and
+[`docs/spec/constitution.md`](constitution.md) is its structured expansion. This
 page describes the role projection required by the production frontend; it is
 not a role taxonomy or a second grammar authority.
 
@@ -34,10 +35,10 @@ establishes those graph facts.
 
 Current delimiter roles remain:
 
-- `()` ordinary application and grouping, including computed and ordinal
-  retrieval;
+- `()` ordinary application and grouping; it never means aggregate indexing;
 - `{}` structured packs, descriptor application, and descriptor homes;
-- `[]` retired; brackets do not select another semantic operation;
+- `[]` computed or indexed projection (`values[i]`, `table[key]`); read and
+  write are demand-selected faces of one projected place/value relation;
 - `.` statically named projection after an explicit subject;
 - `:` admitted descriptor, subject, and home roles;
 - `@` the current-world accessor: bare `@` the current-world value, `@member`

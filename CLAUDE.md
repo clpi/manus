@@ -37,8 +37,9 @@ Every rule this project recorded as an assertion has decayed — a sibling
 
 ## Identity
 
-**Idol** is the language and project identity (`idol`, `.id`). Its sole semantic
-law is `docs/spec/constitution.md` — including §67 Idol algebra closure
+**Idol** is the language and project identity (`idol`, `.id`). Its supreme law is
+`docs/spec/law.md`, whose structured expansion is `docs/spec/constitution.md`
+— including §67 Idol algebra closure
 (home, subject, world, protocol, witness, injection, union, standard reachability,
 shell/run/outcome, binding census, completion metrics). Do not mint artificial
 secondary language namespaces for graph, value, or relation. No independent algebra

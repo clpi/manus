@@ -1,6 +1,7 @@
 # Idol text and bytes
 
-The sole semantic law is [`docs/spec/constitution.md`](constitution.md). This
+The supreme law is [`docs/spec/law.md`](law.md) and
+[`docs/spec/constitution.md`](constitution.md) is its structured expansion. This
 page projects its text, bytes, source-face, demand, and realization facts. It is
 not a second vocabulary or an implementation catalog.
 

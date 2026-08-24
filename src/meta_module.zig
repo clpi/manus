@@ -1353,7 +1353,8 @@ pub fn scalingLadderText() []const u8 {
 pub fn agentHooksText() []const u8 {
     return
     \\AGENTS.md — repository entry and mechanical preflight
-    \\docs/spec/constitution.md — sole semantic law
+    \\docs/spec/law.md — supreme law
+    \\docs/spec/constitution.md — structured expansion of the supreme law
     \\CLAUDE.md — operative projection
     \\docs/spec/grammar.md — grammar projection
     \\.agents/AGENT_CANONICAL.md — stable path router
@@ -1556,7 +1557,8 @@ pub fn suggestNextCombinators(path: []const u8) []const u8 {
 /// Current grammar routes exposed through the historical hook surface.
 pub fn agentGrammarText() []const u8 {
     return
-    \\docs/spec/constitution.md — sole semantic law
+    \\docs/spec/law.md — supreme law
+    \\docs/spec/constitution.md — structured expansion of the supreme law
     \\docs/spec/grammar.md — grammar projection
     \\GAP-134 and GAP-145 — generated grammar roles and lexical identity blockers
     \\Lexer owns token identity, grammar owns role, parser owns recognition and provenance

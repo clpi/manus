@@ -1,8 +1,9 @@
 # Idol metaprogramming architecture
 
-This page is a current projection, not a directive catalog. The sole semantic
-law is [`docs/spec/constitution.md`](spec/constitution.md), and canonical
-source uses `.id`.
+This page is a current projection, not a directive catalog. The supreme law is
+[`docs/spec/law.md`](spec/law.md), whose structured expansion is
+[`docs/spec/constitution.md`](spec/constitution.md); canonical source uses
+`.id`.
 
 Idol metaprogramming operates on graph-owned identities, relations, facts,
 dependencies, demands, laws, worlds, provenance, and transformations. It does

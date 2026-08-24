@@ -1,8 +1,9 @@
 # Descriptors, laws, and semantic requirements
 
 This page is a current architectural projection, not a syntax specification.
-The sole law is [`docs/spec/constitution.md`](../spec/constitution.md), and
-canonical source uses `.id`.
+The supreme law is [`docs/spec/law.md`](../spec/law.md) and
+[`docs/spec/constitution.md`](../spec/constitution.md) is its structured
+expansion; canonical source uses `.id`.
 
 Idol describes a value through graph-owned identity plus facts. A descriptor
 can state the laws and structure demanded of a subject without creating a

@@ -4,8 +4,9 @@ This file intentionally contains no static roadmap, completion percentage,
 test count, or feature census. Those values drift and previously trained agents
 on retired architecture.
 
-The sole semantic law is
-[`docs/spec/constitution.md`](../spec/constitution.md). Current priorities are
+The supreme law is [`docs/spec/law.md`](../spec/law.md) and
+[`docs/spec/constitution.md`](../spec/constitution.md) is its structured
+expansion. Current priorities are
 projected by [`docs/AGENT_ALIGNMENT.md`](../AGENT_ALIGNMENT.md), while executed
 production ownership and the next compiler-B boundary are recorded in
 [`docs/bootstrap.md`](../bootstrap.md). Open obligations live in `gaps/GAP-*.md`

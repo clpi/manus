@@ -1,6 +1,7 @@
 # Idol soundness projection
 
-The sole semantic law is [`docs/spec/constitution.md`](constitution.md). This
+The supreme law is [`docs/spec/law.md`](law.md) and
+[`docs/spec/constitution.md`](constitution.md) is its structured expansion. This
 page projects its obligation, witness, failure, and evidence rules. It is not a
 second specification, a fact registry, or an implementation pattern.
 

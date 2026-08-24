@@ -4,9 +4,9 @@
 
 # Idol universal harness boot payload
 
-This file is a **generated projection**, not semantic law. Sole law:
-docs/spec/constitution.md. Stable harness template:
-docs/spec/harness-projection.md.
+This file is a **generated projection**, not semantic law. The supreme law is
+docs/spec/law.md, whose structured expansion is docs/spec/constitution.md.
+Stable harness template: docs/spec/harness-projection.md.
 
 **Invariant:** the harness must reason in Idol — not as a conventional coding
 agent with Idol syntax pasted onto output.

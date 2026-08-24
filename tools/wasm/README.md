@@ -1,8 +1,10 @@
 # Idol WebAssembly
 
 This directory contains Idol's WebAssembly foreign-lawset implementation and
-evidence. Start at [`../../AGENTS.md`](../../AGENTS.md); the sole semantic law is
-[`../../docs/spec/constitution.md`](../../docs/spec/constitution.md), the live
+evidence. Start at [`../../AGENTS.md`](../../AGENTS.md); the supreme law is
+[`../../docs/spec/law.md`](../../docs/spec/law.md) with
+[`../../docs/spec/constitution.md`](../../docs/spec/constitution.md) as its
+structured expansion, the live
 compiler frontier is [`../../docs/bootstrap.md`](../../docs/bootstrap.md), and
 performance claims belong in
 [`../../docs/performance.md`](../../docs/performance.md).

@@ -7,8 +7,9 @@ duplicate authority) is SOURCE-ZERO debt, migrated by repairing the pattern; the
 `.id` file itself is not debt. Idol is not a Lua superset, and a Lua grammar is
 not a safe fallback authority for canonical source.
 
-The sole semantic law is
-[`docs/spec/constitution.md`](../spec/constitution.md). Tooling must project
+The supreme law is [`docs/spec/law.md`](../spec/law.md) and
+[`docs/spec/constitution.md`](../spec/constitution.md) is its structured
+expansion. Tooling must project
 from the same lexical identities, generated grammar roles, graph facts, and
 source-family authority as the compiler. It must not maintain independent
 keyword, delimiter, suffix, namespace, or semantic registries.

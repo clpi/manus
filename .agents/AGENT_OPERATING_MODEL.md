@@ -1,7 +1,8 @@
 # AGENT_OPERATING_MODEL — multi-agent allocation for the self-host frontier
 
-Coordination projection only. `AGENTS.md` routes to
-`docs/spec/constitution.md`, the sole living semantic law. Gates, documents,
+Coordination projection only. The supreme law is `docs/spec/law.md`, whose
+structured expansion is `docs/spec/constitution.md`; `AGENTS.md` routes to
+both. Gates, documents,
 briefs, censuses, examples, and agent instructions derive from it and own no
 law. `AGENT_COORDINATION.md` owns lane and claim discipline; this file only
 routes work to agent classes.

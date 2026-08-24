@@ -1,9 +1,9 @@
 # Idol and WebAssembly
 
 This page projects current architecture without claiming an unverified command
-surface. The sole law is
-[`docs/spec/constitution.md`](../spec/constitution.md); canonical source uses
-`.id`.
+surface. The supreme law is [`docs/spec/law.md`](../spec/law.md) and
+[`docs/spec/constitution.md`](../spec/constitution.md) is its structured
+expansion; canonical source uses `.id`.
 
 WebAssembly is an imported, law-bearing foreign format. Its numeric widths,
 memory behavior, calls, traps, control rules, ABI, and other observable facts

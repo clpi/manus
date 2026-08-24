@@ -3,8 +3,9 @@
 This legacy path does not define agent configuration, tool inventories, or
 language law. Current agents begin at [AGENTS.md](../AGENTS.md), then follow the
 [canonical router](../.agents/AGENT_CANONICAL.md) and
-[integration workflow](../.agents/AGENT_INTEGRATION.md). The sole semantic law
-is [C0](spec/constitution.md).
+[integration workflow](../.agents/AGENT_INTEGRATION.md). The supreme law is
+[`docs/spec/law.md`](spec/law.md) and [C0](spec/constitution.md) is its
+structured expansion.
 
 The language is Idol. Canonical source uses `.id` and new canonical `.id` is
 freely admitted — it is the Idol source extension. Only tracked *noncanonical*

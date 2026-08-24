@@ -3,8 +3,9 @@
 This page is a stable orientation link, not a tool census or semantic
 authority. Start at [AGENTS.md](../AGENTS.md), then follow the
 [canonical router](../.agents/AGENT_CANONICAL.md) and
-[integration workflow](../.agents/AGENT_INTEGRATION.md). The sole semantic law
-is [C0](spec/constitution.md).
+[integration workflow](../.agents/AGENT_INTEGRATION.md). The supreme law is
+[`docs/spec/law.md`](spec/law.md) and [C0](spec/constitution.md) is its
+structured expansion.
 
 The language is Idol and canonical source uses `.id`; new canonical `.id` is
 freely admitted — it is the Idol source extension. Only tracked *noncanonical*
