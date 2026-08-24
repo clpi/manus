@@ -56,9 +56,6 @@
 ///   @comp.select        — compile-time select
 ///   @comp.run           — compile-time execution
 ///   @comp.constexpr     — constexpr evaluation
-///   @comp.catalog       — self-documenting meta directive catalog
-///   @comp.ladder        — exponential scaling reference
-///   @comp.agent.*       — agent discoverability (catalog, ladder, hooks, dedupe, gaps)
 ///   @comp.grammar       — EBNF grammar -> O(b^d) code fragments (generative combinator)
 ///   @comp.weave         — cross-module type-driven code injection (O(N^M) from 1 type)
 ///   @comp.template      — parametric code templates that expand at compile time
@@ -957,7 +954,8 @@ pub fn formatCatalogGrouped(alloc: std.mem.Allocator) ![]const u8 {
     return try buf.toOwnedSlice(alloc);
 }
 
-/// Scaling ladder reference for agents (mirrors `std.meta.hierarchy.scaling_ladder`).
+/// Scaling ladder reference for agents. It mirrored `lib/meta/hierarchy.id`,
+/// which this branch deletes, so this is now the sole owner of the ladder text.
 pub fn scalingLadderText() []const u8 {
     return
     \\map:O(n)
@@ -1190,7 +1188,7 @@ pub fn suggestNextCombinators(path: []const u8) []const u8 {
         }
     }
 
-    return "see @comp.ladder() for full scaling hierarchy";
+    return "@comp.product, @comp.burst";
 }
 
 /// Current grammar routes exposed through the historical hook surface.
@@ -1279,9 +1277,9 @@ pub fn agentMultiplierFor(goal: []const u8) []const u8 {
     if (goalContains(goal, "weave") or goalContains(goal, "cross-module") or goalContains(goal, "cross module"))
         return "@comp.weave(module, concept, fn) — O(N×M) cross-module concept sweep";
     if (goalContains(goal, "dedupe") or goalContains(goal, "duplicate") or goalContains(goal, "coord"))
-        return "@comp.agent.dedupe() + read .agents/AGENT_COORDINATION.md; claim before edit";
+        return "read .agents/AGENT_COORDINATION.md; claim before edit";
     if (goalContains(goal, "gap") or goalContains(goal, "script") or goalContains(goal, "ergonomic"))
-        return "@comp.agent.gaps() + .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; record finding before adding one-off tooling";
+        return ".agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; record finding before adding one-off tooling";
     return "@comp.map / @comp.sweep — O(types); stack @comp.ceiling / @comp.omni for quadratic+";
 }
 
@@ -1480,7 +1478,12 @@ test "meta_module: combinatorComplexity for module directives" {
 test "meta_module: suggestNextCombinators" {
     try std.testing.expectEqualStrings("@comp.product, @comp.burst", suggestNextCombinators("comp.map"));
     try std.testing.expectEqualStrings("@comp.product, @comp.burst", suggestNextCombinators("meta.map"));
-    try std.testing.expectEqualStrings("see @comp.ladder() for full scaling hierarchy", suggestNextCombinators("comp.unknown"));
+    // The fallback may name only LIVE combinators. It used to answer
+    // `@comp.ladder()`, which this branch deletes -- advice for a directive
+    // with no handler is the host publishing authority it no longer has.
+    try std.testing.expectEqualStrings("@comp.product, @comp.burst", suggestNextCombinators("comp.unknown"));
+    try std.testing.expect(resolveBuiltin("comp.product") != null);
+    try std.testing.expect(resolveBuiltin("comp.burst") != null);
 }
 
 test "meta_module: every spelling of one operation gets one answer" {
