@@ -38,15 +38,15 @@ chacha20_block: any = (key: any, counter: i64, nonce: any)
   i = 0
   while i < 8
     off = i * 4
-    state(state:len() + 1) = key:byte(off + 1) | key:byte(off + 2) << 8 | key:byte(off + 3) << 16 | key:byte(off + 4) << 24
+    state[state:len() + 1] = key:byte(off + 1) | key:byte(off + 2) << 8 | key:byte(off + 3) << 16 | key:byte(off + 4) << 24
     i = i + 1
   # Counter
-  state(state:len() + 1) = counter & 4294967295
+  state[state:len() + 1] = counter & 4294967295
   # Nonce (3 x 32-bit words)
   i = 0
   while i < 3
     off = i * 4
-    state(state:len() + 1) = nonce:byte(off + 1) | nonce:byte(off + 2) << 8 | nonce:byte(off + 3) << 16 | nonce:byte(off + 4) << 24
+    state[state:len() + 1] = nonce:byte(off + 1) | nonce:byte(off + 2) << 8 | nonce:byte(off + 3) << 16 | nonce:byte(off + 4) << 24
     i = i + 1
 
   # Working state = copy of initial state
@@ -74,10 +74,10 @@ chacha20_block: any = (key: any, counter: i64, nonce: any)
   i = 1
   while i <= 16
     val = (working[i] + state[i]) & 4294967295
-    result(result:len() + 1) = val & 255:char()
-    result(result:len() + 1) = val >> 8 & 255:char()
-    result(result:len() + 1) = val >> 16 & 255:char()
-    result(result:len() + 1) = val >> 24 & 255:char()
+    result[result:len() + 1] = val & 255:char()
+    result[result:len() + 1] = val >> 8 & 255:char()
+    result[result:len() + 1] = val >> 16 & 255:char()
+    result[result:len() + 1] = val >> 24 & 255:char()
     i = i + 1
   return result:concat()
 
@@ -95,7 +95,7 @@ chacha20_crypt: str = (key: str, nonce: str, data: str)
     block = chacha20_block(key, counter, nonce12)
     i = 1
     while i <= 64 and pos <= data:len()
-      out(out:len() + 1) = data:byte(pos) ~ block:byte(i):char()
+      out[out:len() + 1] = data:byte(pos) ~ block:byte(i):char()
       pos = pos + 1
       i = i + 1
     counter = counter + 1
@@ -141,7 +141,7 @@ hmac_drbg_generate: str = (state: any, num_bytes: i64)
     take = remaining
     if take > 32
       take = 32
-    temp(temp:len() + 1) = state.v:sub(1, take)
+    temp[temp:len() + 1] = state.v:sub(1, take)
     remaining = remaining - take
 
   state.reseed_counter = state.reseed_counter + 1

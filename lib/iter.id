@@ -15,7 +15,7 @@ filter: any = (list: any, fn_ref: any)
   i = 1
   while i <= list:len()
     if fn_ref(list[i])
-      out(out:len() + 1) = list[i]
+      out[out:len() + 1] = list[i]
     i = i + 1
   out
 
@@ -92,7 +92,7 @@ zip: any = (l1: any, l2: any)
     pair = {}
     pair[1] = l1[i]
     pair[2] = l2[i]
-    out(out:len() + 1) = pair
+    out[out:len() + 1] = pair
     i = i + 1
   out
 
@@ -106,7 +106,7 @@ zip_with: any = (l1: any, l2: any, fn_ref: any)
     n = l2:len()
   i = 1
   while i <= n
-    out(out:len() + 1) = fn_ref(l1[i], l2[i])
+    out[out:len() + 1] = fn_ref(l1[i], l2[i])
     i = i + 1
   out
 
@@ -120,7 +120,7 @@ enumerate: any = (list: any)
     pair = {}
     pair[1] = i
     pair[2] = list[i]
-    out(out:len() + 1) = pair
+    out[out:len() + 1] = pair
     i = i + 1
   out
 
@@ -139,9 +139,9 @@ sliding_window: any = (list: any, n: i64)
     window = {}
     j = 0
     while j < n
-      window(window:len() + 1) = list[i + j]
+      window[window:len() + 1] = list[i + j]
       j = j + 1
-    out(out:len() + 1) = window
+    out[out:len() + 1] = window
     i = i + 1
   out
 
@@ -155,7 +155,7 @@ take: any = (list: any, n: i64)
     n = len
   i = 1
   while i <= n
-    out(out:len() + 1) = list[i]
+    out[out:len() + 1] = list[i]
     i = i + 1
   out
 
@@ -167,7 +167,7 @@ drop: any = (list: any, n: i64)
   len = list:len()
   i = n + 1
   while i <= len
-    out(out:len() + 1) = list[i]
+    out[out:len() + 1] = list[i]
     i = i + 1
   out
 

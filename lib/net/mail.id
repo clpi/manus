@@ -39,15 +39,15 @@ list: any = (s: str)
     if ch == ">"
       depth = depth - 1
     if ch == "," and depth == 0
-      parts(parts:len() + 1) = s:sub(start, i - 1)
+      parts[parts:len() + 1] = s:sub(start, i - 1)
       start = i + 1
     i = i + 1
-  parts(parts:len() + 1) = s:sub(start)
+  parts[parts:len() + 1] = s:sub(start)
   i = 1
   while i <= parts:len()
     addr = address(parts[i])
     if addr != nil
-      out(out:len() + 1) = addr
+      out[out:len() + 1] = addr
     i = i + 1
   out
 
@@ -71,11 +71,11 @@ split: any = (s: str)
       line = s:sub(start, i - 1)
       if line:len() > 0 and line:byte(line:len()) == 13
         line = line:sub(1, line:len() - 1)
-      out(out:len() + 1) = line
+      out[out:len() + 1] = line
       start = i + 1
     i = i + 1
   if start <= s:len()
-    out(out:len() + 1) = s:sub(start)
+    out[out:len() + 1] = s:sub(start)
   out
 
 # read: parse an RFC 5322 message into {headers = {...}, body = "..."}.
@@ -105,7 +105,7 @@ read: any = (raw: str)
       val = val .. " " .. line:gsub("^%s+", "")
     else
       if key != nil
-        headers(key:lower()) = val:gsub("^%s+", "")
+        headers[key:lower()] = val:gsub("^%s+", "")
       colon = line:find(":", 1, true)
       if colon != nil
         key = line:sub(1, colon - 1)
@@ -114,5 +114,5 @@ read: any = (raw: str)
         key = nil
     i = i + 1
   if key != nil
-    headers(key:lower()) = val:gsub("^%s+", "")
+    headers[key:lower()] = val:gsub("^%s+", "")
   return { headers = headers, body = body }

@@ -52,8 +52,8 @@ kv_cache_append = (cache: any, key: any, value: any)
       break
     # Copy key/value into cache
     for j = 1, key.cols
-      cache.keys.data((pos - 1) * key.cols + j) = key.data(i * key.cols + j)
-      cache.values.data((pos - 1) * value.cols + j) = value.data(i * value.cols + j)
+      cache.keys.data[(pos - 1) * key.cols + j] = key.data(i * key.cols + j)
+      cache.values.data[(pos - 1) * value.cols + j] = value.data(i * value.cols + j)
     i = i + 1
   cache.length = cache.length + seq_len
 
@@ -91,9 +91,9 @@ mha_forward: any = (layer: any, x: any, use_cache: bool)
 
   for i = 1, seq_len
     for j = 1, dim
-      q.data((i - 1) * dim + j) = qkv.data((i - 1) * dim * 3 + j)
-      k.data((i - 1) * dim + j) = qkv.data((i - 1) * dim * 3 + dim + j)
-      v.data((i - 1) * dim + j) = qkv.data((i - 1) * dim * 3 + dim * 2 + j)
+      q.data[(i - 1) * dim + j] = qkv.data((i - 1) * dim * 3 + j)
+      k.data[(i - 1) * dim + j] = qkv.data((i - 1) * dim * 3 + dim + j)
+      v.data[(i - 1) * dim + j] = qkv.data((i - 1) * dim * 3 + dim * 2 + j)
 
   # Apply KV cache
   if use_cache and layer.kv_cache != nil
@@ -110,7 +110,7 @@ mha_forward: any = (layer: any, x: any, use_cache: bool)
   for i = 1, seq_len
     for j = 1, kv_len
       if j > i
-        scores.data((i - 1) * kv_len + j) = -1000000000000000000000000000000.0
+        scores.data[(i - 1) * kv_len + j] = -1000000000000000000000000000000.0
 
   # Softmax
   attn_weights = softmax_2d(scores)
@@ -137,10 +137,10 @@ softmax_2d: any = (t: any)
     sum = 0
     for j = 1, t.cols
       val = t.data((i - 1) * t.cols + j) - max_val:exp()
-      result.data((i - 1) * t.cols + j) = val
+      result.data[(i - 1) * t.cols + j] = val
       sum = sum + val
     for j = 1, t.cols
-      result.data((i - 1) * t.cols + j) = result.data((i - 1) * t.cols + j) / sum
+      result.data[(i - 1) * t.cols + j] = result.data((i - 1) * t.cols + j) / sum
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -197,7 +197,7 @@ gqa_forward: any = (layer: any, x: any, use_cache: bool)
   for i = 1, seq_len
     for j = 1, kv_len
       if j > i
-        scores.data((i - 1) * kv_len + j) = -1000000000000000000000000000000.0
+        scores.data[(i - 1) * kv_len + j] = -1000000000000000000000000000000.0
 
   attn_weights = softmax_2d(scores)
   attn_out = ml.tensor.matmul(attn_weights, v_expanded)
@@ -219,7 +219,7 @@ repeat_kv: any = (k: any, n_repeat: i64, head_dim: i64)
         for d = 1, head_dim
           src_idx = (i - 1) * k.cols + (h - 1) * head_dim + d
           dst_idx = (i - 1) * new_cols + ((h - 1) * n_repeat + r - 1) * head_dim + d
-          result.data(dst_idx) = k.data(src_idx)
+          result.data[dst_idx] = k.data(src_idx)
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -270,7 +270,7 @@ flash_attention_block: any = (q: any, k: any, v: any, block_size: i64)
         weight = score - new_max:exp()
         row_sum[i] = row_sum[i] + weight
         for d = 1, head_dim
-          output.data((i - 1) * head_dim + d) = output.data((i - 1) * head_dim + d) * scale + weight * v.data((j - 1) * head_dim + d)
+          output.data[(i - 1) * head_dim + d] = output.data((i - 1) * head_dim + d) * scale + weight * v.data((j - 1) * head_dim + d)
 
       row_max[i] = new_max
     col = col + block_size
@@ -279,7 +279,7 @@ flash_attention_block: any = (q: any, k: any, v: any, block_size: i64)
   for i = 1, seq_len
     if row_sum[i] > 0
       for d = 1, head_dim
-        output.data((i - 1) * head_dim + d) = output.data((i - 1) * head_dim + d) / row_sum[i]
+        output.data[(i - 1) * head_dim + d] = output.data((i - 1) * head_dim + d) / row_sum[i]
 
   output
 # ═══════════════════════════════════════════════════════════════

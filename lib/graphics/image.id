@@ -68,7 +68,7 @@ set_pixel = (image: any, x: i64, y: i64, pixel: any)
   idx = (y * image.width + x) * image.channels + 1
   i = 0
   while i < image.channels
-    image.data(idx + i) = pixel[i + 1] or 0
+    image.data[idx + i] = pixel[i + 1] or 0
     i = i + 1
 
 # ═══════════════════════════════════════════════════════════════
@@ -89,12 +89,12 @@ to_rgba: any = (image: any)
 
       i = 0
       while i < image.channels
-        result.data(dst_idx + i) = image.data(src_idx + i)
+        result.data[dst_idx + i] = image.data(src_idx + i)
         i = i + 1
 
       # Add alpha if RGB
       if image.channels == 3
-        result.data(dst_idx + 3) = 255
+        result.data[dst_idx + 3] = 255
       x = x + 1
     y = y + 1
   result
@@ -111,7 +111,7 @@ to_grayscale: any = (image: any)
         gray = 0.299 * image.data(idx) + 0.587 * image.data(idx + 1) + 0.114 * image.data(idx + 2)
       else
         gray = image.data(idx)
-      result.data(y * image.width + x + 1) = gray:floor()
+      result.data[y * image.width + x + 1] = gray:floor()
       x = x + 1
     y = y + 1
   result
@@ -261,7 +261,7 @@ adjust_brightness: any = (image: any, factor: f64)
   result = new(image.width, image.height, image.channels)
   i = 1
   while i <= result.data:len()
-    result.data(i) = 0:max(255:min(image.data(i) * factor:floor()))
+    result.data[i] = 0:max(255:min(image.data(i) * factor:floor()))
     i = i + 1
   result
 
@@ -270,7 +270,7 @@ adjust_contrast: any = (image: any, factor: f64)
   i = 1
   while i <= result.data:len()
     value = image.data(i)
-    result.data(i) = 0:max(255:min((value - 128) * factor + 128:floor()))
+    result.data[i] = 0:max(255:min((value - 128) * factor + 128:floor()))
     i = i + 1
   result
 # ═══════════════════════════════════════════════════════════════

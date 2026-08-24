@@ -37,7 +37,7 @@ encode_u64_le: str = (v: i64)
   parts = {}
   i = 0
   while i < 8
-    parts(parts:len() + 1) = v % 256:char()
+    parts[parts:len() + 1] = v % 256:char()
     v = v / 256
     i = i + 1
   parts:concat()
@@ -122,9 +122,9 @@ decode_f64: f64 = (s: str)
 encode_varint: str = (v: i64)
   out = {}
   while v >= 128
-    out(out:len() + 1) = v % 128 + 128:char()
+    out[out:len() + 1] = v % 128 + 128:char()
     v = v / 128
-  out(out:len() + 1) = v:char()
+  out[out:len() + 1] = v:char()
   out:concat()
 
 # decode_varint: decode a LEB128 varint from string s starting at offset.

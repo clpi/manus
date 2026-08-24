@@ -14,7 +14,7 @@ bool_flag: any = (fs: any, name: str, default_val: bool, usage: str)
     default = default_val
     usage = usage
     is_bool = true
-  fs.flags(name) = f
+  fs.flags[name] = f
   f
 
 # string_flag: register a string flag.
@@ -26,7 +26,7 @@ string_flag: any = (fs: any, name: str, default_val: str, usage: str)
     usage = usage
     is_bool = false
     kind = "string"
-  fs.flags(name) = f
+  fs.flags[name] = f
   f
 
 # int_flag: register an integer flag.
@@ -38,7 +38,7 @@ int_flag: any = (fs: any, name: str, default_val: i64, usage: str)
     usage = usage
     is_bool = false
     kind = "int"
-  fs.flags(name) = f
+  fs.flags[name] = f
   f
 
 # float_flag: register a float flag.
@@ -50,7 +50,7 @@ float_flag: any = (fs: any, name: str, default_val: f64, usage: str)
     usage = usage
     is_bool = false
     kind = "float"
-  fs.flags(name) = f
+  fs.flags[name] = f
   f
 
 # parse: parse the given argument array (1-based).
@@ -67,7 +67,7 @@ parse: any = (fs: any, argv: any)
       # all remaining are positional
       i = i + 1
       while i <= n
-        fs.args(fs.args:len() + 1) = argv[i]
+        fs.args[fs.args:len() + 1] = argv[i]
         i = i + 1
       break
     # long flag: #name or #name=value
@@ -139,7 +139,7 @@ parse: any = (fs: any, argv: any)
               f.value = fval
       else
         # positional argument
-        fs.args(fs.args:len() + 1) = arg
+        fs.args[fs.args:len() + 1] = arg
     i = i + 1
   fs.parsed = true
   return fs, true

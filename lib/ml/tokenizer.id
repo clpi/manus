@@ -19,8 +19,8 @@ bpe_add_token: i64 = (bpe: any, token: str)
   if bpe.vocab(token) != nil
     return bpe.vocab(token)
   bpe.vocab_size = bpe.vocab_size + 1
-  bpe.vocab(token) = bpe.vocab_size
-  bpe.inverse_vocab(bpe.vocab_size) = token
+  bpe.vocab[token] = bpe.vocab_size
+  bpe.inverse_vocab[bpe.vocab_size] = token
   bpe.vocab_size
 
 # Learn BPE merges from a corpus
@@ -44,7 +44,7 @@ bpe_learn = (bpe: any, corpus: any, num_merges: i64)
   i = 1
   while i <= corpus:len()
     ch = corpus:sub(i, i)
-    words(words:len() + 1) = bpe.vocab(ch)
+    words[words:len() + 1] = bpe.vocab(ch)
     i = i + 1
 
   # Perform merges
@@ -73,7 +73,7 @@ bpe_learn = (bpe: any, corpus: any, num_merges: i64)
 
     # Record merge
     merge_count = merge_count + 1
-    bpe.merges(merge_count) = best_pair
+    bpe.merges[merge_count] = best_pair
 
     # Create new token
     parts = {}
@@ -81,7 +81,7 @@ bpe_learn = (bpe: any, corpus: any, num_merges: i64)
     while idx <= best_pair:len()
       if best_pair:sub(idx, idx) == ","
         break
-      parts(parts:len() + 1) = best_pair:sub(idx, idx)
+      parts[parts:len() + 1] = best_pair:sub(idx, idx)
       idx = idx + 1
     left = parts:concat()
     right = best_pair:sub(idx + 1)
@@ -95,14 +95,14 @@ bpe_learn = (bpe: any, corpus: any, num_merges: i64)
       if i < words:len()
         pair = words[i] .. "," .. words[i + 1]
         if pair == best_pair
-          new_words(new_words:len() + 1) = bpe.vocab(new_token)
+          new_words[new_words:len() + 1] = bpe.vocab(new_token)
           i = i + 2
         else
           # continue
-          new_words(new_words:len() + 1) = words[i]
+          new_words[new_words:len() + 1] = words[i]
           i = i + 1
       else
-        new_words(new_words:len() + 1) = words[i]
+        new_words[new_words:len() + 1] = words[i]
         i = i + 1
     words = new_words
 
@@ -114,13 +114,13 @@ bpe_encode: any = (bpe: any, text: str)
   while i <= text:len()
     ch = text:sub(i, i)
     if bpe.vocab(ch) != nil
-      tokens(tokens:len() + 1) = bpe.vocab(ch)
+      tokens[tokens:len() + 1] = bpe.vocab(ch)
     else
       # Unknown character, use [UNK]
       unk = bpe.vocab("[UNK]")
       if unk == nil
         unk = 0
-      tokens(tokens:len() + 1) = unk
+      tokens[tokens:len() + 1] = unk
     i = i + 1
 
   # Apply merges
@@ -130,7 +130,7 @@ bpe_encode: any = (bpe: any, text: str)
     while idx <= merge:len()
       if merge:sub(idx, idx) == ","
         break
-      parts(parts:len() + 1) = merge:sub(idx, idx)
+      parts[parts:len() + 1] = merge:sub(idx, idx)
       idx = idx + 1
     left = parts:concat()
     right = merge:sub(idx + 1)
@@ -144,10 +144,10 @@ bpe_encode: any = (bpe: any, text: str)
       i = 1
       while i <= tokens:len()
         if i < tokens:len() and tokens[i] == left_id and tokens[i + 1] == right_id
-          merged(merged:len() + 1) = new_id
+          merged[merged:len() + 1] = new_id
           i = i + 2
         else
-          merged(merged:len() + 1) = tokens[i]
+          merged[merged:len() + 1] = tokens[i]
           i = i + 1
       tokens = merged
 
@@ -161,7 +161,7 @@ bpe_decode: str = (bpe: any, tokens: any)
     token = bpe.inverse_vocab(tokens[i])
     if token == nil
       token = "?"
-    parts(parts:len() + 1) = token
+    parts[parts:len() + 1] = token
     i = i + 1
   parts:concat()
 
@@ -182,13 +182,13 @@ wordpiece_encode: any = (vocab: any, text: str, max_word_len: i64)
     ch = text:sub(i, i)
     if ch == " " or ch == "\t" or ch == "\n"
       if word:len() > 0
-        words(words:len() + 1) = word
+        words[words:len() + 1] = word
         word = ""
     else
       word = word .. ch
     i = i + 1
   if word:len() > 0
-    words(words:len() + 1) = word
+    words[words:len() + 1] = word
 
   # Tokenize each word
   for w in words
@@ -204,7 +204,7 @@ wordpiece_encode: any = (vocab: any, text: str, max_word_len: i64)
         if end_pos == chars:len()
           # Whole word or prefix
           if vocab[sub] != nil
-            word_tokens(word_tokens:len() + 1) = sub
+            word_tokens[word_tokens:len() + 1] = sub
             chars = chars:sub(end_pos + 1)
             found = true
             break
@@ -212,17 +212,17 @@ wordpiece_encode: any = (vocab: any, text: str, max_word_len: i64)
           # Subword with ##
           sub_with_prefix = "##" .. sub
           if vocab[sub_with_prefix] != nil
-            word_tokens(word_tokens:len() + 1) = sub_with_prefix
+            word_tokens[word_tokens:len() + 1] = sub_with_prefix
             chars = chars:sub(end_pos + 1)
             found = true
             break
         end_pos = end_pos - 1
       if not found
         # Unknown token
-        word_tokens(word_tokens:len() + 1) = "[UNK]"
+        word_tokens[word_tokens:len() + 1] = "[UNK]"
         break
     for t in word_tokens
-      tokens(tokens:len() + 1) = t
+      tokens[tokens:len() + 1] = t
 
   tokens
 
@@ -241,19 +241,19 @@ simple_tokenize: any = (text: str)
 
     if ch == " " or ch == "\t" or ch == "\n"
       if current:len() > 0
-        tokens(tokens:len() + 1) = current
+        tokens[tokens:len() + 1] = current
         current = ""
     else
       if is_punct
         if current:len() > 0
-          tokens(tokens:len() + 1) = current
+          tokens[tokens:len() + 1] = current
           current = ""
-        tokens(tokens:len() + 1) = ch
+        tokens[tokens:len() + 1] = ch
       else
         current = current .. ch
     i = i + 1
   if current:len() > 0
-    tokens(tokens:len() + 1) = current
+    tokens[tokens:len() + 1] = current
   tokens
 
 # ═══════════════════════════════════════════════════════════════
@@ -272,7 +272,7 @@ top_k_tokens: any = (tokens: any, k: i64)
   freq = token_frequencies(tokens)
   sorted = {}
   for t, count in freq
-    sorted(sorted:len() + 1) =
+    sorted[sorted:len() + 1] =
       token = t
       count = count
   # Simple selection sort for top k
@@ -294,7 +294,7 @@ top_k_tokens: any = (tokens: any, k: i64)
   result = {}
   i = 1
   while i <= k and i <= sorted:len()
-    result(result:len() + 1) = sorted[i]
+    result[result:len() + 1] = sorted[i]
     i = i + 1
   result
 # ═══════════════════════════════════════════════════════════════

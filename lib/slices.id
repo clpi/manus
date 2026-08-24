@@ -101,7 +101,7 @@ delete: any = (arr: any, i: i64)
   j = 1
   while j <= n
     if j != i
-      out(out:len() + 1) = arr[j]
+      out[out:len() + 1] = arr[j]
     j = j + 1
   out
 
@@ -112,7 +112,7 @@ reject: any = (arr: any, f: any)
   i = 1
   while i <= arr:len()
     if not f(arr[i])
-      out(out:len() + 1) = arr[i]
+      out[out:len() + 1] = arr[i]
     i = i + 1
   out
 
@@ -147,7 +147,7 @@ replace: any = (arr: any, i: i64, j: i64, v: any)
   out[i] = v
   k = j + 1
   while k <= n
-    out(out:len() + 1) = arr[k]
+    out[out:len() + 1] = arr[k]
     k = k + 1
   out
 
@@ -221,6 +221,6 @@ chunk: any = (arr: any, n: i64)
     while j < n and i + j <= arr:len()
       c[j + 1] = arr[i + j]
       j = j + 1
-    out(out:len() + 1) = c
+    out[out:len() + 1] = c
     i = i + n
   out

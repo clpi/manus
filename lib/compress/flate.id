@@ -14,10 +14,10 @@ compress = (data: any)
       run = run + 1
       j = j + 1
     if run >= 3
-      out(out:len() + 1) = 254:char() .. run:char() .. ch
+      out[out:len() + 1] = 254:char() .. run:char() .. ch
       i = i + run
     else
-      out(out:len() + 1) = ch
+      out[out:len() + 1] = ch
       i = i + 1
   return out:concat()
 
@@ -34,10 +34,10 @@ decompress = (data: any)
         break
       run = data:byte(i + 1)
       ch = data:sub(i + 2, i + 2)
-      out(out:len() + 1) = ch:rep(run)
+      out[out:len() + 1] = ch:rep(run)
       i = i + 3
     else
-      out(out:len() + 1) = data:sub(i, i)
+      out[out:len() + 1] = data:sub(i, i)
       i = i + 1
   return out:concat()
 

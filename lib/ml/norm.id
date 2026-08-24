@@ -41,7 +41,7 @@ batchnorm_forward: any = (layer: any, x: any)
       s = 0
       for i = 1, n
         s = s + x.data((i - 1) * d + j)
-      mean.data(j) = s / n
+      mean.data[j] = s / n
 
     # Compute batch variance
     variance = ml.tensor.zeros(1, d)
@@ -50,12 +50,12 @@ batchnorm_forward: any = (layer: any, x: any)
       for i = 1, n
         diff = x.data((i - 1) * d + j) - mean.data(j)
         s = s + diff * diff
-      variance.data(j) = s / n
+      variance.data[j] = s / n
 
     # Update running statistics
     for j = 1, d
-      layer.running_mean.data(j) = (1 - layer.momentum) * layer.running_mean.data(j) + layer.momentum * mean.data(j)
-      layer.running_var.data(j) = (1 - layer.momentum) * layer.running_var.data(j) + layer.momentum * variance.data(j)
+      layer.running_mean.data[j] = (1 - layer.momentum) * layer.running_mean.data(j) + layer.momentum * mean.data(j)
+      layer.running_var.data[j] = (1 - layer.momentum) * layer.running_var.data(j) + layer.momentum * variance.data(j)
 
     layer.batch_mean = mean
     layer.batch_var = variance
@@ -70,8 +70,8 @@ batchnorm_forward: any = (layer: any, x: any)
     inv_std = 1.0 / variance.data(j) + layer.eps:sqrt()
     for i = 1, n
       x_norm = (x.data((i - 1) * d + j) - mean.data(j)) * inv_std
-      layer.x_normalized.data((i - 1) * d + j) = x_norm
-      result.data((i - 1) * d + j) = x_norm * layer.weight.data(j) + layer.bias.data(j)
+      layer.x_normalized.data[(i - 1) * d + j] = x_norm
+      result.data[(i - 1) * d + j] = x_norm * layer.weight.data(j) + layer.bias.data(j)
 
   layer.input_cache = x
   result
@@ -94,8 +94,8 @@ batchnorm_backward: any = (layer: any, grad_out: any)
     for i = 1, n
       dg = dg + grad_out.data((i - 1) * d + j) * layer.x_normalized.data((i - 1) * d + j)
       db = db + grad_out.data((i - 1) * d + j)
-    layer.grad_weight.data(j) = dg
-    layer.grad_bias.data(j) = db
+    layer.grad_weight.data[j] = dg
+    layer.grad_bias.data[j] = db
 
     # Gradient w.r.t. input
     dx_mean = 0
@@ -108,7 +108,7 @@ batchnorm_backward: any = (layer: any, grad_out: any)
 
     for i = 1, d
       x_norm = layer.x_normalized.data((i - 1) * d + j)
-      dx.data((i - 1) * d + j) = (grad_out.data((i - 1) * d + j) - dx_mean - x_norm * dx_norm_sum) * inv_std * layer.weight.data(j)
+      dx.data[(i - 1) * d + j] = (grad_out.data((i - 1) * d + j) - dx_mean - x_norm * dx_norm_sum) * inv_std * layer.weight.data(j)
   dx
 
 # ═══════════════════════════════════════════════════════════════
@@ -143,7 +143,7 @@ rmsnorm_forward: any = (layer: any, x: any)
 
     # Normalize and scale
     for j = 1, d
-      result.data((i - 1) * d + j) = x.data((i - 1) * d + j) / rms * layer.weight.data(j)
+      result.data[(i - 1) * d + j] = x.data((i - 1) * d + j) / rms * layer.weight.data(j)
 
   layer.input_cache = x
   result
@@ -198,7 +198,7 @@ groupnorm_forward: any = (layer: any, x: any)
     for i = 1, n
       for j = start_ch, end_ch
         idx = (i - 1) * d + j
-        result.data(idx) = (x.data(idx) - mean) * inv_std * layer.weight.data(j) + layer.bias.data(j)
+        result.data[idx] = (x.data(idx) - mean) * inv_std * layer.weight.data(j) + layer.bias.data(j)
 
   layer.input_cache = x
   result
@@ -244,7 +244,7 @@ layernorm_forward: any = (layer: any, x: any)
     inv_std = 1.0 / var + layer.eps:sqrt()
     for j = 1, d
       idx = (i - 1) * d + j
-      result.data(idx) = (x.data(idx) - mean) * inv_std * layer.weight.data(j) + layer.bias.data(j)
+      result.data[idx] = (x.data(idx) - mean) * inv_std * layer.weight.data(j) + layer.bias.data(j)
 
   layer.input_cache = x
   result

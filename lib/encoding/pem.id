@@ -8,13 +8,13 @@ encode: str = (b: any)
   typ = b.type
   b64 = std.base64.encode(data)
   lines = {}
-  lines(lines:len() + 1) = "-----BEGIN " .. typ .. "-----"
+  lines[lines:len() + 1] = "-----BEGIN " .. typ .. "-----"
   i = 1
   while i <= b64:len()
     chunk = b64:sub(i, i + line_width - 1)
-    lines(lines:len() + 1) = chunk
+    lines[lines:len() + 1] = chunk
     i = i + line_width
-  lines(lines:len() + 1) = "-----END " .. typ .. "-----"
+  lines[lines:len() + 1] = "-----END " .. typ .. "-----"
   lines:concat("\n")
 
 decode: any = (data: str)
@@ -33,7 +33,7 @@ decode: any = (data: str)
       end_marker = trimmed
     else(begin_marker != nil and end_marker == nil)
       if trimmed:len() > 0
-        b64_lines(b64_lines:len() + 1) = trimmed
+        b64_lines[b64_lines:len() + 1] = trimmed
   if typ == nil
     return nil
   b64_data = b64_lines:concat()

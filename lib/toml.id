@@ -33,8 +33,8 @@ parse: any = (data: str)
         for _, part in parts
           part = part:trim()
           if current(part) == nil
-            current(part) = {}
-          current_path(current_path:len() + 1) = part
+            current[part] = {}
+          current_path[current_path:len() + 1] = part
           current = current(part)
       else
         eq_pos = nil
@@ -45,5 +45,5 @@ parse: any = (data: str)
         if eq_pos != nil
           key = line:sub(1, eq_pos - 1):trim()
           val_str = line:sub(eq_pos + 1):trim()
-          current(key) = parse_value(val_str)
+          current[key] = parse_value(val_str)
   res

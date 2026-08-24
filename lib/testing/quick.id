@@ -24,7 +24,7 @@ gen_table: any = (max_entries: i64)
   n = random.int(0, max_entries)
   t = {}
   for i = 1, n
-    t(random.int(0, 1000)) = random.int(-1000, 1000)
+    t[random.int(0, 1000)] = random.int(-1000, 1000)
   t
 
 gen: any = (typ: str, max: i64, gen_config: any)

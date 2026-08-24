@@ -14,13 +14,13 @@ std_property_parse: any = (path: str)
     ch = path:sub(i, i)
     if ch == "."
       if current != ""
-        parts(parts:len() + 1) = current
+        parts[parts:len() + 1] = current
       current = ""
     else
       current = current .. ch
     i = i + 1
   if current != ""
-    parts(parts:len() + 1) = current
+    parts[parts:len() + 1] = current
   parts
 
 # Internal: try to convert a string to a number.
@@ -64,11 +64,11 @@ std_property_ensure_path: any = (obj: any, parts: any)
     idx = std_property_to_num(key)
     if idx != nil
       if current(idx) == nil
-        current(idx) = {}
+        current[idx] = {}
       current = current(idx)
     else
       if current(key) == nil
-        current(key) = {}
+        current[key] = {}
       current = current(key)
     i = i + 1
   current
@@ -114,19 +114,19 @@ set = (obj: any, path: str, value: any)
     idx = std_property_to_num(key)
     if idx != nil
       if current(idx) == nil
-        current(idx) = {}
+        current[idx] = {}
       current = current(idx)
     else
       if current(key) == nil
-        current(key) = {}
+        current[key] = {}
       current = current(key)
     i = i + 1
   last = parts(parts:len())
   last_idx = std_property_to_num(last)
   if last_idx != nil
-    current(last_idx) = value
+    current[last_idx] = value
   else
-    current(last) = value
+    current[last] = value
 
 # has: check if a dot-path exists in a nested table.
 has: bool = (obj: any, path: str)
@@ -157,10 +157,10 @@ delete: any = (obj: any, path: str)
   removed = nil
   if nav.is_num
     removed = nav.parent(nav.key)
-    nav.parent(nav.key) = nil
+    nav.parent[nav.key] = nil
   else
     removed = nav.parent(nav.key)
-    nav.parent(nav.key) = nil
+    nav.parent[nav.key] = nil
   removed
 
 # get_or: like get but returns a fallback if the path doesn't exist.
@@ -211,7 +211,7 @@ keys: any = (obj: any)
   flat = flatten(obj, "")
   out = {}
   for pk, _pv in flat
-    out(out:len() + 1) = pk
+    out[out:len() + 1] = pk
   out
 
 # values: get all leaf values in depth-first order.
@@ -219,7 +219,7 @@ values: any = (obj: any)
   flat = flatten(obj, "")
   out = {}
   for _, v in flat
-    out(out:len() + 1) = v
+    out[out:len() + 1] = v
   out
 
 # update: like set but only if the path already exists (no creation).

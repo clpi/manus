@@ -26,17 +26,17 @@ clean: str = (path: str)
     nxt = result:find("/", i, true)
     if nxt == nil
       part = result:sub(i)
-      parts(parts:len() + 1) = part
+      parts[parts:len() + 1] = part
       break
     part = result:sub(i, nxt - 1)
-    parts(parts:len() + 1) = part
+    parts[parts:len() + 1] = part
     i = nxt + 1
   stack = {}
   for _, part in parts
     if part == ".."
       stack:remove()
     else(part != "." and part != "")
-      stack(stack:len() + 1) = part
+      stack[stack:len() + 1] = part
   if stack:len() == 0
     return "."
   stack:concat("/")

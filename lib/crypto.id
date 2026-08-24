@@ -38,28 +38,28 @@ base64_encode: str = (s: str)
     b2 = s:byte(i + 1)
     b3 = s:byte(i + 2)
     triple = b1 * 65536 + b2 * 256 + b3
-    out(out:len() + 1) = B64_CHARS:sub(triple / 262144:floor() + 1, triple / 262144:floor() + 1)
-    out(out:len() + 1) = B64_CHARS:sub(triple % 262144 / 4096:floor() + 1, triple % 262144 / 4096:floor() + 1)
-    out(out:len() + 1) = B64_CHARS:sub(triple % 4096 / 64:floor() + 1, triple % 4096 / 64:floor() + 1)
-    out(out:len() + 1) = B64_CHARS:sub(triple % 64 + 1, triple % 64 + 1)
+    out[out:len() + 1] = B64_CHARS:sub(triple / 262144:floor() + 1, triple / 262144:floor() + 1)
+    out[out:len() + 1] = B64_CHARS:sub(triple % 262144 / 4096:floor() + 1, triple % 262144 / 4096:floor() + 1)
+    out[out:len() + 1] = B64_CHARS:sub(triple % 4096 / 64:floor() + 1, triple % 4096 / 64:floor() + 1)
+    out[out:len() + 1] = B64_CHARS:sub(triple % 64 + 1, triple % 64 + 1)
     i = i + 3
 
   rem = n - i + 1
   if rem == 1
     b1 = s:byte(i)
     triple = b1 * 65536
-    out(out:len() + 1) = B64_CHARS:sub(triple / 262144:floor() + 1, triple / 262144:floor() + 1)
-    out(out:len() + 1) = B64_CHARS:sub(triple % 262144 / 4096:floor() + 1, triple % 262144 / 4096:floor() + 1)
-    out(out:len() + 1) = "="
-    out(out:len() + 1) = "="
+    out[out:len() + 1] = B64_CHARS:sub(triple / 262144:floor() + 1, triple / 262144:floor() + 1)
+    out[out:len() + 1] = B64_CHARS:sub(triple % 262144 / 4096:floor() + 1, triple % 262144 / 4096:floor() + 1)
+    out[out:len() + 1] = "="
+    out[out:len() + 1] = "="
   if rem == 2
     b1 = s:byte(i)
     b2 = s:byte(i + 1)
     triple = b1 * 65536 + b2 * 256
-    out(out:len() + 1) = B64_CHARS:sub(triple / 262144:floor() + 1, triple / 262144:floor() + 1)
-    out(out:len() + 1) = B64_CHARS:sub(triple % 262144 / 4096:floor() + 1, triple % 262144 / 4096:floor() + 1)
-    out(out:len() + 1) = B64_CHARS:sub(triple % 4096 / 64:floor() + 1, triple % 4096 / 64:floor() + 1)
-    out(out:len() + 1) = "="
+    out[out:len() + 1] = B64_CHARS:sub(triple / 262144:floor() + 1, triple / 262144:floor() + 1)
+    out[out:len() + 1] = B64_CHARS:sub(triple % 262144 / 4096:floor() + 1, triple % 262144 / 4096:floor() + 1)
+    out[out:len() + 1] = B64_CHARS:sub(triple % 4096 / 64:floor() + 1, triple % 4096 / 64:floor() + 1)
+    out[out:len() + 1] = "="
   out:concat()
 
 base64_decode: str = (s: str)
@@ -70,7 +70,7 @@ base64_decode: str = (s: str)
     clean = clean .. "="
   lookup = {}
   for i = 1, 64
-    lookup(B64_CHARS:sub(i, i)) = i - 1
+    lookup[B64_CHARS:sub(i, i)] = i - 1
   out = {}
   for i = 1, clean:len(), 4
     c1v = lookup(clean:sub(i, i)) or 0
@@ -88,11 +88,11 @@ base64_decode: str = (s: str)
     # The conditions were misassigned: b1 was gated on char3 and b2 on
     # char4, so decoding "aGk=" emitted only b1 and returned "h" for "hi".
     # One byte lost from every 2-byte tail, silently.
-    out(out:len() + 1) = b1:char()
+    out[out:len() + 1] = b1:char()
     if clean:sub(i + 2, i + 2) != "="
-      out(out:len() + 1) = b2:char()
+      out[out:len() + 1] = b2:char()
     if clean:sub(i + 3, i + 3) != "="
-      out(out:len() + 1) = b3:char()
+      out[out:len() + 1] = b3:char()
   out:concat()
 
 B64URL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
@@ -136,8 +136,8 @@ hex_decode: str = (s: str)
   out = ""
   map = {}
   for i = 1, 16
-    map(HEX_CHARS:sub(i, i)) = i - 1
-    map("ABCDEF":sub(i - 10, i - 10)) = i - 1
+    map[HEX_CHARS:sub(i, i)] = i - 1
+    map["ABCDEF":sub(i - 10, i - 10)] = i - 1
   for i = 1, clean:len(), 2
     hi = clean:sub(i, i)
     lo = clean:sub(i + 1, i + 1)

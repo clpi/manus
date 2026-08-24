@@ -55,11 +55,11 @@ tokens: any = (text: str)
       cur = cur .. c:char()
     else
       if cur:len() >= 2
-        out(out:len() + 1) = cur:lower()
+        out[out:len() + 1] = cur:lower()
       cur = ""
     i = i + 1
   if cur:len() >= 2
-    out(out:len() + 1) = cur:lower()
+    out[out:len() + 1] = cur:lower()
   out
 
 # Char 3-grams of a token, edge-padded with sentinels so prefix/suffix matter.
@@ -73,7 +73,7 @@ trigrams: any = (token: str)
     return out
   i = 1
   while i <= n - 2
-    out(out:len() + 1) = s:sub(i, i + 2)
+    out[out:len() + 1] = s:sub(i, i + 2)
     i = i + 1
   out
 
@@ -124,7 +124,7 @@ rank: any = (q: any, records: any, topk: i64)
   for _, rec in records
     sc = cosine(q, rec.vec)
     if sc > 0
-      all(all:len() + 1) =
+      all[all:len() + 1] =
         name = rec.name
         file = rec.file
         kind = rec.kind
@@ -152,7 +152,7 @@ rank: any = (q: any, records: any, topk: i64)
     if besti == 0
       break
     taken[besti] = true
-    out(out:len() + 1) = all[besti]
+    out[out:len() + 1] = all[besti]
     round = round + 1
   out
 

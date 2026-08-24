@@ -104,7 +104,7 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
           # Output the entry
           i = 1
           while i <= entry:len()
-            output(output:len() + 1) = entry[i]
+            output[output:len() + 1] = entry[i]
             i = i + 1
 
           if prev != nil
@@ -138,11 +138,11 @@ lzw_decompress: any = (data: str, min_code_size: i64, pixel_count: i64)
           j = 1
           while j <= entry:len()
             new_entry[j] = entry[j]
-            output(output:len() + 1) = entry[j]
+            output[output:len() + 1] = entry[j]
             j = j + 1
           first = entry[1]
           new_entry[j] = first
-          output(output:len() + 1) = first
+          output[output:len() + 1] = first
 
           if next_code < 4096
             dict[next_code] = new_entry

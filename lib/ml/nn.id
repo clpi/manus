@@ -13,7 +13,7 @@ linear: any = (in_features: i64, out_features: i64)
   while r < in_features
     c = 0
     while c < out_features
-      weight.data(r * out_features + c) = (weight.data(r * out_features + c) - 0.5) * 2 * scale
+      weight.data[r * out_features + c] = (weight.data(r * out_features + c) - 0.5) * 2 * scale
       c = c + 1
     r = r + 1
   return {
@@ -118,7 +118,7 @@ forward_dropout: any = (layer, x)
     mask_byte = mask_bytes:byte(byte_idx + 1) or 0
     bit_set = mask_byte >> bit_idx & 1
     if bit_set == 1
-      result.data(i) = x.data(i) * scale
+      result.data[i] = x.data(i) * scale
     i = i + 1
   result
 

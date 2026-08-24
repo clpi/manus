@@ -37,11 +37,11 @@ from_json_schema_string: str = (schema_json: str, opts: any)
   required_set = parse_required_fields(schema_json)
 
   code_parts = {}
-  code_parts(code_parts:len() + 1) = emit_record_type(record_name, fields, required_set)
+  code_parts[code_parts:len() + 1] = emit_record_type(record_name, fields, required_set)
   validate = emit_validation_func(record_name, fields, required_set)
   if validate != ""
-    code_parts(code_parts:len() + 1) = validate
-  code_parts(code_parts:len() + 1) = emit_json_serializers(record_name, fields)
+    code_parts[code_parts:len() + 1] = validate
+  code_parts[code_parts:len() + 1] = emit_json_serializers(record_name, fields)
   str_join(code_parts, "\n")
 
 # ═══════════════════════════════════════════════════════════════
@@ -62,10 +62,10 @@ from_protobuf_string: str = (proto_src: str)
       typ, fname = field:match("(%S+)%s+(%w+)")
       if typ and fname
         duo_type = proto_type_to_duo(typ)
-        duo_fields(duo_fields:len() + 1) = { name = fname, type = duo_type }
-    code_parts(code_parts:len() + 1) = emit_record_type(name, duo_fields, {})
-    code_parts(code_parts:len() + 1) = emit_protobuf_encode(name, duo_fields)
-    code_parts(code_parts:len() + 1) = emit_protobuf_decode(name, duo_fields)
+        duo_fields[duo_fields:len() + 1] = { name = fname, type = duo_type }
+    code_parts[code_parts:len() + 1] = emit_record_type(name, duo_fields, {})
+    code_parts[code_parts:len() + 1] = emit_protobuf_encode(name, duo_fields)
+    code_parts[code_parts:len() + 1] = emit_protobuf_decode(name, duo_fields)
   str_join(code_parts, "\n")
 
 # ═══════════════════════════════════════════════════════════════
@@ -74,22 +74,22 @@ from_protobuf_string: str = (proto_src: str)
 
 emit_record_type: str = (name: str, fields: any, required: any)
   parts = {}
-  parts(parts:len() + 1) = "/* [schema_gen] record " .. name .. " */"
-  parts(parts:len() + 1) = "typedef struct {"
+  parts[parts:len() + 1] = "/* [schema_gen] record " .. name .. " */"
+  parts[parts:len() + 1] = "typedef struct {"
   for _, f in fields
     optional = not required[f.name]
     if optional
-      parts(parts:len() + 1) = "    " .. f.type .. " " .. f.name .. ";  /* optional */"
+      parts[parts:len() + 1] = "    " .. f.type .. " " .. f.name .. ";  /* optional */"
     else
-      parts(parts:len() + 1) = "    " .. f.type .. " " .. f.name .. ";"
-  parts(parts:len() + 1) = "} " .. name .. ";"
+      parts[parts:len() + 1] = "    " .. f.type .. " " .. f.name .. ";"
+  parts[parts:len() + 1] = "} " .. name .. ";"
   str_join(parts, "\n")
 
 emit_validation_func: str = (name: str, fields: any, required: any)
   checks = {}
   for _, f in fields
     if required[f.name]
-      checks(checks:len() + 1) = "    if (record->" .. f.name .. " == NULL) { return 0; }  /* missing: " .. f.name .. " */"
+      checks[checks:len() + 1] = "    if (record->" .. f.name .. " == NULL) { return 0; }  /* missing: " .. f.name .. " */"
   if checks:len() > 0
     "/* [schema_gen] validate_" .. name:lower() .. " */\nint validate_" .. name:lower() .. "(const " .. name .. "* record) {\n" .. str_join(checks, "\n") .. "\n    return 1;\n}"
   else
@@ -100,31 +100,31 @@ emit_json_serializers: str = (name: str, fields: any)
   serialize_parts = {}
   for _, f in fields
     if f.type == "str"
-      serialize_parts(serialize_parts:len() + 1) = "    cJSON_AddStringToObject(json, \"" .. f.name .. "\", record->" .. f.name .. ");"
+      serialize_parts[serialize_parts:len() + 1] = "    cJSON_AddStringToObject(json, \"" .. f.name .. "\", record->" .. f.name .. ");"
     else(f.type == "i64")
-      serialize_parts(serialize_parts:len() + 1) = "    cJSON_AddNumberToObject(json, \"" .. f.name .. "\", (double)record->" .. f.name .. ");"
+      serialize_parts[serialize_parts:len() + 1] = "    cJSON_AddNumberToObject(json, \"" .. f.name .. "\", (double)record->" .. f.name .. ");"
     else(f.type == "f64")
-      serialize_parts(serialize_parts:len() + 1) = "    cJSON_AddNumberToObject(json, \"" .. f.name .. "\", record->" .. f.name .. ");"
+      serialize_parts[serialize_parts:len() + 1] = "    cJSON_AddNumberToObject(json, \"" .. f.name .. "\", record->" .. f.name .. ");"
     else(f.type == "bool")
-      serialize_parts(serialize_parts:len() + 1) = "    cJSON_AddBoolToObject(json, \"" .. f.name .. "\", record->" .. f.name .. ");"
+      serialize_parts[serialize_parts:len() + 1] = "    cJSON_AddBoolToObject(json, \"" .. f.name .. "\", record->" .. f.name .. ");"
   "/* [schema_gen] to_json_" .. lower .. " */\ncJSON* to_json_" .. lower .. "(const " .. name .. "* record) {\n    cJSON* json = cJSON_CreateObject();\n" .. str_join(serialize_parts, "\n") .. "\n    return json;\n}"
 
 emit_protobuf_encode: str = (name: str, fields: any)
   lower = name:lower()
   parts = {}
-  parts(parts:len() + 1) = "/* [schema_gen] encode_" .. lower .. " */"
-  parts(parts:len() + 1) = "void encode_" .. lower .. "(const " .. name .. "* msg, uint8_t* buf, size_t* len) {"
-  parts(parts:len() + 1) = "    *len = 0;"
-  parts(parts:len() + 1) = "}"
+  parts[parts:len() + 1] = "/* [schema_gen] encode_" .. lower .. " */"
+  parts[parts:len() + 1] = "void encode_" .. lower .. "(const " .. name .. "* msg, uint8_t* buf, size_t* len) {"
+  parts[parts:len() + 1] = "    *len = 0;"
+  parts[parts:len() + 1] = "}"
   str_join(parts, "\n")
 
 emit_protobuf_decode: str = (name: str, fields: any)
   lower = name:lower()
   parts = {}
-  parts(parts:len() + 1) = "/* [schema_gen] decode_" .. lower .. " */"
-  parts(parts:len() + 1) = "int decode_" .. lower .. "(" .. name .. "* msg, const uint8_t* buf, size_t len) {"
-  parts(parts:len() + 1) = "    return 0;"
-  parts(parts:len() + 1) = "}"
+  parts[parts:len() + 1] = "/* [schema_gen] decode_" .. lower .. " */"
+  parts[parts:len() + 1] = "int decode_" .. lower .. "(" .. name .. "* msg, const uint8_t* buf, size_t len) {"
+  parts[parts:len() + 1] = "    return 0;"
+  parts[parts:len() + 1] = "}"
   str_join(parts, "\n")
 
 # ═══════════════════════════════════════════════════════════════
@@ -136,7 +136,7 @@ parse_json_properties: any = (json: str)
   for name in json:gmatch("\"(%w+)\"%s*:%s*{")
     type_str = json:match("\"" .. name .. "\"%s*:%s*{[^}]*\"type\"%s*:%s*\"(%w+)\"")
     if type_str
-      fields(fields:len() + 1) = {
+      fields[fields:len() + 1] = {
         name = name,
         type = json_type_to_duo(type_str)
       }

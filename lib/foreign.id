@@ -71,21 +71,21 @@ rust_to_c: str = (code: str)
 # Returns the C function as a string (caller can pass to @c.emit).
 python_func: str = (name: str, params: any, body: str, ret_type: str)
   parts = {}
-  parts(parts:len() + 1) = "/* [foreign.python] " .. name .. " */"
-  parts(parts:len() + 1) = ret_type .. " " .. name .. "("
+  parts[parts:len() + 1] = "/* [foreign.python] " .. name .. " */"
+  parts[parts:len() + 1] = ret_type .. " " .. name .. "("
   if params:len() > 0
     for i, p in params
       if i > 1
-        parts(parts:len() + 1) = ","
+        parts[parts:len() + 1] = ","
       if type(p) == "table"
-        parts(parts:len() + 1) = "    " .. p(2) .. " " .. p(1)
+        parts[parts:len() + 1] = "    " .. p(2) .. " " .. p(1)
       else
-        parts(parts:len() + 1) = "    double " .. p
+        parts[parts:len() + 1] = "    double " .. p
   else
-    parts(parts:len() + 1) = "    void"
-  parts(parts:len() + 1) = ") {"
-  parts(parts:len() + 1) = body
-  parts(parts:len() + 1) = "}"
+    parts[parts:len() + 1] = "    void"
+  parts[parts:len() + 1] = ") {"
+  parts[parts:len() + 1] = body
+  parts[parts:len() + 1] = "}"
   str_join(parts, "\n")
 
 # ═══════════════════════════════════════════════════════════════

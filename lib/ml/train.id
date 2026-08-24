@@ -7,9 +7,9 @@ sgd: any = (model, optimizer, lr)
     layer = model.layers(i)
     if layer.type == "linear" and layer.dw != nil
       for j = 1, layer.weight.size
-        layer.weight.data(j) = layer.weight.data(j) - lr * layer.dw.data(j)
+        layer.weight.data[j] = layer.weight.data(j) - lr * layer.dw.data(j)
       for j = 1, layer.bias.size
-        layer.bias.data(j) = layer.bias.data(j) - lr * layer.db.data(j)
+        layer.bias.data[j] = layer.bias.data(j) - lr * layer.db.data(j)
   return model
 
 # One supervised step with cross-entropy on softmax output

@@ -43,7 +43,7 @@ widget_new: any = (widget_type: str)
 
 widget_add_child = (parent: any, child: any)
   child.parent = parent
-  parent.children(parent.children:len() + 1) = child
+  parent.children[parent.children:len() + 1] = child
 
 widget_remove_child = (parent: any, child: any)
   i = 1

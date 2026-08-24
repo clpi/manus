@@ -4,7 +4,7 @@ argparse_key: str = (s: str)
   s or "":gsub("^%-+", "")
 
 add_positional = (parser, name: str, help: str, options: any)
-  parser.positionals(parser.positionals:len() + 1) =
+  parser.positionals[parser.positionals:len() + 1] =
     name = name
     help = help or ""
     required = options and options.required
@@ -19,7 +19,7 @@ add_flag = (parser, short_or_long: str, long_or_help: str, help: str)
   else
     long_opt = short_or_long
     desc = long_or_help
-  parser.flags(parser.flags:len() + 1) =
+  parser.flags[parser.flags:len() + 1] =
     key = argparse_key(long_opt or short_opt)
     short = short_opt
     long = long_opt
@@ -35,7 +35,7 @@ add_option = (parser, short_or_long: str, long_or_help: str, help: str)
   else
     long_opt = short_or_long
     desc = long_or_help
-  parser.options(parser.options:len() + 1) =
+  parser.options[parser.options:len() + 1] =
     key = argparse_key(long_opt or short_opt)
     short = short_opt
     long = long_opt
@@ -62,29 +62,29 @@ parse_with: any = (parser, args: any)
         if eq
           key = name:sub(1, eq - 1)
           val = name:sub(eq + 1)
-          opts(key) = val
+          opts[key] = val
           i = i + 1
         else
           matched = false
           for _, opt in parser.options
             if opt.long == v
               if i + 1 <= args:len() and args[i + 1]:sub(1, 1) != "-"
-                opts(opt.key) = args[i + 1]
+                opts[opt.key] = args[i + 1]
                 i = i + 2
               else
-                opts(opt.key) = nil
+                opts[opt.key] = nil
                 i = i + 1
               matched = true
               break
           if not matched
             for _, fl in parser.flags
               if fl.long == v
-                opts(fl.key) = true
+                opts[fl.key] = true
                 matched = true
                 i = i + 1
                 break
           if not matched
-            opts(name) = true
+            opts[name] = true
             i = i + 1
       else
         if not stop_options and v:sub(1, 1) == "-" and v:len() > 1
@@ -95,44 +95,44 @@ parse_with: any = (parser, args: any)
           for _, opt in parser.options
             if opt.short == short_opt
               if rest:len() > 0
-                opts(opt.key) = rest
+                opts[opt.key] = rest
                 i = i + 1
               else
                 if i + 1 <= args:len() and args[i + 1]:sub(1, 1) != "-"
-                  opts(opt.key) = args[i + 1]
+                  opts[opt.key] = args[i + 1]
                   i = i + 2
                 else
-                  opts(opt.key) = nil
+                  opts[opt.key] = nil
                   i = i + 1
               matched = true
               break
           if not matched
             for _, fl in parser.flags
               if fl.short == short_opt
-                opts(fl.key) = true
+                opts[fl.key] = true
                 matched = true
                 i = i + 1
                 break
           if not matched
             if rest:len() > 0 and i + 1 <= args:len() and args[i + 1]:sub(1, 1) != "-"
-              opts(name) = args[i + 1]
+              opts[name] = args[i + 1]
               i = i + 2
             else
-              opts(name) = true
+              opts[name] = true
               i = i + 1
         else
           if positional_idx <= parser.positionals:len()
             def = parser.positionals(positional_idx)
-            opts(def.name) = v
+            opts[def.name] = v
             positional_idx = positional_idx + 1
           else
-            opts.rest_args(opts.rest_args:len() + 1) = v
+            opts.rest_args[opts.rest_args:len() + 1] = v
           i = i + 1
 
   while positional_idx <= parser.positionals:len()
     def = parser.positionals(positional_idx)
     if opts(def.name) == nil
-      opts(def.name) = nil
+      opts[def.name] = nil
     positional_idx = positional_idx + 1
 
   opts

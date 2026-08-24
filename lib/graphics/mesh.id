@@ -74,9 +74,9 @@ mat4_identity: any = ()
 
 mat4_translate: any = (tx: f64, ty: f64, tz: f64)
   m = mat4_identity()
-  m.m(13) = tx
-  m.m(14) = ty
-  m.m(15) = tz
+  m.m[13] = tx
+  m.m[14] = ty
+  m.m[15] = tz
   m
 
 mat4_scale: any = (sx: f64, sy: f64, sz: f64)
@@ -181,10 +181,10 @@ mat4_multiply: any = (a: any, b: any)
     i = 0
     while i < 4
       idx = j * 4 + i
-      result.m(idx + 1) = 0
+      result.m[idx + 1] = 0
       k = 0
       while k < 4
-        result.m(idx + 1) = result.m(idx + 1) + a.m(k * 4 + i + 1) * b.m(j * 4 + k + 1)
+        result.m[idx + 1] = result.m(idx + 1) + a.m(k * 4 + i + 1) * b.m(j * 4 + k + 1)
         k = k + 1
       i = i + 1
     j = j + 1
@@ -290,24 +290,24 @@ mesh_new: any = ()
 
 mesh_add_vertex: i64 = (mesh: any, x: f64, y: f64, z: f64)
   idx = mesh.vertices:len() / 3
-  mesh.vertices(mesh.vertices:len() + 1) = x
-  mesh.vertices(mesh.vertices:len() + 1) = y
-  mesh.vertices(mesh.vertices:len() + 1) = z
+  mesh.vertices[mesh.vertices:len() + 1] = x
+  mesh.vertices[mesh.vertices:len() + 1] = y
+  mesh.vertices[mesh.vertices:len() + 1] = z
   idx
 
 mesh_add_triangle = (mesh: any, i0: i64, i1: i64, i2: i64)
-  mesh.indices(mesh.indices:len() + 1) = i0
-  mesh.indices(mesh.indices:len() + 1) = i1
-  mesh.indices(mesh.indices:len() + 1) = i2
+  mesh.indices[mesh.indices:len() + 1] = i0
+  mesh.indices[mesh.indices:len() + 1] = i1
+  mesh.indices[mesh.indices:len() + 1] = i2
 
 mesh_add_normal = (mesh: any, x: f64, y: f64, z: f64)
-  mesh.normals(mesh.normals:len() + 1) = x
-  mesh.normals(mesh.normals:len() + 1) = y
-  mesh.normals(mesh.normals:len() + 1) = z
+  mesh.normals[mesh.normals:len() + 1] = x
+  mesh.normals[mesh.normals:len() + 1] = y
+  mesh.normals[mesh.normals:len() + 1] = z
 
 mesh_add_uv = (mesh: any, u: f64, v: f64)
-  mesh.uvs(mesh.uvs:len() + 1) = u
-  mesh.uvs(mesh.uvs:len() + 1) = v
+  mesh.uvs[mesh.uvs:len() + 1] = u
+  mesh.uvs[mesh.uvs:len() + 1] = v
 
 mesh_compute_normals = (mesh: any)
   # Initialize normals to zero
@@ -315,7 +315,7 @@ mesh_compute_normals = (mesh: any)
   mesh.normals = {}
   i = 0
   while i < num_verts * 3
-    mesh.normals(mesh.normals:len() + 1) = 0
+    mesh.normals[mesh.normals:len() + 1] = 0
     i = i + 1
 
   # Accumulate face normals
@@ -333,17 +333,17 @@ mesh_compute_normals = (mesh: any)
     edge2 = vec3_sub(v2, v0)
     face_normal = vec3_cross(edge1, edge2)
 
-    mesh.normals(i0 * 3 + 1) = mesh.normals(i0 * 3 + 1) + face_normal.x
-    mesh.normals(i0 * 3 + 2) = mesh.normals(i0 * 3 + 2) + face_normal.y
-    mesh.normals(i0 * 3 + 3) = mesh.normals(i0 * 3 + 3) + face_normal.z
+    mesh.normals[i0 * 3 + 1] = mesh.normals(i0 * 3 + 1) + face_normal.x
+    mesh.normals[i0 * 3 + 2] = mesh.normals(i0 * 3 + 2) + face_normal.y
+    mesh.normals[i0 * 3 + 3] = mesh.normals(i0 * 3 + 3) + face_normal.z
 
-    mesh.normals(i1 * 3 + 1) = mesh.normals(i1 * 3 + 1) + face_normal.x
-    mesh.normals(i1 * 3 + 2) = mesh.normals(i1 * 3 + 2) + face_normal.y
-    mesh.normals(i1 * 3 + 3) = mesh.normals(i1 * 3 + 3) + face_normal.z
+    mesh.normals[i1 * 3 + 1] = mesh.normals(i1 * 3 + 1) + face_normal.x
+    mesh.normals[i1 * 3 + 2] = mesh.normals(i1 * 3 + 2) + face_normal.y
+    mesh.normals[i1 * 3 + 3] = mesh.normals(i1 * 3 + 3) + face_normal.z
 
-    mesh.normals(i2 * 3 + 1) = mesh.normals(i2 * 3 + 1) + face_normal.x
-    mesh.normals(i2 * 3 + 2) = mesh.normals(i2 * 3 + 2) + face_normal.y
-    mesh.normals(i2 * 3 + 3) = mesh.normals(i2 * 3 + 3) + face_normal.z
+    mesh.normals[i2 * 3 + 1] = mesh.normals(i2 * 3 + 1) + face_normal.x
+    mesh.normals[i2 * 3 + 2] = mesh.normals(i2 * 3 + 2) + face_normal.y
+    mesh.normals[i2 * 3 + 3] = mesh.normals(i2 * 3 + 3) + face_normal.z
 
     i = i + 3
 
@@ -355,9 +355,9 @@ mesh_compute_normals = (mesh: any)
     nz = mesh.normals(i * 3 + 3)
     len = nx * nx + ny * ny + nz * nz:sqrt()
     if len > 0.0000000001
-      mesh.normals(i * 3 + 1) = nx / len
-      mesh.normals(i * 3 + 2) = ny / len
-      mesh.normals(i * 3 + 3) = nz / len
+      mesh.normals[i * 3 + 1] = nx / len
+      mesh.normals[i * 3 + 2] = ny / len
+      mesh.normals[i * 3 + 3] = nz / len
     i = i + 1
 
 # ═══════════════════════════════════════════════════════════════
@@ -486,7 +486,7 @@ scene_node_new: any = (name: str)
   }
 
 scene_add_child = (parent: any, child: any)
-  parent.children(parent.children:len() + 1) = child
+  parent.children[parent.children:len() + 1] = child
 
 scene_remove_child = (parent: any, child: any)
   i = 1

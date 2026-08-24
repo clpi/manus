@@ -46,7 +46,7 @@ sheet_new: any = (texture: any, frame_width: i64, frame_height: i64)
   while y < rows
     x = 0
     while x < cols
-      frames(frames:len() + 1) =
+      frames[frames:len() + 1] =
         x = x * frame_width
         y = y * frame_height
         width = frame_width
@@ -105,7 +105,7 @@ renderer_new: any = ()
     sorted = false
   }
 renderer_add = (renderer: any, sprite: any)
-  renderer.sprites(renderer.sprites:len() + 1) = sprite
+  renderer.sprites[renderer.sprites:len() + 1] = sprite
   renderer.sorted = false
 renderer_remove = (renderer: any, sprite: any)
   i = 1
@@ -125,7 +125,7 @@ renderer_render: any = (renderer: any)
   render_calls = {}
   for sprite in renderer.sprites
     if sprite.visible
-      render_calls(render_calls:len() + 1) =
+      render_calls[render_calls:len() + 1] =
         texture = sprite.texture
         x = sprite.x
         y = sprite.y

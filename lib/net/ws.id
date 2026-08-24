@@ -59,7 +59,7 @@ base64_sha1: str = (data: str)
   i = 1
   while i <= sha1_hex:len()
     hex_pair = sha1_hex:sub(i, i + 1)
-    sha1_bytes(sha1_bytes:len() + 1) = tonumber(hex_pair, 16)
+    sha1_bytes[sha1_bytes:len() + 1] = tonumber(hex_pair, 16)
     i = i + 2
   base64_encode(sha1_bytes)
 
@@ -67,7 +67,7 @@ base64_encode_string: str = (s: str)
   bytes = {}
   i = 1
   while i <= s:len()
-    bytes(bytes:len() + 1) = s:byte(i)
+    bytes[bytes:len() + 1] = s:byte(i)
     i = i + 1
   base64_encode(bytes)
 
@@ -109,16 +109,16 @@ ws_encode_frame: any = (opcode: i64, payload: any, mask: bool)
     i = 1
     while i <= 4
       mask_key[i] = key_data:byte(i)
-      bytes(bytes:len() + 1) = mask_key[i]
+      bytes[bytes:len() + 1] = mask_key[i]
       i = i + 1
 
   # Payload
   i = 1
   while i <= payload:len()
     if mask
-      bytes(bytes:len() + 1) = payload[i] ~ mask_key((i - 1) % 4 + 1)
+      bytes[bytes:len() + 1] = payload[i] ~ mask_key((i - 1) % 4 + 1)
     else
-      bytes(bytes:len() + 1) = payload[i]
+      bytes[bytes:len() + 1] = payload[i]
     i = i + 1
 
 bytes
@@ -217,7 +217,7 @@ ws_text_frame: any = (text: str)
   bytes = {}
   i = 1
   while i <= text:len()
-    bytes(bytes:len() + 1) = text:byte(i)
+    bytes[bytes:len() + 1] = text:byte(i)
     i = i + 1
   ws_encode_frame(OP_TEXT, bytes, false)
 
@@ -231,7 +231,7 @@ ws_close_frame: any = (code: i64, reason: str)
   if reason
     i = 1
     while i <= reason:len()
-      payload(payload:len() + 1) = reason:byte(i)
+      payload[payload:len() + 1] = reason:byte(i)
       i = i + 1
   ws_encode_frame(OP_CLOSE, payload, false)
 
@@ -267,7 +267,7 @@ ws_connection_send: any = (conn: any, opcode: i64, payload: any)
 ws_connection_receive: any = (conn: any, data: any)
   # Append to buffer
   for b in data
-    conn.buffer(conn.buffer:len() + 1) = b
+    conn.buffer[conn.buffer:len() + 1] = b
 
   # Try to decode
   if conn.buffer:len() < 2
@@ -280,7 +280,7 @@ ws_connection_receive: any = (conn: any, data: any)
   new_buf = {}
   i = frame.next
   while i <= conn.buffer:len()
-    new_buf(new_buf:len() + 1) = conn.buffer(i)
+    new_buf[new_buf:len() + 1] = conn.buffer(i)
     i = i + 1
   conn.buffer = new_buf
 
@@ -300,7 +300,7 @@ ws_connection_receive: any = (conn: any, data: any)
     parts = {}
     i = 1
     while i <= frame.payload:len()
-      parts(parts:len() + 1) = frame.payload(i):char()
+      parts[parts:len() + 1] = frame.payload(i):char()
       i = i + 1
     return { type = "text", data = parts:concat() }
   else(frame.opcode == OP_BINARY)

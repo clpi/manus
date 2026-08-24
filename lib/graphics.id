@@ -279,13 +279,13 @@ canvas_clear = (canvas: any, color: any)
   total = canvas.width * canvas.height
   i = 1
   while i <= total
-    canvas.pixels(i) = color
+    canvas.pixels[i] = color
     i = i + 1
 
 canvas_set_pixel = (canvas: any, x: i64, y: i64, color: any)
   if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height
     return
-  canvas.pixels(y * canvas.width + x + 1) = color
+  canvas.pixels[y * canvas.width + x + 1] = color
 
 canvas_get_pixel: any = (canvas: any, x: i64, y: i64)
   if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height

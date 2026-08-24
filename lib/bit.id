@@ -144,7 +144,7 @@ leb128_encode_u: any = (value: i64)
     value = value >> 7
     if value != 0
       byte = byte | 128
-    bytes(bytes:len() + 1) = byte
+    bytes[bytes:len() + 1] = byte
   until value == 0
   bytes
 
@@ -173,7 +173,7 @@ leb128_encode_s: any = (value: i64)
       more = false
     else
       byte = byte | 128
-    bytes(bytes:len() + 1) = byte
+    bytes[bytes:len() + 1] = byte
   bytes
 
 # LEB128 signed decode
@@ -200,7 +200,7 @@ and_bytes: any = (a: any, b: any)
     n = b:len()
   i = 1
   while i <= n
-    out(out:len() + 1) = a[i] & b[i]
+    out[out:len() + 1] = a[i] & b[i]
     i = i + 1
   out
 
@@ -211,7 +211,7 @@ or_bytes: any = (a: any, b: any)
     n = b:len()
   i = 1
   while i <= n
-    out(out:len() + 1) = a[i] | b[i]
+    out[out:len() + 1] = a[i] | b[i]
     i = i + 1
   out
 
@@ -222,7 +222,7 @@ xor_bytes: any = (a: any, b: any)
     n = b:len()
   i = 1
   while i <= n
-    out(out:len() + 1) = a[i] ^ b[i]
+    out[out:len() + 1] = a[i] ^ b[i]
     i = i + 1
   out
 
@@ -230,7 +230,7 @@ not_bytes: any = (a: any)
   out = {}
   i = 1
   while i <= a:len()
-    out(out:len() + 1) = ~a[i] & 255
+    out[out:len() + 1] = ~a[i] & 255
     i = i + 1
   out
 

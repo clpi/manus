@@ -45,7 +45,7 @@ init_table = (r: any)
   r.table = {}
   r.next_code = r.clear_code + 2
   for i = 0, 1 << (r.lit_width - 1)
-    r.table(i) = i:char()
+    r.table[i] = i:char()
 
 decompress: str = (data: str, order: str, lit_width: i64)
   if data == nil
@@ -74,10 +74,10 @@ decompress: str = (data: str, order: str, lit_width: i64)
         else
           break
       if entry != nil
-        out_parts(out_parts:len() + 1) = entry
+        out_parts[out_parts:len() + 1] = entry
       if prev != nil and entry != nil
         new_entry = r.table(prev) .. entry:sub(1, 1)
-        r.table(r.next_code) = new_entry
+        r.table[r.next_code] = new_entry
         r.next_code = r.next_code + 1
         if r.next_code > 1 << r.width and r.width < max_width
           r.width = r.width + 1

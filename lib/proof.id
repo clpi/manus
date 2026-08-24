@@ -11,7 +11,7 @@ result_rows: any = (output: str)
   for line in output:gmatch("[^\n]+")
     rid, val = line:match("^RESULT%s+(%S+)%s+(.*)$")
     if rid != nil
-      rows(rows:len() + 1) = rid .. " " .. val
+      rows[rows:len() + 1] = rid .. " " .. val
   rows:sort()
   rows
 

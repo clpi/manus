@@ -18,7 +18,7 @@ stats_median: f64 = (data: any)
     return 0.0
   sorted = {}
   for v in data
-    sorted(sorted:len() + 1) = v
+    sorted[sorted:len() + 1] = v
   sorted:sort()
 
   n = sorted:len()
@@ -70,7 +70,7 @@ stats_standardize: any = (data: any)
 
   result = {}
   for v in data
-    result(result:len() + 1) = (v - mean) / std
+    result[result:len() + 1] = (v - mean) / std
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -82,7 +82,7 @@ stats_percentile: f64 = (data: any, p: f64)
     return 0.0
   sorted = {}
   for v in data
-    sorted(sorted:len() + 1) = v
+    sorted[sorted:len() + 1] = v
   sorted:sort()
 
   k = p / 100 * (sorted:len() - 1)
@@ -210,7 +210,7 @@ stats_summary: any = (data: any)
 
   sorted = {}
   for v in data
-    sorted(sorted:len() + 1) = v
+    sorted[sorted:len() + 1] = v
   sorted:sort()
 
   {
@@ -238,7 +238,7 @@ stats_outliers_iqr: any = (data: any)
   outliers = {}
   for v in data
     if v < lower or v > upper
-      outliers(outliers:len() + 1) = v
+      outliers[outliers:len() + 1] = v
   { lower = lower, upper = upper, outliers = outliers }
 
 stats_outliers_zscore: any = (data: any, threshold: f64)
@@ -253,7 +253,7 @@ stats_outliers_zscore: any = (data: any, threshold: f64)
   for v in data
     z = (v - mean) / std:abs()
     if z > threshold
-      outliers(outliers:len() + 1) =
+      outliers[outliers:len() + 1] =
         value = v
         zscore = z
   { outliers = outliers }

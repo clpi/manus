@@ -37,7 +37,7 @@ partition: any = (arr: any, lo: any, hi: any, less: any)
   # move pivot to hi-1
   tmp = arr[hi - 1]
   arr[hi - 1] = arr(lo + (hi - lo) / 2)
-  arr(lo + (hi - lo) / 2) = tmp
+  arr[lo + (hi - lo) / 2] = tmp
   pivot = arr[hi - 1]
   i = lo
   j = hi - 1

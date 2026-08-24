@@ -51,7 +51,7 @@ exe: any = (cfg: any)
   if cfg.target == nil
     cfg.target = "native"
   cfg.kind = "exe"
-  _targets(_targets:len() + 1) = cfg
+  _targets[_targets:len() + 1] = cfg
   cfg
 
 lib: any = (cfg: any)

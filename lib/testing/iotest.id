@@ -55,7 +55,7 @@ new_trunc_writer: any = ()
   { written = {}, max = 0, truncated = false }
 
 trunc_write: i64 = (w: any, data: str)
-  w.written(w.written:len() + 1) = data
+  w.written[w.written:len() + 1] = data
   w.max = w.max + data:len()
   data:len()
 

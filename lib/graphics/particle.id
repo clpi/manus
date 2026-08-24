@@ -131,7 +131,7 @@ if config.colors:len() >= 2
     a = c1.a + (c2.a - c1.a) * t
 
 particle.acceleration = config.gravity
-emitter.particles(emitter.particles:len() + 1) = particle
+emitter.particles[emitter.particles:len() + 1] = particle
 particle
 
 emitter_update = (emitter: any, delta_time: f64)
@@ -208,7 +208,7 @@ system_new: any = ()
   }
 
 system_add_emitter = (system: any, emitter: any)
-  system.emitters(system.emitters:len() + 1) = emitter
+  system.emitters[system.emitters:len() + 1] = emitter
 
 system_update = (system: any, delta_time: f64)
   total_particles = 0
@@ -220,7 +220,7 @@ system_get_all_particles: any = (system: any)
   particles = {}
   for emitter in system.emitters
     for p in emitter_get_particles(emitter)
-      particles(particles:len() + 1) = p
+      particles[particles:len() + 1] = p
   particles
 
 system_clear = (system: any)

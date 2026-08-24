@@ -38,7 +38,7 @@ list: any = (archive_path: str)
         break
       name = line:match("^%s+%d+%s+%S+%s+(.+)$")
       if name and name != ""
-        files(files:len() + 1) = name
+        files[files:len() + 1] = name
     if line:match("^%s+Length")
       in_listing = true
   files
@@ -57,7 +57,7 @@ list_detailed: any = (archive_path: str)
         break
       size, date, time, name = line:match("^%s+(%d+)%s+(%S+)%s+(%S+)%s+(.+)$")
       if name and name != ""
-        files(files:len() + 1) =
+        files[files:len() + 1] =
           name = name
           size = size:to(i64)
           date = date

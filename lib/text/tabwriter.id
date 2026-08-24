@@ -22,15 +22,15 @@ write: any = (w: any, s: str)
   while i <= s:len()
     # tab
     if s:byte(i) == 9
-      w.cur_row(w.cur_row:len() + 1) = s:sub(start, i - 1)
+      w.cur_row[w.cur_row:len() + 1] = s:sub(start, i - 1)
       start = i + 1
     i = i + 1
-  w.cur_row(w.cur_row:len() + 1) = s:sub(start)
+  w.cur_row[w.cur_row:len() + 1] = s:sub(start)
   w
 
 # write_col: add a single cell to the current row.
 write_col: any = (w: any, s: str)
-  w.cur_row(w.cur_row:len() + 1) = s
+  w.cur_row[w.cur_row:len() + 1] = s
   w
 
 # newline: finalize the current row and start a new one.
@@ -40,9 +40,9 @@ newline: any = (w: any)
   while i <= w.cur_row:len()
     cell_len = to(str)(w.cur_row(i)):len()
     if w.col_widths(i) == nil or cell_len > w.col_widths(i)
-      w.col_widths(i) = cell_len
+      w.col_widths[i] = cell_len
     i = i + 1
-  w.rows(w.rows:len() + 1) = w.cur_row
+  w.rows[w.rows:len() + 1] = w.cur_row
   w.cur_row = {}
   w
 
@@ -70,6 +70,6 @@ flush: str = (w: any)
       c = c + 1
     # trim trailing pad
     line = line:gsub(w.padchar .. "*$", "")
-    out(out:len() + 1) = line
+    out[out:len() + 1] = line
     r = r + 1
   out:concat("\n")

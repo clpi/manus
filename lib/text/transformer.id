@@ -274,7 +274,7 @@ split_lines: any = (s: str)
     c = s:byte(i)
     # newline
     if c == 10
-      lines(lines:len() + 1) = current
+      lines[lines:len() + 1] = current
       current = ""
     else
       # carriage return
@@ -284,7 +284,7 @@ split_lines: any = (s: str)
         current = current .. c:char()
     i = i + 1
   if current:len() > 0
-    lines(lines:len() + 1) = current
+    lines[lines:len() + 1] = current
   lines
 
 split_words: any = (s: str)
@@ -295,13 +295,13 @@ split_words: any = (s: str)
     c = s:byte(i)
     if c == 32 or c == 9 or c == 10 or c == 13
       if current:len() > 0
-        words(words:len() + 1) = current
+        words[words:len() + 1] = current
         current = ""
     else
       current = current .. c:char()
     i = i + 1
   if current:len() > 0
-    words(words:len() + 1) = current
+    words[words:len() + 1] = current
   words
 
 split_sentences: any = (s: str)
@@ -313,11 +313,11 @@ split_sentences: any = (s: str)
     current = current .. c:char()
     # . ! ?
     if c == 46 or c == 33 or c == 63
-      sentences(sentences:len() + 1) = trim(current)
+      sentences[sentences:len() + 1] = trim(current)
       current = ""
     i = i + 1
   if trim(current):len() > 0
-    sentences(sentences:len() + 1) = trim(current)
+    sentences[sentences:len() + 1] = trim(current)
   sentences
 
 split_tokens: any = (s: str, max_length: i64)
@@ -327,17 +327,17 @@ split_tokens: any = (s: str, max_length: i64)
   for word in words
     if current:len() + word:len() + 1 > max_length
       if current:len() > 0
-        tokens(tokens:len() + 1) = current
+        tokens[tokens:len() + 1] = current
         current = word
       else
-        tokens(tokens:len() + 1) = word
+        tokens[tokens:len() + 1] = word
     else
       if current:len() > 0
         current = current .. " " .. word
       else
         current = word
   if current:len() > 0
-    tokens(tokens:len() + 1) = current
+    tokens[tokens:len() + 1] = current
   tokens
 
 # ═══════════════════════════════════════════════════════════════

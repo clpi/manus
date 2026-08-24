@@ -93,7 +93,7 @@ parse: any = (data: str)
       if val == nil
         break
       # List item at root
-      res(res:len() + 1) = kv
+      res[res:len() + 1] = kv
       i = ni
     else
       if type(kv) == "table" and kv._key != nil

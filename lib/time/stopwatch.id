@@ -29,7 +29,7 @@ stopwatch_lap: f64 = (sw: any)
   if not sw.running
     return 0.0
   lap_time = os.clock() - sw.start_time
-  sw.laps(sw.laps:len() + 1) = lap_time
+  sw.laps[sw.laps:len() + 1] = lap_time
   sw.start_time = os.clock()
   lap_time
 stopwatch_laps: any = (sw: any)
@@ -59,13 +59,13 @@ profiler_new: any = ()
   }
 profiler_start = (profiler: any, name: str)
   if profiler.sections(name) == nil
-    profiler.sections(name) =
+    profiler.sections[name] =
       total = 0
       count = 0
       min = 1000000000000000000000000000000.0
       max = -1000000000000000000000000000000.0
       start_time = nil
-  profiler.sections(name).start_time = os.clock()
+  profiler.sections[name].start_time = os.clock()
 profiler_stop = (profiler: any, name: str)
   section = profiler.sections(name)
   if section == nil or section.start_time == nil
@@ -93,7 +93,7 @@ profiler_stats: any = (profiler: any, name: str)
 profiler_report: any = (profiler: any)
   report = {}
   for name, section in profiler.sections
-    report(report:len() + 1) = profiler_stats(profiler, name)
+    report[report:len() + 1] = profiler_stats(profiler, name)
   report:sort((a: any, b: any) -> any
     a.total > b.total
   )
@@ -113,7 +113,7 @@ benchmark: any = (func: any, iterations: i64)
     start = os.clock()
     func()
     elapsed = os.clock() - start
-    times(times:len() + 1) = elapsed
+    times[times:len() + 1] = elapsed
     i = i + 1
   times:sort()
   total = 0

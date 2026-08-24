@@ -21,7 +21,7 @@ stats_record_alloc = (stats: any, size: i64, type: str)
   stats.current = stats.current + size
   if stats.current > stats.peak
     stats.peak = stats.current
-  stats.allocations_by_type(type) = (stats.allocations_by_type(type) or 0) + size
+  stats.allocations_by_type[type] = (stats.allocations_by_type(type) or 0) + size
 
 stats_record_free = (stats: any, size: i64)
   stats.freed = stats.freed + size
@@ -59,7 +59,7 @@ arena_alloc: any = (arena: any, size: i64)
   if arena.blocks:len() == 0 or arena.blocks(arena.blocks:len()).used + size > arena.block_size
     # Allocate new block
     block_size = arena.block_size:max(size)
-    arena.blocks(arena.blocks:len() + 1) =
+    arena.blocks[arena.blocks:len() + 1] =
       data = {}
       size = block_size
       used = 0
@@ -232,20 +232,20 @@ pool_new: any = (factory: any, initial_size: i64)
 pool_acquire: any = (pool: any)
   if pool.available:len() > 0
     obj = pool.available(pool.available:len())
-    pool.available(pool.available:len()) = nil
-    pool.in_use(obj) = true
+    pool.available[pool.available:len()] = nil
+    pool.in_use[obj] = true
     pool.stats.reused = pool.stats.reused + 1
     return obj
 
   obj = pool.factory()
-  pool.in_use(obj) = true
+  pool.in_use[obj] = true
   pool.stats.created = pool.stats.created + 1
   obj
 
 pool_release = (pool: any, obj: any)
   if pool.in_use(obj)
-    pool.in_use(obj) = nil
-    pool.available(pool.available:len() + 1) = obj
+    pool.in_use[obj] = nil
+    pool.available[pool.available:len() + 1] = obj
     pool.stats.returned = pool.stats.returned + 1
 
 pool_stats: any = (pool: any)

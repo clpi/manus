@@ -24,18 +24,18 @@ encode: str = (src: str)
     if available == 4
       val = ((b1 * 256 + b2) * 256 + b3) * 256 + b4
       if val == 0
-        out(out:len() + 1) = "z"
+        out[out:len() + 1] = "z"
       else
         c1 = val / 85 ^ 4 % 85
         c2 = val / 85 ^ 3 % 85
         c3 = val / 85 ^ 2 % 85
         c4 = val / 85 % 85
         c5 = val % 85
-        out(out:len() + 1) = alphabet:sub(c1 + 1, c1 + 1)
-        out(out:len() + 1) = alphabet:sub(c2 + 1, c2 + 1)
-        out(out:len() + 1) = alphabet:sub(c3 + 1, c3 + 1)
-        out(out:len() + 1) = alphabet:sub(c4 + 1, c4 + 1)
-        out(out:len() + 1) = alphabet:sub(c5 + 1, c5 + 1)
+        out[out:len() + 1] = alphabet:sub(c1 + 1, c1 + 1)
+        out[out:len() + 1] = alphabet:sub(c2 + 1, c2 + 1)
+        out[out:len() + 1] = alphabet:sub(c3 + 1, c3 + 1)
+        out[out:len() + 1] = alphabet:sub(c4 + 1, c4 + 1)
+        out[out:len() + 1] = alphabet:sub(c5 + 1, c5 + 1)
     else
       val = 0
       if available >= 1
@@ -50,11 +50,11 @@ encode: str = (src: str)
       c3 = val / 85 ^ 2 % 85
       c4 = val / 85 % 85
       c5 = val % 85
-      out(out:len() + 1) = alphabet:sub(c1 + 1, c1 + 1)
-      out(out:len() + 1) = alphabet:sub(c2 + 1, c2 + 1)
-      out(out:len() + 1) = alphabet:sub(c3 + 1, c3 + 1)
-      out(out:len() + 1) = alphabet:sub(c4 + 1, c4 + 1)
-      out(out:len() + 1) = alphabet:sub(c5 + 1, c5 + 1)
+      out[out:len() + 1] = alphabet:sub(c1 + 1, c1 + 1)
+      out[out:len() + 1] = alphabet:sub(c2 + 1, c2 + 1)
+      out[out:len() + 1] = alphabet:sub(c3 + 1, c3 + 1)
+      out[out:len() + 1] = alphabet:sub(c4 + 1, c4 + 1)
+      out[out:len() + 1] = alphabet:sub(c5 + 1, c5 + 1)
     i = i + 4
   "~<" .. out:concat() .. "~>"
 
@@ -87,10 +87,10 @@ decode: str = (src: str)
       i = i + 1
     else
       if c == 122
-        out(out:len() + 1) = 0
-        out(out:len() + 1) = 0
-        out(out:len() + 1) = 0
-        out(out:len() + 1) = 0
+        out[out:len() + 1] = 0
+        out[out:len() + 1] = 0
+        out[out:len() + 1] = 0
+        out[out:len() + 1] = 0
         i = i + 1
       else
         if c >= 33 and c <= 117
@@ -108,7 +108,7 @@ decode: str = (src: str)
                   break
           bytes = decode_word(word)
           for _, b in bytes
-            out(out:len() + 1) = b
+            out[out:len() + 1] = b
           i = i + word:len()
         else
           i = i + 1

@@ -59,10 +59,10 @@ server_new: any = ()
   }
 
 server_register = (server: any, method: str, handler: any)
-  server.handlers(method) = handler
+  server.handlers[method] = handler
 
 server_add_middleware = (server: any, middleware: any)
-  server.middleware(server.middleware:len() + 1) = middleware
+  server.middleware[server.middleware:len() + 1] = middleware
 
 server_handle: any = (server: any, request: any)
   # Validate JSON-RPC version
@@ -119,7 +119,7 @@ client_call: any = (client: any, method: str, params: any)
     return result
 
   # Store pending request
-  client.pending(id) = {
+  client.pending[id] = {
     method = method,
     start_time = os.clock()
   }
@@ -133,7 +133,7 @@ client_notify: any = (client: any, method: str, params: any)
 client_handle_response: any = (client: any, response: any)
   if response.id and client.pending(response.id)
     pending = client.pending(response.id)
-    client.pending(response.id) = nil
+    client.pending[response.id] = nil
     return {
       id = response.id,
       method = pending.method,
@@ -143,7 +143,7 @@ client_handle_response: any = (client: any, response: any)
   { notification = response }
 
 client_cancel = (client: any, id: i64)
-  client.pending(id) = nil
+  client.pending[id] = nil
 
 client_pending_count: i64 = (client: any)
   count = 0
@@ -241,14 +241,14 @@ registry_new: any = ()
   }
 
 registry_register = (registry: any, name: str, address: str, metadata: any)
-  registry.services(name) = {
+  registry.services[name] = {
     address = address,
     metadata = metadata or {},
     registered_at = os.clock()
   }
 
 registry_unregister = (registry: any, name: str)
-  registry.services(name) = nil
+  registry.services[name] = nil
 
 registry_discover: any = (registry: any, name: str)
   registry.services(name)
@@ -256,7 +256,7 @@ registry_discover: any = (registry: any, name: str)
 registry_discover_all: any = (registry: any)
   services = {}
   for name, service in registry.services
-    services(services:len() + 1) = { name = name, address = service.address, metadata = service.metadata }
+    services[services:len() + 1] = { name = name, address = service.address, metadata = service.metadata }
   services
 
 registry_heartbeat = (registry: any, name: str)

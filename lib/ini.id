@@ -17,5 +17,5 @@ parse: any = (data: str)
         if parts:len() >= 2
           key = parts[1]:trim()
           val = parts[2]:trim()
-          current_section(key) = val
+          current_section[key] = val
   res

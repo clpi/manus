@@ -42,7 +42,7 @@ gelu: any = (t: any)
   for i = 1, t.size
     v = t.data(i)
     poly = 0.044715 * v * v * v + v
-    result.data(i) = 0.5 * v * (1.0 + math.tanh(0.7978845608 * poly))
+    result.data[i] = 0.5 * v * (1.0 + math.tanh(0.7978845608 * poly))
   return result
 
 layernorm: any = (t, eps)
@@ -60,7 +60,7 @@ layernorm: any = (t, eps)
   rstd = 1.0 / var / n + eps:sqrt()
   result = ml.tensor.zeros(t.rows, t.cols)
   for i = 1, n
-    result.data(i) = (t.data(i) - mean) * rstd
+    result.data[i] = (t.data(i) - mean) * rstd
   return result
 
 dot: f64 = (a, b)

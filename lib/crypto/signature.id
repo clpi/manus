@@ -59,11 +59,11 @@ keygen: any = (key_type: i64)
       public_key = { 4 }
       i = 1
       while i <= 32
-        public_key(public_key:len() + 1) = pub_hash:byte(i)
+        public_key[public_key:len() + 1] = pub_hash:byte(i)
         i = i + 1
       # Pad to 65 bytes
       while public_key:len() < 65
-        public_key(public_key:len() + 1) = 0
+        public_key[public_key:len() + 1] = 0
 
       {
         type = ECDSA_P256,
@@ -288,15 +288,15 @@ envelope_open: any = (envelope: any, recipient_private: any, sender_public: any)
 key_to_bytes: any = (key: any)
   result = {}
   # Type
-  result(result:len() + 1) = key.type >> 8 & 255
-  result(result:len() + 1) = key.type & 255
+  result[result:len() + 1] = key.type >> 8 & 255
+  result[result:len() + 1] = key.type & 255
   # Public key length
   pub_len = key.public:len()
-  result(result:len() + 1) = pub_len >> 8 & 255
-  result(result:len() + 1) = pub_len & 255
+  result[result:len() + 1] = pub_len >> 8 & 255
+  result[result:len() + 1] = pub_len & 255
   # Public key
   for b in key.public
-    result(result:len() + 1) = b
+    result[result:len() + 1] = b
   result
 
 key_from_bytes: any = (data: any)

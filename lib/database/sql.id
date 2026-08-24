@@ -6,7 +6,7 @@ new = ()
   return { drivers = {} }
 
 register = (db: any, name: any, driver: any)
-  db.drivers(name) = driver
+  db.drivers[name] = driver
 
 open = (db: any, driver_name: any, dsn: any)
   d = db.drivers(driver_name)
@@ -17,5 +17,5 @@ open = (db: any, driver_name: any, dsn: any)
 databases = (db: any)
   out = {}
   for k in db.drivers
-    out(out:len() + 1) = k
+    out[out:len() + 1] = k
   return out

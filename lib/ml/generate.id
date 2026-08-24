@@ -80,7 +80,7 @@ sample_top_k: i64 = (logits: any, k: i64, temperature: f64)
   # Find top k
   indexed = {}
   for i = 1, logits:len()
-    indexed(indexed:len() + 1) =
+    indexed[indexed:len() + 1] =
       idx = i
       logit = logits[i]
 
@@ -93,13 +93,13 @@ sample_top_k: i64 = (logits: any, k: i64, temperature: f64)
   top_k = {}
   i = 1
   while i <= k and i <= indexed:len()
-    top_k(top_k:len() + 1) = indexed[i]
+    top_k[top_k:len() + 1] = indexed[i]
     i = i + 1
 
   # Apply temperature to top k
   scaled = {}
   for item in top_k
-    scaled(scaled:len() + 1) = item.logit / temperature
+    scaled[scaled:len() + 1] = item.logit / temperature
 
   # Softmax
   probs = softmax(scaled)
@@ -115,7 +115,7 @@ sample_top_p: i64 = (logits: any, top_p: f64, temperature: f64)
   # Sort logits
   indexed = {}
   for i = 1, logits:len()
-    indexed(indexed:len() + 1) =
+    indexed[indexed:len() + 1] =
       idx = i
       logit = logits[i]
   indexed:sort((a: any, b: any) -> any
@@ -125,7 +125,7 @@ sample_top_p: i64 = (logits: any, top_p: f64, temperature: f64)
   # Apply temperature and softmax
   scaled = {}
   for item in indexed
-    scaled(scaled:len() + 1) = item.logit / temperature
+    scaled[scaled:len() + 1] = item.logit / temperature
   probs = softmax(scaled)
 
   # Accumulate until top_p
@@ -165,7 +165,7 @@ sample_beam_search: any = (logits: any, beams: i64, sequence: any)
 
     indexed = {}
     for i = 1, logits:len()
-      indexed(indexed:len() + 1) =
+      indexed[indexed:len() + 1] =
         idx = i
         logit = logits[i]
     indexed:sort((a: any, b: any) -> any
@@ -186,7 +186,7 @@ sample_beam_search: any = (logits: any, beams: i64, sequence: any)
     # Expand this beam with top candidates
     indexed = {}
     for i = 1, logits:len()
-      indexed(indexed:len() + 1) =
+      indexed[indexed:len() + 1] =
         idx = i
         logit = logits[i]
     indexed:sort((a: any, b: any) -> any
@@ -198,9 +198,9 @@ sample_beam_search: any = (logits: any, beams: i64, sequence: any)
     while i <= top_n
       new_tokens = {}
       for t in beam.tokens
-        new_tokens(new_tokens:len() + 1) = t
-      new_tokens(new_tokens:len() + 1) = indexed[i].idx
-      all_candidates(all_candidates:len() + 1) =
+        new_tokens[new_tokens:len() + 1] = t
+      new_tokens[new_tokens:len() + 1] = indexed[i].idx
+      all_candidates[all_candidates:len() + 1] =
         score = beam.score + indexed[i].logit
         tokens = new_tokens
       i = i + 1
@@ -321,7 +321,7 @@ sample_from_probs: i64 = (probs: any)
 top_k_logits: any = (logits: any, k: i64)
   indexed = {}
   for i = 1, logits:len()
-    indexed(indexed:len() + 1) =
+    indexed[indexed:len() + 1] =
       idx = i
       logit = logits[i]
   indexed:sort((a: any, b: any) -> any
@@ -331,7 +331,7 @@ top_k_logits: any = (logits: any, k: i64)
   result = {}
   i = 1
   while i <= k and i <= indexed:len()
-    result(result:len() + 1) = indexed[i]
+    result[result:len() + 1] = indexed[i]
     i = i + 1
   result
 # ═══════════════════════════════════════════════════════════════

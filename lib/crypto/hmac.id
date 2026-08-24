@@ -40,7 +40,7 @@ hmac_sha256_bytes: str = (key: str, message: str)
   i = 1
   while i <= 64
     val = tonumber(hex:sub(i, i + 1), 16)
-    bytes(bytes:len() + 1) = val:char()
+    bytes[bytes:len() + 1] = val:char()
     i = i + 2
   return bytes:concat()
 

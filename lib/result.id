@@ -169,9 +169,9 @@ collect: any = (results: any)
   while i <= results:len()
     r = results[i]
     if r != nil and r.kind == "ok"
-      vals(vals:len() + 1) = r.value
+      vals[vals:len() + 1] = r.value
     else
-      errs(errs:len() + 1) = std_result_error(r)
+      errs[errs:len() + 1] = std_result_error(r)
     i = i + 1
   first_err = nil
   if errs:len() > 0
@@ -198,7 +198,7 @@ values: any = (results: any)
   while i <= results:len()
     r = results[i]
     if r != nil and r.kind == "ok"
-      out(out:len() + 1) = r.value
+      out[out:len() + 1] = r.value
     i = i + 1
   out
 
@@ -211,7 +211,7 @@ std_result_errors: any = (results: any)
   while i <= results:len()
     r = results[i]
     if r != nil and r.kind == "err"
-      out(out:len() + 1) = r.err
+      out[out:len() + 1] = r.err
     i = i + 1
   out
 

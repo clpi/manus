@@ -38,7 +38,7 @@ lap: any = (t: any)
     return 0
   now = os.clock()
   lap_time = now - t.start
-  t.laps(t.laps:len() + 1) = lap_time
+  t.laps[t.laps:len() + 1] = lap_time
   lap_time
 
 # lap_elapsed: return time since the last lap (or start if first lap).
@@ -146,7 +146,7 @@ time_it: any = (n: i64, fn_ref: any)
     t = new()
     fn_ref()
     stop(t)
-    times(times:len() + 1) = elapsed(t)
+    times[times:len() + 1] = elapsed(t)
     i = i + 1
   total = 0
   min_val = times[1]
@@ -180,7 +180,7 @@ bench: any = (fn_ref: any, min_seconds: float)
     fn_ref()
     stop(t)
     lap_time = elapsed(t)
-    times(times:len() + 1) = lap_time
+    times[times:len() + 1] = lap_time
     total = total + lap_time
     count = count + 1
   min_val = times[1]

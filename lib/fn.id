@@ -45,7 +45,7 @@ map_filter: any = (list: any, fn_ref: any)
   while i <= list:len()
     result = fn_ref(list[i])
     if result != nil
-      out(out:len() + 1) = result
+      out[out:len() + 1] = result
     i = i + 1
   out
 
@@ -74,7 +74,7 @@ unique_by: any = (list: any, fn_ref: any)
     key = fn_ref(list[i])
     if seen[key] == nil
       seen[key] = true
-      out(out:len() + 1) = list[i]
+      out[out:len() + 1] = list[i]
     i = i + 1
   out
 
@@ -87,7 +87,7 @@ take_while: any = (list: any, fn_ref: any)
   while i <= list:len()
     if not fn_ref(list[i])
       break
-    out(out:len() + 1) = list[i]
+    out[out:len() + 1] = list[i]
     i = i + 1
   out
 
@@ -103,7 +103,7 @@ drop_while: any = (list: any, fn_ref: any)
     else
       # skip
       dropping = false
-      out(out:len() + 1) = list[i]
+      out[out:len() + 1] = list[i]
     i = i + 1
   out
 
@@ -117,9 +117,9 @@ chunk: any = (list: any, n: i64)
     group = {}
     j = 0
     while j < n and i + j <= list:len()
-      group(group:len() + 1) = list[i + j]
+      group[group:len() + 1] = list[i + j]
       j = j + 1
-    out(out:len() + 1) = group
+    out[out:len() + 1] = group
     i = i + n
   out
 
@@ -136,9 +136,9 @@ interleave: any = (a: any, b: any)
   i = 1
   while i <= n
     if i <= a:len()
-      out(out:len() + 1) = a[i]
+      out[out:len() + 1] = a[i]
     if i <= b:len()
-      out(out:len() + 1) = b[i]
+      out[out:len() + 1] = b[i]
     i = i + 1
   out
 
@@ -154,9 +154,9 @@ transpose: any = (matrix: any)
     r = 1
     while r <= matrix:len()
       if matrix[r] != nil and matrix[r]:len() >= c
-        col(col:len() + 1) = matrix[r](c)
+        col[col:len() + 1] = matrix[r](c)
       r = r + 1
-    out(out:len() + 1) = col
+    out[out:len() + 1] = col
     c = c + 1
   out
 
@@ -185,10 +185,10 @@ flatten: any = (list: any)
     if type(item) == "table"
       j = 1
       while j <= item:len()
-        out(out:len() + 1) = item[j]
+        out[out:len() + 1] = item[j]
         j = j + 1
     else
-      out(out:len() + 1) = item
+      out[out:len() + 1] = item
     i = i + 1
   out
 
@@ -201,9 +201,9 @@ partition: any = (list: any, fn_ref: any)
   i = 1
   while i <= list:len()
     if fn_ref(list[i])
-      yes(yes:len() + 1) = list[i]
+      yes[yes:len() + 1] = list[i]
     else
-      no(no:len() + 1) = list[i]
+      no[no:len() + 1] = list[i]
     i = i + 1
   out = {}
   out[1] = yes

@@ -295,7 +295,7 @@ fs_glob: any = (pattern: str)
         boundary = true
     if boundary
       if line:len() > 0
-        out(out:len() + 1) = line
+        out[out:len() + 1] = line
       line = ""
     else
       line = line .. text:sub(i, i)

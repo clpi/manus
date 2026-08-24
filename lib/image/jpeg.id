@@ -44,7 +44,7 @@ decode_header: any = (data: str)
         while qi <= 64
           qt[qi] = data:byte(off + 5 + qi - 1)
           qi = qi + 1
-        info.quant_tables(table_id) = qt
+        info.quant_tables[table_id] = qt
       else(marker == 218)
         # Start of scan — record offset for later decoding
         info.sos_data = off + 4

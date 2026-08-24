@@ -64,15 +64,15 @@ std_string_split: any = (s: any, sep: any)
     return out
   if sep == nil or sep == ""
     for i = 1, s:len()
-      out(out:len() + 1) = s:sub(i, i)
+      out[out:len() + 1] = s:sub(i, i)
     return out
   rest = s
   while true
     pos = rest:find(sep)
     if pos == nil
-      out(out:len() + 1) = rest
+      out[out:len() + 1] = rest
       break
-    out(out:len() + 1) = rest:sub(1, pos - 1)
+    out[out:len() + 1] = rest:sub(1, pos - 1)
     rest = rest:sub(pos + sep:len())
   out
 
@@ -224,12 +224,12 @@ std_string_split_n: any = (s: any, sep: any, n: any)
   while count < n - 1
     pos = rest:find(sep)
     if pos == nil
-      out(out:len() + 1) = rest
+      out[out:len() + 1] = rest
       return out
-    out(out:len() + 1) = rest:sub(1, pos - 1)
+    out[out:len() + 1] = rest:sub(1, pos - 1)
     rest = rest:sub(pos + sep:len())
     count = count + 1
-  out(out:len() + 1) = rest
+  out[out:len() + 1] = rest
   out
 
 std_string_to_title_case: any = (s: any)
@@ -286,7 +286,7 @@ M.join = std_string_join
 M.replace_all = std_string_replace_all
 M.replace = std_string_replace
 M.repeat_str = std_string_repeat_str
-M("repeat") = std_string_repeat
+M["repeat"] = std_string_repeat
 M.lines = std_string_lines
 M.to_upper = std_string_to_upper
 M.to_lower = std_string_to_lower

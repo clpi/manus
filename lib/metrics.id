@@ -85,7 +85,7 @@ histogram_observe = (h: any, value: f64)
 
   for i = 1, h.buckets:len()
     if value <= h.buckets(i)
-      h.bucket_counts(i) = h.bucket_counts(i) + 1
+      h.bucket_counts[i] = h.bucket_counts(i) + 1
 
 histogram_get: any = (h: any)
   {
@@ -115,7 +115,7 @@ histogram_reset = (h: any)
   h.min = 1000000000000000000000000000000.0
   h.max = -1000000000000000000000000000000.0
   for i = 1, h.buckets:len()
-    h.bucket_counts(i) = 0
+    h.bucket_counts[i] = 0
 
 # ═══════════════════════════════════════════════════════════════
 # Timer (measure elapsed time)
@@ -172,22 +172,22 @@ registry_new: any = ()
 
 registry_register_counter: any = (reg: any, name: str, help: str)
   c = counter_new(name, help)
-  reg.counters(name) = c
+  reg.counters[name] = c
   c
 
 registry_register_gauge: any = (reg: any, name: str, help: str)
   g = gauge_new(name, help)
-  reg.gauges(name) = g
+  reg.gauges[name] = g
   g
 
 registry_register_histogram: any = (reg: any, name: str, help: str, buckets: any)
   h = histogram_new(name, help, buckets)
-  reg.histograms(name) = h
+  reg.histograms[name] = h
   h
 
 registry_register_timer: any = (reg: any, name: str)
   t = timer_new(name)
-  reg.timers(name) = t
+  reg.timers[name] = t
   t
 
 registry_summary: any = (reg: any)

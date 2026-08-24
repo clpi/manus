@@ -66,7 +66,7 @@ shader_program_get_uniform: any = (program: any, name: str)
   program.uniforms(name)
 
 shader_program_set_uniform = (program: any, name: str, value: any)
-  program.uniforms(name) = value
+  program.uniforms[name] = value
 
 # ═══════════════════════════════════════════════════════════════
 # Built-in Shaders

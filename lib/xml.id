@@ -105,7 +105,7 @@ parse_elem: any = (data: str, start: i64)
         i = i + 1
       trimmed = sp:trim()
       if trimmed:len() > 0
-        elem.children(elem.children:len() + 1) =
+        elem.children[elem.children:len() + 1] =
           kind = "text"
           text = unescape(sp)
       if i > len
@@ -121,7 +121,7 @@ parse_elem: any = (data: str, start: i64)
       child = parse_elem(data, i)
       if child == nil
         break
-      elem.children(elem.children:len() + 1) = child
+      elem.children[elem.children:len() + 1] = child
       i = child._end
   elem._end = i
   return elem

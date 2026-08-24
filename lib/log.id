@@ -47,5 +47,5 @@ with_fields = (level: str, fields: any, msg: str)
   parts = { "[%s] %s":format(level:upper(), msg) }
   if fields != nil
     for k, v in fields
-      parts(parts:len() + 1) = "%s=%s":format(k, v:to(str))
+      parts[parts:len() + 1] = "%s=%s":format(k, v:to(str))
   stdout:write(parts:concat(" ") .. "\n")

@@ -68,13 +68,13 @@ name_encode: any = (name: str)
     if dot_pos == nil
       dot_pos = len + 1
     label_len = dot_pos - pos
-    bytes(bytes:len() + 1) = label_len
+    bytes[bytes:len() + 1] = label_len
     i = pos
     while i < dot_pos
-      bytes(bytes:len() + 1) = name:byte(i)
+      bytes[bytes:len() + 1] = name:byte(i)
       i = i + 1
     pos = dot_pos + 1
-  bytes(bytes:len() + 1) = 0
+  bytes[bytes:len() + 1] = 0
   bytes
 name_decode: any = (data: any, pos: i64)
   parts = {}
@@ -100,7 +100,7 @@ name_decode: any = (data: any, pos: i64)
       while i < len
         label = label .. data[pos + i]:char()
         i = i + 1
-      parts(parts:len() + 1) = label
+      parts[parts:len() + 1] = label
       pos = pos + len
   name = parts:concat(".")
   next_pos = jumped and original_pos or pos
@@ -125,14 +125,14 @@ query_encode: any = (q: any)
   q.header.qdcount = 1
   header_bytes = header_encode(q.header)
   for b in header_bytes
-    bytes(bytes:len() + 1) = b
+    bytes[bytes:len() + 1] = b
   name_bytes = name_encode(q.question.name)
   for b in name_bytes
-    bytes(bytes:len() + 1) = b
-  bytes(bytes:len() + 1) = q.question.qtype >> 8 & 255
-  bytes(bytes:len() + 1) = q.question.qtype & 255
-  bytes(bytes:len() + 1) = q.question.qclass >> 8 & 255
-  bytes(bytes:len() + 1) = q.question.qclass & 255
+    bytes[bytes:len() + 1] = b
+  bytes[bytes:len() + 1] = q.question.qtype >> 8 & 255
+  bytes[bytes:len() + 1] = q.question.qtype & 255
+  bytes[bytes:len() + 1] = q.question.qclass >> 8 & 255
+  bytes[bytes:len() + 1] = q.question.qclass & 255
   bytes
 record_decode: any = (data: any, pos: i64)
   result = name_decode(data, pos)
@@ -155,7 +155,7 @@ record_decode: any = (data: any, pos: i64)
     while i < 16
       hi = data[pos + i]
       lo = data[pos + i + 1]
-      parts(parts:len() + 1) = "%02x%02x":format(hi, lo)
+      parts[parts:len() + 1] = "%02x%02x":format(hi, lo)
       i = i + 2
     rdata = parts:concat(":")
   else(rtype == CNAME or rtype == NS or rtype == PTR)
@@ -209,21 +209,21 @@ response_decode: any = (data: any)
   i = 0
   while i < header.ancount
     record = record_decode(data, pos)
-    answers(answers:len() + 1) = record
+    answers[answers:len() + 1] = record
     pos = record.next
     i = i + 1
   authority = {}
   i = 0
   while i < header.nscount
     record = record_decode(data, pos)
-    authority(authority:len() + 1) = record
+    authority[authority:len() + 1] = record
     pos = record.next
     i = i + 1
   additional = {}
   i = 0
   while i < header.arcount
     record = record_decode(data, pos)
-    additional(additional:len() + 1) = record
+    additional[additional:len() + 1] = record
     pos = record.next
     i = i + 1
   {
@@ -272,7 +272,7 @@ resolver_resolve: any = (resolver: any, name: str, qtype: i64)
         authority = {},
         additional = {}
       }
-      resolver.cache(cache_key) = result
+      resolver.cache[cache_key] = result
       return result
   for server in resolver.servers
     query = query_new(name, qtype)
@@ -284,7 +284,7 @@ resolver_resolve: any = (resolver: any, name: str, qtype: i64)
       additional = {}
     }
     if result.header.rcode == 0 and result.answers:len() > 0
-      resolver.cache(cache_key) = result
+      resolver.cache[cache_key] = result
     return result
   {
     error = "All DNS servers failed"
@@ -296,7 +296,7 @@ resolver_lookup_a: any = (resolver: any, name: str)
   ips = {}
   for answer in result.answers
     if answer.type == A
-      ips(ips:len() + 1) = answer.rdata
+      ips[ips:len() + 1] = answer.rdata
   {
     ips = ips
   }
@@ -307,7 +307,7 @@ resolver_lookup_aaaa: any = (resolver: any, name: str)
   ips = {}
   for answer in result.answers
     if answer.type == AAAA
-      ips(ips:len() + 1) = answer.rdata
+      ips[ips:len() + 1] = answer.rdata
   {
     ips = ips
   }
@@ -318,7 +318,7 @@ resolver_lookup_mx: any = (resolver: any, name: str)
   mx_records = {}
   for answer in result.answers
     if answer.type == MX
-      mx_records(mx_records:len() + 1) = answer.rdata
+      mx_records[mx_records:len() + 1] = answer.rdata
   mx_records:sort((a: any, b: any) -> any
     a.preference < b.preference
   )

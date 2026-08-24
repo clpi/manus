@@ -12,7 +12,7 @@ conv1d_layer: any = (in_channels: i64, out_channels: i64, kernel_size: i64, stri
   scale = 1.0 / in_channels * kernel_size:sqrt()
   weight = ml.tensor.zeros(kernel_size * in_channels, out_channels)
   for i = 1, weight.size
-    weight.data(i) = (math.random() * 2 - 1) * scale
+    weight.data[i] = (math.random() * 2 - 1) * scale
   {
     type = "conv1d",
     in_channels = in_channels,
@@ -44,15 +44,15 @@ conv1d_forward: any = (layer: any, input: any)
             for oc = 1, layer.out_channels
               idx_w = (k * layer.in_channels + c - 1) * layer.out_channels + oc
               idx_out = (o - 1) * layer.out_channels + oc
-              acc.data(idx_out) = acc.data(idx_out) + input.data(idx_in) * layer.weight.data(idx_w)
+              acc.data[idx_out] = acc.data(idx_out) + input.data(idx_in) * layer.weight.data(idx_w)
       # Add bias
       for oc = 1, layer.out_channels
         idx_out = (o - 1) * layer.out_channels + oc
-        acc.data(idx_out) = acc.data(idx_out) + layer.bias.data(oc)
+        acc.data[idx_out] = acc.data(idx_out) + layer.bias.data(oc)
       # Write to result
       for oc = 1, layer.out_channels
         idx_res = (b - 1) * out_len * layer.out_channels + (o - 1) * layer.out_channels + oc
-        result.data(idx_res) = acc.data(oc)
+        result.data[idx_res] = acc.data(oc)
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -67,7 +67,7 @@ conv2d_layer: any = (in_channels: i64, out_channels: i64, kernel_size: i64, stri
   scale = 1.0 / in_channels * kernel_size * kernel_size:sqrt()
   weight = ml.tensor.zeros(kernel_size * kernel_size * in_channels, out_channels)
   for i = 1, weight.size
-    weight.data(i) = (math.random() * 2 - 1) * scale
+    weight.data[i] = (math.random() * 2 - 1) * scale
   {
     type = "conv2d",
     in_channels = in_channels,
@@ -102,7 +102,7 @@ conv2d_forward: any = (layer: any, input: any)
                 idx_w = (kh * layer.kernel_size * layer.in_channels + kw * layer.in_channels + ic - 1) * layer.out_channels + oc
                 acc = acc + input.data(idx_in) * layer.weight.data(idx_w)
         idx_out = (oh * w_out + ow) * layer.out_channels + oc
-        result.data(idx_out) = acc + layer.bias.data(oc)
+        result.data[idx_out] = acc + layer.bias.data(oc)
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -131,7 +131,7 @@ maxpool1d_forward: any = (layer: any, input: any)
         val = input.data((c - 1) * in_len + pos + 1)
         if val > max_val
           max_val = val
-      result.data((c - 1) * out_len + o) = max_val
+      result.data[(c - 1) * out_len + o] = max_val
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -158,7 +158,7 @@ avgpool1d_forward: any = (layer: any, input: any)
       for k = 0, layer.kernel_size - 1
         pos = (o - 1) * layer.stride + k
         sum = sum + input.data((c - 1) * in_len + pos + 1)
-      result.data((c - 1) * out_len + o) = sum / layer.kernel_size
+      result.data[(c - 1) * out_len + o] = sum / layer.kernel_size
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -188,7 +188,7 @@ adaptive_avgpool_forward: any = (layer: any, input: any)
         count = count + 1
         i = i + 1
       if count > 0
-        result.data((c - 1) * out_size + o) = sum / count
+        result.data[(c - 1) * out_size + o] = sum / count
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -208,7 +208,7 @@ global_avgpool_forward: any = (layer: any, input: any)
     while i <= len
       sum = sum + input.data((c - 1) * len + i)
       i = i + 1
-    result.data(c) = sum / len
+    result.data[c] = sum / len
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -223,7 +223,7 @@ flatten_forward: any = (layer: any, input: any)
   result = ml.tensor.zeros(1, input.size)
   i = 1
   while i <= input.size
-    result.data(i) = input.data(i)
+    result.data[i] = input.data(i)
     i = i + 1
   result
 # ═══════════════════════════════════════════════════════════════

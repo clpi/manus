@@ -9,7 +9,7 @@ token_embedding: any = (vocab_size: i64, embed_dim: i64)
   scale = 1.0 / embed_dim:sqrt()
   weights = ml.tensor.zeros(vocab_size, embed_dim)
   for i = 1, weights.size
-    weights.data(i) = (math.random() * 2 - 1) * scale
+    weights.data[i] = (math.random() * 2 - 1) * scale
   {
     type = "token_embedding",
     vocab_size = vocab_size,
@@ -29,7 +29,7 @@ token_embed_forward: any = (layer: any, token_ids: any)
   for i = 1, batch * seq_len
     id = token_ids[i]
     for j = 1, layer.embed_dim
-      result.data((i - 1) * layer.embed_dim + j) = layer.weights.data((id - 1) * layer.embed_dim + j)
+      result.data[(i - 1) * layer.embed_dim + j] = layer.weights.data((id - 1) * layer.embed_dim + j)
   ml.tensor.reshape(result, batch * seq_len, layer.embed_dim)
 
 # ═══════════════════════════════════════════════════════════════
@@ -41,9 +41,9 @@ sinusoidal_encoding: any = (max_len: i64, embed_dim: i64)
   for pos = 0, max_len - 1
     for i = 0, embed_dim / 2:floor() - 1
       freq = 1.0 / 10000:pow(2 * i / embed_dim)
-      pe.data(pos * embed_dim + 2 * i + 1) = pos * freq:sin()
+      pe.data[pos * embed_dim + 2 * i + 1] = pos * freq:sin()
       if 2 * i + 2 <= embed_dim
-        pe.data(pos * embed_dim + 2 * i + 2) = pos * freq:cos()
+        pe.data[pos * embed_dim + 2 * i + 2] = pos * freq:cos()
   {
     type = "sinusoidal",
     max_len = max_len,
@@ -74,7 +74,7 @@ learned_positional_forward: any = (layer: any, positions: any)
     # 1-indexed
     pos = positions[i] + 1
     for j = 1, layer.embed_dim
-      result.data((i - 1) * layer.embed_dim + j) = layer.weights.data((pos - 1) * layer.embed_dim + j)
+      result.data[(i - 1) * layer.embed_dim + j] = layer.weights.data((pos - 1) * layer.embed_dim + j)
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -93,8 +93,8 @@ rope_embedding: any = (dim: i64, base: f64, max_seq_len: i64)
     for i = 0, dim / 2:floor() - 1
       freq = 1.0 / base:pow(2 * i / dim)
       angle = pos * freq
-      freqs.data(pos * dim + 2 * i + 1) = angle:cos()
-      freqs.data(pos * dim + 2 * i + 2) = angle:sin()
+      freqs.data[pos * dim + 2 * i + 1] = angle:cos()
+      freqs.data[pos * dim + 2 * i + 2] = angle:sin()
 
   {
     type = "rope",
@@ -119,8 +119,8 @@ rope_forward: any = (layer: any, x: any, offset: i64)
       sin_val = layer.freqs.data(abs_pos * dim + 2 * i + 2)
       x0 = x.data(pos * dim + 2 * i + 1)
       x1 = x.data(pos * dim + 2 * i + 2)
-      result.data(pos * dim + 2 * i + 1) = x0 * cos_val - x1 * sin_val
-      result.data(pos * dim + 2 * i + 2) = x0 * sin_val + x1 * cos_val
+      result.data[pos * dim + 2 * i + 1] = x0 * cos_val - x1 * sin_val
+      result.data[pos * dim + 2 * i + 2] = x0 * sin_val + x1 * cos_val
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -138,7 +138,7 @@ alibi_encoding: any = (heads: i64, max_seq_len: i64)
   biases = ml.tensor.zeros(heads, max_seq_len)
   for h = 1, heads
     for pos = 0, max_seq_len - 1
-      biases.data((h - 1) * max_seq_len + pos + 1) = -slopes[h] * pos
+      biases.data[(h - 1) * max_seq_len + pos + 1] = -slopes[h] * pos
 
   {
     type = "alibi",
@@ -157,7 +157,7 @@ alibi_forward: any = (layer: any, scores: any, seq_len: i64)
       for j = 1, seq_len
         if j <= i
           # Linear bias: -slope * |i - j|
-          result.data((h - 1) * seq_len * seq_len + (i - 1) * seq_len + j) = result.data((h - 1) * seq_len * seq_len + (i - 1) * seq_len + j) + layer.biases.data((h - 1) * layer.max_seq_len + i - j:abs() + 1)
+          result.data[(h - 1) * seq_len * seq_len + (i - 1) * seq_len + j] = result.data((h - 1) * seq_len * seq_len + (i - 1) * seq_len + j) + layer.biases.data((h - 1) * layer.max_seq_len + i - j:abs() + 1)
   result
 
 # ═══════════════════════════════════════════════════════════════
@@ -201,7 +201,7 @@ embedding_forward: any = (layer: any, token_ids: any, offset: i64)
     else(layer.pos_encoding == "learned")
       positions = {}
       for i = 0, x.rows - 1
-        positions(positions:len() + 1) = i
+        positions[positions:len() + 1] = i
       pos_enc = learned_positional_forward(layer.pos, positions)
       x = ml.tensor.add(x, pos_enc)
   x

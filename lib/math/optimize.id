@@ -7,7 +7,7 @@ descend: any = (f: any, df: any, x0: f64, lr: f64, iterations: i64)
   while i < iterations
     grad = df(x)
     x = x - lr * grad
-    history(history:len() + 1) = x
+    history[history:len() + 1] = x
     i = i + 1
   {
     x = x,
@@ -36,7 +36,7 @@ adam: any = (f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon:
     mh = m / (1 - beta1 ^ i)
     vh = v / (1 - beta2 ^ i)
     x = x - lr * mh / (vh:sqrt() + epsilon)
-    history(history:len() + 1) = x
+    history[history:len() + 1] = x
     i = i + 1
   {
     x = x,
@@ -69,7 +69,7 @@ nelder: any = (f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, it
       else
         point[j] = x0[j]
       j = j + 1
-    simplex(simplex:len() + 1) = {
+    simplex[simplex:len() + 1] = {
       point = point,
       value = f(point)
     }
@@ -158,7 +158,7 @@ grid: any = (f: any, ranges: any, steps: i64)
     points = {}
     i = 0
     while i < steps
-      points(points:len() + 1) = lo + i * step
+      points[points:len() + 1] = lo + i * step
       i = i + 1
     g[name] = points
   best = nil
@@ -166,14 +166,14 @@ grid: any = (f: any, ranges: any, steps: i64)
   results = {}
   names = {}
   for name in ranges
-    names(names:len() + 1) = name
+    names[names:len() + 1] = name
   if names:len() == 1
     for v in g(names[1])
       params = {
         [names[1]] = v
       }
       value = f(params)
-      results(results:len() + 1) = {
+      results[results:len() + 1] = {
         params = params,
         value = value
       }
@@ -188,7 +188,7 @@ grid: any = (f: any, ranges: any, steps: i64)
           [names[2]] = v2
         }
         value = f(params)
-        results(results:len() + 1) = {
+        results[results:len() + 1] = {
           params = params,
           value = value
         }
@@ -212,7 +212,7 @@ random: any = (f: any, ranges: any, iterations: i64)
       hi = range(2)
       params[name] = lo + math.random() * (hi - lo)
     value = f(params)
-    results(results:len() + 1) = {
+    results[results:len() + 1] = {
       params = params,
       value = value
     }

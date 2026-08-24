@@ -13,7 +13,7 @@ bundles =
 names: any = ()
   out = {}
   for name, _ in bundles
-    out(out:len() + 1) = name
+    out[out:len() + 1] = name
   out
 
 traits: any = (bundle_name: str)

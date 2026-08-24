@@ -48,7 +48,7 @@ with_value: any = (parent: any, key: any, value: any)
     cancelled = false
     parent = parent
     done = false
-  child(key) = value
+  child[key] = value
   child
 
 # cancel: cancel a context (and all its children via propagation).

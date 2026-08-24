@@ -15,26 +15,26 @@ onnx_graph_new: any = (name: str)
   }
 
 onnx_graph_add_node = (graph: any, op_type: str, inputs: any, outputs: any, name: str)
-  graph.nodes(graph.nodes:len() + 1) =
+  graph.nodes[graph.nodes:len() + 1] =
     op_type = op_type
     inputs = inputs
     outputs = outputs
     name = name or "node_" .. to(str)(graph.nodes:len())
 
 onnx_graph_add_input = (graph: any, name: str, shape: any, dtype: str)
-  graph.inputs(graph.inputs:len() + 1) =
+  graph.inputs[graph.inputs:len() + 1] =
     name = name
     shape = shape
     dtype = dtype or "float32"
 
 onnx_graph_add_output = (graph: any, name: str, shape: any, dtype: str)
-  graph.outputs(graph.outputs:len() + 1) =
+  graph.outputs[graph.outputs:len() + 1] =
     name = name
     shape = shape
     dtype = dtype or "float32"
 
 onnx_graph_add_initializer = (graph: any, name: str, shape: any, data: any)
-  graph.initializers(graph.initializers:len() + 1) =
+  graph.initializers[graph.initializers:len() + 1] =
     name = name
     shape = shape
     data = data
@@ -57,7 +57,7 @@ onnx_model_encode: any = (model: any)
     inputs = model.graph.inputs
     outputs = model.graph.outputs
   for node in model.graph.nodes
-    graph_summary.nodes(graph_summary.nodes:len() + 1) =
+    graph_summary.nodes[graph_summary.nodes:len() + 1] =
       op_type = node.op_type
       inputs = node.inputs
       outputs = node.outputs
@@ -90,7 +90,7 @@ pytorch_state_dict_new: any = ()
   }
 
 pytorch_state_dict_add = (state_dict: any, name: str, tensor: any)
-  state_dict.tensors(name) = tensor
+  state_dict.tensors[name] = tensor
 
 pytorch_state_dict_save: any = (state_dict: any, path: str)
   # Encode state dict as JSON
@@ -98,7 +98,7 @@ pytorch_state_dict_save: any = (state_dict: any, path: str)
     tensors = {}
     metadata = state_dict.metadata
   for name, tensor in state_dict.tensors
-    payload.tensors(name) =
+    payload.tensors[name] =
       shape = tensor.shape or {}
       dtype = tensor.dtype or "f32"
       data_len = tensor.size or 0
@@ -121,7 +121,7 @@ safetensors_new: any = ()
   }
 
 safetensors_add_tensor = (st: any, name: str, tensor: any, dtype: str)
-  st.tensors(name) =
+  st.tensors[name] =
     data = tensor
     dtype = dtype or "f32"
     shape = tensor.shape or { tensor.size }
@@ -168,12 +168,12 @@ gguf_writer_new: any = (quantization: str)
   }
 
 gguf_writer_add_tensor = (gw: any, name: str, tensor: any, shape: any)
-  gw.tensors(name) =
+  gw.tensors[name] =
     data = tensor
     shape = shape
 
 gguf_writer_add_metadata = (gw: any, key: str, value: any)
-  gw.metadata(key) = value
+  gw.metadata[key] = value
 
 gguf_writer_encode: any = (gw: any)
   # GGUF header as JSON (simplified; real GGUF uses binary format)
@@ -184,7 +184,7 @@ gguf_writer_encode: any = (gw: any)
     tensors = {}
     metadata = gw.metadata
   for name, tensor in gw.tensors
-    payload.tensors(name) =
+    payload.tensors[name] =
       shape = tensor.shape
   encoded = encoding.json.encode(payload)
   {

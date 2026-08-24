@@ -74,7 +74,7 @@ join: any = (...errs)
       msg = e.message
       if msg == nil
         msg = e:to(str)
-      parts(parts:len() + 1) = msg
+      parts[parts:len() + 1] = msg
     i = i + 1
   if parts:len() == 0
     return nil

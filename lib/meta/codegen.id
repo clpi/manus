@@ -19,8 +19,8 @@ fields_map: str = (fields: any, tmpl: str)
 c_struct: str = (name: str, fields: any)
   lines = { "typedef struct " .. name .. " {" }
   for _, f in fields
-    lines(lines:len() + 1) = "    " .. f.type .. " " .. f.name .. ";"
-  lines(lines:len() + 1) = "} " .. name .. ";"
+    lines[lines:len() + 1] = "    " .. f.type .. " " .. f.name .. ";"
+  lines[lines:len() + 1] = "} " .. name .. ";"
   lines:concat("\n")
 
 # Generate field-wise hash combine (FNV-style) for @derive(Hash) style macros.

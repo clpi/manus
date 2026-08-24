@@ -17,9 +17,9 @@ new: any = ()
 # add_node: add a node with optional value.
 add_node = (g: any, id: any, val: any)
   if g.adj(id) == nil
-    g.adj(id) = {}
-    g.in_degree(id) = 0
-  g.nodes(id) = val
+    g.adj[id] = {}
+    g.in_degree[id] = 0
+  g.nodes[id] = val
 
 # add_edge: add a directed edge from -> to with optional weight.
 add_edge = (g: any, from: any, to: any, weight: any)
@@ -30,23 +30,23 @@ add_edge = (g: any, from: any, to: any, weight: any)
   g.adj(from)(g.adj(from):len() + 1) =
     to = to
     weight = weight or 1
-  g.in_degree(to) = (g.in_degree(to) or 0) + 1
+  g.in_degree[to] = (g.in_degree(to) or 0) + 1
 
 # remove_node: remove a node and all its edges.
 remove_node = (g: any, id: any)
   if g.adj(id) == nil
     return
-  g.adj(id) = nil
-  g.nodes(id) = nil
-  g.in_degree(id) = nil
+  g.adj[id] = nil
+  g.nodes[id] = nil
+  g.in_degree[id] = nil
   for n, _ in g.adj
     new_edges = {}
     i = 1
     while i <= g.adj(n):len()
       if g.adj(n)(i).to != id
-        new_edges(new_edges:len() + 1) = g.adj(n)(i)
+        new_edges[new_edges:len() + 1] = g.adj(n)(i)
       i = i + 1
-    g.adj(n) = new_edges
+    g.adj[n] = new_edges
 
 # neighbors: return the list of outgoing neighbors.
 neighbors: any = (g: any, id: any)
@@ -55,7 +55,7 @@ neighbors: any = (g: any, id: any)
   out = {}
   i = 1
   while i <= g.adj(id):len()
-    out(out:len() + 1) = g.adj(id)(i).to
+    out[out:len() + 1] = g.adj(id)(i).to
     i = i + 1
   out
 
@@ -63,7 +63,7 @@ neighbors: any = (g: any, id: any)
 nodes_: any = (g: any)
   out = {}
   for k, _ in g.nodes
-    out(out:len() + 1) = k
+    out[out:len() + 1] = k
   out
 
 # node_count: return the number of nodes.
@@ -122,7 +122,7 @@ bfs = (g: any, start: any, visit: any)
       nb = g.adj(id)(i).to
       if not visited[nb]
         visited[nb] = true
-        queue(queue:len() + 1) = nb
+        queue[queue:len() + 1] = nb
       i = i + 1
 
 # bfs_shortest_path: return the shortest path (fewest edges) from start to goal.
@@ -145,15 +145,15 @@ bfs_shortest_path: any = (g: any, start: any, goal: any)
           path = {}
           cur = nb
           while cur != nil
-            path(path:len() + 1) = cur
+            path[path:len() + 1] = cur
             cur = prev[cur]
           out = {}
           j = path:len()
           while j >= 1
-            out(out:len() + 1) = path[j]
+            out[out:len() + 1] = path[j]
             j = j - 1
           return out
-        queue(queue:len() + 1) = nb
+        queue[queue:len() + 1] = nb
       i = i + 1
   nil
 
@@ -173,7 +173,7 @@ dfs = (g: any, start: any, visit: any)
       while i >= 1
         nb = g.adj(id)(i).to
         if not visited[nb]
-          stack(stack:len() + 1) = nb
+          stack[stack:len() + 1] = nb
         i = i - 1
 
 # dfs_topological: DFS-based topological sort (returns nil if cycle exists).
@@ -189,7 +189,7 @@ dfs_topological: any = (g: any)
   out = {}
   i = order:len()
   while i >= 1
-    out(out:len() + 1) = order[i]
+    out[out:len() + 1] = order[i]
     i = i - 1
   out
 
@@ -205,7 +205,7 @@ dfs_topo_visit: bool = (g: any, id: any, color: any, order: any)
         return false
     i = i + 1
   color[id] = black
-  order(order:len() + 1) = id
+  order[order:len() + 1] = id
   true
 
 # ═══════════════════════════════════════════════════════════════
@@ -219,22 +219,22 @@ topological_sort: any = (g: any)
   for n, _ in g.adj
     i = 1
     while i <= g.adj(n):len()
-      in_deg(g.adj(n)(i).to) = (in_deg(g.adj(n)(i).to) or 0) + 1
+      in_deg[g.adj(n)(i).to] = (in_deg(g.adj(n)(i).to) or 0) + 1
       i = i + 1
   queue = {}
   for n, d in in_deg
     if d == 0
-      queue(queue:len() + 1) = n
+      queue[queue:len() + 1] = n
   order = {}
   while queue:len() > 0
     id = queue:remove(1)
-    order(order:len() + 1) = id
+    order[order:len() + 1] = id
     i = 1
     while i <= g.adj(id) or {}:len()
       nb = g.adj(id)(i).to
       in_deg[nb] = in_deg[nb] - 1
       if in_deg[nb] == 0
-        queue(queue:len() + 1) = nb
+        queue[queue:len() + 1] = nb
       i = i + 1
   if order:len() != node_count(g)
     return nil
@@ -297,7 +297,7 @@ dijkstra: any = (g: any, start: any)
         if new_dist < dist[edge.to]
           dist[edge.to] = new_dist
           prev[edge.to] = cur.id
-          pq(pq:len() + 1) =
+          pq[pq:len() + 1] =
             id = edge.to
             d = new_dist
         i = i + 1
@@ -310,12 +310,12 @@ dijkstra_path: any = (result: any, goal: any)
   path = {}
   cur = goal
   while cur != nil
-    path(path:len() + 1) = cur
+    path[path:len() + 1] = cur
     cur = result.prev(cur)
   out = {}
   i = path:len()
   while i >= 1
-    out(out:len() + 1) = path[i]
+    out[out:len() + 1] = path[i]
     i = i - 1
   out
 
@@ -336,14 +336,14 @@ connected_components: any = (g: any)
         id = stack:remove()
         if not visited[id]
           visited[id] = true
-          comp(comp:len() + 1) = id
+          comp[comp:len() + 1] = id
           i = 1
           while i <= g.adj(id) or {}:len()
             nb = g.adj(id)(i).to
             if not visited[nb]
-              stack(stack:len() + 1) = nb
+              stack[stack:len() + 1] = nb
             i = i + 1
-      components(components:len() + 1) = comp
+      components[components:len() + 1] = comp
   components
 
 # indegree: return in-degree of a node.
@@ -373,7 +373,7 @@ subgraph: any = (g: any, node_ids: any)
   set = {}
   i = 1
   while i <= node_ids:len()
-    set(node_ids[i]) = true
+    set[node_ids[i]] = true
     if g.nodes(node_ids[i]) != nil
       add_node(g2, node_ids[i], g.nodes(node_ids[i]))
     i = i + 1

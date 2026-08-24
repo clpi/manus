@@ -22,15 +22,15 @@ render: str = (tmpl: str, data: any)
     if i + 1 <= n and tmpl:sub(i, i + 1) == "{{"
       close = tmpl:find("}}", i + 2, true)
       if close == nil
-        out(out:len() + 1) = tmpl:sub(i)
+        out[out:len() + 1] = tmpl:sub(i)
         break
       expr = tmpl:sub(i + 2, close - 1):gsub("^%s+", "")
       expr = expr:gsub("%s+$", "")
       result = eval_expr(expr, data)
-      out(out:len() + 1) = result:to(str)
+      out[out:len() + 1] = result:to(str)
       i = close + 2
     else
-      out(out:len() + 1) = tmpl:sub(i, i)
+      out[out:len() + 1] = tmpl:sub(i, i)
       i = i + 1
   out:concat()
 
@@ -63,9 +63,9 @@ resolve_path: any = (path: str, data: any)
   while true
     dot = rest:find(".", 1, true)
     if dot == nil
-      parts(parts:len() + 1) = rest
+      parts[parts:len() + 1] = rest
       break
-    parts(parts:len() + 1) = rest:sub(1, dot - 1)
+    parts[parts:len() + 1] = rest:sub(1, dot - 1)
     rest = rest:sub(dot + 1)
   cur = data
   i = 1
@@ -96,7 +96,7 @@ render_blocks: str = (tmpl: str, data: any, start: i64)
     if i + 1 <= n and tmpl:sub(i, i + 1) == "{{"
       close = tmpl:find("}}", i + 2, true)
       if close == nil
-        out(out:len() + 1) = tmpl:sub(i)
+        out[out:len() + 1] = tmpl:sub(i)
         break
       expr = tmpl:sub(i + 2, close - 1):gsub("^%s+", "")
       expr = expr:gsub("%s+$", "")
@@ -134,7 +134,7 @@ render_blocks: str = (tmpl: str, data: any, start: i64)
           if type(collection) == "table"
             # iterate array part
             while k <= collection:len()
-              out(out:len() + 1) = render_blocks(block_text, collection[k], 1)
+              out[out:len() + 1] = render_blocks(block_text, collection[k], 1)
               k = k + 1
             # also iterate hash parts
             for hk, hv in collection
@@ -144,7 +144,7 @@ render_blocks: str = (tmpl: str, data: any, start: i64)
                   item =
                     value = hv
                     key = hk
-                out(out:len() + 1) = render_blocks(block_text, item, 1)
+                out[out:len() + 1] = render_blocks(block_text, item, 1)
         i = block_end + 2
         if block_end == nil
           i = n + 1
@@ -178,16 +178,16 @@ render_blocks: str = (tmpl: str, data: any, start: i64)
               j = j + 1
           if block_end != nil and cond != nil and cond != false
             block_text = tmpl:sub(block_start, block_end - 1)
-            out(out:len() + 1) = render_blocks(block_text, data, 1)
+            out[out:len() + 1] = render_blocks(block_text, data, 1)
           i = block_end + 2
           if block_end == nil
             i = n + 1
         else
           result = eval_expr(expr, data)
-          out(out:len() + 1) = result:to(str)
+          out[out:len() + 1] = result:to(str)
           i = close + 2
     else
-      out(out:len() + 1) = tmpl:sub(i, i)
+      out[out:len() + 1] = tmpl:sub(i, i)
       i = i + 1
   out:concat()
 
