@@ -10,7 +10,7 @@
 #   This gate owns the AUTHORITY side, in `src/`, which that ledger explicitly
 #   does not touch. Compatibility aliases and positive source teaching can keep
 #   a retired family authoritative after its `@comp.*` uses reach zero. These
-#   five rules gate that residue.
+#   six rules gate that residue.
 #
 # THE LAW. docs/metaprogramming.md: metaprogramming operates on graph-owned
 # identities, relations, facts, dependencies, demands, laws, worlds, provenance
@@ -22,7 +22,7 @@
 # docs/spec/canonical.md 25 lists `@(comp|host|runtime).` as a hard lexical
 # reject pattern.
 #
-# FIVE RULES:
+# SIX RULES:
 #   (B) CATALOG. Dotted directive entries in src/meta_module.zig may not EXCEED
 #       the pinned budget. The ledger next door counts `.id` source only, so the
 #       Zig-side catalog -- three spellings per operation, `comp.`/`meta.`/
@@ -45,6 +45,14 @@
 #       two catalog-category branches, but zero tracked source faces, no
 #       `__codegen` consumer and no module-registration branch. None may return:
 #       a catalog entry with no semantic producer is still host authority.
+#   (H) SECOND CATALOG. `.public = ` is not the only place this file writes
+#       directive names down. `isMetaAttribute` carries `expression_combinators`,
+#       a parallel list keyed on the SAME public names, deciding whether a name
+#       parses in expression position or as a module directive. Rule (B) is
+#       BLIND to it -- measured at 126 entries while (B) reported 566, so the
+#       true host authority was 692 and the pinned ceiling understated it by a
+#       fifth. Rows could be added there for free, and a rename from the first
+#       catalog into the second would have LOWERED (B) while changing nothing.
 #
 # NON-NEGOTIABLES, learned from gate/admission.sh and GAP-201/GAP-220:
 #   * A CEILING WITHOUT A FLOOR REPORTS CLEAN WHEN IT BREAKS. Rule (B) was
@@ -67,7 +75,7 @@
 #     at 1642 against a true 1586.
 #
 # USAGE:
-#   sh gate/directive/authority.sh              controls + the five rules
+#   sh gate/directive/authority.sh              controls + the six rules
 #   sh gate/directive/authority.sh --control    controls only, plus the compiler
 #                                               measurement behind lib/jit.id
 set -eu
@@ -81,12 +89,41 @@ cd "$root" || exit 2
 # ---------------------------------------------------------------- constants --
 # Pinned 2026-08-23 by the executable rule below.
 #
-# DENOMINATOR, because a numerator alone is a rumour: 560 dotted rows in
-# src/meta_module.zig, generally three compatibility spellings per operation,
-# i.e. about 187 distinct
-# operations behind them.
+# DENOMINATOR, because a numerator alone is a rumour: 240 dotted rows in
+# src/meta_module.zig over 158 distinct operations. `comp.` is the only full
+# spelling (190 rows); `meta.` survives on 50 rows, ONLY where a `.id` site or
+# a host caller actually names it.
+#
+# FOUR DELETIONS GOT US HERE, all measured with this rule, none a rename:
+#   560 -> 381  the `compiler.` spelling entire. 179 rows carrying zero
+#               distinct meaning -- every one resolved to the same internal
+#               hook as its `comp.`/`meta.` siblings -- and zero `.id` users.
+#   381 -> 253  128 `meta.` rows with NO REFERENT ANYWHERE: not in `.id`, not
+#               in `src/`, not in `docs/`. Absence of callers is the reason to
+#               delete, not a reason to keep. A dormant row is a claim, and an
+#               agent can discover and revive it.
+#   253 -> 252  the bare `@comp.emit` alias, a fourth spelling of `__emit`
+#               beside `@comp.c.emit`, `@c.emit` and `@emit`, with no users.
+#   252 -> 240  the SELF-DESCRIBING family: `@comp.catalog`, `@comp.ladder`,
+#               `@comp.agent.*`. These described the directive namespace, not
+#               any program, so once the namespace stops being authority they
+#               have no referent to describe. Deleted, not classified.
+#
+# WITNESSED, so none of it is a vacuous edit. Each deleted spelling compiled
+# before and is refused after, while the surviving spelling of the same
+# operation still does exactly what it did:
+#   @compiler.c.emit  1 machine-word store -> REFUSED
+#   @comp.emit        1 machine-word store -> REFUSED
+#   @comp.c.emit      1 store              -> 1 store   (unchanged)
+#   @comp.catalog/@comp.ladder/@comp.agent.dedupe  compiled -> REFUSED
+#
+# The corpus ledger next door moved only where corpus code was deleted with the
+# rows: 108 forms/807 uses -> 101/790, all 17 lost uses belonging to the
+# self-describing family. Across the first three deletions it did not move at
+# all, which is the evidence they were behaviour-preserving for every program
+# that exists.
 CATALOG_FILE=src/meta_module.zig
-CATALOG_BUDGET=560
+CATALOG_BUDGET=240
 
 CATALOG_RE='\\.public = "(comp|meta|compiler)\\.'
 CANONICAL_RE='\\.canonical'
@@ -97,6 +134,12 @@ DORMANT_NAME_RE='"((meta|comp|compiler)\\.)?codegen"'
 DORMANT_INTERNAL_RE='"__codegen"'
 DORMANT_FACE_RE='@(codegen|(comp|meta|compiler)\\.codegen)([^a-z0-9.]|$)'
 DORMANT_REALIZER_RE='(register(Codegen|codegen)|eql\\(u8, name, "codegen"\\))'
+
+# (H) The second catalog. Block-scoped, not whole-file: the same names appear in
+# doc comments and in test assertions, and charging those would make the ratchet
+# fight its own test suite instead of the catalog.
+COMBINATOR_RE='"(comp|meta|compiler)\\.[a-zA-Z0-9_.]+"'
+COMBINATOR_BUDGET=66
 
 viol=0
 fail() { viol=$((viol + 1)); printf '  FAIL %s\n' "$*"; }
@@ -115,6 +158,18 @@ count_re() {
     }
     END { print n + 0 }
   ' "$@"
+}
+
+# Count COMBINATOR_RE inside the `expression_combinators` literal only.
+count_combinators() {
+  awk -v re="$COMBINATOR_RE" '
+    /const expression_combinators = \[_\]\[\]const u8\{/ { inblk = 1; next }
+    inblk && /^[ \t]*\};[ \t]*$/ { inblk = 0 }
+    inblk { line = $0
+      while (match(line, re)) { n++; line = substr(line, RSTART + RLENGTH) }
+    }
+    END { print n + 0 }
+  ' "$1"
 }
 
 assert_read() {
@@ -171,8 +226,10 @@ probe 'dormant/face'     "$DORMANT_FACE_RE" '@compiler.codegen("payload")' 1
 probe 'dormant/face-no'  "$DORMANT_FACE_RE" '@compiler.schema("payload")' 0
 probe 'dormant/realize'  "$DORMANT_REALIZER_RE" 'else if (std.mem.eql(u8, name, "codegen")) {' 1
 probe 'dormant/real-no'  "$DORMANT_REALIZER_RE" 'else if (std.mem.eql(u8, name, "pipeline")) {' 0
+probe 'combin/hit'       "$COMBINATOR_RE"       '        "comp.map",             "meta.map",' 1
+probe 'combin/decline'   "$COMBINATOR_RE"       '        "popcount",             "clz",'      0
 [ "$viol" -eq 0 ] || { printf '%s: CONTROLS FAILED (%s)\n' "$prog" "$viol"; exit 2; }
-ok '20 pattern controls: every pattern sees its defect and declines the lawful face'
+ok '22 pattern controls: every pattern sees its defect and declines the lawful face'
 
 # --------------------------------------------------------- compiler control --
 # The measurement behind lib/jit.id's note. Statement-position and
@@ -293,6 +350,18 @@ if [ "$dormant_names" -gt 0 ] || [ "$dormant_internal" -gt 0 ] || \
   fail "(G) dormant codegen directive returned: $dormant_names host name(s), $dormant_internal internal hook(s), $dormant_faces source face(s), $dormant_realizers realizer(s)"
 else
   ok '(G) dormant codegen directive has no host name, hook, source face or realizer'
+fi
+
+combinators=$(count_combinators "$CATALOG_FILE")
+printf '  second   %s expression_combinators entries, budget %s\n' "$combinators" "$COMBINATOR_BUDGET"
+if ! assert_live H "$combinators" "$COMBINATOR_BUDGET" 'expression_combinators entr(ies)'; then
+  :
+elif [ "$combinators" -gt "$COMBINATOR_BUDGET" ]; then
+  fail "(H) expression_combinators $combinators EXCEEDS budget $COMBINATOR_BUDGET -- a directive name was added to the SECOND catalog, which rule (B) cannot see"
+else
+  ok '(H) second catalog within budget'
+  [ "$combinators" -eq "$COMBINATOR_BUDGET" ] || \
+    printf '  note     second-catalog budget is stale by %s; lower COMBINATOR_BUDGET to %s\n' "$((COMBINATOR_BUDGET - combinators))" "$combinators"
 fi
 
 if [ "$viol" -eq 0 ]; then
