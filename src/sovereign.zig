@@ -240,6 +240,24 @@ pub const verticals = [_]Vertical{
         .expect = .{ .int = .leak, .text = .leak, .name = .leak, .relation = .absent, .reference = .leak },
     },
     .{
+        // SUBJECT-ORIENTED APPLICATION. `law.md` §9: "Source orientation
+        // disappears after resolution. Operation-first and subject-first faces
+        // that denote the same application share one occurrence identity."
+        // `n:step()` and `step(n)` must therefore reach the same bytes, and the
+        // damage classes here ask whether the face survived into realization.
+        .name = "subject",
+        .file = "sovereign-subject.id",
+        .source =
+        \\step(v: i64): i64
+        \\    v + 1
+        \\
+        \\main: i64 = ()
+        \\    n = 5
+        \\    n:step() * 2
+        ,
+        .expect = .{ .int = .leak, .text = .absent, .name = .leak, .relation = .leak, .reference = .leak },
+    },
+    .{
         .name = "foreign",
         .file = "sovereign-foreign.id",
         .source =

@@ -1015,6 +1015,11 @@ pub fn build(b: *std.Build) void {
     // front of it. The same tests also run inside `unit-test` (src/tests.zig
     // imports the module), which is where the merge signal reads them; this
     // step exists for the census, not for coverage.
+    //
+    // A CACHED RUN PRINTS NOTHING — the build runner replays no stderr for a
+    // run step whose inputs are unchanged. The verdict is unaffected: a stale
+    // ledger still fails. To re-read the table, touch src/sovereign.zig or run
+    // the test binary directly.
     const sovereign_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/sovereign.zig"),
