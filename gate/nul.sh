@@ -80,6 +80,15 @@
 # build makes the gate exit non-zero WITHOUT reporting on the rest — a gate
 # that measures nothing must fail, never pass quietly. `probe` counts the
 # programs actually measured and §0 refuses a run that measured none.
+#
+# AND THE PROCESS STATUS IS CHECKED, NOT ONLY THE BYTES. Every subject here is
+# run through `run`, which keeps the exit status beside the output and reports
+# a non-zero one as its own failure. Capturing a subject with `x=$(subject)`
+# alone keeps the bytes and DISCARDS the status, so a realization that printed
+# exactly the right answer and then crashed compared EQUAL to the oracle and
+# recorded as passing — the absence of a measurement indistinguishable from
+# the absence of a violation, which is the class `gate/vacuity.sh` exists to
+# convict. See the note above `run`.
 set -u
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -122,6 +131,37 @@ build() {
   return 0
 }
 
+# ─── THE PROCESS STATUS IS HALF THE ANSWER ─────────────────────────────────
+# `x=$(subject)` KEEPS THE BYTES AND THROWS AWAY THE STATUS. A realization that
+# prints exactly the expected stdout and then dies — a crash after the last
+# `print`, a failed final return, a `SIGSEGV` in teardown — compared EQUAL to
+# the oracle and was recorded as passing. That is this repository's standard
+# defect one variant over: the absence of a measurement (nobody asked what the
+# process did) is indistinguishable from the absence of a violation.
+#
+# `run <label> <cmd...>` leaves the bytes in `$ans` and the status in `$ansrc`,
+# and reports a non-zero status AS ITS OWN FAILURE before any comparison
+# happens. The output check still runs afterwards, because a crashing subject
+# that ALSO printed the wrong bytes is two findings and the reader wants both.
+#
+# IT IS NEVER CALLED INSIDE `$( )`. `bad` sets `fail=1`, and item 5 on
+# `gate/vacuity.sh`'s list of convicted instruments is a refusal whose `fail=1`
+# died inside a command substitution while the gate printed FAIL and exited 0.
+# The assignment `ans=$(...)` is inside this function; the CALL is not.
+ans=''
+ansrc=0
+run() {
+  rlabel=$1
+  shift
+  ans=$("$@" 2>"$work/run.err")
+  ansrc=$?
+  [ "$ansrc" -eq 0 ] && return 0
+  rsay=$(tr -d '\r' < "$work/run.err" | grep -v '^[[:space:]]*$' | head -1 | cut -c1-72)
+  rout=$(printf %s "$ans" | tr '\n' '/')
+  bad "$rlabel exited $ansrc after printing [$rout] (stderr: ${rsay:-nothing}) -- a realization that does not exit cleanly has not answered, whatever it printed first"
+  return 0
+}
+
 # ─── §1 the control: an embedded NUL is a byte of the value ────────────────
 # `s:len()` is 3 and `s:byte(3)` is 98 ('b'), not 108 ('l', out of the next
 # literal) and not 0. Both realizations, and the answer is the oracle's:
@@ -139,8 +179,8 @@ main: i64 = ()
 ID
 want='len=3 b1=97 b2=0 b3=98'
 if build embed; then
-  direct=$("$work/embed.bin" 2>/dev/null)
-  wasm=$($wasmrun "$work/embed.wasm" 2>/dev/null)
+  run '§1 direct' "$work/embed.bin";           direct=$ans
+  run '§1 wasm' "$wasmrun" "$work/embed.wasm"; wasm=$ans
   if [ "$direct" != "$want" ]; then
     bad "§1 direct: got '$direct', the oracle says '$want'. A NUL is a byte of the value; scan-to-NUL is not its length and the linker's split is not its bytes."
   else
@@ -171,8 +211,8 @@ main: i64 = ()
 ID
 wantmod='len=3 b3=98'
 if build modscope; then
-  mdirect=$("$work/modscope.bin" 2>/dev/null)
-  mwasm=$($wasmrun "$work/modscope.wasm" 2>/dev/null)
+  run '§1b direct' "$work/modscope.bin";           mdirect=$ans
+  run '§1b wasm' "$wasmrun" "$work/modscope.wasm"; mwasm=$ans
   [ "$mdirect" = "$wantmod" ] || bad "§1b direct module scope: got '$mdirect', the oracle says '$wantmod'"
   [ "$mwasm" = "$wantmod" ] || bad "§1b wasm module scope: got '$mwasm', the oracle says '$wantmod'"
   [ "$mdirect" != "$wantmod" ] || [ "$mwasm" != "$wantmod" ] || note "§1b module scope, both realizations: $mdirect"
@@ -203,9 +243,9 @@ main: i64 = ()
   0
 ID
 if build plain; then
-  got=$("$work/plain.bin" 2>/dev/null)
+  run '§3 direct' "$work/plain.bin"; got=$ans
   [ "$got" = "len=3" ] || bad "§3 a NUL-free literal answered '$got', expected 'len=3'"
-  gotw=$($wasmrun "$work/plain.wasm" 2>/dev/null)
+  run '§3 wasm' "$wasmrun" "$work/plain.wasm"; gotw=$ans
   [ "$gotw" = "len=3" ] || bad "§3 wasm: a NUL-free literal answered '$gotw', expected 'len=3'"
   if command -v otool >/dev/null 2>&1; then
     if otool -l "$work/plain.bin" 2>/dev/null | grep -q 'sectname __cstring'; then
@@ -241,8 +281,8 @@ main: i64 = ()
   0
 ID
 if build mixed; then
-  mixdirect=$("$work/mixed.bin" 2>/dev/null)
-  mixwasm=$($wasmrun "$work/mixed.wasm" 2>/dev/null)
+  run '§3a direct' "$work/mixed.bin";           mixdirect=$ans
+  run '§3a wasm' "$wasmrun" "$work/mixed.wasm"; mixwasm=$ans
   [ "$mixdirect" = '3 33 98' ] || bad "§3a direct, NUL literal beside a determined table: got '$mixdirect', expected '3 33 98'"
   [ "$mixwasm" = '3 33 98' ] || bad "§3a wasm, NUL literal beside a determined table: got '$mixwasm', expected '3 33 98'"
   if command -v otool >/dev/null 2>&1; then
@@ -287,7 +327,13 @@ if command -v shasum >/dev/null 2>&1; then
     d1=$(shasum -a 256 "$work/dgone.a.o" | cut -d' ' -f1)
     d2=$(shasum -a 256 "$work/dgone.b.o" | cut -d' ' -f1)
     d3=$(shasum -a 256 "$work/dgtwo.a.o" | cut -d' ' -f1)
-    if [ "$d1" != "$d2" ]; then
+    # A DIGEST THAT DID NOT RUN COMPARES EQUAL TO ANOTHER ONE THAT DID NOT RUN.
+    # `$(cmd | cut)` is `cut`'s status, so a failed `shasum` leaves three empty
+    # strings, arm 1 reads them as identical and arm 2 as identical too — the
+    # second catches it today by accident, and an accident is not a control.
+    if [ -z "$d1" ] || [ -z "$d2" ] || [ -z "$d3" ]; then
+      bad '§3b a digest came back EMPTY — shasum answered nothing and three nothings compare equal, which is not a byte claim'
+    elif [ "$d1" != "$d2" ]; then
       bad '§3b the SAME source compiled twice into two output paths differs — realization is not deterministic here, so no byte-identity claim in this tree is readable'
     elif [ "$d1" = "$d3" ]; then
       bad '§3b adding an interior NUL changed NOTHING in the object — the digest cannot see the decision it is being used to confirm'
@@ -328,8 +374,8 @@ pinned='a
 2
 eqa'
 if build boundary; then
-  bdirect=$("$work/boundary.bin" 2>/dev/null)
-  bwasm=$($wasmrun "$work/boundary.wasm" 2>/dev/null)
+  run '§4 direct' "$work/boundary.bin";           bdirect=$ans
+  run '§4 wasm' "$wasmrun" "$work/boundary.wasm"; bwasm=$ans
   if [ "$bdirect" != "$bwasm" ]; then
     bad "§4 the realizations disagree on the UNREPAIRED path too: direct '$(printf %s "$bdirect" | tr '\n' '/')' vs wasm '$(printf %s "$bwasm" | tr '\n' '/')'"
   fi
