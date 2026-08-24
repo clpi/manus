@@ -13,9 +13,9 @@
 # These are not a budget. Every nonzero row is a body the SHC transfer route
 # replaces with a runtime abort while exiting 0, and every one of them must
 # reach 0 or REFUSED before the source it names can execute inside a compiler.
-# The three on lib/compiler/token_view.id are the GAP-134 parser-slice
-# prerequisite; the 291 on lib/compiler/parser.id are why that file is a
-# shadow authority and not a transfer candidate.
+# lib/compiler/token_view.id is the GAP-134 parser-slice prerequisite;
+# lib/compiler/parser.id is why that file is a shadow authority and not a
+# transfer candidate. Their counts are the rows below, not this paragraph.
 0	lib/compiler/application.id
 0	lib/compiler/arm64.id
 REFUSED	lib/compiler/arm64check.id

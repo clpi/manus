@@ -29,10 +29,11 @@
 # CONSEQUENCE THIS GATE EXISTS TO KEEP VISIBLE (GAP-134 / GAP-145): the one
 # grammar-fact owner is unreachable from Idol. lib/compiler/token_view.id — the
 # immutable token view GAP-134 names as the parser-slice prerequisite — emits
-# three of these aborts, one for each of its `token.grammarrole.*` consumers.
-# An Idol parser recognition decision therefore either aborts at runtime or
-# inlines its own copy of the grammar facts, and the second is the fourth
-# grammar authority `law.grammar.one` forbids.
+# one abort for each of its `token.grammarrole.*` consumers and no other. Its
+# pinned row below is that count; this sentence does not restate it. An Idol
+# parser recognition decision therefore either aborts at runtime or inlines its
+# own copy of the grammar facts, and the second is the fourth grammar authority
+# `law.grammar.one` forbids.
 #
 # THE RATCHET. Every subject is pinned by exact measured class in
 # gate/lower/fallback.baseline. A RISE fails. A FALL fails, so that a repair
@@ -61,16 +62,37 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Measure one subject. Prints REFUSED when the route fails closed, otherwise
-# the exact number of silent aborts it emitted. Refusal is the LAWFUL answer
-# here and is recorded as its own class, never folded into a count of zero:
-# a subject that stops refusing and starts aborting must be visible.
+# Measure one subject into exactly one of THREE classes.
+#
+#   <n>        the route succeeded and emitted n silent aborts
+#   REFUSED    the route FAILED CLOSED -- the lawful answer, its own class,
+#              never folded into a count of zero, because a subject that stops
+#              refusing and starts aborting must be visible
+#   UNTRUSTED  anything else
+#
+# The third class exists because "nonzero exit" is not "codegen refused". A
+# crash, a signal, a missing file, a compiler that is not this compiler -- all
+# exit nonzero, and mapping them to REFUSED would let an already-REFUSED pin
+# keep matching while nothing was measured. Measured at dec7d509: a lawful
+# refusal is exit 1 with `codegen refused` on stderr; `dump-c` on a path that
+# does not exist is also exit 1 but says `FileNotFound`. Only the first is
+# lawful, and the diagnostic is carried out so a reader can see which happened.
 measure() {
-    if "$IDOL" dump-c "$1" --lib >"$work/out.c" 2>/dev/null; then
+    # `$?` AFTER AN `if` COMPOUND IS THE `if`'s STATUS, NOT THE COMMAND'S: a
+    # bodyless-else `if` that does not take its branch exits 0. Capture the
+    # status on the line that produces it, or every refusal reads as UNTRUSTED.
+    "$IDOL" dump-c "$1" --lib >"$work/out.c" 2>"$work/err"
+    status=$?
+    if [ "$status" = 0 ]; then
         grep -c "$abort" "$work/out.c"
-    else
-        printf 'REFUSED\n'
+        return 0
     fi
+    if [ "$status" = 1 ] && grep -q 'codegen refused' "$work/err"; then
+        printf 'REFUSED\n'
+        return 0
+    fi
+    printf 'UNTRUSTED\n'
+    return 0
 }
 
 # ============================== BOTH CONTROLS ==============================
@@ -79,17 +101,32 @@ measure() {
 # damaged owner for exactly that reason, so this file proves it can see the
 # defect and proves it does not invent one, before it reports anything.
 #
-# POSITIVE: a cross-module call must be COUNTED. `compiler.reader.read` is a
-# two-line relation in lib/compiler/reader.id; the call resolves, and the route
-# still emits the abort.
+# POSITIVE: a cross-module call must not be answered the same way as a
+# local-only one. `compiler.reader.read` is a two-line relation in
+# lib/compiler/reader.id; the call resolves, and today the route still emits
+# the abort.
+#
+# THE CONTROL MUST NOT REQUIRE THE DEFECT TO SURVIVE. An earlier version
+# refused REFUSED here, which would have made this gate impossible to turn
+# green on the very day cross-module lowering is repaired: the planted call
+# would fail closed, the control would exit 3, and lowering the baseline could
+# not admit the fix. What the control actually needs is that the reader
+# DISCRIMINATES -- a planted cross-module call must not answer 0, the answer a
+# local-only file gives. REFUSED is the repaired world and is lawful, and it is
+# announced, because at that point every nonzero pin below must fall.
 cat >"$work/positive.id" <<'PROBE'
 grab: i64 = (d: { value: i64 })
   compiler.reader.read(d)
 PROBE
 positive=$(measure "$work/positive.id")
 case $positive in
-    REFUSED|0)
-        printf 'lower fallback control: FAIL — a planted cross-module call measured %s, so this reader cannot see the defect it exists to count\n' "$positive" >&2
+    0)
+        printf 'lower fallback control: FAIL — a planted cross-module call measured 0, the same answer a local-only file gives, so this reader discriminates nothing\n' >&2
+        exit 3
+        ;;
+    UNTRUSTED)
+        printf 'lower fallback control: FAIL — a planted cross-module call did not produce a lawful outcome; the compiler under test is not measurable\n' >&2
+        sed -n '1,5p' "$work/err" >&2
         exit 3
         ;;
 esac
@@ -107,16 +144,20 @@ PROBE
 negative=$(measure "$work/negative.id")
 if [ "$negative" != 0 ]; then
     printf 'lower fallback control: FAIL — a file with only local calls measured %s, not 0\n' "$negative" >&2
+    sed -n '1,5p' "$work/err" >&2
     exit 3
+fi
+if [ "$positive" = REFUSED ]; then
+    printf 'lower fallback: the transfer route now FAILS CLOSED on a cross-module call — every nonzero pin below must fall\n'
 fi
 # NAME THE MEASURING COMPILER (`law.evidence.subject.one`). These pins are a
 # property of the compiler that produced them, and the failure they cause when
 # that compiler is the wrong one is indistinguishable from a real regression
 # unless the run says which one it used. Measured both ways at dec7d509: debug
-# and ReleaseFast agree exactly, so build mode is NOT the sensitive axis --
-# REVISION is. The tracked, stale `out/bin/idol` reports lib/compiler/parser.id
-# as REFUSED where this revision reports 291, and this gate correctly calls
-# that a CLASS CHANGE rather than agreeing with it.
+# and ReleaseFast agree on every row, so build mode is NOT the sensitive axis --
+# REVISION is. The tracked, stale `out/bin/idol` refuses lib/compiler/parser.id
+# where this revision measures it, and this gate calls that a CLASS CHANGE
+# rather than agreeing with it.
 printf 'lower fallback control: PASS — planted cross-module call counted %s; local-only file counted 0 (compiler %s)\n' \
     "$positive" "$IDOL"
 
@@ -144,6 +185,11 @@ for subject in $subjects; do
     pin=$(printf '%s\n' "$pinned" | awk -v s="$subject" '$2 == s { print $1 }')
     got=$(measure "$subject")
     case $got in
+        UNTRUSTED)
+            printf 'lower fallback: NOT MEASURED — %s produced no lawful outcome\n' "$subject" >&2
+            sed -n '1,5p' "$work/err" >&2
+            exit 3
+            ;;
         REFUSED) refused=$((refused + 1)) ;;
         *) total=$((total + got)); [ "$got" -gt 0 ] && counted=$((counted + 1)) ;;
     esac

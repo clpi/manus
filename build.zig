@@ -818,15 +818,23 @@ pub fn build(b: *std.Build) void {
     // cross the same seam.
     //
     // On that seam, src/codegen.zig lowers a qualified call whose callee body
-    // is not at file scope to `duo_fatal("unlowered native call")` and EXITS 0
-    // WITH EMPTY STDERR. Measured over the 21 transfer subjects: 319 abort
-    // sites, including all three grammar-role consumers in
-    // lib/compiler/token_view.id -- the immutable token view GAP-134 names as
-    // the parser-slice prerequisite. Nothing in this tree measured that.
+    // is not at file scope to `duo_fatal("unlowered native call")` and exits 0
+    // with empty stderr, so the route reports success while replacing the
+    // transferred body with a runtime abort. Nothing in this tree measured it.
+    //
+    // THE COUNTS LIVE IN THE RUNNER, NOT HERE. `sh gate/lower/fallback.sh`
+    // prints the subject total, the abort total and the refusal total on every
+    // run, and gate/lower/fallback.baseline holds the per-subject pins. A
+    // figure copied into this comment would be the exact decay AGENTS.md
+    // records; the command is the citation.
     //
     // It is on `test` because an unwired control is GAP-145's O7 class, and
-    // this one costs about a second.
-    const lower_fallback_cmd = b.addSystemCommand(&.{"./gate/lower/fallback.sh"});
+    // this one costs about a second. It runs under tools/node/dev/idol-lock
+    // because it drives the compiler repeatedly and `test` schedules steps
+    // concurrently -- an unserialized census shares the content-addressed
+    // build cache with whatever else is running (AGENTS.md concurrent lanes;
+    // docs/spec/law.md 13).
+    const lower_fallback_cmd = b.addSystemCommand(&.{ "./tools/node/dev/idol-lock", "--", "./gate/lower/fallback.sh" });
     lower_fallback_cmd.setCwd(b.path("."));
     lower_fallback_cmd.step.dependOn(b.getInstallStep());
     const lower_fallback_step = b.step("lower-fallback", "the SHC transfer route emits no new silent `unlowered native call` abort (law.fallback.zero)");
@@ -834,10 +842,12 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&lower_fallback_cmd.step);
 
     // posix -- GAP-145 O7. Written to ask the strictest shell present whether
-    // every gate in the home can be READ at all, then enumerated 43 of the 49
-    // that were there because its glob stopped at `gate/*.sh`. Repaired to the
-    // enumeration `gate/all.sh` has always used. It was on no build step and
-    // no hook, which is the same O7 class it exists to police, so it is here.
+    // every gate in the home can be READ at all, it enumerated only `gate/*.sh`
+    // and so could not see the nested gates `law.path.name` keeps creating --
+    // several of which are on this very step. Repaired to the enumeration
+    // `gate/all.sh` has always used; the gate prints its own subject count. It
+    // was on no build step and no hook, which is the same O7 class it exists
+    // to police, so it is here.
     const posix_cmd = b.addSystemCommand(&.{ "sh", "gate/posix.sh" });
     posix_cmd.setCwd(b.path("."));
     const posix_step = b.step("posix", "every shell gate in gate/ parses under a strict POSIX shell (GAP-145 O7)");
