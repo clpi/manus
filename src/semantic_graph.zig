@@ -3300,57 +3300,46 @@ pub const SemanticGraph = struct {
         scope: id,
         stmts: []ast.Stmt,
     ) !void {
-        // THE SHADOW ROSTER, ANSWERED BEFORE THE WALK. A bare-name assignment
-        // is a write to the module binding it names UNLESS this body declares
-        // that name itself, and a declaration may sit anywhere in the body —
-        // including below the assignment. Collecting the roster first is what
-        // makes the answer independent of statement order, and it is the same
-        // reason `place.zig` answers `ForeignReach` before its own walk.
+        // THE SHADOW ROSTER, GROWN IN SOURCE ORDER AND TRUNCATED AT EVERY BLOCK
+        // BOUNDARY. A bare-name assignment is a write to the module binding it
+        // names UNLESS the name is declared where the assignment can see the
+        // declaration — which is a LEXICAL question, not a whole-body one.
+        //
+        // A whole-body roster gets it wrong in the unsafe direction. Measured,
+        // before this was scoped:
+        //
+        //     global ring: i64 = 0
+        //     bump(): i64
+        //       ring = 1          <- a write to the module binding
+        //       if ring > 100
+        //         ring: i64 = 5   <- a declaration in an inner block
+        //       7
+        //
+        // exported an EMPTY `mutations` array. The inner declaration is scoped
+        // to the `if`; the assignment above it names the module's word, and
+        // dropping that row is exactly the licence GAP-225 is about.
+        //
+        // The graph has no block entities — every local of a relation is a
+        // child of the one callable — so the roster is where block extent
+        // lives, and it lives only for as long as this walk needs it.
         var declared: std.ArrayListUnmanaged([]const u8) = .empty;
         defer declared.deinit(self.alloc);
-        if (self.module_root != scope) try collectDeclaredNames(self.alloc, &declared, stmts);
-        try self.liftBindingsAtScope(file, scope, stmts, declared.items);
+        try self.liftBindingsAtScope(file, scope, stmts, &declared);
         try self.liftBindingsInCallables(file, scope, stmts);
     }
 
-    /// Every name `stmts` DECLARES, excluding bare-name assignment — which is
-    /// precisely the question a shadow adjudication turns on. Nested callables
-    /// are skipped: their declarations are their own scope's.
-    fn collectDeclaredNames(
-        alloc: std.mem.Allocator,
-        out: *std.ArrayListUnmanaged([]const u8),
+    /// Enter a nested lexical block: everything it declares is visible inside
+    /// it and gone after, so the roster is restored to the length it had.
+    fn liftBindingsInBlock(
+        self: *SemanticGraph,
+        file: []const u8,
+        scope: id,
         stmts: []ast.Stmt,
-    ) !void {
-        for (stmts) |*stmt| {
-            switch (stmt.*) {
-                .local_decl => |*ld| for (ld.names) |*n| try noteName(alloc, out, n.ident),
-                .const_decl => |*cd| try noteName(alloc, out, cd.ident),
-                .global_decl => |*gd| for (gd.names) |*n| try noteName(alloc, out, n.ident),
-                .do_block => |*d| try collectDeclaredNames(alloc, out, d.body.stmts),
-                .while_loop => |*w| try collectDeclaredNames(alloc, out, w.body.stmts),
-                .repeat_loop => |*r| try collectDeclaredNames(alloc, out, r.body.stmts),
-                .num_for => |*nf| {
-                    try noteName(alloc, out, nf.var_name);
-                    try collectDeclaredNames(alloc, out, nf.body.stmts);
-                },
-                .gen_for => |*g| {
-                    for (g.vars) |v| try noteName(alloc, out, v);
-                    try collectDeclaredNames(alloc, out, g.body.stmts);
-                },
-                .if_stmt => |*i| {
-                    if (i.binding) |binding| try noteName(alloc, out, binding.name);
-                    try collectDeclaredNames(alloc, out, i.then.stmts);
-                    for (i.elseifs) |*ei| try collectDeclaredNames(alloc, out, ei.body.stmts);
-                    if (i.else_body) |*eb| try collectDeclaredNames(alloc, out, eb.stmts);
-                },
-                .try_stmt => |*t| {
-                    try collectDeclaredNames(alloc, out, t.body.stmts);
-                    for (t.catches) |*cc| try collectDeclaredNames(alloc, out, cc.body.stmts);
-                },
-                .defer_stmt => |*d| try collectDeclaredNames(alloc, out, d.body.stmts),
-                else => {},
-            }
-        }
+        declared: *std.ArrayListUnmanaged([]const u8),
+    ) anyerror!void {
+        const mark = declared.items.len;
+        defer declared.shrinkRetainingCapacity(mark);
+        try self.liftBindingsAtScope(file, scope, stmts, declared);
     }
 
     fn noteName(
@@ -3379,17 +3368,29 @@ pub const SemanticGraph = struct {
         // The module's own body binds; it does not write somebody else's word.
         if (scope == root) return false;
         // A GENUINE SHADOW STAYS DISTINCT. This is the control acceptance §3
-        // asks for: a body that declares `_pos` owns its own `_pos`, and the
-        // module's is a different entity that this assignment does not touch.
+        // asks for: a body that declares `_pos` where this assignment can see
+        // the declaration owns its own `_pos`, and the module's is a different
+        // entity that this assignment does not touch.
         for (declared) |existing| if (std.mem.eql(u8, existing, name)) return false;
-        // A parameter of the same spelling is already that binding.
+        // A parameter of the same spelling IS that binding. Only `.param`,
+        // because a `.local` child of this scope may have been minted by a
+        // declaration in a SIBLING block that this assignment cannot see —
+        // block extent is the roster's, and the graph has no block entities.
         for (self.nested.of(scope)) |child| {
             const node = self.get(child) orelse continue;
-            if (node.kind != .local and node.kind != .param) continue;
+            if (node.kind != .param) continue;
             const child_name = node.name orelse continue;
             if (std.mem.eql(u8, child_name, name)) return false;
         }
-        const binding = self.resolveBindingInScope(root, name) orelse return false;
+        // RESOLVE THROUGH THE ENCLOSING CHAIN, NOT STRAIGHT TO THE MODULE. For
+        // a relation nested inside another, a same-named local or parameter of
+        // the ENCLOSING relation is the binding the assignment names, and the
+        // graph records reaching it as a `.capture` edge. Jumping to the root
+        // would publish a module write about a word the program never touches.
+        // Sweep one finishes the enclosing scope before sweep two descends, so
+        // by here every binding above this relation exists.
+        const outer = (self.get(scope) orelse return false).scope orelse return false;
+        const binding = self.resolveBindingInScope(outer, name) orelse return false;
         const binding_node = self.get(binding) orelse return false;
         if (binding_node.scope != root) return false;
         const relation = self.enclosingCallable(scope) orelse return false;
@@ -3438,8 +3439,8 @@ pub const SemanticGraph = struct {
         file: []const u8,
         scope: id,
         stmts: []ast.Stmt,
-        declared: []const []const u8,
-    ) !void {
+        declared: *std.ArrayListUnmanaged([]const u8),
+    ) anyerror!void {
         for (stmts) |*stmt| {
             switch (stmt.*) {
                 .local_decl => |*ld| {
@@ -3453,6 +3454,7 @@ pub const SemanticGraph = struct {
                             lname.attributes,
                             lname,
                         );
+                        try noteName(self.alloc, declared, lname.ident);
                         try self.noteLocalBinding(
                             file,
                             scope,
@@ -3463,20 +3465,24 @@ pub const SemanticGraph = struct {
                         );
                     }
                 },
-                .const_decl => |*cd| try self.noteLocalBinding(
-                    file,
-                    scope,
-                    cd.ident,
-                    cd.loc,
-                    self.bindingDescriptor(cd.typ),
-                    null,
-                ),
+                .const_decl => |*cd| {
+                    try noteName(self.alloc, declared, cd.ident);
+                    try self.noteLocalBinding(
+                        file,
+                        scope,
+                        cd.ident,
+                        cd.loc,
+                        self.bindingDescriptor(cd.typ),
+                        null,
+                    );
+                },
                 .global_decl => |*gd| {
                     for (gd.names) |*lname| {
                         // `global x = …` INSIDE a relation writes the module's
                         // word — `place.zig` records the same reading in
                         // `reachStmt`. It is a write, not a second binding.
-                        if (try self.noteModuleWrite(scope, declared, lname.ident)) continue;
+                        if (try self.noteModuleWrite(scope, declared.items, lname.ident)) continue;
+                        try noteName(self.alloc, declared, lname.ident);
                         try self.noteLocalBinding(
                             file,
                             scope,
@@ -3495,33 +3501,39 @@ pub const SemanticGraph = struct {
                         // a WRITE to that binding; minting a same-spelled local
                         // in this relation is what made the two indistinguishable
                         // (gaps/GAP-225.md).
-                        if (try self.noteModuleWrite(scope, declared, target.name.ident)) continue;
+                        if (try self.noteModuleWrite(scope, declared.items, target.name.ident)) continue;
                         try self.noteLocalBinding(file, scope, target.name.ident, target.loc(), null, null);
                     }
                 },
-                .do_block => |*d| try self.liftBindingsAtScope(file, scope, d.body.stmts, declared),
-                .while_loop => |*w| try self.liftBindingsAtScope(file, scope, w.body.stmts, declared),
-                .repeat_loop => |*r| try self.liftBindingsAtScope(file, scope, r.body.stmts, declared),
+                .do_block => |*d| try self.liftBindingsInBlock(file, scope, d.body.stmts, declared),
+                .while_loop => |*w| try self.liftBindingsInBlock(file, scope, w.body.stmts, declared),
+                .repeat_loop => |*r| try self.liftBindingsInBlock(file, scope, r.body.stmts, declared),
                 .if_stmt => |*i| {
-                    try self.liftBindingsAtScope(file, scope, i.then.stmts, declared);
-                    for (i.elseifs) |*ei| try self.liftBindingsAtScope(file, scope, ei.body.stmts, declared);
-                    if (i.else_body) |*eb| try self.liftBindingsAtScope(file, scope, eb.stmts, declared);
+                    try self.liftBindingsInBlock(file, scope, i.then.stmts, declared);
+                    for (i.elseifs) |*ei| try self.liftBindingsInBlock(file, scope, ei.body.stmts, declared);
+                    if (i.else_body) |*eb| try self.liftBindingsInBlock(file, scope, eb.stmts, declared);
                 },
                 .num_for => |*nf| {
+                    const mark = declared.items.len;
+                    defer declared.shrinkRetainingCapacity(mark);
+                    try noteName(self.alloc, declared, nf.var_name);
                     try self.noteLocalBinding(file, scope, nf.var_name, nf.loc, null, null);
                     try self.liftBindingsAtScope(file, scope, nf.body.stmts, declared);
                 },
                 .gen_for => |*g| {
+                    const mark = declared.items.len;
+                    defer declared.shrinkRetainingCapacity(mark);
+                    for (g.vars) |v| try noteName(self.alloc, declared, v);
                     for (g.vars) |v| try self.noteLocalBinding(file, scope, v, g.loc, null, null);
                     try self.liftBindingsAtScope(file, scope, g.body.stmts, declared);
                 },
                 // `.func_decl` IS SWEEP TWO'S. Descending here is exactly the
                 // order dependence `liftBindingsInStmts` split the walk to end.
                 .try_stmt => |*t| {
-                    try self.liftBindingsAtScope(file, scope, t.body.stmts, declared);
-                    for (t.catches) |*cc| try self.liftBindingsAtScope(file, scope, cc.body.stmts, declared);
+                    try self.liftBindingsInBlock(file, scope, t.body.stmts, declared);
+                    for (t.catches) |*cc| try self.liftBindingsInBlock(file, scope, cc.body.stmts, declared);
                 },
-                .defer_stmt => |*d| try self.liftBindingsAtScope(file, scope, d.body.stmts, declared),
+                .defer_stmt => |*d| try self.liftBindingsInBlock(file, scope, d.body.stmts, declared),
                 else => {},
             }
         }

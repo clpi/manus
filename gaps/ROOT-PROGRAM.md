@@ -195,7 +195,7 @@ commit. Neither was superseded.
 | `GAP-123` | CLOSED | `ace5f7d5` deleted `scripts/duo_lock.id`; `97753361` rerouted AGENTS item 4 to `tools/node/dev/idol-lock`; pinned by `tools/node/dev/census/convergence` |
 | `GAP-135` | SUPERSEDED | `3cd3f07b` "revert gap[126]: remove textual relation reconstruction" |
 | `GAP-142` | SUPERSEDED | `gate/admission.id` + `gate/admission.sh` + `evidence/mop/merge/readiness.md`; every adjudicated branch retired |
-| `GAP-225` | CLOSED | the lift names the module binding a relation writes and `publishApplicationMutations` publishes its cardinality; `effect none` 1043 -> 1018 on `examples` with `one` 123 -> 148; `gate/speculation.sh` hazard row 0 published / 10 severed; regression `examples/place/mutate.id` |
+| `GAP-225` | CLOSED | the lift names the module binding a relation writes and `publishApplicationMutations` publishes its cardinality; the census movement and the hazard row are what `sh gate/effect.sh` and `sh gate/speculation.sh` print, and the floors are pinned in those runners; regression `examples/place/mutate.id` |
 
 Each carries its evidence in its own file. No gap was reclassified on the
 strength of its own prose.

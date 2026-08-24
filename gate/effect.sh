@@ -35,7 +35,7 @@
 #
 #     edc726bf   none 1043   one 123   unknown 165   before either
 #     539e7902   none 1024   one 142   unknown 165   the lift names the binding
-#     this file  none 1019   one 153   unknown 163   + closure and cardinality
+#     this file  none 1019   one 154   unknown 163   + closure and cardinality
 #
 # The middle row is the state `MIN_NONE` was left ROTTEN at: the floor still
 # said 1043 and the tree measured 1024, so this gate was RED on `main` and the
@@ -123,7 +123,7 @@ subject=examples/demand/tail.id
 # noticed rather than shipped.
 MIN_APPS=${EFFECT_MIN_APPS:-1200}
 MIN_NONE=${EFFECT_MIN_NONE:-1019}
-MIN_ONE=${EFFECT_MIN_ONE:-153}
+MIN_ONE=${EFFECT_MIN_ONE:-154}
 
 command -v jq >/dev/null 2>&1 || { echo "effect: jq not on PATH" >&2; exit 64; }
 [ -x "$idol" ] || { echo "effect: no compiler at $idol (set IDOL=)" >&2; exit 64; }
