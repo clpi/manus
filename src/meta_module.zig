@@ -1,7 +1,7 @@
 /// Canonical `@comp.*` compiler module: hierarchical public names for metaprogramming.
 ///
 /// The PRIMARY public surface for compile-time operations is `@comp.*` dotted paths.
-/// `@compiler.*`, and `@meta.*` are aliases that map to the same internal handlers.
+/// `@meta.*` is an alias family that maps to the same internal handlers.
 /// NO underscore aliases (`@comptime_map`, `@define_derive`) — those are removed.
 /// A small set of bare-name aliases (`@popcount`, `@clz`, `@likely`, etc.) are kept
 /// for ergonomics on extremely common intrinsics that predate the hierarchy.
@@ -70,7 +70,7 @@
 ///
 /// Keyword-safe paths: avoid Duo keywords as path segments — use `@comp.when` not
 /// `@comp.if`, `@comp.concepts.*` not `@comp.concept.*`, `@comp.compile.warn` not
-/// `@comp.comptime.warn`. All `@meta.*` and `@compiler.*` paths are aliases.
+/// `@comp.comptime.warn`. All `@meta.*` paths are aliases.
 const std = @import("std");
 
 const BuiltinEntry = struct { public: []const u8, internal: []const u8 };
@@ -84,252 +84,141 @@ const builtins = [_]BuiltinEntry{
     // ── Exponential combinators ──
     .{ .public = "meta.map", .internal = "__comptimemap" },
     .{ .public = "comp.map", .internal = "__comptimemap" },
-    .{ .public = "compiler.map", .internal = "__comptimemap" },
     .{ .public = "meta.sweep", .internal = "__comptimemap" },
     .{ .public = "comp.sweep", .internal = "__comptimemap" },
-    .{ .public = "compiler.sweep", .internal = "__comptimemap" },
     .{ .public = "meta.expand", .internal = "__metaexpand" },
     .{ .public = "comp.expand", .internal = "__metaexpand" },
-    .{ .public = "compiler.expand", .internal = "__metaexpand" },
     .{ .public = "meta.pow", .internal = "__metaexpand" },
     .{ .public = "comp.pow", .internal = "__metaexpand" },
-    .{ .public = "compiler.pow", .internal = "__metaexpand" },
     .{ .public = "meta.ceiling", .internal = "__metaceiling" },
     .{ .public = "comp.ceiling", .internal = "__metaceiling" },
-    .{ .public = "compiler.ceiling", .internal = "__metaceiling" },
     .{ .public = "meta.omni", .internal = "__metaomni" },
     .{ .public = "comp.omni", .internal = "__metaomni" },
-    .{ .public = "compiler.omni", .internal = "__metaomni" },
     .{ .public = "meta.stack", .internal = "__metaomni" },
     .{ .public = "comp.stack", .internal = "__metaomni" },
-    .{ .public = "compiler.stack", .internal = "__metaomni" },
     .{ .public = "meta.burst", .internal = "__metaburst" },
     .{ .public = "comp.burst", .internal = "__metaburst" },
-    .{ .public = "compiler.burst", .internal = "__metaburst" },
     .{ .public = "meta.tensor", .internal = "__comptimetensor" },
     .{ .public = "comp.tensor", .internal = "__comptimetensor" },
-    .{ .public = "compiler.tensor", .internal = "__comptimetensor" },
     .{ .public = "meta.derive.tensor", .internal = "__derivetensor" },
     .{ .public = "comp.derive.tensor", .internal = "__derivetensor" },
-    .{ .public = "compiler.derive.tensor", .internal = "__derivetensor" },
     .{ .public = "meta.nfold", .internal = "__comptimenfold" },
     .{ .public = "comp.nfold", .internal = "__comptimenfold" },
-    .{ .public = "compiler.nfold", .internal = "__comptimenfold" },
     .{ .public = "meta.derive.nfold", .internal = "__derivenfold" },
     .{ .public = "comp.derive.nfold", .internal = "__derivenfold" },
-    .{ .public = "compiler.derive.nfold", .internal = "__derivenfold" },
     .{ .public = "meta.transcend", .internal = "__metatranscend" },
     .{ .public = "comp.transcend", .internal = "__metatranscend" },
-    .{ .public = "compiler.transcend", .internal = "__metatranscend" },
     .{ .public = "meta.infinity", .internal = "__metainfinity" },
     .{ .public = "comp.infinity", .internal = "__metainfinity" },
-    .{ .public = "compiler.infinity", .internal = "__metainfinity" },
     .{ .public = "meta.hyper", .internal = "__metahyper" },
     .{ .public = "comp.hyper", .internal = "__metahyper" },
-    .{ .public = "compiler.hyper", .internal = "__metahyper" },
     .{ .public = "meta.tower", .internal = "__derivetower" },
     .{ .public = "comp.tower", .internal = "__derivetower" },
-    .{ .public = "compiler.tower", .internal = "__derivetower" },
     .{ .public = "meta.derive", .internal = "__derivemap" },
     .{ .public = "comp.derive", .internal = "__derivemap" },
-    .{ .public = "compiler.derive", .internal = "__derivemap" },
     .{ .public = "meta.product", .internal = "__comptimeproduct" },
     .{ .public = "comp.product", .internal = "__comptimeproduct" },
-    .{ .public = "compiler.product", .internal = "__comptimeproduct" },
     .{ .public = "meta.derive.product", .internal = "__deriveproduct" },
     .{ .public = "comp.derive.product", .internal = "__deriveproduct" },
-    .{ .public = "compiler.derive.product", .internal = "__deriveproduct" },
     // ── Truly exponential (2^n / n!) combinators ──
     .{ .public = "meta.power", .internal = "__comptimepower" },
     .{ .public = "comp.power", .internal = "__comptimepower" },
-    .{ .public = "compiler.power", .internal = "__comptimepower" },
     .{ .public = "meta.powerset", .internal = "__comptimepower" },
     .{ .public = "comp.powerset", .internal = "__comptimepower" },
-    .{ .public = "compiler.powerset", .internal = "__comptimepower" },
     .{ .public = "meta.derive.power", .internal = "__derivepower" },
     .{ .public = "comp.derive.power", .internal = "__derivepower" },
-    .{ .public = "compiler.derive.power", .internal = "__derivepower" },
-    .{ .public = "meta.derive.powerset", .internal = "__derivepower" },
     .{ .public = "comp.derive.powerset", .internal = "__derivepower" },
-    .{ .public = "compiler.derive.powerset", .internal = "__derivepower" },
     .{ .public = "meta.choose", .internal = "__comptimechoose" },
     .{ .public = "comp.choose", .internal = "__comptimechoose" },
-    .{ .public = "compiler.choose", .internal = "__comptimechoose" },
     .{ .public = "meta.derive.choose", .internal = "__derivechoose" },
     .{ .public = "comp.derive.choose", .internal = "__derivechoose" },
-    .{ .public = "compiler.derive.choose", .internal = "__derivechoose" },
     .{ .public = "meta.permute", .internal = "__comptimepermute" },
     .{ .public = "comp.permute", .internal = "__comptimepermute" },
-    .{ .public = "compiler.permute", .internal = "__comptimepermute" },
     .{ .public = "meta.derive.permute", .internal = "__derivepermute" },
     .{ .public = "comp.derive.permute", .internal = "__derivepermute" },
-    .{ .public = "compiler.derive.permute", .internal = "__derivepermute" },
     // ── Universal composition glue (closes the combinator algebra) ──
     .{ .public = "meta.each", .internal = "__comptimeeach" },
     .{ .public = "comp.each", .internal = "__comptimeeach" },
-    .{ .public = "compiler.each", .internal = "__comptimeeach" },
     // `@comp.chain` — ergonomic alias for `@comp.each` (combinator composition glue)
-    .{ .public = "meta.chain", .internal = "__comptimeeach" },
     .{ .public = "comp.chain", .internal = "__comptimeeach" },
-    .{ .public = "compiler.chain", .internal = "__comptimeeach" },
 
     // `@comp.match` — compile-time pattern-match codegen (switch/case of codegen)
     // Splits pattern spec on `|`, calls callback for each alternative with {pattern, index, count}.
     // One declarative line → N specialized branches. Composes with @comp.each, @comp.burst, etc.
-    .{ .public = "meta.match", .internal = "__comptimematch" },
     .{ .public = "comp.match", .internal = "__comptimematch" },
-    .{ .public = "compiler.match", .internal = "__comptimematch" },
 
     // `@comp.tabulate` — compile-time lookup table generator (unrolled loop of codegen)
     // Calls callback for 0..count-1 with {index, count}, concatenates comma-separated.
     // O(1) author input → O(count) output. Replaces runtime init with compile-time static.
-    .{ .public = "meta.tabulate", .internal = "__comptimetabulate" },
     .{ .public = "comp.tabulate", .internal = "__comptimetabulate" },
-    .{ .public = "compiler.tabulate", .internal = "__comptimetabulate" },
 
     // `@comp.interpolate` — compile-time string interpolation (code template injection)
     // Takes template with {name} placeholders + {name=value} vars table, substitutes at compile time.
-    .{ .public = "meta.interpolate", .internal = "__comptimeinterpolate" },
     .{ .public = "comp.interpolate", .internal = "__comptimeinterpolate" },
-    .{ .public = "compiler.interpolate", .internal = "__comptimeinterpolate" },
 
     // `@comp.zip` — compile-time cartesian zip codegen (quadratic combinator)
     // Two pipe-separated specs, callback for every (a, b) pair with {a, b, index, count}.
-    .{ .public = "meta.zip", .internal = "__comptimezip" },
     .{ .public = "comp.zip", .internal = "__comptimezip" },
-    .{ .public = "compiler.zip", .internal = "__comptimezip" },
 
     // ── Type introspection ──
-    .{ .public = "meta.type.name", .internal = "__type_name" },
     .{ .public = "comp.type.name", .internal = "__type_name" },
-    .{ .public = "compiler.type.name", .internal = "__type_name" },
-    .{ .public = "meta.type.id", .internal = "__type_id" },
     .{ .public = "comp.type.id", .internal = "__type_id" },
-    .{ .public = "compiler.type.id", .internal = "__type_id" },
-    .{ .public = "meta.type.info", .internal = "__typeinfo" },
     .{ .public = "comp.type.info", .internal = "__typeinfo" },
-    .{ .public = "compiler.type.info", .internal = "__typeinfo" },
     .{ .public = "meta.type.shape", .internal = "__type_shape" },
     .{ .public = "comp.type.shape", .internal = "__type_shape" },
-    .{ .public = "compiler.type.shape", .internal = "__type_shape" },
     // Ergonomic alias — same intrinsic as @comp.type.shape (specialization ladder label).
     .{ .public = "meta.shape", .internal = "__type_shape" },
     .{ .public = "comp.shape", .internal = "__type_shape" },
-    .{ .public = "compiler.shape", .internal = "__type_shape" },
     .{ .public = "meta.why.shape", .internal = "__why_shape" },
     .{ .public = "comp.why.shape", .internal = "__why_shape" },
-    .{ .public = "compiler.why.shape", .internal = "__why_shape" },
     .{ .public = "meta.why.boxed", .internal = "__why_boxed" },
     .{ .public = "comp.why.boxed", .internal = "__why_boxed" },
-    .{ .public = "compiler.why.boxed", .internal = "__why_boxed" },
     .{ .public = "meta.why.not.native", .internal = "__why_not_native" },
     .{ .public = "comp.why.not.native", .internal = "__why_not_native" },
-    .{ .public = "compiler.why.not.native", .internal = "__why_not_native" },
     .{ .public = "meta.representation", .internal = "__representation" },
     .{ .public = "comp.representation", .internal = "__representation" },
-    .{ .public = "compiler.representation", .internal = "__representation" },
     .{ .public = "meta.why", .internal = "__why" },
     .{ .public = "comp.why", .internal = "__why" },
-    .{ .public = "compiler.why", .internal = "__why" },
     .{ .public = "meta.why.module", .internal = "__why_module" },
     .{ .public = "comp.why.module", .internal = "__why_module" },
-    .{ .public = "compiler.why.module", .internal = "__why_module" },
     .{ .public = "meta.origin", .internal = "__origin" },
     .{ .public = "comp.origin", .internal = "__origin" },
-    .{ .public = "compiler.origin", .internal = "__origin" },
-    .{ .public = "meta.typeinfo", .internal = "__typeinfo" },
-    .{ .public = "meta.type.is", .internal = "__is_type" },
     .{ .public = "comp.type.is", .internal = "__is_type" },
-    .{ .public = "compiler.type.is", .internal = "__is_type" },
-    .{ .public = "meta.is.type", .internal = "__is_type" },
-    .{ .public = "meta.type.of", .internal = "__typeof" },
     .{ .public = "comp.type.of", .internal = "__typeof" },
-    .{ .public = "compiler.type.of", .internal = "__typeof" },
-    .{ .public = "meta.typeof", .internal = "__typeof" },
-    .{ .public = "meta.types", .internal = "__moduletypes" },
     .{ .public = "comp.types", .internal = "__moduletypes" },
-    .{ .public = "compiler.types", .internal = "__moduletypes" },
-    .{ .public = "meta.type.names", .internal = "__moduletypenames" },
     .{ .public = "comp.type.names", .internal = "__moduletypenames" },
-    .{ .public = "compiler.type.names", .internal = "__moduletypenames" },
-    .{ .public = "meta.types.with", .internal = "__concepttypenames" },
     .{ .public = "comp.types.with", .internal = "__concepttypenames" },
-    .{ .public = "compiler.types.with", .internal = "__concepttypenames" },
-    .{ .public = "meta.diff", .internal = "__typediff" },
     .{ .public = "comp.diff", .internal = "__typediff" },
-    .{ .public = "compiler.diff", .internal = "__typediff" },
-    .{ .public = "meta.satisfies", .internal = "__satisfies" },
     .{ .public = "comp.satisfies", .internal = "__satisfies" },
-    .{ .public = "compiler.satisfies", .internal = "__satisfies" },
 
     // ── Structural reflection ──
-    .{ .public = "meta.fields", .internal = "__fields" },
     .{ .public = "comp.fields", .internal = "__fields" },
-    .{ .public = "compiler.fields", .internal = "__fields" },
     .{ .public = "meta.fields.map", .internal = "__fieldsmap" },
     .{ .public = "comp.fields.map", .internal = "__fieldsmap" },
-    .{ .public = "compiler.fields.map", .internal = "__fieldsmap" },
-    .{ .public = "meta.methods", .internal = "__methods" },
     .{ .public = "comp.methods", .internal = "__methods" },
-    .{ .public = "compiler.methods", .internal = "__methods" },
-    .{ .public = "meta.variants", .internal = "__variants" },
     .{ .public = "comp.variants", .internal = "__variants" },
-    .{ .public = "compiler.variants", .internal = "__variants" },
-    .{ .public = "meta.has.field", .internal = "__has_field" },
     .{ .public = "comp.has.field", .internal = "__has_field" },
-    .{ .public = "compiler.has.field", .internal = "__has_field" },
-    .{ .public = "meta.has.method", .internal = "__has_method" },
     .{ .public = "comp.has.method", .internal = "__has_method" },
-    .{ .public = "compiler.has.method", .internal = "__has_method" },
-    .{ .public = "meta.has.metamethod", .internal = "__has_metamethod" },
     .{ .public = "comp.has.metamethod", .internal = "__has_metamethod" },
-    .{ .public = "compiler.has.metamethod", .internal = "__has_metamethod" },
-    .{ .public = "meta.field.type", .internal = "__field_type" },
     .{ .public = "comp.field.type", .internal = "__field_type" },
-    .{ .public = "compiler.field.type", .internal = "__field_type" },
-    .{ .public = "meta.field.offset", .internal = "__field_offset" },
     .{ .public = "comp.field.offset", .internal = "__field_offset" },
-    .{ .public = "compiler.field.offset", .internal = "__field_offset" },
-    .{ .public = "meta.field.size", .internal = "__field_size" },
     .{ .public = "comp.field.size", .internal = "__field_size" },
-    .{ .public = "compiler.field.size", .internal = "__field_size" },
 
     // ── Concept introspection ──
-    .{ .public = "meta.concepts.methods", .internal = "__concept_methods" },
     .{ .public = "comp.concepts.methods", .internal = "__concept_methods" },
-    .{ .public = "compiler.concepts.methods", .internal = "__concept_methods" },
-    .{ .public = "meta.concepts.fields", .internal = "__concept_fields" },
     .{ .public = "comp.concepts.fields", .internal = "__concept_fields" },
-    .{ .public = "compiler.concepts.fields", .internal = "__concept_fields" },
-    .{ .public = "meta.concepts.members", .internal = "__concept_members" },
     .{ .public = "comp.concepts.members", .internal = "__concept_members" },
-    .{ .public = "compiler.concepts.members", .internal = "__concept_members" },
-    .{ .public = "meta.concepts.count", .internal = "__concept_count" },
     .{ .public = "comp.concepts.count", .internal = "__concept_count" },
-    .{ .public = "compiler.concepts.count", .internal = "__concept_count" },
 
     // ── Compile-time control ──
-    .{ .public = "meta.when", .internal = "__comptimeif" },
     .{ .public = "comp.when", .internal = "__comptimeif" },
-    .{ .public = "compiler.when", .internal = "__comptimeif" },
     .{ .public = "meta.loop", .internal = "__comptimefor" },
     .{ .public = "comp.loop", .internal = "__comptimefor" },
-    .{ .public = "compiler.loop", .internal = "__comptimefor" },
-    .{ .public = "meta.fold", .internal = "__comptimefold" },
     .{ .public = "comp.fold", .internal = "__comptimefold" },
-    .{ .public = "compiler.fold", .internal = "__comptimefold" },
-    .{ .public = "meta.assert", .internal = "__static_assert" },
     .{ .public = "comp.assert", .internal = "__static_assert" },
-    .{ .public = "compiler.assert", .internal = "__static_assert" },
-    .{ .public = "meta.compile.log", .internal = "__comptimeprint" },
     .{ .public = "comp.compile.log", .internal = "__comptimeprint" },
-    .{ .public = "compiler.compile.log", .internal = "__comptimeprint" },
-    .{ .public = "meta.compile.warn", .internal = "__comptimewarn" },
     .{ .public = "comp.compile.warn", .internal = "__comptimewarn" },
-    .{ .public = "compiler.compile.warn", .internal = "__comptimewarn" },
-    .{ .public = "meta.compile.error", .internal = "__comptimeerror" },
     .{ .public = "comp.compile.error", .internal = "__comptimeerror" },
-    .{ .public = "compiler.compile.error", .internal = "__comptimeerror" },
     // Canonical @comp.* dotted forms for the legacy flat/underscored parser aliases
     // (type introspection, concept/field/embed helpers, comptime control). Same
     // internals as the flat names; flat forms remain as deprecated aliases until
@@ -355,76 +244,39 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "comp.if", .internal = "__comptimeif" },
     .{ .public = "comp.for", .internal = "__comptimefor" },
     .{ .public = "comp.bit.field", .internal = "__bitfield" },
-    .{ .public = "meta.constexpr", .internal = "__constexpr" },
     .{ .public = "comp.constexpr", .internal = "__constexpr" },
-    .{ .public = "compiler.constexpr", .internal = "__constexpr" },
 
     // ── Derive management ──
     .{ .public = "meta.define.derive", .internal = "__define_derive" },
     .{ .public = "comp.define.derive", .internal = "__define_derive" },
-    .{ .public = "compiler.define.derive", .internal = "__define_derive" },
-    .{ .public = "meta.register.derive", .internal = "__register_derive" },
     .{ .public = "comp.register.derive", .internal = "__register_derive" },
-    .{ .public = "compiler.register.derive", .internal = "__register_derive" },
-    .{ .public = "meta.register.rewrite", .internal = "__register_rewrite" },
     .{ .public = "comp.register.rewrite", .internal = "__register_rewrite" },
-    .{ .public = "compiler.register.rewrite", .internal = "__register_rewrite" },
-    .{ .public = "meta.derive.lookup", .internal = "__lookup_derive" },
     .{ .public = "comp.derive.lookup", .internal = "__lookup_derive" },
-    .{ .public = "compiler.derive.lookup", .internal = "__lookup_derive" },
-    .{ .public = "meta.derive.list", .internal = "__list_derives" },
     .{ .public = "comp.derive.list", .internal = "__list_derives" },
-    .{ .public = "compiler.derive.list", .internal = "__list_derives" },
-    .{ .public = "meta.derive.eval", .internal = "__eval_derive" },
     .{ .public = "comp.derive.eval", .internal = "__eval_derive" },
-    .{ .public = "compiler.derive.eval", .internal = "__eval_derive" },
 
     // ── Embed ──
-    .{ .public = "meta.embed.str", .internal = "__embed_str" },
     .{ .public = "comp.embed.str", .internal = "__embed_str" },
-    .{ .public = "compiler.embed.str", .internal = "__embed_str" },
-    .{ .public = "meta.embed.file", .internal = "__embed_file" },
     .{ .public = "comp.embed.file", .internal = "__embed_file" },
-    .{ .public = "compiler.embed.file", .internal = "__embed_file" },
     // NOTE: meta.embed.json and meta.wasm are module directives, not expressions;
     // they must lower to C globals, not lua_Value tables (AGENTS.md §6).
 
     // ── Code generation / transform ──
-    .{ .public = "meta.foreign", .internal = "__foreign" },
     .{ .public = "comp.foreign", .internal = "__foreign" },
-    .{ .public = "compiler.foreign", .internal = "__foreign" },
-    .{ .public = "meta.schema", .internal = "__schema" },
     .{ .public = "comp.schema", .internal = "__schema" },
-    .{ .public = "compiler.schema", .internal = "__schema" },
-    .{ .public = "meta.ffi", .internal = "__ffi_gen" },
     .{ .public = "comp.ffi", .internal = "__ffi_gen" },
-    .{ .public = "compiler.ffi", .internal = "__ffi_gen" },
-    .{ .public = "meta.pipeline", .internal = "__pipeline" },
     .{ .public = "comp.pipeline", .internal = "__pipeline" },
-    .{ .public = "compiler.pipeline", .internal = "__pipeline" },
-    .{ .public = "meta.sql", .internal = "__sql" },
     .{ .public = "comp.sql", .internal = "__sql" },
-    .{ .public = "compiler.sql", .internal = "__sql" },
     // The last two intrinsics still spelled with a leading `__` in .id source.
     // Every other internal already had a `@comp.*` public name here; these did
     // not, which is the only reason the `__` namespace could not reach zero.
-    .{ .public = "meta.native.load.u8", .internal = "__native_load_u8" },
     .{ .public = "comp.native.load.u8", .internal = "__native_load_u8" },
-    .{ .public = "compiler.native.load.u8", .internal = "__native_load_u8" },
-    .{ .public = "meta.id.kind", .internal = "__duo_kind" },
     .{ .public = "comp.id.kind", .internal = "__duo_kind" },
-    .{ .public = "compiler.id.kind", .internal = "__duo_kind" },
-    .{ .public = "meta.lua", .internal = "__lua_exec" },
     .{ .public = "comp.lua", .internal = "__lua_exec" },
-    .{ .public = "compiler.lua", .internal = "__lua_exec" },
-    .{ .public = "meta.run", .internal = "__run" },
     .{ .public = "comp.run", .internal = "__run" },
-    .{ .public = "compiler.run", .internal = "__run" },
-    .{ .public = "meta.c.emit.file", .internal = "__c_emit_file" },
     .{ .public = "comp.c.emit.file", .internal = "__c_emit_file" },
-    .{ .public = "compiler.c.emit.file", .internal = "__c_emit_file" },
 
-    // ── Compiler / raw C interface (hierarchical @c.*, @comp.c.*, @meta.c.*, @compiler.c.*) ──
+    // ── Compiler / raw C interface (hierarchical @c.*, @comp.c.*, @meta.c.*) ──
     .{ .public = "c.emit", .internal = "__emit" },
     .{ .public = "c.call", .internal = "__c_call" },
     .{ .public = "c.include", .internal = "__c_include" },
@@ -435,17 +287,9 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "emit", .internal = "__emit" },
     .{ .public = "asm", .internal = "__asm" },
     .{ .public = "hot", .internal = "__hot_path" },
-    .{ .public = "meta.hint.hot", .internal = "__hot_path" },
     .{ .public = "comp.hint.hot", .internal = "__hot_path" },
-    .{ .public = "compiler.hint.hot", .internal = "__hot_path" },
     .{ .public = "meta.c.emit", .internal = "__emit" },
-    .{ .public = "meta.c.call", .internal = "__c_call" },
-    .{ .public = "meta.c.include", .internal = "__c_include" },
     .{ .public = "meta.c.export", .internal = "__c_export" },
-    .{ .public = "meta.c.import", .internal = "__c_import" },
-    .{ .public = "meta.c.type", .internal = "__c_type" },
-    .{ .public = "meta.c.link", .internal = "__c_link" },
-    .{ .public = "meta.asm", .internal = "__asm" },
     .{ .public = "comp.c.emit", .internal = "__emit" },
     .{ .public = "comp.c.call", .internal = "__c_call" },
     .{ .public = "comp.c.include", .internal = "__c_include" },
@@ -454,180 +298,73 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "comp.c.type", .internal = "__c_type" },
     .{ .public = "comp.c.link", .internal = "__c_link" },
     .{ .public = "comp.asm", .internal = "__asm" },
-    .{ .public = "comp.emit", .internal = "__emit" },
-    .{ .public = "compiler.c.emit", .internal = "__emit" },
-    .{ .public = "compiler.c.call", .internal = "__c_call" },
-    .{ .public = "compiler.c.include", .internal = "__c_include" },
-    .{ .public = "compiler.c.export", .internal = "__c_export" },
-    .{ .public = "compiler.c.import", .internal = "__c_import" },
-    .{ .public = "compiler.c.type", .internal = "__c_type" },
-    .{ .public = "compiler.c.link", .internal = "__c_link" },
-    .{ .public = "compiler.emit", .internal = "__emit" },
-    .{ .public = "compiler.asm", .internal = "__asm" },
 
     // ── Type construction ──
-    .{ .public = "meta.make.type", .internal = "__make_type" },
     .{ .public = "comp.make.type", .internal = "__make_type" },
-    .{ .public = "compiler.make.type", .internal = "__make_type" },
-    .{ .public = "meta.as.type", .internal = "__as_type" },
     .{ .public = "comp.as.type", .internal = "__as_type" },
-    .{ .public = "compiler.as.type", .internal = "__as_type" },
-    .{ .public = "meta.bitfield", .internal = "__bitfield" },
     .{ .public = "comp.bitfield", .internal = "__bitfield" },
-    .{ .public = "compiler.bitfield", .internal = "__bitfield" },
-    .{ .public = "meta.union", .internal = "__union" },
     .{ .public = "comp.union", .internal = "__union" },
-    .{ .public = "compiler.union", .internal = "__union" },
-    .{ .public = "meta.select", .internal = "__select" },
     .{ .public = "comp.select", .internal = "__select" },
-    .{ .public = "compiler.select", .internal = "__select" },
 
     // ── Typeof (type-specifier, not value expression) ──
-    .{ .public = "meta.typeof", .internal = "__typeof" },
     .{ .public = "comp.typeof", .internal = "__typeof" },
-    .{ .public = "compiler.typeof", .internal = "__typeof" },
 
     // ── Bit intrinsics (bare-name + hierarchy aliases for ergonomics) ──
-    .{ .public = "meta.bit.popcount", .internal = "__popcount" },
     .{ .public = "comp.bit.popcount", .internal = "__popcount" },
-    .{ .public = "compiler.bit.popcount", .internal = "__popcount" },
     .{ .public = "popcount", .internal = "__popcount" },
-    .{ .public = "meta.bit.ctz", .internal = "__ctz" },
     .{ .public = "comp.bit.ctz", .internal = "__ctz" },
-    .{ .public = "compiler.bit.ctz", .internal = "__ctz" },
     .{ .public = "ctz", .internal = "__ctz" },
-    .{ .public = "meta.bit.clz", .internal = "__clz" },
     .{ .public = "comp.bit.clz", .internal = "__clz" },
-    .{ .public = "compiler.bit.clz", .internal = "__clz" },
     .{ .public = "clz", .internal = "__clz" },
-    .{ .public = "meta.bit.bswap", .internal = "__bswap" },
     .{ .public = "comp.bit.bswap", .internal = "__bswap" },
-    .{ .public = "compiler.bit.bswap", .internal = "__bswap" },
     .{ .public = "bswap", .internal = "__bswap" },
-    .{ .public = "meta.bit.rotl", .internal = "__rotl" },
     .{ .public = "comp.bit.rotl", .internal = "__rotl" },
-    .{ .public = "compiler.bit.rotl", .internal = "__rotl" },
     .{ .public = "rotl", .internal = "__rotl" },
-    .{ .public = "meta.bit.rotr", .internal = "__rotr" },
     .{ .public = "comp.bit.rotr", .internal = "__rotr" },
-    .{ .public = "compiler.bit.rotr", .internal = "__rotr" },
-    .{ .public = "meta.bit.bitcast", .internal = "__bitcast" },
     .{ .public = "comp.bit.bitcast", .internal = "__bitcast" },
-    .{ .public = "compiler.bit.bitcast", .internal = "__bitcast" },
 
     // ── Optimization hints (bare-name + hierarchy aliases for ergonomics) ──
-    .{ .public = "meta.hint.likely", .internal = "__likely" },
     .{ .public = "comp.hint.likely", .internal = "__likely" },
-    .{ .public = "compiler.hint.likely", .internal = "__likely" },
     .{ .public = "likely", .internal = "__likely" },
-    .{ .public = "meta.hint.unlikely", .internal = "__unlikely" },
     .{ .public = "comp.hint.unlikely", .internal = "__unlikely" },
-    .{ .public = "compiler.hint.unlikely", .internal = "__unlikely" },
     .{ .public = "unlikely", .internal = "__unlikely" },
-    .{ .public = "meta.hint.prefetch", .internal = "__prefetch" },
     .{ .public = "comp.hint.prefetch", .internal = "__prefetch" },
-    .{ .public = "compiler.hint.prefetch", .internal = "__prefetch" },
     .{ .public = "prefetch", .internal = "__prefetch" },
-    .{ .public = "meta.hint.assume", .internal = "__assume" },
     .{ .public = "comp.hint.assume", .internal = "__assume" },
-    .{ .public = "compiler.hint.assume", .internal = "__assume" },
-    .{ .public = "meta.hint.unreachable", .internal = "__unreachable" },
     .{ .public = "comp.hint.unreachable", .internal = "__unreachable" },
-    .{ .public = "compiler.hint.unreachable", .internal = "__unreachable" },
-    .{ .public = "meta.hint.trap", .internal = "__trap" },
     .{ .public = "comp.hint.trap", .internal = "__trap" },
-    .{ .public = "compiler.hint.trap", .internal = "__trap" },
-    .{ .public = "meta.hint.fence", .internal = "__fence" },
     .{ .public = "comp.hint.fence", .internal = "__fence" },
-    .{ .public = "compiler.hint.fence", .internal = "__fence" },
     .{ .public = "fence", .internal = "__fence" },
-    .{ .public = "meta.hint.volatile", .internal = "__volatile" },
     .{ .public = "comp.hint.volatile", .internal = "__volatile" },
-    .{ .public = "compiler.hint.volatile", .internal = "__volatile" },
     .{ .public = "volatile", .internal = "__volatile" },
 
     // ── Catalog / self-documentation / agent ──
-    .{ .public = "meta.catalog", .internal = "__metacatalog" },
-    .{ .public = "comp.catalog", .internal = "__metacatalog" },
-    .{ .public = "compiler.catalog", .internal = "__metacatalog" },
-    .{ .public = "meta.ladder", .internal = "__metaladder" },
-    .{ .public = "comp.ladder", .internal = "__metaladder" },
-    .{ .public = "compiler.ladder", .internal = "__metaladder" },
-    .{ .public = "meta.agent.catalog", .internal = "__metaagentcatalog" },
-    .{ .public = "comp.agent.catalog", .internal = "__metaagentcatalog" },
-    .{ .public = "compiler.agent.catalog", .internal = "__metaagentcatalog" },
-    .{ .public = "meta.agent.ladder", .internal = "__metaagentladder" },
-    .{ .public = "comp.agent.ladder", .internal = "__metaagentladder" },
-    .{ .public = "compiler.agent.ladder", .internal = "__metaagentladder" },
-    .{ .public = "meta.agent.hooks", .internal = "__metaagenthooks" },
-    .{ .public = "comp.agent.hooks", .internal = "__metaagenthooks" },
-    .{ .public = "compiler.agent.hooks", .internal = "__metaagenthooks" },
-    .{ .public = "meta.agent.dedupe", .internal = "__metaagentdedupe" },
-    .{ .public = "comp.agent.dedupe", .internal = "__metaagentdedupe" },
-    .{ .public = "compiler.agent.dedupe", .internal = "__metaagentdedupe" },
-    .{ .public = "meta.agent.gaps", .internal = "__metaagentgaps" },
-    .{ .public = "comp.agent.gaps", .internal = "__metaagentgaps" },
-    .{ .public = "compiler.agent.gaps", .internal = "__metaagentgaps" },
-    .{ .public = "meta.agent.grammar", .internal = "__metaagentgrammar" },
-    .{ .public = "comp.agent.grammar", .internal = "__metaagentgrammar" },
-    .{ .public = "compiler.agent.grammar", .internal = "__metaagentgrammar" },
-    .{ .public = "comp.agent.multiplier", .internal = "__metaagentmultiplier" },
-    .{ .public = "compiler.agent.multiplier", .internal = "__metaagentmultiplier" },
-    .{ .public = "meta.agent.multiplier", .internal = "__metaagentmultiplier" },
     .{ .public = "meta.str.starts.with", .internal = "__strstartswith" },
     .{ .public = "comp.str.starts.with", .internal = "__strstartswith" },
-    .{ .public = "compiler.str.starts.with", .internal = "__strstartswith" },
     .{ .public = "meta.str.ends.with", .internal = "__strendswith" },
     .{ .public = "comp.str.ends.with", .internal = "__strendswith" },
-    .{ .public = "compiler.str.ends.with", .internal = "__strendswith" },
-    .{ .public = "meta.str.countlines", .internal = "__strcountlines" },
     .{ .public = "comp.str.countlines", .internal = "__strcountlines" },
-    .{ .public = "compiler.str.countlines", .internal = "__strcountlines" },
-    .{ .public = "meta.str.splitcount", .internal = "__strsplitcount" },
     .{ .public = "comp.str.splitcount", .internal = "__strsplitcount" },
-    .{ .public = "compiler.str.splitcount", .internal = "__strsplitcount" },
-    .{ .public = "meta.str.len", .internal = "__strcomptelen" },
     .{ .public = "comp.str.len", .internal = "__strcomptelen" },
-    .{ .public = "compiler.str.len", .internal = "__strcomptelen" },
-    .{ .public = "meta.str.eq", .internal = "__streq" },
     .{ .public = "comp.str.eq", .internal = "__streq" },
-    .{ .public = "compiler.str.eq", .internal = "__streq" },
-    .{ .public = "meta.str.join", .internal = "__strjoin" },
     .{ .public = "comp.str.join", .internal = "__strjoin" },
-    .{ .public = "compiler.str.join", .internal = "__strjoin" },
 
     // ── Generative combinators (break the linear ceiling) ──
     // @meta.grammar: EBNF grammar -> O(b^d) code fragments from minimal spec
-    .{ .public = "meta.grammar", .internal = "__metagrammar" },
     .{ .public = "comp.grammar", .internal = "__metagrammar" },
-    .{ .public = "compiler.grammar", .internal = "__metagrammar" },
     // @meta.weave: cross-module type-driven code injection (1 type ^ N weaves ^ M derives)
-    .{ .public = "meta.weave", .internal = "__metaweave" },
     .{ .public = "comp.weave", .internal = "__metaweave" },
-    .{ .public = "compiler.weave", .internal = "__metaweave" },
     // @meta.template: parametric code templates that expand at compile time
-    .{ .public = "meta.template", .internal = "__metatemplate" },
     .{ .public = "comp.template", .internal = "__metatemplate" },
-    .{ .public = "compiler.template", .internal = "__metatemplate" },
     // @meta.generate: LLM-free generative code synthesis from constraints
-    .{ .public = "meta.generate", .internal = "__metagenerate" },
     .{ .public = "comp.generate", .internal = "__metagenerate" },
-    .{ .public = "compiler.generate", .internal = "__metagenerate" },
     // @meta.scheme: declarative program scheme -> full implementation
-    .{ .public = "meta.scheme", .internal = "__metascheme" },
     .{ .public = "comp.scheme", .internal = "__metascheme" },
-    .{ .public = "compiler.scheme", .internal = "__metascheme" },
-    .{ .public = "meta.scheme.clauses", .internal = "__metaschemeclauses" },
     .{ .public = "comp.scheme.clauses", .internal = "__metaschemeclauses" },
-    .{ .public = "compiler.scheme.clauses", .internal = "__metaschemeclauses" },
     // @meta.fixpoint: unbounded iterative combinator — O(1) input -> O(max_iter) output
-    .{ .public = "meta.fixpoint", .internal = "__comptimefixpoint" },
     .{ .public = "comp.fixpoint", .internal = "__comptimefixpoint" },
-    .{ .public = "compiler.fixpoint", .internal = "__comptimefixpoint" },
     // @meta.fanout: tree-shaped generative expansion — O(branch^depth) output from O(1) input
-    .{ .public = "meta.fanout", .internal = "__comptimefanout" },
     .{ .public = "comp.fanout", .internal = "__comptimefanout" },
-    .{ .public = "compiler.fanout", .internal = "__comptimefanout" },
 
     // ── Bare @ aliases for ergonomic exponential metaprogramming ──
     // These are short, memorable names with just @ prefix, like @popcount
@@ -651,108 +388,51 @@ const builtins = [_]BuiltinEntry{
 // ─────────────────────────────────────────────────────────────────────────────
 
 const directives = [_]DirectiveEntry{
-    .{ .public = "meta.pipeline", .canonical = "pipeline" },
     .{ .public = "comp.pipeline", .canonical = "pipeline" },
-    .{ .public = "compiler.pipeline", .canonical = "pipeline" },
-    .{ .public = "meta.foreign", .canonical = "foreign" },
     .{ .public = "comp.foreign", .canonical = "foreign" },
-    .{ .public = "compiler.foreign", .canonical = "foreign" },
-    .{ .public = "meta.embed.json", .canonical = "embed.json" },
     .{ .public = "comp.embed.json", .canonical = "embed.json" },
-    .{ .public = "compiler.embed.json", .canonical = "embed.json" },
-    .{ .public = "meta.embed.wasm", .canonical = "wasm" },
     .{ .public = "comp.embed.wasm", .canonical = "wasm" },
-    .{ .public = "compiler.embed.wasm", .canonical = "wasm" },
-    .{ .public = "meta.wasm", .canonical = "wasm" },
     .{ .public = "comp.wasm", .canonical = "wasm" },
-    .{ .public = "compiler.wasm", .canonical = "wasm" },
-    .{ .public = "meta.sql", .canonical = "sql" },
     .{ .public = "comp.sql", .canonical = "sql" },
-    .{ .public = "compiler.sql", .canonical = "sql" },
-    .{ .public = "meta.lua", .canonical = "lua" },
     .{ .public = "comp.lua", .canonical = "lua" },
-    .{ .public = "compiler.lua", .canonical = "lua" },
-    .{ .public = "meta.ffi", .canonical = "ffi.gen" },
     .{ .public = "comp.ffi", .canonical = "ffi.gen" },
-    .{ .public = "compiler.ffi", .canonical = "ffi.gen" },
     .{ .public = "meta.define.derive", .canonical = "define.derive" },
     .{ .public = "comp.define.derive", .canonical = "define.derive" },
-    .{ .public = "compiler.define.derive", .canonical = "define.derive" },
-    .{ .public = "meta.define.bundle", .canonical = "define.derive.bundle" },
     .{ .public = "comp.define.bundle", .canonical = "define.derive.bundle" },
-    .{ .public = "compiler.define.bundle", .canonical = "define.derive.bundle" },
-    .{ .public = "meta.derive.all", .canonical = "derive.all" },
     .{ .public = "comp.derive.all", .canonical = "derive.all" },
-    .{ .public = "compiler.derive.all", .canonical = "derive.all" },
     .{ .public = "meta.emit.derive", .canonical = "emit.derive" },
     .{ .public = "comp.emit.derive", .canonical = "emit.derive" },
-    .{ .public = "compiler.emit.derive", .canonical = "emit.derive" },
     .{ .public = "meta.emit.omni", .canonical = "emit.omni" },
     .{ .public = "comp.emit.omni", .canonical = "emit.omni" },
-    .{ .public = "compiler.emit.omni", .canonical = "emit.omni" },
     .{ .public = "meta.burst", .canonical = "burst" },
     .{ .public = "comp.burst", .canonical = "burst" },
-    .{ .public = "compiler.burst", .canonical = "burst" },
     .{ .public = "meta.transcend", .canonical = "transcend" },
     .{ .public = "comp.transcend", .canonical = "transcend" },
-    .{ .public = "compiler.transcend", .canonical = "transcend" },
     .{ .public = "meta.infinity", .canonical = "infinity" },
     .{ .public = "comp.infinity", .canonical = "infinity" },
-    .{ .public = "compiler.infinity", .canonical = "infinity" },
     .{ .public = "meta.hyper", .canonical = "hyper" },
     .{ .public = "comp.hyper", .canonical = "hyper" },
-    .{ .public = "compiler.hyper", .canonical = "hyper" },
-    .{ .public = "meta.compile.native", .canonical = "native" },
     .{ .public = "comp.compile.native", .canonical = "native" },
-    .{ .public = "compiler.compile.native", .canonical = "native" },
     .{ .public = "native", .canonical = "native" },
-    .{ .public = "meta.compile.cached", .canonical = "cached" },
     .{ .public = "comp.compile.cached", .canonical = "cached" },
-    .{ .public = "compiler.compile.cached", .canonical = "cached" },
-    .{ .public = "meta.compile.thread", .canonical = "compile.thread" },
     .{ .public = "comp.compile.thread", .canonical = "compile.thread" },
-    .{ .public = "compiler.compile.thread", .canonical = "compile.thread" },
-    .{ .public = "meta.compile.device", .canonical = "device" },
     .{ .public = "comp.compile.device", .canonical = "device" },
-    .{ .public = "compiler.compile.device", .canonical = "device" },
-    .{ .public = "meta.compile.autodiff", .canonical = "autodiff" },
     .{ .public = "comp.compile.autodiff", .canonical = "autodiff" },
-    .{ .public = "compiler.compile.autodiff", .canonical = "autodiff" },
-    .{ .public = "meta.compile.differentiable", .canonical = "differentiable" },
     .{ .public = "comp.compile.differentiable", .canonical = "differentiable" },
-    .{ .public = "compiler.compile.differentiable", .canonical = "differentiable" },
-    .{ .public = "meta.compile.profile", .canonical = "profile" },
     .{ .public = "comp.compile.profile", .canonical = "profile" },
-    .{ .public = "compiler.compile.profile", .canonical = "profile" },
-    .{ .public = "meta.compile.unroll", .canonical = "unroll" },
     .{ .public = "comp.compile.unroll", .canonical = "unroll" },
-    .{ .public = "compiler.compile.unroll", .canonical = "unroll" },
-    .{ .public = "meta.compile.modify", .canonical = "modify" },
     .{ .public = "comp.compile.modify", .canonical = "modify" },
-    .{ .public = "compiler.compile.modify", .canonical = "modify" },
-    .{ .public = "meta.compile.only", .canonical = "compile.only" },
     .{ .public = "comp.compile.only", .canonical = "compile.only" },
-    .{ .public = "compiler.compile.only", .canonical = "compile.only" },
-    .{ .public = "meta.emit.file", .canonical = "c.emit.file" },
     .{ .public = "comp.emit.file", .canonical = "c.emit.file" },
-    .{ .public = "compiler.emit.file", .canonical = "c.emit.file" },
     // Generative combinators as module-level directives
-    .{ .public = "meta.grammar", .canonical = "grammar" },
     .{ .public = "comp.grammar", .canonical = "grammar" },
-    .{ .public = "compiler.grammar", .canonical = "grammar" },
-    .{ .public = "meta.weave", .canonical = "weave" },
     .{ .public = "comp.weave", .canonical = "weave" },
-    .{ .public = "compiler.weave", .canonical = "weave" },
-    .{ .public = "meta.template", .canonical = "template" },
     .{ .public = "comp.template", .canonical = "template" },
-    .{ .public = "compiler.template", .canonical = "template" },
-    .{ .public = "meta.scheme", .canonical = "scheme" },
     .{ .public = "comp.scheme", .canonical = "scheme" },
-    .{ .public = "compiler.scheme", .canonical = "scheme" },
 };
 
 /// Map `@`-prefixed qualified name to internal intrinsic (`__comptimemap`, etc.).
-/// Accepts `comp.*`, `compiler.*`, and `meta.*` prefixes interchangeably.
+/// Accepts `comp.*` and `meta.*` prefixes interchangeably.
 pub fn resolveBuiltin(qualified: []const u8) ?[]const u8 {
     for (builtins) |entry| {
         if (std.mem.eql(u8, qualified, entry.public)) return entry.internal;
@@ -800,7 +480,7 @@ pub fn isCHeaderImportDirective(name: []const u8) bool {
 /// Standalone raw C injection directives (`@comp.c.emit`, legacy `@c.emit`, …).
 ///
 /// SEVEN SPELLINGS REACH `__emit`: `@comp.c.emit` (canonical), `@c.emit`,
-/// `@meta.c.emit`, `@compiler.c.emit`, `@comp.emit`, `@compiler.emit`, `@emit`.
+/// `@meta.c.emit`, `@comp.emit`, `@emit`.
 /// They are one operation — compiled and run, all seven give the same answer.
 /// The table is the only place that fact is written down, so this predicate
 /// reads the table instead of restating part of it; restating part of it is
@@ -878,7 +558,7 @@ pub fn directiveMatches(name: []const u8, canonical: []const u8) bool {
 }
 
 pub fn isModuleDirective(name: []const u8) bool {
-    // Check the directives array (handles meta.*, comp.*, compiler.* prefixed names)
+    // Check the directives array (handles meta.*, comp.* prefixed names)
     for (directives) |entry| {
         if (std.mem.eql(u8, name, entry.public)) return true;
     }
@@ -936,49 +616,49 @@ pub fn isMetaAttribute(name: []const u8) bool {
     // expression-position calls that should be parsed as expr_stmt, not
     // attributed declarations.
     const expression_combinators = [_][]const u8{
-        "comp.match",           "meta.match",           "compiler.match",
-        "comp.tabulate",        "meta.tabulate",        "compiler.tabulate",
-        "comp.interpolate",     "meta.interpolate",     "compiler.interpolate",
-        "comp.zip",             "meta.zip",             "compiler.zip",
-        "comp.assert",          "meta.assert",          "compiler.assert",
-        "comp.compile.log",     "meta.compile.log",     "compiler.compile.log",
-        "comp.compile.warn",    "meta.compile.warn",    "compiler.compile.warn",
-        "comp.compile.error",   "meta.compile.error",   "compiler.compile.error",
-        "comp.each",            "meta.each",            "compiler.each",
-        "comp.chain",           "meta.chain",           "compiler.chain",
-        "comp.map",             "meta.map",             "compiler.map",
-        "comp.sweep",           "meta.sweep",           "compiler.sweep",
-        "comp.grammar",         "meta.grammar",         "compiler.grammar",
-        "comp.template",        "meta.template",        "compiler.template",
-        "comp.generate",        "meta.generate",        "compiler.generate",
-        "comp.scheme",          "meta.scheme",          "compiler.scheme",
-        "comp.scheme.clauses",  "meta.scheme.clauses",  "compiler.scheme.clauses",
-        "comp.weave",           "meta.weave",           "compiler.weave",
-        "comp.product",         "meta.product",         "compiler.product",
-        "comp.power",           "meta.power",           "compiler.power",
-        "comp.powerset",        "meta.powerset",        "compiler.powerset",
-        "comp.permute",         "meta.permute",         "compiler.permute",
-        "comp.choose",          "meta.choose",          "compiler.choose",
-        "comp.fixpoint",        "meta.fixpoint",        "compiler.fixpoint",
-        "comp.fanout",          "meta.fanout",          "compiler.fanout",
+        "comp.match",
+        "comp.tabulate",
+        "comp.interpolate",
+        "comp.zip",
+        "comp.assert",
+        "comp.compile.log",
+        "comp.compile.warn",
+        "comp.compile.error",
+        "comp.each",            "meta.each",
+        "comp.chain",
+        "comp.map",             "meta.map",
+        "comp.sweep",           "meta.sweep",
+        "comp.grammar",
+        "comp.template",
+        "comp.generate",
+        "comp.scheme",
+        "comp.scheme.clauses",
+        "comp.weave",
+        "comp.product",         "meta.product",
+        "comp.power",           "meta.power",
+        "comp.powerset",        "meta.powerset",
+        "comp.permute",         "meta.permute",
+        "comp.choose",          "meta.choose",
+        "comp.fixpoint",
+        "comp.fanout",
         // @comp.derive.* expression combinators (G-060: must parse as expr in blocks)
-        "comp.derive.power",    "meta.derive.power",    "compiler.derive.power",
-        "comp.derive.powerset", "meta.derive.powerset", "compiler.derive.powerset",
-        "comp.derive.choose",   "meta.derive.choose",   "compiler.derive.choose",
-        "comp.derive.permute",  "meta.derive.permute",  "compiler.derive.permute",
-        "comp.derive.product",  "meta.derive.product",  "compiler.derive.product",
-        "comp.derive.tensor",   "meta.derive.tensor",   "compiler.derive.tensor",
-        "comp.derive.nfold",    "meta.derive.nfold",    "compiler.derive.nfold",
-        "comp.derive",          "meta.derive",          "compiler.derive",
-        "comp.expand",          "meta.expand",          "compiler.expand",
-        "comp.ceiling",         "meta.ceiling",         "compiler.ceiling",
-        "comp.omni",            "meta.omni",            "compiler.omni",
-        "comp.stack",           "meta.stack",           "compiler.stack",
-        "comp.burst",           "meta.burst",           "compiler.burst",
-        "comp.transcend",       "meta.transcend",       "compiler.transcend",
-        "comp.infinity",        "meta.infinity",        "compiler.infinity",
-        "comp.hyper",           "meta.hyper",           "compiler.hyper",
-        "comp.tower",           "meta.tower",           "compiler.tower",
+        "comp.derive.power",    "meta.derive.power",
+        "comp.derive.powerset",
+        "comp.derive.choose",   "meta.derive.choose",
+        "comp.derive.permute",  "meta.derive.permute",
+        "comp.derive.product",  "meta.derive.product",
+        "comp.derive.tensor",   "meta.derive.tensor",
+        "comp.derive.nfold",    "meta.derive.nfold",
+        "comp.derive",          "meta.derive",
+        "comp.expand",          "meta.expand",
+        "comp.ceiling",         "meta.ceiling",
+        "comp.omni",            "meta.omni",
+        "comp.stack",           "meta.stack",
+        "comp.burst",           "meta.burst",
+        "comp.transcend",       "meta.transcend",
+        "comp.infinity",        "meta.infinity",
+        "comp.hyper",           "meta.hyper",
+        "comp.tower",           "meta.tower",
     };
     for (expression_combinators) |expr_name| {
         if (std.mem.eql(u8, name, expr_name)) return false;
@@ -1014,12 +694,10 @@ pub fn isAttachingMetaAttribute(name: []const u8) bool {
 }
 
 /// Normalize type-level derive attributes to canonical names.
-/// Accepts `comp.*`, `compiler.*`, `meta.*` prefixes interchangeably.
+/// Accepts `comp.*` and `meta.*` prefixes interchangeably.
 pub fn normalizeTypeAttribute(name: []const u8) []const u8 {
     // Strip prefix to get canonical dotted form (comp.* is primary)
-    const stripped = if (std.mem.startsWith(u8, name, "compiler."))
-        name["compiler.".len..]
-    else if (std.mem.startsWith(u8, name, "comp."))
+    const stripped = if (std.mem.startsWith(u8, name, "comp."))
         name["comp.".len..]
     else if (std.mem.startsWith(u8, name, "meta."))
         name["meta.".len..]
@@ -1039,13 +717,11 @@ pub fn isTypeLevelDeriveAttribute(name: []const u8) bool {
 }
 
 /// Normalize function/type compiler hint attributes under @comp.compile.* / @meta.compile.*
-/// Accepts `comp.*`, `compiler.*`, `meta.*` prefixes interchangeably.
+/// Accepts `comp.*` and `meta.*` prefixes interchangeably.
 /// Canonical prefix is `comp.*` — returns bare dotted form `compile.only`, `inline`, etc.
 pub fn normalizeCompileAttribute(name: []const u8) []const u8 {
     // Strip prefix to get canonical dotted form
-    const stripped = if (std.mem.startsWith(u8, name, "compiler."))
-        name["compiler.".len..]
-    else if (std.mem.startsWith(u8, name, "comp."))
+    const stripped = if (std.mem.startsWith(u8, name, "comp."))
         name["comp.".len..]
     else if (std.mem.startsWith(u8, name, "meta."))
         name["meta.".len..]
@@ -1075,8 +751,6 @@ pub fn catalogPathParseable(path: []const u8) bool {
         path["comp.".len..]
     else if (std.mem.startsWith(u8, path, "meta."))
         path["meta.".len..]
-    else if (std.mem.startsWith(u8, path, "compiler."))
-        path["compiler.".len..]
     else
         return false;
     var tail = rest;
@@ -1139,8 +813,7 @@ pub fn catalogCategory(path: []const u8) []const u8 {
     if (std.mem.startsWith(u8, path, "meta.emit.") or
         std.mem.startsWith(u8, path, "comp.emit."))
         return "emit";
-    if (std.mem.eql(u8, path, "meta.derive.all") or
-        std.mem.eql(u8, path, "meta.burst") or
+    if (std.mem.eql(u8, path, "meta.burst") or
         std.mem.eql(u8, path, "meta.transcend") or
         std.mem.eql(u8, path, "meta.infinity") or
         std.mem.eql(u8, path, "meta.hyper") or
@@ -1152,27 +825,17 @@ pub fn catalogCategory(path: []const u8) []const u8 {
         std.mem.eql(u8, path, "comp.hyper") or
         std.mem.startsWith(u8, path, "comp.define."))
         return "define";
-    if (std.mem.startsWith(u8, path, "meta.compile.") or
-        std.mem.startsWith(u8, path, "comp.compile."))
+    if (std.mem.startsWith(u8, path, "comp.compile."))
         return "compile";
     if (std.mem.indexOf(u8, path, ".concepts.") != null or
         std.mem.startsWith(u8, path, "meta.type.") or
         std.mem.startsWith(u8, path, "comp.type.") or
-        std.mem.startsWith(u8, path, "meta.types") or
         std.mem.startsWith(u8, path, "comp.types") or
-        std.mem.startsWith(u8, path, "meta.has.") or
         std.mem.startsWith(u8, path, "comp.has.") or
-        std.mem.startsWith(u8, path, "meta.field.") or
         std.mem.startsWith(u8, path, "comp.field.") or
-        std.mem.eql(u8, path, "meta.fields") or
         std.mem.eql(u8, path, "comp.fields") or
-        std.mem.eql(u8, path, "meta.methods") or
         std.mem.eql(u8, path, "comp.methods") or
-        std.mem.eql(u8, path, "meta.variants") or
         std.mem.eql(u8, path, "comp.variants") or
-        std.mem.eql(u8, path, "meta.type.info") or
-        std.mem.eql(u8, path, "meta.type.of") or
-        std.mem.eql(u8, path, "meta.satisfies") or
         std.mem.eql(u8, path, "comp.satisfies") or
         std.mem.eql(u8, path, "meta.catalog") or
         std.mem.eql(u8, path, "comp.catalog") or
@@ -1180,50 +843,30 @@ pub fn catalogCategory(path: []const u8) []const u8 {
         std.mem.eql(u8, path, "comp.ladder") or
         std.mem.startsWith(u8, path, "meta.agent.") or
         std.mem.startsWith(u8, path, "comp.agent.") or
-        std.mem.startsWith(u8, path, "compiler.agent.") or
         std.mem.eql(u8, path, "meta.str.starts.with") or
         std.mem.eql(u8, path, "meta.str.ends.with") or
-        std.mem.eql(u8, path, "meta.str.countlines") or
-        std.mem.eql(u8, path, "meta.str.splitcount") or
         std.mem.eql(u8, path, "comp.str.splitcount") or
-        std.mem.eql(u8, path, "meta.str.len") or
         std.mem.eql(u8, path, "comp.str.len") or
-        std.mem.eql(u8, path, "meta.str.eq") or
         std.mem.eql(u8, path, "comp.str.eq") or
-        std.mem.eql(u8, path, "meta.str.join") or
         std.mem.eql(u8, path, "comp.str.join") or
-        std.mem.eql(u8, path, "meta.concepts.count") or
-        std.mem.eql(u8, path, "meta.rewrite.describe") or
-        std.mem.eql(u8, path, "comp.rewrite.describe") or
-        std.mem.eql(u8, path, "meta.rewrite.rulecount") or
-        std.mem.eql(u8, path, "comp.rewrite.rulecount") or
-        std.mem.eql(u8, path, "meta.diff") or
         std.mem.eql(u8, path, "comp.diff"))
         return "introspection";
-    if (std.mem.eql(u8, path, "meta.pipeline") or
-        std.mem.eql(u8, path, "comp.pipeline") or
-        std.mem.eql(u8, path, "meta.rewrite") or
-        std.mem.eql(u8, path, "comp.rewrite") or
-        std.mem.startsWith(u8, path, "meta.rewrite.") or
-        std.mem.startsWith(u8, path, "comp.rewrite.") or
-        std.mem.eql(u8, path, "meta.foreign") or
+    if (std.mem.eql(u8, path, "comp.pipeline") or
         std.mem.eql(u8, path, "comp.foreign") or
-        std.mem.eql(u8, path, "meta.ffi") or
         std.mem.eql(u8, path, "comp.ffi"))
         return "transform";
     return "other";
 }
 
-/// Prefer `comp.*` > `meta.*` > `compiler.*` when deduping catalog aliases.
+/// Prefer `comp.*` > `meta.*` when deduping catalog aliases.
 fn catalogDisplayPriority(path: []const u8) u8 {
     if (std.mem.startsWith(u8, path, "comp.")) return 0;
     if (std.mem.startsWith(u8, path, "meta.")) return 1;
-    if (std.mem.startsWith(u8, path, "compiler.")) return 2;
     return 3;
 }
 
 /// Newline-separated list of canonical parseable `@comp.*` paths, optionally filtered by category.
-/// Aliases (`@meta.*`, `@compiler.*`) dedupe by internal handler — one row per construct.
+/// Aliases (`@meta.*`) dedupe by internal handler — one row per construct.
 /// Pass category `"grouped"` for section headers (`# combinators`, etc.) over all categories.
 pub fn formatCatalogFiltered(alloc: std.mem.Allocator, category: ?[]const u8) ![]const u8 {
     if (category) |c| {
@@ -1410,8 +1053,6 @@ pub fn combinatorComplexity(path: []const u8) ?ComplexityInfo {
         path["comp.".len..]
     else if (std.mem.startsWith(u8, path, "meta."))
         path["meta.".len..]
-    else if (std.mem.startsWith(u8, path, "compiler."))
-        path["compiler.".len..]
     else
         return null;
 
@@ -1540,8 +1181,6 @@ pub fn suggestNextCombinators(path: []const u8) []const u8 {
         path["comp.".len..]
     else if (std.mem.startsWith(u8, path, "meta."))
         path["meta.".len..]
-    else if (std.mem.startsWith(u8, path, "compiler."))
-        path["compiler.".len..]
     else
         path;
 
@@ -1654,7 +1293,10 @@ test "meta_module: canonical @meta.* builtins" {
     try std.testing.expectEqualStrings("__comptimemap", resolveBuiltin("meta.map").?);
     try std.testing.expectEqualStrings("__derivemap", resolveBuiltin("meta.derive").?);
     try std.testing.expectEqualStrings("__fieldsmap", resolveBuiltin("meta.fields.map").?);
-    try std.testing.expectEqualStrings("__register_derive", resolveBuiltin("meta.register.derive").?);
+    try std.testing.expectEqualStrings("__register_derive", resolveBuiltin("comp.register.derive").?);
+    // `meta.register.derive` was deleted: no `.id` site and no host caller ever
+    // named it. The negative keeps the alias from drifting back in.
+    try std.testing.expect(resolveBuiltin("meta.register.derive") == null);
     try std.testing.expectEqualStrings("__comptimemap", resolveBuiltin("meta.sweep").?);
     try std.testing.expectEqualStrings("__comptimeeach", resolveBuiltin("comp.chain").?);
     try std.testing.expectEqualStrings("__comptimeeach", resolveBuiltin("meta.each").?);
@@ -1677,10 +1319,11 @@ test "meta_module: agentMultiplierFor goal hints" {
 }
 
 test "meta_module: directive normalization" {
-    try std.testing.expectEqualStrings("pipeline", normalizeDirective("meta.pipeline"));
+    try std.testing.expectEqualStrings("pipeline", normalizeDirective("comp.pipeline"));
+    try std.testing.expectEqualStrings("meta.pipeline", normalizeDirective("meta.pipeline"));
     try std.testing.expectEqualStrings("define.derive", normalizeDirective("meta.define.derive"));
-    try std.testing.expectEqualStrings("derive.all", normalizeDirective("meta.derive.all"));
-    try std.testing.expect(directiveMatches("meta.derive.all", "derive.all"));
+    try std.testing.expectEqualStrings("derive.all", normalizeDirective("comp.derive.all"));
+    try std.testing.expect(directiveMatches("comp.derive.all", "derive.all"));
     try std.testing.expect(isMetaAttribute("meta.define.derive"));
     // G-060: derive combinators are expression-position, not block directives
     try std.testing.expect(!isMetaAttribute("comp.derive.power"));
@@ -1693,7 +1336,7 @@ test "meta_module: directive normalization" {
     try std.testing.expectEqualStrings("__metaburst", resolveBuiltin("meta.burst").?);
     try std.testing.expectEqualStrings("burst", normalizeDirective("meta.burst"));
     try std.testing.expectEqualStrings("emit.omni", normalizeDirective("meta.emit.omni"));
-    try std.testing.expectEqualStrings("wasm", normalizeDirective("meta.wasm"));
+    try std.testing.expectEqualStrings("wasm", normalizeDirective("comp.wasm"));
     try std.testing.expectEqualStrings("__comptimemap", resolveBuiltin("meta.sweep").?);
     try std.testing.expectEqualStrings("derive.bundle", normalizeTypeAttribute("meta.derive.bundle"));
     try std.testing.expectEqualStrings("derive.bundle", normalizeTypeAttribute("comp.derive.bundle"));
@@ -1703,16 +1346,22 @@ test "meta_module: directive normalization" {
     try std.testing.expect(isTypeLevelDeriveAttribute("comp.derive.bundle"));
     try std.testing.expect(!isTypeLevelDeriveAttribute("comp.derive.power"));
     try std.testing.expect(!isMetaAttribute("comp.derive.bundle"));
-    try std.testing.expectEqualStrings("__metaagentcatalog", resolveBuiltin("meta.agent.catalog").?);
-    try std.testing.expectEqualStrings("__metaagentcatalog", resolveBuiltin("comp.agent.catalog").?);
-    try std.testing.expectEqualStrings("__metaagenthooks", resolveBuiltin("meta.agent.hooks").?);
-    try std.testing.expectEqualStrings("__metaagentdedupe", resolveBuiltin("comp.agent.dedupe").?);
-    try std.testing.expectEqualStrings("__metaagentgaps", resolveBuiltin("comp.agent.gaps").?);
+    // The self-describing family is DELETED. `@comp.catalog`, `@comp.ladder`
+    // and `@comp.agent.*` described the directive namespace, not any program,
+    // so they had no referent left once the namespace they enumerate stopped
+    // being authority. These negatives are what keep them deleted.
+    try std.testing.expect(resolveBuiltin("comp.catalog") == null);
+    try std.testing.expect(resolveBuiltin("comp.ladder") == null);
+    try std.testing.expect(resolveBuiltin("comp.agent.catalog") == null);
+    try std.testing.expect(resolveBuiltin("comp.agent.hooks") == null);
+    try std.testing.expect(resolveBuiltin("comp.agent.dedupe") == null);
+    try std.testing.expect(resolveBuiltin("comp.agent.gaps") == null);
     try std.testing.expect(catalogPathParseable("comp.map"));
-    try std.testing.expect(catalogPathParseable("comp.agent.dedupe"));
     try std.testing.expect(isCHeaderImportDirective("comp.c.import"));
     try std.testing.expect(isCHeaderImportDirective("c.import"));
-    try std.testing.expect(isCHeaderImportDirective("meta.c.include"));
+    // `meta.c.include` was deleted with the rest of the referent-free `meta.*`
+    // rows; the negative is what keeps the alias from drifting back.
+    try std.testing.expect(!isCHeaderImportDirective("meta.c.include"));
     try std.testing.expect(!isCHeaderImportDirective("comp.c.export"));
     try std.testing.expect(isCEmitDirective("comp.c.emit"));
     try std.testing.expect(!isMetaAttribute("comp.c.import"));
@@ -1723,7 +1372,6 @@ test "meta_module: catalog lists canonical comp paths (deduped)" {
     const catalog = try formatCatalog(alloc);
     defer alloc.free(catalog);
     try std.testing.expect(std.mem.indexOf(u8, catalog, "comp.map") != null);
-    try std.testing.expect(std.mem.indexOf(u8, catalog, "comp.catalog") != null);
     try std.testing.expect(std.mem.indexOf(u8, catalog, "comp.pipeline") != null);
     try std.testing.expect(std.mem.indexOf(u8, catalog, "comp.str.starts.with") != null);
     try std.testing.expect(std.mem.indexOf(u8, catalog, "comp.str.ends.with") != null);
@@ -1770,7 +1418,7 @@ test "meta_module: catalogPathParseable rejects keywords" {
 test "meta_module: catalogCategory and filtered catalog" {
     try std.testing.expectEqualStrings("combinators", catalogCategory("meta.map"));
     try std.testing.expectEqualStrings("combinators", catalogCategory("meta.burst"));
-    try std.testing.expectEqualStrings("define", catalogCategory("meta.derive.all"));
+    try std.testing.expectEqualStrings("define", catalogCategory("comp.derive.all"));
     try std.testing.expectEqualStrings("emit", catalogCategory("meta.emit.omni"));
 
     const alloc = std.testing.allocator;
@@ -1840,12 +1488,15 @@ test "meta_module: every spelling of one operation gets one answer" {
     // resolves to a single internal hook. A predicate that says yes to some of
     // a row and no to the rest is the shape of the `@comp.c.emit` defect: the
     // function compiles, the payload is discarded, and `idol check` is clean.
-    const emit = [_][]const u8{ "comp.c.emit", "c.emit", "meta.c.emit", "compiler.c.emit", "emit", "comp.emit", "compiler.emit" };
+    const emit = [_][]const u8{ "comp.c.emit", "c.emit", "meta.c.emit", "emit" };
+    // `comp.emit` was a fourth spelling of the SAME `__emit` hook with zero
+    // `.id` users. Deleted; the negative keeps it from drifting back.
+    try std.testing.expect(!isCEmitDirective("comp.emit"));
     for (emit) |s| try std.testing.expect(isCEmitDirective(s));
     try std.testing.expect(!isCEmitDirective("comp.c.emit.file"));
     try std.testing.expect(!isCEmitDirective("comp.c.include"));
 
-    const include = [_][]const u8{ "comp.c.include", "c.include", "meta.c.include", "compiler.c.include", "comp.c.import", "c.import", "cinclude" };
+    const include = [_][]const u8{ "comp.c.include", "c.include", "comp.c.import", "c.import", "cinclude" };
     for (include) |s| try std.testing.expect(isCHeaderImportDirective(s));
     try std.testing.expect(!isCHeaderImportDirective("comp.c.emit"));
 
@@ -1857,7 +1508,6 @@ test "meta_module: every spelling of one operation gets one answer" {
         "comp.c.export", "c.export",  "meta.c.export",
         "comp.c.type",   "c.type",    "comp.c.link",
         "c.link",        "comp.c.call", "c.call",
-        "meta.c.call",   "compiler.c.call",
     };
     for (attaching) |s| try std.testing.expect(isAttachingCInterfaceAttribute(s));
     // Negative controls: the standalone C-interface statements must NOT attach,

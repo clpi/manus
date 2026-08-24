@@ -30,14 +30,11 @@ CASCADE = @comp.each(SUBSETS, fun(frag)
   @comp.template(frag.name .. ":int64_t", "int64_t tag_$0() { return 0 }\n")
 )
 
-HINT = @comp.agent.multiplier("compose exponential cascade")
-
 print("=== folded zip (3×2 = 6 pairs) ===")
 print(PAIRS)
 print("=== power→each→template cascade (7 stubs) ===")
 print(CASCADE)
 print("=== agent multiplier hint ===")
-print(HINT)
 
 TYPE_AXES = @comp.str.splitcount(TYPES, "|")
 OP_AXES = @comp.str.splitcount(OPS, "|")

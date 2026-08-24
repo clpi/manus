@@ -80,18 +80,6 @@ str_contains_hint: str = ()
 str_prefix_suffix_hint: str = ()
   "@meta.str.starts.with(s, prefix) / @meta.str.ends.with(s, suffix) — native C predicates / comptime fold"
 
-catalog_hint: str = ()
-  "@meta.catalog([category|grouped]) — combinators | define | emit | introspection | transform | compile | all | grouped"
-
-ladder_hint: str = ()
-  "@meta.ladder() — exponential scaling ladder (map → derive → product → tensor → transcend)"
-
-agent_catalog_hint: str = ()
-  "@meta.agent.catalog() — grouped @meta.* paths for agent discoverability"
-
-agent_hooks_hint: str = ()
-  "@comp.agent.hooks() + std.agent — coordination, recipes, build_gates, multiplier_for"
-
 template_hint: str = ()
   "@comp.template(instances, body[, fn]) — O(n) parametric axis; $0/$1/$name/$ctype placeholders"
 
@@ -136,10 +124,6 @@ M =
   nfold_hint = nfold_hint
   str_contains_hint = str_contains_hint
   str_prefix_suffix_hint = str_prefix_suffix_hint
-  catalog_hint = catalog_hint
-  ladder_hint = ladder_hint
-  agent_catalog_hint = agent_catalog_hint
-  agent_hooks_hint = agent_hooks_hint
   template_hint = template_hint
   generate_hint = generate_hint
   scheme_hint = scheme_hint

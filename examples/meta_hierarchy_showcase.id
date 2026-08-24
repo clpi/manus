@@ -13,7 +13,6 @@
 #   @comp.satisfies           concept membership
 #   @comp.assert              static assertion
 #   @comp.when                  comptime conditional (not @comp.if — keyword)
-#   @comp.catalog()             discover all parseable @comp.* paths
 #
 # Exponential scaling (one declaration → multiplicative output):
 #   @comp.map                   O(types)
@@ -57,12 +56,8 @@ meta.name .. ";"
 SWEEP = @comp.map("HasTag", mark)
 NAMES = @comp.type.names()
 TAG_TYPES = @comp.types.with("HasTag")
-CATALOG = @comp.catalog()
-LADDER = @comp.ladder()
 
 print("=== meta hierarchy showcase ===")
-print("catalog_has_map = true")
-print("ladder_has_tensor = true")
 print("sweep = " .. SWEEP)
 print("all_types = " .. NAMES)
 print("tag_types = " .. TAG_TYPES)

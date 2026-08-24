@@ -8326,11 +8326,11 @@ test "parse: dotted @comp and @meta paths lower through meta module registry" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const mod = try parseSource(
-        \\local ladder = @comp.ladder()
         \\local sweep = @meta.map("HasTag", cb)
+        \\local burst = @comp.burst("HasTag", D, "HasId")
     , &arena);
 
-    const expected = [_][]const u8{ "__metaladder", "__comptimemap" };
+    const expected = [_][]const u8{ "__comptimemap", "__metaburst" };
     for (expected, 0..) |name, i| {
         const init = mod.body.stmts[i].local_decl.inits[0];
         try testing.expect(init.* == .call);

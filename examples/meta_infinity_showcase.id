@@ -37,10 +37,8 @@ quad_sig: str = (a, b, c, d)
   a.name .. "x" .. b.name .. "x" .. c.name .. "x" .. d.name .. ";"
 
 NFOLD = @comp.nfold({ "HasXY", "HasTag", "HasId", "HasExtra" }, quad_sig)
-LADDER = @comp.ladder()
 
 print("=== meta infinity showcase ===")
-print("has_infinity = " .. to(str)("infinity:" in LADDER))
 print("nfold = " .. NFOLD)
 print("point ok = true")
 print("ok")

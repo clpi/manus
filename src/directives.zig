@@ -839,7 +839,6 @@ test "directives: C boundary migration symbols are exact quoted identifiers" {
         .{ .name = "c.export", .args = "\"static\"" },
         .{ .name = "comp.c.export", .args = "\"idol.add\"" },
         .{ .name = "meta.c.export", .args = "\"idol_add\"" },
-        .{ .name = "compiler.c.export", .args = "\"idol_add\"" },
         .{ .name = "comp.ffi", .args = "\"idol_add\"" },
     };
     for (rejected) |attr| try std.testing.expect(boundaryAttributeError(&.{attr}, "idol_decl") != null);
@@ -919,11 +918,13 @@ test "directives: the C interface answers to every spelling, not the six short o
         try std.testing.expect(isCInterfaceDirective(pair[0]));
         try std.testing.expect(isCInterfaceDirective(pair[1]));
     }
-    // `@meta.*` and `@compiler.*` are deprecated spellings of the same
-    // operations, not different ones — they were invisible here too.
+    // `@meta.*` is a deprecated spelling of the same operations, not
+    // different ones — it was invisible here too. `@compiler.*` no longer
+    // exists: its catalog rows were deleted, so it resolves to nothing.
     try std.testing.expect(isCInterfaceDirective("meta.c.emit"));
-    try std.testing.expect(isCInterfaceDirective("compiler.c.export"));
-    try std.testing.expect(isCInterfaceDirective("comp.emit"));
+    try std.testing.expect(!isCInterfaceDirective("compiler.c.export"));
+    // `comp.emit` was deleted: a fourth spelling of `__emit` with no users.
+    try std.testing.expect(!isCInterfaceDirective("comp.emit"));
     try std.testing.expect(isCInterfaceDirective("emit"));
     // `@cinclude` has no alias-table entry; the literal tail is what covers it.
     try std.testing.expect(isCInterfaceDirective("cinclude"));

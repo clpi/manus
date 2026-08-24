@@ -61,9 +61,9 @@ multiplier_for: str = (goal: str)
   if g:find("weave") or g:find("cross-module") or g:find("cross module")
     return "@comp.weave(module, concept, fn) — O(N×M) cross-module concept sweep"
   if g:find("dedupe") or g:find("duplicate") or g:find("coord")
-    return "@comp.agent.dedupe() + read .agents/AGENT_COORDINATION.md; claim before edit"
+    return "read .agents/AGENT_COORDINATION.md; claim before edit"
   if g:find("gap") or g:find("script") or g:find("ergonomic")
-    return "@comp.agent.gaps() + .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; record finding before adding one-off tooling"
+    return ".agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; record finding before adding one-off tooling"
   "@comp.map / @comp.sweep — O(types); stack @comp.ceiling / @comp.omni for quadratic+"
 
 build_gates: str = ()
@@ -73,7 +73,7 @@ native_policy: str = ()
   "NO lua_Value intermediaries on typed/comptime paths\n" .. "Hot paths: i64, f64, bool, str, typed records → direct C scalars/structs\n" .. "@comp.* / @meta.* fold at compile time; runtime output is native C\n" .. "Comptime callbacks: @comp.compile.only or comptime-only detection\n" .. "@comp.embed.json / @comp.wasm: module directives → const uint8_t[] globals\n" .. "Ultimate target: optimal machine code, not C-as-ceiling (LTO/PGO/@asm/@device)"
 
 recipes: str = ()
-  "N types one macro: @comp.derive.all(\"Concept\", MyDerive)\n" .. "N×M type pairs: @comp.derive.product(\"A\", \"B\", MyDerive)\n" .. "Max file emit: @comp.burst(\"A\", MyDerive, \"B\")\n" .. "User macro: @comp.define.derive(\"Name\", fun generate(meta): str ... end)\n" .. "Bundle traits: @comp.derive.bundle(\"Numeric\") on type\n" .. "Fixed-size subsets: @comp.choose(\"Concept\", 2, fn) — controlled O(n choose k) expansion\n" .. "Pipeline family: @comp.pipeline({ variants = \"name:ctype:init | ...\" })\n" .. "Compose combinators: @comp.each(@comp.power(\"C\", fn), fn2) — chains two exponential stages\n" .. "Constraint cartesian: @comp.generate({ ops/types/template block }) — O(ops×types)\n" .. "Declarative scheme: @comp.scheme(\"type T {...} | fn f(...): T\", template)\n" .. "Generate→each: @comp.each(@comp.generate(spec, body), fn) — re-expand each cartesian fragment\n" .. "Scheme→each: @comp.each(@comp.scheme(decls, tmpl), fn) — declarative units → fragments\n" .. "Full stack: examples/parity/each.id — scheme/generate → each parity\n" .. "Parallel comptime: @comp.compile.thread\n" .. "Coordination: .agents/AGENT_COORDINATION.md; @comp.agent.dedupe(); claim before edit\n" .. "Gaps ledger: .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; @comp.agent.gaps(); MCP idol_agent_gaps_*\n" .. "Coordination lock: scripts/idol_lock.id"
+  "N types one macro: @comp.derive.all(\"Concept\", MyDerive)\n" .. "N×M type pairs: @comp.derive.product(\"A\", \"B\", MyDerive)\n" .. "Max file emit: @comp.burst(\"A\", MyDerive, \"B\")\n" .. "User macro: @comp.define.derive(\"Name\", fun generate(meta): str ... end)\n" .. "Bundle traits: @comp.derive.bundle(\"Numeric\") on type\n" .. "Fixed-size subsets: @comp.choose(\"Concept\", 2, fn) — controlled O(n choose k) expansion\n" .. "Pipeline family: @comp.pipeline({ variants = \"name:ctype:init | ...\" })\n" .. "Compose combinators: @comp.each(@comp.power(\"C\", fn), fn2) — chains two exponential stages\n" .. "Constraint cartesian: @comp.generate({ ops/types/template block }) — O(ops×types)\n" .. "Declarative scheme: @comp.scheme(\"type T {...} | fn f(...): T\", template)\n" .. "Generate→each: @comp.each(@comp.generate(spec, body), fn) — re-expand each cartesian fragment\n" .. "Scheme→each: @comp.each(@comp.scheme(decls, tmpl), fn) — declarative units → fragments\n" .. "Full stack: examples/parity/each.id — scheme/generate → each parity\n" .. "Parallel comptime: @comp.compile.thread\n" .. "Coordination: .agents/AGENT_COORDINATION.md; claim before edit\n" .. "Gaps ledger: .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; MCP idol_agent_gaps_*\n" .. "Coordination lock: scripts/idol_lock.id"
 
 # GAP-blocked teaching fixtures (idol check fails; owned by other gates):
 #   examples/pack/apply.id      — GAP-092 brace/descriptor rows

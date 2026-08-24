@@ -16198,7 +16198,6 @@ test "sema: migration boundary symbols fail closed before realization" {
         "@c.export(\"static\")\nf: i64 = ()\n  0\n",
         "@export(\"idol_add\")\nf: i64 = ()\n  0\n",
         "@meta.c.export(\"idol_add\")\nf: i64 = ()\n  0\n",
-        "@compiler.c.export(\"idol_add\")\nf: i64 = ()\n  0\n",
         "@ffi(\"puts\")\n@ffi(\"fputs\")\nf: i64 = ()\n  0\n",
         "@ffi(\"puts\")\n@export\nf: i64 = ()\n  0\n",
     };

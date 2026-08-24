@@ -3,13 +3,13 @@
   "why": "Current metaprogramming law admits no compiler-directive syntax: metaprogramming operates on graph identities, facts, dependencies, demand, worlds, provenance and transformations. Compatibility parsing still maps dotted @comp.* forms onto string-dispatched internal handlers. This ledger inventories that second control plane, and gate/directive.sh prevents a removed form or use from returning.",
   "counting": "CODE POSITIONS ONLY. `#` comments are stripped before matching, because prose describing a directive is not a use of it. Forms may not end in a dot; an earlier census produced phantom forms like `@comp.define...` by capturing sentence punctuation.",
   "totals": {
-    "code_occurrences": 807,
-    "distinct_forms": 108,
-    "files": 133,
+    "code_occurrences": 790,
+    "distinct_forms": 101,
+    "files": 132,
     "by_disposition": {
-      "evidence": 12,
+      "evidence": 6,
       "foreign": 9,
-      "relation": 56,
+      "relation": 55,
       "stage": 7,
       "target": 1,
       "transformation": 23
@@ -208,12 +208,6 @@
       "disposition": "transformation",
       "rationale": "graph transformation with exact in/out identities"
     },
-    "@comp.ladder": {
-      "code_occurrences": 5,
-      "files": 4,
-      "disposition": "relation",
-      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
-    },
     "@comp.bit.bitcast": {
       "code_occurrences": 4,
       "files": 1,
@@ -292,23 +286,11 @@
       "disposition": "transformation",
       "rationale": "transformation composition"
     },
-    "@comp.agent.dedupe": {
-      "code_occurrences": 3,
-      "files": 2,
-      "disposition": "evidence",
-      "rationale": "tooling/evidence projection"
-    },
     "@comp.burst": {
       "code_occurrences": 3,
       "files": 2,
       "disposition": "relation",
       "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
-    },
-    "@comp.catalog": {
-      "code_occurrences": 3,
-      "files": 3,
-      "disposition": "evidence",
-      "rationale": "evidence projection"
     },
     "@comp.chain": {
       "code_occurrences": 3,
@@ -351,18 +333,6 @@
       "files": 1,
       "disposition": "relation",
       "rationale": "descriptor relation over graph identities"
-    },
-    "@comp.agent.gaps": {
-      "code_occurrences": 2,
-      "files": 2,
-      "disposition": "evidence",
-      "rationale": "tooling/evidence projection"
-    },
-    "@comp.agent.hooks": {
-      "code_occurrences": 2,
-      "files": 2,
-      "disposition": "evidence",
-      "rationale": "tooling/evidence projection"
     },
     "@comp.as.type": {
       "code_occurrences": 2,
@@ -525,18 +495,6 @@
       "files": 2,
       "disposition": "relation",
       "rationale": "descriptor relation"
-    },
-    "@comp.agent.catalog": {
-      "code_occurrences": 1,
-      "files": 1,
-      "disposition": "evidence",
-      "rationale": "tooling/evidence projection"
-    },
-    "@comp.agent.multiplier": {
-      "code_occurrences": 1,
-      "files": 1,
-      "disposition": "evidence",
-      "rationale": "tooling/evidence projection"
     },
     "@comp.bit.field": {
       "code_occurrences": 1,

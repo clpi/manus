@@ -69,11 +69,6 @@ SUBSET_CODE = @comp.derive.power("HasXY", SubsetStub)
 print("=== @comp.derive.power (7 derive fragments) ===")
 print(SUBSET_CODE)
 
-# 6. The scaling ladder now documents the full exponential family.
-LADDER = @comp.ladder()
-print("=== @comp.ladder (updated) ===")
-print(LADDER)
-
 ok = POWER_COUNT == 7 and PERMUTE_COUNT == 6
 print("=== RESULT ===")
 print("power_and_permute_ok = " .. to(str)(ok))
