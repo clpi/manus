@@ -3506,6 +3506,22 @@ fn launchWorlds(src_path: []const u8) subject_home.WorldSet {
     return worlds;
 }
 
+/// Whether the CURRENT WORLD provides `name` as a bare member edge.
+///
+/// Handed to `macro_expand`, which is AST-layer and may not read the world
+/// table itself (`gate/layers.manifest`). The STANDARD environment is EXACT
+/// here rather than an approximation of `launchWorlds`: the only world a launch
+/// adds is `testing`, and `testing` is `anchored_only`, so it confers no bare
+/// reach at all and cannot change this answer. Should that ever change, this
+/// must take the launch set — and `Sema.checkWorldAccess`, which already does,
+/// is the producer that would refuse the difference rather than absorb it.
+fn worldMemberBare(name: []const u8) bool {
+    return switch (subject_home.bareReach(name)) {
+        .one => true,
+        .none, .ambiguous => false,
+    };
+}
+
 fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !ParsedModule {
     const src = try read_source(alloc, io, src_path);
     term.setSource(src_path, src);
@@ -3552,6 +3568,13 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     if (module_has_macro_syntax(&mod)) {
         var expander = MacroExpand.Expander.init(alloc);
         defer expander.deinit();
+        // `@x(args)` — the sigil's directive reader cannot tell a world
+        // application from a directive AT THE TOKEN, and the AST layer may not
+        // read the world table to find out. So the fact is handed over from
+        // here, where the launch worlds were just computed for sema. It is
+        // consulted only after the directive tables and the user macro table
+        // have both declined, so a declared macro still wins.
+        expander.world_member = worldMemberBare;
         expander.expandModule(&mod) catch |e| {
             term.err("macro expansion error: {s}", .{@errorName(e)});
             std.process.exit(1);

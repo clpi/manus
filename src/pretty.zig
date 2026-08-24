@@ -564,7 +564,16 @@ pub const PrettyPrinter = struct {
             .quoted => |x| try self.writeStringLitQuoted(x),
             .vararg => try self.write("..."),
 
-            .name => |x| try self.write(x.ident),
+            .name => |x| {
+                // THE SIGIL IS THE ACCESS, so it is part of the spelling and
+                // the printer owes it back. gap[223] is the standing lesson
+                // here: a printer that drops half of an `@` face turns a legal
+                // file into one the parser refuses. `@x` reprinted as `x` would
+                // be worse than illegal — it would still compile, and resolve
+                // against the lexical scope this face exists to bypass.
+                if (x.world) try self.write("@");
+                try self.write(x.ident);
+            },
             .quote => |x| {
                 try self.write("`");
                 try self.printExpr(x.expr, 0);
@@ -2402,6 +2411,24 @@ test "pretty: gap[223] comptime eval over a pack keeps its parens" {
     const out = try fmtCanonical(alloc, src);
     try testing.expectEqualStrings(src, out);
     try testing.expect(std.mem.indexOf(u8, out, "@{") == null);
+    try expectIdempotent(alloc, src);
+}
+
+test "pretty: a world access keeps its sigil" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `@x` and `x` are DIFFERENT PROGRAMS wherever a binding of that spelling
+    // exists, so dropping the sigil is worse than the gap[223] class it sits
+    // next to: the reprint still compiles, and resolves to the binding instead
+    // of the world member. Round trip, both in application position and bare.
+    const src =
+        \\x = @env("HOME")
+        \\y = @cwd()
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings(src, out);
     try expectIdempotent(alloc, src);
 }
 

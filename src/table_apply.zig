@@ -52,7 +52,20 @@ fn argProjection(func: *const ast.Expr) bool {
 
 fn bareMember(names: *const BoundNames, func: *const ast.Expr) ?subject_home.OsMember {
     if (func.* != .name) return null;
-    if (names.has(func.name.ident)) return null;
+    // THE SIGIL IS THE DISAMBIGUATOR, and it is the one spelling this guard
+    // must not apply to. A BARE name yields to any binding of that spelling —
+    // "an injected world adds REACH and never takes a NAME" — but `@env` is the
+    // author writing down which fact set to read (`world.md`: "Lexical binding
+    // wins for a bare lexical name; `@x` accesses the world member
+    // explicitly"), so a binding named `env` no longer answers for it.
+    //
+    // MEASURED WRONG ANSWER, not a hypothetical: with the guard applied to both
+    // spellings, `env = (k) 99` followed by `@env("HOME")` compiled, ran, and
+    // printed `99`. Sema had already resolved that occurrence to the world
+    // member, so this pass was contradicting a fact the graph carried — the
+    // exact two-authorities-one-token shape §2 forbids. `gate/world/access.sh`
+    // §3 fails against the version of this line without the guard.
+    if (!func.name.world and names.has(func.name.ident)) return null;
     return switch (subject_home.bareReach(func.name.ident)) {
         .one => |world| if (world == .os) subject_home.osDotMember(func.name.ident) else null,
         .none, .ambiguous => null,

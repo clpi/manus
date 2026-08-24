@@ -22,9 +22,10 @@
 #                   printer reprinted `@{` and formatting a legal file produced
 #                   an illegal one.
 #
-# GAP-203 owns what remains: freeing the sigil is NOT closing the algebra. No
-# face of the five compiles yet. This gate asserts the sigil is FREE, never that
-# injection works.
+# GAP-203 owns what remains: freeing the sigil is NOT closing the algebra. This
+# gate asserts the sigil is FREE, never that injection works. `@x` access closed
+# afterwards and is held by `gate/world/access.sh`; the other four faces do not
+# compile.
 set -eu
 root=${WORLDFACEROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)}
 if [ "${IDOL_LOCK_HELD:-0}" != 1 ]; then
@@ -283,4 +284,4 @@ grep -q 'dt\.kind == token\.kindat' "$work/selfhost_live.id" && fail "§5 contro
 grep -q 'token\.kindat' "$selfhost" || fail "§5 subject: the self-host parser has NO kindat test at all — the anchor and directive faces are gone, and this row is reading a file that no longer parses '@'"
 
 printf 'world/face gate: PASS — sigil free (4 retired spellings refused by name, 4 migrated spellings admitted, 0 live corpus sites, formatter sigil-free, both frontiers agree)\n'
-printf 'world/face gate: NOTE — a free sigil is not a closed algebra; 0 of 5 world faces compile (gap[203])\n'
+printf 'world/face gate: NOTE — a free sigil is not a closed algebra. ONE of the five faces now compiles — `@x` access, in its single-segment form, held by gate/world/access.sh. The other four do not (gap[203]).\n'

@@ -7200,6 +7200,27 @@ pub const Parser = struct {
             const part = try self.parse_at_path_segment();
             try parts.append(self.alloc, part.text);
         }
+        // `@x` — WORLD ACCESS, the first face of the `@` algebra (`law.md` §6,
+        // `world.md` "One projection algebra"). Reached only where the sigil
+        // path is a SINGLE segment and no `(` follows, which is exactly the
+        // input the unconditional `expect(.lparen)` forty lines below used to
+        // kill with "write `(` at this token edge" — so this production is
+        // strictly widening and no program that compiled before changes shape.
+        //
+        // The directive reader keeps everything else. A dotted path with no
+        // call (`@build.debug`) is a directive missing its arguments and still
+        // reaches the same refusal, because a world member is ONE static
+        // projection of the current world and `@x.y` is that access followed by
+        // an ordinary `.` step — which the suffix loop applies to this node.
+        //
+        // WHICH world member, and whether the current world has one at all, is
+        // NOT decided here. The parser owns recognition; sema owns resolution
+        // against the exact launch worlds (`law.md` §4: never grant world
+        // authority from syntax).
+        if (parts.items.len == 1 and (try self.pk()).kind != .lparen) {
+            return self.new_expr(.{ .name = .{ .loc = l, .ident = first.text, .world = true } });
+        }
+
         const qualified = try std.mem.join(self.alloc, ".", parts.items);
         defer self.alloc.free(qualified);
 

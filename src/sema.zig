@@ -4073,6 +4073,69 @@ pub const Sema = struct {
     ///      bare `write` resolves.
     ///
     /// Answers TRUE when it reported.
+    /// `@x` — ONE EXACT MEMBER OF THE CURRENT WORLD, or a refusal.
+    ///
+    /// THE CURRENT WORLD IS THE LAUNCH-WORLD SET, and it is the only fact set
+    /// consulted. `subject_home.declarations` is the sole authority for what a
+    /// world provides (`law.md` §6: authority is a fact IN a world, and world
+    /// availability validates it after intent resolves), so this asks that
+    /// table the same three questions the bare-name path asks — and asks them
+    /// WITHOUT the `userBinding(name) == null` guard that path carries, because
+    /// a lexical binding is exactly what the sigil is written to step past.
+    ///
+    /// FAILS CLOSED. `world.md` "Projection and injection edge cases": missing
+    /// access fails, and there is no parent-directory, other-world,
+    /// global-registry, library, or default-namespace fallback. A world that
+    /// holds two incomparable definitions for one member diagnoses rather than
+    /// choosing (`law.md` §6, "Ambiguity fails closed — never
+    /// first/last/load/path/hash order").
+    fn checkWorldAccess(self: *Sema, loc: ast.Loc, member: []const u8) SemaError!RT {
+        // A WORLD MAY CONTAIN OTHER WORLDS (`law.md` §6), so a reached world's
+        // own name is an ordinary member of the world that reaches it: `@os` is
+        // the `os` world as a value, and `@os.env("HOME")` is that access
+        // followed by one static projection.
+        if (subject_home.worldNamedFor(self.worlds.slice(), member) != null) return .any;
+        switch (subject_home.bareReachFor(self.worlds.slice(), member)) {
+            .one => return .any,
+            .ambiguous => |pair| {
+                self.err(
+                    loc,
+                    "'@{s}' names no single member: '{s}' and '{s}' both provide '{s}' in this world — anchor the one you mean, '{s}.{s}' or '{s}.{s}' (c0 law.inject.algebra: ambiguous injection fails rather than picking)",
+                    .{
+                        member,
+                        subject_home.homeName(pair.first),
+                        subject_home.homeName(pair.second),
+                        member,
+                        subject_home.homeName(pair.first),
+                        member,
+                        subject_home.homeName(pair.second),
+                        member,
+                    },
+                );
+                return .any;
+            },
+            .none => {},
+        }
+        // The standing streams are supplied INSTANCES, not member edges, and a
+        // bare `stdout` has no value realization on either backend — so `@stdout`
+        // is refused for the same reason and by the same measurement, rather
+        // than type-checking clean and dying at emit.
+        if (subject_home.suppliedInstanceFor(self.worlds.slice(), member)) |_| {
+            self.err(
+                loc,
+                "'@{s}' is a standing INSTANCE the 'io' world supplies, not a member edge of the current world, and it has no value realization — take the relation on the instance ('{s}:…') instead of the instance itself",
+                .{ member, member },
+            );
+            return .any;
+        }
+        self.err(
+            loc,
+            "the current world has no member '{s}' — '@{s}' is one exact static access and there is no parent-directory, other-world, global-registry, library, or default-namespace fallback (docs/spec/world.md, projection and injection edge cases). A LEXICAL binding of this name is not reached by the sigil: write the bare '{s}' for that",
+            .{ member, member, member },
+        );
+        return .any;
+    }
+
     fn refuseBareStreamRelation(self: *Sema, loc: ast.Loc, name: []const u8) bool {
         // TWO INJECTED WORLDS PROVIDING ONE NAME. Checked here because this is
         // the site a bare name that resolved to nothing arrives at, and an
@@ -4388,6 +4451,14 @@ pub const Sema = struct {
                 return .any;
             },
             .name => |n| {
+                // `@x` — WORLD ACCESS. Resolved against the exact launch worlds
+                // and NEVER against the lexical scope, which is the one thing
+                // this face is for: `world.md` rules that a bare lexical name
+                // wins for the bare spelling and that `@x` accesses the world
+                // member explicitly, so consulting `scope.lookup` first here
+                // would collapse the two spellings into one meaning and delete
+                // the face.
+                if (n.world) return self.checkWorldAccess(n.loc, n.ident);
                 if (self.scope.lookup(n.ident)) |sym| {
                     // Emit deprecation warning if symbol is @deprecated (Requirement 18.7)
                     if (sym.deprecated_msg) |msg| {
@@ -4985,7 +5056,14 @@ pub const Sema = struct {
                     .func => |f| f.ret.*,
                     else => .any,
                 };
-                if (c.func.* == .name) {
+                // A MODULE RELATION IS SELECTED BY NAME HERE, so the sigil face
+                // has to be excluded BY NAME too. `@env("HOME")` names the
+                // world member and `callable_defs` is keyed on the spelling, so
+                // a module relation called `env` claimed the occurrence and the
+                // graph published `relation: <env decl>` over a site the
+                // machine realizes as `getenv` — one token, two authorities,
+                // measured disagreeing.
+                if (c.func.* == .name and !c.func.name.world) {
                     if (self.callable_defs.get(c.func.name.ident)) |target| {
                         if (target) |resolved| {
                             const slots = subjectSlotArgs(resolved, c.args);

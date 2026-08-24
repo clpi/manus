@@ -572,7 +572,21 @@ pub const Expr = union(enum) {
     /// producer identity (GAP-145); `.host` is not a source quote.
     quoted: struct { loc: Loc, val: []const u8, quote: Quote = .host },
     vararg: Loc,
-    name: struct { loc: Loc, ident: []const u8 },
+    /// A NAME, and WHICH FACT SET RESOLVED IT.
+    ///
+    /// `x` and `@x` denote the same semantic thing whenever the current world
+    /// is what supplies `x` — `law.md` §1, one semantic thing, one exact id —
+    /// so the world face is a FACT ON THE NAME, not a second node kind. What
+    /// the flag changes is which fact set is consulted: `world = false` reads
+    /// the lexical scope first and the current world only when no binding
+    /// answers; `world = true` reads the CURRENT WORLD and never the lexical
+    /// scope, which is the whole capability (`world.md`: "Lexical binding wins
+    /// for a bare lexical name; `@x` accesses the world member explicitly").
+    ///
+    /// Unlike `field.anchored`, this IS read downstream: sema resolves it,
+    /// `semantic_graph.worldOfApplication` refuses to let a same-named module
+    /// relation claim the occurrence, and `pretty` writes the sigil back.
+    name: struct { loc: Loc, ident: []const u8, world: bool = false },
     index: struct { loc: Loc, obj: *Expr, key: *Expr },
     /// `a.b` and `a@b` build the SAME node — the value of `b` at `a` — so the
     /// AST could not tell them apart and the formatter rewrote every `p@x` into

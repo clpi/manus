@@ -5777,7 +5777,15 @@ pub const SemanticGraph = struct {
         switch (expr.*) {
             .call => |c| switch (c.func.*) {
                 .name => |n| {
-                    if (self.findFunc(n.ident) != null) return .{ .home = null, .member = "" };
+                    // A DECLARED RELATION OF THE SAME SPELLING DOES NOT ANSWER
+                    // FOR `@x`. The bare face yields to the declaration — that
+                    // is the `findFunc` line — but the sigil names the world
+                    // outright, and a graph that let the declaration win here
+                    // published `world: none` over an occurrence the machine
+                    // realizes as `getenv`. Measured on `env = (k) 99` followed
+                    // by `@env("HOME")`: the program printed the environment
+                    // variable and the graph said no world was drawn.
+                    if (!n.world and self.findFunc(n.ident) != null) return .{ .home = null, .member = "" };
                     const home = subject_home.injectedWorldProvidingFor(self.launch_worlds.slice(), n.ident) orelse return null;
                     return .{ .home = home, .member = n.ident };
                 },

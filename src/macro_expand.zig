@@ -17,6 +17,17 @@ pub const Expander = struct {
 
     alloc: std.mem.Allocator,
     macros: std.StringHashMapUnmanaged(*const ast.MacroDef) = .empty,
+    /// WHETHER THE CURRENT WORLD PROVIDES `name` AS A MEMBER EDGE — HANDED
+    /// OVER, never asked here.
+    ///
+    /// This pass is AST-layer: it owns shape and owns no semantic relation
+    /// identity, so it may not read the world table (`gate/layers.manifest`;
+    /// `law.md` §4 forbids granting world authority from syntax, and importing
+    /// `subject_home` here is the same thing one layer up). The DRIVER knows
+    /// the exact launch worlds — it computed them to hand to sema — and hands
+    /// the one bit this pass needs. Left null, `@x(args)` keeps its
+    /// pre-existing `UnknownMacro` refusal unchanged.
+    world_member: ?*const fn (name: []const u8) bool = null,
     expansion_id: u64 = 0,
     expansion_depth: u32 = 0,
     expanded_nodes: u32 = 0,
@@ -195,12 +206,45 @@ pub const Expander = struct {
         return self.expandExpr(tail);
     }
 
+    /// `@x(args)` — WORLD ACCESS APPLIED, recovered from the shape the sigil's
+    /// retired directive reader leaves behind.
+    ///
+    /// `@x` with no `(` is a world access in the parser (see `parse_macro_call_expr`),
+    /// but `@x(` is indistinguishable from a directive or a user macro AT THE
+    /// TOKEN, and the parser may not decide it: `law.md` §4 forbids granting
+    /// world authority from syntax, and the macro table is not visible there.
+    /// So the decision is made HERE, at the one point where every earlier
+    /// claimant has already declined — the directive tables in the parser, the
+    /// `grad` builtin above, and the user macro table on this line.
+    ///
+    /// A DECLARED MACRO STILL WINS, because it is on the line above this one.
+    /// That is the same order the bare face uses ("an injected world adds REACH
+    /// and never takes a NAME"), and it means this production can only reach
+    /// input that is an error today.
+    ///
+    /// THE WORLD TABLE IS NOT READ HERE. `world_member` is a predicate the
+    /// driver installs from the exact launch worlds; this pass owns no world
+    /// fact and answers `null` when nothing was handed to it, which leaves the
+    /// pre-existing `UnknownMacro` refusal exactly where it was. Whether the
+    /// world really provides the member is decided for real, once, by
+    /// `Sema.checkWorldAccess`.
+    fn worldApplication(self: *Expander, call: ast.MacroCall) Error!?*ast.Expr {
+        const provides = self.world_member orelse return null;
+        if (!provides(call.name)) return null;
+        const func = try self.alloc.create(ast.Expr);
+        func.* = .{ .name = .{ .loc = call.loc, .ident = call.name, .world = true } };
+        const out = try self.alloc.create(ast.Expr);
+        out.* = .{ .call = .{ .loc = call.loc, .func = func, .args = call.args } };
+        return out;
+    }
+
     fn expandMacroCall(self: *Expander, call: ast.MacroCall, ctx: *HygieneContext) Error!*ast.Expr {
         if (self.expansion_depth >= max_expansion_depth) return Error.ExpansionLimitExceeded;
         if (std.mem.eql(u8, call.name, "grad")) {
             return try self.expandGradBuiltin(call, ctx);
         }
-        const def = self.macros.get(call.name) orelse return Error.UnknownMacro;
+        const def = self.macros.get(call.name) orelse
+            return (try self.worldApplication(call)) orelse Error.UnknownMacro;
         if (def.params.len != call.args.len) return Error.ArityMismatch;
         if (def.body != .expr) return Error.MacroBodyExpectedExpression;
 
