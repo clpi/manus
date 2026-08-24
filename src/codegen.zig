@@ -35128,8 +35128,8 @@ test "codegen: text contains uses the ordinary relation face" {
     const alloc = arena.allocator();
     var lex = Lexer.init(
         \\local generated: str = __strjoin({"du", "o"}, "")
-        \\local yes: bool = "uo" in "duo"
-        \\local no: bool = "zz" in "duo"
+        \\local yes: bool = "dol" in "idol"
+        \\local no: bool = "zz" in "idol"
         \\function has(haystack: str, needle: str): bool
         \\  return needle in haystack
         \\end
