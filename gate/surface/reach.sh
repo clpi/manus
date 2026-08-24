@@ -110,6 +110,61 @@ printf '  C1 positive   idol compile+run <trivial>            compiled, executed
 printf '  C2 negative   idol compile --backend=direct <jit>   DNB001 runtime-global:jit\n'
 printf '  C3 check      idol check <call into nothing>        ACCEPTED — check is not evidence\n'
 
+# ============================ §0b PROVENANCE ================================
+# EVIDENCE-SUBJECT-ONE (`law.evidence.subject.one`, AGENTS.md): an evidence
+# artifact carries the exact measured subject revision, and a metric reported
+# "at HEAD" is invalid unless the measured subject IS the checkout HEAD. A
+# pinned ledger is exactly such a metric, so the two ways it can describe
+# something other than this checkout are refused rather than reported.
+#
+#   STALE COMPILER  a `zig-out/bin/idol` older than the last COMMIT that
+#                   touched the compiler source measures a different compiler
+#                   than this revision describes. Every refusal cause in the
+#                   ledger is that binary's, so the ledger would be pinned to
+#                   a compiler nobody can reproduce from this checkout.
+#
+#                   The comparison is against the commit time, NOT against
+#                   source mtimes, because mtime has a false-positive path
+#                   that this session hit: `idol token-tables emit` rewrites
+#                   `src/keyword_classify.c` byte-identically and moves its
+#                   mtime ahead of the binary, and a gate that refuses to run
+#                   after an unrelated no-op regeneration is a gate people
+#                   route around.
+#   DIRTY SUBJECT   the ledger pins levels for COMMITTED bytes. An uncommitted
+#                   edit to a tracked subject or to the compiler source makes
+#                   the measurement unattributable — neither this revision's
+#                   nor any other's.
+#
+# The EVIDENCE revision and the SUBJECT revision are deliberately separate:
+# this file changing does not invalidate a census, so the dirty check covers
+# the tracked `.id` corpus and the compiler source, not the gate itself.
+#
+# Both exit 2 (cannot measure), never 1 (measured, and it moved).
+head_rev=$(git rev-parse HEAD 2>/dev/null) || broke "§0b cannot read HEAD"
+law_sha=$("$idol" authority 2>/dev/null </dev/null \
+    | sed -n 's/.*"source_law":{[^}]*"sha256":"\([0-9a-f]*\)".*/\1/p')
+[ -n "$law_sha" ] || broke "§0b 'idol authority' published no source-law digest"
+
+src_commit=$(git log -1 --format=%ct -- src build.zig 2>/dev/null)
+bin_mtime=$(perl -e 'print +(stat($ARGV[0]))[9]' "$idol" 2>/dev/null) \
+    || bin_mtime=$(stat -f %m "$idol" 2>/dev/null) \
+    || bin_mtime=$(stat -c %Y "$idol" 2>/dev/null)
+case ${src_commit:-}${bin_mtime:-} in
+    *[!0-9]*|'') broke "§0b cannot date the compiler against its source commit" ;;
+esac
+[ "$bin_mtime" -ge "$src_commit" ] \
+    || broke "§0b compiler artifact predates the last compiler-source commit; rebuild before censusing"
+
+dirty=$(git status --porcelain -- '*.id' 'src' 'build.zig' 2>/dev/null | grep -v '^??' | head -5)
+[ -z "$dirty" ] || broke "§0b measured subjects are uncommitted, so no revision owns this census: $(printf '%s' "$dirty" | tr '\n' ';')"
+
+printf '%s\n' '== §0b provenance ============================================================'
+printf '  subject revision  %s (clean for .id, src, build.zig)\n' "$head_rev"
+printf '  compiler          %s\n' "$idol"
+printf '  source law        %s\n' "$law_sha"
+printf '  built after       %s (last commit touching src/, build.zig)\n' \
+    "$(git log -1 --format=%cI -- src build.zig 2>/dev/null)"
+
 # ====================== §1 THE UNIVERSAL LIBRARY BLOCKER ====================
 # Before any per-subsystem row: measure whether a consumer can reach a library
 # module AT ALL. Two sibling files, one calling the other, nothing exotic.
@@ -323,15 +378,51 @@ printf '%s\n' '== §2d CLI surface =============================================
 cli=$work/cli
 mkdir -p "$cli" || broke "cannot stage cli scratch"
 printf 'main: i64 = ()\n    0\n' >"$cli/t.id"
+# A BUILD SOURCE is planted next to the subject on purpose. Without one the
+# fall-through answers `no build source found`, which names no token and so
+# cannot distinguish a missing command from a missing project; with one it
+# answers `target '<c>' not found` and the token is in the message. Measured:
+#
+#     $ idol nosuchcommandatall t.id          # no main.id present
+#     error: no build source found
+#     $ idol nosuchcommandatall t.id          # main.id present
+#     error: target 'nosuchcommandatall' not found in 'main.id'
+#
+# No live command is caught by this: `build` with no targets answers "no build
+# targets found", which does not name `build` as a target.
+printf 'main: i64 = ()\n    0\n' >"$cli/main.id"
 "$idol" help 2>&1 </dev/null | sed -n '/^commands:/,/^$/p' | sed 's/^  //' \
     | awk 'NF{print $1}' | grep -vE '^(commands:|--.*|-h|list|all|stage|import-c)$' | sort -u >"$work/cmds"
 ncmd=$(grep -c . "$work/cmds")
 [ "$ncmd" -gt 0 ] || broke "§2d extracted ZERO commands from 'idol help'"
+# A command can be dead in two shapes and only one of them says so. `catalog`
+# and `dev` sit in the "is this a known command" guard but are never
+# dispatched, so they answer `unknown command`. A command dropped from that
+# guard instead falls through to the BUILD TARGET lookup and answers
+# `target '<c>' not found`, which names no command at all — measured:
+#
+#     $ idol frobnicate t.id
+#     error: target 'frobnicate' not found in 'src/main.id'
+#
+# Matching only the first spelling would let a route disappear while the
+# pinned set still matched. Both shapes count, and the detector is controlled
+# by a planted non-command: if `nosuchcommandatall` is not classified dead,
+# the detector is blind and the section is worthless.
+undispatched() { # $1 command -> 0 when the CLI never dispatched it
+    ( cd "$cli" && "$idol" "$1" t.id >cmd.log 2>&1 </dev/null )
+    grep -q "unknown command" "$cli/cmd.log" && return 0
+    grep -q "target '$1" "$cli/cmd.log" && return 0
+    return 1
+}
+undispatched nosuchcommandatall \
+    || broke "§2d the dead-command detector missed a planted non-command"
+"$idol" help >/dev/null 2>&1 </dev/null \
+    || broke "§2d 'idol help' itself failed; the command list is unreadable"
+
 dead=
 while IFS= read -r c; do
     [ -n "$c" ] || continue
-    ( cd "$cli" && "$idol" "$c" t.id >cmd.log 2>&1 </dev/null )
-    grep -q "unknown command" "$cli/cmd.log" && dead="$dead $c"
+    undispatched "$c" && dead="$dead $c"
 done <"$work/cmds"
 printf '  commands documented by "idol help": %s\n' "$ncmd"
 if [ -n "$dead" ]; then
