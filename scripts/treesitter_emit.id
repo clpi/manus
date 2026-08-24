@@ -94,22 +94,13 @@ grammarpath = "ext/tree-sitter-idol/grammar.js"
 markbegin = "@@residue:begin"
 markend = "@@residue:end"
 
-# SUBJECT-FIRST, and that is what makes this generator RUNNABLE.
-#
-# This body was `io.open(path, "r")` then `f:read("a")` then `f:close()`, and
-# the direct backend refuses `method-unresolved:read` on the handle face. The
-# whole of `zig build treesitter-projection` — the byte-identity control on
-# the second grammar authority — was dead behind that one line, which is how
-# `grammar.js` acquired hand-authored GAP-145 comment and literal identities
-# under a banner claiming zero authored lines.
-#
-# `path:read()` is the subject-first face and it lowers to `idol_io_read_path`.
-# Behaviour is the same at both ends that mattered here: a present file gives
-# its bytes, and an absent one gives the empty text `io.open`'s nil branch left
-# in `body`. Measured on this tree's own `gate/byteface/byteface.sh` (12596
-# bytes) and on a path that does not exist (0).
 slurp: str = (path: str)
-    path:read()
+    f = io.open(path, "r")
+    body: str = ""
+    if f
+        body = f:read("a")
+        f:close()
+    body
 
 spill: bool = (path: str, body: str)
     f = io.open(path, "w")

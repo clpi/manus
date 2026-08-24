@@ -1,5 +1,5 @@
 #!/bin/sh
-# gate/byteface/byteface.sh — GAP-145 / GAP-207: the byte face of a value must
+# gate/byte/face.sh — GAP-145 / GAP-207: the byte face of a value must
 # be ANSWERED or REFUSED, never guessed.
 #
 # ═══ WHY THIS FILE EXISTS AND THE OTHER THREE CONTROLS DID NOT SUFFICE ═════
@@ -10,9 +10,10 @@
 # as "then an integer". Three instruments were run against it and all three
 # were CLEAN while the program printed a pointer:
 #
-#   zig build unit-test              unchanged, same nine failures
-#   compile-status sweep, 547 .id    zero diff
-#   output differential, examples/   zero diff
+#   zig build unit-test                    unchanged, same failures
+#   compile-status sweep, whole corpus     zero diff
+#   output differential, everything that   zero diff
+#     compiles
 #
 # The third is the interesting one. It was a real output differential and it
 # still saw nothing, because THE CORPUS CONTAINS NO PROGRAM OF THIS SHAPE: a
@@ -27,6 +28,15 @@
 #            below. Not a substring, not a regex, not "contains abc".
 #   REFUSE   a non-zero exit AND an empty stdout. A refusal that printed
 #            something first has already emitted the wrong answer.
+#
+# BYTE FOR BYTE MEANS FILES, NOT `$(...)`. The first version of this gate held
+# both sides in shell variables, and POSIX command substitution STRIPS EVERY
+# TRAILING NEWLINE — so `abcZ`, `abcZ\n` and `abcZ\n\n` were one value to a
+# comparator whose own header claimed byte-for-byte. That is not academic
+# here: `print` ends a line and `stdout:write` ends nothing, a distinction
+# `lowerStreamWrite` exists to preserve and which was measured wrong once
+# already (`stdout:write("A=V\n")` emitting two newlines). Every subject now
+# names its ENDING and the two streams are compared with `cmp`.
 #
 # The one verdict that is never lawful is the third: exit 0, and bytes on
 # stdout that nobody can predict. Byte-for-byte comparison is what separates
@@ -55,11 +65,11 @@ cd "$root" || { echo "byteface: cannot enter root" >&2; exit 2; }
 
 IDOL=${BYTEFACE_IDOL:-$root/zig-out/bin/idol}
 if [ ! -x "$IDOL" ]; then
-    printf 'byteface: no compiler at %s — nothing was measured\n' "$IDOL" >&2
+    printf 'byte face: no compiler at %s — nothing was measured\n' "$IDOL" >&2
     exit 2
 fi
 
-scratch=$(mktemp -d) || { echo 'byteface: cannot allocate scratch' >&2; exit 2; }
+scratch=$(mktemp -d) || { echo 'byte face: cannot allocate scratch' >&2; exit 2; }
 cleanup() { rm -rf -- "$scratch"; }
 trap 'cleanup' EXIT
 trap 'cleanup; exit 130' INT
@@ -71,7 +81,7 @@ subjects=0
 
 fail() {
     violations=$((violations + 1))
-    printf 'byteface: FAIL %s\n' "$*"
+    printf 'byte face: FAIL %s\n' "$*"
 }
 
 # ── THE COMPARATOR, as a function, so the controls can call the same code ──
@@ -81,31 +91,35 @@ fail() {
 #
 #   verdict_of EXPECTKIND EXPECTTEXT ACTUALSTATUS ACTUALOUT
 #     -> prints 'agree' or a reason, exit status unused
+#   verdict_of EXPECTKIND WANTFILE GOTFILE ACTUALSTATUS [named|silent]
+#     -> prints 'agree' or a reason
 verdict_of() {
     vk=$1
-    vtext=$2
-    vstatus=$3
-    vout=$4
+    vwant=$2
+    vgot=$3
+    vstatus=$4
     vnamed=${5:-named}
     case "$vk" in
         answer)
             if [ "$vstatus" -ne 0 ]; then
-                printf 'expected the answer [%s], got exit %s\n' "$vtext" "$vstatus"
+                printf 'expected the answer [%s], got exit %s\n' "$(cat "$vwant")" "$vstatus"
                 return 0
             fi
-            if [ "$vout" != "$vtext" ]; then
-                printf 'expected the answer [%s], got [%s]\n' "$vtext" "$vout"
+            if ! cmp -s "$vwant" "$vgot"; then
+                printf 'expected the bytes [%s], got [%s] (%s vs %s bytes)\n' \
+                    "$(cat "$vwant")" "$(cat "$vgot")" \
+                    "$(wc -c < "$vwant" | tr -d ' ')" "$(wc -c < "$vgot" | tr -d ' ')"
                 return 0
             fi
             printf 'agree\n'
             ;;
         refuse)
             if [ "$vstatus" -eq 0 ]; then
-                printf 'expected a named refusal, got exit 0 and [%s]\n' "$vout"
+                printf 'expected a named refusal, got exit 0 and [%s]\n' "$(cat "$vgot")"
                 return 0
             fi
-            if [ -n "$vout" ]; then
-                printf 'refused at exit %s but printed [%s] first\n' "$vstatus" "$vout"
+            if [ -s "$vgot" ]; then
+                printf 'refused at exit %s but printed [%s] first\n' "$vstatus" "$(cat "$vgot")"
                 return 0
             fi
             # A CRASH IS NOT A REFUSAL. Exit 139 with an empty stdout satisfies
@@ -125,6 +139,20 @@ verdict_of() {
     esac
 }
 
+# `want NAME ENDING` writes the expected bytes from stdin-free arguments into a
+# file. ENDING is `nl` for a line-ending egress (`print`) and `nonl` for one
+# that ends nothing (`stdout:write`) — the distinction `$(...)` destroyed.
+want_file() {
+    wf=$1
+    wtext=$2
+    wend=${3:-nonl}
+    if [ "$wend" = 'nl' ]; then
+        printf '%s\n' "$wtext" > "$wf"
+    else
+        printf '%s' "$wtext" > "$wf"
+    fi
+}
+
 # ── 1. the comparator is controlled on the recorded defect ─────────────────
 #
 # Three transcripts out of GAP-207's own table, plus the shape GAP-145 records
@@ -135,9 +163,11 @@ control_convictions=0
 control_subjects=0
 convict() {
     control_subjects=$((control_subjects + 1))
-    cv=$(verdict_of "$1" "$2" "$3" "$4" "${5:-named}")
+    want_file "$scratch/cwant" "$2" "${6:-nl}"
+    printf '%s' "$4" > "$scratch/cgot"
+    cv=$(verdict_of "$1" "$scratch/cwant" "$scratch/cgot" "$3" "${5:-named}")
     if [ "$cv" = 'agree' ]; then
-        printf 'byteface: CONTROL NOT CONVICTED — comparator called [%s] an agreement with [%s]\n' "$4" "$2" >&2
+        printf 'byte face: CONTROL NOT CONVICTED — comparator called [%s] an agreement with [%s]\n' "$4" "$2" >&2
     else
         control_convictions=$((control_convictions + 1))
     fi
@@ -155,16 +185,29 @@ convict refuse '' 1 '4339188916Z'
 convict refuse '' 139 '' silent
 # And the honest verdicts must NOT be convicted, or the comparator is simply
 # a constant `FAIL` and equally useless.
-if [ "$(verdict_of answer abcZ 0 abcZ)" != 'agree' ]; then
-    printf 'byteface: CONTROL BROKEN — comparator refuses a correct answer\n' >&2
+want_file "$scratch/cwant" abcZ nl
+printf 'abcZ\n' > "$scratch/cgot"
+if [ "$(verdict_of answer "$scratch/cwant" "$scratch/cgot" 0)" != 'agree' ]; then
+    printf 'byte face: CONTROL BROKEN — comparator refuses a correct answer\n' >&2
     exit 2
 fi
-if [ "$(verdict_of refuse '' 1 '')" != 'agree' ]; then
-    printf 'byteface: CONTROL BROKEN — comparator refuses a clean refusal\n' >&2
+# AND IT MUST SEE THE ENDING. This is the defect the first version of this file
+# carried: with `$(...)` on both sides, an extra trailing newline was invisible.
+printf 'abcZ\n\n' > "$scratch/cgot"
+if [ "$(verdict_of answer "$scratch/cwant" "$scratch/cgot" 0)" = 'agree' ]; then
+    printf 'byte face: CONTROL BROKEN — comparator cannot see a trailing newline\n' >&2
+    exit 2
+fi
+control_subjects=$((control_subjects + 1))
+control_convictions=$((control_convictions + 1))
+want_file "$scratch/cwant" '' nonl
+: > "$scratch/cgot"
+if [ "$(verdict_of refuse "$scratch/cwant" "$scratch/cgot" 1)" != 'agree' ]; then
+    printf 'byte face: CONTROL BROKEN — comparator refuses a clean refusal\n' >&2
     exit 2
 fi
 if [ "$control_subjects" -eq 0 ] || [ "$control_convictions" -ne "$control_subjects" ]; then
-    printf 'byteface: comparator control failed (%s/%s convicted) — measuring nothing\n' \
+    printf 'byte face: comparator control failed (%s/%s convicted) — measuring nothing\n' \
         "$control_convictions" "$control_subjects" >&2
     exit 2
 fi
@@ -180,23 +223,26 @@ run_subject() {
     sname=$1
     skind=$2
     stext=$3
+    send=${4:-nl}
     subjects=$((subjects + 1))
     sfile="$scratch/subject.id"
     cat > "$sfile"
-    # NO PIPELINE. `$?` after `cmd | sed` is SED's status, and the first draft
-    # of this file scored every refusal as exit 0 for exactly that reason —
-    # the gate reporting a number it had not measured, in the gate written to
-    # forbid it. The compiler puts its build progress and its diagnostics on
-    # stderr, so the program's own bytes are stdout, unfiltered.
-    # RUN FROM THE SCRATCH DIRECTORY. `idol run` writes the linked binary
+    # NO PIPELINE AND NO COMMAND SUBSTITUTION ON THE OUTPUT. `$?` after
+    # `cmd | sed` is SED's status, and the first draft of this file scored
+    # every refusal as exit 0 for exactly that reason; `$(...)` then ate the
+    # trailing newline that separates `print` from `stdout:write`. The
+    # compiler puts its build progress and its diagnostics on stderr, so the
+    # program's own bytes are stdout, unfiltered and uncopied.
+    #
+    # RUN FROM THE SCRATCH DIRECTORY: `idol run` writes the linked binary
     # beside the invocation, and a gate that drops `subject.out` into the
     # repository root is editing the tree it is measuring.
     ( cd "$scratch" && "$IDOL" run "$sfile" ) > "$scratch/out" 2> "$scratch/err"
     sstatus=$?
-    sout=$(cat "$scratch/out")
+    want_file "$scratch/want" "$stext" "$send"
     snamed=silent
     if grep -q 'error:' "$scratch/err"; then snamed=named; fi
-    sv=$(verdict_of "$skind" "$stext" "$sstatus" "$sout" "$snamed")
+    sv=$(verdict_of "$skind" "$scratch/want" "$scratch/out" "$sstatus" "$snamed")
     if [ "$sv" != 'agree' ]; then
         fail "$sname: $sv"
     fi
@@ -205,7 +251,7 @@ run_subject() {
 # THE GAP-207 PROGRAM ITSELF. A byte sequence has element descriptor `byte`
 # and no textual law; `dnir.Value` has no member that carries one, so the
 # lawful verdict is the named refusal. What it must never be is a pointer.
-run_subject 'bound byte literal in a concat' refuse '' <<'IDL'
+run_subject 'bound byte literal in a concat' refuse '' nonl <<'IDL'
 main: i64 = ()
     s = 'abc'
     print(s .. "Z")
@@ -216,25 +262,25 @@ IDL
 # `global` already refused; the bare module binding was the fourth spelling
 # and it printed an address, which is how one fact came to have two answers
 # depending only on which keyword was written.
-run_subject 'const-bound byte literal in a concat' refuse '' <<'IDL'
+run_subject 'const-bound byte literal in a concat' refuse '' nonl <<'IDL'
 const j = 'abc'
 main: i64 = ()
     print(j .. "Z")
     0
 IDL
-run_subject 'local-bound byte literal in a concat' refuse '' <<'IDL'
+run_subject 'local-bound byte literal in a concat' refuse '' nonl <<'IDL'
 local j = 'abc'
 main: i64 = ()
     print(j .. "Z")
     0
 IDL
-run_subject 'global-bound byte literal in a concat' refuse '' <<'IDL'
+run_subject 'global-bound byte literal in a concat' refuse '' nonl <<'IDL'
 global j = 'abc'
 main: i64 = ()
     print(j .. "Z")
     0
 IDL
-run_subject 'bare-bound byte literal in a concat' refuse '' <<'IDL'
+run_subject 'bare-bound byte literal in a concat' refuse '' nonl <<'IDL'
 j = 'abc'
 main: i64 = ()
     print(j .. "Z")
@@ -244,7 +290,7 @@ IDL
 # A byte sequence handed to `print` on its own already refused by name, and
 # must keep doing so: the admission rule and the capability rule have to claim
 # the SAME set, which is the failure GAP-204 names.
-run_subject 'bound byte literal printed alone' refuse '' <<'IDL'
+run_subject 'bound byte literal printed alone' refuse '' nonl <<'IDL'
 main: i64 = ()
     s = 'abc'
     print(s)
@@ -256,12 +302,12 @@ IDL
 # quoted part into the format string without asking which face it had. So the
 # unnamed spelling answered `abcZ` while the named one refused -- one fact,
 # two answers, decided by whether the operand had been bound.
-run_subject 'byte literal in a concat, unnamed' refuse '' <<'IDL'
+run_subject 'byte literal in a concat, unnamed' refuse '' nonl <<'IDL'
 main: i64 = ()
     print('abc' .. "Z")
     0
 IDL
-run_subject 'byte literal interpolation' refuse '' <<'IDL'
+run_subject 'byte literal interpolation' refuse '' nonl <<'IDL'
 main: i64 = ()
     k = 1
     print('a {k} b')
@@ -277,12 +323,12 @@ IDL
 # ANSWER rather than refuse -- and the literal spelling always did, while the
 # BOUND spelling printed a decimal address at exit 0. The recommended idiom
 # was the broken one.
-run_subject 'byte payload written, unnamed' answer '{"a":1}' <<'IDL'
+run_subject 'byte payload written, unnamed' answer '{"a":1}' nonl <<'IDL'
 main: i64 = ()
     stdout:write('{"a":1}')
     0
 IDL
-run_subject 'byte payload written, bound' answer '{"a":1}' <<'IDL'
+run_subject 'byte payload written, bound' answer '{"a":1}' nonl <<'IDL'
 main: i64 = ()
     j = '{"a":1}'
     stdout:write(j)
@@ -322,13 +368,13 @@ main: i64 = ()
     print("a {k} b")
     0
 IDL
-run_subject 'bound text written' answer hello <<'IDL'
+run_subject 'bound text written' answer hello nonl <<'IDL'
 main: i64 = ()
     j = "hello"
     stdout:write(j)
     0
 IDL
-run_subject 'bound integer written' answer 7 <<'IDL'
+run_subject 'bound integer written' answer 7 nonl <<'IDL'
 main: i64 = ()
     n = 7
     stdout:write(n)
@@ -337,14 +383,14 @@ IDL
 
 # ── 3. verdict ─────────────────────────────────────────────────────────────
 if [ "$subjects" -eq 0 ]; then
-    printf 'byteface: FAIL zero subjects — a gate that measures nothing is not a control (GAP-201)\n' >&2
+    printf 'byte face: FAIL zero subjects — a gate that measures nothing is not a control (GAP-201)\n' >&2
     exit 1
 fi
 if [ "$violations" -ne 0 ]; then
-    printf 'byteface: FAIL %s of %s subject(s); comparator convicted %s/%s recorded defects\n' \
+    printf 'byte face: FAIL %s of %s subject(s); comparator convicted %s/%s recorded defects\n' \
         "$violations" "$subjects" "$control_convictions" "$control_subjects" >&2
     exit 1
 fi
-printf 'byteface: PASS %s subject(s); comparator convicted %s/%s recorded defects\n' \
+printf 'byte face: PASS %s subject(s); comparator convicted %s/%s recorded defects\n' \
     "$subjects" "$control_convictions" "$control_subjects"
 exit 0
