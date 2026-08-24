@@ -58,6 +58,9 @@
 #       `__TEXT,__cstring` / S_CSTRING_LITERALS, and only a module with an
 #       interior NUL moves to its own `__TEXT,__conststr` / S_REGULAR section.
 #       The representation choice is a CONSEQUENCE OF A FACT, not a new default.
+#   §3a A module carrying BOTH an interior NUL and a determined table, so the
+#       section-index and base-address arithmetic is exercised with two data
+#       sections present.
 #   §3b The digest §3's byte claim rests on, measured in BOTH directions: the
 #       same source twice is identical, one added NUL is not. A comparison that
 #       cannot tell two programs apart confirms nothing.
@@ -220,6 +223,38 @@ if build plain; then
   fi
 fi
 
+# ─── §3a both data sections present at once ────────────────────────────────
+# THE SECTION COUNT IS ARITHMETIC, and a new section is exactly where that
+# arithmetic breaks. `__const` (determined tables) derives its index and its
+# base address from whether the literal blob's section exists, and `bssBaseAddr`
+# derives a third address from both. A module carrying an interior NUL AND a
+# determined table exercises all three at once: if any derivation still assumes
+# the literal blob is named `__cstring`, or counts sections differently, an
+# `adrp/add` lands on the wrong word and the table read answers garbage.
+cat > "$work/mixed.id" <<'ID'
+main: i64 = ()
+  s: str = "a\0b"
+  t = { 11, 22, 33 }
+  i = s:len()
+  v = t[i]
+  print("{i} {v} {s:byte(3)}")
+  0
+ID
+if build mixed; then
+  mixdirect=$("$work/mixed.bin" 2>/dev/null)
+  mixwasm=$($wasmrun "$work/mixed.wasm" 2>/dev/null)
+  [ "$mixdirect" = '3 33 98' ] || bad "§3a direct, NUL literal beside a determined table: got '$mixdirect', expected '3 33 98'"
+  [ "$mixwasm" = '3 33 98' ] || bad "§3a wasm, NUL literal beside a determined table: got '$mixwasm', expected '3 33 98'"
+  if command -v otool >/dev/null 2>&1; then
+    secs=$(otool -l "$work/mixed.bin" 2>/dev/null | grep -c 'sectname __const$')
+    blob=$(otool -l "$work/mixed.bin" 2>/dev/null | grep -c 'sectname __conststr')
+    if [ "$secs" -lt 1 ] || [ "$blob" -lt 1 ]; then
+      bad "§3a the two data sections did not both ship (__const $secs, __conststr $blob) — §3a's subject is not the one it claims"
+    fi
+  fi
+  [ "$mixdirect" = '3 33 98' ] && [ "$mixwasm" = '3 33 98' ] && note "§3a NUL literal beside a determined table, both realizations: $mixdirect"
+fi
+
 # ─── §3b the digest comparison itself, in BOTH directions ──────────────────
 # A BYTE CLAIM NEEDS A LIVE COMPARISON. §3 reads the section by name; the claim
 # that a NUL-free module is otherwise UNTOUCHED is a claim about bytes, and a
@@ -312,8 +347,8 @@ fi
 # reader sees a green line and believes something ran.
 if [ "$measured" -eq 0 ]; then
   bad '§0 measured ZERO programs — every subject failed to build, so nothing above is a finding'
-elif [ "$measured" -lt 4 ]; then
-  bad "§0 measured only $measured of 4 subjects"
+elif [ "$measured" -lt 5 ]; then
+  bad "§0 measured only $measured of 5 subjects"
 else
   note "§0 measured $measured subjects on both realizations"
 fi
