@@ -1118,6 +1118,18 @@ pub fn quotedLiteralType(quote: ast.Quote) ResolvedType {
     return .str;
 }
 
+/// Does this resolved descriptor CARRY the byte-sequence face?
+///
+/// The shape belongs to `quotedLiteralType` above and is asked of it here, so a
+/// consumer never spells `elem == .u8 and size == null` for itself. A consumer
+/// that restates the shape is a second answer to `law.text.byte`, and the one
+/// this repairs (`src/dnir_lower.zig`) had been answering the question by
+/// ELIMINATION — "not f64, not str, not a pointer, therefore an integer" — over
+/// a `const char*`.
+pub fn isQuotedByteSequence(descriptor: ResolvedType) bool {
+    return quotedLiteralType(.bytes).eql(descriptor);
+}
+
 
 pub const c_type_marker_prefix = "__c_type:";
 

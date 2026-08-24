@@ -852,6 +852,20 @@ pub fn build(b: *std.Build) void {
     // `gate/all.sh` has always used; the gate prints its own subject count. It
     // was on no build step and no hook, which is the same O7 class it exists
     // to police, so it is here.
+    // byteface -- GAP-145 O5 / GAP-207. The wrong answer this measures was
+    // clean under `zig build unit-test`, clean under a 547-file compile-status
+    // sweep, and clean under an output differential across every example that
+    // compiles, because THE CORPUS HAS NO PROGRAM OF THAT SHAPE. It carries its
+    // own subjects, it needs the installed compiler to run them, and it is on
+    // this step rather than reachable only by someone typing its name -- which
+    // is the O7 class that let the same defect sit unmeasured.
+    const byteface_cmd = b.addSystemCommand(&.{ "sh", "gate/byteface/byteface.sh" });
+    byteface_cmd.setCwd(b.path("."));
+    byteface_cmd.step.dependOn(b.getInstallStep());
+    const byteface_step = b.step("byteface", "a byte sequence is answered or refused by name, never rendered as a pointer (GAP-207)");
+    byteface_step.dependOn(&byteface_cmd.step);
+    test_step.dependOn(&byteface_cmd.step);
+
     const posix_cmd = b.addSystemCommand(&.{ "sh", "gate/posix.sh" });
     posix_cmd.setCwd(b.path("."));
     const posix_step = b.step("posix", "every shell gate in gate/ parses under a strict POSIX shell (GAP-145 O7)");

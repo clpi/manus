@@ -1847,6 +1847,44 @@ fn graphTextConst(graph: *const semantic_graph.SemanticGraph, expr: *const Expr)
     return std.meta.activeTag(descriptor) == .str;
 }
 
+/// THE BYTE FACE OF THE SAME QUESTION (GAP-145 `law.text.byte`, GAP-207).
+///
+/// `graphTextConst` answers "is this literal TEXT"; a consumer that reads its
+/// negation as "then it is a number" has invented a third face nobody
+/// published. This asks the producer the positive question instead, through the
+/// same descriptor route, and `types.isQuotedByteSequence` owns the shape.
+fn graphByteSequenceConst(graph: *const semantic_graph.SemanticGraph, expr: *const Expr) bool {
+    const value = graph.sourceQuoteValue(expr) orelse return false;
+    const node = graph.get(value) orelse return false;
+    const descriptor = node.descriptor orelse return false;
+    return types.isQuotedByteSequence(descriptor);
+}
+
+/// The expression produces a BYTE SEQUENCE — a value with element descriptor
+/// `byte`, which carries none of the textual law `str` does and is not a
+/// number.
+///
+/// Two routes, both the producer's: the graph descriptor where the occurrence
+/// has one, and `byteseq_slots` residency where it does not. The second exists
+/// because a NAME occurrence carries no value node of its own — measured on
+/// `s = 'abc' ; print(s .. "Z")`, where `graphNameDescriptor` answers
+/// `.unvisited` and the physical slot is the only surviving record of what the
+/// binding holds.
+fn exprIsByteSequence(ctx: *const LowerCtx, expr: *const ast.Expr) bool {
+    return switch (expr.*) {
+        .quoted => graphByteSequenceConst(ctx.graph, expr),
+        .name => |n| blk: {
+            switch (graphNameDescriptor(ctx, expr)) {
+                .known => |descriptor| break :blk types.isQuotedByteSequence(descriptor),
+                .unknown, .unvisited => {},
+            }
+            const slot = ctx.locals.get(n.ident) orelse break :blk false;
+            break :blk ctx.byteseq_slots.contains(slot);
+        },
+        else => false,
+    };
+}
+
 pub const ModuleTableKind = enum { int, text };
 
 pub fn moduleConstTableKind(
@@ -3766,6 +3804,24 @@ pub const LowerCtx = struct {
     /// materialized by `materializeTableSlots`. `t[i]` on one of these is a
     /// scaled 8-byte load, not a select-chain.
     ptr_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// Slots bound to the BYTE-SEQUENCE face (GAP-145 `law.text.byte`,
+    /// GAP-207). A byte sequence is not text and it is not an integer, and
+    /// `dnir.Value` has no member that carries one, so this pass cannot render
+    /// it. What it must not do is GUESS.
+    ///
+    /// `exprIsStr` answering false for the byte face left `concatOperandOk`
+    /// asking `exprIsIntegral`, whose `.name` arm admits any slot that is not
+    /// f64/str/ptr — a NEGATIVE test wearing the clothes of the positive one
+    /// documented above it. `planConcat` then chose `%lld` for a
+    /// `const char*`. Measured: `s = 'abc' ; print(s .. "Z")` printed
+    /// `4370531440Z`, exit 0, no diagnostic, a different address every run.
+    ///
+    /// This set is the third arm. Membership is the producer's fact, read
+    /// through the descriptor the semantic graph published for the quote
+    /// (`publishSourceQuote` -> `types.quotedLiteralType`), never off
+    /// `expr.quoted.quote`. Its only consumers are the two predicates that were
+    /// answering by elimination: `exprIsIntegral` and `concatOperandOk`.
+    byteseq_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// Wide/opaque record parameters keyed by the parameter name.
     param_record_types: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Graph aggregate identity to the one physical base temp selected for this
@@ -3869,6 +3925,7 @@ pub const LowerCtx = struct {
         self.bool_slots.deinit(self.alloc);
         self.narrow_slots.deinit(self.alloc);
         self.ptr_slots.deinit(self.alloc);
+        self.byteseq_slots.deinit(self.alloc);
         var pr = self.param_record_types.iterator();
         while (pr.next()) |entry| self.alloc.free(entry.key_ptr.*);
         self.param_record_types.deinit(self.alloc);
@@ -4916,6 +4973,14 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
             ctx.narrow_slots.get(slot) orelse .any;
         if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
         if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
+        // THE BYTE FACE IS RECORDED AT THE SAME STORE (GAP-207). Both
+        // directions: a slot REASSIGNED away from a byte sequence stops being
+        // one, and leaving the mark set would refuse a legal concat for the
+        // rest of the body.
+        if (exprIsByteSequence(ctx, value))
+            try ctx.byteseq_slots.put(ctx.alloc, slot, {})
+        else
+            _ = ctx.byteseq_slots.remove(slot);
         try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = store_ty });
         subsumeProducerRefit(ctx);
         return;
@@ -4941,6 +5006,14 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
     try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, fk), slot);
     if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
     if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
+    // THE BYTE FACE IS RECORDED AT THE SAME STORE (GAP-207). Both
+    // directions: a slot REASSIGNED away from a byte sequence stops being
+    // one, and leaving the mark set would refuse a legal concat for the
+    // rest of the body.
+    if (exprIsByteSequence(ctx, value))
+        try ctx.byteseq_slots.put(ctx.alloc, slot, {})
+    else
+        _ = ctx.byteseq_slots.remove(slot);
     try ctx.emit(.{ .op = .store_local, .result = slot, .lhs = v, .ty = store_ty });
 }
 
@@ -7255,6 +7328,13 @@ fn exprIsBoolish(ctx: *LowerCtx, expr: *const ast.Expr) bool {
 fn concatOperandOk(ctx: *LowerCtx, expr: *const ast.Expr) bool {
     if (exprIsStr(ctx, expr)) return true;
     if (exprIsBoolish(ctx, expr)) return false;
+    // A BYTE SEQUENCE IS THE THIRD ANSWER, and it is stated here rather than
+    // left to fall out of the two above (GAP-145 `law.text.byte`, GAP-207).
+    // `dnir.Value` carries `void/i64/f64/str/local/temp/record` and has no
+    // member for element descriptor `byte`, so the lawful shape is a REFUSAL
+    // this pass can name, not a render. Without this line `exprIsIntegral`
+    // admitted the `const char*` and `planConcat` printed it through `%lld`.
+    if (exprIsByteSequence(ctx, expr)) return false;
     return exprIsIntegral(ctx, expr);
 }
 
@@ -7568,6 +7648,14 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
             ctx.narrow_slots.get(slot) orelse .any;
         if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
         if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
+        // THE BYTE FACE IS RECORDED AT THE SAME STORE (GAP-207). Both
+        // directions: a slot REASSIGNED away from a byte sequence stops being
+        // one, and leaving the mark set would refuse a legal concat for the
+        // rest of the body.
+        if (exprIsByteSequence(ctx, value))
+            try ctx.byteseq_slots.put(ctx.alloc, slot, {})
+        else
+            _ = ctx.byteseq_slots.remove(slot);
         // Both directions. A slot REASSIGNED from a bool to an integer is no
         // longer a bool, and leaving the mark set would refuse a legal
         // interpolation for the rest of the function.
@@ -7609,6 +7697,14 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
     const store_ty: RT = if (f64_store) .f64 else .any;
     if (store_ty == .f64) try ctx.f64_slots.put(ctx.alloc, slot, {});
     if (exprIsStr(ctx, value)) try ctx.str_slots.put(ctx.alloc, slot, {});
+    // THE BYTE FACE IS RECORDED AT THE SAME STORE (GAP-207). Both
+    // directions: a slot REASSIGNED away from a byte sequence stops being
+    // one, and leaving the mark set would refuse a legal concat for the
+    // rest of the body.
+    if (exprIsByteSequence(ctx, value))
+        try ctx.byteseq_slots.put(ctx.alloc, slot, {})
+    else
+        _ = ctx.byteseq_slots.remove(slot);
     if (exprIsBoolish(ctx, value)) try ctx.bool_slots.put(ctx.alloc, slot, {});
     if (pointer_store) try ctx.ptr_slots.put(ctx.alloc, slot, {});
     if (ast.intLiteralValue(value)) |n| {
@@ -12420,9 +12516,15 @@ fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
                 .unknown, .unvisited => {},
             }
             const slot = ctx.locals.get(n.ident) orelse break :blk false;
+            // This tail is the one place in this predicate that answers by
+            // ELIMINATION, against the doc comment above it. Every face it does
+            // not name is admitted as an integer, so a face ADDED anywhere else
+            // in the compiler becomes a wrong answer here by default — which is
+            // exactly how the byte sequence arrived (GAP-207).
             break :blk !ctx.f64_slots.contains(slot) and
                 !ctx.str_slots.contains(slot) and
                 !ctx.ptr_slots.contains(slot) and
+                !ctx.byteseq_slots.contains(slot) and
                 !nameIsPositionalTable(ctx, n.ident);
         },
         .if_expr => |ie| exprIsIntegral(ctx, ie.then_expr) and exprIsIntegral(ctx, ie.else_expr),
