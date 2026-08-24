@@ -251,6 +251,23 @@ main: i64 = ()
     0
 IDL
 
+# THE SAME FACT WITHOUT A NAME. `lowerPrintFormat` runs BEFORE the binop
+# guard for a print argument, and `planConcat` folded the bytes of every
+# quoted part into the format string without asking which face it had. So the
+# unnamed spelling answered `abcZ` while the named one refused -- one fact,
+# two answers, decided by whether the operand had been bound.
+run_subject 'byte literal in a concat, unnamed' refuse '' <<'IDL'
+main: i64 = ()
+    print('abc' .. "Z")
+    0
+IDL
+run_subject 'byte literal interpolation' refuse '' <<'IDL'
+main: i64 = ()
+    k = 1
+    print('a {k} b')
+    0
+IDL
+
 # ── the negative controls: what must NOT have moved ────────────────────────
 #
 # A repair that refuses everything is not a repair. Each of these is a shape

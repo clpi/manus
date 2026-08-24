@@ -22129,7 +22129,17 @@ pub const CodeGen = struct {
             .nil => "nil",
             .true_lit, .false_lit => "boolean",
             .int_lit, .float_lit => "number",
-            .quoted => "string",
+            // GAP-145 `law.text.byte`: `type()` names a member of the Lua
+            // kingdom and a byte sequence is not one. The `.name` arm two
+            // lines down already answers this correctly -- it asks the
+            // DESCRIPTOR and declines to fold when the answer is not str,
+            // numeric or bool -- while this arm read the NODE and answered
+            // "string" for every quote face, including the one whose element
+            // descriptor is `byte`. Declining is the same mechanism reached by
+            // asking the producer's quote instead of the syntax, and it hands
+            // the question to the runtime `type()` below rather than inventing
+            // a name here.
+            .quoted => |lit| if (ast.quotedLiteralIsByteSequence(lit.quote)) null else "string",
             .name => |name| blk: {
                 if (is_runtime_global(name.ident)) break :blk null;
                 const rt = self.expr_type(expr);

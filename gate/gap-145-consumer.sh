@@ -271,13 +271,19 @@ fi
 # `src/dnir_lower.zig` `graphTextConst`, which reads `sourceQuoteValue` off the
 # graph instead of assuming text. Raising it is the edit that must be argued
 # for.
-QUOTE_BLIND_CEILING=22
+QUOTE_BLIND_CEILING=21
 
 arms=$(grep -h '^[[:space:]]*\(\.[a-z_, .]*\)\?\.quoted =>' "$ROOT"/src/*.zig | wc -l | tr -d ' ')
 # `.quoted` CONTAINS `.quote`, so a naive `grep -c '\.quote'` matches every arm
 # and reports 0 blind ones. It did, on the first run of this check. `[^d]` is
 # what separates reading the fact from naming the node.
-observing=$(grep -h '^[[:space:]]*\(\.[a-z_, .]*\)\?\.quoted =>' "$ROOT"/src/*.zig | grep -cE '\.quote[^d]|Quote|graphTextConst')
+#
+# `graphByteSequenceConst` joins the observing set because it asks the SAME
+# producer route `graphTextConst` does -- `sourceQuoteValue` -> node descriptor
+# -- for the other face. An arm converted to read the producer must be
+# recognised as having been converted, or the ceiling stops being a ratchet
+# and starts being a cap on writing the repair.
+observing=$(grep -h '^[[:space:]]*\(\.[a-z_, .]*\)\?\.quoted =>' "$ROOT"/src/*.zig | grep -cE '\.quote[^d]|Quote|graphTextConst|graphByteSequenceConst')
 blind=$((arms - observing))
 examined=$((examined + 1))
 if [ "$arms" -eq 0 ]; then
@@ -287,6 +293,62 @@ else
         "$arms" "$observing" "$blind" "$QUOTE_BLIND_CEILING"
     if [ "$blind" -gt "$QUOTE_BLIND_CEILING" ]; then
         bad "quote-blind .quoted arms ROSE to $blind, ceiling $QUOTE_BLIND_CEILING"
+    fi
+fi
+
+# ── 3c. THE FORM THE ARM CENSUS CANNOT SEE ──────────────────────────────────
+#
+# Section 3b greps for a SWITCH ARM, `.quoted =>`. A consumer can reach the
+# same node through a TAG TEST -- `p.* == .quoted`, `args[0].* == .quoted` --
+# and every one of those was invisible to the census that has been reported as
+# GAP-145's O5 number since it was first taken.
+#
+# This is not a hypothetical blind spot. `planConcat` in `src/dnir_lower.zig`
+# is written in that form, and it folded the bytes of EVERY quoted part
+# straight into a printf format string without asking which face it had:
+#
+#     print('abc' .. "Z")            answered abcZ   (folded, tag-test site)
+#     x = 'abc' .. "Z" ; print(x)    refused         (switch-arm site)
+#
+# One fact with two answers, and the census that was supposed to be counting
+# exactly this class could not see the site that carried it.
+#
+# WHAT THIS SECTION DOES AND DOES NOT CLAIM. It counts the surface; it does not
+# judge each member. Most of these sites read a literal as a NAME -- a concept
+# name, a `__emit` template, a field spelling -- where no text/byte law is
+# observable, and deciding that line-locally is not something a grep can do
+# honestly. So the number is a CEILING on the surface, not a blind count: it
+# makes the form visible, which it was not, and refuses growth while GAP-145 is
+# open. A site added here has to be argued for by raising the number.
+QUOTE_TAGTEST_CEILING=88
+
+tagtests=$(grep -h '== \.quoted\b' "$ROOT"/src/*.zig | wc -l | tr -d ' ')
+examined=$((examined + 1))
+
+# POSITIVE CONTROL ON THE COUNTER. The counter is the instrument; a ceiling
+# reported by a pattern that matches nothing is the exact defect this whole
+# file exists for (`tools/parity/grammar` grepped `ROLEIDENTITYCOUNT` at a file
+# that writes `roleidentitycount` and was green for months). Two planted sites
+# in a scratch file must be counted as two, and a file with none as none.
+tagprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate scratch' >&2; exit 2; }
+cat > "$tagprobe/planted.zig" <<'PLANT'
+    if (p.* == .quoted) return null;
+    const v = if (args[0].* == .quoted) args[0].quoted.val else null;
+    if (p.* == .int_lit) return null;
+PLANT
+: > "$tagprobe/clean.zig"
+planted=$(grep -h '== \.quoted\b' "$tagprobe/planted.zig" | wc -l | tr -d ' ')
+cleaned=$(grep -h '== \.quoted\b' "$tagprobe/clean.zig" | wc -l | tr -d ' ')
+rm -rf -- "$tagprobe"
+if [ "$planted" -ne 2 ] || [ "$cleaned" -ne 0 ]; then
+    bad "the tag-test counter is broken: planted 2 counted as $planted, empty counted as $cleaned"
+elif [ "$tagtests" -eq 0 ]; then
+    bad 'the tag-test census matched nothing while its own control counted 2 -- it is reading the wrong tree'
+else
+    printf '  .quoted tag-test sites: %s (ceiling %s); counter control: 2 planted, 0 in empty\n' \
+        "$tagtests" "$QUOTE_TAGTEST_CEILING"
+    if [ "$tagtests" -gt "$QUOTE_TAGTEST_CEILING" ]; then
+        bad "the .quoted tag-test surface ROSE to $tagtests, ceiling $QUOTE_TAGTEST_CEILING"
     fi
 fi
 

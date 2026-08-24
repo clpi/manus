@@ -404,7 +404,22 @@ pub const Evaluator = struct {
             .false_lit => .{ .bool = false },
             .int_lit => |lit| .{ .int = lit.val },
             .float_lit => |lit| .{ .float = lit.val },
-            .quoted => |lit| .{ .string = lit.val },
+            // GAP-145 `law.text.byte`: this `Value` has `nil/bool/int/float/
+            // string/...` and NO member whose element descriptor is `byte`.
+            // Folding a byte sequence into `.string` is the collapse the gap
+            // is about, and it is why one fact had two answers decided only by
+            // whether a name was written:
+            //
+            //     print('abc' .. "Z")          folded here, answered abcZ
+            //     s = 'abc' ; print(s .. "Z")  not folded, named refusal
+            //
+            // Declining is not a new mechanism. Every caller of `eval` already
+            // treats a refusal as "fail closed, leave the body lowered", which
+            // is the same route the unfolded spelling takes.
+            .quoted => |lit| if (ast.quotedLiteralIsByteSequence(lit.quote))
+                return error.UnsupportedExpression
+            else
+                .{ .string = lit.val },
             .name => |name| blk: {
                 const value = self.lookup(name.ident) orelse return error.UnsupportedExpression;
                 if (value == .unavailable) return error.UnsupportedExpression;

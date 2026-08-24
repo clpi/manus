@@ -11766,6 +11766,20 @@ fn planConcat(ctx: *LowerCtx, parts: []const *const ast.Expr, newline: bool) Err
 
     for (parts) |p| {
         if (p.* == .quoted) {
+            // THE QUOTE FACE DECIDES WHETHER THIS IS FORMAT TEXT AT ALL
+            // (GAP-145 `law.text.byte`). This branch folded the bytes of EVERY
+            // quoted part straight into the format string, so a byte-sequence
+            // literal became text here without anything having said so — and
+            // it is reached BEFORE `lowerBinop`'s guard, because
+            // `lowerPrintFormat` runs first for a print argument. One fact,
+            // two answers, decided by whether the operand had a name:
+            //
+            //     print('abc' .. "Z")              -> abcZ    (folded here)
+            //     x = 'abc' .. "Z" ; print(x)      -> refused (lowerBinop)
+            //
+            // Declining is the same verdict the named spelling already gets;
+            // both callers of `planConcat` turn a null into their own bail.
+            if (exprIsByteSequence(ctx, p)) return null;
             try literal.appendSlice(ctx.alloc, p.quoted.val);
             // A `%` in the program's own text is TEXT. Left alone it reads the
             // following byte as a conversion and prints an argument that was
