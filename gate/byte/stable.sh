@@ -8,29 +8,40 @@
 #
 # The answer this gate pins, measured rather than assumed:
 #
-#   OBJECT      (`--emit obj`) is stable across processes AND independent of
-#               the output path. Safe to diff, unconditionally.
+#   OBJECT      (`--emit obj`, `--backend=direct`) is stable across processes
+#               and independent of the OUTPUT path. Safe to diff.
 #   EXECUTABLE  (linked) is stable across processes and across DIRECTORIES, but
 #               NOT across output BASENAMES. arm64 macOS binaries are ad-hoc
 #               code-signed, the signature's Identifier IS the output basename,
 #               the CDHash covers it, and `ld` derives LC_UUID from the output
 #               path. Two identical programs written to `a.out` and `b.out`
 #               differ in ~52 bytes and always will.
+#   SOURCE      the SOURCE path is mangled into every symbol
+#               (`_idol_private_tmp_..._arith__main`), so the same program read
+#               from two directories, or under two filenames, emits different
+#               symbols and therefore different bytes. This is the hazard that
+#               matters, because it scales with symbol count: a large module
+#               compiled from two scratch directories differs almost everywhere.
 #
-#   => Diff objects. If you must diff executables, hold the BASENAME fixed and
-#      vary the directory.
+#   => Hold the SOURCE path fixed across arms and diff OBJECTS. If you must diff
+#      executables, hold the output BASENAME fixed too and vary the directory.
 #
-# FOUR SECTIONS, and §4 is what stops this passing vacuously:
+# Measured on `--backend=direct` only. Wasm and the C route are NOT covered;
+# re-establish the baseline there before diffing bytes on either.
+#
+# FIVE SECTIONS, and §4/§5 are what stop this passing vacuously — each pins a
+# comparison that must still be able to SEE a difference:
 #
 #   §1 SUBJECTS    the corpus is enumerated and a zero refuses.
-#   §2 OBJECT      same subject, separate processes, DIFFERENT output names ->
-#                  bytes must be IDENTICAL.
+#   §2 OBJECT      same source path, separate processes, DIFFERENT output names
+#                  -> bytes must be IDENTICAL.
 #   §3 DIRECTORY   linked executable, same basename, different directory ->
 #                  bytes must be IDENTICAL.
 #   §4 CONTROL     linked executable, DIFFERENT basenames -> bytes must DIFFER.
-#                  Without this the gate could pass by comparing nothing, and
-#                  the known path sensitivity could silently appear or vanish
-#                  without anyone noticing which.
+#   §5 SOURCE      identical content from two source directories, and under two
+#                  source filenames -> bytes must DIFFER, and the mangled symbol
+#                  must name the path, so the cause is exhibited and not
+#                  inferred.
 set -eu
 root=${BYTESTABLEROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)}
 if [ "${IDOL_LOCK_HELD:-0}" != 1 ]; then
@@ -151,5 +162,30 @@ if [ "$a" = "$b" ]; then
     fail "§4 CONTROL: two different output basenames produced IDENTICAL bytes. Either the ad-hoc signature identity stopped tracking the basename (re-measure and rewrite this gate's header), or this comparison can no longer see any difference (in which case §2 and §3 proved nothing)."
 fi
 
-printf 'byte/stable gate: %d subject(s); object bytes path-independent; executable bytes basename-sensitive by design.\n' "$count"
+# ------------------------------------------------------------------ §5 SOURCE
+# The hazard, pinned in BOTH of its faces, with the cause exhibited. If either
+# comparison ever comes back identical, home mangling stopped carrying the
+# source path and the rule in this gate's header must be re-measured before
+# anyone relies on it.
+mkdir -p "$work/aa" "$work/bbbbbbbb"
+cp "$work/src/arith.id" "$work/aa/arith.id"
+cp "$work/src/arith.id" "$work/bbbbbbbb/arith.id"
+cp "$work/src/arith.id" "$work/aa/zzzzzzzzzz.id"
+"$idol" compile --no-cache --emit obj -o "$work/s1.o" "$work/aa/arith.id" >/dev/null 2>&1 ||
+    fail "§5 object emission failed"
+"$idol" compile --no-cache --emit obj -o "$work/s2.o" "$work/bbbbbbbb/arith.id" >/dev/null 2>&1 ||
+    fail "§5 object emission failed from the second directory"
+"$idol" compile --no-cache --emit obj -o "$work/s3.o" "$work/aa/zzzzzzzzzz.id" >/dev/null 2>&1 ||
+    fail "§5 object emission failed under the second filename"
+[ "$(sum "$work/s1.o")" != "$(sum "$work/s2.o")" ] ||
+    fail "§5 identical source in two DIRECTORIES produced identical bytes; the source path no longer reaches the symbols and this gate's rule is stale"
+[ "$(sum "$work/s1.o")" != "$(sum "$work/s3.o")" ] ||
+    fail "§5 identical source under two FILENAMES produced identical bytes; the source path no longer reaches the symbols and this gate's rule is stale"
+# Exhibit the cause rather than inferring it from a hash difference.
+nm "$work/s1.o" 2>/dev/null | grep -q '_aa_arith__' ||
+    fail "§5 the emitted symbol does not carry the source path; the byte difference above has some OTHER cause and the header is wrong"
+
+printf 'byte/stable gate: %d subject(s). object bytes: stable across processes and output paths.\n' "$count"
+printf 'byte/stable gate: executable bytes: basename-sensitive (ad-hoc signature identity + LC_UUID).\n'
+printf 'byte/stable gate: source path is mangled into every symbol -- hold it FIXED across arms.\n'
 printf 'byte/stable gate: OK.\n'
