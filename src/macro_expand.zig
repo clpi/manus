@@ -228,13 +228,30 @@ pub const Expander = struct {
     /// pre-existing `UnknownMacro` refusal exactly where it was. Whether the
     /// world really provides the member is decided for real, once, by
     /// `Sema.checkWorldAccess`.
-    fn worldApplication(self: *Expander, call: ast.MacroCall) Error!?*ast.Expr {
+    /// THE ARGUMENTS ARE CLONED THROUGH `ctx`, exactly as an ordinary `.call`
+    /// and the `grad` builtin already do. Handing `call.args` over untouched
+    /// left this production the one arm of the expander that does not expand
+    /// what it returns: a nested `@cwd(@cwd())` kept the inner `.macro_call`
+    /// and reached sema as `unexpanded macro expression reached semantic
+    /// analysis`, and inside a macro body a parameter reference would have
+    /// survived unsubstituted. The CALLEE name is deliberately NOT substituted
+    /// — it names a member of the world, not a lexical binding, and hygiene has
+    /// no authority over it.
+    fn worldApplication(
+        self: *Expander,
+        call: ast.MacroCall,
+        ctx: *HygieneContext,
+    ) Error!?*ast.Expr {
         const provides = self.world_member orelse return null;
         if (!provides(call.name)) return null;
         const func = try self.alloc.create(ast.Expr);
         func.* = .{ .name = .{ .loc = call.loc, .ident = call.name, .world = true } };
         const out = try self.alloc.create(ast.Expr);
-        out.* = .{ .call = .{ .loc = call.loc, .func = func, .args = call.args } };
+        out.* = .{ .call = .{
+            .loc = call.loc,
+            .func = func,
+            .args = try self.cloneExprSlice(call.args, ctx),
+        } };
         return out;
     }
 
@@ -244,7 +261,7 @@ pub const Expander = struct {
             return try self.expandGradBuiltin(call, ctx);
         }
         const def = self.macros.get(call.name) orelse
-            return (try self.worldApplication(call)) orelse Error.UnknownMacro;
+            return (try self.worldApplication(call, ctx)) orelse Error.UnknownMacro;
         if (def.params.len != call.args.len) return Error.ArityMismatch;
         if (def.body != .expr) return Error.MacroBodyExpectedExpression;
 

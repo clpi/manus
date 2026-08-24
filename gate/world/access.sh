@@ -189,5 +189,41 @@ cp "$work/fmt_shadow.id" "$work/fmt_shadow.once"
 "$idol" fmt "$work/fmt_shadow.id" >/dev/null 2>&1 || fail "§5 fmt refused its own output"
 cmp -s "$work/fmt_shadow.once" "$work/fmt_shadow.id" || fail "§5 fmt is not a fixed point on '@x'"
 
-printf 'world/access gate: PASS — @x is a world access (runs and answers; missing member refused by name; the sigil steps past a same-named binding while the bare name does not; the draw is on the graph; the reprint keeps the sigil and the answer)\n'
+# ----------------------------------------------------------------- §6 NESTING
+# THE PRODUCTION MUST EXPAND WHAT IT RETURNS. `@x(args)` is decided in the macro
+# expander, which is the pass that owns expansion, so an argument handed through
+# untouched is the one arm of that pass which does not expand its own output: a
+# nested access stayed a `.macro_call` and sema refused the program with
+# `unexpanded macro expression reached semantic analysis`. The witness is an
+# indirection, so the answer can only be produced by actually EVALUATING the
+# inner access and feeding its value to the outer one — a gate that merely
+# compiled a nested access would pass against an expander that dropped it.
+cat >"$work/nest.id" <<'ID'
+print(@env(@env("IDOLWORLDACCESSOUTER")))
+ID
+set +e
+nest_out=$(IDOLWORLDACCESSOUTER=IDOLWORLDACCESSINNER \
+    IDOLWORLDACCESSINNER=world-access-nested-value \
+    "$idol" run "$work/nest.id" 2>&1)
+nest_rc=$?
+set -e
+[ "$nest_rc" -eq 0 ] || { printf '%s\n' "$nest_out" >&2; fail "§6 a nested world access does not run"; }
+case $nest_out in
+    *world-access-nested-value*) : ;;
+    *) printf '%s\n' "$nest_out" >&2; fail "§6 the nested access did not resolve through the inner one: $nest_out" ;;
+esac
+# CONTROL. The nesting must not have been bought by making the expander accept
+# anything: an inner member the world does not have must still be refused, by
+# name, inside an argument.
+cat >"$work/nest_absent.id" <<'ID'
+print(@env(@worldaccessabsentmember()))
+ID
+runout nest_absent
+[ "$rc" -ne 0 ] || { printf '%s\n' "$out" >&2; fail "§6 control: an absent member ACCEPTED inside an argument"; }
+case $out in
+    *worldaccessabsentmember*|*UnknownMacro*) : ;;
+    *) printf '%s\n' "$out" >&2; fail "§6 control: the refusal did not name what it refused: $out" ;;
+esac
+
+printf 'world/access gate: PASS — @x is a world access (runs and answers; missing member refused by name; the sigil steps past a same-named binding while the bare name does not; the draw is on the graph; the reprint keeps the sigil and the answer; a nested access is expanded and evaluated, and an absent member inside an argument is still refused)\n'
 printf 'world/access gate: NOTE — this closes ONE face, in its SINGLE-SEGMENT form. `@x.y` is still the directive path, `@k = v` still has no world place, and `@{ … }` still derives no world (gap[203]).\n'
