@@ -1657,6 +1657,41 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// A RECORD PARAMETER TAKEN BY POINTER AND RETURNED BY VALUE HAS TO BE
+    /// DEREFERENCED, and nothing did it.
+    ///
+    /// A relation whose result is a record has a BY-VALUE C return type
+    /// (`self.typ` emits `duo_rec_X`), while a record PARAMETER is passed by
+    /// pointer (`internal_record_param_by_ptr`). Every other use of such a
+    /// parameter already knows this — `emit_native_field_access` writes `->`,
+    /// `emit_arg_for_param` passes the pointer through — but `return pack`
+    /// emitted the bare name:
+    ///
+    ///     pack: { kinds: []i64, count: i64 }
+    ///     self: pack = (pack: pack)
+    ///       pack
+    ///
+    ///     duo_rec_X self(duo_rec_X *pack) { return pack; }
+    ///     error: returning 'duo_rec_X *' from a function with incompatible
+    ///            result type 'duo_rec_X'
+    ///
+    /// Six lines, no other module involved. It is one of the two remaining C
+    /// errors in `lib/compiler/token_view.id`'s transfer artifact, which is why
+    /// it is repaired here rather than recorded: without it the GAP-134
+    /// prerequisite still cannot be linked, and "the calls are realized" would
+    /// be a claim about the emitter rather than a program that runs.
+    fn emit_returned_expr(self: *CodeGen, val: *const ast.Expr) E!void {
+        if (val.* == .name and self.current_ret != .any and
+            self.expr_is_native_record_ptr_param(val))
+        {
+            self.p("(*", .{});
+            try self.emit_expr(val);
+            self.p(")", .{});
+            return;
+        }
+        try self.emit_expr(val);
+    }
+
     fn field_base_is_native_record_ptr(self: *CodeGen, obj: *const ast.Expr) bool {
         if (self.expr_is_native_record_ptr_param(obj)) return true;
         if (obj.* == .field) return self.field_base_is_native_record_ptr(obj.field.obj);
@@ -7388,6 +7423,9 @@ pub const CodeGen = struct {
         }
         if (self.idol_mode) {
             try self.emit_required_modules(mod);
+            // Realization closes over what RESOLUTION reached, not only over
+            // what `req` named. See `emit_reached_partitions`.
+            try self.emit_reached_partitions();
         }
         if (self.moduleNeedsLuaRuntime()) {
             try self.emit_closure_structs(self.all_closures.items);
@@ -12542,15 +12580,15 @@ pub const CodeGen = struct {
                 if (!self.moduleNeedsLuaRuntime() and self.expr_is_native_scalar(expr) and
                     (self.current_ret.is_numeric() or self.current_ret == .bool or self.current_ret == .str))
                 {
-                    try self.emit_expr(expr);
+                    try self.emit_returned_expr(expr);
                 } else if (expr.* == .method_call and self.static_dispatch_type_for_expr(expr.method_call.obj, expr.method_call.method) != null) {
                     try self.emit_expr(expr);
                 } else if (self.current_ret.is_numeric() or self.current_ret == .bool or self.current_ret == .str)
                     try self.emit_dynamic_unbox(expr, self.current_ret)
                 else
-                    try self.emit_expr(expr);
+                    try self.emit_returned_expr(expr);
             } else {
-                try self.emit_expr(expr);
+                try self.emit_returned_expr(expr);
             }
         }
         self.p(";\n", .{});
@@ -14457,15 +14495,15 @@ pub const CodeGen = struct {
                         if (!self.moduleNeedsLuaRuntime() and self.expr_is_native_scalar(r.vals[0]) and
                             (self.current_ret.is_numeric() or self.current_ret == .bool or self.current_ret == .str))
                         {
-                            try self.emit_expr(r.vals[0]);
+                            try self.emit_returned_expr(r.vals[0]);
                         } else if (self.current_ret.is_numeric() or self.current_ret == .bool or self.current_ret == .str)
                             try self.emit_dynamic_unbox(r.vals[0], self.current_ret)
                         else
-                            try self.emit_expr(r.vals[0]);
+                            try self.emit_returned_expr(r.vals[0]);
                         self.p(";\n", .{});
                     } else {
                         self.p("return ", .{});
-                        try self.emit_expr(r.vals[0]);
+                        try self.emit_returned_expr(r.vals[0]);
                         self.p(";\n", .{});
                     }
                 } else {
@@ -16823,6 +16861,39 @@ pub const CodeGen = struct {
                     try self.emit_expr(lit);
                     return;
                 }
+                // A CROSS-HOME CONSTANT THIS CHECK ALREADY EVALUATED IS ITS
+                // VALUE. `sema.foreign_module_int_constants` holds the exact
+                // integer for this exact occurrence — published while the
+                // reference was resolved — and codegen used it only as a
+                // PREDICATE (`expr_is_req_module_const_field`) and never as the
+                // value. HPLS §99: fact true, represented, and not propagated.
+                //
+                // MEASURED, and it is the single largest remaining defect in
+                // the C transfer artifacts. `token.kindassign` in a full-native
+                // module emitted
+                //
+                //     lua_table_get_str_num(token, "kindassign", …)
+                //
+                // — a runtime table walk through an identifier the translation
+                // unit never declared. Measured over the five subjects whose
+                // cross-home applications this change realizes, folding the
+                // published value takes their C error total from 56 to 21 and
+                // takes `lib/compiler/bind.id` and `lib/compiler/graph.id` from
+                // 20 and 10 errors to none.
+                //
+                // FULL-NATIVE ONLY, deliberately. In a translation unit that
+                // carries the Lua runtime the surrounding expression may demand
+                // a `lua_Value`, and a bare integer literal is not one. The
+                // defect measured above is a property of the unit that has no
+                // dynamic path at all, and so is the repair.
+                if (!self.moduleNeedsLuaRuntime()) {
+                    if (self.checked_sema) |sem| {
+                        if (sem.foreignModuleIntConstant(expr)) |value| {
+                            self.p("INT64_C({d})", .{value});
+                            return;
+                        }
+                    }
+                }
                 if (f.obj.* == .name) {
                     if (self.req_module_bindings.get(f.obj.name.ident)) |mod_cname| {
                         if (try self.try_emit_req_module_const_field(mod_cname, f.field, self.expr_type(expr))) return;
@@ -17586,6 +17657,7 @@ pub const CodeGen = struct {
                 if (try self.maybe_emit_math_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_simd_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_call(c.func, c.args, self.expr_type(expr))) return;
+                if (try self.try_emit_reached_home_call(expr, c.func, c.args, self.expr_type(expr))) return;
                 if (try self.try_emit_req_module_field_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_stdlib_module_call(c.func, c.args, self.expr_type(expr))) return;
                 if (c.func.* == .name) {
@@ -24726,6 +24798,99 @@ pub const CodeGen = struct {
         }
     }
 
+    /// REALIZATION CLOSES OVER WHAT RESOLUTION REACHED.
+    ///
+    /// `emit_required_modules` above embeds a partition named by `req`, the
+    /// spelling `docs/spec/source.md` and `AGENTS.md` ban by name, or by a
+    /// `std.`-rooted ambient chain. A canonical `.id` file writes neither. It
+    /// writes `lexer.new(src, file, family)` and means the file next to it, and
+    /// nothing in this emitter ever asked which partitions that reached — so
+    /// the transfer route emitted a caller with no callee, and answered for it
+    /// first with `duo_fatal("unlowered native call")` under exit 0 and then,
+    /// at `1ec8850e`, with the compile refusal that replaced it.
+    ///
+    /// THE LIST IS THE RESOLVER'S, NOT A SEARCH DONE HERE. `sema.appliedHomes`
+    /// projects the `home` field of the `ApplicationFact` rows the check
+    /// published, and a row exists only where `home_resolve.resolve` answered
+    /// and a declaration was selected. It cannot hold a row the resolver did
+    /// not produce, so the partitions embedded here are exactly the partitions
+    /// this module's APPLICATIONS reach — no more, and the "no less" half is
+    /// enforced by the refusal: a reached partition that fails to embed leaves
+    /// its call sites unrealized, and every one of them then refuses, located.
+    ///
+    /// DEMAND SELECTS REALIZATION, so the list is applications and not every
+    /// home the check resolved. See `sema.appliedHomes` for the measurement
+    /// that settled it.
+    ///
+    /// THE C NAME IS THE HOME IDENTITY, NOT THE WRITTEN SPELLING. `req` embeds
+    /// under `module_c_name(<the string the source wrote>)`, which is fine when
+    /// the string IS the home. It is not fine for a sibling: `lexer` written in
+    /// `bind.id` and `compiler.lexer` written elsewhere are ONE partition, and
+    /// giving them two C names would embed one file twice and define every
+    /// symbol in it twice. `entry.home` is `home_resolve.homeOfPath`'s answer —
+    /// the same derivation the symbol law uses — so one partition has one name
+    /// however it was reached.
+    ///
+    /// DEAD CODE IS THE LINKER'S PROBLEM, NOT A REASON TO EMBED LESS. A reached
+    /// partition contributes its relations; the ones nothing calls are dropped
+    /// downstream. FTCFTW's "Idol pays no runtime cost for source partitions"
+    /// is preserved by that, not by refusing to realize.
+    fn emit_reached_partitions(self: *CodeGen) E!void {
+        if (!self.idol_mode) return;
+        if (self.src_path.len == 0) return;
+        const checked = self.checked_sema orelse return;
+
+        // Collect before embedding: `emit_embedded_module` runs a whole nested
+        // check, which can add rows to `foreign_homes` and invalidate an
+        // iterator held across the call.
+        var paths: std.ArrayList([]const u8) = .empty;
+        defer paths.deinit(self.alloc);
+        var homes: std.ArrayList([]const u8) = .empty;
+        defer homes.deinit(self.alloc);
+        var applied = checked.appliedHomes();
+        while (applied.next()) |home| {
+            const entry = checked.resolvedHome(home) orelse continue;
+            if (entry.path.len == 0 or entry.home.len == 0) continue;
+            var seen = false;
+            for (paths.items) |known| {
+                if (std.mem.eql(u8, known, entry.path)) seen = true;
+            }
+            if (seen) continue;
+            try paths.append(self.alloc, entry.path);
+            try homes.append(self.alloc, entry.home);
+        }
+        // ORDER THE EMBEDS. `foreign_homes` is a hash map, so its iteration
+        // order is allocator luck; emitting two partitions in a different order
+        // on two runs of one compiler over one input is a translation unit that
+        // does not reproduce. Sorted by home, which is the identity.
+        const Pair = struct { home: []const u8, path: []const u8 };
+        var rows: std.ArrayList(Pair) = .empty;
+        defer rows.deinit(self.alloc);
+        for (homes.items, paths.items) |h, pth| try rows.append(self.alloc, .{ .home = h, .path = pth });
+        std.mem.sort(Pair, rows.items, {}, struct {
+            fn less(_: void, a: Pair, b: Pair) bool {
+                return std.mem.lessThan(u8, a.home, b.home);
+            }
+        }.less);
+
+        for (rows.items) |row| {
+            if (self.embedded_module_paths.contains(row.path)) continue;
+            if (same_source_file(self.alloc, self.io, row.path, self.src_path)) continue;
+            const cname = try self.module_c_name(row.home);
+            defer self.alloc.free(cname);
+            if (!self.emit_embedded_module(cname, row.path)) {
+                // NOT A HARD EXIT HERE, and that is deliberate rather than lax.
+                // The call sites into this partition are the thing that must not
+                // pass silently, and they will not: with nothing embedded,
+                // `try_emit_reached_home_call` declines and every one of them
+                // reaches the unrealized-application refusal, which is LOCATED
+                // at the application. Refusing here instead would name the file
+                // and lose the site.
+                term.warn("cannot realize the source partition this program reaches: {s} (home {s})", .{ row.path, row.home });
+            }
+        }
+    }
+
     fn module_c_name(self: *CodeGen, name: []const u8) std.mem.Allocator.Error![]u8 {
         var out: std.ArrayList(u8) = .empty;
         defer out.deinit(self.alloc);
@@ -25687,6 +25852,15 @@ pub const CodeGen = struct {
         var amb_owned: ?[]const u8 = null;
         defer if (amb_owned) |o| self.alloc.free(o);
         const mod_cname = blk: {
+            // THE PUBLISHED FACT FIRST, for the same reason the emitter
+            // consults it first: an application into a partition reached by
+            // ordinary home projection has no `req` alias and no `std.` root,
+            // so neither branch below can name it, and inference would answer
+            // `any` for a call the emitter is about to lower natively. That
+            // disagreement is the defect this whole function was written for —
+            // stated for the `req` face in the paragraph above and true in
+            // exactly the same way here.
+            if (self.reached_home_call_cname(expr)) |reached| break :blk reached;
             if (f.obj.* == .name) break :blk self.req_module_bindings.get(f.obj.name.ident) orelse return null;
             if (!self.idol_mode or f.obj.* != .field) return null;
             const mod_path = ambient_dotted_path(f.obj, &amb_buf) orelse return null;
@@ -25740,12 +25914,98 @@ pub const CodeGen = struct {
             amb_cname = c;
             break :blk c;
         };
+        return self.emit_module_field_call(mod_cname, f.field, args, result_rt);
+    }
 
+    /// THE C NAME AN ALREADY-EMBEDDED PARTITION WAS EMITTED UNDER, for the home
+    /// a published application fact names. Null when nothing was embedded for
+    /// it, which is the fail-closed answer: the caller declines and the
+    /// application reaches the unrealized-callee refusal.
+    ///
+    /// TWO LOOKUPS, NEITHER OF THEM A SEARCH. `resolvedHome` is the resolver's
+    /// own row for that semantic home; `embedded_module_paths` is the emitter's
+    /// record of what it actually wrote. Asking the second by the first's path
+    /// means the symbol this call names cannot be a symbol nothing defined.
+    fn embedded_cname_for_home(self: *CodeGen, home: []const u8) ?[]const u8 {
+        const checked = self.checked_sema orelse return null;
+        const entry = checked.resolvedHome(home) orelse return null;
+        return self.embedded_module_paths.get(entry.path);
+    }
+
+    /// The embedded partition an APPLICATION resolves into, from the fact
+    /// published for that exact occurrence. One question asked in one place, so
+    /// the emitter and the return-type inference cannot answer it differently —
+    /// the disagreement `infer_req_module_call_return_type` exists to prevent.
+    fn reached_home_call_cname(self: *CodeGen, expr: *const ast.Expr) ?[]const u8 {
+        if (!self.idol_mode) return null;
+        if (expr.* != .call) return null;
+        if (expr.call.func.* != .field) return null;
+        const checked = self.checked_sema orelse return null;
+        const fact = checked.applicationFact(expr) orelse return null;
+        return self.embedded_cname_for_home(fact.home orelse return null);
+    }
+
+    /// A CALL INTO A REACHED SOURCE PARTITION, EMITTED AS A DIRECT CALL.
+    ///
+    /// KEYED ON THE PUBLISHED FACT, AND STRICTLY INSIDE THE REFUSAL. The arm
+    /// below refuses EVERY qualified application a full-native transfer unit
+    /// cannot realize, whatever the compiler knows about it. This realizes the
+    /// subset it knows most about: an application carrying a
+    /// `sema.ApplicationFact` whose `home` is not this module's — a callee whose
+    /// declaration this compilation READ, in a partition it can name. Every
+    /// site this declines still refuses, so there is no third outcome where an
+    /// application is quietly neither realized nor refused.
+    ///
+    /// WHY THE RECEIVER SPELLING IS NOT CONSULTED. `try_emit_req_module_field_call`
+    /// above reads `f.obj` — a `req` alias, or a `std.`-rooted ambient chain —
+    /// and that is why it never fired for `lexer.new(src, file, family)` in
+    /// `lib/compiler/bind.id`: the sibling home is written as one bare segment
+    /// and resolves to `compiler.lexer`, so neither branch could name it. Worse,
+    /// keying on the spelling would capture an ordinary value that happens to
+    /// share a word with a home. The occurrence fact has neither problem: it
+    /// exists only where resolution selected a declaration in another home.
+    ///
+    /// THIS IS NOT A MODULE SYSTEM. No syntax is added, no registry is created,
+    /// and no home is discoverable here that resolution did not already answer
+    /// for. `docs/spec/source.md`: "A resolved reference contributes its own
+    /// semantic dependency" — reach was already established by scope and home
+    /// projection, and what was missing is the REALIZATION half of the same
+    /// sentence, that a program whose meaning closes over two source partitions
+    /// must be realized over both.
+    fn try_emit_reached_home_call(
+        self: *CodeGen,
+        expr: *const ast.Expr,
+        func: *const ast.Expr,
+        args: []*ast.Expr,
+        result_rt: RT,
+    ) E!bool {
+        if (func.* != .field) return false;
+        const cname = self.reached_home_call_cname(expr) orelse return false;
+        return self.emit_module_field_call(cname, func.field.field, args, result_rt);
+    }
+
+    /// EMIT ONE CALL INTO AN EMBEDDED SOURCE PARTITION, given the C name that
+    /// partition was actually emitted under.
+    ///
+    /// Split out of `try_emit_req_module_field_call` so that the two ways a
+    /// partition becomes reachable — a `req` binding and the home projection a
+    /// canonical `.id` file actually uses — share ONE emitter. Two emitters for
+    /// one application would be free to disagree about the receiver ABI, the
+    /// boxing decision, and which scope the arguments belong to, and this
+    /// function's own comments record three separate defects of exactly that
+    /// shape.
+    fn emit_module_field_call(
+        self: *CodeGen,
+        mod_cname: []const u8,
+        field: []const u8,
+        args: []*ast.Expr,
+        result_rt: RT,
+    ) E!bool {
         var name_buf: [256]u8 = undefined;
         const saved_cname = self.current_module_cname;
         const saved_body = self.current_func_body;
         self.current_module_cname = mod_cname;
-        const mname = self.mangled_name(f.field, &name_buf);
+        const mname = self.mangled_name(field, &name_buf);
         const body = self.func_bodies.get(mname);
         const ft: RT = if (body) |b| self.func_expr_type(b) else .any;
         if (body == null or ft != .func) {
@@ -26309,10 +26569,42 @@ pub const CodeGen = struct {
         self.idol_mode = subsem.idol_mode;
         self.module_globals = &subsem.module_globals;
         self.current_module_cname = cname;
+        // A PARTITION'S MODULE-SCOPE NAMES ARE ITS OWN.
+        //
+        // `emit_embedded_module_file_scope_constants` and the const-descriptor
+        // loop below both `note_comptime_binding(<bare ident>, …)`, and the
+        // comptime scope stack was the CALLER'S. So an embedded partition's
+        // constants became foldable by BARE NAME in the module that reached it.
+        //
+        // MEASURED, and it is a wrong answer rather than a build failure.
+        // `lib/compiler/token.id` declares `kindat = 81` (the kind of `@`);
+        // `lib/compiler/token_view.id` declares a RELATION `kindat` and calls
+        // it. With `compiler.token` embedded, `peek`'s body emitted
+        //
+        //     return 81(pack, index);
+        //
+        // — the sibling's constant, applied. Reduced to two files it is four
+        // lines: `dep.id` with `kindat = 81`, a consumer declaring
+        // `kindat: i64 = (n: i64)` and calling it, and the call emits `81(n)`.
+        //
+        // `docs/spec/law.md` §5 and §6 both forbid it in one word each: `.` is
+        // "never … namespace fallback", and "a local binding wins over an
+        // ambient projection". The partition's constants are neither of those —
+        // they are not in reach unqualified at all — so they get their own
+        // scope, pushed for exactly as long as the partition is being emitted.
+        // Its own bodies still see them; nothing outside does.
+        self.comptime_scopes.append(self.alloc, std.StringHashMapUnmanaged(comptime_eval.Value).empty) catch {
+            term.err("emit_embedded_module: comptime scope setup failed for {s}", .{path});
+            return false;
+        };
         const old_req_bindings = self.req_module_bindings;
         self.req_module_bindings = .{};
         const old_alias_defs = self.alias_defs.clone(self.alloc) catch self.alias_defs;
         defer {
+            if (self.comptime_scopes.items.len > 0) {
+                var partition_comptime = self.comptime_scopes.pop().?;
+                partition_comptime.deinit(self.alloc);
+            }
             var req_it = self.req_module_bindings.iterator();
             while (req_it.next()) |entry| {
                 self.alloc.free(entry.key_ptr.*);

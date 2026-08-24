@@ -13,7 +13,7 @@ kindat: i64 = (pack: pack, index: i64)
   if index < 1 or index > pack.count
     token.kindeof
   else
-    pack.kinds(index)
+    pack.kinds[index]
 
 peek: i64 = (pack: pack, index: i64)
   kindat(pack, index)

@@ -895,6 +895,46 @@ pub const Sema = struct {
         return answer;
     }
 
+    /// EVERY HOME THIS MODULE'S APPLICATIONS REACH, ONE ROW PER APPLICATION.
+    ///
+    /// `resolvedHome` below answers "which module IS this one home".
+    /// This answers the question REALIZATION has to ask first: "which
+    /// partitions do the APPLICATIONS in this module reach, so that what I
+    /// emit is CLOSED over them".
+    ///
+    /// IT IS THE APPLICATIONS, NOT `foreign_homes`, AND THE DIFFERENCE IS
+    /// MEASURED. `foreign_homes` is every spelling the check ASKED about,
+    /// including homes reached only for a constant projection.
+    /// `lib/compiler/token_view.id` reads `token.kindeof` and calls
+    /// `token.grammarrole.*`; realizing every resolved home embeds
+    /// `lib/compiler/token.id` — 819 lines that need the Lua runtime — into a
+    /// full-native translation unit that has decided not to declare one, and
+    /// the artifact stops compiling (`call to undeclared function
+    /// 'lua_to_bool'`). Demand selects realization: an APPLICATION demands the
+    /// callee's body, and a constant projection does not.
+    ///
+    /// THIS IS NOT A MODULE TABLE AND CANNOT BECOME ONE. Every row is one
+    /// `ApplicationFact.home` that `recordApplicationInHome` already published,
+    /// recomputed on every call, owning nothing and outliving nothing. A second
+    /// registry is a thing that can DISAGREE with the first; this cannot hold a
+    /// row the resolver did not produce. Rows repeat when several applications
+    /// share a home; deduplication is the consumer's, because the identity that
+    /// matters to it is the physical partition, not the home string.
+    pub const AppliedHomes = struct {
+        it: std.AutoHashMapUnmanaged(*const Expr, ApplicationFact).ValueIterator,
+
+        pub fn next(self: *AppliedHomes) ?[]const u8 {
+            while (self.it.next()) |fact| {
+                if (fact.home) |home| return home;
+            }
+            return null;
+        }
+    };
+
+    pub fn appliedHomes(self: *const Sema) AppliedHomes {
+        return .{ .it = self.applications.valueIterator() };
+    }
+
     /// The already-resolved home with this semantic home identity. This never
     /// invokes the loader and never treats a source spelling as authority: an
     /// application fact has already retained `ForeignHome.home`, and graph

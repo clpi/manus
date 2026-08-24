@@ -1,39 +1,63 @@
 # gate/lower/fallback.baseline — measured pins for gate/lower/fallback.sh.
 #
-# One row per SHC transfer subject: the exact number of
-# `duo_fatal("unlowered native call")` sites that `idol dump-c <file> --lib`
-# emits, or REFUSED when the route fails closed instead.
+# TWO COLUMNS PER SHC TRANSFER SUBJECT, then the subject:
 #
-# Measured at dec7d509 (origin/main) with ./zig-out/bin/idol built from that
-# revision. Build mode is not the sensitive axis: a ReleaseFast build of the
-# same revision reproduces every row exactly. REVISION is -- the tracked stale
-# out/bin/idol reports lib/compiler/parser.id as REFUSED where this revision
-# reports 291, and the gate calls that a CLASS CHANGE rather than agreeing.
+#   1  the exact number of `duo_fatal("unlowered native call")` sites that
+#      `idol dump-c <file> --lib` emits, or REFUSED when the route fails closed
+#   2  CLEAN when the emitted C passes `cc -std=c11 -fsyntax-only`, DIRTY when
+#      it does not, `-` when there is no artifact because the route refused
 #
-# These are not a budget. Every nonzero row is a body the SHC transfer route
-# replaces with a runtime abort while exiting 0, and every one of them must
-# reach 0 or REFUSED before the source it names can execute inside a compiler.
-# lib/compiler/token_view.id is the GAP-134 parser-slice prerequisite;
-# lib/compiler/parser.id is why that file is a shadow authority and not a
-# transfer candidate. Their counts are the rows below, not this paragraph.
-0	lib/compiler/application.id
-0	lib/compiler/arm64.id
-REFUSED	lib/compiler/arm64check.id
-REFUSED	lib/compiler/bind.id
-0	lib/compiler/comptime.id
-REFUSED	lib/compiler/emit_c.id
-0	lib/compiler/fmt.id
-REFUSED	lib/compiler/graph.id
-0	lib/compiler/lexer.id
-0	lib/compiler/macho.id
-0	lib/compiler/monolith.id
-REFUSED	lib/compiler/parser.id
-0	lib/compiler/profile.id
-0	lib/compiler/reader.id
-0	lib/compiler/record.id
-REFUSED	lib/compiler/rewrite.id
-REFUSED	lib/compiler/symbol.id
-REFUSED	lib/compiler/token.id
-REFUSED	lib/compiler/token_view.id
-0	lib/token/classify.id
-0	lib/token/grammarrole.id
+# THE SECOND COLUMN IS WHY THIS FILE IS STILL A MEASUREMENT. Cross-home
+# realization took every abort count to zero, and a ratchet whose every row
+# reads zero guards nothing. "Zero aborts" says the emitter wrote no marker; it
+# says nothing about whether it wrote C. FOUR subjects still do not compile —
+# monolith.id (3 C errors), parser.id (17), rewrite.id (2) and classify.id (11)
+# — for reasons that have nothing to do with cross-home calls. monolith.id and
+# classify.id carried theirs before this change and before `1ec8850e`; they are
+# named here rather than averaged away.
+#
+# WHAT MOVED, and it is the whole content of this revision. Five subjects were
+# pinned REFUSED at `088e3d07`, and before `1ec8850e` they were counts: 291 for
+# parser.id, 17 for bind.id, 5 for graph.id, 3 each for rewrite.id and
+# token_view.id — 319 applications the transfer route answered with a runtime
+# abort under exit 0, then with a refusal, and now with a CALL.
+#
+#   parser.id       REFUSED -> 0 DIRTY   (17 C errors, none cross-home)
+#   bind.id         REFUSED -> 0 CLEAN   calls the self-hosted Idol lexer
+#   graph.id        REFUSED -> 0 CLEAN
+#   rewrite.id      REFUSED -> 0 DIRTY   (2 C errors, none cross-home)
+#   token_view.id   REFUSED -> 0 CLEAN   the GAP-134 parser-slice prerequisite
+#
+# bind.id and token_view.id are LINKED AND RUN by the gate before this census
+# is read; the counts here are not the evidence, those two answers are.
+#
+# THE FOUR REMAINING REFUSALS ARE NOT CROSS-HOME. arm64check.id, symbol.id and
+# token.id refuse with "codegen refused a binding whose value it cannot
+# represent"; emit_c.id refuses with "a reference to a module it cannot find"
+# (`std.script`). None of them is an unrealized application.
+#
+# Measured with `./zig-out/bin/idol` built from this tree and the system `cc`.
+# Build mode is not the sensitive axis: a ReleaseFast build of the same revision
+# reproduces every row. REVISION is — the tracked stale `out/bin/idol`
+# disagrees, and the gate calls that a CLASS CHANGE rather than agreeing.
+0	CLEAN	lib/compiler/application.id
+0	CLEAN	lib/compiler/arm64.id
+REFUSED	-	lib/compiler/arm64check.id
+0	CLEAN	lib/compiler/bind.id
+0	CLEAN	lib/compiler/comptime.id
+REFUSED	-	lib/compiler/emit_c.id
+0	CLEAN	lib/compiler/fmt.id
+0	CLEAN	lib/compiler/graph.id
+0	CLEAN	lib/compiler/lexer.id
+0	CLEAN	lib/compiler/macho.id
+0	DIRTY	lib/compiler/monolith.id
+0	DIRTY	lib/compiler/parser.id
+0	CLEAN	lib/compiler/profile.id
+0	CLEAN	lib/compiler/reader.id
+0	CLEAN	lib/compiler/record.id
+0	DIRTY	lib/compiler/rewrite.id
+REFUSED	-	lib/compiler/symbol.id
+REFUSED	-	lib/compiler/token.id
+0	CLEAN	lib/compiler/token_view.id
+0	DIRTY	lib/token/classify.id
+0	CLEAN	lib/token/grammarrole.id
