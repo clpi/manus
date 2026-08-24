@@ -1,0 +1,254 @@
+# expect-exit: 97
+#
+# A RECORD PARAMETER'S FIELDS MUST SURVIVE A HOST-EGRESS CALL.
+#
+# `print`/`stdout:write` is a CALL — it emits `bl _printf`, `bl _puts`,
+# `bl _fflush` — and for a long time nothing in the backend said so. Two
+# separate mechanisms broke on that silence, and both answered WRONG rather
+# than refusing:
+#
+#   1. `print_value` staged printf's own arguments into x0 and x2 BEFORE
+#      `emitSaveCallerRegs` ran, so the save preserved THE ARGUMENTS and the
+#      restore wrote them back over whatever the caller had live there.
+#      Measured on `_quad` with `print(99)` before the read: `a` came back as
+#      208 (the low byte of the format string's address), `c` came back as 99
+#      (print's own argument), while `b` and `d` were untouched — alternating
+#      fields destroyed, because x0 and x2 are the two registers printf's shape
+#      writes and they are the FIRST and THIRD argument slots.
+#
+#   2. `dnirFunctionHasCall` counted only `call_direct`/`call_extern`, so a
+#      body whose only call was a print was planned as a LEAF — and a leaf is
+#      allowed to keep its parameters in the incoming ABI registers. On the
+#      integer side that at least reached the caller-save block; on the FLOAT
+#      side it is beyond rescue there, because that save covers d16..d30 only
+#      while an f64 parameter sits in d0..d7. `_fpair` below is that half.
+#
+# EXIT STATUS IS THE ASSERTION, and stdout stays EMPTY so this can live in
+# `native_only/` where the C backend is not an available oracle. The egress
+# used is `stdout:write("")` — a real `printf("%s", "")` followed by a real
+# `fflush`, staging x0 and x2 exactly as `print(n)` does, and printing nothing.
+# The register discipline is the same one `print` travels; what changes is only
+# that this file can assert it inside an empty-stdout gate.
+#
+# 97, not 0: zero is also what a harness that never ran the binary observes.
+
+_trio: { a: i64, b: i64, c: i64 }
+
+_quad: { a: i64, b: i64, c: i64, d: i64 }
+
+_five: { a: i64, b: i64, c: i64, d: i64, e: i64 }
+
+_eight: { a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64 }
+
+_dozen: {
+    a: i64, b: i64, c: i64, d: i64, e: i64, f: i64,
+    g: i64, h: i64, i: i64, j: i64, k: i64, l: i64
+}
+
+# SIXTEEN — eight argument registers plus the eight stacked words, the widest
+# record the convention carries. The stacked half must survive the egress too:
+# `emitPushVarargs` moves `sp` inside the call window, and a field read from a
+# frame offset that shifted underneath it is the same wrong answer wearing a
+# different mechanism.
+_wide: {
+    a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64,
+    i: i64, j: i64, k: i64, l: i64, m: i64, n: i64, o: i64, p: i64
+}
+
+_silent: i64 = (seed: i64)
+  stdout:write("")
+  return seed
+
+_t3: i64 = (v: _trio)
+  n: i64 = _silent(0)
+  stdout:write("")
+  if v.a != 101 return 1
+  if v.b != 102 return 2
+  if v.c != 103 return 3
+  return n
+
+_t4: i64 = (v: _quad)
+  stdout:write("")
+  if v.a != 101 return 11
+  if v.b != 102 return 12
+  if v.c != 103 return 13
+  if v.d != 104 return 14
+  return 0
+
+# EVERY READ SEPARATED BY ITS OWN EGRESS. One call before all four reads is the
+# weaker shape: it cannot tell a field destroyed by the FIRST call from one
+# destroyed by the fourth.
+_t4_interleaved: i64 = (v: _quad)
+  stdout:write("")
+  if v.a != 101 return 21
+  stdout:write("")
+  if v.b != 102 return 22
+  stdout:write("")
+  if v.c != 103 return 23
+  stdout:write("")
+  if v.d != 104 return 24
+  stdout:write("")
+  if v.a != 101 return 25
+  if v.d != 104 return 26
+  return 0
+
+_t5: i64 = (v: _five)
+  stdout:write("")
+  if v.a != 101 return 31
+  if v.b != 102 return 32
+  if v.c != 103 return 33
+  if v.d != 104 return 34
+  if v.e != 105 return 35
+  return 0
+
+_t8: i64 = (v: _eight)
+  stdout:write("")
+  if v.a != 101 return 41
+  if v.b != 102 return 42
+  if v.c != 103 return 43
+  if v.d != 104 return 44
+  if v.e != 105 return 45
+  if v.f != 106 return 46
+  if v.g != 107 return 47
+  if v.h != 108 return 48
+  return 0
+
+_t12: i64 = (v: _dozen)
+  stdout:write("")
+  if v.a != 101 return 51
+  if v.b != 102 return 52
+  if v.c != 103 return 53
+  if v.d != 104 return 54
+  if v.e != 105 return 55
+  if v.f != 106 return 56
+  if v.g != 107 return 57
+  if v.h != 108 return 58
+  if v.i != 109 return 59
+  if v.j != 110 return 60
+  if v.k != 111 return 61
+  if v.l != 112 return 62
+  return 0
+
+_t16: i64 = (v: _wide)
+  stdout:write("")
+  if v.a != 101 return 71
+  if v.b != 102 return 72
+  if v.c != 103 return 73
+  if v.d != 104 return 74
+  if v.e != 105 return 75
+  if v.f != 106 return 76
+  if v.g != 107 return 77
+  if v.h != 108 return 78
+  if v.i != 109 return 79
+  if v.j != 110 return 80
+  if v.k != 111 return 81
+  if v.l != 112 return 82
+  if v.m != 113 return 83
+  if v.n != 114 return 84
+  if v.o != 115 return 85
+  if v.p != 116 return 86
+  return 0
+
+# A RECORD BETWEEN SCALARS. The scalars share the record's slot cursor, so a
+# save/restore that is off by one destroys `x` or `y` instead of a field and
+# the record alone would not show it.
+_mixed: i64 = (x: i64, v: _quad, y: i64)
+  stdout:write("")
+  if x != 7 return 91
+  if v.a != 101 return 92
+  if v.b != 102 return 93
+  if v.c != 103 return 94
+  if v.d != 104 return 95
+  if y != 8 return 96
+  return 0
+
+# READ, THEN MUTATE LOCALLY, THEN READ AGAIN — with an egress in the middle of
+# each phase. A local derived from a field must not alias the field's home, and
+# the field must still answer after the local has been written over.
+_mutate: i64 = (v: _quad)
+  stdout:write("")
+  q: i64 = v.a
+  if q != 101 return 101
+  q = q + v.c
+  if q != 204 return 102
+  stdout:write("")
+  if v.a != 101 return 103
+  if v.b != 102 return 104
+  if v.c != 103 return 105
+  if v.d != 104 return 106
+  q = q + v.b + v.d
+  if q != 410 return 107
+  stdout:write("")
+  if q != 410 return 108
+  if v.a != 101 return 109
+  return 0
+
+# TWO RECORDS ACROSS AN EGRESS AND AN ORDINARY CALL IN THE SAME BODY, so the
+# egress path and the `call_direct` path have to agree about one register file.
+_two: i64 = (u: _quad, w: _quad)
+  stdout:write("")
+  n: i64 = _silent(0)
+  if n != 0 return 121
+  if u.a != 101 return 122
+  if u.d != 104 return 123
+  if w.a != 201 return 124
+  if w.d != 204 return 125
+  return 0
+
+# THE FLOAT HALF. f64 parameters arrive in d0..d7, which the caller-save block
+# does NOT cover, so their survival depends entirely on the body being planned
+# as a caller. `_fquad` adds a second call after the egress: the relocation has
+# to be a HOME, not a one-shot reload.
+_fpair: f64 = (x: f64, y: f64)
+  stdout:write("")
+  return x + y
+
+_fquad: f64 = (x: f64, y: f64)
+  stdout:write("")
+  n: i64 = _silent(0)
+  stdout:write("")
+  if n != 0 return 0.0
+  return x - y
+
+_main: i64 = ()
+  t3: _trio = { a = 101, b = 102, c = 103 }
+  r: i64 = _t3(t3)
+  if r != 0 return r
+
+  t4: _quad = { a = 101, b = 102, c = 103, d = 104 }
+  r = _t4(t4)
+  if r != 0 return r
+  r = _t4_interleaved(t4)
+  if r != 0 return r
+  r = _mutate(t4)
+  if r != 0 return r
+
+  t5: _five = { a = 101, b = 102, c = 103, d = 104, e = 105 }
+  r = _t5(t5)
+  if r != 0 return r
+
+  t8: _eight = { a = 101, b = 102, c = 103, d = 104, e = 105, f = 106, g = 107, h = 108 }
+  r = _t8(t8)
+  if r != 0 return r
+
+  t12: _dozen = { a = 101, b = 102, c = 103, d = 104, e = 105, f = 106, g = 107, h = 108, i = 109, j = 110, k = 111, l = 112 }
+  r = _t12(t12)
+  if r != 0 return r
+
+  t16: _wide = { a = 101, b = 102, c = 103, d = 104, e = 105, f = 106, g = 107, h = 108, i = 109, j = 110, k = 111, l = 112, m = 113, n = 114, o = 115, p = 116 }
+  r = _t16(t16)
+  if r != 0 return r
+
+  r = _mixed(7, t4, 8)
+  if r != 0 return r
+
+  w4: _quad = { a = 201, b = 202, c = 203, d = 204 }
+  r = _two(t4, w4)
+  if r != 0 return r
+
+  f: f64 = _fpair(1.5, 2.25)
+  if f != 3.75 return 131
+  f = _fquad(9.5, 2.25)
+  if f != 7.25 return 132
+
+  return 97

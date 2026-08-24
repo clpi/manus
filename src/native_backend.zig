@@ -1920,10 +1920,35 @@ const Arm64Compiler = struct {
 
     /// True when the body contains any call, so parameters must be relocated out
     /// of the argument/return registers to survive it.
+    ///
+    /// `print_value` IS A CALL. It emits `bl _printf` / `bl _puts` (and
+    /// `bl _fflush` on the `stdout:write` shape) exactly as `call_extern` does,
+    /// and the only reason it is a separate opcode is that its argument shape is
+    /// fixed rather than lowered. Omitting it here told every consumer of this
+    /// predicate that a printing body is a LEAF, and a leaf is allowed to keep
+    /// its parameters in the incoming ABI registers — which is what the
+    /// comment eighty lines below in `compileDnirFunction` says is safe only
+    /// "with no call there is no staging".
+    ///
+    /// It bit both register files. On the integer side x0..x7 at least reached
+    /// `emitSaveCallerRegs`; on the FLOAT side it is unrecoverable there,
+    /// because that save covers d16..d30 only (`fp_value_reg_base`), while an
+    /// f64 parameter left in place sits in d0..d7 — caller-saved, and printf
+    /// clobbers them. MEASURED:
+    ///
+    ///     _fshow: f64 = (x: f64, y: f64)   print(99)   return x + y
+    ///
+    /// compiled to `bl _printf` followed by `fadd d16, d0, d1`, and
+    /// `_fshow(1.5, 2.25)` answered something other than 3.75. Naming the call
+    /// here is the fix: `fp_body_has_call` then copies d0..d7 into the value
+    /// bank in the prologue, which is what every other call already gets.
     fn dnirFunctionHasCall(f: dnir.Function) bool {
         for (f.blocks) |b| {
             for (b.instrs) |ins| {
-                if (ins.op == .call_direct or ins.op == .call_extern) return true;
+                switch (ins.op) {
+                    .call_direct, .call_extern, .print_value => return true,
+                    else => {},
+                }
             }
         }
         return false;
@@ -2952,12 +2977,20 @@ const Arm64Compiler = struct {
             }
         } else {
             // x0..x7 are both the argument registers and the return-value
-            // register, and `emitSaveCallerRegs` only preserves x9..x28. A
-            // parameter left in its incoming register is therefore destroyed by
-            // any call: in `fib(n-1) + fib(n-2)` the second operand read x0
-            // after the first call and computed `fib(n-1) - 2` instead of
-            // `n - 2`. Copy parameters into the caller-saved range when the body
-            // can call; leaf functions keep the incoming register and pay nothing.
+            // register, so a parameter left in its incoming register is
+            // ARGUMENT-STAGING TERRITORY for the body's own calls: in
+            // `fib(n-1) + fib(n-2)` the second operand read x0 after the first
+            // call and computed `fib(n-1) - 2` instead of `n - 2`. Copy
+            // parameters into the caller-saved range when the body can call;
+            // leaf functions keep the incoming register and pay nothing.
+            //
+            // `emitSaveCallerRegs` DOES cover x0..x7 (it walks 0..8 and then
+            // 9..28) — this comment claimed it stopped at x9, which is false and
+            // reads as a licence to leave things in the argument file. What it
+            // does not cover is the FP argument file: its FP loop starts at
+            // `fp_value_reg_base` = d16, so d0..d7 are preserved by NOTHING and
+            // an f64 parameter's survival rests entirely on the relocation
+            // above, hence on `dnirFunctionHasCall` naming every call.
             try self.planGpStackLocals(f, scalar_body_has_call);
             // Claim the indirect-result pointer FIRST, while x8 still holds what
             // the caller put there. Everything after this can call, and x8 does
@@ -4588,10 +4621,37 @@ const Arm64Compiler = struct {
                 // arguments are passed ON THE STACK at the caller's sp, not in
                 // x1/d0 (verified against xcrun clang -S output and raw asm:
                 // passing in x1 prints garbage, storing at [sp,#0] prints
-                // correctly). So the arg is parked in x2 (volatile — survives
-                // the save) and stored at [sp,#0] after reserving the vararg
-                // slot. w8 is NOT needed (Apple's printf ignores the AAPCS
-                // FP-count register for the stack convention).
+                // correctly). So the arg is parked in x2 and stored at [sp,#0]
+                // after reserving the vararg slot. w8 is NOT needed (Apple's
+                // printf ignores the AAPCS FP-count register for the stack
+                // convention).
+                //
+                // THE ARGUMENTS ARE PLACED AFTER `emitSaveCallerRegs`, NOT
+                // BEFORE IT. x0 and x2 are not scratch: they are ordinary
+                // allocatable registers, and in a body that reads a RECORD
+                // PARAMETER they are that record's second and fourth incoming
+                // fields. Staging `adrp x0, fmt` and `mov x2, value` ahead of
+                // the save made the save preserve PRINTF'S OWN ARGUMENTS, and
+                // the restore then wrote them back over the caller's live
+                // values — so the fields riding EVEN argument registers came
+                // back destroyed while the odd ones survived. Measured on
+                //
+                //     _r4: { a: i64, b: i64, c: i64, d: i64 }
+                //     _show: i64 = (p: _r4)   print(99)   return p.<f>
+                //
+                // as a = 208 (the low byte of the format string's address),
+                // b = 2, c = 99 (print's OWN argument, read back as a field),
+                // d = 4. Exit 0, no diagnostic: a silent wrong answer in the
+                // middle of a core feature.
+                //
+                // The split the fix keeps is between EVALUATION and PLACEMENT.
+                // Evaluation may load from `[sp,#off]` and therefore must stay
+                // ABOVE the save, which moves `sp`; placement is a register
+                // move that reads a register the save copied but did not
+                // change, so it belongs BELOW it, where x0..x7 are already
+                // preserved and free to overwrite. This is exactly the
+                // discipline `call_direct` gets from `preserveArgReg`, which
+                // `print_value` never called.
                 //
                 // `.field = "nonl"` is `stdout:write`: THE SAME EGRESS WITHOUT
                 // THE LINE ENDING. It is a caller property, not a value one, so
@@ -4608,28 +4668,34 @@ const Arm64Compiler = struct {
                 const has_value = ins.ty == .str or ins.ty == .i64 or ins.ty == .f64;
                 const stack_arg = has_value and !use_puts;
                 var fmt_sym: u32 = 0;
+                // WHERE THE VALUE IS *NOW*, above the save. `value_home` is
+                // where it has to BE at the call; the move between them is
+                // emitted below the save.
+                const value_home: u5 = if (use_puts) 0 else 2;
+                var value_reg: ?u5 = null;
+                var value_fp: ?u5 = null;
+                var value_imm: ?i64 = null;
                 switch (ins.ty) {
                     .str => {
                         const reg = try self.evalDnirValue(temps, ins.lhs);
-                        const home: u5 = if (use_puts) 0 else 2;
-                        if (reg != home) try self.emitMovReg(home, reg);
+                        value_reg = reg;
                         self.releaseDnirTemp(pinned, ins.lhs, reg);
                         fmt_sym = if (use_puts) 0 else try self.internString("%s");
                     },
                     .i64 => {
                         const reg = try self.evalDnirValue(temps, ins.lhs);
-                        if (reg != 2) try self.emitMovReg(2, reg);
+                        value_reg = reg;
                         self.releaseDnirTemp(pinned, ins.lhs, reg);
                         fmt_sym = try self.internString(if (nonl) "%lld" else "%lld\n");
                     },
                     .f64 => switch (ins.lhs) {
-                        // Literal: materialize the bit pattern directly into
-                        // x2 carries this physical mixed-ABI source — no FP reg.
-                        .f64 => |n| try self.emitMovImm(2, @bitCast(n)),
-                        else => {
-                            const d = try self.evalDnirValueFp(temps, ins.lhs);
-                            try self.emitFmovToGpr(2, d);
-                        },
+                        // Literal: the bit pattern goes straight into x2, which
+                        // carries this physical mixed-ABI source — no FP reg.
+                        .f64 => |n| value_imm = @bitCast(n),
+                        // A live FP register is preserved by the save and not
+                        // altered by it, so the `fmov` reads it just as well
+                        // below the save as above.
+                        else => value_fp = try self.evalDnirValueFp(temps, ins.lhs),
                     },
                     // A valueless `print` is a blank line. A valueless WRITE is
                     // nothing at all, and emitting `printf("")` for it would be
@@ -4642,19 +4708,30 @@ const Arm64Compiler = struct {
                     try self.syncGateLocalTempsAfterCall(temps, pinned);
                     return;
                 }
-                if (fmt_sym != 0) try self.emitAdrpAdd(0, fmt_sym);
                 // Unknown str (NULL from missing os.args / os.env) is not a
                 // C "(null)" sentinel. Skip the call. Present empty still prints.
-                // The guard reads WHERE THE STRING IS, which the shape above
-                // decided: x0 on the `puts` path, x2 on the `printf("%s")` one.
-                // Testing x0 unconditionally would have tested the FORMAT
+                // The guard reads the register the string is IN — which above
+                // the save is wherever evaluation left it, not yet the ABI
+                // home. Testing x0 unconditionally would have tested the FORMAT
                 // string — never null — and passed a null through to `%s`.
                 var skip: ?u32 = null;
                 if (ins.ty == .str) {
-                    try self.emitCmpZero(if (use_puts) 0 else 2);
+                    try self.emitCmpZero(value_reg orelse return self.refuse(@src()));
                     skip = try self.emitBCond(.eq, 0);
                 }
                 const save = try self.emitSaveCallerRegs();
+                // PLACEMENT. x0..x7 are on the stack now, so writing them costs
+                // the caller nothing. Value first, format second: a value that
+                // evaluation happened to leave in x0 would otherwise be
+                // overwritten by its own format string.
+                if (value_reg) |reg| {
+                    if (reg != value_home) try self.emitMovReg(value_home, reg);
+                } else if (value_fp) |d| {
+                    try self.emitFmovToGpr(value_home, d);
+                } else if (value_imm) |bits| {
+                    try self.emitMovImm(value_home, bits);
+                }
+                if (fmt_sym != 0) try self.emitAdrpAdd(0, fmt_sym);
                 if (stack_arg) {
                     // Reserve a 16-byte slot so sp stays 16-byte aligned at the
                     // call; the vararg goes at [sp,#0], [sp,#8] is padding.
@@ -13461,9 +13538,23 @@ test "native backend write egress does not append a line ending" {
 }
 
 // A NULL string still writes nothing rather than libc's `(null)`, and the guard
-// has to read the register the STRING is in. `puts` takes it in x0; the write
-// path takes it in x2 and x0 holds the format, which is never null — testing x0
-// there would have passed every null straight through to `%s`.
+// has to read the register the STRING is in — never the format, which is never
+// null and would pass every null straight through to `%s`.
+//
+// This used to be spelled as two literal register names (`cmp x2, #0` for the
+// write path, `cmp x0, #0` for `puts`), which pinned the ABI HOME rather than
+// the law. The homes are no longer written until after `emitSaveCallerRegs`
+// (see `print_value`: staging them earlier made the save preserve printf's own
+// arguments and the restore write them back over the caller's live values), so
+// the guard now names whatever register EVALUATION left the string in. The law
+// it was always testing survives that move and is what is asserted here:
+//
+//   * a null guard exists ahead of the egress call, and
+//   * the format string is not materialized into any register until AFTER the
+//     guard — so "the guard tested the format" is not merely false, it is
+//     unrepresentable, and
+//   * the register the guard names is the one that then travels to the ABI
+//     home, so it is not merely SOME live register either.
 test "native backend write egress guards the value register not the format" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
@@ -13484,8 +13575,10 @@ test "native backend write egress guards the value register not the format" {
         .{ .op = .ret, .lhs = .{ .i64 = 0 }, .ty = .i64 },
     };
     inline for (.{
-        .{ &write_instructions, "cmp x2, #0" },
-        .{ &print_instructions, "cmp x0, #0" },
+        // callee, ABI home the value must reach, format label (null on `puts`,
+        // which takes the string itself in x0 and has no format at all).
+        .{ &write_instructions, "\tbl _printf\n", "x2", @as(?[]const u8, "adrp x0, Lduo_str_1") },
+        .{ &print_instructions, "\tbl _puts\n", "x0", @as(?[]const u8, null) },
     }) |case| {
         const blocks = [_]dnir.Block{.{ .instrs = case[0] }};
         const functions = [_]dnir.Function{.{ .name = "main", .ret = .i64, .blocks = &blocks }};
@@ -13493,7 +13586,31 @@ test "native backend write egress guards the value register not the format" {
         var diagnostic: Diagnostic = .{};
         var output = try emitArm64FromDnir(alloc, module, null, &diagnostic);
         defer output.deinit(alloc);
-        try std.testing.expect(std.mem.indexOf(u8, output.asm_text, case[1]) != null);
+        const text = output.asm_text;
+
+        const call_at = std.mem.indexOf(u8, text, case[1]) orelse return error.NoEgressCall;
+        const guard_at = std.mem.lastIndexOf(u8, text[0..call_at], ", #0\n\tb.eq ") orelse
+            return error.NoNullGuard;
+        const cmp_at = std.mem.lastIndexOf(u8, text[0..guard_at], "\tcmp ") orelse
+            return error.NoNullGuard;
+        const guard_reg = text[cmp_at + "\tcmp ".len .. guard_at];
+        // A register name and nothing else — this is what fails loudly if the
+        // guard ever grows an operand the parse above does not model.
+        try std.testing.expect(guard_reg.len >= 2 and guard_reg[0] == 'x');
+
+        // THE FORMAT IS NOT IN A REGISTER YET when the guard runs.
+        if (case[3]) |fmt_adrp| {
+            const fmt_at = std.mem.indexOf(u8, text, fmt_adrp) orelse return error.NoFormat;
+            try std.testing.expect(fmt_at > guard_at);
+        }
+
+        // …and the register the guard names is the one that reaches the home.
+        const home: []const u8 = case[2];
+        if (!std.mem.eql(u8, guard_reg, home)) {
+            const window = text[guard_at..call_at];
+            const move = try std.fmt.allocPrint(alloc, "\tmov {s}, {s}\n", .{ home, guard_reg });
+            try std.testing.expect(std.mem.indexOf(u8, window, move) != null);
+        }
     }
 }
 
@@ -14688,6 +14805,103 @@ test "native backend lowers source print to host egress and retains physical pri
     );
     defer alloc.free(object);
     try std.testing.expect(std.mem.indexOf(u8, object, "_printf") != null);
+}
+
+// HOST EGRESS IS A CALL, AND A CALL DOES NOT GET TO EAT ITS CALLER'S VALUES.
+//
+// The defect this pins answered WRONG and said nothing. In
+//
+//     _r4: { a: i64, b: i64, c: i64, d: i64 }
+//     _show: i64 = (p: _r4)   print(99)   return p.<field>
+//
+// `p.a` came back 208, `p.b` 2, `p.c` 99, `p.d` 4 — the low byte of the format
+// string's address, then the right answer, then PRINT'S OWN ARGUMENT, then the
+// right answer. Exit 0, no diagnostic. Alternating fields, because x0 and x2
+// are the two registers printf's call shape writes and they are the first and
+// third argument slots of the exploded record.
+//
+// TWO INDEPENDENT MECHANISMS PRODUCED IT, and this test pins both, because
+// either one alone still miscompiles:
+//
+//   * `print_value` staged `adrp x0, <fmt>` and `mov x2, <value>` ABOVE
+//     `emitSaveCallerRegs`, so the save preserved printf's arguments and the
+//     restore wrote them back over the caller's live values. The physical
+//     signature is ordering: `str x30, [sp,` closes the caller-save block, and
+//     it must precede every argument write. Asserted below.
+//
+//   * `dnirFunctionHasCall` did not count `print_value`, so a printing body was
+//     planned as a LEAF and kept its parameters in the incoming ABI registers
+//     across the `bl`. The physical signature is residency: after the egress
+//     call, nothing may be READ out of x0..x7. Asserted below.
+//
+// A compile-only assertion is exactly what a silent wrong answer defeats, so
+// the ANSWER is asserted too, by
+// `examples/native_differential/native_only/record_param_across_egress.id`
+// (every field of a 3/4/5/8/12/16-field record read after an egress call, plus
+// scalar mixes, local mutation, and f64 parameters — exit 97 or a distinct code
+// naming the field that came back wrong).
+test "native backend keeps record parameter fields alive across host egress" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\_r4: { a: i64, b: i64, c: i64, d: i64 }
+        \\
+        \\_show: i64 = (p: _r4)
+        \\  print(99)
+        \\  return p.a + p.b + p.c + p.d
+        \\
+        \\main: i64 = ()
+        \\  v: _r4 = { a = 1, b = 2, c = 3, d = 4 }
+        \\  return _show(v)
+    , "native.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.idol_mode = true;
+    try sem.check_module(&mod);
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    try liftCheckedTestGraph(&mod, &sem, &graph);
+    var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
+    defer assembly.deinit(alloc);
+    const asm_text = assembly.assembly;
+
+    const label = "_idol_native___show:\n";
+    const body_at = (std.mem.indexOf(u8, asm_text, label) orelse
+        return error.NoShowRelation) + label.len;
+    const body_end = std.mem.indexOfPos(u8, asm_text, body_at, "\n\n") orelse asm_text.len;
+    const body = asm_text[body_at..body_end];
+
+    const call_at = std.mem.indexOf(u8, body, "\tbl _printf\n") orelse return error.NoEgressCall;
+    const before_call = body[0..call_at];
+    const after_call = body[call_at + "\tbl _printf\n".len ..];
+
+    // ORDERING. `emitSaveCallerRegs` always stores x30, and always last in its
+    // GP run, so its position IS the end of the save block. Every register the
+    // call shape writes must be written after it.
+    const save_at = std.mem.indexOf(u8, before_call, "\tstr x30, [sp,") orelse
+        return error.NoCallerSave;
+    if (std.mem.indexOf(u8, before_call, "\tadrp x0,")) |fmt_at| {
+        try std.testing.expect(save_at < fmt_at);
+    }
+    if (std.mem.indexOf(u8, before_call, "\tmov x2,")) |arg_at| {
+        try std.testing.expect(save_at < arg_at);
+    }
+
+    // RESIDENCY. The four fields arrive in x0..x3 and the body reads all four
+    // AFTER the egress call, so if any read still names an argument register
+    // the value it reads is whatever printf left there. The only x0 the tail is
+    // allowed is the WRITE that returns the sum.
+    inline for (.{ ", x0\n", ", x1\n", ", x2\n", ", x3\n", ", x0,", ", x1,", ", x2,", ", x3," }) |read| {
+        try std.testing.expect(std.mem.indexOf(u8, after_call, read) == null);
+    }
 }
 
 test "native backend refuses source sealed record application absent graph identity facts" {
