@@ -70,16 +70,17 @@ name purge only.
 
 **2 Application/Graph Sovereignty** — `GAP-124`, `GAP-137`, `GAP-201`,
 `GAP-202`, `GAP-113`, `GAP-125`, `GAP-132`, `GAP-153`, `GAP-161`, `GAP-165`,
-`GAP-221`, `GAP-225`.
+`GAP-221`.
 `GAP-201` is the umbrella that owns the remaining bridge inventory; `GAP-137`
 owns one fact being optional and fail-open and is one row from closed;
 `GAP-202` owns making the one application algebra complete enough that scalar
 multiplication needs no subsystem of its own. `GAP-132` is the sharpest live
-defect in the program and reproduces in one command. `GAP-221` and `GAP-225` are
-both the same shape one level down — a fact the graph does not publish
-(per-body binding origin; a module-global write as an effect) read off a
-spelling instead. `GAP-221`'s wrong ANSWER is crossed; its deletion witness and
-its pin are not.
+defect in the program and reproduces in one command. `GAP-221` is a fact the
+graph does not publish (per-body binding origin) read off a spelling instead;
+its wrong ANSWER is crossed and its deletion witness and its pin are not.
+The module-binding write that used to sit beside it — a write read off a
+spelling because the lift minted a same-spelled local for it — is CLOSED and
+reclassified below.
 
 **3 Demand + Laws** — `GAP-187` (root, research), `GAP-149`, `GAP-138`.
 `GAP-187` declares `Kind: research_gap` and its own C0 block calls it "the P0
@@ -194,6 +195,7 @@ commit. Neither was superseded.
 | `GAP-123` | CLOSED | `ace5f7d5` deleted `scripts/duo_lock.id`; `97753361` rerouted AGENTS item 4 to `tools/node/dev/idol-lock`; pinned by `tools/node/dev/census/convergence` |
 | `GAP-135` | SUPERSEDED | `3cd3f07b` "revert gap[126]: remove textual relation reconstruction" |
 | `GAP-142` | SUPERSEDED | `gate/admission.id` + `gate/admission.sh` + `evidence/mop/merge/readiness.md`; every adjudicated branch retired |
+| `GAP-225` | CLOSED | the lift names the module binding a relation writes and `publishApplicationMutations` publishes its cardinality; `effect none` 1043 -> 1018 on `examples` with `one` 123 -> 148; `gate/speculation.sh` hazard row 0 published / 10 severed; regression `examples/place/mutate.id` |
 
 Each carries its evidence in its own file. No gap was reclassified on the
 strength of its own prose.

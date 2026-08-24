@@ -441,42 +441,20 @@ const empty_module_globals: ModuleGlobals = .{};
 /// Does any FUNCTION in this module assign `name`? Module-level code alone does
 /// not force storage: those statements run in order in one entry frame, where a
 /// register-resident binding is already correct.
-fn moduleFunctionsAssignName(mod: *const ast.Module, name: []const u8) bool {
-    for (mod.body.stmts) |*stmt| {
-        if (stmt.* != .func_decl) continue;
-        if (stmtsAssignName(stmt.func_decl.func.body.stmts, name)) return true;
-    }
-    return false;
-}
-
-fn stmtsAssignName(stmts: []const ast.Stmt, name: []const u8) bool {
-    for (stmts) |*st| {
-        switch (st.*) {
-            .assign => |a| for (a.targets) |t| {
-                if (t.* == .name and std.mem.eql(u8, t.name.ident, name)) return true;
-            },
-            // A `local`/parameter of the same name SHADOWS the global for the
-            // rest of that body, so a write to it is not a write to the global.
-            // Answering "true" here would give storage to a name that never
-            // needed it; answering "false" for the assign arm would miscompile.
-            .local_decl => |ld| for (ld.names) |n| {
-                if (std.mem.eql(u8, n.ident, name)) return false;
-            },
-            .do_block => |b| if (stmtsAssignName(b.body.stmts, name)) return true,
-            .while_loop => |w| if (stmtsAssignName(w.body.stmts, name)) return true,
-            .repeat_loop => |r| if (stmtsAssignName(r.body.stmts, name)) return true,
-            .num_for => |f| if (stmtsAssignName(f.body.stmts, name)) return true,
-            .gen_for => |f| if (stmtsAssignName(f.body.stmts, name)) return true,
-            .if_stmt => |is| {
-                if (stmtsAssignName(is.then.stmts, name)) return true;
-                for (is.elseifs) |ei| if (stmtsAssignName(ei.body.stmts, name)) return true;
-                if (is.else_body) |eb| if (stmtsAssignName(eb.stmts, name)) return true;
-            },
-            else => {},
-        }
-    }
-    return false;
-}
+// `moduleFunctionsAssignName` and `stmtsAssignName` STOOD HERE.
+//
+// They walked every relation body in the module looking for a bare-name
+// assignment to a module-scope spelling, with their own shadow rule
+// ("a `local`/parameter of the same name SHADOWS the global"), to answer one
+// question: does a relation write this module binding. The graph publishes
+// exactly that answer now — `SemanticGraph.writes` names the exact BINDING
+// ENTITY the lift resolved the assignment to, and `moduleBindingWritten` is
+// the query. `law.fact.producer.one`: once a fact is published, a downstream
+// phase does not reconstruct it from syntax.
+//
+// The two answers were compared before the walk was deleted: every `--emit
+// asm` output over `examples` and `lib` is byte-identical across the swap,
+// with the source path held fixed.
 
 /// HOW MANY TIMES `name` IS ASSIGNED ANYWHERE IN THE MODULE.
 ///
@@ -591,7 +569,11 @@ fn typeOfGlobal(t: ast.TypeExpr, init: ?*const Expr) RT {
     };
 }
 
-fn collectModuleGlobals(alloc: std.mem.Allocator, mod: *const ast.Module) Error!ModuleGlobals {
+fn collectModuleGlobals(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    graph: *const semantic_graph.SemanticGraph,
+) Error!ModuleGlobals {
     var out: ModuleGlobals = .{};
     errdefer out.deinit(alloc);
     for (mod.body.stmts) |*stmt| {
@@ -627,7 +609,13 @@ fn collectModuleGlobals(alloc: std.mem.Allocator, mod: *const ast.Module) Error!
                 if (t.* != .name) continue;
                 const name = t.name.ident;
                 if (out.types.contains(name)) continue;
-                if (!moduleFunctionsAssignName(mod, name)) continue;
+                // THE GRAPH'S ANSWER, not a second walk of the same bodies.
+                // A relation body that assigns this module binding is a
+                // `SemanticGraph.Write` row naming the exact binding entity,
+                // and the shadow adjudication that used to live in
+                // `stmtsAssignName` lives at the lift where the entity is
+                // resolved (gaps/GAP-225.md).
+                if (!graph.moduleBindingWritten(name)) continue;
                 const init: ?*const Expr = if (i < as.values.len) as.values[i] else null;
                 try out.types.put(alloc, name, typeOfGlobal(.inferred, init));
                 try out.order.append(alloc, .{ .name = name, .init = init });
@@ -965,8 +953,8 @@ const PromotionVerdict = enum {
     /// with storage. THE COMMON CASE, and the one that looks like a failure and
     /// is not: a module-scope binding gets a `__bss` word only when it is
     /// declared WITH A TYPE (`collectModuleGlobals`' `.local_decl` arm) or when
-    /// a RELATION in the module also assigns it (the `.assign` arm, via
-    /// `moduleFunctionsAssignName`). A bare `i = 0` at module scope in a file
+    /// a RELATION in the module also assigns it (the `.assign` arm, via the
+    /// graph's `moduleBindingWritten`). A bare `i = 0` at module scope in a file
     /// with no relations is neither, so it is already register-resident and
     /// there is nothing here to promote.
     no_module_binding,
@@ -2408,7 +2396,7 @@ fn lowerModuleFromGraph(
     // both would let a read fold to the initializer while a write went to
     // storage — the two halves of the same binding disagreeing, which is worse
     // than either the old folding or the new storage alone.
-    var module_globals = try collectModuleGlobals(alloc, mod);
+    var module_globals = try collectModuleGlobals(alloc, mod, graph);
     defer module_globals.deinit(alloc);
     {
         // A DECLARED WIDTH IS A PROPERTY OF THE PLACE and applies at EVERY
