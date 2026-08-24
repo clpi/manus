@@ -447,8 +447,9 @@ const empty_module_globals: ModuleGlobals = .{};
 // assignment to a module-scope spelling, with their own shadow rule
 // ("a `local`/parameter of the same name SHADOWS the global"), to answer one
 // question: does a relation write this module binding. The graph publishes
-// exactly that answer now — `SemanticGraph.writes` names the exact BINDING
-// ENTITY the lift resolved the assignment to, and `moduleBindingWritten` is
+// exactly that answer now — `SemanticGraph.binding_mutations` names the exact
+// BINDING ENTITY the lift resolved the assignment to, and
+// `moduleBindingWritten` is
 // the query. `law.fact.producer.one`: once a fact is published, a downstream
 // phase does not reconstruct it from syntax.
 //
@@ -459,7 +460,7 @@ const empty_module_globals: ModuleGlobals = .{};
 /// HOW MANY TIMES `name` IS ASSIGNED ANYWHERE IN THE MODULE.
 ///
 /// Top-level statements, every nested block, and every relation body. The
-/// shadowing rule is `stmtsAssignName`'s: a `local` of the same name shadows
+/// shadowing rule is the lift's: a `local` of the same name shadows
 /// the module binding for the rest of that block, so writes after it are not
 /// writes to this name.
 fn assignCountInStmts(stmts: []const ast.Stmt, name: []const u8) usize {
@@ -512,7 +513,7 @@ fn assignCountInStmts(stmts: []const ast.Stmt, name: []const u8) usize {
 /// that comment says it should.
 /// Writes to `name` at MODULE scope.
 ///
-/// `assignCountInStmts` carries `stmtsAssignName`'s shadowing rule, which stops
+/// `assignCountInStmts` carries the nested shadowing rule, which stops
 /// counting at a `local_decl` of the name because inside a relation body such a
 /// declaration SHADOWS the module binding. At module scope that is exactly
 /// wrong: the declaration IS the binding, not a shadow of it. Applying the

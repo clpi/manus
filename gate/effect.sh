@@ -30,14 +30,25 @@
 # caller with a constant and deleted the write. Measured, `--backend=direct`:
 # a program answering 2 answered 0.
 #
-# `none` FELL BY 25 ON `examples` WHEN THAT WAS REPAIRED, and every one of the
-# 25 became `one` naming the binding written. `MIN_NONE` below moved down by
-# exactly that, ONCE, with this paragraph as the argument. Moving it again
-# needs its own argument; a lane that lowers it to make a census pass is doing
-# the thing the rule above exists to stop. The floor still catches a LOSS, and
-# the anti-regression ratchet for the repair itself is not here at all — it is
-# `gate/speculation.sh`, whose "...publishing effect none" row must stay at
-# zero and is immune to ordinary corpus growth in a way a ceiling here is not.
+# `none` FELL WHEN THAT WAS REPAIRED, and it fell in two steps because two
+# lanes reached the same defect. On `examples`:
+#
+#     edc726bf   none 1043   one 123   unknown 165   before either
+#     539e7902   none 1024   one 142   unknown 165   the lift names the binding
+#     this file  none 1019   one 153   unknown 163   + closure and cardinality
+#
+# The middle row is the state `MIN_NONE` was left ROTTEN at: the floor still
+# said 1043 and the tree measured 1024, so this gate was RED on `main` and the
+# census it exists to police was not being read. It is pinned at the measured
+# value now, ONCE, with this paragraph as the argument. Moving it again needs
+# its own argument; a lane that lowers it to make a census pass is doing the
+# thing the rule above exists to stop.
+#
+# The floor still catches a LOSS, and the anti-regression ratchet for the
+# repair itself is not here at all — it is `gate/speculation.sh`, whose
+# "...publishing effect none" row must stay at zero while its severed twin
+# stays nonzero. That pair is immune to ordinary corpus growth in a way a
+# ceiling here is not.
 #
 # AND THE CENSUS IS NOT ENOUGH. A card can be published, counted, projected to
 # JSON and read by nobody. The COUNTERFACTUAL removes the fact and NOTHING
@@ -99,16 +110,20 @@ subject=examples/demand/tail.id
 # after `publishApplicationWorlds`: that reordering must not have taken a
 # single proof of unobservability away. It is pinned at the value the base
 # measured, so a positive card bought by giving up a `none` fails here — with
-# the one documented exception above, where 25 of those `none`s were not
-# proofs and the census moved 1043 -> 1018 / 123 -> 148 on `examples`.
+# the one documented exception above.
 #
 # `MIN_ONE` rose with it, and that is the half that makes the exception
 # checkable: the mutation repair does not merely stop saying `none`, it names
-# the binding written. A change that took the 25 out of `none` and left them in
-# `unknown` would pass a lowered `MIN_NONE` and fail here.
+# the binding written. A change that took those `none`s and left them in
+# `unknown` would pass a lowered `MIN_NONE` and fail here. It caught exactly
+# that during the repair — grounding the effect card only from the call-graph
+# CLOSURE dropped the exact binding for every relation that both writes one and
+# applies something unresolved, and 18 `one` cards over `examples lib` became
+# `unknown`. The direct rows ground first now, and this floor is why that was
+# noticed rather than shipped.
 MIN_APPS=${EFFECT_MIN_APPS:-1200}
-MIN_NONE=${EFFECT_MIN_NONE:-1018}
-MIN_ONE=${EFFECT_MIN_ONE:-148}
+MIN_NONE=${EFFECT_MIN_NONE:-1019}
+MIN_ONE=${EFFECT_MIN_ONE:-153}
 
 command -v jq >/dev/null 2>&1 || { echo "effect: jq not on PATH" >&2; exit 64; }
 [ -x "$idol" ] || { echo "effect: no compiler at $idol (set IDOL=)" >&2; exit 64; }

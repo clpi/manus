@@ -6180,7 +6180,8 @@ pub const SemanticGraph = struct {
     }
 
     /// MUTATION, FOR EVERY APPLICATION OCCURRENCE — the closure over the call
-    /// graph of the DIRECT writes the lift recorded in `SemanticGraph.writes`.
+    /// graph of the DIRECT writes the lift recorded in
+    /// `SemanticGraph.binding_mutations`.
     ///
     /// WHY THIS IS A COLUMN AND NOT A FIELD ON `ApplicationFact`. The same
     /// reason `Draw` is: the occurrences that reach a write are frequently ones
@@ -6331,7 +6332,6 @@ pub const SemanticGraph = struct {
     /// lookup is at the source-resolution boundary where a name is lawful. The
     /// answer is derived from exact binding entities, never from spellings.
     pub fn moduleBindingWritten(self: *const SemanticGraph, name: []const u8) bool {
-        if (mutationSevered()) return false;
         const root = self.module_root orelse return false;
         for (self.binding_mutations.items) |write| {
             const binding = self.get(write.binding) orelse continue;
@@ -6340,6 +6340,25 @@ pub const SemanticGraph = struct {
             if (std.mem.eql(u8, binding_name, name)) return true;
         }
         return false;
+    }
+
+    /// TRUE WHEN A MODULE BINDING'S INITIALIZER IS ITS VALUE EVERYWHERE —
+    /// nothing in the module writes it, so a reader may be answered from the
+    /// declaration. The question `comptime.foldRelationBody` asks before
+    /// binding an initializer into the fold's scope as a constant.
+    ///
+    /// SEVERED BY THE COUNTERFACTUAL, AND `moduleBindingWritten` IS NOT.
+    /// `dnir_lower.collectModuleGlobals` asks the raw fact to decide whether a
+    /// binding needs a `__DATA` word, and that is a physical requirement of the
+    /// program rather than a licence anything reads: a control able to delete
+    /// it BREAKS THE COMPILER instead of moving a decision, which is the one
+    /// thing `gate/effect.sh` says a sever may never do. Measured — with the
+    /// storage query severed too, a program whose module binding a relation
+    /// writes stopped lowering at `lowerExprCons`. So the sever reaches exactly
+    /// the licences: this one, and the two loops in `publishApplicationEffects`.
+    pub fn moduleBindingConstant(self: *const SemanticGraph, name: []const u8) bool {
+        if (mutationSevered()) return true;
+        return !self.moduleBindingWritten(name);
     }
 
     /// The exact bindings a card names, whatever its arity. Empty for `.none`
@@ -6358,7 +6377,7 @@ pub const SemanticGraph = struct {
 
     /// Publication of the mutation column severed at the producer, for the
     /// counterfactual control. Every application reads `mutation: unknown` and
-    /// nothing else moves — `writes` is still lifted, `effect` is still
+    /// nothing else moves — `binding_mutations` is still lifted, `effect` is still
     /// published by its own pass off whatever the severed column says.
     /// `IDOL_MUTATION_SEVER` is classed `.affects` in `main.behaviourEnvClass`
     /// because it changes the artifact, which is the point of the control.
@@ -6614,6 +6633,33 @@ pub const SemanticGraph = struct {
         // way). Blocking alone would publish `unknown` and lose the name of the
         // place; grounding alone would license the transform. World draw and
         // binding mutation stay separate columns and both feed this one card.
+        // THE DIRECT ROWS GROUND FIRST, and they have to. A relation that
+        // writes `_pos` AND also applies something the graph could not resolve
+        // has closure card `.unknown` — honest about the CARDINALITY, since
+        // there may be writes behind the unresolved call — but the binding it
+        // demonstrably writes is still known, and dropping it would trade an
+        // exact place for a shrug. Measured: 18 `one` cards became `unknown`
+        // corpus-wide when the closure was the only grounding source.
+        //
+        // BOTH LOOPS ARE UNDER ONE SEVER. `mutationSevered()` already empties
+        // the closure column at its producer; if the direct rows kept feeding
+        // this pass, `IDOL_MUTATION_SEVER=1` would remove half a fact and the
+        // control would measure the half. Measured: with only the closure
+        // severed, `lib/compiler/comptime.id` still refused its arms on
+        // `effect-not-none` and `gate/speculation.sh` could not show that the
+        // mutation fact is what refuses them.
+        const mutation_severed = mutationSevered();
+        if (!mutation_severed) for (self.binding_mutations.items) |write| {
+            const target = row_of.get(write.relation) orelse continue;
+            rows.items[target].blocked = true;
+            groundRow(&rows.items[target], write.binding);
+        };
+
+        // THEN THE CLOSURE, which adds what a direct row cannot say: a relation
+        // that writes nothing itself but APPLIES one that does is grounded at
+        // the binding it reaches, and one whose callees this pass could not
+        // follow is blocked with no place named. `.none` is the only card that
+        // licenses anything, and it is a positive claim.
         for (self.mutation_closure.items) |row| {
             const callee = self.applicationRelation(row.application) orelse continue;
             const target = row_of.get(callee) orelse continue;
@@ -6626,11 +6672,13 @@ pub const SemanticGraph = struct {
                 },
                 .many => |range| {
                     rows.items[target].blocked = true;
-                    // The FIRST binding in lift order. `Card` holds one site and
-                    // the exact set is already published in the mutation column,
-                    // so naming one here loses nothing a consumer cannot recover.
-                    if (range.len > 0) {
-                        groundRow(&rows.items[target], self.mutation_places.items[range.start]);
+                    // The LOWEST binding id the set names — `groundRow`'s own
+                    // tie-break, applied here so the choice is the same one it
+                    // would make. `Card` holds one site and the exact set is
+                    // already published in the closure column, so naming one
+                    // here loses nothing a consumer cannot recover.
+                    for (self.mutation_places.items[range.start .. range.start + range.len]) |binding| {
+                        groundRow(&rows.items[target], binding);
                     }
                 },
             }
@@ -7495,14 +7543,14 @@ pub const SemanticGraph = struct {
             try appendCardJson(buf, alloc, "effect", self.applicationEffect(draw.application));
             try buf.append(alloc, '}');
         }
-        // MUTATION AND ITS EVIDENCE, BOTH PROJECTED, and they are two columns
-        // because they answer two questions. `writes` is what the LIFT saw:
-        // this relation's body assigns this exact module binding. `mutations`
-        // is the CLOSURE over the call graph, keyed by the occurrence, and is
-        // what a consumer reads. A reader given only the second cannot tell a
-        // direct write from a reached one; given only the first it has to walk
-        // the call graph itself, which is the reconstruction this column
-        // exists to end.
+        // THE CLOSURE, PROJECTED BESIDE ITS EVIDENCE. `mutations` below is what
+        // the LIFT saw — this relation's body assigns this exact module
+        // binding — and it is POSITIVE ONLY, so the absence of a row means
+        // `none` and `unknown` at the same time. This column is the closure
+        // over the call graph, keyed by the occurrence, and it says which. A
+        // reader given only the rows has to walk the call graph itself, which
+        // is the reconstruction this column exists to end; a reader given only
+        // the closure cannot tell a direct write from a reached one.
         try buf.appendSlice(alloc, "],\"mutation_closure\":[");
         for (self.mutation_closure.items, 0..) |row, i| {
             if (i > 0) try buf.append(alloc, ',');
@@ -8725,7 +8773,7 @@ test "semantic_graph: checked callable linkage is one id keyed fact" {
     try graph.writeJson(alloc, "linkage.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 13), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 14), parsed.value.object.get("version").?.integer);
     const exported = parsed.value.object.get("callable_linkages").?.array.items;
     try std.testing.expectEqual(@as(usize, 4), exported.len);
     try std.testing.expectEqual(@as(i64, external), exported[3].object.get("callable").?.integer);
@@ -8813,7 +8861,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 13), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 14), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
     try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
@@ -9322,7 +9370,7 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Color\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Red\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"storage_class\"") == null);
-    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":13") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":14") != null);
     try std.testing.expectEqualStrings(
         "unknown",
         parsed.value.object.get("root_source_law").?.object.get("card").?.string,
@@ -10248,8 +10296,17 @@ test "semantic_graph: module mutation keeps binding identity and local shadow" {
     var json: std.ArrayListUnmanaged(u8) = .empty;
     defer json.deinit(alloc);
     try graph.writeJson(alloc, "module-mutation.id", &json, null);
-    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"version\":13") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"version\":14") != null);
     try std.testing.expect(std.mem.indexOf(u8, json.items, "\"mutations\":[{") != null);
+
+    // THE CARDINALITY, AND THE THREE STATES THAT MUST NOT COLLAPSE. The
+    // `mutations` rows above are positive only, so absence means `none` and
+    // `unknown` at once. `entry` applies a relation that writes exactly one
+    // binding; `shadowentry` applies one that writes nothing and must read
+    // `none` rather than share the silence.
+    try std.testing.expectEqual(MutationCard{ .one = module_binding }, graph.mutation(calls[0]));
+    try std.testing.expectEqual(MutationCard.none, graph.mutation(shadow_calls[0]));
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"mutation_closure\":[{") != null);
 }
 
 test "semantic_graph: one module binding owns checked value origin and survives shadowing" {

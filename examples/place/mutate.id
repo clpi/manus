@@ -53,7 +53,7 @@ probe(): i64
 # is the repair; collapsing this one too would be the opposite defect, and the
 # graph says which happened: `idol graph examples/place/mutate.id | jq` shows
 # TWO entities named `ring` — one at module scope, one under `shadow` — and the
-# `writes` column names the module one, from `bump`, and only that one.
+# `mutations` column names the module one, from `bump`, and only that one.
 #
 # THE GRAPH CONTROL IS CHECKED, THE STORAGE ONE IS NOT, and the difference is a
 # separate defect. `shadow()` answering 5 is checked below; `ring` still being
@@ -68,7 +68,7 @@ probe(): i64
 #     print(shadow())
 #     print(ring)      -> 5, and the answer is 0
 #
-# where `writes` is EMPTY and the graph still holds two distinct entities. The
+# where `mutations` is EMPTY and the graph still holds two distinct entities. The
 # lift is right and the storage decision is not; see gaps/GAP-228.md.
 shadow(): i64
   ring: i64 = 5

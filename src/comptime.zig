@@ -2055,7 +2055,7 @@ pub fn foldRelationBody(
             // The graph knows, now that the lift relates the write to the
             // binding instead of minting a same-spelled local for it. Before
             // that it could not have been asked: the write was invisible.
-            if (graph.moduleBindingWritten(name)) continue;
+            if (!graph.moduleBindingConstant(name)) continue;
             const so_far = [_]std.StringHashMapUnmanaged(Value){scope};
             const value = evalWithBindings(init, .{ .scopes = &so_far }, .{
                 .step_limit = fold_step_limit,
