@@ -268,34 +268,49 @@ def main(argv):
         print('  FAIL zero subjects read')
         return 3
 
-    rc = 0
+    # TWO OUTCOMES, TRACKED SEPARATELY, because `rc = rc or 1` after an earlier
+    # `rc = 3` made the exit status depend on which identity sorted first: a
+    # SPLIT seen before a floor breach reported 1, the same pair in the other
+    # order reported 3. REFUSE always outranks FAIL -- an instrument that
+    # cannot vouch for its own measurement has no finding to report.
+    refuse = False
+    split = False
     for ident in sorted(floors):
         values = rows.get(ident, {})
         witnesses = sorted({f for fs in values.values() for f in fs})
         print('  census %-24s %d witnesses, %d distinct value(s)'
               % (ident, len(witnesses), len(values)))
+        # An identity with NO value is the vacuity shape, not agreement, and it
+        # is checked before the floor so a floor of zero cannot license it.
+        if not values:
+            print('  FAIL %s: no projection answers this identity -- the extractor '
+                  'or the subject set broke' % ident)
+            refuse = True
+            continue
         if len(witnesses) < floors[ident]:
             print('  FAIL %s: %d witnesses is BELOW the pinned floor of %d -- the '
                   'extractor, the pathspecs or the tree broke; a ratchet that stops '
                   'counting must never report clean'
                   % (ident, len(witnesses), floors[ident]))
-            rc = 3
+            refuse = True
             continue
         bad = [v for v in values if v.startswith('UNCLASSIFIED:')]
         for v in sorted(bad):
             print('  FAIL %s: role phrase not in the normalization vocabulary -- [%s] in %s'
                   % (ident, v.split(':', 1)[1], ' '.join(sorted(values[v]))))
-            rc = rc or 1
+            split = True
         if len(values) > 1:
             print('  FAIL %s is SPLIT across %d values:' % (ident, len(values)))
             for v in sorted(values):
                 print('       %-28s %s' % (v, ' '.join(sorted(values[v]))))
-            rc = rc or 1
+            split = True
         elif not bad:
             (only,) = list(values)
             print('  ok   %-24s = %-26s agreed by %d projections'
                   % (ident, only, len(witnesses)))
-    return rc
+    if refuse:
+        return 3
+    return 1 if split else 0
 
 
 if __name__ == '__main__':
@@ -460,9 +475,35 @@ stale_case vocabulary 1 "$LAWFUL_ROUTE" '- `[]` bracket sugar for host arrays;' 
 # agreeing pages is the vacuity shape this repository keeps catching, so the
 # floor is shown to bite on a tree that is otherwise perfectly consistent.
 stale_case floor      3 "$LAWFUL_ROUTE" "$LAWFUL_DELIM" 99 99
+# AN IDENTITY NOBODY ANSWERS IS NOT AGREEMENT. Measured on a one-page tree with
+# no delimiter declaration at all: an empty value set used to reach the "exactly
+# one value" branch and crash on the unpack, and with a floor of zero it would
+# have printed `ok`. It refuses now, and the floor is zero here precisely so the
+# floor cannot be what is doing the work.
+printf 'docs/spec/roles.md\n' >"$tmp/ctl.solo"
+write_target "$LAWFUL_ROUTE" ''
+out=$(verdict "$ct" "$tmp/ctl.solo" 1 0 2>&1); rc=$?
+if [ "$rc" -ne 3 ]; then
+  fail "stale control unanswered: expected exit 3, got $rc"
+  printf '%s\n' "$out" | sed 's/^/       /'
+else
+  ok "stale control unanswered -> exit $rc"
+fi
+# REFUSE OUTRANKS FAIL REGARDLESS OF ORDER. `law.projection.computed` sorts
+# first, so this sets `split` on an unteachable role phrase and only then trips
+# `law.root`'s floor. The status must be 3, not the 1 the old `rc = rc or 1`
+# would have preserved.
+write_target "$LAWFUL_ROUTE" '- `[]` bracket sugar for host arrays;'
+out=$(verdict "$ct" "$tmp/ctl.solo" 99 1 2>&1); rc=$?
+if [ "$rc" -ne 3 ]; then
+  fail "stale control precedence: expected exit 3, got $rc"
+  printf '%s\n' "$out" | sed 's/^/       /'
+else
+  ok "stale control precedence -> exit $rc"
+fi
 
 [ "$viol" -eq 0 ] || { printf '%s: STALE-PROJECTION CONTROLS FAILED (%d)\n' "$prog" "$viol" >&2; exit 3; }
-ok 'the gate discriminates: green undamaged, red on each stale projection and on a collapsed floor'
+ok 'the gate discriminates: green undamaged; red on each stale projection, a collapsed floor and an unanswered identity; refusal outranks a finding'
 
 case "$mode" in
   --controls) printf '%s: controls only, tree not measured\n' "$prog"; exit 0 ;;
