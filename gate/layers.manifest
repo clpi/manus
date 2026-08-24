@@ -140,6 +140,13 @@ FOREIGN  foreign_transpile.zig
 DRIVER   main.zig
 DRIVER   tests.zig
 DRIVER   property_tests.zig
+# The graph-sovereignty instrument. `poison.zig` needs only AST, but it is
+# EVIDENCE, not a compiler stage: no production path may import either of these,
+# and DRIVER is the layer that says so. `sovereign.zig` genuinely depends on
+# everything — it drives parse, sema, graph lift and the native backend in one
+# measurement.
+DRIVER   poison.zig
+DRIVER   sovereign.zig
 DRIVER   term.zig
 DRIVER   debug_trace.zig
 DRIVER   explain_pipeline.zig

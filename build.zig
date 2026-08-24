@@ -1010,6 +1010,26 @@ pub fn build(b: *std.Build) void {
     // catalog apparatus was retired.
     test_step.dependOn(&run_native_backend_tests.step);
 
+    // `zig build sovereign` — the graph-sovereignty census on its own, so the
+    // per-vertical table can be read without the whole unit suite's output in
+    // front of it. The same tests also run inside `unit-test` (src/tests.zig
+    // imports the module), which is where the merge signal reads them; this
+    // step exists for the census, not for coverage.
+    const sovereign_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/sovereign.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        // The whole compiler is reachable from this root, so without a filter
+        // the step would re-run every unit test in the tree and bury the census.
+        .filters = &.{"sovereign:"},
+    });
+    linkProductionKeywordClassify(b, sovereign_tests.root_module);
+    const run_sovereign_tests = b.addRunArtifact(sovereign_tests);
+    const sovereign_step = b.step("sovereign", "Graph sovereignty over machine bytes: damage the AST after graph publication, compare object bytes");
+    sovereign_step.dependOn(&run_sovereign_tests.step);
+
     const native_diff_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/native_differential.id" });
     native_diff_cmd.step.dependOn(b.getInstallStep());
     native_diff_cmd.setCwd(b.path("."));

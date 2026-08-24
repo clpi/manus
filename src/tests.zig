@@ -83,6 +83,8 @@ test {
     _ = @import("jit.zig");
     _ = @import("c_backend.zig");
     _ = @import("native_backend.zig");
+    _ = @import("poison.zig");
+    _ = @import("sovereign.zig");
     // `wasm_backend.zig` — 3,429 lines with ZERO IMPORTERS until this line.
     //
     // MEASURED at `015ded1a`: `git grep wasm_backend` over `src/`, `tools/` and
