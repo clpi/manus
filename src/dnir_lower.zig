@@ -8274,13 +8274,7 @@ const TextBind = struct {
 
     fn note(self: *TextBind, init: ?*const ast.Expr) void {
         self.writes += 1;
-        if (init) |e| {
-            if (e.* == .quoted) {
-                self.literal = e.quoted.val;
-                return;
-            }
-        }
-        self.literal = null;
+        self.literal = if (init) |e| quotedLiteralBytes(e) else null;
     }
 };
 
@@ -8363,8 +8357,30 @@ fn textBindInStmt(stmt: *const ast.Stmt, name: []const u8, out: *TextBind) void 
 /// one ran, so there is no fact, and the scan is what MEASURES that rather than
 /// assuming it. This is the same safety `noteConstTable` takes from
 /// `tableUseInBlock`, narrowed to the one question a length needs.
+/// THE BYTES A QUOTED LITERAL CARRIES, ASKED IN ONE PLACE.
+///
+/// Two consumers need the same fact — `determinedTextLen` needs its EXTENT and
+/// `TextBind.note` needs the payload itself — and each spelled its own tag
+/// test for it. `gate/gap-145-consumer.sh` counts exactly that form and caps
+/// it, because a consumer reaching a quoted node through an equality test on
+/// the tag is invisible to the switch-arm census GAP-145 reports (and the
+/// census counts the spelling, so this sentence does not write it): `planConcat` was
+/// written that way and folded every quoted part into a printf format string
+/// without asking which face it had.
+///
+/// This reads EXTENT AND PAYLOAD, which are face-independent. `law.text.byte`
+/// gives cardinality and layout to a byte sequence exactly as to text; the two
+/// faces differ in what the octets MEAN, and nothing here decides that. The
+/// face question has its own producer — `types.quotedLiteralType`, asked
+/// through `graphByteSequenceConst` / `exprIsByteSequence` — and no consumer
+/// may answer it from this tag.
+fn quotedLiteralBytes(expr: *const ast.Expr) ?[]const u8 {
+    if (expr.* != .quoted) return null;
+    return expr.quoted.val;
+}
+
 fn determinedTextLen(ctx: *LowerCtx, expr: *const ast.Expr) ?i64 {
-    if (expr.* == .quoted) return @intCast(expr.quoted.val.len);
+    if (quotedLiteralBytes(expr)) |bytes| return @intCast(bytes.len);
     if (expr.* != .name) return null;
     const name = expr.name.ident;
     const slot = ctx.locals.get(name) orelse {
