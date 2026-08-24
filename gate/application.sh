@@ -216,10 +216,35 @@ for row in open(exports):
                     cause = "host-relation-no-entity"
             elif head is None:
                 cause = "unattributed"
-            elif assign_target(text, node["col"]):
-                cause, note = "projection-with-application-parens", head
             elif head == '<computed>':
+                # A COMPUTED CALLEE FOLLOWED BY `=` IS A CURRIED DECLARATION,
+                # not a projection. `to(micron)(inch) = stretch@exact` and
+                # `eq(i64)(f64) = eq_f64_i64@lossless` are conversion-edge
+                # DECLARATIONS whose second curry level is the assignment's
+                # left side, and rewriting their parentheses to brackets makes
+                # `examples/compile_fail/relation_lossy_compose.id` — a fixture
+                # that exists to be refused — compile clean. Measured: 26 sites,
+                # every one of them a declaration. The projection row therefore
+                # admits a NAME or a dotted name and nothing else.
                 cause, note = "callee-is-a-value", "<computed>"
+            elif assign_target(text, node["col"]) and \
+                    head.split('.')[0] in binds:
+                # `x(i) = v` WHERE `x` IS A VALUE BINDING. Nothing assigns to an
+                # application result, so the parentheses here are projection,
+                # and `docs/spec/law.md` §5 gives projection to `[]`:
+                # "`()` is ordinary application. It never means table indexing."
+                # `examples/call_index_assign.id` is the negative probe for
+                # exactly this shape and requires it to refuse.
+                #
+                # THE BINDING TEST IS LOAD-BEARING AND WAS ADDED AFTER A WRONG
+                # REPAIR. `env(k) = v` is the CANONICAL write face of the
+                # injected `os` world's environment PLACE — `examples/projection/place.id`
+                # names all four faces and puts `os.env[k] = v` on the LEGACY
+                # side — and `env` is a world projection, not a binding, so it
+                # is not in `binds` and never reaches this row. A relation with
+                # a place has a lawful write face through `()`; a local holding
+                # a table does not.
+                cause, note = "projection-with-application-parens", head
             elif '.' in head:
                 root = head.split('.')[0]
                 home = '.'.join(head.split('.')[:-1])
