@@ -2726,11 +2726,79 @@ basis = law{
 #     @{ k = v }     derive the current world with exact injected facts (injection)
 #     x@{ k = v }    scoped interjection — x@(@{ k = v })
 #     @k = v         mutate a world member place, when it is a place
-#     @( … )         eval
+#     @( … )         the current world APPLIED TO AN EXPRESSION — that expression
+#                    resolved under it, at the stage the world carries
 #
 # INVALID: @.member and @:member — @ already accesses, so there is no `@.`
 # projection step and no `@:` subject dispatch. `@comp.foo` and prefix `@`
 # directives are not in that family and die with the bootstrap authority they carry.
+#
+# ── THE `@( … )` ROW USED TO READ "eval", WITH NO ACCOUNT ────────────────────
+#
+# That one word was the whole of the collision. Three faces are visible at the
+# surface — `@(expr)` compile-time evaluation, `@{ … }` injection, `@member`
+# access — and `@` is only ONE algebra if compile-time evaluation is itself
+# explained as evaluation under a world. Left unexplained, "eval" is compiler
+# magic in the same table that binds "@ never means compiler magic and prefix
+# directive syntax DOES NOT EXIST" three lines below. The row is now accounted
+# for rather than removed, and the account is `law.stage.world`.
+#
+# THE COMPOSITION IS THE ONE ALREADY WRITTEN DOWN. `anchor.apply` says
+# `@` + pack = apply(current world)(pack) = derived world. Applying the current
+# world to a pack of FACTS derives a world; applying it to an EXPRESSION
+# resolves that expression under it. Same prefix `@`, same application algebra
+# (§9, one application algebra), one operand kind apart.
+#
+# AND STAGE IS A WORLD FACT, not a kingdom: `docs/spec/law.md` §6 lists
+# "stage/target facts" among what a world carries, and §11 makes stage one of
+# the obligations every transformation already binds. So "evaluate at compile
+# time" NAMES the stage fact of the world doing the resolving, and
+#
+#     @(expr)  ==  expr@{ stage = comp }
+#
+# is an identity between two spellings of one meaning, not a definition of a
+# second mechanism.
+#
+# WHAT FOLLOWS, and this is why the ruling is worth its ink:
+#
+#   · `@comp.*` HAS A DESTINATION. An operation whose entire content is "do this
+#     at compile time" is an ordinary relation applied under a stage-delta
+#     world. The host directive catalog can be deleted without losing the
+#     capability, because the capability was never the directive.
+#   · "NOT A COMPILE-TIME CONSTANT" IS NOT A SPECIAL DIAGNOSTIC. A value that
+#     does not exist at the compile stage is not a fact of that world, so it is
+#     refused by the ordinary rule that a derived world does not fall through to
+#     facts absent at formation — `docs/spec/world.md`: "Resolution does not
+#     search `trial` and then fall back to the root world — the deltas are
+#     established when the world is formed." One refusal, not two.
+#   · STAGE PARTICIPATES IN WORLD IDENTITY, hence in cache identity wherever it
+#     changes lawful realizations (`law.md` §10, §13).
+#
+# THE REFUTED READING, recorded so it is not re-argued: that `@` genuinely has
+# two roles, one world-algebraic and one directive-like. It is refused on this
+# table's own terms — `law.at.one` already binds prefix directive syntax out of
+# existence, and §2 forbids a second authority for one token. A directive
+# reading would also need its own world/effect/stage obligation list beside the
+# one §11 already requires of every transformation, which is a parallel ontology
+# by construction.
+
+# Evaluation at a stage IS evaluation under a world; `@(expr)` is that, spelled
+# with the world elided because it is the current one.
+stageworld = law{
+    id    = "law.stage.world"
+    kind  = .invariant
+    holds = .world
+    binds = {
+        "stage is a FACT a world carries, never a separate kingdom, directive namespace, or evaluation mechanism",
+        "@(expr) is apply(current world)(expr) — expr resolved under the world resolving it — and equals expr@{ stage = comp }; it is a compatibility spelling with exact provenance, not a fourth use of the sigil",
+        "an operation whose entire content is compile-time evaluation is an ordinary relation applied under a stage-delta world; @comp.* @meta.* @compiler.* carry no capability the stage world lacks",
+        "a value absent at a stage is absent from that stage's world and is refused by the derived-world no-fallthrough rule, not by a separate compile-time-constant diagnostic",
+        "stage participates in world identity, and therefore in artifact identity wherever it changes a lawful realization",
+    }
+    canon = { "@(1 + 2)", "fold(xs)@{ stage = comp }" }
+    deny  = "@( … ) read as a compiler directive, a second evaluation implementation, or an eval kingdom outside the world algebra"
+    fails = "a compile-time facility that carries its own world/effect/stage obligations beside the ones every transformation already binds"
+}
 
 anchor = law{
     id    = "law.at.one"

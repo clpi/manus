@@ -32,7 +32,29 @@ dependency framework is introduced.
 thing@world      qualify     evaluate thing under world
 thing@{ k = v }  interject   evaluate thing under an injected world
 @k = v           mutate      obtain a world member as a place and mutate it
+@(expr)          stage       apply the current world to an expression — that
+                             expression resolved under it, at the stage the
+                             world carries
 ```
+
+The last row is the one that keeps `@` a single algebra. Compile-time
+evaluation is not a directive and not a sixth mechanism: stage is a fact a
+world carries (`law.md` §6), so evaluating at the compile stage is evaluating
+under a world whose stage fact is `comp`, and
+
+```text
+@(expr)  ==  expr@{ stage = comp }
+```
+
+is an identity between two spellings. `@` + pack derives a world; `@` +
+expression resolves that expression under the world — one prefix meaning, one
+application algebra, two operand kinds. Two consequences are worth spelling
+out. An operation whose entire content is "do this at compile time" is an
+ordinary relation applied under a stage-delta world, so `@comp.*` has somewhere
+lawful to go. And a value that does not exist at the compile stage is simply
+not a fact of that world, refused by the same no-fallthrough rule as any other
+derived-world lookup rather than by a special compile-time-constant
+diagnostic. See C0 `law.stage.world`.
 
 `@` is itself the accessor: write `@x`, never `@.x`; `@.x` and `@:x` are INVALID
 because `@` already performs the access. `.` is one static step, always — one
