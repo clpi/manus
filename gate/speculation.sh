@@ -176,8 +176,10 @@ else
         # reports. So the assumed arm has to demonstrate that it moved the
         # refusal it names; a byte-identical artifact only means something once
         # the census under the assumption is different from the census without.
-        LC_ALL=C grep -q 'no_termination_fact=0 ' "$work/assumed.report" ||
+        ! LC_ALL=C grep -q 'no_termination_fact=[1-9]' "$work/assumed.report" ||
             die "IDOL_TERMINATION_ASSUME=1 did not clear the no-termination-fact refusal in $src. The control reaches no decision, so its byte-identical artifact proves nothing about the fact. Check native_backend.terminationAssumed."
+        LC_ALL=C grep -q 'no_termination_fact=' "$work/assumed.report" ||
+            die "the assumed arm of $src printed no ifconv2 census line at all. A control that produced no reading is not a reading of zero."
         reached=$((reached + 1))
         cmp -s "$work/base.s" "$work/assumed.s" || {
             note "  differs under the assumption: $src"
@@ -207,7 +209,7 @@ while IFS= read -r src; do
            | select(.effect.card == "none")
            | ($nm[.relation|tostring] // "?")' "$work/g.json" 2>/dev/null |
         LC_ALL=C sort -u >"$work/free" || continue
-    LC_ALL=C comm -12 "$work/mutrel" "$work/free" |
+    LC_ALL=C comm -12 "$work/mutrel" "$work/free" 2>/dev/null |
         LC_ALL=C awk -v f="$src" 'NF { print f "\t" $0 }' >>"$work/mutators"
 done <"$work/files"
 
