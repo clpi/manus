@@ -694,3 +694,51 @@ alternatives and never bake a target's cost model into transformation legality
 (separate correctness proof from target cost evidence). Realization ≠ instruction
 sequence on a classical CPU — GPU/NPU/DSP/FPGA/PIM/analog/neuromorphic/quantum and
 whatever comes next are admissible whenever semantics and target facts permit.
+
+## Executed rows, and the frontier as measured
+
+Two FTCFTW rows now EXECUTE rather than being indexed, and each is a runner
+that recomputes its own numbers — nothing here restates them:
+
+    sh gate/ftcftw/wrap.sh     defined i64 wraparound vs C signed overflow
+    sh gate/ftcftw/stage.sh    lawful nonexecution: the stage world vs runtime
+
+`wrap` is the semantic-knowledge mechanism at parity's edge: Idol's i64 wraps
+by definition, C's signed overflow is undefined, so the emitted unsigned form
+lets the C compiler reassociate across a recurrence the idiomatic `int64_t`
+spelling blocks. Its third arm — the same algorithm handwritten with
+`uint64_t` — is the control that keeps the row honest: the outcome is OPTIMAL
+(the frontier reached without the programmer knowing why), not a fabricated
+win over a strawman.
+
+`stage` is the §108 REALIZATION-CONTRACT executed: work C must do at runtime,
+`@( … )` does at build, and the program carries the answer. Its controls pin
+structure (the idol arm carries no loop; the C arm still does, proving the C
+compiler could not fold it), full-64-bit re-derivation of the folded constant
+by an independent program, the backend's integer division law, and refusal of
+a duplicated spelling. Its outcome text carries its own bounds: a fuel-capped
+capability row, with the provenance asymmetry stated — a hand-pasted C
+constant is a human claim; this one is compiler-derived and gate-re-verified.
+
+The frontier that remains, each axis with its measured blocker:
+
+- **Nonexecution beyond one module** — the stage scope is single-name module
+  relations; dotted homes, overload identity, and cross-run persistence are
+  the recorded next steps (`gaps/GAP-227.md`, the stage-scope dup poisoning).
+- **Aliasing facts as `restrict`** — OWNERSHIP-ZERO alias facts have no C
+  surface yet because the C99 slice emits scalar locals only; the axis opens
+  when the slice admits aggregates (`gate/realize/census.sh` measures the
+  slice's edge; `gaps/GAP-226.md` and `gaps/GAP-234.md` own the walls in
+  front of it).
+- **Width narrowing** — `binopResultWidth` facts exist; no row measures what
+  they buy on a 64-bit host.
+- **Closed-form realization** (§101 `law.algorithm.realization`) — a linear
+  recurrence has an O(log n) matrix-power realization for runtime-bound n;
+  no machinery proves or extracts it yet. This is the axis where dominance
+  over the best C is structurally available rather than fuel-bounded,
+  because it changes the algorithm, not the instruction selection.
+
+The honest gate on every future row is the same three: the work must survive
+the optimizer (a deleted loop times as process startup), the arms must agree
+at full width before anything is timed, and the comparison oracle must be the
+BEST known spelling, not the idiomatic one.
