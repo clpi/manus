@@ -6060,6 +6060,20 @@ fn do_compile(
         const lowered = dnir_lower.lowerModuleWithGraphObserved(alloc, &ps.mod, &graph, &lowering) catch |err| {
             term.err("C99 realizer: graph-to-DNIR refused ({s})", .{@errorName(err)});
             if (lowering.note()) |why| term.hint("refused at: {s}", .{why});
+            // THE REFUSAL ALREADY KNEW WHICH RELATION IT CHOKED ON.
+            // `refuseApplication` binds `diagnostic.relation` from
+            // `applicationFace` for exactly this purpose, and the arm twenty
+            // lines below already prints its own `in relation:`. This one did
+            // not, so every `missing-application-id` reached the reader as a
+            // bare note naming no subject — 141 of the 210 `idol check` accepts
+            // in `examples/`, all reporting the same six words.
+            //
+            // The id is printed beside the face because the face is a
+            // DIAGNOSTIC PROJECTION, not an identity: two occurrences of one
+            // spelling share the face and differ in the id, and the id is what
+            // `gate/application.sh` and the graph census speak.
+            if (lowering.relation) |face| term.hint("in relation: {s}", .{face});
+            if (lowering.application) |id| term.hint("application id: {d}", .{id});
             std.process.exit(1);
         };
         defer native_ir.deinitModule(alloc, lowered);
