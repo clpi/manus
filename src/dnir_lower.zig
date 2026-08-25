@@ -213,6 +213,25 @@ const ModuleConsts = struct {
     /// binding has no `LowerCtx`, so it is recorded here and read at the same
     /// two places, so both classifiers agree on one read.
     str_tables: std.StringHashMapUnmanaged(void) = .empty,
+    /// Single-name module relations, for the compile-stage world. `@(tri(100))`
+    /// is evaluation under a stage-delta world (`law.stage.world`), and the
+    /// evaluator has been ABLE to run a relation body — `evalWhile`,
+    /// `callFunctionValue`, a step budget — the whole time; what it lacked was
+    /// any binding for `tri`, because `compileStageValue` hands it an EMPTY
+    /// evaluator. This is the same fact channel the comment above describes:
+    /// module-level knowledge a `LowerCtx` consumer needs, collected in the one
+    /// walk that has the module. Bodies are borrowed from the AST, which
+    /// outlives lowering.
+    funcs: std.StringHashMapUnmanaged(*const ast.FuncBody) = .empty,
+    /// Spellings declared MORE THAN ONCE at module scope. A name-keyed map
+    /// would silently keep the last body, and the stage evaluator does no
+    /// overload resolution — so `@(pick(1))` could execute a `pick` selected
+    /// by collection order rather than by the argument, which is the silent
+    /// wrong answer class. A duplicated spelling is removed from `funcs` and
+    /// recorded here, so the stage world REFUSES it (`compile-stage-absent`)
+    /// instead of guessing; carrying the resolved application identity into
+    /// the fold is the correct future, not a spelling coin-flip now.
+    func_dups: std.StringHashMapUnmanaged(void) = .empty,
 
     fn deinit(self: *ModuleConsts, alloc: std.mem.Allocator) void {
         var it = self.ints.iterator();
@@ -224,6 +243,12 @@ const ModuleConsts = struct {
         var tit = self.str_tables.iterator();
         while (tit.next()) |e| alloc.free(e.key_ptr.*);
         self.str_tables.deinit(alloc);
+        var fit = self.funcs.iterator();
+        while (fit.next()) |e| alloc.free(e.key_ptr.*);
+        self.funcs.deinit(alloc);
+        var dit = self.func_dups.iterator();
+        while (dit.next()) |e| alloc.free(e.key_ptr.*);
+        self.func_dups.deinit(alloc);
     }
 };
 
@@ -1880,6 +1905,92 @@ pub fn compileStageValue(operand: *const Expr) ?dnir.Value {
     };
 }
 
+/// Compile-stage evaluation with the MODULE in scope, which is what makes
+/// `@(tri(100))` a value rather than a refusal.
+///
+/// `compileStageValue` above hands the evaluator an EMPTY environment, so any
+/// operand naming a module relation or const failed its first lookup and the
+/// whole face refused `compile-stage-absent` — while `evalWhile`,
+/// `callFunctionValue` and the `Options.step_limit` fuel have been in the
+/// evaluator all along. REALIZATION-CONTRACT (§108) calls lawful nonexecution
+/// the ultimate realization; this is that contract executed: the value the
+/// stage world holds is what the program contains, and there is no residual
+/// operation to realize. C has no spelling for this — a C11 program cannot ask
+/// its compiler to run an arbitrary function at build time — so this is
+/// exactly the semantic-knowledge frontier `law.ftcftw.dominance` names.
+///
+/// Scratch lives in an arena and dies here: relation values, captures, locals,
+/// and any intermediate the evaluator allocates are freed together, and only
+/// the scalar leaves. Nontermination is bounded by the evaluator's own step
+/// budget, which `evalWhile` charges per iteration — a compile-stage loop that
+/// exceeds it returns null and the face refuses with the honest note.
+///
+/// THE RETIRED EMITTER'S PRECHECK KEEPS THE NARROWER RULE. `src/codegen.zig`'s
+/// native-scalar precheck admits `@( … )` iff the bare `compileStageValue`
+/// folds, so on the direct path an operand only THIS function can fold refuses
+/// at admission. That disagreement is fail-closed — an honest refusal, never a
+/// wrong answer — and widening the retired emitter would be work spent on the
+/// side of the seam that `law.bridge.death` deletes.
+pub fn compileStageValueInModule(
+    alloc: std.mem.Allocator,
+    consts: *const ModuleConsts,
+    operand: *const Expr,
+) ?dnir.Value {
+    if (consts.funcs.count() == 0 and consts.ints.count() == 0) return null;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const aa = arena.allocator();
+    // THE STAGE WORLD GETS A LARGER FUEL BUDGET THAN INCIDENTAL FOLDING. The
+    // default `step_limit` exists so that folding the compiler chose to attempt
+    // cannot hang a compile the author never asked to wait for. `@( … )` is the
+    // opposite situation: the author WROTE "evaluate this at the compile
+    // stage", so the budget prices the request rather than the accident —
+    // bounded still, because a nonterminating loop must refuse rather than
+    // hang, but sized to real work. 200M steps is a few seconds of tree-walk
+    // on commodity hardware; past it, the face refuses with the honest note
+    // and the program still has the runtime spelling available.
+    // `native_fold` is NOT optional here, and the evaluator's own doc block is
+    // the reason: admitting relation application without it is a MEASURED
+    // silent wrong answer three ways — `/` on two ints routed to the float
+    // path (`7 / 2 == 3` folding false), `//` flooring where the backend
+    // truncates, `%` taking the divisor's sign where the backend keeps the
+    // dividend's, and one flat `locals` stack giving a callee write-through
+    // access to same-spelled caller bindings. The switch turns on frames and
+    // the backend's integer laws together because they are not independently
+    // safe.
+    const options: comptime_eval.Options = .{
+        .alloc = aa,
+        .step_limit = 200_000_000,
+        .native_fold = true,
+    };
+
+    var scope: std.StringHashMapUnmanaged(comptime_eval.Value) = .empty;
+    var fit = consts.funcs.iterator();
+    while (fit.next()) |e| {
+        // Empty bindings on purpose: captures snapshot nothing, and the call
+        // resolves sibling relations through the evaluator's own bindings at
+        // application time — which is also what makes recursion work.
+        const fv = comptime_eval.funcValue(e.value_ptr.*, .{}, options) catch continue;
+        scope.put(aa, e.key_ptr.*, fv) catch return null;
+    }
+    var cit = consts.ints.iterator();
+    while (cit.next()) |e|
+        scope.put(aa, e.key_ptr.*, .{ .int = e.value_ptr.* }) catch return null;
+
+    const scopes = [_]std.StringHashMapUnmanaged(comptime_eval.Value){scope};
+    const v = comptime_eval.evalWithBindings(
+        operand,
+        .{ .scopes = &scopes },
+        options,
+    ) catch return null;
+    return switch (v) {
+        .int => |n| dnir.Value{ .i64 = n },
+        .bool => |b| dnir.Value{ .i64 = @intFromBool(b) },
+        .float => |f| dnir.Value{ .f64 = f },
+        else => null,
+    };
+}
+
 /// THE ONE FACT BOTH PASSES READ.
 ///
 /// `codegen`'s native-scalar precheck decides ADMISSION and this file decides
@@ -2075,6 +2186,29 @@ fn collectModuleConsts(
                 for (ed.variants, 0..) |v, i| {
                     const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ ed.name, v.name });
                     try map.put(alloc, key, @intCast(i));
+                }
+                continue;
+            },
+            // The single-name relations, for compile-stage evaluation. Dotted
+            // paths stay out: a home-qualified relation is a cross-partition
+            // question and the stage world answers module-local ones.
+            .func_decl => |*fd| {
+                if (fd.path.len == 1) {
+                    const spelled = fd.path[0];
+                    if (out.func_dups.contains(spelled)) continue;
+                    if (out.funcs.fetchRemove(spelled)) |prev| {
+                        // Second declaration under one spelling: poison it.
+                        // See `func_dups` — a name-keyed map kept the LAST
+                        // body, and last-wins is a coin-flip, not resolution.
+                        alloc.free(prev.key);
+                        const dup = try alloc.dupe(u8, spelled);
+                        errdefer alloc.free(dup);
+                        try out.func_dups.put(alloc, dup, {});
+                        continue;
+                    }
+                    const key = try alloc.dupe(u8, spelled);
+                    errdefer alloc.free(key);
+                    try out.funcs.put(alloc, key, &fd.func);
                 }
                 continue;
             },
@@ -10497,6 +10631,10 @@ fn lowerExprCons(
             // and nothing about their program.
             if (u.op == .compile) {
                 if (compileStageValue(u.operand)) |v| break :blk v;
+                // The module-scoped fold: `@(tri(100))` where `tri` is a
+                // sibling relation. See `compileStageValueInModule` for the
+                // contract and the retired precheck's narrower rule.
+                if (compileStageValueInModule(ctx.alloc, ctx.module_consts, u.operand)) |v| break :blk v;
                 return bailWith(ctx.diagnostic, @src(), "compile-stage-absent");
             }
             return bailWith(ctx.diagnostic, @src(), @tagName(u.op));
