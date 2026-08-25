@@ -190,8 +190,6 @@ const builtins = [_]BuiltinEntry{
 
     // ── Structural reflection ──
     .{ .public = "comp.fields", .internal = "__fields" },
-    .{ .public = "meta.fields.map", .internal = "__fieldsmap" },
-    .{ .public = "comp.fields.map", .internal = "__fieldsmap" },
     .{ .public = "comp.methods", .internal = "__methods" },
     .{ .public = "comp.variants", .internal = "__variants" },
     .{ .public = "comp.has.field", .internal = "__has_field" },
@@ -260,9 +258,7 @@ const builtins = [_]BuiltinEntry{
 
     // ── Code generation / transform ──
     .{ .public = "comp.foreign", .internal = "__foreign" },
-    .{ .public = "comp.schema", .internal = "__schema" },
     .{ .public = "comp.ffi", .internal = "__ffi_gen" },
-    .{ .public = "comp.pipeline", .internal = "__pipeline" },
     .{ .public = "comp.sql", .internal = "__sql" },
     // The last two intrinsics still spelled with a leading `__` in .id source.
     // Every other internal already had a `@comp.*` public name here; these did
@@ -270,7 +266,6 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "comp.native.load.u8", .internal = "__native_load_u8" },
     .{ .public = "comp.id.kind", .internal = "__duo_kind" },
     .{ .public = "comp.lua", .internal = "__lua_exec" },
-    .{ .public = "comp.run", .internal = "__run" },
     .{ .public = "comp.c.emit.file", .internal = "__c_emit_file" },
 
     // ── Compiler / raw C interface (hierarchical @c.*, @comp.c.*, @meta.c.*) ──
@@ -1290,7 +1285,19 @@ pub fn agentMultiplierFor(goal: []const u8) []const u8 {
 test "meta_module: canonical @meta.* builtins" {
     try std.testing.expectEqualStrings("__comptimemap", resolveBuiltin("meta.map").?);
     try std.testing.expectEqualStrings("__derivemap", resolveBuiltin("meta.derive").?);
-    try std.testing.expectEqualStrings("__fieldsmap", resolveBuiltin("meta.fields.map").?);
+    // `__schema`, `__run`, `__pipeline`, `__fieldsmap` were deleted (GAP-234
+    // 1b): each appeared in this table and NOWHERE else — no sema arm, no
+    // codegen arm, no comptime arm — so every one parsed, passed the blanket
+    // `__` admission, and was consumed by nobody. The negatives keep the dead
+    // aliases from drifting back in, per the `meta.register.derive` precedent
+    // below; the parser's compiler-namespace guard (GAP-234 1a) is what makes
+    // these deletions a truthful refusal at the site instead of a silent
+    // reroute into macro expansion.
+    try std.testing.expect(resolveBuiltin("meta.fields.map") == null);
+    try std.testing.expect(resolveBuiltin("comp.fields.map") == null);
+    try std.testing.expect(resolveBuiltin("comp.schema") == null);
+    try std.testing.expect(resolveBuiltin("comp.pipeline") == null);
+    try std.testing.expect(resolveBuiltin("comp.run") == null);
     try std.testing.expectEqualStrings("__register_derive", resolveBuiltin("comp.register.derive").?);
     // `meta.register.derive` was deleted: no `.id` site and no host caller ever
     // named it. The negative keeps the alias from drifting back in.
