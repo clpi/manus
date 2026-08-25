@@ -111,10 +111,16 @@ fn applicationFace(graph: *const semantic_graph.SemanticGraph, entity: semantic_
     }
     if (node.ast_ref) |raw| {
         const expr: *const Expr = @ptrCast(@alignCast(raw));
+        // The chain head, for the reason spelled out on `exprFace`: a curried
+        // `f(a)(b)` is a `.call` whose callee is a `.call`, and answering
+        // `node.name` for it answered null, because an indirect-callee node
+        // carries no name. `exprFace` walks to the head and this defers to it,
+        // so the two projections cannot disagree about one occurrence.
         return switch (expr.*) {
             .call => |c| switch (c.func.*) {
                 .name => |n| n.ident,
                 .field => |f| f.field,
+                .call, .method_call => exprFace(expr) orelse node.name,
                 else => node.name,
             },
             .method_call => |mc| mc.method,
@@ -144,11 +150,26 @@ fn refuseApplication(
     return invalidGraphFacts(diagnostic, site, note);
 }
 
+/// THE HEAD OF AN APPLICATION CHAIN, not just its outermost callee.
+///
+/// A curried application `f(a)(b)` is a `.call` whose `func` is another `.call`,
+/// and the two arms below answer only `.name` and `.field`. Everything else fell
+/// to null, so `to(str)(x)` — the operation-first face `CLAUDE.md` records as
+/// migratable debt, and 17 of the 20 unnamed refusals in `examples/` — refused
+/// with no face at all. Measured: 20 of the 141 `missing-application-id`
+/// refusals bound no relation, and every one of them was this shape.
+///
+/// Walking `func` to the head answers `to`, `greet`, `concat` for those sites.
+/// That is a SPELLING and this returns it only where the graph already declined
+/// — see the note in `applicationFace`, which reserves the syntax face for "the
+/// occurrence the graph could NOT resolve". Bounded by construction: each step
+/// strictly descends one `func` edge of a finite expression.
 fn exprFace(expr: *const Expr) ?[]const u8 {
     return switch (expr.*) {
         .call => |c| switch (c.func.*) {
             .name => |n| n.ident,
             .field => |f| f.field,
+            .call, .method_call => exprFace(c.func),
             else => null,
         },
         .method_call => |mc| mc.method,

@@ -6060,6 +6060,24 @@ fn do_compile(
         const lowered = dnir_lower.lowerModuleWithGraphObserved(alloc, &ps.mod, &graph, &lowering) catch |err| {
             term.err("C99 realizer: graph-to-DNIR refused ({s})", .{@errorName(err)});
             if (lowering.note()) |why| term.hint("refused at: {s}", .{why});
+            // THE SITE, WHICH THE DIRECT ARM HAS PRINTED ALL ALONG.
+            //
+            // `bail()` calls `diagnostic.record(site, null)`, so `note()` is
+            // null and the line above prints NOTHING. There are 86 such call
+            // sites in `src/dnir_lower.zig`, and five subjects in `examples/`
+            // reach them, so a reader got `graph-to-DNIR refused
+            // (UnsupportedConstruct)` and no cause at all — while the SAME
+            // refusal on `--backend=direct` printed `bail site: fn() at
+            // file:line` from `diagnostic.lowering.site` twelve hundred lines
+            // above. The site was recorded and this arm never read it.
+            //
+            // Printed unconditionally rather than only when the note is
+            // missing: a note names the cause and the site names the producer,
+            // and the population that motivated this — one note reached from
+            // three sites, `gaps/GAP-233.md` — is exactly the case where
+            // knowing the cause is not knowing which producer said it.
+            if (lowering.site) |at|
+                term.hint("bail site: {s}() at {s}:{d}", .{ at.fn_name, at.file, at.line });
             // THE REFUSAL ALREADY KNEW WHICH RELATION IT CHOKED ON.
             // `refuseApplication` binds `diagnostic.relation` from
             // `applicationFace` for exactly this purpose, and the arm twenty

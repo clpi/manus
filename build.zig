@@ -874,6 +874,24 @@ pub fn build(b: *std.Build) void {
     posix_step.dependOn(&posix_cmd.step);
     test_step.dependOn(&posix_cmd.step);
 
+    // GAP-145 ordered item 7, and the gate it names as the precedent is the one
+    // directly above. `gate/gap-145-consumer.sh` was reachable only through
+    // `gate/all.sh`, which is on no build step and no hook — so it held the
+    // ONLY executable ceilings on the quote/text/byte observer surface and the
+    // only working control on the tree-sitter operator table, and nothing ran
+    // them. The counts and ceilings themselves live in the gate, which prints
+    // them; restating them here is how they rot.
+    //
+    // A ceiling nothing runs is not a ratchet: host `TokenKind` regressed
+    // measurably while these were unwired, which is precisely the class the
+    // gap opened this item for.
+    const gap145_cmd = b.addSystemCommand(&.{ "sh", "gate/gap-145-consumer.sh" });
+    gap145_cmd.setCwd(b.path("."));
+    gap145_cmd.step.dependOn(b.getInstallStep());
+    const gap145_step = b.step("gap-145-consumer", "no consumer observes the collapsed quote/text/byte identity, and the editor grammar agrees with the token owner (GAP-145 O1/O5/O7)");
+    gap145_step.dependOn(&gap145_cmd.step);
+    test_step.dependOn(&gap145_cmd.step);
+
     const ftcftw_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/ledger/ftcftw.id" });
     ftcftw_cmd.setCwd(b.path("."));
     ftcftw_cmd.step.dependOn(b.getInstallStep());
