@@ -128,14 +128,30 @@ case $_r in
        exit 2 ;;
 esac
 
-# A subject the realizer is known to refuse, so the refusal arm is exercised
-# rather than assumed. `tt(2)` on an aggregate is the shape `law.md` §5 rules
-# and `gate/application.sh` already probes.
-printf 'tt: [4]i64 = {1, 2, 3, 4}\ntt(2)\n' >"$work/refuses.id"
+# A subject the realizer is known to refuse WITH A BOUND FACE, so the refusal
+# arm is exercised rather than assumed. This control's first subject was
+# `tt(2)` on an aggregate — and the §5 sema guard then landed, so that shape
+# refuses at CHECK and never reaches the realizer at all. The control moved to
+# a host relation with no entity (`assert`, GAP-226's family): check accepts
+# it, the realizer refuses it, and the face binds. If THIS control ever stops
+# refusing, the wall it measures has fallen and the gate should be retired
+# with it.
+printf 'main: i64 = ()\n  x = assert(1)\n  x\n' >"$work/refuses.id"
 _f=$(classify "$work/refuses.id")
 case $_f in
     OK*) printf '  control FAIL: the refusal arm never fired\n' >&2; ctl=1 ;;
+    CHECK*) printf '  control FAIL: the known realizer-refusal was refused by check instead\n' >&2; ctl=1 ;;
     *) ;;
+esac
+
+# And the CHECK class is exercised too: `tt(2)` on an aggregate is exactly the
+# `law.md` §5 shape the sema guard refuses, so it must classify as CHECK — not
+# as a realizer refusal, and never as OK.
+printf 'tt: [4]i64 = {1, 2, 3, 4}\ntt(2)\n' >"$work/checkclass.id"
+_c=$(classify "$work/checkclass.id")
+case $_c in
+    CHECK*) ;;
+    *) printf '  control FAIL: the §5 shape did not classify as CHECK (got: %s)\n' "$_c" >&2; ctl=1 ;;
 esac
 
 # The face must survive into the classifier, or the histogram below is empty
@@ -150,7 +166,7 @@ _face_seen=$(printf '%s' "$_f" | cut -f2)
     printf 'realize census: BROKEN — the classifier failed its own controls\n' >&2
     exit 2
 }
-printf '  PASS — a subject that realizes, a subject that refuses, and a bound face\n'
+printf '  PASS — realizes, realizer-refuses with a face, and the §5 shape is CHECK-class\n'
 
 # ============================== §2 CENSUS ===================================
 printf 'realize census: §2 examples/\n'

@@ -4977,6 +4977,32 @@ pub const Sema = struct {
                     );
                     return .any;
                 }
+                // THE MIRROR OF THE GUARD ABOVE, and the one law.md §5 rules in
+                // a single sentence: "`()` is ordinary application. It never
+                // means table indexing." The arm above refuses a CALLABLE
+                // subject wearing BRACES; this refuses a DESCRIPTOR-BOUND
+                // AGGREGATE wearing PARENS. `tt: [4]i64` then `tt(2)` held the
+                // descriptor right here in `ft` and dropped it to `.any` at the
+                // result switch below, so the retired `T(i)` spelling sailed
+                // through check and surfaced two passes later as a
+                // missing-application-id the reader could not attribute
+                // (`gaps/GAP-233.md`). Three producers already rule this face —
+                // `place.zig`'s walk, `gate/delimiter-projection-law.sh`,
+                // `gate/callfold.sh` — and sema was the one that did not.
+                //
+                // Bare non-world names only: a world face (`env(k)`) is a world
+                // projection and not a binding (`gate/application.sh` pins that
+                // difference), and a dotted callee answers `.any` here so there
+                // is no descriptor to rule on. Fail-closed exactly where the
+                // fact is in hand.
+                if (ft == .array and c.func.* == .name and !c.func.name.world) {
+                    self.err(
+                        c.loc,
+                        "'{s}' is an aggregate, and `()` is ordinary application — it never means table indexing (law.md §5); computed aggregate access is the projection `{s}[...]`",
+                        .{ c.func.name.ident, c.func.name.ident },
+                    );
+                    return .any;
+                }
                 if (ft == .func and ft.func.is_compile_only) {
                     self.err(c.loc, "function is marked @comp.compile.only and cannot be called at runtime", .{});
                 }
