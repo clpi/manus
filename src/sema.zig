@@ -13989,6 +13989,256 @@ test "sema: Pass23 colon method assign infers native str signature" {
     try testing.expectEqualStrings("str", fd.func.ret_type.named);
 }
 
+// ── GAP-236 pins — subject declaration faces and partial application ──────
+// The owner ruling of 2026-08-25 (gaps/GAP-236.md) fixes a five-case
+// declaration matrix and twelve saturation laws. These tests pin the
+// MEASURED current behavior of each matrix case at filing time, so any
+// change — repair or regression — is noticed. A test asserting a
+// mis-resolution documents residue, not endorsement; the gap record says
+// which side of the ruling each pin stands on.
+
+test "sema: gap236 case1 — ordinary callable declares, applies, and publishes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdolSema(
+        \\double = (x: i64): i64
+        \\    x * 2
+        \\d = double(21)
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expectEqual(@as(usize, 1), s.applications.count());
+}
+
+test "sema: gap236 case2 — generic relation resolves the subject when the relation is declared" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdolSema(
+        \\mass = (b: i64): i64
+        \\    b * 10
+        \\weight = (body, factor)
+        \\    body:mass() * factor
+        \\w = weight(2, 3)
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: gap236 case2 — undeclared relation on an untyped param fails closed" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdolSema(
+        \\weight = (body, factor)
+        \\    body:mass() * factor
+    , &arena);
+    try testing.expectEqual(@as(u32, 1), s.errors);
+    try testing.expect(std.mem.indexOf(
+        u8,
+        s.diagnostics.items[0].message,
+        "'mass' is neither a descriptor nor a callable",
+    ) != null);
+}
+
+test "sema: gap236 case3 — subject-specialized declaration mints a Lua method, publishes nothing" {
+    // RESIDUE vs the ruling: `body:weight = (factor)` should be relation
+    // `weight` specialized to subject `body`. Today the parser
+    // (try_parse_qualified_func_assign) reads it as a method func_decl with
+    // path {body, weight} and a prepended untyped receiver param, sema files
+    // it under table_methods, and NO callable or application fact is
+    // published — the declaration is semantically inert.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "body:weight = (factor)\n    factor * 2";
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    p.idol_mode = true;
+    var mod = try p.parse_module();
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expectEqual(@as(usize, 2), fd.path.len);
+    try testing.expectEqualStrings("body", fd.path[0]);
+    try testing.expectEqualStrings("weight", fd.path[1]);
+    try testing.expect(fd.method);
+    try testing.expectEqualStrings("self", fd.func.params[0].name);
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expectEqual(@as(usize, 0), s.applications.count());
+    try testing.expect(s.table_methods.get("body") != null);
+}
+
+test "sema: gap236 case3 — declaration/invocation symmetry is broken" {
+    // RESIDUE: after `body:weight = (factor)`, the symmetric invocation
+    // `body:weight(3)` refuses — the declaration face minted no callable.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdolSema(
+        \\body:weight = (factor)
+        \\    factor * 2
+        \\w = body:weight(3)
+    , &arena);
+    try testing.expectEqual(@as(u32, 1), s.errors);
+    try testing.expect(std.mem.indexOf(
+        u8,
+        s.diagnostics.items[0].message,
+        "'weight' is neither a descriptor nor a callable",
+    ) != null);
+}
+
+test "sema: gap236 case4 — subject home compresses and the relation applies" {
+    // SATISFIES the ruling's acceptance shape: a slot declared inside
+    // `body: { … }` keeps relation identity `weight`, the home types the
+    // receiver param, and `b:weight(3)` publishes an application fact.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\body: {
+        \\    weight = (factor)
+        \\        factor * 2
+        \\}
+        \\b: body = {}
+        \\w = b:weight(3)
+    ;
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    p.idol_mode = true;
+    var mod = try p.parse_module();
+    var slot: ?*const ast.FuncDecl = null;
+    for (mod.body.stmts) |*st| {
+        if (st.* == .func_decl and st.func_decl.path.len == 1 and
+            std.mem.eql(u8, st.func_decl.path[0], "weight"))
+        {
+            slot = &st.func_decl;
+        }
+    }
+    try testing.expect(slot != null);
+    try testing.expectEqualStrings("self", slot.?.func.params[0].name);
+    try testing.expectEqualStrings("body", slot.?.func.params[0].typ.named);
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expectEqual(@as(usize, 1), s.applications.count());
+}
+
+test "sema: gap236 case5 — static member declaration is accepted but publishes no entity" {
+    // RESIDUE: `body.weight = (factor)` parses as a func_decl with
+    // path {body, weight}, method=false. Sema defines it in neither scope
+    // nor table_methods, so `body.weight(3)` publishes no application and
+    // blocks only at realization — check stays silent.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\body = { name = "probe" }
+        \\body.weight = (factor)
+        \\    factor * 2
+        \\w = body.weight(3)
+    ;
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    p.idol_mode = true;
+    var mod = try p.parse_module();
+    const fd = mod.body.stmts[1].func_decl;
+    try testing.expectEqual(@as(usize, 2), fd.path.len);
+    try testing.expect(!fd.method);
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expectEqual(@as(usize, 0), s.applications.count());
+    try testing.expect(s.table_methods.get("body") == null);
+}
+
+test "sema: gap236 law9 — operand-first and subject-first faces publish one application shape" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdolSema(
+        \\scale = (n: i64, k: i64): i64
+        \\    n * k
+        \\a = scale(2, 3)
+        \\b = 2:scale(3)
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expectEqual(@as(usize, 2), s.applications.count());
+}
+
+test "sema: gap236 saturation — an undersaturated application is published as complete" {
+    // RESIDUE vs saturation laws (3) and (12): `add(1)` against a two-param
+    // relation neither curries (correct — no positional currying exists)
+    // nor fails closed (wrong — subjectSlotArgs promotes the lone argument
+    // to subject and records the application with its open requirement
+    // silently dropped). `inc` never becomes callable; `inc(2)` blocks only
+    // at realization.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdolSema(
+        \\add = (a: i64, b: i64): i64
+        \\    a + b
+        \\inc = add(1)
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expectEqual(@as(usize, 1), s.applications.count());
+}
+
+test "sema: gap236 level edge — declaration face and subject invocation still hold" {
+    // CLAUDE.md's `to(str) = (value)` / `value:to(str)` faces. The relation
+    // identity today is the flat minted symbol (relation_edge_symbol), not
+    // a projection fact — recorded as residue in gaps/GAP-236.md.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\to(str) = (value)
+        \\    "{value}"
+        \\n: i64 = 17
+        \\s = n:to(str)
+    ;
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    p.idol_mode = true;
+    var mod = try p.parse_module();
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expectEqualStrings("to__str", fd.path[0]);
+    var s = Sema.init(alloc);
+    s.idol_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: gap236 case6 — subject-qualified level declaration refuses at parse" {
+    // Owner ruling addendum (2026-08-25): `body:weight(g) = (…)` is the
+    // canonical spelling of progressive fact saturation — subject face left
+    // of the colon, head pack a projection/saturation level, declaration
+    // face mirroring the invocation face. MEASURED: no spelling of it
+    // parses today. The qualified-assign reader bails when a head pack
+    // intervenes before `=`, the level-edge reader accepts only
+    // unqualified single-segment heads, and what remains refuses at the
+    // `=`. The braced and offside home variants refuse too. Fails closed —
+    // no mis-resolution to pin, only the refusal itself.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "body:weight(g) = (factor)\n    factor * 2";
+    var lex = Lexer.init(src, "test.id");
+    var p = Parser.init(&lex, alloc);
+    p.idol_mode = true;
+    const refused = if (p.parse_module()) |_| false else |_| true;
+    try testing.expect(refused);
+}
+
+test "sema: gap236 level edge — curried operand face after the level group still holds" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runIdolSema(
+        \\read(number) = (lx, b)
+        \\    b
+        \\one: i64 = 1
+        \\r = one:read(number)(2)
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
 test "sema: Pass23 string interpolation infers str return" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();

@@ -44,6 +44,26 @@
 # its own argument; a lane that lowers it to make a census pass is doing the
 # thing the rule above exists to stop.
 #
+# AND IT FELL A THIRD TIME, BY ONE, FOR THE READ HALF (gaps/GAP-229.md). The
+# write column said which relations ADVANCE a module binding and nothing said
+# which relations READ one, so a relation whose answer depends on when it is
+# called — `_at` in `lib/compiler/comptime.id`, reading the cursor `_skip_ws`
+# advances — published `none`. That `none` was not a proof either: the lift
+# now records bare-name reads against the exact module binding they resolve
+# to, and the effect derivation blocks AND grounds a read of a binding SOME
+# relation writes, so `one` names the binding READ as well as the binding
+# written. On `examples`, corpus of this tree:
+#
+#     before     none 1058   one 169   unknown 151
+#     after      none 1057   one 170   unknown 151
+#
+# paid out of a non-proof `none`, with `unknown` untouched. The controls are
+# both directions at once: `_hex_val` and `_is_digit` (closed functions of
+# their operands) keep `none`, and a read of a binding NOTHING writes stays
+# `none` — the write column is the discriminant, and the graph unit test
+# "reading a mutated module binding is an observation; a constant read is
+# not" pins both.
+#
 # The floor still catches a LOSS, and the anti-regression ratchet for the
 # repair itself is not here at all — it is `gate/speculation.sh`, whose
 # "...publishing effect none" row must stay at zero while its severed twin
@@ -121,9 +141,14 @@ subject=examples/demand/tail.id
 # applies something unresolved, and 18 `one` cards over `examples lib` became
 # `unknown`. The direct rows ground first now, and this floor is why that was
 # noticed rather than shipped.
+#
+# `MIN_ONE` rose again with the read half (GAP-229): the positive card now
+# also names the binding a relation READS when some relation writes it, and
+# the floor is pinned at the value the tree measured so a change that dropped
+# the read grounding back into `none` or `unknown` fails here.
 MIN_APPS=${EFFECT_MIN_APPS:-1200}
 MIN_NONE=${EFFECT_MIN_NONE:-1019}
-MIN_ONE=${EFFECT_MIN_ONE:-154}
+MIN_ONE=${EFFECT_MIN_ONE:-170}
 
 command -v jq >/dev/null 2>&1 || { echo "effect: jq not on PATH" >&2; exit 64; }
 [ -x "$idol" ] || { echo "effect: no compiler at $idol (set IDOL=)" >&2; exit 64; }

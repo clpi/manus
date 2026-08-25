@@ -993,6 +993,27 @@ pub const BindingMutation = struct {
     binding: id,
 };
 
+/// One relation reads one exact module-scope binding.
+///
+/// THE READ HALF OF `BindingMutation`, and a separate column for the same
+/// reason the write half is one: the identity of the binding is the fact, and
+/// a boolean on the relation could not carry it. A row here is what the LIFT
+/// saw — this relation's body names this module binding in read position — and
+/// it is raw: whether the read is an OBSERVATION is not decided here, because
+/// that depends on the write column. A read of a binding SOME relation writes
+/// is an observation (its answer depends on when it is called); a read of a
+/// binding nothing writes is a constant lookup and licenses everything a
+/// closed function does. `publishApplicationEffects` is the one derivation
+/// that joins the two columns, so the read rows stay honest raw evidence and
+/// the observation stays derived. gaps/GAP-229.md.
+///
+/// Repeated reads by one relation of one binding are one sparse row, exactly
+/// as repeated writes are.
+pub const BindingObservation = struct {
+    relation: id,
+    binding: id,
+};
+
 /// The value one module binding was initialized from, joined once at semantic
 /// ingress to the exact module place that decides whether that value remains
 /// current.
@@ -1210,6 +1231,10 @@ pub const SemanticGraph = struct {
     origins: std.ArrayListUnmanaged(Origin) = .empty,
     /// Exact module-binding writes, in source lift order.
     binding_mutations: std.ArrayListUnmanaged(BindingMutation) = .empty,
+    /// Exact module-binding reads, in source lift order — the read half of
+    /// `binding_mutations` (gaps/GAP-229.md). Raw reads: whether a read is an
+    /// observation is derived against the write column, never stored here.
+    binding_reads: std.ArrayListUnmanaged(BindingObservation) = .empty,
     callable_linkages: std.ArrayListUnmanaged(CallableLinkage) = .empty,
     callable_linkage_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
     /// Set only by checked lift. A manually assembled/bootstrap graph may have
@@ -1274,6 +1299,7 @@ pub const SemanticGraph = struct {
         self.ranges.deinit(self.alloc);
         self.origins.deinit(self.alloc);
         self.binding_mutations.deinit(self.alloc);
+        self.binding_reads.deinit(self.alloc);
         for (self.callable_linkages.items) |fact| self.alloc.free(fact.symbol);
         self.callable_linkages.deinit(self.alloc);
         self.callable_linkage_rows.deinit(self.alloc);
@@ -3371,6 +3397,29 @@ pub const SemanticGraph = struct {
         return self.binding_mutations.items;
     }
 
+    /// Publish one exact read of a binding owned by this module — the read
+    /// half of `publishBindingMutation`, with the same validation and the same
+    /// sparsity: the binding and relation were resolved by the lexical lift,
+    /// and repeated reads of one binding by one relation are one row.
+    fn publishBindingRead(self: *SemanticGraph, relation: id, binding: id) !void {
+        if (!self.callable(relation)) return error.InvalidBindingObservation;
+        const module = self.module_root orelse return error.InvalidBindingObservation;
+        const node = self.get(binding) orelse return error.InvalidBindingObservation;
+        if (node.kind != .local or node.scope != module) return error.InvalidBindingObservation;
+        for (self.binding_reads.items) |fact| {
+            if (fact.relation == relation and fact.binding == binding) return;
+        }
+        try self.binding_reads.append(self.alloc, .{
+            .relation = relation,
+            .binding = binding,
+        });
+    }
+
+    /// Sparse module-binding read facts in source lift order.
+    pub fn bindingReads(self: *const SemanticGraph) []const BindingObservation {
+        return self.binding_reads.items;
+    }
+
     fn bindingDescriptor(self: *SemanticGraph, typ: ast.TypeExpr) ?types.ResolvedType {
         const descriptor = types.resolve(typ, null, self.alloc) catch return null;
         if (descriptor == .any) return null;
@@ -3424,7 +3473,7 @@ pub const SemanticGraph = struct {
         self: *SemanticGraph,
         file: []const u8,
         scope: id,
-        stmts: []ast.Stmt,
+        block: *const ast.Block,
     ) !void {
         // THE SHADOW ROSTER, GROWN IN SOURCE ORDER AND TRUNCATED AT EVERY BLOCK
         // BOUNDARY. A bare-name assignment is a write to the module binding it
@@ -3450,8 +3499,8 @@ pub const SemanticGraph = struct {
         // lives, and it lives only for as long as this walk needs it.
         var declared: std.ArrayListUnmanaged([]const u8) = .empty;
         defer declared.deinit(self.alloc);
-        try self.liftBindingsAtScope(file, scope, stmts, &declared);
-        try self.liftBindingsInCallables(file, scope, stmts);
+        try self.liftBindingsAtScope(file, scope, block, &declared);
+        try self.liftBindingsInCallables(file, scope, block.stmts);
     }
 
     /// Enter a nested lexical block: everything it declares is visible inside
@@ -3460,12 +3509,12 @@ pub const SemanticGraph = struct {
         self: *SemanticGraph,
         file: []const u8,
         scope: id,
-        stmts: []ast.Stmt,
+        block: *const ast.Block,
         declared: *std.ArrayListUnmanaged([]const u8),
     ) anyerror!void {
         const mark = declared.items.len;
         defer declared.shrinkRetainingCapacity(mark);
-        try self.liftBindingsAtScope(file, scope, stmts, declared);
+        try self.liftBindingsAtScope(file, scope, block, declared);
     }
 
     fn noteName(
@@ -3475,6 +3524,50 @@ pub const SemanticGraph = struct {
     ) !void {
         for (out.items) |existing| if (std.mem.eql(u8, existing, name)) return;
         try out.append(alloc, name);
+    }
+
+    /// THE MODULE BINDING A BARE NAME DESIGNATES AT THIS POINT OF THE WALK, or
+    /// null when the name designates something else — a lexical shadow, a
+    /// parameter, an enclosing relation's binding, or nothing at all. ONE
+    /// resolution for both halves of the module-binding column: the write half
+    /// (`noteModuleWrite`) and the read half (`noteModuleRead`) must adjudicate
+    /// shadows identically or the two columns describe two different programs.
+    fn moduleBindingNamed(
+        self: *SemanticGraph,
+        scope: id,
+        declared: []const []const u8,
+        name: []const u8,
+    ) ?id {
+        const root = self.module_root orelse return null;
+        // The module's own body binds; it does not write somebody else's word.
+        if (scope == root) return null;
+        // A GENUINE SHADOW STAYS DISTINCT. This is the control acceptance §3
+        // asks for: a body that declares `_pos` where this occurrence can see
+        // the declaration owns its own `_pos`, and the module's is a different
+        // entity that this occurrence does not touch.
+        for (declared) |existing| if (std.mem.eql(u8, existing, name)) return null;
+        // A parameter of the same spelling IS that binding. Only `.param`,
+        // because a `.local` child of this scope may have been minted by a
+        // declaration in a SIBLING block that this occurrence cannot see —
+        // block extent is the roster's, and the graph has no block entities.
+        for (self.nested.of(scope)) |child| {
+            const node = self.get(child) orelse continue;
+            if (node.kind != .param) continue;
+            const child_name = node.name orelse continue;
+            if (std.mem.eql(u8, child_name, name)) return null;
+        }
+        // RESOLVE THROUGH THE ENCLOSING CHAIN, NOT STRAIGHT TO THE MODULE. For
+        // a relation nested inside another, a same-named local or parameter of
+        // the ENCLOSING relation is the binding the occurrence names, and the
+        // graph records reaching it as a `.capture` edge. Jumping to the root
+        // would publish a module fact about a word the program never touches.
+        // Sweep one finishes the enclosing scope before sweep two descends, so
+        // by here every binding above this relation exists.
+        const outer = (self.get(scope) orelse return null).scope orelse return null;
+        const binding = self.resolveBindingInScope(outer, name) orelse return null;
+        const binding_node = self.get(binding) orelse return null;
+        if (binding_node.scope != root) return null;
+        return binding;
     }
 
     /// TRUE WHEN THIS BARE-NAME ASSIGNMENT IS A WRITE TO A MODULE BINDING, and
@@ -3490,38 +3583,102 @@ pub const SemanticGraph = struct {
         declared: []const []const u8,
         name: []const u8,
     ) !bool {
-        const root = self.module_root orelse return false;
-        // The module's own body binds; it does not write somebody else's word.
-        if (scope == root) return false;
-        // A GENUINE SHADOW STAYS DISTINCT. This is the control acceptance §3
-        // asks for: a body that declares `_pos` where this assignment can see
-        // the declaration owns its own `_pos`, and the module's is a different
-        // entity that this assignment does not touch.
-        for (declared) |existing| if (std.mem.eql(u8, existing, name)) return false;
-        // A parameter of the same spelling IS that binding. Only `.param`,
-        // because a `.local` child of this scope may have been minted by a
-        // declaration in a SIBLING block that this assignment cannot see —
-        // block extent is the roster's, and the graph has no block entities.
-        for (self.nested.of(scope)) |child| {
-            const node = self.get(child) orelse continue;
-            if (node.kind != .param) continue;
-            const child_name = node.name orelse continue;
-            if (std.mem.eql(u8, child_name, name)) return false;
-        }
-        // RESOLVE THROUGH THE ENCLOSING CHAIN, NOT STRAIGHT TO THE MODULE. For
-        // a relation nested inside another, a same-named local or parameter of
-        // the ENCLOSING relation is the binding the assignment names, and the
-        // graph records reaching it as a `.capture` edge. Jumping to the root
-        // would publish a module write about a word the program never touches.
-        // Sweep one finishes the enclosing scope before sweep two descends, so
-        // by here every binding above this relation exists.
-        const outer = (self.get(scope) orelse return false).scope orelse return false;
-        const binding = self.resolveBindingInScope(outer, name) orelse return false;
-        const binding_node = self.get(binding) orelse return false;
-        if (binding_node.scope != root) return false;
+        const binding = self.moduleBindingNamed(scope, declared, name) orelse return false;
         const relation = self.enclosingCallable(scope) orelse return false;
         try self.publishBindingMutation(relation, binding);
         return true;
+    }
+
+    /// A BARE NAME IN READ POSITION, recorded against the module binding it
+    /// resolves to — the read half GAP-229 names. Nothing is recorded where
+    /// the name designates a shadow, a parameter, an enclosing relation's
+    /// binding, or no binding at all; the adjudication is `moduleBindingNamed`,
+    /// shared with the write half.
+    fn noteModuleRead(
+        self: *SemanticGraph,
+        scope: id,
+        declared: []const []const u8,
+        name: []const u8,
+    ) !void {
+        const binding = self.moduleBindingNamed(scope, declared, name) orelse return;
+        const relation = self.enclosingCallable(scope) orelse return;
+        try self.publishBindingRead(relation, binding);
+    }
+
+    /// EVERY BARE NAME AN EXPRESSION READS, against the roster as it stands.
+    ///
+    /// The walk mirrors `place.reachExpr` member for member so a new AST face
+    /// breaks the build here too instead of silently joining the unmodelled
+    /// set. The unmodelled arms are the same ones the write walk does not
+    /// descend into (`liftBindingsAtScope` has no `.match_stmt` arm, and a
+    /// nested `func_expr` body is sweep two's): a read inside one publishes no
+    /// row, which under-blocks — the same missing-fact class this walker
+    /// exists to shrink, bounded, and recorded in gaps/GAP-229.md rather than
+    /// guessed at.
+    fn noteExprReads(
+        self: *SemanticGraph,
+        scope: id,
+        declared: []const []const u8,
+        expr: *const ast.Expr,
+    ) anyerror!void {
+        switch (expr.*) {
+            // `@x` reads the CURRENT WORLD and never the lexical scope — the
+            // `world` flag's whole meaning — so it is not a binding read.
+            .name => |n| if (!n.world) try self.noteModuleRead(scope, declared, n.ident),
+            .index => |ix| {
+                try self.noteExprReads(scope, declared, ix.obj);
+                try self.noteExprReads(scope, declared, ix.key);
+            },
+            .field => |f| try self.noteExprReads(scope, declared, f.obj),
+            // The callee position is walked too: a `.name` there that resolves
+            // to a module-scope LOCAL is a call through a binding, which reads
+            // it. One that names a relation resolves to no `.local`/`.param`
+            // and `moduleBindingNamed` declines it.
+            .call => |c| {
+                try self.noteExprReads(scope, declared, c.func);
+                for (c.args) |a| try self.noteExprReads(scope, declared, a);
+            },
+            .method_call => |m| {
+                try self.noteExprReads(scope, declared, m.obj);
+                for (m.args) |a| try self.noteExprReads(scope, declared, a);
+            },
+            .binop => |b| {
+                try self.noteExprReads(scope, declared, b.lhs);
+                try self.noteExprReads(scope, declared, b.rhs);
+            },
+            .unop => |u| try self.noteExprReads(scope, declared, u.operand),
+            .try_expr => |v| try self.noteExprReads(scope, declared, v.operand),
+            .unwrap_expr => |v| try self.noteExprReads(scope, declared, v.operand),
+            .await_expr => |v| try self.noteExprReads(scope, declared, v.operand),
+            .contains_expr => |v| {
+                try self.noteExprReads(scope, declared, v.lhs);
+                try self.noteExprReads(scope, declared, v.rhs);
+            },
+            .range => |r| {
+                try self.noteExprReads(scope, declared, r.start);
+                try self.noteExprReads(scope, declared, r.end);
+                if (r.step) |st| try self.noteExprReads(scope, declared, st);
+            },
+            .sequence => |sq| for (sq.exprs) |v| try self.noteExprReads(scope, declared, v),
+            .if_expr => |i| {
+                try self.noteExprReads(scope, declared, i.cond);
+                try self.noteExprReads(scope, declared, i.then_expr);
+                try self.noteExprReads(scope, declared, i.else_expr);
+            },
+            .table => |t| for (t.fields) |field| switch (field) {
+                .indexed => |v| {
+                    try self.noteExprReads(scope, declared, v.key);
+                    try self.noteExprReads(scope, declared, v.val);
+                },
+                .named => |v| try self.noteExprReads(scope, declared, v.val),
+                .positional => |v| try self.noteExprReads(scope, declared, v),
+                .spread => |v| try self.noteExprReads(scope, declared, v),
+                .semantic => |v| try self.noteExprReads(scope, declared, v.val),
+            },
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => {},
+            // NOT MODELLED — bounded exactly as the write walk is.
+            .func_expr, .list_comp, .match_expr, .quote, .unquote, .macro_call, .semantic, .semantic_scope => {},
+        }
     }
 
     /// Sweep two: the callables declared under `stmts`, whatever block they sit
@@ -3537,7 +3694,7 @@ pub const SemanticGraph = struct {
             switch (stmt.*) {
                 .func_decl => |*fd| {
                     if (self.findFuncDecl(fd)) |nested_id| {
-                        try self.liftBindingsInStmts(file, nested_id, fd.func.body.stmts);
+                        try self.liftBindingsInStmts(file, nested_id, &fd.func.body);
                     }
                 },
                 .do_block => |*d| try self.liftBindingsInCallables(file, scope, d.body.stmts),
@@ -3560,16 +3717,25 @@ pub const SemanticGraph = struct {
         }
     }
 
+    /// Sweep one over one lexical block: every name it binds, every module
+    /// binding it writes (GAP-225), and every module binding it READS
+    /// (GAP-229). Reads are walked against the roster AS IT STANDS at each
+    /// statement — an initializer is read before the name it initializes is
+    /// declared, a loop bound before the loop variable binds — so the shadow
+    /// adjudication is the same lexical one the write half uses.
     fn liftBindingsAtScope(
         self: *SemanticGraph,
         file: []const u8,
         scope: id,
-        stmts: []ast.Stmt,
+        block: *const ast.Block,
         declared: *std.ArrayListUnmanaged([]const u8),
     ) anyerror!void {
-        for (stmts) |*stmt| {
+        for (block.stmts) |*stmt| {
             switch (stmt.*) {
                 .local_decl => |*ld| {
+                    // The declared name is not in scope in its own initializer,
+                    // so the reads are walked before the roster grows.
+                    for (ld.inits) |initializer| try self.noteExprReads(scope, declared.items, initializer);
                     for (ld.names) |*lname| {
                         try self.liftTableShapeFromTypeExpr(
                             file,
@@ -3592,6 +3758,7 @@ pub const SemanticGraph = struct {
                     }
                 },
                 .const_decl => |*cd| {
+                    try self.noteExprReads(scope, declared.items, cd.val);
                     try noteName(self.alloc, declared, cd.ident);
                     try self.noteLocalBinding(
                         file,
@@ -3603,6 +3770,7 @@ pub const SemanticGraph = struct {
                     );
                 },
                 .global_decl => |*gd| {
+                    for (gd.inits) |initializer| try self.noteExprReads(scope, declared.items, initializer);
                     for (gd.names) |*lname| {
                         // `global x = …` INSIDE a relation writes the module's
                         // word — `place.zig` records the same reading in
@@ -3620,8 +3788,14 @@ pub const SemanticGraph = struct {
                     }
                 },
                 .assign => |*asg| {
+                    for (asg.values) |value| try self.noteExprReads(scope, declared.items, value);
                     for (asg.targets) |target| {
-                        if (target.* != .name) continue;
+                        if (target.* != .name) {
+                            // `t[k] = v` and `t.f = v` READ `t` (and `k`) to
+                            // locate the place they write.
+                            try self.noteExprReads(scope, declared.items, target);
+                            continue;
+                        }
                         // THE SHADOW ENTITY DIES HERE. A bare-name assignment
                         // whose name the module binds and this body does not is
                         // a WRITE to that binding; minting a same-spelled local
@@ -3631,38 +3805,64 @@ pub const SemanticGraph = struct {
                         try self.noteLocalBinding(file, scope, target.name.ident, target.loc(), null, null);
                     }
                 },
-                .do_block => |*d| try self.liftBindingsInBlock(file, scope, d.body.stmts, declared),
-                .while_loop => |*w| try self.liftBindingsInBlock(file, scope, w.body.stmts, declared),
-                .repeat_loop => |*r| try self.liftBindingsInBlock(file, scope, r.body.stmts, declared),
+                .call_stmt => |*c| try self.noteExprReads(scope, declared.items, c.expr),
+                .expr_stmt => |*e| try self.noteExprReads(scope, declared.items, e.expr),
+                .ret => |*r| for (r.vals) |v| try self.noteExprReads(scope, declared.items, v),
+                .do_block => |*d| try self.liftBindingsInBlock(file, scope, &d.body, declared),
+                .while_loop => |*w| {
+                    try self.noteExprReads(scope, declared.items, w.cond);
+                    try self.liftBindingsInBlock(file, scope, &w.body, declared);
+                },
+                .repeat_loop => |*r| {
+                    // The `until` condition can see the body's declarations, so
+                    // the roster extent covers both.
+                    const mark = declared.items.len;
+                    defer declared.shrinkRetainingCapacity(mark);
+                    try self.liftBindingsAtScope(file, scope, &r.body, declared);
+                    try self.noteExprReads(scope, declared.items, r.cond);
+                },
                 .if_stmt => |*i| {
-                    try self.liftBindingsInBlock(file, scope, i.then.stmts, declared);
-                    for (i.elseifs) |*ei| try self.liftBindingsInBlock(file, scope, ei.body.stmts, declared);
-                    if (i.else_body) |*eb| try self.liftBindingsInBlock(file, scope, eb.stmts, declared);
+                    if (i.binding) |binding| try self.noteExprReads(scope, declared.items, binding.expr);
+                    try self.noteExprReads(scope, declared.items, i.cond);
+                    try self.liftBindingsInBlock(file, scope, &i.then, declared);
+                    for (i.elseifs) |*ei| {
+                        try self.noteExprReads(scope, declared.items, ei.cond);
+                        try self.liftBindingsInBlock(file, scope, &ei.body, declared);
+                    }
+                    if (i.else_body) |*eb| try self.liftBindingsInBlock(file, scope, eb, declared);
                 },
                 .num_for => |*nf| {
                     const mark = declared.items.len;
                     defer declared.shrinkRetainingCapacity(mark);
+                    // The bounds are read before the loop variable binds.
+                    try self.noteExprReads(scope, declared.items, nf.start);
+                    try self.noteExprReads(scope, declared.items, nf.stop);
+                    if (nf.step) |st| try self.noteExprReads(scope, declared.items, st);
                     try noteName(self.alloc, declared, nf.var_name);
                     try self.noteLocalBinding(file, scope, nf.var_name, nf.loc, null, null);
-                    try self.liftBindingsAtScope(file, scope, nf.body.stmts, declared);
+                    try self.liftBindingsAtScope(file, scope, &nf.body, declared);
                 },
                 .gen_for => |*g| {
                     const mark = declared.items.len;
                     defer declared.shrinkRetainingCapacity(mark);
+                    for (g.iters) |iter| try self.noteExprReads(scope, declared.items, iter);
                     for (g.vars) |v| try noteName(self.alloc, declared, v);
                     for (g.vars) |v| try self.noteLocalBinding(file, scope, v, g.loc, null, null);
-                    try self.liftBindingsAtScope(file, scope, g.body.stmts, declared);
+                    try self.liftBindingsAtScope(file, scope, &g.body, declared);
                 },
                 // `.func_decl` IS SWEEP TWO'S. Descending here is exactly the
                 // order dependence `liftBindingsInStmts` split the walk to end.
                 .try_stmt => |*t| {
-                    try self.liftBindingsInBlock(file, scope, t.body.stmts, declared);
-                    for (t.catches) |*cc| try self.liftBindingsInBlock(file, scope, cc.body.stmts, declared);
+                    try self.liftBindingsInBlock(file, scope, &t.body, declared);
+                    for (t.catches) |*cc| try self.liftBindingsInBlock(file, scope, &cc.body, declared);
                 },
-                .defer_stmt => |*d| try self.liftBindingsInBlock(file, scope, d.body.stmts, declared),
+                .defer_stmt => |*d| try self.liftBindingsInBlock(file, scope, &d.body, declared),
                 else => {},
             }
         }
+        // The block's RESULT is a read like any other, and `_at`'s whole
+        // observation sits in exactly this position (gaps/GAP-229.md).
+        if (block.tail_expr) |tail| try self.noteExprReads(scope, declared.items, tail);
     }
 
     /// §18's census, lifted ONCE. Idempotent: a second call is a no-op, so a
@@ -4306,7 +4506,7 @@ pub const SemanticGraph = struct {
         // Module bindings used to be absent while function locals were present,
         // so an application value could carry an exact descriptor yet lose the
         // binding it read solely because that binding lived one scope higher.
-        try self.liftBindingsInStmts(file, mod_id, mod.body.stmts);
+        try self.liftBindingsInStmts(file, mod_id, &mod.body);
         try self.liftPlaces(mod);
         try self.liftBodies(mod);
         // AFTER the bindings, because a range is keyed by binding entity and
@@ -7002,6 +7202,34 @@ pub const SemanticGraph = struct {
             groundRow(&rows.items[target], write.binding);
         };
 
+        // THE READ HALF, AND IT IS A JOIN, NOT A COLUMN OF ITS OWN JUDGMENT.
+        // A read of a module binding is an observation exactly when SOME
+        // relation writes that binding — `_at` reads the cursor `_skip_ws`
+        // advances, so its answer depends on when it is called, and `effect:
+        // none` about it licensed CSE, hoisting and whole-relation folding of
+        // a value that moves (gaps/GAP-229.md). A read of a binding NOTHING
+        // writes is the other case exactly: the initializer is the value
+        // everywhere, the relation is a closed function of its operands, and
+        // blocking it would trade the fact for a flinch. The write column is
+        // the discriminant, so the raw read rows stay published unfiltered and
+        // the observation is derived here — the same producer that already
+        // derives the write consequence, `law.fact.producer.one`.
+        //
+        // UNDER THE SAME SEVER, NECESSARILY. The observation is derived FROM
+        // the write column; a sever that emptied the write consequence but
+        // left this join standing would remove half the fact and let
+        // `gate/speculation.sh` attribute the surviving refusals to a column
+        // it had just severed.
+        if (!mutation_severed) for (self.binding_reads.items) |read| {
+            const written = for (self.binding_mutations.items) |write| {
+                if (write.binding == read.binding) break true;
+            } else false;
+            if (!written) continue;
+            const target = row_of.get(read.relation) orelse continue;
+            rows.items[target].blocked = true;
+            groundRow(&rows.items[target], read.binding);
+        };
+
         // THEN THE CLOSURE, which adds what a direct row cannot say: a relation
         // that writes nothing itself but APPLIES one that does is grounded at
         // the binding it reaches, and one whose callees this pass could not
@@ -7946,6 +8174,20 @@ pub const SemanticGraph = struct {
             try appendJsonInt(buf, alloc, write.binding);
             try buf.append(alloc, '}');
         }
+        // THE READ HALF, RAW. A row says a relation's body names a module
+        // binding in read position; whether that read is an observation is a
+        // JOIN against `mutations`, and the projection carries both columns so
+        // a reader derives it the same way `publishApplicationEffects` does
+        // instead of trusting a judgment this array cannot defend.
+        try buf.appendSlice(alloc, "],\"reads\":[");
+        for (self.binding_reads.items, 0..) |read, i| {
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"relation\":");
+            try appendJsonInt(buf, alloc, read.relation);
+            try buf.appendSlice(alloc, ",\"binding\":");
+            try appendJsonInt(buf, alloc, read.binding);
+            try buf.append(alloc, '}');
+        }
         try buf.append(alloc, ']');
     }
 
@@ -8158,7 +8400,14 @@ pub const SemanticGraph = struct {
         // follow its callees", and those license opposite decisions. The
         // closure column carries the cardinality explicitly, keyed by the
         // application, so `unknown != absent != none`. gaps/GAP-225.md.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":14,\"file\":\"");
+        //
+        // version 15: `reads`. Version 14 carried the write half of the
+        // module-binding column and nothing about reads, so a relation whose
+        // answer depends on when it is called (`_at` reading the cursor
+        // `_skip_ws` advances) projected `effect: none` and a reader had no
+        // way to derive the observation. The read rows are raw; the
+        // observation is the join against `mutations`. gaps/GAP-229.md.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":15,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         switch (self.root_source_law_edition) {
@@ -9120,7 +9369,7 @@ test "semantic_graph: checked callable linkage is one id keyed fact" {
     try graph.writeJson(alloc, "linkage.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 14), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 15), parsed.value.object.get("version").?.integer);
     const exported = parsed.value.object.get("callable_linkages").?.array.items;
     try std.testing.expectEqual(@as(usize, 4), exported.len);
     try std.testing.expectEqual(@as(i64, external), exported[3].object.get("callable").?.integer);
@@ -9208,7 +9457,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 14), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 15), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
     try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
@@ -9717,7 +9966,7 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Color\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Red\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"storage_class\"") == null);
-    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":14") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":15") != null);
     try std.testing.expectEqualStrings(
         "unknown",
         parsed.value.object.get("root_source_law").?.object.get("card").?.string,
@@ -10643,7 +10892,7 @@ test "semantic_graph: module mutation keeps binding identity and local shadow" {
     var json: std.ArrayListUnmanaged(u8) = .empty;
     defer json.deinit(alloc);
     try graph.writeJson(alloc, "module-mutation.id", &json, null);
-    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"version\":14") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"version\":15") != null);
     try std.testing.expect(std.mem.indexOf(u8, json.items, "\"mutations\":[{") != null);
 
     // THE CARDINALITY, AND THE THREE STATES THAT MUST NOT COLLAPSE. The
@@ -10654,6 +10903,93 @@ test "semantic_graph: module mutation keeps binding identity and local shadow" {
     try std.testing.expectEqual(MutationCard{ .one = module_binding }, graph.mutation(calls[0]));
     try std.testing.expectEqual(MutationCard.none, graph.mutation(shadow_calls[0]));
     try std.testing.expect(std.mem.indexOf(u8, json.items, "\"mutation_closure\":[{") != null);
+}
+
+test "semantic_graph: reading a mutated module binding is an observation; a constant read is not" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // GAP-229's shape in miniature. `bump` WRITES `cursor`; `peek` only READS
+    // it, so its answer depends on when it is called — the observation. `fixed`
+    // is written by NOTHING, so `still` reading it is a closed function and the
+    // control in the other direction: a change that blocks both has stopped
+    // distinguishing a constant lookup from a cursor read.
+    const source =
+        \\global cursor: i64 = 0
+        \\global fixed: i64 = 41
+        \\bump: i64 = ()
+        \\    cursor = cursor + 1
+        \\    cursor
+        \\peek: i64 = ()
+        \\    cursor
+        \\still: i64 = ()
+        \\    fixed
+        \\entry: i64 = ()
+        \\    peek()
+        \\stillentry: i64 = ()
+        \\    still()
+    ;
+    var lexer = Lexer.init(source, "module-read.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const home = try graph.liftModuleWithCheckedCalls(&module, &checked, "module-read.id");
+
+    const cursor_binding = graph.resolveInHome(home, "cursor", .local) orelse
+        return error.TestExpectedEqual;
+    const fixed_binding = graph.resolveInHome(home, "fixed", .local) orelse
+        return error.TestExpectedEqual;
+    const peek = graph.resolveInHome(home, "peek", .func) orelse
+        return error.TestExpectedEqual;
+    const still = graph.resolveInHome(home, "still", .func) orelse
+        return error.TestExpectedEqual;
+    const entry = graph.resolveInHome(home, "entry", .func) orelse
+        return error.TestExpectedEqual;
+    const still_entry = graph.resolveInHome(home, "stillentry", .func) orelse
+        return error.TestExpectedEqual;
+
+    // THE RAW ROWS ARE UNFILTERED: both reads exist as lift facts, and the
+    // discriminant (does anything write the binding) is applied only at the
+    // derivation. `bump`'s own read of `cursor` (the right side of its
+    // assignment) is a row too, and one row — repeated reads stay sparse.
+    var peek_reads_cursor = false;
+    var still_reads_fixed = false;
+    var read_rows_of_peek: usize = 0;
+    for (graph.bindingReads()) |read| {
+        if (read.relation == peek) read_rows_of_peek += 1;
+        if (read.relation == peek and read.binding == cursor_binding) peek_reads_cursor = true;
+        if (read.relation == still and read.binding == fixed_binding) still_reads_fixed = true;
+    }
+    try std.testing.expect(peek_reads_cursor);
+    try std.testing.expect(still_reads_fixed);
+    try std.testing.expectEqual(@as(usize, 1), read_rows_of_peek);
+
+    // THE OBSERVATION: `peek` writes nothing (mutation card `none`), and still
+    // its application is not effect-free — the effect grounds at the exact
+    // binding READ. `still` reads only a binding nothing writes and stays
+    // `none`; moving it too would be the collapse the control exists to catch.
+    const calls = graph.applicationsIn(entry);
+    try std.testing.expectEqual(@as(usize, 1), calls.len);
+    try std.testing.expectEqual(Card{ .one = cursor_binding }, graph.applicationEffect(calls[0]));
+    try std.testing.expectEqual(MutationCard.none, graph.mutation(calls[0]));
+    const still_calls = graph.applicationsIn(still_entry);
+    try std.testing.expectEqual(@as(usize, 1), still_calls.len);
+    try std.testing.expectEqual(Card.none, graph.applicationEffect(still_calls[0]));
+    try std.testing.expectEqual(MutationCard.none, graph.mutation(still_calls[0]));
+
+    // The projection carries the raw read rows beside the write rows.
+    var json: std.ArrayListUnmanaged(u8) = .empty;
+    defer json.deinit(alloc);
+    try graph.writeJson(alloc, "module-read.id", &json, null);
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"reads\":[{") != null);
 }
 
 test "semantic_graph: one module binding owns checked value origin and survives shadowing" {

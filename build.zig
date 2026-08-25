@@ -372,6 +372,18 @@ pub fn build(b: *std.Build) void {
     const wasm_global_step = b.step("wasm-global", "DNIR global initialization agrees under direct and Wasm realization");
     wasm_global_step.dependOn(&wasm_global_cmd.step);
 
+    // GAP-235: a Lua `local function` is the same graph-owned callable its
+    // `.id` spelling is. The graphs were identical while the realizations
+    // disagreed, so the pinned observation is executed stdout under Wasmtime,
+    // compared byte-for-byte between the two ingests — plus the
+    // refuse-by-name negative control for a genuinely unknown call target.
+    const wasm_local_cmd = b.addSystemCommand(&.{ "sh", "gate/wasm/local.sh" });
+    wasm_local_cmd.setCwd(b.path("."));
+    wasm_local_cmd.setEnvironmentVariable("IDOL_BIN", "./zig-out/bin/idol");
+    wasm_local_cmd.step.dependOn(b.getInstallStep());
+    const wasm_local_step = b.step("wasm-local", "Lua local-function ingest agrees with its .id spelling under the Wasm realization");
+    wasm_local_step.dependOn(&wasm_local_cmd.step);
+
     // C0 law.corpus.zero is the Idol owner; this is an authority-free physical
     // Git-status projection. The same shim guards commits and serialized
     // admission so empty, binary, renamed, case-varied, and untracked .id

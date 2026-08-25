@@ -36,6 +36,11 @@ pub const View = struct {
         return grammar_roles.canStartPattern(k);
     }
 
+    pub fn canStartBody(self: View, index: usize) bool {
+        const k = self.kind(index) orelse return false;
+        return grammar_roles.canStartBody(k);
+    }
+
     pub fn role(self: View, index: usize) ?grammar_roles.RoleRow {
         const k = self.kind(index) orelse return null;
         return grammar_roles.lookup(k);
@@ -98,6 +103,26 @@ test "token view: pattern start is a generated role" {
     try std.testing.expect(grammar_roles.canStartPattern(.name));
     try std.testing.expect(grammar_roles.canStartPattern(.lbrace));
     try std.testing.expect(!grammar_roles.canStartPattern(.kw_if));
+}
+
+test "token view: body start answers by ordinal and fails closed past the pack" {
+    // The header recognizer's same-line/next-line body decision consumes this
+    // observation (src/parser.zig headerSignal); the parser no longer selects
+    // a host TokenKind for it. The role is the owner's `body_start` fact.
+    const src = "return 1";
+    var lex = lexer.Lexer.init(src, "probe.id");
+    var toks: [4]lexer.Token = undefined;
+    var i: usize = 0;
+    while (i < toks.len) : (i += 1) {
+        toks[i] = try lex.next();
+        if (toks[i].kind == .eof) break;
+    }
+    const view = fromTokens(toks[0..i]);
+    try std.testing.expectEqual(.kw_return, view.kind(0));
+    try std.testing.expect(view.canStartBody(0));
+    try std.testing.expect(view.canStartBody(1)); // int_lit is a literal body start
+    // Absence of a producer token is not permission to reconstruct the role.
+    try std.testing.expect(!view.canStartBody(99));
 }
 
 test "token view: fromDispatch takes family not suffix" {

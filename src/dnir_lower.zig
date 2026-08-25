@@ -3313,15 +3313,25 @@ fn declarationIsForeignBoundary(
 }
 
 fn shouldIncludeFuncDecl(fd: *const ast.FuncDecl, graph: *const semantic_graph.SemanticGraph) bool {
-    if (fd.is_local) return false;
     if (declarationLinkage(graph, fd)) |linkage| {
+        // The graph published this callable's linkage, so the graph owns the
+        // definer set. `is_local` is a source scoping face — Lua's
+        // `local function` — and scope is already a graph fact; letting the
+        // spelling remove the definer here left every call site holding an
+        // internal symbol no function defines (GAP-238: hello.lua refused
+        // `call_direct/call-target-unknown` on wasm32-wasi while the same
+        // program spelled in .id compiled).
         if (linkage.exposure == .c_import) return false;
     } else if (graph.requiresCallableLinkage()) {
         // The entity-linkage preflight refuses the missing row before this
         // predicate is consumed. Do not let the source attribute decide that a
         // damaged checked declaration should disappear from the denominator.
         return true;
-    } else if (funcFfiName(fd.attributes) != null) return false;
+    } else {
+        // No graph-owned linkage: the legacy source-face reading remains.
+        if (fd.is_local) return false;
+        if (funcFfiName(fd.attributes) != null) return false;
+    }
     if (fd.path.len == 1 and !fd.method) return true;
     if (fd.method and fd.path.len >= 2) return true;
     // §3 — math.add = (a, b) … static module members (dot, not colon).
@@ -6611,10 +6621,72 @@ fn emitUnrolledWhilePrologue(ctx: *LowerCtx, ws: anytype) Error!void {
     if (guard_idx) |g| ctx.instrs.items[g].branch_target = exit_idx;
 }
 
+/// What one name mapped to before a nested block declared it — the fact that
+/// lets the block's exit restore the enclosing binding instead of leaking the
+/// shadow's slot (gap[228]).
+const BlockDeclaration = struct { name: []const u8, prior: ?u32 };
+
+/// The names this block DECLARES at its own statement level, each with the
+/// mapping it is about to shadow. Only `.local_decl` rows: a declaration is a
+/// new binding scoped to the block, which is exactly the adjudication the
+/// lift's roster performs (`liftBindingsInBlock` shrinks its `declared` roster
+/// at block exit). A bare assignment is not recorded because it is not a new
+/// binding — it targets whatever binding is visible, and diverting it would be
+/// the opposite defect (`bodyDeclaresBinding` documents the measured pair).
+fn noteBlockDeclarations(
+    ctx: *LowerCtx,
+    block: *const ast.Block,
+    out: *std.ArrayListUnmanaged(BlockDeclaration),
+) Error!void {
+    for (block.stmts) |*stmt| {
+        if (stmt.* != .local_decl) continue;
+        for (stmt.local_decl.names) |n| {
+            var recorded = false;
+            for (out.items) |row| {
+                if (std.mem.eql(u8, row.name, n.ident)) {
+                    recorded = true;
+                    break;
+                }
+            }
+            if (recorded) continue;
+            try out.append(ctx.alloc, .{ .name = n.ident, .prior = ctx.locals.get(n.ident) });
+        }
+    }
+}
+
+/// gap[228], the extent half. `ctx.locals` is the lowering's binding
+/// environment, and it is keyed by SPELLING with no block extent — so a
+/// declaration inside a nested block used to stay in the map after the block
+/// closed, and a later write or read of the same spelling was answered from
+/// the shadow's slot while the graph's `mutations` column named the module
+/// binding. Measured before this restore existed: `deep()` writing `ring = 2`
+/// BELOW a closed `if` block that declared its own `ring` left the module word
+/// untouched and the program answered 0 where the answer is 2, with
+/// `binding_mutations` correctly naming the module binding the whole time.
+///
+/// The restore consumes the same fact the lift consumes: a declaration's
+/// extent IS its block. A name whose `prior` slot exists points back at the
+/// enclosing binding's slot; a name with no prior mapping is removed so the
+/// next mention falls through to the storage the graph adjudicated
+/// (`ModuleGlobals` for a module binding, a refusal for a name nothing binds).
+fn restoreBlockDeclarations(ctx: *LowerCtx, rows: []const BlockDeclaration) void {
+    for (rows) |row| {
+        if (row.prior) |slot| {
+            if (ctx.locals.getPtr(row.name)) |held| held.* = slot;
+            continue;
+        }
+        if (ctx.locals.fetchRemove(row.name)) |entry| ctx.alloc.free(entry.key);
+    }
+}
+
 fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool) Error!bool {
     const saved_answering = ctx.block_answering;
     ctx.block_answering = allow_return;
     defer ctx.block_answering = saved_answering;
+    var declarations: std.ArrayListUnmanaged(BlockDeclaration) = .empty;
+    defer declarations.deinit(ctx.alloc);
+    try noteBlockDeclarations(ctx, block, &declarations);
+    defer restoreBlockDeclarations(ctx, declarations.items);
     for (block.stmts, 0..) |*stmt, i| {
         const tail_here = allow_return and stmtIsTailSlot(block, i);
         if (stmt.* == .ret) {
@@ -17871,6 +17943,68 @@ test "dnir_lower: same-spelled local shadows module storage by binding" {
     try std.testing.expect(!saw_wrong_global_store);
     // Negative control: the module binding remains real storage for a caller
     // after the local shadow's scope ends.
+    try std.testing.expect(saw_main_global_read);
+}
+
+test "dnir_lower: a module write below a closed shadow block reaches the module word" {
+    // gap[228], the extent half. The graph adjudicates this program exactly:
+    // its `mutations` column names the MODULE binding, written by `deep`,
+    // because the inner declaration's roster entry is gone by the time
+    // `ring = 2` is lifted (`liftBindingsInBlock`). The lowering's `ctx.locals`
+    // had no such extent, so the leaked shadow slot captured the write and the
+    // module word kept its initializer — measured on `--backend=wasm`: the
+    // program answered 0 where the answer is 2.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\ring: i64 = 0
+        \\deep: i64 = ()
+        \\    if ring > 100
+        \\        ring: i64 = 5
+        \\        return ring
+        \\    ring = 2
+        \\    3
+        \\main: i64 = ()
+        \\    deep()
+        \\    ring
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "gap228-extent.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "gap228-extent.id");
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+
+    var saw_deep = false;
+    var deep_writes_module_word = false;
+    var saw_main_global_read = false;
+    for (lowered.functions) |function| {
+        if (std.mem.eql(u8, function.name, "main")) {
+            for (function.blocks) |block| for (block.instrs) |instruction| {
+                if (instruction.op == .load_global and
+                    std.mem.eql(u8, instruction.field, "ring")) saw_main_global_read = true;
+            };
+            continue;
+        }
+        saw_deep = true;
+        for (function.blocks) |block| for (block.instrs) |instruction| {
+            if (instruction.op == .store_global and
+                std.mem.eql(u8, instruction.field, "ring")) deep_writes_module_word = true;
+        };
+    }
+    try std.testing.expect(saw_deep);
+    // The write below the closed block is the module write the graph already
+    // published; a leaked shadow slot swallowing it is the recorded defect.
+    try std.testing.expect(deep_writes_module_word);
     try std.testing.expect(saw_main_global_read);
 }
 

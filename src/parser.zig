@@ -3198,7 +3198,7 @@ pub const Parser = struct {
         }
         if (!allow_untyped_comma and !typed_or_vararg) return false;
         if (depth1_tokens == 0 and !allow_untyped_comma) return false;
-        if (grammar_roles.canStartBody(after.kind)) return true;
+        if (view.canStartBody(idx)) return true;
         return false;
     }
 

@@ -55,36 +55,52 @@ probe(): i64
 # TWO entities named `ring` — one at module scope, one under `shadow` — and the
 # `mutations` column names the module one, from `bump`, and only that one.
 #
-# THE GRAPH CONTROL IS CHECKED, THE STORAGE ONE IS NOT, and the difference is a
-# separate defect. `shadow()` answering 5 is checked below; `ring` still being
-# 1 afterwards is NOT, because realization gives the shadowing declaration the
-# module's `__DATA` word and the module binding reads 5. That is independent of
-# every fact this file is about — reduce it to
+# THE GRAPH CONTROL AND THE STORAGE CONTROL ARE BOTH CHECKED. `shadow()`
+# answering 5 is one row; `ring` still being 1 afterwards is a SEPARATE row,
+# because realization once gave the shadowing declaration the module's
+# `__DATA` word and the module binding read 5 — the reduction
 #
 #     global ring: i64 = 0
 #     shadow(): i64
 #       ring: i64 = 5
 #       ring
 #     print(shadow())
-#     print(ring)      -> 5, and the answer is 0
+#     print(ring)      -> 5, then 5 where the answer is 0
 #
-# where `mutations` is EMPTY and the graph still holds two distinct entities. The
-# lift is right and the storage decision is not; see gaps/GAP-228.md.
+# with `mutations` EMPTY and the graph holding two distinct entities the whole
+# time. The lift was right and the storage decision was not; the declaration
+# now publishes its own slot before its initializer lowers, and the row below
+# that reads `ring` back is what withdraws the licence to regress. See
+# gaps/GAP-228.md.
 shadow(): i64
   ring: i64 = 5
   ring
 
-# THE BLOCK CONTROL. A declaration in an INNER block is scoped to that block,
-# so the assignment above it names the module's word. A shadow roster collected
-# over the whole body instead of the lexical chain drops that write — measured,
-# `idol graph` exported an EMPTY `mutations` array for exactly this shape, and
-# an empty mutation column is the licence this file exists to withdraw. The
-# inner branch never runs; its only job is to declare the name.
+# THE BLOCK CONTROL, ON BOTH SIDES OF THE BLOCK. A declaration in an INNER
+# block is scoped to that block, so the assignment above it AND the assignment
+# below it both name the module's word. Each side was measured wrong once:
+#
+#   above  a shadow roster collected over the whole body instead of the
+#          lexical chain dropped the write — `idol graph` exported an EMPTY
+#          `mutations` array for exactly this shape, and an empty mutation
+#          column is the licence this file exists to withdraw.
+#
+#   below  the LOWERING's binding environment kept the inner declaration after
+#          its block closed, so the write below was answered from the leaked
+#          shadow slot while the graph named the module binding — measured on
+#          `--backend=wasm`, the module word kept its old value (gap 228, the
+#          extent half; `restoreBlockDeclarations` in src/dnir_lower.zig).
+#
+# The below-write MULTIPLIES so one read of `ring` afterwards checks both
+# sides by value: 6 requires the write above to have landed (2) and the write
+# below to have reached the same word (2 * 3). The inner branch never runs;
+# its only job is to declare the name.
 deep(): i64
   ring = 2
   if ring > 100
     ring: i64 = 5
     return ring
+  ring = ring * 3
   3
 
 check(): i64
@@ -102,13 +118,17 @@ check(): i64
     print("place mutate: the shadowing local did not answer 5, it answered")
     print(hid)
     return 3
+  if ring != 1
+    print("place mutate: the shadow's declaration MOVED the module word, ring is")
+    print(ring)
+    return 6
   low: i64 = deep()
   if low != 3
     print("place mutate: deep did not answer 3, it answered")
     print(low)
     return 4
-  if ring != 2
-    print("place mutate: the write above an inner declaration was ERASED, ring is")
+  if ring != 6
+    print("place mutate: a write beside the inner declaration missed the module word, ring is")
     print(ring)
     return 5
   print("place mutate: OK")

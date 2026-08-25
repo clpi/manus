@@ -1,3 +1,10 @@
+<!-- GENERATED frame — do not edit outside the residue markers below.
+     Producer: docs/spec/constitution.md (C0). Emitter: scripts/alignment_emit.id.
+     Check and regenerate: sh gate/alignment-projection.sh
+     C0 law.semantic.service binds the constitution to generate the teaching
+     corpus and fails independently handwritten copies; law.doc.corpus makes
+     documentation corpus. gaps/GAP-133.md records the drift this closes. -->
+
 # Agent Alignment Compass
 
 This file is a short priority router. It is not language law and must not grow
@@ -7,6 +14,34 @@ the current production ledger, and live ownership.
 The constitution is structured law documentation, not an implementation
 example.
 
+Everything outside the residue markers is emitted from C0 by
+`scripts/alignment_emit.id`; the residue between them is authored operative
+guidance, carried byte-for-byte and counted. A `law.*` identity cited
+anywhere in this file must resolve in C0 or regeneration fails, so a retired
+authority cannot keep being taught here — that is the GAP-133 defect class.
+
+## Cited laws (resolved against C0 at emit time)
+
+| Law | Kind | Holds |
+|---|---|---|
+| `law.semantic.service` | protocol | one |
+| `law.doc.corpus` | invariant | canonical |
+| `law.bootstrap.velocity` | protocol | priority |
+| `law.bridge.death` | invariant | deletion |
+
+## The docs gate (C0 §57)
+
+Documentation is corpus (`law.doc.corpus`). Each of these is a build
+failure:
+
+1. a visible semantic token lacks a semantic role
+2. a current lowering claim lacks compiler evidence
+3. source, graph, dnir and assembly correspondence is broken
+4. stale canonical syntax contradicts an owner ruling
+5. generated escape artifacts appear in output
+6. distinguishable semantic roles collapse to identical rendering by accident
+
+<!-- @@residue:begin — authored; counted; shrink it by moving facts into C0 -->
 ## Architectural mandate (2026-08-20 — supersedes fixture-chasing)
 
 **A passing fixture is not the objective.** Never repair a downstream consumer
@@ -54,7 +89,7 @@ Static ratchets: `sh gate/architecture-negative.sh`. Behavioral companions:
 
 **Self-host score discipline:** each green module names semantic authority gained
 (physical reach + authority quality). Never copy counts from static scoreboard
-markdown — run `gate/selfhost.sh` only.
+markdown — run `../idol-native/gate/selfhost.sh` only.
 
 **bind.id destination:** binding occurrence ids + scope/home facts, not textual
 name-token scanning. A green bind module is not graph-native resolution.
@@ -93,7 +128,7 @@ traverse it successfully.
 | 20 | Text diagnostics for agents | Structured: entity, fact, producer, category |
 | 21 | Shell gates as second ontology | Native A–E projections of one graph, not parallel meaning |
 | 22 | idol-native decides semantics | **idol-native may measure and falsify. idol owns meaning.** |
-| 23 | Static scoreboard counts | HISTORICAL EVIDENCE only; live from `gate/selfhost.sh` |
+| 23 | Static scoreboard counts | HISTORICAL EVIDENCE only; live from `../idol-native/gate/selfhost.sh` |
 | 24 | Monolith SHC progress | Capability probe only; B requires real composition |
 | 25 | More subject-first methods before resolution law | Generic ambiguity/order law before filter/take/… expansion |
 | 26 | Sequence basis undermined by `any` | Work backward from `xs:map(f):take(n)` contraction facts |
@@ -318,3 +353,4 @@ requested.
 Record architectural blockers in `gaps/GAP-0NN.md`. Record performance evidence
 in `docs/performance.md`. Use the current checkout and fixed artifacts for every
 claim; do not infer implementation state from historical pass documents.
+<!-- @@residue:end -->

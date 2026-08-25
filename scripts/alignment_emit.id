@@ -1,0 +1,367 @@
+# alignment emit — docs/AGENT_ALIGNMENT.md as a projection of C0 (GAP-133).
+#
+# gaps/GAP-133.md records the defect class: the agent alignment compass was a
+# clean but stale HANDWRITTEN projection of docs/spec/constitution.md. It
+# taught deleted pass plans, a retired identity, and a script that no longer
+# existed, and nothing could notice, because no generator owned it and no gate
+# compared it to anything. C0 law.semantic.service binds "the constitution
+# grammar standard vocabulary and compiler manifest generate the teaching
+# corpus" and fails "independently handwritten examples that can contradict
+# semantic authority"; law.doc.corpus makes documentation corpus. This file is
+# the generator, and gate/alignment-projection.sh is the named live doc gate.
+#
+# WHAT IS GENERATED and what is carried. The output is split by two marker
+# lines into a GENERATED frame and an AUTHORED residue — the same honest
+# partition scripts/treesitter_emit.id established for grammar.js, and for the
+# same reason: the operative guidance in the residue (dated mandates, the
+# misunderstanding table) is not IN C0, so an emitter that claimed to derive
+# it would be lying. What C0 does own is emitted from C0 on every run:
+#
+#   the cited-law table    every `law.*` identity cited anywhere in this file
+#                          is resolved against C0 at emit time, and its kind
+#                          and holds facts are read from the law block itself.
+#                          A citation that stops resolving FAILS the emitter —
+#                          the exact drift class GAP-133 records (a retired
+#                          authority still being taught) cannot survive a
+#                          regeneration.
+#   the docs-gate list     the build-failure conditions of C0 §57, read from
+#                          the `docgate` block verbatim, because that is the
+#                          law this projection is subject to.
+#
+# The residue is counted and printed. Moving a fact into C0 and citing it is
+# how the number shrinks; hand-editing outside the markers is what
+# gate/alignment-projection.sh exists to refuse.
+#
+# CONFIGURATION IS THE WORKING DIRECTORY, deliberately. This executes through
+# the same dump-c bridge as gate/gap-114-boxed-len.sh, and that realization
+# lowers neither `os.env` nor `os.args` today — measured, not assumed: both
+# refuse at codegen with an unrealized-callee/unrepresentable-binding
+# diagnostic. So the emitter reads and writes FIXED repo-relative paths, and
+# the gate stages scratch working directories when it needs to run against a
+# tampered constitution or a hand-edited compass. No flag surface exists to
+# drift.
+#
+#   reads    docs/spec/constitution.md          the producer, C0
+#            docs/AGENT_ALIGNMENT.md            only for the residue between
+#                                               the markers
+#   writes   docs/AGENT_ALIGNMENT.md            the whole projection
+#
+# `io.open` here is the same classified script-home ingress
+# scripts/treesitter_emit.id uses; the deletion condition is shared with that
+# file (a world-backed script home).
+#
+# Exit 0 wrote the projection · 3 the emitter could not run honestly (missing
+# C0, an unresolvable law citation, an empty residue, or a frame control
+# absent from its own output).
+
+c0path = "docs/spec/constitution.md"
+docpath = "docs/AGENT_ALIGNMENT.md"
+markbegin = "@@residue:begin"
+markend = "@@residue:end"
+
+slurp: str = (path: str)
+    f = io.open(path, "r")
+    body: str = ""
+    if f
+        body = f:read("a")
+        f:close()
+    body
+
+spill: bool = (path: str, body: str)
+    f = io.open(path, "w")
+    done: bool = false
+    if f
+        f:write(body)
+        f:close()
+        done = true
+    done
+
+lines: i64 = (s: str)
+    parts = s:split("\n")
+    n: i64 = parts:len()
+    if n > 0
+        last: str = parts[n]
+        if last == ""
+            n -= 1
+    n
+
+# Everything between the two marker lines, verbatim, the marker lines
+# themselves excluded. Empty when the markers are absent.
+carve: str = (body: str)
+    rows = body:split("\n")
+    out: str = ""
+    inside: bool = false
+    i: i64 = 1
+    while i <= rows:len()
+        row: str = rows[i]
+        at1: i64 = row:find(markbegin)
+        at2: i64 = row:find(markend)
+        if inside and at2 > 0
+            inside = false
+        else
+            if inside
+                out = "{out}{row}\n"
+            if at1 > 0
+                inside = true
+        i += 1
+    out
+
+# ── Citation scan ────────────────────────────────────────────────────────────
+
+# Every distinct `law.<word>.<word>…` identity in `text`, first-citation
+# order, space-separated. A candidate needs at least one internal dot after
+# `law.` (so `docs/spec/law.md` never qualifies) and must not continue a
+# longer word to its left (so `bylaw.` never qualifies).
+cited: str = (text: str)
+    parts = text:split("law.")
+    found: str = ""
+    k: i64 = 2
+    while k <= parts:len()
+        prev: str = parts[k - 1]
+        ok: i64 = 1
+        pl: i64 = prev:len()
+        if pl > 0
+            p: i64 = prev:byte(pl)
+            if p >= 97 and p <= 122
+                ok = 0
+            if p == 46
+                ok = 0
+        body: str = parts[k]
+        bl: i64 = body:len()
+        j: i64 = 1
+        going: i64 = 1
+        dots: i64 = 0
+        while j <= bl and going == 1
+            c: i64 = body:byte(j)
+            within: i64 = 0
+            if c >= 97 and c <= 122
+                within = 1
+            if c == 46 and j < bl
+                c2: i64 = body:byte(j + 1)
+                if c2 >= 97 and c2 <= 122
+                    within = 1
+                    dots += 1
+            if within == 1
+                j += 1
+            else
+                going = 0
+        if ok == 1 and j > 1 and dots > 0
+            stem: str = body:sub(1, j - 1)
+            id: str = "law.{stem}"
+            probe: str = " {id} "
+            pool: str = " {found}"
+            seen: i64 = pool:find(probe, 1, true)
+            if seen == 0
+                found = "{found}{id} "
+        k += 1
+    found
+
+# ── C0 law resolution ────────────────────────────────────────────────────────
+
+# The table row for one law id, read from its block in C0: the `id` line
+# located by exact quoted identity, then the first `kind` and `holds` facts
+# before the block closes. An id C0 does not carry answers the empty string —
+# the caller turns that into the exit-3 refusal.
+facts: str = (c0: str, id: str)
+    rows = c0:split("\n")
+    quoted: str = "\"{id}\""
+    out: str = ""
+    i: i64 = 1
+    while i <= rows:len() and out == ""
+        # `rows[i]:trim()` in one face segfaults through the dump-c bridge
+        # today (measured; the indexed element must be bound before a method
+        # applies), so every indexed element here is bound first.
+        r: str = rows[i]
+        t: str = r:trim()
+        head: str = t:sub(1, 2)
+        if head == "id" and t:len() > quoted:len()
+            tail: str = t:sub(t:len() - quoted:len() + 1, t:len())
+            if tail == quoted
+                kind: str = "—"
+                holds: str = "—"
+                k: i64 = i + 1
+                going: i64 = 1
+                while k <= rows:len() and going == 1
+                    r2: str = rows[k]
+                    t2: str = r2:trim()
+                    if t2 == "}"
+                        going = 0
+                    else
+                        cells = t2:split("= .")
+                        if cells:len() > 1
+                            cell: str = cells[2]
+                            value: str = cell:trim()
+                            lead: str = t2:sub(1, 4)
+                            if lead == "kind"
+                                kind = value
+                            lead = t2:sub(1, 5)
+                            if lead == "holds"
+                                holds = value
+                        k += 1
+                out = "| `{id}` | {kind} | {holds} |"
+        i += 1
+    out
+
+# The docs-gate conditions of C0 §57, read from the `docgate` block: every
+# quoted member between `docgate = ` and the closing brace, as a numbered
+# list. Zero conditions is the emitter's own failure, never a pass.
+conditions: str = (c0: str)
+    rows = c0:split("\n")
+    out: str = ""
+    inside: i64 = 0
+    n: i64 = 0
+    i: i64 = 1
+    while i <= rows:len() and inside < 2
+        r: str = rows[i]
+        t: str = r:trim()
+        if inside == 1
+            if t == "}"
+                inside = 2
+            else
+                first: str = t:sub(1, 1)
+                if first == "\""
+                    body: str = t:sub(2, t:len())
+                    last: str = body:sub(body:len(), body:len())
+                    if last == ","
+                        body = body:sub(1, body:len() - 1)
+                    last = body:sub(body:len(), body:len())
+                    if last == "\""
+                        body = body:sub(1, body:len() - 1)
+                    n += 1
+                    nn: str = n:to(str)
+                    out = "{out}{nn}. {body}\n"
+        lead: str = t:sub(1, 9)
+        if inside == 0 and lead == "docgate ="
+            inside = 1
+        i += 1
+    out
+
+# ── The generated frame ──────────────────────────────────────────────────────
+
+# The head above the law table. Static text, so every claim in it is about the
+# MECHANISM, never about a count or a tree state a runner should own instead.
+preface: str = ()
+    b: str = "<!-- GENERATED frame — do not edit outside the residue markers below.\n"
+    b = "{b}     Producer: docs/spec/constitution.md (C0). Emitter: scripts/alignment_emit.id.\n"
+    b = "{b}     Check and regenerate: sh gate/alignment-projection.sh\n"
+    b = "{b}     C0 law.semantic.service binds the constitution to generate the teaching\n"
+    b = "{b}     corpus and fails independently handwritten copies; law.doc.corpus makes\n"
+    b = "{b}     documentation corpus. gaps/GAP-133.md records the drift this closes. -->\n"
+    b = "{b}\n"
+    b = "{b}# Agent Alignment Compass\n"
+    b = "{b}\n"
+    b = "{b}This file is a short priority router. It is not language law and must not grow\n"
+    b = "{b}into a second specification. Start at `AGENTS.md` (Idol durable orientation +\n"
+    b = "{b}mechanical preflight); it routes to the sole law, this priority projection,\n"
+    b = "{b}the current production ledger, and live ownership.\n"
+    b = "{b}The constitution is structured law documentation, not an implementation\n"
+    b = "{b}example.\n"
+    b = "{b}\n"
+    b = "{b}Everything outside the residue markers is emitted from C0 by\n"
+    b = "{b}`scripts/alignment_emit.id`; the residue between them is authored operative\n"
+    b = "{b}guidance, carried byte-for-byte and counted. A `law.*` identity cited\n"
+    b = "{b}anywhere in this file must resolve in C0 or regeneration fails, so a retired\n"
+    b = "{b}authority cannot keep being taught here — that is the GAP-133 defect class.\n"
+    b
+
+main: i64 = ()
+    print("alignment emit — the compass projection")
+    print("  constitution  {c0path}")
+    print("  output        {docpath}")
+
+    c0: str = slurp(c0path)
+    if c0 == ""
+        print("alignment emit: FAIL — {c0path} is empty or unreadable. The producer is")
+        print("  the one thing this projection cannot exist without.")
+        return 3
+
+    existing: str = slurp(docpath)
+    residue: str = carve(existing)
+    if residue == ""
+        print("alignment emit: FAIL — no authored residue between the {markbegin} and")
+        print("  {markend} markers of {docpath}. An empty residue would emit a")
+        print("  plausible file that silently dropped the whole operative compass,")
+        print("  which is worse than refusing.")
+        return 3
+
+    count: i64 = lines(residue)
+    nres: str = count:to(str)
+    print("  residue       {nres} authored lines")
+
+    head: str = preface()
+
+    ids: str = cited("{head}{residue}")
+    table: str = ""
+    nlaw: i64 = 0
+    missing: i64 = 0
+    names = ids:split(" ")
+    i: i64 = 1
+    while i <= names:len()
+        id: str = names[i]
+        if id != ""
+            row: str = facts(c0, id)
+            if row == ""
+                print("alignment emit: FAIL — this file cites {id} and {c0path} carries no")
+                print("  law block with that identity. Either the citation is stale or the")
+                print("  law moved; both are exactly the drift this emitter exists to stop.")
+                missing += 1
+            else
+                table = "{table}{row}\n"
+                nlaw += 1
+        i += 1
+    if missing > 0
+        return 3
+
+    gates: str = conditions(c0)
+    ngate: i64 = lines(gates)
+    if nlaw == 0 or ngate == 0
+        print("alignment emit: FAIL — the projection found no cited laws or no docgate")
+        print("  conditions in {c0path}. A frame that measures nothing must not be")
+        print("  reported as generated.")
+        return 3
+
+    nl: str = nlaw:to(str)
+    ng: str = ngate:to(str)
+    print("  projected     {nl} cited laws, {ng} docs-gate conditions")
+
+    body: str = head
+    body = "{body}\n"
+    body = "{body}## Cited laws (resolved against C0 at emit time)\n"
+    body = "{body}\n"
+    body = "{body}| Law | Kind | Holds |\n"
+    body = "{body}|---|---|---|\n"
+    body = "{body}{table}"
+    body = "{body}\n"
+    body = "{body}## The docs gate (C0 §57)\n"
+    body = "{body}\n"
+    body = "{body}Documentation is corpus (`law.doc.corpus`). Each of these is a build\n"
+    body = "{body}failure:\n"
+    body = "{body}\n"
+    body = "{body}{gates}"
+    body = "{body}\n"
+    body = "{body}<!-- {markbegin} — authored; counted; shrink it by moving facts into C0 -->\n"
+    body = "{body}{residue}"
+    body = "{body}<!-- {markend} -->\n"
+
+    total: i64 = lines(body)
+    gen: i64 = total - count
+    ntotal: str = total:to(str)
+    ngen: str = gen:to(str)
+    print("  emitted       {ngen} generated lines of {ntotal} total")
+
+    # Positive control on the emitter's own output: the two absences that must
+    # never be reported as success are a lost frame and a lost residue.
+    withlaw: i64 = body:find("| Law | Kind | Holds |")
+    withres: i64 = body:find(markbegin)
+    if withlaw == 0 or withres == 0
+        print("alignment emit: FAIL — the emitted text is missing the law table or the")
+        print("  residue markers. The emitter is broken, not the compass.")
+        return 3
+
+    done: bool = spill(docpath, body)
+    if done
+        print("alignment emit: wrote {docpath}")
+    else
+        print("alignment emit: FAIL — could not write {docpath}")
+        return 3
+    0

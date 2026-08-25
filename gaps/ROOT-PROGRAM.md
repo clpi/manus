@@ -43,7 +43,7 @@ several of them.
 say so out loud: `scripts/ledger/semantic.id` reports `WORLDGATE`, `VOCABGATE`,
 `SENTINELGATE` and `CONTROLREDUCE` interned and `SUBJECTGATE waits on
 application subject edges`; `scripts/ledger/graph.id` reports the func tag gate
-open. `GAP-113`, `GAP-125`, `GAP-132`, `GAP-153`, `GAP-161` and `GAP-165` each
+open. `GAP-125`, `GAP-132`, `GAP-153`, `GAP-161` and `GAP-165` each
 name it as their unblocker.
 
 **`GAP-119` — process/execution world vocabulary.** `docs/spec/world.md` §313
@@ -69,7 +69,7 @@ the `.call` / `.method_call` split; its identity half is crossed and gated by
 name purge only.
 
 **2 Application/Graph Sovereignty** — `GAP-124`, `GAP-137`, `GAP-201`,
-`GAP-202`, `GAP-113`, `GAP-125`, `GAP-132`, `GAP-153`, `GAP-161`, `GAP-165`,
+`GAP-202`, `GAP-125`, `GAP-132`, `GAP-153`, `GAP-161`, `GAP-165`,
 `GAP-221`.
 `GAP-201` is the umbrella that owns the remaining bridge inventory; `GAP-137`
 owns one fact being optional and fail-open and is one row from closed;
@@ -95,9 +95,8 @@ projection) and its code half is not. `GAP-138` is here because a
 This is the thinnest program in the active-P0 set. That is itself a finding: the
 transformation half of the architecture has almost no live P0 pressure on it.
 
-**5 World/Stage Algebra** — `GAP-119` (chokepoint), `GAP-118`, `GAP-128`,
-`GAP-146`, `GAP-147`, `GAP-155`, `GAP-157`, `GAP-203`.
-`GAP-118` (absence erased into empty string) and `GAP-203` (the injection half
+**5 World/Stage Algebra** — `GAP-119` (chokepoint), `GAP-128`,
+`GAP-146`, `GAP-147`, `GAP-157`, `GAP-203`.
 of the world algebra has no graph fact — `WorldFact` still carries no parent and
 no delta range) are the two that are about the algebra itself. `GAP-157` is here
 because `std.` reaches are vocabulary that should arrive through layout/home/
@@ -121,7 +120,7 @@ gate's fixture is declaration-vs-declaration, not the headline shape (a user
 export capturing the compiler's own bootstrap extern), so the bootstrap symbol
 set still has no control at all.
 
-**8 Bootstrap/Evidence** — `GAP-050`, `GAP-115`, `GAP-127`, `GAP-136`,
+**8 Bootstrap/Evidence** — `GAP-050`, `GAP-127`, `GAP-136`,
 `GAP-139`, `GAP-152`, `GAP-172`.
 `GAP-152`'s aggregate FTCFTW pass EXISTS and is green, and correctly prints
 `complete FTCFTW proof: NOT PROVEN` — its honesty defect is that it indexes
@@ -226,7 +225,7 @@ commit. Neither was superseded.
 | `GAP-135` | SUPERSEDED | `3cd3f07b` "revert gap[126]: remove textual relation reconstruction" |
 | `GAP-142` | SUPERSEDED | `gate/admission.id` + `gate/admission.sh` + `evidence/mop/merge/readiness.md`; every adjudicated branch retired |
 | `GAP-225` | CLOSED | the lift names the module binding a relation writes and `publishApplicationMutations` publishes its cardinality; the census movement and the hazard row are what `sh gate/effect.sh` and `sh gate/speculation.sh` print, and the floors are pinned in those runners; regression `examples/place/mutate.id` |
-
+| `GAP-115` | CLOSED | `99673d63` "evidence: a fixed /tmp name is a fact any concurrent session can rewrite"; doctor/census/projection/positive-controls now mint run-private mktemp roots, pinned by `gate/gap-115-evidence.sh` |
 Each carries its evidence in its own file. No gap was reclassified on the
 strength of its own prose.
 

@@ -13,11 +13,25 @@ fail=0
 ok() { printf 'ok %s\n' "$1"; }
 bad() { printf 'FAIL %s\n' "$1" >&2; fail=$((fail + 1)); }
 
+# PRIVATE EVIDENCE ROOT. Every probe below that captures a child's output and
+# greps it for a verdict used to write a fixed `/tmp/idol-*.out` path. Two
+# concurrent doctors then graded one another's bytes, and any writer that knew
+# the fixed name could invert a verdict — 'keychain is locked' or
+# '<server>: ready' are grep targets, not just display (GAP-115).
+work="$(mktemp -d "${TMPDIR:-/tmp}/idol-doctor.XXXXXX")" || exit 1
+
 cleanup_root_artifacts() {
   find "$repo" -maxdepth 1 -type f \( -name '*.out' -o -name '*.profraw' -o -name 'test_*.c' -o -name 'test_*.wasm' \) -exec rm {} \;
 }
 
-trap cleanup_root_artifacts EXIT
+# `cleanup_root_artifacts` is also called mid-run, so the private evidence
+# root is only released on exit.
+cleanup_doctor() {
+  cleanup_root_artifacts
+  rm -rf "$work"
+}
+
+trap cleanup_doctor EXIT
 
 need_cmd() {
   if command -v "$1" >/dev/null 2>&1; then
@@ -103,7 +117,7 @@ else
   bad "branch is not main"
 fi
 
-if gh api user --jq .login >/tmp/idol-gh-auth.out 2>&1; then
+if gh api user --jq .login >"$work/gh-auth.out" 2>&1; then
   ok "GitHub CLI authenticated"
 else
   bad "GitHub CLI authentication failed"
@@ -229,18 +243,18 @@ else
   bad "Cursor indexing exclusions missing"
 fi
 
-if "$repo/tools/node/dev/orient" >/tmp/idol-orient.out 2>&1 \
-  && grep -q '^project: Idol$' /tmp/idol-orient.out \
-  && grep -Fq "devrepository: $development" /tmp/idol-orient.out \
-  && grep -Fq "releaserepository: $release" /tmp/idol-orient.out \
-  && grep -q '^authority:' /tmp/idol-orient.out; then
+if "$repo/tools/node/dev/orient" >"$work/orient.out" 2>&1 \
+  && grep -q '^project: Idol$' "$work/orient.out" \
+  && grep -Fq "devrepository: $development" "$work/orient.out" \
+  && grep -Fq "releaserepository: $release" "$work/orient.out" \
+  && grep -q '^authority:' "$work/orient.out"; then
   ok "orientation command reports current repository facts"
 else
   bad "orientation command failed"
 fi
 
 gate="$(mktemp -t idiomgate)" || bad "could not create idiom gate probe"
-trap 'rm -f "$gate"' EXIT
+trap 'rm -f "$gate"; cleanup_doctor' EXIT
 printf '+++ b/updateface.id\n@@ -0,0 +1 @@\n+step = step + 1\n' > "$gate"
 if ! "$duo" check "$repo/gate/idiom.id" >/dev/null 2>&1; then
   bad "gate/idiom update-face positive control fails semantic check"
@@ -250,12 +264,12 @@ else
   bad "gate/idiom update-face positive control missing law.update.face"
 fi
 rm -f "$gate"
-trap cleanup_root_artifacts EXIT
+trap cleanup_doctor EXIT
 
 "$repo/tools/node/dev/probe-mcp" || bad "direct MCP initialize probe failed"
 
-if TERM=xterm-256color codex --strict-config doctor >/tmp/idol-codex-doctor.out 2>&1; then
-  if grep -q 'app-server.*stale or unreachable' /tmp/idol-codex-doctor.out; then
+if TERM=xterm-256color codex --strict-config doctor >"$work/codex-doctor.out" 2>&1; then
+  if grep -q 'app-server.*stale or unreachable' "$work/codex-doctor.out"; then
     bad "codex doctor reports stale or unreachable app-server socket"
   else
     ok "codex doctor"
@@ -264,21 +278,21 @@ else
   bad "codex doctor failed"
 fi
 
-if cursor agent --help >/tmp/idol-cursor-agent.out 2>&1; then
+if cursor agent --help >"$work/cursor-agent.out" 2>&1; then
   ok "Cursor Agent starts far enough to read CLI help"
 else
-  if grep -qi 'keychain is locked' /tmp/idol-cursor-agent.out; then
+  if grep -qi 'keychain is locked' "$work/cursor-agent.out"; then
     bad "Cursor Agent blocked by locked macOS login keychain"
   else
     bad "Cursor Agent CLI failed"
   fi
 fi
 
-if cursor agent mcp list >/tmp/idol-cursor-mcp.out 2>&1; then
+if cursor agent mcp list >"$work/cursor-mcp.out" 2>&1; then
   missing_cursor_mcp=0
   for name in $(jq -r '.servers[] | select(.enabled == true) | .name' "$repo/tools/node/dev/mcp.manifest.json"); do
     required=$(jq -r --arg name "$name" '.servers[] | select(.name == $name) | (.required // false)' "$repo/tools/node/dev/mcp.manifest.json")
-    if grep -q "^$name: ready" /tmp/idol-cursor-mcp.out; then
+    if grep -q "^$name: ready" "$work/cursor-mcp.out"; then
       ok "Cursor MCP server ready: $name"
     elif [ "$required" = false ]; then
       ok "Cursor optional MCP server unavailable: $name"
@@ -294,16 +308,16 @@ else
   bad "Cursor MCP server list failed"
 fi
 
-if cursor agent --print --mode=ask --trust --workspace "$repo" "Start at AGENTS.md. Answer with the sole Idol semantic law file path only." >/tmp/idol-cursor-agent-smoke.out 2>&1; then
-  if grep -q 'docs/spec/constitution.md' /tmp/idol-cursor-agent-smoke.out; then
+if cursor agent --print --mode=ask --trust --workspace "$repo" "Start at AGENTS.md. Answer with the sole Idol semantic law file path only." >"$work/cursor-agent-smoke.out" 2>&1; then
+  if grep -q 'docs/spec/constitution.md' "$work/cursor-agent-smoke.out"; then
     ok "Cursor Agent fresh headless session orients through AGENTS.md"
   else
     bad "Cursor Agent fresh headless session did not identify C0"
   fi
 else
-  if grep -qi 'keychain is locked' /tmp/idol-cursor-agent-smoke.out; then
+  if grep -qi 'keychain is locked' "$work/cursor-agent-smoke.out"; then
     bad "Cursor Agent fresh headless session blocked by locked macOS login keychain"
-  elif grep -qi 'Authentication required' /tmp/idol-cursor-agent-smoke.out; then
+  elif grep -qi 'Authentication required' "$work/cursor-agent-smoke.out"; then
     bad "Cursor Agent fresh headless session requires login"
   else
     bad "Cursor Agent fresh headless session failed"

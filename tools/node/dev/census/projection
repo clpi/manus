@@ -4,16 +4,24 @@ set -eu
 repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$repo"
 idol="${IDOL:-$repo/zig-out/bin/idol}"
+# PRIVATE EVIDENCE FILE. This used to be the fixed path
+# /tmp/idol-census-projection.out, which every concurrent session on the
+# machine shared: the bytes displayed after the verdict could belong to
+# another tree's run (GAP-115). The name is minted per run and unguessable,
+# so no concurrent writer can substitute the evidence between the write on
+# the `if` line and the read on the `sed` line.
+out="$(mktemp "${TMPDIR:-/tmp}/idol-census-projection.XXXXXX")"
+trap 'rm -f "$out"' EXIT
 fail=0
 run_census() {
   label="$1"
   script="$2"
-  if "$idol" run "$repo/$script" >/tmp/idol-census-projection.out 2>&1; then
+  if "$idol" run "$repo/$script" >"$out" 2>&1; then
     echo "census/projection: pass $label"
-    sed 's/^/  /' /tmp/idol-census-projection.out
+    sed 's/^/  /' "$out"
   else
     echo "census/projection: FAIL $label" >&2
-    sed 's/^/  /' /tmp/idol-census-projection.out >&2
+    sed 's/^/  /' "$out" >&2
     fail=1
   fi
 }
