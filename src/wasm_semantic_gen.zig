@@ -142,9 +142,9 @@ pub fn writeCatalogJson(w: *std.Io.Writer) !void {
 /// Emit `lib/wasm/opcode_lookup.id` — generated opcode → semantic id dispatch (P9-M1).
 pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
     try w.writeAll(
-        \\-- GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
-        \\-- Regenerate: duo wasm-tables emit
-        \\-- Canonical opcode facts: src/wasm_semantic.zig
+        \\# GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
+        \\# Regenerate: idol wasm-tables emit
+        \\# Canonical opcode facts: src/wasm_semantic.zig
         \\
         \\GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
         \\INSTRUCTION_COUNT = 
@@ -152,77 +152,75 @@ pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
     try w.print("{d}\n\n", .{wasm_semantic.mvpCount()});
     try w.writeAll("INSTRUCTION_IDS = {\n");
     for (wasm_semantic.mvp_instructions) |inst| {
-        try w.print("    \"{s}\",\n", .{inst.id});
+        try w.print("  \"{s}\",\n", .{inst.id});
     }
     try w.writeAll("}\n\nIMMEDIATE_FORMS = {\n");
     for (mvp_immediate_form) |form| {
-        try w.print("    \"{s}\",\n", .{form.name()});
+        try w.print("  \"{s}\",\n", .{form.name()});
     }
     try w.writeAll("}\n\nSTACK_POP = {\n");
     for (mvp_validator) |entry| {
-        try w.print("    {d},\n", .{entry.stack.pop});
+        try w.print("  {d},\n", .{entry.stack.pop});
     }
     try w.writeAll("}\n\nSTACK_PUSH = {\n");
     for (mvp_validator) |entry| {
-        try w.print("    {d},\n", .{entry.stack.push});
+        try w.print("  {d},\n", .{entry.stack.push});
     }
     try w.writeAll("}\n\nINSTRUCTION_OPCODES = {\n");
     for (wasm_semantic.mvp_instructions) |inst| {
-        try w.print("    {d},\n", .{inst.opcode});
+        try w.print("  {d},\n", .{inst.opcode});
     }
     try w.writeAll("}\n\nOPCODE_TO_INDEX = {\n");
     for (wasm_semantic.mvp_opcode_index) |idx| {
-        try w.print("    {d},\n", .{idx});
+        try w.print("  {d},\n", .{idx});
     }
     try w.writeAll(
         \\}
         \\
-        \\opcode_for_index(idx: i64): i64
-        \\    if idx < 0 or idx >= INSTRUCTION_COUNT return -1 end
-        \\    INSTRUCTION_OPCODES[idx + 1]
-        \\end
+        \\opcode_for_index: i64 = (idx: i64)
+        \\  if idx < 0 or idx >= INSTRUCTION_COUNT
+        \\    return -1
+        \\  INSTRUCTION_OPCODES[idx + 1]
         \\
-        \\generator_owner(): str
-        \\    GENERATOR_OWNER
-        \\end
+        \\generator_owner: str = ()
+        \\  GENERATOR_OWNER
         \\
-        \\instruction_count(): i64
-        \\    INSTRUCTION_COUNT
-        \\end
+        \\instruction_count: i64 = ()
+        \\  INSTRUCTION_COUNT
         \\
-        \\instruction_index_for_opcode(op: i64): i64
-        \\    if op < 0 or op > 255 return -1 end
-        \\    idx = OPCODE_TO_INDEX[op + 1]
-        \\    if idx < 0 return -1 end
-        \\    idx
-        \\end
+        \\instruction_index_for_opcode: i64 = (op: i64)
+        \\  if op < 0 or op > 255
+        \\    return -1
+        \\  idx = OPCODE_TO_INDEX[op + 1]
+        \\  if idx < 0
+        \\    return -1
+        \\  idx
         \\
-        \\semantic_id_for_index(idx: i64): str
-        \\    if idx < 0 or idx >= INSTRUCTION_COUNT return "" end
-        \\    INSTRUCTION_IDS[idx + 1]
-        \\end
+        \\semantic_id_for_index: str = (idx: i64)
+        \\  if idx < 0 or idx >= INSTRUCTION_COUNT
+        \\    return ""
+        \\  INSTRUCTION_IDS[idx + 1]
         \\
-        \\semantic_id_for_opcode(op: i64): str
-        \\    idx = instruction_index_for_opcode(op)
-        \\    if idx < 0 return "" end
-        \\    INSTRUCTION_IDS[idx + 1]
-        \\end
+        \\semantic_id_for_opcode: str = (op: i64)
+        \\  idx = instruction_index_for_opcode(op)
+        \\  if idx < 0
+        \\    return ""
+        \\  INSTRUCTION_IDS[idx + 1]
         \\
-        \\immediate_form_for_index(idx: i64): str
-        \\    if idx < 0 or idx >= INSTRUCTION_COUNT return "none" end
-        \\    IMMEDIATE_FORMS[idx + 1]
-        \\end
+        \\immediate_form_for_index: str = (idx: i64)
+        \\  if idx < 0 or idx >= INSTRUCTION_COUNT
+        \\    return "none"
+        \\  IMMEDIATE_FORMS[idx + 1]
         \\
-        \\stack_pop_for_index(idx: i64): i64
-        \\    if idx < 0 or idx >= INSTRUCTION_COUNT return 0 end
-        \\    STACK_POP[idx + 1]
-        \\end
+        \\stack_pop_for_index: i64 = (idx: i64)
+        \\  if idx < 0 or idx >= INSTRUCTION_COUNT
+        \\    return 0
+        \\  STACK_POP[idx + 1]
         \\
-        \\stack_push_for_index(idx: i64): i64
-        \\    if idx < 0 or idx >= INSTRUCTION_COUNT return 0 end
-        \\    STACK_PUSH[idx + 1]
-        \\end
-        \\
+        \\stack_push_for_index: i64 = (idx: i64)
+        \\  if idx < 0 or idx >= INSTRUCTION_COUNT
+        \\    return 0
+        \\  STACK_PUSH[idx + 1]
         \\
     );
 }
@@ -239,9 +237,9 @@ fn wardOpcodeFieldName(id: []const u8) []const u8 {
 /// Emit `lib/wasm/ward_mvp_opcodes.id` — Ward-compatible OP_* for MVP subset only.
 pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
     try w.writeAll(
-        \\-- GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
-        \\-- Regenerate: duo wasm-tables emit
-        \\-- MVP subset (63 ops). Ward extended opcodes remain in ward/src/wasm/op.id until migrated.
+        \\# GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
+        \\# Regenerate: idol wasm-tables emit
+        \\# MVP subset (63 ops). Ward extended opcodes remain in ward/src/wasm/op.id until migrated.
         \\
         \\GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
         \\CANONICAL_OWNER = "src/wasm_semantic.zig"
@@ -269,7 +267,7 @@ pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
     // ARE the module. No `M = {}` wrapper and no trailing bare `M` — both are
     // graveyard idiom. With no tail expression duo already exports an implicit
     // table of every module-level binding, which is exactly the right shape.
-    try w.writeAll("\ncanonical_owner(): str\n    CANONICAL_OWNER\nend\n");
+    try w.writeAll("\ncanonical_owner: str = ()\n  CANONICAL_OWNER\n");
 }
 
 pub fn emitWardMvpOpcodesFile(alloc: std.mem.Allocator, io: std.Io, path: []const u8) !void {

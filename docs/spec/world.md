@@ -43,7 +43,7 @@ world carries (`law.md` §6), so evaluating at the compile stage is evaluating
 under a world whose stage fact is `comp`, and
 
 ```text
-@(expr)  ==  expr@{ stage = comp }
+@(expr)  ==  expr@{ stage = compile }
 ```
 
 is an identity between two spellings. `@` + pack derives a world; `@` +
@@ -55,6 +55,29 @@ lawful to go. And a value that does not exist at the compile stage is simply
 not a fact of that world, refused by the same no-fallthrough rule as any other
 derived-world lookup rather than by a special compile-time-constant
 diagnostic. See C0 `law.stage.world`.
+
+`expr@{ stage = compile }` is the canonical face and `@(expr)` is retained
+compatibility with exact provenance; both build one node, and the printer
+writes back the one that was written. The algebra's identities are executable
+on running programs — `sh gate/world/stage.sh`:
+
+```id
+print(@(1 + 2))                                        # 3
+print((1 + 2)@{ stage = compile })                     # 3, same node
+print(5@{})                                            # 5   derive(W, {}) = W
+print((1 + 2)@{ stage = compile }@{ stage = compile })  # 3   reinjection is idempotent
+print(@(cwd()))                                        # refused: absent at this stage
+```
+
+The last line is the one that shows a stage was involved at all. `cwd()` runs
+perfectly well; it is simply not a fact of the compile-stage world, and the
+derived world does not fall through to the one it was derived from.
+
+Only the stage delta resolves today. `expr@{ tax = 1 }` refuses and names the
+missing fact — `WorldFact` carries no parent and no fact-delta range, so a world
+derived on an ordinary member cannot be represented (gap[203] closure item 1).
+A duplicate member in one literal is an error, and a positional entry names no
+fact.
 
 `@` is itself the accessor: write `@x`, never `@.x`; `@.x` and `@:x` are INVALID
 because `@` already performs the access. `.` is one static step, always — one

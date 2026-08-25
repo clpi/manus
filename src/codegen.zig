@@ -5655,7 +5655,18 @@ pub const CodeGen = struct {
                 // construct still needs the boxed path.
                 if (un.op == .compile) {
                     if (un.operand.* != .table) {
-                        self.nativeDiagFail("compile-nontable");
+                        // THE COMPILE-STAGE WORLD ANSWERS FIRST, and the rule
+                        // lives once. `@(1 + 2)` is a value that world holds,
+                        // so the program contains the value and there is
+                        // nothing left to realize — but this precheck rejected
+                        // every non-table `.compile` outright while
+                        // `dnir_lower` was already able to fold it, so the
+                        // whole scalar face of `@( … )` refused on the default
+                        // backend. Same precheck/lowering drift as string.byte
+                        // and the expression-if; `compileStageValue` is the one
+                        // rule both sides now call.
+                        if (@import("dnir_lower.zig").compileStageValue(un.operand) != null) break :blk true;
+                        self.nativeDiagFail("compile-stage-absent");
                         break :blk false;
                     }
                     for (un.operand.table.fields) |fld| {
@@ -7167,10 +7178,23 @@ pub const CodeGen = struct {
             self.p("    }}\n", .{});
             self.p("    return parity & 1;\n", .{});
             self.p("}}\n", .{});
-            self.p("typedef double v4f64 __attribute__((ext_vector_type(4)));\n", .{});
-            self.p("typedef int64_t v4i64 __attribute__((ext_vector_type(4)));\n", .{});
-            self.p("typedef float v8f32 __attribute__((ext_vector_type(8)));\n", .{});
-            self.p("typedef int32_t v8i32 __attribute__((ext_vector_type(8)));\n", .{});
+            // `vector_size` IS THE PORTABLE SPELLING; `ext_vector_type` IS CLANG'S.
+            // GCC does not implement `ext_vector_type`, so under gcc these four
+            // typedefs decayed to their SCALAR element types and the
+            // `__builtin_convertvector` calls below then failed the emitted
+            // translation unit with "first argument must be an integer or
+            // floating vector" — a host-shaped assumption inside the emitter,
+            // the same class as the feature-macro line GAP-040 left one layer up.
+            //
+            // `vector_size` takes BYTES where `ext_vector_type` takes LANES, and
+            // every one of these four is 32 bytes: 4 x f64, 4 x i64, 8 x f32,
+            // 8 x i32. The layouts are identical, and this code uses only
+            // arithmetic, compound literals and `__builtin_convertvector`, all of
+            // which both compilers support on `vector_size` types.
+            self.p("typedef double v4f64 __attribute__((vector_size(32)));\n", .{});
+            self.p("typedef int64_t v4i64 __attribute__((vector_size(32)));\n", .{});
+            self.p("typedef float v8f32 __attribute__((vector_size(32)));\n", .{});
+            self.p("typedef int32_t v8i32 __attribute__((vector_size(32)));\n", .{});
             self.p("static inline v4f64 duo_select_v4f64(v4i64 c, v4f64 a, v4f64 b) {{\n", .{});
             self.p("    v4f64 fc = __builtin_convertvector(c, v4f64);\n", .{});
             self.p("    v4f64 one = (v4f64){{1.0, 1.0, 1.0, 1.0}};\n", .{});
@@ -7188,6 +7212,28 @@ pub const CodeGen = struct {
             self.p("static inline v8i32 duo_select_v8i32(v8i32 c, v8i32 a, v8i32 b) {{\n", .{});
             self.p("    v8i32 one = (v8i32){{1, 1, 1, 1, 1, 1, 1, 1}};\n", .{});
             self.p("    return a * c + b * (one - c);\n", .{});
+            self.p("}}\n", .{});
+            // ELEMENTWISE SQRT, WRITTEN PORTABLY FOR THE SAME REASON AS THE
+            // TYPEDEFS ABOVE. `__builtin_elementwise_sqrt` is clang's; gcc has no
+            // such builtin, so it parsed as an implicit `int`-returning call and
+            // the emitted unit failed with "incompatible types when initializing
+            // type 'v4f64' ... using type 'int'". That error was INVISIBLE while
+            // the typedefs still said `ext_vector_type`, because gcc ignored those
+            // too and the destination had already decayed to a scalar — one
+            // host-shaped assumption masking the next.
+            //
+            // A per-lane loop over a `vector_size` subscript is the portable
+            // spelling both compilers accept, and both re-vectorize it: gcc and
+            // clang each emit a single sqrt instruction per register at -O2.
+            self.p("static inline v4f64 duo_sqrt_v4f64(v4f64 x) {{\n", .{});
+            self.p("    v4f64 r;\n", .{});
+            self.p("    for (int i = 0; i < 4; i++) r[i] = __builtin_sqrt(x[i]);\n", .{});
+            self.p("    return r;\n", .{});
+            self.p("}}\n", .{});
+            self.p("static inline v8f32 duo_sqrt_v8f32(v8f32 x) {{\n", .{});
+            self.p("    v8f32 r;\n", .{});
+            self.p("    for (int i = 0; i < 8; i++) r[i] = __builtin_sqrtf(x[i]);\n", .{});
+            self.p("    return r;\n", .{});
             self.p("}}\n", .{});
         }
         // Emitted ahead of (and independently of) the lua runtime: a dense table
@@ -23126,7 +23172,14 @@ pub const CodeGen = struct {
             return true;
         }
         if (std.mem.eql(u8, fname, "sqrt")) {
-            self.p("__builtin_elementwise_sqrt(", .{});
+            // Dispatch on the operand's own vector type rather than emitting one
+            // clang-only builtin for both. See `duo_sqrt_v4f64` / `duo_sqrt_v8f32`
+            // above for why the helper exists at all.
+            const arg_rt: RT = if (args.len > 0) self.expr_type(args[0]) else .v4f64;
+            self.p("{s}(", .{switch (arg_rt) {
+                .v8f32 => "duo_sqrt_v8f32",
+                else => "duo_sqrt_v4f64",
+            }});
             if (args.len > 0) try self.emit_expr(args[0]);
             self.p(")", .{});
             return true;

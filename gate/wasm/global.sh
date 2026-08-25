@@ -29,6 +29,23 @@ esac
     exit 2
 }
 
+# THIS IS A DIFFERENTIAL, so it needs BOTH realizations, and the wasmtime check
+# above was hiding the other half. On a host with no wasmtime it said "wasmtime
+# absent" and stopped; install wasmtime and the direct arm then fails DNB004 and
+# the gate reports `FAIL direct=1 compile=0 wasm=40` — a differential naming a
+# disagreement where one side never ran. Two host facts, and the gate could only
+# see one of them.
+#
+# `gate/all.sh` would classify this correctly today only because the compiler's
+# own DNB004 text leaks into the log it greps, which is the fragile log-matching
+# the header of gate/realization/direct.sh exists to end. Asked directly instead.
+. "$root/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+    direct_native_note 'the direct-vs-wasm stdout differential (the direct arm is one of the two observations)'
+    exit 1
+fi
+
 mkdir "$work/direct" "$work/wasm" || exit 2
 (
     cd "$work/direct" || exit 125

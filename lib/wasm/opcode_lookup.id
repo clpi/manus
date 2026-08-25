@@ -1,5 +1,5 @@
 # GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
-# Regenerate: duo wasm-tables emit
+# Regenerate: idol wasm-tables emit
 # Canonical opcode facts: src/wasm_semantic.zig
 
 GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
@@ -68,7 +68,7 @@ INSTRUCTION_IDS = {
   "wasm.i32.rotr",
   "wasm.i64.add",
   "wasm.f32.add",
-  "wasm.f64.add"
+  "wasm.f64.add",
 }
 
 IMMEDIATE_FORMS = {
@@ -134,7 +134,7 @@ IMMEDIATE_FORMS = {
   "none",
   "none",
   "none",
-  "none"
+  "none",
 }
 
 STACK_POP = {
@@ -200,7 +200,7 @@ STACK_POP = {
   2,
   2,
   2,
-  2
+  2,
 }
 
 STACK_PUSH = {
@@ -266,7 +266,7 @@ STACK_PUSH = {
   1,
   1,
   1,
-  1
+  1,
 }
 
 INSTRUCTION_OPCODES = {
@@ -332,7 +332,7 @@ INSTRUCTION_OPCODES = {
   120,
   124,
   146,
-  160
+  160,
 }
 
 OPCODE_TO_INDEX = {
@@ -591,13 +591,13 @@ OPCODE_TO_INDEX = {
   -1,
   -1,
   -1,
-  -1
+  -1,
 }
 
 opcode_for_index: i64 = (idx: i64)
   if idx < 0 or idx >= INSTRUCTION_COUNT
     return -1
-  INSTRUCTION_OPCODES(idx + 1)
+  INSTRUCTION_OPCODES[idx + 1]
 
 generator_owner: str = ()
   GENERATOR_OWNER
@@ -608,7 +608,7 @@ instruction_count: i64 = ()
 instruction_index_for_opcode: i64 = (op: i64)
   if op < 0 or op > 255
     return -1
-  idx = OPCODE_TO_INDEX(op + 1)
+  idx = OPCODE_TO_INDEX[op + 1]
   if idx < 0
     return -1
   idx
@@ -616,25 +616,25 @@ instruction_index_for_opcode: i64 = (op: i64)
 semantic_id_for_index: str = (idx: i64)
   if idx < 0 or idx >= INSTRUCTION_COUNT
     return ""
-  INSTRUCTION_IDS(idx + 1)
+  INSTRUCTION_IDS[idx + 1]
 
 semantic_id_for_opcode: str = (op: i64)
   idx = instruction_index_for_opcode(op)
   if idx < 0
     return ""
-  INSTRUCTION_IDS(idx + 1)
+  INSTRUCTION_IDS[idx + 1]
 
 immediate_form_for_index: str = (idx: i64)
   if idx < 0 or idx >= INSTRUCTION_COUNT
     return "none"
-  IMMEDIATE_FORMS(idx + 1)
+  IMMEDIATE_FORMS[idx + 1]
 
 stack_pop_for_index: i64 = (idx: i64)
   if idx < 0 or idx >= INSTRUCTION_COUNT
     return 0
-  STACK_POP(idx + 1)
+  STACK_POP[idx + 1]
 
 stack_push_for_index: i64 = (idx: i64)
   if idx < 0 or idx >= INSTRUCTION_COUNT
     return 0
-  STACK_PUSH(idx + 1)
+  STACK_PUSH[idx + 1]

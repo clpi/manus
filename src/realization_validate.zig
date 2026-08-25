@@ -1,4 +1,5 @@
-//! Shared graph-to-DNIR validation for computed aggregate projections.
+//! Shared graph-to-DNIR validation: computed aggregate projections, and the
+//! shape of a relation's result pack.
 //!
 //! Native and Wasm consume the same physical schedule. This module is the one
 //! admission question both ask before emitting bytes; neither backend may
@@ -323,4 +324,313 @@ pub fn aggregateSchedule(module: dnir.Module) ?Failure {
         }
     }
     return null;
+}
+
+// ---------------------------------------------------------------------------
+// RESULT PACKS
+//
+// A relation that answers with SEVERAL VALUES has one declared shape and two
+// physical spellings of it: `Function.ret_pack` (a tuple result type) and
+// `Function.ret_record` (a named record result type). Source cannot be both at
+// once, so exactly one is populated — and each backend used to validate only
+// the spelling it happened to consume. AArch64 checked `ret_pack` arity at the
+// return and never the record's; wasm rebuilt the arity from `ret_record` and
+// refused `ret_pack` outright. NOTHING checked that the two agreed with each
+// other or with the call sites that project them, so a lowering that
+// disagreed with itself would have produced two different arities on the two
+// targets with neither backend objecting. That is the divergence this section
+// removes: one producer of "how many values does this relation answer with",
+// asked once, before either backend emits a byte.
+//
+// WHAT IS DELIBERATELY *NOT* HERE. `dnir_lower.max_reg_record_fields` (8) is
+// AAPCS64's register-return window, and crossing it selects the x8
+// indirect-result convention; wasm multi-value has no such window and needs no
+// such choice. An all-f64 record return is realized on AArch64 through the FP
+// register file and is refused by the wasm emitter. Both are TARGET facts
+// about a shape that is semantically legal, so both stay in their backend —
+// moving them here would make one target's ABI into Idol's semantics.
+// ---------------------------------------------------------------------------
+
+/// A relation's declared result pack: how many values it answers with, and the
+/// record naming them when it has one. THE ONE PRODUCER of that fact; a
+/// backend that re-derives it is the defect this exists to prevent.
+pub const ResultPack = struct {
+    arity: usize,
+    record: ?dnir.RecordDesc = null,
+};
+
+/// Null means the relation names a result record this module does not define.
+/// `resultPackShape` reports that as a refusal, so a backend calling this
+/// after the shared validation has passed may treat null as impossible input
+/// rather than a second independent admission question.
+pub fn resultPackOf(module: dnir.Module, function: dnir.Function) ?ResultPack {
+    if (function.ret_record) |name| {
+        const record = dnir.findRecord(module, name) orelse return null;
+        return .{ .arity = record.fields.len, .record = record };
+    }
+    return .{ .arity = function.ret_pack.len };
+}
+
+fn moduleFunction(module: dnir.Module, name: []const u8) ?dnir.Function {
+    if (name.len == 0) return null;
+    for (module.functions) |function| {
+        if (std.mem.eql(u8, function.name, name)) return function;
+    }
+    return null;
+}
+
+/// The values a pack return answers with. `vals` is authoritative; the
+/// `lhs`/`rhs`/`third` prefix is the older three-member spelling and CANNOT
+/// express a fourth member, which is why a five-field record return once left
+/// the caller reading whatever x3/x4 held.
+fn returnPackValues(instruction: dnir.Instr, three: *[3]dnir.Value) []const dnir.Value {
+    if (instruction.vals.len > 0) return instruction.vals;
+    three.* = .{ instruction.lhs, instruction.rhs, instruction.third };
+    var n: usize = 0;
+    while (n < 3 and three[n] != .void) n += 1;
+    return three[0..n];
+}
+
+fn validateResultPacks(module: dnir.Module) ?Failure {
+    for (module.functions) |function| {
+        if (function.ret_pack.len > 0 and function.ret_record != null)
+            return failed("result-pack-dual-source", function.id);
+        const pack = resultPackOf(module, function) orelse
+            return failed("result-pack-record-unknown", function.id);
+        if (pack.record) |record| {
+            if (record.fields.len == 0)
+                return failed("result-pack-record-empty", function.id);
+            if (record.fields.len != record.kinds.len)
+                return failed("result-pack-record-shape", function.id);
+        }
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| switch (instruction.op) {
+                .ret => {
+                    // A value-carrying scalar return out of a relation that
+                    // declared several results answers one of them and leaves
+                    // the rest to whatever the ABI slot held.
+                    if (pack.arity > 1 and instruction.lhs != .void)
+                        return failed("result-pack-scalar-return", function.id);
+                },
+                .ret_pack => {
+                    if (function.ret_pack.len == 0)
+                        return failed("result-pack-form", function.id);
+                    if (instruction.vals.len != pack.arity)
+                        return failed("result-pack-declared-arity", function.id);
+                },
+                .ret_record => {
+                    const record = pack.record orelse
+                        return failed("result-pack-form", function.id);
+                    var three: [3]dnir.Value = undefined;
+                    if (returnPackValues(instruction, &three).len != pack.arity)
+                        return failed("result-pack-declared-arity", function.id);
+                    if (instruction.record.len != 0 and
+                        !std.mem.eql(u8, instruction.record, record.name))
+                    {
+                        return failed("result-pack-record-mismatch", function.id);
+                    }
+                },
+                .call_direct => {
+                    // A foreign or not-yet-lowered callee has no declared pack
+                    // here to disagree with; its boundary is checked elsewhere.
+                    const callee = moduleFunction(module, instruction.callee) orelse continue;
+                    const callee_pack = resultPackOf(module, callee) orelse
+                        return failed("result-pack-record-unknown", function.id);
+                    if (instruction.pack_results.len != 0 and
+                        instruction.pack_results.len != callee_pack.arity)
+                    {
+                        return failed("result-pack-call-arity", function.id);
+                    }
+                    if (instruction.record.len != 0) {
+                        const record = callee_pack.record orelse
+                            return failed("result-pack-call-record", function.id);
+                        if (!std.mem.eql(u8, instruction.record, record.name))
+                            return failed("result-pack-call-record", function.id);
+                    }
+                },
+                else => {},
+            };
+        }
+    }
+    return null;
+}
+
+/// Validate every relation's declared result pack and every realization of it
+/// before any backend emits bytes. Null means the pack shape is exact.
+pub fn resultPackShape(module: dnir.Module) ?Failure {
+    return validateResultPacks(module);
+}
+
+// ---------------------------------------------------------------------------
+// RESULT-PACK CONTROLS
+//
+// Every case below is stated as a HAND-BUILT physical module rather than as
+// source, because the question is whether the validator refuses a schedule the
+// two backends would have realized differently — and only one of them could
+// ever be reached from lowering at a time. A control that can only be produced
+// by breaking lowering is exactly the one worth pinning.
+// ---------------------------------------------------------------------------
+
+const control_pair = dnir.RecordDesc{
+    .name = "Pair",
+    .fields = &.{ "a", "b" },
+    .kinds = &.{ .i64, .i64 },
+};
+
+fn controlModule(functions: []const dnir.Function) dnir.Module {
+    return .{ .functions = functions, .records = &.{control_pair} };
+}
+
+fn controlBlocks(instrs: []const dnir.Instr) [1]dnir.Block {
+    return .{.{ .instrs = instrs }};
+}
+
+test "result pack: an exact record return is admitted" {
+    var blocks = controlBlocks(&.{
+        .{ .op = .ret_record, .record = "Pair", .vals = &.{ .{ .i64 = 1 }, .{ .i64 = 2 } } },
+    });
+    const module = controlModule(&.{.{
+        .name = "pair",
+        .ret = .i64,
+        .ret_record = "Pair",
+        .blocks = &blocks,
+    }});
+    try std.testing.expect(resultPackShape(module) == null);
+}
+
+test "result pack: a record return short of its declared arity is refused" {
+    var blocks = controlBlocks(&.{
+        .{ .op = .ret_record, .record = "Pair", .vals = &.{.{ .i64 = 1 }} },
+    });
+    const module = controlModule(&.{.{
+        .name = "pair",
+        .ret = .i64,
+        .ret_record = "Pair",
+        .blocks = &blocks,
+    }});
+    const failure = resultPackShape(module) orelse return error.TestExpectedRefusal;
+    try std.testing.expectEqualStrings("result-pack-declared-arity", failure.note);
+}
+
+test "result pack: the three-member spelling counts the same as vals" {
+    // `lhs`/`rhs`/`third` is the older encoding of the same return, and both
+    // backends decode it. Two members present, two declared: admitted.
+    var blocks = controlBlocks(&.{
+        .{ .op = .ret_record, .record = "Pair", .lhs = .{ .i64 = 1 }, .rhs = .{ .i64 = 2 } },
+    });
+    const module = controlModule(&.{.{
+        .name = "pair",
+        .ret = .i64,
+        .ret_record = "Pair",
+        .blocks = &blocks,
+    }});
+    try std.testing.expect(resultPackShape(module) == null);
+}
+
+test "result pack: a tuple return declared as a record is refused" {
+    // THE DIVERGENCE THIS SECTION EXISTS FOR. AArch64 measured this return
+    // against `ret_pack` and wasm against `ret_record`; with both populated
+    // the two targets read two different arities and neither objected.
+    var blocks = controlBlocks(&.{
+        .{ .op = .ret_pack, .vals = &.{ .{ .i64 = 1 }, .{ .i64 = 2 } } },
+    });
+    const module = controlModule(&.{.{
+        .name = "pair",
+        .ret = .i64,
+        .ret_pack = &.{ .i64, .i64 },
+        .ret_record = "Pair",
+        .blocks = &blocks,
+    }});
+    const failure = resultPackShape(module) orelse return error.TestExpectedRefusal;
+    try std.testing.expectEqualStrings("result-pack-dual-source", failure.note);
+}
+
+test "result pack: a named result record this module never defines is refused" {
+    var blocks = controlBlocks(&.{
+        .{ .op = .ret_record, .vals = &.{.{ .i64 = 1 }} },
+    });
+    const module = controlModule(&.{.{
+        .name = "pair",
+        .ret = .i64,
+        .ret_record = "Absent",
+        .blocks = &blocks,
+    }});
+    const failure = resultPackShape(module) orelse return error.TestExpectedRefusal;
+    try std.testing.expectEqualStrings("result-pack-record-unknown", failure.note);
+}
+
+test "result pack: a scalar return carrying one member of a pack is refused" {
+    var blocks = controlBlocks(&.{
+        .{ .op = .ret, .lhs = .{ .i64 = 1 } },
+    });
+    const module = controlModule(&.{.{
+        .name = "pair",
+        .ret = .i64,
+        .ret_record = "Pair",
+        .blocks = &blocks,
+    }});
+    const failure = resultPackShape(module) orelse return error.TestExpectedRefusal;
+    try std.testing.expectEqualStrings("result-pack-scalar-return", failure.note);
+}
+
+test "result pack: a return form the relation did not declare is refused" {
+    var blocks = controlBlocks(&.{
+        .{ .op = .ret_record, .record = "Pair", .vals = &.{ .{ .i64 = 1 }, .{ .i64 = 2 } } },
+    });
+    const module = controlModule(&.{.{
+        .name = "pair",
+        .ret = .i64,
+        .ret_pack = &.{ .i64, .i64 },
+        .blocks = &blocks,
+    }});
+    const failure = resultPackShape(module) orelse return error.TestExpectedRefusal;
+    try std.testing.expectEqualStrings("result-pack-form", failure.note);
+}
+
+test "result pack: a call projecting the wrong number of members is refused" {
+    var callee_blocks = controlBlocks(&.{
+        .{ .op = .ret_pack, .vals = &.{ .{ .i64 = 1 }, .{ .i64 = 2 } } },
+    });
+    var caller_blocks = controlBlocks(&.{
+        .{
+            .op = .call_direct,
+            .callee = "pair",
+            .pack_results = &.{.{ .value = 0, .temp = 0, .ty = .i64 }},
+        },
+        .{ .op = .ret, .lhs = .{ .temp = 0 } },
+    });
+    const module = controlModule(&.{
+        .{ .name = "pair", .ret = .i64, .ret_pack = &.{ .i64, .i64 }, .blocks = &callee_blocks },
+        .{ .name = "main", .ret = .i64, .blocks = &caller_blocks },
+    });
+    const failure = resultPackShape(module) orelse return error.TestExpectedRefusal;
+    try std.testing.expectEqualStrings("result-pack-call-arity", failure.note);
+}
+
+test "result pack: a call naming a record its callee does not answer is refused" {
+    var callee_blocks = controlBlocks(&.{
+        .{ .op = .ret, .lhs = .{ .i64 = 1 } },
+    });
+    var caller_blocks = controlBlocks(&.{
+        .{ .op = .call_direct, .callee = "one", .record = "Pair", .result = 0 },
+        .{ .op = .ret, .lhs = .{ .temp = 0 } },
+    });
+    const module = controlModule(&.{
+        .{ .name = "one", .ret = .i64, .blocks = &callee_blocks },
+        .{ .name = "main", .ret = .i64, .blocks = &caller_blocks },
+    });
+    const failure = resultPackShape(module) orelse return error.TestExpectedRefusal;
+    try std.testing.expectEqualStrings("result-pack-call-record", failure.note);
+}
+
+test "result pack: a scalar module is untouched by the pack validator" {
+    var blocks = controlBlocks(&.{
+        .{ .op = .ret, .lhs = .{ .i64 = 7 } },
+    });
+    const module = dnir.Module{ .functions = &.{.{
+        .name = "main",
+        .ret = .i64,
+        .blocks = &blocks,
+    }} };
+    try std.testing.expect(resultPackShape(module) == null);
 }

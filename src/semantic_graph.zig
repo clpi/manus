@@ -2428,6 +2428,57 @@ pub const SemanticGraph = struct {
         return node.foreign_home;
     }
 
+    /// A SOURCE PARTITION THIS PROGRAM REACHED, and the file it was read from.
+    ///
+    /// `home` is the dotted home; `path` is the physical source `home_resolve`
+    /// already selected for it. Both are BORROWED from the graph.
+    pub const ReachedHome = struct {
+        home: []const u8,
+        path: []const u8,
+    };
+
+    /// THE SOURCE PARTITIONS THIS MODULE REACHED, IN ONE PLACE.
+    ///
+    /// `foreignHome` answers "which home does this ONE callable live in". This
+    /// answers the question realization has to ask instead: "which source
+    /// partitions did resolution reach, so that the realization I emit is
+    /// CLOSED over them". It is the same fact set, projected once rather than
+    /// rediscovered per call site.
+    ///
+    /// THIS IS NOT A MODULE TABLE AND CANNOT BECOME ONE. It holds no entry a
+    /// resolution did not already make: `liftForeignHome` creates the foreign
+    /// module node only when `home_resolve.resolve` answered and `sema` cached
+    /// the answer, so this is a PROJECTION of resolution, recomputed from the
+    /// graph on every call, owning nothing and outliving nothing. A second
+    /// registry is a thing that can disagree with the first; this cannot hold a
+    /// row the resolver did not produce.
+    ///
+    /// WHY THE CALLER MAY NOT READ THE UNDEFINED SYMBOL NAMES INSTEAD. The
+    /// object's `need` list carries exactly the same information as a set of
+    /// mangled strings, and reaching for it would make the link line depend on
+    /// re-parsing `idol_<h>__<n>` back into a home — meaning reconstructed from
+    /// a spelling, which `docs/spec/source.md` forbids by name. The home is a
+    /// graph fact; ask the graph.
+    pub fn reachedHomes(
+        self: *const SemanticGraph,
+        alloc: std.mem.Allocator,
+    ) ![]ReachedHome {
+        var out: std.ArrayListUnmanaged(ReachedHome) = .empty;
+        errdefer out.deinit(alloc);
+        for (self.nodes.items) |node| {
+            if (node.kind != .module) continue;
+            const home = node.foreign_home orelse continue;
+            if (node.span.file.len == 0) continue;
+            var seen = false;
+            for (out.items) |row| {
+                if (std.mem.eql(u8, row.path, node.span.file)) seen = true;
+            }
+            if (seen) continue;
+            try out.append(alloc, .{ .home = home, .path = node.span.file });
+        }
+        return out.toOwnedSlice(alloc);
+    }
+
     fn findFuncDecl(self: *const SemanticGraph, target: *const ast.FuncDecl) ?id {
         const raw: *const anyopaque = @ptrCast(target);
         return self.origin.get(@intFromPtr(raw));

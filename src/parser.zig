@@ -6316,6 +6316,114 @@ pub const Parser = struct {
         return if (opener.kind == .lbrace) .interject else .qualify_expr;
     }
 
+    /// `expr` QUALIFIED UNDER THE COMPILE-STAGE WORLD, in either of its two
+    /// source faces.
+    ///
+    /// `world_face` is provenance only — `true` for `expr@{ stage = compile }`,
+    /// `false` for the compatibility spelling `@(expr)` — and the printer is
+    /// its sole reader (`law.md` §9: one occurrence identity, provenance
+    /// records the face used).
+    ///
+    /// SAME-FACT REINJECTION IS IDEMPOTENT, and it is idempotent HERE, at
+    /// formation, rather than by a rule some later pass applies:
+    /// `derive(derive(W, D), D) = derive(W, D)`, so qualifying an expression
+    /// that is ALREADY qualified under this exact world yields the same
+    /// expression. `@(@(1 + 2))` and `(1 + 2)@{ stage = compile }@{ stage = compile }`
+    /// are therefore the same node as the single form, which is the law being
+    /// true of the tree rather than asserted about it.
+    fn compileStageQualified(
+        self: *Parser,
+        loc: ast.Loc,
+        subject: *ast.Expr,
+        world_face: bool,
+    ) ParseError!*ast.Expr {
+        if (subject.* == .unop and subject.unop.op == .compile) return subject;
+        return self.new_expr(.{ .unop = .{
+            .loc = loc,
+            .op = .compile,
+            .operand = subject,
+            .world_face = world_face,
+        } });
+    }
+
+    /// `thing@{ k = v }` — INTERJECTION, which `world.md`:64 reduces exactly to
+    /// `thing@(@{ k = v })`: derive the current world with these deltas, then
+    /// evaluate `thing` under it.
+    ///
+    /// TWO OF THE ALGEBRA'S LAWS ARE STRUCTURAL HERE, not checks bolted on.
+    /// `derive(W, {})` IS `W`, so an empty injection returns the subject
+    /// untouched — there is no world to form and nothing to qualify against.
+    /// And the STAGE delta is the compile stage, so `expr@{ stage = compile }`
+    /// is the same node `@(expr)` builds (`law.stage.world`); reinjecting the
+    /// exact same stage fact is therefore idempotent by construction rather
+    /// than by a rule that could drift.
+    ///
+    /// EVERY OTHER DELTA REFUSES, BY NAME. `WorldFact` still records
+    /// home/reach/members with no parent and no fact-delta range, so a world
+    /// derived on `tax` or `clock` has nothing to be represented by and no
+    /// realization to be evaluated under (gap[203] closure item 1). Admitting
+    /// the shape and ignoring the delta would be the worst available answer:
+    /// the program would compile and mean what it said it did not.
+    ///
+    /// A DUPLICATE MEMBER IS AN ERROR (`world.md`, "a duplicate member in one
+    /// literal is an error") and is checked BEFORE the delta is classified, so
+    /// `@{ stage = compile, stage = runtime }` reports the duplicate rather
+    /// than silently taking one of them.
+    fn parse_interjection(
+        self: *Parser,
+        loc: ast.Loc,
+        subject: *ast.Expr,
+        deltas: *ast.Expr,
+    ) ParseError!*ast.Expr {
+        if (deltas.* != .table) {
+            term.locErr(loc, "an injection literal is a pack of 'k = v' fact deltas", .{});
+            return ParseError.ExpectedToken;
+        }
+        const fields = deltas.table.fields;
+        for (fields, 0..) |field, i| {
+            const named = switch (field) {
+                .named => |x| x,
+                else => {
+                    term.locErr(loc, "a world delta names one exact fact: write 'k = v'", .{});
+                    term.locHint(loc, "docs/spec/world.md: '@{{ k = v }}' derives a closed world with exact fact deltas. A positional or computed entry names no fact, so there is nothing for the derived world to differ by", .{});
+                    return ParseError.ExpectedToken;
+                },
+            };
+            for (fields[0..i]) |earlier| {
+                const prior = switch (earlier) {
+                    .named => |x| x,
+                    else => continue,
+                };
+                if (std.mem.eql(u8, prior.key, named.key)) {
+                    term.locErr(loc, "'{s}' is injected twice in one literal", .{named.key});
+                    term.locHint(loc, "docs/spec/world.md: a duplicate member in one literal is an error. A world holds one exact fact per member, and choosing between two spellings of it by position would be the fail-open the algebra forbids", .{});
+                    return ParseError.ExpectedToken;
+                }
+            }
+        }
+        // `derive(W, {}) = W` — the empty injection is the identity. The world
+        // is unchanged, so qualification under it is the subject itself.
+        if (fields.len == 0) return subject;
+        if (fields.len == 1 and std.mem.eql(u8, fields[0].named.key, "stage")) {
+            const value = fields[0].named.val;
+            if (value.* == .name) {
+                const stage = value.name.ident;
+                if (std.mem.eql(u8, stage, "compile")) {
+                    return self.compileStageQualified(loc, subject, true);
+                }
+                term.locErr(loc, "the '{s}' stage has no realization to evaluate under", .{stage});
+                term.locHint(loc, "'compile' is the one stage this compiler can evaluate under today (law.stage.world). The others are graph facts with no evaluator behind them, and admitting the spelling would compile a program that does not mean what it says", .{});
+                return ParseError.ExpectedToken;
+            }
+            term.locErr(loc, "a stage delta names a stage", .{});
+            term.locHint(loc, "write 'stage = compile'; the stage is an exact identity, not a computed value", .{});
+            return ParseError.ExpectedToken;
+        }
+        term.locErr(loc, "no derived-world fact for delta '{s}'", .{fields[0].named.key});
+        term.locHint(loc, "law.injection.only rules '@{{ … }}' world-deriving and docs/spec/world.md admits this face, but semantic_graph.WorldFact still records home/reach/members with NO parent and NO fact-delta range — so a world derived on this member cannot be represented and there is nothing to evaluate under (gap[203] closure item 1). The one delta that resolves today is 'stage = compile', which is the world '@( … )' already evaluates in", .{});
+        return ParseError.ExpectedToken;
+    }
+
     fn at_is_glued_anchor(self: *Parser, at_tok: Token) ParseError!bool {
         const saved = self.lex.saveState();
         defer self.lex.restoreState(saved);
@@ -7166,7 +7274,10 @@ pub const Parser = struct {
             _ = try self.adv(); // consume '('
             const operand = try self.parse_expr();
             _ = try self.expect(.rparen);
-            return self.new_expr(.{ .unop = .{ .loc = l, .op = .compile, .operand = operand } });
+            // THE COMPATIBILITY FACE of `expr@{ stage = compile }`, and it
+            // builds the same node through the same constructor so the two
+            // spellings cannot drift apart (law.stage.world, C0 §52).
+            return self.compileStageQualified(l, operand, false);
         }
         // `@{ … }` — REFUSED. This block used to read the pack here and justify
         // it with c0 §43 `anchor.brace`: "the same form, name recovered from
@@ -7572,9 +7683,15 @@ pub const Parser = struct {
                     // blaming the operand types.
                     if (try self.at_glued_world_face(tok)) |face| switch (face) {
                         .interject => {
-                            term.locErr(tok.loc, "interjection 'thing@{{ … }}' has no derived-world fact yet", .{});
-                            term.locHint(tok.loc, "docs/spec/world.md admits this face and law.injection.only rules that '@{{ … }}' derives a world, but the graph carries no derived world: WorldFact records home/reach/members with no parent and no fact deltas, so nothing can represent the injection. Qualify against a named world ('thing@world') until the derived-world fact exists", .{});
-                            return ParseError.ExpectedToken;
+                            _ = try self.adv();
+                            const deltas = try self.parse_table();
+                            e = try self.parse_interjection(tok.loc, e, deltas);
+                            // CONTINUE, or the face cannot chain. Without it the
+                            // loop fell through to the anchor test with the
+                            // ALREADY-CONSUMED `@` token and broke out, so
+                            // `x@{ stage = compile }@{ stage = compile }` — the
+                            // idempotence law's own subject — died in matmul.
+                            continue;
                         },
                         .qualify_expr => {
                             term.locErr(tok.loc, "qualification 'thing@( … )' takes no world EXPRESSION yet", .{});

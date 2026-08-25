@@ -4450,9 +4450,16 @@ const Arm64Compiler = struct {
             },
             .ret_pack => {
                 const vals = ins.vals;
-                if (vals.len == 0 or vals.len > dnir_lower.max_reg_record_fields or
-                    vals.len != self.cur_func_ret_pack.len)
-                {
+                // NON-EMPTY, and the same count the relation declared, are
+                // `realization_validate.resultPackShape`'s questions, asked
+                // once for both targets before this file sees the module.
+                // WHAT SURVIVES IS THE ABI FACT: AAPCS64 returns at most
+                // `max_reg_record_fields` members in registers and selects the
+                // x8 indirect-result convention past that. Wasm multi-value has
+                // no such window and needs no such choice, so this bound is not
+                // a ruling about the pack and does not belong in the shared
+                // validator.
+                if (vals.len > dnir_lower.max_reg_record_fields) {
                     return self.refuse(@src());
                 }
                 for (self.cur_func_ret_pack) |ty| switch (ty) {
@@ -10098,6 +10105,13 @@ fn emitArm64FromDnirLicensed(
     diagnostic: *Diagnostic,
     licence: ?*const const_table.Licence,
 ) Error!Arm64Output {
+    // THE SHARED RESULT-PACK ADMISSION, asked here rather than in
+    // `validateDnirApplications` so that it is the same question at the same
+    // point on both targets: immediately before a backend turns this module
+    // into bytes, with no graph required and no gate-transport exemption.
+    if (realization_validate.resultPackShape(m)) |failure| {
+        return invalidFactsWith(diagnostic, @src(), failure.note);
+    }
     var records = try collectF64RecordsFromDnir(alloc, m);
     defer freeF64Records(alloc, &records);
     var scal_records = try collectScalRecordsFromDnir(alloc, m);

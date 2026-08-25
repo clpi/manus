@@ -1819,6 +1819,46 @@ fn constGlobalInit(init: *const Expr, ty: RT) ?dnir.Value {
     };
 }
 
+/// THE VALUE THE COMPILE-STAGE WORLD HAS FOR THIS EXPRESSION, or null.
+///
+/// `@(expr)` is `expr` resolved under the current world at the stage that world
+/// carries (`law.stage.world`, C0 §52) — equivalently `expr@{ stage = compile }`.
+/// So the question this answers is a WORLD LOOKUP, not a peephole: does the
+/// compile-stage world hold a value for this expression? A derived world does
+/// not fall through to facts absent at formation (`docs/spec/world.md`), and a
+/// runtime binding is exactly such a fact, so `null` here is that rule and not
+/// an unimplemented case.
+///
+/// `comptime_eval` IS THE PRODUCER and there is no second one. A local folder
+/// over literals would be a second authority for one fact — `constGlobalInit`
+/// twenty lines up already asks this same evaluator for the module-init form —
+/// and two folders that disagree is the confident-wrong-number class this
+/// backend keeps meeting. `eval` takes no bindings, which is precisely why it
+/// answers this question correctly: a name bound at run time cannot resolve
+/// through it.
+///
+/// BOTH PASSES CALL THIS ONE. `codegen`'s native-scalar precheck decides
+/// ADMISSION and this file decides CAPABILITY; while they were separate rules
+/// for the `.compile` unop they disagreed, and the disagreement was a whole
+/// face: the precheck rejected every `.compile` over a non-table outright, so
+/// `print(@(1 + 2))` — a spelling the evaluator has always been able to fold —
+/// refused with `DNB001 compile-nontable` on every program in the corpus that
+/// used it.
+pub fn compileStageValue(operand: *const Expr) ?dnir.Value {
+    const v = comptime_eval.eval(operand) catch return null;
+    return switch (v) {
+        .int => |n| dnir.Value{ .i64 = n },
+        .bool => |b| dnir.Value{ .i64 = @intFromBool(b) },
+        .float => |f| dnir.Value{ .f64 = f },
+        // A `str` is an address into `__cstring` and a table is a shape, not a
+        // scalar. Both are real compile-stage values and neither has a scalar
+        // realization here, so they stay with the paths that own them
+        // (`moduleConstTableKind` for the descriptor table) rather than being
+        // approximated.
+        else => null,
+    };
+}
+
 /// THE ONE FACT BOTH PASSES READ.
 ///
 /// `codegen`'s native-scalar precheck decides ADMISSION and this file decides
@@ -9891,8 +9931,13 @@ fn absentModulePlace(ctx: *LowerCtx, name: []const u8) ?*const place.Place {
     return p;
 }
 
-/// `t(k)` / `t[k]` on a module-scope collection whose §18 residency is
-/// `.absent` — the element, as an immediate, with no storage anywhere.
+/// `t[k]` on a module-scope collection whose place residency is `.absent` —
+/// the element, as an immediate, with no storage anywhere.
+///
+/// `t(k)` DOES NOT REACH HERE AND MUST NOT. `law.md` §5 gives indexing to `[]`
+/// and says of `()`: "it is ordinary application. It never means table
+/// indexing." `placeFold` no longer offers a `.call` arm; see the ruling
+/// there.
 fn placeElement(ctx: *LowerCtx, name: []const u8, key: *const Expr) ?dnir.Value {
     const p = absentModulePlace(ctx, name) orelse return null;
     if (p.shape != .collection) return null;
@@ -9900,8 +9945,10 @@ fn placeElement(ctx: *LowerCtx, name: []const u8, key: *const Expr) ?dnir.Value 
     const init = p.init orelse return null;
     if (init.* != .table) return null;
     const fields = init.table.fields;
-    // §19 CONSTANT INDEX — the per-access half, separate from the place-wide
-    // determinacy `residencyRefusal` already checked.
+    // CONSTANT INDEX — the per-access half, separate from the place-wide
+    // determinacy `residencyRefusal` already checked. A key that is not a
+    // literal is a genuinely COMPUTED projection and keeps its runtime
+    // access; only a determined one may be answered as an immediate.
     const k = ast.intLiteralValue(key) orelse return null;
     // TABLES ARE 1-INDEXED. `t(0)` is out of range as surely as `t(len + 1)`,
     // and folding either to `fields[k - 1]` is the wrong-answer class this
@@ -9913,8 +9960,8 @@ fn placeElement(ctx: *LowerCtx, name: []const u8, key: *const Expr) ?dnir.Value 
     return dnir.Value{ .i64 = v };
 }
 
-/// §18 RESIDENCY, CONSUMED — the fact `place.zig` produces reaching emitted
-/// machine code.
+/// PLACE RESIDENCY, CONSUMED — the fact `place.zig` produces reaching emitted
+/// machine code, for the ONE face `law.md` §5 gives to projection.
 ///
 /// A module-scope binding that nothing writes, aliases, escapes or indexes at a
 /// runtime offset has NO RUNTIME LOCATION: every read of it IS its initializer.
@@ -9923,25 +9970,54 @@ fn placeElement(ctx: *LowerCtx, name: []const u8, key: *const Expr) ?dnir.Value 
 /// `DNB001 … missing: k` and `DNB001 … missing: graph-dnir-unsupported` — so
 /// the fold is not a cheaper path to an answer the compiler already had.
 ///
-/// WHY IT IS NOT A FOURTH NAME-KEYED TABLE. `ModuleConsts` answers one spelling
-/// with one boolean and cannot say why it declined; `place.residencyRefusal`
-/// names ten distinct reasons, is three-valued so `unknown` never reads as
-/// `no`, and is read from the SAME array `observation.zig` and `eqspace.zig`
-/// read. Deleting any one of its five §19 clauses re-admits a candidate the
-/// other four forbid, which `gate/place.sh` measures in `__text`.
+/// WHY IT IS NOT A FOURTH NAME-KEYED TABLE. `place.residencyRefusal` names ten
+/// distinct reasons, is three-valued so `unknown` never reads as `no`, and is
+/// read from the SAME array `observation.zig` and `eqspace.zig` read. Deleting
+/// any one of its clauses re-admits a candidate the others forbid.
+///
+/// It is a PLACE consumer and nothing else. It answers a projection through a
+/// location; it does not answer a bare name's VALUE — `law.md` §6 separates
+/// those (`value != place`) and the arm that crossed the line is gone.
 fn placeFold(ctx: *LowerCtx, expr: *const Expr) ?dnir.Value {
     switch (expr.*) {
-        .name => |n| {
-            const p = absentModulePlace(ctx, n.ident) orelse return null;
-            if (p.shape != .scalar) return null;
-            const init = p.init orelse return null;
-            const v = ast.intLiteralValue(init) orelse return null;
-            return dnir.Value{ .i64 = v };
-        },
-        .call => |c| {
-            if (c.func.* != .name or c.args.len != 1) return null;
-            return placeElement(ctx, c.func.name.ident, c.args[0]);
-        },
+        // `[]` IS THE ONLY FACE THAT REACHES HERE.
+        //
+        // Two arms were deleted, and each was a rival authority, not a
+        // duplicate:
+        //
+        //   `.name` READ A VALUE OFF A PLACE ROW. It answered a bare module
+        //   scalar by reaching into `p.init` — the initializer AST hanging off
+        //   the place census — and returning it as an immediate. `law.md` §6
+        //   is explicit twice over: "value != place", "binding != place", and
+        //   "Scalars … are not places merely because a compiler implementation
+        //   stores them." An unwritten, unaliased, non-escaping module scalar
+        //   therefore has NO place, and the row `place.zig`'s over-approximating
+        //   AST census mints for it is not a licence to answer its value. The
+        //   value producer owns that answer; this consumer asking the place
+        //   census for it was a second authority over one fact.
+        //
+        //   `.call` FOLDED `t(k)` AS AN INDEX. `law.md` §5: "`()` is ordinary
+        //   application. It never means table indexing." `place.zig` already
+        //   rules this way in its own walk — its `.call` arm reads the callee
+        //   and the operands and comments "it is never an index", and
+        //   `test "place: an ordinary call is not an indexed read"` pins
+        //   `readCount() == 0` and `escape == unknown` for `s(2)`. This arm
+        //   disagreed with that ruling from the consumer side, so the two
+        //   producers answered one question two ways.
+        //
+        //   THE ARM WAS NOT SAFE BECAUSE IT WAS UNREACHABLE. It was shadowed:
+        //   naming a collection as a callee drives `place.zig` to publish
+        //   `escape:"unknown"`, `residencyRefusal` then refuses, and
+        //   `absentModulePlace` returns null — so the wrong answer was withheld
+        //   by a DIFFERENT producer's conservatism rather than by this fold's
+        //   own guard, which admitted it. A guard that permits a wrong answer
+        //   and relies on someone upstream to never ask is fail-open with a
+        //   witness. `gate/callfold.sh` is the control.
+        //
+        // The whole justification the deleted arms carried cited "§18
+        // residency" and "§19 constant index" — sections of a retired edition
+        // of the source law. Current `law.md` ends at §17, and its §6 place
+        // clause is the ruling above.
         .index => |ix| {
             if (ix.obj.* != .name) return null;
             return placeElement(ctx, ix.obj.name.ident, ix.key);
@@ -10390,6 +10466,17 @@ fn lowerExprCons(
                     .ty = if (exprCRank(ctx, u.operand) == .uint32) RT.u32 else RT.any,
                 });
                 break :blk dnir.Value{ .temp = t };
+            }
+            // `@(expr)` / `expr@{ stage = compile }` — EVALUATION UNDER THE
+            // COMPILE-STAGE WORLD. When that world holds a value for the
+            // operand, the value is what the program contains; there is no
+            // residual operation to realize. When it does not, the refusal
+            // NAMES the world question rather than the token, because
+            // "compile-nontable" told the author about the compiler's precheck
+            // and nothing about their program.
+            if (u.op == .compile) {
+                if (compileStageValue(u.operand)) |v| break :blk v;
+                return bailWith(ctx.diagnostic, @src(), "compile-stage-absent");
             }
             return bailWith(ctx.diagnostic, @src(), @tagName(u.op));
         },

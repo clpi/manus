@@ -385,12 +385,14 @@ printf 'main: i64 = ()\n    0\n' >"$gen/seed.id"
 ( cd "$gen" && "$idol" token-tables emit seed.id >>gen.log 2>&1 </dev/null ) \
     || note "§2c 'idol token-tables emit' failed"
 gen_drift=
+gen_repro=
 gen_seen=0
 for f in lib/wasm/opcode_lookup.id lib/wasm/ward_mvp_opcodes.id lib/token/classify.id; do
     [ -f "$gen/$f" ] || { note "§2c generator produced no $f"; continue; }
     gen_seen=$((gen_seen + 1))
     if cmp -s "$gen/$f" "$root/$f"; then
         printf '  reproduces  %s\n' "$f"
+        gen_repro="$gen_repro $f"
     else
         n=$(diff "$root/$f" "$gen/$f" | grep -c '^[<>]')
         printf '  DRIFT %-5s %s\n' "$n" "$f"
@@ -398,9 +400,6 @@ for f in lib/wasm/opcode_lookup.id lib/wasm/ward_mvp_opcodes.id lib/token/classi
     fi
 done
 [ "$gen_seen" -gt 0 ] || broke "§2c compared ZERO generated files"
-if grep -q '^--' "$gen/lib/wasm/ward_mvp_opcodes.id" 2>/dev/null; then
-    printf '  cause    the generator emits retired dash comments into .id\n'
-fi
 
 # ===================== §2d DOCUMENTED BUT UNREACHABLE CLI ===================
 # `idol help` is a capability claim. Each command it names is invoked here
@@ -523,12 +522,15 @@ PIN
 
 printf '%s\n' '== §5 ledger ================================================================='
 # Pinned alongside the level rows, for the same reason: these are the two
-# surfaces a reader trusts most (the help text and a "generated" header) and
-# they are both currently wrong.
+# surfaces a reader trusts most — the help text, which still names commands the
+# dispatcher never reaches, and the generated tables, which now DO reproduce.
+# The generator row is pinned POSITIVELY: the named tables must each come back
+# byte-identical from their generator. Pinning the drift set instead would go
+# green the moment a generator stopped emitting a file at all.
 [ "${dead# }" = "catalog dev" ] \
     || note "§5 the dead documented-command set moved: expected 'catalog dev', measured '${dead# }'"
-[ "${gen_drift# }" = "lib/wasm/opcode_lookup.id lib/wasm/ward_mvp_opcodes.id lib/token/classify.id" ] \
-    || note "§5 the generator-drift set moved: measured '${gen_drift# }'"
+[ "${gen_repro# }" = "lib/wasm/opcode_lookup.id lib/wasm/ward_mvp_opcodes.id lib/token/classify.id" ] \
+    || note "§5 a generated table stopped reproducing from its generator: reproduced '${gen_repro# }', drifted '${gen_drift# }'"
 if cmp -s "$work/pinned" "$ledger"; then
     printf '  measured census matches the pinned ledger (%s subjects)\n' "$total_subjects"
 else

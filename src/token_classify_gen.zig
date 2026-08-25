@@ -43,21 +43,21 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
     const kws = token_semantic.keywords;
     const sorted = sortedIndices();
     try w.print(
-        \\-- GENERATED from src/token_classify_gen.zig — do not edit by hand.
-        \\-- Regenerate: duo token-tables emit
-        \\-- Canonical token facts: src/token_semantic.zig
+        \\# GENERATED from src/token_classify_gen.zig — do not edit by hand.
+        \\# Regenerate: idol token-tables emit
+        \\# Canonical token facts: src/token_semantic.zig
         \\
-        \\-- Pass 12 M1 — Duo-native keyword classifier (P12-WS7).
-        \\-- {d} reserved words across 3 categories; 3 candidate realizations.
-        \\-- Proof: examples/pass12_m1_diff.id (differential + fuzz); artifact
-        \\-- inspection in src/token_classify_gen.zig (kind ids match lexer.TokenKind).
+        \\# Pass 12 M1 — Duo-native keyword classifier (P12-WS7).
+        \\# {d} reserved words across 3 categories; 3 candidate realizations.
+        \\# Proof: examples/pass12_m1_diff.id (differential + fuzz); artifact
+        \\# inspection in src/token_classify_gen.zig (kind ids match lexer.TokenKind).
         \\
         \\GENERATOROWNER = "src/token_classify_gen.zig"
         \\DESCRIPTORSCHEMA = "token-semantic-v0"
         \\KEYWORDCOUNT = {d}
         \\PRODUCTIONCLASSIFIER = "classifier.branchchain"
         \\
-        \\-- Categories: 1 = luakeyword, 2 = duotype, 3 = duocontextual
+        \\# Categories: 1 = luakeyword, 2 = duotype, 3 = duocontextual
         \\CATEGORYLUA = 1
         \\CATEGORYDUOTYPE = 2
         \\CATEGORYDUOCONTEXTUAL = 3
@@ -72,26 +72,26 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
     }
 
     // Sorted descriptor (lexicographic) — 1-indexed Lua tables.
-    try w.writeAll("\n-- Sorted descriptor (lexicographic) for sortedlookup + metadata.\nSORTEDTEXT = {\n");
+    try w.writeAll("\n# Sorted descriptor (lexicographic) for sortedlookup + metadata.\nSORTEDTEXT = {\n");
     for (sorted, 0..) |ki, i| {
-        try w.print("    {s}\"{s}\",\n", .{ if (i == 0) "" else "", kws[ki].text });
+        try w.print("  {s}\"{s}\",\n", .{ if (i == 0) "" else "", kws[ki].text });
     }
     try w.writeAll("}\nSORTEDID = {\n");
     for (sorted, 0..) |ki, i| {
-        try w.print("    {s}{d},\n", .{ if (i == 0) "" else "", @intFromEnum(kws[ki].kind) });
+        try w.print("  {s}{d},\n", .{ if (i == 0) "" else "", @intFromEnum(kws[ki].kind) });
     }
     try w.writeAll("}\nSORTEDCATEGORY = {\n");
     for (sorted, 0..) |ki, i| {
-        try w.print("    {s}{d},\n", .{ if (i == 0) "" else "", categoryInt(kws[ki]) });
+        try w.print("  {s}{d},\n", .{ if (i == 0) "" else "", categoryInt(kws[ki]) });
     }
     try w.writeAll("}\n");
 
     // Candidate 1 — branch chain (linear if-chain; no tables, no alloc).
-    try w.writeAll("\n-- Candidate 1: branch chain (production).\nclassifybranchchain: i64 = (w: str)\n");
+    try w.writeAll("\n# Candidate 1: branch chain (production).\nclassifybranchchain: i64 = (w: str)\n");
     for (kws) |kw| {
-        try w.print("    if w == \"{s}\" then return {d} end\n", .{ kw.text, @intFromEnum(kw.kind) });
+        try w.print("  if w == \"{s}\"\n    return {d}\n", .{ kw.text, @intFromEnum(kw.kind) });
     }
-    try w.writeAll("    0\nend\n");
+    try w.writeAll("  0\n");
 
     // Candidate 2 — length bucket (length filter then equality chain).
     var lengths: [32]usize = undefined;
@@ -112,50 +112,46 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
             return a < b;
         }
     }.lessThan);
-    try w.writeAll("\n-- Candidate 2: length bucket (filter then equality chain).\nclassifylengthbucket: i64 = (w: str)\n    n = string.len(w)\n");
+    try w.writeAll("\n# Candidate 2: length bucket (filter then equality chain).\nclassifylengthbucket: i64 = (w: str)\n  n = string.len(w)\n");
     for (lengths[0..len_count]) |l| {
-        try w.print("    if n == {d} then\n", .{l});
+        try w.print("  if n == {d}\n", .{l});
         for (kws) |kw| {
             if (kw.text.len != l) continue;
-            try w.print("        if w == \"{s}\" then return {d} end\n", .{ kw.text, @intFromEnum(kw.kind) });
+            try w.print("    if w == \"{s}\"\n      return {d}\n", .{ kw.text, @intFromEnum(kw.kind) });
         }
-        try w.writeAll("        0\n    end\n");
+        try w.writeAll("    0\n");
     }
-    try w.writeAll("    0\nend\n");
+    try w.writeAll("  0\n");
 
     // Candidate 3 — sorted binary search.
-    try w.print("\n-- Candidate 3: sorted lookup (binary search over descriptor).\nclassifysortedlookup: i64 = (w: str)\n    lo = 1\n    hi = {d}\n    while lo <= hi\n        mid = (lo + hi) // 2\n        if w == SORTEDTEXT[mid] then return SORTEDID[mid] end\n        if w < SORTEDTEXT[mid] then\n            hi = mid - 1\n        else\n            lo = mid + 1\n        end\n    end\n    0\nend\n", .{kws.len});
+    try w.print("\n# Candidate 3: sorted lookup (binary search over descriptor).\nclassifysortedlookup: i64 = (w: str)\n  lo = 1\n  hi = {d}\n  while lo <= hi\n    mid = (lo + hi) // 2\n    if w == SORTEDTEXT[mid]\n      return SORTEDID[mid]\n    if w < SORTEDTEXT[mid]\n      hi = mid - 1\n    else\n      lo = mid + 1\n  0\n", .{kws.len});
 
     // Production entry + metadata projections.
     try w.writeAll(
         \\
-        \\-- Production entry (mirrors token_semantic.production_classifier).
+        \\# Production entry (mirrors token_semantic.production_classifier).
         \\@c.export("duo_keyword_classify")
         \\classify: i64 = (w: str)
-        \\    classifybranchchain(w)
-        \\end
+        \\  classifybranchchain(w)
         \\
         \\iskeyword: bool = (w: str)
-        \\    classify(w) != 0
-        \\end
+        \\  classify(w) != 0
         \\
         \\categoryof: i64 = (id: i64)
-        \\    i = 1
-        \\    while i <= KEYWORDCOUNT
-        \\        if SORTEDID[i] == id then return SORTEDCATEGORY[i] end
-        \\        i += 1
-        \\    end
-        \\    0
-        \\end
+        \\  i = 1
+        \\  while i <= KEYWORDCOUNT
+        \\    if SORTEDID[i] == id
+        \\      return SORTEDCATEGORY[i]
+        \\    i += 1
+        \\  0
         \\
         \\spellingof: str = (id: i64)
-        \\    i = 1
-        \\    while i <= KEYWORDCOUNT
-        \\        if SORTEDID[i] == id then return SORTEDTEXT[i] end
-        \\        i += 1
-        \\    end
-        \\    ""
-        \\end
+        \\  i = 1
+        \\  while i <= KEYWORDCOUNT
+        \\    if SORTEDID[i] == id
+        \\      return SORTEDTEXT[i]
+        \\    i += 1
+        \\  ""
         \\
     );
 }
@@ -165,7 +161,7 @@ pub fn emitKeywordClassifyNativeC(w: *std.Io.Writer) !void {
     const kws = token_semantic.keywords;
     try w.print(
         \\/* GENERATED from {s} — do not edit by hand.
-        \\ * Regenerate: duo token-tables emit
+        \\ * Regenerate: idol token-tables emit
         \\ * Canonical Duo projection: lib/token/classify.id (@c.export classify)
         \\ * Production consumer: src/keyword_bridge.zig → src/lexer.zig
         \\ */

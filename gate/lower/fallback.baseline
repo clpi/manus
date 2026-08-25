@@ -10,11 +10,21 @@
 # THE SECOND COLUMN IS WHY THIS FILE IS STILL A MEASUREMENT. Cross-home
 # realization took every abort count to zero, and a ratchet whose every row
 # reads zero guards nothing. "Zero aborts" says the emitter wrote no marker; it
-# says nothing about whether it wrote C. FOUR subjects still do not compile —
-# monolith.id (3 C errors), parser.id (17), rewrite.id (2) and classify.id (11)
-# — for reasons that have nothing to do with cross-home calls. monolith.id and
-# classify.id carried theirs before this change and before `1ec8850e`; they are
-# named here rather than averaged away.
+# says nothing about whether it wrote C. ONE subject still does not compile —
+# parser.id (17 C errors) — for reasons that have nothing to do with cross-home
+# calls. It is named here rather than averaged away.
+#
+# THE OTHER THREE MOVED CLEAN, and the ratchet had to be told. monolith.id and
+# rewrite.id measured CLEAN against a DIRTY pin on `8347a9c2` itself, so that
+# pair was already stale before this branch: the gate was reporting "the
+# transfer ratchet moved" on a tree strictly MORE correct than the one the pin
+# was written against, which is a ratchet failing in the direction that teaches
+# nothing. classify.id joined them here, because `land/generators-20260823` made
+# the generated tables reproduce canonically and the emitted C compiles.
+#
+# This is the same repair `2d1dbe3e` made to `gate/surface/reach.sh` §5 for the
+# same cause — a pin that recorded a defect as the EXPECTED state, and so fired
+# when the defect was fixed. A pin is a measurement, not a wish.
 #
 # WHAT MOVED, and it is the whole content of this revision. Five subjects were
 # pinned REFUSED at `088e3d07`, and before `1ec8850e` they were counts: 291 for
@@ -51,14 +61,14 @@ REFUSED	-	lib/compiler/emit_c.id
 0	CLEAN	lib/compiler/graph.id
 0	CLEAN	lib/compiler/lexer.id
 0	CLEAN	lib/compiler/macho.id
-0	DIRTY	lib/compiler/monolith.id
+0	CLEAN	lib/compiler/monolith.id
 0	DIRTY	lib/compiler/parser.id
 0	CLEAN	lib/compiler/profile.id
 0	CLEAN	lib/compiler/reader.id
 0	CLEAN	lib/compiler/record.id
-0	DIRTY	lib/compiler/rewrite.id
+0	CLEAN	lib/compiler/rewrite.id
 REFUSED	-	lib/compiler/symbol.id
 REFUSED	-	lib/compiler/token.id
 0	CLEAN	lib/compiler/token_view.id
-0	DIRTY	lib/token/classify.id
+0	CLEAN	lib/token/classify.id
 0	CLEAN	lib/token/grammarrole.id

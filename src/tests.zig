@@ -99,6 +99,11 @@ test {
     // needed an arm here. Wiring it to a driver is a larger job and is NOT this;
     // this is the line that stops it decaying unnoticed in the meantime.
     _ = @import("wasm_backend.zig");
+    // The one semantic validator BOTH of the two lines above consume. It is
+    // imported here in its own right and not left to reach the test runner
+    // through them, because the point of the file is that it is not owned by
+    // either backend.
+    _ = @import("realization_validate.zig");
     _ = @import("demand.zig");
     _ = @import("demand_projection.zig");
     _ = @import("quotient_synth.zig");

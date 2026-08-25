@@ -738,9 +738,30 @@ pub const PrettyPrinter = struct {
                 // GAP-203 named in advance when it said closing the parser half
                 // alone would do exactly this.
                 //
-                // ONE arm now. `@(expr)` is the only spelling of comptime eval
-                // the parser accepts, and a pack is an ordinary operand of it.
+                // TWO SPELLINGS, ONE NODE, AND THE PRINTER OWES BACK THE ONE
+                // THAT WAS WRITTEN. `law.stage.world` rules `@(expr)` and
+                // `expr@{ stage = compile }` the same meaning — the current
+                // world applied to an expression — so they build one node and
+                // `world_face` carries which face spelled it. Reprinting the
+                // world face as the compatibility face would still compile and
+                // still mean the same thing, which is why it is a spelling
+                // question and not a gap[223] corruption; but `law.md` §16 says
+                // what the author wrote is kept and never relitigated by a
+                // printer, and a formatter that silently migrates the canonical
+                // spelling BACK to the compatibility one is migration pressure
+                // pointed the wrong way.
+                //
+                // The compatibility arm's own history is below. `@` is not a
+                // prefix operator you can juxtapose: it parses by the
+                // DELIMITER, so printing the operand bare gave `@64` for
+                // `@(64)` — a reprint the parser will not take back — and
+                // gap[223] is the same failure with a table operand.
                 if (x.op == .compile) {
+                    if (x.world_face) {
+                        try self.printExpr(x.operand, tight_operand_position);
+                        try self.write("@{ stage = compile }");
+                        return;
+                    }
                     try self.write("@(");
                     try self.printExpr(x.operand, 0);
                     try self.write(")");
@@ -2444,6 +2465,63 @@ test "pretty: a world access keeps its sigil" {
     const out = try fmtCanonical(alloc, src);
     try testing.expectEqualStrings(src, out);
     try expectIdempotent(alloc, src);
+}
+
+test "pretty: the two stage faces are one node and keep their own spelling" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `law.stage.world`: `@(expr)` and `expr@{ stage = compile }` are one
+    // meaning, so they are one node and `world_face` is the provenance the
+    // printer reads. Migrating the canonical face back to the compatibility
+    // one still compiles and still means the same thing — which is exactly why
+    // only a round trip catches it, and why it matters: a formatter that
+    // rewrites the canonical spelling into the retained one is migration
+    // pressure pointed backwards.
+    const compat =
+        \\x = @(1 + 2)
+        \\
+    ;
+    const canon =
+        \\x = (1 + 2)@{ stage = compile }
+        \\
+    ;
+    try testing.expectEqualStrings(compat, try fmtCanonical(alloc, compat));
+    try testing.expectEqualStrings(canon, try fmtCanonical(alloc, canon));
+    try expectIdempotent(alloc, compat);
+    try expectIdempotent(alloc, canon);
+}
+
+test "pretty: same-fact reinjection collapses in the reprint" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `derive(derive(W, D), D) = derive(W, D)`, applied at FORMATION rather
+    // than by a later pass, so the doubled spelling never becomes two worlds.
+    // The reprint is where that is observable.
+    const src =
+        \\x = (1 + 2)@{ stage = compile }@{ stage = compile }
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings("x = (1 + 2)@{ stage = compile }\n", out);
+    try expectIdempotent(alloc, out);
+}
+
+test "pretty: the empty injection is the identity" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `derive(W, {}) = W`. No world is formed, so there is nothing to qualify
+    // against and the subject is unchanged — including in the reprint, which
+    // must not invent a stage the source did not name.
+    const src =
+        \\x = 5@{}
+        \\
+    ;
+    const out = try fmtCanonical(alloc, src);
+    try testing.expectEqualStrings("x = 5\n", out);
+    try testing.expect(std.mem.indexOf(u8, out, "stage") == null);
 }
 
 test "pretty: gap[223] the paren arm is still load-bearing for a non-pack" {

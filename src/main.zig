@@ -102,6 +102,28 @@ var macos_sdkroot_configured = false;
 /// The platform SDK this compile targets, captured from `SDKROOT`. Empty when
 /// unset. Enters the build cache key; see `apply_env_flags` and `buildCacheKey`.
 var global_sdkroot: []const u8 = "";
+
+/// The developer directory this compile's toolchain is resolved from, captured
+/// from `DEVELOPER_DIR`. Empty when unset.
+///
+/// SAME CLASS AS `SDKROOT`, AND THE COMMENT AT THAT CAPTURE ALREADY NAMES THE
+/// CLASS: an input consumed by a SUBPROCESS this compiler spawns, carrying
+/// neither the `DUO_` nor the `IDOL_` prefix, so no amount of care in
+/// `behaviourEnvClass` reaches it and `surveyBehaviourEnv` is structurally
+/// unable to decline on it. `SDKROOT` was repaired as one name; this is the
+/// second member of the same class.
+///
+/// `xcrun` resolves the assembler, the linker and the default SDK relative to
+/// the developer directory, and this compiler spawns `xcrun clang` to assemble
+/// and link and `xcrun llvm-profdata` to merge profiles. Changing it therefore
+/// changes the toolchain that produced the artifact.
+///
+/// MODELLED ON THE ARGUMENT, NOT ON A MEASUREMENT, AND SAID SO. The host this
+/// landed on has exactly one developer directory installed, so a two-toolchain
+/// byte-difference arm was not available to run. Hashing an input that turns
+/// out not to matter costs a cache miss; omitting one that does costs a wrong
+/// answer, so the unmeasured direction is the conservative one.
+var global_developer_dir: []const u8 = "";
 var compiler_lib_root: ?[]const u8 = null;
 var forwarded_program_args: []const []const u8 = &.{};
 /// argv[0], recorded so the build cache key can include the compiler's own
@@ -400,6 +422,7 @@ const behaviour_env_table = [_]BehaviourEnvRow{
     // A code-affecting unprefixed input must therefore be `.modelled` --
     // hashed into the key -- because declining is not available to it.
     .{ "SDKROOT", .modelled },
+    .{ "DEVELOPER_DIR", .modelled },
     // Selects `scratch.root()`, which is WHERE the cache lives. It chooses
     // which cache answers, never what the artifact contains, and hashing it
     // would give every TMPDIR its own entry for identical bytes.
@@ -840,6 +863,12 @@ fn mainInner(init: std.process.Init) !void {
     const alloc = init.arena.allocator();
     term.init(init.io);
     apply_env_flags(init);
+    // `DEVELOPER_DIR`, captured for the same reason and by the same argument
+    // as `SDKROOT` above — see `global_developer_dir`. It selects which
+    // toolchain every `xcrun` this compiler spawns resolves to.
+    if (init.environ_map.get("DEVELOPER_DIR")) |developer_dir| {
+        global_developer_dir = developer_dir;
+    }
     if (init.environ_map.get("SDKROOT")) |sdkroot| {
         macos_sdkroot_configured = sdkroot.len > 0;
         // NOT EVERY CODE-AFFECTING VARIABLE WEARS THE PREFIX, and this one is
@@ -897,6 +926,7 @@ fn mainInner(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "explain") or
             std.mem.eql(u8, args[1], "algebra") or
             std.mem.eql(u8, args[1], "env-census") or
+            std.mem.eql(u8, args[1], "cache-deps") or
             std.mem.eql(u8, args[1], "catalog") or
             std.mem.eql(u8, args[1], "dev") or
             std.mem.eql(u8, args[1], "wasm-tables") or
@@ -1340,6 +1370,14 @@ fn mainInner(init: std.process.Init) !void {
         return;
     }
 
+    if (std.mem.eql(u8, cmd, "cache-deps")) {
+        const f = input_file orelse {
+            term.err("idol cache-deps needs a file", .{});
+            std.process.exit(2);
+        };
+        try do_cache_deps(alloc, io, f);
+        return;
+    }
     if (std.mem.eql(u8, cmd, "env-census")) {
         if (input_file != null) {
             term.err("idol env-census takes no file argument", .{});
@@ -1818,7 +1856,15 @@ fn do_project_fmt(alloc: std.mem.Allocator, io: Io, t: build_framework.Target) !
 fn do_project_check(alloc: std.mem.Allocator, io: Io, t: build_framework.Target) !void {
     term.banner("check");
     if (t.src) |src| {
-        const dummy = try scratch.path(alloc, "duo_check_{s}.out", .{std.fs.path.stem(src)});
+        // SALTED, LIKE EVERY OTHER ARTIFACT THIS PROCESS WRITES. `duo_check_x.out`
+        // is derived from the source BASENAME alone, so `idol check a/x.id` and
+        // `idol check b/x.id` running at once compile two different programs
+        // into one path. `src/scratch.zig` was written for exactly this failure
+        // and the intermediate object already carries `salt()`; the executable
+        // the check produces did not.
+        const dummy = try scratch.path(alloc, "duo_check_{s}_{x}_{d}.out", .{
+            std.fs.path.stem(src), scratch.salt(), std.c.getpid(),
+        });
         defer alloc.free(dummy);
         try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, false, false, false, false, false, false, false, null, t.link, null, true);
         term.ok("'{s}' ok", .{src});
@@ -1944,7 +1990,16 @@ fn run_test_sources(
         const out = if (output_file != null and sources.len == 1)
             output_file.?
         else
-            try scratch.path(alloc, "duo_{s}_{d}.test.out", .{ std.fs.path.stem(file), idx });
+            // THE INDEX IS A POSITION IN THIS RUN'S LIST, NOT AN IDENTITY.
+            // `idol test a/x.id` and `idol test b/x.id` both resolve slot 0 to
+            // `duo_x_0.test.out`, and the window between compiling into that
+            // path and executing it is wide enough for one lane to run the
+            // other lane's binary and report its exit code as its own. The test
+            // LOG two hundred lines below is already salted; the artifact the
+            // run actually executes was not.
+            try scratch.path(alloc, "duo_{s}_{d}_{x}_{d}.test.out", .{
+                std.fs.path.stem(file), idx, scratch.salt(), std.c.getpid(),
+            });
         defer if (!(output_file != null and sources.len == 1)) alloc.free(out);
         try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null, true);
         const code = try run_pretty_test_runner(alloc, io, out, bench_only);
@@ -4619,6 +4674,213 @@ fn directLinkInputs(
     return inputs.toOwnedSlice(alloc);
 }
 
+// ===========================================================================
+// REALIZATION CLOSURE OVER REACHED SOURCE PARTITIONS
+// ===========================================================================
+//
+// THE MEASUREMENT THIS EXISTS FOR. Two sibling files, one calling the other:
+//
+//     helper.id   twice: i64 = (x: i64)
+//                     x * 2
+//     main.id     main: i64 = ()
+//                     helper.twice(21)
+//
+// At 6c520e93, `idol compile --backend=direct main.id`:
+//
+//     Undefined symbols for architecture arm64:
+//       "_idol_tmpcross_helper__twice", referenced from:
+//           _idol_tmpcross_main__main in duo_main_..._native.o
+//
+// EVERY OTHER PIECE ALREADY WORKED, and that is the whole finding. Compiling
+// the two files SEPARATELY to objects and linking them by hand:
+//
+//     idol compile --backend=direct --emit obj helper.id -o helper.o
+//     nm helper.o   ->  T _idol_tmpcross_helper__twice
+//     idol compile --backend=direct --emit obj main.id   -o main.o
+//     nm main.o     ->  U _idol_tmpcross_helper__twice
+//                       T _idol_tmpcross_main__main
+//     clang main.o helper.o -o prog -Wl,-e,_idol_tmpcross_main__main
+//     ./prog; echo $?   ->  42
+//
+// The definer and the caller already derive the SAME string from the same two
+// facts, because both go through `home_resolve.relationSymbol`. Resolution
+// already found the file; sema already parsed its declaration; the graph
+// already carries the foreign home. The single missing step was that nobody
+// ever compiled the reached partition and put it on the link line.
+//
+// SO THIS IS NOT A MODULE SYSTEM, AND THE DISTINCTION IS THE LAW.
+// `docs/spec/source.md`: "A canonical `.id` file is a source partition, not a
+// module" and "A resolved reference contributes its own semantic dependency.
+// Source does not repeat that fact with an import operation." Reach was
+// already established by scope and home projection. What was missing was the
+// REALIZATION half of the same sentence: a program whose meaning closes over
+// two source partitions must be realized over both. No syntax is added, no
+// registry is created, no home is discoverable here that resolution did not
+// already answer for — `graph.reachedHomes` is a projection of what
+// `home_resolve.resolve` already selected, recomputed per call.
+//
+// WHY THE HOME LIST COMES FROM THE GRAPH AND NOT FROM `artifact.need`. The
+// undefined-symbol list carries the same information as a set of mangled
+// strings, and reading it would mean parsing `idol_<h>__<n>` back into a home
+// — meaning reconstructed from a spelling, which `docs/spec/source.md`
+// forbids in the sentence "No later phase reconstructs meaning from
+// filenames, paths, token spelling". The home is a graph fact; ask the graph.
+//
+// FAIL CLOSED. A reached partition that cannot be realized is a REFUSAL naming
+// the partition, never a skipped link input. Skipping it would put the program
+// back exactly where it started — an undefined symbol from the linker instead
+// of a compiler diagnostic — which is the fail-open this change removes.
+//
+// DEAD CODE COSTS NOTHING. The link line already carries `-dead_strip`, so a
+// reached partition's unused relations do not reach the binary. FTCFTW's "Idol
+// pays no runtime cost for source partitions" is preserved by the linker, not
+// by refusing to link.
+
+/// Realize ONE reached source partition as an object, and report the homes it
+/// reaches in turn.
+///
+/// `out_reached` is appended with the source paths this partition itself
+/// reached, so the caller's worklist closes transitively: a program that calls
+/// a sibling which calls a third partition links all three.
+fn realizeReachedPartition(
+    alloc: std.mem.Allocator,
+    io: Io,
+    source_path: []const u8,
+    target: []const u8,
+    out_reached: *std.ArrayListUnmanaged([]const u8),
+) ![]const u8 {
+    // A diagnostic raised while realizing a REACHED partition must quote that
+    // partition; a diagnostic raised afterwards must go back to quoting the
+    // entry. `parse_and_check` sets the view unconditionally, so the entry's
+    // view is saved here and restored by the caller's `defer`.
+    var ps = try parse_and_check(alloc, io, source_path);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, source_path);
+
+    const reached = try graph.reachedHomes(alloc);
+    defer alloc.free(reached);
+    for (reached) |row| try out_reached.append(alloc, try alloc.dupe(u8, row.path));
+
+    // THE SAME LIFT THE `--emit obj` PATH DOES, deliberately arm for arm. A
+    // reached partition is read from OUTSIDE the object being built, so
+    // `world_closed` stays at its false default exactly as it does there: the
+    // entry's own lift is the closed world and this one is not.
+    var demand_plan = try demand.analyzeModule(alloc, &ps.mod, .{ .graph = &graph });
+    defer demand_plan.deinit();
+    try demand.prune(alloc, &ps.mod, &demand_plan);
+    _ = try loop_closure.applyToModule(alloc, &ps.mod);
+
+    var native_diagnostic: native_backend.Diagnostic = .{};
+    var artifact = try native_backend.emitObjectWithGraphLineageObserved(
+        alloc,
+        &ps.mod,
+        target,
+        &graph,
+        &native_diagnostic,
+    );
+    defer artifact.deinit(alloc);
+
+    // CONTENT-ADDRESSED, like `materializeBootstrapC` and for the same reason:
+    // the link line must not move between runs of the same compiler on the
+    // same input, and two partitions must not collide on a stem.
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(artifact.bytes, &digest, .{});
+    const hex = std.fmt.bytesToHex(digest, .lower);
+    const obj_path = try scratch.path(alloc, "idol-home-{s}-{s}.o", .{
+        hex[0..16], std.fs.path.stem(source_path),
+    });
+    try Io.Dir.writeFile(Io.Dir.cwd(), io, .{ .sub_path = obj_path, .data = artifact.bytes });
+    return obj_path;
+}
+
+/// Every object the entry's link line needs beyond its own, closed
+/// transitively over the source partitions resolution reached.
+///
+/// Returns an empty slice for the overwhelmingly common single-partition
+/// program, which is why this costs nothing where nothing is reached.
+fn reachedHomeObjects(
+    alloc: std.mem.Allocator,
+    io: Io,
+    entry_path: []const u8,
+    graph: *const semantic_graph.SemanticGraph,
+) ![]const []const u8 {
+    // A REACHED PARTITION IS NEVER THE PROCESS IMAGE, so it is realized as an
+    // OBJECT whatever the entry's artifact kind is. Passing the entry's target
+    // down would ask the emitter for a second `native-exe`, which is where the
+    // first version of this refused with `UnsupportedTarget` — one program has
+    // one entry, and the partitions it reaches contribute relations, not roots.
+    const target = "native-object";
+    const first = try graph.reachedHomes(alloc);
+    defer alloc.free(first);
+    if (first.len == 0) return &.{};
+
+    const saved_view = term.currentSource();
+    defer term.restoreSource(saved_view);
+
+    // Identity is the REAL path, not the spelling: a partition reached as
+    // `./helper.id` and as `helper.id` is one partition and must be realized
+    // once, or the link line carries two definitions of every symbol in it.
+    var done: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer {
+        for (done.items) |p| alloc.free(p);
+        done.deinit(alloc);
+    }
+    try done.append(alloc, try realPathOwned(alloc, entry_path));
+
+    var pending: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer {
+        for (pending.items) |p| alloc.free(p);
+        pending.deinit(alloc);
+    }
+    for (first) |row| try pending.append(alloc, try alloc.dupe(u8, row.path));
+
+    var objects: std.ArrayListUnmanaged([]const u8) = .empty;
+    errdefer objects.deinit(alloc);
+
+    var head: usize = 0;
+    while (head < pending.items.len) : (head += 1) {
+        const source_path = pending.items[head];
+        const real = try realPathOwned(alloc, source_path);
+        var seen = false;
+        for (done.items) |p| {
+            if (std.mem.eql(u8, p, real)) seen = true;
+        }
+        if (seen) {
+            alloc.free(real);
+            continue;
+        }
+        try done.append(alloc, real);
+        const obj = realizeReachedPartition(alloc, io, source_path, target, &pending) catch |e| {
+            // FAIL CLOSED, BY NAME. The alternative — dropping this input and
+            // linking anyway — reproduces the exact undefined-symbol failure
+            // this whole path removes, one layer further from its cause.
+            term.err("cannot realize the source partition this program reaches: {s} ({s})", .{ source_path, @errorName(e) });
+            term.hint("compile it on its own to see the refusal: idol compile --backend=direct --emit obj {s}", .{source_path});
+            std.process.exit(1);
+        };
+        try objects.append(alloc, obj);
+    }
+    return objects.toOwnedSlice(alloc);
+}
+
+/// The canonical file identity of a source spelling, or the spelling itself
+/// when the filesystem cannot answer. Two spellings of one file must not be
+/// realized twice; a path that does not resolve is left alone so the refusal
+/// the caller reports names what the user wrote.
+fn realPathOwned(alloc: std.mem.Allocator, path: []const u8) ![]const u8 {
+    var real_buf: [std.c.PATH_MAX]u8 = undefined;
+    var path_z: [std.c.PATH_MAX]u8 = undefined;
+    if (path.len < path_z.len) {
+        @memcpy(path_z[0..path.len], path);
+        path_z[path.len] = 0;
+        if (std.c.realpath(path_z[0..path.len :0].ptr, &real_buf)) |rp| {
+            return alloc.dupe(u8, std.mem.sliceTo(rp, 0));
+        }
+    }
+    return alloc.dupe(u8, path);
+}
+
 fn reportDirectBackendError(
     io: Io,
     err: anyerror,
@@ -4900,6 +5162,150 @@ fn hashReqClosure(
     return true;
 }
 
+/// Hash every SOURCE PARTITION the entry reaches through home projection,
+/// transitively — the dotted-spelling half of what `hashReqClosure` does for
+/// the banned `req` spelling.
+///
+/// THE DEFECT THIS CLOSES, MEASURED. With the realization closure in place but
+/// this scan absent, three partitions where `main` -> `helper` -> `deeper`:
+///
+///     idol compile --backend=direct main.id -o m.out   -> 42
+///     # edit helper.id to call deeper.plus(x) first
+///     idol compile --backend=direct main.id -o m.out   -> `(cached)`, 42
+///     idol compile --no-cache …                        -> 44
+///
+/// 44 is the answer. The cache served a binary built from a partition that no
+/// longer exists — the same class as the `req` defect recorded above, arriving
+/// through the spelling that is NOT banned, which is now the only spelling a
+/// canonical `.id` file has.
+///
+/// ONE RESOLVER, NOT A SECOND SEARCH. `hashReqClosure` above must over
+/// approximate because the real answer lived in a `CodeGen` method it could not
+/// call. That is no longer true for homes: `home_resolve.resolve` is a pure
+/// function of `(from, home)` and is the SAME call the compile itself makes, so
+/// this asks it rather than reimplementing its roots. Two functions answering
+/// one question with different sets is the defect that comment warns about; one
+/// function cannot have it.
+///
+/// STILL A TEXTUAL SCAN, and still before the parse, so it over-approximates
+/// the CANDIDATE SET: `a.b` inside a comment or a string is probed like any
+/// other, and every proper prefix of a chain is a candidate home because
+/// `compiler.lexer.new(…)` has home `compiler.lexer` while `user.name` has
+/// none. A candidate that resolves to nothing is not a reach and is not a
+/// failure — unlike `req`, where a name nothing answers means a broken program,
+/// a dotted spelling that names no file is the ordinary static projection
+/// `docs/spec/source.md` gives `.` as its permanent meaning.
+///
+/// FAIL CLOSED ON SIZE. A source with more distinct dotted spellings than the
+/// bound is not probed one by one; the caller declines to cache instead of
+/// storing an entry it did not fully key.
+fn hashHomeClosure(
+    alloc: std.mem.Allocator,
+    io: Io,
+    from_path: []const u8,
+    src: []const u8,
+    h: *std.crypto.hash.sha2.Sha256,
+    seen: *std.StringHashMapUnmanaged(void),
+    depth: u8,
+) bool {
+    if (depth > 64) return false;
+    var homes: std.StringHashMapUnmanaged(void) = .empty;
+    if (!collectDottedHomes(alloc, src, &homes)) return false;
+    // ORDER THE PROBES. A hash fed in hash-map iteration order is a hash whose
+    // value depends on allocator luck, and a cache key that changes between two
+    // identical invocations is a cache that never hits.
+    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+    var name_it = homes.keyIterator();
+    while (name_it.next()) |k| names.append(alloc, k.*) catch return false;
+    std.mem.sort([]const u8, names.items, {}, struct {
+        fn less(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.less);
+
+    const cwd = Io.Dir.cwd();
+    for (names.items) |home| {
+        const source = home_resolve.resolve(
+            alloc,
+            io,
+            .{ .from = from_path, .stdlib_root = compiler_lib_root },
+            home,
+        ) orelse continue;
+        const path = source.path;
+        if (std.mem.eql(u8, path, from_path)) continue;
+        if (seen.contains(path)) continue;
+        const owned_path = alloc.dupe(u8, path) catch return false;
+        seen.put(alloc, owned_path, {}) catch return false;
+        const body = Io.Dir.readFileAlloc(cwd, io, path, alloc, .unlimited) catch return false;
+        // The PATH as well as the bytes, and the §87 quotient rather than the
+        // bytes where the parser can supply one — both for the reasons
+        // `hashReqClosure` states.
+        h.update(path);
+        if (hashSourceQuotient(alloc, h, body, path)) {
+            h.update("q");
+        } else {
+            h.update("r");
+            h.update(body);
+        }
+        if (!hashHomeClosure(alloc, io, path, body, h, seen, depth + 1)) return false;
+    }
+    return true;
+}
+
+/// Every dotted spelling in a source that COULD name a home: for a chain
+/// `a.b.c` the candidates are `a` and `a.b`, never `a.b.c` itself, because the
+/// last component is the relation or projection being named. Deduplicated, so
+/// a file that writes `lexer.next(…)` a thousand times probes once.
+fn collectDottedHomes(
+    alloc: std.mem.Allocator,
+    src: []const u8,
+    out: *std.StringHashMapUnmanaged(void),
+) bool {
+    const max_homes = 4096;
+    var i: usize = 0;
+    while (i < src.len) {
+        if (!isIdentStart(src[i])) {
+            i += 1;
+            continue;
+        }
+        // A dotted chain never begins mid-identifier, and a numeric literal's
+        // `.` is not a projection.
+        if (i > 0 and (isIdentPart(src[i - 1]) or src[i - 1] == '.')) {
+            while (i < src.len and isIdentPart(src[i])) i += 1;
+            continue;
+        }
+        const start = i;
+        while (i < src.len and isIdentPart(src[i])) i += 1;
+        var last_dot: ?usize = null;
+        while (i + 1 < src.len and src[i] == '.' and isIdentStart(src[i + 1])) {
+            last_dot = i;
+            i += 1;
+            while (i < src.len and isIdentPart(src[i])) i += 1;
+        }
+        const end = last_dot orelse continue;
+        // Every proper prefix ending at a dot is a candidate home.
+        var cut = start;
+        while (cut <= end) : (cut += 1) {
+            if (cut != end and src[cut] != '.') continue;
+            const stop = if (cut == end) end else cut;
+            if (stop <= start) continue;
+            const home = src[start..stop];
+            if (out.contains(home)) continue;
+            if (out.count() >= max_homes) return false;
+            out.put(alloc, home, {}) catch return false;
+        }
+    }
+    return true;
+}
+
+fn isIdentStart(c: u8) bool {
+    return std.ascii.isAlphabetic(c) or c == '_';
+}
+
+fn isIdentPart(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_';
+}
+
 /// §87 build-cache key over the PARSER'S QUOTIENT of a source, not its bytes.
 ///
 /// HPLS.md §87: "reorganization, formatting or path movement must not
@@ -4979,6 +5385,316 @@ fn hashSourceQuotient(
     return false;
 }
 
+/// ═══ THE TYPED DEPENDENCY CONTRACT ════════════════════════════════════════
+///
+/// WHAT WAS HERE BEFORE, AND WHY IT KEPT FAILING THE SAME WAY. The cache key
+/// was a bare `Sha256` fed by a hand-ordered run of `h.update(...)` calls, and
+/// the comment above `behaviour_env_table` records the consequence: this site
+/// "has now been corrected six times and every correction had one shape: a new
+/// behaviour flag shipped, nobody added it to the key". A seventh is catalogued
+/// inline below. Six of those are not six mistakes; they are one missing
+/// structure, made six times, because nothing anywhere ENUMERATED what a build
+/// outcome depends on. There was no list to fail to update — only a function to
+/// forget to edit.
+///
+/// The hash also WAS the key rather than accelerating one. Nothing could be
+/// inspected, diffed, or explained: when two compiles disagreed there was one
+/// 32-byte digest and no way to ask which dependency moved.
+///
+/// WHAT THIS IS. One record naming every dependency, each field typed and each
+/// field a category rather than a spelling. The digest is DERIVED from the
+/// record by reflection over its fields, so:
+///
+///   ADDING A FIELD ADDS IT TO THE KEY. There is no second place to update and
+///   therefore no seventh occurrence of the one defect this site keeps having.
+///
+///   NO TWO FIELDS CAN COLLIDE BY CONCATENATION. Every field is framed with its
+///   ordinal, a type tag and its length. The old code hashed `target`,
+///   `backend_mode` and `opt` as three bare adjacent strings — while, twenty
+///   lines below, `SDKROOT` carried a hand-written length prefix "so an unset
+///   value and an empty one cannot collide with a set one by concatenation".
+///   The reasoning was right and applied to one field at a time. Framing is now
+///   a property of the encoder, not a thing each field remembers.
+///
+///   THE RECORD IS INSPECTABLE. `idol cache-deps <file>` prints it, one field
+///   per line, so a cache disagreement is answered by a diff instead of a
+///   bisect — and so `gate/cachedeps.sh` can assert that a dependency the
+///   compiler claims to model actually MOVES when that dependency moves.
+///
+/// CONSERVATIVE INVALIDATION IS UNCHANGED AND IS THE POINT OF THE `?`. Every
+/// producer that cannot answer returns null and the compile is not cached:
+/// an unmodelled `.affects` environment variable, an unreadable source, an
+/// unresolvable home, an unresolvable `req` closure. Declining costs a rebuild.
+///
+/// WHAT IS STILL NOT MODELLED, stated here rather than discovered later. CPU
+/// features, subtarget and ABI beyond the target string; profile evidence;
+/// foreign objects and linker inputs; stage and effect severing. Those four are
+/// handled today by DECLINING to cache at all (`cacheable` refuses a compile
+/// carrying link flags, a non-default `cc`, PGO or bench mode), which is sound
+/// but coarse. They are absent from this record because a field nothing
+/// populates is worse than an acknowledged gap: it reads as coverage.
+const BuildDependencies = struct {
+    /// SOURCE SUBJECT — the root source as the parser's quotient of itself,
+    /// never as its bytes, so a comment or a reflow is not a new program.
+    subject: [32]u8,
+    /// Which producer answered `subject`. Keeps a quotient key and a
+    /// raw-fallback key in disjoint keyspaces.
+    subject_form: enum { quotient, raw },
+    /// REACH — every module this file can transitively require. The worst of
+    /// the six historical defects lived here: the others served a binary built
+    /// under the wrong RULES, this one served a binary built from the wrong
+    /// SOURCE.
+    reach: [32]u8,
+    /// HOME — ordinary relation symbols depend on the resolved semantic home.
+    /// The home BYTES, not the path spelling: equivalent paths resolve equal.
+    home: []const u8,
+
+    /// TARGET FACE. A single string today; CPU features, subtarget and ABI are
+    /// the acknowledged gap above.
+    target: []const u8,
+    backend_mode: []const u8,
+    opt: []const u8,
+
+    /// COMPILER IDENTITY, by size and mtime rather than by content. Hashing a
+    /// ~15 MB binary on every invocation cost more than the compile the cache
+    /// exists to avoid (measured: 159 ms -> 258 ms). The trade is recorded, not
+    /// hidden: two different compilers with equal size AND mtime collide.
+    compiler_size: u64,
+    compiler_mtime: i96,
+
+    /// RULE SET. Whether this path compiles under gate transport, whose
+    /// validation waiver must never reach a path that did not waive it.
+    gate_transport_waived: bool,
+
+    /// WORLD — which worlds the launcher granted. Source structure may select a
+    /// role; only `launchWorlds` turns a role into exact world identities.
+    /// Measured before this existed: `idol check plain.id` REFUSED and
+    /// `idol compile plain.id` handed back a working binary from the cache.
+    worlds: [32]u8,
+    /// OBSERVER DEMAND. `--observer=debugger` changes which realizations are
+    /// lawful; a watched compilation was served the UNWATCHED artifact.
+    observer_demand: u32,
+
+    /// REALIZATION POLICY. Both of these change which machine code a source
+    /// lowers to, and a key without them serves one arm of a severing control
+    /// the other arm's binary — which makes the control measure 1.00x against
+    /// itself. Three separate lanes have been bitten by that exact shape.
+    unroll_factor: u32,
+    module_promote: bool,
+
+    /// ENVIRONMENT FACTS, AND ONLY WHERE SEMANTICALLY CONSUMED. Both of these
+    /// are consumed by a SUBPROCESS this compiler spawns rather than read in
+    /// its own source, which is why neither carries a `DUO_`/`IDOL_` prefix and
+    /// why `surveyBehaviourEnv` is structurally unable to reach them. They are
+    /// modelled — hashed — rather than declined, because they are set on every
+    /// ordinary macOS build and declining would disable the cache outright.
+    ///
+    /// `SDKROOT` selects the platform SDK and changes the emitted
+    /// `LC_BUILD_VERSION`; measured, arm A (unset) and arm C (set, warm cache)
+    /// were BYTE-IDENTICAL where arm B (set, fresh) differed.
+    ///
+    /// `DEVELOPER_DIR` selects which toolchain `xcrun` resolves — this compiler
+    /// spawns `xcrun clang` to assemble and link, and `xcrun llvm-profdata` to
+    /// merge profiles — so it selects the assembler, the linker AND the default
+    /// SDK. It is modelled on the same reasoning as `SDKROOT` and by the same
+    /// argument, NOT on a two-toolchain byte measurement: the machine this
+    /// landed on has exactly one developer directory installed, so no such
+    /// measurement was available. Hashing an input that turns out not to matter
+    /// costs a cache miss; omitting one that does costs a wrong answer.
+    sdkroot: []const u8,
+    developer_dir: []const u8,
+
+    const Self = @This();
+
+    /// Fold one field into `h` with its ordinal, a type tag and its length, so
+    /// no two fields can produce the same byte run by adjacency.
+    fn foldField(h: *std.crypto.hash.sha2.Sha256, ordinal: u16, value: anytype) void {
+        const T = @TypeOf(value);
+        h.update(std.mem.asBytes(&ordinal));
+        switch (@typeInfo(T)) {
+            .pointer => |ptr| {
+                // The only pointer shape in this record is a byte slice.
+                comptime std.debug.assert(ptr.size == .slice and ptr.child == u8);
+                h.update("s");
+                const n: u64 = @intCast(value.len);
+                h.update(std.mem.asBytes(&n));
+                h.update(value);
+            },
+            .array => |arr| {
+                comptime std.debug.assert(arr.child == u8);
+                h.update("a");
+                const n: u64 = arr.len;
+                h.update(std.mem.asBytes(&n));
+                h.update(&value);
+            },
+            .int, .bool => {
+                h.update("i");
+                const n: u64 = @sizeOf(T);
+                h.update(std.mem.asBytes(&n));
+                h.update(std.mem.asBytes(&value));
+            },
+            .@"enum" => {
+                h.update("e");
+                const tag: u64 = @intFromEnum(value);
+                const n: u64 = @sizeOf(u64);
+                h.update(std.mem.asBytes(&n));
+                h.update(std.mem.asBytes(&tag));
+            },
+            else => @compileError("BuildDependencies carries a field shape the " ++
+                "framing encoder does not know: " ++ @typeName(T)),
+        }
+    }
+
+    /// THE DIGEST IS DERIVED FROM THE RECORD, NEVER MAINTAINED BESIDE IT.
+    /// `inline for` over the declared fields is what makes a new dependency
+    /// enter the key by existing rather than by being remembered.
+    fn digest(self: *const Self) [32]u8 {
+        var h = std.crypto.hash.sha2.Sha256.init(.{});
+        // The field COUNT enters first, so a record that gained or lost a
+        // dependency cannot collide with one that did not.
+        const arity: u16 = @typeInfo(Self).@"struct".field_names.len;
+        h.update("idol-build-deps-v1");
+        h.update(std.mem.asBytes(&arity));
+        inline for (@typeInfo(Self).@"struct".field_names, 0..) |name, i| {
+            foldField(&h, @intCast(i), @field(self, name));
+        }
+        var out: [32]u8 = undefined;
+        h.final(&out);
+        return out;
+    }
+
+    /// One line per dependency: NAME, then the exact bytes that field
+    /// contributes, rendered as a per-field digest so a slice and a scalar
+    /// print the same shape and a long path does not have to be quoted.
+    fn describe(self: *const Self, w: anytype) !void {
+        inline for (@typeInfo(Self).@"struct".field_names, 0..) |name, i| {
+            var fh = std.crypto.hash.sha2.Sha256.init(.{});
+            foldField(&fh, @intCast(i), @field(self, name));
+            var fd: [32]u8 = undefined;
+            fh.final(&fd);
+            try w.print("{s}\t{s}\n", .{ name, std.fmt.bytesToHex(fd, .lower) });
+        }
+        try w.print("(key)\t{s}\n", .{std.fmt.bytesToHex(self.digest(), .lower)});
+    }
+};
+
+/// Gather the dependency record, or answer `null` when any of it is unavailable.
+///
+/// EVERY `return null` HERE IS A CONSERVATIVE INVALIDATION, not an error path.
+fn buildDependencies(
+    alloc: std.mem.Allocator,
+    io: Io,
+    src_path: []const u8,
+    target: []const u8,
+    backend_mode: []const u8,
+    opt: []const u8,
+    home_out: *[]const u8,
+) ?BuildDependencies {
+    // FAIL CLOSED ON A FLAG THIS RECORD DOES NOT MODEL. Declining to cache
+    // costs a rebuild; caching under an unmodelled behaviour flag costs a
+    // measurement that reads 1.00x because both arms were handed one artifact.
+    if (global_unmodelled_behaviour_env) return null;
+    const cwd = Io.Dir.cwd();
+    const src = Io.Dir.readFileAlloc(cwd, io, src_path, alloc, .unlimited) catch return null;
+    defer alloc.free(src);
+    if (self_argv0.len == 0) return null;
+    const self_stat = Io.Dir.statFile(cwd, io, self_argv0, .{}) catch return null;
+    const home = home_resolve.homeOfPath(alloc, io, src_path) catch return null;
+    errdefer alloc.free(home);
+
+    var subject_h = std.crypto.hash.sha2.Sha256.init(.{});
+    var subject_form: @FieldType(BuildDependencies, "subject_form") = .quotient;
+    if (!hashSourceQuotient(alloc, &subject_h, src, src_path)) {
+        subject_form = .raw;
+        subject_h.update(src);
+    }
+    var subject: [32]u8 = undefined;
+    subject_h.final(&subject);
+
+    var reach_h = std.crypto.hash.sha2.Sha256.init(.{});
+    {
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        defer arena.deinit();
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
+        const root = cacheProjectRoot(io, src_path);
+        if (!hashReqClosure(arena.allocator(), io, root, src, &reach_h, &seen, 0)) {
+            alloc.free(home);
+            return null;
+        }
+        // ...AND THROUGH HOME PROJECTION, which is the only reach a canonical
+        // `.id` file has. This record was cut before `hashHomeClosure` existed
+        // and carried the `req` half alone, so `reach` would have named a field
+        // that answered for less than its own comment claims — the shape this
+        // struct exists to prevent.
+        //
+        // `seen` is SHARED with the `req` walk deliberately: a partition reached
+        // both ways is one file and must be hashed once, or the two walks would
+        // key the same bytes twice and the key would depend on which ran first.
+        if (!hashHomeClosure(arena.allocator(), io, src_path, src, &reach_h, &seen, 0)) {
+            alloc.free(home);
+            return null;
+        }
+    }
+    var reach: [32]u8 = undefined;
+    reach_h.final(&reach);
+
+    var worlds_h = std.crypto.hash.sha2.Sha256.init(.{});
+    {
+        const worlds = launchWorlds(src_path);
+        const n: u64 = worlds.len;
+        worlds_h.update(std.mem.asBytes(&n));
+        for (worlds.slice()) |w| {
+            const name = subject_home.homeName(w);
+            const len: u64 = @intCast(name.len);
+            worlds_h.update(std.mem.asBytes(&len));
+            worlds_h.update(name);
+        }
+    }
+    var worlds: [32]u8 = undefined;
+    worlds_h.final(&worlds);
+
+    home_out.* = home;
+    return .{
+        .subject = subject,
+        .subject_form = subject_form,
+        .reach = reach,
+        .home = home,
+        .target = target,
+        .backend_mode = backend_mode,
+        .opt = opt,
+        .compiler_size = self_stat.size,
+        .compiler_mtime = self_stat.mtime.nanoseconds,
+        .gate_transport_waived = native_bootstrap.gateTransport(src_path),
+        .worlds = worlds,
+        .observer_demand = global_observer_demand.cacheKey(),
+        .unroll_factor = dnir_lower.unrollFactorSetting(),
+        .module_promote = dnir_lower.module_promote_enabled,
+        .sdkroot = global_sdkroot,
+        .developer_dir = global_developer_dir,
+    };
+}
+
+/// `idol cache-deps <file>` — THE DEPENDENCY RECORD, PRINTED.
+///
+/// Same reasoning as `idol env-census`: the point is not the printing, it is
+/// that a gate can ask the binary under test what it believes a build depends
+/// on. A category the compiler claims to model but whose field never moves is
+/// then a measurable defect rather than a plausible comment.
+fn do_cache_deps(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
+    const stdout = std.Io.File.stdout();
+    var buf: [4096]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    var home: []const u8 = &.{};
+    const deps = buildDependencies(alloc, io, src_path, "native", "auto", "-O3", &home) orelse {
+        try fw.interface.print("(declined)\tno key: a dependency was unavailable or unmodelled\n", .{});
+        try fw.interface.flush();
+        return;
+    };
+    defer alloc.free(home);
+    try deps.describe(&fw.interface);
+    try fw.interface.flush();
+}
+
 fn buildCacheKey(
     alloc: std.mem.Allocator,
     io: Io,
@@ -4987,115 +5703,44 @@ fn buildCacheKey(
     backend_mode: []const u8,
     opt: []const u8,
 ) ?[]u8 {
-    // FAIL CLOSED ON A FLAG THIS KEY DOES NOT MODEL. Declining to cache costs a
-    // rebuild; caching under an unmodelled behaviour flag costs a measurement
-    // that reads 1.00x because both arms were handed one artifact. The named
-    // flags below still enter the key so that the COMMON severing controls stay
-    // cacheable and fast; this catch-all covers the one that ships next.
-    if (global_unmodelled_behaviour_env) return null;
-    const cwd = Io.Dir.cwd();
-    const src = Io.Dir.readFileAlloc(cwd, io, src_path, alloc, .unlimited) catch return null;
-    defer alloc.free(src);
-    if (self_argv0.len == 0) return null;
-    // Identify the compiler by size+mtime, NOT by hashing its bytes: it is a
-    // ~15 MB binary, and reading it on every invocation cost more than the
-    // compile the cache exists to avoid (measured: 159 ms -> 258 ms).
-    const self_stat = Io.Dir.statFile(cwd, io, self_argv0, .{}) catch return null;
-    var h = std.crypto.hash.sha2.Sha256.init(.{});
-    // Ordinary relation symbols depend on the resolved semantic home. Preserve
-    // that fact in the executable cache key without making path spelling an
-    // identity: equivalent paths resolve to the same home bytes.
-    const home = home_resolve.homeOfPath(alloc, io, src_path) catch return null;
+    // THE HASH ACCELERATES THE RECORD; IT DOES NOT REPLACE IT. Everything this
+    // key depends on is enumerated, named and typed in `BuildDependencies`, and
+    // the digest is derived from those fields by reflection — so a dependency
+    // enters the key by being declared, not by being remembered at this call
+    // site. `idol cache-deps <file>` prints the record the digest came from.
+    var home: []const u8 = &.{};
+    const deps = buildDependencies(alloc, io, src_path, target, backend_mode, opt, &home) orelse
+        return null;
     defer alloc.free(home);
-    const home_discriminant: u8 = 1;
-    const home_len: u64 = @intCast(home.len);
-    h.update(std.mem.asBytes(&home_discriminant));
-    h.update(std.mem.asBytes(&home_len));
-    h.update(home);
-    // The root source enters as the parser's quotient of itself, never as its
-    // bytes — see `hashSourceQuotient`. The discriminant keeps a quotient key
-    // and a raw-fallback key in disjoint keyspaces.
-    if (hashSourceQuotient(alloc, &h, src, src_path)) {
-        h.update("q");
-    } else {
-        h.update("r");
-        h.update(src);
-    }
-    h.update(target);
-    h.update(backend_mode);
-    h.update(opt);
-    h.update(std.mem.asBytes(&self_stat.size));
-    h.update(std.mem.asBytes(&self_stat.mtime));
-    // The rule set this path compiles under. See the note above: without it the
-    // cache serves a validation-waived artifact to a path that never waived it.
-    const waived: u8 = if (native_bootstrap.gateTransport(src_path)) 1 else 0;
-    h.update(std.mem.asBytes(&waived));
-    // ...AND WHICH WORLDS THE LAUNCHER GRANTED. Source structure may select a
-    // launch role, but only `launchWorlds` turns that role into exact world
-    // identities. With only source bytes and the waiver in the key, two
-    // byte-identical files launched under different roles hit one entry.
-    // MEASURED, same bytes, same directory:
-    //
-    //     idol compile foo_test.id   ok compile        ./foo_test.out -> 2
-    //     idol check   plain.id      REFUSED
-    //     idol compile plain.id      cached            ./plain.out    -> 2
-    //
-    // The checker refuses the program and the compiler hands back a working
-    // binary for it. That is the §40 failure in its worst form — not a stale
-    // artifact but an artifact built under RULES THIS FILE DOES NOT HAVE.
-    //
-    // A SET, not a bool, and exactly the same launcher result sema consumes.
-    // ...AND WHICH OBSERVERS ARE DEMANDED (HPLS §11). Fourth defect at this
-    // site, found the same way the other three were — by measuring and getting
-    // no difference at all. `--observer=debugger` changes which realizations
-    // are lawful, and with only the bytes in the key a watched compilation was
-    // served the UNWATCHED artifact. See `observer_demand.Demand.cacheKey`.
-    const obs_key = global_observer_demand.cacheKey();
-    h.update(std.mem.asBytes(&obs_key));
-    // ...AND THE LOOP-UNROLL SETTING (gap[221]). Fifth defect avoided at this
-    // site rather than found here: `IDOL_UNROLL` changes which machine code a
-    // source lowers to, exactly as `--observer` does, and a key without it
-    // serves the unrolled artifact to a compile that severed the transform —
-    // which would make the transform's own negative control measure 1.00x by
-    // handing both arms the same binary. Read from `dnir_lower`, the one place
-    // the setting is interpreted, so there is no second reading of the value.
-    const unroll_key: u32 = dnir_lower.unrollFactorSetting();
-    h.update(std.mem.asBytes(&unroll_key));
-    // ...AND THE MODULE-PROMOTION SEVERING CONTROL. Sixth defect at this site,
-    // and it was LIVE: `DUO_NO_MODULE_PROMOTE` changes which machine code a
-    // source lowers to and was not in the key at all, so the promotion lane's
-    // own negative control was one `TMPDIR` away from measuring 1.00x against
-    // itself. Three separate lanes have been bitten by this exact shape.
-    const promote_key: u8 = if (dnir_lower.module_promote_enabled) 1 else 0;
-    h.update(std.mem.asBytes(&promote_key));
-    // ...AND THE PLATFORM SDK. Seventh defect at this site, and the first that
-    // the `DUO_`/`IDOL_` survey was STRUCTURALLY unable to catch: `SDKROOT`
-    // carries neither prefix, so no amount of care in `behaviourEnvClass`
-    // would have reached it. See `apply_env_flags` for the measurement. The
-    // length is hashed alongside the bytes so an unset value and an empty one
-    // cannot collide with a set one by concatenation.
-    const sdk_len: u64 = @intCast(global_sdkroot.len);
-    h.update(std.mem.asBytes(&sdk_len));
-    h.update(global_sdkroot);
-    const worlds = launchWorlds(src_path);
-    for (worlds.slice()) |w| h.update(subject_home.homeName(w));
-    h.update(std.mem.asBytes(&worlds.len));
-    // ...AND EVERY MODULE THIS FILE CAN REACH. Third defect at this site, and
-    // the worst: the other two served a binary built under the wrong RULES,
-    // this one served a binary built from the wrong SOURCE.
-    {
-        var arena = std.heap.ArenaAllocator.init(alloc);
-        defer arena.deinit();
-        const aa = arena.allocator();
-        var seen: std.StringHashMapUnmanaged(void) = .empty;
-        const root = cacheProjectRoot(io, src_path);
-        if (!hashReqClosure(aa, io, root, src, &h, &seen, 0)) return null;
-    }
-    var digest: [32]u8 = undefined;
-    h.final(&digest);
     // Flat path: no directory to create, so one fewer failure mode.
-    return std.fmt.allocPrint(alloc, "idol-cache-{s}", .{std.fmt.bytesToHex(digest, .lower)}) catch null;
+    return std.fmt.allocPrint(
+        alloc,
+        "idol-cache-{s}",
+        .{std.fmt.bytesToHex(deps.digest(), .lower)},
+    ) catch null;
 }
+
+
+/// ═══ A CACHE ENTRY NAMES ITS OWN EXTENT ═══════════════════════════════════
+///
+/// The key deliberately does not name the output path — "the same program
+/// compiled to two different names is the same program" — so nothing outside
+/// the entry knows how long the artifact is supposed to be, and `buildCacheLoad`
+/// could check only `bytes.len == 0`. A TRUNCATED-BUT-NONZERO entry was
+/// therefore served, chmod'd executable, renamed over the output, and RUN.
+///
+/// The entry carries a fixed prologue instead: a magic, so an entry written by
+/// a compiler that predates this format is refused rather than misread, and the
+/// payload length, so truncation is arithmetic rather than a guess. A short
+/// read now fails a comparison instead of becoming a program.
+///
+/// This does NOT make the cache trusted. A writer with access to the directory
+/// can write a well-formed prologue over well-formed bytes; that is a property
+/// of a shared scratch root, not of this encoding. What it closes is the
+/// accident: a store interrupted, a disk that filled, an entry left behind by a
+/// compiler that died between two writes.
+const cache_entry_magic = "IDOLCA01";
+const cache_entry_prologue = cache_entry_magic.len + @sizeOf(u64);
 
 fn buildCacheDir(io: Io) ?Io.Dir {
     // Open /tmp once as a Dir handle and address entries by BASENAME. The
@@ -5113,19 +5758,37 @@ fn buildCacheDir(io: Io) ?Io.Dir {
 fn buildCacheLoad(io: Io, cache_name: []const u8, out_path: []const u8, alloc: std.mem.Allocator) bool {
     var dir = buildCacheDir(io) orelse return false;
     defer dir.close(io);
-    const bytes = Io.Dir.readFileAlloc(dir, io, cache_name, alloc, .unlimited) catch return false;
-    defer alloc.free(bytes);
-    // A ZERO-BYTE ENTRY IS NEVER AN EXECUTABLE. `buildCacheStore` no longer
-    // makes one, but an entry written by an older compiler is still sitting in
-    // a shared `/tmp` on every machine that ran one, and serving it hands the
-    // caller a file that runs and EXITS 0 having done nothing — a green test
-    // suite for a program that was never linked. Refuse it and delete it, so
-    // the poisoned key is repaired by the first run that touches it rather
-    // than on every run forever.
-    if (bytes.len == 0) {
+    const raw = Io.Dir.readFileAlloc(dir, io, cache_name, alloc, .unlimited) catch return false;
+    defer alloc.free(raw);
+    // AN ENTRY THAT DOES NOT ACCOUNT FOR ITS OWN BYTES IS NOT AN EXECUTABLE.
+    //
+    // The zero-byte case came first and is the same defect at length 0: an
+    // entry written by an older compiler is still sitting in a shared `/tmp`
+    // on every machine that ran one, and serving it hands the caller a file
+    // that runs and EXITS 0 having done nothing — a green test suite for a
+    // program that was never linked. A TRUNCATED entry is worse, because it is
+    // not obviously empty; before the prologue existed there was nothing to
+    // compare a short read against, so it was served.
+    //
+    // Every refusal here DELETES, so a poisoned key is repaired by the first
+    // run that touches it rather than on every run forever. An entry in the
+    // pre-prologue format is refused by the magic and swept the same way.
+    const bytes = blk: {
+        if (raw.len < cache_entry_prologue) break :blk null;
+        if (!std.mem.eql(u8, raw[0..cache_entry_magic.len], cache_entry_magic)) break :blk null;
+        const recorded = std.mem.readInt(
+            u64,
+            raw[cache_entry_magic.len..][0..@sizeOf(u64)],
+            .little,
+        );
+        const payload = raw[cache_entry_prologue..];
+        if (recorded != payload.len) break :blk null;
+        if (payload.len == 0) break :blk null;
+        break :blk payload;
+    } orelse {
         Io.Dir.deleteFile(dir, io, cache_name) catch {};
         return false;
-    }
+    };
     const cwd = Io.Dir.cwd();
 
     // WRITE-THEN-RENAME, not write-in-place. Rewriting a Mach-O that was recently
@@ -5162,7 +5825,64 @@ fn buildCacheStore(io: Io, cache_name: []const u8, out_path: []const u8, alloc: 
     // THAT EXITS 0. Measured. `cacheable` already refuses the sink outputs it
     // can name; this is the backstop that does not depend on naming them.
     if (bytes.len == 0) return;
-    Io.Dir.writeFile(dir, io, .{ .sub_path = cache_name, .data = bytes }) catch return;
+
+    // ═══ PUBLISH ATOMICALLY, OR DO NOT PUBLISH ═════════════════════════════
+    //
+    // This used to be one truncating `writeFile` at the FINAL cache name, in a
+    // directory whose whole purpose is to be shared by every compile on the
+    // machine. Three things follow from that, and the third is the one that
+    // hands back a wrong answer:
+    //
+    //   A reader can open the entry MID-TRUNCATE and get a short buffer.
+    //   A writer killed mid-write LEAVES that short buffer behind, at a valid
+    //     key, forever.
+    //   `buildCacheLoad` refuses `bytes.len == 0` and nothing else, so a
+    //     truncated-but-nonzero Mach-O is served, chmod'd executable, renamed
+    //     over the output, and RUN.
+    //
+    // That is the zero-byte defect this file already documents twenty lines
+    // above ("a green test suite for a program that was never linked"), one
+    // size class up, and a length check cannot close it: there is no length to
+    // compare against, because the key deliberately does not name the output.
+    //
+    // WRITE TO A PRIVATE NAME, THEN RENAME ONTO THE KEY. `rename(2)` within one
+    // directory is atomic, so every reader observes either the previous
+    // complete entry or this complete one, and a writer that dies leaves only
+    // its own temp file. This is not a new idiom in this file — `buildCacheLoad`
+    // restores cache→output exactly this way, and `materializeBootstrapC` does
+    // it for the bootstrap translation unit under the comment "a concurrent
+    // compile must never read a half-written translation unit". The one write
+    // that publishes INTO the shared directory was the one place it was
+    // missing.
+    //
+    // `scratch.salt()` is what makes the temp name private: the pid alone is
+    // reused, and a stale temp from a dead compiler with the same pid is
+    // exactly the file a concurrent run must not rename onto a live key.
+    const staged = std.fmt.allocPrint(
+        alloc,
+        "{s}.staging-{x}-{d}",
+        .{ cache_name, scratch.salt(), std.c.getpid() },
+    ) catch return;
+    defer alloc.free(staged);
+    const framed = alloc.alloc(u8, cache_entry_prologue + bytes.len) catch return;
+    defer alloc.free(framed);
+    @memcpy(framed[0..cache_entry_magic.len], cache_entry_magic);
+    std.mem.writeInt(
+        u64,
+        framed[cache_entry_magic.len..][0..@sizeOf(u64)],
+        bytes.len,
+        .little,
+    );
+    @memcpy(framed[cache_entry_prologue..], bytes);
+    Io.Dir.writeFile(dir, io, .{ .sub_path = staged, .data = framed }) catch {
+        // A failed write leaves a partial file under OUR name, never the key.
+        Io.Dir.deleteFile(dir, io, staged) catch {};
+        return;
+    };
+    Io.Dir.rename(dir, staged, dir, cache_name, io) catch {
+        Io.Dir.deleteFile(dir, io, staged) catch {};
+        return;
+    };
 }
 
 /// Does `out_path` name a place an artifact can be READ BACK FROM?
@@ -5757,7 +6477,19 @@ fn do_compile(
                     if (artifact_result) |artifact_value| {
                         var artifact = artifact_value;
                         defer artifact.deinit(alloc);
-                        const direct_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null, artifact.need);
+                        const boot_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null, artifact.need);
+                        // REALIZATION CLOSES OVER WHAT RESOLUTION REACHED.
+                        // Empty for a single-partition program, which is why
+                        // the common case pays nothing. See
+                        // `reachedHomeObjects` for the measurement.
+                        const home_extra = try reachedHomeObjects(alloc, io, src_path, &direct_graph);
+                        const direct_extra = blk_extra: {
+                            if (home_extra.len == 0) break :blk_extra boot_extra;
+                            var joined: std.ArrayListUnmanaged([]const u8) = .empty;
+                            try joined.appendSlice(alloc, boot_extra);
+                            try joined.appendSlice(alloc, home_extra);
+                            break :blk_extra try joined.toOwnedSlice(alloc);
+                        };
                         const obj_path = blk: {
                             var oh = std.hash.Wyhash.init(0);
                             const scratch_salt = scratch.salt();

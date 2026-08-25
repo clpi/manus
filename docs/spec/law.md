@@ -215,7 +215,7 @@ source world and cannot manufacture authority from a boolean/string label.
 Stage is a fact a world carries, so evaluation at a stage is evaluation under a
 world. `@(expr)` is the current world applied to an expression — `expr`
 resolved under the world resolving it, whose stage fact is the compile stage —
-and is therefore exactly `expr@{ stage = comp }`. It is not a compiler
+and is therefore exactly `expr@{ stage = compile }`. It is not a compiler
 directive and not a fourth use of the sigil; prefix `@` keeps its one meaning.
 It follows that an operation whose whole content is "do this at compile time"
 is an ordinary relation applied under a stage-delta world, that a value absent

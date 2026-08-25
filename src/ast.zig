@@ -597,7 +597,19 @@ pub const Expr = union(enum) {
     call: struct { loc: Loc, func: *Expr, args: []*Expr, form: InvocationForm = .parenthesized },
     method_call: struct { loc: Loc, obj: *Expr, method: []const u8, args: []*Expr, form: InvocationForm = .receiver_parenthesized },
     binop: struct { loc: Loc, op: BinOp, lhs: *Expr, rhs: *Expr },
-    unop: struct { loc: Loc, op: UnOp, operand: *Expr },
+    /// A PREFIX OPERATION, and for `.compile` also WHICH SOURCE FACE spelled it.
+    ///
+    /// `@(expr)` and `expr@{ stage = compile }` are the SAME NODE, deliberately.
+    /// `law.stage.world` (C0 §52) rules them one meaning — the current world
+    /// applied to an expression, resolved at the stage that world carries — and
+    /// `law.md` §9 says of exactly this situation that faces denoting the same
+    /// application "share one occurrence identity and one relation identity;
+    /// provenance records the face used". `world_face` is that provenance: the
+    /// printer writes back the spelling that was written, and nothing else
+    /// reads it. Making them two nodes would have been a second authority for
+    /// one meaning, and every downstream pass would have had to learn that the
+    /// two agree.
+    unop: struct { loc: Loc, op: UnOp, operand: *Expr, world_face: bool = false },
     func_expr: *FuncBody,
     /// The brace construct, in all three of its stances — see `Pack`. Named
     /// `table` for the bootstrap's own history; a table is one REALIZATION of

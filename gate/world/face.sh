@@ -23,9 +23,11 @@
 #                   an illegal one.
 #
 # GAP-203 owns what remains: freeing the sigil is NOT closing the algebra. This
-# gate asserts the sigil is FREE, never that injection works. `@x` access closed
-# afterwards and is held by `gate/world/access.sh`; the other four faces do not
-# compile.
+# gate asserts the sigil is FREE, never that injection works. Two faces closed
+# afterwards and have their own gates — `@x` access (gate/world/access.sh) and
+# `thing@{ … }` interjection for the STAGE delta (gate/world/stage.sh). §1's
+# rows below are the PREFIX literal `@{ … }`, which still derives no world and
+# must keep refusing while a derived world has no value realization.
 set -eu
 root=${WORLDFACEROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)}
 if [ "${IDOL_LOCK_HELD:-0}" != 1 ]; then
@@ -284,4 +286,4 @@ grep -q 'dt\.kind == token\.kindat' "$work/selfhost_live.id" && fail "§5 contro
 grep -q 'token\.kindat' "$selfhost" || fail "§5 subject: the self-host parser has NO kindat test at all — the anchor and directive faces are gone, and this row is reading a file that no longer parses '@'"
 
 printf 'world/face gate: PASS — sigil free (4 retired spellings refused by name, 4 migrated spellings admitted, 0 live corpus sites, formatter sigil-free, both frontiers agree)\n'
-printf 'world/face gate: NOTE — a free sigil is not a closed algebra. ONE of the five faces now compiles — `@x` access, in its single-segment form, held by gate/world/access.sh. The other four do not (gap[203]).\n'
+printf 'world/face gate: NOTE — a free sigil is not a closed algebra. Two faces now compile: `@x` access in its single-segment form (gate/world/access.sh), and `thing@{ … }` interjection FOR THE STAGE DELTA ONLY (gate/world/stage.sh). Every other delta refuses, and `@{ … }` alone still derives no world (gap[203]).\n'

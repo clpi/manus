@@ -720,17 +720,23 @@ fn paramSlotTypes(e: *Emitter, f: dnir.Function) Error![]SlotType {
     return out.toOwnedSlice(e.alloc);
 }
 
+/// THE DECLARED RESULT ARITY IS NOT RE-DERIVED HERE. It comes from
+/// `realization_validate.resultPackOf`, the one producer both realizations
+/// read, because this file used to compute it from `ret_record` while the
+/// AArch64 backend computed it from `ret_pack` and nothing compared the two.
+/// What remains below is the wasm-only part: an all-f64 record return has an
+/// FP-register realization on AArch64 and none here, so it is refused as a
+/// GAP IN THIS BACKEND and not as a ruling about the pack.
 fn returnSlotTypes(e: *Emitter, f: dnir.Function) Error![]SlotType {
-    if (f.ret_record) |rec_name| {
-        const rec = dnir.findRecord(e.module, rec_name) orelse return e.refuse("record-return-unknown");
-        var out: std.ArrayListUnmanaged(SlotType) = .empty;
-        errdefer out.deinit(e.alloc);
+    const pack = realization_validate.resultPackOf(e.module, f) orelse
+        return e.refuse("result-pack-record-unknown");
+    if (pack.record) |rec| {
         for (rec.kinds) |k| {
             if (k == .f64) return e.refuse("record-return-f64");
-            try out.append(e.alloc, .i64);
         }
-        if (out.items.len == 0) return e.refuse("record-return-empty");
-        return out.toOwnedSlice(e.alloc);
+        const out = try e.alloc.alloc(SlotType, pack.arity);
+        @memset(out, .i64);
+        return out;
     }
     return switch (f.ret) {
         .void, .nil, .never => try e.alloc.dupe(SlotType, &.{}),
@@ -793,6 +799,9 @@ pub fn emitFromDnir(
         if (std.mem.eql(u8, std.mem.span(raw), "1")) e.wasm_tailcall = true;
     }
     if (realization_validate.aggregateSchedule(m)) |failure| {
+        return e.refuse(failure.note);
+    }
+    if (realization_validate.resultPackShape(m)) |failure| {
         return e.refuse(failure.note);
     }
 
@@ -1429,7 +1438,9 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
         },
 
         .ret => {
-            if (e.cur_results.len > 1) return e.refuse("scalar-ret-from-record-relation");
+            // A value-carrying `.ret` out of a pack-returning relation is
+            // refused by `realization_validate.resultPackShape` for BOTH
+            // targets before this runs.
             if (e.cur_results.len == 1) {
                 const want = e.cur_results[0];
                 if (ins.lhs == .void) {
@@ -1578,7 +1589,9 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
                 while (n < 3 and three[n] != .void) n += 1;
                 break :blk three[0..n];
             };
-            if (vals.len != e.cur_results.len) return e.refuse("ret-record-arity");
+            // Arity against the relation's declared pack is
+            // `realization_validate.resultPackShape`'s question, asked once for
+            // both targets — including this exact three-member decoding.
             for (vals) |v| try pushValue(e, b, v, .i64);
             try emitFrameRestore(e, b);
             try b.byte(op_return);
@@ -2032,8 +2045,16 @@ fn finishCallResult(e: *Emitter, b: *Buf, ins: dnir.Instr, results: []const Slot
     // arm calls "a parallel move, not a sequential one".
     if (results.len > 1) {
         const base = if (ins.field.len > 0) ins.field else "rec";
+        // The call's record name and its member count are checked against the
+        // CALLEE's declared pack by `realization_validate.resultPackShape`.
+        // The lookup survives because the field NAMES are needed below — it is
+        // a READ of a proven fact, not a second admission question, and the
+        // `orelse` arm is the shape Zig requires rather than a live refusal:
+        // `emitCallDirect` already resolved this callee out of `m.functions`,
+        // and the shared validator proved its record name and arity, while
+        // `emitCallExtern` refuses a record-returning extern before it can
+        // reach here at all.
         const rec = dnir.findRecord(e.module, ins.record) orelse return e.refuse("call-record-unknown");
-        if (rec.fields.len != results.len) return e.refuse("call-record-arity");
         var i: usize = rec.fields.len;
         while (i > 0) {
             i -= 1;

@@ -2754,7 +2754,7 @@ basis = law{
 # the obligations every transformation already binds. So "evaluate at compile
 # time" NAMES the stage fact of the world doing the resolving, and
 #
-#     @(expr)  ==  expr@{ stage = comp }
+#     @(expr)  ==  expr@{ stage = compile }
 #
 # is an identity between two spellings of one meaning, not a definition of a
 # second mechanism.
@@ -2790,12 +2790,12 @@ stageworld = law{
     holds = .world
     binds = {
         "stage is a FACT a world carries, never a separate kingdom, directive namespace, or evaluation mechanism",
-        "@(expr) is apply(current world)(expr) — expr resolved under the world resolving it — and equals expr@{ stage = comp }; it is a compatibility spelling with exact provenance, not a fourth use of the sigil",
+        "@(expr) is apply(current world)(expr) — expr resolved under the world resolving it — and equals expr@{ stage = compile }; it is a compatibility spelling with exact provenance, not a fourth use of the sigil",
         "an operation whose entire content is compile-time evaluation is an ordinary relation applied under a stage-delta world; @comp.* @meta.* @compiler.* carry no capability the stage world lacks",
         "a value absent at a stage is absent from that stage's world and is refused by the derived-world no-fallthrough rule, not by a separate compile-time-constant diagnostic",
         "stage participates in world identity, and therefore in artifact identity wherever it changes a lawful realization",
     }
-    canon = { "@(1 + 2)", "fold(xs)@{ stage = comp }" }
+    canon = { "@(1 + 2)", "fold(xs)@{ stage = compile }" }
     deny  = "@( … ) read as a compiler directive, a second evaluation implementation, or an eval kingdom outside the world algebra"
     fails = "a compile-time facility that carries its own world/effect/stage obligations beside the ones every transformation already binds"
 }

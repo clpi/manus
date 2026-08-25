@@ -1,18 +1,18 @@
--- GENERATED from src/token_classify_gen.zig — do not edit by hand.
--- Regenerate: duo token-tables emit
--- Canonical token facts: src/token_semantic.zig
+# GENERATED from src/token_classify_gen.zig — do not edit by hand.
+# Regenerate: idol token-tables emit
+# Canonical token facts: src/token_semantic.zig
 
--- Pass 12 M1 — Duo-native keyword classifier (P12-WS7).
--- 54 reserved words across 3 categories; 3 candidate realizations.
--- Proof: examples/pass12_m1_diff.id (differential + fuzz); artifact
--- inspection in src/token_classify_gen.zig (kind ids match lexer.TokenKind).
+# Pass 12 M1 — Duo-native keyword classifier (P12-WS7).
+# 54 reserved words across 3 categories; 3 candidate realizations.
+# Proof: examples/pass12_m1_diff.id (differential + fuzz); artifact
+# inspection in src/token_classify_gen.zig (kind ids match lexer.TokenKind).
 
 GENERATOROWNER = "src/token_classify_gen.zig"
 DESCRIPTORSCHEMA = "token-semantic-v0"
 KEYWORDCOUNT = 54
 PRODUCTIONCLASSIFIER = "classifier.branchchain"
 
--- Categories: 1 = luakeyword, 2 = duotype, 3 = duocontextual
+# Categories: 1 = luakeyword, 2 = duotype, 3 = duocontextual
 CATEGORYLUA = 1
 CATEGORYDUOTYPE = 2
 CATEGORYDUOCONTEXTUAL = 3
@@ -71,7 +71,7 @@ KINDCOMPTIME = 55
 KINDBY = 56
 KINDLET = 57
 
--- Sorted descriptor (lexicographic) for sortedlookup + metadata.
+# Sorted descriptor (lexicographic) for sortedlookup + metadata.
 SORTEDTEXT = {
   "alias",
   "and",
@@ -126,7 +126,7 @@ SORTEDTEXT = {
   "u8",
   "until",
   "void",
-  "while"
+  "while",
 }
 SORTEDID = {
   51,
@@ -182,7 +182,7 @@ SORTEDID = {
   35,
   27,
   42,
-  28
+  28,
 }
 SORTEDCATEGORY = {
   3,
@@ -238,10 +238,10 @@ SORTEDCATEGORY = {
   2,
   1,
   2,
-  1
+  1,
 }
 
--- Candidate 1: branch chain (production).
+# Candidate 1: branch chain (production).
 classifybranchchain: i64 = (w: str)
   if w == "and"
     return 4
@@ -353,7 +353,7 @@ classifybranchchain: i64 = (w: str)
     return 57
   0
 
--- Candidate 2: length bucket (filter then equality chain).
+# Candidate 2: length bucket (filter then equality chain).
 classifylengthbucket: i64 = (w: str)
   n = string.len(w)
   if n == 2
@@ -480,21 +480,21 @@ classifylengthbucket: i64 = (w: str)
     0
   0
 
--- Candidate 3: sorted lookup (binary search over descriptor).
+# Candidate 3: sorted lookup (binary search over descriptor).
 classifysortedlookup: i64 = (w: str)
   lo = 1
   hi = 54
   while lo <= hi
     mid = (lo + hi) // 2
-    if w == SORTEDTEXT(mid)
-      return SORTEDID(mid)
-    if w < SORTEDTEXT(mid)
+    if w == SORTEDTEXT[mid]
+      return SORTEDID[mid]
+    if w < SORTEDTEXT[mid]
       hi = mid - 1
     else
       lo = mid + 1
   0
 
--- Production entry (mirrors token_semantic.production_classifier).
+# Production entry (mirrors token_semantic.production_classifier).
 @c.export("duo_keyword_classify")
 classify: i64 = (w: str)
   classifybranchchain(w)
@@ -505,15 +505,15 @@ iskeyword: bool = (w: str)
 categoryof: i64 = (id: i64)
   i = 1
   while i <= KEYWORDCOUNT
-    if SORTEDID(i) == id
-      return SORTEDCATEGORY(i)
-    i = i + 1
+    if SORTEDID[i] == id
+      return SORTEDCATEGORY[i]
+    i += 1
   0
 
 spellingof: str = (id: i64)
   i = 1
   while i <= KEYWORDCOUNT
-    if SORTEDID(i) == id
-      return SORTEDTEXT(i)
-    i = i + 1
+    if SORTEDID[i] == id
+      return SORTEDTEXT[i]
+    i += 1
   ""

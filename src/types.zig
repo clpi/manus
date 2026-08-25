@@ -378,9 +378,12 @@ pub const ResolvedType = union(enum) {
     // names TWO registers.
     //
     // They are not a mistake; they are C-backend types that outlived their
-    // backend. `codegen.zig` lowers each one to a clang `ext_vector_type(4)` /
-    // `ext_vector_type(8)`, where any width is legal because clang splits it —
-    // and `codegen.zig` also gives them a 32-byte alignment, which is the tell:
+    // backend. `codegen.zig` lowers each one to a 32-byte `vector_size` typedef
+    // — four f64/i64 lanes or eight f32/i32 lanes — where any width is legal
+    // because the C compiler splits it; that spelling replaced a clang-only
+    // `ext_vector_type` which gcc silently ignored, decaying the typedefs to
+    // their scalar element types. `codegen.zig` also gives them a 32-byte
+    // alignment, which is the tell:
     // 32 is the AVX register, not the NEON one. Read as a declaration of what
     // the language can vectorize, they claim 4- and 8-wide on a machine whose
     // widest lane group is 2 for f64/i64 and 4 for f32/i32.

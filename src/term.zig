@@ -16,7 +16,7 @@ pub var info: bool = false;
 /// When true, emit compiler hints (opt-in).
 pub var hints: bool = false;
 
-const SourceView = struct {
+pub const SourceView = struct {
     path: []const u8,
     bytes: []const u8,
 };
@@ -36,6 +36,18 @@ pub fn setSource(path: []const u8, bytes: []const u8) void {
 
 pub fn clearSource() void {
     active_source = null;
+}
+
+/// The source a diagnostic would currently quote from. A caller that must
+/// compile a SECOND source partition inside one invocation saves this and puts
+/// it back, so a later diagnostic about the entry does not quote lines out of
+/// the partition the entry merely reached.
+pub fn currentSource() ?SourceView {
+    return active_source;
+}
+
+pub fn restoreSource(view: ?SourceView) void {
+    active_source = view;
 }
 
 fn wprint(comptime fmt: []const u8, args: anytype) void {

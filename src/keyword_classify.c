@@ -1,5 +1,5 @@
 /* GENERATED from src/token_classify_gen.zig — do not edit by hand.
- * Regenerate: duo token-tables emit
+ * Regenerate: idol token-tables emit
  * Canonical Duo projection: lib/token/classify.id (@c.export classify)
  * Production consumer: src/keyword_bridge.zig → src/lexer.zig
  */
