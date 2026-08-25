@@ -3822,7 +3822,17 @@ pub const SemanticGraph = struct {
                     try self.noteExprReads(scope, declared.items, r.cond);
                 },
                 .if_stmt => |*i| {
-                    if (i.binding) |binding| try self.noteExprReads(scope, declared.items, binding.expr);
+                    // `if v = expr` makes `v` visible across the condition and
+                    // every arm (sema scopes it that way), so the head binding
+                    // enters the roster BEFORE the walk — or a module binding
+                    // spelled `v` would be charged with the arm's reads and the
+                    // relation would lose its valid `effect: none` fact.
+                    const mark = declared.items.len;
+                    defer declared.shrinkRetainingCapacity(mark);
+                    if (i.binding) |binding| {
+                        try self.noteExprReads(scope, declared.items, binding.expr);
+                        try noteName(self.alloc, declared, binding.name);
+                    }
                     try self.noteExprReads(scope, declared.items, i.cond);
                     try self.liftBindingsInBlock(file, scope, &i.then, declared);
                     for (i.elseifs) |*ei| {

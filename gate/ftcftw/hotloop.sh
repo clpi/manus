@@ -124,10 +124,23 @@ printf '  exercised path: engine=%s   answer=%s\n' "$mode" "${engine_answer:-<no
 printf 'ftcftw/hotloop: §3 min of %s, alternating\n' "$N"
 be=999999999; bo=999999999
 i=0
+# A failed run's short duration is not a measurement: every timed command's
+# status is checked, and a transient failure aborts the row rather than
+# feeding a bogus minimum into WIN/LOSS.
 while [ "$i" -lt "$N" ]; do
-    s=$(date +%s%N); DUO_WASM_MODULE=$mod DUO_WASM_INVOKE=$entry DUO_WASM_ENGINE=$mode "$engine" >/dev/null 2>&1; e=$(date +%s%N)
+    s=$(date +%s%N)
+    DUO_WASM_MODULE=$mod DUO_WASM_INVOKE=$entry DUO_WASM_ENGINE=$mode "$engine" >/dev/null 2>&1 || {
+        printf 'ftcftw/hotloop: BROKEN — the engine arm failed during timing (iteration %s); nothing is reported\n' "$i" >&2
+        exit 3
+    }
+    e=$(date +%s%N)
     t=$(( (e - s) / 1000000 )); [ "$t" -lt "$be" ] && be=$t
-    s=$(date +%s%N); wasmtime --invoke "$entry" "$mod" >/dev/null 2>&1; e=$(date +%s%N)
+    s=$(date +%s%N)
+    wasmtime --invoke "$entry" "$mod" >/dev/null 2>&1 || {
+        printf 'ftcftw/hotloop: BROKEN — the wasmtime arm failed during timing (iteration %s); nothing is reported\n' "$i" >&2
+        exit 3
+    }
+    e=$(date +%s%N)
     t=$(( (e - s) / 1000000 )); [ "$t" -lt "$bo" ] && bo=$t
     i=$((i + 1))
 done
