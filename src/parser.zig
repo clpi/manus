@@ -7420,6 +7420,34 @@ pub const Parser = struct {
             return self.new_expr(.{ .call = .{ .loc = l, .func = builtin_name, .args = args_slice } });
         }
 
+        // AN UNRESOLVED COMPILER-NAMESPACE SPELLING REFUSES BY NAME (GAP-234
+        // item 1a). Both resolvers above have missed, so this spelling is in
+        // no table — a typo, or a row a later change deletes. The mint below
+        // would turn it into a `.macro_call` carrying only the FIRST path
+        // segment, which routes a compiler-directive spelling into macro
+        // expansion under a truncated name: a semantic change wearing a parse
+        // fallback's clothes, and the reason deleting a dead directive row was
+        // unsafe before this guard existed.
+        //
+        // `law.at.one` denies the prefix-directive plane outright and
+        // `law.stage.world` names the namespaces: `@comp.*` `@meta.*`
+        // `@compiler.*` carry no capability the stage world lacks. The shape is
+        // the `@constexpr` arm's, and like every desugar here it sits behind
+        // the formatting early-return, so a reprinting parser still round-trips
+        // the written spelling untouched.
+        if (self.idol_mode) {
+            const compiler_ns = std.mem.startsWith(u8, qualified, "comp.") or
+                std.mem.startsWith(u8, qualified, "meta.") or
+                std.mem.startsWith(u8, qualified, "compiler.") or
+                std.mem.eql(u8, qualified, "comp") or
+                std.mem.eql(u8, qualified, "meta") or
+                std.mem.eql(u8, qualified, "compiler");
+            if (compiler_ns) {
+                term.locErr(l, "@{s} names no compile-time relation; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{qualified});
+                return ParseError.UnexpectedToken;
+            }
+        }
+
         return self.new_expr(.{ .macro_call = .{
             .loc = l,
             .name = first.text,
