@@ -11699,7 +11699,7 @@ test "native backend: strict graph physical refusal stays unsupported" {
         error.UnsupportedProgram,
         emitArm64ModuleWithGraph(alloc, &module, null, &graph, &diagnostic),
     );
-    try std.testing.expectEqualStrings("bnot", diagnostic.note().?);
+    try std.testing.expectEqualStrings("unop-not-lowered:bnot", diagnostic.note().?);
 }
 
 test "native backend: strict graph unresolved application stays semantic" {

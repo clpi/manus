@@ -3899,15 +3899,15 @@ subjectone = law{
 environmentone = law{
     id    = "law.environment.one"
     kind  = .invariant
-    holds = .unsettled
+    holds = .proved
     binds = {
         "environment access has one semantic owner",
         "the key or name is the subject and the environment is required world authority",
         "the outcome preserves absent present empty and present nonempty as distinct semantic cases",
         "foreign symbol names and package paths do not become native relations",
-        "no source spelling is admitted until the smallest existing relation family is proved",
+        "the admitted face is the os.env[key] computed projection per law.host, and absence stays a distinct runtime fact rather than an empty string",
     }
-    keep = "vocabularyblocked is the only honest state until relation admission settles the canonical expression"
+    keep = "gate/gap-118-env-absence.sh executes the three-outcome proof; GAP-118 records the admission and the deleted erasing wrapper"
 }
 
 sentinelzero = law{

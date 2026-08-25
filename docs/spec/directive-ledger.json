@@ -1,36 +1,36 @@
 {
-  "subject": "every @comp.* directive form at a CODE position in tracked .id source",
+  "subject": "every @comp.*, @meta.*, and @compiler.* directive form at a CODE position in tracked .id source",
   "why": "Current metaprogramming law admits no compiler-directive syntax: metaprogramming operates on graph identities, facts, dependencies, demand, worlds, provenance and transformations. Compatibility parsing still maps dotted @comp.* forms onto string-dispatched internal handlers. This ledger inventories that second control plane, and gate/directive.sh prevents a removed form or use from returning.",
   "counting": "CODE POSITIONS ONLY. `#` comments are stripped before matching, because prose describing a directive is not a use of it. Forms may not end in a dot; an earlier census produced phantom forms like `@comp.define...` by capturing sentence punctuation.",
   "totals": {
-    "code_occurrences": 790,
-    "distinct_forms": 101,
-    "files": 132,
+    "code_occurrences": 710,
+    "distinct_forms": 106,
+    "files": 121,
     "by_disposition": {
       "evidence": 6,
       "foreign": 9,
-      "relation": 55,
+      "relation": 60,
       "stage": 7,
       "target": 1,
-      "transformation": 23
+      "transformation": 27
     }
   },
   "forms": {
     "@comp.c.emit": {
-      "code_occurrences": 132,
-      "files": 33,
+      "code_occurrences": 122,
+      "files": 26,
       "disposition": "foreign",
       "rationale": "generated-C / ABI escape; realization + origin + linkage facts, never semantic selection"
     },
     "@comp.c.call": {
-      "code_occurrences": 64,
-      "files": 17,
+      "code_occurrences": 36,
+      "files": 11,
       "disposition": "foreign",
       "rationale": "generated-C / ABI escape; realization + origin + linkage facts, never semantic selection"
     },
     "@comp.define.derive": {
-      "code_occurrences": 35,
-      "files": 27,
+      "code_occurrences": 31,
+      "files": 25,
       "disposition": "stage",
       "rationale": "stage-scoped binding; compile-time world"
     },
@@ -41,8 +41,8 @@
       "rationale": "foreign origin and ABI realization"
     },
     "@comp.map": {
-      "code_occurrences": 30,
-      "files": 24,
+      "code_occurrences": 29,
+      "files": 23,
       "disposition": "relation",
       "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
     },
@@ -65,20 +65,20 @@
       "rationale": "proof obligation over graph facts"
     },
     "@comp.run": {
-      "code_occurrences": 20,
-      "files": 4,
+      "code_occurrences": 0,
+      "files": 0,
       "disposition": "stage",
       "rationale": "compile-time stage evaluation of an ordinary relation"
     },
     "@comp.pipeline": {
-      "code_occurrences": 19,
-      "files": 10,
+      "code_occurrences": 14,
+      "files": 8,
       "disposition": "transformation",
       "rationale": "transformation composition"
     },
     "@comp.c.include": {
-      "code_occurrences": 17,
-      "files": 10,
+      "code_occurrences": 9,
+      "files": 5,
       "disposition": "foreign",
       "rationale": "generated-C / ABI escape; realization + origin + linkage facts, never semantic selection"
     },
@@ -149,8 +149,8 @@
       "rationale": "protocol/adjective relation"
     },
     "@comp.for": {
-      "code_occurrences": 9,
-      "files": 5,
+      "code_occurrences": 7,
+      "files": 3,
       "disposition": "relation",
       "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
     },
@@ -227,8 +227,8 @@
       "rationale": "graph transformation with exact in/out identities"
     },
     "@comp.derive.bundle": {
-      "code_occurrences": 4,
-      "files": 3,
+      "code_occurrences": 3,
+      "files": 2,
       "disposition": "transformation",
       "rationale": "graph transformation with exact in/out identities"
     },
@@ -239,8 +239,8 @@
       "rationale": "foreign byte ingress; world read authority + provenance"
     },
     "@comp.fields.map": {
-      "code_occurrences": 4,
-      "files": 3,
+      "code_occurrences": 0,
+      "files": 0,
       "disposition": "relation",
       "rationale": "descriptor projection"
     },
@@ -305,8 +305,8 @@
       "rationale": "descriptor projection"
     },
     "@comp.fields": {
-      "code_occurrences": 3,
-      "files": 2,
+      "code_occurrences": 2,
+      "files": 1,
       "disposition": "relation",
       "rationale": "descriptor projection"
     },
@@ -371,8 +371,8 @@
       "rationale": "protocol/adjective relation"
     },
     "@comp.define.bundle": {
-      "code_occurrences": 2,
-      "files": 2,
+      "code_occurrences": 1,
+      "files": 1,
       "disposition": "stage",
       "rationale": "stage-scoped binding; compile-time world"
     },
@@ -395,8 +395,8 @@
       "rationale": "graph transformation with exact in/out identities"
     },
     "@comp.embed.str": {
-      "code_occurrences": 2,
-      "files": 2,
+      "code_occurrences": 0,
+      "files": 0,
       "disposition": "foreign",
       "rationale": "foreign byte ingress; world read authority + provenance"
     },
@@ -473,8 +473,8 @@
       "rationale": "graph transformation"
     },
     "@comp.schema": {
-      "code_occurrences": 2,
-      "files": 2,
+      "code_occurrences": 0,
+      "files": 0,
       "disposition": "relation",
       "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
     },
@@ -621,6 +621,60 @@
       "files": 1,
       "disposition": "evidence",
       "rationale": "explanation projection over graph lineage"
+    },
+    "@meta.burst": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@meta.ceiling": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@meta.derive.nfold": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "transformation",
+      "rationale": "no @comp.* analog in the ledger; ratcheted @meta.* spelling whose sole code-position occurrence is a string literal in lib/meta/codegen.id (comment stripping does not strip strings)"
+    },
+    "@meta.infinity": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@meta.nfold": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
+    },
+    "@meta.pow": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "transformation",
+      "rationale": "no @comp.* analog in the ledger; ratcheted @meta.* spelling whose sole code-position occurrence is a string literal in lib/meta/codegen.id (comment stripping does not strip strings)"
+    },
+    "@meta.str.ends.with": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "transformation",
+      "rationale": "no @comp.* analog in the ledger; ratcheted @meta.* spelling whose sole code-position occurrence is a string literal in lib/meta/codegen.id (comment stripping does not strip strings)"
+    },
+    "@meta.str.starts.with": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "transformation",
+      "rationale": "no @comp.* analog in the ledger; ratcheted @meta.* spelling whose sole code-position occurrence is a string literal in lib/meta/codegen.id (comment stripping does not strip strings)"
+    },
+    "@meta.transcend": {
+      "code_occurrences": 1,
+      "files": 1,
+      "disposition": "relation",
+      "rationale": "ordinary relation over graph values; the directive face adds nothing law.infer.one does not already recover"
     }
   }
 }

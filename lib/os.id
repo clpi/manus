@@ -14,13 +14,11 @@ write_file: bool = (path: str, data: any)
   stdout:write(data)
   true
 
-getenv: any = (name: str)
-  if name == nil
-    return ""
-  v = os.env(name)
-  if v == nil
-    return ""
-  v
+# The environment reader lived here as `getenv` and answered "" for BOTH an
+# absent variable and a variable present-empty — the GAP-118 erasure, and a
+# retired glued name besides. It had zero callers. Environment lookup is
+# `os.env[key]` at the call site; absence stays a distinct runtime fact there
+# (gate/gap-118-env-absence.sh is the executed pin: 10/20/30).
 
 args: any = ()
   os.args

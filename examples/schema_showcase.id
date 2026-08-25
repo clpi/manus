@@ -1,7 +1,0 @@
-# JSON Schema → C struct generation at compile time
-# Run: duo run examples/schema_showcase.id
-
-@comp.schema("examples/schemas/point.json")
-
-print("=== @schema showcase ===")
-print("Point struct emitted at compile time — see generated C for typedef")

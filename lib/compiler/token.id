@@ -584,6 +584,14 @@ zigrow: str = (kind: i64)
       start = i + 1
     i += 1
   s = "    .\{ .kind = .{z}, .spell = \"{spell}\""
+  # Keyword fact: the identities the word scanner may select by spelling.
+  # This is the "Keywords from classify.id" block above (kindand..kindlet)
+  # made an executable emitted fact, so the production keyword lookup
+  # (src/keyword_bridge.zig) reads THIS owner instead of a second table
+  # generated from src/token_semantic.zig. Recognition still keys on the
+  # ordinal; the spelling is what the scanner MATCHES, never a dispatch name.
+  if kind >= kindand and kind <= kindlet
+    s = "{s}, .keyword = true"
   if rolebeginexpr(kind)
     s = "{s}, .begin_expr = true"
   if roleprefix(kind)
@@ -652,6 +660,7 @@ zigbody: str = ()
   s = "{s}pub const RoleRow = struct \{\n"
   s = "{s}    kind: ?lexer.TokenKind = null,\n"
   s = "{s}    spell: []const u8 = \"\",\n"
+  s = "{s}    keyword: bool = false,\n"
   s = "{s}    begin_expr: bool = false,\n"
   s = "{s}    prefix: bool = false,\n"
   s = "{s}    postfix: bool = false,\n"

@@ -79,6 +79,25 @@ fn bail(diagnostic: *Diagnostic, site: std.builtin.SourceLocation) Error {
     return error.UnsupportedConstruct;
 }
 
+/// The identity-first note: `cause:name`. `gate/realize/census.sh` measured
+/// eleven refusal sites handing `bailWith` a bare name — a binding's ident, a
+/// record field key, an AST tag — so the note carried provenance where a cause
+/// belongs and no reader could group it. The tree already had the correct form
+/// on display (`mod-global-written:{s}`, pinned by gate/narrow.sh): identity
+/// first, colon, then the name, so a prefix groups and the provenance
+/// survives. On overflow the identity survives and the name is dropped, which
+/// is the right half to lose.
+fn bailNamed(
+    diagnostic: *Diagnostic,
+    site: std.builtin.SourceLocation,
+    cause: []const u8,
+    name: []const u8,
+) Error {
+    var buf: [96]u8 = undefined;
+    const note = std.fmt.bufPrint(&buf, "{s}:{s}", .{ cause, name }) catch cause;
+    return bailWith(diagnostic, site, note);
+}
+
 fn bailWith(diagnostic: *Diagnostic, site: std.builtin.SourceLocation, note: []const u8) Error {
     diagnostic.record(site, note);
     return error.UnsupportedConstruct;
@@ -2909,16 +2928,20 @@ fn lowerModuleFromGraph(
             // as plain `os`, so the row named a module where the finding is one
             // declaration inside it.
             //
-            // AND THE REASON. The predicate knows exactly which ABI or subset
-            // limit refused the declaration; reporting only the name made the
-            // reader rediscover it by bisecting the subject by hand.
+            // AND THE REASON, IDENTITY FIRST. The predicate knows exactly
+            // which ABI or subset limit refused the declaration; reporting
+            // only the name made the reader rediscover it by bisecting the
+            // subject by hand. The reason is the kebab CAUSE and leads; the
+            // declaration path is provenance and follows the colon, the same
+            // `cause:name` shape `bailNamed` emits, so a census groups these
+            // rows by cause instead of minting one row per refused name.
             if (skipped == null) {
                 const path = if (fd.path.len > 0)
                     try std.mem.join(alloc, ".", fd.path)
                 else
                     try alloc.dupe(u8, "?");
                 defer alloc.free(path);
-                skipped = try std.fmt.allocPrint(alloc, "{s}: {s}", .{ path, reason });
+                skipped = try std.fmt.allocPrint(alloc, "{s}:{s}", .{ reason, path });
             }
             continue;
         }
@@ -2993,7 +3016,7 @@ fn lowerModuleFromGraph(
     // module reached lowering and no realization was ever proposed for it.
     const expected = countModuleFunctions(mod, graph) + @as(usize, @intFromBool(want));
     if (functions.items.len != expected)
-        return bailWith(diagnostic, @src(), skipped orelse "?");
+        return bailWith(diagnostic, @src(), skipped orelse "function-count-mismatch");
 
     const owned_functions = try functions.toOwnedSlice(alloc);
     errdefer {
@@ -3531,10 +3554,10 @@ fn functionEligibleReason(
     graph: *const semantic_graph.SemanticGraph,
     mod: *const ast.Module,
 ) ?[]const u8 {
-    if (fd.func.vararg or fd.func.vararg_name != null) return "vararg relation";
+    if (fd.func.vararg or fd.func.vararg_name != null) return "vararg-relation";
     if (recordForTypeExpr(recs, fd.func.ret_type, graph)) |rec| {
-        if (rec.fields.len == 0) return "record return with no fields";
-        if (rec.fields.len > max_record_fields) return "record return wider than 32 fields";
+        if (rec.fields.len == 0) return "record-return-no-fields";
+        if (rec.fields.len > max_record_fields) return "record-return-wider-than-32-fields";
         // The caller-side indirect buffer understands a mixed exact shape, but
         // this backend does not yet have mixed GP/FP stores for an INDIRECT
         // callee return. Keep only that case refused. A two-word C result and
@@ -3545,12 +3568,12 @@ fn functionEligibleReason(
         // mixed indirect shapes stay refused until the C ABI path exists.
         if (declarationIsForeignBoundary(graph, fd) and recordKindsMixed(rec) and
             recordReturnIsIndirectFields(rec.fields.len, true))
-            return "foreign-boundary mixed GP/FP indirect record return";
+            return "foreign-mixed-indirect-record-return";
         // An f64 record rides v0..v7 as a homogeneous float aggregate; there is
         // no indirect form for it here, so its own eight stays a hard limit.
         if (isF64Record(recs, fd.func.ret_type)) |_| {
             if (rec.fields.len > max_reg_record_fields)
-                return "f64 record return wider than the 8 float result registers";
+                return "f64-record-return-wider-than-8-registers";
         }
         for (fd.func.params) |p| {
             // A record PARAMETER is still one field per argument register —
@@ -3566,7 +3589,7 @@ fn functionEligibleReason(
                 }
                 if (all_f64) {
                     if (r.fields.len > max_reg_record_fields)
-                        return "f64 record parameter wider than the 8 float argument registers";
+                        return "f64-record-parameter-wider-than-8-registers";
                     continue;
                 }
                 continue;
@@ -3574,21 +3597,21 @@ fn functionEligibleReason(
             if (isFloatType(p.typ)) continue;
             if (p.typ == .named) continue;
             if (!isIntType(p.typ) and !isBoolType(p.typ) and !isStrType(p.typ) and !typeIsPtr(p.typ) and
-                !typeIsScalarCaseSet(mod, p.typ)) return "record-returning relation has a parameter of unsupported type";
+                !typeIsScalarCaseSet(mod, p.typ)) return "record-return-parameter-unsupported";
         }
         return null;
     }
     if (fd.func.ret_type == .tuple) {
-        if (declarationIsForeignBoundary(graph, fd)) return "tuple return across a foreign boundary";
-        if (fd.func.ret_type.tuple.len == 0) return "empty tuple return";
+        if (declarationIsForeignBoundary(graph, fd)) return "tuple-return-foreign-boundary";
+        if (fd.func.ret_type.tuple.len == 0) return "tuple-return-no-elements";
         if (fd.func.ret_type.tuple.len > max_reg_record_fields)
-            return "tuple return wider than the 8 result registers";
+            return "tuple-return-wider-than-8-registers";
         for (fd.func.ret_type.tuple) |item| if (gpPackType(item) == null)
-            return "tuple return element is not a general-purpose word";
+            return "tuple-return-element-not-gp-word";
     } else if (!isFloatType(fd.func.ret_type) and !isIntType(fd.func.ret_type) and !isBoolType(fd.func.ret_type) and
         !isStrType(fd.func.ret_type) and !isVoidType(fd.func.ret_type) and !typeIsPtr(fd.func.ret_type) and
         !typeIsScalarCaseSet(mod, fd.func.ret_type) and
-        fd.func.ret_type != .inferred) return "unsupported return type";
+        fd.func.ret_type != .inferred) return "result-type-unsupported";
     // AAPCS64 assigns the result and argument register classes independently.
     // Determine the parameter file from parameter descriptors, never from the
     // result descriptor.
@@ -3596,11 +3619,11 @@ fn functionEligibleReason(
         if (slots > 0) return if (slots <= 8)
             null
         else
-            "f64 parameter file wider than the 8 float argument registers";
+            "f64-parameter-file-wider-than-8-registers";
     }
     var gp_slots: usize = 0;
     for (fd.func.params) |p| {
-        if (isFloatType(p.typ)) return "f64 parameter mixed with general-purpose parameters";
+        if (isFloatType(p.typ)) return "f64-parameter-mixed-with-gp";
         if (recordForTypeExpr(recs, p.typ, graph)) |r| {
             var all_f64 = r.fields.len > 0;
             for (r.kinds) |k| {
@@ -3609,7 +3632,7 @@ fn functionEligibleReason(
                     break;
                 }
             }
-            if (all_f64) return "all-f64 record parameter mixed with general-purpose parameters";
+            if (all_f64) return "all-f64-record-parameter-mixed-with-gp";
         }
         if (recordForTypeExpr(recs, p.typ, graph)) |r| {
             // Wide module tables (`lexer`, …) cross calls as one opaque handle,
@@ -3651,7 +3674,7 @@ fn functionEligibleReason(
             // the two budgets are now one budget rather than two numbers that
             // can drift apart.
             if (gp_slots > max_direct_scalar_args)
-                return "record parameter fields overflow the 16 general-purpose argument slots";
+                return "record-parameter-overflows-16-gp-slots";
             continue;
         }
         // A SCALAR IS A SCALAR WHATEVER ITS SPELLING. `i64`, `bool`, `str`,
@@ -3674,7 +3697,7 @@ fn functionEligibleReason(
             typeIsScalarCaseSet(mod, p.typ))
         {
             gp_slots += 1;
-            if (gp_slots > max_direct_scalar_args) return "more than 16 general-purpose arguments";
+            if (gp_slots > max_direct_scalar_args) return "more-than-16-gp-arguments";
             continue;
         }
         // What is left is a named type this backend does not model as a word:
@@ -3682,10 +3705,10 @@ fn functionEligibleReason(
         if (p.typ == .named) {
             gp_slots += 1;
             if (gp_slots > max_reg_record_fields)
-                return "opaque handle parameter overflows the 8 argument registers";
+                return "opaque-handle-overflows-8-registers";
             continue;
         }
-        return "parameter of unsupported type";
+        return "parameter-type-unsupported";
     }
     return null;
 }
@@ -5940,7 +5963,7 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
             if (ctx.loop_heads.items.len == 0) return bail(ctx.diagnostic, @src());
             try ctx.emit(.{ .op = .br, .branch_target = ctx.loop_heads.items[ctx.loop_heads.items.len - 1] });
         },
-        else => return bailWith(ctx.diagnostic, @src(), @tagName(stmt.*)),
+        else => return bailNamed(ctx.diagnostic, @src(), "statement-not-lowered", @tagName(stmt.*)),
     }
 }
 
@@ -9844,7 +9867,7 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
         for (rec.fields, 0..) |fname, i| {
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ base, fname });
             defer ctx.alloc.free(key);
-            const slot = ctx.locals.get(key) orelse return bailWith(ctx.diagnostic, @src(), fname);
+            const slot = ctx.locals.get(key) orelse return bailNamed(ctx.diagnostic, @src(), "local-slot-missing", fname);
             nvals[i] = .{ .local = slot };
         }
         try ctx.emit(.{
@@ -9878,7 +9901,7 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
             else => return bail(ctx.diagnostic, @src()),
         };
         if (fieldIndexIn(rec, nf.key)) |idx| {
-            if (seen[idx]) return bailWith(ctx.diagnostic, @src(), nf.key);
+            if (seen[idx]) return bailNamed(ctx.diagnostic, @src(), "record-field-duplicate", nf.key);
             vals[idx] = try lowerExpr(ctx, nf.val);
             seen[idx] = true;
         } else if (nf.val.* == .table) {
@@ -9888,7 +9911,7 @@ fn lowerRecordReturn(ctx: *LowerCtx, table: *const ast.Expr) Error!void {
         } else if (nf.val.* == .field) {
             try lowerNestedRecordFromFieldRef(ctx, rec, nf.key, nf.val, vals, seen);
         } else {
-            return bailWith(ctx.diagnostic, @src(), nf.key);
+            return bailNamed(ctx.diagnostic, @src(), "record-field-value-not-lowered", nf.key);
         }
     }
     // A partially-written buffer is the exact failure this convention has to
@@ -9924,8 +9947,8 @@ fn lowerNestedRecordFromLocal(
         const suffix = fname[prefix_pat.len..];
         const local_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ base, suffix });
         defer ctx.alloc.free(local_key);
-        const slot = ctx.locals.get(local_key) orelse return bailWith(ctx.diagnostic, @src(), local_key);
-        if (seen[idx]) return bailWith(ctx.diagnostic, @src(), fname);
+        const slot = ctx.locals.get(local_key) orelse return bailNamed(ctx.diagnostic, @src(), "local-slot-missing", local_key);
+        if (seen[idx]) return bailNamed(ctx.diagnostic, @src(), "record-field-duplicate", fname);
         vals[idx] = .{ .local = slot };
         seen[idx] = true;
     }
@@ -10009,7 +10032,7 @@ fn lowerNestedRecordFromFieldRef(
     const prefix_pat = std.fmt.bufPrint(&prefix_buf, "{s}.", .{prefix}) catch return bail(ctx.diagnostic, @src());
     for (rec.fields, 0..) |fname, idx| {
         if (!std.mem.startsWith(u8, fname, prefix_pat)) continue;
-        if (seen[idx]) return bailWith(ctx.diagnostic, @src(), fname);
+        if (seen[idx]) return bailNamed(ctx.diagnostic, @src(), "record-field-duplicate", fname);
         const suffix = fname[prefix_pat.len..];
         const local_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ base_path.items, suffix });
         defer ctx.alloc.free(local_key);
@@ -10552,7 +10575,7 @@ fn lowerExprCons(
             {
                 break :blk dnir.Value{ .str = n.ident };
             }
-            return bailWith(ctx.diagnostic, @src(), n.ident);
+            return bailNamed(ctx.diagnostic, @src(), "unresolved-name", n.ident);
         },
         .binop => |b| if (b.op == .@"and" or b.op == .@"or")
             try lowerShortCircuit(ctx, b.op, b.lhs, b.rhs)
@@ -10637,7 +10660,7 @@ fn lowerExprCons(
                 if (compileStageValueInModule(ctx.alloc, ctx.module_consts, u.operand)) |v| break :blk v;
                 return bailWith(ctx.diagnostic, @src(), "compile-stage-absent");
             }
-            return bailWith(ctx.diagnostic, @src(), @tagName(u.op));
+            return bailNamed(ctx.diagnostic, @src(), "unop-not-lowered", @tagName(u.op));
         },
         .index => |ix| blk: {
             if (argv(ix.obj)) {
@@ -10724,7 +10747,7 @@ fn lowerExprCons(
             }
             return bail(ctx.diagnostic, @src());
         },
-        else => bailWith(ctx.diagnostic, @src(), @tagName(expr.*)),
+        else => bailNamed(ctx.diagnostic, @src(), "expression-not-lowered", @tagName(expr.*)),
     };
 }
 
@@ -12591,7 +12614,7 @@ fn lowerStrCompare(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *co
             .gt => .gt,
             .leq => .leq,
             .geq => .geq,
-            else => return bailWith(ctx.diagnostic, @src(), @tagName(op)),
+            else => return bailNamed(ctx.diagnostic, @src(), "cmp-not-lowered", @tagName(op)),
         },
         .lhs = .{ .temp = cmp },
         .rhs = .{ .i64 = 0 },
@@ -12902,7 +12925,7 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
     // refuse without having emitted the operands' instructions, which is what
     // the struct-literal field order used to guarantee.
     const tag: dnir.BinOpTag = binopTagOf(op) orelse
-        return bailWith(ctx.diagnostic, @src(), @tagName(op));
+        return bailNamed(ctx.diagnostic, @src(), "binop-not-lowered", @tagName(op));
     const t = ctx.freshTemp();
     var a = try lowerExpr(ctx, lhs);
     var b = try lowerExpr(ctx, rhs);
@@ -15267,7 +15290,7 @@ test "dnir_lower: interpolation consumes nested graph value descriptor" {
         error.UnsupportedConstruct,
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
     );
-    try std.testing.expectEqualStrings("concat", diagnostic.note().?);
+    try std.testing.expectEqualStrings("binop-not-lowered:concat", diagnostic.note().?);
 }
 
 test "dnir_lower: checked aggregate operand requires graph ABI facts" {
@@ -16180,7 +16203,7 @@ test "dnir_lower: diagnostics are isolated and reset by their own run" {
         error.UnsupportedConstruct,
         lowerModuleWithGraphObserved(alloc, &name_module, &name_graph, &retry_diagnostic),
     );
-    try std.testing.expectEqualStrings("unknown", retry_diagnostic.note().?);
+    try std.testing.expectEqualStrings("unresolved-name:unknown", retry_diagnostic.note().?);
     const name_site = retry_diagnostic.site orelse return error.TestExpectedEqual;
     try std.testing.expect(!std.mem.eql(u8, application_site.fn_name, name_site.fn_name));
     try std.testing.expectEqualStrings("missing-application-id", application_diagnostic.note().?);
@@ -17421,7 +17444,7 @@ test "dnir_lower: a record parameter's fields ride the general-purpose argument 
         const reason = functionEligibleReason(fd, records.items, &graph, &mod) orelse
             return error.TestUnexpectedResult;
         try std.testing.expectEqualStrings(
-            "record parameter fields overflow the 16 general-purpose argument slots",
+            "record-parameter-overflows-16-gp-slots",
             reason,
         );
     }
@@ -17603,7 +17626,7 @@ test "dnir_lower: checked quote classification fails closed on damaged graph des
         error.UnsupportedConstruct,
         lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic),
     );
-    try std.testing.expectEqualStrings("concat", diagnostic.note().?);
+    try std.testing.expectEqualStrings("binop-not-lowered:concat", diagnostic.note().?);
 }
 
 test "dnir_lower: the quote face has ONE producer, and its reach is total over module bindings" {

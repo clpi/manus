@@ -77,12 +77,13 @@ classify() {
 # IS THIS NOTE AN IDENTITY, OR A NAME?
 #
 # A refusal note is supposed to name a CAUSE, so that a reader can group it, a
-# gate can pin it, and a ratchet can count it. Some of them name a SUBJECT
-# instead. Measured in `src/dnir_lower.zig`, `bailWith` is called with a bare
-# `fname` (9692), a bare field key `nf.key` (9726, 9736), and `@tagName(stmt.*)`
-# (5788) — and at 2766 the note is built as `"{path}: {reason}"`, identity LAST,
-# so even the notes that carry a cause put the provenance where a prefix match
-# would look for the cause.
+# gate can pin it, and a ratchet can count it. Some of them named a SUBJECT
+# instead: `bailWith` in `src/dnir_lower.zig` was called with a bare `fname`, a
+# bare field key, and `@tagName(stmt.*)`, and the ineligible-declaration note
+# was built as `"{path}: {reason}"`, identity LAST — provenance where a prefix
+# match looks for the cause. Those producers now emit the identity-first colon
+# form below; this test remains because it is what CATCHES the next producer
+# that regresses to a bare name.
 #
 # The test is a fact about the note's SHAPE, not a judgement about any subject's
 # spelling: a kebab-case word is the form every deliberate identity in this file
@@ -101,12 +102,32 @@ classify() {
 #
 # `<no note>` is this gate's OWN sentinel for a refusal that recorded nothing,
 # so it is a third class and is excluded rather than counted as either.
+# The identity-first colon form (`unresolved-name:mcp`) is an identity CARRYING
+# provenance — `bailNamed` in dnir_lower.zig is its one producer and
+# `mod-global-written:` was its precedent — so the test validates the prefix
+# and the histogram below groups by it, keeping the name visible without
+# letting it split the count.
 note_is_identity() {
     case $1 in
         '<no note>') return 0 ;;
+        *:*)
+            case ${1%%:*} in
+                *[!a-z0-9-]*|'') return 1 ;;
+                *) return 0 ;;
+            esac ;;
         *[!a-z0-9-]*) return 1 ;;
         '') return 1 ;;
         *) return 0 ;;
+    esac
+}
+
+# The grouping key: the identity prefix of a colon note, the note otherwise.
+# One ROW per call — it maps lines in a pipeline, so the newline is part of
+# the contract, not decoration.
+note_group() {
+    case $1 in
+        *:*) printf '%s:*\n' "${1%%:*}" ;;
+        *) printf '%s\n' "$1" ;;
     esac
 }
 
@@ -206,7 +227,8 @@ printf 'realize census: §3 refusals by note\n'
 if [ "$refused" -eq 0 ]; then
     printf '  none\n'
 else
-    cut -f1 "$work/rows" | sort | uniq -c | sort -rn | while read -r count note; do
+    cut -f1 "$work/rows" | while IFS= read -r note; do note_group "$note"; done \
+        | sort | uniq -c | sort -rn | while read -r count note; do
         if [ "$note" = '<no note>' ]; then
             printf '  %5s  %s   <- the refusal recorded no cause at all\n' "$count" "$note"
         elif note_is_identity "$note"; then

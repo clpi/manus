@@ -55,8 +55,82 @@ if [ "${IDOL_LOCK_HELD:-}" = "1" ]; then
   exec "$@"
 fi
 
+# The env guard above is not sufficient on its own: `zig build` steps do not
+# reliably propagate IDOL_LOCK_HELD to the gates they spawn, so a suite run
+# wrapped in this lock deadlocked against its own `gate/cache-home.sh` for 25
+# measured minutes — the child waited on the lock its ancestor held. The
+# ancestry walk below is the env-independent form of the same fact: if the
+# current holder is an ancestor of this process, the lock is already ours.
+holderpid() {
+  for entry in "$lockdir"/owner.*.*; do
+    [ -d "$entry" ] || continue
+    name=${entry##*/}
+    name=${name#owner.}
+    printf '%s\n' "${name%%.*}"
+    return 0
+  done
+  printf '\n'
+}
+
+held_by_ancestor() {
+  hp=$(holderpid)
+  [ -n "$hp" ] || return 1
+  a=$$
+  while [ "$a" -gt 1 ] 2>/dev/null; do
+    [ "$a" = "$hp" ] && return 0
+    a=$(ps -o ppid= -p "$a" 2>/dev/null | tr -d ' ') || return 1
+    [ -n "$a" ] || return 1
+  done
+  return 1
+}
+
+# A holder whose process is gone cannot release the lock; waiting the full
+# timeout on it (measured: a killed suite left its token and the next run
+# queued 13 minutes behind a corpse) serializes against nobody. Reclaim it —
+# but ONLY the exact token whose liveness was checked: with two waiters on
+# one corpse, a wildcard removal after the first waiter re-acquires would
+# delete the first waiter's LIVE token and both commands would run at once.
+holdertoken() {
+  for entry in "$lockdir"/owner.*.*; do
+    [ -d "$entry" ] || continue
+    printf '%s\n' "$entry"
+    return 0
+  done
+  printf '\n'
+}
+
+holder_dead() {
+  dead_token=$(holdertoken)
+  [ -n "$dead_token" ] || return 1
+  name=${dead_token##*/}
+  name=${name#owner.}
+  dead_pid=${name%%.*}
+  case $dead_pid in *[!0-9]*|'') return 1 ;; esac
+  ! kill -0 "$dead_pid" 2>/dev/null
+}
+
+# The exec below MUST mark the lock held: gates re-exec themselves under this
+# script when IDOL_LOCK_HELD is unset, so an ancestry exec without the marker
+# ping-pongs gate↔lock forever inside one process (measured via strace on
+# gate/defaults.sh — continuous ps reads, no sleep, no child).
 waited=0
 while ! mkdir "$lockdir" 2>/dev/null; do
+  if held_by_ancestor; then
+    IDOL_LOCK_HELD=1
+    export IDOL_LOCK_HELD
+    IDOL_BUILD_LOCK="$lockdir"
+    export IDOL_BUILD_LOCK
+    exec "$@"
+  fi
+  if holder_dead; then
+    echo "idol-lock: reclaiming lock from dead holder $dead_pid" >&2
+    # Exactly the observed corpse's token — if another waiter reclaimed
+    # first and a new holder exists, both rmdirs fail and the loop simply
+    # re-evaluates against the live owner.
+    rmdir "$dead_token" 2>/dev/null || true
+    rmdir "$lockdir" 2>/dev/null || true
+    continue
+  fi
   if [ "$waited" -ge "$timeout" ]; then
     echo "idol-lock: timed out after ${timeout}s waiting for lock ($(holder))" >&2
     exit 75

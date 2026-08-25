@@ -105,12 +105,20 @@ set -e
 [ "$rc" -eq 143 ] || fail "nested child signal became $rc"
 [ ! -e "$nested" ] || fail 'nested signalled child left its lock'
 
+# Reentrancy has TWO arms — the env marker and the holder-ancestry walk (added
+# after a suite deadlocked 25 minutes against its own gate because `zig build`
+# does not propagate the env marker). Fail-closed is proven only when BOTH are
+# removed; removing just the env arm now correctly falls through to ancestry.
 damaged="$work/idol-lock-damaged"
-sed '/^if \[ "${IDOL_LOCK_HELD:-}" = "1" \]; then$/,/^fi$/d' \
+sed -e '/^if \[ "${IDOL_LOCK_HELD:-}" = "1" \]; then$/,/^fi$/d' \
+    -e '/^  if held_by_ancestor; then$/,/^  fi$/d' \
   "$shell" >"$damaged"
 chmod +x "$damaged"
 if grep -Fq 'if [ "${IDOL_LOCK_HELD:-}" = "1" ]; then' "$damaged"; then
   fail 'reentrant-arm damage did not land'
+fi
+if grep -Fq 'if held_by_ancestor; then' "$damaged"; then
+  fail 'ancestry-arm damage did not land'
 fi
 set +e
 IDOL_BUILD_LOCK="$work/damaged-shell-lock" "$shell" -- \
@@ -120,6 +128,34 @@ set -e
 [ "$rc" -eq 75 ] || fail "damaged nested shell returned $rc"
 [ ! -e "$work/damaged-shell-ran" ] || fail 'damaged nested shell ran its child'
 [ ! -e "$work/damaged-shell-lock" ] || fail 'damaged outer shell left its lock'
+
+# The ancestry arm itself: a nested shell whose env marker was SCRUBBED (the
+# measured zig-build behavior) still recognizes the ancestor holder and execs
+# through instead of deadlocking — and marks the lock held so a re-execing
+# gate does not ping-pong.
+nested="$work/nested-ancestry"
+set +e
+IDOL_BUILD_LOCK="$nested" "$shell" -- \
+  env -u IDOL_LOCK_HELD IDOL_BUILD_LOCK="$nested" \
+  "$shell" --timeout 0 -- "$work/write" "$work/ancestry-ran"
+rc=$?
+set -e
+[ "$rc" -eq 0 ] || fail "ancestor-held env-scrubbed nested shell returned $rc"
+[ -e "$work/ancestry-ran" ] || fail 'ancestor-held nested shell never ran its child'
+[ ! -e "$nested" ] || fail 'ancestry nested shell left its lock'
+
+# A holder whose process is gone is reclaimed instead of waited on: a killed
+# suite once queued the next run 13 minutes behind a corpse.
+dead="$work/shell-dead-holder"
+mkdir -p "$dead/owner.999999999.1"
+set +e
+IDOL_BUILD_LOCK="$dead" "$shell" --timeout 5 -- \
+  "$work/write" "$work/dead-reclaim-ran" 2>/dev/null
+rc=$?
+set -e
+[ "$rc" -eq 0 ] || fail "dead-holder reclamation returned $rc"
+[ -e "$work/dead-reclaim-ran" ] || fail 'dead-holder reclamation never ran its child'
+[ ! -e "$dead" ] || fail 'dead-holder reclamation left the lock'
 
 legacy="$work/shell-legacy"
 mkdir "$legacy"

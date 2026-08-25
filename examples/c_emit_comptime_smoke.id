@@ -1,6 +1,0 @@
-point: { x: f64, y: f64 }
-r: point = { x = 1.0, y = 2.0 }
-
-@comp.c.emit(@comp.fields.map(r, "/* %n */\n"))
-
-print("ok")

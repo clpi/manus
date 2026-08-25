@@ -1,28 +1,17 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// SH-02 + SH-03 production seam. These travel together: any module that
-/// reaches `lexer_bridge` reaches both the keyword table and the Idol lexer
-/// behind it, so linking them separately only produces undefined symbols later.
-///
-/// The Idol lexer artifact also defines a STRONG `duo_keyword_classify`, which
-/// overrides the weak one in src/keyword_classify.c — that file was written
-/// weak for exactly this case.
-fn linkProductionKeywordClassify(b: *std.Build, mod: *std.Build.Module) void {
-    // Weak `duo_keyword_classify` from the classify C projection. The lexer
-    // artifact currently emits a strong definition of the same symbol; weak
-    // loses. Delete this unit when classify.id is the sole linked producer.
-    mod.addCSourceFile(.{
-        .file = b.path("src/keyword_classify.c"),
-        .flags = &.{ "-std=c11", "-w" },
-    });
-    linkProductionIdolLexer(b, mod);
-    mod.link_libc = true;
-}
-
 /// SH-03 production dispatch: Idol lexer regenerated from
 /// `lib/compiler/lexer.id`. Provides `duo_lexer_tokenize_full`.
-/// Keyword classify is the separate generated unit above.
+///
+/// Keyword classification no longer links a C table: src/keyword_bridge.zig
+/// reads the `.keyword` rows of src/grammar_role_table.zig (generated from the
+/// one owner, lib/compiler/token.id) at comptime. The retired unit here linked
+/// src/keyword_classify.c weak on the claim that the lexer artifact emits a
+/// strong `duo_keyword_classify` override — src/lexer_tokenize.c defines no
+/// such symbol, so the weak second producer always answered. That file remains
+/// only as the direct backend's bootstrap link input for user programs that
+/// import the symbol (src/main.zig `boot()`), with its own deletion condition.
 fn linkProductionIdolLexer(b: *std.Build, mod: *std.Build.Module) void {
     mod.addCSourceFile(.{
         .file = b.path("src/lexer_tokenize.c"),
@@ -103,7 +92,7 @@ pub fn build(b: *std.Build) void {
             .strip = optimize == .fast,
         }),
     });
-    linkProductionKeywordClassify(b, exe.root_module);
+    linkProductionIdolLexer(b, exe.root_module);
     addDirectRuntimeObjects(b, exe.root_module);
     b.installArtifact(exe);
 
@@ -365,7 +354,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    linkProductionKeywordClassify(b, unit_tests.root_module);
+    linkProductionIdolLexer(b, unit_tests.root_module);
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
     test_step.dependOn(&grammar_projection_cmd.step);
@@ -463,7 +452,7 @@ pub fn build(b: *std.Build) void {
     // Delete it when the tracked direct-native harness can obtain the same
     // facts itself (law.bridge.death).
     const wasm_evidence_cmd = b.addSystemCommand(&.{
-        "sh", "-eu", "-c",
+        "sh",            "-eu",                      "-c",
         \\build_zig_version=$1
         \\build_optimize=$2
         \\revision=$(git rev-parse HEAD)
@@ -535,9 +524,7 @@ pub fn build(b: *std.Build) void {
         \\printf 'wasm-evidence oracle=wart revision=%s version=%s binary_sha256=%s provenance_sha256=%s role=test-only dynamic_competitor=no\n' "$wart_revision" "$wart_version" "$wart_hash" "$wart_provenance_sha"
         \\printf 'wasm-evidence preflight=pass outcome=pending-direct-native\n'
         ,
-        "wasm-evidence",
-        builtin.zig_version_string,
-        @tagName(optimize),
+        "wasm-evidence", builtin.zig_version_string, @tagName(optimize),
     });
     wasm_evidence_cmd.setCwd(b.path("."));
     wasm_evidence_cmd.step.dependOn(b.getInstallStep());
@@ -560,7 +547,7 @@ pub fn build(b: *std.Build) void {
     wasm_engine_cmd.step.dependOn(&wasm_evidence_cmd.step);
 
     const wasm_engine_artifact_evidence_cmd = b.addSystemCommand(&.{
-        "sh", "-eu", "-c",
+        "sh",                   "-eu", "-c",
         \\engine_hash=$(shasum -a 256 "$1" | cut -d ' ' -f 1)
         \\printf 'wasm-evidence artifact=direct-native-engine binary_sha256=%s\n' "$engine_hash"
         ,
@@ -586,7 +573,7 @@ pub fn build(b: *std.Build) void {
     wasm_test_build_cmd.step.dependOn(&wasm_engine_artifact_evidence_cmd.step);
 
     const wasm_harness_artifact_evidence_cmd = b.addSystemCommand(&.{
-        "sh", "-eu", "-c",
+        "sh",                    "-eu", "-c",
         \\harness_hash=$(shasum -a 256 "$1" | cut -d ' ' -f 1)
         \\printf 'wasm-evidence artifact=direct-native-harness binary_sha256=%s\n' "$harness_hash"
         ,
@@ -676,7 +663,7 @@ pub fn build(b: *std.Build) void {
     const semantic_harness_step = b.step("semantic-harness", "Every projection target must agree on stdout, not just exit status");
     semantic_harness_step.dependOn(&semantic_harness_cmd.step);
 
-    const repo_hygiene_cmd = b.addSystemCommand(&.{ "./tools/node/dev/repo-hygiene" });
+    const repo_hygiene_cmd = b.addSystemCommand(&.{"./tools/node/dev/repo-hygiene"});
     repo_hygiene_cmd.setCwd(b.path("."));
     const repo_hygiene_step = b.step("repo-hygiene", "forbidden root artifacts and tracked agent noise");
     repo_hygiene_step.dependOn(&repo_hygiene_cmd.step);
@@ -747,7 +734,7 @@ pub fn build(b: *std.Build) void {
             .strip = true,
         }),
     });
-    linkProductionKeywordClassify(b, census_exe.root_module);
+    linkProductionIdolLexer(b, census_exe.root_module);
     addDirectRuntimeObjects(b, census_exe.root_module);
     const census_install = b.addInstallArtifact(census_exe, .{});
 
@@ -1086,7 +1073,7 @@ pub fn build(b: *std.Build) void {
         }),
         .filters = &.{"WP-04"},
     });
-    linkProductionKeywordClassify(b, native_backend_tests.root_module);
+    linkProductionIdolLexer(b, native_backend_tests.root_module);
     const run_native_backend_tests = b.addRunArtifact(native_backend_tests);
     // Exercises the LIVE native backend over src/native_backend.zig. The old
     // consumer, the deleted catalog gate, ran the same coverage before the
@@ -1113,7 +1100,7 @@ pub fn build(b: *std.Build) void {
         // the step would re-run every unit test in the tree and bury the census.
         .filters = &.{"sovereign:"},
     });
-    linkProductionKeywordClassify(b, sovereign_tests.root_module);
+    linkProductionIdolLexer(b, sovereign_tests.root_module);
     const run_sovereign_tests = b.addRunArtifact(sovereign_tests);
     const sovereign_step = b.step("sovereign", "Graph sovereignty over machine bytes: damage the AST after graph publication, compare object bytes");
     sovereign_step.dependOn(&run_sovereign_tests.step);
@@ -1286,7 +1273,7 @@ pub fn build(b: *std.Build) void {
     closure_proof_step.dependOn(&semantic_proof_cmd.step);
 
     const idiom_cmd = b.addSystemCommand(&.{
-        "sh", "-c",
+        "sh",                                                                                               "-c",
         "git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run gate/idiom.id || test $? -eq 3",
     });
     idiom_cmd.setCwd(b.path("."));
@@ -1300,7 +1287,7 @@ pub fn build(b: *std.Build) void {
     bench_proof_step.dependOn(&bench_proof_cmd.step);
 
     const idiom_gate_cmd = b.addSystemCommand(&.{
-        "sh", "-c",
+        "sh",                                                                                               "-c",
         "git diff -U0 --diff-filter=ACM -- '*.id' | ./zig-out/bin/idol run gate/idiom.id || test $? -eq 3",
     });
     idiom_gate_cmd.setCwd(b.path("."));
@@ -1373,7 +1360,7 @@ pub fn build(b: *std.Build) void {
     // owner, and by-name calls to seven handlers that used to answer nothing at
     // all. It spawns the servers in a scratch cwd, because `idol run x.id`
     // drops `x.out` beside itself and this gate guards the tree it runs in.
-    const mcp_gate_cmd = b.addSystemCommand(&.{ "./tools/node/dev/mcp-gate" });
+    const mcp_gate_cmd = b.addSystemCommand(&.{"./tools/node/dev/mcp-gate"});
     mcp_gate_cmd.setCwd(b.path("."));
     mcp_gate_cmd.step.dependOn(b.getInstallStep());
     const mcp_gate_step = b.step("mcp-gate", "MCP servers must handshake, serve their full tool census, and answer by value");
@@ -1438,7 +1425,7 @@ pub fn build(b: *std.Build) void {
 
     // G-061 strict dispatch gate: metaprogramming smoke under DUO_TRANSFORM_GATE=1
     const meta_gate_cmd = b.addSystemCommand(&.{
-        "bash",                                                                                                                                        "-c",
+        "bash",                                                                                                               "-c",
         "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 ./tools/node/dev/idol-lock -- ./zig-out/bin/idol run examples/parity/each.id",
     });
     meta_gate_cmd.setCwd(b.path("."));

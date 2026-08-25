@@ -12896,6 +12896,37 @@ pub const Sema = struct {
         return false;
     }
 
+    /// Whether any statement of this body — nested control flow included — is
+    /// an explicit `return` carrying a value. A nested function expression
+    /// owns its returns, and a statement-level walk never descends into one,
+    /// so those do not count against the enclosing body.
+    fn block_has_valued_ret(blk: *const ast.Block) bool {
+        for (blk.stmts) |*stmt| {
+            if (stmt_has_valued_ret(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn stmt_has_valued_ret(stmt: *const ast.Stmt) bool {
+        return switch (stmt.*) {
+            .ret => |r| r.vals.len > 0,
+            .if_stmt => |is| {
+                if (block_has_valued_ret(&is.then)) return true;
+                for (is.elseifs) |ei| {
+                    if (block_has_valued_ret(&ei.body)) return true;
+                }
+                if (is.else_body) |eb| return block_has_valued_ret(&eb);
+                return false;
+            },
+            .while_loop => |wl| block_has_valued_ret(&wl.body),
+            .repeat_loop => |rl| block_has_valued_ret(&rl.body),
+            .num_for => |nf| block_has_valued_ret(&nf.body),
+            .gen_for => |gf| block_has_valued_ret(&gf.body),
+            .do_block => |db| block_has_valued_ret(&db.body),
+            else => false,
+        };
+    }
+
     fn stmt_references_name(stmt: *const ast.Stmt, name: []const u8) bool {
         return switch (stmt.*) {
             .local_decl => |ld| for (ld.inits) |init_expr| {
@@ -12974,6 +13005,49 @@ pub const Sema = struct {
         // §4: trailing assignment expression counts too.
         if (block_implicit_return_expr(&fb.body)) |e| {
             const t = infer.infer_expr(e, .any);
+            // GAP-060 — a tail that answers NOTHING resolves the return to
+            // `void` instead of aborting inference. `pass(msg: str)` whose
+            // whole body is `print("OK: " .. msg)` stayed `.inferred`, so the
+            // void epilogue in `dnir_lower.lowerFunction` (guarded on the
+            // DECLARED return type) never ran: the function fell off its own
+            // end — refused by the AArch64 backend, a runtime `unreachable`
+            // trap on wasm right after the print — while the same body spelled
+            // `: void` worked. Writing the fact here routes the inferred
+            // spelling down the exact path the annotation already takes. Both
+            // faces of "answers nothing" land: the built-in floor (`print`)
+            // through `isVoidShapedCall`, and a call to a callee already
+            // resolved `: void` through its re-defined signature, so the fact
+            // cascades caller by caller in declaration order. An explicit
+            // valued `return` anywhere keeps the body out of this rule — its
+            // value demand survives, however the tail is shaped.
+            // The name-based floor (`print`) applies ONLY when inference
+            // resolved nothing AND the module itself does not re-define the
+            // spelling: `is_dynamic_call` types every `print` call `.any`
+            // regardless of a shadowing declaration, so the resolved fact has
+            // to be recovered from `callable_defs` here — a module relation
+            // wearing the spelling that is not proven void keeps the tail out
+            // of the floor, or the shadowing caller's result would be
+            // silently retyped void.
+            const name_floor = t == .any and tail_result_demand.isVoidShapedCall(e) and floor: {
+                if (e.* == .call and e.call.func.* == .name) {
+                    if (self.callable_defs.get(e.call.func.name.ident)) |maybe_decl| {
+                        if (maybe_decl) |decl| {
+                            const shadow_rt = decl.func.ret_type;
+                            if (!(shadow_rt == .named and
+                                std.mem.eql(u8, shadow_rt.named, "void")))
+                                break :floor false;
+                        }
+                    }
+                }
+                break :floor true;
+            };
+            if (fb.ret_type == .inferred and !fb.ret_fallible and
+                (t == .void or name_floor) and
+                !block_has_valued_ret(&fb.body))
+            {
+                fb.ret_type = .{ .named = "void" };
+                return;
+            }
             infer.ret_tys.append(infer.sema.alloc, t) catch return;
         }
 
@@ -13903,6 +13977,121 @@ test "sema: untyped function can be specialized to native" {
     try testing.expectEqualStrings("i64", fd.func.params[0].typ.named);
     try testing.expectEqualStrings("i64", fd.func.params[1].typ.named);
     try testing.expectEqualStrings("i64", fd.func.ret_type.named);
+}
+
+test "sema: GAP-060 void-shaped tail resolves inferred return to void" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // The gap's minimal shape: a bare declaration whose whole body is one
+    // void-shaped call. Left `.inferred`, the void epilogue in dnir_lower
+    // never ran and the function fell off its own end (wasm `unreachable`
+    // trap after the print; AArch64 refusal). The resolved fact must be the
+    // exact spelling `: void` already takes.
+    const src =
+        \\pass(msg: str)
+        \\    print("OK: " .. msg)
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    p.idol_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expectEqualStrings("void", fd.func.ret_type.named);
+}
+
+test "sema: GAP-060 void return cascades to a caller in tail position" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `emit` resolves to void through the print floor; `pass` then resolves
+    // through `emit`'s re-defined signature — the caller-by-caller cascade.
+    const src =
+        \\emit(msg: str)
+        \\    print(msg)
+        \\
+        \\pass(msg: str)
+        \\    emit("OK: " .. msg)
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    p.idol_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expectEqualStrings("void", mod.body.stmts[0].func_decl.func.ret_type.named);
+    try testing.expectEqualStrings("void", mod.body.stmts[1].func_decl.func.ret_type.named);
+}
+
+test "sema: GAP-060 positive control — a value tail still infers its value type" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\double(x: i64)
+        \\    x * 2
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    p.idol_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expectEqualStrings("i64", fd.func.ret_type.named);
+}
+
+test "sema: GAP-060 explicit valued return keeps the body out of the void rule" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // A body that sometimes answers a value must not be resolved void merely
+    // because its fall-through tail is an effect.
+    const src =
+        \\maybe(x: i64)
+        \\    if x > 0
+        \\        return 5
+        \\    print("no")
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    p.idol_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expect(fd.func.ret_type != .named or
+        !std.mem.eql(u8, fd.func.ret_type.named, "void"));
+}
+
+test "sema: GAP-060 a shadowing print that answers a value outranks the name floor" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // The spelling `print` is only the FLOOR for an unresolvable callee. A
+    // user relation shadowing it with a value answer resolves the tail's
+    // type, and the resolved fact wins — retyping this void would silently
+    // drop the caller's result.
+    const src =
+        \\print(x: i64): i64
+        \\    return x + 1
+        \\bump(x: i64)
+        \\    print(x)
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    p.idol_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    const fd = mod.body.stmts[1].func_decl;
+    try testing.expect(fd.func.ret_type != .named or
+        !std.mem.eql(u8, fd.func.ret_type.named, "void"));
 }
 
 test "sema: integer literal resolves to i64" {
