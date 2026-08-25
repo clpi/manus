@@ -6,11 +6,11 @@
     "sole_semantic_authority": true,
     "compact_law": {
       "path": "docs/spec/law.md",
-      "blob": "81201294022572a9dba25d774054eeed862e293b"
+      "blob": "155edf8e9204d00316dab8363676f0fd7b2fb552"
     },
     "long_form_law": {
       "path": "docs/spec/constitution.md",
-      "blob": "818df753e0a37a892801c1d5e0f0c34096766ec8",
+      "blob": "56ec285b3d320981711a190d8414c4f557bade4b",
       "role": "structured expansion and law-id owner; compact law wins on drift"
     },
     "source_projection": {
@@ -21,11 +21,11 @@
   },
   "source_law_edition": {
     "schema": "idol.source.law.v1",
-    "sha256": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
+    "sha256": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
     "algorithm": "sha256 of schema UTF-8, NUL, compact-law bytes, NUL, long-form-law bytes",
     "input_blob_ids": {
-      "compact_law": "81201294022572a9dba25d774054eeed862e293b",
-      "long_form_law": "818df753e0a37a892801c1d5e0f0c34096766ec8"
+      "compact_law": "155edf8e9204d00316dab8363676f0fd7b2fb552",
+      "long_form_law": "56ec285b3d320981711a190d8414c4f557bade4b"
     },
     "canonical_source": ".id",
     "foreign_source_editions": "must carry their own exact law identity; unknown never inherits this edition"
@@ -49,7 +49,7 @@
     "world": "@"
   },
   "rulings": {
-    "coverage": "seed; docs/spec/constitution.md remains the complete law-id owner until every ruling is projected here",
+    "coverage": "seed; docs/spec/constitution.md remains the complete law-id owner until every ruling is projected here; law.subject.declaration (declaration-side specialization)",
     "status_vocabulary": [
       "current",
       "superseded",
@@ -61,7 +61,7 @@
         "law": "law.identity.current",
         "identity": "Idol",
         "status": "current",
-        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
+        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
         "supersedes": [
           "historical.identity.Duo",
           "historical.identity.Duon",
@@ -86,7 +86,7 @@
         "law": "law.application.parentheses",
         "identity": "application",
         "status": "current",
-        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
+        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
         "supersedes": [
           "historical.call-shaped-indexing"
         ],
@@ -110,7 +110,7 @@
         "law": "law.projection.computed",
         "identity": "computed projection",
         "status": "current",
-        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
+        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
         "supersedes": [
           "historical.brackets-legacy",
           "historical.call-shaped-indexing"
@@ -135,7 +135,7 @@
         "law": "law.structure.braces",
         "identity": "structured pack",
         "status": "current",
-        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
+        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
         "supersedes": [],
         "source_faces": [
           "{}"
@@ -157,7 +157,7 @@
         "law": "law.block.offside",
         "identity": "block closure",
         "status": "current",
-        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
+        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
         "supersedes": [
           "historical.block.end-canonical"
         ],
@@ -181,7 +181,7 @@
         "law": "law.at.one",
         "identity": "world axis",
         "status": "current",
-        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
+        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
         "supersedes": [
           "historical.at.descriptor-anchor",
           "historical.at.descriptor-application",
@@ -211,6 +211,32 @@
           "MCP"
         ],
         "implementation_state": "partial"
+      },
+      {
+        "law": "law.subject.declaration",
+        "identity": "one relation identity plus subject constraint plus projection facts plus implementation witness",
+        "status": "current",
+        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
+        "supersedes": [],
+        "source_faces": [
+          "subject:relation = ...",
+          "relation(levels) = ...",
+          "subject:relation(levels) = ...",
+          "subject: { relation(levels) = ... }"
+        ],
+        "semantic_form": "specialization: relation + subject constraint + projection facts + implementation witness; no nested functions, bound methods, partial-application nodes, or closures",
+        "negative_controls": [
+          "(:) anonymous self slot",
+          "|> pipeline operator",
+          "payload specialization body:move(10) = ...",
+          "request-id specialization server:fetch(18291) = ..."
+        ],
+        "generated_consumers": [
+          "parser declaration heads",
+          "relation specialization resolution",
+          "specialization convergence r|a|b == r|b|a under commuting laws"
+        ],
+        "implementation_state": "semantics authoritative; parser production admitted by law, implementation not yet claimed — not a claim of working compiler code"
       }
     ]
   },

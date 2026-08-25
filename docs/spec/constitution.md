@@ -5980,6 +5980,40 @@ projectionhead = law{
     fails = "reading relation declaration projection as an intermediate callable"
 }
 
+
+subjectdeclaration = law{
+    id    = "law.subject.declaration"
+    kind  = .invariant
+    holds = .declaration
+    binds = {
+        "a declaration head may orient an existing relation around a semantic subject so body:weight = (factor) declares relation weight with subject specialization body and ordinary operand factor",
+        "head projection levels compose with subject specialization so body:weight(kg) = (factor) declares relation weight with subject constraint body projection fact unit kg and remaining operand factor",
+        "subject-relation-level declaration normalizes to relation identity plus subject constraint plus specialization facts plus implementation witness and never to nested functions bound methods partial applications or curry chains",
+        "a subject home compresses the same declaration because the home supplies the recoverable subject so body: { weight(kg) = ... } equals body:weight(kg) = ...",
+        "head levels admit only stable semantic axes descriptor unit encoding law stage target world witness while runtime payload stays in the operand pack after = so body:move(10) = ... and server:fetch(18291) = ... are refused as payload specialization",
+        "compile-time knowledge at a call site may specialize an application without minting a declared relation axis",
+        "there is no anonymous self slot (: ) parameter and no native pipeline operator |> because chaining is subject and relation chaining through demanded results",
+        "specialization order is source projection not semantic identity so r | target = arm | format = png and r | format = png | target = arm converge when the relation laws say those facts commute",
+    }
+    canon = {
+        "weight = (body, factor) body:mass() * factor",
+        "weight(kg) = (body, factor)",
+        "body:weight = (factor) :mass() * factor",
+        "body:weight(kg) = (factor) :mass() * factor",
+        "body: { weight(kg) = (factor) :mass() * factor }",
+        "image:encode(png)(fast) when png and fast are independently meaningful axes",
+    }
+    deny  = {
+        "weight = (:, factor)",
+        "value |> relation",
+        "body:move(10) = ... payload as a specialization axis",
+        "server:fetch(18291) = ... request id as a specialization axis",
+        "CurriedFunction BoundMethod or PartialApplication as a semantic node kingdom",
+        "flattening subject projection and operand into generic curry slots",
+    }
+    fails = "encoding receiver placement a second time or turning runtime data into relation decomposition"
+}
+
 currystructural = law{
     id    = "law.curry.structural"
     kind  = .invariant

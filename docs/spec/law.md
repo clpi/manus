@@ -279,6 +279,22 @@ Call shape, table shape, descriptor identity, compile-time values, result packs,
 closure captures, world, stage, target, and observer demand drive progressive
 specialization.
 
+Declaration heads specialize by the same algebra as invocation faces. A relation
+head may carry its projection pack before `=` (`weight(kg) = (body, factor)`),
+a subject specialization (`body:weight = (factor)`), or both
+(`body:weight(kg) = (factor)`). These are one relation identity plus semantic
+facts — subject constraint and projection facts — with an implementation
+witness; they are not nested functions, bound methods, partial applications, or
+closures. A subject home compresses the same declaration
+(`body: { weight(kg) = ... }`) by supplying the recoverable subject.
+
+Head levels admit only stable semantic axes: descriptor, unit, encoding, law,
+stage, target, world, witness. Runtime payload stays in the operand pack after
+`=`; specializing on payload (`body:move(10) = ...`) is refused. Compile-time
+knowledge at a call site may specialize an application without minting a
+declared axis. There is no anonymous self slot `(:)` and no pipeline operator
+`|>`; chaining is subject/relation chaining through demanded results.
+
 ## 10. Demand and observation
 
 Demand is a graph fact, not a parallel type lattice. It identifies which results,

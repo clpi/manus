@@ -7,7 +7,7 @@
 const std = @import("std");
 
 pub const source_law_schema = "idol.source.law.v1";
-pub const source_law_sha256 = "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd";
+pub const source_law_sha256 = "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b";
 
 pub const ExactSourceLaw = struct {
     family: []const u8,
