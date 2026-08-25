@@ -39,8 +39,8 @@ echo "census/convergence: TOTAL CONVERGENCE P0-A/B"
 
 scan 'duo_mode' 'duo_mode field'
 scan 'duo_native' 'duo_native authority tag' 'lexer_bridge\.zig'
-scan 'duo_classify' 'duo_classify authority' 'token_semantic\.zig'
-scan 'duo_type|duo_contextual' 'duo token categories' 'token_semantic\.zig'
+scan 'duo_classify' 'duo_classify authority'
+scan 'duo_type|duo_contextual' 'duo token categories'
 scan 'isEntrypointPath\(".*\.duo"\)|build\.duo' 'entrypoint .duo acceptance' 'build_framework\.zig'
 scan 'sourceFacts\(".*\.duo"\).*idol|\.duo.*canonical' 'idol law for .duo suffix' 'lexer_bridge\.zig'
 scan '@import\("native_req_support\.zig"\)' 'native_req_support import'

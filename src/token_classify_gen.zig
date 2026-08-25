@@ -1,30 +1,51 @@
-//! M1 — Duo-native keyword classifier projection (P12-WS6/WS7).
+//! Duo-native keyword classifier projection (P12-WS6/WS7).
 //!
-//! Emits `lib/token/classify.id` from the canonical descriptor in
-//! `src/token_semantic.zig` (mirror of `wasm_semantic_gen.zig` → opcode_lookup.id).
+//! Emits `lib/token/classify.id` and `src/keyword_classify.c` from the
+//! `.keyword` rows of `src/grammar_role_table.zig` — the generated projection
+//! of the ONE grammar-fact owner, `lib/compiler/token.id` (`law.grammar.one`,
+//! `law.fact.producer.one`). This generator used to read a second 54-row host
+//! table (`src/token_semantic.zig`); that table is deleted and the owner's
+//! rows are the only keyword-identity producer the emit reads.
 //!
-//! Projections emitted here: classifier (3 candidate realizations), spelling,
-//! category metadata. Kind ids are lexer.TokenKind ordinals so the Duo side is
-//! differential-equivalent to the Zig host path consumed by `src/lexer.zig`.
+//! Projections emitted here: classifier (3 candidate realizations) and
+//! spelling. Kind ids are lexer.TokenKind ordinals straight off the owner's
+//! rows, so the Duo side is differential-equivalent to the host lexer path
+//! (`src/keyword_bridge.zig` reads the same rows).
 const std = @import("std");
-const token_semantic = @import("token_semantic.zig");
+const lexer = @import("lexer.zig");
+const table = @import("grammar_role_table.zig");
 
-pub const SCHEMA_VERSION = "token-semantic-v0";
+pub const SCHEMA_VERSION = "grammar-role-v1";
 pub const PROVENANCE = "src/token_classify_gen.zig";
 
-fn categoryInt(kw: token_semantic.KeywordEntry) i64 {
-    return @intFromEnum(kw.category) + 1;
-}
+const Keyword = struct { text: []const u8, kind: lexer.TokenKind };
 
-/// Lexicographic index order over the canonical keyword table.
-fn sortedIndices() [token_semantic.keywords.len]usize {
-    var idx: [token_semantic.keywords.len]usize = undefined;
-    for (0..token_semantic.keywords.len) |i| idx[i] = i;
+/// The owner's keyword census in ordinal (row) order — the same rows the
+/// production lookup in `src/keyword_bridge.zig` builds its map from.
+pub const keywords = blk: {
+    var count: usize = 0;
+    for (table.rows) |row| {
+        if (row.keyword) count += 1;
+    }
+    var kws: [count]Keyword = undefined;
+    var i: usize = 0;
+    for (table.rows) |row| {
+        if (!row.keyword) continue;
+        kws[i] = .{ .text = row.spell, .kind = row.kind.? };
+        i += 1;
+    }
+    break :blk kws;
+};
+
+/// Lexicographic index order over the owner's keyword census.
+fn sortedIndices() [keywords.len]usize {
+    var idx: [keywords.len]usize = undefined;
+    for (0..keywords.len) |i| idx[i] = i;
     var i: usize = 1;
     while (i < idx.len) : (i += 1) {
         const key = idx[i];
         var j = i;
-        while (j > 0 and std.mem.lessThan(u8, token_semantic.keywords[key].text, token_semantic.keywords[idx[j - 1]].text)) {
+        while (j > 0 and std.mem.lessThan(u8, keywords[key].text, keywords[idx[j - 1]].text)) {
             idx[j] = idx[j - 1];
             j -= 1;
         }
@@ -40,27 +61,23 @@ fn upperInto(buf: *[32]u8, s: []const u8) []const u8 {
 }
 
 pub fn emitTokenClassify(w: *std.Io.Writer) !void {
-    const kws = token_semantic.keywords;
+    const kws = keywords;
     const sorted = sortedIndices();
     try w.print(
         \\# GENERATED from src/token_classify_gen.zig — do not edit by hand.
         \\# Regenerate: idol token-tables emit
-        \\# Canonical token facts: src/token_semantic.zig
+        \\# Keyword facts: src/grammar_role_table.zig `.keyword` rows — the
+        \\# generated projection of the one owner, lib/compiler/token.id.
         \\
-        \\# Pass 12 M1 — Duo-native keyword classifier (P12-WS7).
-        \\# {d} reserved words across 3 categories; 3 candidate realizations.
-        \\# Proof: examples/pass12_m1_diff.id (differential + fuzz); artifact
-        \\# inspection in src/token_classify_gen.zig (kind ids match lexer.TokenKind).
+        \\# Duo-native keyword classifier (P12-WS7).
+        \\# {d} reserved words; 3 candidate realizations. Kind ids are
+        \\# lexer.TokenKind ordinals read off the owner's rows, so the Duo side
+        \\# is differential-equivalent to the host path (src/keyword_bridge.zig).
         \\
         \\GENERATOROWNER = "src/token_classify_gen.zig"
-        \\DESCRIPTORSCHEMA = "token-semantic-v0"
+        \\DESCRIPTORSCHEMA = "grammar-role-v1"
         \\KEYWORDCOUNT = {d}
         \\PRODUCTIONCLASSIFIER = "classifier.branchchain"
-        \\
-        \\# Categories: 1 = luakeyword, 2 = duotype, 3 = duocontextual
-        \\CATEGORYLUA = 1
-        \\CATEGORYDUOTYPE = 2
-        \\CATEGORYDUOCONTEXTUAL = 3
         \\
     , .{ kws.len, kws.len });
 
@@ -79,10 +96,6 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
     try w.writeAll("}\nSORTEDID = {\n");
     for (sorted, 0..) |ki, i| {
         try w.print("  {s}{d},\n", .{ if (i == 0) "" else "", @intFromEnum(kws[ki].kind) });
-    }
-    try w.writeAll("}\nSORTEDCATEGORY = {\n");
-    for (sorted, 0..) |ki, i| {
-        try w.print("  {s}{d},\n", .{ if (i == 0) "" else "", categoryInt(kws[ki]) });
     }
     try w.writeAll("}\n");
 
@@ -129,21 +142,13 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
     // Production entry + metadata projections.
     try w.writeAll(
         \\
-        \\# Production entry (mirrors token_semantic.production_classifier).
+        \\# Production entry (branch chain, mirrored by src/keyword_classify.c).
         \\@c.export("duo_keyword_classify")
         \\classify: i64 = (w: str)
         \\  classifybranchchain(w)
         \\
         \\iskeyword: bool = (w: str)
         \\  classify(w) != 0
-        \\
-        \\categoryof: i64 = (id: i64)
-        \\  i = 1
-        \\  while i <= KEYWORDCOUNT
-        \\    if SORTEDID[i] == id
-        \\      return SORTEDCATEGORY[i]
-        \\    i += 1
-        \\  0
         \\
         \\spellingof: str = (id: i64)
         \\  i = 1
@@ -158,12 +163,14 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
 
 /// C realization of `classify.id` production entry — linked into the duo binary (P16-WS3).
 pub fn emitKeywordClassifyNativeC(w: *std.Io.Writer) !void {
-    const kws = token_semantic.keywords;
+    const kws = keywords;
     try w.print(
         \\/* GENERATED from {s} — do not edit by hand.
         \\ * Regenerate: idol token-tables emit
         \\ * Canonical Duo projection: lib/token/classify.id (@c.export classify)
-        \\ * Production consumer: src/keyword_bridge.zig → src/lexer.zig
+        \\ * Production consumer: src/main.zig boot() — the direct backend's link
+        \\ * input for user programs importing the symbol. The compiler's own
+        \\ * lexer reads the owner's rows (src/keyword_bridge.zig), not this.
         \\ */
         \\#include <stdint.h>
         \\#include <string.h>
@@ -212,13 +219,13 @@ pub fn emitTokenClassifyFile(alloc: std.mem.Allocator, io: std.Io, path: []const
     try std.Io.Dir.writeFile(cwd, io, .{ .sub_path = path, .data = aw.written() });
 }
 
-test "token_classify_gen: emitted kind ids match descriptor" {
+test "token_classify_gen: emitted kind ids match the owner's rows" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer aw.deinit();
     try emitTokenClassify(&aw.writer);
     const out = aw.written();
     var name_buf: [32]u8 = undefined;
-    for (token_semantic.keywords) |kw| {
+    for (keywords) |kw| {
         const up = upperInto(&name_buf, kw.text);
         var want_buf: [64]u8 = undefined;
         const want = std.fmt.bufPrint(&want_buf, "KIND{s} = {d}", .{ up, @intFromEnum(kw.kind) }) catch unreachable;
@@ -233,10 +240,17 @@ test "token_classify_gen: emitted kind ids match descriptor" {
 test "token_classify_gen: sorted descriptor is lexicographic" {
     const sorted = sortedIndices();
     for (1..sorted.len) |i| {
-        const a = token_semantic.keywords[sorted[i - 1]].text;
-        const b = token_semantic.keywords[sorted[i]].text;
+        const a = keywords[sorted[i - 1]].text;
+        const b = keywords[sorted[i]].text;
         try std.testing.expect(std.mem.lessThan(u8, a, b));
     }
+}
+
+test "token_classify_gen: the census is the retired host table's" {
+    // The deleted src/token_semantic.zig carried 54 rows; the owner's rows
+    // must carry the same census or a keyword silently dropped out of the
+    // generated artifacts.
+    try std.testing.expectEqual(@as(usize, 54), keywords.len);
 }
 
 test "token_classify_gen: emit native C when EMIT_CLASSIFY_C set" {

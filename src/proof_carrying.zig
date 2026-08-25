@@ -71,7 +71,7 @@ pub const seed_capabilities: []const Capability = &.{
     .{ .id = "cap.repr.native_scalar", .description = "Full native_scalar module without lua runtime", .status = .partial, .owner = "src/codegen.zig" },
     .{ .id = "cap.bench.direct", .description = "Canonical direct-native benchmark profile", .status = .partial, .owner = "src/backend_identity.zig" },
     .{ .id = "cap.bench.correctness", .description = "Benchmark RESULT correctness gate", .status = .supported, .owner = "scripts/run_benchmark.sh" },
-    .{ .id = "cap.token_semantic.m1", .description = "Descriptor-driven keyword classifier in production lexer", .status = .supported, .owner = "src/token_semantic.zig" },
+    .{ .id = "cap.token_semantic.m1", .description = "Owner-derived keyword classifier in production lexer", .status = .supported, .owner = "src/keyword_bridge.zig" },
 };
 
 /// Recompute claim status from capability dependencies (§9.2).
@@ -552,7 +552,7 @@ pub const seed_claims: []const ReleaseClaim = &.{
     },
     .{
         .id = "claim.m1_keyword_semantic",
-        .statement = "Keyword classifier derives from the canonical token_semantic keyword table, differential-checked against two peer classifiers",
+        .statement = "Keyword classifier derives from the one grammar-fact owner's generated keyword rows (lib/compiler/token.id)",
         .status = .supported,
         .dependency_ids = &.{"cap.token_semantic.m1"},
         .proof_bundle_id = "bundle.m1.keyword_classifier",

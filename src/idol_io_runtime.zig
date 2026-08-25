@@ -124,6 +124,8 @@ extern "c" fn malloc(n: usize) ?*anyopaque;
 extern "c" fn realloc(p: ?*anyopaque, n: usize) ?*anyopaque;
 extern "c" fn free(p: ?*anyopaque) void;
 extern "c" fn read(fd: c_int, buf: [*]u8, n: usize) isize;
+extern "c" fn write(fd: c_int, buf: [*]const u8, n: usize) isize;
+extern "c" fn strlen(s: [*:0]const u8) usize;
 extern "c" fn fopen(path: [*:0]const u8, mode: [*:0]const u8) ?*anyopaque;
 extern "c" fn fseek(f: *anyopaque, off: c_long, whence: c_int) c_int;
 extern "c" fn ftell(f: *anyopaque) c_long;
@@ -269,32 +271,61 @@ export fn idol_io_read_line() callconv(.c) ?[*:0]u8 {
     return @ptrCast(buf);
 }
 
+/// `path:read()` refusal. AN ABSENT FILE IS NOT A VALUE: every failure leg
+/// here used to answer NULL, which flowed into Idol `str` and became
+/// `strlen(NULL)` — measured UB recorded in `gaps/GAP-145.md` ("Ordered-work
+/// item 1"), where a program observing the missing-file result printed NOTHING
+/// AT ALL at exit 0. Failing closed is `law.id.one`: downstream semantic use
+/// fails closed when the required facts are absent. The stdin precedent is
+/// `idol_io_read_line`: end of input is not modelled as a value either.
+///
+/// The diagnostic is identity-first — `read-refused:<cause>:<path>` — on fd 2
+/// raw, the `strFatal` convention from `idol_str_runtime.zig`. Sequential
+/// writes rather than one assembled buffer because the path is unbounded and
+/// the `oom` leg cannot malloc a message. `arrive()` first so bytes the
+/// program wrote before the refusal are observable ahead of it, the same
+/// flush-before-dying obligation B5 discharges for traps. `exit(1)`, not
+/// `abort()`: a refusal is an answered outcome, not a trap.
+///
+/// A structured absent|present outcome family (letting source observe absence
+/// as a value) remains OPEN under GAP-154/GAP-118; this function does not
+/// admit it.
+fn readRefused(cause: [*:0]const u8, path: [*:0]const u8) noreturn {
+    arrive();
+    _ = write(2, "read-refused:", "read-refused:".len);
+    _ = write(2, cause, strlen(cause));
+    _ = write(2, ":", 1);
+    _ = write(2, path, strlen(path));
+    _ = write(2, "\n", 1);
+    exit(1);
+}
+
 export fn idol_io_read_path(path: ?[*:0]const u8) callconv(.c) ?[*:0]u8 {
     const p = path orelse return idol_io_read_stdin();
     if (p[0] == 0) return idol_io_read_stdin();
-    const f = fopen(p, "rb") orelse return null;
+    const f = fopen(p, "rb") orelse readRefused("absent", p);
     if (fseek(f, 0, SEEK_END) != 0) {
         _ = fclose(f);
-        return null;
+        readRefused("io", p);
     }
     const sz = ftell(f);
     if (sz < 0) {
         _ = fclose(f);
-        return null;
+        readRefused("io", p);
     }
     if (fseek(f, 0, SEEK_SET) != 0) {
         _ = fclose(f);
-        return null;
+        readRefused("io", p);
     }
     const n: usize = @intCast(sz);
     const buf: [*]u8 = @ptrCast(malloc(n + 1) orelse {
         _ = fclose(f);
-        return null;
+        readRefused("oom", p);
     });
     if (fread(buf, 1, n, f) != n) {
         free(buf);
         _ = fclose(f);
-        return null;
+        readRefused("io", p);
     }
     _ = fclose(f);
     buf[n] = 0;

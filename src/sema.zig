@@ -3049,6 +3049,9 @@ pub const Sema = struct {
             if (block_implicit_return_expr(blk)) |e| {
                 const actual = try self.check_expr(e);
                 self.check_return_value(e.loc(), actual);
+                // CALLABLE-DEMAND (gap[110]) — the result descriptor is the
+                // demand a bare tail pack meets.
+                self.check_demanded_pack_result(e);
             } else if (self.current_ret != .any and self.current_ret != .void and blk.stmts.len > 0) {
                 // A function body ending in an `if` with NO else has no value on
                 // the false path, and nothing downstream supplies one — the
@@ -3238,6 +3241,11 @@ pub const Sema = struct {
                                 }
                             }
                         }
+                        // EXPECT-APPLY (gap[110]) — the annotation IS the
+                        // demand, so this is where the demanded pack's labels
+                        // meet the descriptor. After the mismatch checks above
+                        // so a genuine descriptor mismatch still reports as one.
+                        if (i < ld.inits.len) self.check_demanded_pack(lname.typ, ld.inits[i]);
                         t = ann;
                     }
                     const is_const = is_const_attrib(lname.attrib);
@@ -3300,6 +3308,8 @@ pub const Sema = struct {
                         .any;
                     if (lname.typ != .inferred) {
                         const ann = try self.resolve_type(lname.typ);
+                        // EXPECT-APPLY (gap[110]) — same demand, module scope.
+                        if (i < gd.inits.len) self.check_demanded_pack(lname.typ, gd.inits[i]);
                         t = ann;
                     }
                     apply_record_layout_attrs(&t, lname.attributes);
@@ -3429,6 +3439,8 @@ pub const Sema = struct {
                 } else {
                     const actual = try self.check_expr(r.vals[0]);
                     self.check_return_value(r.loc, actual);
+                    // CALLABLE-DEMAND (gap[110]) — same demand, written face.
+                    self.check_demanded_pack_result(r.vals[0]);
                     for (r.vals[1..]) |v| _ = try self.check_expr(v);
                 }
             },
@@ -4469,6 +4481,62 @@ pub const Sema = struct {
         c.args[0].table.pack.realized = .fields;
 
         return RT{ .@"struct" = .{ .name = subject } };
+    }
+
+    /// EXPECT-APPLY, the DIAGNOSTIC half — c0 §43 `law.brace`, §44
+    /// `apply.edge`. gap[110] rung 1.
+    ///
+    /// `p: point = { … }` and `p = point{ … }` are two source projections of
+    /// ONE application relation — the annotation supplies the omitted subject.
+    /// The applied face already refuses a label the descriptor has no field
+    /// for (`check_descriptor_application`, above); before this, the demanded
+    /// face accepted the SAME pack silently, so the most inferred rung of the
+    /// ladder diagnosed strictly less than the most explicit one — the exact
+    /// inversion gap[110] measures.
+    ///
+    /// `{…}` STAYS SEMANTICALLY NEUTRAL: nothing here writes `pack.applied`
+    /// or `pack.realized`, and a bare pack nobody demands a descriptor from is
+    /// untouched. This fires only where a record descriptor IS demanded — the
+    /// gap's own "Do not" places the diagnostic exactly there. The subject
+    /// resolution and the label test mirror `check_descriptor_application`
+    /// clause for clause so the two faces cannot drift apart.
+    fn check_demanded_pack(self: *Sema, ann: ast.TypeExpr, rhs: *ast.Expr) void {
+        if (ann != .named) return;
+        self.check_demanded_pack_for(ann.named, rhs);
+    }
+
+    /// CALLABLE-DEMAND (gap[110] rung 2) shares this producer: the binding's
+    /// result descriptor is the demand a returned bare pack meets, so a
+    /// `make: point = (a, b)` body ending in `{ x = a, z = b }` refuses with
+    /// the same sentence the binding and applied faces use. One label law,
+    /// one producer (`law.fact.producer.one`).
+    fn check_demanded_pack_result(self: *Sema, rhs: *ast.Expr) void {
+        if (self.current_ret != .@"struct") return;
+        self.check_demanded_pack_for(self.current_ret.@"struct".name, rhs);
+    }
+
+    fn check_demanded_pack_for(self: *Sema, subject: []const u8, rhs: *ast.Expr) void {
+        if (rhs.* != .table) return;
+        // The applied face was already validated by APPLY-ONE's resolving half.
+        if (rhs.table.pack.applied) return;
+        const def = self.alias_defs.get(subject) orelse return;
+        // A descriptor with type parameters is a generic alias and is expanded,
+        // not applied; a nominal descriptor over a scalar has no field pack to
+        // receive. Both decline rather than guessing, per `law.brace`.
+        if (def.type_params != null) return;
+        const is_record = def.fields.len != 0 or
+            (def.target != null and def.target.? == .record);
+        if (!is_record) return;
+        for (rhs.table.fields) |tf| {
+            if (tf != .named) continue;
+            if (!AliasRegistry.hasfield(def, tf.named.key)) {
+                self.err(
+                    rhs.loc(),
+                    "descriptor '{s}' has no field '{s}', so the demanded pack carries a label the subject cannot receive",
+                    .{ subject, tf.named.key },
+                );
+            }
+        }
     }
 
     fn check_expr_inner(self: *Sema, expr: *ast.Expr) SemaError!RT {

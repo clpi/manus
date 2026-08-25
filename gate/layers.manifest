@@ -30,7 +30,6 @@ TOKEN    lexer_dispatch.zig
 TOKEN    lexer_differential.zig
 TOKEN    source_cursor.zig
 TOKEN    token_view.zig
-TOKEN    token_semantic.zig
 TOKEN    token_classify_gen.zig
 TOKEN    keyword_bridge.zig
 TOKEN    grammar_roles.zig

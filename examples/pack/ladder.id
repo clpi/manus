@@ -1,0 +1,44 @@
+# @corpus current
+# THE APPLICATION LADDER — gap[110], c0 §43 `law.brace`, §44 `apply.edge` /
+# `law.pack.shape`. Owner ruling 2026-08-09, reconciled 2026-08-13
+# (`law.injection.only` retired the `@{ … }` rung).
+#
+# ONE semantic case — the point (3.0, 4.0) — through every live rung of the
+# ladder, most explicit to most inferred, in ONE file so no rung can drift
+# without the others noticing:
+#
+#     q = point{ x = 3.0, y = 4.0 }      rung 0  descriptor STATED
+#     p: point = { x = 3.0, y = 4.0 }    rung 1  descriptor = the DEMANDED one
+#     m = make(3.0, 4.0)                 rung 2  descriptor = the RESULT demand
+#
+# gap[110] measured the ladder INVERTED on 2026-08-09: only rung 0 worked,
+# rung 1 broke the C on read, and rung 2 did not even bind. This fixture is
+# the pin on the repaired state: every rung answers, and the answers AGREE —
+# 3 three times, then 4 three times. A single divergent digit is a rung
+# constructing something other than the point the others constructed.
+#
+# The DIAGNOSTIC half of the parity is the negative twin
+# `examples/compile_fail/expect_apply_label.id`: rung 1 refuses a label the
+# descriptor has no field for with the same law rung 0 already enforced
+# (`examples/compile_fail/apply_one_label.id`). Read the twins together —
+# either alone passes under a compiler that had picked one rung to believe.
+#
+# `{…}` stays semantically neutral throughout: nothing here makes a brace mean
+# "construct"; the subject arrives from the stated name at rung 0 and from
+# demand at rungs 1 and 2, exactly as PACK and EXPECT-APPLY rule.
+
+point: { x: f64, y: f64 }
+
+make: point = (a: f64, b: f64)
+    { a, b }
+
+main = ()
+    q = point{ x = 3.0, y = 4.0 }
+    p: point = { x = 3.0, y = 4.0 }
+    m = make(3.0, 4.0)
+    print(q.x)
+    print(p.x)
+    print(m.x)
+    print(q.y)
+    print(p.y)
+    print(m.y)

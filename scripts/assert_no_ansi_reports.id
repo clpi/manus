@@ -63,9 +63,9 @@ check_json_report = ()
   # one-liner, which is an FF-0 (monoglot) violation in a repo whose whole
   # point is that Duo is the best choice for every job — and json.decode
   # has existed the entire time.
-  fh = io.open(tmp, "r")
-  text = fh:read("a")
-  fh:close()
+  # Subject-first byte face; fail-closed. The runner just wrote tmp, so a
+  # missing capture file is a broken gate and the refusal is the right answer.
+  text = tmp:read()
   n: i64 = text:len()
   events: i64 = 0
   saw_summary = false

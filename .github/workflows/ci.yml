@@ -9,7 +9,11 @@ on:
 
 env:
   # Bootstrap pin. build.zig.zon remains the package-level compatibility floor.
-  ZIG_VERSION: 0.17.0-dev.389+f5a1968f6
+  # The pin tracks the toolchain the tree is actually developed and verified
+  # under — the same snapshot candidate.yml uses to build the protected base.
+  # The retired 0.17.0-dev.389 pin was never exercised by a runner, so it never
+  # carried build evidence for any tree that shipped under it.
+  ZIG_VERSION: 0.17.0-dev.1567+f0354179a
 
 jobs:
   hygiene:
@@ -33,7 +37,14 @@ jobs:
         run: zig build
 
       - name: Repository admission
-        run: zig build repo-hygiene public-safety
+        # public-safety routes through gate/public-safety.sh so a host with no
+        # direct-native realization reports the exact DNB004 host fact (NOT
+        # MEASURED) instead of a bare `run ./zig-out/bin/idol failure` that
+        # reads as a scan finding. The step still fails on such a host: NOT
+        # MEASURED is honest attribution, not admission.
+        run: |
+          zig build repo-hygiene
+          sh gate/public-safety.sh
 
   build:
     runs-on: ubuntu-latest

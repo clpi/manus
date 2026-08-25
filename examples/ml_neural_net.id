@@ -27,13 +27,13 @@ add_bias = (t, bias)
             r.data[(i-1)*t.cols+j] = t.data[(i-1)*t.cols+j] + bias.data[j]
     return r
 
-relu = (t: any)
+relu = (t)
     r = zeros(t.rows, t.cols)
     for i = 1, t.size
         if t.data[i] > 0 r.data[i] = t.data[i] 
     return r
 
-softmax = (t: any)
+softmax = (t)
     r = zeros(t.rows, t.cols)
     for row = 1, t.rows
         mx = t.data[(row-1)*t.cols+1]

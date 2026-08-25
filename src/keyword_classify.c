@@ -1,7 +1,9 @@
 /* GENERATED from src/token_classify_gen.zig — do not edit by hand.
  * Regenerate: idol token-tables emit
  * Canonical Duo projection: lib/token/classify.id (@c.export classify)
- * Production consumer: src/keyword_bridge.zig → src/lexer.zig
+ * Production consumer: src/main.zig boot() — the direct backend's link
+ * input for user programs importing the symbol. The compiler's own
+ * lexer reads the owner's rows (src/keyword_bridge.zig), not this.
  */
 #include <stdint.h>
 #include <string.h>

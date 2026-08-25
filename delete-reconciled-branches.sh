@@ -34,17 +34,21 @@
 # EXCLUDED (not deleted by this script):
 #   main                                    — the base branch
 #   claude/reconcile-semantic-graph-088dg0  — live session branch
-#   audit/macmini-live-20260820             — the ONE ref whose content is
-#     absent from main: 5 temporary Mac mini CI-audit files whose own note
-#     says "Do not merge". Obsolete scaffolding, but it carries unlanded
-#     bytes, so its deletion stays a human decision. Delete manually with:
-#       git push origin --delete audit/macmini-live-20260820
+#
+# audit/macmini-live-20260820 was initially excluded as the one ref carrying
+# unlanded bytes. Reconciled 2026-08-25 with run evidence: all FIVE runs of
+# its own workflow concluded CANCELLED after ~70 minutes queued — no
+# self-hosted runner ever picked a job up (gh api
+# repos/clpi/idol/actions/workflows/macmini-live-audit.yml/runs). The rig
+# never executed, captured nothing, contains no Idol semantic content, and
+# its own audit-network-links.md opens "Do not merge." Verdict: DISCARD.
 #
 # Run from any clone with push access:  sh delete-reconciled-branches.sh
 # Each deletion is independent; a failure on one does not stop the rest.
 
 set -u
 
+git push origin --delete audit/macmini-live-20260820
 git push origin --delete audit/metrics-current-head
 git push origin --delete census/falsesurface
 git push origin --delete census/recon2-final

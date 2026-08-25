@@ -1,0 +1,26 @@
+# @corpus current
+# EXPECT-APPLY, the NEGATIVE twin at the DEMANDED rung — gap[110], c0 §43
+# `law.brace`, §44 `apply.edge`. The demanded mirror of
+# `examples/compile_fail/apply_one_label.id`.
+#
+# `p: point = { … }` and `q = point{ … }` are two source projections of ONE
+# application relation, so a pack the descriptor cannot receive must refuse at
+# BOTH rungs, with the same law. Measured 2026-08-25 before the repair, this
+# file checked GREEN while the applied spelling of the same pack refused —
+# the exact inversion gap[110] is about, surviving in its last seam: the most
+# inferred rung diagnosed strictly less than the most explicit one.
+#
+# The gap's own "Do not" places the diagnostic precisely here: "the diagnostic
+# belongs where a descriptor IS demanded and the pack cannot satisfy it."
+# `a = { x, y }` with no demand stays legal and undiagnosed — the positive
+# rows live in `examples/pack/ladder.id` and `examples/pack/apply.id`.
+#
+# Pinned on the substring `has no field` plus the label `z`, the same pin the
+# applied twin carries, so rewording the sentence does not move either fixture
+# and the two rungs cannot drift apart silently.
+
+point: { x: f64, y: f64 }
+
+main = ()
+    p: point = { x = 1.0, z = 2.0 }
+    print(p.x)

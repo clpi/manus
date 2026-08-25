@@ -326,6 +326,15 @@ pub const CodeGen = struct {
     /// boxed table lookup. Null until `emit_module` collects it.
     current_module: ?*const ast.Module = null,
     emit_stmt_blocks_as_returns: bool = false,
+    /// GAP-070 — TRUE only while the statement being emitted belongs to a block
+    /// in return context (`.implicit_return`), the same fact `dnir_lower.zig`
+    /// carries as `ctx.block_answering`. `control_block_should_return` is a
+    /// TYPE test; without this position fact it fired inside loop bodies, and a
+    /// value-typed `if` arm in a `while` body became a `return` from the
+    /// enclosing function — measured: `count(3)` answered 5 through this face
+    /// where the DNIR/C99 path answered 3. A loop body never answers the
+    /// relation, so the type test may only fire where the block does.
+    stmt_block_answering: bool = false,
     /// GAP-174 — set only for the duration of `block_tail_type`. See
     /// `local_type`.
     local_type_overlay: ?*const std.StringHashMapUnmanaged(RT) = null,
@@ -12228,7 +12237,13 @@ pub const CodeGen = struct {
     }
 
     fn emit_control_block(self: *CodeGen, blk: *const ast.Block) E!void {
-        if (self.emit_stmt_blocks_as_returns or self.control_block_should_return(blk)) {
+        // GAP-070 — the type test alone is not permission to return: the arm
+        // must also sit in an answering block (`stmt_block_answering`), which a
+        // loop body never is. This mirrors `dnir_lower.zig`'s
+        // `answering and branchIsValueGuard(...)` gate.
+        if (self.emit_stmt_blocks_as_returns or
+            (self.stmt_block_answering and self.control_block_should_return(blk)))
+        {
             try self.emit_returning_block(blk);
         } else {
             try self.emit_block(blk);
@@ -12427,8 +12442,17 @@ pub const CodeGen = struct {
                 // into it: an inner `if` would grow a `return` in every arm and
                 // leave the relation early with the wrong value.
                 const prev = self.emit_stmt_blocks_as_returns;
+                const prev_answering = self.stmt_block_answering;
                 self.emit_stmt_blocks_as_returns = false;
-                defer self.emit_stmt_blocks_as_returns = prev;
+                // GAP-070 — record whether THIS block answers the relation, so
+                // an `if` arm's value-guard return (the type test above) can
+                // fire in a function body and never in a loop body, matching
+                // `dnir_lower.zig`'s `block_answering` law.
+                self.stmt_block_answering = tail_mode == .implicit_return;
+                defer {
+                    self.emit_stmt_blocks_as_returns = prev;
+                    self.stmt_block_answering = prev_answering;
+                }
                 try self.emit_stmt(&blk.stmts[i]);
             }
             i += 1;
@@ -16371,6 +16395,37 @@ pub const CodeGen = struct {
         return self.expr_type(expr) == .str and !self.expr_emits_lua_value(expr);
     }
 
+    /// gap[094]. TRUE for a compile-time EMPTY text literal operand of `..`.
+    ///
+    /// The parser seeds single-hole interpolation with an empty literal so that
+    /// `"{i}"` and `"x{i}"` are one desugar shape (`"" .. i` beside `"x" .. i`).
+    /// That seed is a SOURCE-shaped realization, not a semantic demand: the
+    /// only observation the program makes is the text VALUE, and concatenating
+    /// the empty text is the identity on that observation
+    /// (`law.observation.minimum`). So the native C projection consumes the
+    /// exact graph fact — an operand that is a text literal of length zero —
+    /// and elides the concat instead of materializing an empty segment plus a
+    /// second allocation, `strlen`, and `memcpy`.
+    ///
+    /// The witness is structural and complete: an empty literal has no effect,
+    /// so dropping it changes no evaluation order; the surviving operand is
+    /// emitted through the same display conversion (`emit_native_display_cstr`)
+    /// the concat arm would have fed it through, so the produced bytes are
+    /// byte-identical; and the concat's fresh allocation is not a semantic
+    /// observation — text is immutable in this projection. The BYTE face is
+    /// excluded: `''` is a byte-sequence value under `law.literal.bytes`, and
+    /// this witness speaks only for text. The boxed `lua_concat` path is also
+    /// excluded: under Lua law `"" .. x` errors on nil/table and STRINGIFIES a
+    /// number, so eliding there would change observable law — the equivalence
+    /// is witnessed only where the operand's display conversion is already the
+    /// exact realization, which is the full-native arm below.
+    fn concat_operand_is_empty_text(expr: *const ast.Expr) bool {
+        return switch (expr.*) {
+            .quoted => |lit| lit.val.len == 0 and !ast.quotedLiteralIsByteSequence(lit.quote),
+            else => false,
+        };
+    }
+
     /// Render a native scalar as a C string, for the contexts where the boxed
     /// backend would have called `lua_to_str`.
     ///
@@ -16422,7 +16477,22 @@ pub const CodeGen = struct {
         for (parts.items) |part| {
             if (!self.concat_operand_is_native_cstr(part)) return false;
         }
-        try self.emit_native_str_concat_left_fold(parts.items, parts.items.len);
+        // gap[094]. Empty text segments are identity operands of `..`; see
+        // `concat_operand_is_empty_text`. Dropping them here means an all-str
+        // chain that only ever had one real segment folds to that segment with
+        // no `duo_str_concat` call at all (`count == 1` emits the part bare).
+        var kept: usize = 0;
+        for (parts.items) |part| {
+            if (concat_operand_is_empty_text(part)) continue;
+            parts.items[kept] = part;
+            kept += 1;
+        }
+        if (kept == 0) {
+            // Every segment was empty, so the value IS the empty text.
+            self.p("\"\"", .{});
+            return true;
+        }
+        try self.emit_native_str_concat_left_fold(parts.items, kept);
         return true;
     }
 
@@ -18635,6 +18705,21 @@ pub const CodeGen = struct {
                     if (try self.try_emit_native_str_concat(expr)) {
                         return;
                     } else if (!self.moduleNeedsLuaRuntime()) {
+                        // gap[094]. `"{i}"` desugars to `"" .. i`, and the empty
+                        // seed is a source-shaped realization, not a demand. An
+                        // empty text operand is the identity of `..` on the one
+                        // observation the value makes, so the surviving operand's
+                        // display conversion IS the whole realization — one
+                        // allocation, no `duo_str_concat`, no empty segment.
+                        // Witness in `concat_operand_is_empty_text`.
+                        if (concat_operand_is_empty_text(b.lhs)) {
+                            try self.emit_native_display_cstr(b.rhs);
+                            return;
+                        }
+                        if (concat_operand_is_empty_text(b.rhs)) {
+                            try self.emit_native_display_cstr(b.lhs);
+                            return;
+                        }
                         // Both operands must reach `duo_str_concat` as `char*`.
                         // Emitting them raw passed an int64_t where a
                         // `const char*` was expected, so `"n = " .. n` on a
@@ -38685,4 +38770,43 @@ test "codegen: a function-body local outranks a module global of the same name" 
     try testing.expectEqualStrings("return total;", output[ret .. ret + "return total;".len]);
     // …and the module binding still has its own storage, unrenamed.
     try testing.expect(std.mem.indexOf(u8, output, "duo_g_total") != null);
+}
+
+test "codegen: gap[094] single-hole interpolation realizes as the conversion, not an empty concat" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // `"{i}"` desugars to `"" .. i` (the parser's single-hole seed). The seed
+    // is source shape, not demand: the C projection must realize the value as
+    // the hole's display conversion alone. `"x{i}"` is the positive control —
+    // a genuine two-part interpolation still concatenates.
+    var lex = Lexer.init(
+        \\i = 7
+        \\a: str = "{i}"
+        \\b: str = "x{i}"
+        \\print(a)
+        \\print(b)
+    , "test.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    semantic.idol_mode = true;
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.idol_mode = true;
+    try cg.emit_module(&module);
+    const output = aw.written();
+    // The single-hole value is the conversion, whole and alone.
+    try testing.expect(std.mem.indexOf(u8, output, "const char* a = duo_str_from_i64((int64_t)(i));") != null);
+    // No empty-seeded concat survives anywhere in the artifact.
+    try testing.expect(std.mem.indexOf(u8, output, "duo_str_concat(\"\"") == null);
+    // Positive control: two real segments still concatenate.
+    try testing.expect(std.mem.indexOf(u8, output, "duo_str_concat(\"x\", duo_str_from_i64((int64_t)(i)))") != null);
 }

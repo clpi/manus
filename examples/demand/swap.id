@@ -33,7 +33,7 @@ bump: i64 = (k: i64)
     calls += 1
     k
 
-two: any = (x: i64)
+two = (x: i64)
     return x * 2, x * 3
 
 want: i64 = (what: str, got: i64, wanted: i64)

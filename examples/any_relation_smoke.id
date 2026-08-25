@@ -1,0 +1,28 @@
+# COLLECTION-RELATION-ONE smoke — `xs:any(p)`, the existential edge, answered
+# BY VALUE on the C path. GAP-235 is the owner: the word `any` is RELATION
+# vocabulary (`xs:any(pred)`), never a type-position spelling.
+#
+# Three questions, three answers, one exit code:
+#   hit    some element of {3, 5, 8} is even        -> true   (+1)
+#   miss   no element of {3, 5, 8} exceeds 100      -> false  (+10 not taken)
+#   empty  an existential over an EMPTY source      -> false  (+100 not taken)
+#
+# The empty answer is law, not accident: `lowerAnyRelation` (src/dnir_lower.zig)
+# answers extent 0 with an immediate false, and `evalCollectionRelation`
+# (src/comptime.zig) falls off the loop to false. This file executes that
+# ruling rather than quoting it — expected exit is 1.
+
+main: i64 = ()
+    xs: [3]i64 = {3, 5, 8}
+    zs: [0]i64 = {}
+    hit = xs:any((x) x % 2 == 0)
+    miss = xs:any((x) x > 100)
+    empty = zs:any((x) x > 0)
+    verdict = 0
+    if hit
+        verdict += 1
+    if miss
+        verdict += 10
+    if empty
+        verdict += 100
+    verdict

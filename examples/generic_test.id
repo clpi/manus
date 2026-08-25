@@ -16,7 +16,7 @@ fun safe_div<T>(a: T, b: T): T
     a // b
 
 # Generic swap with explicit multi-return
-fun swap<T>(a: T, b: T): any
+fun swap<T>(a: T, b: T)
     return b, a
 
 # Generic function with type constraints via runtime checks

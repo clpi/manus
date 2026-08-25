@@ -123,6 +123,13 @@ refuses("examples/compile_fail/relation_lossy_compose.id", "no silent conversion
 # that the row above needs a compile because its rule did not make it there.
 run_fail("examples/compile_fail/nominal_bare.id", "descriptor mismatch: 'd' is declared 'feet'")
 run_fail("examples/compile_fail/nominal_erase.id", "descriptor mismatch: 'y' is declared 'f64'")
+# gap[110], the DEMANDED rung of the application ladder. `p: point = { … }`
+# and `q = point{ … }` are two projections of one relation, so a label the
+# descriptor has no field for refuses at both — this row is the demanded
+# mirror of the applied-rung pin scripts/applyone.id ROW 6 carries. Pinned on
+# the shared substring so the two rungs cannot drift apart silently.
+run_fail("examples/compile_fail/expect_apply_label.id", "has no field 'z'")
+run_fail("examples/compile_fail/callable_demand_label.id", "has no field 'z'")
 # constitution §41, the two refusals that ship WITH bare-case resolution.
 # gap[087] fix step 2 says the shadow diagnostic "lands with it, not after",
 # and the mixed-space row is what distinguishes a demand-driven resolver from

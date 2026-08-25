@@ -2974,6 +2974,25 @@ test "comptime eval: the method face reaches the string folder" {
     ));
 }
 
+// gap[109] positive control. The recorded defect: `"{a + b}"` and every other
+// non-path hole passed through as its own source text with no diagnostic — a
+// program that asked for a value got the source that asked for it. Holes are
+// now parsed by the real grammar (`parser.desugar_string_interpolation`), so
+// `{s:sub(2, 3)}` — the exact "parses but is not a path" class the gap
+// measured in the wild as `{files[i]}` — is a VALUE. Pass-through would
+// answer the hole's own 13 source bytes, and `:len()` makes the two answers
+// unconfusable: 2 by value, 13 as text.
+test "comptime eval: a resolvable interpolation hole answers by value, not as its own source text" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    try std.testing.expectEqual(Value{ .int = 2 }, try foldWholeBody(alloc,
+        \\main: i64 = ()
+        \\    s = "alpha"
+        \\    "{s:sub(2, 3)}":len()
+    ));
+}
+
 test "comptime eval: the method face and the dotted face are one implementation" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

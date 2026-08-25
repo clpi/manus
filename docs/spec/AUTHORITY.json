@@ -10,7 +10,7 @@
     },
     "long_form_law": {
       "path": "docs/spec/constitution.md",
-      "blob": "caa7f5cc1ca51cef0b55ea8968ded0b2467aee4d",
+      "blob": "818df753e0a37a892801c1d5e0f0c34096766ec8",
       "role": "structured expansion and law-id owner; compact law wins on drift"
     },
     "source_projection": {
@@ -21,11 +21,11 @@
   },
   "source_law_edition": {
     "schema": "idol.source.law.v1",
-    "sha256": "71a8c60467326aaa20ce40a827b14d735801d4269e9010dd4db81fee2ea811ba",
+    "sha256": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
     "algorithm": "sha256 of schema UTF-8, NUL, compact-law bytes, NUL, long-form-law bytes",
     "input_blob_ids": {
       "compact_law": "81201294022572a9dba25d774054eeed862e293b",
-      "long_form_law": "caa7f5cc1ca51cef0b55ea8968ded0b2467aee4d"
+      "long_form_law": "818df753e0a37a892801c1d5e0f0c34096766ec8"
     },
     "canonical_source": ".id",
     "foreign_source_editions": "must carry their own exact law identity; unknown never inherits this edition"
@@ -61,7 +61,7 @@
         "law": "law.identity.current",
         "identity": "Idol",
         "status": "current",
-        "effective": "71a8c60467326aaa20ce40a827b14d735801d4269e9010dd4db81fee2ea811ba",
+        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
         "supersedes": [
           "historical.identity.Duo",
           "historical.identity.Duon",
@@ -86,7 +86,7 @@
         "law": "law.application.parentheses",
         "identity": "application",
         "status": "current",
-        "effective": "71a8c60467326aaa20ce40a827b14d735801d4269e9010dd4db81fee2ea811ba",
+        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
         "supersedes": [
           "historical.call-shaped-indexing"
         ],
@@ -110,7 +110,7 @@
         "law": "law.projection.computed",
         "identity": "computed projection",
         "status": "current",
-        "effective": "71a8c60467326aaa20ce40a827b14d735801d4269e9010dd4db81fee2ea811ba",
+        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
         "supersedes": [
           "historical.brackets-legacy",
           "historical.call-shaped-indexing"
@@ -135,7 +135,7 @@
         "law": "law.structure.braces",
         "identity": "structured pack",
         "status": "current",
-        "effective": "71a8c60467326aaa20ce40a827b14d735801d4269e9010dd4db81fee2ea811ba",
+        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
         "supersedes": [],
         "source_faces": [
           "{}"
@@ -157,7 +157,7 @@
         "law": "law.block.offside",
         "identity": "block closure",
         "status": "current",
-        "effective": "71a8c60467326aaa20ce40a827b14d735801d4269e9010dd4db81fee2ea811ba",
+        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
         "supersedes": [
           "historical.block.end-canonical"
         ],
@@ -181,7 +181,7 @@
         "law": "law.at.one",
         "identity": "world axis",
         "status": "current",
-        "effective": "71a8c60467326aaa20ce40a827b14d735801d4269e9010dd4db81fee2ea811ba",
+        "effective": "109162d4ff12d5b2b23b3e0d2d5a6b609b64ab628a2f4b1ab1c262892545d4cd",
         "supersedes": [
           "historical.at.descriptor-anchor",
           "historical.at.descriptor-application",

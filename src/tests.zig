@@ -68,7 +68,6 @@ test {
     _ = @import("shell_host.zig");
     _ = @import("git_preservation.zig");
     _ = @import("proof_carrying.zig");
-    _ = @import("token_semantic.zig");
     _ = @import("token_classify_gen.zig");
     _ = @import("backend_identity.zig");
     _ = @import("native_barrier_checks.zig");

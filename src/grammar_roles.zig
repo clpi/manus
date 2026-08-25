@@ -409,18 +409,3 @@ test "grammar roles: source spelling has one producer and it is the owner" {
     // is the real spelling of `dot` and would collide with a live identity.
     try std.testing.expectEqualStrings("", rows[3].spell);
 }
-
-test "grammar roles: the host keyword table cannot drift from the owner" {
-    // `token_semantic.keywords` still carries keyword text for the classifier.
-    // It is no longer where `spelling()` reads, so it could rot silently; this
-    // requires it to agree with the owner on every keyword identity.
-    const token_semantic = @import("token_semantic.zig");
-    var checked: usize = 0;
-    for (rows) |r| {
-        const kind = r.kind orelse continue;
-        const entry = token_semantic.entryForKind(kind) orelse continue;
-        try std.testing.expectEqualStrings(entry.text, kind.spelling());
-        checked += 1;
-    }
-    try std.testing.expect(checked >= 50);
-}

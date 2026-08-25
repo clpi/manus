@@ -224,11 +224,13 @@ that could be mistaken for counters.
 Project identity: **Idol** (`idol`, `.id`). Constitution §67 is sole semantic
 algebra authority. Git owns historical archive.
 
-Repository identity is currently **inconsistent across authority documents** and
-is deliberately not restated here: `docs/spec/AUTHORITY.md` says `clpi/idol`,
-`docs/spec/constitution.md` says `idollang/idol`, and `docs/spec/law.md` is
-silent. That contradiction must be resolved in the spec, not projected from
-here.
+Repository identity is a dev/release split, not a contradiction:
+`docs/spec/AUTHORITY.md` names `clpi/idol` as the living development
+authority, and `docs/spec/constitution.md`'s `idollang/idol` is the release
+identity the project SHIPS as (`tools/node/dev/orient` projects both:
+`devrepository: clpi/idol`, `releaserepository: idollang/idol`, the latter
+untouched until RELEASE_READINESS authorization). Cite the orient
+projection, not this paragraph.
 
 ## Ledgers and fresh evidence
 

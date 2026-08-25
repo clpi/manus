@@ -804,6 +804,61 @@ pub const WorldFact = struct {
     members: FactRange,
 };
 
+/// One exact fact delta of a DERIVED world: the derived world's own member
+/// entity (which carries the injected name) and the exact value entity the
+/// formation bound it to. Packed into `SemanticGraph.world_deltas`; a
+/// `DerivedWorldFact.deltas` range names its rows.
+pub const WorldDelta = struct {
+    member: id,
+    value: id,
+};
+
+/// A world DERIVED from a parent world by an exact fact delta — the graph half
+/// of `@{ k = v }` (gap[203] closure item 1; C0 `law.projection.algebra`:
+/// "injection `@{ k = v }` derives a NEW closed world").
+///
+/// ONE PRODUCER: `deriveWorld` (`law.fact.producer.one`). It refuses the
+/// unlawful shapes at formation — a duplicate member in one delta pack, a
+/// delta that would manufacture authority — and applies the algebra's two
+/// identities there too: empty injection returns the parent (`derive(W, {}) =
+/// W`) and injecting exactly what resolution already answers returns the world
+/// it was asked to re-derive, so the identities are properties of the GRAPH,
+/// not only of syntax.
+///
+/// DERIVATION DOES NOT MUTATE THE PARENT. The parent's fact row, member
+/// range, and scope children are untouched; the derived world's `scope` is
+/// the PARENT'S scope (the module), never the parent itself — nesting it
+/// under the parent would publish "member of the parent", which is the
+/// opposite of a sibling world.
+///
+/// NO `home` AND NO `reach`, deliberately. Injection changes fact
+/// AVAILABILITY; it never grants (`law.injection.authority`,
+/// `law.world.grant`). Whatever authority questions a derived world is asked
+/// delegate through `parent` to the root ambient fact, so a delta cannot
+/// widen what the launcher granted.
+///
+/// `witness` is the formation occurrence entity — provenance proving WHERE
+/// the deltas were established. Formation-time binding is what
+/// `docs/spec/world.md` means by "the deltas are established when the world
+/// is formed": within one graph incarnation every fact row is immutable, so
+/// resolving delta-first and then through `parent` reads formation-time state
+/// and can never observe a parent fact that was missing at formation
+/// (gap[203] closure item 5). The witness proves provenance, never authority.
+///
+/// NOT YET PUBLISHED FROM SOURCE. `@{ k = v }` still refuses in the parser by
+/// name, and that refusal is deliberate (gap[227]'s ordering finding: a
+/// source face that checks clean against this fact and then fails at emit is
+/// strictly worse than today's refusal at the point the author wrote it). The
+/// named first production consumer is the compile-stage world (gap[227]
+/// items 1–2); until a realization evaluates under a derived world, the
+/// producers of this column are its executable property tests.
+pub const DerivedWorldFact = struct {
+    world: id,
+    parent: id,
+    deltas: FactRange,
+    witness: id,
+};
+
 /// WORLD, keyed by the exact application occurrence.
 ///
 /// KEYED BY THE OCCURRENCE AND NOT STORED ON `ApplicationFact`, deliberately.
@@ -1135,6 +1190,12 @@ pub const SemanticGraph = struct {
     /// Injected worlds this module draws on, and the members it reaches.
     worlds: std.ArrayListUnmanaged(WorldFact) = .empty,
     world_members: std.ArrayListUnmanaged(id) = .empty,
+    /// Worlds DERIVED by exact fact delta, in formation order. A row's parent
+    /// is always an earlier-published world (ambient or derived), which is
+    /// what makes the resolution walk in `worldMemberValue` finite.
+    derived_worlds: std.ArrayListUnmanaged(DerivedWorldFact) = .empty,
+    /// The packed delta rows `DerivedWorldFact.deltas` ranges name.
+    world_deltas: std.ArrayListUnmanaged(WorldDelta) = .empty,
     /// `world[application]`, ascending by application id.
     draws: std.ArrayListUnmanaged(Draw) = .empty,
     /// `mutation[application]`, ascending by application id — the closure of
@@ -1205,6 +1266,8 @@ pub const SemanticGraph = struct {
         self.bodies.deinit(self.alloc);
         self.worlds.deinit(self.alloc);
         self.world_members.deinit(self.alloc);
+        self.derived_worlds.deinit(self.alloc);
+        self.world_deltas.deinit(self.alloc);
         self.draws.deinit(self.alloc);
         self.mutation_closure.deinit(self.alloc);
         self.mutation_places.deinit(self.alloc);
@@ -4016,6 +4079,194 @@ pub const SemanticGraph = struct {
         const end = std.math.add(u32, fact.members.start, fact.members.len) catch return &.{};
         if (end > self.world_members.items.len) return &.{};
         return self.world_members.items[fact.members.start..end];
+    }
+
+    /// The derived-world fact one entity carries, or null when the entity is
+    /// not a derived world.
+    pub fn derivedWorld(self: *const SemanticGraph, world: id) ?DerivedWorldFact {
+        for (self.derived_worlds.items) |fact| {
+            if (fact.world == world) return fact;
+        }
+        return null;
+    }
+
+    /// The exact delta rows of one derived world.
+    pub fn worldDeltas(self: *const SemanticGraph, fact: DerivedWorldFact) []const WorldDelta {
+        const end = std.math.add(u32, fact.deltas.start, fact.deltas.len) catch return &.{};
+        if (end > self.world_deltas.items.len) return &.{};
+        return self.world_deltas.items[fact.deltas.start..end];
+    }
+
+    /// One requested fact delta, as handed to `deriveWorld`. `value` is the
+    /// exact value entity the derived world binds `name` to.
+    pub const WorldDeltaSpec = struct { name: []const u8, value: id };
+
+    /// THE ONE PRODUCER of `DerivedWorldFact` (`law.fact.producer.one`).
+    ///
+    /// Derives a CLOSED world from `parent` by the exact deltas in `specs`,
+    /// witnessed by the formation occurrence `witness`. The parent is
+    /// unchanged — no parent row, member range, or scope child moves.
+    ///
+    /// The algebra's identities are applied AT FORMATION, so they hold as
+    /// graph identities rather than as prose:
+    ///
+    ///   derive(W, {})            = W    empty injection is identity
+    ///   derive(W, d) where W already resolves every (k = v) in d
+    ///                            = W    same-fact injection is idempotent
+    ///   derive(W, d) twice       = one world (hash-consed on parent + deltas)
+    ///
+    /// REFUSED SHAPES, failing closed by name:
+    ///
+    ///   error.ParentNotAWorld          `parent` carries no world fact
+    ///   error.FormationWitnessUnknown  `witness` names no graph entity
+    ///   error.DuplicateInjectionMember one literal binds one name twice
+    ///                                  (`docs/spec/world.md`: "a duplicate
+    ///                                  member in one literal is an error")
+    ///   error.InjectionCannotGrantAuthority
+    ///       a delta spelled `authority`, or spelled as a world's name.
+    ///       `law.injection.authority`: an injected authority fact must
+    ///       itself be a valid semantic witness — this graph carries no
+    ///       witness values yet, so no value entity can be one, and
+    ///       `@{ authority = true }` grants nothing. A delta named like a
+    ///       world (`@{ os = fake }`, `@{ c = 1 }`) would read as replacing a
+    ///       launcher grant, and grants come only from the launcher
+    ///       (`law.world.grant`; `law.world.resolve` ends in FAILURE).
+    pub fn deriveWorld(
+        self: *SemanticGraph,
+        parent: id,
+        specs: []const WorldDeltaSpec,
+        witness: id,
+    ) !id {
+        const parent_is_derived = self.derivedWorld(parent) != null;
+        var parent_is_ambient = false;
+        for (self.worlds.items) |fact| {
+            if (fact.world == parent) parent_is_ambient = true;
+        }
+        if (!parent_is_derived and !parent_is_ambient) return error.ParentNotAWorld;
+        const witness_node = self.get(witness) orelse return error.FormationWitnessUnknown;
+
+        // Unlawful shapes refuse BEFORE the identities apply: `@{ authority =
+        // true, authority = false }` is two errors and the authority one must
+        // not be reachable only on the duplicate-free spelling.
+        for (specs, 0..) |spec, i| {
+            for (specs[0..i]) |earlier| {
+                if (std.mem.eql(u8, earlier.name, spec.name)) {
+                    return error.DuplicateInjectionMember;
+                }
+            }
+            if (std.mem.eql(u8, spec.name, "authority")) {
+                return error.InjectionCannotGrantAuthority;
+            }
+            if (subject_home.worldNamed(spec.name) != null) {
+                return error.InjectionCannotGrantAuthority;
+            }
+        }
+
+        // derive(W, {}) = W. Nothing is published.
+        if (specs.len == 0) return parent;
+
+        // Same-fact idempotence: injecting exactly what the world already
+        // resolves is the world. Only an exact `.one` match counts — an
+        // `unknown` or `none` answer is not the injected fact.
+        idempotent: {
+            for (specs) |spec| {
+                switch (self.worldMemberValue(parent, spec.name)) {
+                    .one => |value| if (value != spec.value) break :idempotent,
+                    .unknown, .none => break :idempotent,
+                }
+            }
+            return parent;
+        }
+
+        // Hash-consed on (parent, delta set), order-insensitively: deriving
+        // the same world twice answers ONE identity, which is what makes
+        // reinjection idempotence a property of the graph.
+        existing: for (self.derived_worlds.items) |fact| {
+            if (fact.parent != parent) continue;
+            const deltas = self.worldDeltas(fact);
+            if (deltas.len != specs.len) continue;
+            for (specs) |spec| {
+                const matched = for (deltas) |delta| {
+                    const node = self.get(delta.member) orelse continue;
+                    const name = node.name orelse continue;
+                    if (std.mem.eql(u8, name, spec.name) and delta.value == spec.value) {
+                        break true;
+                    }
+                } else false;
+                if (!matched) continue :existing;
+            }
+            return fact.world;
+        }
+
+        // Formation. The derived world is a SIBLING of its parent — scope is
+        // the parent's scope, so the parent's own children are untouched and
+        // the new world is not published as a parent member.
+        const parent_node = self.get(parent) orelse return error.ParentNotAWorld;
+        const scope = parent_node.scope orelse return error.ParentNotAWorld;
+        const world = try self.addChild(scope, .{
+            .kind = .value,
+            .span = witness_node.span,
+            .knowledge = .stable,
+            .stage = .sema,
+        });
+        const start = self.world_deltas.items.len;
+        for (specs) |spec| {
+            const member = try self.addChild(world, .{
+                .kind = .value,
+                .span = witness_node.span,
+                .name = spec.name,
+                .knowledge = .stable,
+                .stage = .sema,
+            });
+            try self.addEdge(.{ .from = world, .to = member, .kind = .member });
+            try self.world_deltas.append(self.alloc, .{ .member = member, .value = spec.value });
+        }
+        try self.derived_worlds.append(self.alloc, .{
+            .world = world,
+            .parent = parent,
+            .deltas = try factRange(start, self.world_deltas.items.len - start),
+            .witness = witness,
+        });
+        return world;
+    }
+
+    /// THE ONE OWNER of world-member resolution over graph world entities.
+    ///
+    /// Delta rows answer first; an untouched name answers through the parent:
+    /// project(inject(w, k = v), k) = v and project(inject(w, k = v), q) =
+    /// project(w, q) (`law.projection.algebra`). This is extensionally the
+    /// formation-time delta — every fact row read here is immutable within one
+    /// graph incarnation, so the walk can never observe a parent fact that was
+    /// missing at formation, and it terminates because a parent is always an
+    /// earlier-published world.
+    ///
+    /// At an AMBIENT world the three answers stay distinct and there is NO
+    /// other-world, registry, or default fallback:
+    ///
+    ///   .one      the module-reached member entity of that name
+    ///   .unknown  the world's declaration provides the name but this module
+    ///             reached no entity for it — the fact exists, the graph
+    ///             carries no id
+    ///   .none     the world does not hold the fact. Fails closed by name.
+    pub fn worldMemberValue(self: *const SemanticGraph, world: id, name: []const u8) Card {
+        if (self.derivedWorld(world)) |fact| {
+            for (self.worldDeltas(fact)) |delta| {
+                const node = self.get(delta.member) orelse continue;
+                const member_name = node.name orelse continue;
+                if (std.mem.eql(u8, member_name, name)) return .{ .one = delta.value };
+            }
+            return self.worldMemberValue(fact.parent, name);
+        }
+        for (self.worlds.items) |fact| {
+            if (fact.world != world) continue;
+            for (self.worldMembers(fact)) |member| {
+                const node = self.get(member) orelse continue;
+                const member_name = node.name orelse continue;
+                if (std.mem.eql(u8, member_name, name)) return .{ .one = member };
+            }
+            return if (subject_home.homeProvides(fact.home, name)) .unknown else .none;
+        }
+        return .unknown;
     }
 
     /// The place an application value reads, three-valued.
@@ -11469,4 +11720,202 @@ test "semantic_graph: cross-home application exposes the exact missing body boun
     // this null with the target's graph-owned body/schedule before C emission
     // may stop refusing; spelling-based embedding is not an alternative.
     try std.testing.expect(graph.bodyOf(target) == null);
+}
+
+/// Shared fixture for the derived-world tests: lift a module whose two bare
+/// `os` applications make `publishApplicationWorlds` publish the ambient `os`
+/// world with reached members `env` and `cwd`.
+fn liftedOsWorldModule(alloc: std.mem.Allocator, g: *SemanticGraph) !id {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const src =
+        \\main: i64 = ()
+        \\    print(env("HOME"))
+        \\    print(cwd())
+        \\    0
+    ;
+    var lex = Lexer.init(src, "derived-world.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    return try g.liftModuleWithCheckedCalls(&module, &checked, "derived-world.id");
+}
+
+fn ambientOsWorld(g: *const SemanticGraph) !id {
+    for (g.worlds.items) |fact| {
+        if (fact.home == .os) return fact.world;
+    }
+    return error.TestExpectedEqual;
+}
+
+test "semantic_graph: derived world resolves delta first and the parent is unchanged" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    const module_id = try liftedOsWorldModule(alloc, &g);
+    const os_world = try ambientOsWorld(&g);
+
+    const original_env = switch (g.worldMemberValue(os_world, "env")) {
+        .one => |member| member,
+        .unknown, .none => return error.TestExpectedEqual,
+    };
+    const original_cwd = switch (g.worldMemberValue(os_world, "cwd")) {
+        .one => |member| member,
+        .unknown, .none => return error.TestExpectedEqual,
+    };
+
+    const injected = try g.addChild(module_id, .{
+        .kind = .value,
+        .span = .{ .file = "derived-world.id", .start = 0, .end = 0 },
+        .name = "fake",
+    });
+    const witness = try g.addChild(module_id, .{
+        .kind = .value,
+        .span = .{ .file = "derived-world.id", .start = 0, .end = 0 },
+    });
+    const parent_children_before = g.nested.of(os_world).len;
+
+    const derived = try g.deriveWorld(
+        os_world,
+        &.{.{ .name = "env", .value = injected }},
+        witness,
+    );
+    try std.testing.expect(derived != os_world);
+
+    // (a) The overridden member answers the delta value.
+    try std.testing.expectEqual(Card{ .one = injected }, g.worldMemberValue(derived, "env"));
+
+    // (b) The parent is unchanged: its own resolution still answers the
+    // original member entity, and the derived world was not published as a
+    // parent child.
+    try std.testing.expectEqual(Card{ .one = original_env }, g.worldMemberValue(os_world, "env"));
+    try std.testing.expectEqual(parent_children_before, g.nested.of(os_world).len);
+    for (g.nested.of(os_world)) |child| try std.testing.expect(child != derived);
+
+    // (c) A non-overridden member falls through to the parent's exact entity.
+    try std.testing.expectEqual(Card{ .one = original_cwd }, g.worldMemberValue(derived, "cwd"));
+
+    // The fall-through fails closed and stays three-valued: a name the world
+    // does not hold is `.none` — no other-world or registry fallback — while
+    // a name the world provides but this module never reached is `.unknown`.
+    try std.testing.expect(g.worldMemberValue(derived, "nosuch") == .none);
+    try std.testing.expect(g.worldMemberValue(derived, "clock") == .unknown);
+
+    // The fact row carries all four halves: identity, parent, delta, witness.
+    const fact = g.derivedWorld(derived) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(os_world, fact.parent);
+    try std.testing.expectEqual(witness, fact.witness);
+    try std.testing.expectEqual(@as(usize, 1), g.worldDeltas(fact).len);
+}
+
+test "semantic_graph: derivation identities are graph properties" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    const module_id = try liftedOsWorldModule(alloc, &g);
+    const os_world = try ambientOsWorld(&g);
+    const injected = try g.addChild(module_id, .{
+        .kind = .value,
+        .span = .{ .file = "derived-world.id", .start = 0, .end = 0 },
+        .name = "fake",
+    });
+    const other = try g.addChild(module_id, .{
+        .kind = .value,
+        .span = .{ .file = "derived-world.id", .start = 0, .end = 0 },
+        .name = "other",
+    });
+    const witness = try g.addChild(module_id, .{
+        .kind = .value,
+        .span = .{ .file = "derived-world.id", .start = 0, .end = 0 },
+    });
+
+    // derive(W, {}) = W — empty injection is identity and publishes nothing.
+    try std.testing.expectEqual(os_world, try g.deriveWorld(os_world, &.{}, witness));
+    try std.testing.expectEqual(@as(usize, 0), g.derived_worlds.items.len);
+
+    // Deriving the same (parent, delta set) twice answers ONE world identity.
+    const delta = [_]SemanticGraph.WorldDeltaSpec{.{ .name = "env", .value = injected }};
+    const first = try g.deriveWorld(os_world, &delta, witness);
+    const second = try g.deriveWorld(os_world, &delta, witness);
+    try std.testing.expectEqual(first, second);
+    try std.testing.expectEqual(@as(usize, 1), g.derived_worlds.items.len);
+
+    // Injecting the fact a derived world already resolves is idempotent:
+    // derive(derive(W, d), d) = derive(W, d).
+    try std.testing.expectEqual(first, try g.deriveWorld(first, &delta, witness));
+
+    // A DIFFERENT value forms a distinct world, and forming it does not move
+    // the world it was derived from.
+    const third = try g.deriveWorld(first, &.{.{ .name = "env", .value = other }}, witness);
+    try std.testing.expect(third != first);
+    try std.testing.expectEqual(Card{ .one = other }, g.worldMemberValue(third, "env"));
+    try std.testing.expectEqual(Card{ .one = injected }, g.worldMemberValue(first, "env"));
+}
+
+test "semantic_graph: injection cannot manufacture authority and refuses by name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    const module_id = try liftedOsWorldModule(alloc, &g);
+    const os_world = try ambientOsWorld(&g);
+    const label = try g.addChild(module_id, .{
+        .kind = .value,
+        .span = .{ .file = "derived-world.id", .start = 0, .end = 0 },
+        .name = "label",
+    });
+    const witness = try g.addChild(module_id, .{
+        .kind = .value,
+        .span = .{ .file = "derived-world.id", .start = 0, .end = 0 },
+    });
+
+    // `@{ authority = true }` grants nothing (law.injection.authority): an
+    // injected authority fact must itself be a valid witness, and no value
+    // entity is one, so the formation fails closed rather than admitting a
+    // label wearing the word.
+    try std.testing.expectError(
+        error.InjectionCannotGrantAuthority,
+        g.deriveWorld(os_world, &.{.{ .name = "authority", .value = label }}, witness),
+    );
+
+    // A delta spelled as a world name would read as replacing a launcher
+    // grant; grants come only from the launcher (law.world.grant).
+    try std.testing.expectError(
+        error.InjectionCannotGrantAuthority,
+        g.deriveWorld(os_world, &.{.{ .name = "os", .value = label }}, witness),
+    );
+    try std.testing.expectError(
+        error.InjectionCannotGrantAuthority,
+        g.deriveWorld(os_world, &.{.{ .name = "c", .value = label }}, witness),
+    );
+
+    // One literal binding one name twice is an error, not a shadow.
+    try std.testing.expectError(
+        error.DuplicateInjectionMember,
+        g.deriveWorld(os_world, &.{
+            .{ .name = "env", .value = label },
+            .{ .name = "env", .value = witness },
+        }, witness),
+    );
+
+    // A parent that is no world, and a witness the graph does not carry,
+    // both refuse before anything is published.
+    try std.testing.expectError(
+        error.ParentNotAWorld,
+        g.deriveWorld(label, &.{.{ .name = "env", .value = label }}, witness),
+    );
+    try std.testing.expectError(
+        error.FormationWitnessUnknown,
+        g.deriveWorld(os_world, &.{.{ .name = "env", .value = label }}, 999999),
+    );
+    try std.testing.expectEqual(@as(usize, 0), g.derived_worlds.items.len);
 }

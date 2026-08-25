@@ -94,13 +94,20 @@ grammarpath = "ext/tree-sitter-idol/grammar.js"
 markbegin = "@@residue:begin"
 markend = "@@residue:end"
 
+# The read itself is the subject-first byte face, `path:read()`, which is
+# FAIL-CLOSED: an absent file refuses (`read-refused:absent:<path>`) instead of
+# answering a value — the NULL-into-`strlen` trap this file's GAP-145 record
+# measured. Three consumers here rely on absent -> "" (the bootstrap slurp of
+# the not-yet-emitted output, the TSEMIT_RESIDUE seed, and check-mode), so the
+# already-executable open/close handle probe keeps that contract in front of
+# the fail-closed read. A structured absent|present outcome stays open under
+# GAP-154/GAP-118; this guard is not it.
 slurp: str = (path: str)
     f = io.open(path, "r")
-    body: str = ""
-    if f
-        body = f:read("a")
-        f:close()
-    body
+    if f == nil
+        return ""
+    f:close()
+    path:read()
 
 spill: bool = (path: str, body: str)
     f = io.open(path, "w")
