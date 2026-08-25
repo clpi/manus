@@ -100,6 +100,18 @@ touch "$work/idol"
 [ "$(hash "$work/idol")" = "$source_hash" ] || fail 'private compiler changed bytes'
 compiler=$work/idol
 
+# EVERY COMPILE BELOW GOES THROUGH --backend=direct, so on a host without that
+# realization the very first one failed and this gate said 'cold left compile
+# failed' — a sentence that sends a reader to the cache-home logic, which is
+# fine. The host fact has one producer, and it is asked before the subjects are
+# blamed for it.
+. "$root/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+    direct_native_note 'the private-cache-home census (every subject is a direct-backend artifact)'
+    exit 1
+fi
+
 left_symbol=_idol_left_role__helper
 right_symbol=_idol_right_role__helper
 other_symbol=_idol_other_right_role__helper

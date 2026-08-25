@@ -21,7 +21,7 @@ subject="$repo/gate/subject.sh"
 [ -x "$subject" ] || { echo "attribution: no subject enumerator at $subject" >&2; exit 2; }
 out="${1:-/dev/stdout}"
 TMO="${ATTRIBUTION_TIMEOUT:-60}"
-tmp="$(mktemp -t idolattr)"; trap 'rm -f "$tmp" "$tmp.all" "$tmp.files" "$tmp.rec"' EXIT
+tmp="$(mktemp "${TMPDIR:-/tmp}/idolattr.XXXXXX")"; trap 'rm -f "$tmp" "$tmp.all" "$tmp.files" "$tmp.rec"' EXIT
 # examples/compile_fail/ IS EXCLUDED ON PURPOSE. Those files exist to be
 # rejected — a refusal there is the fixture passing, not a blocked program.
 # Counting them inflated this budget by 29 and would have made the census

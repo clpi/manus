@@ -60,6 +60,18 @@ idol="${IDOL_BIN:-$root/zig-out/bin/idol}"
 work="$(mktemp -d)" || exit 2
 trap 'rm -rf "$work"' EXIT
 
+# §1 and §2 EXECUTE the three binaries and read their exit codes, so a host
+# that cannot build them measures nothing. This gate used to say
+#     FAIL — idiv.id did not compile — the subject does not exist
+# of a file it had written itself moments earlier: "does not exist" meant the
+# BINARY, and read as the source. One producer for the host fact.
+. "$root/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+    direct_native_note 'the zero-divisor faults are read from three EXECUTED binaries, none of which can be built'
+    exit 2
+fi
+
 fail=0
 note() { printf 'divisor: %s\n' "$1"; }
 bad()  { printf 'divisor: FAIL — %s\n' "$1" >&2; fail=1; }

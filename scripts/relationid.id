@@ -1,9 +1,0 @@
-# STABLE SEMANTIC IDENTITY for the relation store — gap[103].
-#
-# Executable gate (direct backend + gatecap): scripts/proof/relation.id
-# Build: zig build relation-id
-
-main: i64 = ()
-  print("relation gate moved to scripts/proof/relation.id")
-  print("run: ./zig-out/bin/idol run scripts/proof/relation.id")
-  return 1

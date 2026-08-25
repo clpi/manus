@@ -100,6 +100,16 @@ answer() {
 [ -x "$idol" ] || fail "compiler is not executable: $idol"
 [ "$mode" = ReleaseFast ] || fail "requires a source-built ReleaseFast compiler, got $mode"
 
+# EVERY NAMESPACE BELOW IS POPULATED BY A DIRECT-BACKEND COMPILE, so the first
+# one failed and this gate said 'cold testing compile failed' -- which reads as
+# the launch-world cache having broken. One producer for the host fact.
+. "$root/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+    direct_native_note 'the launch-world namespace census (every subject is a direct-backend artifact)'
+    exit 1
+fi
+
 mkdir -p "$work/test" "$work/ordinary" "$work/testing" "$work/mytest"
 testing_source=$work/test/role.id
 ordinary=$work/ordinary/role.id

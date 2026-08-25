@@ -83,7 +83,7 @@ subject_list() {
   subject_allow_empty=$1
   shift
   subject_tree || return 3
-  subject_out=$(mktemp -t idolsubject) || {
+  subject_out=$(mktemp "${TMPDIR:-/tmp}/idolsubject.XXXXXX") || {
     subject_say "cannot create a scratch file under ${TMPDIR:-/tmp}"
     return 3
   }
@@ -114,7 +114,7 @@ subject_list() {
 # green — in a scratch tree, so the controls do not depend on the contents of
 # whatever repository the gate happens to be measuring.
 subject_selftest() {
-  subject_work=$(mktemp -d -t idolsubjectctl) || return 1
+  subject_work=$(mktemp -d "${TMPDIR:-/tmp}/idolsubjectctl.XXXXXX") || return 1
   # `trap ... RETURN` is not POSIX; clean up on every exit path by hand.
   subject_rc=0
 

@@ -72,11 +72,20 @@
 # everything else. The control below proves the rule fires on that pair and
 # does NOT fire on 1 versus 4294967295.
 #
-# WARD IS INVOKED THROUGH THE ENVIRONMENT, not argv. `tools/wasm/src/ward.id`
-# reads WARD_WASM and WARD_INVOKE; passing a module as an argument measures a
-# different module or nothing at all, which is how two earlier ward baselines
-# came out wrong. ward also appends a three-line trailer to stdout, stripped
-# before comparison, and the stripping is itself controlled below.
+# WARD IS INVOKED THROUGH THE ENVIRONMENT, not argv: this script sets WARD_WASM
+# and WARD_INVOKE on the `ward` binary named by WARD_BIN. Passing a module as an
+# argument measures a different module or nothing at all, which is how two
+# earlier ward baselines came out wrong. ward also appends a three-line trailer
+# to stdout, stripped before comparison, and the stripping is controlled below.
+#
+# THIS COMMENT USED TO NAME `tools/wasm/src/ward.id` AS THE READER OF THOSE TWO
+# NAMES, and that was wrong twice over. The engine was renamed to `engine.id`,
+# and `engine.id` reads `DUO_WASM_*` — `WARD_WASM` and `WARD_INVOKE` appear
+# nowhere in this tree except here and `gaps/GAP-128.md`. There is also no
+# `ward` step in `build.zig`. So the ward axis has no in-tree producer for
+# either the binary or the variable names, and it correctly refuses at the
+# `exists(wardbin)` check rather than reporting a number. Restoring the axis
+# means naming the producer, not repairing this paragraph.
 #
 # ON THE TEMPORARIES. Nearly every print builds its line from single-use
 # locals. That is TMP-1 shaped and it is not a style choice: string
@@ -539,7 +548,17 @@ main: i64 = ()
         print("  pipeline ward has no counterpart for. Quote the core row.")
         print("")
         wardwhole: i64 = loc(root, "'tools/wasm/src/*.id'")
-        wardcore: i64 = loc(root, "'tools/wasm/src/ward.id' 'tools/wasm/src/wasm/*.id'")
+        # The core is the engine plus the wasm partition. Each component is
+        # counted SEPARATELY because the aggregate hid a stale name: this row
+        # used to spell the engine `ward.id`, which was renamed to `engine.id`,
+        # and `git ls-files` answers a nonexistent pathspec with silence rather
+        # than an error. The wasm partition kept the total comfortably nonzero,
+        # so the `<= 0` control below passed while the row under-reported the
+        # Idol runtime by the whole engine — and it under-reported it in the
+        # flattering direction, in a table whose subject is Idol versus wart.
+        wardengine: i64 = loc(root, "'tools/wasm/src/engine.id'")
+        wardwasm: i64 = loc(root, "'tools/wasm/src/wasm/*.id'")
+        wardcore: i64 = wardengine + wardwasm
         wardfiles: i64 = filecount(root, "'tools/wasm/src/*.id'")
         wartwhole: i64 = loc(warttree, "'src/*.zig'")
         wartcore: i64 = loc(warttree, "'src/wasm/*.zig'")
@@ -567,10 +586,11 @@ main: i64 = ()
         e1: str = pad("wasmer", 11)
         print(ind .. e1 .. na .. na .. nb .. "   upstream source is not vendored here")
 
-        if wardcore <= 0 or wartcore <= 0
+        if wardengine <= 0 or wardwasm <= 0 or wartcore <= 0
             print("")
-            print("  runtime bench: FAIL — a loc row read zero. Both trees must be")
-            print("    reachable; a zero here is a broken pathspec, not a small runtime.")
+            print("  runtime bench: FAIL — a loc component read zero. Both trees must")
+            print("    be reachable; a zero is a broken pathspec, not a small runtime.")
+            print("    engine {wardengine}  wasm {wardwasm}  wart core {wartcore}")
             code = 3
         print("")
 

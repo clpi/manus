@@ -25,11 +25,17 @@ fail() {
 
 [ -x "$idol" ] || fail "compiler is not executable: $idol"
 
-canonical=$root/out/gap111_probe3.id
+canonical=$work/canonical.id
 unknown=$work/unknown.id
 log=$work/check.log
 
-[ -f "$canonical" ] || fail "missing ratchet probe: $canonical"
+cat >"$canonical" <<'PROBE'
+twice = (x) x * 2
+xs = {1, 2, 3}
+main: i64 = ()
+    r = iter.map(xs, twice)
+    0
+PROBE
 
 cat >"$unknown" <<'PROBE'
 main: i64 = ()

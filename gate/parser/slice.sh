@@ -1,9 +1,9 @@
 #!/bin/sh
-# gate/parser_slice.sh — M2 first parser ownership transfer slice.
+# gate/parser/slice.sh — M2 first parser ownership transfer slice.
 #
-#   sh gate/parser_slice.sh
-#   sh gate/parser_slice.sh --ledger
-#   sh gate/parser_slice.sh --selftest
+#   sh gate/parser/slice.sh
+#   sh gate/parser/slice.sh --ledger
+#   sh gate/parser/slice.sh --selftest
 #
 # Exit 0 = static controls hold and the current compiler records the expected
 # execution refusals.  Static source presence alone is never SHC evidence.
@@ -12,11 +12,15 @@
 # Closed outcome states: win, bound, open, unknownbound.
 
 set -u
-cd "$(dirname "$0")/.." || exit 2
+cd "$(dirname "$0")/../.." || exit 2
 ROOT=$(pwd)
 
-SRC=${IDOL_SRC:-../idol}
-IDOL=${IDOL:-./bin/idol}
+# The subjects are `src/parser.zig` and `lib/compiler/*.id`, which live in THIS
+# repository. The default used to be `../idol`, a sibling checkout, so on a lone
+# clone every source probe reported "missing" — an absent tree read as a deleted
+# file. Same class of error as the sibling gate home in gate/all.sh.
+SRC=${IDOL_SRC:-$ROOT}
+IDOL=${IDOL:-./zig-out/bin/idol}
 case $IDOL in
     /*) IDOLABS=$IDOL ;;
     *)  IDOLABS="$ROOT/${IDOL#./}" ;;
@@ -26,21 +30,21 @@ esac
 # A missing compiler is infrastructure status and must never be read as a
 # parser score.  --selftest exercises this branch in the positive direction.
 if [ ! -x "$IDOLABS" ]; then
-    printf 'parser_slice gate: no executable %s — NOT A MEASUREMENT\n' "$IDOLABS"
+    printf 'parser slice gate: no executable %s — NOT A MEASUREMENT\n' "$IDOLABS"
     exit 2
 fi
 
 if [ "${1:-}" = "--selftest" ]; then
     if PARSER_SLICE_SELFTEST=1 IDOL="$ROOT/.parser-slice-missing-idol" "$0" >/dev/null 2>&1; then
-        printf 'parser_slice selftest: FAIL missing compiler was accepted\n'
+        printf 'parser slice selftest: FAIL missing compiler was accepted\n'
         exit 1
     fi
-    printf 'parser_slice selftest: PASS missing compiler fails closed\n'
+    printf 'parser slice selftest: PASS missing compiler fails closed\n'
     if PARSER_SLICE_EXPECT_CODE=not_dnb001 "$0" >/dev/null 2>&1; then
-        printf 'parser_slice selftest: FAIL diagnostic damage was accepted\n'
+        printf 'parser slice selftest: FAIL diagnostic damage was accepted\n'
         exit 1
     fi
-    printf 'parser_slice selftest: PASS diagnostic damage fails closed\n'
+    printf 'parser slice selftest: PASS diagnostic damage fails closed\n'
     exit 0
 fi
 
@@ -61,7 +65,7 @@ FAILED=0 SEEN=0
 bad() { printf '  FAIL  %s\n' "$1"; FAILED=$((FAILED+1)); }
 ok()   { printf '  ok    %s\n' "$1"; }
 
-printf 'parser_slice gate: first parser ownership transfer\n\n'
+printf 'parser slice gate: first parser ownership transfer\n\n'
 
 # Execute the two candidate Idol modules.  A refusal is the honest current
 # result: these modules are source/grammar projections, not executed parser
@@ -180,6 +184,6 @@ DEBT_COUNT=$(printf '%s\n' "$LEDGER" | grep -c . 2>/dev/null || echo 0)
 SEEN=$((SEEN + DEBT_COUNT))
 
 printf '\n'
-[ "$FAILED" -eq 0 ] && printf 'parser_slice gate: PASS (%s probes) parser-slice ledger unchanged\n' "$SEEN" \
-    || printf 'parser_slice gate: FAIL (%s probes) %s violations\n' "$SEEN" "$FAILED"
+[ "$FAILED" -eq 0 ] && printf 'parser slice gate: PASS (%s probes) parser-slice ledger unchanged\n' "$SEEN" \
+    || printf 'parser slice gate: FAIL (%s probes) %s violations\n' "$SEEN" "$FAILED"
 exit "$FAILED"

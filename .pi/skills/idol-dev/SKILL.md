@@ -85,7 +85,7 @@ source:
 
 ```sh
 repo="$(git rev-parse --show-toplevel)"
-gate="$(mktemp -t idolgate)" && trap 'rm -f "$gate"' EXIT
+gate="$(mktemp "${TMPDIR:-/tmp}/idolgate.XXXXXX")" && trap 'rm -f "$gate"' EXIT
 git diff -U0 -- '*.id' > "$gate"
 cat "$gate" | "$repo/zig-out/bin/idol" run "$repo/gate/idiom.id"
 ```

@@ -58,8 +58,11 @@ their capability through raw C, which is why gap[061]'s ambient-authority grep
 could not find the authority those two modules hold. The census therefore
 **advertises** the aggregate embedded-site count (with a positive control so a
 broken grep cannot pass). Per-site **audit** and **enforce** live in
-`scripts/embedledger.id`: it names every remaining `@c` payload by file and
-fails until the count reaches zero. Embedded sites are `ledger`-class by
+`scripts/ledger/embed.id` (`zig build embed-ledger`): it names every remaining
+`@c` payload by file and fails until the count reaches zero. It also refuses to
+report a verdict at all when `gate/subject.sh` cannot enumerate — a tree with no
+`.git` used to produce this ledger's PASS line from nothing, which is
+`GAP-201`/`GAP-220`. Embedded sites are `ledger`-class by
 construction — bootstrap, with the no-foreign-waist ruling as the
 termination condition — and they only shrink.
 
@@ -70,7 +73,10 @@ scanner learned to skip comment lines. **The census's own source**: adding a
 diagnostic that names the token in a string took it to 184. A scanner whose
 subject is the text it greps for reports itself, which is the exclusion
 `audit100` makes for the identical reason. The honest advertised count is
-**181**; shrinking it is enforced by `embedledger`, not a second census floor.
+**181**; shrinking it is enforced by `scripts/ledger/embed.id`, not a second
+census floor. That ledger carries the ratchet as an `EMBED_FLOOR` default rather
+than a hardcoded constant, so the floor and the advertised count are separately
+readable.
 
 ## Rules
 

@@ -31,7 +31,7 @@ budget=${COVERAGE_BUDGET:-}
 command -v jq >/dev/null 2>&1 || { echo "coverage: jq not on PATH" >&2; exit 64; }
 [ -x "$idol" ] || { echo "coverage: no compiler at $idol (set IDOL=)" >&2; exit 64; }
 
-work=$(mktemp -d -t idolcoverage) || exit 64
+work=$(mktemp -d "${TMPDIR:-/tmp}/idolcoverage.XXXXXX") || exit 64
 trap 'rm -rf "$work"' EXIT INT TERM
 
 # ---------------------------------------------------------------------------

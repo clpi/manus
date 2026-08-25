@@ -75,19 +75,23 @@ fail() { printf 'byte/stable gate: FAIL %s\n' "$1" >&2; exit 1; }
 # (`sh "$gate" >/dev/null 2>&1`) and counts every zero exit as a pass. There is
 # no skip protocol in that runner to opt into. So on a host where the direct
 # backend emits no artifact to compare, this gate has NOT MEASURED its subject
-# and says so with a refusal status, exactly as `gate/taint.sh:20` already does
-# for the same class of fact ("counterfactual interposition currently requires
-# Darwin"). No gate in this home exits 0 for a host it could not measure; the
-# four that print SKIP do so only under an explicit `--census-only` /
-# `--static-only` flag, where the CALLER asked for the reduced run.
-case $(uname -s)/$(uname -m) in
-    Darwin/arm64) : ;;
-    *)
-        printf 'byte/stable gate: FAIL — direct-native artifacts exist only on Darwin/arm64; this host emits nothing to compare and the baseline is NOT MEASURED (uname: %s/%s)\n' \
-            "$(uname -s)" "$(uname -m)" >&2
-        exit 2
-        ;;
-esac
+# and says so with a refusal status. No gate in this home exits 0 for a host it
+# could not measure; the four that print SKIP do so only under an explicit
+# `--census-only` / `--static-only` flag, where the CALLER asked for the
+# reduced run.
+#
+# IT ASKED `uname` AND HARDCODED Darwin/arm64, which is the one spelling of this
+# check that goes stale in the WRONG DIRECTION: the supported-triple set belongs
+# to the compiler and has changed before, so the day an x86-64 realization lands
+# this gate would keep refusing on a host that could measure — and it would keep
+# doing so silently, because a refusal here reads as expected. The producer asks
+# the compiler and reads the DNB004 identity instead.
+. "$root/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+    direct_native_note 'the byte-stability baseline (there is no artifact to compare)'
+    exit 2
+fi
 
 # ---------------------------------------------------------------- §1 SUBJECTS
 # One file per construct, written here rather than referenced, so the gate

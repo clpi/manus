@@ -16,6 +16,24 @@ This directory preserves the complete 25-file Pass 2 research corpus supplied to
 
 **Current status (2026-08-20):** the committed `pass-2-source.tar.gz` is **corrupt** (truncated gzip, 15,008 bytes; `gzip -t` fails). The blob has been corrupt since commit `e4d45bed`; the 25 source `.txt` files were never stored outside the archive in git history. `manifest.json` still records the expected archive digest `e66fe6cd…` (88,492 bytes).
 
+The intact bytes are not recoverable from this repository, and that is a
+measurement rather than an inference — do not repeat the search, run it:
+
+```sh
+# every branch that carries the file, by blob size: all one corrupt size
+for b in $(git branch -r --format='%(refname:short)' | grep -v HEAD); do
+    git cat-file -s "$b:research/archive/pass-2/pass-2-source.tar.gz" 2>/dev/null
+done | sort -u
+# any blob of the complete size anywhere in the object database: none
+git cat-file --batch-all-objects --batch-check | awk '$2=="blob" && $3==88492'
+```
+
+So `gate/authority.sh` is red on data that is gone, not on a regression, and
+it stays red until the 25 original inputs arrive from outside the repository.
+Its refusal is correct and must not be relaxed to admit the corrupt archive:
+the manifest already pins the corrupt identity exactly so that a DIFFERENT
+corruption cannot pass as this one.
+
 To restore integrity when you have the original files on disk:
 
 ```sh

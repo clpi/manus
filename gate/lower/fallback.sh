@@ -336,8 +336,9 @@ fi
 # that compiler is the wrong one is indistinguishable from a real regression
 # unless the run says which one it used. Measured both ways: debug and
 # ReleaseFast agree on every row, so build mode is NOT the sensitive axis --
-# REVISION is. The tracked, stale `out/bin/idol` disagrees with a fresh build
-# on these rows, and this gate calls that a CLASS CHANGE rather than agreeing.
+# REVISION is. A stale compiler disagrees with a fresh build on these rows and
+# this gate calls that a CLASS CHANGE rather than agreeing. The tree used to
+# carry one: a tracked prebuilt `out/bin/idol`, now deleted.
 printf 'lower fallback control: PASS — planted cross-module call answered 21; three-partition chain answered 42; local-only file 0/CLEAN; unresolvable application and unrealizable partition both REFUSED (compiler %s, cc %s)\n' \
     "$IDOL" "$CCBIN"
 

@@ -26,6 +26,17 @@ IDOL=${IDOL_BIN:-$ROOT/zig-out/bin/idol}
 work=$(mktemp -d) || exit 64
 trap 'rm -rf "$work"' EXIT
 
+# EVERY SUBJECT IS A DIRECT-BACKEND COMPILE, so a host without that realization
+# refuses all three at TARGET SELECTION and the graph never sees the module
+# question this gate is about. It used to notice that per subject, which reported
+# the one host fact three times. Established once, said once.
+. "$ROOT/gate/realization/direct.sh"
+direct_native_probe "$IDOL"
+if direct_native_absent; then
+  direct_native_note 'where the unresolvable-home refusal comes from (target selection refuses before the graph sees the module)'
+  exit 1
+fi
+
 examined=0
 bad=0
 
@@ -63,6 +74,16 @@ for f in "$work"/*.id; do
       continue
       ;;
   esac
+  # A host limit cannot reach here: the producer above refuses the whole gate,
+  # so a DNB004 arriving per subject would mean the control disagreed with the
+  # subjects, which is a defect and must not be filed under the host.
+  case $out in
+    *DNB004*)
+      echo "module-zero-precheck: FAIL $(basename "$f") — DNB004 on a subject after the host control said this host CAN realize direct native code; the control and the subjects disagree"
+      bad=$((bad + 1))
+      continue
+      ;;
+  esac
   case $out in
     *"producer: graph"*) : ;;
     *)
@@ -81,7 +102,10 @@ if [ "$examined" -eq 0 ]; then
 fi
 
 if [ "$bad" -ne 0 ]; then
-  echo "module-zero-precheck: $bad of $examined subject(s) answered by the pre-graph gate"
+  # Not "answered by the pre-graph gate" — that names one of the three causes
+  # above and asserted it for all of them, including the host limit that
+  # answers nothing.
+  echo "module-zero-precheck: $bad of $examined subject(s) did NOT have their refusal produced by the graph; each line above says which cause"
   exit 1
 fi
 echo "module-zero-precheck: $examined subject(s) — every refusal produced by the graph"

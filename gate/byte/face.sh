@@ -69,6 +69,19 @@ if [ ! -x "$IDOL" ]; then
     exit 2
 fi
 
+# Every subject below is RUN and its printed answer compared. On a host with no
+# direct-native realization `idol run` refuses before any program prints, and
+# this gate reported nine lines of the form
+#     FAIL byte payload written, unnamed: expected the answer [{"a":1}], got exit 1
+# which reads as nine wrong answers from the byte face. It was one absent
+# backend, named nowhere in the output.
+. "$root/gate/realization/direct.sh"
+direct_native_probe "$IDOL"
+if direct_native_absent; then
+    direct_native_note 'the printed-answer comparison needs to EXECUTE each subject, and none can be built'
+    exit 2
+fi
+
 scratch=$(mktemp -d) || { echo 'byte face: cannot allocate scratch' >&2; exit 2; }
 cleanup() { rm -rf -- "$scratch"; }
 trap 'cleanup' EXIT

@@ -53,6 +53,20 @@ fi
 idol=${IDOL_BIN:-"$root/zig-out/bin/idol"}
 [ -x "$idol" ] || { printf 'envcache gate: FAIL no compiler at %s\n' "$idol" >&2; exit 1; }
 
+# THIS IS THE LOUDEST CASE OF THE SHARED HOST LIMIT IN THIS HOME. Every probe is
+# a direct-backend compile, so on a host without that realization all 53
+# registered variables come back "refused all 0 probe(s)", §4 declares the gate
+# vacuous, §5's three controls fail, and the summary reports 46 VIOLATIONS of a
+# cache law -- forty-six findings that are one host fact, in the gate best
+# positioned to be believed, because it does name its own non-vacuity. One
+# producer, asked before 53 variables are accused.
+. "$root/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+    direct_native_note 'the environment-cache probe matrix (all 53 variables and both controls need direct-backend artifacts)'
+    exit 1
+fi
+
 work=$(mktemp -d "${TMPDIR:-/tmp}/idol-envcache.XXXXXX")
 cleanup() { rm -rf "$work"; }
 trap cleanup EXIT INT TERM

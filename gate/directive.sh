@@ -35,7 +35,7 @@ led="docs/spec/directive-ledger.json"
 subject="$repo/gate/subject.sh"
 [ -f "$led" ] || { echo "directive.sh: missing $led" >&2; exit 2; }
 [ -x "$subject" ] || { echo "directive.sh: missing executable $subject" >&2; exit 2; }
-tmp="$(mktemp -t idoldir)"; trap 'rm -f "$tmp" "$tmp.led" "$tmp.now" "$tmp.files"' EXIT
+tmp="$(mktemp "${TMPDIR:-/tmp}/idoldir.XXXXXX")"; trap 'rm -f "$tmp" "$tmp.led" "$tmp.now" "$tmp.files"' EXIT
 
 # Consume the one fail-closed repository subject producer. Do not restore a
 # gate-local `find`/Git/fallback policy beside it.

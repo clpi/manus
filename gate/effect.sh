@@ -128,7 +128,7 @@ MIN_ONE=${EFFECT_MIN_ONE:-154}
 command -v jq >/dev/null 2>&1 || { echo "effect: jq not on PATH" >&2; exit 64; }
 [ -x "$idol" ] || { echo "effect: no compiler at $idol (set IDOL=)" >&2; exit 64; }
 
-work=$(mktemp -d -t idoleffect) || exit 64
+work=$(mktemp -d "${TMPDIR:-/tmp}/idoleffect.XXXXXX") || exit 64
 trap 'rm -rf "$work"' EXIT INT TERM
 
 die() { printf 'EFFECT BLOCKED -- %s\n' "$*" >&2; exit 1; }
@@ -188,6 +188,20 @@ fi
 
 # =============================================================== COUNTERFACTUAL
 [ -f "$subject" ] || die "the counterfactual subject $subject is missing. Without it the census stands alone, and a census cannot tell a published fact from a consumed one."
+
+# THE CENSUS ABOVE IS MEASURABLE ANYWHERE; THIS HALF IS NOT. The counterfactual
+# compares emitted assembly, so it needs a native realization, and on a host
+# without one this gate printed its four census counts and then
+# "EFFECT BLOCKED -- the subject did not compile with the effect fact
+# published" — which reads as the publisher having broken. The census keeps its
+# floors (that is real law signal this host can carry) and the counterfactual
+# says which half went unmeasured. Still non-zero: half a gate is not a pass.
+. "$repo/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+    direct_native_note 'the counterfactual half (the census above DID run and its floors held)'
+    exit 1
+fi
 
 "$idol" compile "$subject" --emit asm -o "$work/with.s" >/dev/null 2>&1 ||
     die "the subject did not compile with the effect fact published."

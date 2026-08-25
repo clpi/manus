@@ -54,8 +54,32 @@ units=$(git -C "$root" ls-files -- 'src/*.zig' | grep -c . || true)
 # Each clone is a full checkout of the repo, so the scratch root goes next to
 # the repo rather than on ${TMPDIR}, which is typically the boot volume and
 # will fill. Every clone is deleted the moment its control has run.
-scratch="${IDOL_GATE_SCRATCH:-$(dirname "$root")/.idol-gate-scratch}"
-mkdir -p "$scratch"
+#
+# THE PARENT IS NOT ALWAYS WRITABLE, and the unconditional form assumed it was.
+# `dirname` of a repo checked out one level below the filesystem root is `/`, so
+# the scratch became `//.idol-gate-scratch` and the gate died on a raw
+#
+#     mkdir: cannot create directory '//.idol-gate-scratch': Permission denied
+#
+# which reads as a broken gate rather than as an unavailable location. It never
+# showed up where this was written because that checkout is several directories
+# deep. Preference is unchanged; what is added is asking whether the preferred
+# location can be had, naming the fallback when it is taken, and refusing in the
+# gate's own voice when neither works.
+scratch="${IDOL_GATE_SCRATCH:-}"
+if [ -z "$scratch" ]; then
+    preferred="$(dirname "$root")/.idol-gate-scratch"
+    if mkdir -p "$preferred" 2>/dev/null; then
+        scratch="$preferred"
+    else
+        scratch="${TMPDIR:-/tmp}/.idol-gate-scratch"
+        printf 'layering-controls: NOTE %s is not writable; using %s. Clones are\n' \
+            "$(dirname "$root")" "$scratch" >&2
+        printf 'layering-controls:   full checkouts, so set IDOL_GATE_SCRATCH to a roomy volume.\n' >&2
+    fi
+fi
+mkdir -p "$scratch" ||
+    refuse "cannot create a scratch root at $scratch — set IDOL_GATE_SCRATCH to a writable directory"
 tmp=$(mktemp -d "$scratch/layering-controls.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT INT TERM
 

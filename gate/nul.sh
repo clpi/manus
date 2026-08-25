@@ -100,6 +100,17 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 idol="${IDOL_BIN:-$root/zig-out/bin/idol}"
 [ -x "$idol" ] || { echo "nul: no compiler at $idol" >&2; exit 2; }
 
+# EVERY SUBJECT BELOW IS A DIRECT-BACKEND ARTIFACT, so on a host with no direct
+# realization all five of them fail and this gate reported five FAILs plus "§0
+# measured ZERO programs" — five sentences about a subject that is fine, and not
+# one of them mentions the host. The fact has one producer.
+. "$root/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+  direct_native_note 'the NUL byte differential over direct-backend artifacts'
+  exit 1
+fi
+
 work="$(mktemp -d)" || exit 2
 trap 'rm -rf "$work"' EXIT
 

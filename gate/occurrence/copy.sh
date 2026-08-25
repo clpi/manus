@@ -69,7 +69,7 @@ cd "$repo" || exit 64
 idol=./zig-out/bin/idol
 [ -x "$idol" ] || { echo "gate/occurrence/copy.sh: no $idol — run zig build" >&2; exit 64; }
 
-work=$(mktemp -d -t idoloccurrence) || exit 64
+work=$(mktemp -d "${TMPDIR:-/tmp}/idoloccurrence.XXXXXX") || exit 64
 trap 'rm -rf "$work"' EXIT INT TERM
 
 unroll_subject=examples/native_differential/p02_loop.id
@@ -82,6 +82,17 @@ done
 fail=0
 note() { printf '%s\n' "$1"; }
 bad() { printf 'FAIL %s\n' "$1"; fail=1; }
+
+# Every section here compares object digests, and the objects come from the
+# direct backend. Without it §0 refuses and the whole gate printed
+# "§0 subject refuses" — five words that name neither the host nor the backend,
+# and that read as a defect in the subject rather than an absent realization.
+. "$repo/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+    direct_native_note 'the object-digest census needs direct-backend emission, and there is none to digest'
+    exit 2
+fi
 
 # Emit one object and print its digest. An emission that refuses prints
 # nothing, so every comparison below fails loudly rather than comparing two

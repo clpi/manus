@@ -69,6 +69,17 @@ note() { printf 'surface/reach: FAIL %s\n' "$1" >&2; fail=1; }
 [ -x "$idol" ] || broke "compiler absent or not executable: $idol"
 command -v git >/dev/null 2>&1 || broke "git absent; subject enumeration is git-tracked"
 
+# C1 BELOW IS A DIRECT-BACKEND COMPILE, so a host without that realization
+# reported INSTRUMENT BROKEN — a true statement about this gate that names the
+# wrong instrument: the compiler is fine and refused by design. The host fact
+# has one producer, asked before the control is read as a defect.
+. "$root/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+    direct_native_note 'the reachable-surface census (C1 needs a direct-backend artifact)'
+    exit 1
+fi
+
 # ============================== §0 CONTROLS =================================
 # Three controls that must DISAGREE with each other. A compiler that refused
 # everything, or accepted everything, cannot satisfy all three at once.

@@ -42,7 +42,13 @@ All 6 gates PASS semantic check (idol check):
 
 Direct backend execution: BLOCKED
   All gates fail with DNB011 on builtin I/O
-  This is a known, characterized failure (bridge_dnb011.md)
+  (Dated. Re-measured 2026-08-24 on x86_64-Linux: the refusal is DNB004,
+  not DNB011 — the direct backend has no machine realization for this host
+  at all, so builtin I/O is never reached. DNB011 was the AArch64-macOS
+  answer. The characterization document this line cited, root
+  bridge_dnb011.md, was deleted with the other root analysis prose; the
+  live single producer of the host-realization fact is
+  gate/realization/direct.sh.)
 
 Pre-commit hook: FUNCTIONAL
   Uses check-based admission (documented temporary bypass)

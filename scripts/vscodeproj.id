@@ -9,7 +9,7 @@ main: i64 = ()
     print("vscodeproj: fail no git root")
     os.exit(3)
 
-  tmp = script.chomp(script.capture("mktemp -t vscodeproj"))
+  tmp = script.chomp(script.capture("mktemp \"${TMPDIR:-/tmp}/vscodeproj.XXXXXX\""))
   if tmp == ""
     print("vscodeproj: fail no temp file")
     os.exit(3)

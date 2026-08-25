@@ -15555,6 +15555,24 @@ test "native backend lowers source print to host egress and retains physical pri
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
     try liftCheckedTestGraph(&mod, &sem, &graph);
+
+    // `emitAssemblyModeWithGraphLineage` refuses unless the HOST is
+    // aarch64-macos, so everything below the graph lift is unavailable
+    // elsewhere. Every other physical test in this file carries this guard;
+    // this one did not, so it was the single red test in the suite on any other
+    // host — reported as a backend defect when it was a missing guard.
+    //
+    // The off-host arm ASSERTS THE REFUSAL rather than skipping. `DNB004` is a
+    // published outcome, a skip measures nothing, and a refusal that quietly
+    // became a wrong answer is exactly what this suite exists to catch.
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
+        try std.testing.expectError(
+            error.UnsupportedTarget,
+            emitCheckedTestAssembly(alloc, &mod, &graph, null),
+        );
+        return;
+    }
+
     var assembly = try emitCheckedTestAssembly(alloc, &mod, &graph, null);
     defer assembly.deinit(alloc);
     try std.testing.expect(std.mem.indexOf(u8, assembly.assembly, ".globl _main") != null);

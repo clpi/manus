@@ -156,25 +156,55 @@ not. `s = 'abc'; print(s .. "Z")` prints a pointer, exit 0, no diagnostic,
 address varying per run. Bisected across two isolated worktrees with private
 caches: correct at `ae5fea3b^`, wrong at `ae5fea3b`. See `gaps/GAP-207.md`.
 
-**A tracked prebuilt binary is a stale oracle that manufactures false greens.**
-`out/bin/idol` was last committed at `301ac0b0` (2026-08-20). At `dec7d509` it
-disagrees with a fresh `zig build` on at least two verdicts: it prints `abcZ`
-for the `GAP-207` reproduction where a fresh build prints a pointer, and it
-reports `relation proof: pass` for `scripts/proof/relation.id` where a fresh
-build refuses with `UnsupportedProgram` at `lowerExprCons() dnir_lower.zig:9769`.
-Verification that runs `./out/bin/idol` is verification against a three-day-old
-compiler. This is `GAP-115`'s class, arriving through a tracked artifact rather
-than a shared temp path.
+**A tracked prebuilt binary was a stale oracle that manufactured false greens —
+CLOSED by deleting the binary.** `out/bin/idol` was last committed at `301ac0b0`
+(2026-08-20). At `dec7d509` it disagreed with a fresh `zig build` on at least two
+verdicts: it printed `abcZ` for the `GAP-207` reproduction where a fresh build
+printed a pointer, and it reported `relation proof: pass` for
+`scripts/proof/relation.id` where a fresh build refused with
+`UnsupportedProgram` at `lowerExprCons() dnir_lower.zig:9769`. This was
+`GAP-115`'s class arriving through a tracked artifact rather than a shared temp
+path, and the class is closed the same way: the artifact is untracked and `out/`
+is gone, so there is no second compiler in the tree for a verification to reach
+by accident. Four documents that warned readers away from the path have been
+reconciled to say it no longer exists rather than to keep steering around it.
 
 **Four gaps state something about `HEAD` that is false in the dangerous
 direction** — believing them produces a wrong CLOSED:
 
-- `GAP-127` declares `scripts/shcledger.id` and `scripts/selfhost_manifest.id`
+- ~~`GAP-127` declares `scripts/shcledger.id` and `scripts/selfhost_manifest.id`
   deleted. Both are tracked; `shcledger.id:17` still calls `io.popen`. Three SHC
   ledgers with contradicting counts coexist, which IS the contract drift the gap
-  is named for, live and worse than filed.
-- `GAP-128` cites `tools/wasm/src/ward.id` as the environment reader. That file
-  does not exist; the engine was renamed to `engine.id`.
+  is named for, live and worse than filed.~~ **RESOLVED 2026-08-24 by deleting
+  the files rather than the claim.** One SHC ledger remains,
+  `scripts/ledger/shc.id`. The deciding measurement: `selfhost_manifest.id` does
+  not compile (`idol check` refuses `_row` at `1:1`), and `shcledger.id`
+  consumed it by `grep -c` rather than by running it, so its counts were a
+  substring tally over a file the compiler rejects. See `gaps/GAP-127.md`
+  § 2026-08-24.
+- `GAP-128` was said here to cite `tools/wasm/src/ward.id` as the environment
+  reader. **Re-read 2026-08-24: it does not.** The gap's `**Files:**` line and
+  its body both name `tools/wasm/src/engine.id`, and the only `ward` tokens in it
+  are the two ENV VARIABLE names `WARD_WASM`/`WARD_INVOKE`, which are what the
+  gap is about. The stale `ward.id` path was in the SCRIPTS: a paragraph in
+  `scripts/runtime_bench.id` asserting that `ward.id` reads those two names, and
+  comment rows in `scripts/audit100.id`.
+
+  Chasing it there found a live wrong number rather than only stale prose. The
+  `AXIS loc` row measured the Idol runtime core as
+  `'tools/wasm/src/ward.id' 'tools/wasm/src/wasm/*.id'`. `git ls-files` answers a
+  nonexistent pathspec with silence, so the engine contributed 0 and the wasm
+  partition kept the total nonzero — past the row's own `<= 0` guard, whose
+  comment says "a zero here is a broken pathspec, not a small runtime". The row
+  under-reported the Idol runtime by 6,886 of 10,192 lines, 68%, in the
+  flattering direction, in a table whose whole subject is Idol versus wart. Each
+  component is now counted separately and the guard fires per component.
+
+  Also measured while there: `WARD_WASM`/`WARD_INVOKE` appear nowhere in this
+  tree except that script and `GAP-128`, and `build.zig` has no `ward` step. So
+  the ward axis has no in-tree producer for either the binary or the variable
+  names. It refuses honestly at its `exists(wardbin)` check; restoring it means
+  naming a producer, which is `GAP-128`'s actual remaining work.
 - `GAP-168` asserts `gate/path.id` `list(staged)` rejects plural roots via
   `plural(root(...))`. No such check exists, and `scripts/ledger/perf.id` is a
   positive control the gate must ACCEPT.

@@ -105,8 +105,19 @@ command -v jq >/dev/null 2>&1 || { echo "speculation: jq not on PATH" >&2; exit 
 [ -x "$idol" ] || { echo "speculation: no compiler at $idol (set IDOL=)" >&2; exit 64; }
 [ -f "$extract" ] || { echo "speculation: gate/speculation.awk is missing" >&2; exit 64; }
 
-work=$(mktemp -d -t idolspeculation) || exit 64
+work=$(mktemp -d "${TMPDIR:-/tmp}/idolspeculation.XXXXXX") || exit 64
 trap 'rm -rf "$work"' EXIT INT TERM
+
+# THE CENSUS IS OVER arm64 LOWERINGS, so a host with no direct realization
+# reaches zero modules and this gate said "ZERO modules reached the arm64
+# census. Examining nothing is not a pass" — correct, and it reads as a corpus
+# that stopped lowering rather than a host that never could. One producer.
+. "$repo/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+  direct_native_note 'the arm64 if-conversion census'
+  exit 1
+fi
 
 die() { printf 'SPECULATION BLOCKED -- %s\n' "$*" >&2; exit 1; }
 note() { printf '%s\n' "$*" >&2; }

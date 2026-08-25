@@ -238,6 +238,17 @@ controls() {
 [ "$mode" = ReleaseFast ] || fail "requires a source-built ReleaseFast compiler, got $mode"
 [ -d "$fixtures" ] || fail "missing fixture directory: $fixtures"
 
+# THE CONTROL IS A DIRECT-BACKEND COMPILE. Its failure printed 'positive control
+# did not direct-compile', which reads as a broken control -- the sharpest
+# possible misdirection, since a control is what a reader trusts to tell them
+# the instrument works. One producer for the host fact.
+. "$root/gate/realization/direct.sh"
+direct_native_probe "$idol"
+if direct_native_absent; then
+    direct_native_note 'the default-argument row census (its control is a direct-backend artifact)'
+    exit 1
+fi
+
 rows=0
 control
 

@@ -437,6 +437,11 @@ main: i64 = ()
   # set grew 445 -> 447. All 440 points land in exactly THREE files, and all
   # three are under `tools/wasm/`:
   #
+  # (`ward.id` in these tables is the engine's name AT THE MEASURED COMMIT. It
+  # was renamed to `tools/wasm/src/engine.id`; the counts are left as recorded
+  # rather than restated under the new name, because they are a measurement of a
+  # named revision and not a claim about the current tree.)
+  #
   #   row          delta   opcodes.id  ward.id  derived.id
   #   snake         +158        11        146          1
   #   upper         +167         3        164          0

@@ -122,6 +122,26 @@ KNOWNUNPROVEN=''
 # exclusion is visible rather than implicit in a glob.
 RUNNERS='gate/all.sh gate/vacuity.sh gate/admission-all.sh'
 
+# ── libraries, which declare their own role ────────────────────────────────
+# A file under `gate/` that exists to be SOURCED is not a gate, and the plants
+# say nothing about it: it has no subject of its own, so it is green under both
+# and would be convicted for being what it is. `gate/all.sh` has to skip it too,
+# and TWO name lists in two enumerators is the duplicated-fact defect that
+# `gate/realization/direct.sh` was written to remove. So the role is a fact of
+# the FILE — one `# gate-role: library` line, read by both consumers.
+#
+# THE MARKER IS NOT A PERMISSION SLIP. A gate could write that line to escape
+# this harness, so a declared library must be SOURCED by at least one gate or
+# this file fails: dead libraries and gates hiding behind the role both have to
+# be reachable from a real consumer, which is a fact a reader can follow.
+role_of() {
+  # Read from a bounded head so a `gate-role:` mentioned in prose further down
+  # (this comment block, for one) cannot be mistaken for a declaration.
+  sed -n '1,40p' "$1" 2>/dev/null \
+    | sed -n 's/^# *gate-role: *\([a-z]*\) *$/\1/p' \
+    | head -1
+}
+
 PER_GATE_TIMEOUT=${VACUITY_TIMEOUT:-90}
 
 # ── the timeout facility, and honesty about not having one ─────────────────
@@ -421,12 +441,30 @@ done
 # ═══ MEASURE ═══════════════════════════════════════════════════════════════
 sound=0; vacuous=0; declared=0; timedout=0; skipped=0
 vacuous_names=''; timeout_names=''; declared_sound=''; crashes=''; newvacuous=''; unproven=0; unproven_names=''
+libdead=''
 
 oldifs=$IFS; IFS='
 '
 for g in $gates; do
   IFS=$oldifs
   case " $RUNNERS " in *" $g "*) skipped=$((skipped + 1)); printf '  %-38s RUNNER (excluded by role)\n' "${g#gate/}"; continue ;; esac
+  if [ "$(role_of "$g")" = library ]; then
+    # Sourced by whom? Answered, not assumed. `grep -l` over the gate home is
+    # the whole check: a library nothing sources is dead, and a gate wearing the
+    # marker to dodge the plants has to be sourced by another gate to pass here.
+    consumers=$(grep -l "${g#gate/}" $(echo "$gates" | grep -v "^$g$") 2>/dev/null | tr '\n' ' ')
+    if [ -z "$consumers" ]; then
+      libdead="$libdead ${g#gate/}"
+      printf '  %-38s LIBRARY   declared, but NO gate sources it\n' "${g#gate/}"
+    else
+      skipped=$((skipped + 1))
+      printf '  %-38s LIBRARY (excluded by role; sourced by %s gate(s))\n' \
+        "${g#gate/}" "$(printf '%s' "$consumers" | wc -w | tr -d ' ')"
+    fi
+    IFS='
+'
+    continue
+  fi
 
   e=$(mktemp -d "$scratch/e.XXXXXX") || exit 2
   h=$(mktemp -d "$scratch/h.XXXXXX") || exit 2
@@ -515,6 +553,10 @@ for u in $unproven_names; do
 done
 if [ -n "$newvacuous" ]; then
   printf 'vacuity: NEW VACUOUS GATE(S) —%s — a gate that stays green with no subject is reporting a fact it did not measure\n' "$newvacuous" >&2
+  rc=1
+fi
+if [ -n "$libdead" ]; then
+  printf 'vacuity: DECLARED LIBRARY WITH NO CONSUMER —%s — the role excuses a file from the plants, so it has to be reachable from a gate that uses it\n' "$libdead" >&2
   rc=1
 fi
 # A name on KNOWNVACUOUS that now passes is a line to delete. Reported loudly

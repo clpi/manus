@@ -132,6 +132,122 @@ fn skipTypedefPrefix(s: []const u8) []const u8 {
     }
 }
 
+/// Skip the specifier clauses a C declaration may carry BETWEEN its parameter
+/// list and its `;` or `{`.
+///
+/// This is not a nicety. `parseFunctionDecls` required `)` to be followed
+/// immediately by `;` or `{`, and glibc declares essentially everything as
+///
+///     extern size_t strlen (const char *__s)
+///          __attribute__ ((__nothrow__ )) __attribute__ ((__pure__))
+///          __attribute__ ((__nonnull__ (1)));
+///
+/// so every attributed declaration was silently DROPPED and `@comp.ffi` over a
+/// system header returned a short list rather than an error. It read as working
+/// because Darwin's headers declare `size_t strlen(const char *__s);` with the
+/// availability macros consumed by `-P`, so the shape never arose on the host
+/// this code was written on. `__asm__` is in the same position and same
+/// business: glibc uses it to RENAME the symbol (`__asm__ ("strtof64")`), and a
+/// rename we cannot honour must drop the declaration rather than emit an
+/// `extern` for a symbol the library does not export under that name.
+const TrailingSpecifiers = struct {
+    rest: []const u8,
+    /// An asm label renames the symbol. The caller must refuse the declaration
+    /// instead of emitting a plausible-looking `extern` that will not link.
+    renamed: bool,
+};
+
+fn skipTrailingSpecifiers(s: []const u8) TrailingSpecifiers {
+    var rest = skipWs(s);
+    var renamed = false;
+    while (true) {
+        const id = readIdent(rest);
+        if (id.name.len == 0) break;
+        const is_attribute = std.mem.eql(u8, id.name, "__attribute__") or
+            std.mem.eql(u8, id.name, "__attribute") or
+            std.mem.eql(u8, id.name, "__extension__");
+        const is_asm = std.mem.eql(u8, id.name, "__asm__") or
+            std.mem.eql(u8, id.name, "__asm") or
+            std.mem.eql(u8, id.name, "asm");
+        if (!is_attribute and !is_asm) break;
+        const args = skipWs(id.rest);
+        if (args.len == 0 or args[0] != '(') {
+            // A bare `__extension__` carries no parenthesised payload.
+            if (std.mem.eql(u8, id.name, "__extension__")) {
+                rest = args;
+                continue;
+            }
+            break;
+        }
+        const close = findMatchingParen(args) orelse break;
+        if (is_asm) renamed = true;
+        rest = skipWs(args[close + 1 ..]);
+    }
+    return .{ .rest = rest, .renamed = renamed };
+}
+
+/// Drop the storage-class and linkage words from a captured return type.
+///
+/// The return type is captured as the raw span before the function name, so on
+/// glibc it came out as `extern size_t` and `emitExternDecls` then wrote
+/// `extern extern size_t strlen(...)`, which is not C. Darwin's headers omit
+/// `extern` on these declarations, which is why the doubled keyword never
+/// appeared. `inline` is dropped for the same reason: it is a definition
+/// property, and what is emitted here is a declaration.
+fn stripStorageClass(ret: []const u8) []const u8 {
+    var rest = ret;
+    while (true) {
+        const id = readIdent(rest);
+        if (id.name.len == 0) break;
+        if (std.mem.eql(u8, id.name, "extern") or
+            std.mem.eql(u8, id.name, "static") or
+            std.mem.eql(u8, id.name, "inline") or
+            std.mem.eql(u8, id.name, "__inline") or
+            std.mem.eql(u8, id.name, "__inline__") or
+            std.mem.eql(u8, id.name, "__extension__"))
+        {
+            rest = id.rest;
+            continue;
+        }
+        break;
+    }
+    return std.mem.trim(u8, rest, " \t\r\n");
+}
+
+/// Step over the pointer stars, and the qualifiers between them, that sit
+/// between a return type and the function name.
+///
+/// `skipTypedefPrefix` stops at the first word that is not a storage class or a
+/// base-type keyword — which for `extern void *memcpy (...)` is `void`, leaving
+/// `*memcpy`. `readIdent` then found no identifier at `*` and the whole
+/// declaration was skipped, so EVERY pointer-returning function was dropped:
+/// `strcpy`, `strchr`, `malloc`, `memcpy`, `getenv`. That is host-independent
+/// and predates the attribute defect; it showed up here because the GNU fixture
+/// happens to include one. The return type is captured as the span before the
+/// name, so consuming the stars here is also what puts them in `ret_type`.
+fn skipPointerDepth(s: []const u8) []const u8 {
+    var rest = skipWs(s);
+    while (rest.len > 0) {
+        if (rest[0] == '*') {
+            rest = skipWs(rest[1..]);
+            continue;
+        }
+        const id = readIdent(rest);
+        if (id.name.len == 0) break;
+        // Only a qualifier may sit between stars. Anything else is the name.
+        if (std.mem.eql(u8, id.name, "const") or
+            std.mem.eql(u8, id.name, "volatile") or
+            std.mem.eql(u8, id.name, "__restrict") or
+            std.mem.eql(u8, id.name, "restrict"))
+        {
+            rest = skipWs(id.rest);
+            continue;
+        }
+        break;
+    }
+    return rest;
+}
+
 fn findMatchingParen(s: []const u8) ?usize {
     if (s.len == 0 or s[0] != '(') return null;
     var depth: usize = 1;
@@ -173,7 +289,7 @@ pub fn parseFunctionDecls(alloc: std.mem.Allocator, src: []const u8) ![]CDecl {
             continue;
         }
 
-        const after_type = skipTypedefPrefix(rest);
+        const after_type = skipPointerDepth(skipTypedefPrefix(rest));
         const fn_name = readIdent(after_type);
         if (fn_name.name.len == 0) {
             rest = skipLine(rest);
@@ -189,10 +305,17 @@ pub fn parseFunctionDecls(alloc: std.mem.Allocator, src: []const u8) ![]CDecl {
             continue;
         };
         const params = std.mem.trim(u8, params_rest[1..close], " \t\r\n");
-        var after = skipWs(params_rest[close + 1 ..]);
+        const trailing = skipTrailingSpecifiers(params_rest[close + 1 ..]);
+        var after = trailing.rest;
         const is_def = after.len > 0 and after[0] == '{';
         if (!is_def and (after.len == 0 or after[0] != ';')) {
             rest = skipLine(rest);
+            continue;
+        }
+        // An asm label means the emitted `extern` would name a symbol the
+        // library does not export. Refusing is the only honest answer.
+        if (trailing.renamed) {
+            rest = if (is_def) after else after[1..];
             continue;
         }
 
@@ -203,7 +326,7 @@ pub fn parseFunctionDecls(alloc: std.mem.Allocator, src: []const u8) ![]CDecl {
             } else rest = after[1..];
             continue;
         }
-        const ret_type = std.mem.trim(u8, rest[0..ret_end], " \t\r\n");
+        const ret_type = stripStorageClass(std.mem.trim(u8, rest[0..ret_end], " \t\r\n"));
         if (ret_type.len == 0 or std.mem.indexOf(u8, ret_type, "(") != null) {
             if (is_def) {
                 if (std.mem.indexOfScalar(u8, after, '}')) |end| rest = after[end + 1 ..];
@@ -289,9 +412,53 @@ test "c_header_parse: parses function definitions" {
     try std.testing.expectEqualStrings("sub", decls[1].name);
 }
 
+// The GNU declaration shape, as a FIXTURE rather than as whatever the host's
+// libc happens to ship. The system-header test below is the integration half
+// and needs a C preprocessor to say anything; this half needs nothing, so the
+// two repairs it covers stay measured on every host including the one that
+// cannot run clang. Both spellings are copied from glibc's preprocessed
+// `string.h` and `stdlib.h`.
+test "c_header_parse: a GNU-attributed declaration is neither dropped nor doubly extern" {
+    const alloc = std.testing.allocator;
+    const src =
+        \\extern size_t strlen (const char *__s)
+        \\     __attribute__ ((__nothrow__ )) __attribute__ ((__pure__)) __attribute__ ((__nonnull__ (1)));
+        \\extern void *memcpy (void *__restrict __dest, const void *__restrict __src, size_t __n)
+        \\     __attribute__ ((__nothrow__ )) __attribute__ ((__nonnull__ (1, 2)));
+        \\extern float strtof32 (const char *__restrict __nptr, char **__restrict __endptr)
+        \\     __asm__ ("" "strtof") __attribute__ ((__nothrow__ ));
+    ;
+    const decls = try parseFunctionDecls(alloc, src);
+    defer {
+        for (decls) |d| {
+            alloc.free(d.name);
+            alloc.free(d.ret_type);
+            alloc.free(d.params);
+        }
+        alloc.free(decls);
+    }
+
+    // Two admitted, and the asm-renamed one REFUSED: emitting `extern float
+    // strtof32(...)` would name a symbol glibc exports as `strtof`.
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+    try std.testing.expectEqualStrings("strlen", decls[0].name);
+    try std.testing.expectEqualStrings("size_t", decls[0].ret_type);
+    try std.testing.expectEqualStrings("memcpy", decls[1].name);
+    try std.testing.expectEqualStrings("void *", decls[1].ret_type);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    try emitExternDecls(&aw.writer, decls);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "extern extern") == null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "extern size_t strlen(const char *__s);") != null);
+}
+
 test "c_header_parse: finds strlen in string.h preprocessed output" {
     const alloc = std.testing.allocator;
-    const pre = preprocessHeader(alloc, "string.h") orelse return error.TestExpectedSystemHeader;
+    // No C preprocessor means this host cannot supply the observation. That is
+    // a missing capability, not a wrong answer, and the fixture test above
+    // keeps the same two repairs measured when this arm is taken.
+    const pre = preprocessHeader(alloc, "string.h") orelse return error.SkipZigTest;
     defer alloc.free(pre);
     const decls = try parseFunctionDecls(alloc, pre);
     defer {
@@ -305,6 +472,10 @@ test "c_header_parse: finds strlen in string.h preprocessed output" {
     var found = false;
     for (decls) |d| {
         if (std.mem.eql(u8, d.name, "strlen")) found = true;
+        // Whatever the host libc spells, no captured return type may carry a
+        // storage class into the emitted declaration.
+        try std.testing.expect(!std.mem.startsWith(u8, d.ret_type, "extern"));
+        try std.testing.expect(!std.mem.startsWith(u8, d.ret_type, "static"));
     }
     try std.testing.expect(found);
 }

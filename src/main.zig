@@ -1164,7 +1164,7 @@ fn mainInner(init: std.process.Init) !void {
         term.err("the graph-backed C realizer currently emits portable source only; use --backend=c --emit=c", .{});
         std.process.exit(1);
     }
-    target = resolveCompileBackend(backend_mode, target);
+    target = resolveCompileBackend(backend_mode, target, emit_kind);
 
     if (std.mem.eql(u8, cmd, "help") or std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
         term.printRaw("{s}", .{usage});
@@ -3919,13 +3919,34 @@ fn resolveCompileTarget(target_in: []const u8, emit: target_model.EmitKind) []co
     return target_in;
 }
 
-fn resolveCompileBackend(backend: []const u8, target_in: []const u8) []const u8 {
+fn resolveCompileBackend(backend: []const u8, target_in: []const u8, emit: target_model.EmitKind) []const u8 {
     const parsed = backend_identity.Backend.parse(backend) orelse {
         term.err("unknown --backend '{s}' (expected auto, direct, native, c, or wasm)", .{backend});
         std.process.exit(1);
     };
     switch (parsed) {
-        .direct => return if (native_backend.isNativeMachineTarget(target_in)) target_in else "native-exe",
+        // THIS RETURNED `native-exe` FOR EVERY EMIT KIND, AND DISCARDED THE ONE
+        // THE CALLER NAMED. `resolveCompileTarget` just above maps emit onto a
+        // legacy target name, but only when the HOST triple is direct-backend
+        // supported — `toLegacyTargetName` returns null otherwise. So on any
+        // non-aarch64-darwin host it returned the input unchanged (`native`),
+        // this arm did not match `isNativeMachineTarget`, and the request became
+        // an EXECUTABLE. MEASURED: `--backend=direct --emit obj` on
+        // lib/compiler/parser.id refused with "no native machine realization for
+        // target 'native-exe'" — naming a realization the caller never asked
+        // for, which is gap[015]/gap[019]'s exact defect (the wrong format,
+        // silently) surviving in the one place that overrides their repair.
+        // The emit kind now decides the target here too, so the refusal names
+        // what was actually requested.
+        .direct => {
+            if (native_backend.isNativeMachineTarget(target_in)) return target_in;
+            return switch (emit) {
+                .obj => "native-object",
+                .assembly => "native-asm",
+                .dylib => "native-dylib",
+                else => "native-exe",
+            };
+        },
         .auto => return target_in,
         // Explicit only. Selection was paired with `--emit=c` above, and this
         // target reaches the graph-backed realizer before any direct decision.
@@ -3952,6 +3973,20 @@ fn resolveCompileBackend(backend: []const u8, target_in: []const u8) []const u8 
             std.process.exit(1);
         },
     }
+}
+
+test "the direct backend carries the requested emit kind into its target" {
+    // Every one of these returned `native-exe` before, on any host whose triple
+    // the direct backend does not support, so a refusal named a realization the
+    // caller had not asked for. `native` is the default target — the exact input
+    // that reached this function from `idol compile --backend=direct --emit obj`.
+    try std.testing.expectEqualStrings("native-object", resolveCompileBackend("direct", "native", .obj));
+    try std.testing.expectEqualStrings("native-asm", resolveCompileBackend("direct", "native", .assembly));
+    try std.testing.expectEqualStrings("native-dylib", resolveCompileBackend("direct", "native", .dylib));
+    try std.testing.expectEqualStrings("native-exe", resolveCompileBackend("direct", "native", .exe));
+    // An explicit machine target still wins over the emit kind: it already names
+    // its own format, and reinterpreting it is the defect this repairs.
+    try std.testing.expectEqualStrings("native-asm", resolveCompileBackend("direct", "native-asm", .obj));
 }
 
 fn wantsMachineLowering(backend_mode: []const u8, target: []const u8) bool {
@@ -5407,8 +5442,26 @@ fn do_compile(
         return;
     }
 
+    // THIS REFUSAL CROSSED THE SEAM AS PROSE AND NOTHING ELSE. Every other
+    // direct-backend refusal carries a stable identity — `DNB001 … missing: …
+    // producer: dnir lower`, `DNB011 … producer: graph` — and
+    // `directDiagnostic` has always mapped `error.UnsupportedTarget` to DNB004,
+    // "target object format or host is unsupported by the direct backend",
+    // which is exactly this. The mapping existed; this site did not use it.
+    //
+    // The cost was paid by consumers. A gate asking "did the direct backend
+    // refuse this program?" greps for DNB001 or `direct backend`, gets neither
+    // (the text says `auto backend` here), and reports a violated law where the
+    // truth is that the host has no realization to refuse from. That is
+    // MAGIC-CODE-ZERO's seam requirement read from the other end: a rejection
+    // must cross as a stable identity, not as a sentence each consumer
+    // re-derives. Measured on this host, `idol run examples/call_index_assign.id`
+    // now names DNB004 and gate/architecture-companion.sh can tell a host limit
+    // from a subset finding instead of scoring one as the other.
     if ((selected_backend == .auto or selected_backend == .direct) and effective_machine_target == null) {
-        term.err("{s} backend has no native machine realization for target '{s}' on this host; explicitly select --backend=c or --backend=wasm if that realization is intended", .{ selected_backend.name(), target });
+        var identity_buf: [192]u8 = undefined;
+        const identity = native_backend.formatDirectError(error.UnsupportedTarget, target, &identity_buf);
+        term.err("{s}: {s} backend has no native machine realization for target '{s}' on this host; explicitly select --backend=c or --backend=wasm if that realization is intended", .{ identity, selected_backend.name(), target });
         std.process.exit(1);
     }
 

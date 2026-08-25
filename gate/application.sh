@@ -79,7 +79,7 @@ corpus=${COVERAGE_CORPUS:-examples lib}
 budget=${APPLICATION_BUDGET:-}
 [ -x "$idol" ] || { echo "application: no compiler at $idol (set IDOL=)" >&2; exit 64; }
 command -v python3 >/dev/null 2>&1 || { echo "application: python3 absent" >&2; exit 64; }
-work=$(mktemp -d -t idolapplication) || exit 64
+work=$(mktemp -d "${TMPDIR:-/tmp}/idolapplication.XXXXXX") || exit 64
 trap 'rm -rf "$work"' EXIT INT TERM
 
 # FLOOR 1. A named root that does not resolve is not an empty root — it is a

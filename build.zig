@@ -168,7 +168,7 @@ pub fn build(b: *std.Build) void {
     const foreign_step = b.step("foreign-census", "U8: every foreign file classified ledger or oracle; ratchets violations");
     foreign_step.dependOn(&foreign_cmd.step);
 
-    const embed_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=direct", "scripts/embedledger.id" });
+    const embed_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "--backend=direct", "scripts/ledger/embed.id" });
     embed_cmd.setCwd(b.path("."));
     embed_cmd.step.dependOn(b.getInstallStep());
     const embed_step = b.step("embed-ledger", "Embedded @c audit; enforce zero sites for self-hosting");
@@ -689,7 +689,7 @@ pub fn build(b: *std.Build) void {
 
     const pathgate_cmd = b.addSystemCommand(&.{
         "sh", "-c",
-        \\tmp=$(mktemp -t idolpath) && printf '%s\n' graph.id > "$tmp" && dif=$(mktemp -t idolname) && printf '%s\n' '--- a/x.id' '+++ b/x.id' '@@ -0,0 +1,1 @@' '+bad = nativebackend' > "$dif" && IDOLPATHLIST="$tmp" IDOLNAMEDIFF="$dif" ./zig-out/bin/idol run gate/path.id; rc=$?; rm -f "$tmp" "$dif"; exit $rc
+        \\tmp=$(mktemp "${TMPDIR:-/tmp}/idolpath.XXXXXX") && printf '%s\n' graph.id > "$tmp" && dif=$(mktemp "${TMPDIR:-/tmp}/idolname.XXXXXX") && printf '%s\n' '--- a/x.id' '+++ b/x.id' '@@ -0,0 +1,1 @@' '+bad = nativebackend' > "$dif" && IDOLPATHLIST="$tmp" IDOLNAMEDIFF="$dif" ./zig-out/bin/idol run gate/path.id; rc=$?; rm -f "$tmp" "$dif"; exit $rc
     });
     pathgate_cmd.setCwd(b.path("."));
     pathgate_cmd.step.dependOn(b.getInstallStep());

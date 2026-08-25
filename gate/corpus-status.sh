@@ -34,9 +34,9 @@ DEFAULTS=docs/source-corpus-classification.md
 [ -f "$MANIFEST" ] || { printf 'corpus-status gate: FAIL — missing %s\n' "$MANIFEST"; exit 2; }
 [ -f "$DEFAULTS" ] || { printf 'corpus-status gate: FAIL — missing %s\n' "$DEFAULTS"; exit 2; }
 
-RULES=$(mktemp -t idol-corpus-rules)
-DEFS=$(mktemp -t idol-corpus-defs)
-FILES=$(mktemp -t idol-corpus-files)
+RULES=$(mktemp "${TMPDIR:-/tmp}/idol-corpus-rules.XXXXXX")
+DEFS=$(mktemp "${TMPDIR:-/tmp}/idol-corpus-defs.XXXXXX")
+FILES=$(mktemp "${TMPDIR:-/tmp}/idol-corpus-files.XXXXXX")
 trap 'rm -f "$RULES" "$DEFS" "$FILES"' EXIT
 # The manifest's fenced projection block: `class<spaces>prefix`, first match wins.
 awk '/^```text$/ { inb = !inb; next } inb && /[[:space:]]/ {
