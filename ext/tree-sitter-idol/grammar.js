@@ -50,6 +50,8 @@
  *                                 of roleprecedence in lib/compiler/token.id,
  *                                 the one grammar-fact owner. Verified by
  *                                 gate/gap-145-consumer.sh over EVERY pair.
+ *   hash / compat / long comment GAP-145 comment identities; `comment`
+ *                                 is the query-compatible union
  *   comment / helpers             the tail registry
  *
  * NOT GENERATED FROM DOC EBNF, and why:

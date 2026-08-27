@@ -488,6 +488,230 @@ else
     fi
 fi
 
+# ── 3e. comment rules are EMITTED, not authored (GAP-145 O1 comments) ───────
+#
+# §3 closed the operator half of the second-grammar-authority seam. The comment
+# half stood open until this section: `tail()` in scripts/treesitter_emit.id
+# emitted ONE collapsed Lua `--` comment rule while the tracked grammar.js
+# carried three hand-authored GAP-145 identities. The generator disclaimed
+# authorship of rules that existed only as hand edits, and nothing compared
+# them — the exact shape §3's header describes, one registry later.
+#
+# Three demands, in order of strength:
+#
+#   BYTE IDENTITY. The comment rules in the tracked artifact must be the exact
+#   rendering of `tail()`'s Comments registry — same lines, same bytes. A hand
+#   edit to grammar.js's comment rules, or a generator edit that does not
+#   reproduce them, fails here.
+#
+#   OWNER RESOLUTION. Every comment identity the emission carries must resolve
+#   against src/grammar_role_table.zig — the generated projection of
+#   lib/compiler/token.id, the one grammar-fact owner (law.grammar.one):
+#
+#       hash_comment         -> .comment             spell "#",    canonical
+#       compat_comment       -> .compat_comment      spell "--",   compat_only
+#       compat_long_comment  -> .compat_long_comment spell "--[[", compat_only
+#
+#   SET EQUALITY both ways: an owner comment identity missing from the emission
+#   fails (deleted rule), and an emitted rule with no owner identity fails
+#   (invented grammar). The rule-name -> kind mapping is a declared projection
+#   boundary, printed on every run, exactly like ALIAS in §3.
+#
+#   NO COLLAPSE. The emitted union must reference each identity by its own rule
+#   name. Re-collapsing to one `token(choice(seq('--', ...)))` rule — the old
+#   shape, which folded all three identities into one Lua comment — fails the
+#   byte comparison, and this comment says why it must.
+#
+# Positive controls, both failure modes §3 learned separately: a rule whose
+# TEXT moves, and a rule that VANISHES from the tracked artifact.
+python3 - "$ROOT" <<'PY'
+import re, sys, os
+
+root = sys.argv[1]
+
+# Declared projection boundary: tree-sitter rule name -> owner kind.
+COMMENT_ALIAS = {
+    'hash_comment': 'comment',
+    'compat_comment': 'compat_comment',
+    'compat_long_comment': 'compat_long_comment',
+}
+
+def unescape(s):
+    # .id double-quoted escapes, left to right: \\ -> \, \n -> newline,
+    # \' -> ', \" -> ".
+    out, i = [], 0
+    while i < len(s):
+        if s[i] == '\\' and i + 1 < len(s) and s[i+1] in ('\\', 'n', "'", '"'):
+            out.append({'\\': '\\', 'n': '\n', "'": "'", '"': '"'}[s[i+1]])
+            i += 2
+            continue
+        out.append(s[i]); i += 1
+    return ''.join(out)
+
+def emitted_comment_rules(path):
+    """Render tail()'s Comments registry: the b-accumulated lines after the
+    'Comments {cbar}' banner line, up to (not including) the '  },' closer."""
+    src = open(path).read().split('\n')
+    anchors = [n for n, l in enumerate(src) if 'Comments {cbar}' in l]
+    if len(anchors) != 1:
+        return None, 'found %d "Comments" banner anchors, expected exactly 1' % len(anchors)
+    rendered = []
+    for l in src[anchors[0]+1:]:
+        m = re.match(r'^\s*b = "\{b\}(.*)\\n"$', l)
+        if not m:
+            break
+        rendered.append(unescape(m.group(1)))
+    # drop the leading blank line of the section, stop before the closer
+    body = [r for r in rendered]
+    if body and body[0] == '':
+        body = body[1:]
+    if '  },' in body:
+        body = body[:body.index('  },')]
+    return body, None
+
+def tracked_comment_rules(path):
+    """The comment rules in grammar.js: from 'comment: $ =>' through the
+    terminating \"']')),\" line, byte-exact, comments and all."""
+    js = open(path).read().split('\n')
+    starts = [n for n, l in enumerate(js) if l.strip().startswith('comment: $ =>')]
+    if not starts:
+        return None, 'no comment rule in the tracked grammar'
+    i = starts[-1]
+    ends = [n for n, l in enumerate(js) if n > i and "']'))," in l]
+    if not ends:
+        return None, 'comment rule in the tracked grammar does not terminate'
+    return js[i:ends[0]+1], None
+
+def owner_comment_rows(path):
+    src = open(path).read()
+    rows = {}
+    for m in re.finditer(
+            r'\.\{ \.kind = \.([a-z_]*comment[a-z_]*), \.spell = "([^"]*)"(.*?)\},',
+            src, re.S):
+        kind, spell, rest = m.group(1), m.group(2), m.group(3)
+        rows[kind] = (spell, '.compat_only = true' in rest)
+    return rows
+
+def compare(gen, tracked, owner):
+    problems = []
+    if gen != tracked:
+        for n in range(max(len(gen), len(tracked))):
+            g = gen[n] if n < len(gen) else '<missing>'
+            t = tracked[n] if n < len(tracked) else '<missing>'
+            if g != t:
+                problems.append(
+                    'comment rule line %d differs — generator emits %r, '
+                    'tracked grammar has %r' % (n, g, t))
+                break
+        if not problems:
+            problems.append('comment rule blocks differ in length: generator %d '
+                            'lines, tracked %d' % (len(gen), len(tracked)))
+    # identity extraction from the EMITTED block. The union head `comment:` is
+    # the query-compatible projection face, not a member identity; members are
+    # the $.name references in its choice arms, and DEFINED identities are the
+    # 4-space-indented rules that are union members.
+    names = set(re.findall(r'\$\.([a-z_]*comment[a-z_]*),', '\n'.join(gen)))
+    defined = set(re.findall(r'^\s{4}([a-z_]*comment[a-z_]*): \$ =>', '\n'.join(gen), re.M)) - {'comment'}
+    if names != defined:
+        problems.append('the comment union references %s but defines %s — a '
+                        'referenced identity has no rule, or a rule is unreferenced'
+                        % (sorted(names), sorted(defined)))
+    owner_family = {k for k in owner if 'comment' in k}
+    emitted_kinds = {COMMENT_ALIAS.get(n) for n in defined}
+    for n in sorted(defined - set(COMMENT_ALIAS)):
+        problems.append('emitted comment rule %r has no declared owner mapping — '
+                        'invented grammar or a drifted projection boundary' % n)
+    for k in sorted(owner_family - emitted_kinds):
+        problems.append('owner comment identity %r is MISSING from the emitted '
+                        'comment rules' % k)
+    for k in sorted(emitted_kinds - owner_family):
+        problems.append('emitted comment rule maps to %r, which the owner '
+                        'projection does not carry' % k)
+    # spelling and compat facts flow from the owner. compat_long_comment's
+    # opener is spelled as three JS literals ('--', '[', '['), so the
+    # spell-occurrence needle is the owner spell's first two characters for
+    # spells three characters or longer.
+    for n, k in sorted(COMMENT_ALIAS.items()):
+        if k not in owner:
+            continue
+        spell, compat = owner[k]
+        needle = spell if len(spell) < 3 else spell[:2]
+        if needle not in '\n'.join(gen):
+            problems.append('owner spell %r for %s does not occur in the emitted '
+                            'rules' % (spell, k))
+        want_compat = 'compat' in k
+        if want_compat and not compat:
+            problems.append('owner marks %s canonical, the emission treats it as '
+                            'compat' % k)
+        if not want_compat and compat:
+            problems.append('owner marks %s compat_only, the emission treats it '
+                            'as canonical' % k)
+    return problems
+
+gen_path = os.path.join(root, 'scripts/treesitter_emit.id')
+js_path = os.path.join(root, 'ext/tree-sitter-idol/grammar.js')
+owner_path = os.path.join(root, 'src/grammar_role_table.zig')
+
+gen, err = emitted_comment_rules(gen_path)
+if err:
+    print('gap-145 consumer gate: FAIL comment-emission reader: %s' % err)
+    sys.exit(1)
+tracked, err = tracked_comment_rules(js_path)
+if err:
+    print('gap-145 consumer gate: FAIL tracked-comment reader: %s' % err)
+    sys.exit(1)
+if not gen or not tracked:
+    print('gap-145 consumer gate: FAIL a comment reader yielded zero rules — '
+          'a broken reader reports agreement')
+    sys.exit(1)
+owner = owner_comment_rows(owner_path)
+if not owner:
+    print('gap-145 consumer gate: FAIL owner projection carries no comment rows — '
+          'reading the wrong tree')
+    sys.exit(1)
+
+problems = compare(gen, tracked, owner)
+
+# POSITIVE CONTROLS. Two, because §3 proved the failure modes are independent:
+# text that MOVES and rules that VANISH.
+ctl_move = list(gen)
+if len(ctl_move) > 6:
+    ctl_move[6] = ctl_move[6].replace('prec(-1,', 'prec(-2,')
+ctl_move_p = compare(ctl_move, tracked, owner)
+if not any(p.startswith('comment rule line') for p in ctl_move_p):
+    print('gap-145 consumer gate: FAIL the comment comparator did not see a '
+          'planted text move — it cannot fail, so its pass means nothing')
+    sys.exit(1)
+
+ctl_drop = [l for l in gen if 'hash_comment' not in l]
+ctl_drop_p = compare(ctl_drop, tracked, owner)
+if not any('MISSING' in p or 'union references' in p or 'differ' in p for p in ctl_drop_p):
+    print("gap-145 consumer gate: FAIL the comment comparator did not see the "
+          "planted DELETION of 'hash_comment' — an editor grammar can lose a "
+          "comment identity and still report agreement")
+    sys.exit(1)
+
+print('  comment rules: generator emission is byte-identical to the tracked '
+      'grammar (%d lines)' % len(gen))
+print('  comment identities: %s' % ', '.join(
+    '%s->%s(%r)' % (n, k, owner[k][0] if k in owner else '?')
+    for n, k in sorted(COMMENT_ALIAS.items())))
+print('  positive controls: planted text move detected (%d finding(s)); planted '
+      'deletion of hash_comment detected (%d finding(s))'
+      % (len(ctl_move_p), len(ctl_drop_p)))
+
+if problems:
+    for p in problems:
+        print('gap-145 consumer gate: FAIL comment authorship — %s' % p)
+    sys.exit(1)
+sys.exit(0)
+PY
+cmt_status=$?
+examined=$((examined + 1))
+if [ "$cmt_status" -ne 0 ]; then
+    bad 'tree-sitter comment rules are authored or drifted, not emitted from the lexical owner'
+fi
+
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
