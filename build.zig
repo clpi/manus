@@ -999,6 +999,23 @@ pub fn build(b: *std.Build) void {
     gap145_step.dependOn(&gap145_cmd.step);
     test_step.dependOn(&gap145_cmd.step);
 
+    // treesitter-literal — GAP-145 O1, the literal half of the step above.
+    // `gate/treesitter/literal.sh` landed with the O1 authorship move itself
+    // (#175) wired to nothing but the gate/all.sh glob: a named control that
+    // no build step or hook can fail is the same unwired-control class the
+    // comment above records. The gate reads the owner's generated bridge
+    // (src/grammar_role_table.zig, whose tracked bytes gate/grammar-projection
+    // keeps identical to lib/compiler/token.id's) and the tracked grammar.js,
+    // and fails unless every literal identity in the editor grammar IS an
+    // owner quoted row and every owner quoted row HAS an identity rule, with
+    // planted positive controls both directions. It needs no compiler, so it
+    // has no install dependency.
+    const ts_literal_cmd = b.addSystemCommand(&.{ "sh", "gate/treesitter/literal.sh" });
+    ts_literal_cmd.setCwd(b.path("."));
+    const ts_literal_step = b.step("treesitter-literal", "the editor grammar's literal identities are exactly the lexical owner's quoted rows (GAP-145 O1)");
+    ts_literal_step.dependOn(&ts_literal_cmd.step);
+    test_step.dependOn(&ts_literal_cmd.step);
+
     const ftcftw_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/ledger/ftcftw.id" });
     ftcftw_cmd.setCwd(b.path("."));
     ftcftw_cmd.step.dependOn(b.getInstallStep());
