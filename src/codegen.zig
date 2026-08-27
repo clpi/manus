@@ -17122,7 +17122,14 @@ pub const CodeGen = struct {
             .false_lit => self.p("false", .{}),
             .int_lit => |v| self.emit_c_int_literal(v.val),
             .float_lit => |v| self.p("{e}", .{v.val}),
-            .quoted => |v| {
+            // Producer quote owns the face (GAP-145 O5): this generic emitter
+            // has no byte-sequence realization, so a byte-face quote is
+            // refused as a commented placeholder — never silently emitted as
+            // a text literal. Same total-but-honest route this switch already
+            // uses for unrealizable constructs.
+            .quoted => |v| if (ast.quotedLiteralIsByteSequence(v.quote))
+                self.p("/* byte-sequence face has no realization in this emitter */ lua_val_nil()", .{})
+            else {
                 self.p("\"", .{});
                 try self.emit_string_escaped(v.val);
                 self.p("\"", .{});
@@ -19829,7 +19836,11 @@ pub const CodeGen = struct {
 
     fn fold_meta_string_expr(self: *CodeGen, expr: *const ast.Expr) ?[]const u8 {
         return switch (expr.*) {
-            .quoted => |s| s.val,
+            // Producer quote owns the face (GAP-145 O5): a byte-sequence
+            // literal is not a compile-time string, so this arm refuses rather
+            // than folds it into the string kingdom. Same fail-closed route as
+            // `src/comptime.zig` — callers treat null as "leave it lowered".
+            .quoted => |s| if (ast.quotedLiteralIsByteSequence(s.quote)) null else s.val,
             .name => |n| blk: {
                 const value = self.comptime_bindings().get(n.ident) orelse break :blk null;
                 break :blk if (value == .string) value.string else null;
@@ -20990,7 +21001,8 @@ pub const CodeGen = struct {
     fn metaStringFromExpr(self: *CodeGen, expr: *const ast.Expr) ?[]const u8 {
         if (self.meta_combinator_fold_depth > 0) {
             return switch (expr.*) {
-                .quoted => |s| s.val,
+                // Producer quote owns the face (GAP-145 O5).
+                .quoted => |s| if (ast.quotedLiteralIsByteSequence(s.quote)) null else s.val,
                 .name => |n| blk: {
                     const value = self.comptime_bindings().get(n.ident) orelse break :blk null;
                     break :blk if (value == .string) value.string else null;
@@ -20999,7 +21011,8 @@ pub const CodeGen = struct {
             };
         }
         return switch (expr.*) {
-            .quoted => |s| s.val,
+            // Producer quote owns the face (GAP-145 O5).
+            .quoted => |s| if (ast.quotedLiteralIsByteSequence(s.quote)) null else s.val,
             else => self.fold_meta_string_expr(expr),
         };
     }
@@ -21015,7 +21028,8 @@ pub const CodeGen = struct {
     fn deriveNameValueFromExpr(expr: *const ast.Expr) ?comptime_eval.Value {
         return switch (expr.*) {
             .name => |n| .{ .string = n.ident },
-            .quoted => |s| .{ .string = s.val },
+            // Producer quote owns the face (GAP-145 O5).
+            .quoted => |s| if (ast.quotedLiteralIsByteSequence(s.quote)) null else .{ .string = s.val },
             else => null,
         };
     }
@@ -21256,8 +21270,14 @@ pub const CodeGen = struct {
             return 1;
         }
         if (std.mem.eql(u8, internal, "__comptimefixpoint") and args.len == 3) {
+            // Producer quote owns the face (GAP-145 O5): a byte-sequence
+            // literal is not a compile-time string, so this combinator
+            // refuses rather than folds it into the string kingdom.
             storage[0] = switch (args[0].*) {
-                .quoted => |s| .{ .string = s.val },
+                .quoted => |s| if (ast.quotedLiteralIsByteSequence(s.quote))
+                    return null
+                else
+                    .{ .string = s.val },
                 else => .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null },
             };
             const fp = fixpointCallFromArgs(args) orelse return null;

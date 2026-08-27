@@ -332,7 +332,21 @@ fi
 # every one of them, taking blind from 10 to 0 with zero semantic change. The
 # planted control here is that exact shape. An arm observes the producer quote
 # only by a route that can answer differently for the two faces.
-QUOTE_BLIND_CEILING=21
+QUOTE_BLIND_CEILING=15
+
+# 2026-08-27 O5: six text claims in src/codegen.zig stopped guessing the face
+# from AST shape and now observe the producer quote via
+# `ast.quotedLiteralIsByteSequence(lit.quote)` — fold_meta_string_expr (≈19817),
+# metaStringFromExpr (≈20979, ≈20989), deriveNameValueFromExpr (≈21005),
+# __comptimefixpoint (≈21253), and the generic emit_expr arm (≈17113, byte face
+# now emits an honest commented placeholder instead of a text literal) — taking
+# blind 21 → 15. The graph routes (`graphTextConst`/`sourceQuoteValue`) are
+# unreachable in codegen: codegen has no graph handle (zero `semantic_graph`
+# imports; the deletion witness is the `graphTextConst` prologue at
+# src/dnir_lower.zig:2054). The producer-quote observation route was already
+# canonical in codegen at 11155/16593/22546 and the fail-closed byte refusal
+# follows comptime.zig:451. Lower the ceiling as the remaining face-neutral
+# arms (span, truthy, emit, inert, carrier, test, name) are adjudicated away.
 
 armregex='^[[:space:]]*(\.[a-z_, .]*)?\.quoted =>'
 arms=$(grep -hE "$armregex" "$ROOT"/src/*.zig | wc -l | tr -d ' ')
