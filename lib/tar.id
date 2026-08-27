@@ -1,15 +1,13 @@
 # tar — basic TAR archive wrapper
 
-proc = proc
-
 create: bool = (archive_path: str, source_dir: str)
   cmd = "tar -cf " .. archive_path .. " -C " .. source_dir .. " ."
-  rc = proc.exec(cmd)
+  rc = os.execute(cmd)
   rc == 0
 
 extract: bool = (archive_path: str, dest_dir: str)
   # Ensure destination exists
-  proc.exec("mkdir -p " .. dest_dir)
+  os.execute("mkdir -p " .. dest_dir)
   cmd = "tar -xf " .. archive_path .. " -C " .. dest_dir
-  rc = proc.exec(cmd)
+  rc = os.execute(cmd)
   rc == 0

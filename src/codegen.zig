@@ -16656,6 +16656,22 @@ pub const CodeGen = struct {
         try parts.append(self.alloc, expr);
     }
 
+    /// The exact condition `try_emit_native_str_concat` tests, as a predicate:
+    /// every collected part of the concat tree is a native cstr. Mirrors
+    /// `concat_operand_is_native_cstr` over the whole tree so consumers like
+    /// `expr_is_native_cstr` can ask the emitter's own question without
+    /// emitting.
+    fn concat_tree_is_native_cstr(self: *CodeGen, expr: *const ast.Expr) bool {
+        var parts: std.ArrayList(*const ast.Expr) = .empty;
+        defer parts.deinit(self.alloc);
+        self.collect_concat_operands(expr, &parts) catch return false;
+        if (parts.items.len == 0) return false;
+        for (parts.items) |part| {
+            if (!self.concat_operand_is_native_cstr(part)) return false;
+        }
+        return true;
+    }
+
     fn concat_operand_is_native_cstr(self: *CodeGen, expr: *const ast.Expr) bool {
         return self.expr_type(expr) == .str and !self.expr_emits_lua_value(expr);
     }
@@ -22726,6 +22742,18 @@ pub const CodeGen = struct {
             .binop => |bb| switch (bb.op) {
                 .@"and", .@"or" => self.expr_is_native_cstr(bb.lhs) and
                     self.expr_is_native_cstr(bb.rhs),
+                // `a .. b` of native-cstr operands lowers through
+                // `try_emit_native_str_concat` to `duo_str_concat(...)`,
+                // which returns `char*` — the concat IS a native cstr
+                // exactly when every collected part is, which is the same
+                // condition that emitter tests. Without this arm a concat
+                // argument reached statement position (`os.execute("mkdir -p "
+                // .. dest_dir)` in lib/tar.id) and `emit_cstr_arg` wrapped it
+                // in `lua_to_str(duo_str_concat(...))` — an undeclared name
+                // in a no-lua `--lib` unit, then `-Wint-conversion` handing
+                // its int to `system`. Bound concats never saw this because
+                // the binding path notes the local `.str` first.
+                .concat => self.concat_tree_is_native_cstr(e),
                 else => false,
             },
             else => false,
