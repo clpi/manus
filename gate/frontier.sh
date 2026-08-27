@@ -37,6 +37,11 @@ ACTIVE_STATUS = re.compile(
     r"^\*\*Status:\*\*[ \t]*(OPEN|REOPENED)([ \t\u00b7(:\u2014-]|$)", re.IGNORECASE
 )
 ACTIVE_P0 = re.compile(r"^\*\*(Status|Priority):\*\*.*P0", re.IGNORECASE)
+ROOT_EDGES = {
+    "GAP-134": ("lib/compiler/token.id", "src/parser.zig"),
+    "GAP-145": ("lib/compiler/lexer.id", "src/parser.zig"),
+}
+STATUS_HEADER = re.compile(r"^\*\*Status:\*\*[ \t]+([A-Z]+)", re.MULTILINE)
 KEYS = {
     "schema",
     "gap",
@@ -114,6 +119,17 @@ def validate_text(text, expected_gap):
     require_string(frontier["root_program"], "root_program")
     require_string_list(frontier["current_blockers"], "current_blockers")
     require_string_list(frontier["superseded_observations"], "superseded_observations")
+
+    if expected_gap in ROOT_EDGES:
+        first, last = ROOT_EDGES[expected_gap]
+        if not frontier["root_program"].startswith(first):
+            raise FrontierError(
+                f"root_program must start at the grammar owner {first}"
+            )
+        if not frontier["root_program"].endswith(last):
+            raise FrontierError(
+                f"root_program must end at the parser consumer {last}"
+            )
 
     anchors = {
         heading_anchor(line)
@@ -216,6 +232,33 @@ def validate_order(text, source, steps):
     raise FrontierError(f"{source} is missing critical-path order: {chain}")
 
 
+def validate_blockers(frontiers):
+    """No blocker may reference a gap whose frontier is no longer OPEN."""
+    for gap, frontier in sorted(frontiers.items()):
+        for blocker in frontier["current_blockers"]:
+            for ref in re.findall(r"GAP-\d{3}", blocker):
+                if ref == gap:
+                    continue
+                other = frontiers.get(ref)
+                if other is not None and other["status"] != "OPEN":
+                    raise FrontierError(
+                        f"{gap} blocker cites {ref} as blocking, but its "
+                        f"frontier status is {other['status']}"
+                    )
+    # while GAP-145 is OPEN, GAP-134 blockers must name it
+    if (
+        frontiers.get("GAP-145", {}).get("status") == "OPEN"
+        and frontiers.get("GAP-134") is not None
+    ):
+        if not any(
+            "GAP-145" in blocker
+            for blocker in frontiers["GAP-134"]["current_blockers"]
+        ):
+            raise FrontierError(
+                "GAP-145 is OPEN, so a GAP-134 blocker must name it"
+            )
+
+
 def sample(frontier=None):
     value = frontier or {
         "schema": SCHEMA,
@@ -259,6 +302,17 @@ def controls():
     damaged.append(sample().replace("#historical-observation", "#absent-observation"))
     damaged.append(sample().replace('"status": "OPEN"', '"status": "CLOSED"'))
 
+    # root-edge discipline: GAP-134 must start at lib/compiler/token.id
+    # and end at src/parser.zig; damage each edge independently
+    edge_sample = {
+        "schema": SCHEMA,
+        "gap": "GAP-134",
+        "status": "OPEN",
+        "root_program": "lib/compiler/token.id -> src/parser.zig",
+        "current_blockers": ["One current blocker."],
+        "superseded_observations": ["#historical-observation"],
+    }
+
     for index, text in enumerate(damaged, 1):
         try:
             validate_text(text, "GAP-000")
@@ -266,7 +320,68 @@ def controls():
             continue
         raise FrontierError(f"damage control {index} was not rejected")
 
-    return len(damaged) + 1 + projection_controls() + order_controls()
+    # root-edge controls carry their own gap identity, so they are validated
+    # with the expected gap they name and one intact positive control
+    validate_text(sample(edge_sample), "GAP-134")
+    edge_damaged = [
+        sample(edge_sample).replace("lib/compiler/token.id", "src/dump.c"),
+        sample(edge_sample).replace("src/parser.zig", "src/pretty.zig"),
+    ]
+    for index, text in enumerate(edge_damaged, 1):
+        try:
+            validate_text(text, "GAP-134")
+        except FrontierError:
+            continue
+        raise FrontierError(f"root edge damage control {index} was not rejected")
+
+    return len(damaged) + 1 + projection_controls() + order_controls() + blocker_controls()
+
+
+def blocker_sample(gap="GAP-000", status="OPEN", blockers=None):
+    return {
+        "schema": SCHEMA,
+        "gap": gap,
+        "status": status,
+        "root_program": "owner -> consumer",
+        "current_blockers": blockers or ["One current blocker."],
+        "superseded_observations": ["#historical-observation"],
+    }
+
+
+def blocker_controls():
+    # intact: GAP-134 cites the still-open GAP-145
+    validate_blockers({
+        "GAP-134": blocker_sample(
+            "GAP-134", blockers=["GAP-145 remains OPEN."]
+        ),
+        "GAP-145": blocker_sample("GAP-145"),
+    })
+
+    # damaged: GAP-134 cites a gap whose frontier is CLOSED
+    try:
+        validate_blockers({
+            "GAP-134": blocker_sample(
+                "GAP-134", blockers=["GAP-145 remains OPEN."]
+            ),
+            "GAP-145": blocker_sample("GAP-145", status="CLOSED"),
+        })
+    except FrontierError:
+        pass
+    else:
+        raise FrontierError("blocker damage control 1 was not rejected")
+
+    # damaged: GAP-145 is OPEN but no GAP-134 blocker names it
+    try:
+        validate_blockers({
+            "GAP-134": blocker_sample("GAP-134"),
+            "GAP-145": blocker_sample("GAP-145"),
+        })
+    except FrontierError:
+        pass
+    else:
+        raise FrontierError("blocker discipline damage control was not rejected")
+
+    return 3
 
 
 def projection_sample(roster="`GAP-001`, `GAP-002`", table="| `GAP-003` | CLOSED | x |"):
@@ -376,14 +491,21 @@ def main():
         raise FrontierError(f"unknown argument: {' '.join(args)}")
 
     checked = 0
+    frontiers = {}
     for gap in REQUIRED:
         path = root / "gaps" / f"{gap}.md"
         if not path.is_file():
             raise FrontierError(f"required subject is absent: {path.relative_to(root)}")
-        validate_text(path.read_text(encoding="utf-8"), gap)
+        text = path.read_text(encoding="utf-8")
+        validate_text(text, gap)
+        block = text.split(BEGIN, 1)[1].split(END, 1)[0]
+        frontiers[gap] = json.loads(
+            re.search(r"```json\s*(.*?)\s*```", block, re.S).group(1)
+        )
         checked += 1
     if checked != len(REQUIRED) or checked == 0:
         raise FrontierError("required frontier subject set was not examined")
+    validate_blockers(frontiers)
 
     gaps_dir = root / "gaps"
     active = active_p0_set(gaps_dir)
@@ -418,7 +540,8 @@ def main():
     print(
         f"frontier gate: PASS ({checked} gap(s), "
         f"{rows} projection row(s) against {len(active)} active-P0 gap(s), "
-        f"critical path order checked in {BOOTSTRAP} and {CONTRACT})"
+        f"critical path order checked in {BOOTSTRAP} and {CONTRACT}, "
+        f"blocker discipline over {len(frontiers)} frontier block(s))"
     )
 
 
