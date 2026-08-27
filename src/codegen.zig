@@ -1508,6 +1508,44 @@ pub const CodeGen = struct {
         return null;
     }
 
+    /// File-stream protocol: f:write(body) → fputs, f:close() → fclose.
+    /// Only for bindings whose local type is .pointer(.void) — the FILE* that
+    /// io.open produces in full-native mode. This is the write-side dual of
+    /// try_emit_readable_protocol (duo_io_read_path), for generator code that
+    /// owns a file for the duration of one spill.
+    fn try_emit_file_stream_protocol(
+        self: *CodeGen,
+        call: anytype,
+    ) E!bool {
+        if (call.obj.* != .name) return false;
+        const obj_ty = self.local_type(call.obj.name.ident) orelse return false;
+        if (obj_ty != .pointer) return false;
+        if (std.mem.eql(u8, call.method, "write") and call.args.len == 1) {
+            self.p("fputs(", .{});
+            try self.emit_cstr_arg(call.args[0]);
+            self.p(", (FILE*)", .{});
+            try self.emit_expr(call.obj);
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, call.method, "close") and call.args.len == 0) {
+            self.p("fclose((FILE*)", .{});
+            try self.emit_expr(call.obj);
+            self.p(")", .{});
+            return true;
+        }
+        return false;
+    }
+
+    fn file_stream_method_result_type(self: *CodeGen, method: []const u8, obj: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        if (obj.* != .name) return null;
+        const obj_ty = self.local_type(obj.name.ident) orelse return null;
+        if (obj_ty != .pointer) return null;
+        if (std.mem.eql(u8, method, "write") and args.len == 1) return .i64;
+        if (std.mem.eql(u8, method, "close") and args.len == 0) return .i64;
+        return null;
+    }
+
     fn comptime_binding_is_scalar_const(self: *CodeGen, name: []const u8) bool {
         const val = self.comptime_bindings().get(name) orelse return false;
         return switch (val) {
@@ -2299,6 +2337,7 @@ pub const CodeGen = struct {
             if (self.math_call_result_type(c.func, c.args)) |t| return t;
             if (self.table_call_result_type(c.func, c.args)) |t| return t;
             if (self.os_call_result_type(c.func, c.args)) |t| return t;
+            if (self.io_call_result_type(c.func, c.args)) |t| return t;
             if (self.ffi_call_result_type(c.func, c.args)) |t| return t;
             if (self.net_call_result_type(c.func, c.args)) |t| return t;
             if (self.coroutine_call_result_type(c.func, c.args)) |t| return t;
@@ -2323,6 +2362,7 @@ pub const CodeGen = struct {
             const mc = e.method_call;
             if (self.string_method_result_type(mc.method, mc.obj, mc.args)) |t| return t;
             if (self.readable_method_result_type(mc.method, mc.obj, mc.args)) |t| return t;
+            if (self.file_stream_method_result_type(mc.method, mc.obj, mc.args)) |t| return t;
             if (self.world_method_result_type(mc.method, mc.obj, mc.args)) |t| return t;
             // gap[025] / FACE-CALL: a receiver face over a FREE function has the
             // callee's declared return type. Without this the method call types
@@ -2380,6 +2420,11 @@ pub const CodeGen = struct {
             if (b.op == .@"or" and b.lhs.* == .binop and b.lhs.binop.op == .@"and") {
                 const then_t = self.expr_type(b.lhs.binop.rhs);
                 if (then_t.eql(rt) and self.lua_and_or_value_type_is_native(then_t)) return then_t;
+                // A chain of comparisons joined by and/or lowers to native
+                // &&/|| — the chain IS .bool. Typing it .any wraps the whole
+                // condition in lua_to_bool(...), which a module that needs no
+                // Lua runtime never declares (GAP-145 O3 dump-c --lib).
+                if (then_t.eql(rt) and then_t == .bool) return .bool;
                 return .any;
             }
             if (b.op == .@"and" or b.op == .@"or") {
@@ -3139,6 +3184,20 @@ pub const CodeGen = struct {
             return .i64;
         if (std.mem.eql(u8, f.field, "istype")) return .bool;
         if (std.mem.eql(u8, f.field, "string")) return .str;
+        return null;
+    }
+
+    /// io.open(path, mode) returns a FILE* handle in full-native mode.
+    /// The native-eligibility walker already accepts io.open as native-eligible
+    /// when both args are scalars; without this the binder sees .any and
+    /// refuses the binding (GAP-145 O3 dump-c --lib, lib/compiler/token.id spill).
+    fn io_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        if (func.* != .field) return null;
+        const f = &func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "io")) return null;
+        if (std.mem.eql(u8, f.field, "open") and args.len >= 1) {
+            return self.mem_pointer_to(.void);
+        }
         return null;
     }
 
@@ -5881,6 +5940,7 @@ pub const CodeGen = struct {
                 }
                 const resolvable = self.string_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.readable_method_result_type(mc.method, mc.obj, mc.args) != null or
+                    self.file_stream_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.egress_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.stream_method_result_type(mc.method, mc.obj, mc.args) != null or
                     self.world_method_result_type(mc.method, mc.obj, mc.args) != null or
@@ -18091,6 +18151,7 @@ pub const CodeGen = struct {
                 }
                 if (try self.tryEmitSubjectRelation(mc)) return;
                 if (try self.try_emit_readable_protocol(mc)) return;
+                if (try self.try_emit_file_stream_protocol(mc)) return;
                 if (try self.try_emit_egress_protocol(mc)) return;
 
                 // ═══════════════════════════════════════════════════════════
@@ -24097,6 +24158,21 @@ pub const CodeGen = struct {
             try self.emit_boxed_runtime_call(mapped, args, expected, result_rt);
             return true;
         } else if (std.mem.eql(u8, mod, "io")) {
+            // Native-scalar io.open → fopen (GAP-145 O3 dump-c --lib):
+            // a module that needs no Lua runtime lowers the file-stream edge
+            // directly to FILE* — the write-side dual of duo_io_read_path.
+            if (!self.moduleNeedsLuaRuntime() and std.mem.eql(u8, fname, "open") and args.len >= 1) {
+                self.p("(void*)fopen(", .{});
+                try self.emit_cstr_arg(args[0]);
+                self.p(", ", .{});
+                if (args.len >= 2) {
+                    try self.emit_cstr_arg(args[1]);
+                } else {
+                    self.p("\"r\"", .{});
+                }
+                self.p(")", .{});
+                return true;
+            }
             const mapped = if (std.mem.eql(u8, fname, "write")) "lua_io_write" else if (std.mem.eql(u8, fname, "read")) "lua_io_read" else if (std.mem.eql(u8, fname, "flush")) "lua_io_flush" else if (std.mem.eql(u8, fname, "open")) "lua_io_open" else if (std.mem.eql(u8, fname, "close")) "lua_io_close" else if (std.mem.eql(u8, fname, "tmpfile")) "lua_io_tmpfile" else if (std.mem.eql(u8, fname, "input")) "lua_io_input" else if (std.mem.eql(u8, fname, "output")) "lua_io_output" else if (std.mem.eql(u8, fname, "popen")) "lua_io_popen" else if (std.mem.eql(u8, fname, "type")) "lua_io_type" else if (std.mem.eql(u8, fname, "lines")) "lua_io_lines" else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "flush") or std.mem.eql(u8, fname, "tmpfile")) @as(usize, 0) else if (std.mem.eql(u8, fname, "read") or std.mem.eql(u8, fname, "close") or std.mem.eql(u8, fname, "input") or std.mem.eql(u8, fname, "output") or std.mem.eql(u8, fname, "type") or std.mem.eql(u8, fname, "lines")) @as(usize, 1) else if (std.mem.eql(u8, fname, "open") or std.mem.eql(u8, fname, "popen")) @as(usize, 2) else if (std.mem.eql(u8, fname, "write")) @as(usize, 4) else 0;
