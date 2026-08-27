@@ -124,6 +124,30 @@ else:
         emitter_errors.append(
             'emitter no longer builds the bridge-row needle ".kind = .{kind}," '
             "— kinds are no longer read from the bridge")
+    # Each registry's BODY must still read its bridge row-facts. A gutted
+    # registry — declaration kept, row-filters stripped — derives nothing;
+    # scoping the needles to each registry's body catches that revert.
+    registry_bodies = {}
+    for reg in ("identities", "numerics", "spell", "literalpattern"):
+        m = re.search(rf"^{reg}: str = \((?:kind: str)?\)\n((?:    .*\n|\n)+?)^\S", emitter_src, re.M)
+        registry_bodies[reg] = m.group(1) if m else ""
+    required_needles = {
+        "identities": ('".quoted = true"', 'row:find(".spell = \\"")'),
+        "numerics": ('".literal_kind = true"', '".quoted = true"'),
+        "spell": ('".kind = .{kind},"', 'row:find(".spell = \\"")'),
+        "literalpattern": ('".pattern = true"', '".literal_kind = true"',
+                           '".keyword = true"', 'row:find(".spell = \\"")'),
+    }
+    for reg, needles in required_needles.items():
+        body = registry_bodies[reg]
+        if not body:
+            emitter_errors.append(
+                f"emitter registry `{reg}` has no body to read the bridge with")
+        for needle in needles:
+            if needle not in body:
+                emitter_errors.append(
+                    f"emitter registry `{reg}` no longer reads the bridge "
+                    f"row-fact {needle} — its rows would be hand-chosen")
     # A hand-typed spelling literal must NOT appear: tokens() interpolates
     # '{nilspell}' / '{truespell}' / '{falsespell}'. The raw spelled forms
     # below can only appear if hand-typing returned.
