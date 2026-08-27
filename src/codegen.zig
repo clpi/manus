@@ -1590,7 +1590,7 @@ pub const CodeGen = struct {
             switch (stmt.*) {
                 .local_decl => |ld| {
                     for (ld.names, 0..) |n, i| {
-                        if (std.mem.eql(u8, n.name, name) and i < ld.inits.len and expr_is_io_popen(ld.inits[i]))
+                        if (std.mem.eql(u8, n.ident, name) and i < ld.inits.len and expr_is_io_popen(ld.inits[i]))
                             return true;
                     }
                 },
@@ -7215,6 +7215,14 @@ pub const CodeGen = struct {
         self.p("    if (!fgets(buf, 8192, f)) {{ free(buf); return NULL; }}\n", .{});
         self.p("    return buf;\n", .{});
         self.p("}}\n", .{});
+        // popen/pclose are POSIX; under -std=c11 strict mode (no feature
+        // macros) glibc hides them from <stdio.h>. Declare explicitly for
+        // plain native-scalar TUs. The wasm arm already defines static-inline
+        // stubs earlier in the TU; Windows has _popen/_pclose via mingw.
+        self.p("#if !defined(__wasm__) && !defined(_WIN32)\n", .{});
+        self.p("extern FILE* popen(const char*, const char*);\n", .{});
+        self.p("extern int pclose(FILE*);\n", .{});
+        self.p("#endif\n", .{});
         self.p("static inline FILE* _DUO_popen(const char* cmd, const char* mode) {{ return popen(cmd, mode); }}\n", .{});
         if (self.native_scalar_needs_int_floor_helpers(mod)) {
             // Floor division and floor modulo for typed int64 (Lua // and % semantics)
