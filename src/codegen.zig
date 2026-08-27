@@ -234,6 +234,11 @@ pub const CodeGen = struct {
     dense_float_locals: std.StringHashMapUnmanaged(void) = .empty,
     /// Function-local `t = {}` lowered to `t_items[]` + `t_len` (no lua tables).
     native_str_list_locals: std.StringHashMapUnmanaged(void) = .empty,
+    /// Function-local `parts = s:split(sep)` in a full-native module. The split
+    /// result is an ordinal list of `const char*` plus its backing storage, so
+    /// the emitter must name that representation directly instead of refusing an
+    /// `.any` binding or reintroducing the Lua table runtime.
+    native_split_str_list_locals: std.StringHashMapUnmanaged(void) = .empty,
     /// Names in the current block that must NOT take the `t_items[]` lowering
     /// because they are used as keyed tables (`t.field = v` / `t["k"] = v`).
     /// Populated per-block before emission; see `note_str_list_disqualifications`.
@@ -2807,6 +2812,32 @@ pub const CodeGen = struct {
 
     fn is_native_str_list_local(self: *const CodeGen, name: []const u8) bool {
         return self.native_str_list_locals.contains(name);
+    }
+
+    fn register_native_split_str_list_local(self: *CodeGen, name: []const u8) !void {
+        const owned = try self.alloc.dupe(u8, name);
+        try self.native_split_str_list_locals.put(self.alloc, owned, {});
+    }
+
+    fn is_native_split_str_list_local(self: *const CodeGen, name: []const u8) bool {
+        return self.native_split_str_list_locals.contains(name);
+    }
+
+    fn try_emit_native_split_str_list_local(self: *CodeGen, name: []const u8, init_expr: *const ast.Expr) E!bool {
+        if (init_expr.* != .method_call) return false;
+        const mc = init_expr.method_call;
+        if (!std.mem.eql(u8, mc.method, "split") or mc.args.len != 1) return false;
+        if (self.is_native_split_str_list_local(name)) return false;
+
+        try self.note_local(name);
+        try self.note_local_type(name, .any);
+        try self.register_native_split_str_list_local(name);
+        self.p("duo_str_split_list {s} = duo_str_split_cstr(", .{name});
+        try self.emit_expr(mc.obj);
+        self.p(", ", .{});
+        try self.emit_cstr_arg(mc.args[0]);
+        self.p(");\n", .{});
+        return true;
     }
 
     fn is_str_list_disqualified(self: *const CodeGen, name: []const u8) bool {
@@ -7109,6 +7140,47 @@ pub const CodeGen = struct {
         self.p("    char* res = (char*)malloc(len + 1);\n", .{});
         self.p("    if (!res) return (char*)s;\n", .{});
         self.p("    memcpy(res, b, len); res[len] = '\\0'; return res;\n", .{});
+        self.p("}}\n", .{});
+        self.p("typedef struct {{ char* buf; const char** items; int64_t len; }} duo_str_split_list;\n", .{});
+        self.p("static inline duo_str_split_list duo_str_split_cstr(const char* src, const char* sep) {{\n", .{});
+        self.p("    duo_str_split_list out; out.buf = NULL; out.items = NULL; out.len = 0;\n", .{});
+        self.p("    if (!src) src = \"\";\n", .{});
+        self.p("    if (!sep) sep = \"\";\n", .{});
+        self.p("    size_t src_len = strlen(src);\n", .{});
+        self.p("    size_t sep_len = strlen(sep);\n", .{});
+        self.p("    out.buf = (char*)malloc(src_len + 1);\n", .{});
+        self.p("    if (!out.buf) return out;\n", .{});
+        self.p("    memcpy(out.buf, src, src_len + 1);\n", .{});
+        self.p("    if (sep_len == 0) {{\n", .{});
+        self.p("        out.items = (const char**)malloc(sizeof(char*));\n", .{});
+        self.p("        if (!out.items) return out;\n", .{});
+        self.p("        out.items[0] = out.buf; out.len = 1; return out;\n", .{});
+        self.p("    }}\n", .{});
+        self.p("    int64_t count = 1;\n", .{});
+        self.p("    char* scan = out.buf;\n", .{});
+        self.p("    while (1) {{\n", .{});
+        self.p("        char* hit = strstr(scan, sep);\n", .{});
+        self.p("        if (!hit) break;\n", .{});
+        self.p("        count += 1;\n", .{});
+        self.p("        scan = hit + sep_len;\n", .{});
+        self.p("    }}\n", .{});
+        self.p("    out.items = (const char**)malloc((size_t)count * sizeof(char*));\n", .{});
+        self.p("    if (!out.items) return out;\n", .{});
+        self.p("    out.len = count;\n", .{});
+        self.p("    int64_t i = 0;\n", .{});
+        self.p("    char* part = out.buf;\n", .{});
+        self.p("    while (1) {{\n", .{});
+        self.p("        out.items[i++] = part;\n", .{});
+        self.p("        char* hit = strstr(part, sep);\n", .{});
+        self.p("        if (!hit) break;\n", .{});
+        self.p("        memset(hit, 0, sep_len);\n", .{});
+        self.p("        part = hit + sep_len;\n", .{});
+        self.p("    }}\n", .{});
+        self.p("    return out;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline const char* duo_str_split_get(duo_str_split_list list, int64_t i) {{\n", .{});
+        self.p("    if (i < 1 || i > list.len || !list.items) return \"\";\n", .{});
+        self.p("    return list.items[(size_t)(i - 1)];\n", .{});
         self.p("}}\n", .{});
         self.p("static inline __attribute__((noreturn)) void duo_fatal(const char* msg) {{\n", .{});
         // `self.p` is std.fmt, which does not treat `%` specially, so the old
@@ -14319,6 +14391,11 @@ pub const CodeGen = struct {
                                 continue;
                             }
                             if (!self.moduleNeedsLuaRuntime() and effective_tt == .any and i < as.values.len and
+                                try self.try_emit_native_split_str_list_local(name, as.values[i]))
+                            {
+                                continue;
+                            }
+                            if (!self.moduleNeedsLuaRuntime() and effective_tt == .any and i < as.values.len and
                                 as.values[i].* == .func_expr)
                             {
                                 continue;
@@ -17104,6 +17181,10 @@ pub const CodeGen = struct {
                     self.p("(void*)0", .{});
                     return;
                 }
+                if (self.is_native_split_str_list_local(n.ident)) {
+                    self.p("(void*)0", .{});
+                    return;
+                }
                 // 2.10 G3: a primitive type name in VALUE position is a
                 // descriptor value. Last resort — every compile-time use of a
                 // type name (`to(T)(v)`, `mem.store(T)`, a type annotation)
@@ -17274,6 +17355,12 @@ pub const CodeGen = struct {
                 }
                 if (self.str_byte_index(expr) != null) {
                     try self.emit_str_byte_index(expr);
+                    return;
+                }
+                if (idx.obj.* == .name and self.is_native_split_str_list_local(idx.obj.name.ident)) {
+                    self.p("duo_str_split_get({s}, ", .{idx.obj.name.ident});
+                    try self.emit_expr(idx.key);
+                    self.p(")", .{});
                     return;
                 }
                 if (self.is_dense_table_index(idx.obj)) {
@@ -18377,6 +18464,10 @@ pub const CodeGen = struct {
                         // == 0 where `string.len(bytes)` reported 27791, and
                         // the wasm engine's `bytes:len() < 8` magic guard
                         // therefore rejected every module it was given.
+                        if (mc.obj.* == .name and self.is_native_split_str_list_local(mc.obj.name.ident)) {
+                            self.p("{s}.len", .{mc.obj.name.ident});
+                            return;
+                        }
                         const result_rt = self.expr_type(expr);
                         self.p("{s}(", .{if (result_rt.is_integer()) "lua_any_len_i64" else "lua_any_len"});
                         try self.emit_expr(mc.obj);
