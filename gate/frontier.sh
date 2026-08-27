@@ -15,6 +15,8 @@ from pathlib import Path
 SCHEMA = "idol.gap.frontier.v1"
 BEGIN = "<!-- idol-gap-frontier:v1:begin -->"
 END = "<!-- idol-gap-frontier:v1:end -->"
+BOOTSTRAP = "docs/bootstrap.md"
+CONTRACT = "docs/spec/convergence-contract.md"
 REQUIRED = (
     "GAP-134",
     "GAP-137",
@@ -205,6 +207,15 @@ def validate_projection(text, active, present):
     return len(roster) + len(set(reclassified))
 
 
+def validate_order(text, source, steps):
+    flat = re.sub(r"\s+", " ", text)
+    chain = " -> ".join(steps)
+    pattern = r".*?".join(re.escape(step) for step in steps)
+    if re.search(pattern, flat):
+        return
+    raise FrontierError(f"{source} is missing critical-path order: {chain}")
+
+
 def sample(frontier=None):
     value = frontier or {
         "schema": SCHEMA,
@@ -255,7 +266,7 @@ def controls():
             continue
         raise FrontierError(f"damage control {index} was not rejected")
 
-    return len(damaged) + 1 + projection_controls()
+    return len(damaged) + 1 + projection_controls() + order_controls()
 
 
 def projection_sample(roster="`GAP-001`, `GAP-002`", table="| `GAP-003` | CLOSED | x |"):
@@ -310,6 +321,50 @@ def projection_controls():
     return len(damaged) + 2
 
 
+def order_controls():
+    # bootstrap chain: GAP-145 -> GAP-134 -> parser
+    validate_order(
+        "source-family -> GAP-145 -> GAP-134 -> parser",
+        "control",
+        ("GAP-145", "GAP-134", "parser"),
+    )
+    damaged = [
+        "source-family -> GAP-134 -> GAP-145 -> parser",
+        "source-family -> GAP-145 -> parser",
+    ]
+    for index, text in enumerate(damaged, 1):
+        try:
+            validate_order(text, "control", ("GAP-145", "GAP-134", "parser"))
+        except FrontierError:
+            continue
+        raise FrontierError(f"order damage control {index} was not rejected")
+
+    # contract chain: all four stages, each absent step is one damage
+    contract_steps = (
+        "GAP-145 lexical",
+        "GAP-134 grammar roles",
+        "parser recognition",
+        "graph",
+    )
+    intact = (
+        "GAP-145 lexical identity -> GAP-134 grammar roles -> "
+        "parser recognition -> graph facts"
+    )
+    validate_order(intact, "control", contract_steps)
+    contract_damaged = []
+    for drop in contract_steps:
+        keep = [step for step in contract_steps if step != drop]
+        flat = " -> ".join(keep)
+        contract_damaged.append(flat)
+    for index, text in enumerate(contract_damaged, 1):
+        try:
+            validate_order(text, "control", contract_steps)
+        except FrontierError:
+            continue
+        raise FrontierError(f"contract order damage control {index} was not rejected")
+    return len(damaged) + len(contract_damaged) + 2
+
+
 def main():
     root = Path(sys.argv[1])
     args = sys.argv[2:]
@@ -342,9 +397,28 @@ def main():
     if rows == 0:
         raise FrontierError("projection was not examined")
 
+    bootstrap_path = root / BOOTSTRAP
+    if not bootstrap_path.is_file():
+        raise FrontierError(f"required subject is absent: {BOOTSTRAP}")
+    validate_order(
+        bootstrap_path.read_text(encoding="utf-8"),
+        BOOTSTRAP,
+        ("GAP-145", "GAP-134", "parser"),
+    )
+
+    contract_path = root / CONTRACT
+    if not contract_path.is_file():
+        raise FrontierError(f"required subject is absent: {CONTRACT}")
+    validate_order(
+        contract_path.read_text(encoding="utf-8"),
+        CONTRACT,
+        ("GAP-145 lexical", "GAP-134 grammar roles", "parser recognition", "graph"),
+    )
+
     print(
         f"frontier gate: PASS ({checked} gap(s), "
-        f"{rows} projection row(s) against {len(active)} active-P0 gap(s))"
+        f"{rows} projection row(s) against {len(active)} active-P0 gap(s), "
+        f"critical path order checked in {BOOTSTRAP} and {CONTRACT})"
     )
 
 
