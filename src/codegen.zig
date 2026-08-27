@@ -408,8 +408,8 @@ pub const CodeGen = struct {
     // needs real `duo_g_` storage, which is the case this must not break.
     const_read_only: std.StringHashMapUnmanaged(void) = .{},
     // Names for which an embedded module actually emitted `duo_g_<mod>_<name>`
-    // storage. Declaration and readers kept picking different spellings for the
-    // same binding; this records what was really declared so reads can follow it.
+    // storage. Declaration and readers kept picking different spellings for
+    // the same binding; this records what was really declared so reads can follow it.
     // Keyed `<mod>|<name>` because the same name lives in many modules.
     emitted_global_storage: std.StringHashMapUnmanaged(void) = .{},
     // Scalar identities that an embedded module actually emitted at file
@@ -1528,8 +1528,25 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         }
+        // f:read() over a popen pipe — fgets into a per-call heap buffer,
+        // NULL at EOF so `while line != nil` terminates (lib/proc.id capture,
+        // lib/fs.id lines). Same fixed shape as the emit side: one line per
+        // read call, caller owns the buffer lifetime.
+        if (std.mem.eql(u8, call.method, "read") and call.args.len == 0) {
+            self.p("duo_fstream_readline((FILE*)", .{});
+            try self.emit_expr(call.obj);
+            self.p(")", .{});
+            return true;
+        }
         if (std.mem.eql(u8, call.method, "close") and call.args.len == 0) {
-            self.p("fclose((FILE*)", .{});
+            // Compile-time provenance: pclose for io.popen streams (reaps the
+            // child), fclose for io.open files. The scan walks the enclosing
+            // function body for the binding's initializer — no runtime flag.
+            if (self.local_binds_popen(call.obj.name.ident)) {
+                self.p("pclose((FILE*)", .{});
+            } else {
+                self.p("fclose((FILE*)", .{});
+            }
             try self.emit_expr(call.obj);
             self.p(")", .{});
             return true;
@@ -1542,8 +1559,61 @@ pub const CodeGen = struct {
         const obj_ty = self.local_type(obj.name.ident) orelse return null;
         if (obj_ty != .pointer) return null;
         if (std.mem.eql(u8, method, "write") and args.len == 1) return .i64;
+        // f:read() answers a possibly-absent line — NULL at EOF. The nilable
+        // str is represented as .str with NULL sentinel here; the while-test
+        // `line != nil` compares against that sentinel natively.
+        if (std.mem.eql(u8, method, "read") and args.len == 0) return .str;
         if (std.mem.eql(u8, method, "close") and args.len == 0) return .i64;
         return null;
+    }
+
+    /// True when `e` is the expression `io.popen(...)`.
+    fn expr_is_io_popen(e: *const ast.Expr) bool {
+        if (e.* != .call) return false;
+        const c = &e.call;
+        if (c.func.* != .field) return false;
+        const f = &c.func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "io")) return false;
+        return std.mem.eql(u8, f.field, "popen");
+    }
+
+    /// Walk the current function body for a local_decl or assign that binds
+    /// `name` to `io.popen(...)`. Compile-time provenance: the closer for
+    /// `f:close()` must be pclose (reaps the child) when the stream came from
+    /// popen, and fclose when it came from io.open. No runtime flag needed.
+    fn local_binds_popen(self: *CodeGen, name: []const u8) bool {
+        const fb = self.current_func_body orelse return false;
+        return self.block_binds_popen(&fb.body, name);
+    }
+    fn block_binds_popen(self: *CodeGen, blk: *const ast.Block, name: []const u8) bool {
+        for (blk.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |ld| {
+                    for (ld.names, 0..) |n, i| {
+                        if (std.mem.eql(u8, n.name, name) and i < ld.inits.len and expr_is_io_popen(ld.inits[i]))
+                            return true;
+                    }
+                },
+                .assign => |as| {
+                    for (as.targets, 0..) |t, i| {
+                        if (t.* == .name and std.mem.eql(u8, t.name.ident, name) and i < as.values.len and expr_is_io_popen(as.values[i]))
+                            return true;
+                    }
+                },
+                .while_loop => |ws| if (self.block_binds_popen(&ws.body, name)) return true,
+                .repeat_loop => |rs| if (self.block_binds_popen(&rs.body, name)) return true,
+                .num_for => |nf| if (self.block_binds_popen(&nf.body, name)) return true,
+                .gen_for => |gf| if (self.block_binds_popen(&gf.body, name)) return true,
+                .do_block => |db| if (self.block_binds_popen(&db.body, name)) return true,
+                .if_stmt => |is| {
+                    if (self.block_binds_popen(&is.then, name)) return true;
+                    for (is.elseifs) |ei| if (self.block_binds_popen(&ei.body, name)) return true;
+                    if (is.else_body) |eb| if (self.block_binds_popen(&eb, name)) return true;
+                },
+                else => {},
+            }
+        }
+        return false;
     }
 
     fn comptime_binding_is_scalar_const(self: *CodeGen, name: []const u8) bool {
@@ -3196,6 +3266,12 @@ pub const CodeGen = struct {
         const f = &func.field;
         if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "io")) return null;
         if (std.mem.eql(u8, f.field, "open") and args.len >= 1) {
+            return self.mem_pointer_to(.void);
+        }
+        // io.popen(cmd, mode) — the read-side dual of the open edge: a pipe
+        // stream in full-native mode, same FILE* representation (lib/proc.id
+        // capture, lib/fs.id lines). pclose closes it.
+        if (std.mem.eql(u8, f.field, "popen") and args.len >= 1) {
             return self.mem_pointer_to(.void);
         }
         return null;
@@ -5865,6 +5941,15 @@ pub const CodeGen = struct {
                         break :blk self.expr_is_native_scalar(call.args[0]) and
                             self.expr_is_native_scalar(call.args[1]);
                     }
+                    // io.popen(cmd, mode): same FILE* stream shape as io.open,
+                    // native-eligible when the operands are scalar (lib/proc.id
+                    // capture). The binder types it via io_call_result_type.
+                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "io") and
+                        std.mem.eql(u8, f.field, "popen") and call.args.len == 2)
+                    {
+                        break :blk self.expr_is_native_scalar(call.args[0]) and
+                            self.expr_is_native_scalar(call.args[1]);
+                    }
                     if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string")) {
                         if (std.mem.eql(u8, f.field, "len") and call.args.len == 1) {
                             break :blk self.expr_is_native_scalar(call.args[0]);
@@ -7118,6 +7203,19 @@ pub const CodeGen = struct {
         self.p("    buf[got] = '\\0';\n", .{});
         self.p("    return buf;\n", .{});
         self.p("}}\n", .{});
+        // File-stream read/close for native io.popen / io.open bindings
+        // (GAP-145 O3 dump-c --lib, lib/proc.id capture, lib/fs.id lines).
+        // One line per f:read() call into a fresh heap buffer; NULL at EOF so
+        // `while line != nil` terminates. duo_fstream_close picks the closer
+        // by flag byte: a popen pipe needs pclose (waits for the child and
+        // answers its status), an io.open file takes fclose.
+        self.p("static inline char* duo_fstream_readline(FILE* f) {{\n", .{});
+        self.p("    char* buf = (char*)malloc(8192);\n", .{});
+        self.p("    if (!buf) duo_fatal(\"read: out of memory\");\n", .{});
+        self.p("    if (!fgets(buf, 8192, f)) {{ free(buf); return NULL; }}\n", .{});
+        self.p("    return buf;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline FILE* _DUO_popen(const char* cmd, const char* mode) {{ return popen(cmd, mode); }}\n", .{});
         if (self.native_scalar_needs_int_floor_helpers(mod)) {
             // Floor division and floor modulo for typed int64 (Lua // and % semantics)
             self.p("__attribute__((always_inline)) static inline int64_t lua_idiv_i64(int64_t a, int64_t b) {{\n", .{});
@@ -18150,8 +18248,8 @@ pub const CodeGen = struct {
                     return;
                 }
                 if (try self.tryEmitSubjectRelation(mc)) return;
-                if (try self.try_emit_readable_protocol(mc)) return;
                 if (try self.try_emit_file_stream_protocol(mc)) return;
+                if (try self.try_emit_readable_protocol(mc)) return;
                 if (try self.try_emit_egress_protocol(mc)) return;
 
                 // ═══════════════════════════════════════════════════════════
@@ -24163,6 +24261,21 @@ pub const CodeGen = struct {
             // directly to FILE* — the write-side dual of duo_io_read_path.
             if (!self.moduleNeedsLuaRuntime() and std.mem.eql(u8, fname, "open") and args.len >= 1) {
                 self.p("(void*)fopen(", .{});
+                try self.emit_cstr_arg(args[0]);
+                self.p(", ", .{});
+                if (args.len >= 2) {
+                    try self.emit_cstr_arg(args[1]);
+                } else {
+                    self.p("\"r\"", .{});
+                }
+                self.p(")", .{});
+                return true;
+            }
+            // Native-scalar io.popen → popen (GAP-145 O3 dump-c --lib,
+            // lib/proc.id capture): same FILE* stream, closed by pclose in
+            // the file-stream protocol below.
+            if (!self.moduleNeedsLuaRuntime() and std.mem.eql(u8, fname, "popen") and args.len >= 1) {
+                self.p("(void*)_DUO_popen(", .{});
                 try self.emit_cstr_arg(args[0]);
                 self.p(", ", .{});
                 if (args.len >= 2) {
