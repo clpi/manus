@@ -1,6 +1,71 @@
 # idol wasm — handoff
 
-## 2026-08-15 (latest) — five wrong answers in the ARM64 emitter, and the call/stack-depth grid
+## 2026-08-26 (later) — the owed repair LANDED and is now execution-verified; one asymmetric gap closed
+
+The entry bytes below are repaired in `src/engine.id` (`48 89 F8 48 01 F0 C3`,
+`codesz 7`, entry check restored, arch-refusal arm kept), and the repair is no
+longer prose — it has been executed:
+
+* `dump-c` + `cc -O2` of `src/probe_jit.id` on this x86_64 host:
+  `VERDICT: the jit substrate is whole and executes emitted code (42).`, exit 0.
+* Sabotage control (byte 5 `0xF0`→`0xF8`, i.e. the exact staged defect):
+  `VERDICT: emitted entry code returned 80 for (40, 2), not 42.`, exit 1.
+* The repaired `jit_substrate_gap()` itself, driven inside a compiled
+  `src/engine.id` artifact (swap of the `engine_main()` call at `main`'s tail
+  for a gap driver — source untouched): `SUBSTRATE OK`, exit 0.
+* **New this session:** the x86_64 arm now reads back the written bytes
+  (`r32(word0) == 0x48F88948`) BEFORE seal+entry, matching the ARM64 arm's
+  stated invariant ("a hollow writer is a clean refusal... rather than a
+  fault"). Negative control: stubbing every `jit__w8` call to `{}` in the
+  compiled artifact yields `SUBSTRATE GAP: jit.w8 wrote nothing (jit.r32 read
+  back 0, expected 0x48F88948)`, exit 1 — clean refusal, no SIGSEGV. Without
+  the read-back that same sabotage sealed and entered a zero page.
+* `idol check src/engine.id` clean after the edit.
+
+The 2026-08-15 entry below stays as written: its five-fault record is why every
+claim here carries a sabotage control.
+
+## 2026-08-26 — the x86_64 substrate entry bytes in engine.id are wrong (measured), and probe_jit.id now proves entry per-arch
+
+For the wave adding an x86_64 arm to `jit_substrate_gap()` (engine.id claim
+`ftcftw`): the staged bytes for the entry proof do not compute 40+2, and the
+working-tree edit that replaced the entry check with a DEADBEEF write/read
+cycle deletes the only control that would have caught it.
+
+**Measured** (Linux x86_64, `zig-out/bin/idol dump-c` + `cc -std=c11 -O2`,
+substrate `lib/jit.id` via `req "jit"`):
+
+| bytes | disassembly (`as` ground truth) | `call2(buf, 40, 2)` |
+|---|---|---|
+| `48 01 F8 C3` (staged engine.id) | `addq %rdi, %rax; retq` | **40** — arg0 + caller garbage in rax; exit 0, plausible |
+| `48 89 F8 48 01 F0 C3` | `movq %rdi, %rax; addq %rsi, %rax; retq` | **42** — both argument registers proven |
+
+`48 01 F8` is not "add rax, rdi" in the System V argument discipline: rdi is
+arg0, rsi is arg1, and the accumulator must first be loaded from an argument
+register. The staged test's own `got != 42` check would fail on every x86_64
+host — or, under the working-tree edit that removes the check entirely, pass
+while proving nothing about entry, icache flush, or the ABI.
+
+**Repair applied to `src/probe_jit.id`** (this file's sibling, unclaimed):
+the substrate gate is now per-architecture. ARM64 keeps `MOVZ W0,#42; RET`;
+x86_64 emits the seven assembler-verified bytes above and requires
+`call2(buf, 40, 2) == 42`, so BOTH argument registers are load-bearing;
+any other arch refuses ("unmeasured, not whole") instead of executing foreign
+encodings. Baseline before repair: the probe SIGILL'd (exit 132) on x86_64
+because it sealed ARM64 words and entered them. After: exit 0, verdict
+printed, and a one-byte sabotage (`0xF0`→`0xF8`, i.e. the staged engine.id
+encoding) is caught — "returned 80 for (40, 2), not 42", exit 1. Round-trip
+check uses little-endian word orientation (`0x48F88948`), same as engine.id's
+`0x4342` check.
+
+**The engine.id change still owed by the claim owner:** replace the staged
+x86_64 bytes `48 01 F8` (+`C3`) with `48 89 F8 48 01 F0 C3` (codesz 7) — or
+restore the entry check the working-tree edit deleted; either alone leaves the
+defect class alive. Note `idol run gate/idiom.id` over a diff is DNB004-blocked
+on x86_64 hosts (direct backend), so admission there is `idol check` on the
+gate sources, per `.githooks/pre-commit`.
+
+## 2026-08-15 — five wrong answers in the ARM64 emitter, and the call/stack-depth grid
 
 The 2026-08-14 differential found three JIT/interpreter disagreements. There
 were **five**, and the two extra ones were invisible to that corpus. All five

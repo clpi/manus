@@ -96,6 +96,13 @@ BACKEND	native_bootstrap.zig	SEMA	subject_home.zig
 BACKEND	pipeline_gen.zig	AST	directives.zig
 BACKEND	wasm_backend.zig	AST	ast.zig
 BACKEND	wasm_backend.zig	SEMA	semantic_graph.zig
+# Re-pinned 2026-08-26: f33bb37 added src/c_backend.zig (whose only SEMA reach
+# is a test-block @import of semantic_graph.zig) in the same commit that added
+# this gate, but the baseline above was measured at 40de041c -- one revision
+# earlier -- so the edge was never in the pin and every commit after f33bb37
+# failed L1. Added here, not waived: it is the same debt as the wasm_backend
+# edge above it.
+BACKEND	c_backend.zig	SEMA	semantic_graph.zig
 IR	native_ir.zig	BACKEND	dnir_hardware.zig
 IR	native_ir.zig	SEMA	semantic_graph.zig
 IR	representation_manifest.zig	BACKEND	native_barrier_checks.zig

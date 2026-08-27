@@ -46,3 +46,26 @@ Performance reporting follows correctness and separates decode/import, compile,
 instantiate, startup, steady execution, memory, runtime footprint, artifact
 size, and end-to-end latency. Always identify the selected realization and any
 fallback.
+
+For a bounded host-path proof on a fresh Linux/macOS box, run
+`zig build wasm-test-smoke` first. It exercises the SAME portable build path,
+oracle pinning, comparator damage control, and the in-harness tail-call
+`return_call` (0x12) control, but bounds the corpus matrix to two fast
+value-bearing fixtures (`bench/hash.wasm`, `bench/fib.wasm`). Repository
+admission stays `zig build wasm-test`.
+
+On Linux x86_64, Linux aarch64, macOS x86_64, and macOS arm64 hosts,
+`tools/wasm/proof.sh` bootstraps the workflow-pinned Zig toolchain when needed,
+then takes the portable admission path in dependency order: build
+`zig-out/bin/idol`; on direct-supported hosts, compile
+`tools/wasm/src/engine.id` and `tools/wasm/test/conform.id` to native
+executables with `--backend=direct`; otherwise use the bounded host bridge
+`idol dump-c` plus `cc -std=c11 -O2 -lm`; bootstrap the pinned Wart oracle
+when it is not already configured; and only then execute the conformance
+harness against those exact built artifacts. The repository admission step
+`zig build wasm-test` exercises the same portable host path in-tree, and
+`zig build wasm-test-smoke` runs the bounded two-row slice for faster host-path
+rechecks. This is a host-tooling bridge only: the script surfaces the first
+exact blocker it meets — unsupported host, direct-native refusal, host-bridge
+dump/cc failure, Wart bootstrap/fetch/binary/provenance failure, missing pinned
+Wasmtime `47.0.3`, or a harness/gate failure — rather than inventing a pass.

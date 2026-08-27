@@ -81,6 +81,10 @@ OP_br_table = 14
 OP_return_ = 15
 OP_call = 16
 OP_call_indirect = 17
+# `_OP_return_call`: module vocabulary is frozen (gate/vocabulary.sh), so the
+# new opcode constant takes the private underscore face the gate admits. Same
+# family shape as the 186 `OP_*` rows above; one identity, one value.
+_OP_return_call = 18
 OP_drop = 26
 OP_select = 27
 OP_local_get = 32
@@ -500,6 +504,7 @@ OP_NAMES = {
   {15,   "return"},
   {16,   "call"},
   {17,   "call_indirect"},
+  {18,   "return_call"},
   {26,   "drop"},
   {27,   "select"},
   {32,   "local.get"},
@@ -842,7 +847,7 @@ GRANT_DEFAULT = "all"
 # stated once. The guest cannot reach this: nothing in a .wasm file names an
 # environment variable of the host process.
 grant_spec: str = ()
-  env("DUO_WASM_GRANT") or GRANT_DEFAULT
+  os.env["DUO_WASM_GRANT"] or GRANT_DEFAULT
 
 # 1 when a denied import should be admitted and answer `notcapable` at every
 # call, instead of being refused at instantiation.
@@ -875,7 +880,7 @@ grant_errno_mode: i64 = ()
   # is what the retired spelling meant here — verified equal across unset /
   # empty / matching / other. Do not "simplify" it back. Routed to the lead in
   # docs/wasm-import-kinds.md §4.
-  if (env("DUO_WASM_GRANT_MODE") or "") == "errno"
+  if (os.env["DUO_WASM_GRANT_MODE"] or "") == "errno"
     r = 1
   r
 
@@ -888,7 +893,7 @@ grant_errno_mode: i64 = ()
 # Unlike `bail`/`bailop` this does NOT exit: declining to compile is legal, the
 # interpreter still has to run. Only the silence was the bug.
 jitbail: i64 = (why: str, op: i64, pos: i64)
-  if env("DUO_WASM_JIT_TRACE")
+  if os.env["DUO_WASM_JIT_TRACE"]
     if op >= 0
       io.stderr:write("wasm: jit declined -- " .. why .. " -- opcode " .. op:to(str) .. " " .. opname(op) .. " at body offset " .. pos:to(str) .. "\n")
     else
@@ -936,6 +941,16 @@ jit_is_arm64: i64 = ()
     r = 1
   r
 
+_jit_is_x86_64: i64 = ()
+  r: i64 = 0
+  av = jitm.arch
+  if av == "x86_64" or av == "amd64"
+    r = 1
+  ac = jitm.arch()
+  if ac == "x86_64" or ac == "amd64"
+    r = 1
+  r
+
 jit_arch_name: str = ()
   av = jitm.arch
   r: str = "nil"
@@ -978,18 +993,49 @@ jit_arch_name: str = ()
 # above this and never reach it.
 jit_substrate_gap: str = ()
   probe = jitm.alloc(4096)
-  if not probe
+  if !probe
     return "jit.alloc refused the mapping"
   # 1. THE WORD WRITER, proved by read-back before anything is executed.
-  #    ADD x0, x0, x1 / RET — chosen so the call below also proves that the
-  #    two arguments ARRIVE, which is what the compiled entry sequence depends
-  #    on (x0 = linear memory, x1 = globals).
-  jitm.w32(probe, 0, 0x8B010000)
-  jitm.w32(probe, 1, 0xD65F03C0)
-  if jitm.r32(probe, 0) != 0x8B010000
-    return "jit.w32 wrote nothing (jit.r32 read back " .. to(str)(jitm.r32(probe, 0)) .. ", expected 0x8B010000) -- the word writer is a no-op"
-  if jitm.r32(probe, 1) != 0xD65F03C0
-    return "jit.w32 wrote nothing at word 1 -- the word writer is a no-op"
+  #    Architecture-specific: ARM64 emits fixed 32-bit words, x86_64 emits
+  #    variable-length bytes. Both prove the writer works and that arguments
+  #    arrive in the expected registers (x0/x1 on ARM64, rdi/rsi on x86_64).
+  codesz: i64 = 0
+  if jit_is_arm64() == 1
+    # ARM64: ADD x0, x0, x1 / RET
+    jitm.w32(probe, 0, 0x8B010000)
+    jitm.w32(probe, 1, 0xD65F03C0)
+    if jitm.r32(probe, 0) != 0x8B010000
+      return "jit.w32 wrote nothing (jit.r32 read back " .. to(str)(jitm.r32(probe, 0)) .. ", expected 0x8B010000) -- the word writer is a no-op"
+    if jitm.r32(probe, 1) != 0xD65F03C0
+      return "jit.w32 wrote nothing at word 1 -- the word writer is a no-op"
+    codesz = 8
+  elseif _jit_is_x86_64() == 1
+    # System V AMD64, byte-for-byte what `as` emits:
+    #   movq %rdi, %rax   48 89 F8   arg0 -> return register
+    #   addq %rsi, %rax   48 01 F0   arg1 in
+    #   retq              C3
+    # 40 + 2 = 42 through BOTH argument registers. `48 01 F8` is
+    # `addq %rdi, %rax` — arg0 added to whatever the caller left in rax —
+    # and measured through this substrate it answers 40 for (40, 2) with
+    # exit 0: a plausible wrong answer, which is the shape this probe
+    # exists to refuse, so both arguments are load-bearing here.
+    jitm.w8(probe, 0, 0x48)
+    jitm.w8(probe, 1, 0x89)
+    jitm.w8(probe, 2, 0xF8)
+    jitm.w8(probe, 3, 0x48)
+    jitm.w8(probe, 4, 0x01)
+    jitm.w8(probe, 5, 0xF0)
+    jitm.w8(probe, 6, 0xC3)
+    # Read-back BEFORE entry, the same load-bearing ordering the ARM64 arm
+    # above states: a hollow w8 must be a clean refusal and an interpreter
+    # fallback, not a sealed zero page entered as code (SIGSEGV). Little-endian
+    # word 0 over bytes 48 89 F8 48 reads 0x48F88948 — the same orientation
+    # probe_jit.id checks.
+    if jitm.r32(probe, 0) != 0x48F88948
+      return "jit.w8 wrote nothing (jit.r32 read back " .. to(str)(jitm.r32(probe, 0)) .. ", expected 0x48F88948) -- the byte writer is a no-op"
+    codesz = 7
+  else
+    return "jit substrate self-test: architecture not supported (arch = " .. jit_arch_name() .. ")"
   # 2. The address of an emitted buffer, which `call_indirect` bakes into the
   #    dispatch table it branches through.
   if jitm.addr(probe) == 0
@@ -998,15 +1044,15 @@ jit_substrate_gap: str = ()
   if jitm.sym("write") == 0
     return "jit.sym cannot resolve `write`"
   # 4. W^X publication.
-  if not jitm.seal(probe, 8)
+  if !jitm.seal(probe, codesz)
     return "jit.seal refused to make the buffer executable"
   # 5. ENTRY, by value, through the exact arity the compiled body is entered
   #    with. 40 + 2 is not a formality: it fails if the writer wrote garbage,
   #    if the icache was not flushed, or if the arguments do not land in
-  #    x0/x1.
+  #    x0/x1 (ARM64) or rdi/rsi (x86_64).
   got: i64 = jitm.call2(probe, 40, 2)
   if got != 42
-    return "jit.call2 returned " .. got:to(str) .. " for `ADD x0,x0,x1` on (40, 2) -- expected 42"
+    return "jit.call2 returned " .. got:to(str) .. " for (40, 2) -- expected 42"
   jitm.release(probe, 4096)
   ""
 
@@ -1014,9 +1060,16 @@ jit_substrate_gap: str = ()
 #
 # This legacy path still re-walks the module and builds its function/type/code
 # tables inline. Pointer transport no longer requires that shape; decomposition
-# now waits on graph-owned cross-home modules and exact outcome alternatives;
-# ordinary fixed GP result packs already cross without an aggregate.
-run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
+# now waits on graph-owned cross-home modules and exact outcome alternatives.
+#
+# The final RESULT BITS are written through `out` rather than returned. The C
+# host bridge still boxes this call as a `lua_Value` function, and raw f32/f64
+# bit patterns do not survive that numeric return path: a float result crossed
+# back to `main` as an ordinary number, then `main` re-read those bytes as bits
+# and printed a random answer. Keeping the bits in memory preserves the exact
+# one-graph value until the entry formats it by the function's declared result
+# type.
+run_body: i64 = (img: str, n: i64, target: i64, out: *u8)
   # The only module name whose functions this host provides. Bound to a `str`
   # local so `:byte()` indexes it; the roster it names lives in
   # `wasm/wasi_abi.id` and is shared with `wasm/wasi.id`.
@@ -1463,6 +1516,7 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
   mem.write_byte(himm, 13, 1)   # br_if
   mem.write_byte(himm, 16, 1)   # call
   mem.write_byte(himm, 17, 1)   # call_indirect (typeidx; the arm eats tableidx)
+  mem.write_byte(himm, 18, 1)   # return_call
 
   # ── type table: param count per type index ───────────────────────────
   # `call` must know how many operands to move from the caller's stack into
@@ -1652,7 +1706,7 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
   # `inf`. Eight parameters, which is what `tpty` retains.
   npar0: i64 = mem.read_i64(ftab, (target * 4 + 3) * 8)
   tix0: i64 = mem.read_i64(fty, target * 8)
-  argstr = env("DUO_WASM_ARGS")
+  argstr = os.env["DUO_WASM_ARGS"]
   aidx: i64 = 0
   if argstr != nil
     asx: str = argstr
@@ -1710,12 +1764,18 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
           elseif avt == 0x7C or avt == 0x7D or isf == 1
             fvv: f64 = to(f64)(acur)
             mem.write_i64(fb, 0, 0)
+            fw2: i64 = 8
             if avt == 0x7D
-              f32v: f32 = fvv
-              mem.store(f32)(fb, f32v)
+              mem.store(f32)(fb, fvv)
+              fw2 = 4
             else
               mem.store(f64)(fb, fvv)
-            av = mem.read_i64(fb, 0)
+            mem.write_i64(fb, 8, 0)
+            fk2: i64 = 0
+            while fk2 < fw2
+              mem.write_byte(fb, 8 + fk2, mem.read_byte(fb, fk2))
+              fk2 += 1
+            av = mem.read_i64(fb, 8)
           else
             av = to(i64)(acur)
             if avt == 0x7F
@@ -1954,10 +2014,12 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
         else
           pc = cur_end
 
-      elseif op == OP_call
-        # call: `imm2` already holds the decoded function index (opcode 16 is
-        # registered in `himm`). Imported/WASI functions are not executable
-        # here yet, so bail rather than jumping into a body that isn't ours.
+      elseif op == OP_call or op == _OP_return_call
+        # call / return_call: `imm2` already holds the decoded function index
+        # (`call` 16 and `return_call` 18 are both registered in `himm`). The
+        # tail-call form gives the current frame back before entering the
+        # callee, so a wasm module emitted with `IDOL_WASM_TAILCALL=1` stays in
+        # this one graph instead of refusing on opcode 18.
         if imm2 < nimp
           # A wasi_snapshot_preview1 import, PERFORMED. It used to be a blanket
           # stub: consume the declared parameters, push zeros, report success.
@@ -2116,7 +2178,7 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
             elseif hid == wabi.i_args_sizes_get
               # One argument, the module path — the same convention wasmtime
               # uses for argv[0].
-              av0: str = wabi.argv0_of(env("DUO_WASM_MODULE") or "module.wasm")
+              av0: str = wabi.argv0_of(os.env["DUO_WASM_MODULE"] or "module.wasm")
               avl: i64 = string.len(av0) + 1
               asp: i64 = mem.read_i64(st, (ab + 1) * 8) & M32
               abp: i64 = mem.read_i64(st, (ab + 2) * 8) & M32
@@ -2130,7 +2192,7 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
                 asj += 1
               hrv = wabi.ERRNO_success
             elseif hid == wabi.i_args_get
-              ag0: str = wabi.argv0_of(env("DUO_WASM_MODULE") or "module.wasm")
+              ag0: str = wabi.argv0_of(os.env["DUO_WASM_MODULE"] or "module.wasm")
               agp: i64 = mem.read_i64(st, (ab + 1) * 8) & M32
               agb: i64 = mem.read_i64(st, (ab + 2) * 8) & M32
               agi: i64 = 0
@@ -2219,42 +2281,74 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
           if irn > 0
             sp += 1
             mem.write_i64(st, sp * 8, hrv & M32)
+          if op == _OP_return_call
+            if depth > 0
+              depth -= 1
+              pc       = mem.read_i64(fr, (depth * 8) * 8)
+              cur_end  = mem.read_i64(fr, (depth * 8 + 1) * 8)
+              lbase    = mem.read_i64(fr, (depth * 8 + 2) * 8)
+              lsp      = mem.read_i64(fr, (depth * 8 + 3) * 8)
+              lsp_base = mem.read_i64(fr, (depth * 8 + 4) * 8)
+            else
+              pc = cur_end
         else
         fx: i64 = imm2 - nimp
-        if fx < 0 or fx >= nfn or depth >= 63
+        if fx < 0 or fx >= nfn
           return bail(op, pc)
-        mem.write_i64(fr, (depth * 8) * 8, pc)
-        mem.write_i64(fr, (depth * 8 + 1) * 8, cur_end)
-        mem.write_i64(fr, (depth * 8 + 2) * 8, lbase)
-        mem.write_i64(fr, (depth * 8 + 3) * 8, lsp)
-        mem.write_i64(fr, (depth * 8 + 4) * 8, lsp_base)
-        depth += 1
-        nb: i64 = lbase + 64
         npc: i64 = mem.read_i64(ftab, (fx * 4 + 3) * 8)
         nlc2: i64 = mem.read_i64(ftab, (fx * 4 + 2) * 8)
-        if nb + 64 > 64 * 64 or npc > sp
-          return bail(op, pc)
-        # Arguments sit on the operand stack with the LAST param on top, so
-        # fill the callee's locals downwards as they pop.
-        ka: i64 = npc - 1
-        while ka >= 0
-          mem.write_i64(lo, (nb + ka) * 8, mem.read_i64(st, sp * 8))
-          sp -= 1
-          ka -= 1
-        za: i64 = npc
-        while za < npc + nlc2
-          mem.write_i64(lo, (nb + za) * 8, 0)
-          za += 1
-        lbase = nb
-        lsp_base = lsp
-        # Do NOT reset lsp. `ltgt` is ONE shared label buffer, so starting the
-        # callee at 0 made its labels overwrite the caller's: a call inside a
-        # loop, to a callee that also loops, returned the caller's first
-        # iteration value and exited (1 instead of 10). Branch depths are
-        # relative to the top of the stack, so letting the callee's labels
-        # stack ABOVE the caller's is correct; the frame pop restores lsp.
-        pc = mem.read_i64(ftab, (fx * 4) * 8)
-        cur_end = mem.read_i64(ftab, (fx * 4 + 1) * 8)
+        if op == OP_call
+          if depth >= 63
+            return bail(op, pc)
+          mem.write_i64(fr, (depth * 8) * 8, pc)
+          mem.write_i64(fr, (depth * 8 + 1) * 8, cur_end)
+          mem.write_i64(fr, (depth * 8 + 2) * 8, lbase)
+          mem.write_i64(fr, (depth * 8 + 3) * 8, lsp)
+          mem.write_i64(fr, (depth * 8 + 4) * 8, lsp_base)
+          depth += 1
+          nb: i64 = lbase + 64
+          if nb + 64 > 64 * 64 or npc > sp
+            return bail(op, pc)
+          # Arguments sit on the operand stack with the LAST param on top, so
+          # fill the callee's locals downwards as they pop.
+          ka: i64 = npc - 1
+          while ka >= 0
+            mem.write_i64(lo, (nb + ka) * 8, mem.read_i64(st, sp * 8))
+            sp -= 1
+            ka -= 1
+          za: i64 = npc
+          while za < npc + nlc2
+            mem.write_i64(lo, (nb + za) * 8, 0)
+            za += 1
+          lbase = nb
+          lsp_base = lsp
+          # Do NOT reset lsp. `ltgt` is ONE shared label buffer, so starting the
+          # callee at 0 made its labels overwrite the caller's: a call inside a
+          # loop, to a callee that also loops, returned the caller's first
+          # iteration value and exited (1 instead of 10). Branch depths are
+          # relative to the top of the stack, so letting the callee's labels
+          # stack ABOVE the caller's is correct; the frame pop restores lsp.
+          pc = mem.read_i64(ftab, (fx * 4) * 8)
+          cur_end = mem.read_i64(ftab, (fx * 4 + 1) * 8)
+        else
+          if npc > sp
+            return bail(op, pc)
+          # Tail-call: replace THIS frame with the callee. The caller's labels
+          # are exactly the ones below `lsp_base`; every label above that dies
+          # with the frame being returned from, so the callee starts at the same
+          # local base and with `lsp` rewound to `lsp_base`.
+          ka2: i64 = npc - 1
+          while ka2 >= 0
+            mem.write_i64(lo, (lbase + ka2) * 8, mem.read_i64(st, sp * 8))
+            sp -= 1
+            ka2 -= 1
+          za2: i64 = npc
+          while za2 < npc + nlc2
+            mem.write_i64(lo, (lbase + za2) * 8, 0)
+            za2 += 1
+          lsp = lsp_base
+          pc = mem.read_i64(ftab, (fx * 4) * 8)
+          cur_end = mem.read_i64(ftab, (fx * 4 + 1) * 8)
 
       elseif op == OP_global_get
         # global.get (immediate already decoded into imm2 via himm)
@@ -2375,8 +2469,8 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
             while sc < cur_end and mem.read_byte(code, sc) >= 0x80
               sc += 1
             sc += 1
-          elseif sb == 12 or sb == 13 or sb == 16 or (sb >= 32 and sb <= 36) or sb == 65 or sb == 66
-            # br, br_if, call, local.*/global.*, i32.const, i64.const
+          elseif sb == 12 or sb == 13 or sb == 16 or sb == 18 or (sb >= 32 and sb <= 36) or sb == 65 or sb == 66
+            # br, br_if, call, return_call, local.*/global.*, i32.const, i64.const
             while sc < cur_end and mem.read_byte(code, sc) >= 0x80
               sc += 1
             sc += 1
@@ -2989,7 +3083,11 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
         if ok == 0
           return bail(op, pc)
         mem.store(f64)(fb, dr)
-        mem.write_i64(st, (sp - ar + 1) * 8, mem.read_i64(fb, 0))
+        mem.write_i64(st, (sp - ar + 1) * 8, 0)
+        drk: i64 = 0
+        while drk < 8
+          mem.write_byte(st, (sp - ar + 1) * 8 + drk, mem.read_byte(fb, drk))
+          drk += 1
         # THE RESULT IS ALREADY ON THE STACK: it was just written at
         # `sp - ar + 1`, so the arity `ar` has been consumed and ONE value
         # produced, i.e. the depth falls by `ar - 1` — by one for a binary op
@@ -3016,13 +3114,21 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
           sr = 1
         if sp < sr
           return bail(op, pc)
-        mem.write_i64(fb, 0, mem.read_i64(st, sp * 8))
-        eb: f32 = mem.load(f32)(fb)
-        ea: f32 = eb
+        mem.write_i64(fb, 0, 0)
+        ebk: i64 = 0
+        while ebk < 4
+          mem.write_byte(fb, ebk, mem.read_byte(st, sp * 8 + ebk))
+          ebk += 1
+        eb: f64 = mem.load(f32)(fb)
+        ea: f64 = eb
         if sr == 2
-          mem.write_i64(fb, 0, mem.read_i64(st, (sp - 1) * 8))
+          mem.write_i64(fb, 0, 0)
+          eak: i64 = 0
+          while eak < 4
+            mem.write_byte(fb, eak, mem.read_byte(st, (sp - 1) * 8 + eak))
+            eak += 1
           ea = mem.load(f32)(fb)
-        er: f32 = 0.0
+        er: f64 = 0.0
         eok: i64 = 1
         if op == OP_f32_add
           er = ea + eb
@@ -3057,8 +3163,8 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
           if eb < 0.0
             er = math.ceil(eb)
         elseif op == OP_f32_nearest
-          efl: f32 = math.floor(eb)
-          efr: f32 = eb - efl
+          efl: f64 = math.floor(eb)
+          efr: f64 = eb - efl
           er = efl
           if efr > 0.5
             er = efl + 1.0
@@ -3078,8 +3184,11 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
           return bail(op, pc)
         mem.write_i64(fb, 0, 0)
         mem.store(f32)(fb, er)
-        mem.write_i64(st, (sp - sr + 1) * 8, mem.read_i64(fb, 0))
-        # Same correction as the f64 arm above, and the same bug byte for byte:
+        mem.write_i64(st, (sp - sr + 1) * 8, 0)
+        erk: i64 = 0
+        while erk < 4
+          mem.write_byte(st, (sp - sr + 1) * 8 + erk, mem.read_byte(fb, erk))
+          erk += 1
         # one value is produced where `sr` were consumed, so the depth falls by
         # `sr - 1`, not rises past the floor by `sr + 1`.
         sp -= sr - 1
@@ -3088,10 +3197,18 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
         # f32 comparisons -> i32 0/1
         if sp < 2
           return bail(op, pc)
-        mem.write_i64(fb, 0, mem.read_i64(st, sp * 8))
-        gb: f32 = mem.load(f32)(fb)
-        mem.write_i64(fb, 0, mem.read_i64(st, (sp - 1) * 8))
-        ga: f32 = mem.load(f32)(fb)
+        mem.write_i64(fb, 0, 0)
+        gbk: i64 = 0
+        while gbk < 4
+          mem.write_byte(fb, gbk, mem.read_byte(st, sp * 8 + gbk))
+          gbk += 1
+        gb: f64 = mem.load(f32)(fb)
+        mem.write_i64(fb, 0, 0)
+        gak: i64 = 0
+        while gak < 4
+          mem.write_byte(fb, gak, mem.read_byte(st, (sp - 1) * 8 + gak))
+          gak += 1
+        ga: f64 = mem.load(f32)(fb)
         gr: i64 = 0
         if op == OP_f32_eq and ga == gb
           gr = 1
@@ -3142,7 +3259,11 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
         if iv >= 2147483648
           iv -= 4294967296
         mem.store(f64)(fb, iv * 1.0)
-        mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
+        mem.write_i64(st, sp * 8, 0)
+        ivk: i64 = 0
+        while ivk < 8
+          mem.write_byte(st, sp * 8 + ivk, mem.read_byte(fb, ivk))
+          ivk += 1
 
       elseif op == OP_i32_eq or op == OP_i32_gt_u or op == OP_i32_le_u or op == OP_i32_ge_u
         # i32 eq / gt_u / le_u / ge_u # the unsigned comparisons the original
@@ -3177,12 +3298,20 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
           dv2: f64 = mem.load(f64)(fb)
           mem.write_i64(fb, 0, 0)
           mem.store(f32)(fb, dv2)
-          mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
+          mem.write_i64(st, sp * 8, 0)
+          dvk: i64 = 0
+          while dvk < 4
+            mem.write_byte(st, sp * 8 + dvk, mem.read_byte(fb, dvk))
+            dvk += 1
         elseif op == OP_f64_promote_f32
           mem.write_i64(fb, 0, raw)
-          ev2: f32 = mem.load(f32)(fb)
+          ev2: f64 = mem.load(f32)(fb)
           mem.store(f64)(fb, ev2)
-          mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
+          mem.write_i64(st, sp * 8, 0)
+          evk: i64 = 0
+          while evk < 8
+            mem.write_byte(st, sp * 8 + evk, mem.read_byte(fb, evk))
+            evk += 1
         elseif op >= OP_f32_convert_i32_s
           # integer -> float
           iv2: i64 = raw
@@ -3193,18 +3322,30 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
                 iv2 -= 0x100000000
           fv2: f64 = iv2 * 1.0
           mem.write_i64(fb, 0, 0)
-          if op <= OP_f32_convert_i64_u
+          # Keep the width choice on the exact opcode family. The ordinal test
+          # here was mis-realizing the f64 arms through the f32 store, so
+          # `f64.convert_i64_s 1000` and `f64.convert_i32_u 100` both reached
+          # the end of the run as tiny denormals and printed as 0.
+          if op == OP_f32_convert_i32_s or op == OP_f32_convert_i32_u or op == OP_f32_convert_i64_s or op == OP_f32_convert_i64_u
             mem.store(f32)(fb, fv2)
+            mem.write_i64(st, sp * 8, 0)
+            fvk: i64 = 0
+            while fvk < 4
+              mem.write_byte(st, sp * 8 + fvk, mem.read_byte(fb, fvk))
+              fvk += 1
           else
             mem.store(f64)(fb, fv2)
-          mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
+            mem.write_i64(st, sp * 8, 0)
+            fvk2: i64 = 0
+            while fvk2 < 8
+              mem.write_byte(st, sp * 8 + fvk2, mem.read_byte(fb, fvk2))
+              fvk2 += 1
         else
           # float -> integer, truncating TOWARD ZERO (not floor: -2.7 -> -2)
           mem.write_i64(fb, 0, raw)
           src: f64 = 0.0
           if op == OP_i32_trunc_f32_s or op == OP_i32_trunc_f32_u or op == OP_i64_trunc_f32_s or op == OP_i64_trunc_f32_u
-            sf: f32 = mem.load(f32)(fb)
-            src = sf
+            src = mem.load(f32)(fb)
           else
             src = mem.load(f64)(fb)
           # Truncation toward zero IS the C double->int64_t conversion, so a
@@ -3485,8 +3626,7 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
           mem.write_i64(fb, 0, qraw)
           qsrc: f64 = 0.0
           if sub <= 1
-            qf: f32 = mem.load(f32)(fb)
-            qsrc = qf
+            qsrc = mem.load(f32)(fb)
           else
             qsrc = mem.load(f64)(fb)
           qv: i64 = 0
@@ -3586,7 +3726,7 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
               ck += 1
             av2: i64 = mem.read_i64(fb, 0)
             af: f64 = mem.load("f64", fb)
-            a32: f32 = mem.load("f32", fb)
+            a32: f64 = mem.load("f32", fb)
             mem.write_i64(fb, 0, 0)
             ck2: i64 = 0
             while ck2 < vwd
@@ -3594,7 +3734,7 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
               ck2 += 1
             bv2: i64 = mem.read_i64(fb, 0)
             bf: f64 = mem.load("f64", fb)
-            b32: f32 = mem.load("f32", fb)
+            b32: f64 = mem.load("f32", fb)
             mem.write_i64(fb, 0, 0)
             # Integer kernels need no masking: only `vwd` bytes are written
             # back, so a lane truncates to its own width by construction.
@@ -3679,13 +3819,14 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
         # turns a corpus sweep directly into a ranked opcode worklist.
         return bailop(op, pc)
 
-  # Return the top slot's RAW BITS. Masking with M32 here silently destroyed
-  # every f64 and i64 result (wart_f64_bench read 1929046707 instead of
-  # 1000100048462729.9). i32 arms already mask their own results, so the
-  # unsigned 32-bit value is unaffected; the entry formats by result type.
-  last: i64 = 0
+  # Preserve the top slot's RAW BITS in memory. Returning them directly through
+  # the boxed C host bridge recovers a numeric `lua_Value`, not the original bit
+  # pattern, so float results become garbage before `main` formats them.
   if sp > 0
-    last = mem.read_i64(st, sp * 8)
+    rk: i64 = 0
+    while rk < 8
+      mem.write_byte(out, rk, mem.read_byte(st, sp * 8 + rk))
+      rk += 1
   mem.free(code)
   mem.free(st)
   mem.free(lo)
@@ -3694,7 +3835,7 @@ run_body: i64 = (img: str, n: i64, target: i64, guard: i64)
   mem.free(lin)
   mem.free(gl)
   mem.free(himm)
-  last
+  0
 
 
 # ALU ops are one code path driven by a table: opcode -> ARM64 base word.
@@ -4378,7 +4519,7 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
     # One line per body under DUO_WASM_JIT_TRACE. The refusal trace names why a
     # body was declined; nothing said what the emitter was DOING when it did
     # not decline, which is how "engine=interp, no reason given" happened.
-    if env("DUO_WASM_JIT_TRACE")
+    if os.env["DUO_WASM_JIT_TRACE"]
       io.stderr:write("wasm: jit body fn=" .. curfn:to(str) .. " off=" .. off:to(str) .. " blen=" .. blen:to(str) .. " params=" .. fnprm:to(str) .. " locals=" .. selfloc:to(str) .. " words-so-far=" .. n:to(str) .. " queue=" .. jqh:to(str) .. "/" .. jqn:to(str) .. "\n")
     # eight argument registers, seventeen local registers
     if selfloc > 17 or fnprm > 8 or n > 260000
@@ -4471,15 +4612,15 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
       # register. Only local.get, float consts and float binops are known safe;
       # everything else materialises first. Conservative on purpose — a stale
       # local read as an integer is a silent wrong answer.
-      if fcl >= 0 and not (op == OP_local_get or fkeep == 1)
+      if fcl >= 0 and !(op == OP_local_get or fkeep == 1)
         jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
         n += 1
         fcl = -1
-      if ali_slot >= 0 and not (op == OP_i32_const or op == OP_local_get or fkeep == 1 or (aw != 0 and sp >= 2))
+      if ali_slot >= 0 and !(op == OP_i32_const or op == OP_local_get or fkeep == 1 or (aw != 0 and sp >= 2))
         jitm.w32(code, n, 0xAA0003E0 | (ali_reg << 16) | ali_slot)
         n += 1
         ali_slot = -1
-      if ali2_slot >= 0 and not (op == OP_i32_const or op == OP_local_get or fkeep == 1 or (aw != 0 and sp >= 2))
+      if ali2_slot >= 0 and !(op == OP_i32_const or op == OP_local_get or fkeep == 1 or (aw != 0 and sp >= 2))
         jitm.w32(code, n, 0xAA0003E0 | (ali2_reg << 16) | ali2_slot)
         n += 1
         ali2_slot = -1
@@ -4702,7 +4843,7 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
         # it must either come from d2 (only operand `a` on the accumulate path
         # can) or force a flush first. Without this, `b` read the stale register
         # and wart_f64_bench drifted to 1000100036477765.6.
-        if fcl >= 0 and not (accreg == fcl and fsb != fcl)
+        if fcl >= 0 and !(accreg == fcl and fsb != fcl)
           jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
           n += 1
           fcl = -1
@@ -6413,7 +6554,7 @@ jit_compile: i64 = (s: str, off: i64, blen: i64, code: any, mlen: i64)
   # then asked mprotect to publish 2.8 billion words, was refused, and fell
   # back to the interpreter without a word. Every other exit from this function
   # is already an explicit `return`; this was the one that was not.
-  if env("DUO_WASM_JIT_TRACE")
+  if os.env["DUO_WASM_JIT_TRACE"]
     io.stderr:write("wasm: jit emitted " .. n:to(str) .. " words for " .. jqn:to(str) .. " bod(y/ies)\n")
   return n
 end
@@ -6435,13 +6576,13 @@ end
 # `duo_entry_main__lua` by the C backend but CALLED as `main__lua`, so the
 # translation unit does not link. Any other name mangles consistently.
 engine_main = ()
-  path = env("DUO_WASM_MODULE")
-  invoke = env("DUO_WASM_INVOKE") or "run"
+  path = os.env["DUO_WASM_MODULE"]
+  invoke = os.env["DUO_WASM_INVOKE"] or "run"
   # Every failure below goes to STDERR and exits nonzero. It used to `print`
   # to stdout and fall off the end of main, i.e. exit 0 # so a harness that
   # ran the engine on the wrong path got a clean exit status and no `result=` line,
   # and only noticed if it happened to be checking for one.
-  if not path
+  if !path
     io.stderr:write("wasm: set DUO_WASM_MODULE=<module.wasm> (DUO_WASM_INVOKE=<export>, default \"run\")\n")
     io.stderr:write("      DUO_WASM_ARGS=<v1>,<v2>,... supplies the export's parameters;\n")
     io.stderr:write("      a value is decimal, or `#<hex>` for the raw 64-bit pattern.\n")
@@ -6451,7 +6592,7 @@ engine_main = ()
   force_interp: i64 = 0
   # `or ""` per the note on `grant_errno_mode`: `env(k) == "<literal>"` on an
   # unset key exits 139. Do not remove it.
-  if (env("DUO_WASM_ENGINE") or "") == "interp"
+  if (os.env["DUO_WASM_ENGINE"] or "") == "interp"
     force_interp = 1
   # DUO_WASM_ENGINE=jit is a REQUIREMENT, not a preference. It used to be
   # ignored entirely — only "interp" was tested — so `DUO_WASM_ENGINE=jit
@@ -6463,11 +6604,11 @@ engine_main = ()
   require_jit: i64 = 0
   # `or ""` per the note on `grant_errno_mode`: `env(k) == "<literal>"` on an
   # unset key exits 139. Do not remove it.
-  if (env("DUO_WASM_ENGINE") or "") == "jit"
+  if (os.env["DUO_WASM_ENGINE"] or "") == "jit"
     require_jit = 1
 
   f = io.open(path, "rb")
-  if not f
+  if !f
     io.stderr:write("wasm: cannot open " .. path .. "\n")
     os.exit(1)
   tRD0 = os.clock()
@@ -6507,7 +6648,7 @@ engine_main = ()
   tRD2 = os.clock()
   tgt: i64 = find_run_body(bytes, nbytes, invoke, string.len(invoke), 1)
   tRD3 = os.clock()
-  if env("DUO_WASM_PHASES")
+  if os.env["DUO_WASM_PHASES"]
     print("phase read=" .. to(str)(tRD1 - tRD0) .. " walk0=" .. to(str)(tRD2 - tRD1) .. " walk1=" .. to(str)(tRD3 - tRD2))
   boff: i64 = packed // 65536
   blen: i64 = packed - boff * 65536
@@ -6522,6 +6663,8 @@ engine_main = ()
 
   engine = "interp"
   result: i64 = 0
+  rraw: *u8 = mem.alloc(16)
+  mem.zero(rraw, 16)
   t0 = os.clock()
 
   # Why the jit is or is not eligible, decided ONCE and stated. See
@@ -6645,7 +6788,7 @@ engine_main = ()
     # cannot move the differential — verified, DIFF 0 unchanged, and the
     # `jit COMPILED` count is unchanged too.
     jit_why = "DUO_WASM_GRANT is not total, and a partial grant is enforced only by the interpreter"
-  elseif env("DUO_WASM_ARGS") != nil
+  elseif os.env["DUO_WASM_ARGS"] != nil
     # THE JIT HAS NO ARGUMENT CHANNEL. `jitm.call2(code, memory, globals)`
     # passes linear memory and the globals block and nothing else, so a
     # compiled body would read its parameters as whatever the emitted prologue
@@ -6656,7 +6799,22 @@ engine_main = ()
     # slowly, and this is the exact shape that failure would take.
     jit_why = "DUO_WASM_ARGS is set and the emitted entry sequence takes no operands"
   elseif jit_is_arm64() == 0
-    jit_why = "the host is not arm64 (jit.arch = " .. jit_arch_name() .. ")"
+    # CROSS-PLATFORM PROOF CLOSED THE HOST BLOCKER on this Linux x86_64 path:
+    # `src/probe_jit.id` now proves alloc/w8/r32/addr/sym/seal/call2 end to end
+    # and `tools/wasm/proof.sh` / `zig build wasm-test` run green through the
+    # portable host bridge. The next refusal therefore has to name the thing that
+    # is ACTUALLY missing. On x86_64 the substrate is whole; what is absent is an
+    # x86_64 body emitter for this engine, whose compiled path still writes ARM64
+    # instructions only. A host that can build and enter emitted code is not the
+    # blocker once that proof is green.
+    if _jit_is_x86_64() == 1
+      jit_gap: str = jit_substrate_gap()
+      if jit_gap != ""
+        jit_why = "the x86_64 jit substrate does not work: " .. jit_gap
+      else
+        jit_why = "the x86_64 jit substrate is whole, but this engine emits arm64 only (jit.arch = " .. jit_arch_name() .. ")"
+    else
+      jit_why = "the jit emitter has no realization for this host (jit.arch = " .. jit_arch_name() .. ")"
   else
     # ONE call. The self-test maps, writes, seals and ENTERS a page, so calling
     # it twice (once for the test, once to build the message) would pay for it
@@ -6706,7 +6864,7 @@ engine_main = ()
       words: i64 = jit_compile(raw, boff, blen, code, nbytes)
       # DUO_WASM_DUMP=<path>: write the emitted words as hex, one per line, for
       # disassembly. Diagnostic only; off unless the env var is set.
-      dmp = env("DUO_WASM_DUMP")
+      dmp = os.env["DUO_WASM_DUMP"]
       if dmp
         df = io.open(dmp, "w")
         if df
@@ -6717,7 +6875,7 @@ engine_main = ()
           df:close()
         print("jit_words=" .. words:to(str))
       tJ2 = os.clock()
-      if env("DUO_WASM_PHASES")
+      if os.env["DUO_WASM_PHASES"]
         print("phase alloc=" .. to(str)(tJ1 - tJ0) .. " compile=" .. to(str)(tJ2 - tJ1))
       # SEALING IS A REFUSAL SITE TOO. `words <= 0` is a decline the emitter has
       # already explained on stderr; a failed `seal` is the host refusing to
@@ -6851,36 +7009,33 @@ engine_main = ()
     os.exit(4)
 
   if engine == "interp"
-    result = run_body(bytes, nbytes, tgt, 0)
+    run_body(bytes, nbytes, tgt, rraw)
 
   t1 = os.clock()
   print("engine=" .. engine)
 
-  # Format by the function's declared RESULT TYPE. `result` carries raw bits, so
-  # an f64 has to be bitcast back before printing; an i32 has to be folded to
-  # unsigned 32-bit (the JIT path already masks, the interpreter no longer does).
+  # Format by the function's declared RESULT TYPE. The JIT returns raw bits in
+  # `result`; the interpreter leaves them in `rraw` so the boxed call boundary
+  # never has to carry a float bit-pattern as a number.
   rtype: i64 = find_run_body(bytes, nbytes, invoke, string.len(invoke), 2)
+  if engine != "interp"
+    mem.write_i64(rraw, 0, result)
   if rtype == 0x7C
-    rbuf = mem.alloc(16)
-    mem.write_i64(rbuf, 0, result)
     # Bind to a typed local FIRST. `to(str)(mem.load(f64)(buf))` inline in a
     # concat loses low mantissa bits (f64.const 1.0001 printed as
     # 1.0000999999999749); the same load bound to an f64 local is exact.
-    rf: f64 = mem.load(f64)(rbuf)
+    rf: f64 = mem.load(f64)(rraw)
     print("result=" .. rf:to(str))
-    mem.free(rbuf)
   elseif rtype == 0x7D
-    rbuf2 = mem.alloc(16)
-    mem.write_i64(rbuf2, 0, result)
-    rf2: f32 = mem.load(f32)(rbuf2)
+    rf2: f64 = mem.load(f32)(rraw)
     print("result=" .. rf2:to(str))
-    mem.free(rbuf2)
   elseif rtype == 0x7E
-    print("result=" .. result:to(str))
+    print("result=" .. mem.read_i64(rraw, 0):to(str))
   else
     # i32 arms already mask their own results, so the slot is already a correct
     # unsigned 32-bit value; masking again here only forces a boxed lua_band.
-    print("result=" .. result:to(str))
+    print("result=" .. mem.read_i64(rraw, 0):to(str))
+  mem.free(rraw)
   print("seconds=" .. to(str)(t1 - t0))
 
 engine_main()

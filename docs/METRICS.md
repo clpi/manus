@@ -26,8 +26,8 @@ The single largest error this document has made is collapsing these into one
 
 | Question | Answer | Proof command |
 |---|---|---|
-| Does an executable **grammar owner** exist? | **Yes.** `lib/compiler/token.id` is the one executable grammar-fact owner (`law.grammar.one`). | `zig build grammar-projection` |
-| Is **grammar consumer closure** reached? | **No.** Only bounded recognition decisions consume the owner's facts; the editor grammar is still authored and still disagrees within a pinned ratchet; `docs/spec/grammar.md` does not generate the parser. | `zig build treesitter-agreement` |
+| Does an executable **grammar owner** exist? | **Yes.** `lib/compiler/token.id` is the one executable grammar-fact owner (`law.grammar.one`). | `zig build grammar-projection` on a direct-native-supported host; on this x86_64-linux host it refuses DNB004 before the owner runs, so the command measures environment here (see `gaps/GAP-134.md`). |
+| Is **grammar consumer closure** reached? | **No.** Only bounded recognition decisions consume the owner's facts; `lib/compiler/token_view.id` is now checkable and `dump-c --lib` linkable, but the editor grammar is still authored and still disagrees within a pinned ratchet, and `docs/spec/grammar.md` does not generate the parser. | `zig build treesitter-agreement` on a direct-native-supported host; on this x86_64-linux host `agreement.sh` reports NOT MEASURED for the same DNB004 reason. |
 | Is the **parser** Idol-owned? | **No.** `src/parser.zig` still decides expressions, bindings, and source structure. Parser SHC has not started. | `docs/bootstrap.md` "Parser recognition — HOST OWNED" |
 
 An owner existing is not consumer closure, and consumer closure would still not
@@ -64,7 +64,7 @@ per-boundary contract and is the authority when this table and that one differ.
 | S0 source ingress + lexer + token/span | **current** |
 | B-L0 lexical identity + GAP-145 consumer zero | open (owner executes; consumers remain) |
 | B-G0a grammar Idol **owner** exists | **met** — `lib/compiler/token.id` |
-| B-G0b grammar **consumer** closure | open (GAP-134) |
+| B-G0b grammar **consumer** closure | open (GAP-134; token_view prerequisite linkable, parser still host-owned) |
 | B-P0 one parser production decision | open — parser SHC not started |
 | B0 compiler B executable | open — B does not exist |
 | C0 B compiles C | open — C does not exist |
@@ -119,8 +119,8 @@ No count below is written out here. Each row names what to run.
 
 | Claim | Command that recomputes it |
 |---|---|
-| The generated grammar projections are load-bearing — `src/grammar_role_table.zig` and `lib/token/grammarrole.id` regenerate byte-identically from `lib/compiler/token.id`, and a malformed producer that exits zero changes no tracked byte | `zig build grammar-projection` (or `sh gate/grammar-projection.sh`) |
-| The editor grammar's disagreement with the owner is exactly the pinned baseline — the gate prints owner infix identities, editor operator rows, and divergences found / pinned / unpinned / stale | `zig build treesitter-agreement` (or `sh gate/treesitter/agreement.sh`) |
+| The generated grammar projections are load-bearing — `src/grammar_role_table.zig` and `lib/token/grammarrole.id` regenerate byte-identically from `lib/compiler/token.id`, and a malformed producer that exits zero changes no tracked byte | `zig build grammar-projection` (or `sh gate/grammar-projection.sh`) on a direct-native-supported host; on this x86_64-linux host the command refuses DNB004 before the owner runs, so use the prior measured witness in `gaps/GAP-134.md` rather than treating the local red as a semantic regression |
+| The editor grammar's disagreement with the owner is exactly the pinned baseline — the gate prints owner infix identities, editor operator rows, and divergences found / pinned / unpinned / stale | `zig build treesitter-agreement` (or `sh gate/treesitter/agreement.sh`) on a direct-native-supported host; on this x86_64-linux host the gate reports NOT MEASURED because the same DNB004 blocks the local direct-native witness |
 | The parser holds no token→operation or operation→token map of its own; `src/ast.zig` aliases the generated ontology and `src/pretty.zig`'s inverse is compile-time checked for totality and injectivity | `zig build unit-test`; inspect `src/grammar_roles.zig` tests and `src/ast.zig` `BinOp`/`UnOp` |
 | The `demandsOperand` membership is an owner fact, and its size is pinned by a counting control rather than by prose | `zig build unit-test` — `src/grammar_roles.zig`, test "the demand fact is the exact dual of expression start" |
 | The `opensLineAndExpression` membership is an owner fact (`opens_line`), not a parser-local list | `zig build unit-test` — `src/grammar_roles.zig`; consumer is `src/parser.zig` `opensLineAndExpression` |
@@ -185,7 +185,7 @@ date. Where a judgment and a gate disagree, the gate is right.
 | Language/semantic-law closure | green |
 | Mechanical anti-drift enforcement | green, incomplete coverage |
 | Naming/vocabulary architecture | green |
-| Grammar **owner** existence | **met** (fact, not judgment — `zig build grammar-projection`) |
+| Grammar **owner** existence | **met** (fact, not judgment — the executable witness is host-sensitive: `zig build grammar-projection` runs on a direct-native-supported host; on this x86_64-linux host it refuses DNB004 before the owner runs) |
 | Grammar **consumer** closure | yellow — bounded consumers only; editor grammar authored; `docs/spec/grammar.md` does not generate the parser |
 | Parser ownership | red — host-executed; parser SHC not started |
 | Source/corpus canonical migration | yellow |

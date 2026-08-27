@@ -16,8 +16,12 @@
 # arch — no alloc, no seal, no call, no word writer, no symbol lookup.
 #
 # EXIT STATUS IS THE ANSWER: 0 when the substrate is whole and the emitted
-# `MOVZ W0,#42; RET` really returns 42, 1 when it is not. A probe that prints
-# "mmap refused" and exits 0 is how this stayed invisible.
+# entry code really returns 42, 1 when it is not. A probe that prints
+# "mmap refused" and exits 0 is how this stayed invisible. A probe that
+# SIGILLs is not a verdict either: it sealed ARM64 words and entered them on
+# an x86_64 host (measured, exit 132). The entry bytes below are therefore
+# per-architecture, and an architecture with no entry proof refuses rather
+# than executing foreign instruction encodings.
 #
 #   duo compile src/probe_jit.id --backend=c --emit exe -o /tmp/probe_jit
 #   /tmp/probe_jit ; echo $?
@@ -49,6 +53,19 @@ arch_is_arm64: i64 = ()
     r = 1
   ac = j.arch()
   if ac == "arm64" or ac == "aarch64"
+    r = 1
+  r
+
+# Underscore-private for the same reason `_OP_return_call` in `src/engine.id`
+# is: `gate/vocabulary.sh` freezes new module-scope vocabulary until the graph
+# can prove public reach, and admits the private face.
+_arch_is_x86_64: i64 = ()
+  r: i64 = 0
+  av = j.arch
+  if av == "x86_64" or av == "amd64"
+    r = 1
+  ac = j.arch()
+  if ac == "x86_64" or ac == "amd64"
     r = 1
   r
 
@@ -108,29 +125,56 @@ probe_main = ()
   # `return lua_val_nil()` for as long as `@comp.c.emit` in statement position
   # was dropped by the C backend). Only the end-to-end proof below decides, and
   # only IT sets the exit status.
-  if n < 6
-    print("")
-    print("NOTE: " .. n:to(str) .. " of 6 are reachable as TABLE FIELDS; the rest are")
-    print("  shadowed by the builtin `jit` table. This is not the verdict —")
-    print("  the calls below are.")
-  # Prove it end to end rather than trusting the roster.
   buf = j.alloc(4096)
-  if not buf
+  if !buf
     print("VERDICT: jit.alloc exists and REFUSED (mmap failed).")
     os.exit(1)
-  # MOVZ W0, #42  => 0x52800000 | (imm16 << 5) | Rd
-  j.w32(buf, 0, 0x52800000 | (42 << 5))
-  # RET
-  j.w32(buf, 1, 0xD65F03C0)
-  if j.r32(buf, 0) != (0x52800000 | (42 << 5))
-    print("VERDICT: jit.w32/jit.r32 do not round-trip a word.")
+  # The entry bytes are the machine's own. One probe for the host that runs it,
+  # chosen by the arch the substrate itself reports.
+  codesz: i64 = 0
+  if arch_is_arm64() == 1
+    # MOVZ W0, #42  => 0x52800000 | (imm16 << 5) | Rd  ; RET
+    j.w32(buf, 0, 0x52800000 | (42 << 5))
+    j.w32(buf, 1, 0xD65F03C0)
+    if j.r32(buf, 0) != (0x52800000 | (42 << 5))
+      print("VERDICT: jit.w32/jit.r32 do not round-trip a word.")
+      os.exit(1)
+    codesz = 8
+  elseif _arch_is_x86_64() == 1
+    # System V AMD64, byte-for-byte what `as` emits:
+    #   movq %rdi, %rax   48 89 F8   arg0 -> return register
+    #   addq %rsi, %rax   48 01 F0   arg1 in
+    #   retq              C3
+    # 40 + 2 = 42 through BOTH argument registers. `48 01 F8` is
+    # `addq %rdi, %rax` — arg0 added to whatever the caller left in rax —
+    # and measured through this substrate it answers 40 for (40, 2) with
+    # exit 0: a plausible wrong answer, which is the shape this probe
+    # exists to refuse, so both arguments are load-bearing here.
+    j.w8(buf, 0, 0x48)
+    j.w8(buf, 1, 0x89)
+    j.w8(buf, 2, 0xF8)
+    j.w8(buf, 3, 0x48)
+    j.w8(buf, 4, 0x01)
+    j.w8(buf, 5, 0xF0)
+    j.w8(buf, 6, 0xC3)
+    # Little-endian word read: bytes 48 89 F8 48 at word 0 read back as
+    # 0x48F88948 (1224247624) — the same orientation as the `0x4342`
+    # round-trip check in `src/engine.id`'s substrate self-test.
+    if j.r32(buf, 0) != 0x48F88948
+      print("VERDICT: jit.w8/jit.r32 do not round-trip the entry bytes (word0="
+        .. to(str)(j.r32(buf, 0)) .. ", expected 1224247624).")
+      os.exit(1)
+    codesz = 7
+  else
+    print("VERDICT: no entry proof for this architecture (jit.arch = "
+      .. arch_name() .. "); the substrate is unmeasured here, not whole.")
     os.exit(1)
-  if not j.seal(buf, 8)
+  if !j.seal(buf, codesz)
     print("VERDICT: jit.seal refused.")
     os.exit(1)
-  r: i64 = j.call2(buf, 0, 0)
+  r: i64 = j.call2(buf, 40, 2)
   if r != 42
-    print("VERDICT: emitted MOVZ W0,#42; RET returned " .. r:to(str) .. ", not 42.")
+    print("VERDICT: emitted entry code returned " .. r:to(str) .. " for (40, 2), not 42.")
     os.exit(1)
   print("")
   print("VERDICT: the jit substrate is whole and executes emitted code (42).")

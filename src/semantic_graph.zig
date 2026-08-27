@@ -12005,6 +12005,72 @@ test "semantic_graph: cross-home tail constant publishes exactI64" {
     try std.testing.expect(saw);
 }
 
+test "sema: a home application does not poison later home constants in the same scope" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var threaded = std.Io.Threaded.init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const io_iface = threaded.io();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const from = "examples/cross_home_constant.id";
+    // The exact shape of `header_signal_lx` (lib/compiler/parser.id): a
+    // dotted-callee application whose walk INVENTS a binding for the home
+    // root, followed in the SAME scope by constant reads through that root.
+    // Before `Symbol.invented`, the second and later reads declined to fold
+    // and full-native C emitted `duo_fallback_get_num(0, token, ...)` on an
+    // undeclared identifier — 13 sites in one function.
+    const src =
+        \\probe: bool = (k: i64)
+        \\    if token.grammarrole.roleliteral(k)
+        \\        return true
+        \\    k == token.kindeof
+        ;
+    var lex = Lexer.init(src, from);
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    checked.source_path = try alloc.dupe(u8, from);
+    const TestLoader = struct {
+        alloc: std.mem.Allocator,
+        io: std.Io,
+        from: []const u8,
+        fn load(raw: *anyopaque, alias: []const u8) ?sema.ForeignHome {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            const source = home_resolve_mod.resolve(
+                self.alloc,
+                self.io,
+                .{ .from = self.from, .stdlib_root = "lib/compiler" },
+                alias,
+            ) orelse return null;
+            if (std.mem.eql(u8, source.path, self.from)) return null;
+            const file_src = std.Io.Dir.cwd().readFileAlloc(self.io, source.path, self.alloc, .unlimited) catch return null;
+            var file_lex = Lexer.init(file_src, source.path);
+            var file_parser = Parser.init(&file_lex, self.alloc);
+            file_parser.idol_mode = true;
+            const file_mod = self.alloc.create(ast.Module) catch return null;
+            file_mod.* = file_parser.parse_module() catch return null;
+            const home = home_resolve_mod.homeOfPath(self.alloc, self.io, source.path) catch return null;
+            return .{ .home = home, .path = source.path, .module = file_mod };
+        }
+    };
+    var loader_ctx: TestLoader = .{ .alloc = alloc, .io = io_iface, .from = from };
+    checked.home_loader = .{ .ctx = &loader_ctx, .load = TestLoader.load };
+    try checked.check_module(&mod);
+
+    // The application's own walk invented `token`; the invention must not
+    // read back as a shadow of the home the source was naming all along.
+    const fb = &mod.body.stmts[0].func_decl.func.body;
+    const tail = fb.tail_expr orelse return error.TestExpectedEqual;
+    try std.testing.expect(tail.* == .binop);
+    try std.testing.expect(tail.binop.rhs.* == .field);
+    try std.testing.expectEqual(@as(i64, 109), checked.foreignModuleIntConstant(tail.binop.rhs).?);
+}
+
 test "semantic_graph: cross-home application exposes the exact missing body boundary" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;

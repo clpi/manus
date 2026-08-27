@@ -10594,7 +10594,7 @@ fn lowerExprCons(
         .float_lit => |fl| .{ .f64 = fl.val },
         .true_lit => .{ .i64 = 1 },
         .false_lit => .{ .i64 = 0 },
-        .quoted => |s| .{ .str = s.val },
+        .quoted => |s| .{ .str = s.val }, // both faces share this carrier; see gaps/GAP-145.md
         // AN INJECTED WORLD ADDS REACH; IT NEVER TAKES A NAME.
         //
         // The world test used to run BEFORE `ctx.locals`, so any program that

@@ -142,6 +142,7 @@ pub const mvp_instructions: []const Instruction = &.{
     ins_ctrl("wasm.return", "return", 0x0F, .none, "interp.return", "lower.return"),
     ins("wasm.call", "call", 0x10, &.{}, &.{}, .func_idx, "interp.call", "lower.call"),
     ins_trap("wasm.call_indirect", "call_indirect", 0x11, &.{}, &.{}, .call_indirect, "interp.call_indirect", "lower.call_indirect"),
+    ins_ctrl("wasm.return_call", "return_call", 0x12, .func_idx, "interp.return_call", "lower.return_call"),
     // Parametric
     ins("wasm.drop", "drop", 0x1A, &.{.any}, &.{}, .none, "interp.drop", "lower.drop"),
     ins("wasm.select", "select", 0x1B, &.{ .i32, .any, .any }, &.{.any}, .none, "interp.select", "lower.select"),
@@ -358,6 +359,14 @@ test "wasm_semantic: i32.add stack effect" {
 test "wasm_semantic: unreachable traps" {
     const inst = findByOpcode(0x00) orelse return error.MissingInstruction;
     try std.testing.expect(inst.may_trap);
+}
+
+test "wasm_semantic: return_call is present with func_idx immediate" {
+    const inst = findByOpcode(0x12) orelse return error.MissingInstruction;
+    try std.testing.expectEqualStrings("wasm.return_call", inst.id);
+    try std.testing.expect(inst.control_flow);
+    try std.testing.expect(inst.immediate == .func_idx);
+    try std.testing.expectEqualStrings("interp.return_call", inst.handler);
 }
 
 test "wasm_semantic: JSON export non-empty" {

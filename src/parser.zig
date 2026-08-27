@@ -19,34 +19,6 @@ pub const ParseError = error{
     ExpectedToken,
 } || lexer_dispatch.DispatchError || Lexer.TokenStreamError || Allocator.Error;
 
-fn findMatchingParen(s: []const u8, start: usize) usize {
-    var depth: i32 = 1;
-    var i: usize = start + 1;
-    var in_string = false;
-    var quote_char: u8 = 0;
-    while (i < s.len) : (i += 1) {
-        if (in_string) {
-            if (s[i] == '\\' and i + 1 < s.len) {
-                i += 1;
-                continue;
-            }
-            if (s[i] == quote_char) in_string = false;
-            continue;
-        }
-        if (s[i] == '"' or s[i] == '\'') {
-            in_string = true;
-            quote_char = s[i];
-            continue;
-        }
-        if (s[i] == '(') depth += 1;
-        if (s[i] == ')') {
-            depth -= 1;
-            if (depth == 0) return i;
-        }
-    }
-    return s.len;
-}
-
 /// How deep `parse_prec` may descend before the parser REFUSES.
 ///
 /// Without a bound the parser did not refuse — it FAULTED. Measured on
@@ -471,7 +443,7 @@ pub const Parser = struct {
             const hint_text = hints[i] orelse continue;
             if (std.mem.indexOfScalar(u8, hint_text, '(')) |paren_pos| {
                 const name = hint_text[0..paren_pos];
-                const end_paren = findMatchingParen(hint_text, paren_pos);
+                const end_paren = paren_pos + (self.matchingTokenClose(hint_text[paren_pos..], &.{}, .lparen, .rparen) orelse hint_text[paren_pos..].len);
                 const args = hint_text[paren_pos + 1 .. end_paren];
                 attrs[i] = .{ .name = name, .args = args };
             } else {
@@ -1717,36 +1689,44 @@ pub const Parser = struct {
         const l = (try self.adv()).loc;
         var vals: std.ArrayList(*ast.Expr) = .empty;
         const nxt = try self.pk();
-        sw: switch (nxt.kind) {
-            .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi => {},
-            else => {
-                // A one-liner is terminated by the NEWLINE (§3.3), so a bare
-                // `return` with nothing after it on its own line returns no
-                // value. Without this it reached across the line break and took
-                // the NEXT statement as its result: `return` followed by
-                // `c = self.src:byte(...)` parsed `c` as the returned
-                // expression and then choked on the `=`.
-                //
-                // It only became reachable when `end` stopped being written —
-                // `return end` used to terminate it, and the closer was doing
-                // work the layout should have been doing.
-                if (self.idol_mode and nxt.loc.line != l.line) break :sw;
-                if (self.idol_mode) {
-                    const view = token_view.fromLexer(self.lex) orelse {
-                        term.locErr(nxt.loc, "production token view is absent at return lookahead", .{});
-                        return ParseError.UnexpectedToken;
-                    };
-                    if (!view.canBeginExpression(self.lex.duoStreamIndex())) {
-                        term.locErr(nxt.loc, "expected a return value or line boundary, got '{s}'", .{nxt.kind.spelling()});
-                        return ParseError.UnexpectedToken;
-                    }
-                }
+        if (try self.returnStartsValue(l, nxt)) {
+            try vals.append(self.alloc, try self.parse_expr());
+            while (try self.eat(.comma) != null)
                 try vals.append(self.alloc, try self.parse_expr());
-                while (try self.eat(.comma) != null)
-                    try vals.append(self.alloc, try self.parse_expr());
-            },
         }
         return ast.Stmt{ .ret = .{ .loc = l, .vals = try vals.toOwnedSlice(self.alloc) } };
+    }
+
+    fn returnStartsValue(self: *Parser, l: ast.Loc, nxt: Token) ParseError!bool {
+        switch (nxt.kind) {
+            .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi => return false,
+            else => {},
+        }
+        // A one-liner is terminated by the NEWLINE (§3.3), so a bare `return`
+        // with nothing after it on its own line returns no value. Without this
+        // it reached across the line break and took the NEXT statement as its
+        // result: `return` followed by `c = self.src:byte(...)` parsed `c` as
+        // the returned expression and then choked on the `=`.
+        //
+        // The same boundary matters inside a match arm. `return` on its own
+        // line must not seize the next arm's pattern as its value just because
+        // the arm parser is using the restricted scrutinee reader.
+        //
+        // It only became reachable when `end` stopped being written —
+        // `return end` used to terminate it, and the closer was doing work the
+        // layout should have been doing.
+        if (self.idol_mode and nxt.loc.line != l.line) return false;
+        if (self.idol_mode) {
+            const view = token_view.fromLexer(self.lex) orelse {
+                term.locErr(nxt.loc, "production token view is absent at return lookahead", .{});
+                return ParseError.UnexpectedToken;
+            };
+            if (!view.canBeginExpression(self.lex.duoStreamIndex())) {
+                term.locErr(nxt.loc, "expected a return value or line boundary, got '{s}'", .{nxt.kind.spelling()});
+                return ParseError.UnexpectedToken;
+            }
+        }
+        return true;
     }
 
     /// §1/§15 — statement-leading keywords the deny table retires,
@@ -4472,19 +4452,19 @@ pub const Parser = struct {
                 const ret_loc = (try self.adv()).loc;
                 var vals: std.ArrayList(*ast.Expr) = .empty;
                 const nxt = try self.pk();
-                const is_case_after = nxt.kind == .name and std.mem.eql(u8, nxt.text, "case");
-                switch (nxt.kind) {
-                    .kw_end, .kw_else, .kw_elseif, .kw_until, .eof, .semi => {},
-                    .name => if (!is_case_after) {
+                if (try self.returnStartsValue(ret_loc, nxt)) {
+                    switch (nxt.kind) {
+                        .name => {
                         try vals.append(self.alloc, try self.parse_match_scrutinee());
                         while (try self.eat(.comma) != null)
                             try vals.append(self.alloc, try self.parse_match_scrutinee());
-                    },
-                    else => {
-                        try vals.append(self.alloc, try self.parse_match_scrutinee());
-                        while (try self.eat(.comma) != null)
+                        },
+                        else => {
                             try vals.append(self.alloc, try self.parse_match_scrutinee());
-                    },
+                            while (try self.eat(.comma) != null)
+                                try vals.append(self.alloc, try self.parse_match_scrutinee());
+                        },
+                    }
                 }
                 try stmts.append(self.alloc, ast.Stmt{ .ret = .{
                     .loc = ret_loc,
@@ -5712,31 +5692,6 @@ pub const Parser = struct {
     /// the exact defect the quote rule was added to fix. Caught by the corpus
     /// STR-1 census moving on `scripts/sim.id`, not by a fixture, which is why
     /// the census is run on both sides of a change to this file.
-    fn interpolationHoleEnd(s: []const u8, protected: []const bool, open: usize) ?usize {
-        if (open >= s.len or s[open] != '{') return null;
-        var depth: usize = 0;
-        var i: usize = open;
-        while (i < s.len) : (i += 1) {
-            const c = s[i];
-            if ((c == '{' or c == '}') and isProtected(protected, i)) continue;
-            if (c == '"' or c == '\'') {
-                i += 1;
-                while (i < s.len and s[i] != c) : (i += 1) {
-                    if (s[i] == '\\' and i + 1 < s.len) i += 1;
-                }
-                if (i >= s.len) return null;
-                continue;
-            }
-            if (c == '{') {
-                depth += 1;
-            } else if (c == '}') {
-                depth -= 1;
-                if (depth == 0) return i;
-            }
-        }
-        return null;
-    }
-
     /// The escape-provenance map is CO-INDEXED with the decoded bytes, so a
     /// short map is a wrong answer, not a slow one. It can legitimately be
     /// EMPTY — every caller that has no map passes `&.{}` — and reading an
@@ -5906,6 +5861,66 @@ pub const Parser = struct {
         );
     }
 
+    /// Matching delimiter extent from the producer pack, not from raw-byte quote
+    /// guesses. `protected` marks decoded braces that are literal text (`\{`,
+    /// `\}`, `\x7B`, …) and therefore must be hidden from the sub-lexer as
+    /// ORDINARY BYTES with the SAME offsets, not reinterpreted as delimiters.
+    fn matchingTokenClose(
+        self: *Parser,
+        text: []const u8,
+        protected: []const bool,
+        open_kind: TK,
+        close_kind: TK,
+    ) ?usize {
+        var scan: std.ArrayList(u8) = .empty;
+        defer scan.deinit(self.alloc);
+
+        for (text, 0..) |c, i| {
+            if ((c == '{' or c == '}') and isProtected(protected, i)) {
+                scan.append(self.alloc, 'x') catch return null;
+                continue;
+            }
+            scan.append(self.alloc, c) catch return null;
+        }
+
+        // The matching close must be observable even when the REMAINDER of the
+        // surrounding literal is not a whole source fragment on its own. Raw
+        // scan handled `"{t}\n"` because it stopped at `}` and ignored the
+        // trailing `"`; tokenizing the WHOLE suffix would reject that same tail
+        // as an unterminated quoted span before we ever see the close. So ask
+        // the producer the narrower question: the earliest PREFIX that lexes
+        // cleanly and balances back to depth zero.
+        var end: usize = 1;
+        while (end <= scan.items.len) : (end += 1) {
+            var sub = self.interpolationLexer(scan.items[0..end]);
+            var p = Parser.init(&sub, self.alloc);
+            p.idol_mode = self.idol_mode;
+            p.ensureProducerPack() catch continue;
+            defer p.releaseOwnedPack();
+
+            const view = token_view.fromLexer(&sub) orelse continue;
+            const first = view.at(0) orelse continue;
+            if (first.kind != open_kind) continue;
+
+            var depth: u32 = 1;
+            var idx: usize = 1;
+            while (idx < view.len()) : (idx += 1) {
+                const tok = view.at(idx) orelse break;
+                if (tok.kind == open_kind) {
+                    depth += 1;
+                    continue;
+                }
+                if (tok.kind != close_kind) continue;
+                depth -= 1;
+                if (depth != 0) continue;
+                const span = tokenSourceSpan(scan.items[0..end], tok) orelse break;
+                if (span.end != end) break;
+                return span.start;
+            }
+        }
+        return null;
+    }
+
     fn parseInterpolationHole(self: *Parser, hole_loc: ast.Loc, raw: []const u8) ParseError!?*ast.Expr {
         const text = std.mem.trim(u8, raw, " \t\r\n");
         if (text.len == 0) return null;
@@ -6054,7 +6069,7 @@ pub const Parser = struct {
                 continue;
             }
             const hole_loc = interpolationLoc(loc, s, i);
-            const close = interpolationHoleEnd(s, protected, i) orelse {
+            const hole_close = self.matchingTokenClose(s[i..], protected[i..], .lbrace, .rbrace) orelse {
                 term.locWarn(hole_loc, "STR-1: this `{{` opens an interpolation hole that never closes", .{});
                 // THE DIAGNOSTIC THAT WILL REFUSE IS ALREADY THE ONE THAT
                 // TEACHES. `docs/text-law.md` §4.5 stages the refusal behind the
@@ -6068,6 +6083,7 @@ pub const Parser = struct {
                 i += 1;
                 continue;
             };
+            const close = i + hole_close;
             const hole_text = s[i + 1 .. close];
             if (try self.parseInterpolationHole(hole_loc, hole_text)) |hole| {
                 if (lit.items.len > 0) {
@@ -8741,6 +8757,26 @@ test "parse: match-arm lookahead refuses without the production token view" {
     try testing.expectError(ParseError.UnexpectedToken, p.startsMatchArm());
 }
 
+test "parse: bare return in a match arm does not consume the next arm pattern" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\match x
+        \\  0 then
+        \\    return
+        \\  [1] then
+        \\    return 2
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 2), stmt.match_stmt.arms.len);
+    try testing.expectEqual(@as(usize, 1), stmt.match_stmt.arms[0].body.stmts.len);
+    try testing.expect(stmt.match_stmt.arms[0].body.stmts[0] == .ret);
+    try testing.expectEqual(@as(usize, 0), stmt.match_stmt.arms[0].body.stmts[0].ret.vals.len);
+    try testing.expect(stmt.match_stmt.arms[1].pattern == .array_destr);
+}
+
 test "parse: if statement" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -10135,6 +10171,21 @@ test "parse: attribute with args on function" {
     try testing.expectEqualStrings("\"use new_func instead\"", stmt.func_decl.attributes[0].args.?);
 }
 
+test "parse: comment hint attribute args preserve nested parens and quoted close" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\--- @deprecated("a)b", wrap(1, call(2, 3)))
+        \\fun old_func()
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqual(@as(usize, 1), stmt.func_decl.attributes.len);
+    try testing.expectEqualStrings("deprecated", stmt.func_decl.attributes[0].name);
+    try testing.expectEqualStrings("\"a)b\", wrap(1, call(2, 3))", stmt.func_decl.attributes[0].args.?);
+}
+
 test "parse: multiple attributes on function" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -10927,7 +10978,8 @@ test "parse: an escaped brace is TEXT and an unescaped one still opens a hole" {
 test "parse: an escaped brace cannot close or deepen a hole" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    // `interpolationHoleEnd` counts brace DEPTH, so a protected brace has to be
+    // `matchingTokenClose` counts brace DEPTH by the producer's tokens, so a
+    // protected brace has to be
     // invisible to it in both directions. Without the guard `"{f(\})}"` would
     // close at the `\}` — text — and the hole would be cut in the wrong place.
     const mod = try parseDuoSource(
@@ -10957,7 +11009,7 @@ test "parse: an ESCAPED QUOTE inside a hole is still a quote, not a protected by
     // The first cut of the protection guard read `isProtected(protected, i)` on
     // EVERY byte, not only on braces. A `"` inside a hole must be written `\"`
     // — the hole is inside a text literal — so it arrives PROTECTED, and the
-    // guard skipped it, disabling the quoted-span rule that `interpolationHoleEnd`
+    // guard skipped it, disabling the quoted-span rule that `matchingTokenClose`
     // exists for. The hole below then cut at the `}` inside the nested string.
     //
     // No fixture caught it. The corpus STR-1 census did: `scripts/sim.id` went

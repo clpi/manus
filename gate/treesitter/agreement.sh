@@ -16,6 +16,13 @@ cd -- "$(unset CDPATH; cd -- "$(dirname -- "$0")/../.." && pwd)" || exit 2
 IDOL=${IDOL:-./zig-out/bin/idol}
 [ -x "$IDOL" ] || { printf 'treesitter agreement: FAIL — compiler is not executable: %s\n' "$IDOL" >&2; exit 2; }
 
+. "./gate/realization/direct.sh"
+direct_native_probe "$IDOL"
+if direct_native_absent; then
+  direct_native_note 'the broken-reader control in this gate is unreachable'
+  exit 2
+fi
+
 # POSITIVE CONTROL. Point the gate at a tree whose owner bridge carries no
 # rows and it must reach the broken-reader refusal (3), not report agreement.
 # Without this the whole gate is one deleted input away from being vacuously

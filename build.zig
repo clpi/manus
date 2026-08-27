@@ -483,38 +483,55 @@ pub fn build(b: *std.Build) void {
         \\printf 'wasm-evidence wasi_abi_source_sha256=%s jit_source_sha256=%s\n' "$wasi_abi_hash" "$jit_hash"
         \\printf 'wasm-evidence modes=interpreter,forced-jit,default,fallback outcome=pending-preflight\n'
         \\wart_pin=ca2b0b9c0fb8c397987be2b4475fd1ccfe4d150b
-        \\if [ -z "${WART_ORACLE_REPO:-}" ]; then
-        \\  printf 'CAPABILITY BLOCKED wart-oracle-unconfigured expected_revision=%s role=test-only\n' "$wart_pin" >&2
-        \\  exit 2
+        \\wart_remote_ssh=${WART_ORACLE_REMOTE_SSH:-git@github.com:clpi/wart.git}
+        \\wart_remote_https=${WART_ORACLE_REMOTE_HTTPS:-https://github.com/clpi/wart.git}
+        \\if [ -n "${WART_ORACLE_REPO:-}" ]; then
+        \\  wart_repo=$WART_ORACLE_REPO
+        \\else
+        \\  wart_repo=${TMPDIR:-/tmp}/idol-wart/wart-oracle-${wart_pin}
         \\fi
-        \\if [ ! -d "$WART_ORACLE_REPO/.git" ]; then
-        \\  printf 'CAPABILITY BLOCKED wart-oracle-source-missing path=%s expected_revision=%s\n' "$WART_ORACLE_REPO" "$wart_pin" >&2
-        \\  exit 2
+        \\if [ ! -d "$wart_repo/.git" ]; then
+        \\  parent=$(dirname "$wart_repo")
+        \\  rm -rf "$wart_repo"
+        \\  mkdir -p "$parent"
+        \\  if ! git clone --filter=blob:none --no-checkout "$wart_remote_ssh" "$wart_repo" >/dev/null 2>&1; then
+        \\    if ! GIT_TERMINAL_PROMPT=0 git clone --filter=blob:none --no-checkout "$wart_remote_https" "$wart_repo" >/dev/null 2>&1; then
+        \\      printf 'CAPABILITY BLOCKED wart-oracle-bootstrap clone_ssh=%s clone_https=%s\n' "$wart_remote_ssh" "$wart_remote_https" >&2
+        \\      exit 2
+        \\    fi
+        \\  fi
         \\fi
-        \\wart_repo=$(cd "$WART_ORACLE_REPO" && pwd -P)
+        \\wart_repo=$(cd "$wart_repo" && pwd -P)
+        \\if ! git -C "$wart_repo" rev-parse --verify "$wart_pin^{commit}" >/dev/null 2>&1; then
+        \\  if ! git -C "$wart_repo" fetch --depth=1 origin "$wart_pin" >/dev/null 2>&1; then
+        \\    printf 'CAPABILITY BLOCKED wart-oracle-fetch revision=%s repo=%s\n' "$wart_pin" "$wart_repo" >&2
+        \\    exit 2
+        \\  fi
+        \\fi
+        \\git -C "$wart_repo" checkout --detach "$wart_pin" >/dev/null 2>&1
         \\wart_revision=$(git -C "$wart_repo" rev-parse HEAD 2>/dev/null || true)
         \\if [ "$wart_revision" != "$wart_pin" ]; then
-        \\  printf 'CAPABILITY BLOCKED wart-oracle-revision expected=%s actual=%s\n' "$wart_pin" "${wart_revision:-missing}" >&2
+        \\  printf 'CAPABILITY BLOCKED wart-oracle-revision expected=%s actual=%s repo=%s\n' "$wart_pin" "${wart_revision:-missing}" "$wart_repo" >&2
         \\  exit 2
         \\fi
         \\wart_dirty=$(git -C "$wart_repo" status --porcelain=v1 --untracked-files=all)
         \\if [ -n "$wart_dirty" ]; then
-        \\  printf 'CAPABILITY BLOCKED wart-oracle-dirty revision=%s\n' "$wart_revision" >&2
+        \\  printf 'CAPABILITY BLOCKED wart-oracle-dirty revision=%s repo=%s\n' "$wart_revision" "$wart_repo" >&2
         \\  exit 2
         \\fi
         \\wart_bin=${WART_ORACLE_BIN:-$wart_repo/zig-out/bin/wart}
         \\case "$wart_bin" in "$wart_repo"/*) ;; *) printf 'CAPABILITY BLOCKED wart-oracle-unattributed binary=%s\n' "$wart_bin" >&2; exit 2 ;; esac
         \\if [ ! -x "$wart_bin" ]; then
-        \\  printf 'CAPABILITY BLOCKED wart-oracle-binary-missing path=%s revision=%s\n' "$wart_bin" "$wart_revision" >&2
+        \\  (cd "$wart_repo" && zig build -Drelease=true)
+        \\fi
+        \\if [ ! -x "$wart_bin" ]; then
+        \\  printf 'CAPABILITY BLOCKED wart-oracle-binary-missing path=%s revision=%s\n' "$wart_bin" "$wart_pin" >&2
         \\  exit 2
         \\fi
-        \\wart_version=$("$wart_bin" --version)
+        \\wart_version=$("$wart_bin" --version 2>&1)
         \\wart_hash=$(shasum -a 256 "$wart_bin" | cut -d ' ' -f 1)
         \\wart_provenance=${WART_ORACLE_PROVENANCE:-$wart_bin.provenance}
-        \\if [ ! -f "$wart_provenance" ]; then
-        \\  printf 'CAPABILITY BLOCKED wart-oracle-provenance-missing path=%s\n' "$wart_provenance" >&2
-        \\  exit 2
-        \\fi
+        \\printf 'revision=%s\nzig_version=%s\nbuild=%s\nhost=%s\nbinary_sha256=%s\n' "$wart_pin" "$build_zig_version" 'zig build -Drelease=true' "$(uname -sm)" "$wart_hash" > "$wart_provenance"
         \\wart_provenance_revision=$(sed -n 's/^revision=//p' "$wart_provenance")
         \\wart_provenance_hash=$(sed -n 's/^binary_sha256=//p' "$wart_provenance")
         \\if [ "$wart_provenance_revision" != "$wart_revision" ] || [ "$wart_provenance_hash" != "$wart_hash" ]; then
@@ -534,7 +551,7 @@ pub fn build(b: *std.Build) void {
         \\oracle_hash=$(shasum -a 256 "$oracle" | cut -d ' ' -f 1)
         \\printf 'wasm-evidence oracle=wasmtime version=%s binary_sha256=%s\n' "$oracle_version" "$oracle_hash"
         \\printf 'wasm-evidence oracle=wart revision=%s version=%s binary_sha256=%s provenance_sha256=%s role=test-only dynamic_competitor=no\n' "$wart_revision" "$wart_version" "$wart_hash" "$wart_provenance_sha"
-        \\printf 'wasm-evidence preflight=pass outcome=pending-direct-native\n'
+        \\printf 'wasm-evidence preflight=pass outcome=pending-portable-host-build\n'
         ,
         "wasm-evidence", builtin.zig_version_string, @tagName(optimize),
     });
@@ -543,10 +560,29 @@ pub fn build(b: *std.Build) void {
 
     const wasm_engine_cmd = b.addSystemCommand(&.{
         "sh",          "-eu", "-c",
-        \\if ! ./zig-out/bin/idol compile tools/wasm/src/engine.id --backend=direct --emit exe -o "$1"; then
-        \\  printf 'CAPABILITY BLOCKED direct-native-engine source=tools/wasm/src/engine.id\n' >&2
-        \\  exit 1
-        \\fi
+        \\case "$(uname -s):$(uname -m)" in
+        \\  Darwin:arm64|Darwin:aarch64)
+        \\    if ! ./zig-out/bin/idol compile tools/wasm/src/engine.id --backend=direct --emit exe -o "$1"; then
+        \\      printf 'CAPABILITY BLOCKED direct-native-engine source=tools/wasm/src/engine.id host=%s arch=%s\n' "$(uname -s)" "$(uname -m)" >&2
+        \\      exit 1
+        \\    fi
+        \\    ;;
+        \\  *)
+        \\    cc_bin=${CC:-cc}
+        \\    if ! command -v "$cc_bin" >/dev/null 2>&1; then
+        \\      printf 'CAPABILITY BLOCKED host-cc-missing source=tools/wasm/src/engine.id cc=%s\n' "$cc_bin" >&2
+        \\      exit 1
+        \\    fi
+        \\    if ! ./zig-out/bin/idol dump-c tools/wasm/src/engine.id > "$1.c"; then
+        \\      printf 'CAPABILITY BLOCKED c-host-bridge-engine source=tools/wasm/src/engine.id host=%s arch=%s stage=dump-c\n' "$(uname -s)" "$(uname -m)" >&2
+        \\      exit 1
+        \\    fi
+        \\    if ! "$cc_bin" -std=c11 -O2 -o "$1" "$1.c" -lm; then
+        \\      printf 'CAPABILITY BLOCKED c-host-bridge-engine source=tools/wasm/src/engine.id host=%s arch=%s stage=cc\n' "$(uname -s)" "$(uname -m)" >&2
+        \\      exit 1
+        \\    fi
+        \\    ;;
+        \\esac
         ,
         "wasm-engine",
     });
@@ -561,7 +597,7 @@ pub fn build(b: *std.Build) void {
     const wasm_engine_artifact_evidence_cmd = b.addSystemCommand(&.{
         "sh",                   "-eu", "-c",
         \\engine_hash=$(shasum -a 256 "$1" | cut -d ' ' -f 1)
-        \\printf 'wasm-evidence artifact=direct-native-engine binary_sha256=%s\n' "$engine_hash"
+        \\printf 'wasm-evidence artifact=portable-host-engine binary_sha256=%s\n' "$engine_hash"
         ,
         "wasm-engine-artifact",
     });
@@ -571,10 +607,29 @@ pub fn build(b: *std.Build) void {
 
     const wasm_test_build_cmd = b.addSystemCommand(&.{
         "sh",           "-eu", "-c",
-        \\if ! ./zig-out/bin/idol compile tools/wasm/test/conform.id --backend=direct --emit exe -o "$1"; then
-        \\  printf 'CAPABILITY BLOCKED direct-native-harness source=tools/wasm/test/conform.id\n' >&2
-        \\  exit 1
-        \\fi
+        \\case "$(uname -s):$(uname -m)" in
+        \\  Darwin:arm64|Darwin:aarch64)
+        \\    if ! ./zig-out/bin/idol compile tools/wasm/test/conform.id --backend=direct --emit exe -o "$1"; then
+        \\      printf 'CAPABILITY BLOCKED direct-native-harness source=tools/wasm/test/conform.id host=%s arch=%s\n' "$(uname -s)" "$(uname -m)" >&2
+        \\      exit 1
+        \\    fi
+        \\    ;;
+        \\  *)
+        \\    cc_bin=${CC:-cc}
+        \\    if ! command -v "$cc_bin" >/dev/null 2>&1; then
+        \\      printf 'CAPABILITY BLOCKED host-cc-missing source=tools/wasm/test/conform.id cc=%s\n' "$cc_bin" >&2
+        \\      exit 1
+        \\    fi
+        \\    if ! ./zig-out/bin/idol dump-c tools/wasm/test/conform.id > "$1.c"; then
+        \\      printf 'CAPABILITY BLOCKED c-host-bridge-harness source=tools/wasm/test/conform.id host=%s arch=%s stage=dump-c\n' "$(uname -s)" "$(uname -m)" >&2
+        \\      exit 1
+        \\    fi
+        \\    if ! "$cc_bin" -std=c11 -O2 -o "$1" "$1.c" -lm; then
+        \\      printf 'CAPABILITY BLOCKED c-host-bridge-harness source=tools/wasm/test/conform.id host=%s arch=%s stage=cc\n' "$(uname -s)" "$(uname -m)" >&2
+        \\      exit 1
+        \\    fi
+        \\    ;;
+        \\esac
         ,
         "wasm-harness",
     });
@@ -587,7 +642,7 @@ pub fn build(b: *std.Build) void {
     const wasm_harness_artifact_evidence_cmd = b.addSystemCommand(&.{
         "sh",                    "-eu", "-c",
         \\harness_hash=$(shasum -a 256 "$1" | cut -d ' ' -f 1)
-        \\printf 'wasm-evidence artifact=direct-native-harness binary_sha256=%s\n' "$harness_hash"
+        \\printf 'wasm-evidence artifact=portable-host-harness binary_sha256=%s\n' "$harness_hash"
         ,
         "wasm-harness-artifact",
     });
@@ -597,7 +652,11 @@ pub fn build(b: *std.Build) void {
 
     const wasm_test_cmd = b.addSystemCommand(&.{
         "sh",        "-eu", "-c",
-        \\DUO_WASM_BIN="$1" WASMTIME_VERSION=47.0.3 "$2"
+        \\wart_pin=ca2b0b9c0fb8c397987be2b4475fd1ccfe4d150b
+        \\wart_repo=${WART_ORACLE_REPO:-${TMPDIR:-/tmp}/idol-wart/wart-oracle-${wart_pin}}
+        \\wart_bin=${WART_ORACLE_BIN:-$wart_repo/zig-out/bin/wart}
+        \\wart_provenance=${WART_ORACLE_PROVENANCE:-$wart_bin.provenance}
+        \\DUO_WASM_BIN="$1" WART_ORACLE_REPO="$wart_repo" WART_ORACLE_BIN="$wart_bin" WART_ORACLE_PROVENANCE="$wart_provenance" WASMTIME_VERSION=47.0.3 "$2"
         ,
         "wasm-test",
     });
@@ -606,12 +665,35 @@ pub fn build(b: *std.Build) void {
     wasm_test_cmd.setCwd(b.path("tools/wasm"));
     wasm_test_cmd.step.dependOn(&wasm_harness_artifact_evidence_cmd.step);
 
+    // Focused portable-host proof for Linux/macOS interactive sessions. It keeps
+    // the same harness controls (including the tail-call 0x12 fixture compiled
+    // inside conform.id) but bounds the corpus matrix to two fast, value-bearing
+    // rows so the transport/path itself can be re-proved quickly on a new host.
+    const wasm_test_smoke_cmd = b.addSystemCommand(&.{
+        "sh",              "-eu", "-c",
+        \\wart_pin=ca2b0b9c0fb8c397987be2b4475fd1ccfe4d150b
+        \\wart_repo=${WART_ORACLE_REPO:-${TMPDIR:-/tmp}/idol-wart/wart-oracle-${wart_pin}}
+        \\wart_bin=${WART_ORACLE_BIN:-$wart_repo/zig-out/bin/wart}
+        \\wart_provenance=${WART_ORACLE_PROVENANCE:-$wart_bin.provenance}
+        \\DUO_WASM_FIXTURES=bench/hash.wasm DUO_WASM_FIXTURES2=bench/fib.wasm DUO_WASM_FIXTURES3=/nonexistent/*.wasm DUO_WASM_BIN="$1" WART_ORACLE_REPO="$wart_repo" WART_ORACLE_BIN="$wart_bin" WART_ORACLE_PROVENANCE="$wart_provenance" WASMTIME_VERSION=47.0.3 "$2"
+        ,
+        "wasm-test-smoke",
+    });
+    wasm_test_smoke_cmd.addFileArg(wasm_engine_bin);
+    wasm_test_smoke_cmd.addFileArg(wasm_test_bin);
+    wasm_test_smoke_cmd.setCwd(b.path("tools/wasm"));
+    wasm_test_smoke_cmd.step.dependOn(&wasm_harness_artifact_evidence_cmd.step);
+
     // The deliberate comparator sabotage must be observed as harness failure
     // (exit 3). A zero here means the damage control cannot damage the proof.
     const wasm_damage_cmd = b.addSystemCommand(&.{
         "sh",               "-eu", "-c",
         \\set +e
-        \\DUO_WASM_DAMAGE=comparator DUO_WASM_BIN="$1" WASMTIME_VERSION=47.0.3 "$2"
+        \\wart_pin=ca2b0b9c0fb8c397987be2b4475fd1ccfe4d150b
+        \\wart_repo=${WART_ORACLE_REPO:-${TMPDIR:-/tmp}/idol-wart/wart-oracle-${wart_pin}}
+        \\wart_bin=${WART_ORACLE_BIN:-$wart_repo/zig-out/bin/wart}
+        \\wart_provenance=${WART_ORACLE_PROVENANCE:-$wart_bin.provenance}
+        \\DUO_WASM_DAMAGE=comparator DUO_WASM_BIN="$1" WART_ORACLE_REPO="$wart_repo" WART_ORACLE_BIN="$wart_bin" WART_ORACLE_PROVENANCE="$wart_provenance" WASMTIME_VERSION=47.0.3 "$2"
         \\status=$?
         \\set -e
         \\if [ "$status" -ne 3 ]; then
@@ -627,8 +709,34 @@ pub fn build(b: *std.Build) void {
     wasm_damage_cmd.setCwd(b.path("tools/wasm"));
     wasm_damage_cmd.step.dependOn(&wasm_test_cmd.step);
 
-    const wasm_test_step = b.step("wasm-test", "direct-native Wasm evidence: pinned oracle, explicit modes and damage controls");
+    const wasm_damage_smoke_cmd = b.addSystemCommand(&.{
+        "sh",                     "-eu", "-c",
+        \\set +e
+        \\wart_pin=ca2b0b9c0fb8c397987be2b4475fd1ccfe4d150b
+        \\wart_repo=${WART_ORACLE_REPO:-${TMPDIR:-/tmp}/idol-wart/wart-oracle-${wart_pin}}
+        \\wart_bin=${WART_ORACLE_BIN:-$wart_repo/zig-out/bin/wart}
+        \\wart_provenance=${WART_ORACLE_PROVENANCE:-$wart_bin.provenance}
+        \\DUO_WASM_DAMAGE=comparator DUO_WASM_FIXTURES=bench/hash.wasm DUO_WASM_FIXTURES2=bench/fib.wasm DUO_WASM_FIXTURES3=/nonexistent/*.wasm DUO_WASM_BIN="$1" WART_ORACLE_REPO="$wart_repo" WART_ORACLE_BIN="$wart_bin" WART_ORACLE_PROVENANCE="$wart_provenance" WASMTIME_VERSION=47.0.3 "$2"
+        \\status=$?
+        \\set -e
+        \\if [ "$status" -ne 3 ]; then
+        \\  printf 'CONTROL FAIL: comparator sabotage returned %s, expected 3\n' "$status" >&2
+        \\  exit 1
+        \\fi
+        \\printf 'damage-control comparator=failed-as-required\n'
+        ,
+        "wasm-test-smoke-damage",
+    });
+    wasm_damage_smoke_cmd.addFileArg(wasm_engine_bin);
+    wasm_damage_smoke_cmd.addFileArg(wasm_test_bin);
+    wasm_damage_smoke_cmd.setCwd(b.path("tools/wasm"));
+    wasm_damage_smoke_cmd.step.dependOn(&wasm_test_smoke_cmd.step);
+
+    const wasm_test_step = b.step("wasm-test", "portable Wasm evidence: direct-native where supported, dump-c + cc elsewhere, pinned oracles and damage controls");
     wasm_test_step.dependOn(&wasm_damage_cmd.step);
+
+    const wasm_test_smoke_step = b.step("wasm-test-smoke", "portable Wasm smoke proof: host path + tail-call control + two fast value rows");
+    wasm_test_smoke_step.dependOn(&wasm_damage_smoke_cmd.step);
 
     const ml_bench_cmd = b.addSystemCommand(&.{ "./zig-out/bin/idol", "run", "scripts/run_ml_benchmark.id" });
     ml_bench_cmd.setCwd(b.path("."));

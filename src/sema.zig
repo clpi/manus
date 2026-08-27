@@ -51,6 +51,17 @@ pub const Symbol = struct {
     /// lands in the SAME map as the seed and overwrites the entry, so scope
     /// DEPTH cannot answer either — the fact has to travel on the symbol.
     seeded: bool = false,
+    /// INVENTED BY SEMA, not written by the author. The implicit-local rule
+    /// (`.name` arm of `check_expr_inner`) binds a bare unknown identifier so
+    /// forward references type as `any`. That invention is not a shadow: the
+    /// source never bound the word, and reading it back as one is what made an
+    /// earlier `token.grammarrole.roleliteral(...)` application poison every
+    /// later `token.kindX` constant read in the same scope
+    /// (`foreignHomeSpellingForRoot` saw the invented binding and declined to
+    /// fold, so full-native C emitted `duo_fallback_get_num(0, token, ...)` on
+    /// an undeclared identifier). A real binding — parameter, local, declared
+    /// relation, seeded world name — never carries this flag.
+    invented: bool = false,
     /// If non-null, using this symbol emits a deprecation warning.
     deprecated_msg: ?[]const u8 = null,
     /// knowledge lattice position derived from `typ` (see `Symbol.knowledge`).
@@ -1150,7 +1161,7 @@ pub const Sema = struct {
             @memcpy(alias_buf[target.len..][0..rest.len], rest);
             resolved_spelling = alias_buf[0 .. target.len + rest.len];
         } else if (!self.home_roots.contains(root)) {
-            if (self.scope.lookup(root) != null) return null;
+            if (self.authorRootBinding(root) != null) return null;
             if (self.module_globals.contains(root)) return null;
         }
         const entry = self.homeNamed(resolved_spelling) orelse return null;
@@ -1211,6 +1222,23 @@ pub const Sema = struct {
         return null;
     }
 
+    /// The root spelling read back as an ordinary binding the AUTHOR wrote, or
+    /// null when no binding exists or the only one is sema's own invention.
+    ///
+    /// The implicit-local rule (`.name` arm of `check_expr_inner`) manufactures
+    /// a binding for a bare name the source never bound, and that invention is
+    /// not a shadow: the source never took the word away from the home. Asking
+    /// `lookup` here instead is what made a `token.grammarrole.roleliteral(...)`
+    /// application poison every later `token.kindX` constant read in the same
+    /// scope — `foreignHomeSpellingForRoot` saw the invented binding, declined
+    /// to fold, and full-native C emitted `duo_fallback_get_num(0, token, ...)`
+    /// on an identifier no translation unit declares. See `Symbol.invented`.
+    fn authorRootBinding(self: *const Sema, root: []const u8) ?Symbol {
+        const sym = self.scope.lookup(root) orelse return null;
+        if (sym.invented) return null;
+        return sym;
+    }
+
     fn foreignHomeSpellingForRoot(self: *const Sema, root: []const u8) ?[]const u8 {
         if (self.home_loader == null) return null;
         if (self.home_aliases.get(root)) |target| {
@@ -1220,7 +1248,7 @@ pub const Sema = struct {
             if (!symbol.is_global or !symbol.is_const) return null;
             return target;
         }
-        if (self.scope.lookup(root) != null) return null;
+        if (self.authorRootBinding(root) != null) return null;
         if (self.module_globals.contains(root)) return null;
         return root;
     }
@@ -4576,7 +4604,7 @@ pub const Sema = struct {
                 }
                 if (self.idol_mode and !self.is_builtin_global(n.ident)) {
                     // Implicit local: bare bindings and forward references are module/file locals.
-                    try self.scope.define(n.ident, .{ .typ = .any, .is_const = false });
+                    try self.scope.define(n.ident, .{ .typ = .any, .is_const = false, .invented = true });
                     return .any;
                 }
                 if (self.scope.needs_explicit_global() and !self.is_builtin_global(n.ident)) {

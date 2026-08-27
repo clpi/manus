@@ -5626,7 +5626,8 @@ pub const CodeGen = struct {
 
     fn expr_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
         return switch (expr.*) {
-            .true_lit, .false_lit, .int_lit, .float_lit, .quoted => true,
+            .true_lit, .false_lit, .int_lit, .float_lit => true,
+            .quoted => true,
             .nil => true,
             // A name the program BOUND is an ordinary local — asked first, so
             // neither world test below can take it away from the author.
@@ -11233,7 +11234,8 @@ pub const CodeGen = struct {
     /// it would silently keep a whole descriptor on the boxed path.
     fn is_descriptor_literal(e: *const ast.Expr) bool {
         return switch (e.*) {
-            .int_lit, .float_lit, .true_lit, .false_lit, .quoted => true,
+            .int_lit, .float_lit, .true_lit, .false_lit => true,
+            .quoted => true,
             .unop => |u| u.op == .neg and switch (u.operand.*) {
                 .int_lit, .float_lit => true,
                 else => false,
@@ -13346,7 +13348,8 @@ pub const CodeGen = struct {
     fn lv_scan_expr(self: *CodeGen, e: *const ast.Expr, st: *LvScan) E!void {
         if (!st.ok) return;
         switch (e.*) {
-            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted => {},
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit => {},
+            .quoted => {},
             .name => |n| {
                 // A dense table named outside an index position would escape the
                 // proof — and sema already refuses to make such a table dense,
@@ -24820,6 +24823,7 @@ pub const CodeGen = struct {
         defer names.deinit(self.alloc);
         if (self.src_path.len > 0) {
             try self.collect_require_names_block(&mod.body, &names);
+            try collect_top_level_req_paths(self.alloc, mod, &names);
             for (mod.body.stmts) |*stmt| {
                 if (stmt.* == .func_decl) {
                     try self.collect_require_names_block(&stmt.func_decl.func.body, &names);
@@ -24907,6 +24911,7 @@ pub const CodeGen = struct {
                     continue;
                 };
                 try self.collect_require_names_block(&sub_mod.body, &names);
+                try collect_top_level_req_paths(self.alloc, &sub_mod, &names);
                 for (sub_mod.body.stmts) |*sub_stmt| {
                     if (sub_stmt.* == .func_decl) {
                         try self.collect_require_names_block(&sub_stmt.func_decl.func.body, &names);
@@ -25138,6 +25143,33 @@ pub const CodeGen = struct {
         return c.args[0].quoted.val;
     }
 
+    fn collect_top_level_req_paths(
+        alloc: std.mem.Allocator,
+        mod: *const ast.Module,
+        names: *std.ArrayList([]const u8),
+    ) std.mem.Allocator.Error!void {
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| {
+                    for (ld.inits) |init_expr| {
+                        if (req_path_from_expr(init_expr)) |path| try names.append(alloc, path);
+                    }
+                },
+                .assign => |*as| {
+                    for (as.values) |value| {
+                        if (req_path_from_expr(value)) |path| try names.append(alloc, path);
+                    }
+                },
+                .global_decl => |*gd| {
+                    for (gd.inits) |init_expr| {
+                        if (req_path_from_expr(init_expr)) |path| try names.append(alloc, path);
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
     /// True when `req("path")` / `require("path")` resolves to an embeddable native module.
     fn req_call_expr_is_native_direct(self: *CodeGen, expr: *const ast.Expr) bool {
         const path = req_path_from_expr(expr) orelse return false;
@@ -25180,16 +25212,29 @@ pub const CodeGen = struct {
     /// the repair is to stop asking a filesystem and start asking the resolver
     /// that already answered.
     ///
-    /// Fail-closed when there is no checked semantics attached: an absent
-    /// resolver means the home is UNKNOWN, and reconstructing it from a path
-    /// here is exactly the rediscovery being deleted.
+    /// Prefer the checked program's answer when this req target already reached
+    /// a home there. When the legacy req string never became a graph-owned home
+    /// fact, fall back to the shared resolver rather than silently emitting a
+    /// binary whose embedded-module table is empty and whose first `req` answers
+    /// `module not found` at runtime. This still asks ONE resolver:
+    /// `home_resolve.resolve`, the same authority used elsewhere in this file.
     ///
-    /// The result is DUPED so ownership is unchanged for every caller — the
-    /// resolver owns its copy, and the one caller that frees this one still may.
+    /// The result is owned by the caller in both arms.
     fn find_module_file_for_req(self: *CodeGen, req_name: []const u8) ?[]const u8 {
-        const checked = self.checked_sema orelse return null;
-        const resolved = checked.resolvedHome(req_name) orelse return null;
-        return self.alloc.dupe(u8, resolved.path) catch null;
+        if (self.checked_sema) |checked| {
+            if (checked.resolvedHome(req_name)) |resolved| {
+                return self.alloc.dupe(u8, resolved.path) catch null;
+            }
+        }
+        return if (home_resolve.resolve(
+            self.alloc,
+            self.io,
+            .{ .from = self.src_path, .stdlib_root = self.stdlib_root },
+            req_name,
+        )) |resolved|
+            resolved.path
+        else
+            null;
     }
 
     /// True when `req "path"` resolves to a module already embedded for native-direct dispatch.
@@ -25208,9 +25253,17 @@ pub const CodeGen = struct {
             if (self.embedded_module_native.get(mod_path)) |emitted_native| {
                 return emitted_native;
             }
+            // Resolution alone does not make a req target native-direct. Until
+            // the module is emitted we must ask the same full-native admission
+            // predicate the embed path will apply, otherwise any resolved module
+            // is misclassified as a direct scalar dependency. That exact drift
+            // leaves table-exporting modules such as tools/wasm/src/wasm/wasi_abi.id
+            // without a duo_mod_* thunk, and the caller dies at runtime with
+            // `module not found` the first time it asks `lua_require` for them.
+            return self.module_path_allows_full_native_embed(mod_path);
         }
         if (self.embedded_req_is_native(req_path)) return true;
-        return self.find_module_file_for_req(req_path) != null;
+        return false;
     }
 
     /// True when a `req` binding may omit `lua_require` (embedded native module).

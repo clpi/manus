@@ -48,6 +48,13 @@ if [ "${1:-}" = "--selftest" ]; then
     exit 0
 fi
 
+. "$ROOT/gate/realization/direct.sh"
+direct_native_probe "$IDOLABS"
+if direct_native_absent; then
+    direct_native_note 'the direct refusal witnesses in this gate are unreachable'
+    exit 2
+fi
+
 LEDGER='
 header-view-slice      win      src/parser.zig               scan_func_header_signal uses View
 idol-parser-module     bound    lib/compiler/parser.id       L1-L3 Idol parser spine exists

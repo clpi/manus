@@ -28,6 +28,7 @@ SEMA="$ROOT/src/sema.zig"
 CODEGEN="$ROOT/src/codegen.zig"
 AST="$ROOT/src/ast.zig"
 DNIR="$ROOT/src/dnir_lower.zig"
+PARSER="$ROOT/src/parser.zig"
 
 violations=0
 examined=0
@@ -96,6 +97,59 @@ fi
 examined=$((examined + 1))
 if ! grep -Fq 'grammar_role_table.zig").rows[@intFromEnum(self)].spell' "$ROOT/src/lexer.zig"; then
     bad 'src/lexer.zig spelling() no longer reads the generated owner projection — a second spelling table is back'
+fi
+
+# ── 2b. the parser holds no raw-byte delimiter scan (GAP-145 O6) ─────────────
+#
+# `findMatchingParen` and `interpolationHoleEnd` answered "where does this
+# delimiter close?" by walking QUOTED BYTES with a hand-rolled quote-state
+# guesser — a second observation of literal structure the producer had already
+# produced. Both were deleted 2026-08-26: delimiter extent is now observed over
+# the producer pack through `matchingTokenClose` + `token_view.fromLexer`, which
+# balances depth on the PRODUCER'S tokens and masks decoded braces the producer
+# marked protected.
+#
+# That deletion was measured, reported, and then left with NOTHING enforcing
+# it: this gate held the ceilings on the quote/text/byte surface and never
+# refused a raw-byte scan coming back. Every assertion this project has ever
+# written down without a runner has decayed; this one had not even the runner.
+# A reintroduction in `src/parser.zig` must FAIL here, not merely become
+# possible to notice.
+#
+# The remaining `findMatchingParen` sites (`src/c_frontend.zig`,
+# `src/c_header_parse.zig`) are FOREIGN C HEADER INGRESS, upstream of any Idol
+# token: there is no producer pack there to observe. They are out of this seam
+# and are not counted.
+forbid "$PARSER" 'findMatchingParen' \
+    'parser.zig reacquired findMatchingParen — delimiter extent belongs to the producer pack (matchingTokenClose), not a raw-byte quote guesser'
+forbid "$PARSER" 'interpolationHoleEnd' \
+    'parser.zig reacquired interpolationHoleEnd — hole extent belongs to the producer pack, not a raw-byte scan'
+has "$PARSER" 'fn matchingTokenClose(' \
+    'parser.zig lost matchingTokenClose — the token-view delimiter-extent relation the O6 deletion replaced the raw scans with'
+has "$PARSER" 'token_view.fromLexer(' \
+    'parser.zig stopped observing delimiter extent through the immutable token view'
+
+# POSITIVE CONTROL ON THE REFUSALS (law.gate.protocol). A `forbid` that cannot
+# fail is the `tools/parity/grammar` defect: green for months while matching
+# nothing. Plant both retired scans beside the live replacement in a scratch
+# parser.zig — the detectors above must convict it, and must NOT convict a
+# clean scratch that carries only the replacement.
+o6probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate scratch' >&2; exit 2; }
+{
+    printf '%s\n' 'fn findMatchingParen(s: []const u8) ?usize { }'
+    printf '%s\n' 'fn interpolationHoleEnd(s: []const u8) ?usize { }'
+    printf '%s\n' 'fn matchingTokenClose(self: *Parser) ?usize { }'
+} >"$o6probe/planted.zig"
+: >"$o6probe/clean.zig"
+o6_planted=$(grep -cE 'findMatchingParen|interpolationHoleEnd' "$o6probe/planted.zig")
+o6_clean=$(grep -cE 'findMatchingParen|interpolationHoleEnd' "$o6probe/clean.zig")
+o6_live=$(grep -cE 'fn matchingTokenClose\(' "$o6probe/planted.zig")
+rm -rf -- "$o6probe"
+examined=$((examined + 1))
+if [ "$o6_planted" -ne 2 ] || [ "$o6_clean" -ne 0 ]; then
+    bad "the raw-scan detector is broken: 2 planted scanned as $o6_planted, clean as $o6_clean"
+elif [ "$o6_live" -ne 1 ]; then
+    bad "the replacement detector is broken: matchingTokenClose planted once, counted $o6_live"
 fi
 
 # ── 3. tree-sitter agrees with the one grammar-fact owner ───────────────────
@@ -271,19 +325,24 @@ fi
 # `src/dnir_lower.zig` `graphTextConst`, which reads `sourceQuoteValue` off the
 # graph instead of assuming text. Raising it is the edit that must be argued
 # for.
+#
+# A DISCARD IS NOT AN OBSERVATION. This section was defeated once, measured
+# 2026-08-26: 21 blind arms were rewritten as `blk: { _ = s.quote; ... }` — a
+# Zig DISCARD that observes nothing — and the observing regex below counted
+# every one of them, taking blind from 10 to 0 with zero semantic change. The
+# planted control here is that exact shape. An arm observes the producer quote
+# only by a route that can answer differently for the two faces.
 QUOTE_BLIND_CEILING=21
 
-arms=$(grep -h '^[[:space:]]*\(\.[a-z_, .]*\)\?\.quoted =>' "$ROOT"/src/*.zig | wc -l | tr -d ' ')
+armregex='^[[:space:]]*(\.[a-z_, .]*)?\.quoted =>'
+arms=$(grep -hE "$armregex" "$ROOT"/src/*.zig | wc -l | tr -d ' ')
 # `.quoted` CONTAINS `.quote`, so a naive `grep -c '\.quote'` matches every arm
 # and reports 0 blind ones. It did, on the first run of this check. `[^d]` is
-# what separates reading the fact from naming the node.
-#
-# `graphByteSequenceConst` joins the observing set because it asks the SAME
-# producer route `graphTextConst` does -- `sourceQuoteValue` -> node descriptor
-# -- for the other face. An arm converted to read the producer must be
-# recognised as having been converted, or the ceiling stops being a ratchet
-# and starts being a cap on writing the repair.
-observing=$(grep -h '^[[:space:]]*\(\.[a-z_, .]*\)\?\.quoted =>' "$ROOT"/src/*.zig | grep -cE '\.quote[^d]|Quote|graphTextConst|graphByteSequenceConst')
+# what separates reading the fact from naming the node. Discards `_ = x.quote`
+# are STRIPPED before this count — see the block comment above.
+observing=$(grep -hE "$armregex" "$ROOT"/src/*.zig \
+    | grep -vE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' \
+    | grep -cE '\.quote[^d]|Quote|graphTextConst|graphByteSequenceConst')
 blind=$((arms - observing))
 examined=$((examined + 1))
 if [ "$arms" -eq 0 ]; then
@@ -295,6 +354,83 @@ else
         bad "quote-blind .quoted arms ROSE to $blind, ceiling $QUOTE_BLIND_CEILING"
     fi
 fi
+
+# POSITIVE CONTROL ON THE CLASSIFIER (law.gate.protocol). The planted defect is
+# the shape that defeated this section, verbatim: a discard that the old
+# observing regex counted. Two planted arms, no real observation between them,
+# must classify as two BLIND arms — or this census again reports a zero it was
+# never given.
+ctl=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate scratch' >&2; exit 2; }
+{
+    printf '%s\n' '        .quoted => |s| blk: { _ = s.quote; break :blk .{ .str = s.val }; },'
+    printf '%s\n' '        .quoted => |lit| blk: { _ = lit.quote; break :blk true; },'
+    printf '%s\n' '        .quoted => |s| graphTextConst(ctx.graph, expr),'
+} >"$ctl/planted.zig"
+: >"$ctl/clean.zig"
+planted_arms=$(grep -hE "$armregex" "$ctl/planted.zig" | wc -l | tr -d ' ')
+planted_obs=$(grep -hE "$armregex" "$ctl/planted.zig" \
+    | grep -vE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' \
+    | grep -cE '\.quote[^d]|Quote|graphTextConst|graphByteSequenceConst')
+rm -rf -- "$ctl"
+planted_blind=$((planted_arms - planted_obs))
+if [ "$planted_arms" -ne 3 ] || [ "$planted_blind" -ne 2 ]; then
+    bad "the arm classifier is broken: 3 planted arms counted as $planted_arms, the 2 discard baits as $planted_blind blind — a discard must never count as observing"
+elif [ "$planted_obs" -ne 1 ]; then
+    bad "the arm classifier no longer recognises the graph route: 1 observing arm counted as $planted_obs"
+fi
+
+# A DISCARD OF THE QUOTE FIELD IS BAIT, OUTRIGHT. Stripping discards from the
+# observing count (above) closes the ADD-an-arm hole, but rewriting one of the
+# 21 existing blind arms as a discard would still pass both §3b (blind stays at
+# ceiling) and §3d (the line is stripped). There is no legitimate reason to
+# write `_ = x.quote;` inside a `.quoted` arm: the field is either OBSERVED by
+# a route that can answer differently for the two faces, or the arm is
+# face-neutral and should not mention the field at all. The only use of the
+# shape ever measured in this tree was census bait. Zero tolerance, positive
+# control below.
+baits=$(grep -hE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' "$ROOT"/src/*.zig | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$baits" -ne 0 ]; then
+    bad "$baits .quoted arm(s) DISCARD the quote field ('_ = x.quote;') — a discard observes nothing; read the face or drop the mention"
+fi
+
+# ── 3d. DIVERGENT QUOTE ARMS: the zero GAP-145 actually demands ─────────────
+#
+# §3b counts a SURFACE (blind arms) and §3c counts a FORM (tag tests); neither
+# judges a member. The task seam is sharper than both: an arm is DIVERGENT when
+# it can answer differently for the text face and the byte face of one quoted
+# literal — the class GAP-207 measured printing a pointer at exit 0. Those are
+# the arms that must be ZERO while the surface census may stay a ratchet.
+#
+# A grep cannot judge divergence line-locally, so the judgement lives in an
+# allowlist ledger: an arm is divergent unless its line is classified here as
+# one of the face-neutral kinds the gap enumerates ("span, truthiness, or
+# emit-side realization and carry no text/byte claim"). The ledger is derived
+# from the live tree, so a re-classification is a diff you can read, not a
+# number you have to trust.
+#
+# Kinds:
+#   observe     the arm asks the producer face (graph/descriptor route)
+#   span        the answer is a location; no value law is touched
+#   truthy      presence/non-nil law; identical for both faces
+#   emit        emit-side realization; the physical carrier is shared by design
+#   name        the literal is used as a NAME (identifier), not as a value
+#   inert       the arm claims no effect and no value shape
+#   carrier     the one deliberate `.str` carrier, adjudicated in GAP-145
+#              "What this section does NOT claim"
+#   test        inside a unit test, not a consumer decision
+DIVERGENT_QUOTE_ARMS=0
+
+divergent=$(grep -hE "$armregex" "$ROOT"/src/*.zig \
+    | grep -vE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' \
+    | grep -vE '\.quote[^d]|Quote|graphTextConst|graphByteSequenceConst' \
+    | grep -vE '=> \|(\*?x\| x\.loc,|s\| s\.val,|x\| x\.val,|lit\| lit\.val,)|=> return true,|=> true,|=> \{\},|=> null,|\.str = s\.val \}, // both faces share this carrier|=> \|lit\| \.\{ \.named = lit\.val \},|=> non_numeric_out\.\* = true,|=> \|v\| \{$|=> \{$|=> \|s\| \.\{ \.string = s\.val \},|=> try self\.emit_c_string_literal\(expr\.quoted\.val\),|=> \|\*x\| if \(d\.kind == \.text\) \{$')
+examined=$((examined + 1))
+divcount=$(printf '%s' "$divergent" | grep -c . )
+if [ "$divcount" -ne "$DIVERGENT_QUOTE_ARMS" ]; then
+    bad "DIVERGENT quote arms ROSE to $divcount, must be $DIVERGENT_QUOTE_ARMS — classify the new arm in this ledger or convert it to a producer route"
+fi
+printf '  divergent quote arms: %s (must be %s)\n' "$divcount" "$DIVERGENT_QUOTE_ARMS"
 
 # ── 3c. THE FORM THE ARM CENSUS CANNOT SEE ──────────────────────────────────
 #
