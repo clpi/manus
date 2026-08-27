@@ -7297,6 +7297,17 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
 
+    // APPLICATION-ONE (C0 §67), the same convergence the compile path runs
+    // before backend selection. `do_dump_c` reached CodeGen without it, so
+    // `os.env(name)` — the CALL face of the environment projection — stayed a
+    // `.call` node that `expr_type` and the `.index` emitter both decline,
+    // while the `os.env[name]` face of the SAME edge dumped clean. MEASURED on
+    // lib/env.id: index face dump=0, call face refused `'v' has no native
+    // representation`. One edge, two faces, one recognized — the convergence
+    // pass is the single owner of that agreement and this entry point was the
+    // one consumer that skipped it.
+    table_apply.normalizeModule(alloc, &ps.mod, &ps.sem.type_map);
+
     var mono = Mono.Monomorphizer.init(alloc, &ps.sem.type_map);
     defer mono.deinit();
     mono.run(&ps.mod) catch |e| {
