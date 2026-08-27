@@ -1,0 +1,89 @@
+#!/bin/sh
+# tools/node/dev/grammar/spec — project owner grammar facts into the
+# generated region of docs/spec/grammar.md (GAP-134 item 5).
+#
+# One producer: reads src/grammar_role_table.zig, the bridge lib/compiler/
+# token.id regenerates (law.grammar.one). Every row below is a fact the
+# owner already publishes; nothing is invented here.
+#
+# GEN_ROOT overrides the repo root (used by the gate's damage control).
+# Output: the FULL markdown file on stdout (generated region spliced
+# between markers). Exit 3 = the bridge or markers could not be read.
+set -u
+root=${GEN_ROOT:-$(unset CDPATH; cd -- "$(dirname -- "$0")/../../../.." && pwd)}
+bridge=$root/src/grammar_role_table.zig
+md=$root/docs/spec/grammar.md
+
+fail() { printf 'grammar spec generator: %s\n' "$*" >&2; exit 3; }
+[ -s "$bridge" ] || fail "missing owner bridge $bridge"
+[ -s "$md" ] || fail "missing projection target $md"
+
+# ── extract rows from the generated bridge ────────────────────────────────
+rows=$(awk '
+  /^    \.\{ \.kind = \./ {
+    line=$0; sub(/^    \.\{ /,"",line); sub(/ \},\$/,"",line)
+    print line
+  }
+' "$bridge")
+[ -n "$rows" ] || fail "owner bridge carries no role rows"
+
+# ── the generated region ──────────────────────────────────────────────────
+# Field order in a row is not guaranteed: the owner emits facts
+# conditionally (`.precedence` only when nonzero). Scan fields, never
+# assume positions.
+fullgen=$(printf '%s\n' "$rows" | awk -F', ' '
+  function emit_header() {
+    print "## Grammar facts (generated)"
+    brk()
+    print "<!-- Generated from lib/compiler/token.id via src/grammar_role_table.zig."
+    print "     Regenerate: idol run lib/compiler/token.id, then sh gate/grammar/spec.sh."
+    print "     Every row is an owner fact; the prose around it is authored law. -->"
+    brk()
+    print "One grammar-fact owner (law.grammar.one): lib/compiler/token.id."
+    brk()
+  }
+  function brk() { print "" }
+  BEGIN { emit_header(); n=0 }
+  {
+    kind=""; spell=""; be=0
+    for (i=1; i<=NF; i++) {
+      if ($i ~ /^\.kind = /) { kind=$i; sub(/^\.kind = \./,"",kind) }
+      if ($i ~ /^\.spell = /) { spell=$i; sub(/^\.spell = "/,"",spell); sub(/"$/,"",spell) }
+      if ($i == ".begin_expr = true") be=1
+    }
+    if (be) { printf "  %s %s\n", kind, spell; n++ }
+  }
+  END {
+    print ""
+    printf "Total: %d identities.\n", n
+  }
+')
+precgen=$(printf '%s\n' "$rows" | awk -F', ' '
+  BEGIN {
+    print ""
+    print "### Operator precedence and associativity"
+    print ""
+    print "Highest number binds tightest (Pratt binding power from the owner):"
+    print ""
+    print "```text"
+  }
+  {
+    kind=""; spell=""; prec=""; assoc="none"
+    for (i=1; i<=NF; i++) {
+      if ($i ~ /^\.kind = /) { kind=$i; sub(/^\.kind = \./,"",kind) }
+      if ($i ~ /^\.spell = /) { spell=$i; sub(/^\.spell = "/,"",spell); sub(/"$/,"",spell) }
+      if ($i ~ /^\.precedence = /) { prec=$i; sub(/^\.precedence = /,"",prec) }
+      if ($i ~ /^\.assoc = \./) { assoc=$i; sub(/^\.assoc = \./,"",assoc) }
+    }
+    if (prec != "") printf "  %-4s %-14s %s\n", prec, spell, assoc
+  }
+  END { print "```" }
+')
+fullgen=$(printf '%s%s\n' "$fullgen" "$precgen")
+
+# ── splice into the tracked markdown between markers ─────────────────────
+awk -v gen="$fullgen" -v mb="<!-- grammar:begin -->" -v me="<!-- grammar:end -->" '
+  index($0, mb) == 1 { print; inregion=1; if (!done) { print gen; done=1 }; next }
+  index($0, me) == 1 { inregion=0; print; next }
+  !inregion { print }
+' "$md"

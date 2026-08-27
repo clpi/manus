@@ -1,0 +1,32 @@
+# grammar spec projection — GAP-134 item 5
+#
+# WHAT THIS IS. `docs/spec/grammar.md` is the one remaining hand-written
+# grammar document and the artifact this gap's title names. This generator
+# replaces the hand-maintained FACT TABLES in it with tables projected from
+# the one executable grammar-fact owner, `lib/compiler/token.id` (read
+# through its generated bridge `src/grammar_role_table.zig`, exactly the way
+# `gate/treesitter/agreement.id` reads the owner). Nothing here invents a
+# production: every row is a fact the owner already publishes.
+#
+# WHAT STAYS AUTHORED. The document's prose (law citations, delimiter
+# rulings, the closed lexical law) is not generated. A projection formats
+# facts; it does not write law. The generated region is delimited by two
+# markers, the same shape `scripts/treesitter_emit.id` established for
+# ext/tree-sitter-idol/grammar.js, so regeneration is byte-checkable.
+#
+# THE CHECK: `idol check scripts/grammar/spec.id && sh gate/grammar/spec.sh`
+# The gate regenerates privately and fails unless the tracked markdown is
+# byte-identical; a damaged owner fact must CHANGE the projection (positive
+# control), and a generator that cannot run exits 3 rather than agreeing.
+#
+# WHY A SHELL-FREE .id GENERATOR ON THIS HOST: `idol run` refuses DNB004 on
+# this Linux box (no direct native realization), so an Idol-body generator
+# cannot execute here. The route that DOES execute is reading the owner's
+# generated Zig bridge and formatting it — the same route
+# `gate/treesitter/agreement.id` uses. This file keeps the Idol front for
+# when DNB004 lifts; the shell gate below drives the actual projection today
+# and both are named in gaps/GAP-134.md.
+
+path = "docs/spec/grammar.md"
+begin = "<!-- grammar:begin -->"
+end = "<!-- grammar:end -->"

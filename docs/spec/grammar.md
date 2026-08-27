@@ -128,6 +128,101 @@ graph-derived semantic canonicality service in `GAP-124`. Any current text
 ratchet, including the added-line check in `gate/idiom.id`, is
 non-authoritative migration pressure and may not claim equivalence.
 
+<!-- grammar:begin -->
+## Grammar facts (generated)
+
+<!-- Generated from lib/compiler/token.id via src/grammar_role_table.zig.
+     Regenerate: idol run lib/compiler/token.id, then sh gate/grammar/spec.sh.
+     Every row is an owner fact; the prose around it is authored law. -->
+
+One grammar-fact owner (law.grammar.one): lib/compiler/token.id.
+
+  name name
+  int_lit integer
+  float_lit float
+  kw_false false
+  kw_function function
+  kw_fun fun
+  kw_if if
+  kw_nil nil
+  kw_not not
+  kw_true true
+  kw_i8 i8
+  kw_i16 i16
+  kw_i32 i32
+  kw_i64 i64
+  kw_u8 u8
+  kw_u16 u16
+  kw_u32 u32
+  kw_u64 u64
+  kw_f32 f32
+  kw_f64 f64
+  kw_bool bool
+  kw_void void
+  kw_str str
+  kw_match match
+  kw_await await
+  kw_comptime comptime
+  lparen (
+  lbrace {
+  minus -
+  hash #
+  pipe |
+  tilde ~
+  colon :
+  dot .
+  at @
+  bang !
+  dots ...
+  hash_hash ##
+  text_lit text
+  bytes_lit bytes
+  compat_text_lit compat_text
+  compat_long_text_lit compat_long_text
+
+Total: 42 identities.
+### Operator precedence and associativity
+
+Highest number binds tightest (Pratt binding power from the owner):
+
+```text
+  4    and            left
+  6    in             nonassoc
+  9    not            none
+  2    or             left
+  17   +              left
+  17   -              left
+  19   *              left
+  19   /              left
+  19   %              left
+  23   ^              right
+  11   &              left
+  7    |              left
+  6    <              nonassoc
+  6    >              nonassoc
+  1    =              right
+  9    ~              left
+  10   .              none
+  19   @              left
+  9    !              none
+  16   ..             right
+  6    ==             nonassoc
+  6    !=             nonassoc
+  6    <=             nonassoc
+  6    >=             nonassoc
+  13   <<             left
+  13   >>             left
+  19   //             left
+  1    |>             left
+  1    +=             right
+  1    -=             right
+  1    *=             right
+  1    /=             right
+  1    %=             right
+  1    ^=             right
+```
+<!-- grammar:end -->
+
 ## Parser boundary
 
 Parser output records the minimum source structure and provenance needed for
