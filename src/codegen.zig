@@ -238,6 +238,15 @@ pub const CodeGen = struct {
     /// result is an ordinal list of `const char*` plus its backing storage, so
     /// the emitter must name that representation directly instead of refusing an
     /// `.any` binding or reintroducing the Lua table runtime.
+    ///
+    /// FUNCTION-SCOPED, like `native_str_list_locals` above: saved/restored
+    /// around every function body. The first cut kept one module-wide set, and
+    /// the guard's "already seen → not mine" check then made the SECOND
+    /// `rows = x:split(...)` in a later function refuse with exactly the
+    /// "no native representation" error the lowering exists to close — the
+    /// registry leaked a binding from one C scope into the next. A binding
+    /// re-declared in a new function is a fresh declaration, so presence in
+    /// this set is never a reason to bail.
     native_split_str_list_locals: std.StringHashMapUnmanaged(void) = .empty,
     /// Names in the current block that must NOT take the `t_items[]` lowering
     /// because they are used as keyed tables (`t.field = v` / `t["k"] = v`).
@@ -2827,8 +2836,12 @@ pub const CodeGen = struct {
         if (init_expr.* != .method_call) return false;
         const mc = init_expr.method_call;
         if (!std.mem.eql(u8, mc.method, "split") or mc.args.len != 1) return false;
-        if (self.is_native_split_str_list_local(name)) return false;
-
+        // NOT "already registered → return false". The registry is
+        // function-scoped, and a second `rows = x:split(...)` in a LATER
+        // function is a fresh declaration that must emit again. Registering
+        // idempotently (same name, same function) is harmless; bailing here is
+        // what made scripts/treesitter_emit.id:1372 refuse while :132 and :347
+        // emitted fine.
         try self.note_local(name);
         try self.note_local_type(name, .any);
         try self.register_native_split_str_list_local(name);
@@ -10836,12 +10849,14 @@ pub const CodeGen = struct {
         const prev_func_name = self.current_func_name;
         const prev_func_noalloc = self.current_func_noalloc;
         const prev_str_list_locals = self.native_str_list_locals;
+        const prev_split_locals = self.native_split_str_list_locals;
         const prev_dense_locals = self.native_dense_local_tables;
         self.current_ret = ret;
         self.current_func_body = fb;
         self.current_func_name = duo_func_name(fd);
         self.current_func_noalloc = funcRequiresNoalloc(fd.attributes);
         self.native_str_list_locals = .{};
+        self.native_split_str_list_locals = .{};
         self.native_dense_local_tables = .{};
         if (fb.use_dense_table) {
             self.dense_table = fb.dense_table;
@@ -10858,6 +10873,10 @@ pub const CodeGen = struct {
             while (sl_it.next()) |key| self.alloc.free(key.*);
             self.native_str_list_locals.deinit(self.alloc);
             self.native_str_list_locals = prev_str_list_locals;
+            var sp_it = self.native_split_str_list_locals.keyIterator();
+            while (sp_it.next()) |key| self.alloc.free(key.*);
+            self.native_split_str_list_locals.deinit(self.alloc);
+            self.native_split_str_list_locals = prev_split_locals;
             var dl_it = self.native_dense_local_tables.iterator();
             while (dl_it.next()) |kv| {
                 self.alloc.free(kv.key_ptr.*);
