@@ -39,6 +39,10 @@
  *                                 alternation that excludes the closing
  *                                 delimiter is computed from the level
  *   double / single quoted string ONE template, two quote characters
+ *   literal identities           the owner's quoted rows in
+ *                                 src/grammar_role_table.zig, generated
+ *                                 from lib/compiler/token.id; `string` is
+ *                                 their query-compatible union
  *   binary_expression             one table of spelling, level and
  *   unary_expression              associativity. The levels are the RANKS
  *                                 of roleprecedence in lib/compiler/token.id,
@@ -1124,16 +1128,6 @@ module.exports = grammar({
       /[0-9]+[eE][+-]?[0-9]+/,
     )),
 
-    // GAP-145 identities: text / bytes / long text. `string` remains the
-    // query-compatible union; it does not collapse those identities.
-    text: $ => $.double_quoted_string,
-    bytes: $ => $.single_quoted_string,
-    long_text: $ => $.long_string,
-    string: $ => choice(
-      $.text,
-      $.bytes,
-      $.long_text,
-    ),
 
     double_quoted_string: $ => token(seq(
       '"',
@@ -1178,6 +1172,20 @@ module.exports = grammar({
     builtinname: $ => alias('type', $.identifier),
 
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
+    // GAP-145 O1: literal identities are not authored here. Each line is
+    // one `.quoted = true` row of the owner's generated bridge
+    // src/grammar_role_table.zig <- lib/compiler/token.id; `string` is the
+    // query-compatible union over exactly those rows.
+    text: $ => $.double_quoted_string,
+    bytes: $ => $.single_quoted_string,
+    compat_text: $ => $.single_quoted_string,
+    compat_long_text: $ => $.long_string,
+    string: $ => choice(
+      $.text,
+      $.bytes,
+      $.compat_text,
+      $.compat_long_text,
+    ),
 
     // ── Binary operators ──────────────────────────────────────────────
 

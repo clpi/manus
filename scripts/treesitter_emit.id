@@ -184,6 +184,10 @@ banner: str = (count: i64)
     b = "{b} *                                 alternation that excludes the closing\n"
     b = "{b} *                                 delimiter is computed from the level\n"
     b = "{b} *   double / single quoted string ONE template, two quote characters\n"
+    b = "{b} *   literal identities           the owner's quoted rows in\n"
+    b = "{b} *                                 src/grammar_role_table.zig, generated\n"
+    b = "{b} *                                 from lib/compiler/token.id; `string` is\n"
+    b = "{b} *                                 their query-compatible union\n"
     b = "{b} *   binary_expression             one table of spelling, level and\n"
     b = "{b} *   unary_expression              associativity. The levels are the RANKS\n"
     b = "{b} *                                 of roleprecedence in lib/compiler/token.id,\n"
@@ -1347,6 +1351,86 @@ quoted: str = (rulename: str, quote: str, wrap: str)
     b = "{b}    )),\n"
     b
 
+# ── The literal identity registry ─────────────────────────────────────────────
+#
+# GAP-145 O1: literal identity is not authored here. The owner's generated
+# bridge src/grammar_role_table.zig — regenerated from lib/compiler/token.id by
+# gate/grammar-projection.sh, byte-pinned to it — carries one row per quoted
+# literal identity with its owner spelling in `.spell`. This registry reads
+# those rows and emits the identity layer plus the `string` union; nothing in
+# this file decides which literal identities exist.
+#
+# The count is a demand, not a convenience: a fifth quoted identity appearing
+# in the owner without this reader learning its physical rule is a silent
+# recognition hole, so the emitter refuses instead of guessing.
+identities: str = ()
+    body: str = slurp("src/grammar_role_table.zig")
+    if body == ""
+        print("treesitter emit: FAIL — src/grammar_role_table.zig is absent or empty.")
+        print("  The literal identity registry reads the owner's generated bridge;")
+        print("  regenerate it with gate/grammar-projection.sh before emitting.")
+        os.exit(2)
+    rows = body:split("\n")
+    out: str = "    // GAP-145 O1: literal identities are not authored here. Each line is\n"
+    out = "{out}    // one `.quoted = true` row of the owner's generated bridge\n"
+    out = "{out}    // src/grammar_role_table.zig <- lib/compiler/token.id; `string` is the\n"
+    out = "{out}    // query-compatible union over exactly those rows.\n"
+    union: str = "    string: $ => choice(\n"
+    seen: i64 = 0
+    i: i64 = 1
+    while i <= rows:len()
+        row: str = rows[i]
+        if row:find(".quoted = true") > 0
+            k: i64 = row:find(".kind = .")
+            if k == 0
+                print("treesitter emit: FAIL — a quoted bridge row has no .kind: {row}")
+                os.exit(2)
+            start: i64 = k + 9
+            stop: i64 = row:find(",", start)
+            if stop == 0
+                print("treesitter emit: FAIL — a quoted bridge row has no field boundary: {row}")
+                os.exit(2)
+            kind: str = row:sub(start, stop - 1)
+            q: i64 = row:find(".spell = \"")
+            if q == 0
+                print("treesitter emit: FAIL — a quoted bridge row has no .spell: {row}")
+                os.exit(2)
+            start = q + 10
+            stop = row:find("\"", start)
+            if stop == 0
+                print("treesitter emit: FAIL — a quoted bridge row has an unterminated .spell: {row}")
+                os.exit(2)
+            spell: str = row:sub(start, stop - 1)
+            rule = ""
+            if kind == "text_lit"
+                rule = "double_quoted_string"
+            else
+                if kind == "bytes_lit"
+                    rule = "single_quoted_string"
+                else
+                    if kind == "compat_text_lit"
+                        rule = "single_quoted_string"
+                    else
+                        if kind == "compat_long_text_lit"
+                            rule = "long_string"
+            if rule == ""
+                print("treesitter emit: FAIL — quoted kind {kind} has no admitted physical rule.")
+                print("  Teach the registry the owner's new quoted identity or refuse;")
+                print("  do not hand-author the identity in grammar.js.")
+                os.exit(2)
+            out = "{out}    {spell}: $ => $.{rule},\n"
+            union = "{union}      $.{spell},\n"
+            seen += 1
+        i += 1
+    if seen != 4
+        counted: str = seen:to(str)
+        print("treesitter emit: FAIL — the owner bridge carries {counted} quoted rows, expected 4.")
+        print("  The literal identity set changed; this registry must learn it, not")
+        print("  grammar.js. Update the demand and the physical-rule map together.")
+        os.exit(2)
+    union = "{union}    ),\n"
+    "{out}{union}"
+
 tokens: str = ()
     dq: str = "\""
     sq: str = "'"
@@ -1370,12 +1454,6 @@ tokens: str = ()
     b = "{b}      /[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?/,\n"
     b = "{b}      /[0-9]+[eE][+-]?[0-9]+/,\n"
     b = "{b}    )),\n"
-    b = "{b}\n"
-    b = "{b}    string: $ => choice(\n"
-    b = "{b}      $.double_quoted_string,\n"
-    b = "{b}      $.single_quoted_string,\n"
-    b = "{b}      $.long_string,\n"
-    b = "{b}    ),\n"
     b = "{b}\n"
     one: str = quoted("double_quoted_string", dq, sq)
     b = "{b}{one}"
@@ -1702,6 +1780,8 @@ main: i64 = ()
     body = "{body}{et}"
     tk: str = tokens()
     body = "{body}{tk}"
+    li: str = identities()
+    body = "{body}{li}"
     body = "{body}\n"
     op: str = operators()
     body = "{body}{op}"
