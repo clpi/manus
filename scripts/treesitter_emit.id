@@ -184,10 +184,12 @@ banner: str = (count: i64)
     b = "{b} *                                 alternation that excludes the closing\n"
     b = "{b} *                                 delimiter is computed from the level\n"
     b = "{b} *   double / single quoted string ONE template, two quote characters\n"
-    b = "{b} *   literal identities           the owner's quoted rows in\n"
-    b = "{b} *                                 src/grammar_role_table.zig, generated\n"
-    b = "{b} *                                 from lib/compiler/token.id; `string` is\n"
-    b = "{b} *                                 their query-compatible union\n"
+    b = "{b} *   literal identities           the owner's quoted and numeric\n"
+    b = "{b} *                                 literal rows in the generated bridge\n"
+    b = "{b} *                                 src/grammar_role_table.zig, from\n"
+    b = "{b} *                                 lib/compiler/token.id; `string` and\n"
+    b = "{b} *                                 `number` are their query-compatible\n"
+    b = "{b} *                                 unions\n"
     b = "{b} *   binary_expression             one table of spelling, level and\n"
     b = "{b} *   unary_expression              associativity. The levels are the RANKS\n"
     b = "{b} *                                 of roleprecedence in lib/compiler/token.id,\n"
@@ -820,13 +822,8 @@ patterns: str = ()
     b = "{b}      '_',\n"
     b = "{b}    ),\n"
     b = "{b}\n"
-    b = "{b}    literal_pattern: $ => choice(\n"
-    b = "{b}      $.number,\n"
-    b = "{b}      $.string,\n"
-    b = "{b}      'true',\n"
-    b = "{b}      'false',\n"
-    b = "{b}      'nil',\n"
-    b = "{b}    ),\n"
+    lp: str = literalpattern()
+    b = "{b}{lp}"
     b = "{b}\n"
     b = "{b}    binding_pattern: $ => seq(\n"
     b = "{b}      $.identifier,\n"
@@ -1431,19 +1428,190 @@ identities: str = ()
     union = "{union}    ),\n"
     "{out}{union}"
 
+
+# GAP-145 O1: numeric literal identity is not authored here either. The same
+# bridge carries the non-quoted literal rows — .literal_kind = true without
+# .quoted — and this registry reads them and emits the `number` union, so a
+# new numeric identity in the owner refuses here instead of silently losing
+# its union membership. The count is a demand for the same reason as above.
+numerics: str = ()
+    body: str = slurp("src/grammar_role_table.zig")
+    if body == ""
+        print("treesitter emit: FAIL — src/grammar_role_table.zig is absent or empty.")
+        print("  The numeric literal registry reads the owner's generated bridge;")
+        print("  regenerate it with gate/grammar-projection.sh before emitting.")
+        os.exit(2)
+    rows = body:split("\n")
+    out: str = "    // GAP-145 O1: numeric literal identities are not authored here; the\n"
+    out = "{out}    // `number` union is the bridge's non-quoted literal rows.\n"
+    union: str = "    number: $ => choice(\n"
+    seen: i64 = 0
+    i: i64 = 1
+    while i <= rows:len()
+        row: str = rows[i]
+        if row:find(".literal_kind = true") > 0
+            if row:find(".quoted = true") == 0
+                k: i64 = row:find(".kind = .")
+                if k == 0
+                    print("treesitter emit: FAIL — a numeric bridge row has no .kind: {row}")
+                    os.exit(2)
+                start: i64 = k + 9
+                stop: i64 = row:find(",", start)
+                if stop == 0
+                    print("treesitter emit: FAIL — a numeric bridge row has no field boundary: {row}")
+                    os.exit(2)
+                kind: str = row:sub(start, stop - 1)
+                q: i64 = row:find(".spell = \"")
+                if q == 0
+                    print("treesitter emit: FAIL — a numeric bridge row has no .spell: {row}")
+                    os.exit(2)
+                start = q + 10
+                stop = row:find("\"", start)
+                if stop == 0
+                    print("treesitter emit: FAIL — a numeric bridge row has an unterminated .spell: {row}")
+                    os.exit(2)
+                spell: str = row:sub(start, stop - 1)
+                rule = ""
+                if kind == "int_lit"
+                    rule = "integer"
+                else
+                    if kind == "float_lit"
+                        rule = "float"
+                if rule == ""
+                    print("treesitter emit: FAIL — numeric kind {kind} has no admitted physical rule.")
+                    print("  Teach the registry the owner's new numeric identity or refuse;")
+                    print("  do not hand-author the union member in grammar.js.")
+                    os.exit(2)
+                union = "{union}      $.{rule},\n"
+                seen += 1
+        i += 1
+    if seen != 2
+        counted: str = seen:to(str)
+        print("treesitter emit: FAIL — the owner bridge carries {counted} numeric rows, expected 2.")
+        print("  The numeric identity set changed; this registry must learn it, not")
+        print("  grammar.js. Update the demand and the physical-rule map together.")
+        os.exit(2)
+    union = "{union}    ),\n"
+    "{out}{union}"
+# GAP-145 O1: keyword literal spellings are owner facts too. `nil`, `true` and
+# `false` are rows of the owner's bridge (.kind = .kw_nil / .kw_true /
+# .kw_false) with the spelling in `.spell`; typing them here by hand is the
+# same independent authorship the registry above removed. One fail-closed
+# read per spelling: absent bridge, absent row, or unterminated .spell
+# refuses instead of guessing.
+spell: str = (kind: str)
+    body: str = slurp("src/grammar_role_table.zig")
+    if body == ""
+        print("treesitter emit: FAIL — src/grammar_role_table.zig is absent or empty.")
+        print("  The keyword spelling reader needs the owner's generated bridge;")
+        print("  regenerate it with gate/grammar-projection.sh before emitting.")
+        os.exit(2)
+    rows = body:split("\n")
+    needle: str = ".kind = .{kind},"
+    found: str = ""
+    i: i64 = 1
+    while i <= rows:len()
+        row: str = rows[i]
+        if row:find(needle) > 0
+            q: i64 = row:find(".spell = \"")
+            if q == 0
+                print("treesitter emit: FAIL — bridge row for {kind} has no .spell: {row}")
+                os.exit(2)
+            start: i64 = q + 10
+            stop: i64 = row:find("\"", start)
+            if stop == 0
+                print("treesitter emit: FAIL — bridge row for {kind} has an unterminated .spell: {row}")
+                os.exit(2)
+            found = row:sub(start, stop - 1)
+        i += 1
+    if found == ""
+        print("treesitter emit: FAIL — the owner bridge has no row for kind {kind}.")
+        print("  Teach the emitter the owner's new kind or refuse;")
+        print("  do not type the spelling by hand.")
+        os.exit(2)
+    found
+
+# GAP-145 O1: the literal_pattern membership is an owner fact, not a choice
+# typed here. Rows carrying `.pattern = true` with `.literal_kind` or
+# `.keyword` are exactly the literal pattern members the owner admits: the
+# six literal identities (deduplicated here into their number/string unions)
+# and the three keyword spellings, in bridge order. This registry walks them
+# and emits the member list; a new pattern literal in the owner refuses here
+# instead of silently losing its member slot. The counts are demands.
+literalpattern: str = ()
+    body: str = slurp("src/grammar_role_table.zig")
+    if body == ""
+        print("treesitter emit: FAIL — src/grammar_role_table.zig is absent or empty.")
+        print("  The literal pattern registry reads the owner's generated bridge;")
+        print("  regenerate it with gate/grammar-projection.sh before emitting.")
+        os.exit(2)
+    rows = body:split("\n")
+    out: str = "    // GAP-145 O1: the literal pattern membership is not authored here;\n"
+    out = "{out}    // it is the bridge's `.pattern` literal and keyword rows.\n"
+    members: str = "    literal_pattern: $ => choice(\n"
+    seen: i64 = 0
+    numberseen: i64 = 0
+    stringseen: i64 = 0
+    i: i64 = 1
+    while i <= rows:len()
+        row: str = rows[i]
+        if row:find(".pattern = true") > 0
+            if row:find(".literal_kind = true") > 0
+                if row:find(".quoted = true") > 0
+                    if stringseen == 0
+                        members = "{members}      $.string,\n"
+                    stringseen += 1
+                else
+                    if numberseen == 0
+                        members = "{members}      $.number,\n"
+                    numberseen += 1
+                seen += 1
+            else
+                if row:find(".keyword = true") > 0
+                    q: i64 = row:find(".spell = \"")
+                    if q == 0
+                        print("treesitter emit: FAIL — a keyword pattern row has no .spell: {row}")
+                        os.exit(2)
+                    start: i64 = q + 10
+                    stop: i64 = row:find("\"", start)
+                    if stop == 0
+                        print("treesitter emit: FAIL — a keyword pattern row has an unterminated .spell: {row}")
+                        os.exit(2)
+                    spell: str = row:sub(start, stop - 1)
+                    members = "{members}      '{spell}',\n"
+                    seen += 1
+        i += 1
+    if seen != 9
+        counted: str = seen:to(str)
+        print("treesitter emit: FAIL — the owner bridge carries {counted} literal pattern rows, expected 9.")
+        print("  The literal pattern set changed; this registry must learn it, not")
+        print("  grammar.js. Update the demand and the physical-rule map together.")
+        os.exit(2)
+    if numberseen != 2
+        counted: str = numberseen:to(str)
+        print("treesitter emit: FAIL — the bridge carries {counted} non-quoted pattern literals, expected 2.")
+        os.exit(2)
+    if stringseen != 4
+        counted: str = stringseen:to(str)
+        print("treesitter emit: FAIL — the bridge carries {counted} quoted pattern literals, expected 4.")
+        os.exit(2)
+    members = "{members}    ),\n"
+    "{out}{members}"
+
 tokens: str = ()
     dq: str = "\""
     sq: str = "'"
     dot: str = "."
     ell: str = "{dot}{dot}{dot}"
-    b: str = "    nil: $ => 'nil',\n"
+    nilspell: str = spell("kw_nil")
+    truespell: str = spell("kw_true")
+    falsespell: str = spell("kw_false")
+    b: str = "    nil: $ => '{nilspell}',\n"
     b = "{b}\n"
-    b = "{b}    boolean: $ => choice('true', 'false'),\n"
+    b = "{b}    boolean: $ => choice('{truespell}', '{falsespell}'),\n"
     b = "{b}\n"
-    b = "{b}    number: $ => choice(\n"
-    b = "{b}      $.integer,\n"
-    b = "{b}      $.float,\n"
-    b = "{b}    ),\n"
+    nu: str = numerics()
+    b = "{b}{nu}"
     b = "{b}\n"
     b = "{b}    integer: $ => token(choice(\n"
     b = "{b}      /[0-9]+/,\n"

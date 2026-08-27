@@ -39,10 +39,12 @@
  *                                 alternation that excludes the closing
  *                                 delimiter is computed from the level
  *   double / single quoted string ONE template, two quote characters
- *   literal identities           the owner's quoted rows in
- *                                 src/grammar_role_table.zig, generated
- *                                 from lib/compiler/token.id; `string` is
- *                                 their query-compatible union
+ *   literal identities           the owner's quoted and numeric
+ *                                 literal rows in the generated bridge
+ *                                 src/grammar_role_table.zig, from
+ *                                 lib/compiler/token.id; `string` and
+ *                                 `number` are their query-compatible
+ *                                 unions
  *   binary_expression             one table of spelling, level and
  *   unary_expression              associativity. The levels are the RANKS
  *                                 of roleprecedence in lib/compiler/token.id,
@@ -630,12 +632,14 @@ module.exports = grammar({
       '_',
     ),
 
+    // GAP-145 O1: the literal pattern membership is not authored here;
+    // it is the bridge's `.pattern` literal and keyword rows.
     literal_pattern: $ => choice(
       $.number,
-      $.string,
-      'true',
       'false',
       'nil',
+      'true',
+      $.string,
     ),
 
     binding_pattern: $ => seq(
@@ -1113,6 +1117,8 @@ module.exports = grammar({
 
     boolean: $ => choice('true', 'false'),
 
+    // GAP-145 O1: numeric literal identities are not authored here; the
+    // `number` union is the bridge's non-quoted literal rows.
     number: $ => choice(
       $.integer,
       $.float,
@@ -1127,7 +1133,6 @@ module.exports = grammar({
       /[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?/,
       /[0-9]+[eE][+-]?[0-9]+/,
     )),
-
 
     double_quoted_string: $ => token(seq(
       '"',
