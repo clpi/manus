@@ -1,7 +1,18 @@
 # compiler.token_view
-# Immutable observation over a production token pack (GAP-134 prerequisite).
+# Immutable observation over a production token stream (GAP-134 / GAP-145).
+#
+# Two realizations of one observation face, the duality the host view carries
+# (`src/token_view.zig` fromPack / fromLexer): the PACK faces read a produced
+# token pack; the CURSOR face reads the stream head of the lexer the pack is
+# produced from. Consumers ask the question here; which realization answers is
+# not their fact. This is the token ABI the recognizer consumes: token identity
+# crosses as an observation, not as producer internals in every consumer.
 
 pack: { kinds: []i64, lines: []i64, cols: []i64, texts: []str, count: i64 }
+
+# Cursor identity: the kind at the stream head the lexer holds.
+kindat: i64 = (lx: lexer)
+  lexer.peek(lx).kind
 
 view: pack = (pack: pack)
   pack
@@ -9,20 +20,17 @@ view: pack = (pack: pack)
 len: i64 = (pack: pack)
   pack.count
 
-kindat: i64 = (pack: pack, index: i64)
+peek: i64 = (pack: pack, index: i64)
   if index < 1 or index > pack.count
     token.kindeof
   else
     pack.kinds[index]
 
-peek: i64 = (pack: pack, index: i64)
-  kindat(pack, index)
-
 canbeginexpr: bool = (pack: pack, index: i64)
-  token.grammarrole.rolebeginexpr(kindat(pack, index))
+  token.grammarrole.rolebeginexpr(peek(pack, index))
 
 roleprecedence: i64 = (pack: pack, index: i64)
-  token.grammarrole.roleprecedence(kindat(pack, index))
+  token.grammarrole.roleprecedence(peek(pack, index))
 
 rolecompatonly: bool = (pack: pack, index: i64)
-  token.grammarrole.rolecompatonly(kindat(pack, index))
+  token.grammarrole.rolecompatonly(peek(pack, index))
