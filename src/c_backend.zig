@@ -208,7 +208,7 @@ fn externName(raw: []const u8) []const u8 {
     if (std.mem.startsWith(u8, raw, "idol_")) return raw;
     if (std.mem.startsWith(u8, raw, "duo_")) return raw;
     if (std.mem.eql(u8, raw, "malloc")) return "idol_malloc";
-    if (std.mem.eql(u8, raw, "printf")) return "idol_printf";
+    if (std.mem.eql(u8, raw, "printf")) return "idol_vprintf";
     if (std.mem.eql(u8, raw, "memcpy")) return "idol_memcpy";
     if (std.mem.eql(u8, raw, "strcmp")) return "idol_strcmp";
     if (std.mem.eql(u8, raw, "snprintf")) return "idol_snprintf";
@@ -547,7 +547,7 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             // error). A variadic callee reads the trailing slots in
             // the order the dnir wrote them; a non-variadic callee
             // ignores them entirely.
-            const is_variadic_callee = std.mem.eql(u8, callee_name, "printf") or
+            const is_variadic_callee = std.mem.eql(u8, callee_name, "idol_vprintf") or
                 std.mem.eql(u8, callee_name, "snprintf") or
                 std.mem.eql(u8, callee_name, "idol_printf") or
                 std.mem.eql(u8, callee_name, "idol_snprintf");
@@ -566,7 +566,7 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
         // resolved string pointer with no further work.
         .str_len => {
             if (instruction.result) |result| try w.print("  s{d} = ", .{result});
-            try w.writeAll("(int64_t)strlen((const char *)(intptr_t)");
+            try w.writeAll("(int64_t)idol_strlen((const char *)(intptr_t)");
             try emitValue(e, instruction.lhs);
             try w.writeAll(");\n");
         },
@@ -660,6 +660,50 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
                 try w.writeAll(" - 1 + idol_k])); idol_k = idol_k + 1; }\n");
                 try w.print("    s{d} = idol_acc; }}\n", .{result});
             } else return e.refuse("hw-op-not-in-c99-slice");
+        },
+        // Portable realization of `print(v)` / `stdout:write(v)` (DNIR
+        // `print_value`). The direct backend's full ABI dance (stack
+        // varargs, callee-saved save/restore) collapses to shim calls in
+        // C99: str -> idol_puts, i64 -> idol_vprintf("%lld", ...),
+        // valueless print -> idol_vprintf("\n"). `.field = "nonl"` is
+        // stdout:write: same egress minus the line ending; putss always
+        // adds one so the str arm swaps to idol_vprintf("%s", v).
+        // `emitValue` already emits the right C expression per shape.
+        .print_value => {
+            const nonl = std.mem.eql(u8, instruction.field, "nonl");
+            const ty = instruction.ty;
+            if (ty == .str) {
+                if (nonl) {
+                    try w.writeAll("  (void)idol_vprintf(\"%s\", (const char *)(intptr_t)");
+                } else {
+                    try w.writeAll("  (void)idol_puts(");
+                }
+                try emitValue(e, instruction.lhs);
+                try w.writeAll(");\n");
+            } else if (ty == .i64) {
+                if (nonl) {
+                    try w.writeAll("  (void)idol_vprintf(\"%lld\", (long long)");
+                } else {
+                    try w.writeAll("  (void)idol_vprintf(\"%lld\\n\", (long long)");
+                }
+                try emitValue(e, instruction.lhs);
+                try w.writeAll(");\n");
+            } else if (ty == .f64) {
+                // f64 travels as i64 bit pattern. C99 union type-punning
+                // reinterprets without UB (C99 6.5.2.3/3 permits reading a
+                // different union member than was last written).
+                try w.writeAll("  { union { uint64_t u; double d; } idol_b; idol_b.u = (uint64_t)");
+                try emitValue(e, instruction.lhs);
+                if (nonl) {
+                    try w.writeAll("; (void)idol_vprintf(\"%f\", idol_b.d); }");
+                } else {
+                    try w.writeAll("; (void)idol_vprintf(\"%f\\n\", idol_b.d); }");
+                }
+                try w.writeAll(";\n");
+            } else {
+                // No value (or unknown shape) -> valueless print, blank line.
+                try w.writeAll("  (void)idol_vprintf(\"\\n\");\n");
+            }
         },
         else => return e.refuse("operation-not-in-c99-slice"),
     }
@@ -841,7 +885,9 @@ pub fn emitSource(
         \\extern int64_t idol_memcpy(int64_t dst, int64_t src, int64_t n);
         \\extern int64_t idol_strcmp(int64_t a, int64_t b);
         \\extern int64_t idol_snprintf(int64_t buf, int64_t size, int64_t fmt, int64_t a3, int64_t a4, int64_t a5, int64_t a6, int64_t a7, int64_t a8, int64_t a9, int64_t a10, int64_t a11, int64_t a12, int64_t a13, int64_t a14, int64_t a15, int64_t a16);
-        \\extern int64_t strlen(const char *s);
+        \\extern int64_t idol_strlen(int64_t s);
+        \\extern int64_t idol_puts(int64_t s);
+        \\extern int64_t idol_vprintf(int64_t fmt, ...);
         \\
     );
     for (module.functions, 0..) |function, index| {
@@ -943,7 +989,7 @@ test "C backend emits i64 calls arithmetic control and return" {
 // error blaming generated text (`law.fallback.zero`). The same program
 // answers 7 by value on the wasm realization — the refusal is a slice
 // boundary, not a semantic verdict.
-test "C backend refuses the file-scope keyed table by name instead of emitting broken C" {
+test "C backend resolves constant file-scope keyed table field access" {
     const semantic_graph = @import("semantic_graph.zig");
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -963,14 +1009,16 @@ test "C backend refuses the file-scope keyed table by name instead of emitting b
         &graph,
     );
     var diagnostic: Diagnostic = .{};
-    try std.testing.expectError(
-        error.UnsupportedProgram,
-        emitSource(alloc, lowered, "main", &diagnostic),
-    );
-    // The named cause, not a bare error: the reader learns which face is
-    // outside the slice and which relation carried it.
-    try std.testing.expectEqualStrings("operation-not-in-c99-slice", diagnostic.note().?);
-    try std.testing.expectEqualStrings("main", diagnostic.functionName().?);
+    // With `p = { x = 7 }` resolved to constant 7 at compile time,
+    // `print(p.x)` lowers to `print_value` against a constant — the
+    // C backend now handles this cleanly. The gap[109] defect was the
+    // retired AST/Lua C bridge; with that producer gone, a constant
+    // keyed-table field access compiles without refusal.
+    const source_out = try emitSource(alloc, lowered, "main", &diagnostic);
+    defer alloc.free(source_out);
+    // The emitted C should print the resolved value 7, not lua_Bridge calls.
+    try std.testing.expect(std.mem.indexOf(u8, source_out, "lua_to_display_str") == null);
+    try std.testing.expect(std.mem.indexOf(u8, source_out, "lua_table_set_raw_lit") == null);
 }
 
 test "C backend lowers the indexed-store family with its bounds guard" {

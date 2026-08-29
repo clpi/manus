@@ -169,3 +169,5 @@ bin/idol
 # sweeping `git add` cannot stage it again. The compiler artifact is `bin/idol`,
 # already ignored above, and `zig-out/bin/idol` is the built binary.
 /idol
+.worktrees/
+/origin/

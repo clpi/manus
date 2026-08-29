@@ -26,7 +26,7 @@ row: i64 = (path: str, proof: str, a: str, b: str, c: str, d: str)
 
 control: i64 = ()
   path = "scripts/ledger/perf.id"
-  if not look(path, "ledger/perf: pass all evidence contracts present")
+  if !look(path, "ledger/perf: pass all evidence contracts present")
     print("ledger/perf: fail control present pattern")
     return 1
   if look(path, "ZZZ_" .. "PERF_NEG" .. "_CTRL")

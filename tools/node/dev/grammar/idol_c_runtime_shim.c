@@ -359,6 +359,25 @@ int64_t idol_strlen(int64_t s) {
     return (int64_t)strlen(u.p);
 }
 
+/* ── print_value realization ──────────────────────────────────────────────── */
+
+int64_t idol_puts(int64_t s) {
+    union { int64_t i; const char *p; } u;
+    u.i = s;
+    if (!u.p) return (int64_t)puts("(null)");
+    return (int64_t)puts(u.p);
+}
+
+int64_t idol_vprintf(int64_t fmt, ...) {
+    union { int64_t i; const char *p; } u;
+    u.i = fmt;
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vprintf(u.p ? u.p : "", ap);
+    va_end(ap);
+    return (int64_t)n;
+}
+
 /* ── shim-side helpers called by `idol_os_arg` ──────────────────────────── */
 
 static int _argc_storage = 0;
