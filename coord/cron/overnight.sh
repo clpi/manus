@@ -153,20 +153,30 @@ while IFS= read -r line; do
         printf 'overnight: %s -> no target file\n' "$ticket_id" | tee -a "$log"
         continue
       fi
-      # Migrate in the worktree
-      (cd "$wt" && sh "$WORKSPACE/coord/cron/migrate-private-prefixes.sh" "$target") >> "$log" 2>&1
-      # Verify gates (use the main workspace so the C backend is built)
+      # Migrate IN THE WORKTREE (not in the main workspace). The
+      # worktree holds its own checkout of $target; the script edits
+      # the worktree's file directly.
+      migrate_status=$(cd "$wt" && sh "$WORKSPACE/coord/cron/migrate-private-prefixes.sh" "$target" 2>&1) || true
+      printf '%s\n' "$migrate_status" >> "$log"
+      # Verify gates against the WORKSPACE (which is the reference)
       if ! (cd "$WORKSPACE" && timeout 60 zig build gap-145-consumer grammar-projection posix) >> "$log" 2>&1; then
         printf 'overnight: %s -> gates FAILED, not committing\n' "$ticket_id" | tee -a "$log"
         continue
       fi
-      # Copy the migrated file back into the worktree
-      cp "$WORKSPACE/$target" "$wt/$target"
-      # Commit
-      if (cd "$wt" && git add -A \
+      # Re-copy the now-migrated file from WORKSPACE (the script
+      # already migrated it; WORKSPACE may have stale pre-migration
+      # content if a previous run ran the script). The script's sed -i
+      # is idempotent on already-migrated files, so WORKSPACE and
+      # worktree converge.
+      cp "$WORKSPACE/$target" "$wt/$target" 2>/dev/null || true
+      # Commit (idempotent: skip if no diff)
+      commit_out=$(cd "$wt" && git add -A \
         && git -c user.name="Idol Live-0" -c user.email="idol@local" \
-             commit -m "spec: decompose private-prefix in $target (ticket $ticket_id)") >> "$log" 2>&1; then
-        # Push
+             commit -m "spec: decompose private-prefix in $target (ticket $ticket_id)" 2>&1) || commit_out="commit-error"
+      printf '%s\n' "$commit_out" >> "$log"
+      # Push only if a commit was actually made (commit exits 0 with
+      # 'nothing to commit' as output if no diff)
+      if printf '%s' "$commit_out" | grep -q "ticket=$ticket_id\|file changed\|files changed"; then
         if (cd "$wt" && git push origin "migrate/$ticket_id":"$BRANCH") >> "$log" 2>&1; then
           printf 'overnight: %s -> PUSHED to %s\n' "$ticket_id" "$BRANCH" | tee -a "$log"
           dispatched=$((dispatched + 1))
@@ -174,7 +184,7 @@ while IFS= read -r line; do
           printf 'overnight: %s -> push failed\n' "$ticket_id" | tee -a "$log"
         fi
       else
-        printf 'overnight: %s -> commit failed (no changes?)\n' "$ticket_id" | tee -a "$log"
+        printf 'overnight: %s -> no diff, skipping push\n' "$ticket_id" | tee -a "$log"
       fi
       ;;
     openrouter)

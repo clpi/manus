@@ -19,7 +19,7 @@ BRANCH=gap-145-c-backend
 WORKTREE_BASE=/tmp/idol-migrate-lane$LANE
 LOG_DIR=/tmp/idol-migrate-logs-lane$LANE
 LOCK_DIR=/tmp/idol-migrate-locks
-MAX_TICKETS_PER_RUN=3
+MAX_TICKETS_PER_RUN=${MAX_TICKETS_PER_RUN:-9}
 OR_MODEL="meta-llama/llama-3.1-8b-instruct"
 
 export WORKSPACE WORKTREE_BASE LOG_DIR LOCK_DIR BRANCH MAX_TICKETS_PER_RUN OR_MODEL
