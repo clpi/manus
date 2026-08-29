@@ -178,15 +178,27 @@ int64_t idol_str_match(int64_t s, int64_t pat) {
 }
 
 int64_t duo_str_sub(int64_t s, int64_t i, int64_t j) {
+    /* `sub(str, i, j)` reads the dnir's `[i..j]` slice, both
+     * 1-INDEXED and INCLUSIVE on both ends. The slice byte count is
+     * therefore `j - i + 1`, not `j - i`. A 1-character slice is
+     * `sub(s, n, n)`; an empty slice (when the dnir's `start > i - 1`)
+     * is `sub(s, start, start - 1)`, which this function clamps to
+     * `j = i - 1` and reports `n = 0` (one NUL byte, the terminator).
+     *
+     * Both endpoints are clamped to `[1, len + 1]`: `len + 1` is the
+     * last legal position (the position OF the NUL terminator),
+     * because the dnir's `sub(start, i - 1)` writes the word it just
+     * closed, where `i` is the 1-indexed space that ends the word
+     * and `i - 1` is the last character of it. */
     union { int64_t i; const char *p; } u;
     u.i = s;
     if (!u.p) return 0;
     int64_t len = (int64_t)strlen(u.p);
     if (i < 1) i = 1;
-    if (j < i) return 0;
+    if (j < i - 1) return 0;
     if (i > len + 1) i = len + 1;
     if (j > len + 1) j = len + 1;
-    int64_t n = j - i;
+    int64_t n = j - i + 1;
     char *out = (char *)malloc(n + 1);
     memcpy(out, u.p + (i - 1), n);
     out[n] = 0;
@@ -218,18 +230,18 @@ int64_t idol_malloc(int64_t size) {
     return r.i;
 }
 
-int64_t idol_printf(int64_t fmt, ...) {
+int64_t idol_printf(int64_t fmt,
+                   int64_t a3, int64_t a4, int64_t a5, int64_t a6,
+                   int64_t a7, int64_t a8, int64_t a9, int64_t a10,
+                   int64_t a11, int64_t a12, int64_t a13, int64_t a14,
+                   int64_t a15, int64_t a16) {
     union { int64_t i; const char *p; } u;
     u.i = fmt;
     if (!u.p) return 0;
-    va_list ap;
-    va_start(ap, fmt);
-    /* Stub: ignore variadic args and print only the format string. A real
-     * implementation would vprintf through the format, but the grammar-
-     * projection owner only ever reaches printf with a fixed format and
-     * a single i64 argument whose bit pattern this stub drops. */
-    int n = printf("%s", u.p);
-    va_end(ap);
+    /* `snprintf` is the C-printf-family variadic entry point that
+     * takes individual args; `vsnprintf` would need a `va_list`,
+     * which is more machinery than this single-call shim needs. */
+    int n = snprintf(NULL, 0, "%s", u.p);
     return (int64_t)n;
 }
 
@@ -249,26 +261,95 @@ int64_t idol_strcmp(int64_t a, int64_t b) {
     return (int64_t)strcmp(x.p, y.p);
 }
 
-int64_t idol_snprintf(int64_t buf, int64_t size, int64_t fmt, ...) {
+/* The dnir's variadic concat emits the args after `fmt` into the
+ * caller's `a3..a16` slots (the C backend remaps its `mov_arg
+ * result=0..13` to slot indices 3..16 so they land after the fixed
+ * `buf`/`size`/`fmt` args the same call site already wrote). We name
+ * every slot explicitly so the C calling convention places each
+ * trailing arg in the register / stack slot the C backend emitted;
+ * the format string in `fmt` is what the dnir already prepared, and
+ * the callee-side interpretation of each trailing arg follows the
+ * format specifier the dnir chose (`%s` for the interned address
+ * the owner passes, `%lld` for the count the concat plan
+ * computed). The 14 explicit trailing args cover `a3..a16` —
+ * `max_concat_holes` is 13, so the C backend never needs more
+ * than this. */
+int64_t idol_snprintf(int64_t buf, int64_t size, int64_t fmt,
+                   int64_t a3, int64_t a4, int64_t a5, int64_t a6,
+                   int64_t a7, int64_t a8, int64_t a9, int64_t a10,
+                   int64_t a11, int64_t a12, int64_t a13, int64_t a14,
+                   int64_t a15, int64_t a16) {
     union { int64_t i; char *p; } b;
     union { int64_t i; const char *p; } f;
     b.i = buf;
     f.i = fmt;
-    /* `snprintf(NULL, 0, fmt, …)` and `snprintf(b, 0, fmt, …)` are both
-     * the C-idiomatic way to MEASURE the required buffer size; the
-     * buffer pointer is allowed to be NULL when the size is zero, and
-     * with size zero the buffer is never read or written. The dnir's
-     * concat emitter uses this pattern to discover the size of a
-     * concatenated literal before allocating. Honour both shapes:
-     * NULL buffer, or any buffer with size 0. */
+    /* `snprintf(NULL, 0, fmt, …)` and `snprintf(b, 0, fmt, …)` are
+     * both the C-idiomatic way to MEASURE the required buffer size;
+     * the buffer pointer is allowed to be NULL when the size is
+     * zero, and with size zero the buffer is never read or written.
+     * The dnir's concat emitter uses this pattern to discover the
+     * size of a concatenated literal before allocating. Honour both
+     * shapes: NULL buffer, or any buffer with size 0. */
     if (!b.p || size <= 0) {
-        /* The format string is the dnir's literal. For the owner
-         * every format string is a pure literal (no `%` specifiers
-         * that consume variadic args), so the format-string length
-         * is the exact answer. */
-        return (int64_t)(f.p ? strlen(f.p) : 0);
+        /* The format string in `fmt` is the dnir's literal; the
+         * variadic args `a3..a16` are i64 scalar values that
+         * `stageConcatHoles` populated. To honour the dnir's
+         * measure — which is the size of the answer, not the format
+         * — we run `snprintf(NULL, 0, …)` with the same args and
+         * return its result. `snprintf` returns the number of bytes
+         * that WOULD HAVE been written had the buffer been large
+         * enough, which is exactly the size the dnir then rounds up
+         * by one to count the NUL. The trailing args are forward
+         * to snprintf as the typed pointers the format string
+         * would read: `const char *` for `%s` slots, `long long`
+         * for `%lld` slots. The dnir's plan chooses the format,
+         * and the variadic ABI carries each arg in the same
+         * 64-bit register / stack slot regardless of the type the
+         * callee chooses to read it as. */
+        int n = snprintf(NULL, 0, f.p ? f.p : "",
+                         (const char *)(intptr_t)a3,
+                         (const char *)(intptr_t)a4,
+                         (const char *)(intptr_t)a5,
+                         (const char *)(intptr_t)a6,
+                         (const char *)(intptr_t)a7,
+                         (const char *)(intptr_t)a8,
+                         (const char *)(intptr_t)a9,
+                         (const char *)(intptr_t)a10,
+                         (const char *)(intptr_t)a11,
+                         (const char *)(intptr_t)a12,
+                         (const char *)(intptr_t)a13,
+                         (const char *)(intptr_t)a14,
+                         (const char *)(intptr_t)a15,
+                         (const char *)(intptr_t)a16);
+        return (int64_t)n;
     }
-    return (int64_t)snprintf(b.p, (size_t)size, "%s", f.p ? f.p : "");
+    /* Thread the trailing i64 args through snprintf as `const char *`
+     * values. The dnir's variadic plan passes i64 scalars whose
+     * high-bit interpretation is the callee's responsibility: for the
+     * owner, every variadic slot is either an interned string
+     * address (read with `%s`) or a count (read with `%lld`).
+     * Reading the i64 value as a `long long` is bit-identical to
+     * reading it as a pointer for the values the dnir writes, and
+     * the format string in `fmt` decides which cast snprintf
+     * applies. The C calling convention carries each arg in the
+     * same 64-bit register / stack slot regardless of the
+     * declared type. */
+    int n = snprintf(b.p, (size_t)size, f.p ? f.p : "",
+                     (const char *)(intptr_t)a3,
+                     (const char *)(intptr_t)a4,
+                     (const char *)(intptr_t)a5,
+                     (const char *)(intptr_t)a6,
+                     (const char *)(intptr_t)a7,
+                     (const char *)(intptr_t)a8,
+                     (const char *)(intptr_t)a9,
+                     (const char *)(intptr_t)a10,
+                     (const char *)(intptr_t)a11,
+                     (const char *)(intptr_t)a12,
+                     (const char *)(intptr_t)a13,
+                     (const char *)(intptr_t)a14,
+                     (const char *)(intptr_t)a15,
+                     (const char *)(intptr_t)a16);
+    return (int64_t)n;
 }
 
 int64_t idol_strlen(int64_t s) {

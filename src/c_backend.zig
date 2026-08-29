@@ -332,6 +332,14 @@ fn emitPrototype(e: *Emitter, function: dnir.Function) Error!void {
 }
 
 fn emitCall(e: *Emitter, instruction: dnir.Instr) Error!void {
+    // A direct call (`call_direct`) also marks the boundary between
+    // "the args the dnir set up for this call" and "the args the next
+    // instruction will set up". The callee has its own `aN` reads
+    // built into the call site (`a0`, `a1`, ... per its `params`),
+    // so any subsequent `mov_arg` populates a fresh arg slot. Reset
+    // here so the next `call_extern` reads `argc = 0` and does not
+    // pick up the `a0` / `a1` the direct call already consumed.
+    e.args_this_call = 0;
     const callee = functionNamed(e.module, instruction.callee) orelse return e.refuse("call-target-not-in-module");
     const w = e.writer();
     if (instruction.result) |result| try w.print("s{d} = ", .{result});
@@ -374,19 +382,14 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             if (argument >= 16) return e.refuse("too-many-call-operands");
             // The dnir's `stageConcatHoles` emits `mov_arg result=0`,
             // `mov_arg result=1`, … to populate the variadic tail of a
-            // `snprintf` call. With `result=0` it OVERWRITES `a0`, which
-            // `lowerConcatChain` had already populated with the malloc'd
-            // output buffer. The C ABI carries variadic int64_t args
-            // through the same `aN` slots (the dnir's design
-            // convention), so the variadic-tail slots would be
-            // `a3..a15`, not `a0..`. Skipping the `field="vararg"`
-            // population here is correct for the C ABI: the variadic
-            // args the dnir intends to carry land in registers /
-            // stack slots the C compiler fills from the explicit
-            // `(int64_t)a0, (int64_t)a1, …` argument list we DO
-            // emit, and the order is the dnir's responsibility. We
-            // take only the fixed-arg `mov_arg`s into account, so
-            // `a0` keeps the value `lowerConcatChain` set.
+            // `snprintf` / `printf` call. The C calling convention
+            // passes variadic args via `...` after the named
+            // parameters, and the dnir's variadic tail begins at
+            // slot index 3 (after `buf`, `size`, `fmt`). If we wrote
+            // these to `a0..aN` they would shadow the fixed-arg
+            // `mov_arg`s the same call site already wrote; remapping
+            // them to `a3..a(3+N)` keeps the variadic tail in its
+            // own slot range and leaves the fixed args untouched.
             //
             // The dnir guarantees `aN` slots are populated in monotonically
             // increasing order between two `call_extern`s. Tracking the
@@ -394,21 +397,25 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             // each call, costs O(1) per arg and a constant reset on every
             // `call_extern`; the alternative was a per-call O(N) re-scan
             // over the same block.
-            if (!std.mem.eql(u8, instruction.field, "vararg") and
-                argument + 1 > e.args_this_call) e.args_this_call = argument + 1;
-            // Skip the emit entirely for variadic-tail populations.
-            // The dnir writes those args for backends that honour a
-            // variadic ABI different from C's; the C backend folds
-            // the variadic tail into the explicit `(int64_t)a0, …`
-            // argument list emitted by `call_extern`, and emitting
-            // them again at this instruction would shadow the fixed
-            // args the same instruction already wrote.
-            if (std.mem.eql(u8, instruction.field, "vararg")) {
-                // No emitted C — variadic tail is folded into the
-                // call site by `call_extern`'s argument loop.
-                return;
-            }
-            try w.print("  a{d} = ", .{argument});
+            const is_variadic = std.mem.eql(u8, instruction.field, "vararg");
+            // `args_this_call` counts the FIXED arg slots the dnir
+            // populates between two `call_extern`s, because those are
+            // the slots the call site iterates over. Variadic args
+            // travel through the same `aN` slots, but the call site
+            // includes them in the trailing `a3..a16` sweep for
+            // variadic callees (`printf`, `snprintf`); their fixed-arg
+            // contribution to `argc` is zero.
+            if (!is_variadic and argument + 1 > e.args_this_call) e.args_this_call = argument + 1;
+            // For variadic writes, shift the slot index to start at 3
+            // so they land after the dnir's fixed args and do not
+            // shadow them. If the dnir emitted more than 13 variadic
+            // args (slots 3..15), refuse — 13 is the dnir's
+            // variadic-tail ceiling (`max_concat_holes`).
+            const slot: u32 = if (is_variadic) blk: {
+                if (argument + 3 > 16) return e.refuse("too-many-variadic-args");
+                break :blk argument + 3;
+            } else argument;
+            try w.print("  a{d} = ", .{slot});
             try emitValue(e, instruction.lhs);
             try w.writeAll(";\n");
         },
@@ -461,8 +468,9 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             const argc = e.args_this_call;
             const has_lhs_arg = instruction.lhs != .void;
             e.args_this_call = 0;
+            const callee_name = externName(instruction.callee);
             if (instruction.result) |result| try w.print("  s{d} = ", .{result});
-            try w.print("{s}(", .{externName(instruction.callee)});
+            try w.print("{s}(", .{callee_name});
             var printed_any = false;
             if (has_lhs_arg) {
                 try w.writeAll("(int64_t)");
@@ -474,6 +482,28 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
                 if (printed_any) try w.writeAll(", ");
                 try w.print("(int64_t)a{d}", .{idx});
                 printed_any = true;
+            }
+            // The dnir's variadic tail for `printf` and `snprintf` is
+            // materialised in `a3..a16` by the `mov_arg result=0..13`
+            // remap in the instruction above. Only emit the trailing
+            // slot reads for those callees; every other extern here
+            // has a signature with at most the fixed args the dnir
+            // already wrote (e.g. `io.open(path, mode)` has 2 args;
+            // adding 14 trailing ones makes the call a C type
+            // error). A variadic callee reads the trailing slots in
+            // the order the dnir wrote them; a non-variadic callee
+            // ignores them entirely.
+            const is_variadic_callee = std.mem.eql(u8, callee_name, "printf") or
+                std.mem.eql(u8, callee_name, "snprintf") or
+                std.mem.eql(u8, callee_name, "idol_printf") or
+                std.mem.eql(u8, callee_name, "idol_snprintf");
+            if (is_variadic_callee) {
+                var variadic_idx: u32 = 3;
+                while (variadic_idx <= 16) : (variadic_idx += 1) {
+                    if (printed_any) try w.writeAll(", ");
+                    try w.print("(int64_t)a{d}", .{variadic_idx});
+                    printed_any = true;
+                }
             }
             try w.writeAll(");\n");
         },
@@ -599,7 +629,23 @@ fn emitFunction(e: *Emitter, function: dnir.Function) Error!void {
     const slots = slotCount(function);
     var slot: u32 = @intCast(function.params.len);
     while (slot < slots) : (slot += 1) try w.print("  int64_t s{d} = 0;\n", .{slot});
-    for (0..try argumentCount(e, function)) |argument| try w.print("  int64_t a{d} = 0;\n", .{argument});
+    // Every argument slot starts at zero. The dnir's `mov_arg result=N`
+    // writes a value to `aN`; if the dnir's plan populates only the
+    // first three slots of a variadic call (buf, size, fmt for
+    // snprintf), the trailing a3..a16 slots carry garbage from the
+    // caller frame, which vsnprintf would then interpret per the
+    // format string and could crash. Initialising every slot to
+    // zero here makes the no-op case safe: an unused trailing slot
+    // is the `void *` representation of `0` (a null pointer), which
+    // vsnprintf handles as a null `%s` and prints `(null)`. The
+    // dnir's plan only writes the slots the format string
+    // references, so the zeroed slots never appear in the answer.
+    try w.writeAll("  int64_t a0 = 0; int64_t a1 = 0; int64_t a2 = 0;\n");
+    try w.writeAll("  int64_t a3 = 0; int64_t a4 = 0; int64_t a5 = 0;\n");
+    try w.writeAll("  int64_t a6 = 0; int64_t a7 = 0; int64_t a8 = 0;\n");
+    try w.writeAll("  int64_t a9 = 0; int64_t a10 = 0; int64_t a11 = 0;\n");
+    try w.writeAll("  int64_t a12 = 0; int64_t a13 = 0; int64_t a14 = 0;\n");
+    try w.writeAll("  int64_t a15 = 0; int64_t a16 = 0;\n");
 
     // One declaration per `alloc_slots` region, hoisted to the frame exactly
     // as the direct backend reserves them at frame setup. The extent is a
@@ -726,10 +772,19 @@ pub fn emitSource(
         \\extern int64_t duo_str_to_i64(int64_t s);
         \\extern double duo_str_to_f64(int64_t s);
         \\extern int64_t idol_malloc(int64_t size);
-        \\extern int64_t idol_printf(int64_t fmt, ...);
+        \\/* The dnir's variadic concat emits the args after `fmt` into
+        \\ * the caller's `a3..a16` slots (the C backend remaps
+        \\ * `mov_arg result=0..13` to slot indices 3..16 so they land
+        \\ * after the fixed args the same call site wrote). The C
+        \\ * calling convention places each trailing arg in the
+        \\ * register / stack slot the C backend emitted, so the
+        \\ * function signature names every slot explicitly. A
+        \\ * non-variadic callee reads the unused trailing slots as
+        \\ * noise, which is harmless. */
+        \\extern int64_t idol_printf(int64_t fmt, int64_t a3, int64_t a4, int64_t a5, int64_t a6, int64_t a7, int64_t a8, int64_t a9, int64_t a10, int64_t a11, int64_t a12, int64_t a13, int64_t a14, int64_t a15, int64_t a16);
         \\extern int64_t idol_memcpy(int64_t dst, int64_t src, int64_t n);
         \\extern int64_t idol_strcmp(int64_t a, int64_t b);
-        \\extern int64_t idol_snprintf(int64_t buf, int64_t size, int64_t fmt, ...);
+        \\extern int64_t idol_snprintf(int64_t buf, int64_t size, int64_t fmt, int64_t a3, int64_t a4, int64_t a5, int64_t a6, int64_t a7, int64_t a8, int64_t a9, int64_t a10, int64_t a11, int64_t a12, int64_t a13, int64_t a14, int64_t a15, int64_t a16);
         \\extern int64_t strlen(const char *s);
         \\
     );
