@@ -12,11 +12,11 @@ _TMP = "/tmp/duo-prop12"
 # The exact LCG the shell version used, seed included, so this generates the
 # SAME 64 cases: any divergence in the report is a real bitwise divergence and
 # not a different corpus. glibc's constants, masked to 31 bits.
-_seed = 305419896
+seed = 305419896
 
-_next_rand: i64 = ()
-  _seed = (_seed * 1103515245 + 12345) & 2147483647
-  _seed
+rand: i64 = ()
+  seed = (seed * 1103515245 + 12345) & 2147483647
+  seed
 
 main: i64 = ()
   print("[Property 12] Testing bitwise correctness...")
@@ -33,8 +33,8 @@ main: i64 = ()
 
   i = 0
   while i < 64
-    ra = _next_rand()
-    rb = _next_rand()
+    ra = rand()
+    rb = rand()
     a = ra - 1073741824
     b = rb - 1073741824
     shift = rb & 31
