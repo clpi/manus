@@ -13786,6 +13786,15 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                 try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_os_execute", .lhs = arg, .ty = .i64 });
                 return .{ .temp = t };
             }
+            if (std.mem.eql(u8, f.obj.name.ident, "os") and
+                std.mem.eql(u8, f.field, "capture") and c.args.len == 1)
+            {
+                const arg = try lowerExpr(ctx, c.args[0]);
+                try ensureExtern(ctx, "os", "capture", "idol_process_capture");
+                const t = ctx.freshTemp();
+                try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_process_capture", .lhs = arg, .ty = .str });
+                return .{ .temp = t };
+            }
             if (std.mem.eql(u8, f.obj.name.ident, "io") and
                 std.mem.eql(u8, f.field, "open") and c.args.len == 2)
             {

@@ -26,6 +26,12 @@ run: { outcome: str, status: i64 } = (line: str)
 evidence: str = (line: str)
   gatecap(line)
 
+# os.capture — process world capture relation (C0 §67 · GAP-155).
+# run + stdout as evidence; empty-output is a legal str value, not a sentinel.
+# Lowers through idol_process_capture via os.capture in dnir_lower.
+capture: str = (line: str)
+  evidence(line)
+
 trim: str = (text: str)
   n = text:len()
   while n > 0

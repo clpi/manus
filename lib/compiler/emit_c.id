@@ -118,12 +118,15 @@ eval: i64 = (expr: str)
     # `ld: library 'System' not found` outside the SDK environment, which made
     # the proof report SKIP rather than fail — exactly the silent-degradation
     # mode the proof's own skip branch exists to make visible.
-    cc = std.script.getenv("DUO_EMIT_CC", "xcrun cc")
-    if std.script.run(cc .. " -O0 -o " .. exe .. " " .. src .. " 2>/dev/null") != 0
+    cc = os.env["DUO_EMIT_CC"]
+    if cc == nil
+        cc = "xcrun cc"
+    end
+    if !os.execute(cc .. " -O0 -o " .. exe .. " " .. src .. " 2>/dev/null")
         os.remove(src)
         return 0 - 1
     end
-    out = std.script.capture(exe)
+    out = process.capture(exe)
     os.remove(src)
     os.remove(exe)
     to(i64)(out)

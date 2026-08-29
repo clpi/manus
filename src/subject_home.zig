@@ -1132,6 +1132,9 @@ pub const os_dot_members = [_]OsMember{
     .{ .name = "date", .how = .unrealized },
     .{ .name = "tmpname", .how = .unrealized, .result = .str },
     .{ .name = "difftime", .how = .unrealized, .result = .f64 },
+    // capture: run + stdout capture as evidence (C0 §67 · GAP-155 process world).
+    // Lowers through idol_process_capture; empty-output is a legal str, not a sentinel.
+    .{ .name = "capture", .how = .unrealized, .result = .str },
     // Retired, with the repair the refusal quotes back.
     .{ .name = "getenv", .how = .retired, .repair = "env(k)" },
     .{ .name = "setenv", .how = .retired, .repair = "env(k) = v" },
