@@ -93,7 +93,11 @@ fi
 #    coord/README.md and the ticket, do the migration, commit, push to
 #    origin/$BRANCH, append a task entry and an attempt summary.
 dispatched=0
-echo "$pending" | while IFS= read -r line; do
+# Avoid pipe-subshell so $dispatched propagates
+pending_file=$(mktemp)
+printf '%s
+' "$pending" > "$pending_file"
+while IFS= read -r line; do
   if [ -z "$line" ]; then continue; fi
   if [ "$dispatched" -ge "$MAX_TICKETS_PER_RUN" ]; then break; fi
 
