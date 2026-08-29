@@ -36,6 +36,7 @@ WORKTREE_BASE=${WORKTREE_BASE:-/tmp/idol-migrate}
 LOG_DIR=${LOG_DIR:-/tmp/idol-migrate-logs}
 BASE_SHA=${BASE_SHA:-566d1884}     # the latest coord/ Live-0 substrate commit
 BRANCH=${BRANCH:-gap-145-c-backend}
+OR_MODEL=${OR_MODEL:-"meta-llama/llama-3.1-8b-instruct"}
 DISPATCH_MODEL=${DISPATCH_MODEL:-claude}
 MAX_TICKETS_PER_RUN=${MAX_TICKETS_PER_RUN:-3}
 
