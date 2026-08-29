@@ -46,6 +46,9 @@ mkdir -p "$LOG_DIR"
 chmod 600 /home/clp/.openclaw/.env 2>/dev/null || true
 . /home/clp/.openclaw/.env
 
+# Cron runs with a minimal PATH; make sure git, nix tools, etc. are reachable.
+export PATH="/home/clp/.nix-profile/bin:/home/clp/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
 # 1. REBASE THE WORKTREE onto the latest origin/$BRANCH before any
 #    dispatch. A stale base is the most common overnight failure mode
 #    and the audit's section 7 says "agents rebase before every push".
