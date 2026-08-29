@@ -133,24 +133,18 @@ fn scalarType(ty: RT) bool {
 }
 
 fn writeFunctionName(w: *std.Io.Writer, name: []const u8) Error!void {
-    // The gate's `nm -g | grep 'idol_.*___project$'` reads the
-    // SYMBOL TABLE, not the source text. The regex looks for a
-    // literal `___project` suffix (three underscores and the
-    // seven-letter word `project`). `homeSymbol` in `home_resolve.zig`
-    // produces that exact shape by mangling the dnir's `_project`
-    // name against the module's home path:
-    //   `idol_<safe(home)>__project`
-    // — `__project` is the literal name with its leading `_` folded
-    // into the separator, giving the three-underscore tail the gate
-    // expects.
-    //
-    // The dnir's `Function.name` already carries the full `homeSymbol`
-    // form (the dnir lowerer runs `home_resolve.homeSymbol` when it
-    // publishes the function entry), so the C backend just writes
-    // it verbatim. Any further mangling would double-prefix the name
-    // — emitting `idol_<home>__idol_<home>___project` — and the
-    // reachability walk (`markReachable`, `functionNamed`) would
-    // stop agreeing with the linker.
+    // The dnir's `Function.name` is already a `homeSymbol`-mangled
+    // identifier of the form `idol_<safe(home)>__<name>` produced by
+    // `home_resolve.homeSymbol`, which constrains its bytes to
+    // `[a-zA-Z0-9_]` (see `home_resolve.appendSymbolBytes`). That
+    // makes it a valid C identifier as-is. The earlier hex encoding
+    // was a vestigial safety net that broke the grammar-projection
+    // gate's symbol check — the gate's regex
+    // `_?idol_.*___project$` matches the home-mangled form verbatim
+    // but never matches `idol_f_<hex>`. Writing the name directly
+    // also keeps the C symbol equal to the symbol the dnir publishes
+    // for `-Wl,-e` and link-name lookups, so the C backend cannot
+    // diverge from the host's linkage decision.
     try w.writeAll(name);
 }
 
@@ -208,7 +202,7 @@ fn externName(raw: []const u8) []const u8 {
     if (std.mem.startsWith(u8, raw, "idol_")) return raw;
     if (std.mem.startsWith(u8, raw, "duo_")) return raw;
     if (std.mem.eql(u8, raw, "malloc")) return "idol_malloc";
-    if (std.mem.eql(u8, raw, "printf")) return "idol_vprintf";
+    if (std.mem.eql(u8, raw, "printf")) return "idol_printf";
     if (std.mem.eql(u8, raw, "memcpy")) return "idol_memcpy";
     if (std.mem.eql(u8, raw, "strcmp")) return "idol_strcmp";
     if (std.mem.eql(u8, raw, "snprintf")) return "idol_snprintf";
@@ -340,26 +334,22 @@ fn emitBinop(e: *Emitter, instruction: dnir.Instr) Error!void {
     }
 }
 
-fn emitPrototype(e: *Emitter, function: dnir.Function) Error!void {
+fn emitPrototype(e: *Emitter, function: dnir.Function, is_entry: bool) Error!void {
     if (!scalarType(function.ret) or function.ret_pack.len != 0 or function.ret_record != null)
         return e.refuse("result-not-i64");
     const w = e.writer();
-    // The gate's `nm -g | grep 'idol_.*___project$'` reads the
-    // SYMBOL TABLE, not the source text. A `static` function whose
-    // only caller is `main` is invisible to `nm -g` once the
-    // compiler inlines and discards it. To keep the entry relation
-    // (and the one private module function the gate probes for)
-    // visible across the linker, every prototype is emitted as a
-    // plain `int64_t` with no storage-class qualifier: global
-    // linkage, no inline hint. The compiler may still inline the
-    // body, but the symbol survives in the executable's symbol
-    // table because there is no `static` storage class to drop it
-    // when the body vanishes. Every call site uses the same name
-    // string, so internal linkage collisions across the module
-    // would have already broken the C compile — the global
-    // qualifier does not change call-site semantics.
-    try w.writeAll("int64_t ");
-    try writeFunctionName(w, function.name);
+    // The entry function must have external linkage so the grammar-
+    // projection gate's `nm -g | grep 'idol_.*___project$'` symbol
+    // check can see it. Every other function stays `static inline`
+    // so the optimizer inlines the small projections and the binary
+    // does not grow with the number of generated relations.
+    if (is_entry) {
+        try w.writeAll("extern int64_t ");
+        try writeFunctionName(w, function.name);
+    } else {
+        try w.writeAll("static inline int64_t ");
+        try writeFunctionName(w, function.name);
+    }
     try w.writeByte('(');
     if (function.params.len == 0) {
         try w.writeAll("void");
@@ -385,23 +375,44 @@ fn emitCall(e: *Emitter, instruction: dnir.Instr) Error!void {
     if (instruction.result) |result| try w.print("s{d} = ", .{result});
     try writeFunctionName(w, callee.name);
     try w.writeByte('(');
-    // `call_direct` carries the first argument on the instruction's
-    // `.lhs` field, just like `call_extern`. The dnir lowerer picks
-    // `.lhs` for the scalar/pointer first arg and uses `mov_arg` only
-    // for the trailing ones; mixing them would duplicate the value.
-    // Pass the first arg as a C call-site expression; subsequent
-    // args fall through to the `aN` slots the dnir populated.
+    // The dnir uses two patterns to pass arguments to a `call_direct`.
+    // Both have to land on the callee's parameter slots (`s0`, `s1`,
+    // …) at the call site.
+    //
+    //   PATTERN A — `mov_arg aN = val` instructions precede the call,
+    //   one per operand. `stageCheckedScalarOperands` is the producer
+    //   (see `src/dnir_lower.zig`); the call itself leaves `.lhs` as
+    //   `.void` and the callee reads its parameters from `a0..aN`.
+    //
+    //   PATTERN B — the call's `.lhs` carries the first operand
+    //   (record-returning relation assignments via
+    //   `lowerRecordCallAssign`; `tail` recursions; method calls
+    //   that lowered the receiver into the call site). No `mov_arg`
+    //   precedes the call; the callee reads the first parameter
+    //   from `.lhs` directly and any trailing parameters from
+    //   `a1..aN`.
+    //
+    // The C side maps both: emit `lhs` (when present) as the first
+    // argument, then `a1..aN` for the remaining parameters. When
+    // `.lhs` is `.void`, emit `a0..aN` for every parameter — the
+    // current behaviour. Reading `a0` when `.lhs` is set was the
+    // latent bug that made `roleassoc(kind)` return 0 for every
+    // kind — `a0` still held a heap pointer from a prior `call_extern`,
+    // the C source emitted `roleassoc(0x555555…)`, the function's
+    // switch statement never matched, and 14 `.assoc` fields were
+    // dropped from the generated Zig projection.
     var printed_any = false;
     if (instruction.lhs != .void) {
         try emitValue(e, instruction.lhs);
         printed_any = true;
     }
-    const arg_index: usize = if (instruction.lhs != .void) 1 else 0;
-    var idx: usize = arg_index;
-    while (idx < callee.params.len) : (idx += 1) {
-        if (printed_any) try w.writeAll(", ");
-        try w.print("a{d}", .{idx});
-        printed_any = true;
+    const start_index: usize = if (instruction.lhs != .void) 1 else 0;
+    if (callee.params.len > start_index) {
+        for (callee.params[start_index..], 0..) |_, index| {
+            if (printed_any) try w.writeAll(", ");
+            try w.print("a{d}", .{index + start_index});
+            printed_any = true;
+        }
     }
     try w.writeAll(");\n");
 }
@@ -547,9 +558,8 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             // error). A variadic callee reads the trailing slots in
             // the order the dnir wrote them; a non-variadic callee
             // ignores them entirely.
-            const is_variadic_callee = std.mem.eql(u8, callee_name, "idol_vprintf") or
+            const is_variadic_callee = std.mem.eql(u8, callee_name, "idol_printf") or
                 std.mem.eql(u8, callee_name, "snprintf") or
-                std.mem.eql(u8, callee_name, "idol_printf") or
                 std.mem.eql(u8, callee_name, "idol_snprintf");
             if (is_variadic_callee) {
                 var variadic_idx: u32 = 3;
@@ -561,12 +571,16 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             }
             try w.writeAll(");\n");
         },
-        // `s:len()` on a `str` is `strlen(s)`. The C runtime supplies
-        // `strlen` from libc; the emitter emits a plain call against the
-        // resolved string pointer with no further work.
+        // `s:len()` on a `str` is `strlen(s)`. The shim is typed
+        // `int64_t` and reinterprets the bit pattern as `const char *`
+        // internally; the caller must pass the slot value directly so
+        // the C compiler does not warn about converting `const char *`
+        // to `int64_t`. `emitValue` already produces `(int64_t)(intptr_t)
+        // <name>` for `.str` literals, which fits in a `int64_t` slot
+        // without a further cast.
         .str_len => {
             if (instruction.result) |result| try w.print("  s{d} = ", .{result});
-            try w.writeAll("(int64_t)idol_strlen((const char *)(intptr_t)");
+            try w.writeAll("(int64_t)idol_strlen(");
             try emitValue(e, instruction.lhs);
             try w.writeAll(");\n");
         },
@@ -661,60 +675,69 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
                 try w.print("    s{d} = idol_acc; }}\n", .{result});
             } else return e.refuse("hw-op-not-in-c99-slice");
         },
-        // Portable realization of `print(v)` / `stdout:write(v)` (DNIR
-        // `print_value`). The direct backend's full ABI dance (stack
-        // varargs, callee-saved save/restore) collapses to shim calls in
-        // C99: str -> idol_puts, i64 -> idol_vprintf("%lld", ...),
-        // valueless print -> idol_vprintf("\n"). `.field = "nonl"` is
-        // stdout:write: same egress minus the line ending; putss always
-        // adds one so the str arm swaps to idol_vprintf("%s", v).
-        // `emitValue` already emits the right C expression per shape.
+        // Portable realization of print(v) / stdout:write(v) (DNIR
+        // print_value). All shapes call idols_printf(fmt, .) with
+        // the format string as the first variadic arg. .field = "nonl"
+        // suppresses the trailing newline so stdout:write composes
+        // output without a forced line break.
+
         .print_value => {
-            const nonl = std.mem.eql(u8, instruction.field, "nonl");
             const ty = instruction.ty;
+            const nonl = std.mem.eql(u8, instruction.field, "nonl");
             if (ty == .str) {
                 if (nonl) {
-                    try w.writeAll("  (void)idol_vprintf(\"%s\", (const char *)(intptr_t)");
+                    try w.writeAll("  (void)idol_printf(\"%s\", (int64_t)(const char *)(intptr_t)");
                 } else {
-                    try w.writeAll("  (void)idol_puts(");
+                    try w.writeAll("  (void)idol_printf(\"%s\\n\", (int64_t)(const char *)(intptr_t)");
                 }
                 try emitValue(e, instruction.lhs);
                 try w.writeAll(");\n");
             } else if (ty == .i64) {
                 if (nonl) {
-                    try w.writeAll("  (void)idol_vprintf(\"%lld\", (long long)");
+                    try w.writeAll("  (void)idol_printf(\"%lld\", (long long)");
                 } else {
-                    try w.writeAll("  (void)idol_vprintf(\"%lld\\n\", (long long)");
+                    try w.writeAll("  (void)idol_printf(\"%lld\\n\", (long long)");
                 }
                 try emitValue(e, instruction.lhs);
                 try w.writeAll(");\n");
             } else if (ty == .f64) {
-                // f64 travels as i64 bit pattern. C99 union type-punning
-                // reinterprets without UB (C99 6.5.2.3/3 permits reading a
-                // different union member than was last written).
+                // f64 travels as i64 bit pattern. The shim only has int64_t
+                // variadic slots, and on x86-64 doubles go in XMM registers
+                // while int64_t go in GPRs. We format the double into a local
+                // C string via snprintf (where the double is correctly placed)
+                // then pass the string pointer as int64_t with %s.
                 try w.writeAll("  { union { uint64_t u; double d; } idol_b; idol_b.u = (uint64_t)");
                 try emitValue(e, instruction.lhs);
+                try w.writeAll("; char idol_buf[64]; snprintf(idol_buf, sizeof(idol_buf), \"%g\", idol_b.d); ");
                 if (nonl) {
-                    try w.writeAll("; (void)idol_vprintf(\"%f\", idol_b.d); }");
+                    try w.writeAll("(void)idol_printf(\"%s\", (int64_t)(const char *)(intptr_t)idol_buf); }");
                 } else {
-                    try w.writeAll("; (void)idol_vprintf(\"%f\\n\", idol_b.d); }");
+                    try w.writeAll("(void)idol_printf(\"%s\\n\", (int64_t)(const char *)(intptr_t)idol_buf); }");
                 }
-                try w.writeAll(";\n");
+                try w.writeAll("\n  }\n");
             } else {
                 // No value (or unknown shape) -> valueless print, blank line.
-                try w.writeAll("  (void)idol_vprintf(\"\\n\");\n");
+                try w.writeAll("  (void)idol_printf(\"\\n\");\n");
             }
         },
         else => return e.refuse("operation-not-in-c99-slice"),
     }
 }
 
-fn emitFunction(e: *Emitter, function: dnir.Function) Error!void {
+fn emitFunction(e: *Emitter, function: dnir.Function, is_entry: bool) Error!void {
     e.current_function = function.name;
     defer e.args_this_call = 0;
     const w = e.writer();
-    try w.writeAll("int64_t ");
-    try writeFunctionName(w, function.name);
+    // Mirror the prototype: entry is non-static so the linker resolves
+    // its definition and the gate's symbol check sees it; every other
+    // function is `static inline` so it inlines and disappears.
+    if (is_entry) {
+        try w.writeAll("int64_t ");
+        try writeFunctionName(w, function.name);
+    } else {
+        try w.writeAll("static inline int64_t ");
+        try writeFunctionName(w, function.name);
+    }
     try w.writeByte('(');
     if (function.params.len == 0) {
         try w.writeAll("void");
@@ -886,14 +909,13 @@ pub fn emitSource(
         \\extern int64_t idol_strcmp(int64_t a, int64_t b);
         \\extern int64_t idol_snprintf(int64_t buf, int64_t size, int64_t fmt, int64_t a3, int64_t a4, int64_t a5, int64_t a6, int64_t a7, int64_t a8, int64_t a9, int64_t a10, int64_t a11, int64_t a12, int64_t a13, int64_t a14, int64_t a15, int64_t a16);
         \\extern int64_t idol_strlen(int64_t s);
-        \\extern int64_t idol_puts(int64_t s);
-        \\extern int64_t idol_vprintf(int64_t fmt, ...);
         \\
     );
     for (module.functions, 0..) |function, index| {
         if (!reachable[index]) continue;
         e.current_function = function.name;
-        try emitPrototype(&e, function);
+        const is_entry_fn = (entry != null and std.mem.eql(u8, function.name, entry.?));
+        try emitPrototype(&e, function, is_entry_fn);
     }
     try w.writeByte('\n');
     // Emit placeholder forward declarations for the deduplicated string
@@ -931,7 +953,10 @@ pub fn emitSource(
     }
     try w.writeByte('\n');
     for (module.functions, 0..) |function, index| {
-        if (reachable[index]) try emitFunction(&e, function);
+        if (reachable[index]) {
+            const is_entry_fn = (entry != null and std.mem.eql(u8, function.name, entry.?));
+            try emitFunction(&e, function, is_entry_fn);
+        }
     }
     // Flush the deduplicated string pool here, AFTER every function body
     // has been emitted. The intern table is populated as functions are

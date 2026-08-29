@@ -230,6 +230,23 @@ int64_t idol_malloc(int64_t size) {
     return r.i;
 }
 
+/* fmt is the bit-pattern of a const char* (interned format string).
+ * The variadic tail a3..a16 carries every arg as int64_t — string
+ * pointers (via union cast), integers, or doubles (via union cast).
+ * We reassemble the variadic call using snprintf, which is the
+ * C-printf-family variadic entry point. vsnprintf would need a
+ * va_list, which is more machinery than this single-call shim needs;
+ * passing the explicit a3..a16 list to snprintf is fine because the
+ * C compiler lays them out in the standard variadic register/stack
+ * convention.
+ *
+ * NOTE on x86-64 ABI: int64_t args go in GPRs, double args in XMM
+ * registers. The C backend must NOT pass raw double bit-patterns
+ * through the int64_t slots for %f — instead, the print_value handler
+ * formats f64 into a local string via snprintf at the call site, then
+ * passes the string pointer as int64_t with %s. For %s the int64_t
+ * holds a pointer bit-pattern; for %lld it holds an integer. Both
+ * are 8 bytes and fit in a GPR, so snprintf reads them correctly. */
 int64_t idol_printf(int64_t fmt,
                    int64_t a3, int64_t a4, int64_t a5, int64_t a6,
                    int64_t a7, int64_t a8, int64_t a9, int64_t a10,
@@ -238,10 +255,20 @@ int64_t idol_printf(int64_t fmt,
     union { int64_t i; const char *p; } u;
     u.i = fmt;
     if (!u.p) return 0;
-    /* `snprintf` is the C-printf-family variadic entry point that
-     * takes individual args; `vsnprintf` would need a `va_list`,
-     * which is more machinery than this single-call shim needs. */
-    int n = snprintf(NULL, 0, "%s", u.p);
+    int n = snprintf(NULL, 0, u.p,
+                     (int64_t)a3, (int64_t)a4, (int64_t)a5, (int64_t)a6,
+                     (int64_t)a7, (int64_t)a8, (int64_t)a9, (int64_t)a10,
+                     (int64_t)a11, (int64_t)a12, (int64_t)a13, (int64_t)a14,
+                     (int64_t)a15, (int64_t)a16);
+    char *buf = (char *)malloc((size_t)n + 1);
+    if (!buf) return 0;
+    snprintf(buf, (size_t)n + 1, u.p,
+             (int64_t)a3, (int64_t)a4, (int64_t)a5, (int64_t)a6,
+             (int64_t)a7, (int64_t)a8, (int64_t)a9, (int64_t)a10,
+             (int64_t)a11, (int64_t)a12, (int64_t)a13, (int64_t)a14,
+             (int64_t)a15, (int64_t)a16);
+    fwrite(buf, 1, (size_t)n, stdout);
+    free(buf);
     return (int64_t)n;
 }
 
@@ -357,25 +384,6 @@ int64_t idol_strlen(int64_t s) {
     u.i = s;
     if (!u.p) return 0;
     return (int64_t)strlen(u.p);
-}
-
-/* ── print_value realization ──────────────────────────────────────────────── */
-
-int64_t idol_puts(int64_t s) {
-    union { int64_t i; const char *p; } u;
-    u.i = s;
-    if (!u.p) return (int64_t)puts("(null)");
-    return (int64_t)puts(u.p);
-}
-
-int64_t idol_vprintf(int64_t fmt, ...) {
-    union { int64_t i; const char *p; } u;
-    u.i = fmt;
-    va_list ap;
-    va_start(ap, fmt);
-    int n = vprintf(u.p ? u.p : "", ap);
-    va_end(ap);
-    return (int64_t)n;
 }
 
 /* ── shim-side helpers called by `idol_os_arg` ──────────────────────────── */

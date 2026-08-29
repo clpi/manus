@@ -21,6 +21,7 @@ selftest() {
   root=$control/repo
   mkdir -p "$root/tools/node/dev/grammar" "$root/lib/compiler" "$root/lib/token" "$root/src"
   cp "$repo/tools/node/dev/grammar/emit" "$root/tools/node/dev/grammar/emit"
+  cp "$repo/tools/node/dev/grammar/idol_c_runtime_shim.c" "$root/tools/node/dev/grammar/idol_c_runtime_shim.c"
   chmod +x "$root/tools/node/dev/grammar/emit"
   printf 'owner\n' >"$root/lib/compiler/token.id"
   printf 'old zig\n' >"$root/src/grammar_role_table.zig"
@@ -59,17 +60,12 @@ selftest() {
   printf '%s\n' \
     '#include <stdio.h>' \
     'int main(void) {' \
-    '  FILE *z = fopen("src/grammar_role_table.zig", "w");' \
-    '  if (!z) return 1;' \
-    '  fprintf(z, "pub const rows = .{ .{ .kind = ., }, };\n");' \
-    '  fclose(z);' \
-    '  FILE *i = fopen("lib/token/grammarrole.id", "w");' \
-    '  if (!i) return 1;' \
-    '  fprintf(i, "rolecount = 1\n");' \
-    '  fclose(i);' \
+    '  FILE *f = fopen("src/grammar_role_table.zig", "w");' \
+    '  if (f) { fprintf(f, "pub const rows = .{ .{ .kind = ., }, };\\n"); fclose(f); }' \
+    '  f = fopen("lib/token/grammarrole.id", "w");' \
+    '  if (f) { fprintf(f, "rolecount = 1\\n"); fclose(f); }' \
     '  return 0;' \
     '}' >"$fake_program"
-  chmod +x "$fake_program"
 
   fake=$control/fake-idol
   # shellcheck disable=SC2016
@@ -86,7 +82,6 @@ selftest() {
     '    done' \
     '    [ -n "$out" ] || exit 2' \
     '    cp "$(dirname "$0")/fake-program" "$out"' \
-    '    chmod +x "$out"' \
     '    exit 0' \
     '    ;;' \
     '  check) exit 0 ;;' \
@@ -190,7 +185,7 @@ generated_id=$stage/$idout
 if ! zig fmt --check "$generated_zig" >"$work/zigfmt.out" 2>"$work/zigfmt.err"; then
   fail 'generated Zig projection is not syntactically valid'
 fi
-if ! (cd -- "$stage" && zig test src/grammar_roles.zig -lc -fno-emit-bin) >"$work/zigtest.out" 2>"$work/zigtest.err"; then
+if ! (cd -- "$stage" && zig test -lc src/grammar_roles.zig -fno-emit-bin) >"$work/zigtest.out" 2>"$work/zigtest.err"; then
   printf 'grammar projection: FAIL — generated Zig projection does not satisfy its consumer\n' >&2
   sed -n '1,20p' "$work/zigtest.err" >&2
   exit 1
