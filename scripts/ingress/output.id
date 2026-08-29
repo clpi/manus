@@ -1,4 +1,4 @@
 # output endpoint — call as output:write(text).
 
 output =
-  write = endpointwrite
+  write = say

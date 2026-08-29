@@ -1,5 +1,5 @@
 # output home — write relation via io world (no @c, no lua).
 
-endpointwrite: i64 = (text: str)
+say: i64 = (text: str)
   stdout:write(text)
   0
