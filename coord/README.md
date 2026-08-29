@@ -39,3 +39,46 @@ resolved by the agent's best guess.
 existed before Live-0 are an exception, not the rule. They reconcile
 into main when their authors rebase and push; Live-0 enforces the
 discipline from now on, not the past.
+
+## Overnight pump
+
+`coord/cron/overnight.sh` is the overnight pump. The audit says
+"agents work in tickets sized to finish in one session. Rebase before
+every push. No branch lives past a day." The pump applies that rule:
+
+  1. `git fetch` the workspace onto the latest origin/gap-145-c-backend.
+  2. `git rebase` the workspace before any dispatch.
+  3. Observe the dirty `/home/clp/src/idol` worktree but do NOT touch it
+     (the audit says "Live-0 enforces the discipline from now on, not
+     the past"). Log the branch and the uncommitted line count.
+  4. Find every pending ticket in `coord/tasks.jsonl`.
+  5. For up to `MAX_TICKETS_PER_RUN` (default 3) tickets, spawn a
+     per-ticket worktree at `/tmp/idol-migrate/$ticket_id` and dispatch
+     a single-ticket subagent there. The subagent's contract: read
+     `coord/README.md`, do the migration, run the three gates, push to
+     `origin/gap-145-c-backend` (NEVER origin/main), append a task row
+     and an attempt summary.
+  6. Exit 0. The next cron tick re-reads the ledger.
+
+The human merges `gap-145-c-backend` -> `main` when the corpus is green.
+No subagent writes to main directly.
+
+### Installing the cron entry
+
+The pump itself is `coord/cron/overnight.sh`. Install it via crontab:
+
+```
+0 2 * * *  /tmp/idol-gap145-fix/coord/cron/overnight.sh >> /tmp/idol-migrate-logs/cron.log 2>&1
+```
+
+That is "2 AM nightly, one ticket each." Adjust the schedule to match
+how much the human can review in the morning.
+
+### Why the pump never writes main
+
+The audit's section 7 says "Trunk discipline. One main. Rebase before
+every push." A subagent that lands on main directly sidesteps the
+human's review and makes the freeze unratifiable. The pump is the
+instrument that keeps subagent work in a single integration branch
+(`gap-145-c-backend`) where the human sees every commit before it
+becomes law.
