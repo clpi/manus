@@ -112,6 +112,64 @@ Idol-0 freeze ratifies the kernel decisions above; the migration of
 the existing `lib/compiler/token.id` to one-word names is a
 multi-ticket workstream tracked separately.
 
+
+## Pre-freeze debt inventory
+
+The repo as of `237b25b5` carries the following spec debt. Each
+entry names the file, the mashed word, and the proposed
+decomposition. The migration is **not** a single PR — it is
+versioned corpus changes per the foundational audit, not silent
+reinterpretation.
+
+| File | Word | Decomposition |
+|---|---|---|
+| `lib/compiler/token.id` | `idbody` | `id` + `body` (separate relation + fact) |
+| `lib/compiler/token.id` | `zigbody` | `zig` + `body` |
+| `lib/compiler/token.id` | `tabletext` | `table` + `text` |
+| `lib/compiler/token.id` | `roleassoc` | `role` + `assoc` |
+| `lib/compiler/token.id` | `rolebit` | `role` + `bit` |
+| `lib/compiler/token.id` | `roleprefix` | `role` + `prefix` |
+| `lib/compiler/token.id` | `roleprojection` | `role` + `projection` |
+| `lib/compiler/token.id` | `roleliteral` | `role` + `literal` |
+| `lib/compiler/token.id` | `roleparameter` | `role` + `parameter` |
+| `lib/compiler/token.id` | `rolepattern` | `role` + `pattern` |
+| `lib/compiler/token.id` | `rolepostfix` | `role` + `postfix` |
+| `lib/compiler/token.id` | `roleprecedence` | `role` + `precedence` |
+| `lib/compiler/token.id` | `rolequoted` | `role` + `quoted` |
+| `lib/compiler/token.id` | `roledescriptor` | `role` + `descriptor` |
+| `lib/compiler/token.id` | `rolebodystart` | `role` + `bodystart` |
+| `lib/compiler/token.id` | `rolecompatonly` | `role` + `compatonly` |
+| `lib/compiler/token.id` | `rolebeginexpr` | `role` + `beginexpr` |
+| `lib/compiler/token.id` | `assocname` | `assoc` + `name` |
+| `lib/compiler/token.id` | `_nametext` | `_` + `name` + `text` |
+| `lib/compiler/token.id` | `_relationname` | `_` + `relation` + `name` |
+| `lib/compiler/token.id` | `_unaryname` | `_` + `unary` + `name` |
+| `lib/compiler/token.id` | `_zigenum` | `_` + `zig` + `enum` |
+| `lib/compiler/token.id` | `_zigescape` | `_` + `zig` + `escape` |
+| `lib/compiler/token.id` | `_zigname` | `_` + `zig` + `name` |
+| `lib/compiler/token.id` | `_wordcount` | `_` + `word` + `count` |
+| `lib/compiler/token.id` | `kindalias`..`kindawait` (90+ entries) | `kind` + word (per-token decomposition) |
+| `lib/compiler/token.id` | `kindeof` (output projection) | `kind` + `eof` -> split into kind index + is_eof fact |
+| `lib/compiler/token.id` | `beginexpr` (output projection) | `begin` + `expr` -> split into begin index + is_begin_expr fact |
+| `gate/idiom.id` | `checkns`, `checkpred` | decompose: `check` + namespace concept; `check` + predicate concept |
+| `gate/idiom.id` | `nspace`, `consumerules`, `graphrules`, `badstem`, `boundface`, `cardinalstem`, `collisionstem`, `commentline`, `compound`, `consumer`, `digitonly`, `docline` | per-id decomposition |
+| `gate/host.id` | `hostr`, `scandr` | `host` + rule, `scan` + dryrun concept |
+| `gate/census.id` | `filescan` | `file` + `scan` |
+| All gate `*.id` | `audit`, `scan`, `rule`, `edge`, `home`, `adj`, `route` | conformant single words |
+| `scripts/ingress/*` (pre-fix) | `endpointwrite`, `endpointread` | decomposed to `say`, `fetch` (commit `1080cbd9`) |
+| `tools/wasm/ingest.id` | `emit` | conformant single word |
+
+The migration is large. Per the foundational audit, the approach is
+"expect two or three amendments to the freeze and treat each as a
+versioned corpus change with a reason, not a silent reinterpretation."
+
+The first migration ticket is `coord/tasks.jsonl` `migrate-token-id-body-2026-08-29`
+(decomposing `idbody` and `zigbody` in `lib/compiler/token.id` while
+preserving the byte-identical grammar projection gate via the C
+backend). It is a self-contained one-week workstream that exercises
+the full freeze/fix/ratify loop with a real downstream consumer.
+
+
 ## Ratification log
 
 - 2026-08-29: D1-D13 drafted from the foundational audit. Awaiting
