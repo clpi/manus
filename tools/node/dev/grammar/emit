@@ -116,9 +116,28 @@ rm -f -- "$stage/$zigout"
 cp "$owner" "$stage/$owner"
 
 artifact=$work/project.out
-if ! (cd -- "$stage" && "$idol" compile --no-cache --backend=direct "$owner" -o "$artifact") >"$work/compile.out" 2>"$work/compile.err"; then
+# Two compilation paths exist here. The first (--backend=direct) was the
+# original recipe and produces a native executable the direct backend can
+# assemble; it is the right choice on aarch64-macos hosts where the direct
+# backend has its machine realisation. The second (--backend=c --emit=c
+# followed by `cc`) is the host-agnostic C-realizer path: the C backend
+# compiles the same owner to portable C99 source, and a host C compiler
+# links the result against `idol_c_runtime_shim.c`, which provides the
+# host-side externs (file I/O, environment, length, comparison, format).
+# The C path is the one this script uses because it does not require the
+# direct backend's machine realisation and therefore runs on any host
+# with a C compiler — including the x86_64-linux hosts the trunk's CI
+# uses, where DNB004 refuses the native machine target. The semantic
+# guarantee is the same: both paths produce byte-identical `src/grammar_
+# role_table.zig` and `lib/token/grammarrole.id` for the same owner.
+if ! (cd -- "$stage" && "$idol" compile --no-cache --backend=c --emit=c --target=c-source "$owner" -o "$work/project.c") >"$work/compile.out" 2>"$work/compile.err"; then
   printf 'grammar projection: FAIL — the Idol owner did not compile from its root\n' >&2
   sed -n '1,20p' "$work/compile.err" >&2
+  exit 1
+fi
+if ! (cd -- "$stage" && cc -O2 -Wno-excess-initializers "$work/project.c" "$repo/tools/node/dev/grammar/idol_c_runtime_shim.c" -o "$artifact") >"$work/link.out" 2>"$work/link.err"; then
+  printf 'grammar projection: FAIL — the C source did not link\n' >&2
+  sed -n '1,20p' "$work/link.err" >&2
   exit 1
 fi
 if ! (cd -- "$stage" && "$artifact") >"$work/run.out" 2>"$work/run.err"; then
@@ -186,9 +205,14 @@ cp -R src "$explicit/src"
 rm -f -- "$explicit/$zigout" "$explicit/$idout"
 cp "$owner" "$explicit/$owner"
 explicit_artifact=$work/explicit.out
-if ! (cd -- "$explicit" && "$idol" compile --no-cache --backend=direct --entry _project "$owner" -o "$explicit_artifact") >"$work/explicit.compile.out" 2>"$work/explicit.compile.err"; then
+if ! (cd -- "$explicit" && "$idol" compile --no-cache --backend=c --emit=c --target=c-source --entry _project "$owner" -o "$work/explicit.c") >"$work/explicit.compile.out" 2>"$work/explicit.compile.err"; then
   printf 'grammar projection: FAIL — exact private project entry did not compile\n' >&2
   sed -n '1,20p' "$work/explicit.compile.err" >&2
+  exit 1
+fi
+if ! (cd -- "$explicit" && cc -O2 -Wno-excess-initializers "$work/explicit.c" "$repo/tools/node/dev/grammar/idol_c_runtime_shim.c" -o "$explicit_artifact") >"$work/explicit.link.out" 2>"$work/explicit.link.err"; then
+  printf 'grammar projection: FAIL — exact private project entry did not link\n' >&2
+  sed -n '1,20p' "$work/explicit.link.err" >&2
   exit 1
 fi
 if ! (cd -- "$explicit" && "$explicit_artifact") >"$work/explicit.run.out" 2>"$work/explicit.run.err"; then
