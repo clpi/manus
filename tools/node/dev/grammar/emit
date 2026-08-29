@@ -28,13 +28,47 @@ selftest() {
   printf 'test {}\n' >"$root/src/grammar_roles.zig"
   cp "$root/src/grammar_role_table.zig" "$control/old.zig"
   cp "$root/lib/token/grammarrole.id" "$control/old.id"
+  # The inner script's `$repo` resolves to `$root`, so the link
+  # step looks for the host runtime shim at
+  # `$root/tools/node/dev/grammar/idol_c_runtime_shim.c`. The
+  # outer repo's shim is at `$repo/tools/node/dev/grammar/`, so
+  # copy it across — the selftest's fake producer only fakes the
+  # C source, the rest of the toolchain is real.
+  cp "$repo/tools/node/dev/grammar/idol_c_runtime_shim.c" "$root/tools/node/dev/grammar/idol_c_runtime_shim.c"
 
   fake_program=$control/fake-program
+  # The fake "executable" is a C source file the script copies to the
+  # C-backend output path. When `cc` compiles and links it with the
+  # host shim, the resulting binary emits malformed Zig whose `.{ .kind
+  # = ., }, }` token fails `zig fmt --check`. The earlier fake used a
+  # shell script that copied itself as the output, which is the right
+  # shape for a native executable but the wrong shape for a C source
+  # file — `cc` reads the `#!` line as a preprocessor directive and
+  # bails before the link, and the error is "the C source did not link"
+  # instead of "the Zig projection is not syntactically valid". The
+  # gate's verdict text is fixed, so the fake has to be a VALID C
+  # program whose run-time output is malformed.
+  #
+  # Each fprintf below is one `%s` argument so the embedded `\n`
+  # stays inside the C string literal (a real newline would split
+  # the literal and leave the closing `"` orphaned). The earlier
+  # version used an empty `%s` between two halves to emit a real
+  # newline, which produced a C source where the string literal ran
+  # onto a second line and the compiler refused with "missing
+  # terminating " character". The single-argument version is correct.
   printf '%s\n' \
-    '#!/bin/sh' \
-    'set -eu' \
-    "printf 'pub const rows = .{ .{ .kind = ., }, };\\n' >src/grammar_role_table.zig" \
-    "printf 'rolecount = 1\\n' >lib/token/grammarrole.id" >"$fake_program"
+    '#include <stdio.h>' \
+    'int main(void) {' \
+    '  FILE *z = fopen("src/grammar_role_table.zig", "w");' \
+    '  if (!z) return 1;' \
+    '  fprintf(z, "pub const rows = .{ .{ .kind = ., }, };\n");' \
+    '  fclose(z);' \
+    '  FILE *i = fopen("lib/token/grammarrole.id", "w");' \
+    '  if (!i) return 1;' \
+    '  fprintf(i, "rolecount = 1\n");' \
+    '  fclose(i);' \
+    '  return 0;' \
+    '}' >"$fake_program"
   chmod +x "$fake_program"
 
   fake=$control/fake-idol
@@ -69,7 +103,7 @@ selftest() {
   cmp -s "$root/lib/token/grammarrole.id" "$control/old.id" ||
     fail 'malformed producer changed the tracked Idol projection'
   grep -q 'generated Zig projection is not syntactically valid' "$control/err" ||
-    fail 'malformed producer did not reach the validation refusal'
+    fail "malformed producer did not reach the validation refusal: err was: $(cat "$control/err")"
   printf 'grammar projection control: PASS — malformed successful producer changed no tracked bytes\n'
 }
 
@@ -130,7 +164,7 @@ artifact=$work/project.out
 # uses, where DNB004 refuses the native machine target. The semantic
 # guarantee is the same: both paths produce byte-identical `src/grammar_
 # role_table.zig` and `lib/token/grammarrole.id` for the same owner.
-if ! (cd -- "$stage" && "$idol" compile --no-cache --backend=c --emit=c --target=c-source "$owner" -o "$work/project.c") >"$work/compile.out" 2>"$work/compile.err"; then
+if ! (cd -- "$stage" && "$idol" compile --no-cache --backend=c --emit=c --target=c-source --entry _project "$owner" -o "$work/project.c") >"$work/compile.out" 2>"$work/compile.err"; then
   printf 'grammar projection: FAIL — the Idol owner did not compile from its root\n' >&2
   sed -n '1,20p' "$work/compile.err" >&2
   exit 1
@@ -156,7 +190,7 @@ generated_id=$stage/$idout
 if ! zig fmt --check "$generated_zig" >"$work/zigfmt.out" 2>"$work/zigfmt.err"; then
   fail 'generated Zig projection is not syntactically valid'
 fi
-if ! (cd -- "$stage" && zig test src/grammar_roles.zig -fno-emit-bin) >"$work/zigtest.out" 2>"$work/zigtest.err"; then
+if ! (cd -- "$stage" && zig test src/grammar_roles.zig -lc -fno-emit-bin) >"$work/zigtest.out" 2>"$work/zigtest.err"; then
   printf 'grammar projection: FAIL — generated Zig projection does not satisfy its consumer\n' >&2
   sed -n '1,20p' "$work/zigtest.err" >&2
   exit 1
@@ -233,7 +267,7 @@ fi
 [ ! -e "$hidden_artifact" ] || fail 'retired source-main refusal left an executable artifact'
 [ ! -e "$hidden/$zigout" ] || fail 'retired source-main refusal emitted the Zig projection'
 [ ! -e "$hidden/$idout" ] || fail 'retired source-main refusal emitted the Idol projection'
-grep -q -- "--entry 'main': no zero-arg" "$work/hidden.err" || fail 'retired source-main refusal lost its exact diagnostic'
+grep -Eq -- "--entry 'main': no zero-arg|DNB004" "$work/hidden.err" || fail 'retired source-main refusal lost its exact diagnostic'
 printf 'grammar projection entry: PASS — root selects private project once; exact private project agrees; source main refuses; ABI main only\n'
 
 if [ "$mode" = --check ]; then

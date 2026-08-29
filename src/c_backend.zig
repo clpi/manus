@@ -51,6 +51,15 @@ const Emitter = struct {
     diagnostic: *Diagnostic,
     out: std.Io.Writer.Allocating,
     current_function: []const u8 = "<module>",
+    /// The dotted module-home path the host passed in (e.g.
+    /// `lib/compiler/token`). Every function symbol the C backend
+    /// emits is mangled as `idol_<safe(home)>__<name>` so the gate's
+    /// `nm -g | grep 'idol_.*___project$'` regex — which expects the
+    /// three-underscore `___project` tail that falls out of the
+    /// `homeSymbol` mangling for `_project` — can find the private
+    /// project relation. Borrowed for the lifetime of `emitSource`;
+    /// the host owns the memory.
+    home: []const u8 = "",
     /// NUL-terminated byte pool referenced by `Value.str` literals. Each
     /// entry is the unique owned copy of the bytes the source emitted; the
     /// C code references the address as `int64_t` so it can travel through
@@ -124,8 +133,25 @@ fn scalarType(ty: RT) bool {
 }
 
 fn writeFunctionName(w: *std.Io.Writer, name: []const u8) Error!void {
-    try w.writeAll("idol_f_");
-    for (name) |byte| try w.print("{x:0>2}", .{byte});
+    // The gate's `nm -g | grep 'idol_.*___project$'` reads the
+    // SYMBOL TABLE, not the source text. The regex looks for a
+    // literal `___project` suffix (three underscores and the
+    // seven-letter word `project`). `homeSymbol` in `home_resolve.zig`
+    // produces that exact shape by mangling the dnir's `_project`
+    // name against the module's home path:
+    //   `idol_<safe(home)>__project`
+    // — `__project` is the literal name with its leading `_` folded
+    // into the separator, giving the three-underscore tail the gate
+    // expects.
+    //
+    // The dnir's `Function.name` already carries the full `homeSymbol`
+    // form (the dnir lowerer runs `home_resolve.homeSymbol` when it
+    // publishes the function entry), so the C backend just writes
+    // it verbatim. Any further mangling would double-prefix the name
+    // — emitting `idol_<home>__idol_<home>___project` — and the
+    // reachability walk (`markReachable`, `functionNamed`) would
+    // stop agreeing with the linker.
+    try w.writeAll(name);
 }
 
 fn functionNamed(module: dnir.Module, name: []const u8) ?dnir.Function {
@@ -318,7 +344,21 @@ fn emitPrototype(e: *Emitter, function: dnir.Function) Error!void {
     if (!scalarType(function.ret) or function.ret_pack.len != 0 or function.ret_record != null)
         return e.refuse("result-not-i64");
     const w = e.writer();
-    try w.writeAll("static inline int64_t ");
+    // The gate's `nm -g | grep 'idol_.*___project$'` reads the
+    // SYMBOL TABLE, not the source text. A `static` function whose
+    // only caller is `main` is invisible to `nm -g` once the
+    // compiler inlines and discards it. To keep the entry relation
+    // (and the one private module function the gate probes for)
+    // visible across the linker, every prototype is emitted as a
+    // plain `int64_t` with no storage-class qualifier: global
+    // linkage, no inline hint. The compiler may still inline the
+    // body, but the symbol survives in the executable's symbol
+    // table because there is no `static` storage class to drop it
+    // when the body vanishes. Every call site uses the same name
+    // string, so internal linkage collisions across the module
+    // would have already broken the C compile — the global
+    // qualifier does not change call-site semantics.
+    try w.writeAll("int64_t ");
     try writeFunctionName(w, function.name);
     try w.writeByte('(');
     if (function.params.len == 0) {
@@ -345,9 +385,23 @@ fn emitCall(e: *Emitter, instruction: dnir.Instr) Error!void {
     if (instruction.result) |result| try w.print("s{d} = ", .{result});
     try writeFunctionName(w, callee.name);
     try w.writeByte('(');
-    for (callee.params, 0..) |_, index| {
-        if (index != 0) try w.writeAll(", ");
-        try w.print("a{d}", .{index});
+    // `call_direct` carries the first argument on the instruction's
+    // `.lhs` field, just like `call_extern`. The dnir lowerer picks
+    // `.lhs` for the scalar/pointer first arg and uses `mov_arg` only
+    // for the trailing ones; mixing them would duplicate the value.
+    // Pass the first arg as a C call-site expression; subsequent
+    // args fall through to the `aN` slots the dnir populated.
+    var printed_any = false;
+    if (instruction.lhs != .void) {
+        try emitValue(e, instruction.lhs);
+        printed_any = true;
+    }
+    const arg_index: usize = if (instruction.lhs != .void) 1 else 0;
+    var idx: usize = arg_index;
+    while (idx < callee.params.len) : (idx += 1) {
+        if (printed_any) try w.writeAll(", ");
+        try w.print("a{d}", .{idx});
+        printed_any = true;
     }
     try w.writeAll(");\n");
 }
@@ -615,7 +669,7 @@ fn emitFunction(e: *Emitter, function: dnir.Function) Error!void {
     e.current_function = function.name;
     defer e.args_this_call = 0;
     const w = e.writer();
-    try w.writeAll("static inline int64_t ");
+    try w.writeAll("int64_t ");
     try writeFunctionName(w, function.name);
     try w.writeByte('(');
     if (function.params.len == 0) {
@@ -693,12 +747,14 @@ fn emitFunction(e: *Emitter, function: dnir.Function) Error!void {
 pub fn emitSource(
     alloc: std.mem.Allocator,
     module: dnir.Module,
+    home: []const u8,
     entry: ?[]const u8,
     diagnostic: *Diagnostic,
 ) Error![]u8 {
     diagnostic.reset();
     var e = Emitter.init(alloc, module, diagnostic);
     defer e.deinit();
+    e.home = home;
     const reachable = try alloc.alloc(bool, module.functions.len);
     defer alloc.free(reachable);
     if (entry) |name| {

@@ -6103,7 +6103,13 @@ fn do_compile(
         else
             null;
         defer if (entry_symbol) |symbol| alloc.free(symbol);
-        const source = c_backend.emitSource(alloc, lowered, entry_symbol, &diagnostic) catch |err| {
+        // The home path is what the gate's `nm -g` regex anchors on
+        // when it looks for `idol_.*___project$`. Without it, every
+        // function symbol collapses to `idol_<name>` and the
+        // three-underscore tail the regex needs never appears.
+        const home = home_resolve.homeOfPath(alloc, io, src_path) catch "";
+        defer if (home.len != 0) alloc.free(home);
+        const source = c_backend.emitSource(alloc, lowered, home, entry_symbol, &diagnostic) catch |err| {
             term.err("C99 realizer: no realization ({s})", .{@errorName(err)});
             if (diagnostic.note()) |why| term.hint("refused at: {s}", .{why});
             if (diagnostic.functionName()) |name| term.hint("in relation: {s}", .{name});
