@@ -97,4 +97,22 @@ case "$status" in
   *) check_up openrouter "degraded:$status" ;;
 esac
 
+# 4. grok/XAI API: a chat completion request as billing/path probe.
+#    This is the path that "went down" per user report — the actual
+#    failure was credits (HTTP 403), not network. Probing here lets
+#    the ntfy alert name the actual cause.
+status=$(curl -sm 5 -o /dev/null -w "%{http_code}" \
+  -H "Authorization: Bearer ${XAI_API_KEY:-no-key}" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"grok-3-fast","messages":[{"role":"user","content":"hi"}],"max_tokens":1}' \
+  https://api.x.ai/v1/chat/completions 2>/dev/null)
+case "$status" in
+  200) check_up xai up ;;
+  401) check_up xai "auth:401" ;;
+  403) check_up xai "no_credits" ;;
+  429) check_up xai "rate_limited" ;;
+  000) check_up xai down ;;
+  *) check_up xai "degraded:$status" ;;
+esac
+
 exit 0
