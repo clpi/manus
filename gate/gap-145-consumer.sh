@@ -332,7 +332,18 @@ fi
 # every one of them, taking blind from 10 to 0 with zero semantic change. The
 # planted control here is that exact shape. An arm observes the producer quote
 # only by a route that can answer differently for the two faces.
-QUOTE_BLIND_CEILING=15
+QUOTE_BLIND_CEILING=13
+
+# 2026-08-27 O5 (second wave): two name-kingdom folds in src/macro_expand.zig
+# stopped guessing the face from AST shape and now observe the producer quote
+# via `ast.quotedLiteralIsByteSequence(lit.quote)` — cloneCapture (~455, a
+# byte-sequence literal is not an identifier, capture refuses) and
+# typeArgFromExpr (~815, a byte-sequence literal is not a type name, the arm
+# refuses) — taking blind 15 → 13. The first wave (six codegen folds, blind
+# 21 → 15) landed via #189. Same route law: graph routes are unreachable in
+# macro_expand (no graph handle); the producer-quote observation is canonical
+# for this consumer. Lower the ceiling as the remaining face-neutral arms
+# (span, truthy, emit, inert, carrier, test) are adjudicated away.
 
 # 2026-08-27 O5: six text claims in src/codegen.zig stopped guessing the face
 # from AST shape and now observe the producer quote via

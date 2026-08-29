@@ -452,7 +452,13 @@ pub const Expander = struct {
         const arg = call.args[0];
         const ident = switch (arg.*) {
             .name => |x| x.ident,
-            .quoted => |x| x.val,
+            // Producer quote owns the face (GAP-145 O5): an identifier is
+            // text, so a byte-sequence literal is not a name and capture
+            // refuses it rather than silently naming it.
+            .quoted => |x| if (ast.quotedLiteralIsByteSequence(x.quote))
+                return Error.CaptureExpectedIdentifier
+            else
+                x.val,
             else => return Error.CaptureExpectedIdentifier,
         };
         const out = try self.alloc.create(ast.Expr);
@@ -809,7 +815,13 @@ pub const Expander = struct {
         _ = self;
         return switch (expr.*) {
             .name => |name| caller_ctx.type_bindings.get(name.ident) orelse .{ .named = name.ident },
-            .quoted => |lit| .{ .named = lit.val },
+            // Producer quote owns the face (GAP-145 O5): a type name is text,
+            // so a byte-sequence literal is not a type and the arm refuses it
+            // rather than silently naming a type.
+            .quoted => |lit| if (ast.quotedLiteralIsByteSequence(lit.quote))
+                return Error.UnsupportedUnquote
+            else
+                .{ .named = lit.val },
             else => null,
         };
     }
