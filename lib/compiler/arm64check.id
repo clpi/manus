@@ -49,11 +49,11 @@ _assemble: str = (mnemonic: str)
     return ""
   fh:write(".text\n.global _start\n_start:\n    " .. mnemonic .. "\n")
   fh:close()
-  cc = script.getenv("DUO_ARM64_CC", "xcrun clang")
-  if script.run(cc .. " -c -o " .. _objpath .. " " .. _asmpath .. " 2>/dev/null") != 0
+  cc = os.env["DUO_ARM64_CC"] or "xcrun clang"
+  if os.execute(cc .. " -c -o " .. _objpath .. " " .. _asmpath .. " 2>/dev/null") != 0
     os.remove(_asmpath)
     return ""
-  out = script.capture("xcrun otool -t " .. _objpath .. " 2>/dev/null | tail -1 | awk '{print $2}'")
+  out = process:capture("xcrun otool -t " .. _objpath .. " 2>/dev/null | tail -1 | awk '{print $2}'")
   os.remove(_asmpath)
   os.remove(_objpath)
   n: i64 = out:len()

@@ -4608,8 +4608,8 @@ pub const CodeGen = struct {
             // standalone path uses. Without this, duo-mode-only syntax (bare
             // function declarations) parses fine when the file is compiled
             // directly but fails with "expected '<eof>', got 'end'" the moment it
-            // is embedded — which is what stopped `std/script.duo` and
-            // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
+            // is embedded — which is what stopped `lib/script.id` and
+            // `lib/mcp.id` from embedding, and so kept the Duo MCP servers dead.
             sub_parser.idol_mode = sub_lex.family == lexer_bridge.family_canon;
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
@@ -25259,8 +25259,8 @@ pub const CodeGen = struct {
                 // standalone path uses. Without this, duo-mode-only syntax (bare
                 // function declarations) parses fine when the file is compiled
                 // directly but fails with "expected '<eof>', got 'end'" the moment it
-                // is embedded — which is what stopped `std/script.duo` and
-                // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
+                // is embedded — which is what stopped `lib/script.id` and
+                // `lib/mcp.id` from embedding, and so kept the Duo MCP servers dead.
                 var sub_mod = sub_parser.parse_module() catch |e| {
                     term.err("emit_required_modules: re-parse failed for {s}: {}", .{ mod_path.?, e });
                     continue;
@@ -25735,8 +25735,8 @@ pub const CodeGen = struct {
             // standalone path uses. Without this, duo-mode-only syntax (bare
             // function declarations) parses fine when the file is compiled
             // directly but fails with "expected '<eof>', got 'end'" the moment it
-            // is embedded — which is what stopped `std/script.duo` and
-            // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
+            // is embedded — which is what stopped `lib/script.id` and
+            // `lib/mcp.id` from embedding, and so kept the Duo MCP servers dead.
             sub_parser.idol_mode = sub_lex.family == lexer_bridge.family_canon;
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
@@ -25804,13 +25804,15 @@ pub const CodeGen = struct {
             // std.compiler.token -> std.token.classify) writes to a symbol that
             // does not exist and that nothing reads.
             // ...unless real `duo_g_` storage was declared for this binding, in
-            // which case the body *does* read it as a table (e.g. std.script's
-            // `_os.read_file(p)` lowers to `lua_table_get_str_lit(duo_g_std_script__os,
-            // "read_file", …)`). Skipping the require then leaves the global
-            // permanently VAL_NIL and the first call through it segfaults —
-            // which is what took out std.script, and with it every repo tooling
-            // script and both duo-mcp servers. The declaration loop above has
-            // already populated `emitted_global_storage`, so this is exact:
+            // which case the body *does* read it as a table (e.g. the
+            // `os.read`/`os.capture` face lowers to
+            // `lua_table_get_str_lit(duo_g_std_script__os, "read_file", …)`).
+            // Skipping the require then leaves the global permanently VAL_NIL and
+            // the first call through it segfaults — which is what took out the
+            // process-world capture and `os.execute`/`os.env` ingress, and with
+            // it every repo tooling script and both duo-mcp servers. The
+            // declaration loop above has already populated
+            // `emitted_global_storage`, so this is exact:
             // emit the require iff something will read the global.
             if (self.current_module_cname.len > 0) {
                 if (self.find_module_file_for_req(path)) |mod_file| {

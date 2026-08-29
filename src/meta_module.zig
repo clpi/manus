@@ -999,7 +999,7 @@ pub fn agentHooksText() []const u8 {
     \\gaps/GAP-0NN.md — open obligations; verify the live census
     \\MCP duo_agent_session_start and duo_dev_claim_* — live state and ownership
     \\Canonical implementation is .id; new canonical .id is admitted; host code is migration debt
-    \\std is migration distribution and std.script is frozen debt
+    \\The process world (os.execute / os.env / process.capture) is canonical; the legacy `lib/script.id` home is frozen debt until GAP-157
     \\Missing relation or world vocabulary is SEMANTIC-VOCABULARY-BLOCKED
     ;
 }
