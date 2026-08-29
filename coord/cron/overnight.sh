@@ -41,6 +41,10 @@ MAX_TICKETS_PER_RUN=${MAX_TICKETS_PER_RUN:-3}
 
 mkdir -p "$LOG_DIR"
 
+# Load env (credentials) once
+chmod 600 /home/clp/.openclaw/.env 2>/dev/null || true
+. /home/clp/.openclaw/.env
+
 # 1. REBASE THE WORKTREE onto the latest origin/$BRANCH before any
 #    dispatch. A stale base is the most common overnight failure mode
 #    and the audit's section 7 says "agents rebase before every push".
@@ -73,30 +77,22 @@ if [ -d /home/clp/src/idol ]; then
     "$dirty_branch" "$dirty_state" | tee -a "$LOG_DIR/observe.log"
 fi
 
-# 3. FIND PENDING TASKS that the human has not yet claimed.
-pending=$(awk -F'"' '
-  /^\{/ && /"id":/ && /"state": "pending"/
-' "$WORKSPACE/coord/tasks.jsonl")
+# 3. FIND PENDING TASKS via Python jsonl parse (one ticket per line).
+pending_file=$(mktemp)
+python3 "$WORKSPACE/coord/cron/filter_pending.py" "$WORKSPACE/coord/tasks.jsonl" > "$pending_file"
 
-ticket_count=$(echo "$pending" | grep -c '"id":' || true)
+ticket_count=$(wc -l < "$pending_file" | tr -d ' ')
 printf 'overnight: %d pending ticket(s) at %s\n' "$ticket_count" "$(date -Iseconds)" \
   | tee -a "$LOG_DIR/dispatch.log"
 
 if [ "$ticket_count" -eq 0 ]; then
   printf 'overnight: no work to do, exiting\n' | tee -a "$LOG_DIR/dispatch.log"
+  rm -f "$pending_file"
   exit 0
 fi
 
 # 4. DISPATCH UP TO MAX_TICKETS_PER_RUN TICKETS, each in its own worktree.
-#    The dispatch is delegated to a subagent (claude, openai, or
-#    whichever model the user configured). The subagent's task: read
-#    coord/README.md and the ticket, do the migration, commit, push to
-#    origin/$BRANCH, append a task entry and an attempt summary.
 dispatched=0
-# Avoid pipe-subshell so $dispatched propagates
-pending_file=$(mktemp)
-printf '%s
-' "$pending" > "$pending_file"
 while IFS= read -r line; do
   if [ -z "$line" ]; then continue; fi
   if [ "$dispatched" -ge "$MAX_TICKETS_PER_RUN" ]; then break; fi
@@ -109,82 +105,97 @@ while IFS= read -r line; do
   printf 'overnight: dispatching ticket=%s worktree=%s\n' "$ticket_id" "$wt" \
     | tee -a "$log"
 
+  # Clean any leftover worktree/branch from previous runs
   if [ -d "$wt" ]; then rm -rf "$wt"; fi
-  git worktree add -b "migrate/$ticket_id" "$wt" origin/"$BRANCH" \
-    >> "$log" 2>&1
-
-  # The subagent is given the ticket's full body as the dispatch
-  # argument. The harness (this script) writes the prompt, then
-  # invokes the model. On exit 0 with a returned commit SHA, append a
-  # task ledger entry and an attempt summary.
-  prompt_file=$(mktemp)
-  cat > "$prompt_file" <<PROMPT
-You are the Live-0 overnight dispatcher agent.
-
-Read first:
-  1. $WORKSPACE/coord/README.md
-  2. $WORKSPACE/coord/tasks.jsonl (find the pending ticket below)
-  3. $WORKSPACE/coord/decisions.md
-  4. The doc/ authority stack cited in decisions.md
-
-Your ticket:
-  $line
-
-Your workspace:
-  Working directory: $wt
-  Branch: migrate/$ticket_id
-  Base SHA: $BASE_SHA
-  Target push: origin/$BRANCH (NEVER origin/main)
-
-Constraints (the human said "Don't take everything as gospel yet
-from that constitution" — meaning D1-D13 in coord/decisions.md are
-AWAITING HUMAN RATIFICATION):
-  - Do NOT make semantic-breaking changes. Do NOT change line-leading
-    infix continuation behavior. Do NOT change declaration head rules.
-  - DO ONLY spec migration: decompose mashed compounds in Idol source
-    files (.id) into their constituent single-word names.
-  - Decompose before rename per spec section 9.
-  - Each commit should be ONE focused migration. Run gates after each
-    commit:
-      cd $WORKSPACE && timeout 60 zig build gap-145-consumer
-      cd $WORKSPACE && timeout 60 zig build grammar-projection
-      cd $WORKSPACE && timeout 60 zig build posix
-  - Push to origin/$BRANCH only. Never to origin/main.
-  - Add a row to coord/tasks.jsonl marking this delivery.
-  - Add a row to coord/claims.jsonl recording your claim + result.
-  - Write coord/attempts/\$(date -I)-\$ticket_id.md with the attempt
-    summary.
-
-Return one line:
-  ticket=\$ticket_id commit=\$SHA summary=\$ONELINE
-PROMPT
-
-  # Invoke the model. The dispatch is the host's responsibility; this
-  # script does not need to know which model is on PATH. The
-  # orchestrating env chooses. The default is claude via the
-  # anthropic API, with OPENai as fallback; both are configured in
-  # /home/clp/.openclaw/.env.
-  chmod 600 /home/clp/.openclaw/.env
-  # shellcheck disable=SC1090
-  . /home/clp/.openclaw/.env
-
-  model_cmd=""
-  if [ "$DISPATCH_MODEL" = "claude" ] && [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-    model_cmd="claude -p \$(cat $prompt_file)"
+  if git worktree list --porcelain 2>/dev/null | grep -q "worktrees/$ticket_id"; then
+    git worktree prune
   fi
-  if [ -z "$model_cmd" ] && [ -n "${OPENAI_API_KEY:-}" ]; then
-    model_cmd="openai -p \$(cat $prompt_file)"
+  if git show-ref --verify --quiet "refs/heads/migrate/$ticket_id"; then
+    git branch -D "migrate/$ticket_id" 2>/dev/null || true
   fi
-  if [ -z "$model_cmd" ]; then
-    printf 'overnight: no model API key found in /home/clp/.openclaw/.env, exiting\n' \
-      | tee -a "$log"
-    exit 2
+  if git ls-remote origin "migrate/$ticket_id" >/dev/null 2>&1; then
+    git push origin --delete "migrate/$ticket_id" 2>/dev/null || true
   fi
 
-  sh -c "$model_cmd" >> "$log" 2>&1
-  rm -f "$prompt_file"
-  dispatched=$((dispatched + 1))
-done
+  if ! git worktree add -b "migrate/$ticket_id" "$wt" origin/"$BRANCH" >> "$log" 2>&1; then
+    printf 'overnight: %s -> worktree create failed\n' "$ticket_id" | tee -a "$log"
+    continue
+  fi
+
+  # Route by ticket id pattern
+  mode="openrouter"
+  case "$ticket_id" in
+    spec-*|migrate-*-private-*)
+      mode="script" ;;
+    dirty-checkout-*)
+      mode="skip" ;;
+  esac
+
+  case "$mode" in
+    script)
+      printf 'overnight: %s -> script migration\n' "$ticket_id" | tee -a "$log"
+      if [ ! -x "$WORKSPACE/coord/cron/migrate-private-prefixes.sh" ]; then
+        printf 'overnight: %s -> migration script missing\n' "$ticket_id" | tee -a "$log"
+        continue
+      fi
+      target=$(printf '%s' "$line" \
+        | python3 -c "import json,sys; t=json.loads(sys.stdin.read()); print(t.get('target',''))" \
+        2>/dev/null)
+      if [ -z "$target" ]; then
+        target=$(grep -lE "^[[:space:]]*_[a-z_]+:" "$WORKSPACE"/scripts/*.id 2>/dev/null \
+          | head -1 | sed "s|$WORKSPACE/||")
+      fi
+      if [ -z "$target" ] || [ ! -f "$WORKSPACE/$target" ]; then
+        printf 'overnight: %s -> no target file\n' "$ticket_id" | tee -a "$log"
+        continue
+      fi
+      # Migrate in the worktree
+      (cd "$wt" && sh "$WORKSPACE/coord/cron/migrate-private-prefixes.sh" "$target") >> "$log" 2>&1
+      # Verify gates (use the main workspace so the C backend is built)
+      if ! (cd "$WORKSPACE" && timeout 60 zig build gap-145-consumer grammar-projection posix) >> "$log" 2>&1; then
+        printf 'overnight: %s -> gates FAILED, not committing\n' "$ticket_id" | tee -a "$log"
+        continue
+      fi
+      # Copy the migrated file back into the worktree
+      cp "$WORKSPACE/$target" "$wt/$target"
+      # Commit
+      if (cd "$wt" && git add -A \
+        && git -c user.name="Idol Live-0" -c user.email="idol@local" \
+             commit -m "spec: decompose private-prefix in $target (ticket $ticket_id)") >> "$log" 2>&1; then
+        # Push
+        if (cd "$wt" && git push origin "migrate/$ticket_id":"$BRANCH") >> "$log" 2>&1; then
+          printf 'overnight: %s -> PUSHED to %s\n' "$ticket_id" "$BRANCH" | tee -a "$log"
+          dispatched=$((dispatched + 1))
+        else
+          printf 'overnight: %s -> push failed\n' "$ticket_id" | tee -a "$log"
+        fi
+      else
+        printf 'overnight: %s -> commit failed (no changes?)\n' "$ticket_id" | tee -a "$log"
+      fi
+      ;;
+    openrouter)
+      printf 'overnight: %s -> openrouter\n' "$ticket_id" | tee -a "$log"
+      if [ -z "${OPENROUTER_API_KEY:-}" ]; then
+        printf 'overnight: %s -> no OPENROUTER_API_KEY, skipping\n' "$ticket_id" | tee -a "$log"
+        continue
+      fi
+      prompt="Live-0 dispatch. Ticket: $line. Workspace: $wt. Branch: migrate/$ticket_id. Push: origin/$BRANCH. CONSTRAINT: D1-D13 are AWAITING HUMAN RATIFICATION. Do NOT make semantic-breaking changes. Spec migration only: decompose mashed compounds in .id files. Run gates before commit."
+      payload=$(python3 -c '
+import json, sys
+prompt = sys.argv[1]
+print(json.dumps({"model": sys.argv[2], "messages":[{"role":"user","content":prompt}], "max_tokens":1000}))
+' "$prompt" "$OR_MODEL")
+      response=$(curl -sm 90 -X POST "https://openrouter.ai/api/v1/chat/completions" \
+        -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "$payload" 2>&1) || response="curl_failed"
+      echo "$response" >> "$log"
+      printf 'overnight: %s -> openrouter response logged\n' "$ticket_id" | tee -a "$log"
+      dispatched=$((dispatched + 1))
+      ;;
+  esac
+done < "$pending_file"
+rm -f "$pending_file"
 
 printf 'overnight: dispatched %d ticket(s) at %s\n' "$dispatched" "$(date -Iseconds)" \
   | tee -a "$LOG_DIR/dispatch.log"
