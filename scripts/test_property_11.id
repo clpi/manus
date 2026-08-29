@@ -20,9 +20,9 @@
 
 _TMP = "/tmp/duo-prop11"
 
-_fails = 0
+fault = 0
 
-_clang: str = ()
+clang: str = ()
   if script.chomp(script.capture("uname")) == "Darwin"
     return "xcrun clang"
   "clang"
@@ -39,14 +39,14 @@ _check_module: str = (name: str, src: str, cc: str)
   script.fs_write(duo_file, src)
   if script.run("./zig-out/bin/idol dump-c " .. duo_file .. " > " .. c_file .. " 2>/dev/null") != 0
     print("FAIL " .. name .. ": duo dump-c failed")
-    _fails = _fails + 1
+    fault = fault + 1
     return ""
 
   cmd = cc .. " -Wall -Wextra -pedantic -std=c11 -Wno-unused-variable" .. " -Wno-strict-prototypes -fsyntax-only " .. c_file .. " > " .. log .. " 2>&1"
   if script.run(cmd) != 0
     print("FAIL " .. name .. ": generated C does not compile")
     print(script.capture("head -6 " .. log))
-    _fails = _fails + 1
+    fault = fault + 1
     return ""
 
   print("ok   " .. name)
@@ -60,12 +60,12 @@ _c_contains = (path: str, needle: str, why: str)
   n = script.chomp(script.capture("grep -Fc \"" .. needle .. "\" " .. path .. " 2>/dev/null"))
   if n == "" or n == "0"
     print("FAIL " .. why)
-    _fails = _fails + 1
+    fault = fault + 1
 
 main: i64 = ()
   print("[Property 11] Testing C codegen...")
   script.run("rm -rf " .. _TMP .. " && mkdir -p " .. _TMP)
-  cc = _clang()
+  cc = clang()
 
   _check_module("arithmetic", "function add(a: i64, b: i64) -> i64\n  return a + b\nend\n\nfunction mix(a: i64, b: i64) -> i64\n  local x: i64 = add(a, b)\n  local y: i64 = (x * 3) - (b // 2)\n  return y % 97\nend\n\nlocal result: i64 = mix(40, 2)\n", cc)
 
@@ -93,8 +93,8 @@ main: i64 = ()
   _c_contains(tf, "return f(x);", "typed function call did not remain a direct native C call")
 
   print("")
-  if _fails > 0
-    print("[Property 11] FAIL — " .. _fails:to(str) .. " module(s)/assertion(s) failed")
+  if fault > 0
+    print("[Property 11] FAIL — " .. fault:to(str) .. " module(s)/assertion(s) failed")
     return 1
   print("[Property 11] SUCCESS")
   0
