@@ -91,13 +91,21 @@ if [ -e "$ROOT/src/lexical_identity.zig" ]; then
     bad 'src/lexical_identity.zig is back — one producer owns lexical identity (law.fact.producer.one); it is lib/compiler/lexer.id'
 fi
 
-# Source spelling has one owner too. `src/lexer.zig` `spelling()` used to be a
-# 60-arm switch falling through to `src/token_semantic.zig`; it now reads the
-# generated projection of `lib/compiler/token.id` `kindspell`.
-examined=$((examined + 1))
-if ! grep -Fq 'grammar_role_table.zig").rows[@intFromEnum(self)].spell' "$ROOT/src/lexer.zig"; then
-    bad 'src/lexer.zig spelling() no longer reads the generated owner projection — a second spelling table is back'
-fi
+# Token identity and source spelling have one owner too. `src/lexer.zig` used
+# to author the enum and its `spelling()` method. Both now live in the generated
+# projection of `lib/compiler/token.id`; the lexer holds only the temporary
+# bridge alias.
+has "$ROOT/src/lexer.zig" \
+    'pub const TokenKind = @import("grammar_role_table.zig").TokenKind;' \
+    'src/lexer.zig no longer aliases the owner-generated token identity'
+forbid "$ROOT/src/lexer.zig" 'pub const TokenKind = enum' \
+    'src/lexer.zig reintroduced a host-authored token identity enum'
+has "$ROOT/src/grammar_role_table.zig" \
+    'pub const TokenKind = enum(u8)' \
+    'generated owner projection no longer carries token identity'
+has "$ROOT/src/grammar_role_table.zig" \
+    'return rows[@backingInt(self)].spell;' \
+    'generated token identity no longer reads its owner-projected spelling row'
 
 # ── 2b. the parser holds no raw-byte delimiter scan (GAP-145 O6) ─────────────
 #

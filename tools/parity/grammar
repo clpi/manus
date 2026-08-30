@@ -5,7 +5,7 @@
 # It never rewrites a grammar role, but absence or drift is a failing result.
 #
 # Projections compared:
-#   canonical   src/lexer.zig TokenKind semantic identities + backing span
+#   canonical   src/grammar_role_table.zig owner-generated TokenKind + span
 #   generated   lib/token/grammarrole.id    (roleidentitycount / rolecount /
 #                                             kindeof / beginexpr)
 #   tree-sitter ext/tree-sitter-idol/src/grammar.json (rule count, context)
@@ -75,7 +75,11 @@ def id_projection(path, identity_pat, count_pat, eof_pat, vec_pat):
         'begin_expr': vec,
     }
 
-canonical = enum_shape('src/lexer.zig')
+canonical = enum_shape('src/grammar_role_table.zig')
+try:
+    lexer_alias = 'pub const TokenKind = @import("grammar_role_table.zig").TokenKind;' in open('src/lexer.zig').read()
+except FileNotFoundError:
+    lexer_alias = False
 generated = id_projection('lib/token/grammarrole.id',
                           r'^roleidentitycount\s*=\s*(\d+)',
                           r'^rolecount\s*=\s*(\d+)', r'^kindeof\s*=\s*(\d+)',
@@ -93,7 +97,7 @@ except Exception:
     doc_tokens = None
 
 rows = [
-    ('src/lexer.zig semantic identities', canonical['identities'] if canonical else None,
+    ('owner-generated token identities', canonical['identities'] if canonical else None,
      canonical['slots'] if canonical else None),
     ('lib/token/grammarrole.id generated', generated['identities'] if generated else None,
      generated['count'] if generated else None),
@@ -109,7 +113,9 @@ for name, identities, slots in rows:
 print()
 drift = []
 if canonical is None:
-    drift.append('canonical src/lexer.zig TokenKind is unreadable')
+    drift.append('owner-generated src/grammar_role_table.zig TokenKind is unreadable')
+if not lexer_alias:
+    drift.append('src/lexer.zig does not alias the owner-generated TokenKind')
 if probe_failed:
     drift.append('this tool cannot read lib/token/grammarrole.id: no match for '
                  + ', '.join(probe_failed)

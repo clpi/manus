@@ -116,14 +116,15 @@ Measurable acceptance criteria:
       and keeps differential `tokenizeHost(allocator, src, file)`
 - [x] producer schema queries replace host `RECORD_SLOTS` / magic ordinals /
       rejection codes (`recordslots`, `field*`, `rejectionname`, `kindname`)
-- [ ] rejection-id and token-role-id; no parallel host `TokenKind` enum
+- [x] host-authored `TokenKind` enum deleted; `lexer.zig` aliases the owner-generated projection
+- [ ] parser consumes token-role-id directly; generated `TokenKind` bridge deleted
 - [ ] `duo_lexer_*` / `useDuoTokens` deleted (`law.bridge.death`)
 - [ ] source-family fact produced by Idol, not suffix/path
 - [ ] GAP-145 closed: distinct canonical identities for all token classes
 - [ ] Zero host semantic fallback after resolution
 - [ ] `tokenizeHost` oracle scoped to legacy-equivalent subset and deletable
 
-Current debt count: 5 exact blockers (parallel TokenKind, bridge names, ingress fact, identity close, oracle bound)
+Current debt count: 5 exact blockers (generated TokenKind bridge, bridge names, ingress fact, identity close, oracle bound)
 
 ## B — GRAMMAR/PARSER SHC
 

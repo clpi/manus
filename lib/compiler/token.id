@@ -649,7 +649,17 @@ zigbody: str = ()
   s = "{s}// a bridge (law.bridge.death), not an authority: change a role in the\n"
   s = "{s}// Idol owner and regenerate. Editing this file by hand is a second\n"
   s = "{s}// producer of one grammar fact.\n"
-  s = "{s}const lexer = @import(\"lexer.zig\");\n\n"
+  s = "{s}// Token identity lives here too: the producer slot is its physical value.\n"
+  s = "{s}pub const TokenKind = enum(u8) \{\n"
+  k = 0
+  while k < roleslotcount
+    z = _zigname(k)
+    if z != "."
+      s = "{s}    {z} = {k},\n"
+    k += 1
+  s = "{s}\n    pub fn spelling(self: TokenKind) []const u8 \{\n"
+  s = "{s}        return rows[@backingInt(self)].spell;\n"
+  s = "{s}    \}\n\};\n\n"
   s = "{s}// Relation identity lives in the TOKEN layer. src/ast.zig ALIASES these\n"
   s = "{s}// two enums; it does not restate them. gate/layers.manifest: the AST\n"
   s = "{s}// layer owns shape and no semantic relation identity.\n"
@@ -658,7 +668,7 @@ zigbody: str = ()
   s = "{s}pub const Associativity = enum(u8) \{\n"
   s = "{s}    none = 0,\n    left = 1,\n    right = 2,\n    nonassoc = 3,\n\};\n\n"
   s = "{s}pub const RoleRow = struct \{\n"
-  s = "{s}    kind: ?lexer.TokenKind = null,\n"
+  s = "{s}    kind: ?TokenKind = null,\n"
   s = "{s}    spell: []const u8 = \"\",\n"
   s = "{s}    keyword: bool = false,\n"
   s = "{s}    begin_expr: bool = false,\n"
