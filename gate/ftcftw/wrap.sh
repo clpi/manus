@@ -31,6 +31,9 @@
 #
 # ANSWER EQUIVALENCE IS CHECKED BEFORE TIME. A faster program that computes
 # something else is not a faster program.
+# One identical byte is read at runtime by every arm. It is a semantic input,
+# not entropy: the fixed seed file makes answers reproducible while preventing
+# the C optimizer from replacing the complete workload with a constant.
 
 set -u
 
@@ -67,16 +70,18 @@ mix: i64 = (seed: i64, rounds: i64)
   h
 
 main: i64 = ()
+  seed = stdin:read():sub(1, 1):byte()
   acc = 0
   outer = 0
   while outer < $OUTER
-    acc = acc + mix(outer, $ROUNDS)
+    acc = acc + mix(seed + outer, $ROUNDS)
     outer = outer + 1
   acc
 EOF
 
 cat >"$work/hand.c" <<EOF
 #include <stdint.h>
+#include <stdio.h>
 static inline int64_t mix(int64_t seed, int64_t rounds) {
     int64_t h = seed;
     for (int64_t i = 0; i < rounds; i++) {
@@ -86,8 +91,10 @@ static inline int64_t mix(int64_t seed, int64_t rounds) {
     return h;
 }
 int main(void) {
+    int input = getchar();
+    int64_t seed = input == EOF ? 0 : (unsigned char)input;
     int64_t acc = 0;
-    for (int64_t outer = 0; outer < $OUTER; outer++) acc += mix(outer, $ROUNDS);
+    for (int64_t outer = 0; outer < $OUTER; outer++) acc += mix(seed + outer, $ROUNDS);
     return (int)acc;
 }
 EOF
@@ -100,12 +107,19 @@ sed 's/int64_t/uint64_t/g; s/(int)acc/(int)(int64_t)acc/' "$work/hand.c" >"$work
     exit 2
 }
 
+printf 'A' >"$work/seed"
 for a in idol hand hand_u; do
-    cc -std=c11 -O2 -o "$work/$a.bin" "$work/$a.c" 2>"$work/$a.cc" || {
+    if [ "$a" = idol ]; then
+        cc -std=c11 -D_POSIX_C_SOURCE=200809L -O2 -o "$work/$a.bin" "$work/$a.c" \
+            "$repo/tools/node/dev/grammar/idol_c_runtime_shim.c" 2>"$work/$a.cc"
+    else
+        cc -std=c11 -D_POSIX_C_SOURCE=200809L -O2 -o "$work/$a.bin" "$work/$a.c" 2>"$work/$a.cc"
+    fi
+    if [ $? -ne 0 ]; then
         printf 'ftcftw/wrap: CANNOT MEASURE — cc refused %s.c\n' "$a" >&2
         sed 's/^/    /' "$work/$a.cc" >&2
         exit 2
-    }
+    fi
 done
 
 # ===================== §1 THE WORK MUST SURVIVE THE OPTIMIZER ================
@@ -113,12 +127,59 @@ done
 # earlier draft of this gate measured 3ms for 10^8 iterations and the assembly
 # was `xorl %eax, %eax; ret`.
 printf 'ftcftw/wrap: §1 the loop survives -O2\n'
+backward_jumps() {
+    asm=$1
+    symbol=$2
+    awk -v symbol="$symbol" '
+        FNR == NR {
+            if ($1 ~ /^\.L[A-Za-z0-9_.$]*:$/) {
+                label=$1
+                sub(/:$/, "", label)
+                at[label]=FNR
+            }
+            next
+        }
+        $1 == symbol ":" { inside=1; next }
+        inside && $1 == "ret" { inside=0; next }
+        inside && $1 ~ /^(j|b|cb|tb)/ {
+            for (i=2; i<=NF; i++) {
+                target=$i
+                gsub(/[,;]/, "", target)
+                if (target in at && at[target] < FNR) n++
+            }
+        }
+        END { print n + 0 }
+    ' "$asm" "$asm"
+}
+cat >"$work/branch-forward.s" <<'ASM'
+main:
+    bne .Llater
+    ret
+.Llater:
+    ret
+ASM
+cat >"$work/branch-backward.s" <<'ASM'
+main:
+.Lloop:
+    bne .Lloop
+    ret
+ASM
+[ "$(backward_jumps "$work/branch-forward.s" main)" -eq 0 ] || {
+    printf 'ftcftw/wrap: BROKEN — branch scanner counted a forward edge as work\n' >&2
+    exit 2
+}
+[ "$(backward_jumps "$work/branch-backward.s" main)" -eq 1 ] || {
+    printf 'ftcftw/wrap: BROKEN — branch scanner missed a planted backward edge\n' >&2
+    exit 2
+}
+printf '  branch scanner control: forward 0, backward 1\n'
 alive=0
 for a in idol hand hand_u; do
-    cc -std=c11 -O2 -S -o "$work/$a.s" "$work/$a.c" 2>/dev/null || continue
-    n=$(awk '/^main:/,/^[[:space:]]*ret/' "$work/$a.s" | grep -cE 'j[a-z]+[[:space:]]+\.L' || :)
+    cc -std=c11 -D_POSIX_C_SOURCE=200809L -O2 -S -o "$work/$a.s" "$work/$a.c" 2>/dev/null || continue
+    case $a in idol) symbol=idol_entry ;; *) symbol=main ;; esac
+    n=$(backward_jumps "$work/$a.s" "$symbol")
     [ "${n:-0}" -gt 0 ] && alive=$((alive + 1))
-    printf '  %-14s backward jumps in main: %s\n' "$a" "${n:-0}"
+    printf '  %-14s backward jumps in %s: %s\n' "$a" "$symbol" "${n:-0}"
 done
 [ "$alive" -eq 3 ] || {
     printf 'ftcftw/wrap: CANNOT MEASURE — a hot loop did not survive; the timing below would be startup\n' >&2
@@ -127,9 +188,9 @@ done
 
 # =========================== §2 SAME ANSWER =================================
 printf 'ftcftw/wrap: §2 equivalence\n'
-"$work/idol.bin"; ai=$?
-"$work/hand.bin"; ah=$?
-"$work/hand_u.bin"; au=$?
+"$work/idol.bin" <"$work/seed"; ai=$?
+"$work/hand.bin" <"$work/seed"; ah=$?
+"$work/hand_u.bin" <"$work/seed"; au=$?
 printf '  idol %s   hand-signed %s   hand-unsigned %s\n' "$ai" "$ah" "$au"
 [ "$ai" = "$ah" ] && [ "$ai" = "$au" ] || {
     printf 'ftcftw/wrap: BROKEN — the three arms do not compute the same answer\n' >&2
@@ -142,7 +203,7 @@ bi=999999; bh=999999; bu=999999
 i=0
 while [ $i -lt 9 ]; do
     for a in idol hand hand_u; do
-        s=$(date +%s%N); "$work/$a.bin" >/dev/null 2>&1; e=$(date +%s%N)
+        s=$(date +%s%N); "$work/$a.bin" <"$work/seed" >/dev/null 2>&1; e=$(date +%s%N)
         t=$(( (e - s) / 1000000 ))
         case $a in
             idol)   [ "$t" -lt "$bi" ] && bi=$t ;;
