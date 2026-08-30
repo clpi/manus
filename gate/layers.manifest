@@ -151,8 +151,8 @@ DRIVER   debug_trace.zig
 DRIVER   explain_pipeline.zig
 DRIVER   module_names.zig
 DRIVER   build_framework.zig
-DRIVER   benchmark_evidence.zig
-DRIVER   evidence_record.zig
+DRIVER   measurement.zig
+DRIVER   evidence.zig
 DRIVER   knowledge_snapshot.zig
 DRIVER   optimization_outcome.zig
 DRIVER   repair_candidate.zig

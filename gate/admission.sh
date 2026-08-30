@@ -97,7 +97,7 @@ set -eu
 # there was no visible slack -- but 123 of the 473 were prose, and deleting
 # prose bought real reaches. Purchasable headroom goes 123 -> 0. The escape
 # hatch goes 6 files / 39 whole-file tokens -> 3 files / 15 code reaches.
-STD_BUDGET=311
+STD_BUDGET=308
 
 # Floor on enumerated subjects. Today's tree has 1013 tracked .id files.
 # gate/subject.sh already refuses a non-work-tree and a zero-subject pathspec;

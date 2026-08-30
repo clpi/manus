@@ -90,9 +90,10 @@ git diff -U0 -- '*.id' > "$gate"
 cat "$gate" | "$repo/zig-out/bin/idol" run "$repo/gate/idiom.id"
 ```
 
-Stage, then let the pre-commit hook run `gate/preflight.id` (which invokes
-`gate/architecture.id` among others). Do not suppress, bypass, weaken, or route around a finding. A
-formatting rewrite requires a proved semantic equivalence, not a regex.
+Stage, then let `.githooks/pre-commit` orchestrate the staged direct gates,
+including `gate/architecture.id`. Do not suppress, bypass, weaken, or route
+around a finding. A formatting rewrite requires a proved semantic equivalence,
+not a regex.
 
 A changed canonical `.id` line (or touched historical `.id` line) is rejected
 when it introduces any of:

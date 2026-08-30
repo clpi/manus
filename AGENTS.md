@@ -529,27 +529,10 @@ admission, a direct-native workaround, or a proof path.
 Commit admission runs through `.githooks/pre-commit` (shell orchestrator → direct-backend
 `idol run gate/*`). Never `--backend=c` on gates.
 
-Gate home (`gate/`). **`ls gate/` is authoritative; this table is a projection**
-— it listed ten files while thirteen were present, so regenerate rather than
-trust it. Three currently unlisted, measured: `graph.id` (temporary migration
-firewall for graph identity / edge closure on added lines, GAP-124), `probe.id`
-(the body of `gate.idiom` — no `main`, no wrapper), and `bytetest.id`, which is
-itself a LAW-ONE path violation: `byte` + `test` glued into one stem, in the very
-home that enforces the rule. `preflight.id` is DEPRECATED in its own header —
-commit admission is `.githooks/pre-commit`.
-
-| Gate | Role |
-|---|---|
-| `preflight.id` | DEPRECATED; admission is `.githooks/pre-commit` shell → direct `idol run gate/*` |
-| `idiom.id` | Added-line lexical/canonical migration firewall |
-| `admission.id` | Semantic-admission firewall on added lines |
-| `host.id` | Host API debt on staged additions |
-| `architecture.id` | Staged-index migration censuses (C0 §65 ratchet) |
-| `path.id` | LAW-ONE path/name firewall |
-| `census.id` | Path stem census |
-| `catalog.id` | Admitted relation projection (tables; admission inlines) |
-| `bootstrap.id` | Shared capture helpers for gate scripts |
-| `build.id` | Zig build-step idiom wrapper (diff → `gate/idiom.id`) |
+Gate home (`gate/`). The tracked tree and build graph are the live inventory; do
+not maintain a hand-written gate roster here. `bytetest.id` remains a named
+LAW-ONE path violation (`byte` + `test`) and must be migrated as its own bounded
+producer/consumer change rather than hidden in a stale table.
 
 ## Path and file names (law.path.name)
 
