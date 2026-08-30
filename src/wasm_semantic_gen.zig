@@ -227,6 +227,10 @@ pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
 
 fn wardOpcodeFieldName(id: []const u8) []const u8 {
     const local = if (std.mem.startsWith(u8, id, "wasm.")) id["wasm.".len..] else id;
+    // Tail-call support is carried by Ward as a private extension
+    // (`tools/wasm/src/engine.id` owns `_OP_return_call = 18`). Projecting it as
+    // public `OP_return_call` would mint unadmitted Idol vocabulary.
+    if (std.mem.eql(u8, local, "return_call")) return "_OP_return_call";
     if (std.mem.eql(u8, local, "if")) return "OP_if_";
     if (std.mem.eql(u8, local, "else")) return "OP_else_";
     if (std.mem.eql(u8, local, "end")) return "OP_end_";
@@ -239,7 +243,11 @@ pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
     try w.writeAll(
         \\# GENERATED from src/wasm_semantic_gen.zig — do not edit by hand.
         \\# Regenerate: idol wasm-tables emit
-        \\# MVP subset (63 ops). Ward extended opcodes remain in ward/src/wasm/op.id until migrated.
+        \\# Canonical bounded subset (
+    );
+    try w.print("{d}", .{wasm_semantic.mvpCount()});
+    try w.writeAll(
+        \\ ops). Ward extended opcodes remain in ward/src/wasm/op.id until migrated.
         \\
         \\GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
         \\CANONICAL_OWNER = "src/wasm_semantic.zig"
@@ -249,7 +257,7 @@ pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
         const local = wardOpcodeFieldName(inst.id);
         var buf: [64]u8 = undefined;
         var len: usize = 0;
-        if (std.mem.startsWith(u8, local, "OP_")) {
+        if (std.mem.startsWith(u8, local, "OP_") or std.mem.startsWith(u8, local, "_OP_")) {
             len = local.len;
             @memcpy(buf[0..len], local);
         } else {
@@ -327,4 +335,26 @@ test "wasm_semantic_gen: call immediate is func_idx" {
 
 test "wasm_semantic_gen: validator table matches instruction count" {
     try std.testing.expect(mvp_validator.len == wasm_semantic.mvpCount());
+}
+
+test "wasm_semantic_gen: Ward projection states the canonical dynamic count" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try emitWardMvpOpcodes(&aw.writer);
+    const expected = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "# Canonical bounded subset ({d} ops).",
+        .{wasm_semantic.mvpCount()},
+    );
+    defer std.testing.allocator.free(expected);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), expected) != null);
+}
+
+test "wasm_semantic_gen: return_call remains a private Ward extension" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try emitWardMvpOpcodes(&aw.writer);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "\n_OP_return_call = 18\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "\nOP_return_call = 18\n") == null);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "OP__OP_return_call") == null);
 }
