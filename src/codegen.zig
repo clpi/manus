@@ -4299,7 +4299,6 @@ pub const CodeGen = struct {
         return true;
     }
 
-
     /// gap[166]. THE MODULE QUESTION MOVED; IT DID NOT VANISH.
     ///
     /// `stmt_is_native_scalar` used to answer "does this file-scope home
@@ -5759,7 +5758,6 @@ pub const CodeGen = struct {
         return self.expr_is_native_scalar(expr);
     }
 
-
     const FixedArrayIndex = struct {
         obj: *const ast.Expr,
         key: *const ast.Expr,
@@ -5779,7 +5777,6 @@ pub const CodeGen = struct {
         if (!self.expr_is_native_scalar(pair.key)) return null;
         return pair;
     }
-
 
     fn native_index_access(self: *CodeGen, expr: *const ast.Expr, require_lvalue_obj: bool) bool {
         const pair: struct { obj: *const ast.Expr, key: *const ast.Expr } = switch (expr.*) {
@@ -6204,6 +6201,162 @@ pub const CodeGen = struct {
             if (stmt == .concept_def) return true;
         }
         return false;
+    }
+
+    const NativeHelper = enum { split, fstream };
+
+    /// Physical prelude demand. These helpers used to be emitted into every C
+    /// translation unit, so a self-contained lexer acquired split-list storage,
+    /// an 8 KiB line reader and popen declarations it could never reach. Scan
+    /// the resolved AST before the prelude and materialize only a helper family
+    /// the module can actually select.
+    fn module_needs_native_helper(self: *CodeGen, mod: *const ast.Module, helper: NativeHelper) bool {
+        if (!self.moduleUsesFullNativeLowering()) return false;
+        return self.block_needs_native_helper(mod.body, helper);
+    }
+
+    fn block_needs_native_helper(self: *CodeGen, block: ast.Block, helper: NativeHelper) bool {
+        if (block.tail_expr) |expr| if (self.expr_needs_native_helper(expr, helper)) return true;
+        for (block.stmts) |*stmt| if (self.stmt_needs_native_helper(stmt, helper)) return true;
+        return false;
+    }
+
+    fn stmt_needs_native_helper(self: *CodeGen, stmt: *const ast.Stmt, helper: NativeHelper) bool {
+        return switch (stmt.*) {
+            .local_decl => |ld| blk: {
+                for (ld.inits) |expr| if (self.expr_needs_native_helper(expr, helper)) break :blk true;
+                break :blk false;
+            },
+            .global_decl => |gd| blk: {
+                for (gd.inits) |expr| if (self.expr_needs_native_helper(expr, helper)) break :blk true;
+                break :blk false;
+            },
+            .const_decl => |cd| self.expr_needs_native_helper(cd.val, helper),
+            .assign => |as| blk: {
+                for (as.targets) |expr| if (self.expr_needs_native_helper(expr, helper)) break :blk true;
+                for (as.values) |expr| if (self.expr_needs_native_helper(expr, helper)) break :blk true;
+                break :blk false;
+            },
+            .call_stmt => |cs| self.expr_needs_native_helper(cs.expr, helper),
+            .expr_stmt => |es| self.expr_needs_native_helper(es.expr, helper),
+            .do_block => |db| self.block_needs_native_helper(db.body, helper),
+            .while_loop => |wl| self.expr_needs_native_helper(wl.cond, helper) or self.block_needs_native_helper(wl.body, helper),
+            .repeat_loop => |rl| self.expr_needs_native_helper(rl.cond, helper) or self.block_needs_native_helper(rl.body, helper),
+            .if_stmt => |is| blk: {
+                if (is.binding) |binding| if (self.expr_needs_native_helper(binding.expr, helper)) break :blk true;
+                if (self.expr_needs_native_helper(is.cond, helper) or self.block_needs_native_helper(is.then, helper)) break :blk true;
+                for (is.elseifs) |elseif| if (self.expr_needs_native_helper(elseif.cond, helper) or self.block_needs_native_helper(elseif.body, helper)) break :blk true;
+                if (is.else_body) |body| if (self.block_needs_native_helper(body, helper)) break :blk true;
+                break :blk false;
+            },
+            .num_for => |nf| self.expr_needs_native_helper(nf.start, helper) or
+                self.expr_needs_native_helper(nf.stop, helper) or
+                (nf.step != null and self.expr_needs_native_helper(nf.step.?, helper)) or
+                self.block_needs_native_helper(nf.body, helper),
+            .gen_for => |gf| blk: {
+                for (gf.iters) |expr| if (self.expr_needs_native_helper(expr, helper)) break :blk true;
+                break :blk self.block_needs_native_helper(gf.body, helper);
+            },
+            .func_decl => |fd| self.func_needs_native_helper(&fd.func, helper),
+            .match_stmt => |m| self.match_needs_native_helper(&m, helper),
+            .try_stmt => |ts| blk: {
+                if (self.block_needs_native_helper(ts.body, helper)) break :blk true;
+                for (ts.catches) |catch_clause| if (self.block_needs_native_helper(catch_clause.body, helper)) break :blk true;
+                for (ts.defers) |defer_stmt| if (self.block_needs_native_helper(defer_stmt.body, helper)) break :blk true;
+                break :blk false;
+            },
+            .defer_stmt => |ds| self.block_needs_native_helper(ds.body, helper),
+            .alias_def => |alias| blk: {
+                for (alias.fields) |field| if (field.default_val) |value| {
+                    if (self.expr_needs_native_helper(value, helper)) break :blk true;
+                };
+                for (alias.methods) |method| if (self.func_needs_native_helper(&method.func, helper)) break :blk true;
+                break :blk false;
+            },
+            .macro_def => |macro| switch (macro.body) {
+                .expr => |expr| self.expr_needs_native_helper(expr, helper),
+                .block => |block| self.block_needs_native_helper(block, helper),
+            },
+            .ret => |r| blk: {
+                for (r.vals) |expr| if (self.expr_needs_native_helper(expr, helper)) break :blk true;
+                break :blk false;
+            },
+            else => false,
+        };
+    }
+
+    fn expr_needs_native_helper(self: *CodeGen, expr: *const ast.Expr, helper: NativeHelper) bool {
+        if (helper == .fstream and expr_is_io_popen(expr)) return true;
+        return switch (expr.*) {
+            .binop => |b| self.expr_needs_native_helper(b.lhs, helper) or self.expr_needs_native_helper(b.rhs, helper),
+            .unop => |un| self.expr_needs_native_helper(un.operand, helper),
+            .call => |call| blk: {
+                if (helper == .fstream and call.func.* == .field and call.func.field.obj.* == .name and
+                    std.mem.eql(u8, call.func.field.obj.name.ident, "io") and std.mem.eql(u8, call.func.field.field, "open")) break :blk true;
+                if (self.expr_needs_native_helper(call.func, helper)) break :blk true;
+                for (call.args) |arg| if (self.expr_needs_native_helper(arg, helper)) break :blk true;
+                break :blk false;
+            },
+            .method_call => |call| blk: {
+                if (helper == .split and std.mem.eql(u8, call.method, "split") and call.args.len == 1) break :blk true;
+                if (self.expr_needs_native_helper(call.obj, helper)) break :blk true;
+                for (call.args) |arg| if (self.expr_needs_native_helper(arg, helper)) break :blk true;
+                break :blk false;
+            },
+            .index => |idx| self.expr_needs_native_helper(idx.obj, helper) or self.expr_needs_native_helper(idx.key, helper),
+            .field => |field| self.expr_needs_native_helper(field.obj, helper),
+            .func_expr => |func| self.func_needs_native_helper(func, helper),
+            .table => |table| blk: {
+                for (table.fields) |field| switch (field) {
+                    .indexed => |entry| if (self.expr_needs_native_helper(entry.key, helper) or self.expr_needs_native_helper(entry.val, helper)) break :blk true,
+                    .named => |entry| if (self.expr_needs_native_helper(entry.val, helper)) break :blk true,
+                    .positional, .spread => |value| if (self.expr_needs_native_helper(value, helper)) break :blk true,
+                    .semantic => |entry| if (self.expr_needs_native_helper(entry.val, helper)) break :blk true,
+                };
+                break :blk false;
+            },
+            .list_comp => |list| self.expr_needs_native_helper(list.value, helper) or
+                self.expr_needs_native_helper(list.iter, helper) or
+                (list.filter != null and self.expr_needs_native_helper(list.filter.?, helper)),
+            .try_expr => |wrapped| self.expr_needs_native_helper(wrapped.operand, helper),
+            .unwrap_expr => |wrapped| self.expr_needs_native_helper(wrapped.operand, helper),
+            .await_expr => |wrapped| self.expr_needs_native_helper(wrapped.operand, helper),
+            .if_expr => |if_expr| self.expr_needs_native_helper(if_expr.cond, helper) or
+                self.expr_needs_native_helper(if_expr.then_expr, helper) or
+                self.expr_needs_native_helper(if_expr.else_expr, helper),
+            .match_expr => |match_expr| self.match_needs_native_helper(match_expr, helper),
+            .contains_expr => |contains| self.expr_needs_native_helper(contains.lhs, helper) or self.expr_needs_native_helper(contains.rhs, helper),
+            .quote => |quoted| self.expr_needs_native_helper(quoted.expr, helper),
+            .unquote => |quoted| self.expr_needs_native_helper(quoted.expr, helper),
+            .macro_call => |macro| blk: {
+                for (macro.args) |arg| if (self.expr_needs_native_helper(arg, helper)) break :blk true;
+                break :blk false;
+            },
+            .sequence => |sequence| blk: {
+                for (sequence.exprs) |item| if (self.expr_needs_native_helper(item, helper)) break :blk true;
+                break :blk false;
+            },
+            .range => |range| self.expr_needs_native_helper(range.start, helper) or
+                self.expr_needs_native_helper(range.end, helper) or
+                (range.step != null and self.expr_needs_native_helper(range.step.?, helper)),
+            else => false,
+        };
+    }
+
+    fn match_needs_native_helper(self: *CodeGen, match_expr: *const ast.MatchExpr, helper: NativeHelper) bool {
+        if (self.expr_needs_native_helper(match_expr.scrutinee, helper)) return true;
+        for (match_expr.arms) |arm| {
+            if (arm.guard) |guard| if (self.expr_needs_native_helper(guard, helper)) return true;
+            if (self.block_needs_native_helper(arm.body, helper)) return true;
+        }
+        return false;
+    }
+
+    fn func_needs_native_helper(self: *CodeGen, func: *const ast.FuncBody, helper: NativeHelper) bool {
+        for (func.params) |param| if (param.default_val) |value| {
+            if (self.expr_needs_native_helper(value, helper)) return true;
+        };
+        return self.block_needs_native_helper(func.body, helper);
     }
 
     fn native_scalar_needs_string_h(self: *CodeGen, mod: *const ast.Module) bool {
@@ -7154,47 +7307,49 @@ pub const CodeGen = struct {
         self.p("    if (!res) return (char*)s;\n", .{});
         self.p("    memcpy(res, b, len); res[len] = '\\0'; return res;\n", .{});
         self.p("}}\n", .{});
-        self.p("typedef struct {{ char* buf; const char** items; int64_t len; }} duo_str_split_list;\n", .{});
-        self.p("static inline duo_str_split_list duo_str_split_cstr(const char* src, const char* sep) {{\n", .{});
-        self.p("    duo_str_split_list out; out.buf = NULL; out.items = NULL; out.len = 0;\n", .{});
-        self.p("    if (!src) src = \"\";\n", .{});
-        self.p("    if (!sep) sep = \"\";\n", .{});
-        self.p("    size_t src_len = strlen(src);\n", .{});
-        self.p("    size_t sep_len = strlen(sep);\n", .{});
-        self.p("    out.buf = (char*)malloc(src_len + 1);\n", .{});
-        self.p("    if (!out.buf) return out;\n", .{});
-        self.p("    memcpy(out.buf, src, src_len + 1);\n", .{});
-        self.p("    if (sep_len == 0) {{\n", .{});
-        self.p("        out.items = (const char**)malloc(sizeof(char*));\n", .{});
-        self.p("        if (!out.items) return out;\n", .{});
-        self.p("        out.items[0] = out.buf; out.len = 1; return out;\n", .{});
-        self.p("    }}\n", .{});
-        self.p("    int64_t count = 1;\n", .{});
-        self.p("    char* scan = out.buf;\n", .{});
-        self.p("    while (1) {{\n", .{});
-        self.p("        char* hit = strstr(scan, sep);\n", .{});
-        self.p("        if (!hit) break;\n", .{});
-        self.p("        count += 1;\n", .{});
-        self.p("        scan = hit + sep_len;\n", .{});
-        self.p("    }}\n", .{});
-        self.p("    out.items = (const char**)malloc((size_t)count * sizeof(char*));\n", .{});
-        self.p("    if (!out.items) return out;\n", .{});
-        self.p("    out.len = count;\n", .{});
-        self.p("    int64_t i = 0;\n", .{});
-        self.p("    char* part = out.buf;\n", .{});
-        self.p("    while (1) {{\n", .{});
-        self.p("        out.items[i++] = part;\n", .{});
-        self.p("        char* hit = strstr(part, sep);\n", .{});
-        self.p("        if (!hit) break;\n", .{});
-        self.p("        memset(hit, 0, sep_len);\n", .{});
-        self.p("        part = hit + sep_len;\n", .{});
-        self.p("    }}\n", .{});
-        self.p("    return out;\n", .{});
-        self.p("}}\n", .{});
-        self.p("static inline const char* duo_str_split_get(duo_str_split_list list, int64_t i) {{\n", .{});
-        self.p("    if (i < 1 || i > list.len || !list.items) return \"\";\n", .{});
-        self.p("    return list.items[(size_t)(i - 1)];\n", .{});
-        self.p("}}\n", .{});
+        if (self.module_needs_native_helper(mod, .split)) {
+            self.p("typedef struct {{ char* buf; const char** items; int64_t len; }} duo_str_split_list;\n", .{});
+            self.p("static inline duo_str_split_list duo_str_split_cstr(const char* src, const char* sep) {{\n", .{});
+            self.p("    duo_str_split_list out; out.buf = NULL; out.items = NULL; out.len = 0;\n", .{});
+            self.p("    if (!src) src = \"\";\n", .{});
+            self.p("    if (!sep) sep = \"\";\n", .{});
+            self.p("    size_t src_len = strlen(src);\n", .{});
+            self.p("    size_t sep_len = strlen(sep);\n", .{});
+            self.p("    out.buf = (char*)malloc(src_len + 1);\n", .{});
+            self.p("    if (!out.buf) return out;\n", .{});
+            self.p("    memcpy(out.buf, src, src_len + 1);\n", .{});
+            self.p("    if (sep_len == 0) {{\n", .{});
+            self.p("        out.items = (const char**)malloc(sizeof(char*));\n", .{});
+            self.p("        if (!out.items) return out;\n", .{});
+            self.p("        out.items[0] = out.buf; out.len = 1; return out;\n", .{});
+            self.p("    }}\n", .{});
+            self.p("    int64_t count = 1;\n", .{});
+            self.p("    char* scan = out.buf;\n", .{});
+            self.p("    while (1) {{\n", .{});
+            self.p("        char* hit = strstr(scan, sep);\n", .{});
+            self.p("        if (!hit) break;\n", .{});
+            self.p("        count += 1;\n", .{});
+            self.p("        scan = hit + sep_len;\n", .{});
+            self.p("    }}\n", .{});
+            self.p("    out.items = (const char**)malloc((size_t)count * sizeof(char*));\n", .{});
+            self.p("    if (!out.items) return out;\n", .{});
+            self.p("    out.len = count;\n", .{});
+            self.p("    int64_t i = 0;\n", .{});
+            self.p("    char* part = out.buf;\n", .{});
+            self.p("    while (1) {{\n", .{});
+            self.p("        out.items[i++] = part;\n", .{});
+            self.p("        char* hit = strstr(part, sep);\n", .{});
+            self.p("        if (!hit) break;\n", .{});
+            self.p("        memset(hit, 0, sep_len);\n", .{});
+            self.p("        part = hit + sep_len;\n", .{});
+            self.p("    }}\n", .{});
+            self.p("    return out;\n", .{});
+            self.p("}}\n", .{});
+            self.p("static inline const char* duo_str_split_get(duo_str_split_list list, int64_t i) {{\n", .{});
+            self.p("    if (i < 1 || i > list.len || !list.items) return \"\";\n", .{});
+            self.p("    return list.items[(size_t)(i - 1)];\n", .{});
+            self.p("}}\n", .{});
+        }
         self.p("static inline __attribute__((noreturn)) void duo_fatal(const char* msg) {{\n", .{});
         // `self.p` is std.fmt, which does not treat `%` specially, so the old
         // `%%s` reached C as a literal `%%s`: duo_fatal printed "%s" and threw
@@ -7294,21 +7449,23 @@ pub const CodeGen = struct {
         // `while line != nil` terminates. duo_fstream_close picks the closer
         // by flag byte: a popen pipe needs pclose (waits for the child and
         // answers its status), an io.open file takes fclose.
-        self.p("static inline char* duo_fstream_readline(FILE* f) {{\n", .{});
-        self.p("    char* buf = (char*)malloc(8192);\n", .{});
-        self.p("    if (!buf) duo_fatal(\"read: out of memory\");\n", .{});
-        self.p("    if (!fgets(buf, 8192, f)) {{ free(buf); return NULL; }}\n", .{});
-        self.p("    return buf;\n", .{});
-        self.p("}}\n", .{});
-        // popen/pclose are POSIX; under -std=c11 strict mode (no feature
-        // macros) glibc hides them from <stdio.h>. Declare explicitly for
-        // plain native-scalar TUs. The wasm arm already defines static-inline
-        // stubs earlier in the TU; Windows has _popen/_pclose via mingw.
-        self.p("#if !defined(__wasm__) && !defined(_WIN32)\n", .{});
-        self.p("extern FILE* popen(const char*, const char*);\n", .{});
-        self.p("extern int pclose(FILE*);\n", .{});
-        self.p("#endif\n", .{});
-        self.p("static inline FILE* _DUO_popen(const char* cmd, const char* mode) {{ return popen(cmd, mode); }}\n", .{});
+        if (self.module_needs_native_helper(mod, .fstream)) {
+            self.p("static inline char* duo_fstream_readline(FILE* f) {{\n", .{});
+            self.p("    char* buf = (char*)malloc(8192);\n", .{});
+            self.p("    if (!buf) duo_fatal(\"read: out of memory\");\n", .{});
+            self.p("    if (!fgets(buf, 8192, f)) {{ free(buf); return NULL; }}\n", .{});
+            self.p("    return buf;\n", .{});
+            self.p("}}\n", .{});
+            // popen/pclose are POSIX; under -std=c11 strict mode (no feature
+            // macros) glibc hides them from <stdio.h>. Declare explicitly for
+            // plain native-scalar TUs. The wasm arm already defines static-inline
+            // stubs earlier in the TU; Windows has _popen/_pclose via mingw.
+            self.p("#if !defined(__wasm__) && !defined(_WIN32)\n", .{});
+            self.p("extern FILE* popen(const char*, const char*);\n", .{});
+            self.p("extern int pclose(FILE*);\n", .{});
+            self.p("#endif\n", .{});
+            self.p("static inline FILE* _DUO_popen(const char* cmd, const char* mode) {{ return popen(cmd, mode); }}\n", .{});
+        }
         if (self.native_scalar_needs_int_floor_helpers(mod)) {
             // Floor division and floor modulo for typed int64 (Lua // and % semantics)
             self.p("__attribute__((always_inline)) static inline int64_t lua_idiv_i64(int64_t a, int64_t b) {{\n", .{});
@@ -8538,7 +8695,6 @@ pub const CodeGen = struct {
             }
         }
     }
-
 
     pub fn populate_record_aliases(self: *CodeGen, mod: *ast.Module) E!void {
         for (mod.body.stmts) |*stmt| {
@@ -25172,7 +25328,6 @@ pub const CodeGen = struct {
         if (block.tail_expr) |tail| try self.collect_require_names(tail, names);
     }
 
-
     fn emit_required_modules(self: *CodeGen, mod: *const ast.Module) E!void {
         var names: std.ArrayList([]const u8) = .empty;
         defer names.deinit(self.alloc);
@@ -25553,7 +25708,6 @@ pub const CodeGen = struct {
             }
         }
     }
-
 
     /// THE FILE A HOME NAMES IS RESOLUTION'S ANSWER, NOT A SEARCH DONE HERE.
     ///
@@ -33957,6 +34111,91 @@ test "source law preserves floored integer relations while facts select the runt
             try testing.expect(std.mem.indexOf(u8, aw.written(), "lua_imod_i64") != null);
         }
     }
+}
+
+const HelperDemandFixture = struct {
+    output: []u8,
+    split: bool,
+    fstream: bool,
+};
+
+fn emitHelperDemandFixture(alloc: std.mem.Allocator, source: []const u8) !HelperDemandFixture {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const held = arena.allocator();
+    var lex = Lexer.initFacts(source, "helper.id", lexer_bridge.sourceFacts("helper.id"));
+    try testing.expect(routeEmbedThroughDuoLexer(held, &lex, source, "helper.id"));
+    var parser = Parser.init(&lex, held);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(held);
+    defer semantic.deinit();
+    semantic.idol_mode = true;
+    try semantic.check_module(&module);
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(held, std.testing.io, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.src_path = "helper.id";
+    cg.idol_mode = true;
+    const split = cg.block_needs_native_helper(module.body, .split);
+    const fstream = cg.block_needs_native_helper(module.body, .fstream);
+    try cg.emit_module(&module);
+    return .{
+        .output = try alloc.dupe(u8, aw.written()),
+        .split = split,
+        .fstream = fstream,
+    };
+}
+
+test "codegen: native helper prelude follows exact module demand" {
+    const alloc = testing.allocator;
+    const plain = try emitHelperDemandFixture(alloc,
+        \\answer: i64 = ()
+        \\    42
+    );
+    defer alloc.free(plain.output);
+    try testing.expect(!plain.split);
+    try testing.expect(!plain.fstream);
+    try testing.expect(std.mem.indexOf(u8, plain.output, "duo_str_split_cstr") == null);
+    try testing.expect(std.mem.indexOf(u8, plain.output, "duo_fstream_readline") == null);
+    try testing.expect(std.mem.indexOf(u8, plain.output, "_DUO_popen") == null);
+
+    const split = try emitHelperDemandFixture(alloc,
+        \\lines: i64 = (text: str)
+        \\    parts = text:split("\\n")
+        \\    n: i64 = parts:len()
+        \\    if n > 0
+        \\        last: str = parts[n]
+        \\        if last == ""
+        \\            n -= 1
+        \\    n
+    );
+    defer alloc.free(split.output);
+    try testing.expect(split.split);
+    try testing.expect(!split.fstream);
+
+    const defaults = try emitHelperDemandFixture(alloc,
+        \\count: i64 = (parts: any = "a,b":split(","))
+        \\    parts:len()
+    );
+    defer alloc.free(defaults.output);
+    try testing.expect(defaults.split);
+    try testing.expect(!defaults.fstream);
+
+    const process = try emitHelperDemandFixture(alloc,
+        \\capture: str = (command: str)
+        \\    stream = io.popen(command, "r")
+        \\    if stream == nil
+        \\        return ""
+        \\    line = stream:read()
+        \\    stream:close()
+        \\    line
+    );
+    defer alloc.free(process.output);
+    try testing.expect(process.fstream);
+    try testing.expect(!process.split);
 }
 
 test "runtime: temporary artifact path is reserved with its suffix" {
