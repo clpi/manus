@@ -3310,12 +3310,14 @@ pub const CodeGen = struct {
         const f = &func.field;
         if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "io")) return null;
         if (std.mem.eql(u8, f.field, "open") and args.len >= 1) {
+            if (self.moduleNeedsLuaRuntime()) return .any;
             return self.mem_pointer_to(.void);
         }
         // io.popen(cmd, mode) — the read-side dual of the open edge: a pipe
         // stream in full-native mode, same FILE* representation (lib/proc.id
         // capture, lib/fs.id lines). pclose closes it.
         if (std.mem.eql(u8, f.field, "popen") and args.len >= 1) {
+            if (self.moduleNeedsLuaRuntime()) return .any;
             return self.mem_pointer_to(.void);
         }
         return null;
@@ -31732,7 +31734,7 @@ const duo_runtime =
     \\        }
     \\        if (close >= end) return (size_t)-1;
     \\        const char* after = close + 1;
-    \\        char op = (after < end) ? *after : '\\0';
+    \\        char op = (after < end) ? *after : '\0';
     \\        if (op == '*' || op == '+' || op == '-' || op == '?') {
     \\            /* quantified capture group: the group records its LAST iteration */
     \\            const char* rest = after + 1;
@@ -31791,7 +31793,7 @@ const duo_runtime =
     \\    {
     \\        const char* item_end = duo_lp_skip_item(p, end);
     \\        if (item_end == p) return (size_t)-1;
-    \\        char op = (item_end < end) ? *item_end : '\\0';
+    \\        char op = (item_end < end) ? *item_end : '\0';
     \\        if (op == '*' || op == '+' || op == '-' || op == '?') {
     \\            const char* rest = item_end + 1;
     \\            size_t maxn = 0;
@@ -34198,6 +34200,26 @@ test "codegen: native helper prelude follows exact module demand" {
     try testing.expect(!process.split);
 }
 
+test "codegen: boxed io handles keep boxed representation and stream dispatch" {
+    const alloc = testing.allocator;
+    const boxed = try emitHelperDemandFixture(alloc,
+        \\slurp: str = (path: str)
+        \\    f = io.open(path, "r")
+        \\    body: str = ""
+        \\    if f
+        \\        body = f:read("a")
+        \\        f:close()
+        \\    body
+        \\
+        \\slurp("/tmp/idol-boxed-handle")
+    );
+    defer alloc.free(boxed.output);
+    try testing.expect(std.mem.indexOf(u8, boxed.output, "lua_Value f = lua_io_open(") != null);
+    try testing.expect(std.mem.indexOf(u8, boxed.output, "lua_file_read_method(f,") != null);
+    try testing.expect(std.mem.indexOf(u8, boxed.output, "void* f = lua_io_open(") == null);
+    try testing.expect(std.mem.indexOf(u8, boxed.output, "f__read(") == null);
+}
+
 test "runtime: temporary artifact path is reserved with its suffix" {
     try testing.expect(std.mem.indexOf(
         u8,
@@ -34219,6 +34241,13 @@ test "runtime: dynamic source loading never invokes the application as the compi
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "/proc/self/exe") == null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "getenv(\"DUO\")") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "./zig-out/bin/duo") != null);
+}
+
+test "runtime: pattern matcher emits one-byte NUL character constants" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "? *after : '\\0';") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "? *item_end : '\\0';") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "? *after : '\\\\0';") == null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "? *item_end : '\\\\0';") == null);
 }
 
 // ── Runtime string: duo_contains ──────────────────────────────────────────
