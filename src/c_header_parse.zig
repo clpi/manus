@@ -40,8 +40,20 @@ pub fn preprocessHeader(alloc: std.mem.Allocator, header: []const u8) ?[]const u
         break :name header;
     };
 
-    const include = [_][]const u8{ "clang", "-E", "-P", "-x", "c", "-include", header_arg, "-" };
-    return preprocessWithArgs(alloc, &include);
+    const clang = [_][]const u8{ "clang", "-E", "-P", "-x", "c", "-include", header_arg, "-" };
+    if (commandAvailable(alloc, "clang")) return preprocessWithArgs(alloc, &clang);
+    // Clang is not part of every admitted host toolchain. `cc -E` supplies the
+    // same preprocessing observation and still receives the header as argv data.
+    // Fall back only when clang is absent, never when it rejected the source.
+    const cc = [_][]const u8{ "cc", "-E", "-P", "-x", "c", "-include", header_arg, "-" };
+    return preprocessWithArgs(alloc, &cc);
+}
+
+fn commandAvailable(alloc: std.mem.Allocator, name: []const u8) bool {
+    const out = host_run.runHostCommandArgs(alloc, &.{ name, "--version" }) orelse return false;
+    defer alloc.free(out.stdout);
+    defer alloc.free(out.stderr);
+    return out.ok;
 }
 
 fn isHeaderSearchName(header: []const u8) bool {
