@@ -14,6 +14,8 @@ Read, in order:
 - Keep one semantic authority. Permit multiple typed physical lowering views only when provenance-linked and semantically subordinate.
 - Separate algorithmic, information, runtime-profile, and backend wins.
 - Public surfaces are downstream of admitted evidence and may not author claims.
+- Keep project boundaries exact. Wart is an independent Wasm runtime/compiler and an external comparator only; Idol does not target, host, leverage, or depend on it.
+- A Wart-in-Idol rewrite is a later, separate experiment. It begins only after Wart's own revision-bound evidence establishes the reference subject across correctness, runtime/compiler performance, syntax/LOC, and the full loss matrix; the rewrite preserves meaning and must earn its own evidence.
 
 ## Immediate work priority
 

@@ -1,7 +1,7 @@
 # Idol Domain-Frontier Capability and Performance Map
 
-**Status:** research disposition, not language law and not an implementation claim.  
-**Repository subject:** `clpi/idol` at `1ae3e38282d8d5ac8071cdcdf948a5fbb1afec69`.  
+**Status:** research disposition, not language law and not an implementation claim.
+**Repository subject:** `clpi/idol` at `1ae3e38282d8d5ac8071cdcdf948a5fbb1afec69`.
 **Purpose:** replace C-centric aspiration with a measurable map of the strongest known implementation in every relevant capability and performance domain.
 
 ## 1. The governing correction
@@ -16,6 +16,15 @@ The envelope is a set, not one language:
 oracle(workload, observations, target)
     = Pareto frontier of every credible equivalent implementation
 ```
+
+### 1.1 Project boundary: Wart is external
+
+Wart is an independent Wasm runtime/compiler, not an Idol target, platform,
+backend, runtime tier, dependency, or design substrate. It may enter an Idol
+comparison set only as an external oracle whose own evidence remains Wart's
+claim. A future Wart-in-Idol rewrite is a separate experiment after Wart itself
+has established the reference frontier and compactness subject; the rewrite must
+preserve that subject's semantics and earn independent evidence for every gain.
 
 The frontier includes hand-written and generated implementations, vendor libraries, domain-specific languages, runtimes, optimizing compilers, and physical lower bounds. Idol may win through information the comparator lacks, work its human author did not perform, runtime facts unavailable ahead of time, or a better algorithm selected under proven conditions. Each class is reported separately.
 

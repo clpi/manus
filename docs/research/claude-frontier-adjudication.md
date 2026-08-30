@@ -1,7 +1,7 @@
 # Adjudication of the 2025–2026 Idol / wart / Live Frontier Surveys
 
-**Status:** research adjudication, not language law.  
-**Repository subject:** `clpi/idol` at `1ae3e38282d8d5ac8071cdcdf948a5fbb1afec69`.  
+**Status:** research adjudication, not language law.
+**Repository subject:** `clpi/idol` at `1ae3e38282d8d5ac8071cdcdf948a5fbb1afec69`.
 **Documents reviewed:**
 
 - *The Idol Constitution*, revision 13;
@@ -10,6 +10,15 @@
 
 The uploaded Constitution states that it was compiled without access to current private repository heads. It therefore cannot supersede the repository’s current supreme compact law by declaration. Its valuable findings are research proposals until reconciled with `docs/spec/law.md`, the executable corpus, and current implementation evidence.
 
+## Project-boundary correction
+
+Wart is a separate project. This adjudication does not make Wart an Idol target,
+platform, backend, runtime tier, dependency, or design substrate. Wart must first
+establish its own revision-bound runtime/compiler frontier and compactness
+evidence. Only then may a separately scoped experiment rewrite that exact subject
+in Idol, preserve its semantics, and measure whether Idol's facts and realization
+freedom improve it. External comparison evidence never becomes Idol meaning.
+
 ## 1. Verdict vocabulary
 
 | Verdict | Meaning |
@@ -17,7 +26,7 @@ The uploaded Constitution states that it was compiled without access to current 
 | **CONFIRMED** | The cited primary evidence supports the factual finding and the project disposition is proportionate. |
 | **QUALIFIED** | The underlying evidence is real, but the document generalizes beyond the measured workload, maturity, or semantic regime. |
 | **REJECTED AS LAW** | The item may be an experiment or realization strategy, but evidence does not justify a constitutional prohibition or universal semantic commitment. |
-| **OPEN** | The claimed project result has no decisive external evidence and must be settled by an Idol/wart/Live experiment. |
+| **OPEN** | The claimed project result has no decisive external evidence and must be settled by a bounded experiment in the project that owns the claim. |
 
 ## 2. High-confidence confirmations
 
@@ -25,7 +34,7 @@ The uploaded Constitution states that it was compiled without access to current 
 |---|---|---|
 | Perceus/Lean-style precise reference counting with reuse can be competitive with tracing collectors on allocation-heavy, cycle-free functional workloads | **CONFIRMED** | Perceus is strong evidence for reuse, uniqueness, and in-place functional update. It is not evidence that arbitrary cyclic Lua object graphs need no cycle strategy. |
 | Mutable Value Semantics is a coherent route to efficient mutation without shared mutable references | **CONFIRMED** | The MVS paper demonstrates second-class references, non-shared mutable variables, stack allocation, and copy avoidance. It validates a sealed representation regime, not a replacement for Lua semantics. |
-| WebAssembly 3.0 is a stable modern target with Memory64, multiple memories, GC/reference types, tail calls, exceptions, and relaxed SIMD | **CONFIRMED** | This supports wart’s target choice. Individual proposals and host support still require target/version evidence. |
+| WebAssembly 3.0 is a stable modern target with Memory64, multiple memories, GC/reference types, tail calls, exceptions, and relaxed SIMD | **CONFIRMED** | This supports Wart's independent target choice only; it creates no Idol target or dependency. Individual proposals and host support still require target/version evidence. |
 | Agent-authored pull requests exhibit an unusually high merge-conflict rate | **CONFIRMED** | AgenticFlict reports 29K+ conflicting cases among 107K+ processed agent PRs, a 27.67% rate. It motivates Live’s experiment; it does not prove semantic claims will drive the residual rate to single digits. |
 | DORA reports an association between greater AI adoption and reduced delivery stability | **CONFIRMED, NON-CAUSAL** | The 2024 report gives the cited negative stability association; later reporting says throughput improved while instability persisted. This is a baseline and hypothesis source, not proof that Live will reverse it. |
 | AlphaDev found production-adopted sorting improvements | **CONFIRMED** | The Nature result and libc++ adoption validate offline search followed by human/machine verification. They do not justify nondeterministic generation inside the shipping compiler. |
@@ -184,7 +193,7 @@ The required amendments are meta-laws, not a wholesale replacement of current sy
 - mature control backends plus own low-latency backend;
 - differential, metamorphic, fuzz, and translation-validation gates;
 - executable corpus, primer, generated grammar, and agent-legibility experiment;
-- content-addressed evidence and public-claim registry;
+- revision-bound evidence records and public projections derived from admitted records;
 - Live claim/context/admission experiments with DORA and AgenticFlict-style controls.
 
 ### Keep open pending measurement

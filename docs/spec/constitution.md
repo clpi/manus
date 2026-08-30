@@ -6910,6 +6910,8 @@ ftcftwdominance = law{
     binds = {
         "FTCFTW-DOMINANCE the objective is verified pareto dominance over the best known semantically equivalent implementation reaching the physical lower bound wherever dominance is impossible not parity with c llvm fortran wasmtime or any named compiler",
         "the comparison oracle is two things at once the strongest known implementation and the semantic physical lower bound — c llvm fortran wasmtime hand assembly and specialized libraries are each only one oracle",
+        "an external oracle remains external comparison never makes it an idol target platform dependency ancestor or design substrate",
+        "reimplementing an oracle is a separate semantic equivalence experiment after the external subject carries its own revision bound evidence and the candidate earns independent equivalence and cost evidence rather than inheriting the oracle claim",
         "for every cost dimension exactly three outcomes are valid win strictly better than the best competitor with equivalence and confidence optimal equal to the proven lower bound where no improvement is physically possible or loss with exact optimization debt application id extra cost semantic cause unresolved fact lower bound and workstream",
         "fewer operations than the semantic minimum is impossible so equalling the lower bound counts as ftcftw closure not failure",
         "conflicting dimensions throughput vs size specialization vs compile time prefetch vs traffic energy are a pareto frontier under an explicit build world policy budget never a collapsed vanity scalar",

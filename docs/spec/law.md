@@ -43,6 +43,12 @@ for that domain. A new system becomes an oracle whenever it establishes a
 stronger frontier point. Idol may not choose a weak spelling, default flag,
 baseline tier, or scalar implementation merely because it is easier to beat.
 
+An external oracle remains external. Comparison never makes it an Idol target,
+platform, dependency, ancestor, or design substrate. Reimplementing an oracle is
+a separate semantic-equivalence experiment, not an inherited claim: the external
+subject must first carry its own revision-bound evidence, and the reimplementation
+must earn independent equivalence and cost evidence.
+
 Every relevant dimension remains visible: runtime, throughput, latency, startup,
 warmup, compile and incremental work, memory, allocations, traffic, artifact and
 loaded bytes, relocations, syscalls, instructions, branches, misses, spills,
