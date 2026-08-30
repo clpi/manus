@@ -34141,6 +34141,12 @@ fn emitHelperDemandFixture(alloc: std.mem.Allocator, source: []const u8) !Helper
     var cg = CodeGen.init(held, std.testing.io, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
     cg.src_path = "helper.id";
     cg.idol_mode = true;
+    // These are library fixtures: mirror the production `dump-c --lib` route
+    // whose generated helper prelude the regression is asserting.
+    cg.lib_mode = true;
+    cg.checked_sema = &semantic;
+    cg.foreign_records = &semantic.foreign_records;
+    cg.foreign_functions = &semantic.foreign_functions;
     const split = cg.block_needs_native_helper(module.body, .split);
     const fstream = cg.block_needs_native_helper(module.body, .fstream);
     try cg.emit_module(&module);
@@ -34177,6 +34183,11 @@ test "codegen: native helper prelude follows exact module demand" {
     defer alloc.free(split.output);
     try testing.expect(split.split);
     try testing.expect(!split.fstream);
+    // This minimal sample is scanner-only: native precheck names
+    // method-unresolved:split. The real full-native positive emission is the
+    // byte-identity Tree-sitter projection exercised by its projection gate.
+    try testing.expect(std.mem.indexOf(u8, split.output, "duo_str_split_cstr") == null);
+    try testing.expect(std.mem.indexOf(u8, split.output, "duo_fstream_readline") == null);
 
     const defaults = try emitHelperDemandFixture(alloc,
         \\count: i64 = (parts: any = "a,b":split(","))
@@ -34185,6 +34196,20 @@ test "codegen: native helper prelude follows exact module demand" {
     defer alloc.free(defaults.output);
     try testing.expect(defaults.split);
     try testing.expect(!defaults.fstream);
+
+    const nested_open = try emitHelperDemandFixture(alloc,
+        \\identity: any = (value: any)
+        \\    value
+        \\
+        \\open: any = (path: str)
+        \\    identity(io.open(path, "r"))
+    );
+    defer alloc.free(nested_open.output);
+    // The outer call scans every argument; its inner io.open call must remain
+    // a load-bearing fstream demand even though the field is not the outer
+    // callee. This is a scanner fact independent of the module realization.
+    try testing.expect(nested_open.fstream);
+    try testing.expect(!nested_open.split);
 
     const process = try emitHelperDemandFixture(alloc,
         \\capture: str = (command: str)
@@ -34198,6 +34223,9 @@ test "codegen: native helper prelude follows exact module demand" {
     defer alloc.free(process.output);
     try testing.expect(process.fstream);
     try testing.expect(!process.split);
+    try testing.expect(std.mem.indexOf(u8, process.output, "duo_fstream_readline") != null);
+    try testing.expect(std.mem.indexOf(u8, process.output, "_DUO_popen") != null);
+    try testing.expect(std.mem.indexOf(u8, process.output, "duo_str_split_cstr") == null);
 }
 
 test "codegen: boxed io handles keep boxed representation and stream dispatch" {
