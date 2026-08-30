@@ -901,6 +901,9 @@ pub fn emitSource(
         \\  __builtin_memcpy(&value, &bits, sizeof value);
         \\  return value;
         \\}
+        \\/* Bounds guards lower to the standard process-abort boundary. This
+        \\ * declaration is the C99 signature; libc supplies the definition. */
+        \\extern void abort(void);
         \\
         \\/* Forward declarations for the host-bound externs the generated
         \\ * program calls. The DNIR `call_extern` op populates the `aN`
@@ -1032,6 +1035,20 @@ test "C backend marks zeroed argument slots as intentional frame state" {
     defer std.testing.allocator.free(source);
 
     try std.testing.expectEqual(@as(usize, 17), std.mem.count(u8, source, "(void)a"));
+}
+
+test "C backend declares the standard abort boundary used by bounds traps" {
+    const instructions = [_]dnir.Instr{
+        .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+    };
+    const functions = [_]dnir.Function{
+        .{ .name = "entry", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
+    };
+    var diagnostic: Diagnostic = .{};
+    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "", "entry", &diagnostic);
+    defer std.testing.allocator.free(source);
+
+    try std.testing.expect(std.mem.indexOf(u8, source, "extern void abort(void);") != null);
 }
 
 test "C backend string print value matches fixed idol printf ABI" {
