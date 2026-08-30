@@ -627,17 +627,15 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             try w.writeAll(";\n");
         },
         .load_index => {
-            // `load_index` against a `str` pointer loads a single byte, and
-            // the C ABI reads it as a `uint8_t` while the integer register
-            // shape keeps it inside the same i64 slot the next op will read.
-            // `.i64` (the default for table reads) and `.u8` / `.any` (the
-            // shape `row:byte(i)` lowers to against a str base) are both
-            // accepted; the offset math is byte-exact regardless of the
-            // declared width.
+            // Ordinary indexed table/slot reads retain their i64 word width.
+            // A load against a `str` pointer carries `.u8` / `.any` and reads
+            // exactly one byte into the same integer slot the next op consumes.
+            // The index remains 1-based in both physical views.
             if (instruction.ty != .i64 and instruction.ty != .u8 and instruction.ty != .any)
                 return e.refuse("index-width-not-byte");
             const result = instruction.result orelse return e.refuse("result-slot-missing");
-            try w.print("  s{d} = ((uint8_t *)(intptr_t)", .{result});
+            const c_type = if (instruction.ty == .i64) "int64_t" else "uint8_t";
+            try w.print("  s{d} = (({s} *)(intptr_t)", .{ result, c_type });
             try emitValue(e, instruction.lhs);
             try w.writeAll(")[");
             try emitValue(e, instruction.rhs);
@@ -995,7 +993,7 @@ test "C backend emits i64 calls arithmetic control and return" {
         .{ .name = "twice", .ret = .i64, .params = &params, .blocks = &.{.{ .instrs = &twice_instructions }} },
     };
     var diagnostic: Diagnostic = .{};
-    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "main", &diagnostic);
+    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "", "main", &diagnostic);
     defer std.testing.allocator.free(source);
     try std.testing.expect(std.mem.indexOf(u8, source, "lua_Value") == null);
     try std.testing.expect(std.mem.indexOf(u8, source, "goto L5") != null);
@@ -1039,7 +1037,7 @@ test "C backend resolves constant file-scope keyed table field access" {
     // C backend now handles this cleanly. The gap[109] defect was the
     // retired AST/Lua C bridge; with that producer gone, a constant
     // keyed-table field access compiles without refusal.
-    const source_out = try emitSource(alloc, lowered, "main", &diagnostic);
+    const source_out = try emitSource(alloc, lowered, "", "main", &diagnostic);
     defer alloc.free(source_out);
     // The emitted C should print the resolved value 7, not lua_Bridge calls.
     try std.testing.expect(std.mem.indexOf(u8, source_out, "lua_to_display_str") == null);
@@ -1059,7 +1057,7 @@ test "C backend lowers the indexed-store family with its bounds guard" {
         .{ .name = "main", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
     };
     var diagnostic: Diagnostic = .{};
-    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "main", &diagnostic);
+    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "", "main", &diagnostic);
     defer std.testing.allocator.free(source);
     try std.testing.expect(std.mem.indexOf(u8, source, "int64_t m0[4] = {0};") != null);
     try std.testing.expect(std.mem.indexOf(u8, source, "s0 = (int64_t)(intptr_t)m0;") != null);
@@ -1081,12 +1079,12 @@ test "C backend refuses byte-width indexed access and genuine hardware intrinsic
     var diagnostic: Diagnostic = .{};
     try std.testing.expectError(error.UnsupportedProgram, emitSource(std.testing.allocator, .{
         .functions = &.{.{ .name = "bytestore", .ret = .i64, .blocks = &.{.{ .instrs = &byte_store }} }},
-    }, null, &diagnostic));
+    }, "", null, &diagnostic));
     try std.testing.expectEqualStrings("index-width-not-i64", diagnostic.note().?);
 
     try std.testing.expectError(error.UnsupportedProgram, emitSource(std.testing.allocator, .{
         .functions = &.{.{ .name = "hwpop", .ret = .i64, .blocks = &.{.{ .instrs = &hw_intrinsic }} }},
-    }, null, &diagnostic));
+    }, "", null, &diagnostic));
     try std.testing.expectEqualStrings("hw-op-not-in-c99-slice", diagnostic.note().?);
 }
 
@@ -1106,16 +1104,16 @@ test "C backend refuses damaged operation and control" {
     var diagnostic: Diagnostic = .{};
     try std.testing.expectError(error.UnsupportedProgram, emitSource(std.testing.allocator, .{
         .functions = &.{.{ .name = "badop", .ret = .i64, .blocks = &.{.{ .instrs = &damaged_operation }} }},
-    }, null, &diagnostic));
+    }, "", null, &diagnostic));
     try std.testing.expectEqualStrings("operation-not-in-c99-slice", diagnostic.note().?);
 
     try std.testing.expectError(error.UnsupportedProgram, emitSource(std.testing.allocator, .{
         .functions = &.{.{ .name = "badbr", .ret = .i64, .blocks = &.{.{ .instrs = &damaged_control }} }},
-    }, null, &diagnostic));
+    }, "", null, &diagnostic));
     try std.testing.expectEqualStrings("branch-target-out-of-range", diagnostic.note().?);
 
     try std.testing.expectError(error.UnsupportedProgram, emitSource(std.testing.allocator, .{
         .functions = &.{.{ .name = "badcmp", .ret = .i64, .blocks = &.{.{ .instrs = &damaged_cmp }} }},
-    }, null, &diagnostic));
+    }, "", null, &diagnostic));
     try std.testing.expectEqualStrings("cmp-not-comparison", diagnostic.note().?);
 }
