@@ -21,6 +21,13 @@ hash256() {
     fi
 }
 
+wasmtime_version_matches() {
+    case "$1" in
+        "wasmtime ${wasmtime_pin}"|"wasmtime ${wasmtime_pin} "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 case "${host_os}:${host_arch}" in
     Linux:x86_64) zig_name=zig-x86_64-linux-${zig_version} ;;
     Linux:aarch64) zig_name=zig-aarch64-linux-${zig_version} ;;
@@ -198,13 +205,23 @@ if ! oracle=$(command -v wasmtime); then
     exit 2
 fi
 oracle_version=$("$oracle" --version)
-case "$oracle_version" in
-    "wasmtime ${wasmtime_pin} "*) ;;
-    *)
-        printf 'CAPABILITY BLOCKED oracle-pin expected=%s actual=%s\n' "$wasmtime_pin" "$oracle_version" >&2
-        exit 2
-        ;;
-esac
+wasmtime_version_matches "wasmtime ${wasmtime_pin}" || {
+    printf 'wasm-proof INTERNAL version control rejected exact pin=%s\n' "$wasmtime_pin" >&2
+    exit 3
+}
+wasmtime_version_matches "wasmtime ${wasmtime_pin} (build metadata)" || {
+    printf 'wasm-proof INTERNAL version control rejected admitted metadata suffix pin=%s\n' "$wasmtime_pin" >&2
+    exit 3
+}
+if wasmtime_version_matches "wasmtime 0.0.0"; then
+    printf 'wasm-proof INTERNAL version control admitted wrong version\n' >&2
+    exit 3
+fi
+if ! wasmtime_version_matches "$oracle_version"; then
+    printf 'CAPABILITY BLOCKED oracle-pin expected=%s actual=%s\n' "$wasmtime_pin" "$oracle_version" >&2
+    exit 2
+fi
+printf 'wasm-proof oracle_version=%s version_controls=pass\n' "$oracle_version"
 
 cd "$repo/tools/wasm"
 exec env \

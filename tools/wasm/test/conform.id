@@ -359,12 +359,12 @@ end
 binary = _getenv("DUO_WASM_BIN", "/tmp/duowasm")
 wasmtime = _getenv("WASMTIME", "wasmtime")
 wasmtimepin = _getenv("WASMTIME_VERSION", "47.0.3")
-# The portable Linux x86_64 host-bridge artifact is slower than the hand-built
-# /tmp probe on `bench/hash2b.wasm`: the exact `zig build wasm-test` engine
-# artifact measured ~94–95s here and the old 90s budget turned two PASS rows
-# into NORESULT. The gate is comparing VALUE, not proving a speed target yet, so
-# the timeout must not cut off a correct answer on the portable path.
-secs: i64 = to(i64)(_getenv("DUO_WASM_TIMEOUT", "120"))
+# The portable C host-bridge artifact is slower than a hand-built probe. On this
+# aarch64 Linux subject, `bench/hash2b.wasm` completed correctly in 142.50s;
+# the old 120s budget turned both interpreter-backed rows into NORESULT. This
+# gate compares VALUE rather than proving a speed target, so use a ceiling with
+# room for thermal/scheduler drift and report performance separately.
+secs: i64 = to(i64)(_getenv("DUO_WASM_TIMEOUT", "240"))
 root = _chomp(_capture("pwd"))
 repo = root .. "/../.."
 tmpbase = _getenv("TMPDIR", "/tmp")
@@ -476,10 +476,10 @@ if _status(wasmtime .. " --version >/dev/null 2>&1") != 0
     print("CONTROL FAIL: oracle `" .. wasmtime .. "` does !run")
     ctlfail += 1
 else
-    oracleversion = _chomp(_capture(wasmtime .. " --version 2>&1 | head -1"))
-    wantversion = "wasmtime " .. wasmtimepin .. " "
-    if string.sub(oracleversion, 1, wantversion:len()) != wantversion
-        print("CONTROL FAIL: oracle pin expected " .. wasmtimepin .. " got " .. oracleversion)
+    version = _chomp(_capture(wasmtime .. " --version 2>&1 | head -1"))
+    want = "wasmtime {wasmtimepin}"
+    if version != want and version:sub(1, want:len() + 1) != "{want} "
+        print("CONTROL FAIL: oracle pin expected " .. wasmtimepin .. " got " .. version)
         ctlfail += 1
     else
         oraclepath = _chomp(_capture("command -v " .. wasmtime))
@@ -488,7 +488,7 @@ else
             print("CONTROL FAIL: could !bind the oracle binary hash")
             ctlfail += 1
         else
-            print("ok   oracle=wasmtime version=" .. oracleversion
+            print("ok   oracle=wasmtime version=" .. version
                 .. " binary_sha256=" .. oraclehash)
         end
     end
@@ -556,20 +556,22 @@ print("ok   " .. nora:to(str) .. " (module, entry) pair(s) the oracle can answer
 # Wart's frozen CLI intentionally does not print an exported scalar result, so
 # it cannot replace the by-value Wasmtime table above. It must still answer an
 # actual Wasm question: this fixed positive control makes its test-oracle role
-# load-bearing without pretending process success is value agreement.
+# load-bearing without pretending process success is value agreement. Pin that
+# role to the interpreter: the default JIT is an optimization tier and traps
+# with an illegal instruction on this aarch64 host for the control module.
 wartcontrol = root .. "/bench/hash.wasm"
-if _status(wartbin .. " --no-color -f run " .. wartcontrol .. " >/dev/null 2>&1") != 0
-    print("CONTROL FAIL: frozen Wart oracle could !execute " .. wartcontrol)
+if _status(wartbin .. " --no-jit --no-color -f run " .. wartcontrol .. " >/dev/null 2>&1") != 0
+    print("CONTROL FAIL: frozen Wart interpreter could !execute " .. wartcontrol)
     return 3
 end
 wartpert = tmp .. "/wart-perturbed.wasm"
 _cp(wartcontrol, wartpert)
 _run("printf '\\x00' | dd of=" .. wartpert .. " bs=1 seek=3 conv=notrunc >/dev/null 2>&1")
-if _status(wartbin .. " --no-color -f run " .. wartpert .. " >/dev/null 2>&1") == 0
-    print("CONTROL FAIL: frozen Wart ACCEPTED its positive control with a broken magic number")
+if _status(wartbin .. " --no-jit --no-color -f run " .. wartpert .. " >/dev/null 2>&1") == 0
+    print("CONTROL FAIL: frozen Wart interpreter ACCEPTED its positive control with a broken magic number")
     return 3
 end
-print("ok   oracle=wart control=bench/hash.wasm entry=run observable=execution-status damage=broken-magic-refused")
+print("ok   oracle=wart tier=interpreter control=bench/hash.wasm entry=run observable=execution-status damage=broken-magic-refused")
 
 # ── CONTROL 2: the module path REACHES the runtime ───────────────────
 # the engine reads DUO_WASM_MODULE, !argv, and it used to DEFAULT to a hardcoded
