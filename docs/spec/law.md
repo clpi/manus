@@ -49,12 +49,19 @@ a separate semantic-equivalence experiment, not an inherited claim: the external
 subject must first carry its own revision-bound evidence, and the reimplementation
 must earn independent equivalence and cost evidence.
 
+A frontier adjective is always scoped. “Fastest,” “smallest,” “best-in-class,”
+and equivalent claims name exact semantic observations, axes, workload/corpus,
+inputs, machine, OS/world, target, implementations, versions/configurations, and
+uncertainty. Without that scope there is no performance claim.
+
 Every relevant dimension remains visible: runtime, throughput, latency, startup,
 warmup, compile and incremental work, memory, allocations, traffic, artifact and
 loaded bytes, relocations, syscalls, instructions, branches, misses, spills,
-energy, and target-specific constraints. A result is WIN, OPTIMAL, or an exact
-LOSS with causal decomposition. No win compensates for an open loss on another
-unacknowledged dimension.
+energy, and target-specific constraints. A measured case is `win` (dominates the
+best comparator with equivalence and confidence), `bound` (reaches a proven
+physical lower bound), `open` (loses an improvable dimension with exact causal
+debt), or `unknownbound` (no useful lower bound is known). No win compensates for
+an open loss on another dimension.
 
 SHC means every production semantic decision is eventually executed by Idol
 itself. Source-file percentage and translated LOC are not SHC evidence.
@@ -79,6 +86,12 @@ Unknown, absent, false, zero, empty, and not-asked are distinct.
 
 Every authoritative fact has exactly one producer. Once known, a fact is carried
 forward; downstream phases never reconstruct it from syntax or representation.
+
+Fact, assumption, and evidence are distinct. Every non-axiomatic fact carries
+trust, provenance, scope, dependencies, and invalidation. The weakest consumed
+trust constrains realization; observed, asserted, guarded, and foreign evidence
+never silently become proof. Acquisition cost and expected realization value are
+evidence/cost facts, not semantic truth.
 
 ## 2. The only semantic architecture
 
@@ -420,6 +433,8 @@ A performance change must bind:
 - raw outcomes and distributions;
 - semantic result/equivalence controls;
 - negative and ablation controls;
+- facts-on/facts-stripped same-backend attribution and same-semantics
+  backend-on/backend controls;
 - runtime, compile work, memory, artifact size, and relevant counters;
 - strongest known competitor and physical lower bound;
 - same-algorithm code-generation comparison separate from algorithmic wins.

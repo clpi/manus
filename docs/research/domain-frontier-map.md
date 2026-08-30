@@ -108,6 +108,11 @@ world · authority · effects · stage · demand · target · profile · hardwar
 
 Facts qualify meaning. They do not create parallel type, effect, optimizer, hardware, or agent kingdoms.
 
+Each non-axiomatic fact carries producer, provenance, trust, scope, dependencies,
+invalidation, and any guard/witness. Evidence and assumptions remain distinct
+from truth. Acquisition cost and expected realization value guide whether a fact
+is worth learning; they never strengthen its trust class.
+
 ### 4.3 Maximum realization freedom
 
 Unless semantically observed or explicitly pinned, source does not force:
@@ -168,6 +173,11 @@ algorithmic-vs-codegen attribution
 status and kill criterion
 ```
 
+Every reported frontier adjective is additionally scoped by exact axes,
+semantics, corpus/input, hardware/world/target, implementations,
+versions/configurations, and uncertainty. Unqualified “fastest” and
+“best-in-class” are refused.
+
 The benchmark harness searches the comparator set rather than preselecting a convenient loser. For CPU controls it normally includes tuned GCC, Clang, ICX and AOCC where available, but that set is expanded or replaced whenever another implementation owns the domain frontier.
 
 ## 6. Immediate research order
@@ -178,7 +188,7 @@ The benchmark harness searches the comparator set rather than preselecting a con
 4. **Representation controls.** For every win, run fact-on/fact-off and same-algorithm controls through mature and own backends.
 5. **Backend attribution.** Keep C/LLVM/Wasm controls so language-information wins cannot hide backend losses and backend losses cannot erase language wins.
 6. **Agent-legibility experiment.** Measure matched tasks with primer, executable corpus, generated grammar, constrained decoding, and fail-closed diagnostics.
-7. **Live process experiment.** Measure conflict prevention, accepted-change cost, purpose recall, stability, and review load against a Git/PR baseline.
+7. **Live process experiment.** Measure conflict prevention, accepted-change cost, purpose recall, stability, and review load as a layer over a Git/PR + merge-queue baseline; replacement of Git, branches, or human review is not admitted without process dominance and preserved knowledge transfer.
 
 ## 7. Public claim rule
 

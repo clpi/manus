@@ -1032,6 +1032,8 @@ facttrust = law{
         "every fact carries exactly one trust level",
         "asserted is attributable — it names its author and what invalidates it",
         "asserted has a spelling and therefore a census",
+        "every non axiomatic fact carries provenance scope dependencies and invalidation and evidence assumption and fact remain distinct",
+        "fact acquisition cost and expected realization value are evidence and cost facts never truth authority",
         "a realization trusts the MINIMUM over the facts it consumes",
         "no mechanism may carry trust that the fact does not",
     }
@@ -6912,6 +6914,8 @@ ftcftwdominance = law{
         "the comparison oracle is two things at once the strongest known implementation and the semantic physical lower bound — c llvm fortran wasmtime hand assembly and specialized libraries are each only one oracle",
         "an external oracle remains external comparison never makes it an idol target platform dependency ancestor or design substrate",
         "reimplementing an oracle is a separate semantic equivalence experiment after the external subject carries its own revision bound evidence and the candidate earns independent equivalence and cost evidence rather than inheriting the oracle claim",
+        "fastest smallest best in class and every equivalent frontier adjective names exact semantic observations axes workload corpus inputs machine os world target implementations versions configurations and uncertainty or it is no claim",
+        "causal attribution compares facts on versus facts stripped under the same backend and backend versus backend under the same semantics so semantic information wins and backend quality wins never impersonate each other",
         "for every cost dimension exactly three outcomes are valid win strictly better than the best competitor with equivalence and confidence optimal equal to the proven lower bound where no improvement is physically possible or loss with exact optimization debt application id extra cost semantic cause unresolved fact lower bound and workstream",
         "fewer operations than the semantic minimum is impossible so equalling the lower bound counts as ftcftw closure not failure",
         "conflicting dimensions throughput vs size specialization vs compile time prefetch vs traffic energy are a pareto frontier under an explicit build world policy budget never a collapsed vanity scalar",

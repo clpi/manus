@@ -14,10 +14,12 @@ The uploaded Constitution states that it was compiled without access to current 
 
 Wart is a separate project. This adjudication does not make Wart an Idol target,
 platform, backend, runtime tier, dependency, or design substrate. Wart must first
-establish its own revision-bound runtime/compiler frontier and compactness
-evidence. Only then may a separately scoped experiment rewrite that exact subject
-in Idol, preserve its semantics, and measure whether Idol's facts and realization
-freedom improve it. External comparison evidence never becomes Idol meaning.
+establish its own revision-bound, axis/corpus/hardware/version-scoped Pareto
+frontier and compactness evidence. An unqualified “fastest Wasm runtime” is not an
+admissible claim. Only then may a separately scoped experiment rewrite that exact
+subject in Idol, preserve its semantics, and measure whether Idol's facts and
+realization freedom improve it. External comparison evidence never becomes Idol
+meaning.
 
 ## 1. Verdict vocabulary
 
@@ -54,7 +56,7 @@ freedom improve it. External comparison evidence never becomes Idol meaning.
 
 Cranelift-class and baseline backends often trade code quality for compile speed; LLVM-backed WAMR AOT and mature native toolchains frequently win steady-state numeric workloads. The exact ratios quoted in the surveys come from particular programs, machines, runtimes, and blog methodology. They may calibrate a suite; they must not become universal constants.
 
-Project consequence: keep mature C/LLVM/Wasm pipelines as controls and an own backend as a product/research axis. Attribute each loss to backend, missing information, algorithm, runtime, or measurement state.
+Project consequence: keep mature C/LLVM/Wasm pipelines as controls and an own backend as a product/research axis, never a mandatory shipping boundary while it loses. Attribute each loss to backend, missing information, algorithm, runtime, or measurement state.
 
 ### 3.2 “The honest C baseline is max(GCC, Clang, ICX, AOCC)”
 
@@ -94,7 +96,7 @@ Project consequence: preserve the experiment and kill criteria; do not treat it 
 
 AgenticFlict establishes the textual conflict baseline, not the semantic/incidental decomposition. Claims may prevent duplicate and overlapping work, but can also serialize useful parallelism or miss higher-order conflicts.
 
-Project consequence: replay an external corpus and instrument a live project before making product claims.
+Project consequence: replay an external corpus and instrument a live project before making product claims. Test Live first as coordination/context/admission over Git and merge-queue baselines; do not ratify it as a replacement for Git, branches, or human review.
 
 ## 4. Findings rejected as universal project law
 
@@ -159,6 +161,16 @@ Ruling: the semantic graph owns meaning and transformation lineage. Multiple typ
 **Verdict: REJECTED AS CURRENT AUTHORITY.**
 
 The uploaded Constitution proposes a specific small language but acknowledges it was prepared without current private repository heads. The current supreme law and executable grammar own canonical syntax. Keyword count is an axis to measure, not a result imported from a research synthesis.
+
+### 4.9 “Imprecise faults should be the familiar default”
+
+**Verdict: REJECTED AS CURRENT LAW.**
+
+The cited imprecise-exception work establishes a transformation-preserving model
+for lazy Haskell, not a general result that imprecision is the right familiar
+default for Idol. Preserve the experiment as an explicit relaxed observation
+regime if bounded evidence justifies it; ordinary fault behavior remains governed
+by current observation/effect law rather than imported by analogy.
 
 ## 5. Current repository correction
 

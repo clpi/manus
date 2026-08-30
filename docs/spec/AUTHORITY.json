@@ -6,11 +6,11 @@
     "sole_semantic_authority": true,
     "compact_law": {
       "path": "docs/spec/law.md",
-      "blob": "155edf8e9204d00316dab8363676f0fd7b2fb552"
+      "blob": "ad4d2d57693ed69d8fac4ac3276210a677cfc0f0"
     },
     "long_form_law": {
       "path": "docs/spec/constitution.md",
-      "blob": "56ec285b3d320981711a190d8414c4f557bade4b",
+      "blob": "7e003a944d91139d5aa17ce89ce4d8c4a9b2901d",
       "role": "structured expansion and law-id owner; compact law wins on drift"
     },
     "source_projection": {
@@ -21,11 +21,11 @@
   },
   "source_law_edition": {
     "schema": "idol.source.law.v1",
-    "sha256": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
+    "sha256": "5d3ff81d5a9824eb31ffbad06b2cc9a1d6725da2ee519af50b53e72da17cf74a",
     "algorithm": "sha256 of schema UTF-8, NUL, compact-law bytes, NUL, long-form-law bytes",
     "input_blob_ids": {
-      "compact_law": "155edf8e9204d00316dab8363676f0fd7b2fb552",
-      "long_form_law": "56ec285b3d320981711a190d8414c4f557bade4b"
+      "compact_law": "ad4d2d57693ed69d8fac4ac3276210a677cfc0f0",
+      "long_form_law": "7e003a944d91139d5aa17ce89ce4d8c4a9b2901d"
     },
     "canonical_source": ".id",
     "foreign_source_editions": "must carry their own exact law identity; unknown never inherits this edition"
@@ -61,7 +61,7 @@
         "law": "law.identity.current",
         "identity": "Idol",
         "status": "current",
-        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
+        "effective": "5d3ff81d5a9824eb31ffbad06b2cc9a1d6725da2ee519af50b53e72da17cf74a",
         "supersedes": [
           "historical.identity.Duo",
           "historical.identity.Duon",
@@ -86,7 +86,7 @@
         "law": "law.application.parentheses",
         "identity": "application",
         "status": "current",
-        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
+        "effective": "5d3ff81d5a9824eb31ffbad06b2cc9a1d6725da2ee519af50b53e72da17cf74a",
         "supersedes": [
           "historical.call-shaped-indexing"
         ],
@@ -110,7 +110,7 @@
         "law": "law.projection.computed",
         "identity": "computed projection",
         "status": "current",
-        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
+        "effective": "5d3ff81d5a9824eb31ffbad06b2cc9a1d6725da2ee519af50b53e72da17cf74a",
         "supersedes": [
           "historical.brackets-legacy",
           "historical.call-shaped-indexing"
@@ -135,7 +135,7 @@
         "law": "law.structure.braces",
         "identity": "structured pack",
         "status": "current",
-        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
+        "effective": "5d3ff81d5a9824eb31ffbad06b2cc9a1d6725da2ee519af50b53e72da17cf74a",
         "supersedes": [],
         "source_faces": [
           "{}"
@@ -157,7 +157,7 @@
         "law": "law.block.offside",
         "identity": "block closure",
         "status": "current",
-        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
+        "effective": "5d3ff81d5a9824eb31ffbad06b2cc9a1d6725da2ee519af50b53e72da17cf74a",
         "supersedes": [
           "historical.block.end-canonical"
         ],
@@ -181,7 +181,7 @@
         "law": "law.at.one",
         "identity": "world axis",
         "status": "current",
-        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
+        "effective": "5d3ff81d5a9824eb31ffbad06b2cc9a1d6725da2ee519af50b53e72da17cf74a",
         "supersedes": [
           "historical.at.descriptor-anchor",
           "historical.at.descriptor-application",
@@ -216,7 +216,7 @@
         "law": "law.subject.declaration",
         "identity": "one relation identity plus subject constraint plus projection facts plus implementation witness",
         "status": "current",
-        "effective": "95e70291b13062881ebc6c96005c5ad02230bf5b5a7e62ced4f6e8787ab4993b",
+        "effective": "5d3ff81d5a9824eb31ffbad06b2cc9a1d6725da2ee519af50b53e72da17cf74a",
         "supersedes": [],
         "source_faces": [
           "subject:relation = ...",
