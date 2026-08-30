@@ -91,10 +91,17 @@ selftest() {
         fail 'mixed-target control was admitted'
     fi
     grep -q 'artifact identity key' "$work/key.err" || fail 'mixed-target control did not reach key verdict'
+
+    if IDOL_ARTIFACT_FLEET= sh "$0" >"$work/default.out" 2>"$work/default.err"; then
+        fail 'no-argument gate execution admitted absent fleet evidence'
+    fi
+    grep -q 'set IDOL_ARTIFACT_FLEET' "$work/default.err" || fail 'no-argument gate execution did not reach the fleet blocker'
     printf '%s\n' 'artifact-equality control: PASS — equality admitted; damage, missing host, and mixed target refused'
 }
 
-case ${1-} in
+mode=--check
+[ "$#" -eq 0 ] || mode=$1
+case $mode in
     --selftest) selftest ;;
     --check)
         manifest=${2:-${IDOL_ARTIFACT_FLEET:-}}

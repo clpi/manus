@@ -101,10 +101,17 @@ selftest() {
         fail 'missing-host control was admitted'
     fi
     grep -q 'missing freebsd native-call evidence' "$work/missing.err" || fail 'missing-host control did not name the absent OS'
+
+    if IDOL_NATIVE_CALL_FLEET= sh "$0" >"$work/default.out" 2>"$work/default.err"; then
+        fail 'no-argument gate execution admitted absent fleet evidence'
+    fi
+    grep -q 'set IDOL_NATIVE_CALL_FLEET' "$work/default.err" || fail 'no-argument gate execution did not reach the fleet blocker'
     printf '%s\n' 'native-call control: PASS — valid matrix admitted; raw-syscall damage and missing OS refused'
 }
 
-case ${1-} in
+mode=--check
+[ "$#" -eq 0 ] || mode=$1
+case $mode in
     --selftest) selftest ;;
     --check)
         manifest=${2:-${IDOL_NATIVE_CALL_FLEET:-}}

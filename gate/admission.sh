@@ -64,11 +64,11 @@ set -eu
 # below is printed by `gate/admission.sh --census-only` on every run, so the
 # comment cannot drift away from the code that produces it.
 #
-#   subjects enumerated ..................  1012 tracked .id files
-#   token occurrences, ALL positions .....   516  = 326 code + 190 text/comment
-#   code-position reaches ................   326  (42 files at the base, 39 now)
+#   subjects enumerated ..................  1001 tracked .id files
+#   token occurrences, ALL positions .....   510  = 323 code + 187 text/comment
+#   code-position reaches ................   323  (37 unpinned carriers)
 #   of those, pinned exempt ..............    15  (3 files)
-#   BUDGET (census subject) ..............   311
+#   BUDGET (census subject) ..............   308
 #
 # THE BASE, so the migration in this commit is visible rather than asserted.
 # Pristine c77dea60: 1012 subjects, 534 tokens = 344 code + 108 text + 82
