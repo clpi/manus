@@ -1,0 +1,44 @@
+# Domain-Frontier Reorientation Brief
+
+Read, in order:
+
+1. `docs/spec/law.md`
+2. `docs/research/domain-frontier-map.md`
+3. `docs/research/claude-frontier-adjudication.md`
+
+## Direction
+
+- Optimize against the strongest semantically equivalent implementation for each domain, not C as a universal oracle.
+- Preserve Lua-correct dynamic meaning while facts, stages, worlds, demand, profiles, targets, and hardware progressively strengthen specialization.
+- Preserve implementation freedom. Do not constitutionally force one memory strategy, JIT shape, concurrency model, layout, backend, or physical IR.
+- Keep one semantic authority. Permit multiple typed physical lowering views only when provenance-linked and semantically subordinate.
+- Separate algorithmic, information, runtime-profile, and backend wins.
+- Public surfaces are downstream of admitted evidence and may not author claims.
+
+## Immediate work priority
+
+1. Oracle and evidence contract.
+2. Reproduced wins corpus.
+3. Fact-on/fact-off strip tests.
+4. Backend attribution through mature controls.
+5. Current-law executable corpus and agent-legibility measurement.
+6. Live process experiment.
+7. Public surfaces only after admitted artifacts exist.
+
+## Refusals
+
+Do not treat any of these as current law without an exact bounded proof:
+
+- generic “faster than C”;
+- universal no-GC;
+- MVS as the dynamic Lua semantic floor;
+- agreement testing as universal coherence proof;
+- runtime replay as free merely because builds are deterministic;
+- only compiler-inserted concurrency;
+- a ban on tracing or any other lawful realization strategy;
+- one semantic graph as a ban on physical lowering IRs;
+- a research document as authority merely because it is comprehensive.
+
+## Stop condition for surface work
+
+No new homepage, dashboard, Atlas, Registry, Observatory, IDE, Live, API-description, or MCP-description feature is justified unless it projects an exact current-law artifact or admitted evidence record that already exists. A truthful empty surface is a successful result.
