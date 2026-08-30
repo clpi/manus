@@ -705,11 +705,13 @@ that recomputes its own numbers — nothing here restates them:
 
 `wrap` is the semantic-knowledge mechanism at parity's edge: Idol's i64 wraps
 by definition, C's signed overflow is undefined, so the emitted unsigned form
-lets the C compiler reassociate across a recurrence the idiomatic `int64_t`
+can let the C compiler reassociate across a recurrence the idiomatic `int64_t`
 spelling blocks. Its third arm — the same algorithm handwritten with
-`uint64_t` — is the control that keeps the row honest: the outcome is OPTIMAL
-(the frontier reached without the programmer knowing why), not a fabricated
-win over a strawman.
+`uint64_t` — is the semantically equivalent control that prevents a fabricated
+win over a strawman. The runner publishes nine-run observed ranges and calls an
+overlap `unknownbound`; equality with an implementation is never `bound` or
+“optimal” without an independently proven physical lower bound. The signed-C
+arm remains an idiomatic undefined-behavior control, not an equivalence oracle.
 
 `stage` is the §108 REALIZATION-CONTRACT executed: work C must do at runtime,
 `@( … )` does at build, and the program carries the answer. Its controls pin

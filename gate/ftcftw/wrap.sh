@@ -6,7 +6,8 @@
 # explicitly empty. Both are correct and neither is a reason to have measured
 # NOTHING. This measures one workload, on one axis, through the one realization
 # route that exists on a host without direct-native codegen, and reports the
-# outcome §99 requires: WIN, OPTIMAL, or LOSS with named debt.
+# current law's scoped `win` or `unknownbound`. Equality with C is NOT a physical
+# lower bound and therefore can never establish `bound` by itself.
 #
 # THE MECHANISM UNDER TEST, which is the whole point. `law.md` §98 says the
 # advantage comes from maximum semantic knowledge. Idol's i64 is defined to
@@ -24,16 +25,19 @@
 #
 # THE THIRD ARM IS THE CONTROL AND IT IS NOT OPTIONAL. Without it the result
 # reads as "Idol is 1.59x faster than C", and that is FALSE: the unsigned
-# spelling ties Idol exactly. The honest claim is that Idol reaches the best
-# known C without the programmer having to know why, and `law.ftcftw.dominance`
-# calls that OPTIMAL, not WIN. A two-arm version of this gate would have
-# published the false claim, which is why the arm is here.
+# spelling can tie Idol. The honest claim is that Idol can reach the strongest
+# equivalent C spelling without the programmer having to know why. A sampled
+# tie or overlap is `unknownbound`, never OPTIMAL: this gate proves no physical
+# lower bound. A two-arm version would publish a false win over a strawman.
 #
 # ANSWER EQUIVALENCE IS CHECKED BEFORE TIME. A faster program that computes
 # something else is not a faster program.
 # One identical byte is read at runtime by every arm. It is a semantic input,
 # not entropy: the fixed seed file makes answers reproducible while preventing
 # the C optimizer from replacing the complete workload with a constant.
+# The measured axis is END-TO-END process wall clock: startup and the one-byte
+# input are included for every arm. They occur once before 100,000,000 inner
+# iterations and remain visible rather than being silently subtracted.
 
 set -u
 
@@ -164,6 +168,12 @@ main:
     bne .Lloop
     ret
 ASM
+cat >"$work/branch-multioperand.s" <<'ASM'
+idol_entry:
+.Lloop:
+    cbnz x0, .Lloop
+    ret
+ASM
 [ "$(backward_jumps "$work/branch-forward.s" main)" -eq 0 ] || {
     printf 'ftcftw/wrap: BROKEN — branch scanner counted a forward edge as work\n' >&2
     exit 2
@@ -172,7 +182,11 @@ ASM
     printf 'ftcftw/wrap: BROKEN — branch scanner missed a planted backward edge\n' >&2
     exit 2
 }
-printf '  branch scanner control: forward 0, backward 1\n'
+[ "$(backward_jumps "$work/branch-multioperand.s" idol_entry)" -eq 1 ] || {
+    printf 'ftcftw/wrap: BROKEN — branch scanner missed a multi-operand backward edge\n' >&2
+    exit 2
+}
+printf '  branch scanner control: forward 0, backward 1, multi-operand 1\n'
 alive=0
 for a in idol hand hand_u; do
     cc -std=c11 -D_POSIX_C_SOURCE=200809L -O2 -S -o "$work/$a.s" "$work/$a.c" 2>/dev/null || continue
@@ -192,48 +206,70 @@ printf 'ftcftw/wrap: §2 equivalence\n'
 "$work/hand.bin" <"$work/seed"; ah=$?
 "$work/hand_u.bin" <"$work/seed"; au=$?
 printf '  idol %s   hand-signed %s   hand-unsigned %s\n' "$ai" "$ah" "$au"
-[ "$ai" = "$ah" ] && [ "$ai" = "$au" ] || {
-    printf 'ftcftw/wrap: BROKEN — the three arms do not compute the same answer\n' >&2
+[ "$ai" = "$au" ] || {
+    printf 'ftcftw/wrap: BROKEN — Idol and the semantically equivalent unsigned-C arm disagree\n' >&2
     exit 2
 }
+# The high-bit control proves both equivalent arms interpret the input byte as
+# 0..255 rather than host `char` signedness. This is deliberately separate from
+# the timed ASCII seed so the portability fact cannot pass by using 0x41.
+printf '\200' >"$work/seed-high"
+[ "$(wc -c <"$work/seed-high" | tr -d ' ')" -eq 1 ] || {
+    printf 'ftcftw/wrap: BROKEN — could not construct the one-byte high-bit control\n' >&2
+    exit 2
+}
+"$work/idol.bin" <"$work/seed-high"; aih=$?
+"$work/hand_u.bin" <"$work/seed-high"; auh=$?
+printf '  high-bit byte control: idol %s   hand-unsigned %s\n' "$aih" "$auh"
+[ "$aih" = "$auh" ] || {
+    printf 'ftcftw/wrap: BROKEN — high-bit input is not zero-extended equally\n' >&2
+    exit 2
+}
+# `int64_t` overflow is undefined in C, so this arm is an idiomatic control,
+# not a semantic oracle. Its observed answer is published above but never used
+# to establish equivalence or a frontier result.
 
 # ============================== §3 TIME =====================================
-printf 'ftcftw/wrap: §3 min of 9, alternating\n'
+printf 'ftcftw/wrap: §3 observed range of 9, alternating (end-to-end wall clock)\n'
 bi=999999; bh=999999; bu=999999
+bix=0; bhx=0; bux=0
 i=0
 while [ $i -lt 9 ]; do
     for a in idol hand hand_u; do
         s=$(date +%s%N); "$work/$a.bin" <"$work/seed" >/dev/null 2>&1; e=$(date +%s%N)
         t=$(( (e - s) / 1000000 ))
         case $a in
-            idol)   [ "$t" -lt "$bi" ] && bi=$t ;;
-            hand)   [ "$t" -lt "$bh" ] && bh=$t ;;
-            hand_u) [ "$t" -lt "$bu" ] && bu=$t ;;
+            idol)   [ "$t" -lt "$bi" ] && bi=$t; [ "$t" -gt "$bix" ] && bix=$t ;;
+            hand)   [ "$t" -lt "$bh" ] && bh=$t; [ "$t" -gt "$bhx" ] && bhx=$t ;;
+            hand_u) [ "$t" -lt "$bu" ] && bu=$t; [ "$t" -gt "$bux" ] && bux=$t ;;
         esac
     done
     i=$((i + 1))
 done
-printf '  idol            %5s ms\n' "$bi"
-printf '  hand int64_t    %5s ms\n' "$bh"
-printf '  hand uint64_t   %5s ms\n' "$bu"
+printf '  idol            %5s..%-5s ms\n' "$bi" "$bix"
+printf '  hand int64_t    %5s..%-5s ms (idiomatic UB control; not an oracle)\n' "$bh" "$bhx"
+printf '  hand uint64_t   %5s..%-5s ms (strongest equivalent C arm)\n' "$bu" "$bux"
 
-[ "$bi" -gt 0 ] || {
+[ "$bi" -gt 0 ] && [ "$bh" -gt 0 ] && [ "$bu" -gt 0 ] || {
     printf 'ftcftw/wrap: CANNOT MEASURE — sub-millisecond; raise OUTER\n' >&2
     exit 2
 }
 
 # ============================ §4 THE OUTCOME ================================
-# §99 admits exactly three, and the comparison oracle is the BEST known
-# implementation — here the unsigned arm, not the idiomatic one.
-printf 'ftcftw/wrap: §4 outcome against the best known C\n'
-if [ "$bi" -lt "$bu" ]; then
-    printf '  WIN — idol is faster than the best C arm (%s ms vs %s ms)\n' "$bi" "$bu"
-elif [ "$bi" -eq "$bu" ]; then
-    printf '  OPTIMAL — idol equals the best C arm (%s ms), and is faster than\n' "$bi"
-    printf '            the idiomatic int64_t spelling (%s ms)\n' "$bh"
+# The comparison oracle is the BEST semantically equivalent known arm — here
+# unsigned C, not the idiomatic signed-overflow control. The nine-run observed
+# ranges are the stated confidence boundary. Overlap cannot establish a win,
+# and equality with an implementation cannot establish a physical bound.
+printf 'ftcftw/wrap: §4 scoped outcome against the strongest equivalent C arm\n'
+if [ "$bix" -lt "$bu" ]; then
+    printf '  WIN — Idol range %s..%s ms is strictly below equivalent-C %s..%s ms\n' "$bi" "$bix" "$bu" "$bux"
+    printf '        confidence: nine-run observed ranges are disjoint\n'
+elif [ "$bi" -gt "$bux" ]; then
+    printf '  UNKNOWNBOUND — Idol range %s..%s ms is above equivalent-C %s..%s ms\n' "$bi" "$bix" "$bu" "$bux"
+    printf '                 the exact causal debt is not isolated, so no OPEN finding is admitted\n'
 else
-    printf '  LOSS — idol %s ms vs best C %s ms; debt: the emitted unsigned form\n' "$bi" "$bu"
-    printf '         did not reach the fold the C arm did\n'
+    printf '  UNKNOWNBOUND — Idol %s..%s ms and equivalent-C %s..%s ms overlap\n' "$bi" "$bix" "$bu" "$bux"
+    printf '                 no physical lower bound is proved; tie/win/loss is unresolved\n'
 fi
-printf 'ftcftw/wrap: OK — one workload, one axis, three arms, answers equal\n'
+printf 'ftcftw/wrap: OK — one workload, one end-to-end axis; equivalent arms answer equally\n'
 exit 0
