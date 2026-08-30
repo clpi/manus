@@ -801,6 +801,12 @@ fn emitFunction(e: *Emitter, function: dnir.Function, is_entry: bool) Error!void
     try w.writeAll("  int64_t a9 = 0; int64_t a10 = 0; int64_t a11 = 0;\n");
     try w.writeAll("  int64_t a12 = 0; int64_t a13 = 0; int64_t a14 = 0;\n");
     try w.writeAll("  int64_t a15 = 0; int64_t a16 = 0;\n");
+    // The complete frame is intentional even when this function performs no
+    // call. Standard C's discarded-value expression records that fact without
+    // a compiler-specific attribute, keeping -Wall -Wextra -Werror clean.
+    try w.writeAll("  (void)a0; (void)a1; (void)a2; (void)a3; (void)a4; (void)a5;\n");
+    try w.writeAll("  (void)a6; (void)a7; (void)a8; (void)a9; (void)a10; (void)a11;\n");
+    try w.writeAll("  (void)a12; (void)a13; (void)a14; (void)a15; (void)a16;\n");
 
     // One declaration per `alloc_slots` region, hoisted to the frame exactly
     // as the direct backend reserves them at frame setup. The extent is a
@@ -1012,6 +1018,20 @@ test "C backend keeps graph root distinct from C ABI main" {
     try std.testing.expect(std.mem.indexOf(u8, source, "extern int64_t idol_entry(void);") != null);
     try std.testing.expect(std.mem.indexOf(u8, source, "int64_t main(void)") == null);
     try std.testing.expect(std.mem.indexOf(u8, source, "int main(void) { return (int)idol_entry(); }") != null);
+}
+
+test "C backend marks zeroed argument slots as intentional frame state" {
+    const instructions = [_]dnir.Instr{
+        .{ .op = .ret, .lhs = .{ .i64 = 42 } },
+    };
+    const functions = [_]dnir.Function{
+        .{ .name = "entry", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
+    };
+    var diagnostic: Diagnostic = .{};
+    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "", "entry", &diagnostic);
+    defer std.testing.allocator.free(source);
+
+    try std.testing.expectEqual(@as(usize, 17), std.mem.count(u8, source, "(void)a"));
 }
 
 test "C backend string print value matches fixed idol printf ABI" {

@@ -4,7 +4,7 @@ set -eu
 
 repo=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 compiler=${IDOL_C_REALIZER_COMPILER:-"$repo/zig-out/bin/idol"}
-cc=${CC:-/usr/bin/clang}
+cc=${CC:-cc}
 poison=/definitely/not/an/idol-c-compiler
 scratch=$(mktemp -d /tmp/idol-c-realizer.XXXXXX)
 trap 'rm -rf "$scratch"' EXIT HUP INT TERM
