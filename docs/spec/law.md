@@ -35,6 +35,14 @@ strict improvement is impossible. It is not “roughly C speed,” not a single
 benchmark score, and not an algorithmic win used to conceal code-generation
 loss.
 
+The oracle is domain-specific. C and C++ are important controls for low-level CPU
+work, never universal authorities. For each workload the comparison set includes
+the strongest credible semantically equivalent language, compiler, runtime,
+library, generated schedule, hand-tuned implementation, and physical lower bound
+for that domain. A new system becomes an oracle whenever it establishes a
+stronger frontier point. Idol may not choose a weak spelling, default flag,
+baseline tier, or scalar implementation merely because it is easier to beat.
+
 Every relevant dimension remains visible: runtime, throughput, latency, startup,
 warmup, compile and incremental work, memory, allocations, traffic, artifact and
 loaded bytes, relocations, syscalls, instructions, branches, misses, spills,
@@ -83,6 +91,15 @@ builtin registry, optimizer ontology, DNIR semantics, backend semantics, LSP
 semantics, or MCP semantics may compete with the graph. Bounded physical indexes
 and encodings are allowed only with a named graph producer, consumer, provenance,
 and deletion condition.
+
+One semantic authority does not require one physical IR representation at every
+optimization level. CFG, SSA, vector/tensor, GPU, machine, object, cache, and
+other target-oriented views are lawful when they are derived from exact graph
+ids and facts, state what information they preserve or intentionally forget,
+retain provenance back to the graph, have exact consumers and invalidation rules,
+and cannot create language meaning or optimization eligibility independently.
+The graph owns meaning; physical views own only the work needed by their bounded
+consumer.
 
 ## 3. Source minimum, graph maximum, physical minimum
 
@@ -346,6 +363,22 @@ result/descriptors, effect law, place identity, world selection, or optimization
 eligibility. AST pointers, names, paths, strings, and opcode tags are temporary
 bridges only and must monotonically reach zero after graph fact closure.
 
+A physical view may be specialized for control, vector/tensor structure, memory,
+GPU mapping, instruction selection, register allocation, object emission, or
+another bounded consumer. It may introduce target-local identities and order only
+as physical encodings linked to exact graph ids. It must publish its information
+loss, assumptions, validation evidence, and machine lineage. “One graph” is never
+a reason to deny an optimization the representation it needs, and “lowering” is
+never permission to rediscover or change meaning.
+
+Memory management, layout, runtime tier, dispatch form, algorithm, schedule,
+parallelization, and target remain open realization choices unless source law or
+an observable requirement fixes them. Region/arena/RC/reuse, cycle collection or
+tracing, explicit placement, interpretation, AOT, copy-and-patch, method/profile
+JIT, trace-derived code, SIMD, GPU, and foreign/control realizations are neither
+required nor constitutionally forbidden merely by present implementation taste.
+They are admitted per exact semantic regime and evidence.
+
 Direct, C, Wasm, JIT, interpreter, and tool backends consume the same graph
 meaning and may differ only in lawful physical realization. Generated C is a
 bootstrap/foreign realization, not proof of direct-native performance or SHC.
@@ -360,6 +393,15 @@ Path may discriminate physical temporary files but is never semantic identity.
 Concurrent builds must use race-safe physical artifact namespaces. Same-basename
 sources may never share temporary objects or poison content-addressed caches.
 Unknown cache dependencies conservatively invalidate or fail closed.
+
+Concurrency is not reduced to one surface or one realization strategy. The
+compiler may insert parallel execution where purity, independence, algebraic law,
+demand, target, and cost evidence permit it. Programs whose observations require
+I/O concurrency, supervision, distributed coordination, latency control, atomics,
+or explicit memory order need the smallest structured and capability-accountable
+mechanism that preserves those observations. Automatic parallelization and
+explicit concurrency are distinct; neither may be used to erase the other’s
+required information.
 
 ## 14. Performance admission and evidence
 
@@ -376,12 +418,28 @@ A performance change must bind:
 - strongest known competitor and physical lower bound;
 - same-algorithm code-generation comparison separate from algorithmic wins.
 
+The strongest known competitor is selected per domain, not per language brand.
+CPU systems controls normally include the strongest available tuned GCC, Clang,
+ICX, AOCC, Fortran, Rust, Zig, vendor library, or hand-written implementation as
+applicable. SIMD/SPMD, GPU/tensor, query, signal-processing, dynamic-runtime,
+compile-latency, safety, incremental, and other workloads additionally compare
+against the systems that own those frontiers. The comparator set and search
+policy are part of the benchmark contract.
+
 Research measurements remain historical until rerun on the exact integrated
 subject. “UNMEASURED” is a valid state; invented green evidence is not.
 
 A non-performance change activates no performance claim and must preserve the
 strongest executable baseline. An algorithmic win never closes machine/codegen
 debt.
+
+Public site, documentation, API descriptions, MCP descriptions, release copy,
+and dashboards are projections of admitted evidence; they do not author claims.
+A public capability or performance sentence must identify an exact admitted
+record containing subject, revision, oracle, observations, raw evidence, and
+status. Without such a record the lawful public state is `UNMEASURED`,
+`NOT IMPLEMENTED`, `NOT ADMITTED`, or `RESEARCH HYPOTHESIS`. A truthful empty
+surface is preferable to an attractive speculative one.
 
 ## 15. Agent, LSP, MCP, tooling
 
@@ -413,9 +471,11 @@ to research or gain a real consumer.
 
 ## 17. Absolute direction
 
-Idol is not a conventional compiler rewritten in `.id`, a permanent AST→IR→IR
-pipeline, a module system, a type/object hierarchy, a conventional Wasm VM, or a
-collection of optimizer passes that rediscover facts.
+Idol is not a conventional compiler rewritten in `.id`, a module system, a
+type/object hierarchy, a conventional Wasm VM, or a collection of optimizer
+passes that rediscover facts. It is also not a dogma that one physical data
+structure, one backend, one memory strategy, one runtime tier, or one concurrency
+model must win every domain.
 
 Idol is:
 
@@ -425,11 +485,12 @@ semantic identity
 + demand and observation
 + lawful transformation
 + late physical realization
++ domain-frontier oracles
 + exact evidence
 ```
 
 The compiler should know more while physically doing less. Dynamic code should
 progressively become native without changing programming style. Every merge must
 move toward fewer authorities, fewer reconstructed facts, fewer representations
-forced early, fewer runtime obligations, and greater semantic/physical freedom—or
-record the exact gap preventing that movement.
+forced early, fewer runtime obligations, broader lawful implementation freedom,
+and stronger evidence—or record the exact gap preventing that movement.
