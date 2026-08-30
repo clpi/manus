@@ -530,9 +530,7 @@ Commit admission runs through `.githooks/pre-commit` (shell orchestrator → dir
 `idol run gate/*`). Never `--backend=c` on gates.
 
 Gate home (`gate/`). The tracked tree and build graph are the live inventory; do
-not maintain a hand-written gate roster here. `bytetest.id` remains a named
-LAW-ONE path violation (`byte` + `test`) and must be migrated as its own bounded
-producer/consumer change rather than hidden in a stale table.
+not maintain a hand-written gate roster here.
 
 ## Path and file names (law.path.name)
 

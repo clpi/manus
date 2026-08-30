@@ -3,12 +3,10 @@
 **zig-cache/
 **zig-out/
 **.zig-out/
-test
-!/tools/wasm/test/
 /tools/wasm/test/*
 !/tools/wasm/test/conform.id
-test3
-test4
+/test3
+/test4
 *.o
 docs/book/
 
