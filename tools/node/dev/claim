@@ -117,7 +117,7 @@ drop() {
 }
 
 clean_incomplete() {
-  for dir in "$claims"/*; do
+  for dir in "$claims"/* "$claims"/.[!.]* "$claims"/..?*; do
     [ -d "$dir" ] || continue
     scan_key=${dir##*/}
     meta "$scan_key" && continue
@@ -133,7 +133,7 @@ list() {
   first=1
   count=0
   printf '{"claims":['
-  for dir in "$claims"/*; do
+  for dir in "$claims"/* "$claims"/.[!.]* "$claims"/..?*; do
     [ -d "$dir" ] || continue
     key=${dir##*/}
     meta "$key" || continue
@@ -186,7 +186,7 @@ acquire() {
   fi
   write_meta "$key" "$owner" "$work"
 
-  for dir in "$claims"/*; do
+  for dir in "$claims"/* "$claims"/.[!.]* "$claims"/..?*; do
     [ -d "$dir" ] || continue
     other=${dir##*/}
     [ "$other" = "$key" ] && continue
@@ -231,8 +231,11 @@ selftest() {
   trap 'rm -rf "$testroot"' EXIT INT TERM
   IDOL_CLAIM_ROOT=$testroot "$0" acquire alpha src/semantic_graph.zig graph >"$testroot/a"
   IDOL_CLAIM_ROOT=$testroot "$0" acquire gamma docs/spec/law.md docs >"$testroot/disjoint"
+  IDOL_CLAIM_ROOT=$testroot "$0" acquire hidden .agents/briefs/domain-frontier.md docs >"$testroot/hidden"
   IDOL_CLAIM_ROOT=$testroot "$0" list >"$testroot/disjoint-list"
-  grep -q '"count":2' "$testroot/disjoint-list"
+  grep -q '"count":3' "$testroot/disjoint-list"
+  grep -q '"path":".agents/briefs/domain-frontier.md"' "$testroot/disjoint-list"
+  IDOL_CLAIM_ROOT=$testroot "$0" release hidden .agents/briefs/domain-frontier.md >"$testroot/hidden-release"
   IDOL_CLAIM_ROOT=$testroot "$0" release gamma docs/spec/law.md >"$testroot/disjoint-release"
   if IDOL_CLAIM_ROOT=$testroot "$0" acquire beta src graph >"$testroot/b"; then false; else [ "$?" -eq 2 ]; fi
   if IDOL_CLAIM_ROOT=$testroot "$0" release beta src/semantic_graph.zig >"$testroot/c"; then false; else [ "$?" -eq 2 ]; fi
