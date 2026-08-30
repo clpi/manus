@@ -146,7 +146,7 @@ test "divisor obligation: IR and relation law agree" {
 
     var carriers: usize = 0;
     inline for (@typeInfo(ast.BinOp).@"enum".field_values) |value| {
-        const op: ast.BinOp = @enumFromInt(value);
+        const op: ast.BinOp = @fromBackingInt(@intCast(value));
         const law = demand_projection.lawsOf(op).divisor_nonzero;
         if (dnir_lower.binopTagOf(op)) |tag| {
             // A relation this substrate realizes as a binop. The two

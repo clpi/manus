@@ -112,7 +112,7 @@ pub const Evidence = enum(u8) {
 
     /// Evidence reliability ordering (lower = more reliable).
     pub fn reliability(self: Evidence) u8 {
-        return @intFromEnum(self);
+        return @backingInt(self);
     }
 
     /// True if this evidence is deterministic and reproducible.
@@ -264,7 +264,7 @@ pub fn writeRegistryJson(w: *std.Io.Writer) !void {
         inline for (@typeInfo(semantic_algebra.CallTransform).@"enum".field_values) |value| {
             if (i > 0) try w.print(",", .{});
             i += 1;
-            const op: semantic_algebra.CallTransform = @enumFromInt(value);
+            const op: semantic_algebra.CallTransform = @fromBackingInt(@intCast(value));
             const id = semantic_algebra.callTransformId(op);
             const d = descriptor(id);
             try w.print("{{\"transform\":\"{s}\",\"is_call\":{s},\"registered\":{s}", .{
@@ -844,7 +844,7 @@ pub fn isShapeTransform(public_name: []const u8) bool {
 /// True when a compatibility transform spelling projects an iteration relation.
 pub fn isIterationTransform(public_name: []const u8) bool {
     inline for (@typeInfo(semantic_algebra.IterationRelation).@"enum".field_values) |value| {
-        const relation: semantic_algebra.IterationRelation = @enumFromInt(value);
+        const relation: semantic_algebra.IterationRelation = @fromBackingInt(@intCast(value));
         if (std.mem.eql(u8, public_name, semantic_algebra.iterationTransformId(relation))) return true;
     }
     return false;
@@ -870,7 +870,7 @@ fn callTransformFromId(public_name: []const u8) ?semantic_algebra.CallTransform 
 
 fn iterationRelationFromTransformId(public_name: []const u8) ?semantic_algebra.IterationRelation {
     inline for (@typeInfo(semantic_algebra.IterationRelation).@"enum".field_values) |value| {
-        const relation: semantic_algebra.IterationRelation = @enumFromInt(value);
+        const relation: semantic_algebra.IterationRelation = @fromBackingInt(@intCast(value));
         if (std.mem.eql(u8, public_name, semantic_algebra.iterationTransformId(relation))) return relation;
     }
     return null;
@@ -1115,7 +1115,7 @@ test "transform_engine: all ShapeOp ids registered" {
         @typeInfo(semantic_algebra.ShapeOp).@"enum".field_names,
         @typeInfo(semantic_algebra.ShapeOp).@"enum".field_values,
     ) |_, value| {
-        const op: semantic_algebra.ShapeOp = @enumFromInt(value);
+        const op: semantic_algebra.ShapeOp = @fromBackingInt(@intCast(value));
         const id = semantic_algebra.shapeTransformId(op);
         try std.testing.expect(isRegisteredTransform(id));
     }
@@ -1195,7 +1195,7 @@ test "transform_engine: compatibility pipeline.map spelling is registered" {
 
 test "transform_engine: all iteration relation ids are registered" {
     inline for (@typeInfo(semantic_algebra.IterationRelation).@"enum".field_values) |value| {
-        const relation: semantic_algebra.IterationRelation = @enumFromInt(value);
+        const relation: semantic_algebra.IterationRelation = @fromBackingInt(@intCast(value));
         const id = semantic_algebra.iterationTransformId(relation);
         try std.testing.expect(isRegisteredTransform(id));
         try std.testing.expect(isIterationTransform(id));
@@ -1216,7 +1216,7 @@ test "transform_engine: all CallTransform ids registered" {
         @typeInfo(semantic_algebra.CallTransform).@"enum".field_names,
         @typeInfo(semantic_algebra.CallTransform).@"enum".field_values,
     ) |_, value| {
-        const op: semantic_algebra.CallTransform = @enumFromInt(value);
+        const op: semantic_algebra.CallTransform = @fromBackingInt(@intCast(value));
         const id = semantic_algebra.callTransformId(op);
         try std.testing.expect(isRegisteredTransform(id));
         try std.testing.expect(isCallTransform(id));

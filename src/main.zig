@@ -5534,7 +5534,7 @@ const BuildDependencies = struct {
             },
             .@"enum" => {
                 h.update("e");
-                const tag: u64 = @intFromEnum(value);
+                const tag: u64 = @backingInt(value);
                 const n: u64 = @sizeOf(u64);
                 h.update(std.mem.asBytes(&n));
                 h.update(std.mem.asBytes(&tag));
@@ -5718,7 +5718,6 @@ fn buildCacheKey(
         .{std.fmt.bytesToHex(deps.digest(), .lower)},
     ) catch null;
 }
-
 
 /// ═══ A CACHE ENTRY NAMES ITS OWN EXTENT ═══════════════════════════════════
 ///
