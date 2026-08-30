@@ -5,7 +5,7 @@
 const std = @import("std");
 const evidence = @import("evidence.zig");
 
-pub const SCHEMA_VERSION = "proof-carrying-v0";
+pub const SCHEMA_VERSION = "idol.proof.schema.v1";
 
 /// Exact graph coordinates retained through transformation provenance.
 ///
@@ -525,7 +525,6 @@ pub fn writeReleaseProofJson(
 
 /// Seed claims — must match README and release docs or be downgraded.
 pub const seed_claims: []const ReleaseClaim = &.{
-
     .{
         .id = "claim.direct_arm64_subset",
         .statement = "Direct ARM64 Mach-O backend for restricted typed scalar subset",
@@ -677,7 +676,7 @@ test "proof_carrying: writeSchemaJson" {
     var buf: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer buf.deinit();
     try writeSchemaJson(&buf.writer);
-    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "proof-carrying-v0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.written(), "idol.proof.schema.v1") != null);
 
     try std.testing.expectEqual(@as(usize, 7), release_proofs.len);
     for (release_proofs, 0..) |domain, i| {
