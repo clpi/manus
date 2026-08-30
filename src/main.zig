@@ -68,7 +68,7 @@ const home_resolve = @import("home_resolve.zig");
 const scratch = @import("scratch.zig");
 const dnir_lower = @import("dnir_lower.zig");
 const native_ir = @import("native_ir.zig");
-const benchmark_evidence = @import("benchmark_evidence.zig");
+const measurement = @import("measurement.zig");
 const representation_manifest = @import("representation_manifest.zig");
 const target_model = @import("target_model.zig");
 const semantic_graph = @import("semantic_graph.zig");
@@ -81,7 +81,6 @@ const sim_pipeline = @import("sim_pipeline.zig");
 const knowledge_snapshot = @import("knowledge_snapshot.zig");
 const assumption_guard = @import("assumption_guard.zig");
 const repair_candidate = @import("repair_candidate.zig");
-const evidence_record = @import("evidence_record.zig");
 const proof_carrying = @import("proof_carrying.zig");
 const optimization_outcome = @import("optimization_outcome.zig");
 const explain_pipeline = @import("explain_pipeline.zig");
@@ -683,7 +682,7 @@ fn emitDirectCompileProofArtifact(
 
     const object_bytes = try Io.Dir.readFileAlloc(Io.Dir.cwd(), io, object_path, alloc, .unlimited);
     defer alloc.free(object_bytes);
-    const counters = benchmark_evidence.EvidenceCounters.fromDirectObject(object_bytes);
+    const counters = measurement.EvidenceCounters.fromDirectObject(object_bytes);
     const manifest = backend_identity.Manifest{
         .backend = .direct,
         .representation = .native,
@@ -696,7 +695,7 @@ fn emitDirectCompileProofArtifact(
     const proof_path = try std.fmt.allocPrint(alloc, "{s}.proof.json", .{object_path});
     defer alloc.free(proof_path);
 
-    var prov = std.ArrayListUnmanaged(benchmark_evidence.ManifestProvenance).empty;
+    var prov = std.ArrayListUnmanaged(measurement.ManifestProvenance).empty;
     defer prov.deinit(alloc);
     for (transform_engine.provenanceEntries()) |e| {
         try prov.append(alloc, .{
@@ -707,7 +706,7 @@ fn emitDirectCompileProofArtifact(
         });
     }
 
-    try benchmark_evidence.writeCompileProofFile(io, proof_path, .{
+    try measurement.writeCompileProofFile(io, proof_path, .{
         .source_path = src_path,
         .generated_path = object_path,
         .bench_backend = global_bench_backend,
@@ -738,7 +737,7 @@ fn emitCompileProofArtifact(
 
     const source = try Io.Dir.readFileAlloc(Io.Dir.cwd(), io, generated_c_path, alloc, .unlimited);
     defer alloc.free(source);
-    const counters = benchmark_evidence.EvidenceCounters.fromGeneratedC(source, source.len);
+    const counters = measurement.EvidenceCounters.fromGeneratedC(source, source.len);
     const manifest = if (global_bench_profile_cli) blk: {
         const prof = backend_identity.profileForBenchBackend(global_bench_backend);
         break :blk backend_identity.Manifest{
@@ -754,7 +753,7 @@ fn emitCompileProofArtifact(
     const proof_path = try std.fmt.allocPrint(alloc, "{s}.proof.json", .{generated_c_path});
     defer alloc.free(proof_path);
 
-    var prov = std.ArrayListUnmanaged(benchmark_evidence.ManifestProvenance).empty;
+    var prov = std.ArrayListUnmanaged(measurement.ManifestProvenance).empty;
     defer prov.deinit(alloc);
     for (transform_engine.provenanceEntries()) |e| {
         try prov.append(alloc, .{
@@ -765,7 +764,7 @@ fn emitCompileProofArtifact(
         });
     }
 
-    try benchmark_evidence.writeCompileProofFile(io, proof_path, .{
+    try measurement.writeCompileProofFile(io, proof_path, .{
         .source_path = src_path,
         .generated_path = generated_c_path,
         .bench_backend = global_bench_backend,

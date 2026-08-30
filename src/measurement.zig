@@ -4,13 +4,13 @@ const backend_identity = @import("backend_identity.zig");
 const native_barrier_checks = @import("native_barrier_checks.zig");
 const representation_manifest = @import("representation_manifest.zig");
 
-pub const SCHEMA_VERSION = "pass27-benchmark-evidence-v0";
+pub const SCHEMA_VERSION = "idol.compile.evidence.v1";
 
-/// L6 — representation manifest as build artifact. The compile-proof artifact is the
-/// unified diffable manifest: identity + emission counters + @comp.why transform provenance.
-pub const MANIFEST_SCHEMA_VERSION = "pass34-l6-manifest-v0";
+/// Representation manifest as a build artifact. The compile-proof artifact is the
+/// unified diffable manifest: identity, emission counters, and transformation provenance.
+pub const MANIFEST_SCHEMA_VERSION = "idol.realization.manifest.v1";
 
-/// One @comp.why transform-provenance entry (L6 manifest provenance section).
+/// One transformation-provenance entry in the manifest.
 pub const ManifestProvenance = struct {
     transform: []const u8,
     site: []const u8,
@@ -18,7 +18,7 @@ pub const ManifestProvenance = struct {
     output_hash: u64,
 };
 
-/// Extended counters beyond `native_barrier_checks.Counts` (P27-P0-02).
+/// Physical emission counters beyond `native_barrier_checks.Counts`.
 pub const EvidenceCounters = struct {
     boxes: usize = 0,
     unboxes: usize = 0,
@@ -29,8 +29,8 @@ pub const EvidenceCounters = struct {
     return_pack_materializations: usize = 0,
     runtime_helpers: usize = 0,
     code_size_bytes: usize = 0,
-    /// L2 — fallback `.field` accesses (duo_fallback_get_* markers) + distinct
-    /// interned field IDs, surfaced in the L6 manifest emission section.
+    /// Fallback `.field` accesses (current bridge marker spelling) and distinct
+    /// interned field ids surfaced in the manifest emission section.
     fallback_field_accesses: usize = 0,
     interned_field_ids: usize = 0,
     fallback_entries: usize = 0,
@@ -121,7 +121,7 @@ pub fn writeCompileProofJson(artifact: CompileProofArtifact, provenance: []const
     }
     try w.print("\",\"manifest\":", .{});
     try backend_identity.writeManifestJson(artifact.manifest, w);
-    const l6_counts = representation_manifest.EmissionCounts{
+    const emission_counts = representation_manifest.EmissionCounts{
         .boxes = artifact.counters.boxes,
         .allocations = artifact.counters.allocations,
         .dynamic_dispatches = artifact.counters.generic_calls + artifact.counters.generic_table_ops,
@@ -130,17 +130,17 @@ pub fn writeCompileProofJson(artifact: CompileProofArtifact, provenance: []const
         .fallback_field_accesses = artifact.counters.fallback_field_accesses,
         .interned_field_ids = 0,
     };
-    const contamination = representation_manifest.classifyContamination(l6_counts, 0);
+    const contamination = representation_manifest.classifyContamination(emission_counts, 0);
     try w.print(",\"emission\":{{\"boxes\":{d},\"unboxes\":{d},\"allocations\":{d},\"generic_table_ops\":{d},\"generic_calls\":{d},\"dynamic_dispatches\":{d},\"fallback_entries\":{d},\"fallback_field_accesses\":{d},\"interned_field_ids\":{d},\"closure_envs\":{d},\"return_pack_materializations\":{d},\"runtime_helpers\":{d},\"generated_bytes\":{d},\"contamination\":\"{s}\"}}", .{
         artifact.counters.boxes,
         artifact.counters.unboxes,
         artifact.counters.allocations,
         artifact.counters.generic_table_ops,
         artifact.counters.generic_calls,
-        l6_counts.dynamic_dispatches,
-        l6_counts.fallback_entries,
-        l6_counts.fallback_field_accesses,
-        l6_counts.interned_field_ids,
+        emission_counts.dynamic_dispatches,
+        emission_counts.fallback_entries,
+        emission_counts.fallback_field_accesses,
+        emission_counts.interned_field_ids,
         artifact.counters.closure_environments,
         artifact.counters.return_pack_materializations,
         artifact.counters.runtime_helpers,
@@ -174,7 +174,7 @@ fn jsonEscape(w: *std.Io.Writer, s: []const u8) !void {
     };
 }
 
-test "pass27_benchmark_evidence: classify boxed specialized vs generic" {
+test "benchmark evidence classifies boxed specialized vs generic" {
     const counters = EvidenceCounters.fromGeneratedC("lua_Value v;", 12);
     const spec = backend_identity.Manifest{
         .backend = .c,
@@ -196,7 +196,7 @@ test "pass27_benchmark_evidence: classify boxed specialized vs generic" {
     try std.testing.expectEqualStrings("provisional-boxed-path", classifyEvidence(counters, generic));
 }
 
-test "pass27_benchmark_evidence: counters from generated C" {
+test "benchmark evidence counts generated C" {
     const src =
         \\void f(void) {
         \\  lua_Value v;
@@ -213,8 +213,15 @@ test "pass27_benchmark_evidence: counters from generated C" {
     try std.testing.expect(c.isBoxedBaseline());
 }
 
-test "pass27_benchmark_evidence: direct object zero-box" {
+test "benchmark evidence recognizes a zero-box direct object" {
     const obj = [_]u8{ 0xCF, 0xFA, 0xED, 0xFE, 0x00, 0x00, 0x00, 0x00 };
     const c = EvidenceCounters.fromDirectObject(&obj);
     try std.testing.expect(c.isZeroBoxNativePath());
+}
+
+test "compile proof schemas use current semantic identities" {
+    try std.testing.expectEqualStrings("idol.compile.evidence.v1", SCHEMA_VERSION);
+    try std.testing.expectEqualStrings("idol.realization.manifest.v1", MANIFEST_SCHEMA_VERSION);
+    try std.testing.expect(std.mem.indexOf(u8, SCHEMA_VERSION, "pass") == null);
+    try std.testing.expect(std.mem.indexOf(u8, MANIFEST_SCHEMA_VERSION, "pass") == null);
 }

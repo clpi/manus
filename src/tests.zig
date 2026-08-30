@@ -43,7 +43,7 @@ test {
     _ = @import("explain_pipeline.zig");
     _ = @import("assumption_guard.zig");
     _ = @import("repair_candidate.zig");
-    _ = @import("evidence_record.zig");
+    _ = @import("evidence.zig");
     _ = @import("place.zig");
     _ = @import("region.zig");
     _ = @import("eqspace.zig");
@@ -55,7 +55,7 @@ test {
     _ = @import("tail_result_demand.zig");
     _ = @import("tail_result_model.zig");
     _ = @import("wiring.zig");
-    _ = @import("benchmark_evidence.zig");
+    _ = @import("measurement.zig");
     _ = @import("lua_metamethod.zig");
     _ = @import("graph_query.zig");
     _ = @import("region_graph.zig");

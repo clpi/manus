@@ -26,7 +26,7 @@ Renaming without semantic decomposition is forbidden (`abi_matrix` → `abimatri
 | `scripts/stdlib_correctness_gate.id` | bootstrap embed | delete under GAP-157 |
 | `scripts/run_wasm_benchmark.id` | workflow | `tools/wasm/bench/` or single operational name |
 | `scripts/run_cross_benchmark.id` | workflow | `tools/bench/` or single operational name |
-| `src/benchmark_evidence.zig` | foreign bootstrap | delete when benchmark evidence executes in Idol (GAP-090 ledger) |
+| `src/measurement.zig` | foreign bootstrap | delete when performance evidence executes in Idol (GAP-090 ledger) |
 | `src/assumption_guard.zig` | foreign bootstrap | delete when profile guard is graph fact (GAP-085) |
 
 ## Enforcement

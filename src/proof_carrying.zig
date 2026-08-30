@@ -1,9 +1,9 @@
 //! — proof-carrying semantic transformations (Goals A–C foundation).
 //!
-//! Reuses `evidence_record.Kind`; does NOT introduce a parallel proof language.
+//! Reuses `evidence.Kind`; does NOT introduce a parallel proof language.
 //! Canonical plan: the semantic-autonomy plan
 const std = @import("std");
-const evidence_record = @import("evidence_record.zig");
+const evidence = @import("evidence.zig");
 
 pub const SCHEMA_VERSION = "proof-carrying-v0";
 
@@ -53,7 +53,7 @@ pub fn lineageGate(record: TransformProofRecord) bool {
 }
 
 /// Evidence classes accepted for obligation discharge (§3.2, §4).
-pub const AcceptedEvidence = evidence_record.Kind;
+pub const AcceptedEvidence = evidence.Kind;
 
 /// §9.1 — capability registry entries linked to release claims.
 pub const Capability = struct {
@@ -621,7 +621,7 @@ pub fn writeSchemaJson(w: *std.Io.Writer) !void {
         try jsonEscape(w, c.statement);
         try w.print("\"}}", .{});
     }
-    try w.print("],\"evidence_reuses\":\"evidence_record.v0\"}}", .{});
+    try w.print("],\"evidence_reuses\":\"idol.evidence.v1\"}}", .{});
 }
 
 fn jsonEscape(w: *std.Io.Writer, s: []const u8) !void {

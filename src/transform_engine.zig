@@ -10,7 +10,7 @@ const std = @import("std");
 const meta_module = @import("meta_module.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const proof_carrying = @import("proof_carrying.zig");
-const evidence_record = @import("evidence_record.zig");
+const evidence = @import("evidence.zig");
 
 pub const BudgetClass = enum {
     constant,
@@ -435,7 +435,7 @@ pub fn proofLogEntries() []const TransformProofLogEntry {
     return proof_log.items;
 }
 
-pub fn evidenceKind(ev: Evidence) evidence_record.Kind {
+pub fn evidenceKind(ev: Evidence) evidence.Kind {
     return switch (ev) {
         .semantic_proof => .proven_semantic_fact,
         .guarded => .guarded_fact,
@@ -494,7 +494,7 @@ pub fn buildTransformProofRecord(
     const validation = try std.fmt.allocPrint(alloc, "inputs_hash={x} output_hash={x}", .{ inputs_hash, output_hash });
     errdefer alloc.free(validation);
 
-    const ev_slice = try alloc.alloc(evidence_record.Kind, 1);
+    const ev_slice = try alloc.alloc(evidence.Kind, 1);
     ev_slice[0] = evidenceKind(ev);
 
     const obligations = try alloc.alloc(proof_carrying.ProofObligation, 1);
