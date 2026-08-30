@@ -398,6 +398,15 @@ JIT, trace-derived code, SIMD, GPU, and foreign/control realizations are neither
 required nor constitutionally forbidden merely by present implementation taste.
 They are admitted per exact semantic regime and evidence.
 
+An operating-system interaction is an ordinary application with exact callable,
+world, effect, failure, ownership, target, ABI, and foreign-origin facts. A
+platform/library call is the portable native realization. A raw syscall is a
+target-local physical candidate, never source identity or a portable default.
+Portability is admitted only when one equivalent subject passes through platform
+calls on Linux, macOS, Windows, and FreeBSD, while a damage/control arm proves
+the raw-syscall realization refuses on every non-Linux target where its ABI is
+not established.
+
 Direct, C, Wasm, JIT, interpreter, and tool backends consume the same graph
 meaning and may differ only in lawful physical realization. Generated C is a
 bootstrap/foreign realization, not proof of direct-native performance or SHC.
@@ -408,6 +417,13 @@ Artifact identity derives from the exact semantic dependency closure:
 source graph, worlds, observers, target/subtarget/ABI, profile, foreign/link
 inputs, realization policy/budget, compiler configuration, and compiler revision.
 Path may discriminate physical temporary files but is never semantic identity.
+
+A reproducibility claim fixes that complete artifact key. For one key, builds on
+x86-64, Apple M-series, and Raspberry Pi 5 must produce byte-identical artifacts;
+different targets or configurations are different keys and are never compared as
+if equality were required. Each host records compiler/toolchain revision and
+binary provenance. Missing hosts, mixed keys, or one differing artifact hash
+block deterministic-build and downstream oracle evidence.
 
 Concurrent builds must use race-safe physical artifact namespaces. Same-basename
 sources may never share temporary objects or poison content-addressed caches.

@@ -30,6 +30,7 @@ pub const Arch = enum {
 pub const Os = enum {
     macos,
     linux,
+    freebsd,
     wasi,
     windows,
     none,
@@ -39,6 +40,7 @@ pub const Os = enum {
         return switch (self) {
             .macos => "macos",
             .linux => "linux",
+            .freebsd => "freebsd",
             .wasi => "wasi",
             .windows => "windows",
             .none => "none",
@@ -49,6 +51,7 @@ pub const Os = enum {
     pub fn parse(s: []const u8) ?Os {
         if (std.mem.eql(u8, s, "macos") or std.mem.eql(u8, s, "darwin")) return .macos;
         if (std.mem.eql(u8, s, "linux")) return .linux;
+        if (std.mem.eql(u8, s, "freebsd")) return .freebsd;
         if (std.mem.eql(u8, s, "wasi")) return .wasi;
         if (std.mem.eql(u8, s, "windows") or std.mem.eql(u8, s, "win32")) return .windows;
         if (std.mem.eql(u8, s, "none") or std.mem.eql(u8, s, "freestanding")) return .none;
@@ -160,7 +163,7 @@ pub const TargetTriple = struct {
     pub fn objectFormat(self: TargetTriple) ObjectFormat {
         return switch (self.os) {
             .macos => .macho,
-            .linux => .elf,
+            .linux, .freebsd => .elf,
             .windows => .coff,
             .wasi, .none => .wasm,
             .unknown => .unknown,
@@ -298,6 +301,7 @@ pub fn hostTriple() TargetTriple {
     const os_tag: Os = switch (builtin.os.tag) {
         .macos => .macos,
         .linux => .linux,
+        .freebsd => .freebsd,
         .wasi => .wasi,
         .windows => .windows,
         else => .unknown,
@@ -310,7 +314,7 @@ pub fn writeJson(w: *std.Io.Writer) !void {
     var triple_buf: [64]u8 = undefined;
     const host_str = host.formatTriple(&triple_buf);
     try w.print(
-        "{{\"schema\":\"{s}\",\"host_triple\":\"{s}\",\"windows_status\":\"{s}\",\"direct_supported_triples\":[\"aarch64-macos\"],\"planned_triples\":[\"x86_64-linux-gnu\",\"x86_64-macos\",\"aarch64-linux-gnu\",\"x86_64-windows-msvc\",\"aarch64-windows-msvc\"],\"legacy_aliases\":{{\"native-exe\":\"aarch64-macos/exe\",\"native-object\":\"aarch64-macos/obj\",\"wasm32-wasi\":\"wasm32-wasi/wasm\"}}}}",
+        "{{\"schema\":\"{s}\",\"host_triple\":\"{s}\",\"windows_status\":\"{s}\",\"direct_supported_triples\":[\"aarch64-macos\"],\"planned_triples\":[\"x86_64-linux-gnu\",\"x86_64-macos\",\"aarch64-linux-gnu\",\"x86_64-windows-msvc\",\"aarch64-windows-msvc\",\"x86_64-freebsd\",\"aarch64-freebsd\"],\"legacy_aliases\":{{\"native-exe\":\"aarch64-macos/exe\",\"native-object\":\"aarch64-macos/obj\",\"wasm32-wasi\":\"wasm32-wasi/wasm\"}}}}",
         .{ SCHEMA_VERSION, host_str, WindowsStatus.current().name() },
     );
 }
@@ -362,6 +366,13 @@ test "target_model: structured triple parse" {
     const r = parseStructuredTarget("x86_64-linux-gnu", .obj).?;
     try std.testing.expectEqual(Arch.x86_64, r.triple.arch);
     try std.testing.expectEqual(Os.linux, r.triple.os);
+    try std.testing.expectEqual(ObjectFormat.elf, r.triple.objectFormat());
+    try std.testing.expect(!r.triple.directBackendSupported());
+}
+
+test "target_model: FreeBSD is a named ELF target fact" {
+    const r = parseStructuredTarget("x86_64-freebsd", .c).?;
+    try std.testing.expectEqualStrings("freebsd", r.triple.os.name());
     try std.testing.expectEqual(ObjectFormat.elf, r.triple.objectFormat());
     try std.testing.expect(!r.triple.directBackendSupported());
 }

@@ -2611,6 +2611,19 @@ abi = law{
     }
 }
 
+portablecall = law{
+    id    = "law.call.portable"
+    kind  = .invariant
+    holds = .derived
+    binds = {
+        "an operating system interaction is one ordinary application carrying exact callable world effect failure ownership target abi and foreign origin facts",
+        "platform or library call is the portable native realization and raw syscall is only a target local physical candidate never source identity or portable default",
+        "portability admission requires one equivalent subject to pass through platform calls on linux macos windows and freebsd",
+        "the negative control proves raw syscall refuses on every non linux target whose syscall abi is not established",
+    }
+    fails = "a source kind or semantic callable identity selected from syscall spelling or a portability claim without four os evidence and raw syscall controls"
+}
+
 # Facts survive REGIONS, not operations. One guard establishes a child world in
 # which many operations consume the proven fact without re-proving it — and the
 # counterpart law is what kills it.
@@ -6557,6 +6570,20 @@ incrementalcache = law{
         "deterministic output is required unless nondeterminism is explicitly lawful — no silent dependence on hash iteration order thread timing filesystem traversal agent scheduling source discovery order or address layout",
     }
     fails = "file keyed invalidation hash identity cache or generated artifact without law fact revision provenance"
+}
+
+artifactreproducible = law{
+    id    = "law.artifact.reproducible"
+    kind  = .invariant
+    holds = .proved
+    binds = {
+        "artifact equality compares one complete key source graph worlds observers target subtarget abi profile foreign and link inputs realization policy compiler configuration compiler revision and toolchain revision",
+        "for one exact key x86 64 apple m series and raspberry pi 5 produce byte identical artifact bytes",
+        "different targets configurations or semantic inputs are different keys and are never compared as if equality were required",
+        "each host records exact compiler binary and toolchain provenance while compiler binaries may lawfully differ by host architecture",
+        "missing host evidence mixed keys or one differing artifact hash blocks deterministic build and every downstream oracle claim depending on it",
+    }
+    fails = "cross target hash equality a deterministic claim from one host or oracle evidence admitted while required host artifact hashes differ or are absent"
 }
 
 canonsemantic = law{

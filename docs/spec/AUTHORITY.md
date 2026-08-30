@@ -30,7 +30,7 @@ Where the compact law and constitution differ, the compact law is the current ow
 ## Executable source-law edition
 
 Canonical `.id` source is qualified by `idol.source.law.v1` edition
-`5d3ff81d5a9824eb31ffbad06b2cc9a1d6725da2ee519af50b53e72da17cf74a`.
+`9631704ed20a823b9c22f0c772a5a627f552b97ffc9eb1df970659b6c67dbd4a`.
 The digest is derived from the schema name and the exact bytes of `law.md` and
 `constitution.md`, with NUL framing recorded by `AUTHORITY.json`. The
 non-authoritative `source.md` projection is checked independently and cannot

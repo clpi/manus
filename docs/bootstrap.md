@@ -240,6 +240,26 @@ their complete graph and diagnostic facts.
 - Compiler performance baselines
 - Binary identity (deterministic builds only)
 
+## Portability and deterministic-evidence admission
+
+The portability decision is locked, but its fleet evidence is not present in
+this tree. `zig build native-call-control` validates the evidence reader and its
+damage controls. `zig build native-call` refuses until
+`IDOL_NATIVE_CALL_FLEET` names one manifest showing an equivalent graph-owned
+application passing through platform calls on Linux, macOS, Windows, and
+FreeBSD, plus raw-syscall refusal controls on every non-Linux OS. This does not
+mint a `native-call` source kind: callable identity stays fixed and target/ABI/
+world facts select a physical call realization.
+
+Likewise, `zig build artifact-equality-control` validates the keyed equality
+reader. `zig build artifact-equality` refuses until `IDOL_ARTIFACT_FLEET` names
+real x86-64, Apple M-series, and Raspberry Pi 5 reports for one identical
+source/target/configuration/compiler/toolchain-revision key. Compiler binary
+hashes are recorded per host and may differ; the produced artifact hash may
+not. No cross-target equality is claimed. Until those real reports exist,
+portable native calls and cross-host deterministic artifacts are **NOT
+ADMITTED**, and evidence-fleet measurements depending on either remain blocked.
+
 ## Bootstrap subset
 
 The minimum Idol subset required to compile the next stage is a staged

@@ -271,6 +271,32 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run all tests (unit + compile-fail)");
     test_step.dependOn(&test_cmd.step);
 
+    // Portability and reproducibility contracts. The ordinary test aggregate
+    // runs their damage-controlled readers; the evidence steps below refuse
+    // until a real fleet manifest is supplied. Synthetic rows never become
+    // portability or deterministic-build evidence.
+    const native_call_control_cmd = b.addSystemCommand(&.{ "sh", "gate/native-call.sh", "--selftest" });
+    native_call_control_cmd.setCwd(b.path("."));
+    const native_call_control_step = b.step("native-call-control", "Validate the four-OS platform-call evidence contract and raw-syscall controls");
+    native_call_control_step.dependOn(&native_call_control_cmd.step);
+    test_step.dependOn(&native_call_control_cmd.step);
+
+    const native_call_cmd = b.addSystemCommand(&.{ "sh", "gate/native-call.sh", "--check" });
+    native_call_cmd.setCwd(b.path("."));
+    const native_call_step = b.step("native-call", "Admit real Linux/macOS/Windows/FreeBSD platform-call evidence; requires IDOL_NATIVE_CALL_FLEET");
+    native_call_step.dependOn(&native_call_cmd.step);
+
+    const artifact_equality_control_cmd = b.addSystemCommand(&.{ "sh", "gate/artifact-equality.sh", "--selftest" });
+    artifact_equality_control_cmd.setCwd(b.path("."));
+    const artifact_equality_control_step = b.step("artifact-equality-control", "Validate cross-host artifact identity/equality and damage controls");
+    artifact_equality_control_step.dependOn(&artifact_equality_control_cmd.step);
+    test_step.dependOn(&artifact_equality_control_cmd.step);
+
+    const artifact_equality_cmd = b.addSystemCommand(&.{ "sh", "gate/artifact-equality.sh", "--check" });
+    artifact_equality_cmd.setCwd(b.path("."));
+    const artifact_equality_step = b.step("artifact-equality", "Admit real x86-64/M-series/Pi-5 artifact equality evidence; requires IDOL_ARTIFACT_FLEET");
+    artifact_equality_step.dependOn(&artifact_equality_cmd.step);
+
     // The C realizer is explicit-only and consumes the same graph-observed DNIR
     // as direct. Run its independent answer, selection, toolchain-poison, and
     // damage controls with the compiler built by this invocation. The outer
