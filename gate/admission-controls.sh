@@ -22,6 +22,15 @@ manifest="$here/std-fixtures.manifest"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/idol-admission-controls.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
+# The production gate owns the ratchet. Controls derive their planted boundary
+# from that exact shipped constant so lowering the budget cannot silently turn
+# every position-precision positive control into an unrelated over-budget red.
+budget=$(sed -n 's/^STD_BUDGET=\([0-9][0-9]*\)$/\1/p' "$gate")
+case $budget in
+    ''|*[!0-9]*) printf 'admission controls: cannot read one numeric STD_BUDGET from %s\n' "$gate" >&2; exit 2 ;;
+esac
+overbudget=$((budget + 1))
+
 pass=0
 fail=0
 expect_fail() { label=$1; shift; if "$@" >"$tmp/out" 2>&1; then fail=$((fail+1)); printf 'FAIL accepted: %s\n' "$label"; sed 's/^/  /' "$tmp/out"; else pass=$((pass+1)); printf '  ok reject: %s\n' "$label"; fi; }
@@ -161,57 +170,57 @@ printf '\n-- census, against the real tree --\n'
 expect_pass "today's tree passes its own pinned census" "$gate" --census-only
 
 printf '\n-- census arithmetic, against the SHIPPED budget --\n'
-make_tree "$tmp/atbudget" 950 311
-expect_pass "synthetic tree at exactly the budget (311)" \
+make_tree "$tmp/atbudget" 950 "$budget"
+expect_pass "synthetic tree at exactly the budget ($budget)" \
     "$tmp/atbudget/gate/admission.sh" --census-only
-make_tree "$tmp/overbudget" 950 312
-expect_fail "synthetic tree one reach OVER the budget (312)" \
+make_tree "$tmp/overbudget" 950 "$overbudget"
+expect_fail "synthetic tree one reach OVER the budget ($overbudget)" \
     "$tmp/overbudget/gate/admission.sh" --census-only
 
 printf '\n-- manifest integrity --\n'
-make_tree "$tmp/drift" 950 311
+make_tree "$tmp/drift" 950 "$budget"
 printf 'y = std.os.exit(1)\n' >>"$tmp/drift/gate/fixture.id"
 expect_fail "pinned carrier drifted from its exact count" \
     "$tmp/drift/gate/admission.sh" --census-only
 
-make_tree "$tmp/earnedout" 950 311
+make_tree "$tmp/earnedout" 950 "$budget"
 printf 'needle = "std.script.capture("\n' >"$tmp/earnedout/gate/fixture.id"
 expect_fail "pinned carrier that no longer reaches -> EARNED OUT, must fail" \
     "$tmp/earnedout/gate/admission.sh" --census-only
 
-make_tree "$tmp/zeropin" 950 311
+make_tree "$tmp/zeropin" 950 "$budget"
 printf 'gate/fixture.id\t0\t# a pin of zero\n' >"$tmp/zeropin/gate/std-fixtures.manifest"
 expect_fail "a pin of 0 is a placeholder, not an exemption -> must fail" \
     "$tmp/zeropin/gate/admission.sh" --census-only
 
-make_tree "$tmp/stale" 950 311
+make_tree "$tmp/stale" 950 "$budget"
 printf 'gate/gone.id\t3\t# no such subject\n' >>"$tmp/stale/gate/std-fixtures.manifest"
 expect_fail "exemption for a path that does not exist -> must fail" \
     "$tmp/stale/gate/admission.sh" --census-only
 
-make_tree "$tmp/nomanifest" 950 311
+make_tree "$tmp/nomanifest" 950 "$budget"
 rm -f "$tmp/nomanifest/gate/std-fixtures.manifest"
 expect_fail "missing manifest -> must fail, not exempt nothing and carry on" \
     "$tmp/nomanifest/gate/admission.sh" --census-only
 
-make_tree "$tmp/emptymanifest" 950 311
+make_tree "$tmp/emptymanifest" 950 "$budget"
 printf '# only comments\n' >"$tmp/emptymanifest/gate/std-fixtures.manifest"
 expect_fail "manifest classifying zero files -> must fail (empty escape hatch)" \
     "$tmp/emptymanifest/gate/admission.sh" --census-only
 
-make_tree "$tmp/badmanifest" 950 311
+make_tree "$tmp/badmanifest" 950 "$budget"
 printf 'gate/fixture.id\n' >"$tmp/badmanifest/gate/std-fixtures.manifest"
 expect_fail "malformed manifest entry (no count) -> must fail" \
     "$tmp/badmanifest/gate/admission.sh" --census-only
 
 printf '\n-- census position precision: a reach is charged, a mention is not --\n'
 # One planted line at a time, in an otherwise lawful synthetic tree sized
-# exactly at the budget. If the counter charges the plant the tree is 312 and
-# the gate must go red; if it correctly ignores it the tree is 311 and green.
+# exactly at the budget. If the counter charges the plant the tree is one over
+# and the gate must go red; if it correctly ignores it the tree stays green.
 plant() {
     label=$1; body=$2; verdict=$3
     d="$tmp/plant$plantno"; plantno=$((plantno + 1))
-    make_tree "$d" 950 311
+    make_tree "$d" 950 "$budget"
     printf '%s\n' "$body" >"$d/src/planted.id"
     ( cd "$d" && git add -A >/dev/null 2>&1 && git commit -qm plant >/dev/null 2>&1 )
     "expect_$verdict" "$label" "$d/gate/admission.sh" --census-only
