@@ -133,6 +133,16 @@ fn scalarType(ty: RT) bool {
 }
 
 fn writeFunctionName(w: *std.Io.Writer, name: []const u8) Error!void {
+    // Raw `main` is the compiler-owned graph root, not a source relation.
+    // The C translation unit also needs the platform ABI `main`; giving both
+    // the same symbol produced `int64_t main(void)` plus a recursive
+    // `int main(void) { return (int)main(); }`. Keep the graph root private
+    // under one fixed physical name. Home-mangled semantic functions never
+    // equal raw `main` and remain verbatim below.
+    if (std.mem.eql(u8, name, "main")) {
+        try w.writeAll("idol_entry");
+        return;
+    }
     // The dnir's `Function.name` is already a `homeSymbol`-mangled
     // identifier of the form `idol_<safe(home)>__<name>` produced by
     // `home_resolve.homeSymbol`, which constrains its bytes to
@@ -281,6 +291,27 @@ fn internString(e: *Emitter, bytes: []const u8) Error![]const u8 {
     return owned;
 }
 
+fn internValue(e: *Emitter, value: dnir.Value) Error!void {
+    switch (value) {
+        .str => |bytes| _ = try internString(e, bytes),
+        else => {},
+    }
+}
+
+fn internReachableStrings(e: *Emitter, reachable: []const bool) Error!void {
+    for (e.module.functions, 0..) |function, index| {
+        if (!reachable[index]) continue;
+        for (function.blocks) |block| {
+            for (block.instrs) |instruction| {
+                try internValue(e, instruction.lhs);
+                try internValue(e, instruction.rhs);
+                try internValue(e, instruction.third);
+                for (instruction.vals) |value| try internValue(e, value);
+            }
+        }
+    }
+}
+
 /// Flush the deduplicated string pool as one declaration per unique entry
 /// in the order it was interned. Called once from `emitProgram`, before
 /// the first prototype. The bytes are emitted as comma-separated octal
@@ -332,6 +363,24 @@ fn emitBinop(e: *Emitter, instruction: dnir.Instr) Error!void {
         .geq => try emitComparison(e, ">=", instruction.lhs, instruction.rhs),
         else => return e.refuse("binop-not-in-c99-slice"),
     }
+}
+
+fn emitPrintValue(e: *Emitter, format: []const u8, value: ?dnir.Value) Error!void {
+    const w = e.writer();
+    try w.writeAll("  (void)idol_printf((int64_t)(intptr_t)");
+    try w.writeAll(format);
+    var slot: u32 = 3;
+    if (value) |v| {
+        try w.writeAll(", ");
+        try emitValue(e, v);
+        slot = 4;
+    }
+    // A supplied `value` occupies the shim's first trailing slot (`a3`). The
+    // fixed ABI names every remaining slot through `a16`; zero them explicitly
+    // so this direct `print_value` path cannot masquerade as a libc variadic
+    // call. With no value, every trailing slot is zero.
+    while (slot <= 16) : (slot += 1) try w.writeAll(", INT64_C(0)");
+    try w.writeAll(");\n");
 }
 
 fn emitPrototype(e: *Emitter, function: dnir.Function, is_entry: bool) Error!void {
@@ -684,38 +733,25 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             const nonl = std.mem.eql(u8, instruction.field, "nonl");
             if (ty == .str) {
                 if (nonl) {
-                    try w.writeAll("  (void)idol_printf(\"%s\", (int64_t)(const char *)(intptr_t)");
+                    try emitPrintValue(e, "\"%s\"", instruction.lhs);
                 } else {
-                    try w.writeAll("  (void)idol_printf(\"%s\\n\", (int64_t)(const char *)(intptr_t)");
+                    try emitPrintValue(e, "\"%s\\n\"", instruction.lhs);
                 }
-                try emitValue(e, instruction.lhs);
-                try w.writeAll(");\n");
             } else if (ty == .i64) {
                 if (nonl) {
-                    try w.writeAll("  (void)idol_printf(\"%lld\", (long long)");
+                    try emitPrintValue(e, "\"%lld\"", instruction.lhs);
                 } else {
-                    try w.writeAll("  (void)idol_printf(\"%lld\\n\", (long long)");
+                    try emitPrintValue(e, "\"%lld\\n\"", instruction.lhs);
                 }
-                try emitValue(e, instruction.lhs);
-                try w.writeAll(");\n");
             } else if (ty == .f64) {
-                // f64 travels as i64 bit pattern. The shim only has int64_t
-                // variadic slots, and on x86-64 doubles go in XMM registers
-                // while int64_t go in GPRs. We format the double into a local
-                // C string via snprintf (where the double is correctly placed)
-                // then pass the string pointer as int64_t with %s.
-                try w.writeAll("  { union { uint64_t u; double d; } idol_b; idol_b.u = (uint64_t)");
-                try emitValue(e, instruction.lhs);
-                try w.writeAll("; char idol_buf[64]; snprintf(idol_buf, sizeof(idol_buf), \"%g\", idol_b.d); ");
-                if (nonl) {
-                    try w.writeAll("(void)idol_printf(\"%s\", (int64_t)(const char *)(intptr_t)idol_buf); }");
-                } else {
-                    try w.writeAll("(void)idol_printf(\"%s\\n\", (int64_t)(const char *)(intptr_t)idol_buf); }");
-                }
-                try w.writeAll("\n  }\n");
+                // The shim ABI carries integer/pointer slots. A C variadic
+                // `double` uses a distinct register class, so forwarding its
+                // i64 bit pattern is not an equivalence witness. Refuse before
+                // emitting source rather than leaving unreachable pseudo-C.
+                return e.refuse("print-value-f64-not-in-c99-slice");
             } else {
                 // No value (or unknown shape) -> valueless print, blank line.
-                try w.writeAll("  (void)idol_printf(\"\\n\");\n");
+                try emitPrintValue(e, "\"\\n\"", null);
             }
         },
         else => return e.refuse("operation-not-in-c99-slice"),
@@ -829,6 +865,7 @@ pub fn emitSource(
     } else {
         @memset(reachable, true);
     }
+    try internReachableStrings(&e, reachable);
     const w = e.writer();
     try w.writeAll(
         \\/* Integer / pointer primitives as the C backend sees them. The
@@ -909,45 +946,12 @@ pub fn emitSource(
         \\extern int64_t idol_strlen(int64_t s);
         \\
     );
+    try emitStringTable(&e);
     for (module.functions, 0..) |function, index| {
         if (!reachable[index]) continue;
         e.current_function = function.name;
         const is_entry_fn = (entry != null and std.mem.eql(u8, function.name, entry.?));
         try emitPrototype(&e, function, is_entry_fn);
-    }
-    try w.writeByte('\n');
-    // Emit placeholder forward declarations for the deduplicated string
-    // table. The interned byte runs that actually back these identifiers
-    // are emitted AFTER all bodies below; the bodies reference the
-    // names (which the placeholders declare), and the bodies do not
-    // depend on the backing array's contents at compile time. The
-    // runtime reads the bytes at execution time, by which point the
-    // backing array has been laid down at its final address. The size
-    // `[1]` here is a placeholder the C compiler accepts for an
-    // incomplete-array forward declaration; the storage site
-    // appended later uses the real byte count.
-    //
-    // The count is bounded by the total number of unique `Value.str`
-    // byte runs the module emits. We do not yet know that count when
-    // emitting the placeholders (the bodies that populate the table
-    // have not been walked), so we emit a generous fixed ceiling and
-    // accept the noise. Anything the table never actually uses is a
-    // harmless unreferenced declaration; anything above the ceiling
-    // would surface as an undeclared identifier, and the ceiling
-    // grows with the corpus. 4096 covers every generator-emitted
-    // literal observed across the trunk's pass-15 + dump-c corpus.
-    var placeholder: u32 = 0;
-    while (placeholder <= 4096) : (placeholder += 1) {
-        // Forward declaration, file-scope, no initializer, with the
-        // same storage class as the later real definition (`static`).
-        // A `static` declaration without an initializer is a tentative
-        // definition; with `[1]` it commits to a size and conflicts
-        // with the later `[] = {…}` definition. Without the size —
-        // `[]` — the tentative definition asks the C compiler to
-        // resolve the size when the initializer appears, and the two
-        // merge into one composite definition with the real element
-        // count.
-        try w.print("static const unsigned char _idol_cstr_{d}[];\n", .{placeholder});
     }
     try w.writeByte('\n');
     for (module.functions, 0..) |function, index| {
@@ -956,13 +960,6 @@ pub fn emitSource(
             try emitFunction(&e, function, is_entry_fn);
         }
     }
-    // Flush the deduplicated string pool here, AFTER every function body
-    // has been emitted. The intern table is populated as functions are
-    // walked — `emitValue` calls `internString` on each `Value.str` it
-    // prints — so a flush before the first body would emit nothing.
-    // The placeholders above let the bodies reference `_idol_cstr_N`
-    // names that resolve to the array declarations printed here.
-    try emitStringTable(&e);
 
     if (entry) |name| {
         const function = functionNamed(module, name) orelse return e.refuse("entry-not-in-module");
@@ -999,6 +996,114 @@ test "C backend emits i64 calls arithmetic control and return" {
     try std.testing.expect(std.mem.indexOf(u8, source, "goto L5") != null);
     try std.testing.expect(std.mem.indexOf(u8, source, "idol_bits_i64") != null);
     try std.testing.expect(std.mem.indexOf(u8, source, "int main(void)") != null);
+}
+
+test "C backend keeps graph root distinct from C ABI main" {
+    const instructions = [_]dnir.Instr{
+        .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+    };
+    const functions = [_]dnir.Function{
+        .{ .name = "main", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
+    };
+    var diagnostic: Diagnostic = .{};
+    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "", "main", &diagnostic);
+    defer std.testing.allocator.free(source);
+
+    try std.testing.expect(std.mem.indexOf(u8, source, "extern int64_t idol_entry(void);") != null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "int64_t main(void)") == null);
+    try std.testing.expect(std.mem.indexOf(u8, source, "int main(void) { return (int)idol_entry(); }") != null);
+}
+
+test "C backend string print value matches fixed idol printf ABI" {
+    const instructions = [_]dnir.Instr{
+        .{ .op = .print_value, .ty = .str, .lhs = .{ .str = "byte10" } },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+    };
+    const functions = [_]dnir.Function{
+        .{ .name = "entry", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
+    };
+    var diagnostic: Diagnostic = .{};
+    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "", "entry", &diagnostic);
+    defer std.testing.allocator.free(source);
+
+    const prefix = "idol_printf((int64_t)(intptr_t)\"%s\\n\", (int64_t)(intptr_t)_idol_cstr_1";
+    const start = std.mem.indexOf(u8, source, prefix) orelse return error.TestUnexpectedResult;
+    const end = std.mem.indexOfPos(u8, source, start, ");") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(@as(usize, 14), std.mem.count(u8, source[start..end], ","));
+}
+
+test "C backend declares only reachable interned strings" {
+    const instructions = [_]dnir.Instr{
+        .{ .op = .print_value, .ty = .str, .lhs = .{ .str = "one" } },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+    };
+    const functions = [_]dnir.Function{
+        .{ .name = "entry", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
+    };
+    var diagnostic: Diagnostic = .{};
+    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "", "entry", &diagnostic);
+    defer std.testing.allocator.free(source);
+
+    // One initialized definition, emitted before the body; no tentative pool.
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        std.mem.count(u8, source, "static const unsigned char _idol_cstr_"),
+    );
+}
+
+test "C backend integer print value matches fixed idol printf ABI" {
+    const instructions = [_]dnir.Instr{
+        .{ .op = .print_value, .ty = .i64, .lhs = .{ .i64 = 42 } },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+    };
+    const functions = [_]dnir.Function{
+        .{ .name = "entry", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
+    };
+    var diagnostic: Diagnostic = .{};
+    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "", "entry", &diagnostic);
+    defer std.testing.allocator.free(source);
+
+    const prefix = "idol_printf((int64_t)(intptr_t)\"%lld\\n\", idol_bits_i64(UINT64_C(0x2a))";
+    const start = std.mem.indexOf(u8, source, prefix) orelse return error.TestUnexpectedResult;
+    const end = std.mem.indexOfPos(u8, source, start, ");") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(@as(usize, 14), std.mem.count(u8, source[start..end], ","));
+}
+
+test "C backend valueless print matches fixed idol printf ABI" {
+    const instructions = [_]dnir.Instr{
+        .{ .op = .print_value },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+    };
+    const functions = [_]dnir.Function{
+        .{ .name = "entry", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
+    };
+    var diagnostic: Diagnostic = .{};
+    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "", "entry", &diagnostic);
+    defer std.testing.allocator.free(source);
+
+    const prefix = "idol_printf((int64_t)(intptr_t)\"\\n\", INT64_C(0)";
+    const start = std.mem.indexOf(u8, source, prefix) orelse return error.TestUnexpectedResult;
+    const end = std.mem.indexOfPos(u8, source, start, ");") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(@as(usize, 14), std.mem.count(u8, source[start..end], ","));
+}
+
+test "C backend refuses f64 print without a float ABI witness" {
+    const instructions = [_]dnir.Instr{
+        .{ .op = .print_value, .ty = .f64, .lhs = .{ .f64 = 1.5 } },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+    };
+    const functions = [_]dnir.Function{
+        .{ .name = "entry", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
+    };
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(error.UnsupportedProgram, emitSource(
+        std.testing.allocator,
+        .{ .functions = &functions },
+        "",
+        "entry",
+        &diagnostic,
+    ));
+    try std.testing.expectEqualStrings("print-value-f64-not-in-c99-slice", diagnostic.note().?);
 }
 
 // gap[109] pinned closed. The recorded defect: a file-scope keyed table

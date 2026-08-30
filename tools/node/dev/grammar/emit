@@ -37,6 +37,35 @@ selftest() {
   # C source, the rest of the toolchain is real.
   cp "$repo/tools/node/dev/grammar/idol_c_runtime_shim.c" "$root/tools/node/dev/grammar/idol_c_runtime_shim.c"
 
+  # The portable runtime boundary must answer stdin as one owned,
+  # NUL-terminated byte run. Exercise the real shim independently of the
+  # grammar owner so a null/stub implementation cannot hide behind an owner
+  # that never reads stdin.
+  stdin_program=$control/stdin-program.c
+  printf '%s\n' \
+    '#include <stdint.h>' \
+    '#include <stdio.h>' \
+    '#include <stdlib.h>' \
+    '#include <string.h>' \
+    'extern int64_t idol_io_read_stdin(void);' \
+    'int main(void) {' \
+    '  union { int64_t i; char *p; } value;' \
+    '  value.i = idol_io_read_stdin();' \
+    '  if (!value.p) return 2;' \
+    '  fwrite(value.p, 1, strlen(value.p), stdout);' \
+    '  free(value.p);' \
+    '  return 0;' \
+    '}' >"$stdin_program"
+  if ! cc -O2 "$stdin_program" "$repo/tools/node/dev/grammar/idol_c_runtime_shim.c" -o "$control/stdin-program"; then
+    fail 'stdin runtime control did not compile'
+  fi
+  printf 'line\nnext' >"$control/stdin.want"
+  if ! "$control/stdin-program" <"$control/stdin.want" >"$control/stdin.got"; then
+    fail 'stdin runtime returned no byte sequence'
+  fi
+  cmp -s "$control/stdin.want" "$control/stdin.got" ||
+    fail 'stdin runtime changed the observed byte sequence'
+
   fake_program=$control/fake-program
   # The fake "executable" is a C source file the script copies to the
   # C-backend output path. When `cc` compiles and links it with the
@@ -164,7 +193,7 @@ if ! (cd -- "$stage" && "$idol" compile --no-cache --backend=c --emit=c --target
   sed -n '1,20p' "$work/compile.err" >&2
   exit 1
 fi
-if ! (cd -- "$stage" && cc -O2 -Wno-excess-initializers "$work/project.c" "$repo/tools/node/dev/grammar/idol_c_runtime_shim.c" -o "$artifact") >"$work/link.out" 2>"$work/link.err"; then
+if ! (cd -- "$stage" && cc -O2 "$work/project.c" "$repo/tools/node/dev/grammar/idol_c_runtime_shim.c" -o "$artifact") >"$work/link.out" 2>"$work/link.err"; then
   printf 'grammar projection: FAIL — the C source did not link\n' >&2
   sed -n '1,20p' "$work/link.err" >&2
   exit 1
@@ -239,7 +268,7 @@ if ! (cd -- "$explicit" && "$idol" compile --no-cache --backend=c --emit=c --tar
   sed -n '1,20p' "$work/explicit.compile.err" >&2
   exit 1
 fi
-if ! (cd -- "$explicit" && cc -O2 -Wno-excess-initializers "$work/explicit.c" "$repo/tools/node/dev/grammar/idol_c_runtime_shim.c" -o "$explicit_artifact") >"$work/explicit.link.out" 2>"$work/explicit.link.err"; then
+if ! (cd -- "$explicit" && cc -O2 "$work/explicit.c" "$repo/tools/node/dev/grammar/idol_c_runtime_shim.c" -o "$explicit_artifact") >"$work/explicit.link.out" 2>"$work/explicit.link.err"; then
   printf 'grammar projection: FAIL — exact private project entry did not link\n' >&2
   sed -n '1,20p' "$work/explicit.link.err" >&2
   exit 1

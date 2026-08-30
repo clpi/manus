@@ -1,9 +1,7 @@
 // idol_c_runtime_shim.c — host-agnostic C99 shim for the extern symbols the
-// grammar-projection owner needs. Compiled alongside the C99 source the
-// C backend emits for `lib/compiler/token.id`. The shim is deliberately
-// minimal: only the symbols `_project` (via `spill`) reaches are
-// implemented, plus the libc wrappers that the dnir's `call_extern` sites
-// emit under their `idol_`-prefixed shim names.
+// C backend declares. The grammar-projection owner reaches a subset; the
+// producer selftest also exercises generic boundaries such as whole-stdin
+// observation so a stub cannot ship merely because that owner does not call it.
 //
 // ABI: every parameter arrives as `int64_t` (the dnir's call-site
 // convention). Pointer-typed parameters carry their bit pattern in the
@@ -68,9 +66,39 @@ int64_t idol_io_read_path(int64_t path) {
 }
 
 int64_t idol_io_read_stdin(void) {
-    /* The grammar-projection owner never reaches this. Returning 0 is
-     * fail-closed; the program that does reach it never compiles. */
-    return 0;
+    size_t capacity = 4096;
+    size_t length = 0;
+    char *buffer = (char *)malloc(capacity);
+    if (!buffer) return 0;
+
+    for (;;) {
+        if (length + 1 == capacity) {
+            if (capacity > SIZE_MAX / 2) {
+                free(buffer);
+                return 0;
+            }
+            capacity *= 2;
+            char *grown = (char *)realloc(buffer, capacity);
+            if (!grown) {
+                free(buffer);
+                return 0;
+            }
+            buffer = grown;
+        }
+        size_t read = fread(buffer + length, 1, capacity - length - 1, stdin);
+        length += read;
+        if (read == 0) {
+            if (ferror(stdin)) {
+                free(buffer);
+                return 0;
+            }
+            break;
+        }
+    }
+    buffer[length] = 0;
+    union { char *p; int64_t i; } result;
+    result.p = buffer;
+    return result.i;
 }
 
 int64_t idol_io_read_line(void) { return idol_io_read_stdin(); }
