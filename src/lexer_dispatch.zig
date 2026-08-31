@@ -352,7 +352,7 @@ pub fn route(
     lex: *lexer.Lexer,
     src: []const u8,
     file: []const u8,
-) !void {
+) ![]lexer.Token {
     if (std.mem.indexOfScalar(u8, src, 0) != null or
         std.mem.indexOfScalar(u8, file, 0) != null)
         return DispatchError.EmbeddedNul;
@@ -409,6 +409,7 @@ pub fn route(
     lex.duo_index = start;
     lex.peeked = null;
     lex.harvestCommentHints();
+    return toks;
 }
 
 /// Tokenize `src` with the HOST lexer — the differential's other side.
@@ -985,9 +986,9 @@ test "lexer_dispatch: route consumes lex.family not path" {
     const a = std.testing.allocator;
     const src: []const u8 = "x = 'a'";
     var lex = lexer.Lexer.initFamily(src, "x.lua", lexer_bridge.family_canon);
-    try route(a, &lex, src, "x.lua");
-    defer a.free(lex.duo_tokens.?);
-    try std.testing.expectEqual(lexer.TokenKind.bytes_lit, lex.duo_tokens.?[2].kind);
+    const toks = try route(a, &lex, src, "x.lua");
+    defer a.free(toks);
+    try std.testing.expectEqual(lexer.TokenKind.bytes_lit, toks[2].kind);
 }
 
 // GAP-024, found while probing GAP-023 and NOT its cause: the host lexer

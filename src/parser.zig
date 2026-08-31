@@ -282,11 +282,13 @@ pub const Parser = struct {
             self.pack_index = self.lex.duo_index;
             return;
         }
-        try lexer_dispatch.route(self.alloc, self.lex, self.lex.cursor.bytes, self.lex.cursor.file);
-        // Mirror the producer pack onto the parser so cursor arithmetic can
-        // migrate onto `pack_index` without breaking `lex.duo_tokens` readers.
-        self.pack_tokens = self.lex.duo_tokens;
-        self.pack_index = self.lex.duo_index;
+        // Install the parser mirror directly from the slice `route` returns;
+        // do not rely on the lex alias as a backstop. The two `pack_tokens`
+        // assignments below stay in sync because `installProducerPack` parks
+        // the lex cursor at the pack's last byte.
+        const toks = try lexer_dispatch.route(self.alloc, self.lex, self.lex.cursor.bytes, self.lex.cursor.file);
+        self.pack_tokens = toks;
+        self.pack_index = 0;
         self.pack_owned = true;
     }
 

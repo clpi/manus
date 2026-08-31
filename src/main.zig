@@ -3437,7 +3437,7 @@ fn routeThroughDuoLexer(
     lex: *Lexer,
     src: []const u8,
     src_path: []const u8,
-) !void {
+) ![]@import("lexer.zig").Token {
     return lexer_dispatch.route(alloc, lex, src, src_path);
 }
 
@@ -3604,7 +3604,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
         std.process.exit(1);
     };
     var lex = Lexer.initFacts(src, src_path, facts);
-    routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
+    _ = routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
         diagnoseLexRejection(&lex, src, src_path, e);
         std.process.exit(1);
     };
@@ -5346,7 +5346,7 @@ fn hashSourceQuotient(
     const facts = admittedSourceFacts(path) orelse return false;
     var lx = Lexer.initFacts(src, path, facts);
     var parser = Parser.init(&lx, alloc);
-    routeThroughDuoLexer(alloc, &lx, src, path) catch return false;
+    _ = routeThroughDuoLexer(alloc, &lx, src, path) catch return false;
     parser.ensureProducerPack() catch return false;
     defer parser.releaseOwnedPack();
     const toks = parser.pack_tokens orelse return false;
