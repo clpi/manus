@@ -155,11 +155,12 @@ pub const Lexer = struct {
     }
 
     /// Observe `--- @` facts already in the producer pack. Host-scanner
-    /// harvest is not a production path (`law.bridge.death`).
-    pub fn harvestCommentHints(self: *Lexer) void {
+    /// harvest is not a production path (`law.bridge.death`). Takes the
+    /// pack as a parameter so this scanner-side accessor does not depend on
+    /// the lex alias.
+    pub fn harvestCommentHints(self: *Lexer, toks: []const Token) void {
         self.pending_hint_count = 0;
         self.pending_hints = .{ null, null, null, null, null, null, null, null };
-        const toks = self.duo_tokens orelse return;
         for (toks) |tok| {
             if (tok.kind != .compat_comment) continue;
             if (tok.text.len < 3) continue;
@@ -206,7 +207,7 @@ pub const Lexer = struct {
         self.cursor.line = toks[toks.len - 1].loc.line;
         self.cursor.col = toks[toks.len - 1].loc.col + 1;
         self.peeked = null;
-        self.harvestCommentHints();
+        self.harvestCommentHints(toks);
     }
 
     /// Consume pending compiler hints (from `--- @hint` comments).

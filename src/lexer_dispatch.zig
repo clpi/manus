@@ -408,7 +408,7 @@ pub fn route(
     lex.duo_tokens = toks;
     lex.duo_index = start;
     lex.peeked = null;
-    lex.harvestCommentHints();
+    lex.harvestCommentHints(toks);
     return toks;
 }
 

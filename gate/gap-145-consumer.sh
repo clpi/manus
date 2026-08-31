@@ -353,13 +353,13 @@ forbid "$LEXER" 'pub const TokenStreamError' \
     'lexer retained the orphaned token-stream installer error type'
 has "$DISPATCH" 'lex.duo_tokens = toks;' \
     'production route no longer installs the decoded token slice'
-has "$DISPATCH" 'lex.harvestCommentHints();' \
+has "$DISPATCH" 'lex.harvestCommentHints(toks)' \
     'production route no longer preserves generated comment hints'
 useprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate installer scratch' >&2; exit 2; }
 printf '%s\n' 'pub fn useDuoTokens() void {}' >"$useprobe/old.zig"
 printf '%s\n' 'pub const TokenStreamError = error{};' >>"$useprobe/old.zig"
 printf '%s\n' 'lex.duo_tokens = toks;' >"$useprobe/new.zig"
-printf '%s\n' 'lex.harvestCommentHints();' >>"$useprobe/new.zig"
+printf '%s\n' 'lex.harvestCommentHints(toks);' >>"$useprobe/new.zig"
 use_old=$(grep -cE 'useDuoTokens|TokenStreamError' "$useprobe/old.zig")
 use_new=$(grep -cE 'duo_tokens = toks|harvestCommentHints' "$useprobe/new.zig")
 rm -rf -- "$useprobe"
