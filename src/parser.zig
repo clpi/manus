@@ -305,6 +305,19 @@ pub const Parser = struct {
         self.pack_owned = false;
     }
 
+    /// Index of the token returned by the next `peek()` on the production
+    /// stream. Reads the lexer-owned producer pack today; when the parser
+    /// owns the slice directly, this accessor will move its arithmetic
+    /// onto a parser-owned cursor and become a pure read of `pack_index`.
+    pub fn producerStreamIndex(self: *const Parser) usize {
+        if (self.lex.duo_tokens == null) return 0;
+        if (self.lex.peeked != null) {
+            return if (self.lex.duo_index > 0) self.lex.duo_index - 1 else 0;
+        }
+        const toks = self.lex.duo_tokens.?;
+        return @min(self.lex.duo_index, toks.len);
+    }
+
     /// §3 — **blocks close by dedent**. This is the layout layer.
     ///
     /// Deliberately NOT "make `end` optional with a pile of lookahead cases":
@@ -830,7 +843,7 @@ pub const Parser = struct {
         if (!self.idol_mode) return l;
         try self.ensureProducerPack();
         const toks = self.lex.duo_tokens orelse return l;
-        var i = @min(self.lex.duoStreamIndex(), toks.len);
+        var i = @min(self.producerStreamIndex(), toks.len);
         var best = l;
         while (i > 0) {
             i -= 1;
@@ -1765,7 +1778,7 @@ pub const Parser = struct {
         // case (parser.id returns 2); the silent 0 / 1 cases map directly.
         try self.ensureProducerPack();
         const facts = try self.ensureParserFacts();
-        const start = self.lex.duoStreamIndex();
+        const start = self.producerStreamIndex();
         const count = std.math.cast(i64, (facts.len - 1) / 2) orelse return error.InvalidRecordCount;
         const index = std.math.cast(i64, start) orelse return false;
         const line = std.math.cast(i64, l.line) orelse return error.SourceTooLarge;
@@ -1794,7 +1807,7 @@ pub const Parser = struct {
             term.locErr(nxt.loc, "production token view is absent at return lookahead", .{});
             return ParseError.UnexpectedToken;
         };
-        term.locErr(nxt.loc, "expected a return value or line boundary, got '{s}'", .{view.kind(self.lex.duoStreamIndex()).?.spelling()});
+        term.locErr(nxt.loc, "expected a return value or line boundary, got '{s}'", .{view.kind(self.producerStreamIndex()).?.spelling()});
         return ParseError.UnexpectedToken;
     }
 
@@ -3050,7 +3063,7 @@ pub const Parser = struct {
         if (lparen.kind != .lparen) return false;
         const facts = try self.ensureParserFacts();
         const view = token_view.fromLexer(self.lex) orelse return false;
-        const start = self.lex.duoStreamIndex();
+        const start = self.producerStreamIndex();
         const before: TK = if (start == 0) .eof else view.kind(start - 1) orelse .eof;
         const count = std.math.cast(i64, (facts.len - 1) / 2) orelse return false;
         const index = std.math.cast(i64, start) orelse return false;
@@ -4232,7 +4245,7 @@ pub const Parser = struct {
 
     fn matchClause(self: *Parser) ParseError!i64 {
         const facts = try self.ensureParserFacts();
-        const start = self.lex.duoStreamIndex();
+        const start = self.producerStreamIndex();
         const count = std.math.cast(i64, (facts.len - 1) / 2) orelse return error.InvalidRecordCount;
         const index = std.math.cast(i64, start) orelse return error.InvalidRecordCount;
         const face = idol_parser_match_clause(facts.ptr, count, index);
@@ -8599,9 +8612,9 @@ test "parse: match-arm pattern role consumes immutable token view" {
     try p.ensureProducerPack();
     defer p.releaseOwnedPack();
 
-    const before = p.lex.duoStreamIndex();
+    const before = p.producerStreamIndex();
     try testing.expect(try p.startsMatchArm());
-    try testing.expectEqual(before, p.lex.duoStreamIndex());
+    try testing.expectEqual(before, p.producerStreamIndex());
 }
 
 test "parse: match-arm lookahead installs the production pack without host fallback" {
