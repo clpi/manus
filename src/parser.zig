@@ -5731,10 +5731,13 @@ pub const Parser = struct {
     /// only the cursor would leave every hole diagnostic at line 1. The cursor
     /// is seated too because it is what `Lexer` reports positions from whenever
     /// a pack is not installed.
-    fn seatSubLexer(sub: *Lexer, seat: ast.Loc) void {
-        sub.cursor.line = seat.line;
-        sub.cursor.col = seat.col;
-        const toks = sub.duo_tokens orelse return;
+    /// Seats the sub-parse cursor and the sub-parser's pack locations. Takes
+    /// the sub-parser's pack mirror explicitly so the seat function does not
+    /// read `sub.lex.duo_tokens` (which is still the legacy alias).
+    fn seatSubParser(sub: *Parser, sub_pack: []Token, seat: ast.Loc) void {
+        sub.lex.cursor.line = seat.line;
+        sub.lex.cursor.col = seat.col;
+        const toks = sub_pack;
         for (@constCast(toks)) |*tok| {
             if (tok.loc.line == 1) tok.loc.col = seat.col + tok.loc.col - 1;
             tok.loc.line = seat.line + tok.loc.line - 1;
@@ -5864,7 +5867,7 @@ pub const Parser = struct {
         p.idol_mode = self.idol_mode;
         p.ensureProducerPack() catch return null;
         defer p.releaseOwnedPack();
-        seatSubLexer(&sub, seat);
+        seatSubParser(&p, p.pack_tokens orelse return null, seat);
 
         const expr = p.parse_expr() catch return null;
         // The whole hole, or none of it. A hole that parses a PREFIX and leaves
