@@ -1,0 +1,10 @@
+taint gate: FAIL counterfactual interposition currently requires Darwin
+
+# Linux host (aarch64-Linux):
+#   - DNB004: target object format or host is unsupported by the direct backend:
+#     auto backend has no native machine realization for target 'native' on this host
+#   - The Darwin-side counterfactual interposition is the canonical proof;
+#     this Linux host cannot exercise it.
+#
+# The static-only / Darwin-unclaimed admission in gaps/GAP-134.md and
+# gaps/GAP-145.md is the only truthful state on this host.

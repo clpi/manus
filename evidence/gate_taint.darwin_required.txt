@@ -1,0 +1,15 @@
+2026-08-31T08:09:09+00:00 Z
+
+# gate/taint.sh on Linux host (DNB004):
+#   taint gate: FAIL counterfactual interposition currently requires Darwin
+#
+# The static-only / Darwin-unclaimed admission in gaps/GAP-134.md and
+# gaps/GAP-145.md is the only truthful state on this host:
+#   - Linux: DNB004 refusal captured at evidence/gate_taint.linux.txt
+#   - macOS: counterfactual interposition is the canonical proof; Darwin
+#     execution is required for that proof.
+#
+# No macOS host is in scope of this session; the gate output above is
+# the only verifiable Linux state. The Darwin-side claim is documented
+# in the prose of gaps/GAP-134.md / gaps/GAP-145.md but cannot be
+# captured in this evidence bundle.

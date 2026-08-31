@@ -1,5 +1,3 @@
-  > compile (scripts/ledger/zig.id) …
-error: direct backend: DNB001: program construct is outside the direct backend subset
-hint: DNB001: program is outside the current direct backend subset (machine code is canonical; use --backend=c only for bootstrap C emit)
-hint: refused with: UnsupportedProgram
-hint: bail site: native-scalar precheck — ret-type:any
+1893/1894 dynamic_boundary.test.dynamic_boundary: native Point facts are not boxed...OK
+1894/1894 dynamic_boundary.test.dynamic_boundary: dynamic module explains boxing...OK
+1832 passed; 62 skipped; 0 failed.
