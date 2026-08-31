@@ -672,7 +672,7 @@ test "lexer_dispatch: production route rejects embedded NUL" {
         DispatchError.EmbeddedNul,
         route(a, &lex, source, "nul.id"),
     );
-    try std.testing.expect(!lex.isDuoBacked());
+    try std.testing.expect(lex.duo_tokens == null);
     try std.testing.expectEqual(@as(?lexer.Loc, null), lex.last_error_loc);
 
     var file_lex = lexer.Lexer.init("", "bad\x00file.id");
@@ -680,7 +680,7 @@ test "lexer_dispatch: production route rejects embedded NUL" {
         DispatchError.EmbeddedNul,
         route(a, &file_lex, "", "bad\x00file.id"),
     );
-    try std.testing.expect(!file_lex.isDuoBacked());
+    try std.testing.expect(file_lex.duo_tokens == null);
 }
 
 test "lexer_dispatch: backtick identity then canon parser stream refuses" {
@@ -771,7 +771,7 @@ test "lexer_dispatch: production route fails closed on storage failure" {
         );
         try std.testing.expect(failing.has_induced_failure);
         try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
-        try std.testing.expect(!lex.isDuoBacked());
+        try std.testing.expect(lex.duo_tokens == null);
     }
 }
 

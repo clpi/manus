@@ -8683,9 +8683,9 @@ test "parse: match-arm lookahead installs the production pack without host fallb
     p.idol_mode = true;
     defer p.releaseOwnedPack();
 
-    try testing.expect(!p.lex.isDuoBacked());
+    try testing.expect(p.lex.duo_tokens == null);
     try testing.expect(try p.startsMatchArm());
-    try testing.expect(p.lex.isDuoBacked());
+    try testing.expect(p.lex.duo_tokens != null);
 }
 
 test "parse: bare return in a match arm does not consume the next arm pattern" {

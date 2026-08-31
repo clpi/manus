@@ -172,12 +172,6 @@ pub const Lexer = struct {
         }
     }
 
-    /// Whether this lexer is tokenizing through the Idol producer.
-    /// Name is bridge-death (`duo_*`); delete with the remaining token fields.
-    pub fn isDuoBacked(self: *const Lexer) bool {
-        return self.duo_tokens != null;
-    }
-
     /// One token from the Duo stream. Past the end it repeats EOF, matching the
     /// host scanner, which keeps returning `.eof` rather than erroring.
     fn duo_next(self: *Lexer) Token {
