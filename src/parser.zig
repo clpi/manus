@@ -293,7 +293,7 @@ pub const Parser = struct {
     fn ensureParserFacts(self: *Parser) ParseError![]const i64 {
         if (self.parser_facts) |facts| return facts;
         try self.ensureProducerPack();
-        const tokens = self.pack_tokens orelse self.lex.duo_tokens orelse return error.InvalidRecordCount;
+        const tokens = self.pack_tokens orelse return error.InvalidRecordCount;
         const fields = std.math.mul(usize, tokens.len, 2) catch return error.SourceTooLarge;
         const size = std.math.add(usize, fields, 1) catch return error.SourceTooLarge;
         const facts = try self.alloc.alloc(i64, size);
@@ -616,9 +616,7 @@ pub const Parser = struct {
         // parser has installed its mirror. `lex.peek` does NOT advance
         // `duo_index` (it only fills `peeked`); the mirror is consulted by
         // `producerStreamIndex` which already accounts for the peeked token.
-        if (self.pack_tokens != null and self.lex.duo_tokens != null) {
-            self.pack_index = self.lex.duo_index;
-        }
+        if (self.pack_tokens) |_| self.pack_index = self.lex.duo_index;
         return tok;
     }
 
@@ -631,9 +629,7 @@ pub const Parser = struct {
         // production lane (mirror populated). Tests bypass `ensureProducerPack`
         // and install the lex cursor directly, so the mirror stays null and
         // this no-op is the right behavior for them.
-        if (self.pack_tokens != null and self.lex.duo_tokens != null) {
-            self.pack_index = self.lex.duo_index;
-        }
+        if (self.pack_tokens) |_| self.pack_index = self.lex.duo_index;
         return tok;
     }
 
@@ -889,7 +885,7 @@ pub const Parser = struct {
     fn line_opener(self: *Parser, l: ast.Loc) ParseError!ast.Loc {
         if (!self.idol_mode) return l;
         try self.ensureProducerPack();
-        const toks = self.pack_tokens orelse self.lex.duo_tokens orelse return l;
+        const toks = self.pack_tokens orelse return l;
         var i = @min(self.producerStreamIndex(), toks.len);
         var best = l;
         while (i > 0) {
@@ -1850,8 +1846,7 @@ pub const Parser = struct {
     /// message names the offending spelling.
     fn returnStartsValueDiag(self: *Parser, l: ast.Loc, nxt: Token) ParseError!bool {
         _ = l;
-        // Prefer the parser-owned pack mirror; fall back to the lexer alias.
-        const toks = self.pack_tokens orelse self.lex.duo_tokens orelse {
+        const toks = self.pack_tokens orelse {
             term.locErr(nxt.loc, "production token view is absent at return lookahead", .{});
             return ParseError.UnexpectedToken;
         };
@@ -5737,7 +5732,7 @@ pub const Parser = struct {
     /// Seats the sub-parse cursor and the sub-parser's pack locations. Takes
     /// the sub-parser's pack mirror explicitly so the seat function does not
     /// read `sub.lex.duo_tokens` (which is still the legacy alias).
-    fn seatSubParser(sub: *Parser, sub_pack: []Token, seat: ast.Loc) void {
+    fn seatSubParser(sub: *Parser, sub_pack: []const Token, seat: ast.Loc) void {
         sub.lex.cursor.line = seat.line;
         sub.lex.cursor.col = seat.col;
         const toks = sub_pack;
