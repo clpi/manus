@@ -5820,7 +5820,8 @@ pub const Parser = struct {
             p.ensureProducerPack() catch continue;
             defer p.releaseOwnedPack();
 
-            const view = token_view.fromLexer(&sub) orelse continue;
+            const view_toks = p.pack_tokens orelse continue;
+            const view = token_view.fromTokens(view_toks);
             const first = view.at(0) orelse continue;
             if (first.kind != open_kind) continue;
 

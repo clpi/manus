@@ -138,8 +138,12 @@ forbid "$PARSER" 'interpolationHoleEnd' \
     'parser.zig reacquired interpolationHoleEnd — hole extent belongs to the producer pack, not a raw-byte scan'
 has "$PARSER" 'fn matchingTokenClose(' \
     'parser.zig lost matchingTokenClose — the token-view delimiter-extent relation the O6 deletion replaced the raw scans with'
-has "$PARSER" 'token_view.fromLexer(' \
-    'parser.zig stopped observing delimiter extent through the immutable token view'
+forbid "$PARSER" 'token_view.fromLexer(' \
+    'parser.zig reacquired a lex-alias bridge; producer-pack slices must flow through Parser.pack_tokens'
+forbid "$PARSER" 'token_view.fromTokens(self.lex.duo_tokens' \
+    'parser.zig reads production pack from the lex alias instead of the parser-owned mirror'
+has "$PARSER" 'token_view.fromTokens' \
+    'parser.zig stopped observing delimiter extent through the parser-owned pack'
 
 # POSITIVE CONTROL ON THE REFUSALS (law.gate.protocol). A `forbid` that cannot
 # fail is the `tools/parity/grammar` defect: green for months while matching
