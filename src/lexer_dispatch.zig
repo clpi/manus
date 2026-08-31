@@ -401,6 +401,10 @@ pub fn route(
         lex.shebang = toks[0].text;
         start = 1;
     }
+    // The accessor centralizes the install: cursor parking, peek reset, and
+    // hint harvest. The live `duo_tokens` / `duo_index` fields stay until the
+    // full parser-side cursor migration lands (`docs/bootstrap.md`).
+    lex.installProducerPack(toks);
     lex.duo_tokens = toks;
     lex.duo_index = start;
     lex.peeked = null;

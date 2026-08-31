@@ -209,6 +209,22 @@ pub const Lexer = struct {
         return self.cursor.loc();
     }
 
+    /// Install the validated producer pack so the host parser can advance by
+    /// token ordinal. The slice is owned by the caller (production: the
+    /// parser-installed pack; tests: a stack array). The lex cursor parks
+    /// at the pack's last byte so any subsequent host fallback walks nothing;
+    /// shebang seating, peek reset, and hint harvest are kept here.
+    pub fn installProducerPack(self: *Lexer, toks: []const Token) void {
+        if (toks.len >= 2 and toks[0].kind == .shebang) {
+            self.shebang = toks[0].text;
+        }
+        self.cursor.index = self.cursor.bytes.len;
+        self.cursor.line = toks[toks.len - 1].loc.line;
+        self.cursor.col = toks[toks.len - 1].loc.col + 1;
+        self.peeked = null;
+        self.harvestCommentHints();
+    }
+
     /// Consume pending compiler hints (from `--- @hint` comments).
     /// Returns the count of consumed hints and fills the output slice.
     pub fn consumeHints(self: *Lexer, out: []?[]const u8) u8 {
