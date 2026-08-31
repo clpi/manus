@@ -437,6 +437,42 @@ prefix(): str
     kind += 1
   out
 
+# Literal-kind identities (`int_lit`, `float_lit`, text/bytes/compat). One
+# character per producer slot, "1" where the kind carries a literal payload
+# usable as a call operand or value position. Mirrors `roleliteral` so the
+# parser-side fact and the generated role row's `.literal_kind` field share
+# one definition; damaging the predicate regenerates both projections and
+# the parser.id consumer crosses the same owner.
+# Same zero-arg row shape as `prefix()` / `demand()` / `lead()` — a dense
+# 0/1 char slice over every role slot.
+literal(): str
+  out = ""
+  kind = 0
+  while kind < roleslotcount
+    bit = "0"
+    if kind == kindintlit or kind == kindfloatlit or (kind >= kindtextlit and kind <= kindcompatlongtextlit)
+      bit = "1"
+    out = "{out}{bit}"
+    kind += 1
+  out
+
+# Quoted-payload identities (text / bytes / compat). One character per
+# producer slot, "1" where the kind is a quoted payload (the same set the
+# generated role row marks `.quoted = true`). Mirrors `rolequoted` so the
+# parser-side fact and the role-row emit agree; damaging the predicate
+# regenerates both projections. Slot 3 stays unpublished and never reads as
+# quoted. Same zero-arg row shape as `literal()` / `prefix()` / `demand()`.
+quoted(): str
+  out = ""
+  kind = 0
+  while kind < roleslotcount
+    bit = "0"
+    if (kind >= kindtextlit and kind <= kindcompatlongtextlit)
+      bit = "1"
+    out = "{out}{bit}"
+    kind += 1
+  out
+
 # Pratt binding power
 roleprecedence: i64 = (kind: i64)
   if kind == kindcaret
@@ -827,6 +863,8 @@ idbody: str = ()
   s = "{s}\ndemand(): str\n  \"{demand()}\"\n"
   s = "{s}\nlead(): str\n  \"{lead()}\"\n"
   s = "{s}\nprefix(): str\n  \"{prefix()}\"\n"
+  s = "{s}\nliteral(): str\n  \"{literal()}\"\n"
+  s = "{s}\nquoted(): str\n  \"{quoted()}\"\n"
   s = "{s}\n_slotword: str = (row: str, kind: i64)\n"
   s = "{s}  n = row:len()\n  i = 1\n  seen = 0\n  start = 1\n  out = \".\"\n"
   s = "{s}  while i <= n\n    if row:byte(i) == 32\n      if seen == kind\n        out = row:sub(start, i - 1)\n"

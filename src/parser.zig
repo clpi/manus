@@ -69,6 +69,35 @@ extern fn idol_parser_is_primitive_descriptor_kind(
     kind: i64,
 ) bool;
 
+/// Literal-kind identity — `int_lit`, `float_lit`, text/bytes/compat.
+///
+/// Returns true when the owner grammar row's `.literal_kind` flag is set on
+/// `kind`. The parser used to ask `grammar_roles.isLiteralKind(tok.kind)` on
+/// every Pratt / record / table / descriptor / pretty probe (8 sites across
+/// `parse_stmt`, `parse_match_arm`, `parse_descriptor_slot`, and others),
+/// which is one row-cache lookup per probe. The relation reads the
+/// producer's `literal(): str` row directly through
+/// `parser.id is_literal_kind` and exposes the same predicate through this
+/// single ABI call so the parser owns no kind-attribute cache of its own.
+extern fn idol_parser_is_literal_kind(
+    kind: i64,
+) bool;
+
+/// Quoted-payload identity — text / bytes / compat.
+///
+/// Returns true when the owner grammar row's `.quoted` flag is set on
+/// `kind`. The parser used to ask `grammar_roles.isQuotedKind(tok.kind)` on
+/// every record-key / table-key / descriptor-body / pretty probe (8 sites
+/// across `parse_match_arm`, `parse_stmt`, `parse_descriptor_slot`,
+/// `parse_table_literal`, and others), which is one row-cache lookup per
+/// probe. The relation reads the producer's `quoted(): str` row directly
+/// through `parser.id is_quoted_kind` and exposes the same predicate
+/// through this single ABI call so the parser owns no kind-attribute cache
+/// of its own. Slot 3 stays unpublished and reads as 0.
+extern fn idol_parser_is_quoted_kind(
+    kind: i64,
+) bool;
+
 /// Packed `infix_prec` triple for one token identity.
 ///
 /// Returns 0 when the identity is not an infix operator with a real relation,
@@ -2513,7 +2542,7 @@ pub const Parser = struct {
             if (end > src.len) return null;
             return .{ .start = start, .end = end };
         }
-        if (grammar_roles.isQuotedKind(tok.kind)) {
+        if (idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind)))) {
             if (off == 0) return null;
             const end = off + tok.text.len + 1;
             if (end > src.len) return null;
@@ -4519,7 +4548,7 @@ pub const Parser = struct {
                 return ParseError.UnexpectedToken;
             },
             else => {
-                if (grammar_roles.isLiteralKind(tok.kind)) {
+                if (idol_parser_is_literal_kind(@intCast(@backingInt(tok.kind)))) {
                     const e = try self.parse_simple_expr();
                     return ast.Pattern{ .literal = e };
                 }
@@ -4909,7 +4938,7 @@ pub const Parser = struct {
                     if ((try self.pk()).kind == .assign) is_table_literal = true;
                     self.restoreState(name_saved);
                 },
-                else => if (grammar_roles.isQuotedKind(inner.kind)) {
+                else => if (idol_parser_is_quoted_kind(@intCast(@backingInt(inner.kind)))) {
                     is_table_literal = true;
                 },
             }
@@ -5274,7 +5303,7 @@ pub const Parser = struct {
         // `end` standing between the two lines.
         if (first.* == .name) {
             const is_bash_arg = nxt.loc.line == first.loc().line and
-                (nxt.kind == .name or grammar_roles.isLiteralKind(nxt.kind));
+                (nxt.kind == .name or idol_parser_is_literal_kind(@intCast(@backingInt(nxt.kind))));
             if (is_bash_arg) {
                 const name_info = first.name;
                 var args: std.ArrayList(*ast.Expr) = .empty;
@@ -5282,7 +5311,7 @@ pub const Parser = struct {
                 while (true) {
                     const peek = try self.pk();
                     const is_next = peek.loc.line == first.loc().line and
-                        (peek.kind == .name or grammar_roles.isLiteralKind(peek.kind));
+                        (peek.kind == .name or idol_parser_is_literal_kind(@intCast(@backingInt(peek.kind))));
                     if (!is_next) break;
                     if (peek.kind == .semi or peek.kind == .eof or
                         peek.kind == .kw_end or peek.kind == .kw_else or
@@ -7902,7 +7931,7 @@ pub const Parser = struct {
                     e = try self.new_expr(.{ .unwrap_expr = .{ .loc = tok.loc, .operand = e } });
                 },
                 else => {
-                    if (!grammar_roles.isQuotedKind(tok.kind)) break;
+                    if (!idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind)))) break;
                     if (tok.loc.line > e.loc().line) break;
                     const saved = self.saveState();
                     _ = try self.adv();
@@ -8038,7 +8067,7 @@ pub const Parser = struct {
                 .home = self.descriptor_home,
             })),
             else => {
-                if (grammar_roles.isQuotedKind(tok.kind)) {
+                if (idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind)))) {
                     try args.append(self.alloc, try self.parse_simple_expr());
                 } else {
                     term.locErr(tok.loc, "expected function arguments", .{});
@@ -8084,14 +8113,16 @@ pub const Parser = struct {
                 _ = try self.expect(.assign);
                 const val = try self.parse_expr();
                 try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
-            } else if (grammar_roles.isQuotedKind(tok.kind) or tok.kind == .int_lit) {
+            } else if (idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind))) or
+                idol_parser_is_literal_kind(@intCast(@backingInt(tok.kind)))) {
                 // Sugar: "key" = val  or  1 = val  (unboxed literal key, desugars to indexed)
+                // quoted covers text/bytes/compat; literal_kind covers int_lit (and re-quote too).
                 // Check if next token is `=` via saveState lookahead
                 const saved_lit = self.saveState();
                 _ = try self.adv(); // consume the literal
                 if (try self.check(.assign)) {
                     _ = try self.adv(); // consume `=`
-                    const key = try self.new_expr(if (grammar_roles.isQuotedKind(tok.kind))
+                    const key = try self.new_expr(if (idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind))))
                         ast.Expr{ .quoted = .{ .loc = tok.loc, .val = tok.text, .quote = quoteOf(tok.kind) } }
                     else
                         ast.Expr{ .int_lit = .{ .loc = tok.loc, .val = tok.int_val } });
@@ -8174,7 +8205,7 @@ pub const Parser = struct {
                 if (next.kind != .name and next.kind != .lbracket and next.kind != .concat and
                     next.kind != .int_lit and next.kind != .rbrace and next.kind != .kw_else and
                     !idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(next.kind))) and
-                    !grammar_roles.isQuotedKind(next.kind)) break;
+                    !idol_parser_is_quoted_kind(@intCast(@backingInt(next.kind)))) break;
             }
         }
         _ = try self.expect(.rbrace);
@@ -11682,6 +11713,42 @@ test "parse: production is_primitive_descriptor_kind decision executes the Idol 
         const physical: i64 = @intCast(@backingInt(kind));
         const got = idol_parser_is_primitive_descriptor_kind(physical);
         try testing.expectEqual(row.descriptor, got);
+    }
+}
+
+test "parse: production is_literal_kind decision executes the Idol relation" {
+    // For every role slot, the `idol_parser_is_literal_kind` ABI call must
+    // agree with the `literal_kind` row field the host
+    // `grammar_roles.isLiteralKind(kind)` read answered. The relation reads
+    // the producer's `literal(): str` row directly, so the parser-side
+    // predicate and the row emitter cannot drift apart: damaging the owner
+    // regenerates both. This test exercises the literal-kind-only ABI that
+    // the host `grammar_roles.isLiteralKind` call sites collapsed onto
+    // across `parse_stmt`, `parse_match_arm`, `parse_descriptor_slot`, and
+    // the deduped `int_lit` case in `parse_table_literal`.
+    for (grammar_roles.rows) |row| {
+        const kind = row.kind orelse continue;
+        const physical: i64 = @intCast(@backingInt(kind));
+        const got = idol_parser_is_literal_kind(physical);
+        try testing.expectEqual(row.literal_kind, got);
+    }
+}
+
+test "parse: production is_quoted_kind decision executes the Idol relation" {
+    // For every role slot, the `idol_parser_is_quoted_kind` ABI call must
+    // agree with the `quoted` row field the host
+    // `grammar_roles.isQuotedKind(kind)` read answered. The relation reads
+    // the producer's `quoted(): str` row directly, so the parser-side
+    // predicate and the row emitter cannot drift apart: damaging the owner
+    // regenerates both. This test exercises the quoted-payload-only ABI
+    // that the host `grammar_roles.isQuotedKind` call sites collapsed onto
+    // across `parse_stmt`, `parse_match_arm`, `parse_descriptor_slot`,
+    // `parse_table_literal`, and the call-argument table-sugar arm.
+    for (grammar_roles.rows) |row| {
+        const kind = row.kind orelse continue;
+        const physical: i64 = @intCast(@backingInt(kind));
+        const got = idol_parser_is_quoted_kind(physical);
+        try testing.expectEqual(row.quoted, got);
     }
 }
 

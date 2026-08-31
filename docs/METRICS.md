@@ -49,7 +49,7 @@ semantics → resolution → demand → realization → machine → object → r
 ```
 
 **Current honest state: S0. No compiler B exists. No compiler C exists.**
-Executed parser ownership is eight bounded production decisions; the host still
+Executed parser ownership is ten bounded production decisions; the host still
 owns the parser stage and AST construction.
 
 What has crossed the frontier is real and larger than one boundary: source
@@ -66,7 +66,7 @@ per-boundary contract and is the authority when this table and that one differ.
 | B-L0 lexical identity + GAP-145 consumer zero | open (owner executes; consumers remain) |
 | B-G0a grammar Idol **owner** exists | **met** — `lib/compiler/token.id` |
 | B-G0b grammar **consumer** closure | open (GAP-134; token_view prerequisite linkable, parser still host-owned) |
-| B-P0 one parser production decision | **met** — eight bounded relations execute from `lib/compiler/parser.id`; complete parser stage remains open |
+| B-P0 one parser production decision | **met** — ten bounded relations execute from `lib/compiler/parser.id`; complete parser stage remains open |
 | B0 compiler B executable | open — B does not exist |
 | C0 B compiles C | open — C does not exist |
 
@@ -188,7 +188,7 @@ date. Where a judgment and a gate disagree, the gate is right.
 | Naming/vocabulary architecture | green |
 | Grammar **owner** existence | **met** (fact, not judgment — the executable witness is host-sensitive: `zig build grammar-projection` runs on a direct-native-supported host; on this x86_64-linux host it refuses DNB004 before the owner runs) |
 | Grammar **consumer** closure | yellow — bounded consumers only; editor grammar authored; `docs/spec/grammar.md` does not generate the parser |
-| Parser ownership | red-yellow — eight bounded Idol relations execute; host owns the parser stage and AST construction |
+| Parser ownership | red-yellow — ten bounded Idol relations execute; host owns the parser stage and AST construction |
 | Source/corpus canonical migration | yellow |
 | Graph/application semantic authority | yellow-green |
 | End-to-end semantic identity preservation | yellow |

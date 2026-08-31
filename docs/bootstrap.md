@@ -33,8 +33,8 @@ A production host-built `idol` executable exists. No compiler B built from
 canonical Idol compiler source exists. Host `idol check` / `idol run` are
 not self-host proof.
 
-The production front end nevertheless has nine bounded executed Idol-owned
-boundaries: the lexer producer and eight parser decisions. The executed
+The production front end nevertheless has eleven bounded executed Idol-owned
+boundaries: the lexer producer and ten parser decisions. The executed
 production file `lib/compiler/lexer.id` owns token-kind production, token content,
 and exact source spans. Its `.id` suffix is not evidence of canonical source or
 compiler B. The host bounds-checks those spans and projects them into its

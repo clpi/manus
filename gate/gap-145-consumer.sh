@@ -480,6 +480,82 @@ if [ "$descriptor_old" -ne 1 ] || [ "$descriptor_new" -ne 1 ]; then
     bad "the is_primitive_descriptor_kind transfer detector is broken: old=$descriptor_old new=$descriptor_new"
 fi
 
+# ── 2f''''. literal-kind identity executes from the grammar owner ───────────
+#
+# Pratt / record / match-arm / descriptor / pretty probes across `parse_stmt`,
+# `parse_match_arm`, `parse_descriptor_slot`, and others asked
+# `grammar_roles.isLiteralKind(kind)` on every probe — one row-cache lookup
+# per probe, with no way for the parser to agree with the generated role row
+# except by re-reading the same cached `literal_kind` field. parser.id
+# `is_literal_kind` now reads the producer's `literal(): str` row directly
+# and exposes the same predicate through the C ABI as
+# `idol_parser_is_literal_kind`; the host row read is gone. Same row shape
+# and `kind[8]` access pattern as `lead` / `prefix` / `demands_operand`.
+forbid "$PARSER" 'grammar_roles\.isLiteralKind(' \
+    'parser.zig retained the host literal-kind role decision'
+has "$PARSER" 'idol_parser_is_literal_kind(' \
+    'parser.zig no longer delegates its literal-kind decision to parser.id'
+has "$ROOT/lib/compiler/parser.id" 'is_literal_kind: bool = (kind: i64)' \
+    'parser.id lost the production is_literal_kind relation'
+has "$ROOT/src/parser/projection.c" 'bool is_literal_kind(int64_t kind)' \
+    'the tracked parser projection lost the is_literal_kind ABI'
+has "$ROOT/build.zig" '-Dis_literal_kind=idol_parser_is_literal_kind' \
+    'build.zig no longer renames the is_literal_kind ABI symbol'
+has "$ROOT/lib/compiler/token.id" 'literal(): str' \
+    'token.id lost the zero-arg literal() producer row'
+has "$ROOT/lib/token/grammarrole.id" 'literal(): str' \
+    'the tracked grammarrole.id lost the generated literal() bit slice'
+
+literalprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate is_literal_kind scratch' >&2; exit 2; }
+printf '%s\n' 'if (grammar_roles.isLiteralKind(tok.kind)) { try self.adv(); }' >"$literalprobe/old.zig"
+printf '%s\n' 'if (idol_parser_is_literal_kind(@intCast(@backingInt(tok.kind)))) { try self.adv(); }' >"$literalprobe/new.zig"
+literal_old=$(grep -cE 'grammar_roles\.isLiteralKind' "$literalprobe/old.zig")
+literal_new=$(grep -cF 'idol_parser_is_literal_kind' "$literalprobe/new.zig")
+rm -rf -- "$literalprobe"
+examined=$((examined + 1))
+if [ "$literal_old" -ne 1 ] || [ "$literal_new" -ne 1 ]; then
+    bad "the is_literal_kind transfer detector is broken: old=$literal_old new=$literal_new"
+fi
+
+# ── 2f''''''. quoted-payload identity executes from the grammar owner ───────
+#
+# Record-key / table-key / descriptor-body / pretty probes across
+# `parse_match_arm`, `parse_stmt`, `parse_descriptor_slot`,
+# `parse_table_literal`, and others asked
+# `grammar_roles.isQuotedKind(kind)` on every probe — one row-cache lookup
+# per probe, with no way for the parser to agree with the generated role
+# row except by re-reading the same cached `quoted` field. parser.id
+# `is_quoted_kind` now reads the producer's `quoted(): str` row directly
+# and exposes the same predicate through the C ABI as
+# `idol_parser_is_quoted_kind`; the host row read is gone. Slot 3 stays
+# unpublished and reads as 0. Same row shape and `kind[8]` access pattern
+# as `lead` / `prefix` / `demands_operand` / `is_literal_kind`.
+forbid "$PARSER" 'grammar_roles\.isQuotedKind(' \
+    'parser.zig retained the host quoted-kind role decision'
+has "$PARSER" 'idol_parser_is_quoted_kind(' \
+    'parser.zig no longer delegates its quoted-kind decision to parser.id'
+has "$ROOT/lib/compiler/parser.id" 'is_quoted_kind: bool = (kind: i64)' \
+    'parser.id lost the production is_quoted_kind relation'
+has "$ROOT/src/parser/projection.c" 'bool is_quoted_kind(int64_t kind)' \
+    'the tracked parser projection lost the is_quoted_kind ABI'
+has "$ROOT/build.zig" '-Dis_quoted_kind=idol_parser_is_quoted_kind' \
+    'build.zig no longer renames the is_quoted_kind ABI symbol'
+has "$ROOT/lib/compiler/token.id" 'quoted(): str' \
+    'token.id lost the zero-arg quoted() producer row'
+has "$ROOT/lib/token/grammarrole.id" 'quoted(): str' \
+    'the tracked grammarrole.id lost the generated quoted() bit slice'
+
+quotedprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate is_quoted_kind scratch' >&2; exit 2; }
+printf '%s\n' 'if (grammar_roles.isQuotedKind(tok.kind)) { try self.adv(); }' >"$quotedprobe/old.zig"
+printf '%s\n' 'if (idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind)))) { try self.adv(); }' >"$quotedprobe/new.zig"
+quoted_old=$(grep -cE 'grammar_roles\.isQuotedKind' "$quotedprobe/old.zig")
+quoted_new=$(grep -cF 'idol_parser_is_quoted_kind' "$quotedprobe/new.zig")
+rm -rf -- "$quotedprobe"
+examined=$((examined + 1))
+if [ "$quoted_old" -ne 1 ] || [ "$quoted_new" -ne 1 ]; then
+    bad "the is_quoted_kind transfer detector is broken: old=$quoted_old new=$quoted_new"
+fi
+
 # ── 2g. raw producer kind validates through the owner-generated enum ─────────
 #
 # `kindFromRecord` selected `grammar_role_table.rows[ordinal].kind`, retaining a

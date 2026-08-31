@@ -680,6 +680,40 @@ infix_prec: i64 = (kind: i64)
         right = left - 1
     op | (left << 8) | (right << 16)
 
+# A token whose owner `literal` fact is set is a literal-kind identity
+# (`int_lit`, `float_lit`, text/bytes/compat) usable as a call operand or
+# value position. The host Pratt / record / table / descriptor recognizer
+# asked `grammar_roles.isLiteralKind(kind)` on every probe — one row-cache
+# lookup per probe, with no way for the parser to agree with the generated
+# role row except by re-reading the same cached `literal_kind` field.
+# The relation reads the same owner `literal(): str` the row emitter uses,
+# so the parser-side fact and the generated role row can no longer
+# disagree: damaging the owner regenerates both. Same row shape and
+# `kind[8]` access pattern as `lead` / `prefix` / `demands_operand`.
+is_literal_kind: bool = (kind: i64)
+    if kind < 0
+        return false
+    bits: str = token.grammarrole.literal()
+    if kind >= bits:len()
+        return false
+    bits:byte(kind + 1) == 49
+
+# A token whose owner `quoted` fact is set carries a quoted payload
+# (text / bytes / compat). The host record / table-key / descriptor / pretty
+# recognizer asked `grammar_roles.isQuotedKind(kind)` on every probe — one
+# row-cache lookup per probe. The relation reads the same owner `quoted():
+# str` the row emitter uses to fill `.quoted`, so the parser-side fact and
+# the generated role table cannot drift apart. Slot 3 stays unpublished and
+# reads as 0. Same row shape and `kind[8]` access pattern as
+# `is_literal_kind` and the other zero-arg row readers.
+is_quoted_kind: bool = (kind: i64)
+    if kind < 0
+        return false
+    bits: str = token.grammarrole.quoted()
+    if kind >= bits:len()
+        return false
+    bits:byte(kind + 1) == 49
+
 # Relation-ontology ordinal by name. Walks the order token.id publishes in
 # `_relationorder` so the ordinal is exactly the Relation enum position and
 # nothing here is keyed off a host-side reconstruction. Returns -1 when the
