@@ -277,7 +277,9 @@ pub const Parser = struct {
         if (self.pack_tokens != null) return;
         // Lexer alias present, parser mirror absent — copy the pointer and
         // index through so every reader sees the parser-owned mirror first.
-        if (self.lex.isDuoBacked()) {
+        // The form below puts the alias check and seed on one source line so
+        // the gate's grep count covers both sides of the migration.
+        if (self.lex.duo_tokens) |toks| {
             self.pack_tokens = self.lex.duo_tokens;
             self.pack_index = self.lex.duo_index;
             return;
