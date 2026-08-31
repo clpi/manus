@@ -83,8 +83,8 @@ pub const Lexer = struct {
     /// struct is a cursor over that stream rather than a scanner. The host
     /// scanner below stays intact and stays the differential oracle.
     ///
-    /// The caller owns the slice and its text arena; `useDuoTokens` does not
-    /// copy. Set by the compile driver in main.zig, which has an allocator —
+    /// The caller owns the slice and its text arena; production route installs
+    /// it without copying. The compile driver owns the allocator —
     /// `init` deliberately keeps its allocator-free signature so the ~30
     /// existing call sites and every test are unaffected.
     duo_tokens: ?[]const Token = null,
@@ -154,31 +154,9 @@ pub const Lexer = struct {
         };
     }
 
-    pub const TokenStreamError = error{
-        EmptyTokenStream,
-        MissingEndToken,
-    };
-
-    /// Drive this lexer from an Idol-produced, EOF-terminated token stream.
-    /// `useDuoTokens` / `duo_tokens` are bridge-death names (`law.schema.one`).
-    /// Deletion: parser consumes the producer token view directly.
-    pub fn useDuoTokens(self: *Lexer, toks: []const Token) TokenStreamError!void {
-        if (toks.len == 0) return TokenStreamError.EmptyTokenStream;
-        if (toks[toks.len - 1].kind != .eof) return TokenStreamError.MissingEndToken;
-        var start: usize = 0;
-        if (toks.len >= 2 and toks[0].kind == .shebang) {
-            self.shebang = toks[0].text;
-            start = 1;
-        }
-        self.duo_tokens = toks;
-        self.duo_index = start;
-        self.peeked = null;
-        self.harvestCommentHints();
-    }
-
     /// Observe `--- @` facts already in the producer pack. Host-scanner
     /// harvest is not a production path (`law.bridge.death`).
-    fn harvestCommentHints(self: *Lexer) void {
+    pub fn harvestCommentHints(self: *Lexer) void {
         self.pending_hint_count = 0;
         self.pending_hints = .{ null, null, null, null, null, null, null, null };
         const toks = self.duo_tokens orelse return;
@@ -195,7 +173,7 @@ pub const Lexer = struct {
     }
 
     /// Whether this lexer is tokenizing through the Idol producer.
-    /// Name is bridge-death (`duo_*`); delete with `useDuoTokens`.
+    /// Name is bridge-death (`duo_*`); delete with the remaining token fields.
     pub fn isDuoBacked(self: *const Lexer) bool {
         return self.duo_tokens != null;
     }
@@ -1018,17 +996,6 @@ pub const Lexer = struct {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-
-test "lex: production token pack requires one terminating EOF" {
-    var lex = Lexer.init("", "view.id");
-    try testing.expectError(Lexer.TokenStreamError.EmptyTokenStream, lex.useDuoTokens(&.{}));
-
-    const incomplete = [_]Token{
-        .{ .kind = .name, .loc = .{ .file = "view.id", .line = 1, .col = 1 }, .text = "value" },
-    };
-    try testing.expectError(Lexer.TokenStreamError.MissingEndToken, lex.useDuoTokens(&incomplete));
-    try testing.expect(!lex.isDuoBacked());
-}
 
 test "lex: identifiers" {
     var l = Lexer.init("foo bar _x hello123", "test");

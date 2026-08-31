@@ -40,7 +40,7 @@ extern fn idol_parser_match_clause(
 pub const ParseError = error{
     UnexpectedToken,
     ExpectedToken,
-} || lexer_dispatch.DispatchError || Lexer.TokenStreamError || Allocator.Error;
+} || lexer_dispatch.DispatchError || Allocator.Error;
 
 /// How deep `parse_prec` may descend before the parser REFUSES.
 ///
@@ -8390,7 +8390,9 @@ test "parse: backtick rejection does not depend on token text" {
         .{ .kind = .eof, .loc = .{ .file = file, .line = 1, .col = 10 }, .text = "" },
     };
     var lex = Lexer.init("", file);
-    try lex.useDuoTokens(&tokens);
+    lex.duo_tokens = &tokens;
+    lex.duo_index = 0;
+    lex.peeked = null;
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     var p = Parser.init(&lex, arena.allocator());
@@ -11509,7 +11511,9 @@ test "parse: parser fact packing refuses an out-of-range location" {
         .{ .kind = .eof, .loc = .{ .file = file, .line = 1 << 28, .col = 2 }, .text = "" },
     };
     var lex = Lexer.init("", file);
-    try lex.useDuoTokens(&tokens);
+    lex.duo_tokens = &tokens;
+    lex.duo_index = 0;
+    lex.peeked = null;
     var parser = Parser.init(&lex, testing.allocator);
     try testing.expectError(error.SourceTooLarge, parser.ensureParserFacts());
     try testing.expect(parser.parser_facts == null);

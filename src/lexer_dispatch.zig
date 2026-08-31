@@ -394,10 +394,17 @@ pub fn route(
     };
     if (src_copy.heap) |p| alloc.free(p);
     if (file_copy.heap) |p| alloc.free(p);
-    lex.useDuoTokens(toks) catch |e| {
-        alloc.free(toks);
-        return e;
-    };
+    // decodeRecords already proved nonempty, final EOF, spans, locations and
+    // kind validity. Install exactly once; there is no alternate host route.
+    var start: usize = 0;
+    if (toks.len >= 2 and toks[0].kind == .shebang) {
+        lex.shebang = toks[0].text;
+        start = 1;
+    }
+    lex.duo_tokens = toks;
+    lex.duo_index = start;
+    lex.peeked = null;
+    lex.harvestCommentHints();
 }
 
 /// Tokenize `src` with the HOST lexer — the differential's other side.

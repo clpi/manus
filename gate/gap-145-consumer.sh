@@ -32,6 +32,7 @@ PARSER="$ROOT/src/parser.zig"
 DISPATCH="$ROOT/src/lexer_dispatch.zig"
 LEXER_BRIDGE="$ROOT/src/lexer_bridge.zig"
 TOKEN_VIEW="$ROOT/src/token_view.zig"
+LEXER="$ROOT/src/lexer.zig"
 
 violations=0
 examined=0
@@ -324,6 +325,31 @@ rm -rf -- "$packprobe"
 examined=$((examined + 1))
 if [ "$pack_old" -ne 3 ]; then
     bad "the dead-pack detector is broken: old=$pack_old"
+fi
+
+# `useDuoTokens` was the live mutable installer after record decode. Production
+# now installs its proven EOF-terminated slice directly in route, where shebang,
+# hint and trivia facts are already available. The installer and its orphaned
+# error type must not return under another alias.
+forbid "$LEXER" 'pub fn useDuoTokens(' \
+    'lexer reacquired the mutable useDuoTokens installer'
+forbid "$LEXER" 'pub const TokenStreamError' \
+    'lexer retained the orphaned token-stream installer error type'
+has "$DISPATCH" 'lex.duo_tokens = toks;' \
+    'production route no longer installs the decoded token slice'
+has "$DISPATCH" 'lex.harvestCommentHints();' \
+    'production route no longer preserves generated comment hints'
+useprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate installer scratch' >&2; exit 2; }
+printf '%s\n' 'pub fn useDuoTokens() void {}' >"$useprobe/old.zig"
+printf '%s\n' 'pub const TokenStreamError = error{};' >>"$useprobe/old.zig"
+printf '%s\n' 'lex.duo_tokens = toks;' >"$useprobe/new.zig"
+printf '%s\n' 'lex.harvestCommentHints();' >>"$useprobe/new.zig"
+use_old=$(grep -cE 'useDuoTokens|TokenStreamError' "$useprobe/old.zig")
+use_new=$(grep -cE 'duo_tokens = toks|harvestCommentHints' "$useprobe/new.zig")
+rm -rf -- "$useprobe"
+examined=$((examined + 1))
+if [ "$use_old" -ne 2 ] || [ "$use_new" -ne 2 ]; then
+    bad "the token-installer detector is broken: old=$use_old new=$use_new"
 fi
 
 # ── 3. tree-sitter agrees with the one grammar-fact owner ───────────────────
