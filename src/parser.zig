@@ -327,13 +327,14 @@ pub const Parser = struct {
             self.parser_facts = null;
         }
         if (!self.pack_owned) return;
-        // Parser-owned mirror holds the same allocation that the lexer
-        // pointer reads from; only one free. Clear both so the parser can
-        // move off the lex alias without leaving a dangling reference.
-        self.pack_tokens = null;
-        self.pack_index = 0;
-        if (self.lex.duo_tokens) |toks| {
+        // The parser-owned mirror and the lex alias point at the same
+        // allocation. Free through the mirror; clear the lex alias so any
+        // late `lex.next` / `lex.peek` calls do not observe a dangling
+        // pointer.
+        if (self.pack_tokens) |toks| {
             self.alloc.free(toks);
+            self.pack_tokens = null;
+            self.pack_index = 0;
             self.lex.duo_tokens = null;
             self.lex.duo_index = 0;
             self.lex.peeked = null;

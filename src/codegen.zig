@@ -64,7 +64,7 @@ fn routeEmbedThroughDuoLexer(
     src: []const u8,
     path: []const u8,
 ) bool {
-    @import("lexer_dispatch.zig").route(alloc, lex, src, path) catch return false;
+    _ = @import("lexer_dispatch.zig").route(alloc, lex, src, path) catch return false;
     return true;
 }
 

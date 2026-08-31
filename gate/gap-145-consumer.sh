@@ -144,6 +144,17 @@ forbid "$PARSER" 'token_view.fromTokens(self.lex.duo_tokens' \
     'parser.zig reads production pack from the lex alias instead of the parser-owned mirror'
 has "$PARSER" 'token_view.fromTokens' \
     'parser.zig stopped observing delimiter extent through the parser-owned pack'
+# Two legitimate parser-side references to `self.lex.duo_tokens`: the
+# mirror-seed inside `ensureProducerPack` (which copies the slice into the
+# parser-owned mirror for test/dump-c paths that install the lex cursor
+# directly) and the alias clear inside `releaseOwnedPack` (which prevents
+# late `lex.next` / `lex.peek` calls from observing a dangling pointer).
+# Any third reference is a new lex-alias bridge the parser must not own.
+examined=$((examined + 1))
+lex_reads=$(grep -c 'self\.lex\.duo_tokens' "$PARSER")
+if [ "$lex_reads" -ne 2 ]; then
+    bad "parser.zig has $lex_reads reads of self.lex.duo_tokens; the mirror-seed in ensureProducerPack and the alias clear in releaseOwnedPack are the only two allowed"
+fi
 
 # POSITIVE CONTROL ON THE REFUSALS (law.gate.protocol). A `forbid` that cannot
 # fail is the `tools/parity/grammar` defect: green for months while matching

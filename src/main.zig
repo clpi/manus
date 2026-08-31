@@ -3557,7 +3557,7 @@ const HomeLoaderCtx = struct {
         if (std.mem.eql(u8, path, self.from)) return null;
         const src = read_source(self.alloc, self.io, path) catch return null;
         var lex = Lexer.initFacts(src, path, source.facts);
-        routeThroughDuoLexer(self.alloc, &lex, src, path) catch return null;
+        _ = routeThroughDuoLexer(self.alloc, &lex, src, path) catch return null;
         var parser = Parser.init(&lex, self.alloc);
         parser.idol_mode = lex.family == lexer_bridge.family_canon;
         const mod = self.alloc.create(ast.Module) catch return null;
@@ -7391,7 +7391,7 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
         std.process.exit(1);
     };
     var lex = Lexer.initFacts(src, src_path, facts);
-    routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
+    _ = routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
         diagnoseLexRejection(&lex, src, src_path, e);
         std.process.exit(1);
     };
