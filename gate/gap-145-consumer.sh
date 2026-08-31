@@ -43,7 +43,7 @@ has() {
     pattern=$2
     msg=$3
     examined=$((examined + 1))
-    if ! grep -Fq "$pattern" "$file"; then
+    if ! grep -Fq -- "$pattern" "$file"; then
         bad "$msg"
     fi
 }
@@ -53,7 +53,7 @@ forbid() {
     pattern=$2
     msg=$3
     examined=$((examined + 1))
-    if grep -Fq "$pattern" "$file"; then
+    if grep -Fq -- "$pattern" "$file"; then
         bad "$msg"
     fi
 }
@@ -187,6 +187,39 @@ rm -rf -- "$transfer"
 examined=$((examined + 1))
 if [ "$host_count" -ne 2 ] || [ "$idol_count" -ne 1 ]; then
     bad "the parser-transfer detector is broken: host=$host_count Idol=$idol_count"
+fi
+
+# ── 2d. return-value decision executes from the producer pack (GAP-145 O3) ───
+#
+# `returnStartsValue` answers whether a `return` keyword is followed by a
+# value expression. The kind switch, the cross-line gate, and the
+# idol-mode `rolebeginexpr` test are owner decisions; the host keeps only
+# the diagnostic for the rare "cannot begin an expression" case. A return
+# to the kind switch in parser.zig would re-introduce a host role decision
+# beside the executed Idol relation.
+forbid "$PARSER" '.kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi => return false' \
+    'parser.zig reintroduced a host kind switch beside the executed return-value decision'
+has "$PARSER" 'idol_parser_return_starts_value(' \
+    'returnStartsValue no longer delegates the production decision to parser.id'
+has "$ROOT/lib/compiler/parser.id" 'return_starts_value_lx: i64 = (fact: []i64' \
+    'parser.id lost the immutable producer-pack return-value relation'
+has "$ROOT/src/parser/projection.c" 'return_starts_value_lx(int64_t fact[]' \
+    'the tracked parser.id C projection lost its return-value pack ABI'
+has "$ROOT/build.zig" -- '-Dreturn_starts_value_lx=idol_parser_return_starts_value' \
+    'build.zig no longer renames the return-value ABI symbol'
+
+returnprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate return-value scratch' >&2; exit 2; }
+printf '%s\n' 'const verdict = idol_parser_return_starts_value(facts.ptr, count, index, line, self.idol_mode);' >"$returnprobe/clean.zig"
+printf '%s\n' 'switch (nxt.kind) { .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi => return false, else => {}, }' >"$returnprobe/plantswitch.zig"
+exec_count=$(grep -cF 'idol_parser_return_starts_value' "$returnprobe/clean.zig")
+host_switch_count=$(grep -cE '\.kw_end, \.kw_else, \.kw_elseif, \.kw_until, \.kw_catch, \.eof, \.semi => return false' "$returnprobe/plantswitch.zig")
+rm -rf -- "$returnprobe"
+examined=$((examined + 1))
+if [ "$exec_count" -ne 1 ]; then
+    bad "the return-value executor detector is broken: clean carried $exec_count Idol call(s)"
+fi
+if [ "$host_switch_count" -ne 1 ]; then
+    bad "the return-value host-switch detector is broken: planted host switch carried $host_switch_count match(es)"
 fi
 
 # ── 3. tree-sitter agrees with the one grammar-fact owner ───────────────────

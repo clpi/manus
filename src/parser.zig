@@ -23,6 +23,14 @@ extern fn idol_parser_header_pack(
     prev_before_lparen: i64,
 ) bool;
 
+extern fn idol_parser_return_starts_value(
+    facts: [*]const i64,
+    count: i64,
+    start: i64,
+    return_line: i64,
+    idol_mode: bool,
+) i64;
+
 pub const ParseError = error{
     UnexpectedToken,
     ExpectedToken,
@@ -1735,35 +1743,44 @@ pub const Parser = struct {
     }
 
     fn returnStartsValue(self: *Parser, l: ast.Loc, nxt: Token) ParseError!bool {
-        switch (nxt.kind) {
-            .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi => return false,
-            else => {},
-        }
-        // A one-liner is terminated by the NEWLINE (§3.3), so a bare `return`
-        // with nothing after it on its own line returns no value. Without this
-        // it reached across the line break and took the NEXT statement as its
-        // result: `return` followed by `c = self.src:byte(...)` parsed `c` as
-        // the returned expression and then choked on the `=`.
-        //
-        // The same boundary matters inside a match arm. `return` on its own
-        // line must not seize the next arm's pattern as its value just because
-        // the arm parser is using the restricted scrutinee reader.
-        //
-        // It only became reachable when `end` stopped being written —
-        // `return end` used to terminate it, and the closer was doing work the
-        // layout should have been doing.
-        if (self.idol_mode and nxt.loc.line != l.line) return false;
-        if (self.idol_mode) {
-            const view = token_view.fromLexer(self.lex) orelse {
-                term.locErr(nxt.loc, "production token view is absent at return lookahead", .{});
-                return ParseError.UnexpectedToken;
-            };
-            if (!view.canBeginExpression(self.lex.duoStreamIndex())) {
-                term.locErr(nxt.loc, "expected a return value or line boundary, got '{s}'", .{nxt.kind.spelling()});
-                return ParseError.UnexpectedToken;
-            }
-        }
-        return true;
+        // Production pack decision (GAP-145 O3): the kind switch, the
+        // cross-line gate, and the idol-mode `rolebeginexpr` test all live
+        // in `parser.id` `return_starts_value_lx`. The host keeps only the
+        // diagnostic for the rare "next kind cannot start an expression"
+        // case (parser.id returns 2); the silent 0 / 1 cases map directly.
+        try self.ensureProducerPack();
+        const facts = try self.ensureHeaderFacts();
+        const start = self.lex.duoStreamIndex();
+        const count = std.math.cast(i64, facts.len - 1) orelse return error.InvalidRecordCount;
+        const index = std.math.cast(i64, start) orelse return false;
+        const line = std.math.cast(i64, l.line) orelse return error.SourceTooLarge;
+        const verdict = idol_parser_return_starts_value(
+            facts.ptr,
+            count,
+            index,
+            line,
+            self.idol_mode,
+        );
+        return switch (verdict) {
+            0 => false,
+            1 => true,
+            2 => return self.returnStartsValueDiag(l, nxt),
+            else => return ParseError.UnexpectedToken,
+        };
+    }
+
+    /// Diagnostics for `returnStartsValue` (parser.id returns 2). The pack
+    /// consumer already decided this token cannot begin an expression in
+    /// idol_mode; the host emits the diagnostic from its own token so the
+    /// message names the offending spelling.
+    fn returnStartsValueDiag(self: *Parser, l: ast.Loc, nxt: Token) ParseError!bool {
+        _ = l;
+        const view = token_view.fromLexer(self.lex) orelse {
+            term.locErr(nxt.loc, "production token view is absent at return lookahead", .{});
+            return ParseError.UnexpectedToken;
+        };
+        term.locErr(nxt.loc, "expected a return value or line boundary, got '{s}'", .{view.kind(self.lex.duoStreamIndex()).?.spelling()});
+        return ParseError.UnexpectedToken;
     }
 
     /// §1/§15 — statement-leading keywords the deny table retires,
@@ -11489,4 +11506,92 @@ test "parse: header fact packing refuses an out-of-range location" {
     var parser = Parser.init(&lex, testing.allocator);
     try testing.expectError(error.SourceTooLarge, parser.ensureHeaderFacts());
     try testing.expect(parser.header_facts == null);
+}
+
+test "parse: production return-value decision executes the Idol relation" {
+    // The producer pack packs kind[8], line[28], column[27] into a single i64.
+    // `start` is the zero-based coordinate of the next token; one padding slot
+    // at index 0 preserves Idol's one-based sequence projection. The decision
+    // returns 0 (silent no-value), 1 (value follows), or 2 (idol_mode cannot
+    // begin an expression — the host emits its own diagnostic).
+    const encode = struct {
+        fn e(kind: TK, line: u32, col: u32) i64 {
+            return @intCast(@as(u64, @backingInt(kind)) |
+                (@as(u64, line) << 8) |
+                (@as(u64, col) << 36));
+        }
+    }.e;
+    const run = struct {
+        fn check(start: usize, kind: TK, line: u32, want: i64) !void {
+            const facts = [_]i64{
+                0,
+                encode(kind, line, 1),
+            };
+            try testing.expectEqual(want, idol_parser_return_starts_value(
+                &facts,
+                1,
+                @intCast(start),
+                1,
+                true,
+            ));
+        }
+    }.check;
+
+    // kind-switch: line-terminators are silent 0
+    try run(0, .kw_end, 1, 0);
+    try run(0, .kw_else, 1, 0);
+    try run(0, .kw_elseif, 1, 0);
+    try run(0, .kw_until, 1, 0);
+    try run(0, .kw_catch, 1, 0);
+    try run(0, .eof, 1, 0);
+    try run(0, .semi, 1, 0);
+
+    // out-of-pack returns 0
+    try run(99, .name, 1, 0);
+
+    // same-line expression starters are 1
+    try run(0, .name, 1, 1);
+    try run(0, .int_lit, 1, 1);
+    try run(0, .text_lit, 1, 1);
+    try run(0, .lparen, 1, 1);
+
+    // idol_mode line check: cross-line next token is silent 0
+    try run(0, .name, 2, 0);
+
+    // idol_mode expression-start check: kind that cannot begin an expression
+    try run(0, .kw_function, 1, 2);
+    try run(0, .hash, 1, 2);
+}
+
+test "parse: return-value decision without idol_mode ignores layout and role" {
+    const encode = struct {
+        fn e(kind: TK, line: u32) i64 {
+            return @intCast(@as(u64, @backingInt(kind)) | (@as(u64, line) << 8));
+        }
+    }.e;
+    const facts = [_]i64{ 0, encode(.kw_function, 5) };
+
+    // kw_function cannot begin an expression; with idol_mode=false the
+    // rolebeginexpr gate is skipped, so the decision is 1 (the same-line
+    // line-check is also gated on idol_mode).
+    try testing.expectEqual(@as(i64, 1), idol_parser_return_starts_value(
+        &facts,
+        1,
+        0,
+        1,
+        false,
+    ));
+    // end, else, etc. are still silent 0 in non-idol mode (the kind switch
+    // is the unconditional decision).
+    const line_terminators = [_]TK{ .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi };
+    for (line_terminators) |kind| {
+        const one = [_]i64{ 0, encode(kind, 1) };
+        try testing.expectEqual(@as(i64, 0), idol_parser_return_starts_value(
+            &one,
+            1,
+            0,
+            1,
+            false,
+        ));
+    }
 }

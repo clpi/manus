@@ -505,6 +505,33 @@ header_signal_lx: bool = (fact: []i64, count: i64, start: i64, allow: bool, offs
         return false
     token.grammarrole.rolebodystart(after)
 
+# Production return-value decision over the immutable producer pack.
+# `start` is the zero-based producer coordinate of the token immediately
+# after the `return` keyword. `return_line` is the line of the `return`
+# keyword itself. Returns:
+#   0 — no value (the next kind is a line-terminator, or `.id` mode saw a
+#       cross-line next token, or `start` is past the pack)
+#   1 — a value expression follows
+#   2 — the next kind cannot begin an expression in `.id` mode; the host
+#       carries that into a diagnostic
+# The 0/1/2 split lets the host emit its own diagnostic on the 2 path
+# without re-decoding the producer pack; the 0 path is silent because
+# `return` followed by `end` / `else` / `elseif` / `until` / `catch` /
+# `eof` / `semi` is the bare `return` form and not an error.
+return_starts_value_lx: i64 = (fact: []i64, count: i64, start: i64, return_line: i64, idol_mode: bool)
+    if start < 0 or start >= count
+        return 0
+    encoded = fact[start + 1]
+    kind = encoded & 255
+    nxt_line = (encoded >> 8) & 268435455
+    if kind == token.kindend or kind == token.kindelse or kind == token.kindelseif or kind == token.kinduntil or kind == token.kindcatch or kind == token.kindeof or kind == token.kindsemi
+        return 0
+    if idol_mode and nxt_line != return_line
+        return 0
+    if idol_mode and !token.grammarrole.rolebeginexpr(kind)
+        return 2
+    1
+
 # Cursor on `(`. `offside_col` 0 disables layout discrimination for the
 # single-name `(a)` shape; otherwise it is the statement-line opener column.
 # `prev_before_lp` is the token kind immediately before this `(`, or EOF when

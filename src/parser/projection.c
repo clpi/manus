@@ -2266,6 +2266,7 @@ __attribute__((visibility("default"))) bool can_start_body_kind(int64_t k);
 __attribute__((visibility("default"))) bool is_descriptor_kind(int64_t k);
 __attribute__((visibility("default"))) bool colon_is_method_call_lx(duo_rec_ae78087612f938ba *lx);
 __attribute__((visibility("default"))) bool header_signal_lx(int64_t fact[], int64_t count, int64_t start, bool allow, int64_t offside, int64_t before);
+__attribute__((visibility("default"))) int64_t return_starts_value_lx(int64_t fact[], int64_t count, int64_t start, int64_t return_line, bool idol_mode);
 __attribute__((visibility("default"))) bool paren_header_signal_lx(duo_rec_ae78087612f938ba *lx, bool allow, int64_t offside, int64_t before);
 __attribute__((visibility("default"))) bool statement_header_signal_lx(duo_rec_ae78087612f938ba *lx, duo_rec_735fa21981531a8e *name, bool allow_untyped_comma);
 __attribute__((visibility("default"))) const char* join(const char* a, const char* b);
@@ -2780,6 +2781,25 @@ __attribute__((visibility("default"))) bool header_signal_lx(int64_t fact[], int
         return false;
     }
     return token_grammarrole__rolebodystart(after);
+}
+
+__attribute__((visibility("default"))) int64_t return_starts_value_lx(int64_t fact[], int64_t count, int64_t start, int64_t return_line, bool idol_mode) {
+    if (((start < 0) || (start >= count))) {
+        return 0;
+    }
+    int64_t encoded = fact[(start + 1)];
+    int64_t kind = ((int64_t)((encoded) & (255)));
+    int64_t nxt_line = ((int64_t)((((int64_t)(((uint64_t)(encoded)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
+    if ((((((((kind == INT64_C(10)) || (kind == INT64_C(8))) || (kind == INT64_C(9))) || (kind == INT64_C(27))) || (kind == INT64_C(46))) || (kind == INT64_C(109))) || (kind == INT64_C(77)))) {
+        return 0;
+    }
+    if ((idol_mode && (nxt_line != return_line))) {
+        return 0;
+    }
+    if ((idol_mode && (!token_grammarrole__rolebeginexpr(kind)))) {
+        return 2;
+    }
+    return 1;
 }
 
 __attribute__((visibility("default"))) bool paren_header_signal_lx(duo_rec_ae78087612f938ba *lx, bool allow, int64_t offside, int64_t before) {
