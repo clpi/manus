@@ -5345,8 +5345,11 @@ fn hashSourceQuotient(
 ) bool {
     const facts = admittedSourceFacts(path) orelse return false;
     var lx = Lexer.initFacts(src, path, facts);
+    var parser = Parser.init(&lx, alloc);
     routeThroughDuoLexer(alloc, &lx, src, path) catch return false;
-    const toks = lx.duo_tokens orelse return false;
+    parser.ensureProducerPack() catch return false;
+    defer parser.releaseOwnedPack();
+    const toks = parser.pack_tokens orelse return false;
     defer alloc.free(toks);
 
     var last_line: u32 = 0;
