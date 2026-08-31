@@ -14,6 +14,15 @@ const token_view = @import("token_view.zig");
 const lexer_dispatch = @import("lexer_dispatch.zig");
 const source_cursor = @import("source_cursor.zig");
 
+extern fn idol_parser_header_pack(
+    facts: [*]const i64,
+    count: i64,
+    start: i64,
+    allow_untyped_comma: bool,
+    offside_col: i64,
+    prev_before_lparen: i64,
+) bool;
+
 pub const ParseError = error{
     UnexpectedToken,
     ExpectedToken,
@@ -216,6 +225,10 @@ pub const Parser = struct {
 
     /// True when `parse_module` installed the producer pack on `alloc`.
     pack_owned: bool = false,
+    /// Physical projection consumed by parser.id's first production relation:
+    /// one inaccessible padding slot, then one packed fact per producer token.
+    /// It is built once on first header demand, never per lookahead.
+    header_facts: ?[]i64 = null,
 
     /// Byte offset of the last retired-`#` site `denyRetiredLengthHash` named.
     /// About thirty-five speculative scans rewind the lexer and re-read the same
@@ -234,7 +247,31 @@ pub const Parser = struct {
         self.pack_owned = true;
     }
 
+    fn ensureHeaderFacts(self: *Parser) ParseError![]const i64 {
+        if (self.header_facts) |facts| return facts;
+        try self.ensureProducerPack();
+        const tokens = self.lex.duo_tokens orelse return error.InvalidRecordCount;
+        const size = std.math.add(usize, tokens.len, 1) catch return error.SourceTooLarge;
+        const facts = try self.alloc.alloc(i64, size);
+        errdefer self.alloc.free(facts);
+        facts[0] = 0; // Idol sequences project index one onto physical slot one.
+        for (tokens, 0..) |token, index| {
+            if (token.loc.line >= 1 << 28 or token.loc.col >= 1 << 27)
+                return error.SourceTooLarge;
+            const encoded = @as(u64, @backingInt(token.kind)) |
+                (@as(u64, token.loc.line) << 8) |
+                (@as(u64, token.loc.col) << 36);
+            facts[index + 1] = @intCast(encoded);
+        }
+        self.header_facts = facts;
+        return facts;
+    }
+
     fn releaseOwnedPack(self: *Parser) void {
+        if (self.header_facts) |facts| {
+            self.alloc.free(facts);
+            self.header_facts = null;
+        }
         if (!self.pack_owned) return;
         if (self.lex.duo_tokens) |toks| {
             self.alloc.free(toks);
@@ -758,8 +795,8 @@ pub const Parser = struct {
     /// tracked version reported `line_start = 4:3` while parsing a lambda on
     /// line 2 of `examples/parity/map.id`, which handed the body an opener of
     /// column 20 and (with the empty-body rule below) silently gave the lambda
-    /// an EMPTY body. `duo_tokens` is the same stream `headerSignal` already
-    /// scans and it cannot go stale.
+    /// an EMPTY body. `duo_tokens` is the producer stream the executed Idol
+    /// header relation observes too, so the threshold cannot go stale.
     ///
     /// Only ever moves the threshold LEFT, and only within `l`'s own line: a
     /// header that begins its line is its own line start and nothing changes.
@@ -2973,229 +3010,32 @@ pub const Parser = struct {
         } };
     }
 
-    /// Shared heuristic used by both bare-function and assign-form detection.
-    ///
-    /// The lexer must be positioned at a '(' when this is called. It scans the
-    /// matching paren group (token-wise, tracking bracket/brace nesting) looking
-    /// for signals that the group is a typed/untyped parameter list rather than a
-    /// call's argument list. Returns true when the group reads as a function header.
-    ///
-    /// Two guard rails keep ordinary calls from being misdetected:
-    ///   - a `fun`/`function` keyword at depth 1 means a function is being passed
-    ///     as an argument (`mcp.register_tool("x", fun(a) ... end)`) — a header's
-    ///     parameter list never contains a nested function body, so bail.
-    ///   - a depth-1 `:` only counts as a typed param (`a: i32`) when it directly
-    ///     follows a name; `(expr):method()` / `):c(` colons are method calls.
-    fn viewColonIsMethodCall(view: token_view.View, idx: usize) bool {
-        const colon = view.kind(idx) orelse return false;
-        if (colon != .colon) return false;
-        const name_kind = view.kind(idx + 1) orelse return false;
-        if (name_kind != .name and !grammar_roles.isDescriptor(name_kind)) return false;
-        return view.kind(idx + 2) == .lparen;
-    }
-
-    /// One header recognizer (GAP-134). Observation over the producer pack.
-    /// No host snapshot walk.
-    ///
-    /// `offside_col` is the column of the first token on the line the `(`
-    /// begins — `line_opener`'s answer, the same threshold `parse_func_body`
-    /// hands the body block. It is `null` outside `.id`, where layout does not
-    /// bind and a next-line body is not a spelling at all. See the single
-    /// untyped parameter case at the bottom.
-    fn headerSignal(view: token_view.View, start: usize, allow_untyped_comma: bool, offside_col: ?u32) bool {
-        var idx = start;
-
-        if (view.kind(idx) != .lparen) return false;
-        idx += 1;
-        if (view.kind(idx) == .lparen) return false;
-
-        var paren_depth: usize = 1;
-        var bracket_depth: usize = 0;
-        var brace_depth: usize = 0;
-        var typed_or_vararg = false;
-        var has_comma = false;
-        var depth1_tokens: usize = 0;
-        var depth1_names: usize = 0;
-        // EVERY token inside the group, at every depth. `depth1_tokens` cannot
-        // tell `(t)` from `(less(arr(mid + 1), v))`: the whole call after
-        // `less` sits at depth 2 and is not counted, so both read as "one
-        // depth-1 name". They are not the same thing — a parameter list cannot
-        // contain an application — and the difference is exactly the tokens
-        // depth-1 counting throws away.
-        var inner_tokens: usize = 0;
-        var has_literal_arg = false;
-        var has_table_literal_arg = false;
-        var has_infix_operator = false;
-        var rparen_line: u32 = 0;
-        var prev: TK = .eof;
-        while (paren_depth > 0) {
-            const tok = view.at(idx) orelse return false;
-            const row = view.role(idx);
-            if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and
-                row != null and row.?.literal_kind)
-            {
-                has_literal_arg = true;
-            }
-            switch (tok.kind) {
-                .eof => return false,
-                .dots => typed_or_vararg = true,
-                .comma => if (paren_depth == 1) {
-                    if (prev == .eof) return false;
-                    has_comma = true;
-                },
-                .colon => if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and prev == .name) {
-                    if (!viewColonIsMethodCall(view, idx)) typed_or_vararg = true;
-                },
-                .kw_fun, .kw_function => {
-                    if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and !typed_or_vararg) {
-                        return false;
-                    }
-                },
-                .lparen => paren_depth += 1,
-                .rparen => {
-                    paren_depth -= 1;
-                    if (paren_depth == 0) rparen_line = tok.loc.line;
-                },
-                .lbracket => bracket_depth += 1,
-                .rbracket => {
-                    if (bracket_depth > 0) bracket_depth -= 1;
-                },
-                .lbrace => {
-                    if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0) {
-                        has_table_literal_arg = true;
-                    }
-                    brace_depth += 1;
-                },
-                .rbrace => {
-                    if (brace_depth > 0) brace_depth -= 1;
-                },
-                else => {},
-            }
-            if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and
-                tok.kind != .lparen and tok.kind != .rparen)
-            {
-                depth1_tokens += 1;
-                if (tok.kind == .name) depth1_names += 1;
-                if (grammar_roles.isInfix(tok.kind)) has_infix_operator = true;
-            }
-            // Everything strictly inside the outer parens — the closing one
-            // brings `paren_depth` to 0 and is not inside anything.
-            if (paren_depth > 0) inner_tokens += 1;
-            prev = tok.kind;
-            idx += 1;
-        }
-
-        const after = view.at(idx) orelse return false;
-        if (has_literal_arg and !typed_or_vararg) return false;
-        if (has_infix_operator and !typed_or_vararg) return false;
-        if (has_table_literal_arg and !typed_or_vararg) return false;
-        // `): Name` — a result descriptor, UNLESS the name is followed by `(`,
-        // in which case it is `(expr):method(args)`: a subject call on the
-        // parenthesised value, the same reading `viewColonIsMethodCall` gives a
-        // `:` INSIDE the group.
-        //
-        // THIS TEST EXISTS THREE TIMES IN THIS FUNCTION and only two copies had
-        // it. Because this copy runs first and returned unconditionally, the
-        // `!= .lparen` in the other two was unreachable — one rule, three
-        // spellings, and the disagreeing one won every time. Measured:
-        // `(out:sub(1, n)):to(i64)` (`scripts/abi_matrix.id:61`) was read as a
-        // header whose parameter `out` had type `sub`, and the file was
-        // refused at "write `)` at this token edge" pointing inside the call.
-        // Falling THROUGH rather than returning false is deliberate: the two
-        // copies below decide it, and a typed header keeps its own answer from
-        // `typed_or_vararg` on the next line, which is what keeps `): *Foo`,
-        // `): [4]i64` and `): i(64)` reading as result descriptors.
-        if (after.kind == .colon) {
-            const ty = view.kind(idx + 1) orelse return false;
-            if ((ty == .name or grammar_roles.isDescriptor(ty)) and
-                view.kind(idx + 2) != .lparen) return true;
-        }
-        if (typed_or_vararg or after.kind == .arrow or after.kind == .assign) return true;
-        if (allow_untyped_comma and has_comma) {
-            if (after.kind == .eof) return false;
-            if (after.kind == .colon) {
-                const ty = view.kind(idx + 1) orelse return false;
-                if (ty != .name and !grammar_roles.isDescriptor(ty)) return false;
-                return view.kind(idx + 2) != .lparen;
-            }
-            if (grammar_roles.isInfix(after.kind) or after.kind == .dot) return false;
-            return true;
-        }
-        if (after.kind == .colon) {
-            const ty = view.kind(idx + 1) orelse return false;
-            if (ty != .name and !grammar_roles.isDescriptor(ty)) return false;
-            return view.kind(idx + 2) != .lparen;
-        }
-        if (grammar_roles.isInfix(after.kind) or after.kind == .comma) return false;
-        // A SINGLE BARE NAME IN PARENTHESES — `(t)`, `(meta)`. The only shape
-        // whose two readings are both ordinary: the one-parameter header, and
-        // the grouped expression. `(a, b)` has a comma and `(t: any)` has a
-        // colon; both already decide themselves. This one does not, so the
-        // BODY has to decide it, and the question is where the body may be.
-        //
-        // On the header's own line the next token answers it — `canStartBody`
-        // below. On a LATER line the answer is the offside rule and nothing
-        // else: a body is the lines indented past the opener of the line the
-        // header begins on, which is exactly the threshold `parse_func_body`
-        // will hand `parse_body_block_at`. Asking the same question with the
-        // same threshold is what keeps the recognizer and the body parser from
-        // being two models of one rule.
-        //
-        // REFUSING EVERY NEXT-LINE BODY, which is what stood here, was not a
-        // conservative choice — it was a SILENT WRONG ANSWER. `f: i64 = (t)`
-        // with `t + 1` beneath it reprinted as `f: i64 = t` followed by a
-        // top-level `t + 1`, compiled clean under `idol check`, and returned 1
-        // where the program says 7. The `fun`-retirement lane converts
-        // `fun(t)` into `(t)`, so the shape's population only grows.
-        //
-        // TWO THINGS HAD TO BE EXCLUDED FIRST, both measured as regressions on
-        // the tree before this landed:
-        //
-        //   `else(less(arr(mid + 1), v))`  (lib/slices.id:166, and 5 more)
-        //       one depth-1 name — the whole call after `less` is at depth 2,
-        //       so `depth1_tokens` cannot see it — with the `else`'s own block
-        //       indented beneath. `inner_tokens` is what depth-1 counting threw
-        //       away: a parameter list cannot contain an application, and the
-        //       shape this rule is for is EXACTLY one token wide.
-        //
-        //   `if (flag)` / `while (flag)` / `else(flag)`
-        //       a bare name IS a legal condition, and a condition is always
-        //       followed by an indented block, so offside proves nothing there.
-        //       The keyword before the `(` decides it, and it is the only place
-        //       in this recognizer that looks left of the group — because it is
-        //       the only place where what precedes changes what the group IS.
-        if (depth1_tokens == 1 and depth1_names == 1 and !typed_or_vararg and !has_comma) {
-            if (!allow_untyped_comma) return false;
-            if (after.loc.line != rparen_line) {
-                if (inner_tokens != 1) return false;
-                const open_col = offside_col orelse return false;
-                if (after.loc.col <= open_col) return false;
-                if (start > 0) switch (view.kind(start - 1) orelse .eof) {
-                    .kw_if, .kw_elseif, .kw_else, .kw_while, .kw_until, .kw_for, .kw_match => return false,
-                    else => {},
-                };
-            }
-        }
-        if (!allow_untyped_comma and !typed_or_vararg) return false;
-        if (depth1_tokens == 0 and !allow_untyped_comma) return false;
-        if (view.canStartBody(idx)) return true;
-        return false;
-    }
-
+    /// The production header decision is authored by `lib/compiler/parser.id`
+    /// and executed over the immutable producer-pack facts. The host projects
+    /// physical kind/line/column fields once and supplies no recognition rule.
     fn scan_func_header_signal(self: *Parser, allow_untyped_comma: bool) ParseError!bool {
         const lparen = try self.pk();
         if (lparen.kind != .lparen) return false;
-        try self.ensureProducerPack();
+        const facts = try self.ensureHeaderFacts();
         const view = token_view.fromLexer(self.lex) orelse return false;
-        // DERIVED FROM THE TOKEN STREAM, not from a tracked field: this runs
-        // inside speculative scans that rewind the lexer, and `line_opener`
-        // reads the same producer pack `headerSignal` is about to walk, so it
-        // cannot be left holding a line the parse has not reached.
-        const offside_col: ?u32 = if (self.idol_mode)
-            (try self.line_opener(lparen.loc)).col
+        const start = self.lex.duoStreamIndex();
+        const before: TK = if (start == 0) .eof else view.kind(start - 1) orelse .eof;
+        const count = std.math.cast(i64, facts.len - 1) orelse return false;
+        const index = std.math.cast(i64, start) orelse return false;
+        // Derived from the same producer pack while the speculative host cursor
+        // is rewound; no tracked line-start field can go stale.
+        const offside: i64 = if (self.idol_mode)
+            @intCast((try self.line_opener(lparen.loc)).col)
         else
-            null;
-        return headerSignal(view, self.lex.duoStreamIndex(), allow_untyped_comma, offside_col);
+            0;
+        return idol_parser_header_pack(
+            facts.ptr,
+            count,
+            index,
+            allow_untyped_comma,
+            offside,
+            @intCast(@backingInt(before)),
+        );
     }
 
     fn starts_bare_func_decl(self: *Parser) ParseError!bool {
@@ -3228,8 +3068,8 @@ pub const Parser = struct {
     ///
     /// §42, THE COLLISION. Commit `22e956e6` converted every `name(): void`
     /// into `name = ()`, so `name = ()` is the zero-parameter relation. `()` is
-    /// ALSO the empty pack. `headerSignal` separated them by asking whether the
-    /// token after `)` could start a body — which meant the SAME two characters
+    /// ALSO the empty pack. The Idol `header` relation separates them by asking
+    /// whether the token after `)` can start a body — which meant the SAME two characters
     /// in the SAME position meant different things depending on what happened
     /// to follow:
     ///
@@ -4455,9 +4295,9 @@ pub const Parser = struct {
                 if (try self.returnStartsValue(ret_loc, nxt)) {
                     switch (nxt.kind) {
                         .name => {
-                        try vals.append(self.alloc, try self.parse_match_scrutinee());
-                        while (try self.eat(.comma) != null)
                             try vals.append(self.alloc, try self.parse_match_scrutinee());
+                            while (try self.eat(.comma) != null)
+                                try vals.append(self.alloc, try self.parse_match_scrutinee());
                         },
                         else => {
                             try vals.append(self.alloc, try self.parse_match_scrutinee());
@@ -11587,4 +11427,66 @@ test "apply-one: a comprehension is a stream, and takes no pack stance" {
         \\r = { v for v in xs }
     , &arena);
     try testing.expect(mod.body.stmts[0].assign.values[0].* == .list_comp);
+}
+
+test "parse: production header pack executes the Idol relation" {
+    const run = struct {
+        fn check(kinds: []const TK, allow: bool, want: bool) !void {
+            const facts = try testing.allocator.alloc(i64, 1 + kinds.len);
+            defer testing.allocator.free(facts);
+            facts[0] = 0; // physical padding preserves Idol sequence index one
+            for (kinds, 0..) |kind, index| {
+                facts[index + 1] = @intCast(
+                    @as(u64, @backingInt(kind)) |
+                        (@as(u64, 1) << 8) |
+                        (@as(u64, index + 1) << 36),
+                );
+            }
+            try testing.expectEqual(want, idol_parser_header_pack(
+                facts.ptr,
+                @intCast(kinds.len),
+                0,
+                allow,
+                0,
+                @backingInt(TK.name),
+            ));
+        }
+    }.check;
+
+    try run(&.{ .lparen, .name, .colon, .kw_i64, .rparen, .assign }, false, true);
+    try run(&.{ .lparen, .name, .plus, .int_lit, .rparen, .eof }, true, false);
+    try run(&.{ .lparen, .rparen, .colon, .kw_i64, .eof }, false, true);
+    try run(&.{ .lparen, .name, .colon, .name, .lparen, .text_lit, .rparen, .rparen, .eof }, false, false);
+
+    const high_line: u64 = (1 << 28) - 1;
+    const high_column: u64 = (1 << 27) - 1;
+    const bounds = [_]i64{
+        0,
+        @intCast(@as(u64, @backingInt(TK.lparen)) | (@as(u64, 1) << 8) | (@as(u64, 1) << 36)),
+        @intCast(@as(u64, @backingInt(TK.name)) | (@as(u64, 1) << 8) | (@as(u64, 2) << 36)),
+        @intCast(@as(u64, @backingInt(TK.rparen)) | (@as(u64, 1) << 8) | (@as(u64, 3) << 36)),
+        @intCast(@as(u64, @backingInt(TK.name)) | (high_line << 8) | (high_column << 36)),
+        @intCast(@as(u64, @backingInt(TK.eof)) | (high_line << 8) | (high_column << 36)),
+    };
+    try testing.expect(idol_parser_header_pack(
+        &bounds,
+        5,
+        0,
+        true,
+        @intCast(high_column - 1),
+        @backingInt(TK.name),
+    ));
+}
+
+test "parse: header fact packing refuses an out-of-range location" {
+    const file = "limit.id";
+    const tokens = [_]Token{
+        .{ .kind = .name, .loc = .{ .file = file, .line = 1 << 28, .col = 1 }, .text = "x" },
+        .{ .kind = .eof, .loc = .{ .file = file, .line = 1 << 28, .col = 2 }, .text = "" },
+    };
+    var lex = Lexer.init("", file);
+    try lex.useDuoTokens(&tokens);
+    var parser = Parser.init(&lex, testing.allocator);
+    try testing.expectError(error.SourceTooLarge, parser.ensureHeaderFacts());
+    try testing.expect(parser.header_facts == null);
 }

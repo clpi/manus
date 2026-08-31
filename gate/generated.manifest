@@ -16,6 +16,7 @@
 # FORMAT:  <generated-path>\t<generator-path>\t<marker-substring>
 
 src/lexer_tokenize.c	lib/compiler/lexer.id	do not edit
+src/parser/projection.c	lib/compiler/parser.id	do not edit
 src/keyword_classify.c	src/token_classify_gen.zig	do not edit by hand
 lib/token/classify.id	src/token_classify_gen.zig	do not edit by hand
 src/grammar_role_table.zig	lib/compiler/token.id	do not edit by hand

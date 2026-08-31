@@ -12,13 +12,29 @@ const builtin = @import("builtin");
 /// such symbol, so the weak second producer always answered. That file remains
 /// only as the direct backend's bootstrap link input for user programs that
 /// import the symbol (src/main.zig `boot()`), with its own deletion condition.
-fn linkProductionIdolLexer(b: *std.Build, mod: *std.Build.Module) void {
+fn linkProductionIdolFrontend(b: *std.Build, mod: *std.Build.Module) void {
     mod.addCSourceFile(.{
         .file = b.path("src/lexer_tokenize.c"),
         // The generated lexer artifact carries an executable `main` from the
         // C-backend generator; we link it as a library, so rename that
         // symbol to avoid collision with the Zig test runner / exe root.
         .flags = &.{ "-std=c11", "-w", "-Dmain=duo_lexer_tokenize_main" },
+    });
+    mod.addCSourceFile(.{
+        .file = b.path("src/parser/projection.c"),
+        // `entry` is the one primitive ABI projected for the Zig bootstrap;
+        // every recognition decision remains authored in parser.id.
+        .flags = &.{
+            "-std=c11",
+            "-O2",
+            "-g0",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-w",
+            "-Dmain=idol_parser_projection_main",
+            "-Dheader_signal_lx=idol_parser_header_pack",
+            "-Dis_digit=idol_parser_is_digit",
+        },
     });
     mod.link_libc = true;
 }
@@ -92,7 +108,10 @@ pub fn build(b: *std.Build) void {
             .strip = optimize == .fast,
         }),
     });
-    linkProductionIdolLexer(b, exe.root_module);
+    linkProductionIdolFrontend(b, exe.root_module);
+    // The generated parser library publishes its whole source module; section
+    // GC retains only the Zig-referenced pack relation in the compiler image.
+    exe.link_gc_sections = true;
     addDirectRuntimeObjects(b, exe.root_module);
     b.installArtifact(exe);
 
@@ -371,6 +390,22 @@ pub fn build(b: *std.Build) void {
     // move must regenerate byte-identically before the ordinary test gate runs.
     test_step.dependOn(&lexer_artifact_cmd.step);
 
+    // The first executed parser recognizer follows the same contract. The C
+    // file is a tracked bootstrap projection of lib/compiler/parser.id. Its
+    // probe consumes padded packed kind/line/column facts and tests typed, call,
+    // offside, condition, empty-header, and nested-subject-call decisions.
+    // A second probe compares pack/cursor answers on eight shapes and two
+    // statement forms.
+    // Keeping the host recognizer beside it is refused separately by
+    // gate/gap-145-consumer.sh.
+    const parser_artifact_cmd = b.addSystemCommand(&.{"./tools/node/dev/parser/artifact"});
+    parser_artifact_cmd.setCwd(b.path("."));
+    parser_artifact_cmd.setEnvironmentVariable("IDOL", "./zig-out/bin/idol");
+    parser_artifact_cmd.step.dependOn(b.getInstallStep());
+    const parser_artifact_step = b.step("parser-artifact", "src/parser/projection.c regenerates byte-identically from lib/compiler/parser.id");
+    parser_artifact_step.dependOn(&parser_artifact_cmd.step);
+    test_step.dependOn(&parser_artifact_cmd.step);
+
     // Zig unit tests (lexer, parser, AST, types, sema).
     // Run independently from the binary: `zig build unit-test`
     const unit_tests = b.addTest(.{
@@ -380,12 +415,13 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    linkProductionIdolLexer(b, unit_tests.root_module);
+    linkProductionIdolFrontend(b, unit_tests.root_module);
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
     test_step.dependOn(&grammar_projection_cmd.step);
     const unit_test_step = b.step("unit-test", "Run Zig unit tests only");
     unit_test_step.dependOn(&run_unit_tests.step);
+    unit_test_step.dependOn(&parser_artifact_cmd.step);
 
     // A DNIR module-global initializer is one fact consumed by both physical
     // realizations. Both columns exit 40, so this gate compares stdout too; an
@@ -880,7 +916,7 @@ pub fn build(b: *std.Build) void {
             .strip = true,
         }),
     });
-    linkProductionIdolLexer(b, census_exe.root_module);
+    linkProductionIdolFrontend(b, census_exe.root_module);
     addDirectRuntimeObjects(b, census_exe.root_module);
     const census_install = b.addInstallArtifact(census_exe, .{});
 
@@ -1236,7 +1272,7 @@ pub fn build(b: *std.Build) void {
         }),
         .filters = &.{"WP-04"},
     });
-    linkProductionIdolLexer(b, native_backend_tests.root_module);
+    linkProductionIdolFrontend(b, native_backend_tests.root_module);
     const run_native_backend_tests = b.addRunArtifact(native_backend_tests);
     // Exercises the LIVE native backend over src/native_backend.zig. The old
     // consumer, the deleted catalog gate, ran the same coverage before the
@@ -1263,7 +1299,7 @@ pub fn build(b: *std.Build) void {
         // the step would re-run every unit test in the tree and bury the census.
         .filters = &.{"sovereign:"},
     });
-    linkProductionIdolLexer(b, sovereign_tests.root_module);
+    linkProductionIdolFrontend(b, sovereign_tests.root_module);
     const run_sovereign_tests = b.addRunArtifact(sovereign_tests);
     const sovereign_step = b.step("sovereign", "Graph sovereignty over machine bytes: damage the AST after graph publication, compare object bytes");
     sovereign_step.dependOn(&run_sovereign_tests.step);

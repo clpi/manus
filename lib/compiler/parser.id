@@ -351,12 +351,12 @@ can_start_body_kind: bool = (k: i64)
 is_descriptor_kind: bool = (k: i64)
     token.grammarrole.roledescriptor(k) or is_type_kind(k)
 
-# Cursor on `:`. True when `: name (` is a method/face call, not a type slot.
+# Cursor immediately after `:`. True when the next two identities are `name (`
+# — a subject face call rather than a type slot.
 colon_is_method_call_lx: bool = (lx: lexer)
-    if token_view.kindat(lx) != token.kindcolon
-        return false
+    # `paren_header_signal_lx` has consumed the colon; observe the member and the token
+    # after it, then restore the exact post-colon cursor.
     st = lexer.save_state(lx)
-    _c = lexer.next(lx)
     m = lexer.peek(lx)
     p2 = peek2(lx)
     is_ty = m.kind == token.kindname or is_descriptor_kind(m.kind)
@@ -364,11 +364,152 @@ colon_is_method_call_lx: bool = (lx: lexer)
     lexer.restore_state(lx, st)
     is_ty and is_call
 
+# Production callable-header recognition over the immutable producer pack.
+# Each nonnegative i64 packs kind[8], line[28], column[27]. `start` is the
+# zero-based producer coordinate; one physical padding slot preserves Idol's
+# one-based sequence projection at the C ABI.
+header_signal_lx: bool = (fact: []i64, count: i64, start: i64, allow: bool, offside: i64, before: i64)
+    if start < 0 or start >= count
+        return false
+    encoded = fact[start + 1]
+    if (encoded & 255) != token.kindlparen
+        return false
+    index = start + 1
+    if index < count and (fact[index + 1] & 255) == token.kindlparen
+        return false
+
+    depth = 1
+    bracket = 0
+    brace = 0
+    typed = false
+    comma = false
+    outer = 0
+    names = 0
+    inside = 0
+    literal = false
+    record = false
+    infix = false
+    closing = 0
+    previous = token.kindeof
+    while depth > 0
+        if index < 0 or index >= count
+            return false
+        encoded = fact[index + 1]
+        kind = encoded & 255
+        line = (encoded >> 8) & 268435455
+        if kind == token.kindeof
+            return false
+        if depth == 1 and bracket == 0 and brace == 0 and token.grammarrole.roleliteral(kind)
+            literal = true
+        if kind == token.kinddots
+            typed = true
+        if kind == token.kindcomma and depth == 1
+            if previous == token.kindeof
+                return false
+            comma = true
+        if kind == token.kindcolon and depth == 1 and bracket == 0 and brace == 0 and previous == token.kindname
+            member = token.kindeof
+            following = token.kindeof
+            if index + 1 < count
+                member = fact[index + 2] & 255
+            if index + 2 < count
+                following = fact[index + 3] & 255
+            if !((member == token.kindname or token.grammarrole.roledescriptor(member)) and following == token.kindlparen)
+                typed = true
+        if kind == token.kindfun or kind == token.kindfunction
+            if depth == 1 and bracket == 0 and brace == 0 and !typed
+                return false
+        if kind == token.kindlparen
+            depth += 1
+        elseif kind == token.kindrparen
+            depth -= 1
+            if depth == 0
+                closing = line
+        elseif kind == token.kindlbracket
+            bracket += 1
+        elseif kind == token.kindrbracket
+            if bracket > 0
+                bracket -= 1
+        elseif kind == token.kindlbrace
+            if depth == 1 and bracket == 0 and brace == 0
+                record = true
+            brace += 1
+        elseif kind == token.kindrbrace
+            if brace > 0
+                brace -= 1
+        if depth == 1 and bracket == 0 and brace == 0 and kind != token.kindlparen and kind != token.kindrparen
+            outer += 1
+            if kind == token.kindname
+                names += 1
+            if token.grammarrole.roleassoc(kind) != 0
+                infix = true
+        if depth > 0
+            inside += 1
+        previous = kind
+        index += 1
+
+    after = token.kindeof
+    line = 0
+    column = 0
+    if index >= 0 and index < count
+        encoded = fact[index + 1]
+        after = encoded & 255
+        line = (encoded >> 8) & 268435455
+        column = encoded >> 36
+    if literal and !typed
+        return false
+    if infix and !typed
+        return false
+    if record and !typed
+        return false
+    result = false
+    if after == token.kindcolon
+        shape = token.kindeof
+        following = token.kindeof
+        if index + 1 < count
+            shape = fact[index + 2] & 255
+        if index + 2 < count
+            following = fact[index + 3] & 255
+        result = (shape == token.kindname or token.grammarrole.roledescriptor(shape)) and following != token.kindlparen
+    if result
+        return true
+    if typed or after == token.kindarrow or after == token.kindassign
+        return true
+    if allow and comma
+        if after == token.kindeof
+            return false
+        if after == token.kindcolon
+            return result
+        if token.grammarrole.roleassoc(after) != 0 or after == token.kinddot
+            return false
+        return true
+    if after == token.kindcolon
+        return result
+    if token.grammarrole.roleassoc(after) != 0 or after == token.kindcomma
+        return false
+    if outer == 1 and names == 1 and !typed and !comma
+        if !allow
+            return false
+        if line != closing
+            if inside != 1
+                return false
+            if offside == 0
+                return false
+            if column <= offside
+                return false
+            if before == token.kindif or before == token.kindelseif or before == token.kindelse or before == token.kindwhile or before == token.kinduntil or before == token.kindfor or before == token.kindmatch
+                return false
+    if !allow and !typed
+        return false
+    if outer == 0 and !allow
+        return false
+    token.grammarrole.rolebodystart(after)
+
 # Cursor on `(`. `offside_col` 0 disables layout discrimination for the
 # single-name `(a)` shape; otherwise it is the statement-line opener column.
 # `prev_before_lp` is the token kind immediately before this `(`, or EOF when
 # unknown — used to exclude `if (flag)` / `while (flag)` condition groups.
-header_signal_lx: bool = (lx: lexer, allow_untyped_comma: bool, offside_col: i64, prev_before_lp: i64)
+paren_header_signal_lx: bool = (lx: lexer, allow: bool, offside: i64, before: i64)
     if token_view.kindat(lx) != token.kindlparen
         return false
     st = lexer.save_state(lx)
@@ -447,70 +588,59 @@ header_signal_lx: bool = (lx: lexer, allow_untyped_comma: bool, offside_col: i64
     if has_table_literal_arg and !typed_or_vararg
         lexer.restore_state(lx, st)
         return false
+    result = false
     if after.kind == token.kindcolon
+        colon = lexer.save_state(lx)
+        lexer.next(lx)
         ty = lexer.peek(lx)
         ty2 = peek2(lx)
-        if (ty.kind == token.kindname or is_descriptor_kind(ty.kind)) and ty2.kind != token.kindlparen
-            lexer.restore_state(lx, st)
-            return true
+        result = (ty.kind == token.kindname or is_descriptor_kind(ty.kind)) and ty2.kind != token.kindlparen
+        lexer.restore_state(lx, colon)
+    if result
+        lexer.restore_state(lx, st)
+        return true
     if typed_or_vararg or after.kind == token.kindarrow or after.kind == token.kindassign
         lexer.restore_state(lx, st)
         return true
-    if allow_untyped_comma and has_comma
+    if allow and has_comma
         if after.kind == token.kindeof
             lexer.restore_state(lx, st)
             return false
         if after.kind == token.kindcolon
-            ty = lexer.peek(lx)
-            ty2 = peek2(lx)
-            if ty.kind != token.kindname and !is_descriptor_kind(ty.kind)
-                lexer.restore_state(lx, st)
-                return false
-            if ty2.kind == token.kindlparen
-                lexer.restore_state(lx, st)
-                return false
             lexer.restore_state(lx, st)
-            return true
+            return result
         if is_infix_kind(after.kind) or after.kind == token.kinddot
             lexer.restore_state(lx, st)
             return false
         lexer.restore_state(lx, st)
         return true
     if after.kind == token.kindcolon
-        ty = lexer.peek(lx)
-        ty2 = peek2(lx)
-        if ty.kind != token.kindname and !is_descriptor_kind(ty.kind)
-            lexer.restore_state(lx, st)
-            return false
-        if ty2.kind == token.kindlparen
-            lexer.restore_state(lx, st)
-            return false
         lexer.restore_state(lx, st)
-        return true
+        return result
     if is_infix_kind(after.kind) or after.kind == token.kindcomma
         lexer.restore_state(lx, st)
         return false
     if depth1_tokens == 1 and depth1_names == 1 and !typed_or_vararg and !has_comma
-        if !allow_untyped_comma
+        if !allow
             lexer.restore_state(lx, st)
             return false
         if after.loc.line != rparen_line
             if inner_tokens != 1
                 lexer.restore_state(lx, st)
                 return false
-            if offside_col == 0
+            if offside == 0
                 lexer.restore_state(lx, st)
                 return false
-            if after.loc.col <= offside_col
+            if after.loc.col <= offside
                 lexer.restore_state(lx, st)
                 return false
-            if prev_before_lp == token.kindif or prev_before_lp == token.kindelseif or prev_before_lp == token.kindelse or prev_before_lp == token.kindwhile or prev_before_lp == token.kinduntil or prev_before_lp == token.kindfor or prev_before_lp == token.kindmatch
+            if before == token.kindif or before == token.kindelseif or before == token.kindelse or before == token.kindwhile or before == token.kinduntil or before == token.kindfor or before == token.kindmatch
                 lexer.restore_state(lx, st)
                 return false
-    if !allow_untyped_comma and !typed_or_vararg
+    if !allow and !typed_or_vararg
         lexer.restore_state(lx, st)
         return false
-    if depth1_tokens == 0 and !allow_untyped_comma
+    if depth1_tokens == 0 and !allow
         lexer.restore_state(lx, st)
         return false
     if can_start_body_kind(after.kind)
@@ -526,15 +656,9 @@ statement_header_signal_lx: bool = (lx: lexer, name: token, allow_untyped_comma:
     if token_view.kindat(lx) != token.kindlparen
         lexer.restore_state(lx, st)
         return false
-    _lp = lexer.next(lx)
-    found = header_signal_lx(lx, allow_untyped_comma, name.loc.col, token.kindeof)
+    found = paren_header_signal_lx(lx, allow_untyped_comma, name.loc.col, token.kindeof)
     lexer.restore_state(lx, st)
     found
-
-# Expression-position parenthesised header: cursor on '('.
-paren_header_signal_lx: bool = (lx: lexer, allow_untyped_comma: bool, prev_before_lp: i64)
-    lp = lexer.peek(lx)
-    header_signal_lx(lx, allow_untyped_comma, lp.loc.col, prev_before_lp)
 
 # Join two projection fragments with a space, omitting empty fragments so no
 # trailing-space artifacts leak into the sexpr.
@@ -559,7 +683,8 @@ quote: str = (s: str)
 is_lambda_head: bool = (lx: lexer)
     # Typed/untyped-annotation signals only — not the full header recognizer.
     # Keeps `(a, b)` in the bare-lambda arm separate from `(x: t): r`.
-    paren_header_signal_lx(lx, false, token.kindeof)
+    lp = lexer.peek(lx)
+    paren_header_signal_lx(lx, false, lp.loc.col, token.kindeof)
 
 # The unannotated value-form: `() f(1)` and `(a, b) a < b`.
 #

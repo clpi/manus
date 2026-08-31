@@ -160,6 +160,35 @@ elif [ "$o6_live" -ne 1 ]; then
     bad "the replacement detector is broken: matchingTokenClose planted once, counted $o6_live"
 fi
 
+# ── 2c. one executed parser recognizer (GAP-134 transfer) ───────────────────
+#
+# The owner-authored `header` relation in lib/compiler/parser.id is projected
+# to C during bootstrap and is the production answer. The former Zig
+# `headerSignal` body must stay deleted: keeping it beside the executed Idol
+# relation would preserve two recognizers and make the call a decorative proof.
+forbid "$PARSER" 'fn headerSignal(' \
+    'parser.zig retained the host header recognizer beside the executed Idol relation'
+forbid "$PARSER" 'fn viewColonIsMethodCall(' \
+    'parser.zig retained the host colon-role helper beside the executed Idol relation'
+has "$PARSER" 'return idol_parser_header_pack(' \
+    'scan_func_header_signal no longer delegates its production decision to parser.id'
+has "$ROOT/lib/compiler/parser.id" 'header_signal_lx: bool = (fact: []i64' \
+    'parser.id lost the immutable producer-pack header relation'
+has "$ROOT/src/parser/projection.c" 'bool header_signal_lx(int64_t fact[]' \
+    'the tracked parser.id C projection lost its immutable pack ABI'
+
+transfer=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate parser-transfer scratch' >&2; exit 2; }
+printf '%s\n' 'fn headerSignal() bool { return false; }' >"$transfer/planted.zig"
+printf '%s\n' 'fn viewColonIsMethodCall() bool { return false; }' >>"$transfer/planted.zig"
+printf '%s\n' 'return idol_parser_header_pack(facts, count, index);' >"$transfer/clean.zig"
+host_count=$(grep -cE 'fn (headerSignal|viewColonIsMethodCall)\(' "$transfer/planted.zig")
+idol_count=$(grep -cF 'return idol_parser_header_pack(' "$transfer/clean.zig")
+rm -rf -- "$transfer"
+examined=$((examined + 1))
+if [ "$host_count" -ne 2 ] || [ "$idol_count" -ne 1 ]; then
+    bad "the parser-transfer detector is broken: host=$host_count Idol=$idol_count"
+fi
+
 # ── 3. tree-sitter agrees with the one grammar-fact owner ───────────────────
 
 python3 - "$ROOT" <<'PY'
