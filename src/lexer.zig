@@ -178,16 +178,6 @@ pub const Lexer = struct {
         return self.duo_tokens != null;
     }
 
-    /// Index of the token returned by the next `peek()` on the Duo path.
-    pub fn duoStreamIndex(self: *const Lexer) usize {
-        if (self.duo_tokens == null) return 0;
-        if (self.peeked != null) {
-            return if (self.duo_index > 0) self.duo_index - 1 else 0;
-        }
-        const toks = self.duo_tokens.?;
-        return @min(self.duo_index, toks.len);
-    }
-
     /// One token from the Duo stream. Past the end it repeats EOF, matching the
     /// host scanner, which keeps returning `.eof` rather than erroring.
     fn duo_next(self: *Lexer) Token {

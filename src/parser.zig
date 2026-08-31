@@ -334,18 +334,17 @@ pub const Parser = struct {
     }
 
     /// Index of the token returned by the next `peek()` on the production
-    /// stream. Reads the lexer-owned cursor today; the parser-owned
-    /// `pack_index` is set by `ensureProducerPack` and would advance only on
-    /// the production path. Tests and dump-c walks install the lex cursor
-    /// without calling `ensureProducerPack`, so the lex fields are the
-    /// authoritative source for now.
+    /// stream. Reads the parser-owned pack mirror; `pk` and `advRaw` keep
+    /// `pack_index` in lockstep with `lex.duo_index` on the production lane.
+    /// Tests bypass `ensureProducerPack` and install the lex cursor directly,
+    /// leaving `pack_tokens` null and the parser mirror at zero; callers on
+    /// that path read `lex.duoStreamIndex()` instead of this accessor.
     pub fn producerStreamIndex(self: *const Parser) usize {
-        if (self.lex.duo_tokens == null) return 0;
+        const toks = self.pack_tokens orelse return 0;
         if (self.lex.peeked != null) {
-            return if (self.lex.duo_index > 0) self.lex.duo_index - 1 else 0;
+            return if (self.pack_index > 0) self.pack_index - 1 else 0;
         }
-        const toks = self.lex.duo_tokens.?;
-        return @min(self.lex.duo_index, toks.len);
+        return @min(self.pack_index, toks.len);
     }
 
     /// §3 — **blocks close by dedent**. This is the layout layer.
@@ -609,7 +608,15 @@ pub const Parser = struct {
     }
 
     fn pk(self: *Parser) ParseError!Token {
-        return self.lex.peek();
+        const tok = try self.lex.peek();
+        // Mirror the lexer cursor into the parser-owned pack index when the
+        // parser has installed its mirror. `lex.peek` does NOT advance
+        // `duo_index` (it only fills `peeked`); the mirror is consulted by
+        // `producerStreamIndex` which already accounts for the peeked token.
+        if (self.pack_tokens != null and self.lex.duo_tokens != null) {
+            self.pack_index = self.lex.duo_index;
+        }
+        return tok;
     }
 
     fn advRaw(self: *Parser) ParseError!Token {
@@ -617,6 +624,13 @@ pub const Parser = struct {
         self.prev_line = tok.loc.line;
         self.prev_end_col = tok.loc.col + @as(u32, @intCast(tok.text.len));
         if (demandsOperand(tok.kind)) try self.denyRetiredLengthHash(tok);
+        // Keep `pack_index` aligned with `lex.duo_index` only on the
+        // production lane (mirror populated). Tests bypass `ensureProducerPack`
+        // and install the lex cursor directly, so the mirror stays null and
+        // this no-op is the right behavior for them.
+        if (self.pack_tokens != null and self.lex.duo_tokens != null) {
+            self.pack_index = self.lex.duo_index;
+        }
         return tok;
     }
 
