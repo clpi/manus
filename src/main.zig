@@ -7414,10 +7414,9 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     // notice, so the obvious oracle passes a gutted file.
     var comments: std.ArrayList(pretty.SourceComment) = .empty;
     defer comments.deinit(alloc);
-    // Prefer the parser-owned pack mirror (set by parse_module); fall back to
-    // the lexer alias for the comment scan when the parser hasn't installed
-    // the mirror yet. Both point at the same allocator.
-    const comment_toks = parser.pack_tokens orelse lex.duo_tokens orelse return;
+    // The comment scan runs after `parse_module` succeeded; the parser owns
+    // the immutable pack and `ensureProducerPack` populated `pack_tokens`.
+    const comment_toks = parser.pack_tokens orelse return;
     for (comment_toks) |t| {
         switch (t.kind) {
             .comment, .compat_comment, .compat_long_comment => {

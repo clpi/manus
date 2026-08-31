@@ -267,7 +267,10 @@ pub const Parser = struct {
     }
 
     /// One token pack. Host scanner is not a parse fallback (`law.bridge.death`).
-    fn ensureProducerPack(self: *Parser) ParseError!void {
+    /// Idempotent: the parser mirror is set on the first call and never
+    /// rebuilt; subsequent calls only seed the mirror from the lex alias
+    /// when it has been set externally.
+    pub fn ensureProducerPack(self: *Parser) ParseError!void {
         // If the parser mirror is already set, nothing to install. The lex
         // alias may still have been populated by an earlier caller, but the
         // mirror carries the same allocator so no copy is needed.
