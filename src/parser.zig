@@ -239,6 +239,15 @@ pub const Parser = struct {
 
     /// True when `parse_module` installed the producer pack on `alloc`.
     pack_owned: bool = false,
+    /// Mirror of the production pack, owned by the parser. Both the parser
+    /// cursor arithmetic and the host formatter read it; the lexer fields
+    /// remain as a transitional alias and will be deleted when all readers
+    /// (token_view, main.zig formatter/hash) move onto this accessor.
+    pack_tokens: ?[]const Token = null,
+    /// Mirror of `lex.duo_index` for the parser-owned cursor. The two indices
+    /// stay synchronized through `pk`/`advRaw`; deleting the lexer field
+    /// will leave this one as the only source.
+    pack_index: usize = 0,
     /// Physical projection consumed by parser.id production relations: one
     /// inaccessible padding slot, then metadata + short raw lexeme per token.
     /// Metadata is kind[8], line[28], column[27]. The lexeme fact is a length
@@ -261,6 +270,10 @@ pub const Parser = struct {
     fn ensureProducerPack(self: *Parser) ParseError!void {
         if (self.lex.isDuoBacked()) return;
         try lexer_dispatch.route(self.alloc, self.lex, self.lex.cursor.bytes, self.lex.cursor.file);
+        // Mirror the producer pack onto the parser so cursor arithmetic can
+        // migrate onto `pack_index` without breaking `lex.duo_tokens` readers.
+        self.pack_tokens = self.lex.duo_tokens;
+        self.pack_index = self.lex.duo_index;
         self.pack_owned = true;
     }
 
@@ -296,6 +309,11 @@ pub const Parser = struct {
             self.parser_facts = null;
         }
         if (!self.pack_owned) return;
+        // Parser-owned mirror holds the same allocation that the lexer
+        // pointer reads from; only one free. Clear both so the parser can
+        // move off the lex alias without leaving a dangling reference.
+        self.pack_tokens = null;
+        self.pack_index = 0;
         if (self.lex.duo_tokens) |toks| {
             self.alloc.free(toks);
             self.lex.duo_tokens = null;
