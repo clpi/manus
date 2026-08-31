@@ -33,8 +33,8 @@ A production host-built `idol` executable exists. No compiler B built from
 canonical Idol compiler source exists. Host `idol check` / `idol run` are
 not self-host proof.
 
-The production front end nevertheless has four bounded executed Idol-owned
-boundaries: the lexer producer and three parser decisions. The executed
+The production front end nevertheless has eight bounded executed Idol-owned
+boundaries: the lexer producer and seven parser decisions. The executed
 production file `lib/compiler/lexer.id` owns token-kind production, token content,
 and exact source spans. Its `.id` suffix is not evidence of canonical source or
 compiler B. The host bounds-checks those spans and projects them into its
@@ -98,11 +98,16 @@ sentinel, or query-then-mutate helpers as Idol semantic architecture.
 | Source ingress | IDOL OWNED, HOST FS/ABI BRIDGE | `lib/compiler/lexer.id` executes physical-form and corpus-role admission and returns exact law/provenance. `src/lexer_bridge.zig` only resolves physical provenance to the producer's repo-relative spelling and binds producer names to temporary host enums. The roster is a deletion bridge until launch/provider ingress supplies explicit law facts. |
 | Lexer producer | IDOL OWNED | `lib/compiler/lexer.id` owns token-kind, content, and span production and fails closed. Canonical lexical-law closure remains `GAP-145`. |
 | Canonical `.id` lex route | IDOL OWNED | `src/lexer_dispatch.zig` `route()` calls `tokenize()` for every source. The obsolete `TokenizeAuthority` enum/query is deleted: production has no host/generated selector. Host `tokenizeHost()` is differential-only (legacy-equivalent subset; must not veto intentional Idol divergence; `law.bridge.death`). Generated `src/lexer_tokenize.c` is from current `lib/compiler/lexer.id` via `dump-c --lib`. Every lexer export takes family as an operand (`law.family.one`); `new()` does not read suffix bytes. Production compile, fmt, and embed call the `sourceFacts` bridge once, then `Lexer.initFacts`; the law/provenance answer is executed Idol output. `route()`, parse, sema, and token-view consume `lex.family`. `Lexer.init` is a test convenience. |
-| Lexer ABI schema | IDOL OWNED, GENERATED HOST BRIDGE | `RECORD_SLOTS` / `lexErrorFromCode` / `tokenKindFromOrdinal`, the host-authored `TokenKind` enum, `kindFromRecord`, and `useDuoTokens` are deleted. Record decode validates directly through the owner-generated sparse enum; route installs the proven slice once while preserving shebang and hints. Three parser decisions consume compact producer facts without Zig role logic. Remaining bridge debt: parser tokens still carrying the generated enum and the `duo_tokens` / `duo_index` cursor representation (`law.bridge.death`, GAP-107). |
-| Lexical identity | IDOL OWNED, GAP-145 OPEN | Text/bytes/compat/long, `#` comment, shebang, `--` / `--[[` comments, and reserved backtick cross `tokenize()`. Long-text delimiter level is `int_val`; parser no longer scans `[[`. Producer, host-token, and AST `string_lit` identities are deleted; physical slot 3 is unpublished. AST `.quoted` retains exact quote provenance without a text/bytes taxonomy. Tree-sitter and semantic quote/source-law consumers remain. Three executed parser decisions are not lexical closure or complete parser SHC. |
-| Token/span | IDOL OWNED | Exact token content spans are projected through the generated-C physical bridge; the host retains a temporary parser representation. The unused `ProductionPack` / `tokenizePack` / `fromPack` parallel API is deleted; production has one `route` into the live Lexer token slice. |
-| Grammar roles | IDOL OWNED, GAP-134 partial | `lib/compiler/token.id` is the **one executable grammar-fact owner** (`law.grammar.one`): token identities; roles; precedence and associativity; relation and prefix identity; and infix, update, and glued source faces. It emits `src/grammar_role_table.zig` (host bridge the production parser reads, `law.bridge.death`) and `lib/token/grammarrole.id` (Idol projection). `src/grammar_roles.zig` is accessors only and holds no fact; `src/ast.zig` aliases the generated relation ontology. The former parser infix/update/glued/unary maps and the pretty-printer's authored inverse are deleted; totality and injectivity of the generated inverse are compile-time checked. `zig build grammar-projection` fails unless both artifacts regenerate byte-identically. `lib/compiler/parser.id` now executes header, return-start, and match-clause decisions from those facts; its tracked C projection is byte-gated and semantically probed. NOT closure: `docs/spec/grammar.md` still does not generate the parser, the generated `TokenKind` bridge remains, and most parser recognition is host-executed. |
-| Parser recognition | IDOL OWNED SLICES, HOST MAJORITY | `header_signal_lx`, `return_starts_value_lx`, and `_clause` execute from compact producer facts. `_clause` also consumes raw short-lexeme bytes so contextual `case` is decided in parser.id without globally reserving a token. Zig supplies the immutable physical view and consumes bounded verdicts; the replaced header and match scanners are deleted. `src/parser.zig` still decides most expressions, bindings, source structure, and all AST construction. These are three production relations, not a complete parser stage or Compiler B. |
+| Lexer ABI schema | IDOL OWNED, GENERATED HOST BRIDGE | `RECORD_SLOTS` / `lexErrorFromCode` / `tokenKindFromOrdinal`, the host-authored `TokenKind` enum, `kindFromRecord`, `useDuoTokens`, `Lexer.duo_tokens` / `duo_index` / `duo_next`, and `token_view.fromLexer` are deleted. Record decode validates through the owner-generated sparse enum and route returns one immutable slice. Parser alone owns its pack/index and snapshots that index on every speculative read; Lexer retains only the host differential cursor. Remaining bridge debt is the generated enum still carried by parser tokens and consumed by host kind switches (`law.bridge.death`, GAP-107). |
+| Lexical identity | IDOL OWNED, GAP-145 OPEN | Text/bytes/compat/long, `#` comment, shebang, `--` / `--[[` comments, and reserved backtick cross `tokenize()`. Long-text delimiter level is `int_val`; parser no longer scans `[[`. Producer, host-token, and AST `string_lit` identities are deleted; physical slot 3 is unpublished. AST `.quoted` retains exact quote provenance without a text/bytes taxonomy. Tree-sitter literal/comment identities are owner-derived; the generated token enum, host kind consumers, and semantic quote/source-law observers remain. Four executed parser decisions are not lexical closure or complete parser SHC. |
+| Token/span | IDOL OWNED | Exact token content spans are projected through the generated-C physical bridge; the host retains a temporary parser representation. The unused `ProductionPack` / `tokenizePack` / `fromPack` parallel API and the duplicate Lexer cursor are deleted; production has one `route` whose returned immutable slice is owned and advanced only by Parser. |
+| Grammar roles | IDOL OWNED, GAP-134 partial | `lib/compiler/token.id` is the **one executable grammar-fact owner** (`law.grammar.one`): token identities; roles; precedence and associativity; relation and prefix identity; and infix, update, and glued source faces. It emits `src/grammar_role_table.zig` (host bridge the production parser reads, `law.bridge.death`) and `lib/token/grammarrole.id` (Idol projection). `src/grammar_roles.zig` is accessors only and holds no fact; `src/ast.zig` aliases the generated relation ontology. The former parser infix/update/glued/unary maps and the pretty-printer's authored inverse are deleted; totality and injectivity of the generated inverse are compile-time checked. `zig build grammar-projection` fails unless both artifacts regenerate byte-identically. `lib/compiler/parser.id` now executes header, return-start, match-clause,
+line-head `lead`, unary `prefix`, and end-of-expression `demands_operand`
+decisions from those facts; its tracked C projection is byte-gated and
+semantically probed. NOT closure: `docs/spec/grammar.md` still does not
+generate the parser, the generated `TokenKind` bridge remains, and most
+parser recognition is host-executed. |
+| Parser recognition | IDOL OWNED SLICES, HOST MAJORITY | `header_signal_lx`, `return_starts_value_lx`, `_clause`, `lead`, `prefix`, `demands_operand`, and `infix_prec` execute from producer facts. `_clause` consumes raw short-lexeme bytes so contextual `case` is decided in parser.id without globally reserving a token. `lead` consumes token identity/line plus the previous token line and asks the owner's generated `lead()` row; the former host `.opens_line` read and source-byte scan are deleted. `prefix` consumes token identity and asks the owner's generated `prefix()` row; the former host `.prefix` role read in `parse_expr_stmt` is deleted. `demands_operand` consumes token identity on every token advance from `parser.id` `advRaw` and asks the owner's generated `demand()` row; the former host `.demands_operand` row lookup is deleted. `infix_prec` consumes token identity on every Pratt step and asks the owner's generated `_roleinfix` / `roleprecedence` / `roleassoc` / `_rolerelation` rows; the result (relation ordinal + left/right binding power) is packed into a single i64 over the C ABI, so the two former host row reads (`lookup(...).precedence` / `.assoc` plus `infixRelation`) collapse to one ABI call per Pratt peek, and `Parser.infixBinOp` is deleted. Zig supplies physical facts and consumes bounded verdicts. `src/parser.zig` still decides most expressions, bindings, source structure, and all AST construction. These are seven production relations, not a complete parser stage or Compiler B. |
 | Binding/scope | HOST OWNED | Production binding and scope construction remain in the host parser and semantic producer. The graph now retains one module binding id across declaration, reassignment, checked application operands and shadowing controls; checked names nested in application operand expression trees publish an exact value → binding → descriptor route. Nested function/block bodies are outside that bounded producer domain. |
 | Semantic construction | HOST OWNED | The graph work is an improving host implementation, not executed compiler-B source. |
 | Relation/application resolution | HOST OWNED | Production resolution remains host-executed; exact graph application authority is still under integration. GAP-214 closes checked nested-name descriptor continuity into DNIR even when the containing bootstrap call is unresolved, but does not manufacture an `ApplicationFact`; aggregate/index/foreign-field projection → result identity remains open. |
@@ -119,18 +124,23 @@ For the fail-closed lexer transfer:
   token pack, so the next parser read silently resumed the host scanner.
 - **AFTER:** the same failure propagates, partial route storage is released, and
   no host token stream is accepted by that route.
-- **NEXT:** `GAP-145` remaining is Tree-sitter `grammar.json` and semantic
-  consumers that collapse quote/source-law distinctions. Source-form and
-  corpus-home admission now execute in Idol; filesystem normalization and host
-  enum binding remain explicit bootstrap bridges. `GAP-134` now executes three
-  parser decisions; remaining work is closing grammar.md as the generatable owner
-  and deleting the generated-enum `duo_tokens` / `duo_index` cursor bridge without
-  outrunning GAP-145. Callable-header recognition is `parser.id` `header_signal_lx`; Pratt
-  left/right, relation identity, unary identity, and update/glued faces come
-  from the generated owner. The handwritten operation maps are gone; the
-  remaining recognizers that consume those facts are host-executed.
-  Replace the temporary host enum/name ABI only after compiler B consumes the
-  same source-law contract directly.
+- **NEXT:** Tree-sitter literal, numeric, keyword-literal, and comment identity
+  rules are owner-derived and mechanically pinned; the remaining `GAP-145`
+  boundary is the generated token enum plus host kind consumers and semantic
+  quote/source-law observers. Source-form and corpus-home admission execute in
+  Idol; filesystem normalization and host enum binding remain explicit bootstrap
+  bridges. `GAP-134` executes seven parser decisions and Parser now owns the sole
+  immutable pack cursor; the next transfer is another bounded host recognizer,
+  not another token cursor or table. Callable-header recognition is `parser.id` `header_signal_lx`;
+    line-head recognition is `parser.id` `lead`; unary-prefix recognition is
+    `parser.id` `prefix`; end-of-expression `demands_operand` lives in `parser.id`
+    `advRaw`; Pratt binding-power recognition is `parser.id` `infix_prec`;
+    Pratt left/right, relation identity, unary identity,
+    and update/glued faces come from the generated owner. The handwritten
+    operation maps are gone; the remaining recognizers that consume those facts
+    are host-executed. Replace the temporary host enum/name ABI only after
+    compiler B consumes the same source-law contract directly without a Zig
+    seam.
 
 Canonical source ingress recognizes `.id` as Idol. New canonical `.id` is
 admitted. Retired `.duo` / `.duon` / `.idsem` are not source suffixes.
@@ -187,9 +197,10 @@ GRAPH-SOVEREIGNTY. Partial: caller-indexed `home_apps` adjacency;
 `nested` reverse index for scope/contains; `descriptor_refs` for recursion walks.
 
 Generated `src/lexer_tokenize.c` plus host `Token` rematerialization is a
-**physical** bridge. Semantic authority is Idol `tokenize()`; compile-time
-FTCFTW still needs Idol lexer → immutable token view → Idol parser without
-generated-C call, oversized records, or host token copies. `lib/` remains
+**physical** bridge. Semantic authority is Idol `tokenize()`; the duplicate
+Lexer pack cursor is gone and Parser owns one immutable view, but compile-time
+FTCFTW still needs Idol lexer → Idol parser without generated-C call, oversized
+records, generated enum switching, or host token copies. `lib/` remains
 retired filesystem provenance (GAP-157), not a semantic namespace.
 
 Do not claim combined CI green from local ledgers or focused unit runs.

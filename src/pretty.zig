@@ -12,6 +12,11 @@ const Module = ast.Module;
 const BinOp = ast.BinOp;
 const UnOp = ast.UnOp;
 
+/// Packed `infix_prec` triple, mirrored from the parser projection. The
+/// pretty-printer uses this for the BinOp round-trip test (and only that —
+/// production printing still reads the owner's row).
+extern fn idol_parser_infix_prec(kind: i64) i64;
+
 pub const Mode = enum {
     idol,
     lua,
@@ -2186,13 +2191,18 @@ test "pretty: every BinOp round-trips through the grammar" {
     // grammar owner's `relation` fact, and the parser reads the same fact
     // forward. This is the runtime witness that the two directions compose to
     // the identity, which is the property the deleted pair of hand-written
-    // switches could only be TESTED for.
-    const Parser = @import("parser.zig").Parser;
+    // switches could only be TESTED for. The relation ordinal the parser now
+    // returns through `idol_parser_infix_prec` is the position in
+    // `lib/compiler/token.id` `_relationorder`, which `BinOp` aliases, so
+    // unpacking the packed ABI call reproduces the same bijection the deleted
+    // `Parser.infixBinOp` was tested for.
     inline for (@typeInfo(BinOp).@"enum".field_names) |nm| {
         const op: BinOp = @field(BinOp, nm);
-        const back = Parser.infixBinOp(PrettyPrinter.tokenFor(op));
-        try testing.expect(back != null);
-        try testing.expectEqual(op, back.?);
+        const kind = PrettyPrinter.tokenFor(op);
+        const triple = idol_parser_infix_prec(@intCast(@backingInt(kind)));
+        try testing.expect(triple != 0);
+        const back: BinOp = @enumFromInt(@as(u8, @intCast(triple & 0xff)));
+        try testing.expectEqual(op, back);
     }
 }
 

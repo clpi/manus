@@ -3424,23 +3424,6 @@ fn contractScanModule(alloc: std.mem.Allocator, mod: *const ast.Module, sem: *co
     return findings;
 }
 
-/// SH-03 production dispatch. When the tokenize authority is Duo, lex the whole
-/// source through `lib/compiler/lexer.id` and drive the parser from that
-/// stream instead of the host scanner.
-///
-/// The body moved to `lexer_dispatch.route` so codegen's module-embed paths
-/// route through the SAME entry. While it lived here as a private helper the
-/// driver tokenized through Duo and codegen's embed paths did not, which meant
-/// one compilation ran two scanners.
-fn routeThroughDuoLexer(
-    alloc: std.mem.Allocator,
-    lex: *Lexer,
-    src: []const u8,
-    src_path: []const u8,
-) ![]@import("lexer.zig").Token {
-    return lexer_dispatch.route(alloc, lex, src, src_path);
-}
-
 /// The 1-based `line`th line of `src`, without its terminator.
 fn sourceLine(src: []const u8, line: u32) []const u8 {
     var n: u32 = 1;
@@ -3557,8 +3540,9 @@ const HomeLoaderCtx = struct {
         if (std.mem.eql(u8, path, self.from)) return null;
         const src = read_source(self.alloc, self.io, path) catch return null;
         var lex = Lexer.initFacts(src, path, source.facts);
-        _ = routeThroughDuoLexer(self.alloc, &lex, src, path) catch return null;
         var parser = Parser.init(&lex, self.alloc);
+        parser.pack_tokens = lexer_dispatch.route(self.alloc, &lex, src, path) catch return null;
+        parser.pack_index = 0;
         parser.idol_mode = lex.family == lexer_bridge.family_canon;
         const mod = self.alloc.create(ast.Module) catch return null;
         mod.* = parser.parse_module() catch return null;
@@ -3604,11 +3588,12 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
         std.process.exit(1);
     };
     var lex = Lexer.initFacts(src, src_path, facts);
-    _ = routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
+    var parser = Parser.init(&lex, alloc);
+    parser.pack_tokens = lexer_dispatch.route(alloc, &lex, src, src_path) catch |e| {
         diagnoseLexRejection(&lex, src, src_path, e);
         std.process.exit(1);
     };
-    var parser = Parser.init(&lex, alloc);
+    parser.pack_index = 0;
     parser.idol_mode = lex.family == lexer_bridge.family_canon;
     var mod = parser.parse_module() catch |e| {
         // Parser already emitted a source-span diagnostic for token-edge
@@ -5345,11 +5330,7 @@ fn hashSourceQuotient(
 ) bool {
     const facts = admittedSourceFacts(path) orelse return false;
     var lx = Lexer.initFacts(src, path, facts);
-    var parser = Parser.init(&lx, alloc);
-    _ = routeThroughDuoLexer(alloc, &lx, src, path) catch return false;
-    parser.ensureProducerPack() catch return false;
-    defer parser.releaseOwnedPack();
-    const toks = parser.pack_tokens orelse return false;
+    const toks = lexer_dispatch.route(alloc, &lx, src, path) catch return false;
     defer alloc.free(toks);
 
     var last_line: u32 = 0;
@@ -5382,8 +5363,8 @@ fn hashSourceQuotient(
         h.update(std.mem.asBytes(&t.float_val));
         if (t.kind == .eof) return true;
     }
-    // `routeThroughDuoLexer` admits only EOF-terminated packs. Keep this
-    // fail-closed return in case that contract changes beneath this consumer.
+    // Producer routing admits only EOF-terminated packs. Keep this fail-closed
+    // return in case that contract changes beneath this consumer.
     return false;
 }
 
@@ -7391,11 +7372,12 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
         std.process.exit(1);
     };
     var lex = Lexer.initFacts(src, src_path, facts);
-    _ = routeThroughDuoLexer(alloc, &lex, src, src_path) catch |e| {
+    var parser = Parser.init(&lex, alloc);
+    parser.pack_tokens = lexer_dispatch.route(alloc, &lex, src, src_path) catch |e| {
         diagnoseLexRejection(&lex, src, src_path, e);
         std.process.exit(1);
     };
-    var parser = Parser.init(&lex, alloc);
+    parser.pack_index = 0;
     parser.idol_mode = lex.family == lexer_bridge.family_canon;
     parser.formatting = true;
     const mod = parser.parse_module() catch |err| {

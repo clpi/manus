@@ -37,6 +37,36 @@ extern fn idol_parser_match_clause(
     start: i64,
 ) i64;
 
+extern fn idol_parser_lead(
+    kind: i64,
+    line: i64,
+    before: i64,
+) bool;
+
+extern fn idol_parser_prefix(
+    kind: i64,
+) bool;
+
+extern fn idol_parser_demands_operand(
+    kind: i64,
+) bool;
+
+/// Packed `infix_prec` triple for one token identity.
+///
+/// Returns 0 when the identity is not an infix operator with a real relation,
+/// non-zero precedence, and non-none associativity. Otherwise the layout is:
+///
+///   bits 0..7   = relation ordinal (Relation enum position, 0-23)
+///   bits 8..15  = left binding precedence (0-23)
+///   bits 16..23 = right binding precedence (left adjusted by assoc)
+///
+/// The Relation ordinal is the position in `token.id`'s `_relationorder`,
+/// which `src/grammar_role_table.zig` and `src/ast.zig`'s `BinOp` alias. The
+/// host unpacks with mask+shift and reconstructs the BinOp via `@intToEnum`.
+extern fn idol_parser_infix_prec(
+    kind: i64,
+) i64;
+
 pub const ParseError = error{
     UnexpectedToken,
     ExpectedToken,
@@ -239,14 +269,11 @@ pub const Parser = struct {
 
     /// True when `parse_module` installed the producer pack on `alloc`.
     pack_owned: bool = false,
-    /// Mirror of the production pack, owned by the parser. Both the parser
-    /// cursor arithmetic and the host formatter read it; the lexer fields
-    /// remain as a transitional alias and will be deleted when all readers
-    /// (token_view, main.zig formatter/hash) move onto this accessor.
+    /// Immutable production pack. Parser is the only cursor owner; formatter
+    /// and cache consumers observe this same slice without a lexer alias.
     pack_tokens: ?[]const Token = null,
-    /// Mirror of `lex.duo_index` for the parser-owned cursor. The two indices
-    /// stay synchronized through `pk`/`advRaw`; deleting the lexer field
-    /// will leave this one as the only source.
+    /// Index of the next producer token. Trivia is skipped by Parser.pk/advRaw;
+    /// Lexer retains only its independent host-oracle cursor.
     pack_index: usize = 0,
     /// Physical projection consumed by parser.id production relations: one
     /// inaccessible padding slot, then metadata + short raw lexeme per token.
@@ -266,28 +293,33 @@ pub const Parser = struct {
         return .{ .lex = lex, .alloc = alloc };
     }
 
+    const State = struct {
+        lex: Lexer.State,
+        pack_index: usize,
+        prev_line: u32,
+        prev_end_col: u32,
+    };
+
+    fn saveState(self: *const Parser) State {
+        return .{
+            .lex = self.lex.saveState(),
+            .pack_index = self.pack_index,
+            .prev_line = self.prev_line,
+            .prev_end_col = self.prev_end_col,
+        };
+    }
+
+    fn restoreState(self: *Parser, state: State) void {
+        self.lex.restoreState(state.lex);
+        self.pack_index = state.pack_index;
+        self.prev_line = state.prev_line;
+        self.prev_end_col = state.prev_end_col;
+    }
+
     /// One token pack. Host scanner is not a parse fallback (`law.bridge.death`).
-    /// Idempotent: the parser mirror is set on the first call and never
-    /// rebuilt; subsequent calls only seed the mirror from the lex alias
-    /// when it has been set externally.
+    /// Idempotent: the parser pack is set on the first call and never rebuilt.
     pub fn ensureProducerPack(self: *Parser) ParseError!void {
-        // If the parser mirror is already set, nothing to install. The lex
-        // alias may still have been populated by an earlier caller, but the
-        // mirror carries the same allocator so no copy is needed.
         if (self.pack_tokens != null) return;
-        // Lexer alias present, parser mirror absent — copy the pointer and
-        // index through so every reader sees the parser-owned mirror first.
-        // The form below puts the alias check and seed on one source line so
-        // the gate's grep count covers both sides of the migration.
-        if (self.lex.duo_tokens) |_| {
-            self.pack_tokens = self.lex.duo_tokens;
-            self.pack_index = self.lex.duo_index;
-            return;
-        }
-        // Install the parser mirror directly from the slice `route` returns;
-        // do not rely on the lex alias as a backstop. The two `pack_tokens`
-        // assignments below stay in sync because `installProducerPack` parks
-        // the lex cursor at the pack's last byte.
         const toks = try lexer_dispatch.route(self.alloc, self.lex, self.lex.cursor.bytes, self.lex.cursor.file);
         self.pack_tokens = toks;
         self.pack_index = 0;
@@ -329,33 +361,26 @@ pub const Parser = struct {
             self.parser_facts = null;
         }
         if (!self.pack_owned) return;
-        // The parser-owned mirror and the lex alias point at the same
-        // allocation. Free through the mirror; clear the lex alias so any
-        // late `lex.next` / `lex.peek` calls do not observe a dangling
-        // pointer.
         if (self.pack_tokens) |toks| {
             self.alloc.free(toks);
             self.pack_tokens = null;
             self.pack_index = 0;
-            self.lex.duo_tokens = null;
-            self.lex.duo_index = 0;
-            self.lex.peeked = null;
         }
         self.pack_owned = false;
     }
 
-    /// Index of the token returned by the next `peek()` on the production
-    /// stream. Reads the parser-owned pack mirror; `pk` and `advRaw` keep
-    /// `pack_index` in lockstep with `lex.duo_index` on the production lane.
-    /// Tests bypass `ensureProducerPack` and install the lex cursor directly,
-    /// leaving `pack_tokens` null and the parser mirror at zero; callers on
-    /// that path read `lex.duoStreamIndex()` instead of this accessor.
+    /// Index of the next parser-visible producer token. Trivia remains in the
+    /// immutable pack for formatter/cache observers but is not parser input.
     pub fn producerStreamIndex(self: *const Parser) usize {
         const toks = self.pack_tokens orelse return 0;
-        if (self.lex.peeked != null) {
-            return if (self.pack_index > 0) self.pack_index - 1 else 0;
+        var index = @min(self.pack_index, toks.len);
+        while (index < toks.len) : (index += 1) {
+            switch (toks[index].kind) {
+                .shebang, .comment, .compat_comment, .compat_long_comment => continue,
+                else => break,
+            }
         }
-        return @min(self.pack_index, toks.len);
+        return index;
     }
 
     /// §3 — **blocks close by dedent**. This is the layout layer.
@@ -619,25 +644,23 @@ pub const Parser = struct {
     }
 
     fn pk(self: *Parser) ParseError!Token {
-        const tok = try self.lex.peek();
-        // Mirror the lexer cursor into the parser-owned pack index when the
-        // parser has installed its mirror. `lex.peek` does NOT advance
-        // `duo_index` (it only fills `peeked`); the mirror is consulted by
-        // `producerStreamIndex` which already accounts for the peeked token.
-        if (self.pack_tokens) |_| self.pack_index = self.lex.duo_index;
-        return tok;
+        const toks = self.pack_tokens orelse return try self.lex.peek();
+        self.pack_index = self.producerStreamIndex();
+        if (self.pack_index < toks.len) return toks[self.pack_index];
+        return toks[toks.len - 1];
     }
 
     fn advRaw(self: *Parser) ParseError!Token {
-        const tok = try self.lex.next();
+        const tok = if (self.pack_tokens) |toks| blk: {
+            self.pack_index = self.producerStreamIndex();
+            if (self.pack_index >= toks.len) break :blk toks[toks.len - 1];
+            const next = toks[self.pack_index];
+            self.pack_index += 1;
+            break :blk next;
+        } else try self.lex.next();
         self.prev_line = tok.loc.line;
         self.prev_end_col = tok.loc.col + @as(u32, @intCast(tok.text.len));
-        if (demandsOperand(tok.kind)) try self.denyRetiredLengthHash(tok);
-        // Keep `pack_index` aligned with `lex.duo_index` only on the
-        // production lane (mirror populated). Tests bypass `ensureProducerPack`
-        // and install the lex cursor directly, so the mirror stays null and
-        // this no-op is the right behavior for them.
-        if (self.pack_tokens) |_| self.pack_index = self.lex.duo_index;
+        if (idol_parser_demands_operand(@intCast(@backingInt(tok.kind)))) try self.denyRetiredLengthHash(tok);
         return tok;
     }
 
@@ -662,17 +685,19 @@ pub const Parser = struct {
         return tok;
     }
 
-    /// Tokens that CANNOT END AN EXPRESSION, so the thing after them is an
-    /// operand and not a new statement. This is the whole precondition for
-    /// `denyRetiredLengthHash`, and it is what separates `n = #t` — where the
-    /// operand is missing — from `n = t #t`, where it is not.
+    /// Tokens that CANNOT END AN EXPRESSION used to be read here from the
+    /// generated grammar-role row via `grammar_roles.lookup(kind).demands_operand`,
+    /// but the same fact is now projected from the canonical owner
+    /// (`lib/compiler/token.id` `demand()`) by `lib/compiler/parser.id`
+    /// `demands_operand`, which compiles into the C ABI symbol
+    /// `idol_parser_demands_operand`. The host lookup is gone: one fewer
+    /// row-cache load on every consumed token, and the host recognizer and
+    /// the generated `grammar_role_table.zig` row-emitter both read the same
+    /// owner fact, so they cannot disagree.
     ///
     /// `.lbrace` is deliberately ABSENT. A brace opens a REGION whose body is a
     /// sequence of slots, not one demanded operand, and a comment on its own
     /// line inside a pack is ordinary.
-    fn demandsOperand(kind: TK) bool {
-        return grammar_roles.lookup(kind).demands_operand;
-    }
 
     /// The first byte a `#` would have to be followed by for `#…` to read as the
     /// retired length operator rather than as comment prose. A canonical comment
@@ -720,8 +745,8 @@ pub const Parser = struct {
     /// and never text inside a literal. Three facts have to hold together, and
     /// each one is a fact rather than a heuristic:
     ///
-    ///   1. the token just consumed cannot end an expression (`demandsOperand`),
-    ///      so what follows is an OPERAND;
+    ///   1. the token just consumed cannot end an expression
+    ///      (`idol_parser_demands_operand`), so what follows is an OPERAND;
     ///   2. the next visible token is on a LATER LINE, so that operand did not
     ///      arrive — something swallowed the rest of this line;
     ///   3. the swallowing comment is `#` ABUTTING an expression opener, which
@@ -735,7 +760,7 @@ pub const Parser = struct {
         const src = self.lex.cursor.bytes;
         const from = sourceOffset(src, demand) orelse return;
         const gap_start = from + demand.text.len;
-        const next = self.lex.peek() catch return;
+        const next = self.pk() catch return;
         if (next.loc.line <= demand.loc.line) return;
         const gap_end = if (next.kind == .eof) src.len else (sourceOffset(src, next) orelse src.len);
         if (gap_end < gap_start or gap_end > src.len) return;
@@ -754,9 +779,10 @@ pub const Parser = struct {
     }
 
     /// §3 — **A TOKEN THAT CAN OPEN AN EXPRESSION, AT THE START OF A LINE, OPENS
-    /// ONE.** The exact dual of `demandsOperand` above, and the second half of
-    /// one ruling: that one says what a token cannot END, this one says what a
-    /// token can BEGIN, and between them they decide where an expression stops.
+    /// ONE.** The exact dual of `idol_parser_demands_operand` above, and the
+    /// second half of one ruling: that one says what a token cannot END, this
+    /// one says what a token can BEGIN, and between them they decide where an
+    /// expression stops.
     ///
     /// ===================== WHAT THIS COST =====================
     /// A block-tail expression beginning with unary minus was absorbed as a
@@ -795,31 +821,6 @@ pub const Parser = struct {
     /// The question is whether the OPERATOR begins a line, and nothing about
     /// where its left operand started.
     ///
-    /// Read off the SOURCE BYTES rather than tracked state, for the reason
-    /// `lineStartCol` records one screen up: about thirty-five speculative scans
-    /// rewind the lexer without restoring the parser's line bookkeeping, so a
-    /// tracked "previous line" can be left holding a line the parse has not
-    /// reached. A token's own text is a view into the source on both token
-    /// paths, so its offset cannot go stale.
-    fn opensLineAndExpression(self: *Parser, tok: Token) bool {
-        // WHICH identities are ambiguous at the head of a line is the grammar
-        // owner's fact, not a list kept here. It was `.minus, .tilde, .at`,
-        // and the cost of getting that membership wrong is recorded above.
-        if (!grammar_roles.lookup(tok.kind).opens_line) return false;
-        const src = self.lex.cursor.bytes;
-        const off = sourceOffset(src, tok) orelse return false;
-        var i = off;
-        while (i > 0) {
-            i -= 1;
-            switch (src[i]) {
-                ' ', '\t', '\r' => {},
-                '\n' => return true,
-                else => return false,
-            }
-        }
-        return true;
-    }
-
     /// Offset of `tok` in `src`, or null when the token's text is not a view
     /// into it — a synthesised `.eof`, or a pack whose text arena is elsewhere.
     /// Production packs DO view the caller's source (`lexer_dispatch.route`:
@@ -882,8 +883,8 @@ pub const Parser = struct {
     /// tracked version reported `line_start = 4:3` while parsing a lambda on
     /// line 2 of `examples/parity/map.id`, which handed the body an opener of
     /// column 20 and (with the empty-body rule below) silently gave the lambda
-    /// an EMPTY body. `duo_tokens` is the producer stream the executed Idol
-    /// header relation observes too, so the threshold cannot go stale.
+    /// an EMPTY body. The immutable producer pack is the stream the executed
+    /// Idol header relation observes too, so the threshold cannot go stale.
     ///
     /// Only ever moves the threshold LEFT, and only within `l`'s own line: a
     /// header that begins its line is its own line start and nothing changes.
@@ -921,11 +922,11 @@ pub const Parser = struct {
     /// Argument-list closers only — the position §20 writes it in — so this
     /// cannot reinterpret an existing attribute.
     fn at_is_bare_anchor(self: *Parser) ParseError!bool {
-        const saved = self.lex.saveState();
+        const saved = self.saveState();
         const saved_line = self.prev_line;
         const saved_end = self.prev_end_col;
         defer {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             self.prev_line = saved_line;
             self.prev_end_col = saved_end;
         }
@@ -1236,10 +1237,10 @@ pub const Parser = struct {
         } else {
             // `name = (params) …` — an unlevelled slot. A `=` not followed by a
             // parameter list is not a slot; leave it for the field diagnostic.
-            const saved = self.lex.saveState();
+            const saved = self.saveState();
             _ = try self.adv();
             const opens = try self.check(.lparen);
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             if (!opens) return false;
         }
         _ = try self.expect(.assign);
@@ -1299,7 +1300,7 @@ pub const Parser = struct {
     /// `(` after a field type is still level application (`tags: seq(str)`).
     fn parse_inline_caseset(self: *Parser, field: []const u8, loc: ast.Loc) ParseError!?ast.TypeExpr {
         if (!(try self.check(.lbrace))) return null;
-        const saved = self.lex.saveState();
+        const saved = self.saveState();
         _ = try self.adv();
         var is_caseset = false;
         if ((try self.pk()).kind == .name) {
@@ -1307,7 +1308,7 @@ pub const Parser = struct {
             const after = (try self.pk()).kind;
             is_caseset = after == .comma or after == .lparen;
         }
-        self.lex.restoreState(saved);
+        self.restoreState(saved);
         if (!is_caseset) return null;
 
         const home = self.descriptor_home orelse field;
@@ -1366,11 +1367,11 @@ pub const Parser = struct {
     fn parse_layout_refinements(self: *Parser) ParseError!ast.TypeExpr.Layout {
         var layout: ast.TypeExpr.Layout = .{};
         while ((try self.pk()).kind == .amp) {
-            const saved = self.lex.saveState();
+            const saved = self.saveState();
             _ = try self.adv();
             const name_tok = try self.pk();
             if (name_tok.kind != .name) {
-                self.lex.restoreState(saved);
+                self.restoreState(saved);
                 break;
             }
             _ = try self.adv();
@@ -1396,7 +1397,7 @@ pub const Parser = struct {
             } else if (std.mem.eql(u8, name, "guarded")) {
                 layout.storage = .guarded;
             } else {
-                self.lex.restoreState(saved);
+                self.restoreState(saved);
                 break;
             }
         }
@@ -1416,12 +1417,12 @@ pub const Parser = struct {
         if (t.text.len != 1) return null;
         const stem = t.text[0];
         if (stem != 'i' and stem != 'u' and stem != 'f') return null;
-        const saved = self.lex.saveState();
+        const saved = self.saveState();
         const saved_line = self.prev_line;
         const saved_end = self.prev_end_col;
         var ok = false;
         defer if (!ok) {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             self.prev_line = saved_line;
             self.prev_end_col = saved_end;
         };
@@ -1939,10 +1940,10 @@ pub const Parser = struct {
         // (`type Foo = ...`). But `type(x)` is the Lua builtin call form, so
         // disambiguate by peeking the next token: an `lparen` means a call.
         if (tok.kind == .name and std.mem.eql(u8, tok.text, "type")) {
-            const saved = self.lex.saveState();
+            const saved = self.saveState();
             _ = try self.adv();
             const after = try self.pk();
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             if (after.kind != .lparen) {
                 return self.parse_alias_def_with_attrs(&.{});
             }
@@ -1958,7 +1959,7 @@ pub const Parser = struct {
                 // spellings are keyword tokens). The parser refuses them
                 // without electing another prefix directive as their replacement.
                 {
-                    const ban_saved = self.lex.saveState();
+                    const ban_saved = self.saveState();
                     _ = try self.adv(); // consume '@'
                     const after = try self.pk();
                     if (after.text.len > 0) {
@@ -1968,15 +1969,15 @@ pub const Parser = struct {
                             return ParseError.ExpectedToken;
                         }
                     }
-                    self.lex.restoreState(ban_saved);
+                    self.restoreState(ban_saved);
                 }
                 if (try self.try_parse_c_interface_stmt()) |c_stmt| break :blk c_stmt;
-                const saved = self.lex.saveState();
+                const saved = self.saveState();
                 if (try self.parse_at_starts_attribute_decl()) {
-                    self.lex.restoreState(saved);
+                    self.restoreState(saved);
                     break :blk self.parse_attributed_decl();
                 }
-                self.lex.restoreState(saved);
+                self.restoreState(saved);
                 break :blk self.parse_expr_stmt();
             },
             .kw_local => self.parse_local(),
@@ -2030,14 +2031,14 @@ pub const Parser = struct {
     fn parse_at_starts_attribute_decl(self: *Parser) ParseError!bool {
         // @cinclude is a standalone top-level statement, not attached to a decl.
         // Check for it first before the normal attribute detection.
-        const saved = self.lex.saveState();
+        const saved = self.saveState();
         if ((try self.pk()).kind == .at) {
             _ = try self.adv(); // consume @
             if ((try self.pk()).kind == .name and std.mem.eql(u8, (try self.pk()).text, "cinclude")) {
-                self.lex.restoreState(saved);
+                self.restoreState(saved);
                 return true;
             }
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
         }
         while ((try self.pk()).kind == .at) {
             _ = try self.adv();
@@ -2118,10 +2119,10 @@ pub const Parser = struct {
                     => true,
                     .name => blk: {
                         if (std.mem.eql(u8, nxt.text, "type")) break :blk true;
-                        const s2 = self.lex.saveState();
+                        const s2 = self.saveState();
                         _ = try self.adv();
                         const after = try self.pk();
-                        self.lex.restoreState(s2);
+                        self.restoreState(s2);
                         if (after.kind == .colon) break :blk true;
                         // Bare function declaration (GR-001): `@c.export("n")
                         // name(x: i64): i64 ... end`. `c.export` is an *attaching*
@@ -2141,10 +2142,10 @@ pub const Parser = struct {
             .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_concept, .kw_alias, .kw_local, .kw_global, .kw_for => true,
             .name => blk: {
                 if (std.mem.eql(u8, tok.text, "type")) break :blk true;
-                const s2 = self.lex.saveState();
+                const s2 = self.saveState();
                 _ = try self.adv();
                 const after = try self.pk();
-                self.lex.restoreState(s2);
+                self.restoreState(s2);
                 if (after.kind == .colon) break :blk true;
                 // Bare function declaration (GR-001): `@c.export("n") name(x: i64): i64`.
                 // Bare functions are the canonical form, so an attribute must attach to
@@ -2323,7 +2324,7 @@ pub const Parser = struct {
     /// Standalone `@c.emit("...")` / `@c.include("h.h")` / `@c.import("h.h")` statement.
     fn try_parse_c_interface_stmt(self: *Parser) ParseError!?ast.Stmt {
         if ((try self.pk()).kind != .at) return null;
-        const saved = self.lex.saveState();
+        const saved = self.saveState();
         const loc = (try self.pk()).loc;
         const attr = try self.parse_one_attribute();
         if (std.mem.eql(u8, attr.name, "specialize")) {
@@ -2336,13 +2337,13 @@ pub const Parser = struct {
         if (@import("meta_module.zig").isCEmitDirective(attr.name)) {
             if (attr.args) |raw| {
                 if (!@import("directives.zig").isRawCEmitLiteral(raw)) {
-                    self.lex.restoreState(saved);
+                    self.restoreState(saved);
                     return null;
                 }
             }
             return ast.Stmt{ .directive = .{ .loc = loc, .attr = attr } };
         }
-        self.lex.restoreState(saved);
+        self.restoreState(saved);
         return null;
     }
 
@@ -2990,7 +2991,7 @@ pub const Parser = struct {
     fn parse_level_edge(self: *Parser, path: *std.ArrayList([]const u8)) ParseError!?[]const u8 {
         if (path.items.len != 1) return null;
         if (!(try self.check(.lparen))) return null;
-        const saved = self.lex.saveState();
+        const saved = self.saveState();
         _ = try self.adv();
         const key = try self.pk();
         const level: []const u8 = if (key.kind == .name)
@@ -2998,22 +2999,22 @@ pub const Parser = struct {
         else if (grammar_roles.isDescriptor(key.kind))
             key.kind.spelling()
         else {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             return null;
         };
         _ = try self.adv();
         if (!(try self.check(.rparen))) {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             return null;
         }
         _ = try self.adv();
         if (!(try self.check(.assign))) {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             return null;
         }
         _ = try self.adv();
         const opens_params = try self.check(.lparen);
-        self.lex.restoreState(saved);
+        self.restoreState(saved);
         if (!opens_params) return null;
         _ = try self.adv(); // '('
         _ = try self.adv(); // level
@@ -3138,8 +3139,8 @@ pub const Parser = struct {
     }
 
     fn starts_bare_func_decl(self: *Parser) ParseError!bool {
-        const saved = self.lex.saveState();
-        defer self.lex.restoreState(saved);
+        const saved = self.saveState();
+        defer self.restoreState(saved);
 
         if ((try self.pk()).kind != .name) return false;
         _ = try self.adv();
@@ -3195,11 +3196,11 @@ pub const Parser = struct {
         if (try self.starts_parenthesized_func_expr()) return true;
         if (!self.idol_mode) return false;
         if ((try self.pk()).kind != .lparen) return false;
-        const saved = self.lex.saveState();
+        const saved = self.saveState();
         const saved_line = self.prev_line;
         const saved_end = self.prev_end_col;
         defer {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             self.prev_line = saved_line;
             self.prev_end_col = saved_end;
         }
@@ -3528,8 +3529,8 @@ pub const Parser = struct {
     /// Peeking cannot consume: the caller still has to parse the parenthesized
     /// expression itself, so this restores lexer state before returning.
     fn glued_lparen(self: *Parser, kw: Token) bool {
-        const saved = self.lex.saveState();
-        defer self.lex.restoreState(saved);
+        const saved = self.saveState();
+        defer self.restoreState(saved);
         const nxt = self.pk() catch return false;
         if (nxt.kind != .lparen) return false;
         if (nxt.loc.line != kw.loc.line) return false;
@@ -3710,13 +3711,13 @@ pub const Parser = struct {
         // Position 1 is the tested position per §1.1's success predicate — the
         // value-first return-pack idiom, chosen on merit.
         if ((try self.pk()).kind == .name) {
-            const pack_saved = self.lex.saveState();
+            const pack_saved = self.saveState();
             if (try self.parse_if_pack_binding(l)) |stmt| return stmt;
-            self.lex.restoreState(pack_saved);
+            self.restoreState(pack_saved);
         }
         // `if name = expr` binding condition
         if ((try self.pk()).kind == .name) {
-            const saved = self.lex.saveState();
+            const saved = self.saveState();
             const nm = try self.adv();
             if ((try self.pk()).kind == .assign) {
                 _ = try self.adv();
@@ -3732,7 +3733,7 @@ pub const Parser = struct {
                     .else_body = clauses.else_body,
                 } };
             } else {
-                self.lex.restoreState(saved);
+                self.restoreState(saved);
             }
         }
         const cond = try self.parse_expr();
@@ -3779,10 +3780,10 @@ pub const Parser = struct {
     /// not a new surface. Filed separately.
     fn parse_while_consumption(self: *Parser, l: ast.Loc) ParseError!?ast.Stmt {
         if ((try self.pk()).kind != .name) return null;
-        const saved = self.lex.saveState();
+        const saved = self.saveState();
         const first = try self.adv();
         if ((try self.pk()).kind != .assign) {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             return null;
         }
         _ = try self.adv(); // consume '='
@@ -3797,7 +3798,7 @@ pub const Parser = struct {
         while (try self.eat(.kw_and) != null) {
             const nxt = try self.pk();
             if (nxt.kind == .name) {
-                const link_saved = self.lex.saveState();
+                const link_saved = self.saveState();
                 const nm = try self.adv();
                 if ((try self.pk()).kind == .assign) {
                     _ = try self.adv();
@@ -3808,7 +3809,7 @@ pub const Parser = struct {
                     });
                     continue;
                 }
-                self.lex.restoreState(link_saved);
+                self.restoreState(link_saved);
             }
             try links.append(self.alloc, .{
                 .name = null,
@@ -4234,8 +4235,12 @@ pub const Parser = struct {
         while (true) {
             const tok = try self.pk();
             const inf = infix_prec(tok.kind) orelse break;
-            // §3 — see `opensLineAndExpression`.
-            if (self.opensLineAndExpression(tok)) break;
+            // §3 — the executed Idol `lead` relation owns this distinction.
+            if (idol_parser_lead(
+                @intCast(@backingInt(tok.kind)),
+                @intCast(tok.loc.line),
+                @intCast(self.prev_line),
+            )) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
             const rhs = try self.parse_match_scrutinee_prec(inf.right);
@@ -4685,7 +4690,7 @@ pub const Parser = struct {
                 try entries.append(self.alloc, .{ .spread = spread_expr });
             } else if (tok.kind == .name) {
                 const field_loc = tok.loc;
-                const saved = self.lex.saveState();
+                const saved = self.saveState();
                 _ = try self.adv();
                 if (try self.check(.lparen)) {
                     _ = try self.adv();
@@ -4715,11 +4720,11 @@ pub const Parser = struct {
                         .typ = typ,
                     } });
                 } else if (try self.check(.assign)) {
-                    self.lex.restoreState(saved);
+                    self.restoreState(saved);
                     term.locErr(field_loc, "descriptor fields use 'name: Type' syntax, not '='", .{});
                     return ParseError.UnexpectedToken;
                 } else {
-                    self.lex.restoreState(saved);
+                    self.restoreState(saved);
                     _ = try self.adv();
                     try entries.append(self.alloc, .{ .variant = tok.text });
                 }
@@ -4762,8 +4767,8 @@ pub const Parser = struct {
     fn func_body_should_use_expr_stmt(self: *Parser) ParseError!bool {
         const tok = try self.pk();
         if (tok.kind != .name) return false;
-        const saved = self.lex.saveState();
-        defer self.lex.restoreState(saved);
+        const saved = self.saveState();
+        defer self.restoreState(saved);
         _ = try self.adv();
         var nxt = try self.pk();
         if (nxt.kind == .dot) {
@@ -4779,8 +4784,8 @@ pub const Parser = struct {
 
     /// §3 — `Type:method = (…) …` or `Type.method = (…) …` assign-form func decl.
     fn try_parse_qualified_func_assign(self: *Parser, first: *ast.Expr) ParseError!?ast.Stmt {
-        const saved = self.lex.saveState();
-        errdefer self.lex.restoreState(saved);
+        const saved = self.saveState();
+        errdefer self.restoreState(saved);
 
         var path: std.ArrayList([]const u8) = .empty;
         var method = false;
@@ -4793,7 +4798,7 @@ pub const Parser = struct {
             while (true) {
                 if (try self.eat(.dot) != null) {
                     if ((try self.pk()).kind != .name) {
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                         return null;
                     }
                     const part = try self.expect(.name);
@@ -4807,18 +4812,18 @@ pub const Parser = struct {
                     // function arguments" for a shape that is not a function.
                     _ = try self.adv();
                     if ((try self.pk()).loc.line != colon.loc.line) {
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                         return null;
                     }
                     if ((try self.pk()).kind != .name) {
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                         return null;
                     }
                     const part = try self.expect(.name);
                     if (part.loc.line != colon.loc.line or
                         part.loc.col > colon.loc.col + @as(u32, @intCast(colon.text.len)))
                     {
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                         return null;
                     }
                     try path.append(self.alloc, part.text);
@@ -4833,16 +4838,16 @@ pub const Parser = struct {
         } else return null;
 
         if (path.items.len < 2) {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             return null;
         }
         if ((try self.pk()).kind != .assign) {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             return null;
         }
         _ = try self.adv(); // consume '='
         if (!try self.starts_binding_func_expr()) {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             return null;
         }
         var fb = try self.parse_func_body(loc);
@@ -4869,28 +4874,30 @@ pub const Parser = struct {
         // need full expression parsing, not parse_suffixed_expr which only handles
         // suffixed expressions (names, literals, calls, field access).
         const first_tok = try self.pk();
-        const is_unary = grammar_roles.lookup(first_tok.kind).prefix;
+        // §4 — the executed Idol `prefix` relation owns this distinction; Zig
+        // crosses only the physical kind ordinal.
+        const is_unary = idol_parser_prefix(@intCast(@backingInt(first_tok.kind)));
         // `{ name, age } = user` named destructuring assign
         if (first_tok.kind == .lbrace) {
-            const saved = self.lex.saveState();
+            const saved = self.saveState();
             _ = try self.adv(); // consume '{'
             var is_table_literal = false;
             const inner = try self.pk();
             switch (inner.kind) {
                 .lbracket, .concat, .int_lit => is_table_literal = true,
                 .name => {
-                    const name_saved = self.lex.saveState();
+                    const name_saved = self.saveState();
                     _ = try self.adv();
                     if ((try self.pk()).kind == .assign) is_table_literal = true;
-                    self.lex.restoreState(name_saved);
+                    self.restoreState(name_saved);
                 },
                 else => if (grammar_roles.isQuotedKind(inner.kind)) {
                     is_table_literal = true;
                 },
             }
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             if (!is_table_literal) {
-                const destr_saved = self.lex.saveState();
+                const destr_saved = self.saveState();
                 if (self.parse_table_destr_pattern()) |pat| {
                     if ((try self.pk()).kind == .assign) {
                         _ = try self.adv();
@@ -4898,7 +4905,7 @@ pub const Parser = struct {
                         return try self.stmt_from_table_destructure(pat, rhs, first_tok.loc);
                     }
                 } else |_| {}
-                self.lex.restoreState(destr_saved);
+                self.restoreState(destr_saved);
             }
         }
         if (is_unary) {
@@ -4948,7 +4955,7 @@ pub const Parser = struct {
             // a record type and must keep going to parse_type. A case-set is a
             // name followed by `,` or `(` — a record field always has `:`.
             if ((try self.pk()).kind == .lbrace) caseset: {
-                const saved = self.lex.saveState();
+                const saved = self.saveState();
                 _ = try self.adv();
                 var is_caseset = false;
                 if ((try self.pk()).kind == .name) {
@@ -4968,7 +4975,7 @@ pub const Parser = struct {
                     // thing that reaches it.
                     is_caseset = true;
                 }
-                self.lex.restoreState(saved);
+                self.restoreState(saved);
                 if (!is_caseset) break :caseset;
                 return try self.stmt_from_descriptor(first.name.ident, first.loc());
             }
@@ -5089,10 +5096,10 @@ pub const Parser = struct {
             // Single-target assignment:  name = expr  /  name += expr  /
             // name >>= expr (the operator and its `=` are two glued tokens)
             if (first.* == .name and nxt.kind == .assign) {
-                const saved = self.lex.saveState();
+                const saved = self.saveState();
                 _ = try self.adv();
                 const is_func_assign = try self.starts_binding_func_expr();
-                self.lex.restoreState(saved);
+                self.restoreState(saved);
                 if (is_func_assign) {
                     _ = try self.adv();
                     const fb = try self.parse_func_body(first.loc());
@@ -5157,7 +5164,7 @@ pub const Parser = struct {
             // Could be multi-target assignment (a, b = ...) or bare sequence
             // (a, b).  Speculatively parse comma-separated names, then check
             // whether an assignment operator follows.
-            const saved = self.lex.saveState();
+            const saved = self.saveState();
             var exprs: std.ArrayList(*ast.Expr) = .empty;
             try exprs.append(self.alloc, first);
             while (try self.eat(.comma) != null)
@@ -5215,7 +5222,7 @@ pub const Parser = struct {
                 // ── Bare sequence expression: a, b ──
                 // No assignment operator follows — this is a comma-separated
                 // expression list.  Common as an implicit multi-value return.
-                self.lex.restoreState(saved);
+                self.restoreState(saved);
                 // Re-parse: first was already consumed, but we restored past
                 // the comma so re-collect from first.
                 var seq: std.ArrayList(*ast.Expr) = .empty;
@@ -5350,30 +5357,29 @@ pub const Parser = struct {
 
     // ── Pratt expression parser ───────────────────────────────────────────────
 
-    /// WHICH RELATION, asked of the grammar owner rather than rebuilt here.
+    /// Pratt binding-power triple for one token identity.
     ///
-    /// This was 24 arms naming an operation per token identity — a second
-    /// operation ontology sitting beside the one `lib/compiler/token.id`
-    /// already owned, and one that had to agree with the precedence table two
-    /// lines below it. `ast.BinOp` is now the physical encoding of the owner's
-    /// relation identity; adding an operator changes the owner and its
-    /// generated projection, not this function.
-    pub fn infixBinOp(kind: TK) ?ast.BinOp {
-        return grammar_roles.infixRelation(kind);
-    }
-
+    /// Returns `null` when the identity is not an infix operator with a real
+    /// relation, non-zero precedence, and non-none associativity. Otherwise
+    /// returns the relation identity plus left/right binding power, exactly
+    /// mirroring `lib/compiler/parser.id` `infix_prec`.
+    ///
+    /// The host used to ask `grammar_roles.infixRelation(kind)` for the
+    /// operation identity AND `grammar_roles.lookup(kind)` for `.precedence`
+    /// and `.assoc` — two row reads per Pratt step. The relation is now one
+    /// packed ABI call to `idol_parser_infix_prec`, so `infixBinOp` is gone
+    /// and the row lookup stays out of the Pratt hot path.
     fn infix_prec(kind: TK) ?struct { op: ast.BinOp, left: u8, right: u8 } {
-        const op = infixBinOp(kind) orelse return null;
-        const r = grammar_roles.lookup(kind);
-        if (r.assoc == .none) return null;
-        const left: u8 = @intCast(r.precedence);
-        const right: u8 = switch (r.assoc) {
-            .left => left + 1,
-            .right => left - 1,
-            .nonassoc => left,
-            .none => return null,
+        const triple = idol_parser_infix_prec(@intCast(@backingInt(kind)));
+        if (triple == 0) return null;
+        const op_ordinal: u8 = @intCast(triple & 0xff);
+        const left: u8 = @intCast((triple >> 8) & 0xff);
+        const right: u8 = @intCast((triple >> 16) & 0xff);
+        return .{
+            .op = @as(ast.BinOp, @enumFromInt(op_ordinal)),
+            .left = left,
+            .right = right,
         };
-        return .{ .op = op, .left = left, .right = right };
     }
 
     /// §20 — `v >>= 7`, `n <<= 1`, `m |= bit`, `m &= mask`.
@@ -5396,8 +5402,8 @@ pub const Parser = struct {
     /// grammar fact, not a lexical one.
     fn peek_glued_assign(self: *Parser, op: Token) ParseError!?ast.BinOp {
         const bop = grammar_roles.gluedRelation(op.kind) orelse return null;
-        const saved = self.lex.saveState();
-        defer self.lex.restoreState(saved);
+        const saved = self.saveState();
+        defer self.restoreState(saved);
         _ = try self.adv();
         const eq = try self.pk();
         if (eq.kind != .assign) return null;
@@ -5486,11 +5492,15 @@ pub const Parser = struct {
         while (true) {
             const tok = try self.pk();
             const inf = infix_prec(tok.kind) orelse break;
-            // §3 — see `opensLineAndExpression`. `@` on a new line is an
+            // §3 — `@` on a new line is an
             // attribute prefix and not the matmul operator (without which
             // `x = 42\n@hot\nfun …` parses as `x = 42 @ hot`); `-` and `~` on a
             // new line are unary and not a continuation of the line above.
-            if (self.opensLineAndExpression(tok)) break;
+            if (idol_parser_lead(
+                @intCast(@backingInt(tok.kind)),
+                @intCast(tok.loc.line),
+                @intCast(self.prev_line),
+            )) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
             if (self.idol_mode) {
@@ -5738,8 +5748,7 @@ pub const Parser = struct {
     /// is seated too because it is what `Lexer` reports positions from whenever
     /// a pack is not installed.
     /// Seats the sub-parse cursor and the sub-parser's pack locations. Takes
-    /// the sub-parser's pack mirror explicitly so the seat function does not
-    /// read `sub.lex.duo_tokens` (which is still the legacy alias).
+    /// the immutable pack explicitly; Lexer has no producer-pack cursor.
     fn seatSubParser(sub: *Parser, sub_pack: []const Token, seat: ast.Loc) void {
         sub.lex.cursor.line = seat.line;
         sub.lex.cursor.col = seat.col;
@@ -6250,8 +6259,8 @@ pub const Parser = struct {
     const WorldFace = enum { interject, qualify_expr };
 
     fn at_glued_world_face(self: *Parser, at_tok: Token) ParseError!?WorldFace {
-        const saved = self.lex.saveState();
-        defer self.lex.restoreState(saved);
+        const saved = self.saveState();
+        defer self.restoreState(saved);
         _ = try self.adv();
         const opener = try self.pk();
         if (opener.kind != .lbrace and opener.kind != .lparen) return null;
@@ -6369,8 +6378,8 @@ pub const Parser = struct {
     }
 
     fn at_is_glued_anchor(self: *Parser, at_tok: Token) ParseError!bool {
-        const saved = self.lex.saveState();
-        defer self.lex.restoreState(saved);
+        const saved = self.saveState();
+        defer self.restoreState(saved);
         _ = try self.adv();
         const rel = try self.pk();
         if (!is_name_like_kind(rel.kind)) return false;
@@ -6745,11 +6754,11 @@ pub const Parser = struct {
     fn starts_paren_pack(self: *Parser) ParseError!bool {
         const first = try self.pk();
         if (first.kind != .name and !grammar_roles.isDescriptor(first.kind)) return false;
-        const saved = self.lex.saveState();
+        const saved = self.saveState();
         const saved_line = self.prev_line;
         const saved_end = self.prev_end_col;
         defer {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             self.prev_line = saved_line;
             self.prev_end_col = saved_end;
         }
@@ -6788,11 +6797,11 @@ pub const Parser = struct {
         const first = try self.pk();
         if (first.loc.line == colon.loc.line) return false;
         if (first.kind != .name) return false;
-        const saved = self.lex.saveState();
+        const saved = self.saveState();
         const saved_line = self.prev_line;
         const saved_end = self.prev_end_col;
         defer {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             self.prev_line = saved_line;
             self.prev_end_col = saved_end;
         }
@@ -6831,11 +6840,11 @@ pub const Parser = struct {
     fn starts_offside_pack(self: *Parser, eq: Token) ParseError!bool {
         const first = try self.pk();
         if (first.loc.line == eq.loc.line) return false;
-        const saved = self.lex.saveState();
+        const saved = self.saveState();
         const saved_line = self.prev_line;
         const saved_end = self.prev_end_col;
         defer {
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
             self.prev_line = saved_line;
             self.prev_end_col = saved_end;
         }
@@ -7472,11 +7481,11 @@ pub const Parser = struct {
     fn parse_layout_intrinsic_call(self: *Parser, loc: ast.Loc, name: []const u8) ParseError!*ast.Expr {
         _ = try self.expect(.lparen);
         var arg: *ast.Expr = undefined;
-        const after_lparen = self.lex.saveState();
+        const after_lparen = self.saveState();
         if (try self.try_parse_layout_type_arg(loc)) |type_arg| {
             arg = type_arg;
         } else {
-            self.lex.restoreState(after_lparen);
+            self.restoreState(after_lparen);
             arg = try self.parse_expr();
             _ = try self.expect(.rparen);
         }
@@ -7686,28 +7695,28 @@ pub const Parser = struct {
                     // Peek ahead to distinguish type annotation from method call.
                     // Type annotation: name : Type = value
                     // Method call:     obj : method ( args )
-                    const saved = self.lex.saveState();
-                    _ = try self.lex.next(); // consume ':'
-                    const after_colon = try self.lex.peek();
+                    const saved = self.saveState();
+                    _ = try self.advRaw(); // consume ':'
+                    const after_colon = try self.pk();
                     if (grammar_roles.isDescriptor(after_colon.kind)) {
                         // name : i64 = ...  —  this is a typed binding; don't consume
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                         break;
                     }
                     if (after_colon.kind == .lbrace) {
                         // name : { ... } — record type annotation (Jai-like syntax); don't consume
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                         break;
                     }
                     if (after_colon.kind == .at) {
                         // name : @… — the RETIRED descriptor face. Not consumed
                         // here; the statement reader refuses it by name below.
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                         break;
                     }
                     if (after_colon.kind == .star or after_colon.kind == .question) {
                         // name : *Type or name : ?Type — pointer/optional type; don't consume
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                         break;
                     }
                     // `point:` followed by a LATER line is a descriptor home
@@ -7718,7 +7727,7 @@ pub const Parser = struct {
                     // `a:match` over an offside pack is unaffected: its method
                     // name IS on the `:` line.
                     if (after_colon.loc.line != tok.loc.line) {
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                         break;
                     }
                     if (after_colon.kind == .lbracket) {
@@ -7726,16 +7735,16 @@ pub const Parser = struct {
                         // `[` can never open a method name, so this is unambiguously a
                         // typed binding. Without this case it fell through to the
                         // method-call path and `expect_name_like` failed on `[`.
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                         break;
                     }
                     if (after_colon.kind == .name) {
                         // Could be name : UserType = ... or obj : method ( args )
-                        _ = try self.lex.next(); // consume the name
-                        const after_name = try self.lex.peek();
+                        _ = try self.advRaw(); // consume the name
+                        const after_name = try self.pk();
                         if (after_name.kind == .assign) {
                             // name : TypeName = ...  —  typed binding; don't consume
-                            self.lex.restoreState(saved);
+                            self.restoreState(saved);
                             break;
                         }
                         // `x: i(64) = 5` — an APPLIED type, not the subject call
@@ -7745,10 +7754,10 @@ pub const Parser = struct {
                         // trailing `=` admits only the binding reading. Scanning
                         // the parens balanced keeps `x:f(g(1))` working.
                         if (after_name.kind == .lparen) {
-                            _ = try self.lex.next();
+                            _ = try self.advRaw();
                             var depth: usize = 1;
                             while (depth > 0) {
-                                const t = try self.lex.next();
+                                const t = try self.advRaw();
                                 switch (t.kind) {
                                     .lparen => depth += 1,
                                     .rparen => depth -= 1,
@@ -7756,14 +7765,14 @@ pub const Parser = struct {
                                     else => {},
                                 }
                             }
-                            const after_paren = try self.lex.peek();
-                            self.lex.restoreState(saved);
+                            const after_paren = try self.pk();
+                            self.restoreState(saved);
                             if (after_paren.kind == .assign) break;
                         } else {
-                            self.lex.restoreState(saved);
+                            self.restoreState(saved);
                         }
                     } else {
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                     }
                     // Not a typed binding — treat as method call
                     _ = try self.adv(); // consume ':'
@@ -7877,10 +7886,10 @@ pub const Parser = struct {
                 else => {
                     if (!grammar_roles.isQuotedKind(tok.kind)) break;
                     if (tok.loc.line > e.loc().line) break;
-                    const saved = self.lex.saveState();
+                    const saved = self.saveState();
                     _ = try self.adv();
                     const after = try self.pk();
-                    self.lex.restoreState(saved);
+                    self.restoreState(saved);
                     if (after.kind == .concat) break;
                     const callargs = try self.parse_call_args();
                     if (try self.relation_edge_of(e, callargs)) |sym| {
@@ -7910,14 +7919,14 @@ pub const Parser = struct {
     fn parse_nn_layer_expr(self: *Parser) ParseError!*ast.Expr {
         const tok = try self.pk();
         if (tok.kind == .name) {
-            const saved = self.lex.saveState();
+            const saved = self.saveState();
             _ = try self.adv();
             const nxt = try self.pk();
             if (nxt.kind != .lparen) {
                 const func = try self.new_expr(.{ .name = .{ .loc = tok.loc, .ident = tok.text } });
                 return try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = func, .args = &.{} } });
             }
-            self.lex.restoreState(saved);
+            self.restoreState(saved);
         }
         const expr = try self.parse_expr();
         if (expr.* == .name) {
@@ -8060,7 +8069,7 @@ pub const Parser = struct {
             } else if (grammar_roles.isQuotedKind(tok.kind) or tok.kind == .int_lit) {
                 // Sugar: "key" = val  or  1 = val  (unboxed literal key, desugars to indexed)
                 // Check if next token is `=` via saveState lookahead
-                const saved_lit = self.lex.saveState();
+                const saved_lit = self.saveState();
                 _ = try self.adv(); // consume the literal
                 if (try self.check(.assign)) {
                     _ = try self.adv(); // consume `=`
@@ -8071,7 +8080,7 @@ pub const Parser = struct {
                     const val = try self.parse_expr();
                     try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
                 } else {
-                    self.lex.restoreState(saved_lit);
+                    self.restoreState(saved_lit);
                     const val = try self.parse_expr();
                     if (try self.eat(.kw_for) != null) {
                         const comp = try self.finish_list_comp(l, val);
@@ -8091,7 +8100,7 @@ pub const Parser = struct {
                 // has in a conditional chain. It is a key only; nothing here
                 // makes `else` a name anywhere else.
                 const key_text = if (tok.kind == .name) tok.text else tok.kind.spelling();
-                const saved = self.lex.saveState();
+                const saved = self.saveState();
                 _ = try self.adv();
                 if (try self.check(.assign)) {
                     _ = try self.adv();
@@ -8105,7 +8114,7 @@ pub const Parser = struct {
                         const val = try self.parse_expr();
                         try fields.append(self.alloc, .{ .named = .{ .key = key_text, .val = val } });
                     } else {
-                        self.lex.restoreState(saved);
+                        self.restoreState(saved);
                         const val = try self.parse_expr();
                         if (try self.eat(.kw_for) != null) {
                             const comp = try self.finish_list_comp(l, val);
@@ -8115,7 +8124,7 @@ pub const Parser = struct {
                         try fields.append(self.alloc, .{ .positional = val });
                     }
                 } else {
-                    self.lex.restoreState(saved);
+                    self.restoreState(saved);
                     const val = try self.parse_expr();
                     if (try self.eat(.kw_for) != null) {
                         const comp = try self.finish_list_comp(l, val);
@@ -8461,12 +8470,11 @@ test "parse: backtick rejection does not depend on token text" {
         .{ .kind = .eof, .loc = .{ .file = file, .line = 1, .col = 10 }, .text = "" },
     };
     var lex = Lexer.init("", file);
-    lex.duo_tokens = &tokens;
-    lex.duo_index = 0;
-    lex.peeked = null;
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     var p = Parser.init(&lex, arena.allocator());
+    p.pack_tokens = &tokens;
+    p.pack_index = 0;
     p.idol_mode = true;
 
     try testing.expectError(ParseError.UnexpectedToken, p.parse_module());
@@ -8683,9 +8691,9 @@ test "parse: match-arm lookahead installs the production pack without host fallb
     p.idol_mode = true;
     defer p.releaseOwnedPack();
 
-    try testing.expect(p.lex.duo_tokens == null);
+    try testing.expect(p.pack_tokens == null);
     try testing.expect(try p.startsMatchArm());
-    try testing.expect(p.lex.duo_tokens != null);
+    try testing.expect(p.pack_tokens != null);
 }
 
 test "parse: bare return in a match arm does not consume the next arm pattern" {
@@ -10723,8 +10731,9 @@ test "parse: same-line void call then concat (F-13813-1)" {
 // The negative control is the second half and it is not optional: `#` is the
 // COMMENT OPENER in canonical source, so a refusal that convicts an ordinary
 // comment has replaced a silent wrong answer with a loud one. Remove the
-// `demandsOperand` guard and row 3 fails; remove the later-line guard and row 4
-// fails; remove the abutting-character guard and rows 5–8 fail.
+// Remove the `idol_parser_demands_operand` guard and row 3 fails; remove the
+// later-line guard and row 4 fails; remove the abutting-character guard and
+// rows 5–8 fail.
 test "parse: `#` is refused in every position, and comments are not" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -11582,12 +11591,83 @@ test "parse: parser fact packing refuses an out-of-range location" {
         .{ .kind = .eof, .loc = .{ .file = file, .line = 1 << 28, .col = 2 }, .text = "" },
     };
     var lex = Lexer.init("", file);
-    lex.duo_tokens = &tokens;
-    lex.duo_index = 0;
-    lex.peeked = null;
     var parser = Parser.init(&lex, testing.allocator);
+    parser.pack_tokens = &tokens;
+    parser.pack_index = 0;
     try testing.expectError(error.SourceTooLarge, parser.ensureParserFacts());
     try testing.expect(parser.parser_facts == null);
+}
+
+test "parse: production line-head decision executes the Idol relation" {
+    for (grammar_roles.rows) |row| {
+        const kind = row.kind orelse continue;
+        const physical: i64 = @intCast(@backingInt(kind));
+        try testing.expect(!idol_parser_lead(physical, 2, 2));
+        try testing.expectEqual(row.opens_line, idol_parser_lead(physical, 2, 1));
+    }
+}
+
+test "parse: production prefix decision executes the Idol relation" {
+    for (grammar_roles.rows) |row| {
+        const kind = row.kind orelse continue;
+        const physical: i64 = @intCast(@backingInt(kind));
+        try testing.expectEqual(row.prefix, idol_parser_prefix(physical));
+    }
+}
+
+test "parse: production infix_prec decision executes the Idol relation" {
+    // For every kind whose owner row is a real infix operator with non-none
+    // associativity, the packed `idol_parser_infix_prec` triple must agree
+    // with the three row reads (`lookup`, `infixRelation`) it replaced. The
+    // packed layout: bits 0..7 = Relation ordinal, bits 8..15 = left
+    // precedence, bits 16..23 = right precedence. A non-infix or
+    // assoc == .none kind must round-trip to zero.
+    for (grammar_roles.rows) |row| {
+        const kind = row.kind orelse continue;
+        const physical: i64 = @intCast(@backingInt(kind));
+        const triple = idol_parser_infix_prec(physical);
+        const want_nothing = !row.infix or row.assoc == .none;
+        if (want_nothing) {
+            try testing.expectEqual(@as(i64, 0), triple);
+            continue;
+        }
+        try testing.expect(triple != 0);
+        const op_ordinal: u8 = @intCast(triple & 0xff);
+        const left: u8 = @intCast((triple >> 8) & 0xff);
+        const right: u8 = @intCast((triple >> 16) & 0xff);
+        const want_relation = row.relation orelse return error.MissingRelation;
+        const want_ordinal: u8 = @intCast(@backingInt(want_relation));
+        try testing.expectEqual(want_ordinal, op_ordinal);
+        try testing.expectEqual(@as(u8, @intCast(row.precedence)), left);
+        const want_right: u8 = switch (row.assoc) {
+            .left => @intCast(row.precedence + 1),
+            .right => @intCast(row.precedence - 1),
+            .nonassoc => @intCast(row.precedence),
+            .none => unreachable,
+        };
+        try testing.expectEqual(want_right, right);
+    }
+}
+
+test "parse: production line-head relation separates prefix from continuation" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const split = try parseDuoSource("x = 3\n-2", &arena);
+    try testing.expectEqual(@as(usize, 1), split.body.stmts.len);
+    try testing.expect(split.body.stmts[0] == .assign);
+    try testing.expect(split.body.tail_expr != null);
+    try testing.expect(split.body.tail_expr.?.* == .unop);
+    try testing.expectEqual(ast.UnOp.neg, split.body.tail_expr.?.unop.op);
+    try testing.expect(split.body.tail_expr.?.unop.operand.* == .int_lit);
+    try testing.expectEqual(@as(i64, 2), split.body.tail_expr.?.unop.operand.int_lit.val);
+
+    const joined = try parseDuoSource("x = 3\n* 2", &arena);
+    try testing.expectEqual(@as(usize, 1), joined.body.stmts.len);
+    try testing.expect(joined.body.stmts[0] == .assign);
+    try testing.expect(joined.body.tail_expr == null);
+    try testing.expect(joined.body.stmts[0].assign.values[0].* == .binop);
+    try testing.expectEqual(ast.BinOp.mul, joined.body.stmts[0].assign.values[0].binop.op);
 }
 
 test "parse: production return-value decision executes the Idol relation" {

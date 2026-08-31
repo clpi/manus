@@ -576,6 +576,114 @@ _clause: i64 = (fact: []i64, count: i64, start: i64)
                 return 1
     0
 
+# A token whose owner `lead` fact is set starts a new expression only when it
+# is on a later line than the last consumed token. Zig carries identity and
+# locations across the physical ABI; it assigns no line-head grammar role.
+lead: bool = (kind: i64, line: i64, before: i64)
+    if kind < 0
+        return false
+    bits: str = token.grammarrole.lead()
+    if kind >= bits:len()
+        return false
+    line != before and bits:byte(kind + 1) == 49
+
+# A token whose owner `prefix` fact is set begins an expression even when no
+# caller precedes it. The host Pratt recognizer asks this relation rather than
+# reading `.prefix` off a Zig-side role row. Same `kind[8]` row shape as `lead`
+# because both are dense zero/one fact slices over every role slot; `prefix`
+# reads only the slot byte the relation owns.
+prefix: bool = (kind: i64)
+    if kind < 0
+        return false
+    bits: str = token.grammarrole.prefix()
+    if kind >= bits:len()
+        return false
+    bits:byte(kind + 1) == 49
+
+# A token whose owner `demand` fact is set CANNOT END an expression, so the
+# next token is an operand and not a new statement. The host advRaw asked this
+# of every consumed token and reached into `grammar_roles.lookup` for the
+# row's `.demands_operand` field — one row-cache lookup per token advance, on
+# the Pratt hot path. The relation reads the same owner `demand(): str` the
+# `grammar_role_table.zig` row-emitter uses, so the parser-side fact and the
+# generated role table can no longer disagree: damaging the owner regenerates
+# both. Same row shape as `lead` / `prefix` — a dense 0/1 char slice over
+# every role slot — and the same `kind[8]` access pattern.
+demands_operand: bool = (kind: i64)
+    if kind < 0
+        return false
+    bits: str = token.grammarrole.demand()
+    if kind >= bits:len()
+        return false
+    bits:byte(kind + 1) == 49
+
+# Pratt binding-power triple for one token identity, packed into a single i64.
+#
+# Returns 0 when `kind` is not an infix operator with a real relation, a
+# non-zero precedence, and a non-none associativity — i.e. the host's
+# `infix_prec(kind)` returns `null`. Otherwise the layout is
+#
+#     bits 0..7   = relation ordinal (0-23; Relation enum position)
+#     bits 8..15  = left binding precedence (0-23; same as `roleprecedence`)
+#     bits 16..23 = right binding precedence (left adjusted by associativity)
+#
+# `right` follows Pratt convention: left-associative tightens the right side
+# to `left + 1`, right-associative loosens it to `left - 1`, non-associative
+# keeps it at `left`. The Relation enum IS the order token.id publishes in
+# `_relationorder`; the lookup walks that row here so the ordinal never comes
+# from a host-side reconstruction.
+#
+# `parse_prec` called this on every Pratt step and used to ask
+# `grammar_roles.lookup(kind)` for `.precedence` and `.assoc` AND
+# `grammar_roles.infixRelation(kind)` for the operation identity — two row
+# reads per peek, on the host Pratt hot path. The relation collapses all
+# three facts into one ABI call and one i64 return, so the host row lookup
+# and the `infixBinOp` helper are gone.
+infix_prec: i64 = (kind: i64)
+    if kind < 0
+        return 0
+    if !token.grammarrole._roleinfix(kind)
+        return 0
+    prec: i64 = token.grammarrole.roleprecedence(kind)
+    if prec == 0
+        return 0
+    a: i64 = token.grammarrole.roleassoc(kind)
+    if a == 0
+        return 0
+    op: i64 = relationordinal(token.grammarrole._rolerelation(kind))
+    if op < 0
+        return 0
+    left = prec
+    right: i64 = left
+    if a == 1
+        right = left + 1
+    if a == 2
+        right = left - 1
+    op | (left << 8) | (right << 16)
+
+# Relation-ontology ordinal by name. Walks the order token.id publishes in
+# `_relationorder` so the ordinal is exactly the Relation enum position and
+# nothing here is keyed off a host-side reconstruction. Returns -1 when the
+# name is not in the order — the only legal answer for "." (no relation).
+relationordinal: i64 = (name: str)
+    # Pinned by `lib/compiler/token.id` `_relationorder`; this is a mirror,
+    # not a second order. 24 names, space-separated, single trailing space.
+    orders = "add sub mul div idiv mod pow band bor bxor lshift rshift concat eq neq lt gt leq geq and or contains matmul pipeline "
+    n = orders:len()
+    if n == 0 or name:len() == 0
+        return -1
+    ord = 0
+    start = 1
+    i = 1
+    while i <= n
+        if orders:byte(i) == 32
+            if i - 1 >= start and orders:sub(start, i - 1) == name
+                return ord
+            ord += 1
+            start = i + 1
+        i += 1
+    -1
+
 # Cursor on `(`. `offside_col` 0 disables layout discrimination for the
 # single-name `(a)` shape; otherwise it is the statement-line opener column.
 # `prev_before_lp` is the token kind immediately before this `(`, or EOF when

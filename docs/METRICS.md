@@ -49,12 +49,13 @@ semantics → resolution → demand → realization → machine → object → r
 ```
 
 **Current honest state: S0. No compiler B exists. No compiler C exists.**
-Executed parser ownership is near zero.
+Executed parser ownership is seven bounded production decisions; the host still
+owns the parser stage and AST construction.
 
 What has crossed the frontier is real and larger than one boundary: source
 ingress classification, the production lexer and token/span production, and the
 grammar-fact ontology are executed Idol authority. What has *not* crossed is
-everything from parser recognition rightward. `docs/bootstrap.md` owns the
+the parser stage as a whole and everything rightward. `docs/bootstrap.md` owns the
 per-boundary contract and is the authority when this table and that one differ.
 
 **Score executed SHC authority:** milestone table (S0), not a percentage headline.
@@ -65,7 +66,7 @@ per-boundary contract and is the authority when this table and that one differ.
 | B-L0 lexical identity + GAP-145 consumer zero | open (owner executes; consumers remain) |
 | B-G0a grammar Idol **owner** exists | **met** — `lib/compiler/token.id` |
 | B-G0b grammar **consumer** closure | open (GAP-134; token_view prerequisite linkable, parser still host-owned) |
-| B-P0 one parser production decision | open — parser SHC not started |
+| B-P0 one parser production decision | **met** — seven bounded relations execute from `lib/compiler/parser.id`; complete parser stage remains open |
 | B0 compiler B executable | open — B does not exist |
 | C0 B compiles C | open — C does not exist |
 
@@ -123,7 +124,7 @@ No count below is written out here. Each row names what to run.
 | The editor grammar's disagreement with the owner is exactly the pinned baseline — the gate prints owner infix identities, editor operator rows, and divergences found / pinned / unpinned / stale | `zig build treesitter-agreement` (or `sh gate/treesitter/agreement.sh`) on a direct-native-supported host; on this x86_64-linux host the gate reports NOT MEASURED because the same DNB004 blocks the local direct-native witness |
 | The parser holds no token→operation or operation→token map of its own; `src/ast.zig` aliases the generated ontology and `src/pretty.zig`'s inverse is compile-time checked for totality and injectivity | `zig build unit-test`; inspect `src/grammar_roles.zig` tests and `src/ast.zig` `BinOp`/`UnOp` |
 | The `demandsOperand` membership is an owner fact, and its size is pinned by a counting control rather than by prose | `zig build unit-test` — `src/grammar_roles.zig`, test "the demand fact is the exact dual of expression start" |
-| The `opensLineAndExpression` membership is an owner fact (`opens_line`), not a parser-local list | `zig build unit-test` — `src/grammar_roles.zig`; consumer is `src/parser.zig` `opensLineAndExpression` |
+| The line-head decision executes from parser.id `lead`, consumes the generated owner row, and preserves prefix-vs-continuation behavior | `sh gate/gap-145-consumer.sh`; `IDOL=./zig-out/bin/idol sh tools/node/dev/parser/artifact`; `zig build unit-test` — tests "production line-head decision executes the Idol relation" and "production line-head relation separates prefix from continuation" |
 | Executed self-host boundaries and their remaining host residue | `./zig-out/bin/idol run scripts/ledger/shc.id` |
 | Historical canonical-surface debt (not gate pass) | `./zig-out/bin/idol run scripts/ledger/debt.id` |
 | FTCFTW contract index (presence ≠ complete proof) | `./zig-out/bin/idol run scripts/ledger/ftcftw.id` |
@@ -187,7 +188,7 @@ date. Where a judgment and a gate disagree, the gate is right.
 | Naming/vocabulary architecture | green |
 | Grammar **owner** existence | **met** (fact, not judgment — the executable witness is host-sensitive: `zig build grammar-projection` runs on a direct-native-supported host; on this x86_64-linux host it refuses DNB004 before the owner runs) |
 | Grammar **consumer** closure | yellow — bounded consumers only; editor grammar authored; `docs/spec/grammar.md` does not generate the parser |
-| Parser ownership | red — host-executed; parser SHC not started |
+| Parser ownership | red-yellow — seven bounded Idol relations execute; host owns the parser stage and AST construction |
 | Source/corpus canonical migration | yellow |
 | Graph/application semantic authority | yellow-green |
 | End-to-end semantic identity preservation | yellow |

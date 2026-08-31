@@ -396,17 +396,13 @@ pub fn route(
     if (file_copy.heap) |p| alloc.free(p);
     // decodeRecords already proved nonempty, final EOF, spans, locations and
     // kind validity. Install exactly once; there is no alternate host route.
-    var start: usize = 0;
-    if (toks.len >= 2 and toks[0].kind == .shebang) {
-        lex.shebang = toks[0].text;
-        start = 1;
-    }
-    // The accessor centralizes the install: cursor parking, peek reset, and
-    // hint harvest. The live `duo_tokens` / `duo_index` fields stay until the
-    // full parser-side cursor migration lands (`docs/bootstrap.md`).
-    lex.installProducerPack(toks);
-    lex.duo_tokens = toks;
-    lex.duo_index = start;
+    // Park the host differential scanner and publish shebang/hint observations.
+    // The returned immutable slice is consumed by Parser; Lexer owns no second
+    // producer-pack cursor.
+    if (toks.len >= 2 and toks[0].kind == .shebang) lex.shebang = toks[0].text;
+    lex.cursor.index = lex.cursor.bytes.len;
+    lex.cursor.line = toks[toks.len - 1].loc.line;
+    lex.cursor.col = toks[toks.len - 1].loc.col + 1;
     lex.peeked = null;
     lex.harvestCommentHints(toks);
     return toks;
@@ -672,7 +668,7 @@ test "lexer_dispatch: production route rejects embedded NUL" {
         DispatchError.EmbeddedNul,
         route(a, &lex, source, "nul.id"),
     );
-    try std.testing.expect(lex.duo_tokens == null);
+    try std.testing.expectEqual(@as(usize, 0), lex.cursor.index);
     try std.testing.expectEqual(@as(?lexer.Loc, null), lex.last_error_loc);
 
     var file_lex = lexer.Lexer.init("", "bad\x00file.id");
@@ -680,7 +676,7 @@ test "lexer_dispatch: production route rejects embedded NUL" {
         DispatchError.EmbeddedNul,
         route(a, &file_lex, "", "bad\x00file.id"),
     );
-    try std.testing.expect(file_lex.duo_tokens == null);
+    try std.testing.expectEqual(@as(usize, 0), file_lex.cursor.index);
 }
 
 test "lexer_dispatch: backtick identity then canon parser stream refuses" {
@@ -744,16 +740,17 @@ test "lexer_dispatch: Idol lexer drives a host token stream" {
     try std.testing.expectEqual(@as(u32, 1), toks[0].loc.line);
 }
 
-test "lexer_dispatch: route publishes shebang and hides it from the parser pack" {
+test "lexer_dispatch: route publishes shebang and returns parser identities" {
     const a = std.testing.allocator;
     const src: []const u8 = "#!/usr/bin/env idol\n# note\n1\n";
     var lex = lexer.Lexer.init(src, "t.id");
     const toks = try route(a, &lex, src, "t.id");
     defer a.free(toks);
-    const first = try lex.next();
     try std.testing.expectEqualStrings("#!/usr/bin/env idol", lex.shebang);
-    try std.testing.expectEqual(lexer.TokenKind.int_lit, first.kind);
-    try std.testing.expectEqual(@as(i64, 1), first.int_val);
+    try std.testing.expectEqual(lexer.TokenKind.shebang, toks[0].kind);
+    try std.testing.expectEqual(lexer.TokenKind.comment, toks[1].kind);
+    try std.testing.expectEqual(lexer.TokenKind.int_lit, toks[2].kind);
+    try std.testing.expectEqual(@as(i64, 1), toks[2].int_val);
 }
 
 test "lexer_dispatch: production route fails closed on storage failure" {
@@ -771,7 +768,7 @@ test "lexer_dispatch: production route fails closed on storage failure" {
         );
         try std.testing.expect(failing.has_induced_failure);
         try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
-        try std.testing.expect(lex.duo_tokens == null);
+        try std.testing.expectEqual(@as(usize, 0), lex.cursor.index);
     }
 }
 

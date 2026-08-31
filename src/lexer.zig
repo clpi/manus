@@ -83,13 +83,6 @@ pub const Lexer = struct {
     /// struct is a cursor over that stream rather than a scanner. The host
     /// scanner below stays intact and stays the differential oracle.
     ///
-    /// The caller owns the slice and its text arena; production route installs
-    /// it without copying. The compile driver owns the allocator —
-    /// `init` deliberately keeps its allocator-free signature so the ~30
-    /// existing call sites and every test are unaffected.
-    duo_tokens: ?[]const Token = null,
-    duo_index: usize = 0,
-
     /// Scratch for canonical multiline text normalization (GAP-145).
     text_scratch: [8192]u8 = undefined,
     text_scratch_len: usize = 0,
@@ -173,41 +166,8 @@ pub const Lexer = struct {
         }
     }
 
-    /// One token from the Duo stream. Past the end it repeats EOF, matching the
-    /// host scanner, which keeps returning `.eof` rather than erroring.
-    fn duo_next(self: *Lexer) Token {
-        const toks = self.duo_tokens.?;
-        while (self.duo_index < toks.len) {
-            const tok = toks[self.duo_index];
-            self.duo_index += 1;
-            if (tok.kind == .shebang) {
-                self.shebang = tok.text;
-                continue;
-            }
-            if (tok.kind == .comment or tok.kind == .compat_comment or tok.kind == .compat_long_comment) continue;
-            return tok;
-        }
-        return toks[toks.len - 1];
-    }
-
     fn cur_loc(self: *Lexer) Loc {
         return self.cursor.loc();
-    }
-
-    /// Install the validated producer pack so the host parser can advance by
-    /// token ordinal. The slice is owned by the caller (production: the
-    /// parser-installed pack; tests: a stack array). The lex cursor parks
-    /// at the pack's last byte so any subsequent host fallback walks nothing;
-    /// shebang seating, peek reset, and hint harvest are kept here.
-    pub fn installProducerPack(self: *Lexer, toks: []const Token) void {
-        if (toks.len >= 2 and toks[0].kind == .shebang) {
-            self.shebang = toks[0].text;
-        }
-        self.cursor.index = self.cursor.bytes.len;
-        self.cursor.line = toks[toks.len - 1].loc.line;
-        self.cursor.col = toks[toks.len - 1].loc.col + 1;
-        self.peeked = null;
-        self.harvestCommentHints(toks);
     }
 
     /// Consume pending compiler hints (from `--- @hint` comments).
@@ -954,33 +914,25 @@ pub const Lexer = struct {
             self.peeked = null;
             return tok;
         }
-        if (self.duo_tokens != null) return self.duo_next();
         return self.host_next();
     }
 
     pub fn peek(self: *Lexer) LexError!Token {
         if (self.peeked) |tok| return tok;
-        if (self.duo_tokens != null) {
-            self.peeked = self.duo_next();
-            return self.peeked.?;
-        }
         self.peeked = try self.host_next();
         return self.peeked.?;
     }
 
     /// Save lexer state for speculative parsing / look-ahead.
-    /// `duo_index` is part of the snapshot: on the Duo path the stream position
-    /// is the index, not the cursor, so restoring only `pos` would rewind the
-    /// scanner and leave the token stream where it was — a silent desync on
-    /// every backtrack.
-    pub const State = struct { pos: usize, line: u32, col: u32, peeked: ?Token, duo_index: usize = 0 };
+    /// Production-pack position belongs to Parser.State; this snapshot is only
+    /// the host differential scanner's physical cursor.
+    pub const State = struct { pos: usize, line: u32, col: u32, peeked: ?Token };
     pub fn saveState(self: *const Lexer) State {
         return .{
             .pos = self.cursor.index,
             .line = self.cursor.line,
             .col = self.cursor.col,
             .peeked = self.peeked,
-            .duo_index = self.duo_index,
         };
     }
 
@@ -990,7 +942,6 @@ pub const Lexer = struct {
         self.cursor.line = state.line;
         self.cursor.col = state.col;
         self.peeked = state.peeked;
-        self.duo_index = state.duo_index;
     }
 };
 

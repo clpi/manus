@@ -117,7 +117,7 @@ has "$ROOT/src/grammar_role_table.zig" \
 # delimiter close?" by walking QUOTED BYTES with a hand-rolled quote-state
 # guesser — a second observation of literal structure the producer had already
 # produced. Both were deleted 2026-08-26: delimiter extent is now observed over
-# the producer pack through `matchingTokenClose` + `token_view.fromLexer`, which
+# the producer pack through `matchingTokenClose` + `token_view.fromTokens`, which
 # balances depth on the PRODUCER'S tokens and masks decoded braces the producer
 # marked protected.
 #
@@ -138,23 +138,49 @@ forbid "$PARSER" 'interpolationHoleEnd' \
     'parser.zig reacquired interpolationHoleEnd — hole extent belongs to the producer pack, not a raw-byte scan'
 has "$PARSER" 'fn matchingTokenClose(' \
     'parser.zig lost matchingTokenClose — the token-view delimiter-extent relation the O6 deletion replaced the raw scans with'
-forbid "$PARSER" 'token_view.fromLexer(' \
-    'parser.zig reacquired a lex-alias bridge; producer-pack slices must flow through Parser.pack_tokens'
-forbid "$PARSER" 'token_view.fromTokens(self.lex.duo_tokens' \
-    'parser.zig reads production pack from the lex alias instead of the parser-owned mirror'
+forbid "$TOKEN_VIEW" 'pub fn fromLexer(' \
+    'token_view reacquired a lexer-owned producer-pack adapter'
+forbid "$LEXER" 'duo_tokens: ?[]const Token' \
+    'Lexer reacquired the duplicate producer-pack slice'
+forbid "$LEXER" 'duo_index: usize' \
+    'Lexer reacquired the duplicate producer-pack index'
+forbid "$LEXER" 'fn duo_next(' \
+    'Lexer reacquired the duplicate producer-pack cursor body'
+forbid "$PARSER" 'self.lex.duo_tokens' \
+    'Parser reacquired a producer-pack alias through Lexer'
+forbid "$PARSER" 'self.lex.duo_index' \
+    'Parser reacquired a producer index through Lexer'
+forbid "$DISPATCH" 'lex.duo_tokens =' \
+    'dispatch reacquired the duplicate producer-pack slice install'
+forbid "$DISPATCH" 'lex.duo_index =' \
+    'dispatch reacquired the duplicate producer-pack index install'
 has "$PARSER" 'token_view.fromTokens' \
-    'parser.zig stopped observing delimiter extent through the parser-owned pack'
-# Three legitimate parser-side references to `self.lex.duo_tokens`:
-#  - mirror-seed in `ensureProducerPack` (which copies the slice into the
-#    parser-owned mirror for test/dump-c paths that install the lex cursor
-#    directly)
-#  - alias clear in `releaseOwnedPack` (which prevents late `lex.next` /
-#    `lex.peek` calls from observing a dangling pointer)
-# Any fourth reference is a new lex-alias bridge the parser must not own.
+    'parser.zig stopped observing delimiter extent through its immutable pack'
+has "$PARSER" 'const toks = self.pack_tokens orelse return try self.lex.peek();' \
+    'Parser.pk no longer selects its immutable pack before the host oracle'
+has "$PARSER" 'self.pack_index = self.producerStreamIndex();' \
+    'Parser no longer owns producer-pack cursor advancement'
+
+# Positive control for literal-zero lexer aliases. The old fields, cursor body,
+# and token-view adapter must all be visible to the detector; the sole parser
+# pack shape must not be mistaken for an alias.
+cursorprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate cursor scratch' >&2; exit 2; }
+{
+    printf '%s\n' 'duo_tokens: ?[]const Token = null,'
+    printf '%s\n' 'duo_index: usize = 0,'
+    printf '%s\n' 'fn duo_next(self: *Lexer) Token {}'
+    printf '%s\n' 'pub fn fromLexer(lex: *const Lexer) ?View {}'
+} >"$cursorprobe/old.zig"
+{
+    printf '%s\n' 'pack_tokens: ?[]const Token = null,'
+    printf '%s\n' 'pack_index: usize = 0,'
+} >"$cursorprobe/new.zig"
+cursor_old=$(grep -cE 'duo_tokens:|duo_index:|fn duo_next\(|pub fn fromLexer\(' "$cursorprobe/old.zig")
+cursor_new=$(grep -cE 'duo_tokens:|duo_index:|fn duo_next\(|pub fn fromLexer\(' "$cursorprobe/new.zig" || true)
+rm -rf -- "$cursorprobe"
 examined=$((examined + 1))
-lex_reads=$(grep -c 'self\.lex\.duo_tokens' "$PARSER")
-if [ "$lex_reads" -ne 3 ]; then
-    bad "parser.zig has $lex_reads reads of self.lex.duo_tokens; the mirror-seed in ensureProducerPack and the alias clear in releaseOwnedPack are the only three allowed"
+if [ "$cursor_old" -ne 4 ] || [ "$cursor_new" -ne 0 ]; then
+    bad "the duplicate-cursor detector is broken: old=$cursor_old new=$cursor_new"
 fi
 
 # POSITIVE CONTROL ON THE REFUSALS (law.gate.protocol). A `forbid` that cannot
@@ -278,7 +304,145 @@ if [ "$match_exec" -ne 1 ] || [ "$match_text" -ne 1 ] || [ "$match_depth" -ne 1 
     bad "the match-clause detector is broken: executor=$match_exec text=$match_text depth=$match_depth"
 fi
 
-# ── 2f. raw producer kind validates through the owner-generated enum ─────────
+# ── 2f. line-head relation executes from the grammar owner ──────────────────
+#
+# The host used to read `.opens_line` and rescan source bytes to decide whether
+# an infix token instead begins a new expression. Parser.State now restores the
+# previous token line, so parser.id `lead` consumes identity + line + previous
+# line and asks the generated owner's `lead()` fact. Zig only crosses the ABI.
+forbid "$PARSER" 'fn opensLineAndExpression(' \
+    'parser.zig retained the host line-head recognizer beside parser.id lead'
+forbid "$PARSER" 'grammar_roles.lookup(tok.kind).opens_line' \
+    'parser.zig retained the host opens_line role decision'
+has "$PARSER" 'if (idol_parser_lead(' \
+    'the production Pratt recognizers no longer delegate their line-head decision to parser.id'
+has "$ROOT/lib/compiler/parser.id" 'lead: bool = (kind: i64, line: i64, before: i64)' \
+    'parser.id lost the production line-head relation'
+has "$ROOT/src/parser/projection.c" 'bool lead(int64_t kind, int64_t line, int64_t before)' \
+    'the tracked parser projection lost the line-head ABI'
+has "$ROOT/build.zig" '-Dlead=idol_parser_lead' \
+    'build.zig no longer renames the line-head ABI symbol'
+has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_lead(void)' \
+    'the parser artifact stopped exhaustively checking the owner lead row'
+
+leadprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate line-head scratch' >&2; exit 2; }
+printf '%s\n' 'fn opensLineAndExpression() bool { return grammar_roles.lookup(tok.kind).opens_line; }' >"$leadprobe/old.zig"
+printf '%s\n' 'return idol_parser_lead(kind, line, before);' >"$leadprobe/new.zig"
+lead_old=$(grep -cE 'opensLineAndExpression|lookup\(tok.kind\)\.opens_line' "$leadprobe/old.zig")
+lead_new=$(grep -cF 'idol_parser_lead' "$leadprobe/new.zig")
+rm -rf -- "$leadprobe"
+examined=$((examined + 1))
+if [ "$lead_old" -ne 1 ] || [ "$lead_new" -ne 1 ]; then
+    bad "the line-head transfer detector is broken: old=$lead_old new=$lead_new"
+fi
+
+# ── 2f'. prefix relation executes from the grammar owner ────────────────────
+#
+# The host used to read `.prefix` off the Zig-side role row to decide whether
+# `parse_expr_stmt` should descend into the unary path. The Pratt recognizer
+# now asks the generated owner's `prefix()` fact via `idol_parser_prefix`,
+# crossing only the physical kind ordinal. The relation row has the same
+# zero-parameter shape as `lead` because both are dense zero/one fact slices
+# over every role slot.
+forbid "$PARSER" 'grammar_roles.lookup(first_tok.kind).prefix' \
+    'parser.zig retained the host prefix role decision'
+forbid "$PARSER" 'grammar_roles.lookup(.+)\.prefix' \
+    'parser.zig retained any host prefix role decision'
+has "$PARSER" 'idol_parser_prefix(' \
+    'parse_expr_stmt no longer delegates its prefix decision to parser.id'
+has "$ROOT/lib/compiler/parser.id" 'prefix: bool = (kind: i64)' \
+    'parser.id lost the production prefix relation'
+has "$ROOT/src/parser/projection.c" 'bool prefix(int64_t kind)' \
+    'the tracked parser projection lost the prefix ABI'
+has "$ROOT/build.zig" '-Dprefix=idol_parser_prefix' \
+    'build.zig no longer renames the prefix ABI symbol'
+has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_prefix(void)' \
+    'the parser artifact stopped exhaustively checking the owner prefix row'
+
+prefixprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate prefix scratch' >&2; exit 2; }
+printf '%s\n' 'const is_unary = grammar_roles.lookup(first_tok.kind).prefix;' >"$prefixprobe/old.zig"
+printf '%s\n' 'return idol_parser_prefix(kind);' >"$prefixprobe/new.zig"
+prefix_old=$(grep -cE 'lookup\(.*\)\.prefix' "$prefixprobe/old.zig")
+prefix_new=$(grep -cF 'idol_parser_prefix' "$prefixprobe/new.zig")
+rm -rf -- "$prefixprobe"
+examined=$((examined + 1))
+if [ "$prefix_old" -ne 1 ] || [ "$prefix_new" -ne 1 ]; then
+    bad "the prefix transfer detector is broken: old=$prefix_old new=$prefix_new"
+fi
+
+# ── 2f''. demands_operand relation executes from the grammar owner ──────────
+#
+# `advRaw` runs once per consumed token and used to read the row's
+# `.demands_operand` field via `grammar_roles.lookup(kind).demands_operand`,
+# making the host Pratt recognizer reach into the generated role row for one
+# token-end fact on every advance. parser.id `demands_operand` now reads the
+# generated owner's `demand(): str` and exposes the fact through the C ABI as
+# `idol_parser_demands_operand`. Same row shape and same one-slot access
+# pattern as `lead` / `prefix`; the host row lookup is gone.
+forbid "$PARSER" 'grammar_roles.lookup\(.+\)\.demands_operand' \
+    'parser.zig retained the host demands_operand role decision'
+forbid "$PARSER" 'fn demandsOperand(' \
+    'parser.zig retained the host demandsOperand helper beside parser.id demands_operand'
+has "$PARSER" 'idol_parser_demands_operand(' \
+    'advRaw no longer delegates its demands_operand decision to parser.id'
+has "$ROOT/lib/compiler/parser.id" 'demands_operand: bool = (kind: i64)' \
+    'parser.id lost the production demands_operand relation'
+has "$ROOT/src/parser/projection.c" 'bool demands_operand(int64_t kind)' \
+    'the tracked parser projection lost the demands_operand ABI'
+has "$ROOT/build.zig" '-Ddemands_operand=idol_parser_demands_operand' \
+    'build.zig no longer renames the demands_operand ABI symbol'
+
+demandprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate demands_operand scratch' >&2; exit 2; }
+printf '%s\n' 'fn demandsOperand(kind: u8) bool { return grammar_roles.lookup(kind).demands_operand; }' >"$demandprobe/old.zig"
+printf '%s\n' 'return idol_parser_demands_operand(kind);' >"$demandprobe/new.zig"
+demand_old=$(grep -cE 'demandsOperand|lookup\(.+\)\.demands_operand' "$demandprobe/old.zig")
+demand_new=$(grep -cF 'idol_parser_demands_operand' "$demandprobe/new.zig")
+rm -rf -- "$demandprobe"
+examined=$((examined + 1))
+if [ "$demand_old" -ne 1 ] || [ "$demand_new" -ne 1 ]; then
+    bad "the demands_operand transfer detector is broken: old=$demand_old new=$demand_new"
+fi
+
+# ── 2f'''. infix_prec triple executes from the grammar owner ──────────────────
+#
+# `parse_prec` ran once per Pratt step and used to ask
+# `grammar_roles.infixRelation(kind)` for the operation identity AND
+# `grammar_roles.lookup(kind)` for `.precedence` and `.assoc` — two row reads
+# per peek, on the host Pratt hot path. parser.id `infix_prec` now reads the
+# owner's `_roleinfix`, `roleprecedence`, `roleassoc`, and `_rolerelation`
+# rows and packs the triple (op ordinal + left + right precedence) into one
+# i64 returned through the C ABI as `idol_parser_infix_prec`. Same one-call
+# shape as the lead/prefix/demands_operand transitions; the host row lookup
+# and the `Parser.infixBinOp` helper are gone.
+forbid "$PARSER" 'grammar_roles.lookup\(.+\)\.precedence' \
+    'parser.zig retained the host precedence role decision'
+forbid "$PARSER" 'grammar_roles.lookup\(.+\)\.assoc' \
+    'parser.zig retained the host assoc role decision'
+forbid "$PARSER" 'fn infixBinOp(' \
+    'parser.zig retained the host infixBinOp helper beside parser.id infix_prec'
+forbid "$PARSER" 'return grammar_roles\.infixRelation(' \
+    'parser.zig retained the host infixRelation call inside infix_prec'
+has "$PARSER" 'idol_parser_infix_prec(' \
+    'infix_prec no longer delegates its relation/precedence/assoc decision to parser.id'
+has "$ROOT/lib/compiler/parser.id" 'infix_prec: i64 = (kind: i64)' \
+    'parser.id lost the production infix_prec relation'
+has "$ROOT/src/parser/projection.c" 'int64_t infix_prec(int64_t kind)' \
+    'the tracked parser projection lost the infix_prec ABI'
+has "$ROOT/build.zig" '-Dinfix_prec=idol_parser_infix_prec' \
+    'build.zig no longer renames the infix_prec ABI symbol'
+
+infixprecprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate infix_prec scratch' >&2; exit 2; }
+printf '%s\n' 'fn infixBinOp(kind: u8) ?Relation { return grammar_roles.infixRelation(kind); }' >"$infixprecprobe/old.zig"
+printf '%s\n' 'const r = grammar_roles.lookup(kind); return idol_parser_infix_prec(kind);' >"$infixprecprobe/new.zig"
+infixprec_old=$(grep -cE 'infixBinOp|infixRelation' "$infixprecprobe/old.zig")
+infixprec_new=$(grep -cF 'idol_parser_infix_prec' "$infixprecprobe/new.zig")
+rm -rf -- "$infixprecprobe"
+examined=$((examined + 1))
+if [ "$infixprec_old" -ne 1 ] || [ "$infixprec_new" -ne 1 ]; then
+    bad "the infix_prec transfer detector is broken: old=$infixprec_old new=$infixprec_new"
+fi
+
+# ── 2g. raw producer kind validates through the owner-generated enum ─────────
 #
 # `kindFromRecord` selected `grammar_role_table.rows[ordinal].kind`, retaining a
 # second runtime identity projection after token.id had already generated the
@@ -343,28 +507,36 @@ if [ "$pack_old" -ne 3 ]; then
     bad "the dead-pack detector is broken: old=$pack_old"
 fi
 
-# `useDuoTokens` was the live mutable installer after record decode. Production
-# now installs its proven EOF-terminated slice directly in route, where shebang,
-# hint and trivia facts are already available. The installer and its orphaned
-# error type must not return under another alias.
+# `useDuoTokens` was the mutable installer after record decode. Production now
+# returns one proven EOF-terminated slice to Parser; Lexer retains only cursor
+# parking plus shebang/hint observations for its host-oracle boundary.
 forbid "$LEXER" 'pub fn useDuoTokens(' \
     'lexer reacquired the mutable useDuoTokens installer'
 forbid "$LEXER" 'pub const TokenStreamError' \
     'lexer retained the orphaned token-stream installer error type'
-has "$DISPATCH" 'lex.duo_tokens = toks;' \
-    'production route no longer installs the decoded token slice'
-has "$DISPATCH" 'lex.harvestCommentHints(toks)' \
-    'production route no longer preserves generated comment hints'
+forbid "$LEXER" 'pub fn installProducerPack(' \
+    'lexer reacquired the one-consumer producer-pack wrapper'
+has "$DISPATCH" 'lex.cursor.index = lex.cursor.bytes.len;' \
+    'production route no longer parks the host oracle after producer success'
+has "$DISPATCH" 'lex.harvestCommentHints(toks);' \
+    'production route no longer publishes producer comment hints'
+has "$PARSER" 'self.pack_tokens = toks;' \
+    'Parser no longer owns the returned immutable producer pack'
+has "$PARSER" 'self.pack_index = 0;' \
+    'Parser no longer seats the sole producer cursor'
 useprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate installer scratch' >&2; exit 2; }
 printf '%s\n' 'pub fn useDuoTokens() void {}' >"$useprobe/old.zig"
 printf '%s\n' 'pub const TokenStreamError = error{};' >>"$useprobe/old.zig"
-printf '%s\n' 'lex.duo_tokens = toks;' >"$useprobe/new.zig"
+printf '%s\n' 'pub fn installProducerPack() void {}' >>"$useprobe/old.zig"
+printf '%s\n' 'lex.cursor.index = lex.cursor.bytes.len;' >"$useprobe/new.zig"
 printf '%s\n' 'lex.harvestCommentHints(toks);' >>"$useprobe/new.zig"
-use_old=$(grep -cE 'useDuoTokens|TokenStreamError' "$useprobe/old.zig")
-use_new=$(grep -cE 'duo_tokens = toks|harvestCommentHints' "$useprobe/new.zig")
+printf '%s\n' 'self.pack_tokens = toks;' >>"$useprobe/new.zig"
+printf '%s\n' 'self.pack_index = 0;' >>"$useprobe/new.zig"
+use_old=$(grep -cE 'useDuoTokens|TokenStreamError|installProducerPack' "$useprobe/old.zig")
+use_new=$(grep -cE 'cursor.index = .*cursor.bytes.len|harvestCommentHints\(toks\)|pack_tokens = toks|pack_index = 0' "$useprobe/new.zig")
 rm -rf -- "$useprobe"
 examined=$((examined + 1))
-if [ "$use_old" -ne 2 ] || [ "$use_new" -ne 2 ]; then
+if [ "$use_old" -ne 3 ] || [ "$use_new" -ne 4 ]; then
     bad "the token-installer detector is broken: old=$use_old new=$use_new"
 fi
 

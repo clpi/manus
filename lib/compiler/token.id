@@ -417,6 +417,26 @@ lead(): str
     kind += 1
   out
 
+# A PREFIX identity begins an expression even when no caller precedes it.
+# The relation owns this fact — Zig carries only the physical kind ordinal.
+# Same row shape as `lead` because both are dense zero/one fact slices over
+# every role slot; `prefix` excludes the infix-only identities that `lead`
+# shares with the attribute face (`*`, `+`).
+prefix(): str
+  out = ""
+  kind = 0
+  while kind < roleslotcount
+    bit = "0"
+    if kind == kindnot or kind == kindawait or kind == kindcomptime
+      bit = "1"
+    if kind == kindlparen or kind == kindminus or kind == kindhash
+      bit = "1"
+    if kind == kindtilde or kind == kindbang or kind == kindhashhash
+      bit = "1"
+    out = "{out}{bit}"
+    kind += 1
+  out
+
 # Pratt binding power
 roleprecedence: i64 = (kind: i64)
   if kind == kindcaret
@@ -806,6 +826,7 @@ idbody: str = ()
   # accessor is a new module-scope declaration and the freeze admits none.
   s = "{s}\ndemand(): str\n  \"{demand()}\"\n"
   s = "{s}\nlead(): str\n  \"{lead()}\"\n"
+  s = "{s}\nprefix(): str\n  \"{prefix()}\"\n"
   s = "{s}\n_slotword: str = (row: str, kind: i64)\n"
   s = "{s}  n = row:len()\n  i = 1\n  seen = 0\n  start = 1\n  out = \".\"\n"
   s = "{s}  while i <= n\n    if row:byte(i) == 32\n      if seen == kind\n        out = row:sub(start, i - 1)\n"

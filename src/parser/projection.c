@@ -2094,6 +2094,7 @@ static inline bool token_grammarrole___roleupdate(int64_t kind);
 static inline bool token_grammarrole___roleglue(int64_t kind);
 static inline const char* token_grammarrole__demand(void);
 static inline const char* token_grammarrole__lead(void);
+static inline const char* token_grammarrole__prefix(void);
 static inline const char* token_grammarrole___slotword(const char* row, int64_t kind);
 static inline const char* token_grammarrole___rolerelation(int64_t kind);
 static inline const char* token_grammarrole___roleunary(int64_t kind);
@@ -2171,6 +2172,10 @@ static inline const char* token_grammarrole__demand(void) {
 
 static inline const char* token_grammarrole__lead(void) {
     return "000000000000000000000000000000000000000000000000000000000000000001000000000010000100000000000000000000000000000000";
+}
+
+static inline const char* token_grammarrole__prefix(void) {
+    return "000000000000000000000100000000000000000000000000010000010010000001000010000010000001000100000000000000000000000000";
 }
 
 static inline const char* token_grammarrole___slotword(const char* row, int64_t kind) {
@@ -2268,6 +2273,11 @@ __attribute__((visibility("default"))) bool colon_is_method_call_lx(duo_rec_ae78
 __attribute__((visibility("default"))) bool header_signal_lx(int64_t fact[], int64_t count, int64_t start, bool allow, int64_t offside, int64_t before);
 __attribute__((visibility("default"))) int64_t return_starts_value_lx(int64_t fact[], int64_t count, int64_t start, int64_t return_line, bool idol_mode);
 __attribute__((visibility("default"))) int64_t _clause(int64_t fact[], int64_t count, int64_t start);
+__attribute__((visibility("default"))) bool lead(int64_t kind, int64_t line, int64_t before);
+__attribute__((visibility("default"))) bool prefix(int64_t kind);
+__attribute__((visibility("default"))) bool demands_operand(int64_t kind);
+__attribute__((visibility("default"))) int64_t infix_prec(int64_t kind);
+__attribute__((visibility("default"))) int64_t relationordinal(const char* name);
 __attribute__((visibility("default"))) bool paren_header_signal_lx(duo_rec_ae78087612f938ba *lx, bool allow, int64_t offside, int64_t before);
 __attribute__((visibility("default"))) bool statement_header_signal_lx(duo_rec_ae78087612f938ba *lx, duo_rec_735fa21981531a8e *name, bool allow_untyped_comma);
 __attribute__((visibility("default"))) const char* join(const char* a, const char* b);
@@ -2848,6 +2858,91 @@ __attribute__((visibility("default"))) int64_t _clause(int64_t fact[], int64_t c
         }
     }
     return 0;
+}
+
+__attribute__((visibility("default"))) bool lead(int64_t kind, int64_t line, int64_t before) {
+    if ((kind < 0)) {
+        return false;
+    }
+    const char* bits = token_grammarrole__lead();
+    if ((kind >= ((int64_t)strlen(bits)))) {
+        return false;
+    }
+    return ((line != before) && (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49));
+}
+
+__attribute__((visibility("default"))) bool prefix(int64_t kind) {
+    if ((kind < 0)) {
+        return false;
+    }
+    const char* bits = token_grammarrole__prefix();
+    if ((kind >= ((int64_t)strlen(bits)))) {
+        return false;
+    }
+    return (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49);
+}
+
+__attribute__((visibility("default"))) bool demands_operand(int64_t kind) {
+    if ((kind < 0)) {
+        return false;
+    }
+    const char* bits = token_grammarrole__demand();
+    if ((kind >= ((int64_t)strlen(bits)))) {
+        return false;
+    }
+    return (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49);
+}
+
+__attribute__((visibility("default"))) int64_t infix_prec(int64_t kind) {
+    if ((kind < 0)) {
+        return 0;
+    }
+    if ((!token_grammarrole___roleinfix(kind))) {
+        return 0;
+    }
+    int64_t prec = token_grammarrole__roleprecedence(kind);
+    if ((prec == 0)) {
+        return 0;
+    }
+    int64_t a = token_grammarrole__roleassoc(kind);
+    if ((a == 0)) {
+        return 0;
+    }
+    int64_t op = relationordinal(token_grammarrole___rolerelation(kind));
+    if ((op < 0)) {
+        return 0;
+    }
+    int64_t left = prec;
+    int64_t right = left;
+    if ((a == 1)) {
+                right = (left + 1);
+    }
+    if ((a == 2)) {
+                right = (left - 1);
+    }
+    return ((int64_t)((((int64_t)((op) | (((int64_t)(((uint64_t)(left)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(right)) << ((uint64_t)(16) & 63u))))));
+}
+
+__attribute__((visibility("default"))) int64_t relationordinal(const char* name) {
+    const char* orders = "add sub mul div idiv mod pow band bor bxor lshift rshift concat eq neq lt gt leq geq and or contains matmul pipeline ";
+    int64_t n = ((int64_t)strlen(orders));
+    if (((n == 0) || (((int64_t)strlen(name)) == 0))) {
+        return (-(1));
+    }
+    int64_t ord = 0;
+    int64_t start = 1;
+    int64_t i = 1;
+    while ((i <= n)) {
+        if ((((int64_t)(unsigned char)(orders[i - 1])) == 32)) {
+            if ((((i - 1) >= start) && (strcmp(duo_str_sub_cstr(orders, (int64_t)(start), (int64_t)((i - 1))), name) == 0))) {
+                return ord;
+            }
+                        ord = (ord + 1);
+                        start = (i + 1);
+        }
+                i = (i + 1);
+    }
+    return (-(1));
 }
 
 __attribute__((visibility("default"))) bool paren_header_signal_lx(duo_rec_ae78087612f938ba *lx, bool allow, int64_t offside, int64_t before) {

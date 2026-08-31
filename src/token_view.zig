@@ -51,12 +51,6 @@ pub fn fromTokens(tokens: []const lexer.Token) View {
     return .{ .tokens = tokens };
 }
 
-/// Observation view over the lexer's bound production pack, when present.
-pub fn fromLexer(lex: *const lexer.Lexer) ?View {
-    const toks = lex.duo_tokens orelse return null;
-    return fromTokens(toks);
-}
-
 pub fn fromDispatch(
     allocator: std.mem.Allocator,
     src: [:0]const u8,

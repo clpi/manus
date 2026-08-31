@@ -388,7 +388,7 @@ test "grammar roles: the demand fact is the exact dual of expression start" {
 test "grammar roles: only a two-faced identity opens a line" {
     // A line-leading `*` can only continue the line above; a line-leading `-`
     // could be either, and the wrong answer there silently deleted a tail
-    // expression (see Parser.opensLineAndExpression).
+    // expression. Production consumes this row through parser.id `lead`.
     try std.testing.expect(lookup(.minus).opens_line);
     try std.testing.expect(lookup(.tilde).opens_line);
     try std.testing.expect(lookup(.at).opens_line);
