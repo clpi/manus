@@ -316,7 +316,10 @@ pub const Parser = struct {
         return facts;
     }
 
-    fn releaseOwnedPack(self: *Parser) void {
+    /// Free the immutable pack and reset the parser-owned mirror. Mirrors
+    /// `ensureProducerPack` symmetry: install + release pair is the parser
+    /// API for the immutable producer pack.
+    pub fn releaseOwnedPack(self: *Parser) void {
         if (self.parser_facts) |facts| {
             self.alloc.free(facts);
             self.parser_facts = null;
