@@ -205,7 +205,7 @@ has "$ROOT/lib/compiler/parser.id" 'return_starts_value_lx: i64 = (fact: []i64' 
     'parser.id lost the immutable producer-pack return-value relation'
 has "$ROOT/src/parser/projection.c" 'return_starts_value_lx(int64_t fact[]' \
     'the tracked parser.id C projection lost its return-value pack ABI'
-has "$ROOT/build.zig" -- '-Dreturn_starts_value_lx=idol_parser_return_starts_value' \
+has "$ROOT/build.zig" '-Dreturn_starts_value_lx=idol_parser_return_starts_value' \
     'build.zig no longer renames the return-value ABI symbol'
 
 returnprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate return-value scratch' >&2; exit 2; }
@@ -220,6 +220,42 @@ if [ "$exec_count" -ne 1 ]; then
 fi
 if [ "$host_switch_count" -ne 1 ]; then
     bad "the return-value host-switch detector is broken: planted host switch carried $host_switch_count match(es)"
+fi
+
+# ── 2e. match-arm classification executes from the producer pack ────────────
+#
+# Contextual `case` remains a name token, so the physical pack carries a short
+# raw lexeme beside metadata. parser.id owns the word comparison, pattern role,
+# same-line rule, delimiter depth and separator decision. Zig may consume the
+# 0/1/2/3 verdict but must not reconstruct any of those facts.
+forbid "$PARSER" 'std.mem.eql(u8, first.text, "case")' \
+    'parser.zig reintroduced contextual case recognition beside parser.id clause'
+forbid "$PARSER" 'if (!view.canStartPattern(start)) return false' \
+    'parser.zig reintroduced the match pattern-role decision'
+forbid "$PARSER" '.kw_then, .kw_do, .fat_arrow => return depth == 0' \
+    'parser.zig reintroduced match separator/depth recognition'
+has "$PARSER" 'idol_parser_match_clause(' \
+    'startsMatchArm no longer delegates its production decision to parser.id'
+has "$PARSER" 'facts[2 + index * 2] = @intCast(lexeme);' \
+    'the parser pack lost its raw short-lexeme physical fact'
+has "$ROOT/lib/compiler/parser.id" '_clause: i64 = (fact: []i64' \
+    'parser.id lost the immutable producer-pack match clause relation'
+has "$ROOT/src/parser/projection.c" 'int64_t _clause(int64_t fact[]' \
+    'the tracked parser.id C projection lost its match clause ABI'
+has "$ROOT/build.zig" '-D_clause=idol_parser_match_clause' \
+    'build.zig no longer renames the match clause ABI symbol'
+
+matchprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate match-clause scratch' >&2; exit 2; }
+printf '%s\n' 'const face = idol_parser_match_clause(facts.ptr, count, index);' >"$matchprobe/clean.zig"
+printf '%s\n' 'if (first.kind == .name and std.mem.eql(u8, first.text, "case")) return true;' >"$matchprobe/host.zig"
+printf '%s\n' '.kw_then, .kw_do, .fat_arrow => return depth == 0,' >>"$matchprobe/host.zig"
+match_exec=$(grep -cF 'idol_parser_match_clause' "$matchprobe/clean.zig")
+match_text=$(grep -cF 'std.mem.eql(u8, first.text, "case")' "$matchprobe/host.zig")
+match_depth=$(grep -cF '.kw_then, .kw_do, .fat_arrow => return depth == 0' "$matchprobe/host.zig")
+rm -rf -- "$matchprobe"
+examined=$((examined + 1))
+if [ "$match_exec" -ne 1 ] || [ "$match_text" -ne 1 ] || [ "$match_depth" -ne 1 ]; then
+    bad "the match-clause detector is broken: executor=$match_exec text=$match_text depth=$match_depth"
 fi
 
 # ── 3. tree-sitter agrees with the one grammar-fact owner ───────────────────

@@ -84,24 +84,52 @@ cat > "$cursor_harness" <<'EOF'
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
-static int verify(const char *source, bool allow, int64_t offside, int64_t before, bool expected) {
+static int64_t word(const char *text) {
+    size_t length = strlen(text);
+    int64_t encoded = length > 6 ? 7 : (int64_t)length;
+    size_t extent = length < 6 ? length : 6;
+    for (size_t i = 0; i < extent; ++i) {
+        encoded |= (int64_t)(uint8_t)text[i] << (8 * (i + 1));
+    }
+    return encoded;
+}
+
+static int64_t tokenize(const char *source, int64_t facts[256]) {
     duo_lexer producer = compiler_lexer__new(source, "probe.id", 1);
     duo_lexer edge = compiler_lexer__new("", "probe.id", 1);
     int64_t eof = compiler_lexer__next(&edge).kind;
-    int64_t facts[256] = {0};
     int64_t count = 0;
     for (;;) {
         duo_token token = compiler_lexer__next(&producer);
-        facts[1 + count] = token.kind + token.loc.line * 256 + token.loc.col * INT64_C(68719476736);
+        facts[1 + count * 2] = token.kind + token.loc.line * 256 + token.loc.col * INT64_C(68719476736);
+        facts[2 + count * 2] = word(token.text);
         count += 1;
-        if (token.kind == eof || count == 255) break;
+        if (token.kind == eof || count == 127) break;
     }
+    return count;
+}
+
+static int verify(const char *source, bool allow, int64_t offside, int64_t before, bool expected) {
+    int64_t facts[256] = {0};
+    int64_t count = tokenize(source, facts);
     duo_lexer cursor = compiler_lexer__new(source, "probe.id", 1);
     bool from_cursor = paren_header_signal_lx(&cursor, allow, offside, before);
     bool from_pack = idol_parser_header_pack(facts, count, 0, allow, offside, before);
     if (from_cursor != expected || from_pack != expected || from_cursor != from_pack) {
         fprintf(stderr, "%s cursor=%d pack=%d expected=%d\n", source, from_cursor, from_pack, expected);
+        return 1;
+    }
+    return 0;
+}
+
+static int verify_clause(const char *source, int64_t expected) {
+    int64_t facts[256] = {0};
+    int64_t count = tokenize(source, facts);
+    int64_t found = idol_parser_match_clause(facts, count, 0);
+    if (found != expected) {
+        fprintf(stderr, "%s clause=%lld expected=%lld\n", source, (long long)found, (long long)expected);
         return 1;
     }
     return 0;
@@ -137,7 +165,15 @@ int main(void) {
     failed += verify("(less(arr(1), v))\n    x", true, 1, name, false);
     failed += verify_statement("f(a: i64) = a", true);
     failed += verify_statement("print(t:concat(\"-\"))", false);
-    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 statement-cases=2 failed=%d\n", failed);
+    failed += verify_clause("case", 2);
+    failed += verify_clause("else", 3);
+    failed += verify_clause("x =>", 1);
+    failed += verify_clause("{x} then", 1);
+    failed += verify_clause("x", 0);
+    failed += verify_clause("x\n=>", 0);
+    failed += verify_clause("+ =>", 0);
+    failed += verify_clause(") =>", 0);
+    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 statement-cases=2 clause-cases=8 failed=%d\n", failed);
     return failed != 0;
 }
 EOF
@@ -151,6 +187,8 @@ compile_and_run() {
     if ! "$cc" -std=c11 -O2 -w \
         -Dmain=idol_parser_projection_main \
         -Dheader_signal_lx=idol_parser_header_pack \
+        -Dreturn_starts_value_lx=idol_parser_return_starts_value \
+        -D_clause=idol_parser_match_clause \
         -Dis_digit=idol_parser_is_digit \
         -c "$source" -o "$object"
     then
@@ -160,6 +198,8 @@ compile_and_run() {
     if ! "$cc" -std=c11 -O2 -w \
         -Dmain=idol_parser_projection_main \
         -Dheader_signal_lx=idol_parser_header_pack \
+        -Dreturn_starts_value_lx=idol_parser_return_starts_value \
+        -D_clause=idol_parser_match_clause \
         -Dis_digit=idol_parser_is_digit \
         -include "$source" "$cursor_harness" -lm -o "$cursor_executable"
     then

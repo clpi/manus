@@ -34,6 +34,7 @@ fn linkProductionIdolFrontend(b: *std.Build, mod: *std.Build.Module) void {
             "-Dmain=idol_parser_projection_main",
             "-Dheader_signal_lx=idol_parser_header_pack",
             "-Dreturn_starts_value_lx=idol_parser_return_starts_value",
+            "-D_clause=idol_parser_match_clause",
             "-Dis_digit=idol_parser_is_digit",
         },
     });

@@ -31,6 +31,12 @@ extern fn idol_parser_return_starts_value(
     idol_mode: bool,
 ) i64;
 
+extern fn idol_parser_match_clause(
+    facts: [*]const i64,
+    count: i64,
+    start: i64,
+) i64;
+
 pub const ParseError = error{
     UnexpectedToken,
     ExpectedToken,
@@ -233,10 +239,13 @@ pub const Parser = struct {
 
     /// True when `parse_module` installed the producer pack on `alloc`.
     pack_owned: bool = false,
-    /// Physical projection consumed by parser.id's first production relation:
-    /// one inaccessible padding slot, then one packed fact per producer token.
-    /// It is built once on first header demand, never per lookahead.
-    header_facts: ?[]i64 = null,
+    /// Physical projection consumed by parser.id production relations: one
+    /// inaccessible padding slot, then metadata + short raw lexeme per token.
+    /// Metadata is kind[8], line[28], column[27]. The lexeme fact is a length
+    /// marker plus the first six producer bytes; 7 means longer than six. The
+    /// host copies bytes and assigns no contextual role. Zero is also the EOF
+    /// lexeme; count/start distinguish it from the inaccessible padding slot.
+    parser_facts: ?[]i64 = null,
 
     /// Byte offset of the last retired-`#` site `denyRetiredLengthHash` named.
     /// About thirty-five speculative scans rewind the lexer and re-read the same
@@ -255,11 +264,12 @@ pub const Parser = struct {
         self.pack_owned = true;
     }
 
-    fn ensureHeaderFacts(self: *Parser) ParseError![]const i64 {
-        if (self.header_facts) |facts| return facts;
+    fn ensureParserFacts(self: *Parser) ParseError![]const i64 {
+        if (self.parser_facts) |facts| return facts;
         try self.ensureProducerPack();
         const tokens = self.lex.duo_tokens orelse return error.InvalidRecordCount;
-        const size = std.math.add(usize, tokens.len, 1) catch return error.SourceTooLarge;
+        const fields = std.math.mul(usize, tokens.len, 2) catch return error.SourceTooLarge;
+        const size = std.math.add(usize, fields, 1) catch return error.SourceTooLarge;
         const facts = try self.alloc.alloc(i64, size);
         errdefer self.alloc.free(facts);
         facts[0] = 0; // Idol sequences project index one onto physical slot one.
@@ -269,16 +279,21 @@ pub const Parser = struct {
             const encoded = @as(u64, @backingInt(token.kind)) |
                 (@as(u64, token.loc.line) << 8) |
                 (@as(u64, token.loc.col) << 36);
-            facts[index + 1] = @intCast(encoded);
+            facts[1 + index * 2] = @intCast(encoded);
+            var lexeme: u64 = if (token.text.len > 6) 7 else @intCast(token.text.len);
+            for (token.text[0..@min(token.text.len, 6)], 0..) |byte, byte_index| {
+                lexeme |= @as(u64, byte) << @intCast(8 * (byte_index + 1));
+            }
+            facts[2 + index * 2] = @intCast(lexeme);
         }
-        self.header_facts = facts;
+        self.parser_facts = facts;
         return facts;
     }
 
     fn releaseOwnedPack(self: *Parser) void {
-        if (self.header_facts) |facts| {
+        if (self.parser_facts) |facts| {
             self.alloc.free(facts);
-            self.header_facts = null;
+            self.parser_facts = null;
         }
         if (!self.pack_owned) return;
         if (self.lex.duo_tokens) |toks| {
@@ -1749,9 +1764,9 @@ pub const Parser = struct {
         // diagnostic for the rare "next kind cannot start an expression"
         // case (parser.id returns 2); the silent 0 / 1 cases map directly.
         try self.ensureProducerPack();
-        const facts = try self.ensureHeaderFacts();
+        const facts = try self.ensureParserFacts();
         const start = self.lex.duoStreamIndex();
-        const count = std.math.cast(i64, facts.len - 1) orelse return error.InvalidRecordCount;
+        const count = std.math.cast(i64, (facts.len - 1) / 2) orelse return error.InvalidRecordCount;
         const index = std.math.cast(i64, start) orelse return false;
         const line = std.math.cast(i64, l.line) orelse return error.SourceTooLarge;
         const verdict = idol_parser_return_starts_value(
@@ -3033,11 +3048,11 @@ pub const Parser = struct {
     fn scan_func_header_signal(self: *Parser, allow_untyped_comma: bool) ParseError!bool {
         const lparen = try self.pk();
         if (lparen.kind != .lparen) return false;
-        const facts = try self.ensureHeaderFacts();
+        const facts = try self.ensureParserFacts();
         const view = token_view.fromLexer(self.lex) orelse return false;
         const start = self.lex.duoStreamIndex();
         const before: TK = if (start == 0) .eof else view.kind(start - 1) orelse .eof;
-        const count = std.math.cast(i64, facts.len - 1) orelse return false;
+        const count = std.math.cast(i64, (facts.len - 1) / 2) orelse return false;
         const index = std.math.cast(i64, start) orelse return false;
         // Derived from the same producer pack while the speculative host cursor
         // is rewound; no tracked line-start field can go stale.
@@ -4215,35 +4230,20 @@ pub const Parser = struct {
         return e;
     }
 
-    fn startsMatchArm(self: *Parser) ParseError!bool {
-        const view = token_view.fromLexer(self.lex) orelse {
-            const tok = try self.pk();
-            term.locErr(tok.loc, "production token view is absent at match-arm lookahead", .{});
-            return ParseError.UnexpectedToken;
-        };
+    fn matchClause(self: *Parser) ParseError!i64 {
+        const facts = try self.ensureParserFacts();
         const start = self.lex.duoStreamIndex();
-        const first = view.at(start) orelse return false;
-        if (first.kind == .name and std.mem.eql(u8, first.text, "case")) return true;
-        if (first.kind == .kw_else) return true;
-        if (!view.canStartPattern(start)) return false;
+        const count = std.math.cast(i64, (facts.len - 1) / 2) orelse return error.InvalidRecordCount;
+        const index = std.math.cast(i64, start) orelse return error.InvalidRecordCount;
+        const face = idol_parser_match_clause(facts.ptr, count, index);
+        return switch (face) {
+            0, 1, 2, 3 => face,
+            else => ParseError.UnexpectedToken,
+        };
+    }
 
-        var depth: u32 = 0;
-        var idx = start;
-        while (true) {
-            const tok = view.at(idx) orelse return false;
-            idx += 1;
-            if (tok.kind == .eof or tok.kind == .kw_end or tok.kind == .semi) return false;
-            if (depth == 0 and tok.loc.line != first.loc.line) return false;
-            switch (tok.kind) {
-                .lparen, .lbrace, .lbracket => depth += 1,
-                .rparen, .rbrace, .rbracket => {
-                    if (depth == 0) return false;
-                    depth -= 1;
-                },
-                .kw_then, .kw_do, .fat_arrow => return depth == 0,
-                else => {},
-            }
-        }
+    fn startsMatchArm(self: *Parser) ParseError!bool {
+        return try self.matchClause() != 0;
     }
 
     /// Parse a single match arm. The supported spellings are
@@ -4251,9 +4251,9 @@ pub const Parser = struct {
     /// The body is either a single expression (as a return statement) or
     /// a block that terminates at the next arm or `end`.
     fn parse_match_arm(self: *Parser) ParseError!ast.MatchArm {
-        const first = try self.pk();
-        const case_syntax = first.kind == .name and std.mem.eql(u8, first.text, "case");
-        const else_syntax = first.kind == .kw_else;
+        const face = try self.matchClause();
+        const case_syntax = face == 2;
+        const else_syntax = face == 3;
         if (case_syntax or else_syntax) _ = try self.adv();
 
         // `else` is always a wildcard/catch-all pattern — no pattern to parse
@@ -8602,16 +8602,17 @@ test "parse: match-arm pattern role consumes immutable token view" {
     try testing.expectEqual(before, p.lex.duoStreamIndex());
 }
 
-test "parse: match-arm lookahead refuses without the production token view" {
+test "parse: match-arm lookahead installs the production pack without host fallback" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     var lex = Lexer.init("1 then return 7", "test.id");
     var p = Parser.init(&lex, arena.allocator());
     p.idol_mode = true;
+    defer p.releaseOwnedPack();
 
-    // Bypass parse_module deliberately. A host token kind is not permission to
-    // reconstruct the generated pattern role when its producer view is absent.
-    try testing.expectError(ParseError.UnexpectedToken, p.startsMatchArm());
+    try testing.expect(!p.lex.isDuoBacked());
+    try testing.expect(try p.startsMatchArm());
+    try testing.expect(p.lex.isDuoBacked());
 }
 
 test "parse: bare return in a match arm does not consume the next arm pattern" {
@@ -11449,15 +11450,16 @@ test "apply-one: a comprehension is a stream, and takes no pack stance" {
 test "parse: production header pack executes the Idol relation" {
     const run = struct {
         fn check(kinds: []const TK, allow: bool, want: bool) !void {
-            const facts = try testing.allocator.alloc(i64, 1 + kinds.len);
+            const facts = try testing.allocator.alloc(i64, 1 + kinds.len * 2);
             defer testing.allocator.free(facts);
             facts[0] = 0; // physical padding preserves Idol sequence index one
             for (kinds, 0..) |kind, index| {
-                facts[index + 1] = @intCast(
+                facts[1 + index * 2] = @intCast(
                     @as(u64, @backingInt(kind)) |
                         (@as(u64, 1) << 8) |
                         (@as(u64, index + 1) << 36),
                 );
+                facts[2 + index * 2] = 0;
             }
             try testing.expectEqual(want, idol_parser_header_pack(
                 facts.ptr,
@@ -11480,10 +11482,15 @@ test "parse: production header pack executes the Idol relation" {
     const bounds = [_]i64{
         0,
         @intCast(@as(u64, @backingInt(TK.lparen)) | (@as(u64, 1) << 8) | (@as(u64, 1) << 36)),
+        0,
         @intCast(@as(u64, @backingInt(TK.name)) | (@as(u64, 1) << 8) | (@as(u64, 2) << 36)),
+        0,
         @intCast(@as(u64, @backingInt(TK.rparen)) | (@as(u64, 1) << 8) | (@as(u64, 3) << 36)),
+        0,
         @intCast(@as(u64, @backingInt(TK.name)) | (high_line << 8) | (high_column << 36)),
+        0,
         @intCast(@as(u64, @backingInt(TK.eof)) | (high_line << 8) | (high_column << 36)),
+        0,
     };
     try testing.expect(idol_parser_header_pack(
         &bounds,
@@ -11495,7 +11502,7 @@ test "parse: production header pack executes the Idol relation" {
     ));
 }
 
-test "parse: header fact packing refuses an out-of-range location" {
+test "parse: parser fact packing refuses an out-of-range location" {
     const file = "limit.id";
     const tokens = [_]Token{
         .{ .kind = .name, .loc = .{ .file = file, .line = 1 << 28, .col = 1 }, .text = "x" },
@@ -11504,12 +11511,13 @@ test "parse: header fact packing refuses an out-of-range location" {
     var lex = Lexer.init("", file);
     try lex.useDuoTokens(&tokens);
     var parser = Parser.init(&lex, testing.allocator);
-    try testing.expectError(error.SourceTooLarge, parser.ensureHeaderFacts());
-    try testing.expect(parser.header_facts == null);
+    try testing.expectError(error.SourceTooLarge, parser.ensureParserFacts());
+    try testing.expect(parser.parser_facts == null);
 }
 
 test "parse: production return-value decision executes the Idol relation" {
-    // The producer pack packs kind[8], line[28], column[27] into a single i64.
+    // The producer pack carries one metadata fact and one raw lexeme fact.
+    // Metadata packs kind[8], line[28], column[27] into a single i64.
     // `start` is the zero-based coordinate of the next token; one padding slot
     // at index 0 preserves Idol's one-based sequence projection. The decision
     // returns 0 (silent no-value), 1 (value follows), or 2 (idol_mode cannot
@@ -11526,6 +11534,7 @@ test "parse: production return-value decision executes the Idol relation" {
             const facts = [_]i64{
                 0,
                 encode(kind, line, 1),
+                0,
             };
             try testing.expectEqual(want, idol_parser_return_starts_value(
                 &facts,
@@ -11536,6 +11545,12 @@ test "parse: production return-value decision executes the Idol relation" {
             ));
         }
     }.check;
+
+    // Pin the executable owner facts behind the corrected rejection fixtures.
+    try testing.expect(grammar_roles.canBeginExpression(.kw_function));
+    try testing.expect(grammar_roles.canBeginExpression(.hash));
+    try testing.expect(!grammar_roles.canBeginExpression(.rparen));
+    try testing.expect(!grammar_roles.canBeginExpression(.plus));
 
     // kind-switch: line-terminators are silent 0
     try run(0, .kw_end, 1, 0);
@@ -11558,9 +11573,9 @@ test "parse: production return-value decision executes the Idol relation" {
     // idol_mode line check: cross-line next token is silent 0
     try run(0, .name, 2, 0);
 
-    // idol_mode expression-start check: kind that cannot begin an expression
-    try run(0, .kw_function, 1, 2);
-    try run(0, .hash, 1, 2);
+    // idol_mode expression-start check: kinds the owner does not admit there.
+    try run(0, .rparen, 1, 2);
+    try run(0, .plus, 1, 2);
 }
 
 test "parse: return-value decision without idol_mode ignores layout and role" {
@@ -11569,9 +11584,9 @@ test "parse: return-value decision without idol_mode ignores layout and role" {
             return @intCast(@as(u64, @backingInt(kind)) | (@as(u64, line) << 8));
         }
     }.e;
-    const facts = [_]i64{ 0, encode(.kw_function, 5) };
+    const facts = [_]i64{ 0, encode(.rparen, 5), 0 };
 
-    // kw_function cannot begin an expression; with idol_mode=false the
+    // rparen cannot begin an expression; with idol_mode=false the
     // rolebeginexpr gate is skipped, so the decision is 1 (the same-line
     // line-check is also gated on idol_mode).
     try testing.expectEqual(@as(i64, 1), idol_parser_return_starts_value(
@@ -11585,7 +11600,7 @@ test "parse: return-value decision without idol_mode ignores layout and role" {
     // is the unconditional decision).
     const line_terminators = [_]TK{ .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi };
     for (line_terminators) |kind| {
-        const one = [_]i64{ 0, encode(kind, 1) };
+        const one = [_]i64{ 0, encode(kind, 1), 0 };
         try testing.expectEqual(@as(i64, 0), idol_parser_return_starts_value(
             &one,
             1,
@@ -11594,4 +11609,60 @@ test "parse: return-value decision without idol_mode ignores layout and role" {
             false,
         ));
     }
+}
+
+test "parse: production match-arm decision executes the Idol relation" {
+    const meta = struct {
+        fn pack(kind: TK, line: u32, col: u32) i64 {
+            return @intCast(@as(u64, @backingInt(kind)) |
+                (@as(u64, line) << 8) |
+                (@as(u64, col) << 36));
+        }
+    }.pack;
+    const word = struct {
+        fn pack(text: []const u8) i64 {
+            const extent: u64 = if (text.len > 6) 7 else @intCast(text.len);
+            var encoded = extent;
+            for (text[0..@min(text.len, 6)], 0..) |byte, index| {
+                encoded |= @as(u64, byte) << @intCast(8 * (index + 1));
+            }
+            return @intCast(encoded);
+        }
+    }.pack;
+    const run = struct {
+        fn check(kinds: []const TK, lines: []const u32, texts: []const []const u8, want: i64) !void {
+            try testing.expectEqual(kinds.len, lines.len);
+            try testing.expectEqual(kinds.len, texts.len);
+            const facts = try testing.allocator.alloc(i64, 1 + kinds.len * 2);
+            defer testing.allocator.free(facts);
+            facts[0] = 0;
+            for (kinds, lines, texts, 0..) |kind, line, text, index| {
+                facts[1 + index * 2] = meta(kind, line, @intCast(index + 1));
+                facts[2 + index * 2] = word(text);
+            }
+            try testing.expectEqual(want, idol_parser_match_clause(
+                facts.ptr,
+                @intCast(kinds.len),
+                0,
+            ));
+        }
+    }.check;
+
+    // 2 and 3 identify contextual `case` and `else`; 1 is an ordinary pattern.
+    try run(&.{.name}, &.{1}, &.{"case"}, 2);
+    try run(&.{.kw_else}, &.{1}, &.{"else"}, 3);
+    try run(&.{ .name, .fat_arrow }, &.{ 1, 1 }, &.{ "x", "=>" }, 1);
+    try run(
+        &.{ .lbrace, .name, .rbrace, .kw_then },
+        &.{ 1, 1, 1, 1 },
+        &.{ "{", "x", "}", "then" },
+        1,
+    );
+
+    // No separator, a top-level line crossing, a non-pattern, and an unmatched
+    // closer are not arm starts.
+    try run(&.{ .name, .eof }, &.{ 1, 1 }, &.{ "x", "" }, 0);
+    try run(&.{ .name, .fat_arrow }, &.{ 1, 2 }, &.{ "x", "=>" }, 0);
+    try run(&.{ .plus, .fat_arrow }, &.{ 1, 1 }, &.{ "+", "=>" }, 0);
+    try run(&.{ .rparen, .fat_arrow }, &.{ 1, 1 }, &.{ ")", "=>" }, 0);
 }
