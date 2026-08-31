@@ -279,7 +279,7 @@ pub const Parser = struct {
         // index through so every reader sees the parser-owned mirror first.
         // The form below puts the alias check and seed on one source line so
         // the gate's grep count covers both sides of the migration.
-        if (self.lex.duo_tokens) |toks| {
+        if (self.lex.duo_tokens) |_| {
             self.pack_tokens = self.lex.duo_tokens;
             self.pack_index = self.lex.duo_index;
             return;
