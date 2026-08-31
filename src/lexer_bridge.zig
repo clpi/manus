@@ -189,23 +189,12 @@ pub fn familyCode(facts: SourceFacts) i64 {
     };
 }
 
-pub const TokenizeAuthority = enum {
-    host_zig,
-    generated_native,
-};
-
-/// Physical routing state for the production compile driver.
-pub fn tokenizeAuthority() TokenizeAuthority {
-    return .generated_native;
-}
-
 /// Production keyword lookup through the generated Idol lexer projection.
 pub fn lookupKeyword(text: []const u8) ?lexer.TokenKind {
     return keyword_bridge.lookupKeyword(text);
 }
 
-test "lexer bridge: production split" {
-    try std.testing.expect(tokenizeAuthority() == .generated_native);
+test "lexer bridge: generated keyword projection" {
     try std.testing.expectEqual(lexer.TokenKind.kw_fun, lookupKeyword("fun").?);
     try std.testing.expectEqual(@as(?lexer.TokenKind, null), lookupKeyword("notkw"));
 }

@@ -1,8 +1,8 @@
 //! SH-03 production dispatch — the host consuming the Idol lexer's token stream.
 //!
-//! This is the seam `lexer_bridge.tokenizeAuthority()` switches on. It binds
-//! `duo_lexer_tokenize_full` from the generated projection of
-//! `lib/compiler/lexer.id` and rebuilds host `Token`s from the flat record
+//! This is the production seam. It binds `duo_lexer_tokenize_full` from the
+//! generated projection of `lib/compiler/lexer.id` and rebuilds host `Token`s
+//! from the flat record
 //! buffer, so the compiler can tokenize through Idol instead of `src/lexer.zig`.
 //!
 //! WHY `tokenize_full` AND NOT `tokenize_text`: `tokenize_text` writes six i64
@@ -17,7 +17,15 @@
 const std = @import("std");
 const lexer = @import("lexer.zig");
 const lexer_bridge = @import("lexer_bridge.zig");
-const grammar_role_table = @import("grammar_role_table.zig");
+
+/// Physical validation derived at comptime from the owner-generated sparse
+/// enum. This is not an ordinal→semantic table: the accepted backing values are
+/// the enum itself, and conversion below preserves the producer ordinal.
+const token_kind_values = blk: {
+    var values: std.StaticBitSet(256) = .empty;
+    for (@typeInfo(lexer.TokenKind).@"enum".field_values) |value| values.set(value);
+    break :blk values;
+};
 
 /// Producer schema queries (`law.schema.one`, `law.magic.zero`).
 /// The host must not independently know slot positions, rejection codes, or
@@ -79,18 +87,6 @@ fn rejectionNameToError(name: [*:0]const u8) ?lexer.LexError {
     if (std.mem.eql(u8, name_slice, "UnexpectedChar")) return error.UnexpectedChar;
     if (std.mem.eql(u8, name_slice, "InsufficientIndent")) return error.InsufficientIndent;
     return null;
-}
-
-/// The host must not bind token identity from producer NAMES. `lib/compiler/token.id`
-/// already owns one row per producer ordinal in `src/grammar_role_table.zig`,
-/// including the unpublished slot 3 as `.kind = null`. Decode therefore reads
-/// the owner-derived row at the producer ordinal and refuses null/out-of-range
-/// instead of rebuilding identity through `kindname(i)` and a parallel string
-/// table.
-fn kindFromRecord(raw: i64) DispatchError!lexer.TokenKind {
-    const ordinal = std.math.cast(usize, raw) orelse return DispatchError.InvalidTokenKind;
-    if (ordinal >= grammar_role_table.rows.len) return DispatchError.InvalidTokenKind;
-    return grammar_role_table.rows[ordinal].kind orelse DispatchError.InvalidTokenKind;
 }
 
 fn slot(pos: i64, slots: usize) DispatchError!usize {
@@ -203,7 +199,9 @@ fn tokenFromRecord(
     int_class_at: usize,
     final: bool,
 ) DispatchError!lexer.Token {
-    const kind = try kindFromRecord(r[kind_at]);
+    const raw_kind = std.math.cast(u8, r[kind_at]) orelse return DispatchError.InvalidTokenKind;
+    if (!token_kind_values.isSet(raw_kind)) return DispatchError.InvalidTokenKind;
+    const kind = @as(lexer.TokenKind, @fromBackingInt(raw_kind));
     const line = std.math.cast(u32, r[line_at]) orelse
         return DispatchError.InvalidTokenLocation;
     const col = std.math.cast(u32, r[col_at]) orelse
@@ -469,20 +467,14 @@ pub fn differential(
     }
 }
 
-test "lexer_dispatch: kind identity reads the owner row by producer ordinal" {
-    try bindRecordSchema();
-    try std.testing.expect(record_bound);
-    try std.testing.expect(record_slots > 0);
-    try std.testing.expect(at_kind < record_slots);
-    try std.testing.expectEqual(lexer.TokenKind.eof, try kindFromRecord(@intFromEnum(lexer.TokenKind.eof)));
-    try std.testing.expectEqual(lexer.TokenKind.compat_long_text_lit, try kindFromRecord(@intFromEnum(lexer.TokenKind.compat_long_text_lit)));
-    try std.testing.expectEqual(lexer.TokenKind.shebang, try kindFromRecord(@intFromEnum(lexer.TokenKind.shebang)));
-    try std.testing.expectEqual(lexer.TokenKind.comment, try kindFromRecord(@intFromEnum(lexer.TokenKind.comment)));
-    try std.testing.expectError(DispatchError.InvalidTokenKind, kindFromRecord(-1));
-}
-
 test "lexer_dispatch: record fields are producer positions" {
     try std.testing.expect(!@hasField(lexer.TokenKind, "string_lit"));
+    try std.testing.expectEqual(
+        @typeInfo(lexer.TokenKind).@"enum".field_values.len,
+        token_kind_values.count(),
+    );
+    try std.testing.expect(!token_kind_values.isSet(3));
+    try std.testing.expect(token_kind_values.isSet(@backingInt(lexer.TokenKind.eof)));
     const slots = recordslots();
     try std.testing.expect(slots > 0);
     const positions = [_]i64{
@@ -497,12 +489,6 @@ test "lexer_dispatch: record fields are producer positions" {
         try std.testing.expect(!seen[i]);
         seen[i] = true;
     }
-    try std.testing.expectEqual(grammar_role_table.rows.len, grammar_role_table.slot_count);
-    try std.testing.expectEqual(@as(usize, 114), grammar_role_table.rows.len);
-    try std.testing.expect(grammar_role_table.rows[3].kind == null);
-    try std.testing.expectEqualStrings("", grammar_role_table.rows[3].spell);
-    try std.testing.expectEqual(lexer.TokenKind.kw_and, grammar_role_table.rows[@intFromEnum(lexer.TokenKind.kw_and)].kind.?);
-    try std.testing.expectError(DispatchError.InvalidTokenKind, kindFromRecord(3));
     try std.testing.expect(rejectioncount() > 0);
     const last = rejectioncode(rejectioncount());
     try std.testing.expectEqualStrings("InsufficientIndent", std.mem.span(rejectionname(last)));
@@ -515,7 +501,7 @@ test "lexer_dispatch: malformed generated records fail closed" {
     const source: [:0]const u8 = "";
     const file: [:0]const u8 = "record.id";
     var record = [_]i64{
-        @intFromEnum(lexer.TokenKind.eof),
+        @backingInt(lexer.TokenKind.eof),
         1,
         1,
         0,
@@ -528,6 +514,15 @@ test "lexer_dispatch: malformed generated records fail closed" {
     const valid = try decodeRecords(a, source, file, &record, 1);
     defer a.free(valid);
     try std.testing.expectEqual(lexer.TokenKind.eof, valid[0].kind);
+
+    const kind_at: usize = @intCast(fieldkind());
+    record[kind_at] = 3; // unpublished physical slot: not an enum identity
+    try std.testing.expectError(DispatchError.InvalidTokenKind, decodeRecords(a, source, file, &record, 1));
+    record[kind_at] = -1;
+    try std.testing.expectError(DispatchError.InvalidTokenKind, decodeRecords(a, source, file, &record, 1));
+    record[kind_at] = 256;
+    try std.testing.expectError(DispatchError.InvalidTokenKind, decodeRecords(a, source, file, &record, 1));
+    record[kind_at] = @backingInt(lexer.TokenKind.eof);
 
     const int_class_at: usize = @intCast(_fieldintclass());
     record[int_class_at] = 4;
@@ -562,12 +557,12 @@ test "lexer_dispatch: malformed generated records fail closed" {
         decodeRecords(a, "x", file, &record, 1),
     );
     record[5] = 0;
-    record[0] = @intFromEnum(lexer.TokenKind.name);
+    record[0] = @backingInt(lexer.TokenKind.name);
     try std.testing.expectError(
         DispatchError.InvalidEndToken,
         decodeRecords(a, source, file, &record, 1),
     );
-    record[0] = @intFromEnum(lexer.TokenKind.eof);
+    record[0] = @backingInt(lexer.TokenKind.eof);
 
     try std.testing.expectError(
         DispatchError.InvalidRecordCount,
@@ -596,7 +591,7 @@ test "lexer_dispatch: malformed generated records fail closed" {
         DispatchError.InvalidTokenKind,
         decodeRecords(a, source, file, &record, 1),
     );
-    record[0] = @intFromEnum(lexer.TokenKind.eof);
+    record[0] = @backingInt(lexer.TokenKind.eof);
 
     record[1] = -1;
     try std.testing.expectError(
@@ -646,8 +641,8 @@ test "lexer_dispatch: malformed generated records fail closed" {
     );
 
     var premature = [_]i64{
-        @intFromEnum(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0, 0, 0, 0,
-        @intFromEnum(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        @backingInt(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        @backingInt(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0, 0, 0, 0,
     };
     try std.testing.expectError(
         DispatchError.InvalidEndToken,
@@ -665,8 +660,8 @@ test "lexer_dispatch: malformed generated records fail closed" {
     );
 
     var double_eof = [_]i64{
-        @intFromEnum(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0, 0, 0, 0,
-        @intFromEnum(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        @backingInt(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        @backingInt(lexer.TokenKind.eof), 1, 1, 0, 0, 0, 0, 0, 0, 0,
     };
     try std.testing.expectError(
         DispatchError.InvalidEndToken,

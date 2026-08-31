@@ -42,8 +42,8 @@ const home_resolve = @import("home_resolve.zig");
 /// SH-03: an embedded module tokenizes through the SAME lexer the compile
 /// driver uses.
 ///
-/// Production path uses `lexer_bridge.tokenizeAuthority()` `.generated_native`.
-/// 2026-08-07, but only `main.zig`'s driver consulted it. Every module-embed
+/// The production path uses the generated Idol lexer projection. Only
+/// `main.zig`'s driver originally routed through it. Every module-embed
 /// path below built its own `Lexer` and ran the host scanner, so a single
 /// compilation tokenized the entry point with `lib/compiler/lexer.duo` and
 /// its `req`-ed modules with `src/lexer.zig`. Two scanners deciding one

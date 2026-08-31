@@ -29,6 +29,8 @@ CODEGEN="$ROOT/src/codegen.zig"
 AST="$ROOT/src/ast.zig"
 DNIR="$ROOT/src/dnir_lower.zig"
 PARSER="$ROOT/src/parser.zig"
+DISPATCH="$ROOT/src/lexer_dispatch.zig"
+LEXER_BRIDGE="$ROOT/src/lexer_bridge.zig"
 
 violations=0
 examined=0
@@ -256,6 +258,51 @@ rm -rf -- "$matchprobe"
 examined=$((examined + 1))
 if [ "$match_exec" -ne 1 ] || [ "$match_text" -ne 1 ] || [ "$match_depth" -ne 1 ]; then
     bad "the match-clause detector is broken: executor=$match_exec text=$match_text depth=$match_depth"
+fi
+
+# ── 2f. raw producer kind validates through the owner-generated enum ─────────
+#
+# `kindFromRecord` selected `grammar_role_table.rows[ordinal].kind`, retaining a
+# second runtime identity projection after token.id had already generated the
+# sparse TokenKind enum. Decode now validates against that enum's generated
+# field values and performs one physical backing conversion. No row lookup or
+# host-authored kind table may return.
+forbid "$DISPATCH" 'fn kindFromRecord(' \
+    'lexer dispatch retained the ordinal-to-row kind bridge'
+forbid "$DISPATCH" 'const grammar_role_table = @import("grammar_role_table.zig")' \
+    'lexer dispatch retained the grammar-row runtime identity import'
+has "$DISPATCH" 'for (@typeInfo(lexer.TokenKind).@"enum".field_values)' \
+    'record decode no longer validates through the owner-generated enum values'
+has "$DISPATCH" '@as(lexer.TokenKind, @fromBackingInt(raw_kind))' \
+    'record decode no longer performs the checked physical enum conversion'
+
+kindprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate record-kind scratch' >&2; exit 2; }
+printf '%s\n' 'fn kindFromRecord(raw: i64) void {}' >"$kindprobe/old.zig"
+printf '%s\n' 'const grammar_role_table = @import("grammar_role_table.zig");' >>"$kindprobe/old.zig"
+printf '%s\n' 'for (@typeInfo(lexer.TokenKind).@"enum".field_values) |_| {}' >"$kindprobe/new.zig"
+kind_old=$(grep -cE 'kindFromRecord|grammar_role_table' "$kindprobe/old.zig")
+kind_new=$(grep -cF 'field_values' "$kindprobe/new.zig")
+rm -rf -- "$kindprobe"
+examined=$((examined + 1))
+if [ "$kind_old" -ne 2 ] || [ "$kind_new" -ne 1 ]; then
+    bad "the record-kind detector is broken: old=$kind_old new=$kind_new"
+fi
+
+# The constant host/generated selector always answered generated_native after
+# production routing became unconditional. Keeping the enum and query preserved
+# a fallback-shaped API with no lawful alternate answer.
+forbid "$LEXER_BRIDGE" 'pub const TokenizeAuthority' \
+    'lexer bridge reacquired the obsolete host/generated authority enum'
+forbid "$LEXER_BRIDGE" 'pub fn tokenizeAuthority(' \
+    'lexer bridge reacquired the constant authority selector'
+selectorprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate selector scratch' >&2; exit 2; }
+printf '%s\n' 'pub const TokenizeAuthority = enum { host_zig, generated_native };' >"$selectorprobe/old.zig"
+printf '%s\n' 'pub fn tokenizeAuthority() TokenizeAuthority { return .generated_native; }' >>"$selectorprobe/old.zig"
+selector_old=$(grep -cE 'TokenizeAuthority|tokenizeAuthority' "$selectorprobe/old.zig")
+rm -rf -- "$selectorprobe"
+examined=$((examined + 1))
+if [ "$selector_old" -ne 2 ]; then
+    bad "the authority-selector detector is broken: old=$selector_old"
 fi
 
 # ── 3. tree-sitter agrees with the one grammar-fact owner ───────────────────
