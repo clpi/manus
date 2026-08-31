@@ -310,24 +310,6 @@ fn tokenizeTrusted(
     }
 }
 
-/// Immutable token pack from one `tokenize()` call — the production ingress
-/// artifact parsers observe through `token_view.fromPack` (`law.bridge.death`).
-pub const ProductionPack = struct {
-    tokens: []lexer.Token,
-};
-
-/// One-shot tokenize returning an owned pack. `route` binds the same tokens onto
-/// `Lexer.duo_tokens`; this is the explicit pack API for tests and views.
-pub fn tokenizePack(
-    allocator: std.mem.Allocator,
-    src: [:0]const u8,
-    file: [:0]const u8,
-    family: i64,
-) DispatchError!ProductionPack {
-    const tokens = try tokenize(allocator, src, file, family);
-    return .{ .tokens = tokens };
-}
-
 /// Drive `lex` from the Idol lexer's token stream instead of the host scanner.
 ///
 /// This is the ONE production routing entry. It used to live in main.zig as a

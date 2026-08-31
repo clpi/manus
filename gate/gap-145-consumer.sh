@@ -31,6 +31,7 @@ DNIR="$ROOT/src/dnir_lower.zig"
 PARSER="$ROOT/src/parser.zig"
 DISPATCH="$ROOT/src/lexer_dispatch.zig"
 LEXER_BRIDGE="$ROOT/src/lexer_bridge.zig"
+TOKEN_VIEW="$ROOT/src/token_view.zig"
 
 violations=0
 examined=0
@@ -303,6 +304,26 @@ rm -rf -- "$selectorprobe"
 examined=$((examined + 1))
 if [ "$selector_old" -ne 2 ]; then
     bad "the authority-selector detector is broken: old=$selector_old"
+fi
+
+# The explicit ProductionPack wrapper, tokenizePack constructor and fromPack
+# view only tested one another; production routes directly into Lexer. Keeping
+# that closed loop preserved a second pack API with no consumer.
+forbid "$DISPATCH" 'pub const ProductionPack' \
+    'lexer dispatch reacquired the dead ProductionPack wrapper'
+forbid "$DISPATCH" 'pub fn tokenizePack(' \
+    'lexer dispatch reacquired the dead tokenizePack constructor'
+forbid "$TOKEN_VIEW" 'pub fn fromPack(' \
+    'token view reacquired the dead ProductionPack adapter'
+packprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate dead-pack scratch' >&2; exit 2; }
+printf '%s\n' 'pub const ProductionPack = struct {};' >"$packprobe/old.zig"
+printf '%s\n' 'pub fn tokenizePack() void {}' >>"$packprobe/old.zig"
+printf '%s\n' 'pub fn fromPack() void {}' >>"$packprobe/old.zig"
+pack_old=$(grep -cE 'ProductionPack|tokenizePack|fromPack' "$packprobe/old.zig")
+rm -rf -- "$packprobe"
+examined=$((examined + 1))
+if [ "$pack_old" -ne 3 ]; then
+    bad "the dead-pack detector is broken: old=$pack_old"
 fi
 
 # ── 3. tree-sitter agrees with the one grammar-fact owner ───────────────────

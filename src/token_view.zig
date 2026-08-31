@@ -51,10 +51,6 @@ pub fn fromTokens(tokens: []const lexer.Token) View {
     return .{ .tokens = tokens };
 }
 
-pub fn fromPack(pack: lexer_dispatch.ProductionPack) View {
-    return fromTokens(pack.tokens);
-}
-
 /// Observation view over the lexer's bound production pack, when present.
 pub fn fromLexer(lex: *const lexer.Lexer) ?View {
     const toks = lex.duo_tokens orelse return null;
@@ -132,15 +128,3 @@ test "token view: fromDispatch takes family not suffix" {
     defer a.free(view.tokens);
     try std.testing.expectEqual(.bytes_lit, view.kind(2));
 }
-
-test "token view: fromPack matches fromTokens on production pack" {
-    const a = std.testing.allocator;
-    const src: [:0]const u8 = "x = 1";
-    const pack = try lexer_dispatch.tokenizePack(a, src, "x.id", lexer_bridge.family_canon);
-    defer a.free(pack.tokens);
-    const direct = fromTokens(pack.tokens);
-    const via_pack = fromPack(pack);
-    try std.testing.expectEqual(direct.len(), via_pack.len());
-    try std.testing.expectEqual(direct.kind(2), via_pack.kind(2));
-}
-
