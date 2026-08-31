@@ -33,8 +33,8 @@ A production host-built `idol` executable exists. No compiler B built from
 canonical Idol compiler source exists. Host `idol check` / `idol run` are
 not self-host proof.
 
-The production front end nevertheless has eight bounded executed Idol-owned
-boundaries: the lexer producer and seven parser decisions. The executed
+The production front end nevertheless has nine bounded executed Idol-owned
+boundaries: the lexer producer and eight parser decisions. The executed
 production file `lib/compiler/lexer.id` owns token-kind production, token content,
 and exact source spans. Its `.id` suffix is not evidence of canonical source or
 compiler B. The host bounds-checks those spans and projects them into its
@@ -107,7 +107,7 @@ decisions from those facts; its tracked C projection is byte-gated and
 semantically probed. NOT closure: `docs/spec/grammar.md` still does not
 generate the parser, the generated `TokenKind` bridge remains, and most
 parser recognition is host-executed. |
-| Parser recognition | IDOL OWNED SLICES, HOST MAJORITY | `header_signal_lx`, `return_starts_value_lx`, `_clause`, `lead`, `prefix`, `demands_operand`, and `infix_prec` execute from producer facts. `_clause` consumes raw short-lexeme bytes so contextual `case` is decided in parser.id without globally reserving a token. `lead` consumes token identity/line plus the previous token line and asks the owner's generated `lead()` row; the former host `.opens_line` read and source-byte scan are deleted. `prefix` consumes token identity and asks the owner's generated `prefix()` row; the former host `.prefix` role read in `parse_expr_stmt` is deleted. `demands_operand` consumes token identity on every token advance from `parser.id` `advRaw` and asks the owner's generated `demand()` row; the former host `.demands_operand` row lookup is deleted. `infix_prec` consumes token identity on every Pratt step and asks the owner's generated `_roleinfix` / `roleprecedence` / `roleassoc` / `_rolerelation` rows; the result (relation ordinal + left/right binding power) is packed into a single i64 over the C ABI, so the two former host row reads (`lookup(...).precedence` / `.assoc` plus `infixRelation`) collapse to one ABI call per Pratt peek, and `Parser.infixBinOp` is deleted. Zig supplies physical facts and consumes bounded verdicts. `src/parser.zig` still decides most expressions, bindings, source structure, and all AST construction. These are seven production relations, not a complete parser stage or Compiler B. |
+| Parser recognition | IDOL OWNED SLICES, HOST MAJORITY | `header_signal_lx`, `return_starts_value_lx`, `_clause`, `lead`, `prefix`, `demands_operand`, `infix_prec`, and `is_primitive_descriptor_kind` execute from producer facts. `_clause` consumes raw short-lexeme bytes so contextual `case` is decided in parser.id without globally reserving a token. `lead` consumes token identity/line plus the previous token line and asks the owner's generated `lead()` row; the former host `.opens_line` read and source-byte scan are deleted. `prefix` consumes token identity and asks the owner's generated `prefix()` row; the former host `.prefix` role read in `parse_expr_stmt` is deleted. `demands_operand` consumes token identity on every token advance from `parser.id` `advRaw` and asks the owner's generated `demand()` row; the former host `.demands_operand` row lookup is deleted. `infix_prec` consumes token identity on every Pratt step and asks the owner's generated `_roleinfix` / `roleprecedence` / `roleassoc` / `_rolerelation` rows; the result (relation ordinal + left/right binding power) is packed into a single i64 over the C ABI, so the two former host row reads (`lookup(...).precedence` / `.assoc` plus `infixRelation`) collapse to one ABI call per Pratt peek, and `Parser.infixBinOp` is deleted. `is_primitive_descriptor_kind` consumes token identity on every type-atom / typed-binding / type-table-key / record-field / layout-arg probe (10 sites across `parse_type_primary`, `parse_attributed_decl`, `parse_table_literal`, `parse_record_field_list`, `parse_offside_pack`, `parse_pack_decls`, `layout_arg_can_start_type`, `parse_suffixed_expr`) and asks the owner's generated `roledescriptor` row; the former host `grammar_roles.isDescriptor(kind)` reads collapse to one ABI call per probe. Zig supplies physical facts and consumes bounded verdicts. `src/parser.zig` still decides most expressions, bindings, source structure, and all AST construction. These are eight production relations, not a complete parser stage or Compiler B. |
 | Binding/scope | HOST OWNED | Production binding and scope construction remain in the host parser and semantic producer. The graph now retains one module binding id across declaration, reassignment, checked application operands and shadowing controls; checked names nested in application operand expression trees publish an exact value → binding → descriptor route. Nested function/block bodies are outside that bounded producer domain. |
 | Semantic construction | HOST OWNED | The graph work is an improving host implementation, not executed compiler-B source. |
 | Relation/application resolution | HOST OWNED | Production resolution remains host-executed; exact graph application authority is still under integration. GAP-214 closes checked nested-name descriptor continuity into DNIR even when the containing bootstrap call is unresolved, but does not manufacture an `ApplicationFact`; aggregate/index/foreign-field projection → result identity remains open. |
@@ -129,12 +129,13 @@ For the fail-closed lexer transfer:
   boundary is the generated token enum plus host kind consumers and semantic
   quote/source-law observers. Source-form and corpus-home admission execute in
   Idol; filesystem normalization and host enum binding remain explicit bootstrap
-  bridges. `GAP-134` executes seven parser decisions and Parser now owns the sole
+  bridges. `GAP-134` executes eight parser decisions and Parser now owns the sole
   immutable pack cursor; the next transfer is another bounded host recognizer,
   not another token cursor or table. Callable-header recognition is `parser.id` `header_signal_lx`;
     line-head recognition is `parser.id` `lead`; unary-prefix recognition is
     `parser.id` `prefix`; end-of-expression `demands_operand` lives in `parser.id`
     `advRaw`; Pratt binding-power recognition is `parser.id` `infix_prec`;
+    primitive-descriptor recognition is `parser.id` `is_primitive_descriptor_kind`;
     Pratt left/right, relation identity, unary identity,
     and update/glued faces come from the generated owner. The handwritten
     operation maps are gone; the remaining recognizers that consume those facts

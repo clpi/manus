@@ -51,6 +51,24 @@ extern fn idol_parser_demands_operand(
     kind: i64,
 ) bool;
 
+/// Primitive descriptor identity — `i64`, `str`, `f32`, ...
+///
+/// Returns true when the owner grammar row's `.descriptor` flag is set on
+/// `kind`. The parser used to ask `grammar_roles.isDescriptor(tok.kind)` on
+/// every type-atom / typed-binding / type-table key probe (10 sites across
+/// `parse_type_primary`, `parse_attributed_decl`, `parse_table_literal`,
+/// `parse_record_field_list`, and `layout_arg_can_start_type`), which is one
+/// row-cache lookup per probe. The relation reads the producer's
+/// `roledescriptor` directly through `parser.id is_primitive_descriptor_kind`
+/// and exposes the same predicate through this single ABI call so the parser
+/// owns no kind-attribute cache of its own. Distinct from
+/// `idol_parser_is_descriptor_kind` (the broader `name OR primitive-descriptor`
+/// predicate used by `colon_is_method_call_lx`); this ABI answers only the
+/// primitive-descriptor-only fact the host row read returned.
+extern fn idol_parser_is_primitive_descriptor_kind(
+    kind: i64,
+) bool;
+
 /// Packed `infix_prec` triple for one token identity.
 ///
 /// Returns 0 when the identity is not an infix operator with a real relation,
@@ -1468,7 +1486,7 @@ pub const Parser = struct {
 
     fn parse_type_primary(self: *Parser) ParseError!ast.TypeExpr {
         const tok = try self.pk();
-        if (grammar_roles.isDescriptor(tok.kind)) {
+        if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) {
             _ = try self.adv();
             return .{ .named = tok.kind.spelling() };
         }
@@ -2996,7 +3014,7 @@ pub const Parser = struct {
         const key = try self.pk();
         const level: []const u8 = if (key.kind == .name)
             key.text
-        else if (grammar_roles.isDescriptor(key.kind))
+        else if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(key.kind))))
             key.kind.spelling()
         else {
             self.restoreState(saved);
@@ -6207,7 +6225,7 @@ pub const Parser = struct {
             .dot => self.parse_field_projection(),
             .colon => self.parse_method_reference(),
             else => {
-                if (grammar_roles.isDescriptor(tok.kind)) {
+                if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) {
                     const type_tok = try self.adv();
                     return self.new_expr(.{ .name = .{ .loc = type_tok.loc, .ident = type_tok.kind.spelling() } });
                 }
@@ -6753,7 +6771,7 @@ pub const Parser = struct {
 
     fn starts_paren_pack(self: *Parser) ParseError!bool {
         const first = try self.pk();
-        if (first.kind != .name and !grammar_roles.isDescriptor(first.kind)) return false;
+        if (first.kind != .name and !idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(first.kind)))) return false;
         const saved = self.saveState();
         const saved_line = self.prev_line;
         const saved_end = self.prev_end_col;
@@ -6861,7 +6879,7 @@ pub const Parser = struct {
             }
             return (try self.pk()).kind == .assign;
         }
-        if (first.kind != .name and !grammar_roles.isDescriptor(first.kind)) return false;
+        if (first.kind != .name and !idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(first.kind)))) return false;
         _ = try self.adv();
         return (try self.pk()).kind == .assign;
     }
@@ -6907,7 +6925,7 @@ pub const Parser = struct {
                 try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
                 continue;
             }
-            if (tok.kind != .name and tok.kind != .kw_else and !grammar_roles.isDescriptor(tok.kind)) break;
+            if (tok.kind != .name and tok.kind != .kw_else and !idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) break;
             const key_text = if (tok.kind == .name) tok.text else tok.kind.spelling();
             _ = try self.adv();
             const eq = try self.expect(.assign);
@@ -7517,7 +7535,7 @@ pub const Parser = struct {
     }
 
     fn layout_arg_can_start_type(tok: Token) bool {
-        if (grammar_roles.isDescriptor(tok.kind)) return true;
+        if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) return true;
         return switch (tok.kind) {
             .star, .question, .lbracket, .lbrace => true,
             .name => tok.text.len > 0 and tok.text[0] >= 'A' and tok.text[0] <= 'Z',
@@ -7698,7 +7716,7 @@ pub const Parser = struct {
                     const saved = self.saveState();
                     _ = try self.advRaw(); // consume ':'
                     const after_colon = try self.pk();
-                    if (grammar_roles.isDescriptor(after_colon.kind)) {
+                    if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(after_colon.kind)))) {
                         // name : i64 = ...  —  this is a typed binding; don't consume
                         self.restoreState(saved);
                         break;
@@ -8089,7 +8107,7 @@ pub const Parser = struct {
                     }
                     try fields.append(self.alloc, .{ .positional = val });
                 }
-            } else if (tok.kind == .name or tok.kind == .kw_else or grammar_roles.isDescriptor(tok.kind)) {
+            } else if (tok.kind == .name or tok.kind == .kw_else or idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) {
                 // Speculate: name '=' and name ':' Type '=' mean named fields;
                 // otherwise the entry is positional. A type name is an ORDINARY
                 // name here, so `{ i32 = 69 }` parses like `{ foo = 69 }`.
@@ -8155,7 +8173,7 @@ pub const Parser = struct {
                 const next = try self.pk();
                 if (next.kind != .name and next.kind != .lbracket and next.kind != .concat and
                     next.kind != .int_lit and next.kind != .rbrace and next.kind != .kw_else and
-                    !grammar_roles.isDescriptor(next.kind) and
+                    !idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(next.kind))) and
                     !grammar_roles.isQuotedKind(next.kind)) break;
             }
         }
@@ -11646,6 +11664,24 @@ test "parse: production infix_prec decision executes the Idol relation" {
             .none => unreachable,
         };
         try testing.expectEqual(want_right, right);
+    }
+}
+
+test "parse: production is_primitive_descriptor_kind decision executes the Idol relation" {
+    // For every role slot, the `idol_parser_is_primitive_descriptor_kind` ABI
+    // call must agree with the `descriptor` row field the host
+    // `grammar_roles.isDescriptor(kind)` read answered. The relation reads the
+    // producer's `roledescriptor` row directly, so the parser-side predicate
+    // and the row emitter cannot drift apart: damaging the owner regenerates
+    // both. Distinct from `is_descriptor_kind` (the broader
+    // `roledescriptor OR is_type_kind` predicate used by `colon_is_method_call_lx`);
+    // this test exercises only the primitive-descriptor-only ABI that the 10
+    // host `grammar_roles.isDescriptor` call sites collapsed onto.
+    for (grammar_roles.rows) |row| {
+        const kind = row.kind orelse continue;
+        const physical: i64 = @intCast(@backingInt(kind));
+        const got = idol_parser_is_primitive_descriptor_kind(physical);
+        try testing.expectEqual(row.descriptor, got);
     }
 }
 

@@ -40,6 +40,7 @@ fn linkProductionIdolFrontend(b: *std.Build, mod: *std.Build.Module) void {
             "-Ddemands_operand=idol_parser_demands_operand",
             "-Dinfix_prec=idol_parser_infix_prec",
             "-Dis_digit=idol_parser_is_digit",
+            "-Dis_primitive_descriptor_kind=idol_parser_is_primitive_descriptor_kind",
         },
     });
     mod.link_libc = true;

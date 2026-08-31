@@ -2269,6 +2269,7 @@ __attribute__((visibility("default"))) duo_rec_735fa21981531a8e peek2(duo_rec_ae
 __attribute__((visibility("default"))) bool is_infix_kind(int64_t k);
 __attribute__((visibility("default"))) bool can_start_body_kind(int64_t k);
 __attribute__((visibility("default"))) bool is_descriptor_kind(int64_t k);
+__attribute__((visibility("default"))) bool is_primitive_descriptor_kind(int64_t k);
 __attribute__((visibility("default"))) bool colon_is_method_call_lx(duo_rec_ae78087612f938ba *lx);
 __attribute__((visibility("default"))) bool header_signal_lx(int64_t fact[], int64_t count, int64_t start, bool allow, int64_t offside, int64_t before);
 __attribute__((visibility("default"))) int64_t return_starts_value_lx(int64_t fact[], int64_t count, int64_t start, int64_t return_line, bool idol_mode);
@@ -2595,6 +2596,10 @@ __attribute__((visibility("default"))) bool can_start_body_kind(int64_t k) {
 
 __attribute__((visibility("default"))) bool is_descriptor_kind(int64_t k) {
     return (token_grammarrole__roledescriptor(k) || is_type_kind(k));
+}
+
+__attribute__((visibility("default"))) bool is_primitive_descriptor_kind(int64_t k) {
+    return token_grammarrole__roledescriptor(k);
 }
 
 __attribute__((visibility("default"))) bool colon_is_method_call_lx(duo_rec_ae78087612f938ba *lx) {

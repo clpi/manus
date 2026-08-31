@@ -442,6 +442,44 @@ if [ "$infixprec_old" -ne 1 ] || [ "$infixprec_new" -ne 1 ]; then
     bad "the infix_prec transfer detector is broken: old=$infixprec_old new=$infixprec_new"
 fi
 
+# ── 2f''''. primitive-descriptor identity executes from the grammar owner ────
+#
+# 10 type-atom / typed-binding / type-table-key / record-field / layout-arg
+# sites (`parse_type_primary`, `parse_attributed_decl`, `parse_table_literal`,
+# `parse_record_field_list`, `parse_offside_pack`, `parse_pack_decls`,
+# `layout_arg_can_start_type`, `parse_suffixed_expr`) asked
+# `grammar_roles.isDescriptor(kind)` on every probe — one row-cache lookup per
+# probe, with no way for the parser to agree with the generated role row
+# except by re-reading the same cached `descriptor` field. parser.id
+# `is_primitive_descriptor_kind` now reads the producer's `roledescriptor`
+# directly and exposes the same predicate through the C ABI as
+# `idol_parser_is_primitive_descriptor_kind`; the host row read is gone.
+# Distinct from `is_descriptor_kind` (the broader `roledescriptor OR is_type_kind`
+# predicate used by `colon_is_method_call_lx`); the two predicates answer
+# different questions and the ABI symbol names them separately so a future
+# host that confuses them surfaces as a link error rather than a semantic drift.
+forbid "$PARSER" 'grammar_roles\.isDescriptor(' \
+    'parser.zig retained the host primitive-descriptor role decision'
+has "$PARSER" 'idol_parser_is_primitive_descriptor_kind(' \
+    'parser.zig no longer delegates its primitive-descriptor decision to parser.id'
+has "$ROOT/lib/compiler/parser.id" 'is_primitive_descriptor_kind: bool = (k: i64)' \
+    'parser.id lost the production is_primitive_descriptor_kind relation'
+has "$ROOT/src/parser/projection.c" 'bool is_primitive_descriptor_kind(int64_t k)' \
+    'the tracked parser projection lost the is_primitive_descriptor_kind ABI'
+has "$ROOT/build.zig" '-Dis_primitive_descriptor_kind=idol_parser_is_primitive_descriptor_kind' \
+    'build.zig no longer renames the is_primitive_descriptor_kind ABI symbol'
+
+descriptorprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate is_primitive_descriptor_kind scratch' >&2; exit 2; }
+printf '%s\n' 'if (grammar_roles.isDescriptor(tok.kind)) { try self.adv(); }' >"$descriptorprobe/old.zig"
+printf '%s\n' 'if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) { try self.adv(); }' >"$descriptorprobe/new.zig"
+descriptor_old=$(grep -cE 'grammar_roles\.isDescriptor' "$descriptorprobe/old.zig")
+descriptor_new=$(grep -cF 'idol_parser_is_primitive_descriptor_kind' "$descriptorprobe/new.zig")
+rm -rf -- "$descriptorprobe"
+examined=$((examined + 1))
+if [ "$descriptor_old" -ne 1 ] || [ "$descriptor_new" -ne 1 ]; then
+    bad "the is_primitive_descriptor_kind transfer detector is broken: old=$descriptor_old new=$descriptor_new"
+fi
+
 # ── 2g. raw producer kind validates through the owner-generated enum ─────────
 #
 # `kindFromRecord` selected `grammar_role_table.rows[ordinal].kind`, retaining a

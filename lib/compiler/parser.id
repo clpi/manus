@@ -347,6 +347,25 @@ can_start_body_kind: bool = (k: i64)
 is_descriptor_kind: bool = (k: i64)
     token.grammarrole.roledescriptor(k) or is_type_kind(k)
 
+# Primitive descriptor identity — `i64`, `str`, `f32`, ... — read directly from
+# the grammar owner row. The host parser used to reach into
+# `grammar_roles.lookup(kind).descriptor` on every type-atom / typed-binding /
+# type-table key probe (12 sites across `parse_type_primary`, `parse_attributed_decl`,
+# table-key recognizers, and `layout_arg_can_start_type`), which means the host
+# Pratt + table-grammar readers each held a private kind-attribute cache that
+# had to agree with the generated role row. The relation collapses that fact
+# into one ABI call (`idol_parser_is_primitive_descriptor_kind`) so the parser
+# owns no kind-attribute cache of its own: damaging the owner regenerates both
+# the `src/grammar_role_table.zig` row and the projected parser ABI, and the
+# parser-side call goes through the same producer predicate the table emitter
+# uses. Distinct from `is_descriptor_kind` above: that relation is the broader
+# `name OR primitive-descriptor` predicate used by `colon_is_method_call_lx`
+# to classify a `name :` type slot; this relation is the producer's
+# primitive-descriptor-only fact, which is exactly what the host row read
+# answered.
+is_primitive_descriptor_kind: bool = (k: i64)
+    token.grammarrole.roledescriptor(k)
+
 # Cursor immediately after `:`. True when the next two identities are `name (`
 # — a subject face call rather than a type slot.
 colon_is_method_call_lx: bool = (lx: lexer)
