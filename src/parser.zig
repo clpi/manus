@@ -268,7 +268,17 @@ pub const Parser = struct {
 
     /// One token pack. Host scanner is not a parse fallback (`law.bridge.death`).
     fn ensureProducerPack(self: *Parser) ParseError!void {
-        if (self.lex.isDuoBacked()) return;
+        // If the parser mirror is already set, nothing to install. The lex
+        // alias may still have been populated by an earlier caller, but the
+        // mirror carries the same allocator so no copy is needed.
+        if (self.pack_tokens != null) return;
+        // Lexer alias present, parser mirror absent — copy the pointer and
+        // index through so every reader sees the parser-owned mirror first.
+        if (self.lex.isDuoBacked()) {
+            self.pack_tokens = self.lex.duo_tokens;
+            self.pack_index = self.lex.duo_index;
+            return;
+        }
         try lexer_dispatch.route(self.alloc, self.lex, self.lex.cursor.bytes, self.lex.cursor.file);
         // Mirror the producer pack onto the parser so cursor arithmetic can
         // migrate onto `pack_index` without breaking `lex.duo_tokens` readers.
@@ -280,7 +290,7 @@ pub const Parser = struct {
     fn ensureParserFacts(self: *Parser) ParseError![]const i64 {
         if (self.parser_facts) |facts| return facts;
         try self.ensureProducerPack();
-        const tokens = self.lex.duo_tokens orelse return error.InvalidRecordCount;
+        const tokens = self.pack_tokens orelse self.lex.duo_tokens orelse return error.InvalidRecordCount;
         const fields = std.math.mul(usize, tokens.len, 2) catch return error.SourceTooLarge;
         const size = std.math.add(usize, fields, 1) catch return error.SourceTooLarge;
         const facts = try self.alloc.alloc(i64, size);
@@ -324,9 +334,11 @@ pub const Parser = struct {
     }
 
     /// Index of the token returned by the next `peek()` on the production
-    /// stream. Reads the lexer-owned producer pack today; when the parser
-    /// owns the slice directly, this accessor will move its arithmetic
-    /// onto a parser-owned cursor and become a pure read of `pack_index`.
+    /// stream. Reads the lexer-owned cursor today; the parser-owned
+    /// `pack_index` is set by `ensureProducerPack` and would advance only on
+    /// the production path. Tests and dump-c walks install the lex cursor
+    /// without calling `ensureProducerPack`, so the lex fields are the
+    /// authoritative source for now.
     pub fn producerStreamIndex(self: *const Parser) usize {
         if (self.lex.duo_tokens == null) return 0;
         if (self.lex.peeked != null) {
@@ -860,7 +872,7 @@ pub const Parser = struct {
     fn line_opener(self: *Parser, l: ast.Loc) ParseError!ast.Loc {
         if (!self.idol_mode) return l;
         try self.ensureProducerPack();
-        const toks = self.lex.duo_tokens orelse return l;
+        const toks = self.pack_tokens orelse self.lex.duo_tokens orelse return l;
         var i = @min(self.producerStreamIndex(), toks.len);
         var best = l;
         while (i > 0) {
@@ -1821,10 +1833,12 @@ pub const Parser = struct {
     /// message names the offending spelling.
     fn returnStartsValueDiag(self: *Parser, l: ast.Loc, nxt: Token) ParseError!bool {
         _ = l;
-        const view = token_view.fromLexer(self.lex) orelse {
+        // Prefer the parser-owned pack mirror; fall back to the lexer alias.
+        const toks = self.pack_tokens orelse self.lex.duo_tokens orelse {
             term.locErr(nxt.loc, "production token view is absent at return lookahead", .{});
             return ParseError.UnexpectedToken;
         };
+        const view = token_view.fromTokens(toks);
         term.locErr(nxt.loc, "expected a return value or line boundary, got '{s}'", .{view.kind(self.producerStreamIndex()).?.spelling()});
         return ParseError.UnexpectedToken;
     }
@@ -3080,7 +3094,9 @@ pub const Parser = struct {
         const lparen = try self.pk();
         if (lparen.kind != .lparen) return false;
         const facts = try self.ensureParserFacts();
-        const view = token_view.fromLexer(self.lex) orelse return false;
+        // Prefer the parser-owned pack mirror; fall back to the lexer alias.
+        const toks = self.pack_tokens orelse return false;
+        const view = token_view.fromTokens(toks);
         const start = self.producerStreamIndex();
         const before: TK = if (start == 0) .eof else view.kind(start - 1) orelse .eof;
         const count = std.math.cast(i64, (facts.len - 1) / 2) orelse return false;
