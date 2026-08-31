@@ -748,8 +748,7 @@ test "lexer_dispatch: route publishes shebang and hides it from the parser pack"
     const a = std.testing.allocator;
     const src: []const u8 = "#!/usr/bin/env idol\n# note\n1\n";
     var lex = lexer.Lexer.init(src, "t.id");
-    try route(a, &lex, src, "t.id");
-    const toks = lex.duo_tokens.?;
+    const toks = try route(a, &lex, src, "t.id");
     defer a.free(toks);
     const first = try lex.next();
     try std.testing.expectEqualStrings("#!/usr/bin/env idol", lex.shebang);
@@ -782,8 +781,7 @@ test "lexer_dispatch: production route releases temporary source copies" {
     const file: []const u8 = "lexer.id";
     var lex = lexer.Lexer.init(src, file);
 
-    try route(a, &lex, src, file);
-    const toks = lex.duo_tokens.?;
+    const toks = try route(a, &lex, src, file);
     defer a.free(toks);
 
     try std.testing.expectEqual(@intFromPtr(src.ptr), @intFromPtr(toks[0].text.ptr));
