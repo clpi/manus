@@ -320,7 +320,7 @@ pub fn emitJitRuntime(cg: anytype) E!void {
         \\    if (duo_make_temp_path(lua_path, sizeof lua_path, ".lua") != 0) goto tier2_fail;
         \\    if (duo_write_file(lua_path, src, strlen(src)) != 0) { unlink(lua_path); goto tier2_fail; }
         \\    if (duo_make_temp_path(dlib_path, sizeof dlib_path, DUO_DLIB_EXT) != 0) { unlink(lua_path); goto tier2_fail; }
-        \\    if (duo_compile_load_chunk(lua_path, dlib_path, err, sizeof err) != 0) {
+        \\    if (idol_compile_load_chunk(lua_path, dlib_path, err, sizeof err) != 0) {
         \\        unlink(lua_path);
         \\        unlink(dlib_path);
         \\        goto tier2_fail;
