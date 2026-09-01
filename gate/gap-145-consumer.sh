@@ -409,8 +409,8 @@ fi
 # `grammar_roles.infixRelation(kind)` for the operation identity AND
 # `grammar_roles.lookup(kind)` for `.precedence` and `.assoc` — two row reads
 # per peek, on the host Pratt hot path. parser.id `infix_prec` now reads the
-# owner's `_roleinfix`, `roleprecedence`, `roleassoc`, and `_rolerelation`
-# rows and packs the triple (op ordinal + left + right precedence) into one
+# owner's `_roleinfix`, `roleprecedence`, `roleassoc`, and compact `relation()`
+# ordinal row and packs the triple (op ordinal + left + right precedence) into one
 # i64 returned through the C ABI as `idol_parser_infix_prec`. Same one-call
 # shape as the lead/prefix/demands_operand transitions; the host row lookup
 # and the `Parser.infixBinOp` helper are gone.
@@ -554,6 +554,146 @@ rm -rf -- "$quotedprobe"
 examined=$((examined + 1))
 if [ "$quoted_old" -ne 1 ] || [ "$quoted_new" -ne 1 ]; then
     bad "the is_quoted_kind transfer detector is broken: old=$quoted_old new=$quoted_new"
+fi
+
+# ── 2f'''''''. prefix/update/glue relation faces execute from parser.id ───────
+#
+# The final production grammar_roles relation reads were unaryRelation,
+# gluedRelation and updateRelation. token.id now projects one compact ordinal
+# byte per physical slot from its sole relation/prefix orders. parser.id reads
+# those rows in O(1), applies the glue/update face facts, and returns the exact
+# generated enum ordinal. No name row, name scan, mirrored order string, or dead
+# host relation facade remains.
+examined=$((examined + 1))
+if grep -Eq '^[[:space:]]*(const[[:space:]]+[^=]+=[[:space:]]*)?grammar_roles\.(unaryRelation|gluedRelation|updateRelation)\(' "$PARSER"; then
+    bad 'parser.zig retained an executable host unary/glue/update relation decision'
+fi
+has "$PARSER" 'idol_parser_unary(' \
+    'parser.zig no longer calls the parser.id unary relation'
+has "$PARSER" 'idol_parser_glue(' \
+    'parser.zig no longer calls the parser.id glue relation'
+has "$PARSER" 'idol_parser_update(' \
+    'parser.zig no longer calls the parser.id update relation'
+has "$ROOT/lib/compiler/parser.id" '_unary: i64 = (kind: i64)' \
+    'parser.id lost the private unary bridge relation'
+has "$ROOT/lib/compiler/parser.id" '_glue: i64 = (kind: i64)' \
+    'parser.id lost the private glue bridge relation'
+has "$ROOT/lib/compiler/parser.id" '_update: i64 = (kind: i64)' \
+    'parser.id lost the private update bridge relation'
+has "$ROOT/lib/compiler/parser.id" '_ordinal(token.grammarrole.relation(), kind)' \
+    'parser.id no longer consumes the owner-projected relation ordinal row'
+has "$ROOT/lib/compiler/parser.id" '_ordinal(token.grammarrole.unary(), kind)' \
+    'parser.id no longer consumes the owner-projected unary ordinal row'
+forbid "$ROOT/lib/compiler/parser.id" 'relationordinal:' \
+    'parser.id restored a second relation-order scanner'
+forbid "$ROOT/lib/compiler/parser.id" 'prefixordinal:' \
+    'parser.id restored a second prefix-order scanner'
+forbid "$ROOT/lib/compiler/parser.id" 'add sub mul div idiv mod pow band bor bxor lshift rshift concat eq neq lt gt leq geq and or contains matmul pipeline' \
+    'parser.id restored a hard-coded relation order'
+forbid "$ROOT/lib/compiler/parser.id" 'neg not len bnot compile' \
+    'parser.id restored a hard-coded prefix order'
+has "$ROOT/lib/compiler/token.id" '_encode: str = (which: i64)' \
+    'token.id lost the compact owner ordinal projection'
+has "$ROOT/lib/token/grammarrole.id" 'relation(): str' \
+    'grammarrole.id lost the generated relation ordinal row'
+has "$ROOT/lib/token/grammarrole.id" 'unary(): str' \
+    'grammarrole.id lost the generated unary ordinal row'
+forbid "$ROOT/lib/token/grammarrole.id" '_relationtext' \
+    'grammarrole.id restored the retired relation-name row'
+forbid "$ROOT/lib/token/grammarrole.id" '_unarytext' \
+    'grammarrole.id restored the retired unary-name row'
+forbid "$ROOT/lib/token/grammarrole.id" '_slotword' \
+    'grammarrole.id restored the retired runtime name scanner'
+has "$ROOT/src/parser/projection.c" 'int64_t _unary(int64_t kind)' \
+    'tracked parser projection lost the unary ABI'
+has "$ROOT/src/parser/projection.c" 'int64_t _glue(int64_t kind)' \
+    'tracked parser projection lost the glue ABI'
+has "$ROOT/src/parser/projection.c" 'int64_t _update(int64_t kind)' \
+    'tracked parser projection lost the update ABI'
+has "$ROOT/build.zig" '-D_unary=idol_parser_unary' \
+    'build.zig no longer renames the unary ABI symbol'
+has "$ROOT/build.zig" '-D_glue=idol_parser_glue' \
+    'build.zig no longer renames the glue ABI symbol'
+has "$ROOT/build.zig" '-D_update=idol_parser_update' \
+    'build.zig no longer renames the update ABI symbol'
+for name in infixRelation unaryRelation gluedRelation updateRelation; do
+    forbid "$ROOT/src/grammar_roles.zig" "pub fn $name(" \
+        "grammar_roles.zig restored dead host facade $name"
+done
+has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_relation_faces(void)' \
+    'parser artifact stopped exhaustively checking relation faces'
+has "$ROOT/tools/node/dev/parser/artifact" 'idol_parser_unary((int64_t)kind)' \
+    'parser artifact no longer calls the unary ABI'
+has "$ROOT/tools/node/dev/parser/artifact" 'idol_parser_glue((int64_t)kind)' \
+    'parser artifact no longer calls the glue ABI'
+has "$ROOT/tools/node/dev/parser/artifact" 'idol_parser_update((int64_t)kind)' \
+    'parser artifact no longer calls the update ABI'
+has "$ROOT/tools/node/dev/parser/artifact" '-D_unary=idol_parser_unary' \
+    'parser artifact no longer renames the unary projection symbol'
+has "$ROOT/tools/node/dev/parser/artifact" '-D_glue=idol_parser_glue' \
+    'parser artifact no longer renames the glue projection symbol'
+has "$ROOT/tools/node/dev/parser/artifact" '-D_update=idol_parser_update' \
+    'parser artifact no longer renames the update projection symbol'
+
+relationprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate relation-face scratch' >&2; exit 2; }
+printf '%s\n' \
+    'const a = grammar_roles.unaryRelation(kind);' \
+    'const b = grammar_roles.gluedRelation(kind);' \
+    'const c = grammar_roles.updateRelation(kind);' >"$relationprobe/old.zig"
+printf '%s\n' \
+    'idol_parser_unary(kind);' \
+    'idol_parser_glue(kind);' \
+    'idol_parser_update(kind);' >"$relationprobe/new.zig"
+printf '%s\n' \
+    'orders = "add sub mul div idiv mod pow band bor bxor lshift rshift concat eq neq lt gt leq geq and or contains matmul pipeline "' \
+    'orders = "neg not len bnot compile "' >"$relationprobe/mirror.id"
+: >"$relationprobe/clean.id"
+relation_old=$(grep -cE 'grammar_roles\.(unaryRelation|gluedRelation|updateRelation)' "$relationprobe/old.zig")
+relation_new=$(grep -cE 'idol_parser_(unary|glue|update)' "$relationprobe/new.zig")
+relation_mirror=$(grep -cE 'add sub mul div idiv|neg not len bnot compile' "$relationprobe/mirror.id")
+relation_clean=$(grep -cE 'add sub mul div idiv|neg not len bnot compile' "$relationprobe/clean.id" || true)
+
+# Positive control: mutate token.id's `_prefixorder` in a stage copy to swap
+# `neg` and `compile`, regenerate lib/token/grammarrole.id, and verify the
+# `unary(): str` row at every affected slot shifts. This is the "owner order
+# drives the ABI result" claim made provable end-to-end. The mutation inverts
+# `_unaryname` for `kind` whose prefix is `neg` or `compile`, so the encoded
+# row byte at those slots must differ from the tracked row.
+relation_owner=$(mktemp -d "${TMPDIR:-/tmp}/idol-gap145-relation-owner.XXXXXX") || {
+    echo 'gap-145 consumer gate: cannot allocate relation-owner scratch' >&2
+    rm -rf -- "$relationprobe"
+    exit 2
+}
+cp -R lib "$relation_owner/lib"
+mkdir -p "$relation_owner/tools/node/dev/grammar"
+cp tools/node/dev/grammar/emit "$relation_owner/tools/node/dev/grammar/emit"
+cp tools/node/dev/grammar/idol_c_runtime_shim.c "$relation_owner/tools/node/dev/grammar/idol_c_runtime_shim.c"
+chmod +x "$relation_owner/tools/node/dev/grammar/emit"
+# emit requires the existing projections to be staged too, otherwise the
+# preflight bails before the owner even runs.
+cp -R src "$relation_owner/src"
+# Swap `neg` and `compile` in the staged `_prefixorder`. The token.id uses
+# space-separated names; the swap mutates the order so `_encode(1)` produces
+# a different row byte at every slot whose prefix is `neg` or `compile`.
+sed -i 's|_prefixorder = "neg not len bnot compile "|_prefixorder = "compile not len bnot neg "|' \
+    "$relation_owner/lib/compiler/token.id"
+relation_unary_tracked=$(grep -A1 '^unary(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *"//; s/"$//')
+# The emit script resolves IDOL relative to its working directory, so the
+# relative `./zig-out/bin/idol` would resolve into the stage tree where it
+# does not exist. Pass an absolute path.
+if (cd "$relation_owner" && IDOL="$ROOT/zig-out/bin/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
+    relation_unary_swapped=$(grep -A1 '^unary(): str$' "$relation_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *"//; s/"$//')
+else
+    relation_unary_swapped=''
+fi
+rm -rf -- "$relationprobe"
+
+examined=$((examined + 1))
+if [ "$relation_old" -ne 3 ] || [ "$relation_new" -ne 3 ] || [ "$relation_mirror" -ne 2 ] || [ "$relation_clean" -ne 0 ]; then
+    bad "the relation-face transfer detector is broken: old=$relation_old new=$relation_new mirror=$relation_mirror clean=$relation_clean"
+fi
+if [ -z "$relation_unary_tracked" ] || [ -z "$relation_unary_swapped" ] || [ "$relation_unary_tracked" = "$relation_unary_swapped" ]; then
+    bad "the owner-order-shift probe is broken: tracked and swapped unary rows agree (tracked_len=${#relation_unary_tracked} swapped_len=${#relation_unary_swapped})"
 fi
 
 # ── 2g. raw producer kind validates through the owner-generated enum ─────────

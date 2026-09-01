@@ -636,6 +636,18 @@ demands_operand: bool = (kind: i64)
         return false
     bits:byte(kind + 1) == 49
 
+# Owner-projected ordinal row. `.` is absence; `A` is ordinal zero. The row is
+# a physical projection of token.id's one relation order, not another order.
+_ordinal: i64 = (row: str, kind: i64)
+    if kind < 0 or kind >= row:len()
+        return -1
+    code = row:byte(kind + 1)
+    if code == 46
+        return -1
+    if code < 65 or code > 90
+        return -1
+    code - 65
+
 # Pratt binding-power triple for one token identity, packed into a single i64.
 #
 # Returns 0 when `kind` is not an infix operator with a real relation, a
@@ -648,9 +660,8 @@ demands_operand: bool = (kind: i64)
 #
 # `right` follows Pratt convention: left-associative tightens the right side
 # to `left + 1`, right-associative loosens it to `left - 1`, non-associative
-# keeps it at `left`. The Relation enum IS the order token.id publishes in
-# `_relationorder`; the lookup walks that row here so the ordinal never comes
-# from a host-side reconstruction.
+# keeps it at `left`. The Relation enum ordinal is projected per producer slot
+# by token.id; parser.id neither scans names nor mirrors the owner order.
 #
 # `parse_prec` called this on every Pratt step and used to ask
 # `grammar_roles.lookup(kind)` for `.precedence` and `.assoc` AND
@@ -669,7 +680,7 @@ infix_prec: i64 = (kind: i64)
     a: i64 = token.grammarrole.roleassoc(kind)
     if a == 0
         return 0
-    op: i64 = relationordinal(token.grammarrole._rolerelation(kind))
+    op: i64 = _ordinal(token.grammarrole.relation(), kind)
     if op < 0
         return 0
     left = prec
@@ -714,28 +725,47 @@ is_quoted_kind: bool = (kind: i64)
         return false
     bits:byte(kind + 1) == 49
 
-# Relation-ontology ordinal by name. Walks the order token.id publishes in
-# `_relationorder` so the ordinal is exactly the Relation enum position and
-# nothing here is keyed off a host-side reconstruction. Returns -1 when the
-# name is not in the order — the only legal answer for "." (no relation).
-relationordinal: i64 = (name: str)
-    # Pinned by `lib/compiler/token.id` `_relationorder`; this is a mirror,
-    # not a second order. 24 names, space-separated, single trailing space.
-    orders = "add sub mul div idiv mod pow band bor bxor lshift rshift concat eq neq lt gt leq geq and or contains matmul pipeline "
-    n = orders:len()
-    if n == 0 or name:len() == 0
+# Prefix relation of this identity — the `Prefix` enum ordinal that the
+# host Pratt path was asking through `grammar_roles.unaryRelation(kind)`,
+# which returned `?Prefix`. The fact that
+# `-` and `~` carry BOTH an infix and a prefix relation is the reason this
+# is a separate relation and not a second map consulted inside `infix_prec`.
+# The producer projects the ordinal directly from `_prefixorder`; parser.id
+# reads that fact without a second order or a name scan. Returns -1 when the
+# identity carries no prefix relation.
+_unary: i64 = (kind: i64)
+    _ordinal(token.grammarrole.unary(), kind)
+
+# Glued compound-update relation — the adjacency form (`>>=`, `<<=`,
+# `|=`, `&=`). The lexer mints no token for these, so which identities
+# admit the face is a grammar fact. The host Pratt path asked
+# `grammar_roles.gluedRelation(kind)` and reached into the generated role
+# row for `.glue` and `.relation` — two row reads per `peek_glued_assign`
+# probe. The relation reads the producer's `_roleglue` face and owner-projected
+# relation ordinal, so the parser-side
+# answer and the generated role row's `.relation` field cannot drift
+# apart: damaging the owner regenerates both. Returns -1 when the identity
+# does not admit the glued face.
+_glue: i64 = (kind: i64)
+    if !token.grammarrole._roleglue(kind)
         return -1
-    ord = 0
-    start = 1
-    i = 1
-    while i <= n
-        if orders:byte(i) == 32
-            if i - 1 >= start and orders:sub(start, i - 1) == name
-                return ord
-            ord += 1
-            start = i + 1
-        i += 1
-    -1
+    _ordinal(token.grammarrole.relation(), kind)
+
+# Single-token compound-update relation — `+=`, `-=`, `*=`, `/=`, `%=`,
+# `^=`. The host Pratt path asked `grammar_roles.updateRelation(kind)`
+# and reached into the generated role row for `.update` and `.relation` —
+# two row reads per `compound_assign_op` probe. The relation reads the
+# producer's `_roleupdate` face and owner-projected relation ordinal and returns
+# the Relation enum ordinal, so the parser-side answer and the generated
+# role row's `.relation` field cannot drift apart: damaging the owner
+# regenerates both. `+=` and `+` carry the SAME relation; the face is the
+# only difference, which is why the fact is in one relation and not a
+# sixth spelling of `add`. Returns -1 when the identity does not admit the
+# single-token update face.
+_update: i64 = (kind: i64)
+    if !token.grammarrole._roleupdate(kind)
+        return -1
+    _ordinal(token.grammarrole.relation(), kind)
 
 # Cursor on `(`. `offside_col` 0 disables layout discrimination for the
 # single-name `(a)` shape; otherwise it is the statement-line opener column.

@@ -114,6 +114,56 @@ extern fn idol_parser_infix_prec(
     kind: i64,
 ) i64;
 
+/// Prefix relation of one token identity — the `Prefix` enum ordinal.
+///
+/// Returns -1 when the identity carries no prefix relation (`plus`,
+/// `name`, `int_lit`, every literal keyword, every closing delimiter).
+/// Otherwise returns the ordinal in the `Prefix` enum published by
+/// `lib/compiler/token.id` (`neg=0, not=1, len=2, bnot=3, compile=4`)
+/// and aliased as `ast.UnOp`. The parser used to ask
+/// `grammar_roles.unaryRelation(tok.kind)` on every Pratt unary-prefix
+/// probe (3 sites across `parse_match_scrutinee_prec` and
+/// `parse_prec`), reaching into the generated role row for `.unary`.
+/// The relation reads the producer's owner-generated ordinal directly;
+/// parser.id carries neither a second prefix order nor a name scan.
+extern fn idol_parser_unary(
+    kind: i64,
+) i64;
+
+/// Glued compound-update relation of one token identity — the
+/// adjacency form (`>>=`, `<<=`, `|=`, `&=`). The lexer mints no token
+/// for these; the face is a grammar fact.
+///
+/// Returns -1 when the identity does not admit the glued face
+/// (`plus`, `name`, `caret`, every literal keyword, ...). Otherwise
+/// returns the `Relation` enum ordinal of the relation the identity
+/// applies (e.g. `rshift` for `rshift`). The parser used to ask
+/// `grammar_roles.gluedRelation(op.kind)` on every `peek_glued_assign`
+/// probe, reaching into the generated role row for `.glue` and
+/// `.relation`. The relation reads the producer's glue face and generated
+/// relation ordinal directly; the host row reads are gone.
+extern fn idol_parser_glue(
+    kind: i64,
+) i64;
+
+/// Single-token compound-update relation of one token identity —
+/// `+=`, `-=`, `*=`, `/=`, `%=`, `^=`.
+///
+/// Returns -1 when the identity does not admit the single-token
+/// update face (`plus`, `name`, `pipe`, every literal keyword, ...).
+/// Otherwise returns the `Relation` enum ordinal of the relation the
+/// identity applies (e.g. `add` for `plus_assign`). The parser used to
+/// ask `grammar_roles.updateRelation(kind)` on every
+/// `compound_assign_op` probe, reaching into the generated role row
+/// for `.update` and `.relation`. The relation reads the producer's
+/// update face and generated relation ordinal directly; the host row reads
+/// are gone. `+=` and `+` carry the SAME relation; the face is the
+/// only difference, which is why the fact is in one relation and not a
+/// sixth spelling of `add`.
+extern fn idol_parser_update(
+    kind: i64,
+) i64;
+
 pub const ParseError = error{
     UnexpectedToken,
     ExpectedToken,
@@ -745,7 +795,6 @@ pub const Parser = struct {
     /// `.lbrace` is deliberately ABSENT. A brace opens a REGION whose body is a
     /// sequence of slots, not one demanded operand, and a comment on its own
     /// line inside a pack is ordinary.
-
     /// The first byte a `#` would have to be followed by for `#…` to read as the
     /// retired length operator rather than as comment prose. A canonical comment
     /// is written `# text`; the space is what tells them apart, and it is the
@@ -4267,7 +4316,7 @@ pub const Parser = struct {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
-                const op: ?ast.UnOp = grammar_roles.unaryRelation(tok.kind);
+                const op: ?ast.UnOp = unary_relation(tok.kind);
                 if (op) |uop| {
                     if (tok.kind == .kw_not and self.idol_mode)
                         term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
@@ -5423,7 +5472,7 @@ pub const Parser = struct {
         const left: u8 = @intCast((triple >> 8) & 0xff);
         const right: u8 = @intCast((triple >> 16) & 0xff);
         return .{
-            .op = @as(ast.BinOp, @enumFromInt(op_ordinal)),
+            .op = @as(ast.BinOp, @fromBackingInt(@intCast(op_ordinal))),
             .left = left,
             .right = right,
         };
@@ -5448,7 +5497,7 @@ pub const Parser = struct {
     /// `src/lexer_tokenize.c` does not move, which is the point: this is a
     /// grammar fact, not a lexical one.
     fn peek_glued_assign(self: *Parser, op: Token) ParseError!?ast.BinOp {
-        const bop = grammar_roles.gluedRelation(op.kind) orelse return null;
+        const bop = glued_relation(op.kind) orelse return null;
         const saved = self.saveState();
         defer self.restoreState(saved);
         _ = try self.adv();
@@ -5462,7 +5511,41 @@ pub const Parser = struct {
     /// `+=` and `+` request the SAME relation; the owner records the face, so
     /// this is one observation and not a sixth spelling of `add`.
     fn compound_assign_op(kind: TK) ?ast.BinOp {
-        return grammar_roles.updateRelation(kind);
+        return relation_from_ordinal(idol_parser_update(@intCast(@backingInt(kind))));
+    }
+
+    /// Prefix relation of one token identity, crossing the parser.id ABI.
+    ///
+    /// Returns `null` when the identity carries no prefix relation, else the
+    /// `Prefix` enum value (`neg`, `not`, `len`, `bnot`, `compile`). The
+    /// parser used to ask `grammar_roles.unaryRelation(tok.kind)` on every
+    /// Pratt unary-prefix probe (3 sites across `parse_match_scrutinee_prec`
+    /// and `parse_prec`); the relation is now one i64 ABI call and a small
+    /// `enumFromInt` cast.
+    fn unary_relation(kind: TK) ?ast.UnOp {
+        return prefix_from_ordinal(idol_parser_unary(@intCast(@backingInt(kind))));
+    }
+
+    /// Glued compound-update relation of one token identity, crossing the
+    /// parser.id ABI.
+    ///
+    /// Returns `null` when the identity does not admit the glued face
+    /// (`plus`, `name`, `caret`, ...), else the `Relation` enum value the
+    /// face applies. The parser used to ask
+    /// `grammar_roles.gluedRelation(op.kind)` on every `peek_glued_assign`
+    /// probe; the relation is now one i64 ABI call.
+    fn glued_relation(kind: TK) ?ast.BinOp {
+        return relation_from_ordinal(idol_parser_glue(@intCast(@backingInt(kind))));
+    }
+
+    fn relation_from_ordinal(ordinal: i64) ?ast.BinOp {
+        if (ordinal < 0 or ordinal >= @typeInfo(ast.BinOp).@"enum".field_names.len) return null;
+        return @as(ast.BinOp, @fromBackingInt(@intCast(ordinal)));
+    }
+
+    fn prefix_from_ordinal(ordinal: i64) ?ast.UnOp {
+        if (ordinal < 0 or ordinal >= @typeInfo(ast.UnOp).@"enum".field_names.len) return null;
+        return @as(ast.UnOp, @fromBackingInt(@intCast(ordinal)));
     }
 
     fn parse_expr(self: *Parser) ParseError!*ast.Expr {
@@ -5500,7 +5583,7 @@ pub const Parser = struct {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
-                const op: ?ast.UnOp = grammar_roles.unaryRelation(tok.kind);
+                const op: ?ast.UnOp = unary_relation(tok.kind);
                 if (op) |uop| {
                     if (tok.kind == .kw_not and self.idol_mode)
                         term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
@@ -8114,7 +8197,8 @@ pub const Parser = struct {
                 const val = try self.parse_expr();
                 try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
             } else if (idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind))) or
-                idol_parser_is_literal_kind(@intCast(@backingInt(tok.kind)))) {
+                idol_parser_is_literal_kind(@intCast(@backingInt(tok.kind))))
+            {
                 // Sugar: "key" = val  or  1 = val  (unboxed literal key, desugars to indexed)
                 // quoted covers text/bytes/compat; literal_kind covers int_lit (and re-quote too).
                 // Check if next token is `=` via saveState lookahead
@@ -11696,6 +11780,39 @@ test "parse: production infix_prec decision executes the Idol relation" {
         };
         try testing.expectEqual(want_right, right);
     }
+}
+
+test "parse: production unary glue and update decisions execute Idol relations" {
+    for (grammar_roles.rows) |row| {
+        const kind = row.kind orelse continue;
+        const physical: i64 = @intCast(@backingInt(kind));
+        const relation: i64 = if (row.relation) |value| @intCast(@backingInt(value)) else -1;
+        const unary: i64 = if (row.unary) |value| @intCast(@backingInt(value)) else -1;
+        const expected_glue: i64 = if (row.glue) relation else -1;
+        const expected_update: i64 = if (row.update) relation else -1;
+        if (row.glue or row.update) try testing.expect(relation >= 0);
+        try testing.expectEqual(unary, idol_parser_unary(physical));
+        try testing.expectEqual(expected_glue, idol_parser_glue(physical));
+        try testing.expectEqual(expected_update, idol_parser_update(physical));
+    }
+    const past: i64 = @intCast(grammar_roles.rows.len);
+    try testing.expectEqual(@as(i64, -1), idol_parser_unary(-1));
+    try testing.expectEqual(@as(i64, -1), idol_parser_unary(past));
+    try testing.expectEqual(@as(i64, -1), idol_parser_glue(-1));
+    try testing.expectEqual(@as(i64, -1), idol_parser_glue(past));
+    try testing.expectEqual(@as(i64, -1), idol_parser_update(-1));
+    try testing.expectEqual(@as(i64, -1), idol_parser_update(past));
+}
+
+test "parse: relation ABI ordinal decode refuses values outside generated enums" {
+    const relations: i64 = @intCast(@typeInfo(ast.BinOp).@"enum".field_names.len);
+    const prefixes: i64 = @intCast(@typeInfo(ast.UnOp).@"enum".field_names.len);
+    try testing.expect(Parser.relation_from_ordinal(-1) == null);
+    try testing.expect(Parser.relation_from_ordinal(relations) == null);
+    try testing.expect(Parser.prefix_from_ordinal(-1) == null);
+    try testing.expect(Parser.prefix_from_ordinal(prefixes) == null);
+    try testing.expectEqual(ast.BinOp.add, Parser.relation_from_ordinal(0).?);
+    try testing.expectEqual(ast.UnOp.neg, Parser.prefix_from_ordinal(0).?);
 }
 
 test "parse: production is_primitive_descriptor_kind decision executes the Idol relation" {

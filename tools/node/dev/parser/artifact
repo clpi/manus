@@ -175,6 +175,43 @@ static int verify_prefix(void) {
     return failed;
 }
 
+static int64_t projected_ordinal(const char *row, size_t kind) {
+    const unsigned char code = (unsigned char)row[kind];
+    if (code == '.') return -1;
+    if (code < 'A' || code > 'Z') return -2;
+    return (int64_t)(code - 'A');
+}
+
+static int verify_relation_faces(void) {
+    const char *relations = token_grammarrole__relation();
+    const char *unaries = token_grammarrole__unary();
+    const size_t count = strlen(relations);
+    size_t unary_positive = 0;
+    size_t glue_positive = 0;
+    size_t update_positive = 0;
+    int failed = count == 0 || strlen(unaries) != count;
+    for (size_t kind = 0; kind < count; ++kind) {
+        const int64_t relation = projected_ordinal(relations, kind);
+        const int64_t unary_value = projected_ordinal(unaries, kind);
+        const bool glue_face = token_grammarrole___roleglue((int64_t)kind);
+        const bool update_face = token_grammarrole___roleupdate((int64_t)kind);
+        const int64_t expected_glue = glue_face ? relation : -1;
+        const int64_t expected_update = update_face ? relation : -1;
+        if (unary_value >= 0) unary_positive += 1;
+        if (glue_face) glue_positive += 1;
+        if (update_face) update_positive += 1;
+        if ((glue_face || update_face) && relation < 0) failed += 1;
+        if (idol_parser_unary((int64_t)kind) != unary_value) failed += 1;
+        if (idol_parser_glue((int64_t)kind) != expected_glue) failed += 1;
+        if (idol_parser_update((int64_t)kind) != expected_update) failed += 1;
+    }
+    if (unary_positive == 0 || glue_positive == 0 || update_positive == 0) failed += 1;
+    if (idol_parser_unary(-1) != -1 || idol_parser_unary((int64_t)count) != -1) failed += 1;
+    if (idol_parser_glue(-1) != -1 || idol_parser_glue((int64_t)count) != -1) failed += 1;
+    if (idol_parser_update(-1) != -1 || idol_parser_update((int64_t)count) != -1) failed += 1;
+    return failed;
+}
+
 static int64_t first_kind(const char *source) {
     duo_lexer lexer = compiler_lexer__new(source, "probe.id", 1);
     return compiler_lexer__next(&lexer).kind;
@@ -204,7 +241,8 @@ int main(void) {
     failed += verify_clause(") =>", 0);
     failed += verify_lead();
     failed += verify_prefix();
-    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 statement-cases=2 clause-cases=8 lead-slots=%zu prefix-slots=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), failed);
+    failed += verify_relation_faces();
+    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 statement-cases=2 clause-cases=8 lead-slots=%zu prefix-slots=%zu relation-slots=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), failed);
     return failed != 0;
 }
 EOF
@@ -223,6 +261,9 @@ compile_and_run() {
         -Dlead=idol_parser_lead \
         -Dprefix=idol_parser_prefix \
         -Dinfix_prec=idol_parser_infix_prec \
+        -D_unary=idol_parser_unary \
+        -D_glue=idol_parser_glue \
+        -D_update=idol_parser_update \
         -Dis_digit=idol_parser_is_digit \
         -c "$source" -o "$object"
     then
@@ -237,6 +278,9 @@ compile_and_run() {
         -Dlead=idol_parser_lead \
         -Dprefix=idol_parser_prefix \
         -Dinfix_prec=idol_parser_infix_prec \
+        -D_unary=idol_parser_unary \
+        -D_glue=idol_parser_glue \
+        -D_update=idol_parser_update \
         -Dis_digit=idol_parser_is_digit \
         -include "$source" "$cursor_harness" -lm -o "$cursor_executable"
     then

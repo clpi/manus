@@ -26,9 +26,9 @@ The single largest error this document has made is collapsing these into one
 
 | Question | Answer | Proof command |
 |---|---|---|
-| Does an executable **grammar owner** exist? | **Yes.** `lib/compiler/token.id` is the one executable grammar-fact owner (`law.grammar.one`). | `zig build grammar-projection` on a direct-native-supported host; on this x86_64-linux host it refuses DNB004 before the owner runs, so the command measures environment here (see `gaps/GAP-134.md`). |
-| Is **grammar consumer closure** reached? | **No.** Only bounded recognition decisions consume the owner's facts; `lib/compiler/token_view.id` is now checkable and `dump-c --lib` linkable, but the editor grammar is still authored and still disagrees within a pinned ratchet, and `docs/spec/grammar.md` does not generate the parser. | `zig build treesitter-agreement` on a direct-native-supported host; on this x86_64-linux host `agreement.sh` reports NOT MEASURED for the same DNB004 reason. |
-| Is the **parser** Idol-owned? | **No.** `src/parser.zig` still decides expressions, bindings, and source structure. Parser SHC has not started. | `docs/bootstrap.md` "Parser recognition — HOST OWNED" |
+| Does an executable **grammar owner** exist? | **Yes.** `lib/compiler/token.id` is the one executable grammar-fact owner (`law.grammar.one`). | `IDOL=./zig-out/bin/idol sh gate/grammar-projection.sh` compiles the owner through the portable C realization, executes it in a stage tree, validates both generated consumers, and byte-compares both tracked projections. |
+| Is **grammar consumer closure** reached? | **No.** Thirteen bounded production decisions consume owner facts, but the wider structural parser and editor grammar remain host-authored and `docs/spec/grammar.md` does not generate the parser. | `sh gate/gap-145-consumer.sh`; `docs/bootstrap.md` owns the exact remaining authority. |
+| Is the **parser** Idol-owned? | **Partly.** Thirteen production decisions execute from `lib/compiler/parser.id`; `src/parser.zig` still owns most recognition, AST materialization, bindings, and source structure. | `IDOL=./zig-out/bin/idol sh tools/node/dev/parser/artifact`; `sh gate/gap-145-consumer.sh` |
 
 An owner existing is not consumer closure, and consumer closure would still not
 be parser ownership. Progress on the first two does **not** move the bootstrap
@@ -66,7 +66,7 @@ per-boundary contract and is the authority when this table and that one differ.
 | B-L0 lexical identity + GAP-145 consumer zero | open (owner executes; consumers remain) |
 | B-G0a grammar Idol **owner** exists | **met** — `lib/compiler/token.id` |
 | B-G0b grammar **consumer** closure | open (GAP-134; token_view prerequisite linkable, parser still host-owned) |
-| B-P0 one parser production decision | **met** — ten bounded relations execute from `lib/compiler/parser.id`; complete parser stage remains open |
+| B-P0 one parser production decision | **met** — thirteen bounded decisions execute from `lib/compiler/parser.id`; complete parser stage remains open |
 | B0 compiler B executable | open — B does not exist |
 | C0 B compiles C | open — C does not exist |
 

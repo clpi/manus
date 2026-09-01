@@ -78,48 +78,6 @@ pub fn canStartPattern(kind: lexer.TokenKind) bool {
     return lookup(kind).pattern;
 }
 
-/// ONE OPERATION ONTOLOGY.
-///
-/// `a + b`, `a += b` and `a >>= b` are three SOURCE FACES of one relation, so
-/// they read one fact — `relation` — and differ only in which face the owner
-/// admits for that identity. The parser used to hold three private
-/// `TokenKind => Relation` switches (24 + 6 + 5 arms) that had to agree with
-/// each other and with the precedence table; `Relation` is now the physical
-/// encoding of the owner's relation identity, not a second naming of it.
-///
-/// The infix face: which relation this identity applies between two operands.
-pub fn infixRelation(kind: lexer.TokenKind) ?Relation {
-    const r = lookup(kind);
-    if (!r.infix) return null;
-    return r.relation;
-}
-
-/// The single-token compound-update face (`+=`): the relation it updates by.
-/// `plus_assign` carries the SAME relation as `plus`; the face is the only
-/// thing that differs, which is why it is a separate fact and not a
-/// separate operation.
-pub fn updateRelation(kind: lexer.TokenKind) ?Relation {
-    const r = lookup(kind);
-    if (!r.update) return null;
-    return r.relation;
-}
-
-/// The adjacency-glued compound-update face (`>>=` is `>>` then a glued `=`).
-/// The lexer mints no token for it, so which identities admit the face is a
-/// grammar fact. Adjacency itself stays a parser observation over spans.
-pub fn gluedRelation(kind: lexer.TokenKind) ?Relation {
-    const r = lookup(kind);
-    if (!r.glue) return null;
-    return r.relation;
-}
-
-/// The prefix face. `-` and `~` carry BOTH a prefix and an infix relation;
-/// `unary` and `relation` are therefore two facts on one row, never one map
-/// consulted twice.
-pub fn unaryRelation(kind: lexer.TokenKind) ?Prefix {
-    return lookup(kind).unary;
-}
-
 test "grammar roles: identity not spelling drives prefix on dot" {
     try std.testing.expect(lookup(.dot).postfix);
     try std.testing.expect(!lookup(.dot).prefix);
@@ -290,7 +248,11 @@ test "grammar roles: every relation identity is owned by exactly one infix token
     var seen = std.EnumMap(Relation, lexer.TokenKind){};
     for (rows) |r| {
         const kind = r.kind orelse continue;
-        const rel = infixRelation(kind) orelse continue;
+        if (!r.infix) continue;
+        const rel = r.relation orelse {
+            try std.testing.expect(false);
+            continue;
+        };
         try std.testing.expect(seen.get(rel) == null);
         seen.put(rel, kind);
     }
@@ -302,8 +264,7 @@ test "grammar roles: every relation identity is owned by exactly one infix token
 test "grammar roles: every prefix relation is owned by at least one identity" {
     var seen = std.EnumSet(Prefix){};
     for (rows) |r| {
-        const kind = r.kind orelse continue;
-        if (unaryRelation(kind)) |u| seen.insert(u);
+        if (r.unary) |u| seen.insert(u);
     }
     inline for (@typeInfo(Prefix).@"enum".field_names) |nm| {
         try std.testing.expect(seen.contains(@field(Prefix, nm)));
@@ -313,48 +274,64 @@ test "grammar roles: every prefix relation is owned by at least one identity" {
 test "grammar roles: one identity may carry a prefix and an infix relation" {
     // `~` and `-` are the two. Holding the identity fixed, the two faces are
     // separate facts; nothing here reads the character.
-    try std.testing.expectEqual(Relation.bxor, infixRelation(.tilde).?);
-    try std.testing.expectEqual(Prefix.bnot, unaryRelation(.tilde).?);
-    try std.testing.expectEqual(Relation.sub, infixRelation(.minus).?);
-    try std.testing.expectEqual(Prefix.neg, unaryRelation(.minus).?);
+    const tilde = lookup(.tilde);
+    const minus = lookup(.minus);
+    try std.testing.expect(tilde.infix);
+    try std.testing.expect(minus.infix);
+    try std.testing.expectEqual(Relation.bxor, tilde.relation.?);
+    try std.testing.expectEqual(Prefix.bnot, tilde.unary.?);
+    try std.testing.expectEqual(Relation.sub, minus.relation.?);
+    try std.testing.expectEqual(Prefix.neg, minus.unary.?);
     // `+` has no prefix face and `#` has no infix one.
-    try std.testing.expect(unaryRelation(.plus) == null);
-    try std.testing.expect(infixRelation(.hash) == null);
+    try std.testing.expect(lookup(.plus).unary == null);
+    try std.testing.expect(!lookup(.hash).infix);
 }
 
 test "grammar roles: update faces share their relation and are not infix" {
     // `a += b` and `a + b` request the SAME relation. If the update face were
     // a second operation the two could drift; sharing the row makes that
     // unrepresentable.
-    try std.testing.expectEqual(infixRelation(.plus).?, updateRelation(.plus_assign).?);
-    try std.testing.expectEqual(infixRelation(.caret).?, updateRelation(.caret_assign).?);
-    try std.testing.expect(infixRelation(.plus_assign) == null);
-    try std.testing.expect(updateRelation(.plus) == null);
+    const plus = lookup(.plus);
+    const plus_assign = lookup(.plus_assign);
+    const caret = lookup(.caret);
+    const caret_assign = lookup(.caret_assign);
+    try std.testing.expect(plus.infix);
+    try std.testing.expect(plus_assign.update);
+    try std.testing.expect(caret.infix);
+    try std.testing.expect(caret_assign.update);
+    try std.testing.expectEqual(plus.relation.?, plus_assign.relation.?);
+    try std.testing.expectEqual(caret.relation.?, caret_assign.relation.?);
+    try std.testing.expect(!plus_assign.infix);
+    try std.testing.expect(!plus.update);
     // Plain `=` requests no relation at all — absent is not `add`.
-    try std.testing.expect(infixRelation(.assign) == null);
-    try std.testing.expect(updateRelation(.assign) == null);
+    try std.testing.expect(!lookup(.assign).infix);
+    try std.testing.expect(!lookup(.assign).update);
     try std.testing.expect(lookup(.assign).relation == null);
 }
 
 test "grammar roles: the glued update face is the identity's own relation" {
     // `>>=` is `>>` with a glued `=`; the relation is `>>`'s, and only the
     // five identities the owner admits carry the face.
-    try std.testing.expectEqual(Relation.rshift, gluedRelation(.rshift).?);
-    try std.testing.expectEqual(infixRelation(.pipe).?, gluedRelation(.pipe).?);
-    try std.testing.expectEqual(infixRelation(.amp).?, gluedRelation(.amp).?);
-    try std.testing.expectEqual(infixRelation(.tilde).?, gluedRelation(.tilde).?);
-    try std.testing.expectEqual(infixRelation(.lshift).?, gluedRelation(.lshift).?);
-    try std.testing.expect(gluedRelation(.plus) == null);
-    try std.testing.expect(gluedRelation(.caret) == null);
+    inline for (.{ lexer.TokenKind.rshift, .pipe, .amp, .tilde, .lshift }) |kind| {
+        const row = lookup(kind);
+        try std.testing.expect(row.infix);
+        try std.testing.expect(row.glue);
+        try std.testing.expect(row.relation != null);
+    }
+    try std.testing.expectEqual(Relation.rshift, lookup(.rshift).relation.?);
+    try std.testing.expect(!lookup(.plus).glue);
+    try std.testing.expect(!lookup(.caret).glue);
 }
 
 test "grammar roles: relation identity is held by ordinal, never by spelling" {
     // `!=` and the retired `~=` are one identity; `@` is `matmul` infix and
     // an attribute prefix elsewhere. Neither answer comes from the text.
-    try std.testing.expectEqual(Relation.neq, infixRelation(.neq).?);
+    try std.testing.expect(lookup(.neq).infix);
+    try std.testing.expectEqual(Relation.neq, lookup(.neq).relation.?);
     try std.testing.expectEqualStrings("!=", lexer.TokenKind.neq.spelling());
-    try std.testing.expectEqual(Relation.matmul, infixRelation(.at).?);
-    try std.testing.expect(unaryRelation(.at) == null);
+    try std.testing.expect(lookup(.at).infix);
+    try std.testing.expectEqual(Relation.matmul, lookup(.at).relation.?);
+    try std.testing.expect(lookup(.at).unary == null);
 }
 
 test "grammar roles: the demand fact is the exact dual of expression start" {

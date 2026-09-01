@@ -1861,8 +1861,6 @@ _glue = {
   0,
   0,
 }
-_relationtext = ". . . . and . . . . . . . . . . . . . contains . . . or . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . add sub mul div mod pow . band bor lt gt . bxor . . . . matmul . . . concat . . eq neq leq geq lshift rshift idiv . . pipeline . add sub mul div mod pow . . . . . . . . . "
-_unarytext = ". . . . . . . . . . . . . . . . . . . . . not . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . compile . . . . . . . . . neg . . . . len . . . . . bnot . . . . . . not . . . compile . . . . . . . . . . . . . . . . . . . . . . . . . . "
 
 rolebeginexpr: bool = (kind: i64)
   kind >= 0 and kind < rolecount and beginexpr[kind + 1] > 0
@@ -1930,23 +1928,8 @@ literal(): str
 quoted(): str
   "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111100000"
 
-_slotword: str = (row: str, kind: i64)
-  n = row:len()
-  i = 1
-  seen = 0
-  start = 1
-  out = "."
-  while i <= n
-    if row:byte(i) == 32
-      if seen == kind
-        out = row:sub(start, i - 1)
-      seen += 1
-      start = i + 1
-    i += 1
-  out
+relation(): str
+  "....T.............V...U.........................................ABCDFG.HIPQ.J....W...M..NORSKLE..X.ABCDFG........."
 
-_rolerelation: str = (kind: i64)
-  _slotword(_relationtext, kind)
-
-_roleunary: str = (kind: i64)
-  _slotword(_unarytext, kind)
+unary(): str
+  ".....................B.................................E.........A....C.....D......B...E.........................."
