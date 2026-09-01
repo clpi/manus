@@ -696,6 +696,155 @@ if [ -z "$relation_unary_tracked" ] || [ -z "$relation_unary_swapped" ] || [ "$r
     bad "the owner-order-shift probe is broken: tracked and swapped unary rows agree (tracked_len=${#relation_unary_tracked} swapped_len=${#relation_unary_swapped})"
 fi
 
+# ── 2f''''''''. offside layout recognition executes from parser.id ──────────
+#
+# The host `open_layout` and `layout_verdict` Zig switches carried the
+# dialect check, the opener-presence check, the layout-terminator list
+# (`kw_end`, `kw_else`, `kw_elseif`, `kw_until`, `kw_catch`, `eof`), and the
+# inline-vs-indented branch. The host `parse_block_open` empty-body branch
+# carried a five-identity carve-out (`kw_end`, `kw_else`, `kw_elseif`,
+# `kw_until`, `kw_catch` — `eof` excluded). Every arm of those switches is
+# now a fact in `_opening` / `_layout_verdict` / `_layout_terminator` /
+# `_empty_body_terminator` (private relations, bounded vocabulary-freeze
+# bridge; see `gate/vocabulary.sh`), exposed through ABI consumers named
+# `idol_parser_opening` / `idol_parser_layout_verdict` /
+# `idol_parser_layout_terminator` / `idol_parser_empty_body_terminator`.
+# The parser owns no kind-attribute cache and no terminator list of its own
+# — damaging the owner `lib/compiler/token.id` predicate regenerates both
+# `src/grammar_role_table.zig` and `src/parser/projection.c`, and the
+# parser ABI crosses the same owner row. Any retained host switch on the
+# six (or five) terminator identities, or any retained column-comparison
+# (`tok.loc.col <= f.open_col` etc.), is a layout-recognizer fact the
+# parser kept for itself.
+examined=$((examined + 1))
+# Host switch arms on the layout-terminator six identities.
+if grep -Eq '\.(kw_end|kw_else|kw_elseif|kw_until|kw_catch)\b.*=>\s*(\.close|return f\b)' "$PARSER"; then
+    bad 'parser.zig retained an executable host layout-terminator switch arm'
+fi
+# Host switch arm on `eof` inside the layout paths (the host lists eof in
+# `open_layout`; the empty-body branch deliberately excludes it).
+if grep -Eq '\bok_layout_open|fn open_layout|fn layout_verdict' "$PARSER"; then
+    if ! grep -Eq 'idol_parser_opening\(|idol_parser_layout_verdict\(|idol_parser_layout_terminator\(|idol_parser_empty_body_terminator\(' "$PARSER"; then
+        bad 'parser.zig retained open_layout/layout_verdict decision bodies without crossing the parser.id ABI'
+    fi
+fi
+# The four parser.id relations own the layout decision. They are private
+# (underscore-prefixed) under the vocabulary freeze; the deletion condition
+# is a vocabulary-proven canonical relation surface or complete parser-pack
+# execution, the same bridge the parent's `_unary` / `_glue` / `_update`
+# `_ordinal` relations take.
+has "$ROOT/lib/compiler/parser.id" '_layout_terminator: bool = (kind: i64)' \
+    'parser.id lost the private _layout_terminator relation'
+has "$ROOT/lib/compiler/parser.id" '_empty_body_terminator: bool = (kind: i64)' \
+    'parser.id lost the private _empty_body_terminator relation'
+has "$ROOT/lib/compiler/parser.id" '_opening: i64 = (idol_mode: bool, open_line: i64, open_col: i64, first_kind: i64, first_line: i64, first_col: i64)' \
+    'parser.id lost the private _opening relation'
+has "$ROOT/lib/compiler/parser.id" '_layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, kind: i64, line: i64, col: i64)' \
+    'parser.id lost the private _layout_verdict relation'
+# The owner rows.
+has "$ROOT/lib/compiler/token.id" 'layoutterminator(): str' \
+    'token.id lost the layoutterminator owner row'
+has "$ROOT/lib/compiler/token.id" 'emptybodyterminator(): str' \
+    'token.id lost the emptybodyterminator owner row'
+# Generated projection carries both rows.
+has "$ROOT/lib/token/grammarrole.id" 'layoutterminator(): str' \
+    'grammarrole.id lost the layoutterminator row'
+has "$ROOT/lib/token/grammarrole.id" 'emptybodyterminator(): str' \
+    'grammarrole.id lost the emptybodyterminator row'
+# Tracked parser projection carries the four ABI symbols (underscore-prefixed
+# in the tracked source; cc renames them at link via the build.zig -D flags).
+has "$ROOT/src/parser/projection.c" 'int64_t _opening(bool idol_mode' \
+    'tracked parser projection lost the opening ABI'
+has "$ROOT/src/parser/projection.c" 'int64_t _layout_verdict(bool offside' \
+    'tracked parser projection lost the layout_verdict ABI'
+has "$ROOT/src/parser/projection.c" 'bool _layout_terminator(int64_t kind)' \
+    'tracked parser projection lost the layout_terminator ABI'
+has "$ROOT/src/parser/projection.c" 'bool _empty_body_terminator(int64_t kind)' \
+    'tracked parser projection lost the empty_body_terminator ABI'
+# Build.zig rename lines (underscore-prefixed private names → public ABI).
+has "$ROOT/build.zig" '-D_opening=idol_parser_opening' \
+    'build.zig no longer renames the opening ABI symbol'
+has "$ROOT/build.zig" '-D_layout_verdict=idol_parser_layout_verdict' \
+    'build.zig no longer renames the layout_verdict ABI symbol'
+has "$ROOT/build.zig" '-D_layout_terminator=idol_parser_layout_terminator' \
+    'build.zig no longer renames the layout_terminator ABI symbol'
+has "$ROOT/build.zig" '-D_empty_body_terminator=idol_parser_empty_body_terminator' \
+    'build.zig no longer renames the empty_body_terminator ABI symbol'
+
+# Detector probes — planted old/new/clean. The detector counts MUST be 6/4/0;
+# otherwise the gate verdict on this section is untrustworthy. Old probe
+# contains the host six-identity terminator list, each on its own line so
+# grep counts them individually; new probe contains the four ABI call
+# sites; clean probe has none.
+layoutprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate layout scratch' >&2; exit 2; }
+printf '%s\n' \
+    'fn open_layout(self: *Parser) LayoutFrame {' \
+    '    switch (first.kind) {' \
+    '        .kw_end =>,' \
+    '        .kw_else =>,' \
+    '        .kw_elseif =>,' \
+    '        .kw_until =>,' \
+    '        .kw_catch =>,' \
+    '        .eof => return f,' \
+    '    }' \
+    '    if (tok.loc.col <= f.open_col) return .close;' \
+    '}' >"$layoutprobe/old.zig"
+printf '%s\n' \
+    'idol_parser_opening(self.idol_mode, o.line, o.col, first_kind, first.loc.line, first.loc.col);' \
+    'idol_parser_layout_verdict(f.offside, f.open_col, f.body_col, kind, tok.loc.line, tok.loc.col);' \
+    'idol_parser_layout_terminator(first_kind);' \
+    'idol_parser_empty_body_terminator(first_kind);' >"$layoutprobe/new.zig"
+: >"$layoutprobe/clean.zig"
+layout_old=$(grep -cE '\.(kw_end|kw_else|kw_elseif|kw_until|kw_catch|eof)\b' "$layoutprobe/old.zig")
+layout_new=$(grep -cE 'idol_parser_(opening|layout_verdict|layout_terminator|empty_body_terminator)' "$layoutprobe/new.zig")
+layout_clean=$(grep -cE 'idol_parser_(opening|layout_verdict|layout_terminator|empty_body_terminator)|kw_end.*kw_else.*kw_catch' "$layoutprobe/clean.zig" || true)
+
+examined=$((examined + 1))
+if [ "$layout_old" -lt 6 ] || [ "$layout_new" -ne 4 ] || [ "$layout_clean" -ne 0 ]; then
+    bad "the layout transfer detector is broken: old=$layout_old new=$layout_new clean=$layout_clean"
+fi
+rm -rf -- "$layoutprobe"
+
+# Owner-driven positive control: mutate `layoutterminator()` in a stage copy
+# of token.id to swap which slot carries `1`, regenerate grammarrole.id via
+# the same emit recipe the parent uses, and verify the tracked row byte
+# moves. The mutation must break at least one byte — at the swapped kind
+# slot — and the gate verdict must rest on the byte being different, not
+# on the source text.
+layout_owner=$(mktemp -d "${TMPDIR:-/tmp}/idol-gap145-layout-owner.XXXXXX") || {
+    echo 'gap-145 consumer gate: cannot allocate layout-owner scratch' >&2
+    exit 2
+}
+cp -R lib "$layout_owner/lib"
+mkdir -p "$layout_owner/tools/node/dev/grammar"
+cp tools/node/dev/grammar/emit "$layout_owner/tools/node/dev/grammar/emit"
+cp tools/node/dev/grammar/idol_c_runtime_shim.c "$layout_owner/tools/node/dev/grammar/idol_c_runtime_shim.c"
+chmod +x "$layout_owner/tools/node/dev/grammar/emit"
+cp -R src "$layout_owner/src"
+# The `layoutterminator()` predicate currently reads:
+#     if kind == kindend or kind == kindelse or kind == kindelseif
+#       bit = "1"
+#     if kind == kinduntil or kind == kindcatch or kind == kindeof
+#       bit = "1"
+# Replace `kindend` with `kindreturn` in the staged token.id — `kindreturn`
+# is not in the original six. The bit at `kindend` flips '1' to '0', and
+# the bit at `kindreturn` flips '0' to '1'. The row bytes at those two
+# slots MUST shift; the row MUST differ from the tracked row.
+sed -i 's|kind == kindend or kind == kindelse|kind == kindreturn or kind == kindelse|' \
+    "$layout_owner/lib/compiler/token.id"
+layout_row_tracked=$(grep -A1 '^layoutterminator(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+if (cd "$layout_owner" && IDOL="$ROOT/zig-out/bin/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
+    layout_row_swapped=$(grep -A1 '^layoutterminator(): str$' "$layout_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+else
+    layout_row_swapped=''
+fi
+rm -rf -- "$layout_owner"
+
+examined=$((examined + 1))
+if [ -z "$layout_row_tracked" ] || [ -z "$layout_row_swapped" ] || [ "$layout_row_tracked" = "$layout_row_swapped" ]; then
+    bad "the layout owner-order-shift probe is broken: tracked and swapped rows agree (tracked_len=${#layout_row_tracked} swapped_len=${#layout_row_swapped})"
+fi
+
 # ── 2g. raw producer kind validates through the owner-generated enum ─────────
 #
 # `kindFromRecord` selected `grammar_role_table.rows[ordinal].kind`, retaining a

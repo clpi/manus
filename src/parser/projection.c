@@ -2095,6 +2095,8 @@ static inline const char* token_grammarrole__lead(void);
 static inline const char* token_grammarrole__prefix(void);
 static inline const char* token_grammarrole__literal(void);
 static inline const char* token_grammarrole__quoted(void);
+static inline const char* token_grammarrole__layoutterminator(void);
+static inline const char* token_grammarrole__emptybodyterminator(void);
 static inline const char* token_grammarrole__relation(void);
 static inline const char* token_grammarrole__unary(void);
 static inline bool token_grammarrole__rolebeginexpr(int64_t kind) {
@@ -2185,6 +2187,14 @@ static inline const char* token_grammarrole__quoted(void) {
     return "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111100000";
 }
 
+static inline const char* token_grammarrole__layoutterminator(void) {
+    return "000000001110000000000000000100000000000000000010000000000000000000000000000000000000000000000000000000000000010000";
+}
+
+static inline const char* token_grammarrole__emptybodyterminator(void) {
+    return "000000001110000000000000000100000000000000000010000000000000000000000000000000000000000000000000000000000000000000";
+}
+
 static inline const char* token_grammarrole__relation(void) {
     return "....T.............V...U.........................................ABCDFG.HIPQ.J....W...M..NORSKLE..X.ABCDFG.........";
 }
@@ -2272,6 +2282,10 @@ __attribute__((visibility("default"))) bool is_quoted_kind(int64_t kind);
 __attribute__((visibility("default"))) int64_t _unary(int64_t kind);
 __attribute__((visibility("default"))) int64_t _glue(int64_t kind);
 __attribute__((visibility("default"))) int64_t _update(int64_t kind);
+__attribute__((visibility("default"))) bool _layout_terminator(int64_t kind);
+__attribute__((visibility("default"))) bool _empty_body_terminator(int64_t kind);
+__attribute__((visibility("default"))) int64_t _opening(bool idol_mode, int64_t open_line, int64_t open_col, int64_t first_kind, int64_t first_line, int64_t first_col);
+__attribute__((visibility("default"))) int64_t _layout_verdict(bool offside, int64_t open_col, int64_t body_col, int64_t kind, int64_t line, int64_t col);
 __attribute__((visibility("default"))) bool paren_header_signal_lx(duo_rec_ae78087612f938ba *lx, bool allow, int64_t offside, int64_t before);
 __attribute__((visibility("default"))) bool statement_header_signal_lx(duo_rec_ae78087612f938ba *lx, duo_rec_735fa21981531a8e *name, bool allow_untyped_comma);
 __attribute__((visibility("default"))) const char* join(const char* a, const char* b);
@@ -2973,6 +2987,66 @@ __attribute__((visibility("default"))) int64_t _update(int64_t kind) {
         return (-(1));
     }
     return _ordinal(token_grammarrole__relation(), kind);
+}
+
+__attribute__((visibility("default"))) bool _layout_terminator(int64_t kind) {
+    if ((kind < 0)) {
+        return false;
+    }
+    const char* bits = token_grammarrole__layoutterminator();
+    if ((kind >= ((int64_t)strlen(bits)))) {
+        return false;
+    }
+    return (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49);
+}
+
+__attribute__((visibility("default"))) bool _empty_body_terminator(int64_t kind) {
+    if ((kind < 0)) {
+        return false;
+    }
+    const char* bits = token_grammarrole__emptybodyterminator();
+    if ((kind >= ((int64_t)strlen(bits)))) {
+        return false;
+    }
+    return (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49);
+}
+
+__attribute__((visibility("default"))) int64_t _opening(bool idol_mode, int64_t open_line, int64_t open_col, int64_t first_kind, int64_t first_line, int64_t first_col) {
+    if ((!idol_mode)) {
+        return 0;
+    }
+    if (((open_line == 0) || (open_col == 0))) {
+        return 0;
+    }
+    if (_layout_terminator(first_kind)) {
+        return ((int64_t)(((uint64_t)(open_col)) << ((uint64_t)(8) & 63u)));
+    }
+    if ((first_line == open_line)) {
+        return ((int64_t)((((int64_t)((1) | (4)))) | (((int64_t)(((uint64_t)(open_col)) << ((uint64_t)(8) & 63u))))));
+    }
+    if (((first_line > open_line) && (first_col > open_col))) {
+        return ((int64_t)((((int64_t)((1) | (((int64_t)(((uint64_t)(open_col)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(first_col)) << ((uint64_t)(36) & 63u))))));
+    }
+    return ((int64_t)(((uint64_t)(open_col)) << ((uint64_t)(8) & 63u)));
+}
+
+__attribute__((visibility("default"))) int64_t _layout_verdict(bool offside, int64_t open_col, int64_t body_col, int64_t kind, int64_t line, int64_t col) {
+    if ((!offside)) {
+        return 0;
+    }
+    if ((col <= open_col)) {
+        return 1;
+    }
+    if ((body_col == 0)) {
+        return ((int64_t)(((uint64_t)(col)) << ((uint64_t)(8) & 63u)));
+    }
+    if ((col == body_col)) {
+        return 0;
+    }
+    if (_layout_terminator(kind)) {
+        return 1;
+    }
+    return 2;
 }
 
 __attribute__((visibility("default"))) bool paren_header_signal_lx(duo_rec_ae78087612f938ba *lx, bool allow, int64_t offside, int64_t before) {

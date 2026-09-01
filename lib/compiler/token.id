@@ -462,6 +462,38 @@ literal(): str
 # parser-side fact and the role-row emit agree; damaging the predicate
 # regenerates both projections. Slot 3 stays unpublished and never reads as
 # quoted. Same zero-arg row shape as `literal()` / `prefix()` / `demand()`.
+layoutterminator(): str
+  out = ""
+  kind = 0
+  while kind < roleslotcount
+    bit = "0"
+    if kind == kindend or kind == kindelse or kind == kindelseif
+      bit = "1"
+    if kind == kinduntil or kind == kindcatch or kind == kindeof
+      bit = "1"
+    out = "{out}{bit}"
+    kind += 1
+  out
+
+# Same six identities minus `eof` — `eof` as the FIRST token of a block has
+# a different reading (the body is empty) than `end`/`else`/`elseif`/`until`/
+# `catch` (the block has a written closer the host must still reach), so the
+# empty-body branch in the parser needs the smaller list. The full six
+# remain the parser-side terminator fact; this row is the empty-body
+# discriminant.
+emptybodyterminator(): str
+  out = ""
+  kind = 0
+  while kind < roleslotcount
+    bit = "0"
+    if kind == kindend or kind == kindelse or kind == kindelseif
+      bit = "1"
+    if kind == kinduntil or kind == kindcatch
+      bit = "1"
+    out = "{out}{bit}"
+    kind += 1
+  out
+
 quoted(): str
   out = ""
   kind = 0
@@ -889,6 +921,8 @@ idbody: str = ()
   s = "{s}\nprefix(): str\n  \"{prefix()}\"\n"
   s = "{s}\nliteral(): str\n  \"{literal()}\"\n"
   s = "{s}\nquoted(): str\n  \"{quoted()}\"\n"
+  s = "{s}\nlayoutterminator(): str\n  \"{layoutterminator()}\"\n"
+  s = "{s}\nemptybodyterminator(): str\n  \"{emptybodyterminator()}\"\n"
   s = "{s}\nrelation(): str\n  \"{_encode(0)}\"\n"
   s = "{s}\nunary(): str\n  \"{_encode(1)}\"\n"
   s

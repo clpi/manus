@@ -46,6 +46,10 @@ fn linkProductionIdolFrontend(b: *std.Build, mod: *std.Build.Module) void {
             "-Dis_primitive_descriptor_kind=idol_parser_is_primitive_descriptor_kind",
             "-Dis_literal_kind=idol_parser_is_literal_kind",
             "-Dis_quoted_kind=idol_parser_is_quoted_kind",
+            "-D_layout_terminator=idol_parser_layout_terminator",
+            "-D_empty_body_terminator=idol_parser_empty_body_terminator",
+            "-D_opening=idol_parser_opening",
+            "-D_layout_verdict=idol_parser_layout_verdict",
         },
     });
     mod.link_libc = true;

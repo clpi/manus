@@ -767,6 +767,121 @@ _update: i64 = (kind: i64)
         return -1
     _ordinal(token.grammarrole.relation(), kind)
 
+# Layout-terminator identity — `kw_end`, `kw_else`, `kw_elseif`, `kw_until`,
+# `kw_catch`, `eof`. The parser uses this fact at exactly two sites: when
+# computing a new layout frame (a block that BEGINS with one of these
+# identities has no body to lay out, so its frame stays "offside = false"),
+# and at a statement boundary inside an already-open offside frame (a
+# terminator at an odd column is a disagreement between the two renderings,
+# not a statement that matches no shape — close and let the closer name it
+# precisely). The host `layout_verdict` switch carried the same six identities
+# in its terminator arm; the host `open_layout` switch carried the same five
+# identities minus `eof`. The relation reads the same owner `layoutterminator
+# (): str` row the parser ABI and the generated role row share, so damaging
+# the predicate regenerates both. Same row shape and `kind[8]` access pattern
+# as `is_literal_kind` / `is_quoted_kind` / `is_primitive_descriptor_kind`.
+_layout_terminator: bool = (kind: i64)
+    if kind < 0
+        return false
+    bits: str = token.grammarrole.layoutterminator()
+    if kind >= bits:len()
+        return false
+    bits:byte(kind + 1) == 49
+
+# Empty-body terminator identity — same five as `_layout_terminator` minus
+# `eof`. The empty-body branch in `parse_block_open` decides whether a
+# written closer immediately closes the block (fall through to standard
+# layout) or whether the block is empty (return zero statements). `eof`
+# has a third reading here — the body IS the file's last position, so
+# the empty-block return handles it directly — and a single six-identity
+# list cannot express both meanings without an extra peek. The relation
+# reads the owner `emptybodyterminator(): str` row directly, the same row
+# the generated `grammarrole.id` exposes; damaging the predicate
+# regenerates both. Same row shape and `kind[8]` access pattern as
+# `_layout_terminator` / `is_literal_kind` / `is_quoted_kind`.
+_empty_body_terminator: bool = (kind: i64)
+    if kind < 0
+        return false
+    bits: str = token.grammarrole.emptybodyterminator()
+    if kind >= bits:len()
+        return false
+    bits:byte(kind + 1) == 49
+
+# Layout frame for a block that is about to be parsed, packed into a single
+# i64 so the Zig parser can validate bounds and copy into its physical frame
+# without re-deciding the dialect / opener / first-token rules. The
+# parser-call shape (`open_loc: { line, col }`) carries the opener's column
+# (0 means "no opener; no layout governs"). The relation returns 0 when no
+# layout governs — Lua mode, or no opener, or no physical layout rule
+# applies — and a packed i64 otherwise:
+#
+#     bits 0..0   offside (0 = layout does not govern; 1 = offside frame)
+#     bits 1..1   first_token_is_terminator
+#                   (block begins with a layout terminator — `open_layout`
+#                   returned with `offside = false` for that reason)
+#     bits 2..2   first_token_inline_on_opener_line
+#                   (first body statement shares the opener's line; the
+#                   offside column is left to the first continuation line)
+#     bits 8..35  open_col (28 bits, matching the producer pack layout)
+#     bits 36..63 body_col (28 bits; 0 means "not yet established")
+#
+# `offside = 1` implies one of the two body-position facts above: the first
+# token was on the opener's line (inline body, body_col unset) or the first
+# token was indented past the opener (indented body, body_col set). Either
+# way, the Zig frame's `offside` is true. The body_col field carries the
+# established column so the Zig frame does not need to re-derive it; for an
+# inline body, body_col is 0 and the parser will set it from the first
+# continuation line.
+#
+# The host `open_layout` switch carried exactly this decision: dialect
+# check, opener-presence check, terminator-list check, then inline-vs-
+# indented branch. Every one of those is now a fact in this relation, and
+# the Zig parser only validates that the packed bounds fit a `u32` before
+# copying them into the physical frame.
+_opening: i64 = (idol_mode: bool, open_line: i64, open_col: i64, first_kind: i64, first_line: i64, first_col: i64)
+    if !idol_mode
+        return 0
+    if open_line == 0 or open_col == 0
+        return 0
+    if _layout_terminator(first_kind)
+        return open_col << 8
+    if first_line == open_line
+        return 1 | (1 << 2) | (open_col << 8)
+    if first_line > open_line and first_col > open_col
+        return 1 | (open_col << 8) | (first_col << 36)
+    open_col << 8
+
+# Layout verdict at a statement boundary — keep the body open, close the
+# block, or refuse the line as a mis-indent. The relation consumes the
+# physical frame the opener left behind plus the current token's
+# identity/line/col and returns a packed i64:
+#
+#     bits 0..1   verdict (0 = keep, 1 = close, 2 = misindent)
+#     bits 8..35  body_col (only meaningful when verdict = keep and the
+#                 block's body column was not yet established; the host
+#                 `layout_verdict` mutated `f.body_col` on that path, and
+#                 the relation returns the updated value so the Zig frame
+#                 can adopt it without re-deciding)
+#
+# The rule sequence is: no offside frame ⇒ always keep; column left of
+# the opener ⇒ close; body column not yet established ⇒ set it from this
+# token and keep; exact body column ⇒ keep; terminator identity ⇒ close;
+# ordinary identity ⇒ misindent. The host `layout_verdict` carried the
+# same sequence and the same terminator list (which `_layout_terminator`
+# above now owns). Every arm of that switch is a fact in this relation.
+_layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, kind: i64, line: i64, col: i64)
+    if !offside
+        return 0
+    if col <= open_col
+        return 1
+    if body_col == 0
+        return (col << 8)
+    if col == body_col
+        return 0
+    if _layout_terminator(kind)
+        return 1
+    2
+
 # Cursor on `(`. `offside_col` 0 disables layout discrimination for the
 # single-name `(a)` shape; otherwise it is the statement-line opener column.
 # `prev_before_lp` is the token kind immediately before this `(`, or EOF when

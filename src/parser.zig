@@ -98,6 +98,90 @@ extern fn idol_parser_is_quoted_kind(
     kind: i64,
 ) bool;
 
+/// Layout-terminator identity — `kw_end`, `kw_else`, `kw_elseif`,
+/// `kw_until`, `kw_catch`, `eof`. The parser used to carry the same
+/// six identities in the host `open_layout` switch (a block that BEGINS
+/// with one of these has no body to lay out) and in the host `layout_verdict`
+/// terminator arm (a terminator at an odd column is a disagreement, not a
+/// statement that matches no shape — close the block). The relation reads
+/// the producer's `layoutterminator(): str` row directly through `parser.id
+/// layout_terminator`; the parser owns no kind-attribute cache of its own.
+/// Returns true exactly on the six identities; slot 3 reads as 0.
+extern fn idol_parser_layout_terminator(
+    kind: i64,
+) bool;
+
+/// Empty-body terminator identity — same five as `layout_terminator`
+/// minus `eof`. The empty-body branch in `parse_block_open` needs the
+/// smaller list: `eof` as the FIRST token of a block means "the body IS
+/// the file's last position", and the empty-block return handles it
+/// directly. A single six-identity list cannot express both readings
+/// without an extra peek, and the host `parse_block_open` switch carried
+/// this five-identity carve-out as a host fact. The relation reads the
+/// producer's `emptybodyterminator(): str` row directly through
+/// `parser.id empty_body_terminator`; the parser owns no kind-attribute
+/// cache of its own. Returns true exactly on the five identities; slot 3
+/// reads as 0.
+extern fn idol_parser_empty_body_terminator(
+    kind: i64,
+) bool;
+
+/// Layout frame for a block about to be parsed, packed into one i64.
+///
+/// Returns 0 when layout does not govern — Lua mode, no opener, or the
+/// opener's column is 0. Returns a packed i64 otherwise:
+///
+///     bits 0..0   offside (0 = layout does not govern; 1 = offside frame)
+///     bits 1..1   first_token_is_terminator
+///                   (block begins with a layout terminator — `open_layout`
+///                   returned with `offside = false` for that reason)
+///     bits 2..2   first_token_inline_on_opener_line
+///                   (first body statement shares the opener's line; the
+///                   offside column is left to the first continuation line)
+///     bits 8..35  open_col (28 bits, matching the producer pack layout)
+///     bits 36..63 body_col (28 bits; 0 means "not yet established")
+///
+/// The host `open_layout` switch carried the dialect check, the
+/// opener-presence check, the terminator-list check, and the
+/// inline-vs-indented branch. Every one of those is now a fact in the
+/// `opening` relation; the Zig parser only validates that the packed
+/// bounds fit a `u32` and copies them into the physical frame.
+extern fn idol_parser_opening(
+    idol_mode: bool,
+    open_line: i64,
+    open_col: i64,
+    first_kind: i64,
+    first_line: i64,
+    first_col: i64,
+) i64;
+
+/// Layout verdict at a statement boundary — keep the body open, close the
+/// block, or refuse the line as a mis-indent.
+///
+/// Returns a packed i64:
+///
+///     bits 0..1   verdict (0 = keep, 1 = close, 2 = misindent)
+///     bits 8..35  body_col (only meaningful when verdict = keep and the
+///                 block's body column was not yet established; the host
+///                 `layout_verdict` mutated `f.body_col` on that path,
+///                 and the relation returns the updated value so the Zig
+///                 frame can adopt it without re-deciding)
+///
+/// The host `layout_verdict` carried the same sequence (no offside ⇒
+/// always keep; column left of opener ⇒ close; body column unset ⇒ set
+/// from this token and keep; exact body column ⇒ keep; terminator ⇒ close;
+/// ordinary ⇒ misindent) and the same terminator list (which the
+/// `layout_terminator` relation above now owns). Every arm of that switch
+/// is a fact in this relation.
+extern fn idol_parser_layout_verdict(
+    offside: bool,
+    open_col: i64,
+    body_col: i64,
+    kind: i64,
+    line: i64,
+    col: i64,
+) i64;
+
 /// Packed `infix_prec` triple for one token identity.
 ///
 /// Returns 0 when the identity is not an infix operator with a real relation,
@@ -546,25 +630,26 @@ pub const Parser = struct {
         // was not theoretical: `examples/benchmark.lua:704` (the `.lua` half
         // of the benchmark's correctness oracle) failed to compile at HEAD
         // with "'end' at column 13 closes a block opened at column 9", so
-        // `zig build bench` could not reach a single RESULT row.
-        if (!self.idol_mode) return f;
+        // `zig build bench` could not reach a single RESULT row. The dialect
+        // check, the opener-presence check, the terminator-list check, and
+        // the inline-vs-indented branch all live in `idol_parser_opening` —
+        // the parser owns the boundary and the bytes; Zig only validates
+        // that the packed bounds fit a `u32` and copies them into the frame.
         const o = open orelse return f;
+        const first_kind: i64 = @intCast(@backingInt(first.kind));
+        const frame_bits = idol_parser_opening(
+            self.idol_mode,
+            @intCast(o.line),
+            @intCast(o.col),
+            first_kind,
+            @intCast(first.loc.line),
+            @intCast(first.loc.col),
+        );
+        if (frame_bits == 0) return f;
         f.open_line = o.line;
-        f.open_col = o.col;
-        // An EMPTY block renders nothing, so it says nothing about layout.
-        switch (first.kind) {
-            .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof => return f,
-            else => {},
-        }
-        if (first.loc.line == o.line) {
-            // Body begins inline: `if b .pos += 1`. The offside line is left
-            // unset — a continuation line indented past the opener still
-            // belongs to this block and gets to establish it.
-            f.offside = true;
-        } else if (first.loc.col > o.col) {
-            f.offside = true;
-            f.body_col = first.loc.col;
-        }
+        f.open_col = @intCast((frame_bits >> 8) & 0x0FFFFFFF);
+        f.body_col = @intCast((frame_bits >> 36) & 0x0FFFFFFF);
+        f.offside = (frame_bits & 1) != 0;
         return f;
     }
 
@@ -572,23 +657,30 @@ pub const Parser = struct {
     const LayoutVerdict = enum { keep, close, misindent };
 
     fn layout_verdict(f: *LayoutFrame, tok: Token) LayoutVerdict {
-        if (!f.offside) return .keep;
-        // The opener's column is the threshold: at or left of it, this line has
-        // left the block, however deep the block's own body was.
-        if (tok.loc.col <= f.open_col) return .close;
-        if (f.body_col == 0) {
-            f.body_col = tok.loc.col;
+        // Every arm of this decision now lives in `idol_parser_layout_verdict`:
+        // no offside ⇒ always keep; column left of opener ⇒ close; body
+        // column unset ⇒ set from this token and keep; exact body column ⇒
+        // keep; terminator ⇒ close; ordinary ⇒ misindent. The terminator
+        // list is owned by the `layout_terminator` relation. Zig only
+        // unpacks the verdict, copies the (possibly updated) body column
+        // back into the frame, and materializes the enum.
+        const kind: i64 = @intCast(@backingInt(tok.kind));
+        const verdict_bits = idol_parser_layout_verdict(
+            f.offside,
+            @intCast(f.open_col),
+            @intCast(f.body_col),
+            kind,
+            @intCast(tok.loc.line),
+            @intCast(tok.loc.col),
+        );
+        const verdict_int: u32 = @intCast(verdict_bits & 0x3);
+        if (verdict_int == 0) {
+            const new_body = @as(u32, @intCast((verdict_bits >> 8) & 0x0FFFFFFF));
+            if (f.body_col == 0) f.body_col = new_body;
             return .keep;
         }
-        if (tok.loc.col == f.body_col) return .keep;
-        // A TERMINATOR at an odd column is a disagreement between the two
-        // renderings, not a statement that matches no shape. Close here and let
-        // `close_block` name it precisely ("'end' at column 9 closes a block
-        // opened at column 5"), which is the message that points at the fix.
-        return switch (tok.kind) {
-            .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof => .close,
-            else => .misindent,
-        };
+        if (verdict_int == 1) return .close;
+        return .misindent;
     }
 
     /// §3's mandatory half. A statement indented past its block's offside line
@@ -1820,12 +1912,14 @@ pub const Parser = struct {
         if (empty_ok and self.idol_mode and !self.layout.offside) empty: {
             const o = open orelse break :empty;
             const first = try self.pk();
-            switch (first.kind) {
-                // A written terminator still closes the block it was written
-                // for, and still gets the diagnostic it gets today.
-                .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch => break :empty,
-                else => {},
-            }
+            // A written terminator still closes the block it was written
+            // for, and still gets the diagnostic it gets today. The empty-
+            // body terminator list is owned by the `empty_body_terminator`
+            // relation — `kw_end`, `kw_else`, `kw_elseif`, `kw_until`,
+            // `kw_catch` — and `eof` is deliberately excluded because
+            // `eof` as the first token of a block IS the empty body.
+            const first_kind: i64 = @intCast(@backingInt(first.kind));
+            if (idol_parser_empty_body_terminator(first_kind)) break :empty;
             if (first.loc.line <= o.line or first.loc.col > o.col) break :empty;
             // Closed by that dedent, so `close_block` must not go looking for
             // an `end` it will never find.
@@ -12040,4 +12134,90 @@ test "parse: production match-arm decision executes the Idol relation" {
     try run(&.{ .name, .fat_arrow }, &.{ 1, 2 }, &.{ "x", "=>" }, 0);
     try run(&.{ .plus, .fat_arrow }, &.{ 1, 1 }, &.{ "+", "=>" }, 0);
     try run(&.{ .rparen, .fat_arrow }, &.{ 1, 1 }, &.{ ")", "=>" }, 0);
+}
+
+// Exhaustive layout-frame and layout-verdict tests covering the ten
+// scenarios the parent audit enumerated (module/no-opener, Lua/non-offside,
+// empty/terminator, inline body, indented body, first continuation,
+// exact body column, dedent close, odd-column terminator close, odd-column
+// ordinary-token misindent). The host `open_layout` switch carried every
+// branch; the host `layout_verdict` switch carried every other branch;
+// together they were the host's offside recognition. Both now cross the
+// parser.id ABI.
+test "parse: layout-terminator decisions execute the Idol relations" {
+    // Spot-check the six layout-terminator identities (kw_end=10,
+    // kw_else=8, kw_elseif=9, kw_until=27, kw_catch=46, eof=109). The full
+    // 114-slot iteration is the parser-artifact verify_layout_faces()
+    // probe in tools/node/dev/parser/artifact; here we exercise the
+    // Zig-side ABI and the five-vs-six empty-body carve-out.
+    try testing.expect(idol_parser_layout_terminator(10));
+    try testing.expect(idol_parser_layout_terminator(8));
+    try testing.expect(idol_parser_layout_terminator(9));
+    try testing.expect(idol_parser_layout_terminator(27));
+    try testing.expect(idol_parser_layout_terminator(46));
+    try testing.expect(idol_parser_layout_terminator(109));
+    try testing.expect(!idol_parser_layout_terminator(0)); // name
+    try testing.expect(!idol_parser_layout_terminator(5)); // kw_break
+    try testing.expect(!idol_parser_layout_terminator(17)); // kw_if
+    // The empty-body list excludes eof: every member of the empty-body
+    // list is in the layout-terminator list, but eof is only in the latter.
+    try testing.expect(idol_parser_empty_body_terminator(10));
+    try testing.expect(idol_parser_empty_body_terminator(8));
+    try testing.expect(idol_parser_empty_body_terminator(9));
+    try testing.expect(idol_parser_empty_body_terminator(27));
+    try testing.expect(idol_parser_empty_body_terminator(46));
+    try testing.expect(!idol_parser_empty_body_terminator(109));
+    // Out-of-range kinds return false.
+    try testing.expectEqual(false, idol_parser_layout_terminator(-1));
+    try testing.expectEqual(false, idol_parser_empty_body_terminator(-1));
+}
+
+test "parse: opening ABI encodes the host open_layout decision" {
+    // 1. Module/no-opener (idol_mode=false OR open_col=0): returns 0.
+    try testing.expectEqual(@as(i64, 0), idol_parser_opening(false, 1, 5, 0, 1, 6));
+    try testing.expectEqual(@as(i64, 0), idol_parser_opening(true, 0, 0, 0, 1, 6));
+    // 2. Lua mode + first_is_terminator (kw_end=10): returns 0 because Lua.
+    try testing.expectEqual(@as(i64, 0), idol_parser_opening(false, 1, 5, 10, 2, 9));
+    // 3. Empty/terminator (idol_mode=true, first is layout terminator): offside
+    //    bit NOT set, but open_col still packed.
+    const empty_bits = idol_parser_opening(true, 1, 5, 10, 2, 9);
+    try testing.expectEqual(@as(i64, 0), empty_bits & 1);
+    try testing.expectEqual(@as(i64, 5), (empty_bits >> 8) & 0x0FFFFFFF);
+    // 4. Inline body (first.line == open.line): bit 0 (offside) + bit 2
+    //    (inline) set; body_col remains 0.
+    const inline_bits = idol_parser_opening(true, 1, 5, 0, 1, 6);
+    try testing.expectEqual(@as(i64, 1), inline_bits & 1);
+    try testing.expectEqual(@as(i64, 4), inline_bits & 4);
+    try testing.expectEqual(@as(i64, 0), (inline_bits >> 36) & 0x0FFFFFFF);
+    // 5. Indented body (first.line > open.line AND first.col > open.col):
+    //    offside set; body_col packed into bits 36..63.
+    const indented_bits = idol_parser_opening(true, 1, 5, 0, 2, 9);
+    try testing.expectEqual(@as(i64, 1), indented_bits & 1);
+    try testing.expectEqual(@as(i64, 9), (indented_bits >> 36) & 0x0FFFFFFF);
+    // 6. First token left of opener (first.col <= open.col): offside NOT
+    //    set — the host's "no layout" branch.
+    const left_bits = idol_parser_opening(true, 1, 5, 0, 2, 5);
+    try testing.expectEqual(@as(i64, 0), left_bits & 1);
+}
+
+test "parse: layout_verdict ABI encodes the host verdict decision" {
+    // 1. No offside: verdict 0 (keep) regardless of column.
+    try testing.expectEqual(@as(i64, 0), idol_parser_layout_verdict(false, 5, 0, 0, 2, 3) & 0x3);
+    try testing.expectEqual(@as(i64, 0), idol_parser_layout_verdict(false, 5, 8, 10, 2, 100) & 0x3);
+    // 2. Dedent close (col <= open_col): verdict 1.
+    try testing.expectEqual(@as(i64, 1), idol_parser_layout_verdict(true, 5, 8, 0, 2, 5) & 0x3);
+    try testing.expectEqual(@as(i64, 1), idol_parser_layout_verdict(true, 5, 8, 0, 2, 3) & 0x3);
+    // 3. First continuation establishing body column (body_col == 0,
+    //    col > open_col): verdict 0 with the new body column in bits 8..35.
+    const first_continuation = idol_parser_layout_verdict(true, 5, 0, 0, 2, 8);
+    try testing.expectEqual(@as(i64, 0), first_continuation & 0x3);
+    try testing.expectEqual(@as(i64, 8), (first_continuation >> 8) & 0x0FFFFFFF);
+    // 4. Exact body column (col == body_col): verdict 0.
+    try testing.expectEqual(@as(i64, 0), idol_parser_layout_verdict(true, 5, 8, 0, 2, 8) & 0x3);
+    // 5. Odd-column terminator close (col != body_col, kind is layout
+    //    terminator kw_end=10): verdict 1.
+    try testing.expectEqual(@as(i64, 1), idol_parser_layout_verdict(true, 5, 8, 10, 2, 7) & 0x3);
+    // 6. Odd-column ordinary-token misindent (col != body_col, kind is
+    //    not a layout terminator): verdict 2.
+    try testing.expectEqual(@as(i64, 2), idol_parser_layout_verdict(true, 5, 8, 0, 2, 7) & 0x3);
 }
