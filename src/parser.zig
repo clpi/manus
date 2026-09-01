@@ -51,6 +51,12 @@ extern fn idol_parser_demands_operand(
     kind: i64,
 ) bool;
 
+extern fn idol_parser_at_face(
+    facts: [*]const i64,
+    count: i64,
+    start: i64,
+) i64;
+
 /// Primitive descriptor identity — `i64`, `str`, `f32`, ...
 ///
 /// Returns true when the owner grammar row's `.descriptor` flag is set on
@@ -531,6 +537,22 @@ pub const Parser = struct {
         }
         self.parser_facts = facts;
         return facts;
+    }
+
+    /// Read the authoritative `@`-statement face produced by parser.id
+    /// `_at_face` for the token at producer index `at_index`. Returns
+    /// 0 (expression), 1 (standalone directive), or 2 (attaching
+    /// declaration). When the face is 0, the previous source-text walk
+    /// inside `parse_at_starts_attribute_decl` was a no-op by definition —
+    /// callers short-circuit on 0 to delete one catalog pass per
+    /// expression-position `@` token without changing any outcome
+    /// (GR-134 §Twentysixth, `law.bridge.death`).
+    fn readAtFace(_: *Parser, facts: []const i64, at_index: usize) u8 {
+        const count = facts.len / 2;
+        if (at_index >= count) return 0;
+        const face = idol_parser_at_face(facts.ptr, @intCast(count), @intCast(at_index));
+        if (face < 0 or face > 2) return 0;
+        return @intCast(face);
     }
 
     /// Free the immutable pack and reset the parser-owned mirror. Mirrors
@@ -2219,6 +2241,19 @@ pub const Parser = struct {
     }
 
     fn parse_at_starts_attribute_decl(self: *Parser) ParseError!bool {
+        // The producer-pack relation returns the `@`-statement face:
+        // 0 = expression, 1 = standalone directive, 2 = attaching
+        // declaration. parser.id owns the structural
+        // reduction; the host catalog (`meta_module` + `directives.*`)
+        // remains the identity authority for every alias spelling. When
+        // the face is 0 (expression), the previous source-text walk was a
+        // no-op by definition — short-circuiting here deletes one catalog
+        // pass per expression-position `@` token without changing any
+        // outcome (GR-134 §Twentysixth, `law.bridge.death`).
+        const facts = try self.ensureParserFacts();
+        const at_index = self.producerStreamIndex();
+        const at_face = self.readAtFace(facts, at_index);
+        if (at_face == 0) return false;
         // @cinclude is a standalone top-level statement, not attached to a decl.
         // Check for it first before the normal attribute detection.
         const saved = self.saveState();

@@ -32,6 +32,10 @@ fn linkProductionIdolFrontend(b: *std.Build, mod: *std.Build.Module) void {
             "-fdata-sections",
             "-w",
             "-Dmain=idol_parser_projection_main",
+
+            "-Dis_digit=idol_parser_is_digit",
+
+            "-D_at_face=idol_parser_at_face",
             "-Dheader_signal_lx=idol_parser_header_pack",
             "-Dreturn_starts_value_lx=idol_parser_return_starts_value",
             "-D_clause=idol_parser_match_clause",
@@ -42,7 +46,6 @@ fn linkProductionIdolFrontend(b: *std.Build, mod: *std.Build.Module) void {
             "-D_unary=idol_parser_unary",
             "-D_glue=idol_parser_glue",
             "-D_update=idol_parser_update",
-            "-Dis_digit=idol_parser_is_digit",
             "-Dis_primitive_descriptor_kind=idol_parser_is_primitive_descriptor_kind",
             "-Dis_literal_kind=idol_parser_is_literal_kind",
             "-Dis_quoted_kind=idol_parser_is_quoted_kind",

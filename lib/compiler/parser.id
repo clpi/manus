@@ -882,6 +882,308 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, kind: i64, 
         return 1
     2
 
+# Authoritative `@`-statement face produced for one `@` token by walking the
+# trailing `name (. name)*` and reducing it against the canonical
+# attaching/standalone catalog. This is a bounded bootstrap bridge: the copied
+# catalog must disappear when grammar identities, rather than packed lexeme
+# bytes, own directive admission. Returns 0 (expression), 1 (standalone
+# directive), or 2 (attaching declaration). parser.id owns the structural
+# reduction; the host's `meta_module` + `directives.*` remain the identity
+# authority for every alias spelling (GR-134 §Twentysixth, `law.bridge.death`).
+_at_face: i64 = (fact: []i64, count: i64, start: i64)
+    if start < 0 or start >= count
+        return 0
+    if (fact[start * 2 + 1] & 255) != token.kindat
+        return 0
+    first = start + 1
+    if first >= count
+        return 0
+    if (fact[first * 2 + 1] & 255) != token.kindname
+        return 0
+    s0 = fact[first * 2 + 2]
+    # --- STANDALONE single-segment names (face=1) ---
+    if s0 == 110416788546053 # build
+        return 1
+    if s0 == 113753859646469 # debug
+        return 1
+    if s0 == 111477511058437 # trace
+        return 1
+    if s0 == 33051746585109255 # cinclude
+        return 1
+    # --- ATTACHING single-segment names (face=2) ---
+    if s0 == 28550371717572870 # inline
+        return 2
+    if s0 == 29674094025731591 # noinline
+        return 2
+    if s0 == 1953458179 # hot
+        return 2
+    if s0 == 431315968772 # cold
+        return 2
+    if s0 == 435711995908 # pure
+        return 2
+    if s0 == 28259009574301702 # packed
+        return 2
+    if s0 == 2002874883 # raw
+        return 2
+    if s0 == 29676237331852807 # nopanic
+        return 2
+    if s0 == 30515186162102279 # profile
+        return 2
+    if s0 == 30518523401762054 # unroll
+        return 2
+    if s0 == 27977564880724999 # deprecated
+        return 2
+    if s0 == 30792288878553351 # implements
+        return 2
+    if s0 == 28559167910667270 # derive
+        return 2
+    if s0 == 1768318467 # ffi
+        return 2
+    if s0 == 121390429397253 # align
+        return 2
+    if s0 == 1668440323 # arc
+        return 2
+    if s0 == 1836278019 # asm
+        return 2
+    if s0 == 114776263188997 # bench
+        return 2
+    if s0 == 28544861408420359 # bitfield
+        return 2
+    if s0 == 32476702104445447 # bitcast
+        return 2
+    if s0 == 32217217260020487 # concurrent
+        return 2
+    if s0 == 28557011770630919 # consteval
+        return 2
+    if s0 == 28557015847298567 # flatten
+        return 2
+    if s0 == 28538277256848390 # device
+        return 2
+    if s0 == 32199637824267271 # differentiable
+        return 2
+    if s0 == 29665302412615943 # autodiff
+        return 2
+    if s0 == 32758232898954247 # dispatch
+        return 2
+    if s0 == 34177655031557126 # likely
+        return 2
+    if s0 == 28547073182692615 # unlikely
+        return 2
+    if s0 == 32762587761504263 # prefetch
+        return 2
+    if s0 == 33060551335570951 # noreturn
+        return 2
+    if s0 == 491511968260 # repr
+        return 2
+    if s0 == 29680717032419847 # restrict
+        return 2
+    if s0 == 28259013835977478 # sealed
+        return 2
+    if s0 == 28559167943962118 # native
+        return 2
+    if s0 == 28539415071909639 # guarded
+        return 2
+    if s0 == 31359671019598599 # section
+        return 2
+    if s0 == 431332356868 # simd
+        return 2
+    if s0 == 27418948365480711 # specialize
+        return 2
+    if s0 == 32762592273462278 # target
+        return 2
+    if s0 == 500152235012 # test
+        return 2
+    if s0 == 435627324420 # time
+        return 2
+    if s0 == 29682834334512647 # volatile
+        return 2
+    if s0 == 27988534160352775 # fillocate
+        return 2
+    if s0 == 32776920252310790 # export → attaching
+        return 2
+    # --- c.* attaching (face=2) — first segment is `c`, second segment decides ---
+    if s0 == 25345 # c
+        sec = first + 1
+        while sec < count and (fact[sec * 2 + 1] & 255) == token.kinddot
+            sec += 1
+        if sec >= count or (fact[sec * 2 + 1] & 255) != token.kindname
+            return 0
+        s1 = fact[sec * 2 + 2]
+        if s1 == 32776920252310790 # export (8 bytes)
+            return 2
+        if s1 == 465674789636 # call
+            return 2
+        if s1 == 1768318467 # ffi
+            return 2
+        if s1 == 30239221573640966 # link
+            return 2
+        if s1 == 28552639590327046 # type
+            return 2
+        # c.import / c.emit / c.include → standalone
+        if s1 == 32776920251590918 # import
+            return 1
+        if s1 == 499984983300 # emit
+            return 1
+        if s1 == 28276606056163591 # include
+            return 1
+        return 0
+    # --- `@comp.*` namespace — second segment decides ---
+    if s0 == 482872353540 # comp (4 bytes)
+        sec = first + 1
+        while sec < count and (fact[sec * 2 + 1] & 255) == token.kinddot
+            sec += 1
+        if sec >= count or (fact[sec * 2 + 1] & 255) != token.kindname
+            return 0
+        s1 = fact[sec * 2 + 2]
+        if s1 == 110416788546053 # build
+            return 1
+        if s1 == 113753859646469 # debug
+            return 1
+        if s1 == 111477511058437 # trace
+            return 1
+        if s1 == 33051746585109255 # cinclude
+            return 1
+        if s1 == 28550371717572870 # inline
+            return 2
+        if s1 == 29674094025731591 # noinline
+            return 2
+        if s1 == 1953458179 # hot
+            return 2
+        if s1 == 431315968772 # cold
+            return 2
+        if s1 == 435711995908 # pure
+            return 2
+        if s1 == 28259009574301702 # packed
+            return 2
+        if s1 == 2002874883 # raw
+            return 2
+        if s1 == 29676237331852807 # nopanic
+            return 2
+        if s1 == 30515186162102279 # profile
+            return 2
+        if s1 == 30518523401762054 # unroll
+            return 2
+        if s1 == 27977564880724999 # deprecated
+            return 2
+        if s1 == 30792288878553351 # implements
+            return 2
+        if s1 == 28559167910667270 # derive
+            return 2
+        if s1 == 28538277256848390 # device
+            return 2
+        if s1 == 32776920252310790 # export → attaching
+            return 2
+        if s1 == 28557015847298567 # flatten → attaching
+            return 2
+        if s1 == 28550371616318470 # define (8 bytes — cap=7)
+            thr = sec + 1
+            while thr < count and (fact[thr * 2 + 1] & 255) == token.kinddot
+                thr += 1
+            if thr < count and (fact[thr * 2 + 1] & 255) == token.kindname and fact[thr * 2 + 2] == 28559167910667270
+                return 1
+            return 0
+        if s1 == 29674055488073735 # pipeline (8 bytes)
+            return 1
+        if s1 == 25345 # c
+            thr = sec + 1
+            while thr < count and (fact[thr * 2 + 1] & 255) == token.kinddot
+                thr += 1
+            if thr >= count or (fact[thr * 2 + 1] & 255) != token.kindname
+                return 0
+            s2 = fact[thr * 2 + 2]
+            if s2 == 32776920252310790 # export
+                return 2
+            if s2 == 465674789636 # call
+                return 2
+            if s2 == 1768318467 # ffi
+                return 2
+            if s2 == 30239221573640966 # link
+                return 2
+            if s2 == 28552639590327046 # type
+                return 2
+            if s2 == 32776920251590918 # import
+                return 1
+            if s2 == 499984983300 # emit
+                return 1
+            if s2 == 28276606056163591 # include
+                return 1
+            return 0
+        if s1 == 29107807033714183 # foreign (8 bytes)
+            return 1
+        if s1 == 470087202564 # wasm
+            return 1
+        if s1 == 1819374339 # sql
+            return 1
+        if s1 == 1635085315 # lua
+            return 1
+        return 0
+    # --- `@meta.*` namespace — second segment decides ---
+    if s0 == 418564631812 # meta (4 bytes)
+        sec = first + 1
+        while sec < count and (fact[sec * 2 + 1] & 255) == token.kinddot
+            sec += 1
+        if sec >= count or (fact[sec * 2 + 1] & 255) != token.kindname
+            return 0
+        s1 = fact[sec * 2 + 2]
+        if s1 == 28550371717572870 # inline
+            return 2
+        if s1 == 29674094025731591 # noinline
+            return 2
+        if s1 == 1953458179 # hot
+            return 2
+        if s1 == 431315968772 # cold
+            return 2
+        if s1 == 435711995908 # pure
+            return 2
+        if s1 == 28259009574301702 # packed
+            return 2
+        if s1 == 2002874883 # raw
+            return 2
+        if s1 == 29676237331852807 # nopanic
+            return 2
+        if s1 == 30515186162102279 # profile
+            return 2
+        if s1 == 30518523401762054 # unroll
+            return 2
+        if s1 == 27977564880724999 # deprecated
+            return 2
+        if s1 == 30792288878553351 # implements
+            return 2
+        if s1 == 28559167910667270 # derive
+            return 2
+        if s1 == 28538277256848390 # device
+            return 2
+        if s1 == 32776920252310790 # export → attaching
+            return 2
+        if s1 == 28557015847298567 # flatten → attaching
+            return 2
+        if s1 == 25345 # c
+            thr = sec + 1
+            while thr < count and (fact[thr * 2 + 1] & 255) == token.kinddot
+                thr += 1
+            if thr >= count or (fact[thr * 2 + 1] & 255) != token.kindname
+                return 0
+            s2 = fact[thr * 2 + 2]
+            if s2 == 32776920252310790 # export
+                return 2
+            if s2 == 465674789636 # call
+                return 2
+            if s2 == 1768318467 # ffi
+                return 2
+            if s2 == 30239221573640966 # link
+                return 2
+            if s2 == 28552639590327046 # type
+                return 2
+            if s2 == 32776920251590918 # import
+                return 1
+            if s2 == 499984983300 # emit
+                return 1
+            if s2 == 28276606056163591 # include
+                return 1
+            return 0
+        return 0
+    0
+
 # Cursor on `(`. `offside_col` 0 disables layout discrimination for the
 # single-name `(a)` shape; otherwise it is the statement-line opener column.
 # `prev_before_lp` is the token kind immediately before this `(`, or EOF when
