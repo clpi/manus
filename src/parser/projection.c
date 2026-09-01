@@ -2095,8 +2095,13 @@ static inline const char* token_grammarrole__lead(void);
 static inline const char* token_grammarrole__prefix(void);
 static inline const char* token_grammarrole__literal(void);
 static inline const char* token_grammarrole__quoted(void);
+static inline const char* token_grammarrole__member(void);
 static inline const char* token_grammarrole__layoutterminator(void);
 static inline const char* token_grammarrole__emptybodyterminator(void);
+static inline const char* token_grammarrole__boundary(void);
+static inline const char* token_grammarrole__branch(void);
+static inline const char* token_grammarrole__statement(void);
+static inline const char* token_grammarrole__admission(void);
 static inline const char* token_grammarrole__relation(void);
 static inline const char* token_grammarrole__unary(void);
 static inline bool token_grammarrole__rolebeginexpr(int64_t kind) {
@@ -2187,12 +2192,32 @@ static inline const char* token_grammarrole__quoted(void) {
     return "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111100000";
 }
 
+static inline const char* token_grammarrole__member(void) {
+    return "100011111111111111111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000";
+}
+
 static inline const char* token_grammarrole__layoutterminator(void) {
     return "000000001110000000000000000100000000000000000010000000000000000000000000000000000000000000000000000000000000010000";
 }
 
 static inline const char* token_grammarrole__emptybodyterminator(void) {
     return "000000001110000000000000000100000000000000000010000000000000000000000000000000000000000000000000000000000000000000";
+}
+
+static inline const char* token_grammarrole__boundary(void) {
+    return "000000000010000000000000000100000000000000000000000000000001010100000000000000000000000000000000000000000000010000";
+}
+
+static inline const char* token_grammarrole__branch(void) {
+    return "000000001100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+}
+
+static inline const char* token_grammarrole__statement(void) {
+    return "WAAAATUOAAAANFFDSKACAAAMAAAALEHAAAAAAAAAAAAAPQARGAIJAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAVAAAAAAAAAAAAAAAAAA";
+}
+
+static inline const char* token_grammarrole__admission(void) {
+    return "AAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAACCDHHAAGFBAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 }
 
 static inline const char* token_grammarrole__relation(void) {
@@ -2286,6 +2311,7 @@ __attribute__((visibility("default"))) bool _layout_terminator(int64_t kind);
 __attribute__((visibility("default"))) bool _empty_body_terminator(int64_t kind);
 __attribute__((visibility("default"))) int64_t _opening(bool idol_mode, int64_t open_line, int64_t open_col, int64_t first_kind, int64_t first_line, int64_t first_col);
 __attribute__((visibility("default"))) int64_t _layout_verdict(bool offside, int64_t open_col, int64_t body_col, int64_t kind, int64_t line, int64_t col);
+__attribute__((visibility("default"))) int64_t _at_face(int64_t fact[], int64_t count, int64_t start);
 __attribute__((visibility("default"))) bool paren_header_signal_lx(duo_rec_ae78087612f938ba *lx, bool allow, int64_t offside, int64_t before);
 __attribute__((visibility("default"))) bool statement_header_signal_lx(duo_rec_ae78087612f938ba *lx, duo_rec_735fa21981531a8e *name, bool allow_untyped_comma);
 __attribute__((visibility("default"))) const char* join(const char* a, const char* b);
@@ -3047,6 +3073,435 @@ __attribute__((visibility("default"))) int64_t _layout_verdict(bool offside, int
         return 1;
     }
     return 2;
+}
+
+__attribute__((visibility("default"))) int64_t _at_face(int64_t fact[], int64_t count, int64_t start) {
+    if (((start < 0) || (start >= count))) {
+        return 0;
+    }
+    if ((((int64_t)((fact[((start * 2) + 1)]) & (255))) != INT64_C(81))) {
+        return 0;
+    }
+    int64_t first = (start + 1);
+    if ((first >= count)) {
+        return 0;
+    }
+    if ((((int64_t)((fact[((first * 2) + 1)]) & (255))) != INT64_C(0))) {
+        return 0;
+    }
+    int64_t s0 = fact[((first * 2) + 2)];
+    if ((s0 == 110416788546053)) {
+        return 1;
+    }
+    if ((s0 == 113753859646469)) {
+        return 1;
+    }
+    if ((s0 == 111477511058437)) {
+        return 1;
+    }
+    if ((s0 == 33051746585109255)) {
+        return 1;
+    }
+    if ((s0 == 28550371717572870)) {
+        return 2;
+    }
+    if ((s0 == 29674094025731591)) {
+        return 2;
+    }
+    if ((s0 == 1953458179)) {
+        return 2;
+    }
+    if ((s0 == 431315968772)) {
+        return 2;
+    }
+    if ((s0 == 435711995908)) {
+        return 2;
+    }
+    if ((s0 == 28259009574301702)) {
+        return 2;
+    }
+    if ((s0 == 2002874883)) {
+        return 2;
+    }
+    if ((s0 == 29676237331852807)) {
+        return 2;
+    }
+    if ((s0 == 30515186162102279)) {
+        return 2;
+    }
+    if ((s0 == 30518523401762054)) {
+        return 2;
+    }
+    if ((s0 == 27977564880724999)) {
+        return 2;
+    }
+    if ((s0 == 30792288878553351)) {
+        return 2;
+    }
+    if ((s0 == 28559167910667270)) {
+        return 2;
+    }
+    if ((s0 == 1768318467)) {
+        return 2;
+    }
+    if ((s0 == 121390429397253)) {
+        return 2;
+    }
+    if ((s0 == 1668440323)) {
+        return 2;
+    }
+    if ((s0 == 1836278019)) {
+        return 2;
+    }
+    if ((s0 == 114776263188997)) {
+        return 2;
+    }
+    if ((s0 == 28544861408420359)) {
+        return 2;
+    }
+    if ((s0 == 32476702104445447)) {
+        return 2;
+    }
+    if ((s0 == 32217217260020487)) {
+        return 2;
+    }
+    if ((s0 == 28557011770630919)) {
+        return 2;
+    }
+    if ((s0 == 28557015847298567)) {
+        return 2;
+    }
+    if ((s0 == 28538277256848390)) {
+        return 2;
+    }
+    if ((s0 == 32199637824267271)) {
+        return 2;
+    }
+    if ((s0 == 29665302412615943)) {
+        return 2;
+    }
+    if ((s0 == 32758232898954247)) {
+        return 2;
+    }
+    if ((s0 == 34177655031557126)) {
+        return 2;
+    }
+    if ((s0 == 28547073182692615)) {
+        return 2;
+    }
+    if ((s0 == 32762587761504263)) {
+        return 2;
+    }
+    if ((s0 == 33060551335570951)) {
+        return 2;
+    }
+    if ((s0 == 491511968260)) {
+        return 2;
+    }
+    if ((s0 == 29680717032419847)) {
+        return 2;
+    }
+    if ((s0 == 28259013835977478)) {
+        return 2;
+    }
+    if ((s0 == 28559167943962118)) {
+        return 2;
+    }
+    if ((s0 == 28539415071909639)) {
+        return 2;
+    }
+    if ((s0 == 31359671019598599)) {
+        return 2;
+    }
+    if ((s0 == 431332356868)) {
+        return 2;
+    }
+    if ((s0 == 27418948365480711)) {
+        return 2;
+    }
+    if ((s0 == 32762592273462278)) {
+        return 2;
+    }
+    if ((s0 == 500152235012)) {
+        return 2;
+    }
+    if ((s0 == 435627324420)) {
+        return 2;
+    }
+    if ((s0 == 29682834334512647)) {
+        return 2;
+    }
+    if ((s0 == 27988534160352775)) {
+        return 2;
+    }
+    if ((s0 == 32776920252310790)) {
+        return 2;
+    }
+        int64_t sec = 0;
+        int64_t s1 = 0;
+    if ((s0 == 25345)) {
+                sec = (first + 1);
+        while (((sec < count) && (((int64_t)((fact[((sec * 2) + 1)]) & (255))) == INT64_C(80)))) {
+                        sec = (sec + 1);
+        }
+        if (((sec >= count) || (((int64_t)((fact[((sec * 2) + 1)]) & (255))) != INT64_C(0)))) {
+            return 0;
+        }
+                s1 = fact[((sec * 2) + 2)];
+        if ((s1 == 32776920252310790)) {
+            return 2;
+        }
+        if ((s1 == 465674789636)) {
+            return 2;
+        }
+        if ((s1 == 1768318467)) {
+            return 2;
+        }
+        if ((s1 == 30239221573640966)) {
+            return 2;
+        }
+        if ((s1 == 28552639590327046)) {
+            return 2;
+        }
+        if ((s1 == 32776920251590918)) {
+            return 1;
+        }
+        if ((s1 == 499984983300)) {
+            return 1;
+        }
+        if ((s1 == 28276606056163591)) {
+            return 1;
+        }
+        return 0;
+    }
+        int64_t s2 = 0;
+        int64_t thr = 0;
+    if ((s0 == 482872353540)) {
+                sec = (first + 1);
+        while (((sec < count) && (((int64_t)((fact[((sec * 2) + 1)]) & (255))) == INT64_C(80)))) {
+                        sec = (sec + 1);
+        }
+        if (((sec >= count) || (((int64_t)((fact[((sec * 2) + 1)]) & (255))) != INT64_C(0)))) {
+            return 0;
+        }
+                s1 = fact[((sec * 2) + 2)];
+        if ((s1 == 110416788546053)) {
+            return 1;
+        }
+        if ((s1 == 113753859646469)) {
+            return 1;
+        }
+        if ((s1 == 111477511058437)) {
+            return 1;
+        }
+        if ((s1 == 33051746585109255)) {
+            return 1;
+        }
+        if ((s1 == 28550371717572870)) {
+            return 2;
+        }
+        if ((s1 == 29674094025731591)) {
+            return 2;
+        }
+        if ((s1 == 1953458179)) {
+            return 2;
+        }
+        if ((s1 == 431315968772)) {
+            return 2;
+        }
+        if ((s1 == 435711995908)) {
+            return 2;
+        }
+        if ((s1 == 28259009574301702)) {
+            return 2;
+        }
+        if ((s1 == 2002874883)) {
+            return 2;
+        }
+        if ((s1 == 29676237331852807)) {
+            return 2;
+        }
+        if ((s1 == 30515186162102279)) {
+            return 2;
+        }
+        if ((s1 == 30518523401762054)) {
+            return 2;
+        }
+        if ((s1 == 27977564880724999)) {
+            return 2;
+        }
+        if ((s1 == 30792288878553351)) {
+            return 2;
+        }
+        if ((s1 == 28559167910667270)) {
+            return 2;
+        }
+        if ((s1 == 28538277256848390)) {
+            return 2;
+        }
+        if ((s1 == 32776920252310790)) {
+            return 2;
+        }
+        if ((s1 == 28557015847298567)) {
+            return 2;
+        }
+        if ((s1 == 28550371616318470)) {
+                        thr = (sec + 1);
+            while (((thr < count) && (((int64_t)((fact[((thr * 2) + 1)]) & (255))) == INT64_C(80)))) {
+                                thr = (thr + 1);
+            }
+            if ((((thr < count) && (((int64_t)((fact[((thr * 2) + 1)]) & (255))) == INT64_C(0))) && (fact[((thr * 2) + 2)] == 28559167910667270))) {
+                return 1;
+            }
+            return 0;
+        }
+        if ((s1 == 29674055488073735)) {
+            return 1;
+        }
+        if ((s1 == 25345)) {
+                        thr = (sec + 1);
+            while (((thr < count) && (((int64_t)((fact[((thr * 2) + 1)]) & (255))) == INT64_C(80)))) {
+                                thr = (thr + 1);
+            }
+            if (((thr >= count) || (((int64_t)((fact[((thr * 2) + 1)]) & (255))) != INT64_C(0)))) {
+                return 0;
+            }
+                        s2 = fact[((thr * 2) + 2)];
+            if ((s2 == 32776920252310790)) {
+                return 2;
+            }
+            if ((s2 == 465674789636)) {
+                return 2;
+            }
+            if ((s2 == 1768318467)) {
+                return 2;
+            }
+            if ((s2 == 30239221573640966)) {
+                return 2;
+            }
+            if ((s2 == 28552639590327046)) {
+                return 2;
+            }
+            if ((s2 == 32776920251590918)) {
+                return 1;
+            }
+            if ((s2 == 499984983300)) {
+                return 1;
+            }
+            if ((s2 == 28276606056163591)) {
+                return 1;
+            }
+            return 0;
+        }
+        if ((s1 == 29107807033714183)) {
+            return 1;
+        }
+        if ((s1 == 470087202564)) {
+            return 1;
+        }
+        if ((s1 == 1819374339)) {
+            return 1;
+        }
+        if ((s1 == 1635085315)) {
+            return 1;
+        }
+        return 0;
+    }
+    if ((s0 == 418564631812)) {
+                sec = (first + 1);
+        while (((sec < count) && (((int64_t)((fact[((sec * 2) + 1)]) & (255))) == INT64_C(80)))) {
+                        sec = (sec + 1);
+        }
+        if (((sec >= count) || (((int64_t)((fact[((sec * 2) + 1)]) & (255))) != INT64_C(0)))) {
+            return 0;
+        }
+                s1 = fact[((sec * 2) + 2)];
+        if ((s1 == 28550371717572870)) {
+            return 2;
+        }
+        if ((s1 == 29674094025731591)) {
+            return 2;
+        }
+        if ((s1 == 1953458179)) {
+            return 2;
+        }
+        if ((s1 == 431315968772)) {
+            return 2;
+        }
+        if ((s1 == 435711995908)) {
+            return 2;
+        }
+        if ((s1 == 28259009574301702)) {
+            return 2;
+        }
+        if ((s1 == 2002874883)) {
+            return 2;
+        }
+        if ((s1 == 29676237331852807)) {
+            return 2;
+        }
+        if ((s1 == 30515186162102279)) {
+            return 2;
+        }
+        if ((s1 == 30518523401762054)) {
+            return 2;
+        }
+        if ((s1 == 27977564880724999)) {
+            return 2;
+        }
+        if ((s1 == 30792288878553351)) {
+            return 2;
+        }
+        if ((s1 == 28559167910667270)) {
+            return 2;
+        }
+        if ((s1 == 28538277256848390)) {
+            return 2;
+        }
+        if ((s1 == 32776920252310790)) {
+            return 2;
+        }
+        if ((s1 == 28557015847298567)) {
+            return 2;
+        }
+        if ((s1 == 25345)) {
+                        thr = (sec + 1);
+            while (((thr < count) && (((int64_t)((fact[((thr * 2) + 1)]) & (255))) == INT64_C(80)))) {
+                                thr = (thr + 1);
+            }
+            if (((thr >= count) || (((int64_t)((fact[((thr * 2) + 1)]) & (255))) != INT64_C(0)))) {
+                return 0;
+            }
+                        s2 = fact[((thr * 2) + 2)];
+            if ((s2 == 32776920252310790)) {
+                return 2;
+            }
+            if ((s2 == 465674789636)) {
+                return 2;
+            }
+            if ((s2 == 1768318467)) {
+                return 2;
+            }
+            if ((s2 == 30239221573640966)) {
+                return 2;
+            }
+            if ((s2 == 28552639590327046)) {
+                return 2;
+            }
+            if ((s2 == 32776920251590918)) {
+                return 1;
+            }
+            if ((s2 == 499984983300)) {
+                return 1;
+            }
+            if ((s2 == 28276606056163591)) {
+                return 1;
+            }
+            return 0;
+        }
+        return 0;
+    }
+    return 0;
 }
 
 __attribute__((visibility("default"))) bool paren_header_signal_lx(duo_rec_ae78087612f938ba *lx, bool allow, int64_t offside, int64_t before) {
