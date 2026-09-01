@@ -206,434 +206,546 @@ elif [ "$o6_live" -ne 1 ]; then
     bad "the replacement detector is broken: matchingTokenClose planted once, counted $o6_live"
 fi
 
-# ── 2c. one executed parser recognizer (GAP-134 transfer) ───────────────────
+# ── 2c. callable-header recognition executes from whole-pack lane two ────────
 #
-# The owner-authored `header` relation in lib/compiler/parser.id is projected
-# to C during bootstrap and is the production answer. The former Zig
-# `headerSignal` body must stay deleted: keeping it beside the executed Idol
-# relation would preserve two recognizers and make the call a decorative proof.
+# Event derives previous visible identity and line-opener column, evaluates both
+# admitted comma faces, and stores them in bits 4/5. Zig selects only the caller
+# face; the standalone header-pack ABI is deleted.
 forbid "$PARSER" 'fn headerSignal(' \
-    'parser.zig retained the host header recognizer beside the executed Idol relation'
+    'parser.zig retained the host header recognizer'
 forbid "$PARSER" 'fn viewColonIsMethodCall(' \
-    'parser.zig retained the host colon-role helper beside the executed Idol relation'
-has "$PARSER" 'return idol_parser_header_pack(' \
-    'scan_func_header_signal no longer delegates its production decision to parser.id'
+    'parser.zig retained the host colon-role helper'
+has "$PARSER" 'const decision = try self.currentParserDecision();' \
+    'scan_func_header_signal no longer consumes lane two'
+has "$PARSER" 'const shift: u6 = if (allow_untyped_comma) 5 else 4;' \
+    'scan_func_header_signal lost its two admitted header faces'
+forbid "$PARSER" 'idol_parser_header_pack(' \
+    'parser.zig retained the standalone header-pack ABI'
 has "$ROOT/lib/compiler/parser.id" 'header_signal_lx: bool = (fact: []i64' \
-    'parser.id lost the immutable producer-pack header relation'
+    'parser.id lost its event-internal header implementation'
+has "$ROOT/lib/compiler/parser.id" '(headerplain << 4) | (headercomma << 5)' \
+    'event lost lane-two header bits 4/5'
 has "$ROOT/src/parser/projection.c" 'bool header_signal_lx(int64_t fact[]' \
-    'the tracked parser.id C projection lost its immutable pack ABI'
+    'tracked projection lost the event-internal header implementation'
+forbid "$ROOT/build.zig" '-Dheader_signal_lx=idol_parser_header_pack' \
+    'build.zig retained the standalone header ABI rename'
+forbid "$ROOT/tools/node/dev/parser/artifact" 'idol_parser_header_pack(' \
+    'parser artifact retained the standalone header differential after equivalence'
+has "$ROOT/tools/node/dev/parser/artifact" 'bool from_event = ((events[count + 1] >> (allow ? 5 : 4)) & 1) != 0;' \
+    'parser artifact no longer checks lane-two header bits'
 
 transfer=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate parser-transfer scratch' >&2; exit 2; }
 printf '%s\n' 'fn headerSignal() bool { return false; }' >"$transfer/planted.zig"
 printf '%s\n' 'fn viewColonIsMethodCall() bool { return false; }' >>"$transfer/planted.zig"
-printf '%s\n' 'return idol_parser_header_pack(facts, count, index);' >"$transfer/clean.zig"
+printf '%s\n' 'return idol_parser_header_pack(facts, count, index);' >"$transfer/old.zig"
+printf '%s\n' 'const decision = try self.currentParserDecision();' >"$transfer/new.zig"
 host_count=$(grep -cE 'fn (headerSignal|viewColonIsMethodCall)\(' "$transfer/planted.zig")
-idol_count=$(grep -cF 'return idol_parser_header_pack(' "$transfer/clean.zig")
+header_old=$(grep -cF 'idol_parser_header_pack' "$transfer/old.zig")
+header_new=$(grep -cF 'currentParserDecision' "$transfer/new.zig")
 rm -rf -- "$transfer"
 examined=$((examined + 1))
-if [ "$host_count" -ne 2 ] || [ "$idol_count" -ne 1 ]; then
-    bad "the parser-transfer detector is broken: host=$host_count Idol=$idol_count"
+if [ "$host_count" -ne 2 ] || [ "$header_old" -ne 1 ] || [ "$header_new" -ne 1 ]; then
+    bad "the header lane detector is broken: host=$host_count old=$header_old new=$header_new"
 fi
 
-# ── 2d. return-value decision executes from the producer pack (GAP-145 O3) ───
+# ── 2d. return-value decision executes from whole-pack lane two ──────────────
 #
-# `returnStartsValue` answers whether a `return` keyword is followed by a
-# value expression. The kind switch, the cross-line gate, and the
-# idol-mode `rolebeginexpr` test are owner decisions; the host keeps only
-# the diagnostic for the rare "cannot begin an expression" case. A return
-# to the kind switch in parser.zig would re-introduce a host role decision
-# beside the executed Idol relation.
+# The kind switch, cross-line gate, and idol-mode expression-start rule execute
+# once into lane-two bits 2..3. Zig keeps only the selected diagnostic.
 forbid "$PARSER" '.kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi => return false' \
-    'parser.zig reintroduced a host kind switch beside the executed return-value decision'
-has "$PARSER" 'idol_parser_return_starts_value(' \
-    'returnStartsValue no longer delegates the production decision to parser.id'
+    'parser.zig reintroduced a host kind switch beside the return face'
+has "$PARSER" 'const verdict = ((try self.currentParserDecision()) >> 2) & 3;' \
+    'returnStartsValue no longer consumes lane-two bits 2..3'
+forbid "$PARSER" 'idol_parser_return_starts_value(' \
+    'parser.zig retained the standalone return-value ABI'
 has "$ROOT/lib/compiler/parser.id" 'return_starts_value_lx: i64 = (fact: []i64' \
-    'parser.id lost the immutable producer-pack return-value relation'
+    'parser.id lost its event-internal return implementation'
+has "$ROOT/lib/compiler/parser.id" '(returnface << 2)' \
+    'event lost lane-two return bits 2..3'
 has "$ROOT/src/parser/projection.c" 'return_starts_value_lx(int64_t fact[]' \
-    'the tracked parser.id C projection lost its return-value pack ABI'
-has "$ROOT/build.zig" '-Dreturn_starts_value_lx=idol_parser_return_starts_value' \
-    'build.zig no longer renames the return-value ABI symbol'
+    'tracked projection lost the event-internal return implementation'
+forbid "$ROOT/build.zig" '-Dreturn_starts_value_lx=idol_parser_return_starts_value' \
+    'build.zig retained the return-value ABI rename'
+has "$ROOT/tools/node/dev/parser/artifact" 'int64_t found = (events[3] >> 2) & 3;' \
+    'parser artifact no longer checks lane-two return bits'
+forbid "$ROOT/tools/node/dev/parser/artifact" 'idol_parser_return_starts_value(' \
+    'parser artifact retained the standalone return differential after equivalence'
 
 returnprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate return-value scratch' >&2; exit 2; }
-printf '%s\n' 'const verdict = idol_parser_return_starts_value(facts.ptr, count, index, line, self.idol_mode);' >"$returnprobe/clean.zig"
+printf '%s\n' 'const verdict = idol_parser_return_starts_value(facts.ptr, count, index, line, self.idol_mode);' >"$returnprobe/old.zig"
+printf '%s\n' 'const verdict = ((try self.currentParserDecision()) >> 2) & 3;' >"$returnprobe/new.zig"
 printf '%s\n' 'switch (nxt.kind) { .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi => return false, else => {}, }' >"$returnprobe/plantswitch.zig"
-exec_count=$(grep -cF 'idol_parser_return_starts_value' "$returnprobe/clean.zig")
+return_old=$(grep -cF 'idol_parser_return_starts_value' "$returnprobe/old.zig")
+return_new=$(grep -cF 'currentParserDecision' "$returnprobe/new.zig")
 host_switch_count=$(grep -cE '\.kw_end, \.kw_else, \.kw_elseif, \.kw_until, \.kw_catch, \.eof, \.semi => return false' "$returnprobe/plantswitch.zig")
 rm -rf -- "$returnprobe"
 examined=$((examined + 1))
-if [ "$exec_count" -ne 1 ]; then
-    bad "the return-value executor detector is broken: clean carried $exec_count Idol call(s)"
-fi
-if [ "$host_switch_count" -ne 1 ]; then
-    bad "the return-value host-switch detector is broken: planted host switch carried $host_switch_count match(es)"
+if [ "$return_old" -ne 1 ] || [ "$return_new" -ne 1 ] || [ "$host_switch_count" -ne 1 ]; then
+    bad "the return lane detector is broken: old=$return_old new=$return_new host=$host_switch_count"
 fi
 
-# ── 2e. match-arm classification executes from the producer pack ────────────
+# ── 2e. match-arm classification executes from whole-pack lane two ───────────
 #
 # Contextual `case` remains a name token, so the physical pack carries a short
 # raw lexeme beside metadata. parser.id owns the word comparison, pattern role,
-# same-line rule, delimiter depth and separator decision. Zig may consume the
-# 0/1/2/3 verdict but must not reconstruct any of those facts.
+# same-line rule, delimiter depth and separator decision. Event lane two bits
+# 0..1 carry the 0/1/2/3 face at the same producer coordinate.
 forbid "$PARSER" 'std.mem.eql(u8, first.text, "case")' \
     'parser.zig reintroduced contextual case recognition beside parser.id clause'
 forbid "$PARSER" 'if (!view.canStartPattern(start)) return false' \
     'parser.zig reintroduced the match pattern-role decision'
 forbid "$PARSER" '.kw_then, .kw_do, .fat_arrow => return depth == 0' \
     'parser.zig reintroduced match separator/depth recognition'
-has "$PARSER" 'idol_parser_match_clause(' \
-    'startsMatchArm no longer delegates its production decision to parser.id'
+has "$PARSER" 'const face = (try self.currentParserDecision()) & 3;' \
+    'matchClause no longer consumes whole-pack lane-two bits 0..1'
+forbid "$PARSER" 'idol_parser_match_clause(' \
+    'parser.zig retained the standalone match-clause ABI'
 has "$PARSER" 'facts[2 + index * 2] = @intCast(lexeme);' \
     'the parser pack lost its raw short-lexeme physical fact'
 has "$ROOT/lib/compiler/parser.id" '_clause: i64 = (fact: []i64' \
-    'parser.id lost the immutable producer-pack match clause relation'
+    'parser.id lost its internal immutable-pack match implementation'
+has "$ROOT/lib/compiler/parser.id" 'clauseface = _clause(fact, count, index)' \
+    'event lost the lane-two match face producer'
+has "$ROOT/lib/compiler/parser.id" 'out[count + index] = clauseface | (returnface << 2)' \
+    'event lost the packed lane-two match/return word'
 has "$ROOT/src/parser/projection.c" 'int64_t _clause(int64_t fact[]' \
-    'the tracked parser.id C projection lost its match clause ABI'
-has "$ROOT/build.zig" '-D_clause=idol_parser_match_clause' \
-    'build.zig no longer renames the match clause ABI symbol'
+    'tracked projection lost the event-internal match implementation'
+forbid "$ROOT/build.zig" '-D_clause=idol_parser_match_clause' \
+    'build.zig retained the match-clause ABI rename'
+has "$ROOT/tools/node/dev/parser/artifact" 'int64_t found = events[count] & 3;' \
+    'parser artifact no longer checks the lane-two match face'
+forbid "$ROOT/tools/node/dev/parser/artifact" 'idol_parser_match_clause(' \
+    'parser artifact retained the standalone match differential after equivalence'
 
 matchprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate match-clause scratch' >&2; exit 2; }
-printf '%s\n' 'const face = idol_parser_match_clause(facts.ptr, count, index);' >"$matchprobe/clean.zig"
+printf '%s\n' 'const face = idol_parser_match_clause(facts.ptr, count, index);' >"$matchprobe/old.zig"
+printf '%s\n' 'const face = (try self.currentParserDecision()) & 3;' >"$matchprobe/new.zig"
 printf '%s\n' 'if (first.kind == .name and std.mem.eql(u8, first.text, "case")) return true;' >"$matchprobe/host.zig"
 printf '%s\n' '.kw_then, .kw_do, .fat_arrow => return depth == 0,' >>"$matchprobe/host.zig"
-match_exec=$(grep -cF 'idol_parser_match_clause' "$matchprobe/clean.zig")
+match_old=$(grep -cF 'idol_parser_match_clause' "$matchprobe/old.zig")
+match_new=$(grep -cF 'currentParserDecision' "$matchprobe/new.zig")
 match_text=$(grep -cF 'std.mem.eql(u8, first.text, "case")' "$matchprobe/host.zig")
 match_depth=$(grep -cF '.kw_then, .kw_do, .fat_arrow => return depth == 0' "$matchprobe/host.zig")
 rm -rf -- "$matchprobe"
 examined=$((examined + 1))
-if [ "$match_exec" -ne 1 ] || [ "$match_text" -ne 1 ] || [ "$match_depth" -ne 1 ]; then
-    bad "the match-clause detector is broken: executor=$match_exec text=$match_text depth=$match_depth"
+if [ "$match_old" -ne 1 ] || [ "$match_new" -ne 1 ] || [ "$match_text" -ne 1 ] || [ "$match_depth" -ne 1 ]; then
+    bad "the match-clause lane detector is broken: old=$match_old new=$match_new text=$match_text depth=$match_depth"
 fi
 
-# ── 2f. line-head relation executes from the grammar owner ──────────────────
+# ── 2e'. contextual type head executes from whole-pack lane two ──────────────
 #
-# The host used to read `.opens_line` and rescan source bytes to decide whether
-# an infix token instead begins a new expression. Parser.State now restores the
-# previous token line, so parser.id `lead` consumes identity + line + previous
-# line and asks the generated owner's `lead()` fact. Zig only crosses the ABI.
+# `type` remains a contextual name because `type(x)` is an admitted call face.
+# Event compares the producer's bounded raw word and following token once, then
+# carries alias-head/not-alias in lane-two bit 6. Every Zig statement and
+# attributed-declaration consumer selects that fact without text comparison or
+# save/advance/restore lookahead.
+type_text=$(grep -cE 'std\.mem\.eql\(u8, [[:alnum:]_]+\.text, "type"\)' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$type_text" -ne 0 ]; then
+    bad "parser.zig retained $type_text contextual type text decision(s) beside event bit 6"
+fi
+type_lane=$(grep -cF 'currentParserDecision()) >> 6' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$type_lane" -ne 4 ]; then
+    bad "all four contextual type consumers must select lane-two bit 6 (calls=$type_lane)"
+fi
+has "$ROOT/lib/compiler/parser.id" 'fact[index * 2 + 2] == 435678704644' \
+    'parser.id lost the exact contextual type source-word fact'
+has "$ROOT/lib/compiler/parser.id" '(head << 6)' \
+    'event lost lane-two contextual type bit 6'
+has "$ROOT/src/parser/projection.c" 'fact[((index * 2) + 2)] == 435678704644' \
+    'tracked projection lost contextual type recognition'
+has "$ROOT/src/parser/projection.c" '((uint64_t)(head)) << ((uint64_t)(6)' \
+    'tracked projection lost lane-two contextual type bit 6'
+has "$ROOT/tools/node/dev/parser/artifact" 'int64_t found = (events[count] >> 6) & 1;' \
+    'parser artifact no longer checks lane-two contextual type bit'
+has "$ROOT/tools/node/dev/parser/artifact" 'type-lane-cases=5' \
+    'parser artifact lost the exact contextual type control count'
+
+typeprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate contextual-type scratch' >&2; exit 2; }
+{
+    printf '%s\n' 'if (std.mem.eql(u8, tok.text, "type")) return true;'
+    printf '%s\n' 'if (std.mem.eql(u8, nxt.text, "type")) return true;'
+    printf '%s\n' 'if (std.mem.eql(u8, next.text, "type")) return true;'
+    printf '%s\n' 'if (std.mem.eql(u8, head.text, "type")) return true;'
+} >"$typeprobe/old.zig"
+{
+    printf '%s\n' 'if (((try self.currentParserDecision()) >> 6) & 1 == 1) return true;'
+    printf '%s\n' 'if (((try self.currentParserDecision()) >> 6) & 1 == 1) return true;'
+    printf '%s\n' 'if (((try self.currentParserDecision()) >> 6) & 1 == 1) return true;'
+    printf '%s\n' 'if (((try self.currentParserDecision()) >> 6) & 1 == 1) return true;'
+} >"$typeprobe/new.zig"
+: >"$typeprobe/clean.zig"
+type_old=$(grep -cE 'std\.mem\.eql\(u8, [[:alnum:]_]+\.text, "type"\)' "$typeprobe/old.zig")
+type_new=$(grep -cF 'currentParserDecision()) >> 6' "$typeprobe/new.zig")
+type_clean=$(grep -cE 'std\.mem\.eql\(u8, [[:alnum:]_]+\.text, "type"\)|currentParserDecision\(\).*>> 6' "$typeprobe/clean.zig" || true)
+rm -rf -- "$typeprobe"
+examined=$((examined + 1))
+if [ "$type_old" -ne 4 ] || [ "$type_new" -ne 4 ] || [ "$type_clean" -ne 0 ]; then
+    bad "the contextual-type detector is broken: old=$type_old new=$type_new clean=$type_clean"
+fi
+
+# ── 2e''. bare declaration path executes from whole-pack lane two ────────────
+#
+# Header bit 4 is settled at `(`. Event walks backward over the exact admitted
+# name (`.` name)* (`:` name)? path and writes bit 7 at the starting name. Zig
+# statement and attribute consumers select that coordinate without a second
+# save/scan/restore path recognizer.
+forbid "$PARSER" 'fn starts_bare_func_decl(' \
+    'parser.zig retained the host bare-declaration path recognizer'
+bare_calls=$(grep -cF 'starts_bare_func_decl()' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$bare_calls" -ne 0 ]; then
+    bad "parser.zig retained $bare_calls bare-declaration scanner call(s)"
+fi
+bare_lane=$(grep -cF 'currentParserDecision()) >> 7' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$bare_lane" -ne 4 ]; then
+    bad "all four bare-declaration consumers must select lane-two bit 7 (calls=$bare_lane)"
+fi
+has "$ROOT/lib/compiler/parser.id" 'out[count + start] = out[count + start] | (1 << 7)' \
+    'event lost the propagated bare-declaration head bit'
+has "$ROOT/lib/compiler/parser.id" '== token.kindcolon' \
+    'event lost subject-specialized declaration path recognition'
+has "$ROOT/lib/compiler/parser.id" '== token.kinddot' \
+    'event lost static declaration path recognition'
+has "$ROOT/src/parser/projection.c" 'out[(count + start)] = ((int64_t)((out[(count + start)]) | (128)))' \
+    'tracked projection lost lane-two bare-declaration bit 7'
+has "$ROOT/tools/node/dev/parser/artifact" 'from_event = ((events[count] >> 7) & 1) != 0;' \
+    'parser artifact lost the direct cursor/event bare-head differential'
+has "$ROOT/tools/node/dev/parser/artifact" 'bare-lane-cases=5' \
+    'parser artifact lost the exact bare-head case count'
+
+bareprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate bare-head scratch' >&2; exit 2; }
+{
+    printf '%s\n' 'fn starts_bare_func_decl(self: *Parser) bool { return false; }'
+    printf '%s\n' 'if (try self.starts_bare_func_decl()) return true;'
+    printf '%s\n' 'if (try self.starts_bare_func_decl()) return true;'
+    printf '%s\n' 'if (try self.starts_bare_func_decl()) return true;'
+    printf '%s\n' 'if (try self.starts_bare_func_decl()) return true;'
+} >"$bareprobe/old.zig"
+{
+    printf '%s\n' 'if ((((try self.currentParserDecision()) >> 7) & 1) != 0) return true;'
+    printf '%s\n' 'if ((((try self.currentParserDecision()) >> 7) & 1) != 0) return true;'
+    printf '%s\n' 'if ((((try self.currentParserDecision()) >> 7) & 1) != 0) return true;'
+    printf '%s\n' 'if ((((try self.currentParserDecision()) >> 7) & 1) != 0) return true;'
+} >"$bareprobe/new.zig"
+: >"$bareprobe/clean.zig"
+bare_old=$(grep -cE 'starts_bare_func_decl' "$bareprobe/old.zig")
+bare_new=$(grep -cF 'currentParserDecision()) >> 7' "$bareprobe/new.zig")
+bare_clean=$(grep -cE 'starts_bare_func_decl|currentParserDecision\(\).*>> 7' "$bareprobe/clean.zig" || true)
+rm -rf -- "$bareprobe"
+examined=$((examined + 1))
+if [ "$bare_old" -ne 5 ] || [ "$bare_new" -ne 4 ] || [ "$bare_clean" -ne 0 ]; then
+    bad "the bare-head detector is broken: old=$bare_old new=$bare_new clean=$bare_clean"
+fi
+
+# ── 2f. line-head identity comes from whole-pack visible-token history ────────
+#
+# Event bit 22 combines the owner lead row with the previous parser-visible line
+# while skipping shebang/comment identities. The standalone lead ABI is deleted.
 forbid "$PARSER" 'fn opensLineAndExpression(' \
-    'parser.zig retained the host line-head recognizer beside parser.id lead'
+    'parser.zig retained the host line-head recognizer'
 forbid "$PARSER" 'grammar_roles.lookup(tok.kind).opens_line' \
     'parser.zig retained the host opens_line role decision'
-has "$PARSER" 'if (idol_parser_lead(' \
-    'the production Pratt recognizers no longer delegate their line-head decision to parser.id'
-has "$ROOT/lib/compiler/parser.id" 'lead: bool = (kind: i64, line: i64, before: i64)' \
-    'parser.id lost the production line-head relation'
-has "$ROOT/src/parser/projection.c" 'bool lead(int64_t kind, int64_t line, int64_t before)' \
-    'the tracked parser projection lost the line-head ABI'
-has "$ROOT/build.zig" '-Dlead=idol_parser_lead' \
-    'build.zig no longer renames the line-head ABI symbol'
-has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_lead(void)' \
-    'the parser artifact stopped exhaustively checking the owner lead row'
+has "$PARSER" 'fn currentParserLead(self: *Parser) ParseError!bool {' \
+    'Parser lost its event-backed line-head observer'
+lead_consumers=$(grep -cF 'if (try self.currentParserLead()) break;' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$lead_consumers" -ne 2 ]; then
+    bad "both Pratt consumers must use event line-head bit 22 (calls=$lead_consumers)"
+fi
+forbid "$PARSER" 'idol_parser_lead(' \
+    'parser.zig retained the standalone line-head ABI'
+forbid "$ROOT/lib/compiler/parser.id" 'lead: bool = (kind: i64, line: i64, before: i64)' \
+    'parser.id retained the standalone line-head relation'
+has "$ROOT/lib/compiler/parser.id" 'leads: str = token.grammarrole.lead()' \
+    'event lost the owner lead row'
+has "$ROOT/lib/compiler/parser.id" '(leadface << 22)' \
+    'event lost line-head bit 22'
+forbid "$ROOT/src/parser/projection.c" 'bool lead(int64_t kind, int64_t line, int64_t before)' \
+    'tracked projection retained the line-head function'
+forbid "$ROOT/build.zig" '-Dlead=idol_parser_lead' \
+    'build.zig retained the line-head ABI rename'
+forbid "$ROOT/tools/node/dev/parser/artifact" 'static int verify_lead(void)' \
+    'parser artifact retained the standalone lead differential'
+has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_event_lead_trivia(void)' \
+    'parser artifact lost the trivia-aware line-head differential'
+has "$ROOT/tools/node/dev/parser/artifact" 'event-lead-cases=2' \
+    'parser artifact lost the exact line-head case count'
 
 leadprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate line-head scratch' >&2; exit 2; }
 printf '%s\n' 'fn opensLineAndExpression() bool { return grammar_roles.lookup(tok.kind).opens_line; }' >"$leadprobe/old.zig"
-printf '%s\n' 'return idol_parser_lead(kind, line, before);' >"$leadprobe/new.zig"
+printf '%s\n' 'return ((try self.currentParserEvent()) >> 22) & 1 != 0;' >"$leadprobe/new.zig"
+: >"$leadprobe/clean.zig"
 lead_old=$(grep -cE 'opensLineAndExpression|lookup\(tok.kind\)\.opens_line' "$leadprobe/old.zig")
-lead_new=$(grep -cF 'idol_parser_lead' "$leadprobe/new.zig")
+lead_new=$(grep -cE 'currentParserEvent.*>> 22' "$leadprobe/new.zig")
+lead_clean=$(grep -cE 'opensLineAndExpression|idol_parser_lead|currentParserEvent.*>> 22' "$leadprobe/clean.zig" || true)
 rm -rf -- "$leadprobe"
 examined=$((examined + 1))
-if [ "$lead_old" -ne 1 ] || [ "$lead_new" -ne 1 ]; then
-    bad "the line-head transfer detector is broken: old=$lead_old new=$lead_new"
+if [ "$lead_old" -ne 1 ] || [ "$lead_new" -ne 1 ] || [ "$lead_clean" -ne 0 ]; then
+    bad "the event-line-head detector is broken: old=$lead_old new=$lead_new clean=$lead_clean"
 fi
 
-# ── 2f'. prefix relation executes from the grammar owner ────────────────────
+# ── 2f'. prefix identity comes from whole-pack event ─────────────────────────
 #
-# The host used to read `.prefix` off the Zig-side role row to decide whether
-# `parse_expr_stmt` should descend into the unary path. The Pratt recognizer
-# now asks the generated owner's `prefix()` fact via `idol_parser_prefix`,
-# crossing only the physical kind ordinal. The relation row has the same
-# zero-parameter shape as `lead` because both are dense zero/one fact slices
-# over every role slot.
+# The owner row remains `prefix()`, but event bit 20 now carries its answer at
+# each producer coordinate. The standalone relation/ABI is deleted.
 forbid "$PARSER" 'grammar_roles.lookup(first_tok.kind).prefix' \
     'parser.zig retained the host prefix role decision'
 forbid "$PARSER" 'grammar_roles.lookup(.+)\.prefix' \
     'parser.zig retained any host prefix role decision'
-has "$PARSER" 'idol_parser_prefix(' \
-    'parse_expr_stmt no longer delegates its prefix decision to parser.id'
-has "$ROOT/lib/compiler/parser.id" 'prefix: bool = (kind: i64)' \
-    'parser.id lost the production prefix relation'
-has "$ROOT/src/parser/projection.c" 'bool prefix(int64_t kind)' \
-    'the tracked parser projection lost the prefix ABI'
-has "$ROOT/build.zig" '-Dprefix=idol_parser_prefix' \
-    'build.zig no longer renames the prefix ABI symbol'
-has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_prefix(void)' \
-    'the parser artifact stopped exhaustively checking the owner prefix row'
+has "$PARSER" 'fn currentParserPrefix(self: *Parser) ParseError!bool {' \
+    'Parser lost its event-backed prefix observer'
+has "$PARSER" 'const is_unary = try self.currentParserPrefix();' \
+    'parse_expr_stmt no longer consumes event prefix bit 20'
+forbid "$PARSER" 'idol_parser_prefix(' \
+    'parser.zig retained the standalone prefix ABI'
+forbid "$ROOT/lib/compiler/parser.id" 'prefix: bool = (kind: i64)' \
+    'parser.id retained the standalone prefix relation'
+has "$ROOT/lib/compiler/parser.id" 'prefixes: str = token.grammarrole.prefix()' \
+    'event lost the owner prefix row'
+has "$ROOT/lib/compiler/parser.id" '(prefixface << 20)' \
+    'event lost prefix bit 20'
+forbid "$ROOT/src/parser/projection.c" 'bool prefix(int64_t kind)' \
+    'tracked projection retained the standalone prefix function'
+forbid "$ROOT/build.zig" '-Dprefix=idol_parser_prefix' \
+    'build.zig retained the prefix ABI rename'
+forbid "$ROOT/tools/node/dev/parser/artifact" 'static int verify_prefix(void)' \
+    'parser artifact retained the standalone prefix differential'
+has "$ROOT/tools/node/dev/parser/artifact" '(prefix << 20)' \
+    'whole-pack event oracle lost prefix bit 20'
 
 prefixprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate prefix scratch' >&2; exit 2; }
 printf '%s\n' 'const is_unary = grammar_roles.lookup(first_tok.kind).prefix;' >"$prefixprobe/old.zig"
-printf '%s\n' 'return idol_parser_prefix(kind);' >"$prefixprobe/new.zig"
+printf '%s\n' 'const is_unary = ((try self.currentParserEvent()) >> 20) & 1 != 0;' >"$prefixprobe/new.zig"
+: >"$prefixprobe/clean.zig"
 prefix_old=$(grep -cE 'lookup\(.*\)\.prefix' "$prefixprobe/old.zig")
-prefix_new=$(grep -cF 'idol_parser_prefix' "$prefixprobe/new.zig")
+prefix_new=$(grep -cE 'currentParserEvent.*>> 20' "$prefixprobe/new.zig")
+prefix_clean=$(grep -cE 'lookup\(.*\)\.prefix|idol_parser_prefix|currentParserEvent.*>> 20' "$prefixprobe/clean.zig" || true)
 rm -rf -- "$prefixprobe"
 examined=$((examined + 1))
-if [ "$prefix_old" -ne 1 ] || [ "$prefix_new" -ne 1 ]; then
-    bad "the prefix transfer detector is broken: old=$prefix_old new=$prefix_new"
+if [ "$prefix_old" -ne 1 ] || [ "$prefix_new" -ne 1 ] || [ "$prefix_clean" -ne 0 ]; then
+    bad "the event-prefix detector is broken: old=$prefix_old new=$prefix_new clean=$prefix_clean"
 fi
 
-# ── 2f''. demands_operand relation executes from the grammar owner ──────────
+# ── 2f''. operand demand comes from the consumed event coordinate ────────────
 #
-# `advRaw` runs once per consumed token and used to read the row's
-# `.demands_operand` field via `grammar_roles.lookup(kind).demands_operand`,
-# making the host Pratt recognizer reach into the generated role row for one
-# token-end fact on every advance. parser.id `demands_operand` now reads the
-# generated owner's `demand(): str` and exposes the fact through the C ABI as
-# `idol_parser_demands_operand`. Same row shape and same one-slot access
-# pattern as `lead` / `prefix`; the host row lookup is gone.
+# `advRaw` captures event bit 21 before advancing the sole pack cursor. The
+# standalone relation/ABI is deleted, so a consumed token cannot be reclassified
+# from spelling or from the next token's coordinate.
 forbid "$PARSER" 'grammar_roles.lookup\(.+\)\.demands_operand' \
     'parser.zig retained the host demands_operand role decision'
 forbid "$PARSER" 'fn demandsOperand(' \
-    'parser.zig retained the host demandsOperand helper beside parser.id demands_operand'
-has "$PARSER" 'idol_parser_demands_operand(' \
-    'advRaw no longer delegates its demands_operand decision to parser.id'
-has "$ROOT/lib/compiler/parser.id" 'demands_operand: bool = (kind: i64)' \
-    'parser.id lost the production demands_operand relation'
-has "$ROOT/src/parser/projection.c" 'bool demands_operand(int64_t kind)' \
-    'the tracked parser projection lost the demands_operand ABI'
-has "$ROOT/build.zig" '-Ddemands_operand=idol_parser_demands_operand' \
-    'build.zig no longer renames the demands_operand ABI symbol'
+    'parser.zig retained the host demandsOperand helper'
+has "$PARSER" 'demand = ((events[index] >> 21) & 1) != 0;' \
+    'advRaw no longer captures demand from the consumed event coordinate'
+has "$PARSER" 'if (demand) try self.denyRetiredLengthHash(tok);' \
+    'advRaw no longer consumes the settled demand face'
+forbid "$PARSER" 'idol_parser_demands_operand(' \
+    'parser.zig retained the standalone demands_operand ABI'
+forbid "$ROOT/lib/compiler/parser.id" 'demands_operand: bool = (kind: i64)' \
+    'parser.id retained the standalone demands_operand relation'
+has "$ROOT/lib/compiler/parser.id" 'demands: str = token.grammarrole.demand()' \
+    'event lost the owner demand row'
+has "$ROOT/lib/compiler/parser.id" '(demandface << 21)' \
+    'event lost operand-demand bit 21'
+forbid "$ROOT/src/parser/projection.c" 'bool demands_operand(int64_t kind)' \
+    'tracked projection retained the standalone demands_operand function'
+forbid "$ROOT/build.zig" '-Ddemands_operand=idol_parser_demands_operand' \
+    'build.zig retained the demands_operand ABI rename'
+has "$ROOT/tools/node/dev/parser/artifact" '(demand << 21)' \
+    'whole-pack event oracle lost demand bit 21'
 
 demandprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate demands_operand scratch' >&2; exit 2; }
 printf '%s\n' 'fn demandsOperand(kind: u8) bool { return grammar_roles.lookup(kind).demands_operand; }' >"$demandprobe/old.zig"
-printf '%s\n' 'return idol_parser_demands_operand(kind);' >"$demandprobe/new.zig"
+printf '%s\n' 'const demand = ((events[index] >> 21) & 1) != 0;' >"$demandprobe/new.zig"
+: >"$demandprobe/clean.zig"
 demand_old=$(grep -cE 'demandsOperand|lookup\(.+\)\.demands_operand' "$demandprobe/old.zig")
-demand_new=$(grep -cF 'idol_parser_demands_operand' "$demandprobe/new.zig")
+demand_new=$(grep -cE 'events\[index\].*>> 21' "$demandprobe/new.zig")
+demand_clean=$(grep -cE 'demandsOperand|demands_operand|events\[index\].*>> 21' "$demandprobe/clean.zig" || true)
 rm -rf -- "$demandprobe"
 examined=$((examined + 1))
-if [ "$demand_old" -ne 1 ] || [ "$demand_new" -ne 1 ]; then
-    bad "the demands_operand transfer detector is broken: old=$demand_old new=$demand_new"
+if [ "$demand_old" -ne 1 ] || [ "$demand_new" -ne 1 ] || [ "$demand_clean" -ne 0 ]; then
+    bad "the event-demand detector is broken: old=$demand_old new=$demand_new clean=$demand_clean"
 fi
 
-# ── 2f'''. infix_prec triple executes from the grammar owner ──────────────────
-#
-# `parse_prec` ran once per Pratt step and used to ask
-# `grammar_roles.infixRelation(kind)` for the operation identity AND
-# `grammar_roles.lookup(kind)` for `.precedence` and `.assoc` — two row reads
-# per peek, on the host Pratt hot path. parser.id `infix_prec` now reads the
-# owner's `_roleinfix`, `roleprecedence`, `roleassoc`, and compact `relation()`
-# ordinal row and packs the triple (op ordinal + left + right precedence) into one
-# i64 returned through the C ABI as `idol_parser_infix_prec`. Same one-call
-# shape as the lead/prefix/demands_operand transitions; the host row lookup
-# and the `Parser.infixBinOp` helper are gone.
+# ── 2f'''. Pratt triple comes from event bits 23..46 ─────────────────────────
 forbid "$PARSER" 'grammar_roles.lookup\(.+\)\.precedence' \
     'parser.zig retained the host precedence role decision'
 forbid "$PARSER" 'grammar_roles.lookup\(.+\)\.assoc' \
     'parser.zig retained the host assoc role decision'
 forbid "$PARSER" 'fn infixBinOp(' \
-    'parser.zig retained the host infixBinOp helper beside parser.id infix_prec'
-forbid "$PARSER" 'return grammar_roles\.infixRelation(' \
-    'parser.zig retained the host infixRelation call inside infix_prec'
-has "$PARSER" 'idol_parser_infix_prec(' \
-    'infix_prec no longer delegates its relation/precedence/assoc decision to parser.id'
-has "$ROOT/lib/compiler/parser.id" 'infix_prec: i64 = (kind: i64)' \
-    'parser.id lost the production infix_prec relation'
-has "$ROOT/src/parser/projection.c" 'int64_t infix_prec(int64_t kind)' \
-    'the tracked parser projection lost the infix_prec ABI'
-has "$ROOT/build.zig" '-Dinfix_prec=idol_parser_infix_prec' \
-    'build.zig no longer renames the infix_prec ABI symbol'
+    'parser.zig retained the host infixBinOp helper'
+forbid "$PARSER" 'idol_parser_infix_prec(' \
+    'parser.zig retained the standalone infix ABI'
+has "$PARSER" 'const triple = ((try self.currentParserEvent()) >> 23) & 0xFFFFFF;' \
+    'Pratt no longer consumes event bits 23..46'
+forbid "$ROOT/lib/compiler/parser.id" 'infix_prec: i64 = (kind: i64)' \
+    'parser.id retained the standalone infix relation'
+has "$ROOT/lib/compiler/parser.id" '(infix << 23)' \
+    'event lost the packed Pratt triple'
+forbid "$ROOT/src/parser/projection.c" 'int64_t infix_prec(int64_t kind)' \
+    'tracked projection retained the standalone infix function'
+forbid "$ROOT/build.zig" '-Dinfix_prec=idol_parser_infix_prec' \
+    'build.zig retained the infix ABI rename'
+has "$ROOT/tools/node/dev/parser/artifact" '(infix << 23)' \
+    'event oracle lost the Pratt triple'
 
-infixprecprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate infix_prec scratch' >&2; exit 2; }
+infixprecprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate infix scratch' >&2; exit 2; }
 printf '%s\n' 'fn infixBinOp(kind: u8) ?Relation { return grammar_roles.infixRelation(kind); }' >"$infixprecprobe/old.zig"
-printf '%s\n' 'const r = grammar_roles.lookup(kind); return idol_parser_infix_prec(kind);' >"$infixprecprobe/new.zig"
+printf '%s\n' 'const triple = (event >> 23) & 0xffffff;' >"$infixprecprobe/new.zig"
+: >"$infixprecprobe/clean.zig"
 infixprec_old=$(grep -cE 'infixBinOp|infixRelation' "$infixprecprobe/old.zig")
-infixprec_new=$(grep -cF 'idol_parser_infix_prec' "$infixprecprobe/new.zig")
+infixprec_new=$(grep -cE 'event >> 23' "$infixprecprobe/new.zig")
+infixprec_clean=$(grep -cE 'infixBinOp|infixRelation|idol_parser_infix_prec|event >> 23' "$infixprecprobe/clean.zig" || true)
 rm -rf -- "$infixprecprobe"
 examined=$((examined + 1))
-if [ "$infixprec_old" -ne 1 ] || [ "$infixprec_new" -ne 1 ]; then
-    bad "the infix_prec transfer detector is broken: old=$infixprec_old new=$infixprec_new"
+if [ "$infixprec_old" -ne 1 ] || [ "$infixprec_new" -ne 1 ] || [ "$infixprec_clean" -ne 0 ]; then
+    bad "the event-infix detector is broken: old=$infixprec_old new=$infixprec_new clean=$infixprec_clean"
 fi
 
-# ── 2f''''. primitive-descriptor identity executes from the grammar owner ────
+# ── 2f''''. primitive, literal, and quoted identities come from event ───────
 #
-# 10 type-atom / typed-binding / type-table-key / record-field / layout-arg
-# sites (`parse_type_primary`, `parse_attributed_decl`, `parse_table_literal`,
-# `parse_record_field_list`, `parse_offside_pack`, `parse_pack_decls`,
-# `layout_arg_can_start_type`, `parse_suffixed_expr`) asked
-# `grammar_roles.isDescriptor(kind)` on every probe — one row-cache lookup per
-# probe, with no way for the parser to agree with the generated role row
-# except by re-reading the same cached `descriptor` field. parser.id
-# `is_primitive_descriptor_kind` now reads the producer's `roledescriptor`
-# directly and exposes the same predicate through the C ABI as
-# `idol_parser_is_primitive_descriptor_kind`; the host row read is gone.
-# Distinct from `is_descriptor_kind` (the broader `roledescriptor OR is_type_kind`
-# predicate used by `colon_is_method_call_lx`); the two predicates answer
-# different questions and the ABI symbol names them separately so a future
-# host that confuses them surfaces as a link error rather than a semantic drift.
+# Event bits 17..19 carry the three owner facts at the exact current coordinate.
+# Saved quoted tokens retain the bit captured before speculative advance.
 forbid "$PARSER" 'grammar_roles\.isDescriptor(' \
     'parser.zig retained the host primitive-descriptor role decision'
-has "$PARSER" 'idol_parser_is_primitive_descriptor_kind(' \
-    'parser.zig no longer delegates its primitive-descriptor decision to parser.id'
-has "$ROOT/lib/compiler/parser.id" 'is_primitive_descriptor_kind: bool = (k: i64)' \
-    'parser.id lost the production is_primitive_descriptor_kind relation'
-has "$ROOT/src/parser/projection.c" 'bool is_primitive_descriptor_kind(int64_t k)' \
-    'the tracked parser projection lost the is_primitive_descriptor_kind ABI'
-has "$ROOT/build.zig" '-Dis_primitive_descriptor_kind=idol_parser_is_primitive_descriptor_kind' \
-    'build.zig no longer renames the is_primitive_descriptor_kind ABI symbol'
-
-descriptorprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate is_primitive_descriptor_kind scratch' >&2; exit 2; }
-printf '%s\n' 'if (grammar_roles.isDescriptor(tok.kind)) { try self.adv(); }' >"$descriptorprobe/old.zig"
-printf '%s\n' 'if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) { try self.adv(); }' >"$descriptorprobe/new.zig"
-descriptor_old=$(grep -cE 'grammar_roles\.isDescriptor' "$descriptorprobe/old.zig")
-descriptor_new=$(grep -cF 'idol_parser_is_primitive_descriptor_kind' "$descriptorprobe/new.zig")
-rm -rf -- "$descriptorprobe"
-examined=$((examined + 1))
-if [ "$descriptor_old" -ne 1 ] || [ "$descriptor_new" -ne 1 ]; then
-    bad "the is_primitive_descriptor_kind transfer detector is broken: old=$descriptor_old new=$descriptor_new"
-fi
-
-# ── 2f''''. literal-kind identity executes from the grammar owner ───────────
-#
-# Pratt / record / match-arm / descriptor / pretty probes across `parse_stmt`,
-# `parse_match_arm`, `parse_descriptor_slot`, and others asked
-# `grammar_roles.isLiteralKind(kind)` on every probe — one row-cache lookup
-# per probe, with no way for the parser to agree with the generated role row
-# except by re-reading the same cached `literal_kind` field. parser.id
-# `is_literal_kind` now reads the producer's `literal(): str` row directly
-# and exposes the same predicate through the C ABI as
-# `idol_parser_is_literal_kind`; the host row read is gone. Same row shape
-# and `kind[8]` access pattern as `lead` / `prefix` / `demands_operand`.
 forbid "$PARSER" 'grammar_roles\.isLiteralKind(' \
     'parser.zig retained the host literal-kind role decision'
-has "$PARSER" 'idol_parser_is_literal_kind(' \
-    'parser.zig no longer delegates its literal-kind decision to parser.id'
-has "$ROOT/lib/compiler/parser.id" 'is_literal_kind: bool = (kind: i64)' \
-    'parser.id lost the production is_literal_kind relation'
-has "$ROOT/src/parser/projection.c" 'bool is_literal_kind(int64_t kind)' \
-    'the tracked parser projection lost the is_literal_kind ABI'
-has "$ROOT/build.zig" '-Dis_literal_kind=idol_parser_is_literal_kind' \
-    'build.zig no longer renames the is_literal_kind ABI symbol'
-has "$ROOT/lib/compiler/token.id" 'literal(): str' \
-    'token.id lost the zero-arg literal() producer row'
-has "$ROOT/lib/token/grammarrole.id" 'literal(): str' \
-    'the tracked grammarrole.id lost the generated literal() bit slice'
-
-literalprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate is_literal_kind scratch' >&2; exit 2; }
-printf '%s\n' 'if (grammar_roles.isLiteralKind(tok.kind)) { try self.adv(); }' >"$literalprobe/old.zig"
-printf '%s\n' 'if (idol_parser_is_literal_kind(@intCast(@backingInt(tok.kind)))) { try self.adv(); }' >"$literalprobe/new.zig"
-literal_old=$(grep -cE 'grammar_roles\.isLiteralKind' "$literalprobe/old.zig")
-literal_new=$(grep -cF 'idol_parser_is_literal_kind' "$literalprobe/new.zig")
-rm -rf -- "$literalprobe"
-examined=$((examined + 1))
-if [ "$literal_old" -ne 1 ] || [ "$literal_new" -ne 1 ]; then
-    bad "the is_literal_kind transfer detector is broken: old=$literal_old new=$literal_new"
-fi
-
-# ── 2f''''''. quoted-payload identity executes from the grammar owner ───────
-#
-# Record-key / table-key / descriptor-body / pretty probes across
-# `parse_match_arm`, `parse_stmt`, `parse_descriptor_slot`,
-# `parse_table_literal`, and others asked
-# `grammar_roles.isQuotedKind(kind)` on every probe — one row-cache lookup
-# per probe, with no way for the parser to agree with the generated role
-# row except by re-reading the same cached `quoted` field. parser.id
-# `is_quoted_kind` now reads the producer's `quoted(): str` row directly
-# and exposes the same predicate through the C ABI as
-# `idol_parser_is_quoted_kind`; the host row read is gone. Slot 3 stays
-# unpublished and reads as 0. Same row shape and `kind[8]` access pattern
-# as `lead` / `prefix` / `demands_operand` / `is_literal_kind`.
 forbid "$PARSER" 'grammar_roles\.isQuotedKind(' \
     'parser.zig retained the host quoted-kind role decision'
-has "$PARSER" 'idol_parser_is_quoted_kind(' \
-    'parser.zig no longer delegates its quoted-kind decision to parser.id'
-has "$ROOT/lib/compiler/parser.id" 'is_quoted_kind: bool = (kind: i64)' \
-    'parser.id lost the production is_quoted_kind relation'
-has "$ROOT/src/parser/projection.c" 'bool is_quoted_kind(int64_t kind)' \
-    'the tracked parser projection lost the is_quoted_kind ABI'
-has "$ROOT/build.zig" '-Dis_quoted_kind=idol_parser_is_quoted_kind' \
-    'build.zig no longer renames the is_quoted_kind ABI symbol'
+has "$PARSER" 'fn currentParserPrimitive(self: *Parser) ParseError!bool {' \
+    'Parser lost primitive event bit 17'
+has "$PARSER" 'fn currentParserLiteral(self: *Parser) ParseError!bool {' \
+    'Parser lost literal event bit 18'
+has "$PARSER" 'fn currentParserQuoted(self: *Parser) ParseError!bool {' \
+    'Parser lost quoted event bit 19'
+has "$PARSER" 'const quoted = try self.currentParserQuoted();' \
+    'parse_pack no longer preserves quoted identity before advancing'
+forbid "$PARSER" 'idol_parser_is_primitive_descriptor_kind(' \
+    'parser.zig retained the primitive ABI'
+forbid "$PARSER" 'idol_parser_is_literal_kind(' \
+    'parser.zig retained the literal ABI'
+forbid "$PARSER" 'idol_parser_is_quoted_kind(' \
+    'parser.zig retained the quoted ABI'
+forbid "$ROOT/lib/compiler/parser.id" 'is_primitive_descriptor_kind: bool = (k: i64)' \
+    'parser.id retained the primitive relation'
+forbid "$ROOT/lib/compiler/parser.id" 'is_literal_kind: bool = (kind: i64)' \
+    'parser.id retained the literal relation'
+forbid "$ROOT/lib/compiler/parser.id" 'is_quoted_kind: bool = (kind: i64)' \
+    'parser.id retained the quoted relation'
+has "$ROOT/lib/compiler/parser.id" '(primitive << 17)' \
+    'event lost primitive bit 17'
+has "$ROOT/lib/compiler/parser.id" '(literal << 18)' \
+    'event lost literal bit 18'
+has "$ROOT/lib/compiler/parser.id" '(quoted << 19)' \
+    'event lost quoted bit 19'
+forbid "$ROOT/src/parser/projection.c" 'bool is_primitive_descriptor_kind(int64_t k)' \
+    'tracked projection retained the primitive function'
+forbid "$ROOT/src/parser/projection.c" 'bool is_literal_kind(int64_t kind)' \
+    'tracked projection retained the literal function'
+forbid "$ROOT/src/parser/projection.c" 'bool is_quoted_kind(int64_t kind)' \
+    'tracked projection retained the quoted function'
+forbid "$ROOT/build.zig" '-Dis_primitive_descriptor_kind=idol_parser_is_primitive_descriptor_kind' \
+    'build.zig retained the primitive ABI rename'
+forbid "$ROOT/build.zig" '-Dis_literal_kind=idol_parser_is_literal_kind' \
+    'build.zig retained the literal ABI rename'
+forbid "$ROOT/build.zig" '-Dis_quoted_kind=idol_parser_is_quoted_kind' \
+    'build.zig retained the quoted ABI rename'
+has "$ROOT/lib/compiler/token.id" 'literal(): str' \
+    'token.id lost the literal owner row'
 has "$ROOT/lib/compiler/token.id" 'quoted(): str' \
-    'token.id lost the zero-arg quoted() producer row'
-has "$ROOT/lib/token/grammarrole.id" 'quoted(): str' \
-    'the tracked grammarrole.id lost the generated quoted() bit slice'
+    'token.id lost the quoted owner row'
+has "$ROOT/tools/node/dev/parser/artifact" '(primitive << 17)' \
+    'event oracle lost primitive bit 17'
+has "$ROOT/tools/node/dev/parser/artifact" '(literal << 18)' \
+    'event oracle lost literal bit 18'
+has "$ROOT/tools/node/dev/parser/artifact" '(quoted << 19)' \
+    'event oracle lost quoted bit 19'
 
-quotedprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate is_quoted_kind scratch' >&2; exit 2; }
-printf '%s\n' 'if (grammar_roles.isQuotedKind(tok.kind)) { try self.adv(); }' >"$quotedprobe/old.zig"
-printf '%s\n' 'if (idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind)))) { try self.adv(); }' >"$quotedprobe/new.zig"
-quoted_old=$(grep -cE 'grammar_roles\.isQuotedKind' "$quotedprobe/old.zig")
-quoted_new=$(grep -cF 'idol_parser_is_quoted_kind' "$quotedprobe/new.zig")
-rm -rf -- "$quotedprobe"
+identityprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate identity scratch' >&2; exit 2; }
+printf '%s\n' \
+    'grammar_roles.isDescriptor(tok.kind);' \
+    'grammar_roles.isLiteralKind(tok.kind);' \
+    'grammar_roles.isQuotedKind(tok.kind);' >"$identityprobe/old.zig"
+printf '%s\n' \
+    'const primitive = ((event >> 17) & 1) != 0;' \
+    'const literal = ((event >> 18) & 1) != 0;' \
+    'const quoted = ((event >> 19) & 1) != 0;' >"$identityprobe/new.zig"
+: >"$identityprobe/clean.zig"
+identity_old=$(grep -cE 'isDescriptor|isLiteralKind|isQuotedKind' "$identityprobe/old.zig")
+identity_new=$(grep -cE 'event >> (17|18|19)' "$identityprobe/new.zig")
+identity_clean=$(grep -cE 'isDescriptor|isLiteralKind|isQuotedKind|idol_parser_is_(primitive_descriptor|literal|quoted)_kind|event >> (17|18|19)' "$identityprobe/clean.zig" || true)
+rm -rf -- "$identityprobe"
 examined=$((examined + 1))
-if [ "$quoted_old" -ne 1 ] || [ "$quoted_new" -ne 1 ]; then
-    bad "the is_quoted_kind transfer detector is broken: old=$quoted_old new=$quoted_new"
+if [ "$identity_old" -ne 3 ] || [ "$identity_new" -ne 3 ] || [ "$identity_clean" -ne 0 ]; then
+    bad "the event identity detector is broken: old=$identity_old new=$identity_new clean=$identity_clean"
 fi
 
-# ── 2f'''''''. prefix/update/glue relation faces execute from parser.id ───────
-#
-# The final production grammar_roles relation reads were unaryRelation,
-# gluedRelation and updateRelation. token.id now projects one compact ordinal
-# byte per physical slot from its sole relation/prefix orders. parser.id reads
-# those rows in O(1), applies the glue/update face facts, and returns the exact
-# generated enum ordinal. No name row, name scan, mirrored order string, or dead
-# host relation facade remains.
+# ── 2f'''''''. unary, glue, and update ordinals come from event ───────────────
 examined=$((examined + 1))
 if grep -Eq '^[[:space:]]*(const[[:space:]]+[^=]+=[[:space:]]*)?grammar_roles\.(unaryRelation|gluedRelation|updateRelation)\(' "$PARSER"; then
     bad 'parser.zig retained an executable host unary/glue/update relation decision'
 fi
-has "$PARSER" 'idol_parser_unary(' \
-    'parser.zig no longer calls the parser.id unary relation'
-has "$PARSER" 'idol_parser_glue(' \
-    'parser.zig no longer calls the parser.id glue relation'
-has "$PARSER" 'idol_parser_update(' \
-    'parser.zig no longer calls the parser.id update relation'
-has "$ROOT/lib/compiler/parser.id" '_unary: i64 = (kind: i64)' \
-    'parser.id lost the private unary bridge relation'
-has "$ROOT/lib/compiler/parser.id" '_glue: i64 = (kind: i64)' \
-    'parser.id lost the private glue bridge relation'
-has "$ROOT/lib/compiler/parser.id" '_update: i64 = (kind: i64)' \
-    'parser.id lost the private update bridge relation'
-has "$ROOT/lib/compiler/parser.id" '_ordinal(token.grammarrole.relation(), kind)' \
-    'parser.id no longer consumes the owner-projected relation ordinal row'
-has "$ROOT/lib/compiler/parser.id" '_ordinal(token.grammarrole.unary(), kind)' \
-    'parser.id no longer consumes the owner-projected unary ordinal row'
+forbid "$PARSER" 'idol_parser_unary(' \
+    'parser.zig retained the unary ABI'
+forbid "$PARSER" 'idol_parser_glue(' \
+    'parser.zig retained the glue ABI'
+forbid "$PARSER" 'idol_parser_update(' \
+    'parser.zig retained the update ABI'
+has "$PARSER" '((try self.currentParserEvent()) >> 47) & 0x1F' \
+    'unary no longer consumes event bits 47..51'
+has "$PARSER" '((try self.currentParserEvent()) >> 52) & 0x1F' \
+    'glue no longer consumes event bits 52..56'
+has "$PARSER" '((try self.currentParserEvent()) >> 57) & 0x1F' \
+    'update no longer consumes event bits 57..61'
+forbid "$ROOT/lib/compiler/parser.id" '_unary: i64 = (kind: i64)' \
+    'parser.id retained the unary relation'
+forbid "$ROOT/lib/compiler/parser.id" '_glue: i64 = (kind: i64)' \
+    'parser.id retained the glue relation'
+forbid "$ROOT/lib/compiler/parser.id" '_update: i64 = (kind: i64)' \
+    'parser.id retained the update relation'
+has "$ROOT/lib/compiler/parser.id" '(unaryface << 47)' \
+    'event lost unary bits 47..51'
+has "$ROOT/lib/compiler/parser.id" '(glueface << 52)' \
+    'event lost glue bits 52..56'
+has "$ROOT/lib/compiler/parser.id" '(updateface << 57)' \
+    'event lost update bits 57..61'
 forbid "$ROOT/lib/compiler/parser.id" 'relationordinal:' \
     'parser.id restored a second relation-order scanner'
 forbid "$ROOT/lib/compiler/parser.id" 'prefixordinal:' \
     'parser.id restored a second prefix-order scanner'
-forbid "$ROOT/lib/compiler/parser.id" 'add sub mul div idiv mod pow band bor bxor lshift rshift concat eq neq lt gt leq geq and or contains matmul pipeline' \
-    'parser.id restored a hard-coded relation order'
-forbid "$ROOT/lib/compiler/parser.id" 'neg not len bnot compile' \
-    'parser.id restored a hard-coded prefix order'
 has "$ROOT/lib/compiler/token.id" '_encode: str = (which: i64)' \
     'token.id lost the compact owner ordinal projection'
 has "$ROOT/lib/token/grammarrole.id" 'relation(): str' \
     'grammarrole.id lost the generated relation ordinal row'
 has "$ROOT/lib/token/grammarrole.id" 'unary(): str' \
     'grammarrole.id lost the generated unary ordinal row'
-forbid "$ROOT/lib/token/grammarrole.id" '_relationtext' \
-    'grammarrole.id restored the retired relation-name row'
-forbid "$ROOT/lib/token/grammarrole.id" '_unarytext' \
-    'grammarrole.id restored the retired unary-name row'
-forbid "$ROOT/lib/token/grammarrole.id" '_slotword' \
-    'grammarrole.id restored the retired runtime name scanner'
-has "$ROOT/src/parser/projection.c" 'int64_t _unary(int64_t kind)' \
-    'tracked parser projection lost the unary ABI'
-has "$ROOT/src/parser/projection.c" 'int64_t _glue(int64_t kind)' \
-    'tracked parser projection lost the glue ABI'
-has "$ROOT/src/parser/projection.c" 'int64_t _update(int64_t kind)' \
-    'tracked parser projection lost the update ABI'
-has "$ROOT/build.zig" '-D_unary=idol_parser_unary' \
-    'build.zig no longer renames the unary ABI symbol'
-has "$ROOT/build.zig" '-D_glue=idol_parser_glue' \
-    'build.zig no longer renames the glue ABI symbol'
-has "$ROOT/build.zig" '-D_update=idol_parser_update' \
-    'build.zig no longer renames the update ABI symbol'
+forbid "$ROOT/src/parser/projection.c" 'int64_t _unary(int64_t kind)' \
+    'tracked projection retained the unary function'
+forbid "$ROOT/src/parser/projection.c" 'int64_t _glue(int64_t kind)' \
+    'tracked projection retained the glue function'
+forbid "$ROOT/src/parser/projection.c" 'int64_t _update(int64_t kind)' \
+    'tracked projection retained the update function'
+forbid "$ROOT/build.zig" '-D_unary=idol_parser_unary' \
+    'build.zig retained the unary ABI rename'
+forbid "$ROOT/build.zig" '-D_glue=idol_parser_glue' \
+    'build.zig retained the glue ABI rename'
+forbid "$ROOT/build.zig" '-D_update=idol_parser_update' \
+    'build.zig retained the update ABI rename'
 for name in infixRelation unaryRelation gluedRelation updateRelation; do
     forbid "$ROOT/src/grammar_roles.zig" "pub fn $name(" \
         "grammar_roles.zig restored dead host facade $name"
 done
-has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_relation_faces(void)' \
-    'parser artifact stopped exhaustively checking relation faces'
-has "$ROOT/tools/node/dev/parser/artifact" 'idol_parser_unary((int64_t)kind)' \
-    'parser artifact no longer calls the unary ABI'
-has "$ROOT/tools/node/dev/parser/artifact" 'idol_parser_glue((int64_t)kind)' \
-    'parser artifact no longer calls the glue ABI'
-has "$ROOT/tools/node/dev/parser/artifact" 'idol_parser_update((int64_t)kind)' \
-    'parser artifact no longer calls the update ABI'
-has "$ROOT/tools/node/dev/parser/artifact" '-D_unary=idol_parser_unary' \
-    'parser artifact no longer renames the unary projection symbol'
-has "$ROOT/tools/node/dev/parser/artifact" '-D_glue=idol_parser_glue' \
-    'parser artifact no longer renames the glue projection symbol'
-has "$ROOT/tools/node/dev/parser/artifact" '-D_update=idol_parser_update' \
-    'parser artifact no longer renames the update projection symbol'
+forbid "$ROOT/tools/node/dev/parser/artifact" 'static int verify_relation_faces(void)' \
+    'parser artifact retained standalone relation-face differentials'
+has "$ROOT/tools/node/dev/parser/artifact" '(unary << 47)' \
+    'event oracle lost unary bits'
+has "$ROOT/tools/node/dev/parser/artifact" '(glue << 52)' \
+    'event oracle lost glue bits'
+has "$ROOT/tools/node/dev/parser/artifact" '(update << 57)' \
+    'event oracle lost update bits'
 
 relationprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate relation-face scratch' >&2; exit 2; }
 printf '%s\n' \
@@ -641,15 +753,15 @@ printf '%s\n' \
     'const b = grammar_roles.gluedRelation(kind);' \
     'const c = grammar_roles.updateRelation(kind);' >"$relationprobe/old.zig"
 printf '%s\n' \
-    'idol_parser_unary(kind);' \
-    'idol_parser_glue(kind);' \
-    'idol_parser_update(kind);' >"$relationprobe/new.zig"
+    'const a = ((event >> 47) & 31) - 1;' \
+    'const b = ((event >> 52) & 31) - 1;' \
+    'const c = ((event >> 57) & 31) - 1;' >"$relationprobe/new.zig"
 printf '%s\n' \
     'orders = "add sub mul div idiv mod pow band bor bxor lshift rshift concat eq neq lt gt leq geq and or contains matmul pipeline "' \
     'orders = "neg not len bnot compile "' >"$relationprobe/mirror.id"
 : >"$relationprobe/clean.id"
 relation_old=$(grep -cE 'grammar_roles\.(unaryRelation|gluedRelation|updateRelation)' "$relationprobe/old.zig")
-relation_new=$(grep -cE 'idol_parser_(unary|glue|update)' "$relationprobe/new.zig")
+relation_new=$(grep -cE 'event >> (47|52|57)' "$relationprobe/new.zig")
 relation_mirror=$(grep -cE 'add sub mul div idiv|neg not len bnot compile' "$relationprobe/mirror.id")
 relation_clean=$(grep -cE 'add sub mul div idiv|neg not len bnot compile' "$relationprobe/clean.id" || true)
 
@@ -696,86 +808,69 @@ if [ -z "$relation_unary_tracked" ] || [ -z "$relation_unary_swapped" ] || [ "$r
     bad "the owner-order-shift probe is broken: tracked and swapped unary rows agree (tracked_len=${#relation_unary_tracked} swapped_len=${#relation_unary_swapped})"
 fi
 
-# ── 2f''''''''. offside layout recognition executes from parser.id ──────────
+# ── 2f''''''''. offside layout consumes whole-pack event facts ───────────────
 #
-# The host `open_layout` and `layout_verdict` Zig switches carried the
-# dialect check, the opener-presence check, the layout-terminator list
-# (`kw_end`, `kw_else`, `kw_elseif`, `kw_until`, `kw_catch`, `eof`), and the
-# inline-vs-indented branch. The host `parse_block_open` empty-body branch
-# carried a five-identity carve-out (`kw_end`, `kw_else`, `kw_elseif`,
-# `kw_until`, `kw_catch` — `eof` excluded). Every arm of those switches is
-# now a fact in `_opening` / `_layout_verdict` / `_layout_terminator` /
-# `_empty_body_terminator` (private relations, bounded vocabulary-freeze
-# bridge; see `gate/vocabulary.sh`), exposed through ABI consumers named
-# `idol_parser_opening` / `idol_parser_layout_verdict` /
-# `idol_parser_layout_terminator` / `idol_parser_empty_body_terminator`.
-# The parser owns no kind-attribute cache and no terminator list of its own
-# — damaging the owner `lib/compiler/token.id` predicate regenerates both
-# `src/grammar_role_table.zig` and `src/parser/projection.c`, and the
-# parser ABI crosses the same owner row. Any retained host switch on the
-# six (or five) terminator identities, or any retained column-comparison
-# (`tok.loc.col <= f.open_col` etc.), is a layout-recognizer fact the
-# parser kept for itself.
+# The owner rows still distinguish six layout terminators from the five
+# written empty-body closers. Public `event` emits those as bits 15 and 16.
+# The opening face and every edge consume the event word through public
+# `boundary`; dynamic column decisions stay private in `_layout_verdict`. Four
+# standalone seams are deleted: opening, layout terminator, empty-body terminator,
+# and direct layout verdict.
 examined=$((examined + 1))
-# Host switch arms on the layout-terminator six identities.
 if grep -Eq '\.(kw_end|kw_else|kw_elseif|kw_until|kw_catch)\b.*=>\s*(\.close|return f\b)' "$PARSER"; then
     bad 'parser.zig retained an executable host layout-terminator switch arm'
 fi
-# Host switch arm on `eof` inside the layout paths (the host lists eof in
-# `open_layout`; the empty-body branch deliberately excludes it).
-if grep -Eq '\bok_layout_open|fn open_layout|fn layout_verdict' "$PARSER"; then
-    if ! grep -Eq 'idol_parser_opening\(|idol_parser_layout_verdict\(|idol_parser_layout_terminator\(|idol_parser_empty_body_terminator\(' "$PARSER"; then
-        bad 'parser.zig retained open_layout/layout_verdict decision bodies without crossing the parser.id ABI'
-    fi
-fi
-# The four parser.id relations own the layout decision. They are private
-# (underscore-prefixed) under the vocabulary freeze; the deletion condition
-# is a vocabulary-proven canonical relation surface or complete parser-pack
-# execution, the same bridge the parent's `_unary` / `_glue` / `_update`
-# `_ordinal` relations take.
-has "$ROOT/lib/compiler/parser.id" '_layout_terminator: bool = (kind: i64)' \
-    'parser.id lost the private _layout_terminator relation'
-has "$ROOT/lib/compiler/parser.id" '_empty_body_terminator: bool = (kind: i64)' \
-    'parser.id lost the private _empty_body_terminator relation'
-has "$ROOT/lib/compiler/parser.id" '_opening: i64 = (idol_mode: bool, open_line: i64, open_col: i64, first_kind: i64, first_line: i64, first_col: i64)' \
-    'parser.id lost the private _opening relation'
-has "$ROOT/lib/compiler/parser.id" '_layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, kind: i64, line: i64, col: i64)' \
-    'parser.id lost the private _layout_verdict relation'
-# The owner rows.
+forbid "$ROOT/lib/compiler/parser.id" '_opening: i64 = (' \
+    'parser.id retained the standalone opening relation'
+has "$ROOT/lib/compiler/parser.id" '_layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator: bool, line: i64, col: i64)' \
+    'parser.id lost the private dynamic _layout_verdict relation'
+forbid "$ROOT/lib/compiler/parser.id" '_layout_terminator: bool = (kind: i64)' \
+    'parser.id retained the standalone layout-terminator relation'
+forbid "$ROOT/lib/compiler/parser.id" '_empty_body_terminator: bool = (kind: i64)' \
+    'parser.id retained the standalone empty-body relation'
+has "$ROOT/lib/compiler/parser.id" 'terminators: str = token.grammarrole.layoutterminator()' \
+    'event lost the owner layout-terminator row'
+has "$ROOT/lib/compiler/parser.id" 'empties: str = token.grammarrole.emptybodyterminator()' \
+    'event lost the owner empty-body row'
 has "$ROOT/lib/compiler/token.id" 'layoutterminator(): str' \
     'token.id lost the layoutterminator owner row'
 has "$ROOT/lib/compiler/token.id" 'emptybodyterminator(): str' \
     'token.id lost the emptybodyterminator owner row'
-# Generated projection carries both rows.
 has "$ROOT/lib/token/grammarrole.id" 'layoutterminator(): str' \
     'grammarrole.id lost the layoutterminator row'
 has "$ROOT/lib/token/grammarrole.id" 'emptybodyterminator(): str' \
     'grammarrole.id lost the emptybodyterminator row'
-# Tracked parser projection carries the four ABI symbols (underscore-prefixed
-# in the tracked source; cc renames them at link via the build.zig -D flags).
-has "$ROOT/src/parser/projection.c" 'int64_t _opening(bool idol_mode' \
-    'tracked parser projection lost the opening ABI'
+forbid "$ROOT/src/parser/projection.c" 'int64_t _opening(bool idol_mode' \
+    'tracked parser projection retained the opening ABI'
 has "$ROOT/src/parser/projection.c" 'int64_t _layout_verdict(bool offside' \
-    'tracked parser projection lost the layout_verdict ABI'
-has "$ROOT/src/parser/projection.c" 'bool _layout_terminator(int64_t kind)' \
-    'tracked parser projection lost the layout_terminator ABI'
-has "$ROOT/src/parser/projection.c" 'bool _empty_body_terminator(int64_t kind)' \
-    'tracked parser projection lost the empty_body_terminator ABI'
-# Build.zig rename lines (underscore-prefixed private names → public ABI).
-has "$ROOT/build.zig" '-D_opening=idol_parser_opening' \
-    'build.zig no longer renames the opening ABI symbol'
-has "$ROOT/build.zig" '-D_layout_verdict=idol_parser_layout_verdict' \
-    'build.zig no longer renames the layout_verdict ABI symbol'
-has "$ROOT/build.zig" '-D_layout_terminator=idol_parser_layout_terminator' \
-    'build.zig no longer renames the layout_terminator ABI symbol'
-has "$ROOT/build.zig" '-D_empty_body_terminator=idol_parser_empty_body_terminator' \
-    'build.zig no longer renames the empty_body_terminator ABI symbol'
+    'tracked parser projection lost boundary-internal layout verdict'
+forbid "$ROOT/src/parser/projection.c" 'bool _layout_terminator(int64_t kind)' \
+    'tracked parser projection retained the standalone layout-terminator function'
+forbid "$ROOT/src/parser/projection.c" 'bool _empty_body_terminator(int64_t kind)' \
+    'tracked parser projection retained the standalone empty-body function'
+forbid "$ROOT/build.zig" '-D_opening=idol_parser_opening' \
+    'build.zig retained the opening ABI rename'
+forbid "$ROOT/build.zig" '-D_layout_verdict=idol_parser_layout_verdict' \
+    'build.zig retained the direct layout-verdict ABI rename'
+forbid "$ROOT/build.zig" '-D_layout_terminator=idol_parser_layout_terminator' \
+    'build.zig retained the layout-terminator ABI rename'
+forbid "$ROOT/build.zig" '-D_empty_body_terminator=idol_parser_empty_body_terminator' \
+    'build.zig retained the empty-body ABI rename'
+has "$PARSER" 'const first_event = try self.currentParserEvent();' \
+    'open_layout/empty-body no longer read the whole-pack event'
+has "$PARSER" 'if (((first_event >> 16) & 1) != 0) break :empty;' \
+    'empty-body handling no longer consumes event bit 16'
+forbid "$PARSER" 'idol_parser_layout_verdict' \
+    'parser.zig retained the direct layout-verdict ABI'
+forbid "$PARSER" 'idol_parser_layout_terminator' \
+    'parser.zig retained the standalone layout-terminator ABI'
+forbid "$PARSER" 'idol_parser_empty_body_terminator' \
+    'parser.zig retained the standalone empty-body ABI'
+forbid "$PARSER" 'idol_parser_opening' \
+    'parser.zig retained the standalone opening ABI'
 
-# Detector probes — planted old/new/clean. The detector counts MUST be 6/4/0;
-# otherwise the gate verdict on this section is untrustworthy. Old probe
-# contains the host six-identity terminator list, each on its own line so
-# grep counts them individually; new probe contains the four ABI call
-# sites; clean probe has none.
+# Detector probes — planted old/new/clean. Old carries the six-token host list;
+# new carries the one event read plus opening and boundary consumers.
 layoutprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate layout scratch' >&2; exit 2; }
 printf '%s\n' \
     'fn open_layout(self: *Parser) LayoutFrame {' \
@@ -787,21 +882,18 @@ printf '%s\n' \
     '        .kw_catch =>,' \
     '        .eof => return f,' \
     '    }' \
-    '    if (tok.loc.col <= f.open_col) return .close;' \
     '}' >"$layoutprobe/old.zig"
 printf '%s\n' \
-    'idol_parser_opening(self.idol_mode, o.line, o.col, first_kind, first.loc.line, first.loc.col);' \
-    'idol_parser_layout_verdict(f.offside, f.open_col, f.body_col, kind, tok.loc.line, tok.loc.col);' \
-    'idol_parser_layout_terminator(first_kind);' \
-    'idol_parser_empty_body_terminator(first_kind);' >"$layoutprobe/new.zig"
+    'const first_event = try self.currentParserEvent();' \
+    'idol_parser_boundary(true, count, offside, open_line, open, body, first_event, line, before, col, idol);' \
+    'idol_parser_boundary(false, count, offside, open_line, open, body, first_event, line, before, col, idol);' >"$layoutprobe/new.zig"
 : >"$layoutprobe/clean.zig"
 layout_old=$(grep -cE '\.(kw_end|kw_else|kw_elseif|kw_until|kw_catch|eof)\b' "$layoutprobe/old.zig")
-layout_new=$(grep -cE 'idol_parser_(opening|layout_verdict|layout_terminator|empty_body_terminator)' "$layoutprobe/new.zig")
-layout_clean=$(grep -cE 'idol_parser_(opening|layout_verdict|layout_terminator|empty_body_terminator)|kw_end.*kw_else.*kw_catch' "$layoutprobe/clean.zig" || true)
-
+layout_new=$(grep -cE 'currentParserEvent|idol_parser_(opening|boundary)' "$layoutprobe/new.zig")
+layout_clean=$(grep -cE 'currentParserEvent|idol_parser_(opening|boundary)|kw_end.*kw_else.*kw_catch' "$layoutprobe/clean.zig" || true)
 examined=$((examined + 1))
-if [ "$layout_old" -lt 6 ] || [ "$layout_new" -ne 4 ] || [ "$layout_clean" -ne 0 ]; then
-    bad "the layout transfer detector is broken: old=$layout_old new=$layout_new clean=$layout_clean"
+if [ "$layout_old" -lt 6 ] || [ "$layout_new" -ne 3 ] || [ "$layout_clean" -ne 0 ]; then
+    bad "the layout event detector is broken: old=$layout_old new=$layout_new clean=$layout_clean"
 fi
 rm -rf -- "$layoutprobe"
 
@@ -843,6 +935,480 @@ rm -rf -- "$layout_owner"
 examined=$((examined + 1))
 if [ -z "$layout_row_tracked" ] || [ -z "$layout_row_swapped" ] || [ "$layout_row_tracked" = "$layout_row_swapped" ]; then
     bad "the layout owner-order-shift probe is broken: tracked and swapped rows agree (tracked_len=${#layout_row_tracked} swapped_len=${#layout_row_swapped})"
+fi
+
+# ── 2f'''''''''. static member identity comes from whole-pack event ────────────
+#
+# Once `.` / `:` / `@` fixes member position, ordinary name and keyword
+# identities are member faces. The owner row now crosses only in event bit 9;
+# the standalone member relation/ABI is deleted.
+forbid "$PARSER" 'fn is_name_like_kind(' \
+    'parser.zig retained the host spelling-based member recognizer'
+forbid "$PARSER" 'const s = k.spelling();' \
+    'parser.zig still reconstructs member identity from display spelling'
+forbid "$PARSER" 'std.ascii.isAlphabetic(s[0])' \
+    'parser.zig still decides member identity from an ASCII display byte'
+forbid "$PARSER" 'const text = tok.kind.spelling();' \
+    'parse_at_path_segment still reconstructs a static segment from display spelling'
+forbid "$PARSER" 'std.ascii.isAlphabetic(text[0])' \
+    'parse_at_path_segment still classifies static segments from display bytes'
+has "$PARSER" 'fn currentParserMember(self: *Parser) ParseError!bool {' \
+    'Parser lost its whole-pack member observer'
+member_calls=$(grep -cF 'self.currentParserMember()' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$member_calls" -ne 3 ]; then
+    bad "all three production member consumers must index event bit 9 (calls=$member_calls)"
+fi
+forbid "$PARSER" 'idol_parser_member(' \
+    'parser.zig retained the standalone member ABI'
+has "$ROOT/lib/compiler/token.id" 'member(): str' \
+    'token.id lost the owner-projected member row'
+has "$ROOT/lib/token/grammarrole.id" 'member(): str' \
+    'grammarrole.id lost the generated member row'
+has "$ROOT/lib/compiler/parser.id" 'members: str = token.grammarrole.member()' \
+    'whole-pack event no longer consumes the owner member row'
+forbid "$ROOT/lib/compiler/parser.id" 'member: bool = (kind: i64)' \
+    'parser.id retained the standalone member relation'
+forbid "$ROOT/src/parser/projection.c" 'bool member(int64_t kind)' \
+    'tracked parser projection retained the standalone member ABI'
+forbid "$ROOT/build.zig" '-Dmember(kind)=idol_parser_member(kind)' \
+    'build.zig retained the member ABI rename'
+forbid "$ROOT/tools/node/dev/parser/artifact" 'static int verify_member(void)' \
+    'parser artifact retained the standalone member differential'
+has "$ROOT/tools/node/dev/parser/artifact" '(member << 9)' \
+    'whole-pack event differential lost the member bit'
+
+memberprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate member scratch' >&2; exit 2; }
+printf '%s\n' \
+    'fn is_name_like_kind(k: TK) bool {' \
+    '    const s = k.spelling();' \
+    '    return std.ascii.isAlphabetic(s[0]);' \
+    '}' >"$memberprobe/old.zig"
+printf '%s\n' 'if (((static_event >> 9) & 1) == 0) return null;' >"$memberprobe/new.zig"
+: >"$memberprobe/clean.zig"
+member_old=$(grep -cE 'is_name_like_kind|k\.spelling|isAlphabetic' "$memberprobe/old.zig")
+member_new=$(grep -cE 'static_event >> 9' "$memberprobe/new.zig")
+member_clean=$(grep -cE 'is_name_like_kind|idol_parser_member|isAlphabetic|static_event >> 9' "$memberprobe/clean.zig" || true)
+rm -rf -- "$memberprobe"
+examined=$((examined + 1))
+if [ "$member_old" -ne 3 ] || [ "$member_new" -ne 1 ] || [ "$member_clean" -ne 0 ]; then
+    bad "the member transfer detector is broken: old=$member_old new=$member_new clean=$member_clean"
+fi
+
+# Owner-damage control: move the ordinary-name bit to the integer-literal slot
+# in a private stage tree, regenerate through the canonical grammar emitter, and
+# require the generated member row to change. This proves the verdict follows
+# token.id rather than the host test or the tracked projection text.
+member_owner=$(mktemp -d "${TMPDIR:-/tmp}/idol-gap145-member-owner.XXXXXX") || {
+    echo 'gap-145 consumer gate: cannot allocate member-owner scratch' >&2
+    exit 2
+}
+cp -R lib "$member_owner/lib"
+mkdir -p "$member_owner/tools/node/dev/grammar"
+cp tools/node/dev/grammar/emit "$member_owner/tools/node/dev/grammar/emit"
+cp tools/node/dev/grammar/idol_c_runtime_shim.c "$member_owner/tools/node/dev/grammar/idol_c_runtime_shim.c"
+chmod +x "$member_owner/tools/node/dev/grammar/emit"
+cp -R src "$member_owner/src"
+python3 - "$member_owner/lib/compiler/token.id" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+s = p.read_text()
+old = 'if kind == kindname or (kind >= kindand and kind <= kindlet)'
+new = 'if kind == kindintlit or (kind >= kindand and kind <= kindlet)'
+if s.count(old) != 1:
+    raise SystemExit(1)
+p.write_text(s.replace(old, new))
+PY
+member_row_tracked=$(grep -A1 '^member(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+if (cd "$member_owner" && IDOL="$ROOT/zig-out/bin/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
+    member_row_shifted=$(grep -A1 '^member(): str$' "$member_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+else
+    member_row_shifted=''
+fi
+rm -rf -- "$member_owner"
+examined=$((examined + 1))
+if [ -z "$member_row_tracked" ] || [ -z "$member_row_shifted" ] || [ "$member_row_tracked" = "$member_row_shifted" ]; then
+    bad "the member owner-shift probe is broken: tracked and shifted rows agree (tracked_len=${#member_row_tracked} shifted_len=${#member_row_shifted})"
+fi
+
+# ── 2f''''''''''. complete block boundary action comes from parser.id ─────────
+#
+# The production loop no longer combines a host LayoutVerdict wrapper with a
+# second TokenKind switch. One graph-proven relation returns continue, close,
+# misindent, or return-and-close plus the updated body column. The token owner
+# supplies unconditional closers and conditional else/elseif identities.
+forbid "$PARSER" 'const LayoutVerdict = enum' \
+    'parser.zig retained the host layout verdict enum'
+forbid "$PARSER" 'fn layout_verdict(' \
+    'parser.zig retained the host layout verdict wrapper'
+forbid "$PARSER" '.kw_end, .kw_until, .eof => break' \
+    'parse_block_open retained the host unconditional boundary list'
+forbid "$PARSER" '.rparen, .rbrace, .rbracket => break' \
+    'parse_block_open retained the host bracket-boundary list'
+has "$PARSER" 'idol_parser_boundary(' \
+    'parse_block_open no longer delegates the complete boundary action'
+boundary_calls=$(grep -cF 'idol_parser_boundary(' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$boundary_calls" -lt 2 ]; then
+    bad "the production boundary ABI is not declared and consumed (calls=$boundary_calls)"
+fi
+has "$ROOT/lib/compiler/token.id" 'boundary(): str' \
+    'token.id lost the unconditional block-boundary row'
+has "$ROOT/lib/compiler/token.id" 'branch(): str' \
+    'token.id lost the conditional branch row'
+has "$ROOT/lib/token/grammarrole.id" 'boundary(): str' \
+    'grammarrole.id lost the generated block-boundary row'
+has "$ROOT/lib/token/grammarrole.id" 'branch(): str' \
+    'grammarrole.id lost the generated branch row'
+has "$ROOT/lib/compiler/parser.id" 'boundary: i64 = (opening: bool, count: i64, offside: bool, open_line: i64, open: i64, body: i64, edge: i64, line: i64, before: i64, col: i64, idol: bool)' \
+    'parser.id lost the complete block-boundary relation'
+has "$ROOT/src/parser/projection.c" 'int64_t boundary(bool opening, int64_t count, bool offside' \
+    'tracked parser projection lost the block-boundary ABI'
+has "$ROOT/build.zig" '-Dboundary(...)=idol_parser_boundary(__VA_ARGS__)' \
+    'build.zig no longer renames the block-boundary ABI symbol'
+has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_boundary(void)' \
+    'parser artifact lost the exhaustive boundary behavior probe'
+
+boundaryprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate boundary scratch' >&2; exit 2; }
+printf '%s\n' \
+    'switch (tok.kind) {' \
+    '    .kw_end, .kw_until, .eof => break,' \
+    '    .rparen, .rbrace, .rbracket => break,' \
+    '}' >"$boundaryprobe/old.zig"
+printf '%s\n' 'const action = idol_parser_boundary(false, count, offside, open_line, open, body, event, line, before, col, idol);' >"$boundaryprobe/new.zig"
+: >"$boundaryprobe/clean.zig"
+boundary_old=$(grep -cE 'kw_end.*kw_until.*eof|rparen.*rbrace.*rbracket' "$boundaryprobe/old.zig")
+boundary_new=$(grep -cF 'idol_parser_boundary' "$boundaryprobe/new.zig")
+boundary_clean=$(grep -cE 'kw_end.*kw_until.*eof|rparen.*rbrace.*rbracket|idol_parser_boundary' "$boundaryprobe/clean.zig" || true)
+rm -rf -- "$boundaryprobe"
+examined=$((examined + 1))
+if [ "$boundary_old" -ne 2 ] || [ "$boundary_new" -ne 1 ] || [ "$boundary_clean" -ne 0 ]; then
+    bad "the boundary transfer detector is broken: old=$boundary_old new=$boundary_new clean=$boundary_clean"
+fi
+
+# Owner-damage control: change one unconditional closer, one branch identity,
+# one direct statement face, and one admission face
+# in a private stage, regenerate both projections, and require both exact rows to
+# move. A copied parser list or tracked-text oracle cannot satisfy this control.
+boundary_owner=$(mktemp -d "${TMPDIR:-/tmp}/idol-gap145-boundary-owner.XXXXXX") || {
+    echo 'gap-145 consumer gate: cannot allocate boundary-owner scratch' >&2
+    exit 2
+}
+cp -R lib "$boundary_owner/lib"
+mkdir -p "$boundary_owner/tools/node/dev/grammar"
+cp tools/node/dev/grammar/emit "$boundary_owner/tools/node/dev/grammar/emit"
+cp tools/node/dev/grammar/idol_c_runtime_shim.c "$boundary_owner/tools/node/dev/grammar/idol_c_runtime_shim.c"
+chmod +x "$boundary_owner/tools/node/dev/grammar/emit"
+cp -R src "$boundary_owner/src"
+python3 - "$boundary_owner/lib/compiler/token.id" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+s = p.read_text()
+changes = (
+    ('if kind == kindend or kind == kinduntil or kind == kindeof',
+     'if kind == kindbreak or kind == kinduntil or kind == kindeof'),
+    ('if kind == kindelse or kind == kindelseif',
+     'if kind == kinddo or kind == kindelseif'),
+    ('if kind == kindwhile\n      face = 11',
+     'if kind == kindwhile\n      face = 10'),
+    ('if kind == kindlet\n      face = 8',
+     'if kind == kindlet\n      face = 7'),
+)
+for old, new in changes:
+    if s.count(old) != 1:
+        raise SystemExit(1)
+    s = s.replace(old, new)
+p.write_text(s)
+PY
+boundary_row_tracked=$(grep -A1 '^boundary(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+branch_row_tracked=$(grep -A1 '^branch(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+statement_row_tracked=$(grep -A1 '^statement(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+admission_row_tracked=$(grep -A1 '^admission(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+if (cd "$boundary_owner" && IDOL="$ROOT/zig-out/bin/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
+    boundary_row_shifted=$(grep -A1 '^boundary(): str$' "$boundary_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+    branch_row_shifted=$(grep -A1 '^branch(): str$' "$boundary_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+    statement_row_shifted=$(grep -A1 '^statement(): str$' "$boundary_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+    admission_row_shifted=$(grep -A1 '^admission(): str$' "$boundary_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
+else
+    boundary_row_shifted=''
+    branch_row_shifted=''
+    statement_row_shifted=''
+    admission_row_shifted=''
+fi
+rm -rf -- "$boundary_owner"
+examined=$((examined + 1))
+if [ -z "$boundary_row_tracked" ] || [ -z "$boundary_row_shifted" ] || [ "$boundary_row_tracked" = "$boundary_row_shifted" ]; then
+    bad "the block-boundary owner-shift probe is broken (tracked_len=${#boundary_row_tracked} shifted_len=${#boundary_row_shifted})"
+fi
+examined=$((examined + 1))
+if [ -z "$branch_row_tracked" ] || [ -z "$branch_row_shifted" ] || [ "$branch_row_tracked" = "$branch_row_shifted" ]; then
+    bad "the branch owner-shift probe is broken (tracked_len=${#branch_row_tracked} shifted_len=${#branch_row_shifted})"
+fi
+examined=$((examined + 1))
+if [ -z "$statement_row_tracked" ] || [ -z "$statement_row_shifted" ] || [ "$statement_row_tracked" = "$statement_row_shifted" ]; then
+    bad "the statement owner-shift probe is broken (tracked_len=${#statement_row_tracked} shifted_len=${#statement_row_shifted})"
+fi
+examined=$((examined + 1))
+if [ -z "$admission_row_tracked" ] || [ -z "$admission_row_shifted" ] || [ "$admission_row_tracked" = "$admission_row_shifted" ]; then
+    bad "the admission owner-shift probe is broken (tracked_len=${#admission_row_tracked} shifted_len=${#admission_row_shifted})"
+fi
+
+# ── 2f'''''''''''. one complete block-edge answer from parser.id ─────────────
+#
+# The one boundary result owns loop action, clause face, written closure, and
+# body-column establishment. Zig retains diagnostics, token consumption, and
+# physical frame storage; no clause or closure recognizer survives beside it.
+forbid "$PARSER" 'if (tok.kind == .kw_end) {' \
+    'close_block retained the host written-end recognizer'
+forbid "$PARSER" 'if (offside and tok.loc.line != self.prev_line and tok.loc.col > open.col)' \
+    'close_block retained the host deep-end column decision'
+forbid "$PARSER" 'return tok.loc.col >= open.col;' \
+    'clause binding retained the host opener-column decision'
+forbid "$PARSER" 'fn clause_binds(' \
+    'parser.zig retained the two-call clause boolean wrapper'
+forbid "$PARSER" 'fn clause_face(' \
+    'parser.zig retained the standalone clause-face wrapper'
+forbid "$PARSER" 'idol_parser_clause(' \
+    'parser.zig retained the standalone clause ABI'
+forbid "$PARSER" 'idol_parser_closure(' \
+    'parser.zig retained the standalone closure ABI'
+has "$PARSER" 'const decision = idol_parser_boundary(' \
+    'close_block no longer consumes the complete boundary answer'
+has "$PARSER" 'const action = (decision >> 4) & 0x7;' \
+    'close_block no longer consumes boundary closure bits'
+has "$PARSER" 'self.layout.clause_face = @intCast((decision >> 2) & 0x3);' \
+    'parse_block_open no longer preserves the boundary clause face'
+has "$PARSER" 'var face = self.last_layout.clause_face;' \
+    'parse_if_clauses no longer consumes the completed block face'
+has "$PARSER" 'Only the settled clause face remains observable.' \
+    'return-edge observation lost the closed-frame invariant'
+forbid "$PARSER" 'self.layout.body_col = @intCast((edge_decision >> 8)' \
+    'return-edge observation mutates a block that action 3 already closed'
+boundary_calls=$(grep -cF 'idol_parser_boundary(' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$boundary_calls" -lt 4 ]; then
+    bad "complete boundary ABI is not declared and consumed at every edge (calls=$boundary_calls)"
+fi
+has "$ROOT/lib/compiler/parser.id" '# 1 close, 2 misindent, 3 parse return and close); bits 2..3 carry the clause face;' \
+    'parser.id boundary lost the packed clause/closure contract'
+has "$ROOT/lib/compiler/parser.id" 'sealed = closing << 4' \
+    'parser.id boundary no longer packs written closure'
+forbid "$ROOT/lib/compiler/parser.id" 'clause: i64 = (kind: i64, offside: bool, open: i64, col: i64)' \
+    'parser.id retained the standalone clause relation'
+forbid "$ROOT/lib/compiler/parser.id" 'closure: i64 = (offside: bool, idol: bool, kind: i64, line: i64, before: i64, col: i64, open: i64)' \
+    'parser.id retained the standalone closure relation'
+has "$ROOT/src/parser/projection.c" 'int64_t boundary(bool opening, int64_t count, bool offside' \
+    'tracked parser projection lost the packed boundary ABI'
+forbid "$ROOT/src/parser/projection.c" 'int64_t clause(int64_t kind, bool offside' \
+    'tracked parser projection retained the standalone clause ABI'
+forbid "$ROOT/src/parser/projection.c" 'int64_t closure(bool offside, bool idol' \
+    'tracked parser projection retained the standalone closure ABI'
+has "$ROOT/build.zig" '-Dboundary(...)=idol_parser_boundary(__VA_ARGS__)' \
+    'build.zig no longer renames the packed boundary ABI symbol'
+forbid "$ROOT/build.zig" '-Dclause(...)=idol_parser_clause(__VA_ARGS__)' \
+    'build.zig retained the standalone clause ABI rename'
+forbid "$ROOT/build.zig" '-Dclosure(...)=idol_parser_closure(__VA_ARGS__)' \
+    'build.zig retained the standalone closure ABI rename'
+has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_boundary_closure(void)' \
+    'parser artifact lost the 48-case packed closure differential'
+has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_boundary_clause(void)' \
+    'parser artifact lost the exhaustive packed clause differential'
+has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_boundary_opening(void)' \
+    'parser artifact lost the boundary-opening differential'
+has "$ROOT/tools/node/dev/parser/artifact" 'boundary-opening-cases=7' \
+    'parser artifact lost the exact boundary-opening case count'
+forbid "$ROOT/tools/node/dev/parser/artifact" 'static int verify_opening(void)' \
+    'parser artifact retained the standalone opening differential'
+forbid "$ROOT/tools/node/dev/parser/artifact" 'static int verify_closure(void)' \
+    'parser artifact retained the standalone closure differential'
+forbid "$ROOT/tools/node/dev/parser/artifact" 'static int verify_branch_clause(void)' \
+    'parser artifact retained the standalone clause differential'
+
+# One whole-pack static event producer now carries the token facts that used to
+# be recomputed in every boundary call. Parser owns one fact pack, one event
+# array, and one cursor coordinate across both.
+has "$ROOT/lib/compiler/parser.id" 'event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)' \
+    'parser.id lost the whole-pack event producer'
+has "$ROOT/build.zig" '"-Devent(...)=idol_parser_event(__VA_ARGS__)",' \
+    'build lost the whole-pack event ABI rename'
+has "$ROOT/src/parser/projection.c" 'int64_t event(int64_t fact[], int64_t count, int64_t out[], int64_t capacity, bool idol)' \
+    'generated parser projection lost the event buffer ABI'
+has "$PARSER" 'extern fn idol_parser_event(' \
+    'parser.zig lost the generated whole-pack event ABI'
+has "$PARSER" 'parser_events: ?[]i64 = null,' \
+    'Parser lost its one cached event array'
+has "$PARSER" 'fn ensureParserEvents(self: *Parser) ParseError![]const i64 {' \
+    'Parser no longer derives events once from parser_facts'
+has "$PARSER" 'const static_event = try self.currentParserEvent();' \
+    'production statement dispatch no longer indexes the whole-pack event array'
+has "$PARSER" 'self.alloc.free(events);' \
+    'Parser no longer releases its event array with the owned pack'
+has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_event(void)' \
+    'parser artifact lost the whole-pack event differential'
+has "$ROOT/tools/node/dev/parser/artifact" 'event-cases=228' \
+    'parser artifact lost its exact whole-pack event count'
+has "$ROOT/tools/node/dev/parser/artifact" 'event-boundary-slots=114' \
+    'parser artifact lost exhaustive event-to-boundary coverage'
+has "$ROOT/tools/node/dev/parser/artifact" 'short_out[i] != 777' \
+    'whole-pack short-capacity control no longer proves non-mutation'
+has "$ROOT/lib/compiler/parser.id" '(returns << 13) | (ending << 14) | (terminator << 15) | (empty << 16)' \
+    'event lost return/end/layout/empty static facts'
+has "$PARSER" 'const edge = try self.currentParserEvent();' \
+    'close_block no longer supplies the whole-pack event to boundary'
+forbid "$PARSER" '(decision >> 36)' \
+    'statement dispatch returned to the per-token boundary payload'
+forbid "$PARSER" '(decision >> 41)' \
+    'statement admission returned to the per-token boundary payload'
+event_calls=$(grep -cF 'idol_parser_event(' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$event_calls" -ne 3 ]; then
+    bad "whole-pack event ABI must have one declaration, one production call, and one direct test call: calls=$event_calls"
+fi
+examined=$((examined + 1))
+if ! python3 - "$ROOT/lib/compiler/parser.id" <<'PY'
+from pathlib import Path
+import sys
+s = Path(sys.argv[1]).read_text()
+start = s.index('boundary: i64 = (')
+end = s.index('\n# Cursor on `(`', start)
+body = s[start:end]
+bad = (
+    'token.grammarrole.statement()', 'token.grammarrole.admission()',
+    'token.grammarrole.member()', 'token.grammarrole.boundary()',
+    'token.grammarrole.branch()', 'token.grammarrole.layoutterminator()',
+    'token.grammarrole.emptybodyterminator()', 'routed', 'denied',
+)
+raise SystemExit(any(item in body for item in bad))
+PY
+then
+    bad 'dynamic boundary restored static token facts beside the whole-pack event producer'
+fi
+
+eventprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate event scratch' >&2; exit 2; }
+printf '%s\n' \
+    'for (tokens) |tok| {' \
+    '    const decision = idol_parser_boundary(0, false, 0, 0, tok.kind, 0, 0, 0, idol);' \
+    '    consume((decision >> 36) & 31);' \
+    '}' >"$eventprobe/old.zig"
+printf '%s\n' \
+    'const written = idol_parser_event(facts.ptr, count, events.ptr, count, idol);' \
+    'consume(events[index] & 31);' >"$eventprobe/new.zig"
+: >"$eventprobe/clean.zig"
+event_old=$(grep -cE 'idol_parser_boundary|decision >> 36' "$eventprobe/old.zig")
+event_new=$(grep -cE 'idol_parser_event|events\[index\]' "$eventprobe/new.zig")
+event_clean=$(grep -cE 'idol_parser_boundary|decision >> 36|idol_parser_event|events\[index\]' "$eventprobe/clean.zig" || true)
+rm -rf -- "$eventprobe"
+examined=$((examined + 1))
+if [ "$event_old" -ne 2 ] || [ "$event_new" -ne 2 ] || [ "$event_clean" -ne 0 ]; then
+    bad "the whole-pack event detector is broken: old=$event_old new=$event_new clean=$event_clean"
+fi
+
+# Direct statement dispatch rides on whole-pack event bits 0..4. The owner row maps
+# every token identity; Zig switches only on the settled face. Contextual name
+# and @ lookahead remain explicit follow-on work rather than being guessed here.
+has "$ROOT/lib/compiler/token.id" 'statement(): str' \
+    'token.id lost the direct statement owner row'
+has "$ROOT/lib/token/grammarrole.id" 'statement(): str' \
+    'grammarrole.id lost the generated statement row'
+has "$ROOT/lib/compiler/parser.id" 'statements: str = token.grammarrole.statement()' \
+    'whole-pack event no longer consumes the statement owner row'
+has "$PARSER" 'const dispatch_face: u8 = @intCast(static_event & 0x1F);' \
+    'parse_block_open no longer consumes whole-pack statement dispatch'
+has "$PARSER" 'fn parse_stmt_face(self: *Parser, tok: Token, face: u8, admission: u8)' \
+    'parser lost the face-driven statement materializer'
+has "$PARSER" 'return switch (face) {' \
+    'statement materializer no longer switches on the owner face'
+forbid "$PARSER" '.kw_local => self.parse_local(),' \
+    'parse_stmt retained the host local-statement kind branch'
+forbid "$PARSER" '.kw_if => self.parse_if(),' \
+    'parse_stmt retained the host if-statement kind branch'
+forbid "$PARSER" '.kw_break => blk: {' \
+    'parse_stmt retained the host break-statement kind branch'
+has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_statement_face(void)' \
+    'parser artifact lost the exhaustive statement-face differential'
+
+# Source-family statement admission rides on whole-pack event bits 5..8. Macro is
+# denied in every family; the remaining faces are denied only in canonical Idol.
+has "$ROOT/lib/compiler/token.id" 'admission(): str' \
+    'token.id lost the statement-admission owner row'
+has "$ROOT/lib/token/grammarrole.id" 'admission(): str' \
+    'grammarrole.id lost the generated admission row'
+has "$ROOT/lib/compiler/parser.id" 'admissions: str = token.grammarrole.admission()' \
+    'whole-pack event no longer consumes the admission owner row'
+has "$PARSER" 'const admission_face: u8 = @intCast((static_event >> 5) & 0xF);' \
+    'parse_block_open no longer consumes whole-pack statement admission'
+has "$PARSER" 'fn denyRetiredStmtKeyword(_: *Parser, tok: Token, admission: u8)' \
+    'retired-keyword diagnostics no longer materialize the owner admission face'
+forbid "$PARSER" 'if (tok.kind == .kw_macro) {' \
+    'retired statement admission restored the host macro identity branch'
+forbid "$PARSER" '.kw_try, .kw_catch =>' \
+    'retired statement admission restored the host try/catch identity switch'
+has "$ROOT/tools/node/dev/parser/artifact" 'static int verify_admission(void)' \
+    'parser artifact lost the 114-by-two admission differential'
+has "$ROOT/tools/node/dev/parser/artifact" 'admission-cases=228' \
+    'parser artifact lost its exact admission case count'
+admission_calls=$(grep -cF 'self.statement_admission(' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$admission_calls" -lt 5 ]; then
+    bad "non-block retired-keyword paths bypass the owner admission face: calls=$admission_calls"
+fi
+
+admissionprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate admission scratch' >&2; exit 2; }
+printf '%s\n' \
+    'if (tok.kind == .kw_macro) deny();' \
+    'switch (tok.kind) { .kw_try, .kw_catch => deny(), else => {} }' >"$admissionprobe/old.zig"
+printf '%s\n' \
+    'const admission = (event >> 5) & 15;' \
+    'switch (admission) { 1 => deny_macro(), 2 => deny_route(), else => {} }' >"$admissionprobe/new.zig"
+: >"$admissionprobe/clean.zig"
+admission_old=$(grep -cE 'tok\.kind|kw_macro|kw_try|kw_catch' "$admissionprobe/old.zig")
+admission_new=$(grep -cE 'event >> 5|switch \(admission\)' "$admissionprobe/new.zig")
+admission_clean=$(grep -cE 'tok\.kind|kw_macro|kw_try|kw_catch|event >> 5|switch \(admission\)' "$admissionprobe/clean.zig" || true)
+rm -rf -- "$admissionprobe"
+examined=$((examined + 1))
+if [ "$admission_old" -ne 2 ] || [ "$admission_new" -ne 2 ] || [ "$admission_clean" -ne 0 ]; then
+    bad "the admission transfer detector is broken: old=$admission_old new=$admission_new clean=$admission_clean"
+fi
+
+statementprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate statement scratch' >&2; exit 2; }
+printf '%s\n' \
+    'return switch (tok.kind) {' \
+    '    .kw_if => parse_if(),' \
+    '    .kw_break => parse_break(),' \
+    '};' >"$statementprobe/old.zig"
+printf '%s\n' \
+    'const face = event & 31;' \
+    'return switch (face) { 10 => parse_if(), 19 => parse_break(), else => parse_expr() };' >"$statementprobe/new.zig"
+: >"$statementprobe/clean.zig"
+statement_old=$(grep -cE 'switch \(tok\.kind\)|\.kw_if|\.kw_break' "$statementprobe/old.zig")
+statement_new=$(grep -cE 'event & 31|switch \(face\)' "$statementprobe/new.zig")
+statement_clean=$(grep -cE 'tok\.kind|kw_if|kw_break|event & 31|switch \(face\)' "$statementprobe/clean.zig" || true)
+rm -rf -- "$statementprobe"
+examined=$((examined + 1))
+if [ "$statement_old" -ne 3 ] || [ "$statement_new" -ne 2 ] || [ "$statement_clean" -ne 0 ]; then
+    bad "the statement transfer detector is broken: old=$statement_old new=$statement_new clean=$statement_clean"
+fi
+
+closingprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate closing scratch' >&2; exit 2; }
+printf '%s\n' \
+    'if (tok.kind == .kw_end) {' \
+    '    if (offside and tok.loc.line != self.prev_line and tok.loc.col > open.col) return error.Bad;' \
+    '}' \
+    'return tok.loc.col >= open.col;' >"$closingprobe/old.zig"
+printf '%s\n' \
+    'const edge = idol_parser_boundary(false, count, offside, open_line, open, body, event, line, before, col, idol);' \
+    'const action = (edge >> 4) & 7;' \
+    'const face = (edge >> 2) & 3;' >"$closingprobe/new.zig"
+: >"$closingprobe/clean.zig"
+closing_old=$(grep -cE 'tok\.kind == \.kw_end|tok\.loc\.line != self\.prev_line|tok\.loc\.col >= open\.col' "$closingprobe/old.zig")
+closing_new=$(grep -cF 'idol_parser_boundary' "$closingprobe/new.zig")
+closing_clean=$(grep -cE 'kw_end|prev_line|open\.col|idol_parser_closure|idol_parser_boundary|idol_parser_clause' "$closingprobe/clean.zig" || true)
+rm -rf -- "$closingprobe"
+examined=$((examined + 1))
+if [ "$closing_old" -ne 3 ] || [ "$closing_new" -ne 1 ] || [ "$closing_clean" -ne 0 ]; then
+    bad "the complete boundary detector is broken: old=$closing_old new=$closing_new clean=$closing_clean"
 fi
 
 # ── 2g. raw producer kind validates through the owner-generated enum ─────────

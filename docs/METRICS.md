@@ -27,8 +27,8 @@ The single largest error this document has made is collapsing these into one
 | Question | Answer | Proof command |
 |---|---|---|
 | Does an executable **grammar owner** exist? | **Yes.** `lib/compiler/token.id` is the one executable grammar-fact owner (`law.grammar.one`). | `IDOL=./zig-out/bin/idol sh gate/grammar-projection.sh` compiles the owner through the portable C realization, executes it in a stage tree, validates both generated consumers, and byte-compares both tracked projections. |
-| Is **grammar consumer closure** reached? | **No.** Seventeen bounded production decisions consume owner facts, but the wider structural parser and editor grammar remain host-authored and `docs/spec/grammar.md` does not generate the parser. | `sh gate/gap-145-consumer.sh`; `docs/bootstrap.md` owns the exact remaining authority. |
-| Is the **parser** Idol-owned? | **Partly.** Seventeen production decisions execute from `lib/compiler/parser.id`; `src/parser.zig` still owns most recognition, AST materialization, bindings, and source structure. | `IDOL=./zig-out/bin/idol sh tools/node/dev/parser/artifact`; `sh gate/gap-145-consumer.sh` |
+| Is **grammar consumer closure** reached? | **No.** Twenty-five bounded production decisions consume owner facts, but the wider structural parser and editor grammar remain host-authored and `docs/spec/grammar.md` does not generate the parser. | `sh gate/gap-145-consumer.sh`; `docs/bootstrap.md` owns the exact remaining authority. |
+| Is the **parser** Idol-owned? | **Partly.** Twenty-five production decisions execute from `lib/compiler/parser.id`; `src/parser.zig` still owns most recognition, AST materialization, bindings, and source structure. | `IDOL=./zig-out/bin/idol sh tools/node/dev/parser/artifact`; `sh gate/gap-145-consumer.sh` |
 
 An owner existing is not consumer closure, and consumer closure would still not
 be parser ownership. Progress on the first two does **not** move the bootstrap
@@ -49,8 +49,32 @@ semantics → resolution → demand → realization → machine → object → r
 ```
 
 **Current honest state: S0. No compiler B exists. No compiler C exists.**
-Executed parser ownership is ten bounded production decisions; the host still
-owns the parser stage and AST construction.
+Executed parser ownership is twenty-five bounded production decisions; the host still
+owns parser staging and AST construction. Graph-proven `event` produces one complete
+fact word for every immutable token in one capacity-checked pack call, and graph-proven
+`boundary` consumes its edge/layout face. Bits 0..61 now carry every owner-derived
+per-coordinate static face, including Pratt and relation ordinals; only non-sign bit 62
+remains unused. A second contiguous lane carries match (0..1), return (2..3),
+callable-header variants (4..5), contextual `type` alias head (6), and bare
+declaration head (7). All host-facing per-decision parser ABIs are deleted; only
+whole-pack `event` and complete `boundary` remain. The current aggregate is 1845
+pass / 62 skip / 0 fail, the positive-controlled GAP-145 gate passes 359 checks,
+and admission proves exactly those two graph relations.
+Paired internal evidence in `static-event-consolidation.json` validates with five
+damaged controls. The candidate is an `open` +11,704-byte artifact loss versus
+the exact opening baseline. All latency cells are `unknown` because Raspberry Pi
+throttle history was already `0xe0000`; the raw boundary, clause, statement, and
+member paired intervals point toward losses and are not promoted to claims.
+`event-lane-consolidation.json` compares the current two-lane artifact with the
+exact static-lane baseline. Correctness is `bound`; artifact bytes are a measured
+4,032-byte `win`. All latency cells remain `unknown` from nonzero Pi throttle
+history; raw boundary/clause/statement/member paired intervals point toward
+losses and startup is inconclusive. The contextual-type slice then removed five
+host text decisions and one direct lookahead without widening either ABI or event
+storage; its exact debug artifact was 1,360 bytes larger than the two-lane
+baseline. Bare declaration-path transfer subsequently recovered 608 bytes, so
+the current artifact remains an `open` +752-byte loss from that baseline. Runtime,
+compile, startup, and memory are unmeasured and remain `unknown`.
 
 What has crossed the frontier is real and larger than one boundary: source
 ingress classification, the production lexer and token/span production, and the
@@ -66,7 +90,7 @@ per-boundary contract and is the authority when this table and that one differ.
 | B-L0 lexical identity + GAP-145 consumer zero | open (owner executes; consumers remain) |
 | B-G0a grammar Idol **owner** exists | **met** — `lib/compiler/token.id` |
 | B-G0b grammar **consumer** closure | open (GAP-134; token_view prerequisite linkable, parser still host-owned) |
-| B-P0 one parser production decision | **met** — seventeen bounded decisions execute from `lib/compiler/parser.id`; complete parser stage remains open |
+| B-P0 one parser production decision | **met** — twenty-five bounded decisions execute from `lib/compiler/parser.id`; complete parser stage remains open |
 | B0 compiler B executable | open — B does not exist |
 | C0 B compiles C | open — C does not exist |
 
@@ -188,7 +212,7 @@ date. Where a judgment and a gate disagree, the gate is right.
 | Naming/vocabulary architecture | green |
 | Grammar **owner** existence | **met** (fact, not judgment — the executable witness is host-sensitive: `zig build grammar-projection` runs on a direct-native-supported host; on this x86_64-linux host it refuses DNB004 before the owner runs) |
 | Grammar **consumer** closure | yellow — bounded consumers only; editor grammar authored; `docs/spec/grammar.md` does not generate the parser |
-| Parser ownership | red-yellow — ten bounded Idol relations execute; host owns the parser stage and AST construction |
+| Parser ownership | red-yellow — twenty-five bounded Idol decisions execute; host owns the parser stage and AST construction |
 | Source/corpus canonical migration | yellow |
 | Graph/application semantic authority | yellow-green |
 | End-to-end semantic identity preservation | yellow |

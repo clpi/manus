@@ -347,24 +347,6 @@ can_start_body_kind: bool = (k: i64)
 is_descriptor_kind: bool = (k: i64)
     token.grammarrole.roledescriptor(k) or is_type_kind(k)
 
-# Primitive descriptor identity — `i64`, `str`, `f32`, ... — read directly from
-# the grammar owner row. The host parser used to reach into
-# `grammar_roles.lookup(kind).descriptor` on every type-atom / typed-binding /
-# type-table key probe (12 sites across `parse_type_primary`, `parse_attributed_decl`,
-# table-key recognizers, and `layout_arg_can_start_type`), which means the host
-# Pratt + table-grammar readers each held a private kind-attribute cache that
-# had to agree with the generated role row. The relation collapses that fact
-# into one ABI call (`idol_parser_is_primitive_descriptor_kind`) so the parser
-# owns no kind-attribute cache of its own: damaging the owner regenerates both
-# the `src/grammar_role_table.zig` row and the projected parser ABI, and the
-# parser-side call goes through the same producer predicate the table emitter
-# uses. Distinct from `is_descriptor_kind` above: that relation is the broader
-# `name OR primitive-descriptor` predicate used by `colon_is_method_call_lx`
-# to classify a `name :` type slot; this relation is the producer's
-# primitive-descriptor-only fact, which is exactly what the host row read
-# answered.
-is_primitive_descriptor_kind: bool = (k: i64)
-    token.grammarrole.roledescriptor(k)
 
 # Cursor immediately after `:`. True when the next two identities are `name (`
 # — a subject face call rather than a type slot.
@@ -423,13 +405,13 @@ header_signal_lx: bool = (fact: []i64, count: i64, start: i64, allow: bool, offs
                 return false
             comma = true
         if kind == token.kindcolon and depth == 1 and bracket == 0 and brace == 0 and previous == token.kindname
-            member = token.kindeof
+            part = token.kindeof
             following = token.kindeof
             if index + 1 < count
-                member = fact[(index + 1) * 2 + 1] & 255
+                part = fact[(index + 1) * 2 + 1] & 255
             if index + 2 < count
                 following = fact[(index + 2) * 2 + 1] & 255
-            if !((member == token.kindname or token.grammarrole.roledescriptor(member)) and following == token.kindlparen)
+            if !((part == token.kindname or token.grammarrole.roledescriptor(part)) and following == token.kindlparen)
                 typed = true
         if kind == token.kindfun or kind == token.kindfunction
             if depth == 1 and bracket == 0 and brace == 0 and !typed
@@ -595,47 +577,6 @@ _clause: i64 = (fact: []i64, count: i64, start: i64)
                 return 1
     0
 
-# A token whose owner `lead` fact is set starts a new expression only when it
-# is on a later line than the last consumed token. Zig carries identity and
-# locations across the physical ABI; it assigns no line-head grammar role.
-lead: bool = (kind: i64, line: i64, before: i64)
-    if kind < 0
-        return false
-    bits: str = token.grammarrole.lead()
-    if kind >= bits:len()
-        return false
-    line != before and bits:byte(kind + 1) == 49
-
-# A token whose owner `prefix` fact is set begins an expression even when no
-# caller precedes it. The host Pratt recognizer asks this relation rather than
-# reading `.prefix` off a Zig-side role row. Same `kind[8]` row shape as `lead`
-# because both are dense zero/one fact slices over every role slot; `prefix`
-# reads only the slot byte the relation owns.
-prefix: bool = (kind: i64)
-    if kind < 0
-        return false
-    bits: str = token.grammarrole.prefix()
-    if kind >= bits:len()
-        return false
-    bits:byte(kind + 1) == 49
-
-# A token whose owner `demand` fact is set CANNOT END an expression, so the
-# next token is an operand and not a new statement. The host advRaw asked this
-# of every consumed token and reached into `grammar_roles.lookup` for the
-# row's `.demands_operand` field — one row-cache lookup per token advance, on
-# the Pratt hot path. The relation reads the same owner `demand(): str` the
-# `grammar_role_table.zig` row-emitter uses, so the parser-side fact and the
-# generated role table can no longer disagree: damaging the owner regenerates
-# both. Same row shape as `lead` / `prefix` — a dense 0/1 char slice over
-# every role slot — and the same `kind[8]` access pattern.
-demands_operand: bool = (kind: i64)
-    if kind < 0
-        return false
-    bits: str = token.grammarrole.demand()
-    if kind >= bits:len()
-        return false
-    bits:byte(kind + 1) == 49
-
 # Owner-projected ordinal row. `.` is absence; `A` is ordinal zero. The row is
 # a physical projection of token.id's one relation order, not another order.
 _ordinal: i64 = (row: str, kind: i64)
@@ -648,248 +589,47 @@ _ordinal: i64 = (row: str, kind: i64)
         return -1
     code - 65
 
-# Pratt binding-power triple for one token identity, packed into a single i64.
+# Owner-projected `@`-statement face. The producer packs each token's lexeme
+# into `fact[i*2 + 2]` (slot encoding: length + up to six bytes). For multi-
+# segment paths the relation walks `name (. name)*` from `start+1` (skipping
+# `@`) and accumulates slot-by-slot; for single-segment names one slot
+# suffices. The structural face it returns is one of:
 #
-# Returns 0 when `kind` is not an infix operator with a real relation, a
-# non-zero precedence, and a non-none associativity — i.e. the host's
-# `infix_prec(kind)` returns `null`. Otherwise the layout is
+#   0  expression               — name not in any canonical attaching or
+#                                 standalone directive catalog; the host
+#                                 identity owner (`meta_module` +
+#                                 `directives.*`) classifies these.
+#   1  standalone directive     — `@build.*`, `@debug.*`, `@trace.*`,
+#                                 `@cinclude`, `@comp.define.derive.*`,
+#                                 `@comp.pipeline`, `@comp.c.import`,
+#                                 `@comp.c.emit`, `@comp.c.include`,
+#                                 `@comp.foreign`, `@comp.wasm`,
+#                                 `@comp.sql`, `@comp.lua`.
+#   2  attaching declaration    — `@inline`, `@noinline`, `@hot`, `@cold`,
+#                                 `@pure`, `@packed`, `@raw`, `@nopanic`,
+#                                 `@profile`, `@unroll`, `@deprecated`,
+#                                 `@implements`, `@derive`, `@ffi`, …,
+#                                 `@c.export`, `@c.call`, `@c.ffi`,
+#                                 `@c.link`, `@c.type`, and their
+#                                 `@comp.*` namespace equivalents.
 #
-#     bits 0..7   = relation ordinal (0-23; Relation enum position)
-#     bits 8..15  = left binding precedence (0-23; same as `roleprecedence`)
-#     bits 16..23 = right binding precedence (left adjusted by associativity)
+# Bridge-death witness: the host's `meta_module.resolveBuiltin` +
+# `isAttachingMetaAttribute` + `isStandaloneModuleStatement` +
+# `isCHeaderImportDirective` + `directives.isBuildDirective/...` remain the
+# IDENTITY owners for every alias and ergonomic spelling (`comp.c.export` ↔
+# `c.export`, `meta.pipeline` ↔ `pipeline`, etc.). parser.id owns only the
+# structural reduction (qualified name → {0,1,2}) for the canonical names it
+# enumerates below. When parser.id can read the host catalog directly, those
+# host functions become redundant and are deleted (`law.bridge.death`).
+# Next host-owned boundary after that: parser-side classification for the
+# `@comp.X` namespace where the third segment is the identity authority.
 #
-# `right` follows Pratt convention: left-associative tightens the right side
-# to `left + 1`, right-associative loosens it to `left - 1`, non-associative
-# keeps it at `left`. The Relation enum ordinal is projected per producer slot
-# by token.id; parser.id neither scans names nor mirrors the owner order.
-#
-# `parse_prec` called this on every Pratt step and used to ask
-# `grammar_roles.lookup(kind)` for `.precedence` and `.assoc` AND
-# `grammar_roles.infixRelation(kind)` for the operation identity — two row
-# reads per peek, on the host Pratt hot path. The relation collapses all
-# three facts into one ABI call and one i64 return, so the host row lookup
-# and the `infixBinOp` helper are gone.
-infix_prec: i64 = (kind: i64)
-    if kind < 0
-        return 0
-    if !token.grammarrole._roleinfix(kind)
-        return 0
-    prec: i64 = token.grammarrole.roleprecedence(kind)
-    if prec == 0
-        return 0
-    a: i64 = token.grammarrole.roleassoc(kind)
-    if a == 0
-        return 0
-    op: i64 = _ordinal(token.grammarrole.relation(), kind)
-    if op < 0
-        return 0
-    left = prec
-    right: i64 = left
-    if a == 1
-        right = left + 1
-    if a == 2
-        right = left - 1
-    op | (left << 8) | (right << 16)
-
-# A token whose owner `literal` fact is set is a literal-kind identity
-# (`int_lit`, `float_lit`, text/bytes/compat) usable as a call operand or
-# value position. The host Pratt / record / table / descriptor recognizer
-# asked `grammar_roles.isLiteralKind(kind)` on every probe — one row-cache
-# lookup per probe, with no way for the parser to agree with the generated
-# role row except by re-reading the same cached `literal_kind` field.
-# The relation reads the same owner `literal(): str` the row emitter uses,
-# so the parser-side fact and the generated role row can no longer
-# disagree: damaging the owner regenerates both. Same row shape and
-# `kind[8]` access pattern as `lead` / `prefix` / `demands_operand`.
-is_literal_kind: bool = (kind: i64)
-    if kind < 0
-        return false
-    bits: str = token.grammarrole.literal()
-    if kind >= bits:len()
-        return false
-    bits:byte(kind + 1) == 49
-
-# A token whose owner `quoted` fact is set carries a quoted payload
-# (text / bytes / compat). The host record / table-key / descriptor / pretty
-# recognizer asked `grammar_roles.isQuotedKind(kind)` on every probe — one
-# row-cache lookup per probe. The relation reads the same owner `quoted():
-# str` the row emitter uses to fill `.quoted`, so the parser-side fact and
-# the generated role table cannot drift apart. Slot 3 stays unpublished and
-# reads as 0. Same row shape and `kind[8]` access pattern as
-# `is_literal_kind` and the other zero-arg row readers.
-is_quoted_kind: bool = (kind: i64)
-    if kind < 0
-        return false
-    bits: str = token.grammarrole.quoted()
-    if kind >= bits:len()
-        return false
-    bits:byte(kind + 1) == 49
-
-# Prefix relation of this identity — the `Prefix` enum ordinal that the
-# host Pratt path was asking through `grammar_roles.unaryRelation(kind)`,
-# which returned `?Prefix`. The fact that
-# `-` and `~` carry BOTH an infix and a prefix relation is the reason this
-# is a separate relation and not a second map consulted inside `infix_prec`.
-# The producer projects the ordinal directly from `_prefixorder`; parser.id
-# reads that fact without a second order or a name scan. Returns -1 when the
-# identity carries no prefix relation.
-_unary: i64 = (kind: i64)
-    _ordinal(token.grammarrole.unary(), kind)
-
-# Glued compound-update relation — the adjacency form (`>>=`, `<<=`,
-# `|=`, `&=`). The lexer mints no token for these, so which identities
-# admit the face is a grammar fact. The host Pratt path asked
-# `grammar_roles.gluedRelation(kind)` and reached into the generated role
-# row for `.glue` and `.relation` — two row reads per `peek_glued_assign`
-# probe. The relation reads the producer's `_roleglue` face and owner-projected
-# relation ordinal, so the parser-side
-# answer and the generated role row's `.relation` field cannot drift
-# apart: damaging the owner regenerates both. Returns -1 when the identity
-# does not admit the glued face.
-_glue: i64 = (kind: i64)
-    if !token.grammarrole._roleglue(kind)
-        return -1
-    _ordinal(token.grammarrole.relation(), kind)
-
-# Single-token compound-update relation — `+=`, `-=`, `*=`, `/=`, `%=`,
-# `^=`. The host Pratt path asked `grammar_roles.updateRelation(kind)`
-# and reached into the generated role row for `.update` and `.relation` —
-# two row reads per `compound_assign_op` probe. The relation reads the
-# producer's `_roleupdate` face and owner-projected relation ordinal and returns
-# the Relation enum ordinal, so the parser-side answer and the generated
-# role row's `.relation` field cannot drift apart: damaging the owner
-# regenerates both. `+=` and `+` carry the SAME relation; the face is the
-# only difference, which is why the fact is in one relation and not a
-# sixth spelling of `add`. Returns -1 when the identity does not admit the
-# single-token update face.
-_update: i64 = (kind: i64)
-    if !token.grammarrole._roleupdate(kind)
-        return -1
-    _ordinal(token.grammarrole.relation(), kind)
-
-# Layout-terminator identity — `kw_end`, `kw_else`, `kw_elseif`, `kw_until`,
-# `kw_catch`, `eof`. The parser uses this fact at exactly two sites: when
-# computing a new layout frame (a block that BEGINS with one of these
-# identities has no body to lay out, so its frame stays "offside = false"),
-# and at a statement boundary inside an already-open offside frame (a
-# terminator at an odd column is a disagreement between the two renderings,
-# not a statement that matches no shape — close and let the closer name it
-# precisely). The host `layout_verdict` switch carried the same six identities
-# in its terminator arm; the host `open_layout` switch carried the same five
-# identities minus `eof`. The relation reads the same owner `layoutterminator
-# (): str` row the parser ABI and the generated role row share, so damaging
-# the predicate regenerates both. Same row shape and `kind[8]` access pattern
-# as `is_literal_kind` / `is_quoted_kind` / `is_primitive_descriptor_kind`.
-_layout_terminator: bool = (kind: i64)
-    if kind < 0
-        return false
-    bits: str = token.grammarrole.layoutterminator()
-    if kind >= bits:len()
-        return false
-    bits:byte(kind + 1) == 49
-
-# Empty-body terminator identity — same five as `_layout_terminator` minus
-# `eof`. The empty-body branch in `parse_block_open` decides whether a
-# written closer immediately closes the block (fall through to standard
-# layout) or whether the block is empty (return zero statements). `eof`
-# has a third reading here — the body IS the file's last position, so
-# the empty-block return handles it directly — and a single six-identity
-# list cannot express both meanings without an extra peek. The relation
-# reads the owner `emptybodyterminator(): str` row directly, the same row
-# the generated `grammarrole.id` exposes; damaging the predicate
-# regenerates both. Same row shape and `kind[8]` access pattern as
-# `_layout_terminator` / `is_literal_kind` / `is_quoted_kind`.
-_empty_body_terminator: bool = (kind: i64)
-    if kind < 0
-        return false
-    bits: str = token.grammarrole.emptybodyterminator()
-    if kind >= bits:len()
-        return false
-    bits:byte(kind + 1) == 49
-
-# Layout frame for a block that is about to be parsed, packed into a single
-# i64 so the Zig parser can validate bounds and copy into its physical frame
-# without re-deciding the dialect / opener / first-token rules. The
-# parser-call shape (`open_loc: { line, col }`) carries the opener's column
-# (0 means "no opener; no layout governs"). The relation returns 0 when no
-# layout governs — Lua mode, or no opener, or no physical layout rule
-# applies — and a packed i64 otherwise:
-#
-#     bits 0..0   offside (0 = layout does not govern; 1 = offside frame)
-#     bits 1..1   first_token_is_terminator
-#                   (block begins with a layout terminator — `open_layout`
-#                   returned with `offside = false` for that reason)
-#     bits 2..2   first_token_inline_on_opener_line
-#                   (first body statement shares the opener's line; the
-#                   offside column is left to the first continuation line)
-#     bits 8..35  open_col (28 bits, matching the producer pack layout)
-#     bits 36..63 body_col (28 bits; 0 means "not yet established")
-#
-# `offside = 1` implies one of the two body-position facts above: the first
-# token was on the opener's line (inline body, body_col unset) or the first
-# token was indented past the opener (indented body, body_col set). Either
-# way, the Zig frame's `offside` is true. The body_col field carries the
-# established column so the Zig frame does not need to re-derive it; for an
-# inline body, body_col is 0 and the parser will set it from the first
-# continuation line.
-#
-# The host `open_layout` switch carried exactly this decision: dialect
-# check, opener-presence check, terminator-list check, then inline-vs-
-# indented branch. Every one of those is now a fact in this relation, and
-# the Zig parser only validates that the packed bounds fit a `u32` before
-# copying them into the physical frame.
-_opening: i64 = (idol_mode: bool, open_line: i64, open_col: i64, first_kind: i64, first_line: i64, first_col: i64)
-    if !idol_mode
-        return 0
-    if open_line == 0 or open_col == 0
-        return 0
-    if _layout_terminator(first_kind)
-        return open_col << 8
-    if first_line == open_line
-        return 1 | (1 << 2) | (open_col << 8)
-    if first_line > open_line and first_col > open_col
-        return 1 | (open_col << 8) | (first_col << 36)
-    open_col << 8
-
-# Layout verdict at a statement boundary — keep the body open, close the
-# block, or refuse the line as a mis-indent. The relation consumes the
-# physical frame the opener left behind plus the current token's
-# identity/line/col and returns a packed i64:
-#
-#     bits 0..1   verdict (0 = keep, 1 = close, 2 = misindent)
-#     bits 8..35  body_col (only meaningful when verdict = keep and the
-#                 block's body column was not yet established; the host
-#                 `layout_verdict` mutated `f.body_col` on that path, and
-#                 the relation returns the updated value so the Zig frame
-#                 can adopt it without re-deciding)
-#
-# The rule sequence is: no offside frame ⇒ always keep; column left of
-# the opener ⇒ close; body column not yet established ⇒ set it from this
-# token and keep; exact body column ⇒ keep; terminator identity ⇒ close;
-# ordinary identity ⇒ misindent. The host `layout_verdict` carried the
-# same sequence and the same terminator list (which `_layout_terminator`
-# above now owns). Every arm of that switch is a fact in this relation.
-_layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, kind: i64, line: i64, col: i64)
-    if !offside
-        return 0
-    if col <= open_col
-        return 1
-    if body_col == 0
-        return (col << 8)
-    if col == body_col
-        return 0
-    if _layout_terminator(kind)
-        return 1
-    2
-
-# Authoritative `@`-statement face produced for one `@` token by walking the
-# trailing `name (. name)*` and reducing it against the canonical
-# attaching/standalone catalog. This is a bounded bootstrap bridge: the copied
-# catalog must disappear when grammar identities, rather than packed lexeme
-# bytes, own directive admission. Returns 0 (expression), 1 (standalone
-# directive), or 2 (attaching declaration). parser.id owns the structural
-# reduction; the host's `meta_module` + `directives.*` remain the identity
-# authority for every alias spelling (GR-134 §Twentysixth, `law.bridge.death`).
+# Encoding helper (slot format used everywhere below):
+#   slot(s) = len(s) | s[0]<<8 | s[1]<<16 | … | s[5]<<40      (cap at 6 bytes)
+# Multi-slot paths concatenate slots without separator; identical-length
+# siblings of equal prefix produce the same initial slots only when their
+# first 6 characters match, which is why every canonical name below has a
+# distinct 7-byte-and-beyond signature.
 _at_face: i64 = (fact: []i64, count: i64, start: i64)
     if start < 0 or start >= count
         return 0
@@ -951,6 +691,8 @@ _at_face: i64 = (fact: []i64, count: i64, start: i64)
         return 2
     if s0 == 32476702104445447 # bitcast
         return 2
+    if s0 == 32776920252310790 # export
+        return 2
     if s0 == 32217217260020487 # concurrent
         return 2
     if s0 == 28557011770630919 # consteval
@@ -999,25 +741,23 @@ _at_face: i64 = (fact: []i64, count: i64, start: i64)
         return 2
     if s0 == 27988534160352775 # fillocate
         return 2
-    if s0 == 32776920252310790 # export → attaching
-        return 2
     # --- c.* attaching (face=2) — first segment is `c`, second segment decides ---
-    if s0 == 25345 # c
+    if s0 == 25345 # c (1 byte: 'c' alone)
         sec = first + 1
         while sec < count and (fact[sec * 2 + 1] & 255) == token.kinddot
             sec += 1
         if sec >= count or (fact[sec * 2 + 1] & 255) != token.kindname
             return 0
         s1 = fact[sec * 2 + 2]
-        if s1 == 32776920252310790 # export (8 bytes)
+        if s1 == 32776920252310790 # export (6 bytes — c.export → attaching)
             return 2
-        if s1 == 465674789636 # call
+        if s1 == 465674789636 # call (4 bytes — c.call → attaching)
             return 2
-        if s1 == 1768318467 # ffi
+        if s1 == 1768318467 # ffi (3 bytes — c.ffi → attaching)
             return 2
-        if s1 == 30239221573640966 # link
+        if s1 == 30239221573640966 # link (6 bytes — c.link → attaching)
             return 2
-        if s1 == 28552639590327046 # type
+        if s1 == 28552639590327046 # type (6 bytes — c.type → attaching)
             return 2
         # c.import / c.emit / c.include → standalone
         if s1 == 32776920251590918 # import
@@ -1028,13 +768,84 @@ _at_face: i64 = (fact: []i64, count: i64, start: i64)
             return 1
         return 0
     # --- `@comp.*` namespace — second segment decides ---
-    if s0 == 482872353540 # comp (4 bytes)
+    if s0 == 418564631812 # meta (4 bytes: m, e, t, a) — meta.* namespace
         sec = first + 1
         while sec < count and (fact[sec * 2 + 1] & 255) == token.kinddot
             sec += 1
         if sec >= count or (fact[sec * 2 + 1] & 255) != token.kindname
             return 0
         s1 = fact[sec * 2 + 2]
+        # @meta.<attaching-attribute> → face=2 (mirrors @comp.* branch)
+        if s1 == 28550371717572870 # inline
+            return 2
+        if s1 == 29674094025731591 # noinline
+            return 2
+        if s1 == 1953458179 # hot
+            return 2
+        if s1 == 431315968772 # cold
+            return 2
+        if s1 == 435711995908 # pure
+            return 2
+        if s1 == 28259009574301702 # packed
+            return 2
+        if s1 == 2002874883 # raw
+            return 2
+        if s1 == 29676237331852807 # nopanic
+            return 2
+        if s1 == 30515186162102279 # profile
+            return 2
+        if s1 == 30518523401762054 # unroll
+            return 2
+        if s1 == 27977564880724999 # deprecated
+            return 2
+        if s1 == 30792288878553351 # implements
+            return 2
+        if s1 == 28559167910667270 # derive
+            return 2
+        if s1 == 28538277256848390 # device
+            return 2
+        if s1 == 32776920252310790 # export → attaching
+            return 2
+        if s1 == 28557015847298567 # flatten → attaching
+            return 2
+        # @meta.c.* (mirrors @comp.c.*) — third segment decides
+        if s1 == 25345 # c
+            thr = sec + 1
+            while thr < count and (fact[thr * 2 + 1] & 255) == token.kinddot
+                thr += 1
+            if thr >= count or (fact[thr * 2 + 1] & 255) != token.kindname
+                return 0
+            s2 = fact[thr * 2 + 2]
+            # @meta.c.export / c.call / c.ffi / c.link / c.type → attaching
+            if s2 == 32776920252310790 # export (8 bytes)
+                return 2
+            if s2 == 465674789636 # call (4 bytes)
+                return 2
+            if s2 == 1768318467 # ffi (3 bytes)
+                return 2
+            if s2 == 30239221573640966 # link (6 bytes)
+                return 2
+            if s2 == 28552639590327046 # type (6 bytes)
+                return 2
+            # @meta.c.import / @meta.c.emit / @meta.c.include → standalone
+            if s2 == 32776920251590918 # import
+                return 1
+            if s2 == 499984983300 # emit
+                return 1
+            if s2 == 28276606056163591 # include
+                return 1
+            return 0
+        return 0
+    if s0 == 482872353540 # comp (4 bytes: c, o, m, p)
+        # Skip any `.` separators between segments; the producer token sequence
+        # for `@comp.define.derive` is `@ comp . define . derive ( )`.
+        sec = first + 1
+        while sec < count and (fact[sec * 2 + 1] & 255) == token.kinddot
+            sec += 1
+        if sec >= count or (fact[sec * 2 + 1] & 255) != token.kindname
+            return 0
+        s1 = fact[sec * 2 + 2]
+        # @comp.build.* / @comp.debug.* / @comp.trace.* / @comp.cinclude
         if s1 == 110416788546053 # build
             return 1
         if s1 == 113753859646469 # debug
@@ -1043,6 +854,7 @@ _at_face: i64 = (fact: []i64, count: i64, start: i64)
             return 1
         if s1 == 33051746585109255 # cinclude
             return 1
+        # @comp.<attaching-attribute> → face=2
         if s1 == 28550371717572870 # inline
             return 2
         if s1 == 29674094025731591 # noinline
@@ -1075,15 +887,18 @@ _at_face: i64 = (fact: []i64, count: i64, start: i64)
             return 2
         if s1 == 28557015847298567 # flatten → attaching
             return 2
+        # @comp.define.derive → standalone (third segment "derive")
         if s1 == 28550371616318470 # define (8 bytes — cap=7)
             thr = sec + 1
             while thr < count and (fact[thr * 2 + 1] & 255) == token.kinddot
                 thr += 1
-            if thr < count and (fact[thr * 2 + 1] & 255) == token.kindname and fact[thr * 2 + 2] == 28559167910667270
+            if thr < count and (fact[thr * 2 + 1] & 255) == token.kindname and fact[thr * 2 + 2] == 28559167910667270 # derive
                 return 1
             return 0
-        if s1 == 29674055488073735 # pipeline (8 bytes)
+        # @comp.pipeline → standalone
+        if s1 == 29674055488073735 # pipeline (8 bytes — cap=7)
             return 1
+        # @comp.c.* — third segment decides
         if s1 == 25345 # c
             thr = sec + 1
             while thr < count and (fact[thr * 2 + 1] & 255) == token.kinddot
@@ -1091,16 +906,18 @@ _at_face: i64 = (fact: []i64, count: i64, start: i64)
             if thr >= count or (fact[thr * 2 + 1] & 255) != token.kindname
                 return 0
             s2 = fact[thr * 2 + 2]
-            if s2 == 32776920252310790 # export
+            # @comp.c.export / c.call / c.ffi / c.link / c.type → attaching
+            if s2 == 32776920252310790 # export (8 bytes)
                 return 2
-            if s2 == 465674789636 # call
+            if s2 == 465674789636 # call (4 bytes)
                 return 2
-            if s2 == 1768318467 # ffi
+            if s2 == 1768318467 # ffi (3 bytes)
                 return 2
-            if s2 == 30239221573640966 # link
+            if s2 == 30239221573640966 # link (6 bytes)
                 return 2
-            if s2 == 28552639590327046 # type
+            if s2 == 28552639590327046 # type (6 bytes)
                 return 2
+            # @comp.c.import / @comp.c.emit / @comp.c.include → standalone
             if s2 == 32776920251590918 # import
                 return 1
             if s2 == 499984983300 # emit
@@ -1108,7 +925,8 @@ _at_face: i64 = (fact: []i64, count: i64, start: i64)
             if s2 == 28276606056163591 # include
                 return 1
             return 0
-        if s1 == 29107807033714183 # foreign (8 bytes)
+        # @comp.foreign / @comp.wasm / @comp.sql / @comp.lua → standalone
+        if s1 == 29107807033714183 # foreign (8 bytes — cap=7)
             return 1
         if s1 == 470087202564 # wasm
             return 1
@@ -1117,72 +935,243 @@ _at_face: i64 = (fact: []i64, count: i64, start: i64)
         if s1 == 1635085315 # lua
             return 1
         return 0
-    # --- `@meta.*` namespace — second segment decides ---
-    if s0 == 418564631812 # meta (4 bytes)
-        sec = first + 1
-        while sec < count and (fact[sec * 2 + 1] & 255) == token.kinddot
-            sec += 1
-        if sec >= count or (fact[sec * 2 + 1] & 255) != token.kindname
-            return 0
-        s1 = fact[sec * 2 + 2]
-        if s1 == 28550371717572870 # inline
-            return 2
-        if s1 == 29674094025731591 # noinline
-            return 2
-        if s1 == 1953458179 # hot
-            return 2
-        if s1 == 431315968772 # cold
-            return 2
-        if s1 == 435711995908 # pure
-            return 2
-        if s1 == 28259009574301702 # packed
-            return 2
-        if s1 == 2002874883 # raw
-            return 2
-        if s1 == 29676237331852807 # nopanic
-            return 2
-        if s1 == 30515186162102279 # profile
-            return 2
-        if s1 == 30518523401762054 # unroll
-            return 2
-        if s1 == 27977564880724999 # deprecated
-            return 2
-        if s1 == 30792288878553351 # implements
-            return 2
-        if s1 == 28559167910667270 # derive
-            return 2
-        if s1 == 28538277256848390 # device
-            return 2
-        if s1 == 32776920252310790 # export → attaching
-            return 2
-        if s1 == 28557015847298567 # flatten → attaching
-            return 2
-        if s1 == 25345 # c
-            thr = sec + 1
-            while thr < count and (fact[thr * 2 + 1] & 255) == token.kinddot
-                thr += 1
-            if thr >= count or (fact[thr * 2 + 1] & 255) != token.kindname
-                return 0
-            s2 = fact[thr * 2 + 2]
-            if s2 == 32776920252310790 # export
-                return 2
-            if s2 == 465674789636 # call
-                return 2
-            if s2 == 1768318467 # ffi
-                return 2
-            if s2 == 30239221573640966 # link
-                return 2
-            if s2 == 28552639590327046 # type
-                return 2
-            if s2 == 32776920251590918 # import
-                return 1
-            if s2 == 499984983300 # emit
-                return 1
-            if s2 == 28276606056163591 # include
-                return 1
-            return 0
-        return 0
     0
+
+# Layout verdict at a statement boundary — keep the body open, close the
+# block, or refuse the line as a mis-indent. The relation consumes the
+# physical frame the opener left behind plus the event's settled terminator
+# fact and current line/column, and returns a packed i64:
+#
+#     bits 0..1   verdict (0 = keep, 1 = close, 2 = misindent)
+#     bits 8..35  body_col (only meaningful when verdict = keep and the
+#                 block's body column was not yet established; the host
+#                 `layout_verdict` mutated `f.body_col` on that path, and
+#                 the relation returns the updated value so the Zig frame
+#                 can adopt it without re-deciding)
+#
+# The rule sequence is: no offside frame ⇒ always keep; column left of
+# the opener ⇒ close; body column not yet established ⇒ set it from this
+# token and keep; exact body column ⇒ keep; terminator identity ⇒ close;
+# ordinary identity ⇒ misindent. The host `layout_verdict` carried the
+# same sequence; the whole-pack event now supplies the terminator bit.
+_layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator: bool, line: i64, col: i64)
+    if !offside
+        return 0
+    if col <= open_col
+        return 1
+    if body_col == 0
+        return (col << 8)
+    if col == body_col
+        return 0
+    if terminator
+        return 1
+    2
+
+# Static parser facts for the complete immutable producer pack. One output word
+# per token: bits 0..4 direct statement face; bits 5..8 source-family admission;
+# bit 9 member; bit 10 boundary; bits 11..12 branch face (1 elseif, 2 else);
+# bit 13 return; bit 14 end; bit 15 layout terminator; bit 16 empty terminator.
+# Lane two carries clause bits 0..1, return bits 2..3, callable-header bits 4..5,
+# and the contextual `type` alias head in bit 6. A qualifying callable header
+# propagates the bare declaration head to bit 7 on its starting name coordinate.
+# Capacity refusal precedes every mutation.
+event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
+    if count < 0 or capacity < 0 or count > capacity / 2
+        return -1
+    statements: str = token.grammarrole.statement()
+    admissions: str = token.grammarrole.admission()
+    members: str = token.grammarrole.member()
+    boundaries: str = token.grammarrole.boundary()
+    branches: str = token.grammarrole.branch()
+    terminators: str = token.grammarrole.layoutterminator()
+    empties: str = token.grammarrole.emptybodyterminator()
+    prefixes: str = token.grammarrole.prefix()
+    demands: str = token.grammarrole.demand()
+    leads: str = token.grammarrole.lead()
+    literals: str = token.grammarrole.literal()
+    quoteds: str = token.grammarrole.quoted()
+    relations: str = token.grammarrole.relation()
+    unaries: str = token.grammarrole.unary()
+    before = 0
+    opener = 0
+    prior = token.kindeof
+    index = 0
+    while index < count
+        encoded = fact[index * 2 + 1]
+        kind = encoded & 255
+        line = (encoded >> 8) & 268435455
+        dispatch: i64 = 0
+        if kind >= 0 and kind < statements:len()
+            statementmark: i64 = statements:byte(kind + 1)
+            if statementmark >= 65 and statementmark <= 87
+                dispatch = statementmark - 65
+        admission: i64 = 0
+        if kind >= 0 and kind < admissions:len()
+            admissionmark: i64 = admissions:byte(kind + 1)
+            if admissionmark >= 65 and admissionmark <= 73
+                choice = admissionmark - 65
+                if choice == 1 or idol
+                    admission = choice
+        member: i64 = 0
+        if kind >= 0 and kind < members:len() and members:byte(kind + 1) == 49
+            member = 1
+        boundaryface: i64 = 0
+        if kind >= 0 and kind < boundaries:len() and boundaries:byte(kind + 1) == 49
+            boundaryface = 1
+        branchface: i64 = 0
+        if kind >= 0 and kind < branches:len() and branches:byte(kind + 1) == 49
+            if kind == token.kindelseif
+                branchface = 1
+            else
+                branchface = 2
+        returns: i64 = 0
+        if kind == token.kindreturn
+            returns = 1
+        ending: i64 = 0
+        if kind == token.kindend
+            ending = 1
+        terminator: i64 = 0
+        if kind >= 0 and kind < terminators:len() and terminators:byte(kind + 1) == 49
+            terminator = 1
+        empty: i64 = 0
+        if kind >= 0 and kind < empties:len() and empties:byte(kind + 1) == 49
+            empty = 1
+        primitive: i64 = 0
+        if kind >= 0 and token.grammarrole.roledescriptor(kind)
+            primitive = 1
+        literal: i64 = 0
+        if kind >= 0 and kind < literals:len() and literals:byte(kind + 1) == 49
+            literal = 1
+        quoted: i64 = 0
+        if kind >= 0 and kind < quoteds:len() and quoteds:byte(kind + 1) == 49
+            quoted = 1
+        prefixface: i64 = 0
+        if kind >= 0 and kind < prefixes:len() and prefixes:byte(kind + 1) == 49
+            prefixface = 1
+        demandface: i64 = 0
+        if kind >= 0 and kind < demands:len() and demands:byte(kind + 1) == 49
+            demandface = 1
+        visible = kind >= 0 and kind < token.kindshebang
+        if visible and line != before
+            opener = encoded >> 36
+        leadface: i64 = 0
+        if visible and line != before and kind < leads:len() and leads:byte(kind + 1) == 49
+            leadface = 1
+        infix: i64 = 0
+        unaryface: i64 = 0
+        glueface: i64 = 0
+        updateface: i64 = 0
+        if kind >= 0 and kind < statements:len()
+            relation = _ordinal(relations, kind)
+            unary = _ordinal(unaries, kind)
+            if unary >= 0
+                unaryface = unary + 1
+            if token.grammarrole._roleglue(kind) and relation >= 0
+                glueface = relation + 1
+            if token.grammarrole._roleupdate(kind) and relation >= 0
+                updateface = relation + 1
+            if token.grammarrole._roleinfix(kind) and relation >= 0
+                prec: i64 = token.grammarrole.roleprecedence(kind)
+                assoc: i64 = token.grammarrole.roleassoc(kind)
+                if prec > 0 and assoc > 0
+                    right = prec
+                    if assoc == 1
+                        right = prec + 1
+                    if assoc == 2
+                        right = prec - 1
+                    infix = relation | (prec << 8) | (right << 16)
+        out[index] = dispatch | (admission << 5) | (member << 9) | (boundaryface << 10) | (branchface << 11) | (returns << 13) | (ending << 14) | (terminator << 15) | (empty << 16) | (primitive << 17) | (literal << 18) | (quoted << 19) | (prefixface << 20) | (demandface << 21) | (leadface << 22) | (infix << 23) | (unaryface << 47) | (glueface << 52) | (updateface << 57) | (_at_face(fact, count, index) << 62)
+        clauseface = _clause(fact, count, index)
+        returnface = return_starts_value_lx(fact, count, index, before, idol)
+        head = 0
+        if kind == token.kindname and fact[index * 2 + 2] == 435678704644
+            following = token.kindeof
+            if index + 1 < count
+                following = fact[(index + 1) * 2 + 1] & 255
+            if following != token.kindlparen
+                head = 1
+        offside: i64 = 0
+        if idol
+            offside = opener
+        headerplain: i64 = 0
+        headercomma: i64 = 0
+        if kind == token.kindlparen
+            if header_signal_lx(fact, count, index, false, offside, prior)
+                headerplain = 1
+            if header_signal_lx(fact, count, index, true, offside, prior)
+                headercomma = 1
+        out[count + index] = clauseface | (returnface << 2) | (headerplain << 4) | (headercomma << 5) | (head << 6)
+        if headerplain == 1 and index > 0
+            start = index - 1
+            if (fact[start * 2 + 1] & 255) == token.kindname
+                if start >= 2 and (fact[(start - 1) * 2 + 1] & 255) == token.kindcolon and (fact[(start - 2) * 2 + 1] & 255) == token.kindname
+                    start -= 2
+                while start >= 2 and (fact[(start - 1) * 2 + 1] & 255) == token.kinddot and (fact[(start - 2) * 2 + 1] & 255) == token.kindname
+                    start -= 2
+                out[count + start] = out[count + start] | (1 << 7)
+        if visible
+            before = line
+            prior = kind
+        index += 1
+    count
+
+# One complete block-boundary relation. With `opening`, it returns the physical
+# layout frame: bit 0 offside, bit 2 inline, bits 8..35 opener column, and bits
+# 36..63 body column. Otherwise bits 0..1 are the loop action (0 parse statement,
+# 1 close, 2 misindent, 3 parse return and close); bits 2..3 carry the clause face;
+# bits 4..6 carry written closure; bits 8..35 carry the possibly established body
+# column. Static token facts travel in the one whole-pack `event` output.
+boundary: i64 = (opening: bool, count: i64, offside: bool, open_line: i64, open: i64, body: i64, edge: i64, line: i64, before: i64, col: i64, idol: bool)
+    if opening
+        if !idol
+            return 0
+        if open_line == 0 or open == 0
+            return 0
+        if ((edge >> 15) & 1) == 1
+            return open << 8
+        if line == open_line
+            return 1 | (1 << 2) | (open << 8)
+        if line > open_line and col > open
+            return 1 | (open << 8) | (col << 36)
+        return open << 8
+    column = body
+    ending = ((edge >> 14) & 1) == 1
+    closing: i64 = 4
+    if ending
+        closing = 1
+        if offside and line != before and col > open
+            closing = 2
+        if offside and line != before and col < open
+            closing = 0
+    elseif offside
+        closing = 0
+    elseif idol
+        closing = 3
+    sealed = closing << 4
+    branchface = (edge >> 11) & 3
+    if branchface > 2
+        branchface = 0
+    branch = branchface > 0
+    face: i64 = 0
+    if branch and (!offside or col >= open)
+        face = branchface
+    if count > 0 and line != before
+        terminator = ((edge >> 15) & 1) == 1
+        verdict = _layout_verdict(offside, open, body, terminator, line, col)
+        action = verdict & 3
+        if action != 0
+            return action | (face << 2) | sealed | (column << 8)
+        if body == 0
+            column = (verdict >> 8) & 268435455
+    if ((edge >> 10) & 1) == 1
+        return 1 | (face << 2) | sealed | (column << 8)
+    if branch
+        if !offside or col <= open
+            return 1 | (face << 2) | sealed | (column << 8)
+        return (face << 2) | sealed | (column << 8)
+    if ((edge >> 13) & 1) == 1
+        return 3 | sealed | (column << 8)
+    sealed | (column << 8)
 
 # Cursor on `(`. `offside_col` 0 disables layout discrimination for the
 # single-name `(a)` shape; otherwise it is the statement-line opener column.

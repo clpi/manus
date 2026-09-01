@@ -113,12 +113,21 @@ static int64_t tokenize(const char *source, int64_t facts[256]) {
 
 static int verify(const char *source, bool allow, int64_t offside, int64_t before, bool expected) {
     int64_t facts[256] = {0};
+    int64_t events[256] = {0};
     int64_t count = tokenize(source, facts);
+    for (int64_t index = count; index > 0; --index) {
+        facts[1 + index * 2] = facts[1 + (index - 1) * 2];
+        facts[2 + index * 2] = facts[2 + (index - 1) * 2];
+    }
+    facts[1] = before + INT64_C(256) + INT64_C(68719476736);
+    facts[2] = 0;
+    count += 1;
     duo_lexer cursor = compiler_lexer__new(source, "probe.id", 1);
     bool from_cursor = paren_header_signal_lx(&cursor, allow, offside, before);
-    bool from_pack = idol_parser_header_pack(facts, count, 0, allow, offside, before);
-    if (from_cursor != expected || from_pack != expected || from_cursor != from_pack) {
-        fprintf(stderr, "%s cursor=%d pack=%d expected=%d\n", source, from_cursor, from_pack, expected);
+    int64_t written = idol_parser_event(facts, count, events, count * 2, offside != 0);
+    bool from_event = ((events[count + 1] >> (allow ? 5 : 4)) & 1) != 0;
+    if (written != count || from_cursor != expected || from_event != expected || from_cursor != from_event) {
+        fprintf(stderr, "%s cursor=%d event=%d written=%lld expected=%d\n", source, from_cursor, from_event, (long long)written, expected);
         return 1;
     }
     return 0;
@@ -126,53 +135,69 @@ static int verify(const char *source, bool allow, int64_t offside, int64_t befor
 
 static int verify_clause(const char *source, int64_t expected) {
     int64_t facts[256] = {0};
+    int64_t events[256] = {0};
     int64_t count = tokenize(source, facts);
-    int64_t found = idol_parser_match_clause(facts, count, 0);
-    if (found != expected) {
-        fprintf(stderr, "%s clause=%lld expected=%lld\n", source, (long long)found, (long long)expected);
+    int64_t written = idol_parser_event(facts, count, events, count * 2, true);
+    int64_t found = events[count] & 3;
+    if (written != count || found != expected) {
+        fprintf(stderr, "%s clause-event=%lld written=%lld expected=%lld\n", source, (long long)found, (long long)written, (long long)expected);
+        return 1;
+    }
+    return 0;
+}
+
+static int verify_return(int64_t return_kind, int64_t kind, int64_t line, int64_t return_line, bool idol, int64_t expected) {
+    int64_t facts[5] = {0, return_kind + return_line * INT64_C(256), 0, kind + line * INT64_C(256), 0};
+    int64_t events[4] = {0, 0, 0, 0};
+    int64_t written = idol_parser_event(facts, 2, events, 4, idol);
+    int64_t found = (events[3] >> 2) & 3;
+    if (written != 2 || found != expected) {
+        fprintf(stderr, "return kind=%lld line=%lld event=%lld expected=%lld\n", (long long)kind, (long long)line, (long long)found, (long long)expected);
+        return 1;
+    }
+    return 0;
+}
+
+static int verify_type(const char *source, bool expected) {
+    int64_t facts[256] = {0};
+    int64_t events[256] = {0};
+    int64_t count = tokenize(source, facts);
+    int64_t written = idol_parser_event(facts, count, events, count * 2, true);
+    int64_t found = (events[count] >> 6) & 1;
+    if (written != count || found != expected) {
+        fprintf(stderr, "%s type-event=%lld written=%lld expected=%d\n", source, (long long)found, (long long)written, expected);
         return 1;
     }
     return 0;
 }
 
 static int verify_statement(const char *source, bool expected) {
+    int64_t facts[256] = {0};
+    int64_t events[256] = {0};
+    int64_t count = tokenize(source, facts);
+    int64_t written = idol_parser_event(facts, count, events, count * 2, true);
+    bool from_event = ((events[count] >> 7) & 1) != 0;
     duo_lexer cursor = compiler_lexer__new(source, "probe.id", 1);
     duo_token name = compiler_lexer__peek(&cursor);
-    bool found = statement_header_signal_lx(&cursor, &name, false);
-    if (found != expected) {
-        fprintf(stderr, "%s statement=%d expected=%d\n", source, found, expected);
+    bool from_cursor = statement_header_signal_lx(&cursor, &name, false);
+    if (written != count || from_cursor != expected || from_event != expected || from_cursor != from_event) {
+        fprintf(stderr, "%s statement-cursor=%d event=%d written=%lld expected=%d\n", source, from_cursor, from_event, (long long)written, expected);
         return 1;
     }
     return 0;
 }
 
-static int verify_lead(void) {
-    const char *bits = token_grammarrole__lead();
-    const size_t count = strlen(bits);
-    size_t positives = 0;
-    int failed = count == 0;
-    for (size_t kind = 0; kind < count; ++kind) {
-        const bool expected = bits[kind] == '1';
-        if (expected) positives += 1;
-        if (idol_parser_lead((int64_t)kind, 2, 2)) failed += 1;
-        if (idol_parser_lead((int64_t)kind, 2, 1) != expected) failed += 1;
+static int verify_path(const char *source, bool expected) {
+    int64_t facts[256] = {0};
+    int64_t events[256] = {0};
+    int64_t count = tokenize(source, facts);
+    int64_t written = idol_parser_event(facts, count, events, count * 2, true);
+    bool found = ((events[count] >> 7) & 1) != 0;
+    if (written != count || found != expected) {
+        fprintf(stderr, "%s path-event=%d written=%lld expected=%d\n", source, found, (long long)written, expected);
+        return 1;
     }
-    if (positives == 0) failed += 1;
-    return failed;
-}
-
-static int verify_prefix(void) {
-    const char *bits = token_grammarrole__prefix();
-    const size_t count = strlen(bits);
-    size_t positives = 0;
-    int failed = count == 0;
-    for (size_t kind = 0; kind < count; ++kind) {
-        const bool expected = bits[kind] == '1';
-        if (expected) positives += 1;
-        if (idol_parser_prefix((int64_t)kind) != expected) failed += 1;
-    }
-    if (positives == 0) failed += 1;
-    return failed;
+    return 0;
 }
 
 static int64_t projected_ordinal(const char *row, size_t kind) {
@@ -182,38 +207,279 @@ static int64_t projected_ordinal(const char *row, size_t kind) {
     return (int64_t)(code - 'A');
 }
 
-static int verify_relation_faces(void) {
-    const char *relations = token_grammarrole__relation();
-    const char *unaries = token_grammarrole__unary();
-    const size_t count = strlen(relations);
-    size_t unary_positive = 0;
-    size_t glue_positive = 0;
-    size_t update_positive = 0;
-    int failed = count == 0 || strlen(unaries) != count;
-    for (size_t kind = 0; kind < count; ++kind) {
-        const int64_t relation = projected_ordinal(relations, kind);
-        const int64_t unary_value = projected_ordinal(unaries, kind);
-        const bool glue_face = token_grammarrole___roleglue((int64_t)kind);
-        const bool update_face = token_grammarrole___roleupdate((int64_t)kind);
-        const int64_t expected_glue = glue_face ? relation : -1;
-        const int64_t expected_update = update_face ? relation : -1;
-        if (unary_value >= 0) unary_positive += 1;
-        if (glue_face) glue_positive += 1;
-        if (update_face) update_positive += 1;
-        if ((glue_face || update_face) && relation < 0) failed += 1;
-        if (idol_parser_unary((int64_t)kind) != unary_value) failed += 1;
-        if (idol_parser_glue((int64_t)kind) != expected_glue) failed += 1;
-        if (idol_parser_update((int64_t)kind) != expected_update) failed += 1;
+static bool row_bit(const char *row, size_t kind) {
+    return row[kind] == '1';
+}
+
+static int64_t expected_statement(int64_t kind) {
+    switch (kind) {
+        case 81: return 1;  /* at */
+        case 19: return 2;  /* local */
+        case 15: return 3;  /* global */
+        case 29: return 4;  /* const */
+        case 13: case 14: return 5;  /* function / fun */
+        case 48: return 6;  /* async */
+        case 30: return 7;  /* enum */
+        case 50: return 8;  /* concept */
+        case 51: return 9;  /* alias */
+        case 17: return 10; /* if */
+        case 28: return 11; /* while */
+        case 23: return 12; /* repeat */
+        case 12: return 13; /* for */
+        case 7: return 14;  /* do */
+        case 44: return 15; /* match */
+        case 45: return 16; /* try */
+        case 47: return 17; /* defer */
+        case 16: return 18; /* goto */
+        case 5: return 19;  /* break */
+        case 6: return 20;  /* continue */
+        case 95: return 21; /* dcolon label */
+        case 0: return 22;  /* contextual name */
+        default: return 0;  /* expression */
     }
-    if (unary_positive == 0 || glue_positive == 0 || update_positive == 0) failed += 1;
-    if (idol_parser_unary(-1) != -1 || idol_parser_unary((int64_t)count) != -1) failed += 1;
-    if (idol_parser_glue(-1) != -1 || idol_parser_glue((int64_t)count) != -1) failed += 1;
-    if (idol_parser_update(-1) != -1 || idol_parser_update((int64_t)count) != -1) failed += 1;
+}
+
+static int64_t expected_admission_row(int64_t kind) {
+    switch (kind) {
+        case 54: return 1;             /* macro: always denied */
+        case 45: case 46: return 2;    /* try / catch */
+        case 47: return 3;             /* defer */
+        case 16: return 4;             /* goto */
+        case 53: return 5;             /* extends */
+        case 52: return 6;             /* private */
+        case 48: case 49: return 7;    /* async / await */
+        case 57: return 8;             /* let */
+        default: return 0;
+    }
+}
+
+static int64_t expected_admission(int64_t kind, bool idol) {
+    const int64_t face = expected_admission_row(kind);
+    return face == 1 || idol ? face : 0;
+}
+
+static int64_t expected_infix(int64_t kind) {
+    if (!token_grammarrole___roleinfix(kind)) return 0;
+    const int64_t prec = token_grammarrole__roleprecedence(kind);
+    const int64_t assoc = token_grammarrole__roleassoc(kind);
+    const int64_t op = projected_ordinal(token_grammarrole__relation(), (size_t)kind);
+    if (prec == 0 || assoc == 0 || op < 0) return 0;
+    int64_t right = prec;
+    if (assoc == 1) right = prec + 1;
+    if (assoc == 2) right = prec - 1;
+    return op | (prec << 8) | (right << 16);
+}
+
+static int64_t expected_face(const char *row, bool admitted, int64_t kind) {
+    if (!admitted) return 0;
+    const int64_t ordinal = projected_ordinal(row, (size_t)kind);
+    return ordinal < 0 ? 0 : ordinal + 1;
+}
+
+static int64_t expected_event(int64_t kind, bool idol) {
+    const int64_t member = kind == 0 || (kind >= 4 && kind <= 57);
+    const int64_t boundary = kind == 10 || kind == 27 || kind == 59 ||
+        kind == 61 || kind == 63 || kind == 109;
+    const int64_t branch = kind == 9 ? 1 : (kind == 8 ? 2 : 0);
+    const int64_t returns = kind == 24;
+    const int64_t ending = kind == 10;
+    const int64_t terminator = kind == 8 || kind == 9 || kind == 10 ||
+        kind == 27 || kind == 46 || kind == 109;
+    const int64_t empty = terminator && kind != 109;
+    const int64_t primitive = token_grammarrole__roledescriptor(kind);
+    const int64_t literal = row_bit(token_grammarrole__literal(), (size_t)kind);
+    const int64_t quoted = row_bit(token_grammarrole__quoted(), (size_t)kind);
+    const int64_t prefix = row_bit(token_grammarrole__prefix(), (size_t)kind);
+    const int64_t demand = row_bit(token_grammarrole__demand(), (size_t)kind);
+    const int64_t lead = row_bit(token_grammarrole__lead(), (size_t)kind);
+    const int64_t infix = expected_infix(kind);
+    const int64_t unary = expected_face(token_grammarrole__unary(), true, kind);
+    const int64_t glue = expected_face(token_grammarrole__relation(), token_grammarrole___roleglue(kind), kind);
+    const int64_t update = expected_face(token_grammarrole__relation(), token_grammarrole___roleupdate(kind), kind);
+    return expected_statement(kind) |
+        (expected_admission(kind, idol) << 5) |
+        (member << 9) | (boundary << 10) | (branch << 11) |
+        (returns << 13) | (ending << 14) | (terminator << 15) |
+        (empty << 16) | (primitive << 17) | (literal << 18) |
+        (quoted << 19) | (prefix << 20) | (demand << 21) | (lead << 22) |
+        (infix << 23) | (unary << 47) | (glue << 52) | (update << 57);
+}
+
+static int verify_event(void) {
+    int64_t facts[229] = {0};
+    int failed = 0;
+    for (int64_t kind = 0; kind < 114; ++kind) {
+        facts[1 + kind * 2] = kind + (kind + 1) * INT64_C(256) + INT64_C(68719476736);
+    }
+    for (int idol = 0; idol <= 1; ++idol) {
+        int64_t short_out[230];
+        int64_t out[230];
+        for (int i = 0; i < 230; ++i) short_out[i] = 777;
+        if (idol_parser_event(facts, 114, &short_out[1], 227, idol != 0) != -1) failed += 1;
+        for (int i = 0; i < 230; ++i) if (short_out[i] != 777) failed += 1;
+        for (int i = 0; i < 230; ++i) out[i] = 0;
+        out[0] = 71;
+        out[229] = 75;
+        if (idol_parser_event(facts, 114, &out[1], 228, idol != 0) != 114) failed += 1;
+        if (out[0] != 71 || out[229] != 75) failed += 1;
+        for (int64_t kind = 0; kind < 114; ++kind) {
+            if (out[1 + kind] != expected_event(kind, idol != 0)) failed += 1;
+            if (out[1 + 114 + kind] < 0 || out[1 + 114 + kind] > 15) failed += 1;
+        }
+    }
     return failed;
 }
 
-static bool row_bit(const char *row, size_t kind) {
-    return row[kind] == '1';
+static int verify_event_lead_trivia(void) {
+    const char *row = token_grammarrole__lead();
+    int64_t lead_kind = -1;
+    for (int64_t kind = 0; kind < 110; ++kind) {
+        if (row_bit(row, (size_t)kind)) {
+            lead_kind = kind;
+            break;
+        }
+    }
+    if (lead_kind < 0) return 1;
+    int64_t facts[7] = {0};
+    int64_t out[6] = {0};
+    facts[1] = INT64_C(0) + INT64_C(1) * 256;       /* visible name, line 1 */
+    facts[3] = INT64_C(111) + INT64_C(2) * 256;     /* skipped comment, line 2 */
+    facts[5] = lead_kind + INT64_C(2) * 256;        /* new visible line */
+    int failed = idol_parser_event(facts, 3, out, 6, true) != 3;
+    if (((out[1] >> 22) & 1) != 0) failed += 1;
+    if (((out[2] >> 22) & 1) != 1) failed += 1;
+    facts[5] = lead_kind + INT64_C(1) * 256;        /* same visible line */
+    if (idol_parser_event(facts, 3, out, 6, true) != 3) failed += 1;
+    if (((out[2] >> 22) & 1) != 0) failed += 1;
+    return failed;
+}
+
+static int64_t expected_event_boundary(int64_t kind) {
+    int64_t action = 0;
+    int64_t face = 0;
+    if (kind == 10 || kind == 27 || kind == 59 || kind == 61 || kind == 63 || kind == 109)
+        action = 1;
+    if (kind == 9) { action = 1; face = 1; }
+    if (kind == 8) { action = 1; face = 2; }
+    if (kind == 24) action = 3;
+    const int64_t closing = kind == 10 ? 1 : 4;
+    return action | (face << 2) | (closing << 4);
+}
+
+static int verify_event_boundary(void) {
+    int failed = 0;
+    for (int64_t kind = 0; kind < 114; ++kind) {
+        const int64_t got = idol_parser_boundary(
+            false, 0, false, 0, 5, 0, expected_event(kind, false), 1, 1, 8, false);
+        if (got != expected_event_boundary(kind)) failed += 1;
+    }
+    return failed;
+}
+
+static int verify_admission(void) {
+    const char *row = token_grammarrole__admission();
+    const size_t count = strlen(row);
+    int failed = count != 114;
+    for (size_t kind = 0; kind < count; ++kind) {
+        if (projected_ordinal(row, kind) != expected_admission_row((int64_t)kind)) failed += 1;
+    }
+    return failed;
+}
+
+static int verify_statement_face(void) {
+    const char *row = token_grammarrole__statement();
+    const size_t count = strlen(row);
+    int failed = count != 114;
+    for (size_t kind = 0; kind < count; ++kind) {
+        const int64_t expected = expected_statement((int64_t)kind);
+        if (projected_ordinal(row, kind) != expected) failed += 1;
+    }
+    return failed;
+}
+
+static int verify_boundary(void) {
+    const char *ends = token_grammarrole__boundary();
+    const char *branches = token_grammarrole__branch();
+    const size_t count = strlen(ends);
+    int failed = count == 0 || strlen(branches) != count;
+    size_t end_count = 0;
+    size_t branch_count = 0;
+    for (size_t kind = 0; kind < count; ++kind) {
+        const int64_t event = expected_event((int64_t)kind, false);
+        const int64_t got = idol_parser_boundary(false, 0, false, 0, 5, 0, event, 1, 1, 8, false);
+        int64_t expected = 0;
+        if (row_bit(ends, kind) || row_bit(branches, kind)) expected = 1;
+        if (kind == 24) expected = 3; /* kw_return */
+        if ((got & 0x3) != expected) failed += 1;
+        end_count += row_bit(ends, kind);
+        branch_count += row_bit(branches, kind);
+    }
+    if (end_count != 6 || branch_count != 2) failed += 1;
+
+    const int64_t ordinary = expected_event(0, false);
+    const int64_t branch = expected_event(8, false);
+    const int64_t established = idol_parser_boundary(false, 1, true, 0, 5, 0, ordinary, 2, 1, 8, false);
+    if ((established & 0x3) != 0 || ((established >> 8) & 0x0FFFFFFF) != 8) failed += 1;
+    if ((idol_parser_boundary(false, 1, true, 0, 5, 8, ordinary, 2, 1, 7, false) & 0x3) != 2) failed += 1;
+    if ((idol_parser_boundary(false, 1, true, 0, 5, 8, branch, 2, 1, 8, false) & 0x3) != 0) failed += 1;
+    if ((idol_parser_boundary(false, 1, true, 0, 5, 8, branch, 2, 1, 7, false) & 0x3) != 1) failed += 1;
+    if ((idol_parser_boundary(false, 1, true, 0, 5, 8, branch, 1, 1, 8, false) & 0x3) != 0) failed += 1;
+    if ((idol_parser_boundary(false, 0, false, 0, 5, 0, expected_event(24, false), 1, 1, 8, false) & 0x3) != 3) failed += 1;
+    return failed;
+}
+
+static int verify_boundary_clause(void) {
+    int failed = 0;
+    for (int64_t actual = 0; actual < 114; ++actual) {
+        for (int offside = 0; offside <= 1; ++offside) {
+            for (int64_t delta = -1; delta <= 1; ++delta) {
+                const int64_t open = 5;
+                int64_t expected = 0;
+                if (!offside || open + delta >= open) {
+                    if (actual == 9) expected = 1;      /* kw_elseif */
+                    else if (actual == 8) expected = 2; /* kw_else */
+                }
+                const int64_t decision = idol_parser_boundary(
+                    false, 0, offside, 0, open, 0, expected_event(actual, false), 1, 1, open + delta, false);
+                const int64_t got = (decision >> 2) & 0x3;
+                if (got != expected) failed += 1;
+            }
+        }
+    }
+    /* Branch face 3 is not produced by event and must fail closed to none. */
+    if (((idol_parser_boundary(false, 0, false, 0, 5, 0, INT64_C(3) << 11, 1, 1, 5, false) >> 2) & 0x3) != 0) failed += 1;
+    return failed;
+}
+
+static int verify_boundary_closure(void) {
+    int failed = 0;
+    for (int offside = 0; offside <= 1; ++offside) {
+        for (int idol = 0; idol <= 1; ++idol) {
+            for (int is_end = 0; is_end <= 1; ++is_end) {
+                for (int new_line = 0; new_line <= 1; ++new_line) {
+                    for (int relation = -1; relation <= 1; ++relation) {
+                        const int64_t event = expected_event(is_end ? 10 : 0, false);
+                        const int64_t line = new_line ? 2 : 1;
+                        const int64_t before = 1;
+                        const int64_t open = 5;
+                        const int64_t col = open + relation;
+                        int64_t expected;
+                        if (is_end) {
+                            if (offside && new_line && relation > 0) expected = 2;
+                            else if (offside && new_line && relation < 0) expected = 0;
+                            else expected = 1;
+                        } else if (offside) expected = 0;
+                        else if (idol) expected = 3;
+                        else expected = 4;
+                        const int64_t decision = idol_parser_boundary(
+                            false, 0, offside, 0, open, 0, event, line, before, col, idol);
+                        if (((decision >> 4) & 0x7) != expected) failed += 1;
+                    }
+                }
+            }
+        }
+    }
+    return failed;
 }
 
 static int verify_layout_faces(void) {
@@ -226,76 +492,129 @@ static int verify_layout_faces(void) {
     for (size_t kind = 0; kind < count; ++kind) {
         const bool expected_layout = row_bit(layout_row, kind);
         const bool expected_empty = row_bit(empty_row, kind);
+        const int64_t event = expected_event((int64_t)kind, false);
         if (expected_layout) layout_positive += 1;
         if (expected_empty) empty_positive += 1;
-        if (idol_parser_layout_terminator((int64_t)kind) != expected_layout) failed += 1;
-        if (idol_parser_empty_body_terminator((int64_t)kind) != expected_empty) failed += 1;
+        if ((((event >> 15) & 1) != 0) != expected_layout) failed += 1;
+        if ((((event >> 16) & 1) != 0) != expected_empty) failed += 1;
         if (expected_empty && !expected_layout) failed += 1;
     }
     if (layout_positive != 6 || empty_positive != 5) failed += 1;
-    if (idol_parser_layout_terminator(-1) != false) failed += 1;
-    if (idol_parser_layout_terminator((int64_t)count) != false) failed += 1;
-    if (idol_parser_empty_body_terminator(-1) != false) failed += 1;
-    if (idol_parser_empty_body_terminator((int64_t)count) != false) failed += 1;
+    int64_t facts[3] = {0, 114, 0};
+    int64_t out[2] = {-1, -1};
+    if (idol_parser_event(facts, 1, out, 2, false) != 1) failed += 1;
+    if (((out[0] >> 15) & 3) != 0) failed += 1;
+    facts[1] = -1;
+    if (idol_parser_event(facts, 1, out, 2, false) != 1) failed += 1;
+    if (((out[0] >> 15) & 3) != 0) failed += 1;
     return failed;
 }
 
-static int verify_opening(void) {
+/* at-face bit layout (event lane-one bits 62..63):
+ *   0  expression               — `@name` followed by anything not in any
+ *                                 directive/attribute catalog
+ *   1  standalone directive     — `@build.*`, `@debug.*`, `@trace.*`,
+ *                                 `@cinclude`, `@comp.c.import`, `@comp.c.emit`,
+ *                                 `@comp.define.derive`, `@comp.pipeline`, …
+ *   2  attaching declaration    — `@inline`, `@noinline`, `@hot`, `@cold`,
+ *                                 `@pure`, `@packed`, `@raw`, `@nopanic`,
+ *                                 `@derive`, `@implements`, `@c.export`,
+ *                                 `@c.call`, `@c.ffi`, `@c.link`, `@c.type`, …
+ *
+ * The owner is the producer token pack. Each control below tokenizes a real
+ * source line through `compiler_lexer__new`, runs the whole-pack event once,
+ * and reads the at-face bits off the `@` token coordinate. Failure modes:
+ *   - bit width missing          ⇒ got 0 for every control
+ *   - production lexeme drift    ⇒ `expected_face` disagrees with the host
+ *   - directive catalog drift    ⇒ a control case below stops matching
+ */
+static int64_t at_face_word(const char *name) {
+    return INT64_C(7) | (INT64_C(99) << 8) | (INT64_C(101) << 16) | (INT64_C(118) << 24) | (INT64_C(101) << 32) | (INT64_C(110) << 40);
+}
+
+static int verify_at_face_control(const char *source, int64_t expected) {
+    int64_t facts[256] = {0};
+    int64_t events[258] = {0};
+    int64_t count = tokenize(source, facts);
+    int64_t written = idol_parser_event(facts, count, &events[1], count * 2, true);
+    int64_t at_index = -1;
+    for (int64_t i = 0; i < count; ++i) {
+        if ((facts[1 + i * 2] & 255) == 81) { at_index = i; break; }
+    }
+    int failed = written != count || at_index < 0;
+    int64_t got = at_index >= 0 ? ((events[1 + at_index] >> 62) & 3) : -1;
+    if (got != expected) failed += 1;
+    if (failed) fprintf(stderr, "%s at-face got=%lld expected=%lld written=%lld\n", source, (long long)got, (long long)expected, (long long)written);
+    return failed;
+}
+
+static int verify_at_face(void) {
     int failed = 0;
-    const int64_t k = 0;
+    /* standalone directives — module-scope statements */
+    failed += verify_at_face_control("@cinclude", 1);
+    failed += verify_at_face_control("@build.project(\"x\")", 1);
+    failed += verify_at_face_control("@build", 1);
+    failed += verify_at_face_control("@debug.trace(\"y\")", 1);
+    failed += verify_at_face_control("@trace.entry()", 1);
+    failed += verify_at_face_control("@comp.define.derive()", 1);
+    failed += verify_at_face_control("@comp.pipeline()", 1);
+    failed += verify_at_face_control("@comp.c.import(\"x.h\")", 1);
+    failed += verify_at_face_control("@comp.c.emit(\"int x;\")", 1);
+    /* attaching declaration attributes */
+    failed += verify_at_face_control("@inline foo() = 1", 2);
+    failed += verify_at_face_control("@noinline foo() = 1", 2);
+    failed += verify_at_face_control("@hot foo() = 1", 2);
+    failed += verify_at_face_control("@cold foo() = 1", 2);
+    failed += verify_at_face_control("@pure foo() = 1", 2);
+    failed += verify_at_face_control("@packed", 2);
+    failed += verify_at_face_control("@raw foo() = 1", 2);
+    failed += verify_at_face_control("@nopanic foo() = 1", 2);
+    failed += verify_at_face_control("@profile foo() = 1", 2);
+    failed += verify_at_face_control("@unroll foo() = 1", 2);
+    failed += verify_at_face_control("@deprecated foo() = 1", 2);
+    failed += verify_at_face_control("@implements(i64) x = 1", 2);
+    failed += verify_at_face_control("@derive foo() = 1", 2);
+    failed += verify_at_face_control("@c.export(\"n\") foo() = 1", 2);
+    failed += verify_at_face_control("@c.call(\"x\") foo() = 1", 2);
+    failed += verify_at_face_control("@c.ffi(\"n\") foo() = 1", 2);
+    failed += verify_at_face_control("@ffi(\"x\") foo() = 1", 2);
+    /* bare attaching — `@c.export("n") name(x) = 1` without `fun` */
+    failed += verify_at_face_control("@c.export(\"n\") name() = 1", 2);
+    /* @export and @flatten are also attaching */
+    failed += verify_at_face_control("@export foo() = 1", 2);
+    failed += verify_at_face_control("@flatten foo() = 1", 2);
+    /* @meta.* namespace mirrors @comp.* */
+    failed += verify_at_face_control("@meta.c.export(\"n\") foo() = 1", 2);
+    failed += verify_at_face_control("@meta.c.import(\"x.h\")", 1);
+    failed += verify_at_face_control("@meta.c.emit(\"int x;\")", 1);
+    failed += verify_at_face_control("@meta.c.include(\"x.h\")", 1);
+    failed += verify_at_face_control("@meta.inline foo() = 1", 2);
+    failed += verify_at_face_control("@meta.export foo() = 1", 2);
+    /* expression — unknown `@name` (anything not in any catalog) */
+    failed += verify_at_face_control("@something_unknown(x)", 0);
+    failed += verify_at_face_control("@xyz", 0);
+    failed += verify_at_face_control("@comp.unknown_thing()", 0);
+    return failed;
+}
+
+static int verify_boundary_opening(void) {
+    int failed = 0;
+    const int64_t ordinary = expected_event(0, false);
+    const int64_t terminator = expected_event(10, false);
     const int64_t op_line = 1;
     const int64_t op_col = 5;
-    // 1. Lua mode: returns 0 (no layout).
-    if (idol_parser_opening(false, op_line, op_col, k, 1, 6) != 0) failed += 1;
-    // 2. No opener (open_line 0): returns 0.
-    if (idol_parser_opening(true, 0, 0, k, 1, 6) != 0) failed += 1;
-    // 3. Lua mode + first_is_terminator path: returns 0.
-    if (idol_parser_opening(false, op_line, op_col, 10, 1, 6) != 0) failed += 1;
-    // 4. Open line, inline body (first.line == open_line, not terminator):
-    //    bit 0 = offside, bit 2 = inline, open_col shifted into bits 8..35.
-    const int64_t inline_bits =
-        idol_parser_opening(true, op_line, op_col, k, op_line, op_col + 1);
-    if ((inline_bits & 1) == 0) failed += 1;
-    if ((inline_bits & 4) == 0) failed += 1;
-    if (((inline_bits >> 8) & 0x0FFFFFFF) != op_col) failed += 1;
-    // 5. Indented body (first.line > open_line AND first.col > open_col):
-    //    bit 0 = offside, body_col shifted into bits 36..63.
-    const int64_t first_line = 2;
-    const int64_t first_col = 9;
-    const int64_t indented_bits =
-        idol_parser_opening(true, op_line, op_col, k, first_line, first_col);
-    if ((indented_bits & 1) == 0) failed += 1;
-    if (((indented_bits >> 36) & 0x0FFFFFFF) != first_col) failed += 1;
-    // 6. First token is a layout terminator (e.g. kw_end = 10):
-    //    offside bit NOT set; terminator reading via layout_terminator.
-    if (idol_parser_layout_terminator(10) != true) failed += 1;
-    const int64_t term_bits =
-        idol_parser_opening(true, op_line, op_col, 10, first_line, first_col);
-    if ((term_bits & 1) != 0) failed += 1;
-    return failed;
-}
-
-static int verify_layout_verdict(void) {
-    int failed = 0;
-    const int64_t op_col = 5;
-    // 1. No offside: verdict 0 (keep), regardless of column.
-    if ((idol_parser_layout_verdict(false, op_col, 0, 0, 2, 3) & 0x3) != 0) failed += 1;
-    if ((idol_parser_layout_verdict(false, op_col, 0, 10, 2, 100) & 0x3) != 0) failed += 1;
-    // 2. Column left of opener: verdict 1 (close).
-    if ((idol_parser_layout_verdict(true, op_col, 0, 0, 2, 5) & 0x3) != 1) failed += 1;
-    if ((idol_parser_layout_verdict(true, op_col, 0, 0, 2, 3) & 0x3) != 1) failed += 1;
-    // 3. Body col not yet established, column > opener: verdict 0 (keep)
-    //    with the new body column shifted into bits 8..35.
-    const int64_t set_body =
-        idol_parser_layout_verdict(true, op_col, 0, 0, 2, 8);
-    if ((set_body & 0x3) != 0) failed += 1;
-    if (((set_body >> 8) & 0x0FFFFFFF) != 8) failed += 1;
-    // 4. Exact body column: verdict 0 (keep).
-    if ((idol_parser_layout_verdict(true, op_col, 8, 0, 2, 8) & 0x3) != 0) failed += 1;
-    // 5. Odd-column terminator: verdict 1 (close). kw_end = 10.
-    if ((idol_parser_layout_verdict(true, op_col, 8, 10, 2, 7) & 0x3) != 1) failed += 1;
-    // 6. Odd-column ordinary token: verdict 2 (misindent). kind = 0 (name).
-    if ((idol_parser_layout_verdict(true, op_col, 8, 0, 2, 7) & 0x3) != 2) failed += 1;
+    if (idol_parser_boundary(true, 0, false, op_line, op_col, 0, ordinary, 1, 0, 6, false) != 0) failed += 1;
+    if (idol_parser_boundary(true, 0, false, 0, 0, 0, ordinary, 1, 0, 6, true) != 0) failed += 1;
+    if (idol_parser_boundary(true, 0, false, op_line, op_col, 0, terminator, 2, 0, 9, false) != 0) failed += 1;
+    const int64_t empty_bits = idol_parser_boundary(true, 0, false, op_line, op_col, 0, terminator, 2, 0, 9, true);
+    if ((empty_bits & 1) != 0 || ((empty_bits >> 8) & 0x0FFFFFFF) != op_col) failed += 1;
+    const int64_t inline_bits = idol_parser_boundary(true, 0, false, op_line, op_col, 0, ordinary, op_line, 0, op_col + 1, true);
+    if ((inline_bits & 1) == 0 || (inline_bits & 4) == 0) failed += 1;
+    if (((inline_bits >> 36) & 0x0FFFFFFF) != 0) failed += 1;
+    const int64_t indented_bits = idol_parser_boundary(true, 0, false, op_line, op_col, 0, ordinary, 2, 0, 9, true);
+    if ((indented_bits & 1) == 0 || ((indented_bits >> 36) & 0x0FFFFFFF) != 9) failed += 1;
+    const int64_t left_bits = idol_parser_boundary(true, 0, false, op_line, op_col, 0, ordinary, 2, 0, op_col, true);
+    if ((left_bits & 1) != 0) failed += 1;
     return failed;
 }
 
@@ -318,6 +637,9 @@ int main(void) {
     failed += verify("(less(arr(1), v))\n    x", true, 1, name, false);
     failed += verify_statement("f(a: i64) = a", true);
     failed += verify_statement("print(t:concat(\"-\"))", false);
+    failed += verify_path("home.f(a: i64) = a", true);
+    failed += verify_path("body:weight(kg: i64) = kg", true);
+    failed += verify_path("a:b.c(x: i64) = x", false);
     failed += verify_clause("case", 2);
     failed += verify_clause("else", 3);
     failed += verify_clause("x =>", 1);
@@ -326,13 +648,30 @@ int main(void) {
     failed += verify_clause("x\n=>", 0);
     failed += verify_clause("+ =>", 0);
     failed += verify_clause(") =>", 0);
-    failed += verify_lead();
-    failed += verify_prefix();
-    failed += verify_relation_faces();
+    int64_t returns = first_kind("return");
+    failed += verify_return(returns, first_kind("end"), 1, 1, true, 0);
+    failed += verify_return(returns, name, 1, 1, true, 1);
+    failed += verify_return(returns, name, 2, 1, true, 0);
+    failed += verify_return(returns, first_kind(")"), 1, 1, true, 2);
+    failed += verify_return(returns, first_kind("+"), 1, 1, true, 2);
+    failed += verify_return(returns, first_kind(")"), 5, 1, false, 1);
+    failed += verify_type("type UserId = i64", true);
+    failed += verify_type("type(x)", false);
+    failed += verify_type("type (x)", false);
+    failed += verify_type("typed UserId = i64", false);
+    failed += verify_type("type\nUserId = i64", true);
+    failed += verify_event();
+    failed += verify_event_lead_trivia();
+    failed += verify_event_boundary();
+    failed += verify_admission();
+    failed += verify_statement_face();
+    failed += verify_boundary();
+    failed += verify_boundary_clause();
+    failed += verify_boundary_closure();
     failed += verify_layout_faces();
-    failed += verify_opening();
-    failed += verify_layout_verdict();
-    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 statement-cases=2 clause-cases=8 lead-slots=%zu prefix-slots=%zu relation-slots=%zu layout-terminators=%zu empty-terminators=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
+    failed += verify_boundary_opening();
+    failed += verify_at_face();
+    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 lead-slots=%zu prefix-slots=%zu relation-slots=%zu statement-slots=%zu event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=%zu boundary-slots=%zu boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=%zu empty-terminators=%zu at-face-cases=37 failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__statement()), strlen(token_grammarrole__member()), strlen(token_grammarrole__boundary()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
     return failed != 0;
 }
 EOF
@@ -345,20 +684,9 @@ compile_and_run() {
     cursor_result="$work/$label.cursor.result"
     if ! "$cc" -std=c11 -O2 -w \
         -Dmain=idol_parser_projection_main \
-        -Dheader_signal_lx=idol_parser_header_pack \
-        -Dreturn_starts_value_lx=idol_parser_return_starts_value \
-        -D_clause=idol_parser_match_clause \
-        -Dlead=idol_parser_lead \
-        -Dprefix=idol_parser_prefix \
-        -Dinfix_prec=idol_parser_infix_prec \
-        -D_unary=idol_parser_unary \
-        -D_glue=idol_parser_glue \
-        -D_update=idol_parser_update \
+        '-Dboundary(...)=idol_parser_boundary(__VA_ARGS__)' \
+        '-Devent(...)=idol_parser_event(__VA_ARGS__)' \
         -Dis_digit=idol_parser_is_digit \
-        -D_layout_terminator=idol_parser_layout_terminator \
-        -D_empty_body_terminator=idol_parser_empty_body_terminator \
-        -D_opening=idol_parser_opening \
-        -D_layout_verdict=idol_parser_layout_verdict \
         -c "$source" -o "$object"
     then
         printf 'parser artifact: FAIL — %s projection did not compile\n' "$label" >&2
@@ -366,20 +694,9 @@ compile_and_run() {
     fi
     if ! "$cc" -std=c11 -O2 -w \
         -Dmain=idol_parser_projection_main \
-        -Dheader_signal_lx=idol_parser_header_pack \
-        -Dreturn_starts_value_lx=idol_parser_return_starts_value \
-        -D_clause=idol_parser_match_clause \
-        -Dlead=idol_parser_lead \
-        -Dprefix=idol_parser_prefix \
-        -Dinfix_prec=idol_parser_infix_prec \
-        -D_unary=idol_parser_unary \
-        -D_glue=idol_parser_glue \
-        -D_update=idol_parser_update \
+        '-Dboundary(...)=idol_parser_boundary(__VA_ARGS__)' \
+        '-Devent(...)=idol_parser_event(__VA_ARGS__)' \
         -Dis_digit=idol_parser_is_digit \
-        -D_layout_terminator=idol_parser_layout_terminator \
-        -D_empty_body_terminator=idol_parser_empty_body_terminator \
-        -D_opening=idol_parser_opening \
-        -D_layout_verdict=idol_parser_layout_verdict \
         -include "$source" "$cursor_harness" -lm -o "$cursor_executable"
     then
         printf 'parser artifact: FAIL — %s cursor/pack probe did not compile\n' "$label" >&2

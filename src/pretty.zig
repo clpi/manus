@@ -12,10 +12,10 @@ const Module = ast.Module;
 const BinOp = ast.BinOp;
 const UnOp = ast.UnOp;
 
-/// Packed `infix_prec` triple, mirrored from the parser projection. The
-/// pretty-printer uses this for the BinOp round-trip test (and only that —
-/// production printing still reads the owner's row).
-extern fn idol_parser_infix_prec(kind: i64) i64;
+/// Test-only access to the parser's one whole-pack event producer. Production
+/// printing reads the grammar owner directly; the round-trip test below proves
+/// event bits 23..46 preserve the same relation identity.
+extern fn idol_parser_event(facts: [*]const i64, count: i64, out: [*]i64, capacity: i64, idol: bool) i64;
 
 pub const Mode = enum {
     idol,
@@ -992,8 +992,7 @@ pub const PrettyPrinter = struct {
             switch (f) {
                 .named => |nm| {
                     try self.print("{s} = ", .{nm.key});
-                    if (allLabelledPack(nm.val)) try self.printOffsidePack(nm.val)
-                    else try self.printExpr(nm.val, 0);
+                    if (allLabelledPack(nm.val)) try self.printOffsidePack(nm.val) else try self.printExpr(nm.val, 0);
                 },
                 .indexed => |ix| {
                     try self.write("[");
@@ -2192,16 +2191,19 @@ test "pretty: every BinOp round-trips through the grammar" {
     // forward. This is the runtime witness that the two directions compose to
     // the identity, which is the property the deleted pair of hand-written
     // switches could only be TESTED for. The relation ordinal the parser now
-    // returns through `idol_parser_infix_prec` is the position in
+    // returns through whole-pack event bits 23..46 is the position in
     // `lib/compiler/token.id` `_relationorder`, which `BinOp` aliases, so
     // unpacking the packed ABI call reproduces the same bijection the deleted
     // `Parser.infixBinOp` was tested for.
     inline for (@typeInfo(BinOp).@"enum".field_names) |nm| {
         const op: BinOp = @field(BinOp, nm);
         const kind = PrettyPrinter.tokenFor(op);
-        const triple = idol_parser_infix_prec(@intCast(@backingInt(kind)));
+        var facts = [3]i64{ 0, @intCast(@backingInt(kind)), 0 };
+        var events = [2]i64{ 0, 0 };
+        try testing.expectEqual(@as(i64, 1), idol_parser_event(facts[0..].ptr, 1, events[0..].ptr, 2, true));
+        const triple = (events[0] >> 23) & 0xFFFFFF;
         try testing.expect(triple != 0);
-        const back: BinOp = @enumFromInt(@as(u8, @intCast(triple & 0xff)));
+        const back: BinOp = @fromBackingInt(@intCast(@as(u8, @intCast(triple & 0xff))));
         try testing.expectEqual(op, back);
     }
 }
@@ -2218,8 +2220,8 @@ test "pretty: minimal grouping preserves the tree on every operator pair" {
     // strings, and not merely that formatting is a fixed point, which a dropped
     // parenthesis also satisfies.
     const ops = [_][]const u8{
-        "+",  "-",  "*",  "/",  "//", "%",  "^",  "&",
-        "|",  "~",  "<<", ">>", "==", "!=", "<",  ">",
+        "+",  "-",  "*",   "/",  "//", "%",  "^", "&",
+        "|",  "~",  "<<",  ">>", "==", "!=", "<", ">",
         "<=", ">=", "and", "or",
     };
     var checked: usize = 0;

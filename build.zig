@@ -35,24 +35,8 @@ fn linkProductionIdolFrontend(b: *std.Build, mod: *std.Build.Module) void {
 
             "-Dis_digit=idol_parser_is_digit",
 
-            "-D_at_face=idol_parser_at_face",
-            "-Dheader_signal_lx=idol_parser_header_pack",
-            "-Dreturn_starts_value_lx=idol_parser_return_starts_value",
-            "-D_clause=idol_parser_match_clause",
-            "-Dlead=idol_parser_lead",
-            "-Dprefix=idol_parser_prefix",
-            "-Ddemands_operand=idol_parser_demands_operand",
-            "-Dinfix_prec=idol_parser_infix_prec",
-            "-D_unary=idol_parser_unary",
-            "-D_glue=idol_parser_glue",
-            "-D_update=idol_parser_update",
-            "-Dis_primitive_descriptor_kind=idol_parser_is_primitive_descriptor_kind",
-            "-Dis_literal_kind=idol_parser_is_literal_kind",
-            "-Dis_quoted_kind=idol_parser_is_quoted_kind",
-            "-D_layout_terminator=idol_parser_layout_terminator",
-            "-D_empty_body_terminator=idol_parser_empty_body_terminator",
-            "-D_opening=idol_parser_opening",
-            "-D_layout_verdict=idol_parser_layout_verdict",
+            "-Dboundary(...)=idol_parser_boundary(__VA_ARGS__)",
+            "-Devent(...)=idol_parser_event(__VA_ARGS__)",
         },
     });
     mod.link_libc = true;

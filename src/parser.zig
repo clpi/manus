@@ -14,244 +14,33 @@ const token_view = @import("token_view.zig");
 const lexer_dispatch = @import("lexer_dispatch.zig");
 const source_cursor = @import("source_cursor.zig");
 
-extern fn idol_parser_header_pack(
+/// Produce one static parser event per token in the immutable fact pack.
+/// Bits 0..4 dispatch, 5..8 source-family admission, 9 member, 10 boundary,
+/// and 11 branch. Returns count or -1 without mutation when capacity is short.
+extern fn idol_parser_event(
     facts: [*]const i64,
     count: i64,
-    start: i64,
-    allow_untyped_comma: bool,
-    offside_col: i64,
-    prev_before_lparen: i64,
-) bool;
-
-extern fn idol_parser_return_starts_value(
-    facts: [*]const i64,
-    count: i64,
-    start: i64,
-    return_line: i64,
+    out: [*]i64,
+    capacity: i64,
     idol_mode: bool,
 ) i64;
 
-extern fn idol_parser_match_clause(
-    facts: [*]const i64,
-    count: i64,
-    start: i64,
-) i64;
-
-extern fn idol_parser_lead(
-    kind: i64,
-    line: i64,
-    before: i64,
-) bool;
-
-extern fn idol_parser_prefix(
-    kind: i64,
-) bool;
-
-extern fn idol_parser_demands_operand(
-    kind: i64,
-) bool;
-
-extern fn idol_parser_at_face(
-    facts: [*]const i64,
-    count: i64,
-    start: i64,
-) i64;
-
-/// Primitive descriptor identity — `i64`, `str`, `f32`, ...
-///
-/// Returns true when the owner grammar row's `.descriptor` flag is set on
-/// `kind`. The parser used to ask `grammar_roles.isDescriptor(tok.kind)` on
-/// every type-atom / typed-binding / type-table key probe (10 sites across
-/// `parse_type_primary`, `parse_attributed_decl`, `parse_table_literal`,
-/// `parse_record_field_list`, and `layout_arg_can_start_type`), which is one
-/// row-cache lookup per probe. The relation reads the producer's
-/// `roledescriptor` directly through `parser.id is_primitive_descriptor_kind`
-/// and exposes the same predicate through this single ABI call so the parser
-/// owns no kind-attribute cache of its own. Distinct from
-/// `idol_parser_is_descriptor_kind` (the broader `name OR primitive-descriptor`
-/// predicate used by `colon_is_method_call_lx`); this ABI answers only the
-/// primitive-descriptor-only fact the host row read returned.
-extern fn idol_parser_is_primitive_descriptor_kind(
-    kind: i64,
-) bool;
-
-/// Literal-kind identity — `int_lit`, `float_lit`, text/bytes/compat.
-///
-/// Returns true when the owner grammar row's `.literal_kind` flag is set on
-/// `kind`. The parser used to ask `grammar_roles.isLiteralKind(tok.kind)` on
-/// every Pratt / record / table / descriptor / pretty probe (8 sites across
-/// `parse_stmt`, `parse_match_arm`, `parse_descriptor_slot`, and others),
-/// which is one row-cache lookup per probe. The relation reads the
-/// producer's `literal(): str` row directly through
-/// `parser.id is_literal_kind` and exposes the same predicate through this
-/// single ABI call so the parser owns no kind-attribute cache of its own.
-extern fn idol_parser_is_literal_kind(
-    kind: i64,
-) bool;
-
-/// Quoted-payload identity — text / bytes / compat.
-///
-/// Returns true when the owner grammar row's `.quoted` flag is set on
-/// `kind`. The parser used to ask `grammar_roles.isQuotedKind(tok.kind)` on
-/// every record-key / table-key / descriptor-body / pretty probe (8 sites
-/// across `parse_match_arm`, `parse_stmt`, `parse_descriptor_slot`,
-/// `parse_table_literal`, and others), which is one row-cache lookup per
-/// probe. The relation reads the producer's `quoted(): str` row directly
-/// through `parser.id is_quoted_kind` and exposes the same predicate
-/// through this single ABI call so the parser owns no kind-attribute cache
-/// of its own. Slot 3 stays unpublished and reads as 0.
-extern fn idol_parser_is_quoted_kind(
-    kind: i64,
-) bool;
-
-/// Layout-terminator identity — `kw_end`, `kw_else`, `kw_elseif`,
-/// `kw_until`, `kw_catch`, `eof`. The parser used to carry the same
-/// six identities in the host `open_layout` switch (a block that BEGINS
-/// with one of these has no body to lay out) and in the host `layout_verdict`
-/// terminator arm (a terminator at an odd column is a disagreement, not a
-/// statement that matches no shape — close the block). The relation reads
-/// the producer's `layoutterminator(): str` row directly through `parser.id
-/// layout_terminator`; the parser owns no kind-attribute cache of its own.
-/// Returns true exactly on the six identities; slot 3 reads as 0.
-extern fn idol_parser_layout_terminator(
-    kind: i64,
-) bool;
-
-/// Empty-body terminator identity — same five as `layout_terminator`
-/// minus `eof`. The empty-body branch in `parse_block_open` needs the
-/// smaller list: `eof` as the FIRST token of a block means "the body IS
-/// the file's last position", and the empty-block return handles it
-/// directly. A single six-identity list cannot express both readings
-/// without an extra peek, and the host `parse_block_open` switch carried
-/// this five-identity carve-out as a host fact. The relation reads the
-/// producer's `emptybodyterminator(): str` row directly through
-/// `parser.id empty_body_terminator`; the parser owns no kind-attribute
-/// cache of its own. Returns true exactly on the five identities; slot 3
-/// reads as 0.
-extern fn idol_parser_empty_body_terminator(
-    kind: i64,
-) bool;
-
-/// Layout frame for a block about to be parsed, packed into one i64.
-///
-/// Returns 0 when layout does not govern — Lua mode, no opener, or the
-/// opener's column is 0. Returns a packed i64 otherwise:
-///
-///     bits 0..0   offside (0 = layout does not govern; 1 = offside frame)
-///     bits 1..1   first_token_is_terminator
-///                   (block begins with a layout terminator — `open_layout`
-///                   returned with `offside = false` for that reason)
-///     bits 2..2   first_token_inline_on_opener_line
-///                   (first body statement shares the opener's line; the
-///                   offside column is left to the first continuation line)
-///     bits 8..35  open_col (28 bits, matching the producer pack layout)
-///     bits 36..63 body_col (28 bits; 0 means "not yet established")
-///
-/// The host `open_layout` switch carried the dialect check, the
-/// opener-presence check, the terminator-list check, and the
-/// inline-vs-indented branch. Every one of those is now a fact in the
-/// `opening` relation; the Zig parser only validates that the packed
-/// bounds fit a `u32` and copies them into the physical frame.
-extern fn idol_parser_opening(
-    idol_mode: bool,
+/// One complete block-boundary answer. `opening=true` returns the physical
+/// layout frame (offside/inline/open/body columns). Edge calls return loop,
+/// clause, written-closure, and body-column facts. Static identity facts come
+/// from the whole-pack event; Zig copies or materializes only settled output.
+extern fn idol_parser_boundary(
+    opening: bool,
+    statement_count: i64,
+    offside: bool,
     open_line: i64,
     open_col: i64,
-    first_kind: i64,
-    first_line: i64,
-    first_col: i64,
-) i64;
-
-/// Layout verdict at a statement boundary — keep the body open, close the
-/// block, or refuse the line as a mis-indent.
-///
-/// Returns a packed i64:
-///
-///     bits 0..1   verdict (0 = keep, 1 = close, 2 = misindent)
-///     bits 8..35  body_col (only meaningful when verdict = keep and the
-///                 block's body column was not yet established; the host
-///                 `layout_verdict` mutated `f.body_col` on that path,
-///                 and the relation returns the updated value so the Zig
-///                 frame can adopt it without re-deciding)
-///
-/// The host `layout_verdict` carried the same sequence (no offside ⇒
-/// always keep; column left of opener ⇒ close; body column unset ⇒ set
-/// from this token and keep; exact body column ⇒ keep; terminator ⇒ close;
-/// ordinary ⇒ misindent) and the same terminator list (which the
-/// `layout_terminator` relation above now owns). Every arm of that switch
-/// is a fact in this relation.
-extern fn idol_parser_layout_verdict(
-    offside: bool,
-    open_col: i64,
     body_col: i64,
-    kind: i64,
+    event: i64,
     line: i64,
+    previous_line: i64,
     col: i64,
-) i64;
-
-/// Packed `infix_prec` triple for one token identity.
-///
-/// Returns 0 when the identity is not an infix operator with a real relation,
-/// non-zero precedence, and non-none associativity. Otherwise the layout is:
-///
-///   bits 0..7   = relation ordinal (Relation enum position, 0-23)
-///   bits 8..15  = left binding precedence (0-23)
-///   bits 16..23 = right binding precedence (left adjusted by assoc)
-///
-/// The Relation ordinal is the position in `token.id`'s `_relationorder`,
-/// which `src/grammar_role_table.zig` and `src/ast.zig`'s `BinOp` alias. The
-/// host unpacks with mask+shift and reconstructs the BinOp via `@intToEnum`.
-extern fn idol_parser_infix_prec(
-    kind: i64,
-) i64;
-
-/// Prefix relation of one token identity — the `Prefix` enum ordinal.
-///
-/// Returns -1 when the identity carries no prefix relation (`plus`,
-/// `name`, `int_lit`, every literal keyword, every closing delimiter).
-/// Otherwise returns the ordinal in the `Prefix` enum published by
-/// `lib/compiler/token.id` (`neg=0, not=1, len=2, bnot=3, compile=4`)
-/// and aliased as `ast.UnOp`. The parser used to ask
-/// `grammar_roles.unaryRelation(tok.kind)` on every Pratt unary-prefix
-/// probe (3 sites across `parse_match_scrutinee_prec` and
-/// `parse_prec`), reaching into the generated role row for `.unary`.
-/// The relation reads the producer's owner-generated ordinal directly;
-/// parser.id carries neither a second prefix order nor a name scan.
-extern fn idol_parser_unary(
-    kind: i64,
-) i64;
-
-/// Glued compound-update relation of one token identity — the
-/// adjacency form (`>>=`, `<<=`, `|=`, `&=`). The lexer mints no token
-/// for these; the face is a grammar fact.
-///
-/// Returns -1 when the identity does not admit the glued face
-/// (`plus`, `name`, `caret`, every literal keyword, ...). Otherwise
-/// returns the `Relation` enum ordinal of the relation the identity
-/// applies (e.g. `rshift` for `rshift`). The parser used to ask
-/// `grammar_roles.gluedRelation(op.kind)` on every `peek_glued_assign`
-/// probe, reaching into the generated role row for `.glue` and
-/// `.relation`. The relation reads the producer's glue face and generated
-/// relation ordinal directly; the host row reads are gone.
-extern fn idol_parser_glue(
-    kind: i64,
-) i64;
-
-/// Single-token compound-update relation of one token identity —
-/// `+=`, `-=`, `*=`, `/=`, `%=`, `^=`.
-///
-/// Returns -1 when the identity does not admit the single-token
-/// update face (`plus`, `name`, `pipe`, every literal keyword, ...).
-/// Otherwise returns the `Relation` enum ordinal of the relation the
-/// identity applies (e.g. `add` for `plus_assign`). The parser used to
-/// ask `grammar_roles.updateRelation(kind)` on every
-/// `compound_assign_op` probe, reaching into the generated role row
-/// for `.update` and `.relation`. The relation reads the producer's
-/// update face and generated relation ordinal directly; the host row reads
-/// are gone. `+=` and `+` carry the SAME relation; the face is the
-/// only difference, which is why the fact is in one relation and not a
-/// sixth spelling of `add`.
-extern fn idol_parser_update(
-    kind: i64,
+    idol_mode: bool,
 ) i64;
 
 pub const ParseError = error{
@@ -469,6 +258,10 @@ pub const Parser = struct {
     /// host copies bytes and assigns no contextual role. Zero is also the EOF
     /// lexeme; count/start distinguish it from the inaccessible padding slot.
     parser_facts: ?[]i64 = null,
+    /// One Idol-produced static event per producer token. This is derived once
+    /// from `parser_facts`; Parser retains the sole cursor and indexes both arrays
+    /// by the same producer coordinate.
+    parser_events: ?[]i64 = null,
 
     /// Byte offset of the last retired-`#` site `denyRetiredLengthHash` named.
     /// About thirty-five speculative scans rewind the lexer and re-read the same
@@ -539,26 +332,71 @@ pub const Parser = struct {
         return facts;
     }
 
-    /// Read the authoritative `@`-statement face produced by parser.id
-    /// `_at_face` for the token at producer index `at_index`. Returns
-    /// 0 (expression), 1 (standalone directive), or 2 (attaching
-    /// declaration). When the face is 0, the previous source-text walk
-    /// inside `parse_at_starts_attribute_decl` was a no-op by definition —
-    /// callers short-circuit on 0 to delete one catalog pass per
-    /// expression-position `@` token without changing any outcome
-    /// (GR-134 §Twentysixth, `law.bridge.death`).
-    fn readAtFace(_: *Parser, facts: []const i64, at_index: usize) u8 {
-        const count = facts.len / 2;
-        if (at_index >= count) return 0;
-        const face = idol_parser_at_face(facts.ptr, @intCast(count), @intCast(at_index));
-        if (face < 0 or face > 2) return 0;
-        return @intCast(face);
+    fn ensureParserEvents(self: *Parser) ParseError![]const i64 {
+        if (self.parser_events) |events| return events;
+        const facts = try self.ensureParserFacts();
+        const count = (facts.len - 1) / 2;
+        const count_i64 = std.math.cast(i64, count) orelse return error.InvalidRecordCount;
+        const event_words = std.math.mul(usize, count, 2) catch return error.SourceTooLarge;
+        const event_words_i64 = std.math.cast(i64, event_words) orelse return error.InvalidRecordCount;
+        const events = try self.alloc.alloc(i64, event_words);
+        errdefer self.alloc.free(events);
+        const written = idol_parser_event(facts.ptr, count_i64, events.ptr, event_words_i64, self.idol_mode);
+        if (written != count_i64) return error.InvalidRecordCount;
+        self.parser_events = events;
+        return events;
+    }
+
+    fn currentParserEvent(self: *Parser) ParseError!i64 {
+        const events = try self.ensureParserEvents();
+        if (events.len % 2 != 0) return error.InvalidRecordCount;
+        const count = events.len / 2;
+        const index = self.producerStreamIndex();
+        if (index >= count) return error.InvalidRecordCount;
+        return events[index];
+    }
+
+    fn currentParserDecision(self: *Parser) ParseError!i64 {
+        const events = try self.ensureParserEvents();
+        if (events.len % 2 != 0) return error.InvalidRecordCount;
+        const count = events.len / 2;
+        const index = self.producerStreamIndex();
+        if (index >= count) return error.InvalidRecordCount;
+        return events[count + index];
+    }
+
+    fn currentParserPrimitive(self: *Parser) ParseError!bool {
+        return (((try self.currentParserEvent()) >> 17) & 1) != 0;
+    }
+
+    fn currentParserLiteral(self: *Parser) ParseError!bool {
+        return (((try self.currentParserEvent()) >> 18) & 1) != 0;
+    }
+
+    fn currentParserQuoted(self: *Parser) ParseError!bool {
+        return (((try self.currentParserEvent()) >> 19) & 1) != 0;
+    }
+
+    fn currentParserLead(self: *Parser) ParseError!bool {
+        return (((try self.currentParserEvent()) >> 22) & 1) != 0;
+    }
+
+    fn currentParserPrefix(self: *Parser) ParseError!bool {
+        return (((try self.currentParserEvent()) >> 20) & 1) != 0;
+    }
+
+    fn currentParserMember(self: *Parser) ParseError!bool {
+        return (((try self.currentParserEvent()) >> 9) & 1) != 0;
     }
 
     /// Free the immutable pack and reset the parser-owned mirror. Mirrors
     /// `ensureProducerPack` symmetry: install + release pair is the parser
     /// API for the immutable producer pack.
     pub fn releaseOwnedPack(self: *Parser) void {
+        if (self.parser_events) |events| {
+            self.alloc.free(events);
+            self.parser_events = null;
+        }
         if (self.parser_facts) |facts| {
             self.alloc.free(facts);
             self.parser_facts = null;
@@ -636,6 +474,9 @@ pub const Parser = struct {
         /// Layout carries this block's structure. False = legacy shape, where
         /// only a written `end` closes the block.
         offside: bool = false,
+        /// Clause face observed at the edge that returned this frame: 0 none,
+        /// 1 elseif, 2 else. `boundary` owns identity and column binding.
+        clause_face: u8 = 0,
     };
 
     /// Compute the layout frame for the block about to be parsed. `open` is the
@@ -654,18 +495,22 @@ pub const Parser = struct {
         // with "'end' at column 13 closes a block opened at column 9", so
         // `zig build bench` could not reach a single RESULT row. The dialect
         // check, the opener-presence check, the terminator-list check, and
-        // the inline-vs-indented branch all live in `idol_parser_opening` —
-        // the parser owns the boundary and the bytes; Zig only validates
-        // that the packed bounds fit a `u32` and copies them into the frame.
+        // the inline-vs-indented branch all live in the opening face of
+        // `idol_parser_boundary`; Zig only validates packed bounds and copies.
         const o = open orelse return f;
-        const first_kind: i64 = @intCast(@backingInt(first.kind));
-        const frame_bits = idol_parser_opening(
-            self.idol_mode,
+        const first_event = try self.currentParserEvent();
+        const frame_bits = idol_parser_boundary(
+            true,
+            0,
+            false,
             @intCast(o.line),
             @intCast(o.col),
-            first_kind,
+            0,
+            first_event,
             @intCast(first.loc.line),
+            0,
             @intCast(first.loc.col),
+            self.idol_mode,
         );
         if (frame_bits == 0) return f;
         f.open_line = o.line;
@@ -673,36 +518,6 @@ pub const Parser = struct {
         f.body_col = @intCast((frame_bits >> 36) & 0x0FFFFFFF);
         f.offside = (frame_bits & 1) != 0;
         return f;
-    }
-
-    /// The offside decision at a statement boundary.
-    const LayoutVerdict = enum { keep, close, misindent };
-
-    fn layout_verdict(f: *LayoutFrame, tok: Token) LayoutVerdict {
-        // Every arm of this decision now lives in `idol_parser_layout_verdict`:
-        // no offside ⇒ always keep; column left of opener ⇒ close; body
-        // column unset ⇒ set from this token and keep; exact body column ⇒
-        // keep; terminator ⇒ close; ordinary ⇒ misindent. The terminator
-        // list is owned by the `layout_terminator` relation. Zig only
-        // unpacks the verdict, copies the (possibly updated) body column
-        // back into the frame, and materializes the enum.
-        const kind: i64 = @intCast(@backingInt(tok.kind));
-        const verdict_bits = idol_parser_layout_verdict(
-            f.offside,
-            @intCast(f.open_col),
-            @intCast(f.body_col),
-            kind,
-            @intCast(tok.loc.line),
-            @intCast(tok.loc.col),
-        );
-        const verdict_int: u32 = @intCast(verdict_bits & 0x3);
-        if (verdict_int == 0) {
-            const new_body = @as(u32, @intCast((verdict_bits >> 8) & 0x0FFFFFFF));
-            if (f.body_col == 0) f.body_col = new_body;
-            return .keep;
-        }
-        if (verdict_int == 1) return .close;
-        return .misindent;
     }
 
     /// §3's mandatory half. A statement indented past its block's offside line
@@ -723,58 +538,41 @@ pub const Parser = struct {
     /// diagnostic, unchanged.
     fn close_block(self: *Parser, open: ast.Loc, offside: bool) ParseError!void {
         const tok = try self.pk();
-        if (tok.kind == .kw_end) {
-            // Under layout the two renderings must AGREE. A LINE-LEADING `end`
-            // deeper than its opener means the writer indented a block
-            // differently than they closed it, and that disagreement is the one
-            // case where dedent-closing could otherwise pick a nesting the
-            // writer did not mean. It is a diagnostic, not a silent choice.
-            //
-            // A TRAILING `end` — one sharing a line with the statement before
-            // it, as in `else body = sub(body, 3) end` — is not rendering
-            // structure at all; its column is wherever the text happened to
-            // stop. Those say nothing and are accepted as written.
-            if (offside and tok.loc.line != self.prev_line and tok.loc.col > open.col) {
+        const edge = try self.currentParserEvent();
+        const decision = idol_parser_boundary(
+            false,
+            0,
+            offside,
+            @intCast(open.line),
+            @intCast(open.col),
+            0,
+            edge,
+            @intCast(tok.loc.line),
+            @intCast(self.prev_line),
+            @intCast(tok.loc.col),
+            self.idol_mode,
+        );
+        const action = (decision >> 4) & 0x7;
+        return switch (action) {
+            0 => {},
+            1 => {
+                _ = try self.adv();
+            },
+            2 => {
                 term.locErr(tok.loc, "'end' at column {d} closes a block opened at column {d}", .{ tok.loc.col, open.col });
                 term.locHint(tok.loc, "the block already closed by dedent; align this 'end' with its opener or remove it", .{});
                 return ParseError.UnexpectedToken;
-            }
-            // A LINE-LEADING `end` LEFT of this opener is not this block's. The
-            // block already closed by dedent — that is what put this line at a
-            // shallower column — so the `end` belongs to something enclosing,
-            // and consuming it here spends a terminator the outer block still
-            // needs. `lib/thread.id:251` is the shape: an `if` at column 9
-            // inside a lambda whose body is also at column 9 swallowed the
-            // lambda's own `end` at column 5, leaving `)` where a statement was
-            // expected. Only an inner `end` could have repaired it, and §3
-            // deletes inner `end`s — so the site had NO correct spelling.
-            //
-            // Guarded on `offside` alone: in the `end`-closed dialect every
-            // block still demands its own terminator and this cannot fire.
-            if (offside and tok.loc.line != self.prev_line and tok.loc.col < open.col) return;
-            _ = try self.adv();
-            return;
-        }
-        if (offside) return;
-        if (self.idol_mode) {
-            const edge = try self.pk();
-            term.locErr(edge.loc, "this block opened at column {d} is still open at the file edge", .{open.col});
-            term.locHint(edge.loc, "outdent to close the block — `end` is deleted in .id source", .{});
-            return ParseError.UnexpectedToken;
-        }
-        _ = try self.expect(.kw_end);
-    }
-
-    /// `else`/`elseif` BINDS BY COLUMN (§3 mechanics). Under layout an inner
-    /// `if` has already closed by dedent, so a clause left of this opener
-    /// belongs to an enclosing construct and must not be taken here. A clause
-    /// at or right of the opener binds — which is also what the `end`-closed
-    /// dialect did, so no existing file changes shape.
-    fn clause_binds(self: *Parser, open: ast.Loc, kind: TK, offside: bool) ParseError!bool {
-        const tok = try self.pk();
-        if (tok.kind != kind) return false;
-        if (!offside) return true;
-        return tok.loc.col >= open.col;
+            },
+            3 => {
+                term.locErr(tok.loc, "this block opened at column {d} is still open at the file edge", .{open.col});
+                term.locHint(tok.loc, "outdent to close the block — `end` is deleted in .id source", .{});
+                return ParseError.UnexpectedToken;
+            },
+            4 => {
+                _ = try self.expect(.kw_end);
+            },
+            else => ParseError.UnexpectedToken,
+        };
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -862,16 +660,20 @@ pub const Parser = struct {
     }
 
     fn advRaw(self: *Parser) ParseError!Token {
+        var demand = false;
         const tok = if (self.pack_tokens) |toks| blk: {
             self.pack_index = self.producerStreamIndex();
             if (self.pack_index >= toks.len) break :blk toks[toks.len - 1];
-            const next = toks[self.pack_index];
+            const index = self.pack_index;
+            const events = try self.ensureParserEvents();
+            if (index >= events.len) return error.InvalidRecordCount;
+            demand = ((events[index] >> 21) & 1) != 0;
             self.pack_index += 1;
-            break :blk next;
+            break :blk toks[index];
         } else try self.lex.next();
         self.prev_line = tok.loc.line;
         self.prev_end_col = tok.loc.col + @as(u32, @intCast(tok.text.len));
-        if (idol_parser_demands_operand(@intCast(@backingInt(tok.kind)))) try self.denyRetiredLengthHash(tok);
+        if (demand) try self.denyRetiredLengthHash(tok);
         return tok;
     }
 
@@ -898,13 +700,9 @@ pub const Parser = struct {
 
     /// Tokens that CANNOT END AN EXPRESSION used to be read here from the
     /// generated grammar-role row via `grammar_roles.lookup(kind).demands_operand`,
-    /// but the same fact is now projected from the canonical owner
-    /// (`lib/compiler/token.id` `demand()`) by `lib/compiler/parser.id`
-    /// `demands_operand`, which compiles into the C ABI symbol
-    /// `idol_parser_demands_operand`. The host lookup is gone: one fewer
-    /// row-cache load on every consumed token, and the host recognizer and
-    /// the generated `grammar_role_table.zig` row-emitter both read the same
-    /// owner fact, so they cannot disagree.
+    /// but whole-pack event bit 21 now projects that fact once from canonical
+    /// `lib/compiler/token.id` `demand()`. `advRaw` captures the bit at the
+    /// consumed coordinate before advancing the sole pack cursor.
     ///
     /// `.lbrace` is deliberately ABSENT. A brace opens a REGION whose body is a
     /// sequence of slots, not one demanded operand, and a comment on its own
@@ -956,7 +754,7 @@ pub const Parser = struct {
     /// each one is a fact rather than a heuristic:
     ///
     ///   1. the token just consumed cannot end an expression
-    ///      (`idol_parser_demands_operand`), so what follows is an OPERAND;
+    ///      (whole-pack event bit 21), so what follows is an OPERAND;
     ///   2. the next visible token is on a LATER LINE, so that operand did not
     ///      arrive — something swallowed the rest of this line;
     ///   3. the swallowing comment is `#` ABUTTING an expression opener, which
@@ -989,7 +787,7 @@ pub const Parser = struct {
     }
 
     /// §3 — **A TOKEN THAT CAN OPEN AN EXPRESSION, AT THE START OF A LINE, OPENS
-    /// ONE.** The exact dual of `idol_parser_demands_operand` above, and the
+    /// ONE.** The exact dual of whole-pack demand bit 21 above, and the
     /// second half of one ruling: that one says what a token cannot END, this
     /// one says what a token can BEGIN, and between them they decide where an
     /// expression stops.
@@ -1678,7 +1476,7 @@ pub const Parser = struct {
 
     fn parse_type_primary(self: *Parser) ParseError!ast.TypeExpr {
         const tok = try self.pk();
-        if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) {
+        if (try self.currentParserPrimitive()) {
             _ = try self.adv();
             return .{ .named = tok.kind.spelling() };
         }
@@ -1934,14 +1732,11 @@ pub const Parser = struct {
         if (empty_ok and self.idol_mode and !self.layout.offside) empty: {
             const o = open orelse break :empty;
             const first = try self.pk();
-            // A written terminator still closes the block it was written
-            // for, and still gets the diagnostic it gets today. The empty-
-            // body terminator list is owned by the `empty_body_terminator`
-            // relation — `kw_end`, `kw_else`, `kw_elseif`, `kw_until`,
-            // `kw_catch` — and `eof` is deliberately excluded because
-            // `eof` as the first token of a block IS the empty body.
-            const first_kind: i64 = @intCast(@backingInt(first.kind));
-            if (idol_parser_empty_body_terminator(first_kind)) break :empty;
+            // The smaller empty-body face is event bit 16: written closers
+            // are set; eof is deliberately clear because eof means the body
+            // itself is the file's last position.
+            const first_event = try self.currentParserEvent();
+            if (((first_event >> 16) & 1) != 0) break :empty;
             if (first.loc.line <= o.line or first.loc.col > o.col) break :empty;
             // Closed by that dedent, so `close_block` must not go looking for
             // an `end` it will never find.
@@ -1953,48 +1748,62 @@ pub const Parser = struct {
         while (true) {
             while (try self.eat(.semi) != null) {}
             const tok = try self.pk();
-            if (stmts.items.len > 0 and tok.loc.line != self.prev_line) switch (layout_verdict(&self.layout, tok)) {
-                .keep => {},
-                .close => break,
-                .misindent => return layout_misindent(self.layout, tok),
-            };
-            switch (tok.kind) {
-                .kw_end, .kw_until, .eof => break,
-                // A BRACKET CLOSER ends the block too. Layout cannot see it:
-                // `f(xs, (x: int)\n    x * 2)` puts the `)` on the same LINE as
-                // the last body statement, and layout speaks about line starts,
-                // so the loop fell through to `parse_stmt` and reported
-                // "expected expression, got ')'". No closer can begin a
-                // statement in any dialect, so breaking here never takes a
-                // parse away from anything — it hands the token to the
-                // construct that opened the bracket, which is the only thing
-                // that can consume it. This is what gives a lambda in argument
-                // position an `end`-free spelling at all.
-                .rparen, .rbrace, .rbracket => break,
-                .kw_else, .kw_elseif => {
-                    // else/elseif close the block only when they bind at
-                    // or left of the block opener (layout .close). When
-                    // they are deeper (layout .keep), they belong to an
-                    // inner if and must not terminate this block — fall
-                    // through to parse_stmt which handles the if chain.
-                    if (!self.layout.offside or tok.loc.col <= self.layout.open_col) break;
-                    // Not closing this block; parse as a statement.
-                    try self.flush_module_hint_directives(&stmts);
-                    const st = try self.parse_stmt();
-                    if (self.pending_hoists.items.len > 0) {
-                        try stmts.appendSlice(self.alloc, self.pending_hoists.items);
-                        self.pending_hoists.clearRetainingCapacity();
-                    }
-                    try stmts.append(self.alloc, st);
-                },
-                .kw_return => {
+            const static_event = try self.currentParserEvent();
+            const statement_count = std.math.cast(i64, stmts.items.len) orelse return error.SourceTooLarge;
+            const decision = idol_parser_boundary(
+                false,
+                statement_count,
+                self.layout.offside,
+                @intCast(self.layout.open_line),
+                @intCast(self.layout.open_col),
+                @intCast(self.layout.body_col),
+                static_event,
+                @intCast(tok.loc.line),
+                @intCast(self.prev_line),
+                @intCast(tok.loc.col),
+                self.idol_mode,
+            );
+            const action: u32 = @intCast(decision & 0x3);
+            self.layout.clause_face = @intCast((decision >> 2) & 0x3);
+            if (action == 0 and self.layout.body_col == 0) {
+                self.layout.body_col = @intCast((decision >> 8) & 0x0FFFFFFF);
+            }
+            switch (action) {
+                1 => break,
+                2 => return layout_misindent(self.layout, tok),
+                3 => {
                     try stmts.append(self.alloc, try self.parse_return());
                     _ = try self.eat(.semi);
+                    // `return` closes this block before the loop reaches the
+                    // next token edge. Observe that exact edge through the same
+                    // packed owner relation so a following elseif/else face is
+                    // not lost. This block is already closed: neither the edge
+                    // action nor an inferred body column may reopen or mutate
+                    // its frame. Only the settled clause face remains observable.
+                    const edge = try self.pk();
+                    const edge_event = try self.currentParserEvent();
+                    const edge_count = std.math.cast(i64, stmts.items.len) orelse return error.SourceTooLarge;
+                    const edge_decision = idol_parser_boundary(
+                        false,
+                        edge_count,
+                        self.layout.offside,
+                        @intCast(self.layout.open_line),
+                        @intCast(self.layout.open_col),
+                        @intCast(self.layout.body_col),
+                        edge_event,
+                        @intCast(edge.loc.line),
+                        @intCast(self.prev_line),
+                        @intCast(edge.loc.col),
+                        self.idol_mode,
+                    );
+                    self.layout.clause_face = @intCast((edge_decision >> 2) & 0x3);
                     break;
                 },
-                else => {
+                0 => {
                     try self.flush_module_hint_directives(&stmts);
-                    const st = try self.parse_stmt();
+                    const dispatch_face: u8 = @intCast(static_event & 0x1F);
+                    const admission_face: u8 = @intCast((static_event >> 5) & 0xF);
+                    const st = try self.parse_stmt_face(tok, dispatch_face, admission_face);
                     // Declarations the statement produced on the side land
                     // BEFORE it: an inline case-set is the field's type, so the
                     // enum has to exist by the time the descriptor names it.
@@ -2004,6 +1813,7 @@ pub const Parser = struct {
                     }
                     try stmts.append(self.alloc, st);
                 },
+                else => return ParseError.UnexpectedToken,
             }
         }
         // Extract implicit tail expression: if the last statement is an
@@ -2040,19 +1850,8 @@ pub const Parser = struct {
         // in `parser.id` `return_starts_value_lx`. The host keeps only the
         // diagnostic for the rare "next kind cannot start an expression"
         // case (parser.id returns 2); the silent 0 / 1 cases map directly.
-        try self.ensureProducerPack();
-        const facts = try self.ensureParserFacts();
-        const start = self.producerStreamIndex();
-        const count = std.math.cast(i64, (facts.len - 1) / 2) orelse return error.InvalidRecordCount;
-        const index = std.math.cast(i64, start) orelse return false;
-        const line = std.math.cast(i64, l.line) orelse return error.SourceTooLarge;
-        const verdict = idol_parser_return_starts_value(
-            facts.ptr,
-            count,
-            index,
-            line,
-            self.idol_mode,
-        );
+        if (self.pack_tokens == null) return self.returnStartsValueDiag(l, nxt);
+        const verdict = ((try self.currentParserDecision()) >> 2) & 3;
         return switch (verdict) {
             0 => false,
             1 => true,
@@ -2123,22 +1922,22 @@ pub const Parser = struct {
     /// SUBJECT and needs the Lua dialect rather than a rewrite. Each needs a
     /// corpus migration before it can become an error; `string.` (175 files)
     /// and `req` (100 files) need the replacement surface to exist first.
-    fn denyRetiredStmtKeyword(self: *Parser, tok: Token) ParseError!void {
-        if (tok.kind == .kw_macro) {
+    fn denyRetiredStmtKeyword(_: *Parser, tok: Token, admission: u8) ParseError!void {
+        if (admission == 0) return;
+        if (admission == 1) {
             term.locErr(tok.loc, "'macro' has no native Idol statement role", .{});
             term.locHint(tok.loc, "metaprogramming is expressed through ordinary relations and compile-time facts", .{});
             return ParseError.UnexpectedToken;
         }
-        if (!self.idol_mode) return;
-        const replacement: []const u8 = switch (tok.kind) {
-            .kw_try, .kw_catch => "Pass 100 §0.5: bind the result and route it — `if v, err = f(x) use(v) else report(err)`",
-            .kw_defer => "Pass 100 §15: scope exit is structural — hold the resource in a descriptor value whose release is its own, or route the failure with a result pack",
-            .kw_goto => "Pass 100 §13: use `break`/`continue`, or a dispatch table — `next(state)(event) = handler`, which gets exhaustiveness and the diagram free",
-            .kw_extends => "Pass 100 §15: there is no inheritance — compose by spreading a descriptor `{ ..base, extra = v }`, or home the shared surface on a face",
-            .kw_private => "Pass 100 §15 denies visibility-by-naming: nest the value under the descriptor that owns it",
-            .kw_await, .kw_async => "Pass 100 §15: no async/await keyword pair — concurrency is a property of the value, not a colour on the function",
-            .kw_let => "Pass 100 §0: bindings are bare — `x = expr`. `if let p = e` / `while let p = e` is the Rust shape; write `if v, err = f(x) use(v) else report(err)`",
-            else => return,
+        const replacement: []const u8 = switch (admission) {
+            2 => "Pass 100 §0.5: bind the result and route it — `if v, err = f(x) use(v) else report(err)`",
+            3 => "Pass 100 §15: scope exit is structural — hold the resource in a descriptor value whose release is its own, or route the failure with a result pack",
+            4 => "Pass 100 §13: use `break`/`continue`, or a dispatch table — `next(state)(event) = handler`, which gets exhaustiveness and the diagram free",
+            5 => "Pass 100 §15: there is no inheritance — compose by spreading a descriptor `{ ..base, extra = v }`, or home the shared surface on a face",
+            6 => "Pass 100 §15 denies visibility-by-naming: nest the value under the descriptor that owns it",
+            7 => "Pass 100 §15: no async/await keyword pair — concurrency is a property of the value, not a colour on the function",
+            8 => "Pass 100 §0: bindings are bare — `x = expr`. `if let p = e` / `while let p = e` is the Rust shape; write `if v, err = f(x) use(v) else report(err)`",
+            else => return ParseError.UnexpectedToken,
         };
         term.locErr(tok.loc, "'{s}' is retired in .id files (Pass 100 §1 deny table)", .{tok.kind.spelling()});
         term.locHint(tok.loc, "{s}", .{replacement});
@@ -2146,25 +1945,37 @@ pub const Parser = struct {
         return ParseError.UnexpectedToken;
     }
 
+    fn statement_event(self: *Parser) ParseError!i64 {
+        return self.currentParserEvent();
+    }
+
+    fn statement_admission(self: *Parser) ParseError!u8 {
+        const admission = ((try self.statement_event()) >> 5) & 0xF;
+        if (admission > 8) return ParseError.UnexpectedToken;
+        return @intCast(admission);
+    }
+
     fn parse_stmt(self: *Parser) ParseError!ast.Stmt {
         const tok = try self.pk();
-        // A bare `type` keyword at statement start usually means a type alias
-        // (`type Foo = ...`). But `type(x)` is the Lua builtin call form, so
-        // disambiguate by peeking the next token: an `lparen` means a call.
-        if (tok.kind == .name and std.mem.eql(u8, tok.text, "type")) {
-            const saved = self.saveState();
-            _ = try self.adv();
-            const after = try self.pk();
-            self.restoreState(saved);
-            if (after.kind != .lparen) {
-                return self.parse_alias_def_with_attrs(&.{});
-            }
+        const event = try self.statement_event();
+        const face = event & 0x1F;
+        const admission = (event >> 5) & 0xF;
+        if (face > 22 or admission > 8) return ParseError.UnexpectedToken;
+        return self.parse_stmt_face(tok, @intCast(face), @intCast(admission));
+    }
+
+    fn parse_stmt_face(self: *Parser, tok: Token, face: u8, admission: u8) ParseError!ast.Stmt {
+        // `type` is contextual: `type Name = ...` is an alias declaration while
+        // `type(x)` remains the compatibility call face. Whole-pack lane-two bit
+        // 6 settles that distinction from the producer word and following token.
+        if (face == 22 and (((try self.currentParserDecision()) >> 6) & 1) != 0) {
+            return self.parse_alias_def_with_attrs(&.{});
         }
 
-        try self.denyRetiredStmtKeyword(tok);
+        try self.denyRetiredStmtKeyword(tok, admission);
 
-        return switch (tok.kind) {
-            .at => blk: {
+        return switch (face) {
+            1 => blk: {
                 // GR-007: reject bare @const / @comptime / @comptime_expr /
                 // @compile_time up front with a directed hint, before attribute
                 // dispatch cascades a generic "expected 'name'" error (these
@@ -2192,68 +2003,55 @@ pub const Parser = struct {
                 self.restoreState(saved);
                 break :blk self.parse_expr_stmt();
             },
-            .kw_local => self.parse_local(),
-            .kw_global => self.parse_global(),
-            .kw_const => self.parse_const_decl(),
-            // NOTE: there is no `.kw_struct` case. Duo has no `struct`
-            // keyword; records are declared via inline type-literal
-            // annotations on bindings.
-            .kw_function, .kw_fun => blk: {
+            2 => self.parse_local(),
+            3 => self.parse_global(),
+            4 => self.parse_const_decl(),
+            // NOTE: there is no struct face. Records are declared through
+            // inline type-literal annotations on bindings.
+            5 => blk: {
                 const hint_attrs = try self.consumeLexerHints();
                 defer if (hint_attrs.len > 0) self.alloc.free(hint_attrs);
                 const merged = try self.merge_deferred_hints(hint_attrs);
                 break :blk self.parse_func_decl_with_attrs(false, merged);
             },
-            .kw_async => self.parse_async_func_decl_with_attrs(&.{}),
-            .kw_enum => self.parse_enum_def_with_attrs(&.{}),
-            .kw_concept => self.parse_concept_def_with_attrs(&.{}),
-            .kw_alias => self.parse_alias_def_with_attrs(&.{}),
-            .kw_if => self.parse_if(),
-            .kw_while => self.parse_while(),
-            .kw_repeat => self.parse_repeat(),
-            .kw_for => self.parse_for(),
-            .kw_do => self.parse_do(),
-            .kw_match => self.parse_match_stmt(),
-            .kw_try => self.parse_try(),
-            .kw_defer => self.parse_defer(),
-            .kw_goto => blk: {
+            6 => self.parse_async_func_decl_with_attrs(&.{}),
+            7 => self.parse_enum_def_with_attrs(&.{}),
+            8 => self.parse_concept_def_with_attrs(&.{}),
+            9 => self.parse_alias_def_with_attrs(&.{}),
+            10 => self.parse_if(),
+            11 => self.parse_while(),
+            12 => self.parse_repeat(),
+            13 => self.parse_for(),
+            14 => self.parse_do(),
+            15 => self.parse_match_stmt(),
+            16 => self.parse_try(),
+            17 => self.parse_defer(),
+            18 => blk: {
                 _ = try self.adv();
                 const lbl = try self.expect(.name);
                 break :blk ast.Stmt{ .goto_stmt = .{ .loc = tok.loc, .label = lbl.text } };
             },
-            .kw_break => blk: {
+            19 => blk: {
                 _ = try self.adv();
                 break :blk ast.Stmt{ .brk = tok.loc };
             },
-            .kw_continue => blk: {
+            20 => blk: {
                 _ = try self.adv();
                 break :blk ast.Stmt{ .cont = tok.loc };
             },
-            .dcolon => self.parse_label(),
-            .name => blk: {
-                if (self.func_body_depth == 0 and try self.starts_bare_func_decl()) {
+            21 => self.parse_label(),
+            22 => blk: {
+                if (self.func_body_depth == 0 and (((try self.currentParserDecision()) >> 7) & 1) != 0) {
                     break :blk self.parse_bare_func_decl_with_attrs(false, &.{});
                 }
                 break :blk self.parse_expr_stmt();
             },
-            else => self.parse_expr_stmt(),
+            0 => self.parse_expr_stmt(),
+            else => ParseError.UnexpectedToken,
         };
     }
 
     fn parse_at_starts_attribute_decl(self: *Parser) ParseError!bool {
-        // The producer-pack relation returns the `@`-statement face:
-        // 0 = expression, 1 = standalone directive, 2 = attaching
-        // declaration. parser.id owns the structural
-        // reduction; the host catalog (`meta_module` + `directives.*`)
-        // remains the identity authority for every alias spelling. When
-        // the face is 0 (expression), the previous source-text walk was a
-        // no-op by definition — short-circuiting here deletes one catalog
-        // pass per expression-position `@` token without changing any
-        // outcome (GR-134 §Twentysixth, `law.bridge.death`).
-        const facts = try self.ensureParserFacts();
-        const at_index = self.producerStreamIndex();
-        const at_face = self.readAtFace(facts, at_index);
-        if (at_face == 0) return false;
         // @cinclude is a standalone top-level statement, not attached to a decl.
         // Check for it first before the normal attribute detection.
         const saved = self.saveState();
@@ -2343,7 +2141,7 @@ pub const Parser = struct {
                     .kw_for,
                     => true,
                     .name => blk: {
-                        if (std.mem.eql(u8, nxt.text, "type")) break :blk true;
+                        if ((((try self.currentParserDecision()) >> 6) & 1) != 0) break :blk true;
                         const s2 = self.saveState();
                         _ = try self.adv();
                         const after = try self.pk();
@@ -2355,7 +2153,7 @@ pub const Parser = struct {
                         // directive, so it lands here; without this the attribute is
                         // re-parsed as an expression statement and lowers to a
                         // runtime `__c_export(...)` call no profile declares.
-                        if (self.func_body_depth == 0 and try self.starts_bare_func_decl()) break :blk true;
+                        if (self.func_body_depth == 0 and (((try self.currentParserDecision()) >> 7) & 1) != 0) break :blk true;
                         break :blk false;
                     },
                     else => false,
@@ -2366,7 +2164,7 @@ pub const Parser = struct {
         return switch (tok.kind) {
             .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_concept, .kw_alias, .kw_local, .kw_global, .kw_for => true,
             .name => blk: {
-                if (std.mem.eql(u8, tok.text, "type")) break :blk true;
+                if ((((try self.currentParserDecision()) >> 6) & 1) != 0) break :blk true;
                 const s2 = self.saveState();
                 _ = try self.adv();
                 const after = try self.pk();
@@ -2377,7 +2175,7 @@ pub const Parser = struct {
                 // one exactly as it attaches to a `fun` decl. Without this the whole
                 // attribute is re-parsed as an expression statement, and `@c.export`
                 // lowers to a runtime `__c_export(...)` call that no profile declares.
-                if (self.func_body_depth == 0 and try self.starts_bare_func_decl()) break :blk true;
+                if (self.func_body_depth == 0 and (((try self.currentParserDecision()) >> 7) & 1) != 0) break :blk true;
                 break :blk false;
             },
             else => false,
@@ -2488,7 +2286,7 @@ pub const Parser = struct {
         const attrs_slice = try attrs.toOwnedSlice(self.alloc);
 
         const tok = try self.pk();
-        if (tok.kind == .name and std.mem.eql(u8, tok.text, "type")) {
+        if (tok.kind == .name and (((try self.currentParserDecision()) >> 6) & 1) != 0) {
             return self.parse_alias_def_with_attrs(attrs_slice);
         }
         // Bare function declaration with attributes (GR-001): `@c.export("n")
@@ -2498,7 +2296,7 @@ pub const Parser = struct {
         // into a plain statement, and `@c.export` lowers to a runtime
         // `__c_export(...)` call that no profile declares.
         if (tok.kind == .name and
-            self.func_body_depth == 0 and try self.starts_bare_func_decl())
+            self.func_body_depth == 0 and (((try self.currentParserDecision()) >> 7) & 1) != 0)
         {
             return self.parse_bare_func_decl_with_attrs(false, attrs_slice);
         }
@@ -2507,7 +2305,7 @@ pub const Parser = struct {
         }
         // §15 applies to attributed declarations too, or `@inline async f()`
         // is a hole straight through the ruling.
-        try self.denyRetiredStmtKeyword(tok);
+        try self.denyRetiredStmtKeyword(tok, try self.statement_admission());
         return switch (tok.kind) {
             .kw_function, .kw_fun => self.parse_func_decl_with_attrs(false, attrs_slice),
             .kw_async => self.parse_async_func_decl_with_attrs(attrs_slice),
@@ -2592,26 +2390,13 @@ pub const Parser = struct {
         for (names) |*n| n.attributes = attrs;
     }
 
-    /// Accept a `.name` token or any keyword token as a field-name-like token,
-    /// returning its text. Statements/blocks use a fixed vocabulary; after `.`
-    /// a programmer may legitimately use a reserved word as a method/field name
-    /// (e.g. `string.match(...)`, `str.repeat(...)`, `obj.end`). Statement
-    /// terminators (`end`, `else`, `elseif`, `until`) are NOT accepted here so
-    /// they keep their role as block closers.
-    fn is_name_like_kind(k: TK) bool {
-        return switch (k) {
-            .name => true,
-            .kw_end, .kw_else, .kw_elseif, .kw_until => false,
-            else => blk: {
-                const s = k.spelling();
-                break :blk s.len > 0 and std.ascii.isAlphabetic(s[0]);
-            },
-        };
-    }
-
+    /// Accept a token whose owner-projected member fact is set, returning its
+    /// source text. The position is already fixed by `.` / `:` / `@`, so every
+    /// keyword identity is a lawful contextual member and no literal display
+    /// label is reinterpreted as one.
     fn accept_name_like(self: *Parser) ?[]const u8 {
         const tok = self.pk() catch return null;
-        if (!is_name_like_kind(tok.kind)) return null;
+        if (!(self.currentParserMember() catch return null)) return null;
         _ = self.adv() catch return null;
         return tok.text;
     }
@@ -2661,7 +2446,7 @@ pub const Parser = struct {
             return ParseError.UnexpectedToken;
         }
 
-        const first_span = tokenSourceSpan(src, first_tok) orelse {
+        const first_span = tokenSourceSpan(src, first_tok, try self.currentParserQuoted()) orelse {
             term.locErr(first_tok.loc, "attribute arguments cannot be recovered from this token stream", .{});
             return ParseError.UnexpectedToken;
         };
@@ -2680,7 +2465,7 @@ pub const Parser = struct {
                 depth -= 1;
                 if (depth == 0) break;
             }
-            const span = tokenSourceSpan(src, tok) orelse {
+            const span = tokenSourceSpan(src, tok, try self.currentParserQuoted()) orelse {
                 term.locErr(tok.loc, "attribute arguments cannot be recovered from this token stream", .{});
                 return ParseError.UnexpectedToken;
             };
@@ -2705,7 +2490,7 @@ pub const Parser = struct {
     /// Source range for one token. Quoted and long-text literals use identity
     /// plus the producer-published delimiter level (`int_val`), never a scan
     /// for `[[` / `]]` in surrounding bytes.
-    fn tokenSourceSpan(src: []const u8, tok: Token) ?struct { start: usize, end: usize } {
+    fn tokenSourceSpan(src: []const u8, tok: Token, quoted: bool) ?struct { start: usize, end: usize } {
         const off = srcOffsetOf(src, tok.text) orelse return null;
         if (tok.kind == .compat_long_text_lit) {
             if (tok.int_val < 0) return null;
@@ -2720,7 +2505,7 @@ pub const Parser = struct {
             if (end > src.len) return null;
             return .{ .start = start, .end = end };
         }
-        if (idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind)))) {
+        if (quoted) {
             if (off == 0) return null;
             const end = off + tok.text.len + 1;
             if (end > src.len) return null;
@@ -3038,7 +2823,10 @@ pub const Parser = struct {
 
     fn parse_alias_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
         const first = try self.adv();
-        if (first.kind != .kw_alias and !(first.kind == .name and std.mem.eql(u8, first.text, "type"))) {
+        // Contextual-name callers already consumed lane-two bit 6; the keyword
+        // face comes from the owner statement row. This boundary validates only
+        // the physical token class and never re-reads source spelling.
+        if (first.kind != .kw_alias and first.kind != .name) {
             return ParseError.ExpectedToken;
         }
         const l = (try self.pk()).loc;
@@ -3221,7 +3009,7 @@ pub const Parser = struct {
         const key = try self.pk();
         const level: []const u8 = if (key.kind == .name)
             key.text
-        else if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(key.kind))))
+        else if (try self.currentParserPrimitive())
             key.kind.spelling()
         else {
             self.restoreState(saved);
@@ -3334,52 +3122,13 @@ pub const Parser = struct {
     }
 
     /// The production header decision is authored by `lib/compiler/parser.id`
-    /// and executed over the immutable producer-pack facts. The host projects
-    /// physical kind/line/column fields once and supplies no recognition rule.
+    /// and precomputed in whole-pack lane-two bits 4/5. The host selects only
+    /// the caller's admitted comma face; no token or layout fact is rebuilt.
     fn scan_func_header_signal(self: *Parser, allow_untyped_comma: bool) ParseError!bool {
-        const lparen = try self.pk();
-        if (lparen.kind != .lparen) return false;
-        const facts = try self.ensureParserFacts();
-        // Prefer the parser-owned pack mirror; fall back to the lexer alias.
-        const toks = self.pack_tokens orelse return false;
-        const view = token_view.fromTokens(toks);
-        const start = self.producerStreamIndex();
-        const before: TK = if (start == 0) .eof else view.kind(start - 1) orelse .eof;
-        const count = std.math.cast(i64, (facts.len - 1) / 2) orelse return false;
-        const index = std.math.cast(i64, start) orelse return false;
-        // Derived from the same producer pack while the speculative host cursor
-        // is rewound; no tracked line-start field can go stale.
-        const offside: i64 = if (self.idol_mode)
-            @intCast((try self.line_opener(lparen.loc)).col)
-        else
-            0;
-        return idol_parser_header_pack(
-            facts.ptr,
-            count,
-            index,
-            allow_untyped_comma,
-            offside,
-            @intCast(@backingInt(before)),
-        );
-    }
-
-    fn starts_bare_func_decl(self: *Parser) ParseError!bool {
-        const saved = self.saveState();
-        defer self.restoreState(saved);
-
-        if ((try self.pk()).kind != .name) return false;
-        _ = try self.adv();
-        while (true) {
-            if (try self.eat(.dot) != null) {
-                if ((try self.pk()).kind != .name) return false;
-                _ = try self.adv();
-            } else if (try self.eat(.colon) != null) {
-                if ((try self.pk()).kind != .name) return false;
-                _ = try self.adv();
-                break;
-            } else break;
-        }
-        return self.scan_func_header_signal(false);
+        if ((try self.pk()).kind != .lparen) return false;
+        const decision = try self.currentParserDecision();
+        const shift: u6 = if (allow_untyped_comma) 5 else 4;
+        return ((decision >> shift) & 1) != 0;
     }
 
     fn starts_parenthesized_func_expr(self: *Parser) ParseError!bool {
@@ -3770,17 +3519,19 @@ pub const Parser = struct {
         _ = try self.eat(.assign);
         const then_body = try self.parse_block_at(l);
         var offside = self.last_layout.offside;
+        var face = self.last_layout.clause_face;
         var elseifs: std.ArrayList(ast.ElseIf) = .empty;
         var else_body: ?ast.Block = null;
         while (true) {
-            if (try self.clause_binds(l, .kw_elseif, offside)) {
+            if (face == 1) {
                 const kw = try self.adv();
                 const ec = try self.parse_expr();
                 try self.eat_deprecated(.kw_then);
                 const eb = try self.parse_block_at(kw.loc);
                 offside = offside or self.last_layout.offside;
+                face = self.last_layout.clause_face;
                 try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
-            } else if (try self.clause_binds(l, .kw_else, offside)) {
+            } else if (face == 2) {
                 const kw = try self.adv();
                 // `else(condition)` — the alternative is itself conditional.
                 // This is what retires `elseif`: `else` means "the remaining
@@ -3804,6 +3555,7 @@ pub const Parser = struct {
                     _ = try self.eat(.assign);
                     const eb = try self.parse_block_at(kw.loc);
                     offside = offside or self.last_layout.offside;
+                    face = self.last_layout.clause_face;
                     try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
                     continue;
                 }
@@ -3835,6 +3587,7 @@ pub const Parser = struct {
                     _ = try self.eat(.assign);
                     const eb = try self.parse_block_at(kw.loc);
                     offside = offside or self.last_layout.offside;
+                    face = self.last_layout.clause_face;
                     try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
                     continue;
                 }
@@ -3908,7 +3661,8 @@ pub const Parser = struct {
         const l = (try self.adv()).loc;
         // `if let pattern = expr then ... end` — desugars to match
         if ((try self.pk()).kind == .kw_let) {
-            try self.denyRetiredStmtKeyword(try self.pk());
+            const let_tok = try self.pk();
+            try self.denyRetiredStmtKeyword(let_tok, try self.statement_admission());
             _ = try self.adv(); // consume `let`
             const pattern = try self.parse_pattern();
             _ = try self.expect(.assign);
@@ -4099,7 +3853,8 @@ pub const Parser = struct {
         const l = (try self.adv()).loc;
         // `while let pattern = expr do ... end` — desugars to while + match
         if ((try self.pk()).kind == .kw_let) {
-            try self.denyRetiredStmtKeyword(try self.pk());
+            const let_tok = try self.pk();
+            try self.denyRetiredStmtKeyword(let_tok, try self.statement_admission());
             _ = try self.adv(); // consume `let`
             const pattern = try self.parse_pattern();
             _ = try self.expect(.assign);
@@ -4436,7 +4191,7 @@ pub const Parser = struct {
         {
             const tok = try self.pk();
             if (tok.kind == .kw_await) {
-                try self.denyRetiredStmtKeyword(tok);
+                try self.denyRetiredStmtKeyword(tok, try self.statement_admission());
                 _ = try self.adv(); // consume `await`
                 const operand = try self.parse_match_scrutinee_prec(20);
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
@@ -4445,7 +4200,7 @@ pub const Parser = struct {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
-                const op: ?ast.UnOp = unary_relation(tok.kind);
+                const op: ?ast.UnOp = try self.unary_relation();
                 if (op) |uop| {
                     if (tok.kind == .kw_not and self.idol_mode)
                         term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
@@ -4458,14 +4213,10 @@ pub const Parser = struct {
             }
         }
         while (true) {
-            const tok = try self.pk();
-            const inf = infix_prec(tok.kind) orelse break;
-            // §3 — the executed Idol `lead` relation owns this distinction.
-            if (idol_parser_lead(
-                @intCast(@backingInt(tok.kind)),
-                @intCast(tok.loc.line),
-                @intCast(self.prev_line),
-            )) break;
+            const inf = (try self.infix_prec()) orelse break;
+            // §3 — event bit 22 already combines the owner row with the
+            // previous parser-visible line while ignoring trivia.
+            if (try self.currentParserLead()) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
             const rhs = try self.parse_match_scrutinee_prec(inf.right);
@@ -4528,11 +4279,7 @@ pub const Parser = struct {
     }
 
     fn matchClause(self: *Parser) ParseError!i64 {
-        const facts = try self.ensureParserFacts();
-        const start = self.producerStreamIndex();
-        const count = std.math.cast(i64, (facts.len - 1) / 2) orelse return error.InvalidRecordCount;
-        const index = std.math.cast(i64, start) orelse return error.InvalidRecordCount;
-        const face = idol_parser_match_clause(facts.ptr, count, index);
+        const face = (try self.currentParserDecision()) & 3;
         return switch (face) {
             0, 1, 2, 3 => face,
             else => ParseError.UnexpectedToken,
@@ -4726,7 +4473,7 @@ pub const Parser = struct {
                 return ParseError.UnexpectedToken;
             },
             else => {
-                if (idol_parser_is_literal_kind(@intCast(@backingInt(tok.kind)))) {
+                if (try self.currentParserLiteral()) {
                     const e = try self.parse_simple_expr();
                     return ast.Pattern{ .literal = e };
                 }
@@ -5003,7 +4750,7 @@ pub const Parser = struct {
             }
             nxt = try self.pk();
         }
-        if (nxt.kind == .assign or compound_assign_op(nxt.kind) != null) return true;
+        if (nxt.kind == .assign or (try self.compound_assign_op()) != null) return true;
         return (try self.peek_glued_assign(nxt)) != null;
     }
 
@@ -5099,9 +4846,8 @@ pub const Parser = struct {
         // need full expression parsing, not parse_suffixed_expr which only handles
         // suffixed expressions (names, literals, calls, field access).
         const first_tok = try self.pk();
-        // §4 — the executed Idol `prefix` relation owns this distinction; Zig
-        // crosses only the physical kind ordinal.
-        const is_unary = idol_parser_prefix(@intCast(@backingInt(first_tok.kind)));
+        // §4 — the owner prefix face is bit 20 of the current pack event.
+        const is_unary = try self.currentParserPrefix();
         // `{ name, age } = user` named destructuring assign
         if (first_tok.kind == .lbrace) {
             const saved = self.saveState();
@@ -5116,7 +4862,7 @@ pub const Parser = struct {
                     if ((try self.pk()).kind == .assign) is_table_literal = true;
                     self.restoreState(name_saved);
                 },
-                else => if (idol_parser_is_quoted_kind(@intCast(@backingInt(inner.kind)))) {
+                else => if (try self.currentParserQuoted()) {
                     is_table_literal = true;
                 },
             }
@@ -5296,7 +5042,7 @@ pub const Parser = struct {
             } };
         }
 
-        if (infix_prec(nxt.kind) != null) {
+        if ((try self.infix_prec()) != null) {
             // Save state, re-parse as full expression with precedence climbing.
             // We already consumed the prefix via parse_suffixed_expr, so we
             // need to continue from here.  Reconstruct by re-parsing from the
@@ -5316,8 +5062,9 @@ pub const Parser = struct {
         // ── Assignment or sequence expression ────────────────────────────────
         // Handle:  a = ...        a, b = ...        a += ...
         // Also:    a, b           (bare sequence — implicit multi-value return)
+        const compound = try self.compound_assign_op();
         const glued = try self.peek_glued_assign(nxt);
-        if (nxt.kind == .assign or compound_assign_op(nxt.kind) != null or glued != null) {
+        if (nxt.kind == .assign or compound != null or glued != null) {
             // Single-target assignment:  name = expr  /  name += expr  /
             // name >>= expr (the operator and its `=` are two glued tokens)
             if (first.* == .name and nxt.kind == .assign) {
@@ -5344,7 +5091,7 @@ pub const Parser = struct {
             // `>>=` is TWO tokens; the second is the `=` glued to the operator.
             if (glued != null) _ = try self.adv();
             // Check for `Name = struct ... end` — C-layout type definition
-            if (first.* == .name and compound_assign_op(nxt.kind) == null) {
+            if (first.* == .name and compound == null) {
                 const next_tok = try self.pk();
                 if (next_tok.kind == .name and std.mem.eql(u8, next_tok.text, "struct")) {
                     _ = try self.adv(); // consume "struct"
@@ -5352,7 +5099,7 @@ pub const Parser = struct {
                 }
             }
             var values: std.ArrayList(*ast.Expr) = .empty;
-            if (glued orelse compound_assign_op(nxt.kind)) |op| {
+            if (glued orelse compound) |op| {
                 const rhs = if (self.match_arm_depth > 0)
                     try self.parse_match_scrutinee()
                 else
@@ -5395,7 +5142,7 @@ pub const Parser = struct {
             while (try self.eat(.comma) != null)
                 try exprs.append(self.alloc, try self.parse_suffixed_expr());
             const after = try self.pk();
-            const after_compound = compound_assign_op(after.kind);
+            const after_compound = try self.compound_assign_op();
             if (after.kind == .assign or after_compound != null) {
                 // ── Multi-target assignment: a, b = expr1, expr2 ──
                 if (after_compound != null and exprs.items.len != 1) {
@@ -5481,7 +5228,7 @@ pub const Parser = struct {
         // `end` standing between the two lines.
         if (first.* == .name) {
             const is_bash_arg = nxt.loc.line == first.loc().line and
-                (nxt.kind == .name or idol_parser_is_literal_kind(@intCast(@backingInt(nxt.kind))));
+                (nxt.kind == .name or try self.currentParserLiteral());
             if (is_bash_arg) {
                 const name_info = first.name;
                 var args: std.ArrayList(*ast.Expr) = .empty;
@@ -5489,7 +5236,7 @@ pub const Parser = struct {
                 while (true) {
                     const peek = try self.pk();
                     const is_next = peek.loc.line == first.loc().line and
-                        (peek.kind == .name or idol_parser_is_literal_kind(@intCast(@backingInt(peek.kind))));
+                        (peek.kind == .name or try self.currentParserLiteral());
                     if (!is_next) break;
                     if (peek.kind == .semi or peek.kind == .eof or
                         peek.kind == .kw_end or peek.kind == .kw_else or
@@ -5517,7 +5264,7 @@ pub const Parser = struct {
         // isn't an assignment, bash call, or a specific statement form.
         // If the expression continues with binary/infix operators, complete it.
         var expr = first;
-        if (infix_prec(nxt.kind) != null) {
+        if ((try self.infix_prec()) != null) {
             // Continue precedence climbing from the base expression.
             // We've already parsed the LHS; just continue with the infix loop.
             expr = try self.finish_prec(expr, 0);
@@ -5536,7 +5283,7 @@ pub const Parser = struct {
         var e = lhs;
         while (true) {
             const tok = try self.pk();
-            const inf = infix_prec(tok.kind) orelse break;
+            const inf = (try self.infix_prec()) orelse break;
             if (tok.kind == .at and tok.loc.line > e.loc().line) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
@@ -5591,11 +5338,11 @@ pub const Parser = struct {
     ///
     /// The host used to ask `grammar_roles.infixRelation(kind)` for the
     /// operation identity AND `grammar_roles.lookup(kind)` for `.precedence`
-    /// and `.assoc` — two row reads per Pratt step. The relation is now one
-    /// packed ABI call to `idol_parser_infix_prec`, so `infixBinOp` is gone
-    /// and the row lookup stays out of the Pratt hot path.
-    fn infix_prec(kind: TK) ?struct { op: ast.BinOp, left: u8, right: u8 } {
-        const triple = idol_parser_infix_prec(@intCast(@backingInt(kind)));
+    /// and `.assoc` — two row reads per Pratt step. Whole-pack event bits
+    /// 23..46 now carry the complete triple, so `infixBinOp` and the standalone
+    /// ABI are gone and the row lookup stays out of the Pratt hot path.
+    fn infix_prec(self: *Parser) ParseError!?struct { op: ast.BinOp, left: u8, right: u8 } {
+        const triple = ((try self.currentParserEvent()) >> 23) & 0xFFFFFF;
         if (triple == 0) return null;
         const op_ordinal: u8 = @intCast(triple & 0xff);
         const left: u8 = @intCast((triple >> 8) & 0xff);
@@ -5626,7 +5373,7 @@ pub const Parser = struct {
     /// `src/lexer_tokenize.c` does not move, which is the point: this is a
     /// grammar fact, not a lexical one.
     fn peek_glued_assign(self: *Parser, op: Token) ParseError!?ast.BinOp {
-        const bop = glued_relation(op.kind) orelse return null;
+        const bop = (try self.glued_relation()) orelse return null;
         const saved = self.saveState();
         defer self.restoreState(saved);
         _ = try self.adv();
@@ -5639,8 +5386,9 @@ pub const Parser = struct {
 
     /// `+=` and `+` request the SAME relation; the owner records the face, so
     /// this is one observation and not a sixth spelling of `add`.
-    fn compound_assign_op(kind: TK) ?ast.BinOp {
-        return relation_from_ordinal(idol_parser_update(@intCast(@backingInt(kind))));
+    fn compound_assign_op(self: *Parser) ParseError!?ast.BinOp {
+        const code = ((try self.currentParserEvent()) >> 57) & 0x1F;
+        return relation_from_ordinal(code - 1);
     }
 
     /// Prefix relation of one token identity, crossing the parser.id ABI.
@@ -5651,8 +5399,9 @@ pub const Parser = struct {
     /// Pratt unary-prefix probe (3 sites across `parse_match_scrutinee_prec`
     /// and `parse_prec`); the relation is now one i64 ABI call and a small
     /// `enumFromInt` cast.
-    fn unary_relation(kind: TK) ?ast.UnOp {
-        return prefix_from_ordinal(idol_parser_unary(@intCast(@backingInt(kind))));
+    fn unary_relation(self: *Parser) ParseError!?ast.UnOp {
+        const code = ((try self.currentParserEvent()) >> 47) & 0x1F;
+        return prefix_from_ordinal(code - 1);
     }
 
     /// Glued compound-update relation of one token identity, crossing the
@@ -5663,8 +5412,9 @@ pub const Parser = struct {
     /// face applies. The parser used to ask
     /// `grammar_roles.gluedRelation(op.kind)` on every `peek_glued_assign`
     /// probe; the relation is now one i64 ABI call.
-    fn glued_relation(kind: TK) ?ast.BinOp {
-        return relation_from_ordinal(idol_parser_glue(@intCast(@backingInt(kind))));
+    fn glued_relation(self: *Parser) ParseError!?ast.BinOp {
+        const code = ((try self.currentParserEvent()) >> 52) & 0x1F;
+        return relation_from_ordinal(code - 1);
     }
 
     fn relation_from_ordinal(ordinal: i64) ?ast.BinOp {
@@ -5703,7 +5453,7 @@ pub const Parser = struct {
         {
             const tok = try self.pk();
             if (tok.kind == .kw_await) {
-                try self.denyRetiredStmtKeyword(tok);
+                try self.denyRetiredStmtKeyword(tok, try self.statement_admission());
                 _ = try self.adv(); // consume `await`
                 const operand = try self.parse_prec(20);
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
@@ -5712,7 +5462,7 @@ pub const Parser = struct {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
-                const op: ?ast.UnOp = unary_relation(tok.kind);
+                const op: ?ast.UnOp = try self.unary_relation();
                 if (op) |uop| {
                     if (tok.kind == .kw_not and self.idol_mode)
                         term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
@@ -5750,16 +5500,12 @@ pub const Parser = struct {
         }
         while (true) {
             const tok = try self.pk();
-            const inf = infix_prec(tok.kind) orelse break;
+            const inf = (try self.infix_prec()) orelse break;
             // §3 — `@` on a new line is an
             // attribute prefix and not the matmul operator (without which
             // `x = 42\n@hot\nfun …` parses as `x = 42 @ hot`); `-` and `~` on a
             // new line are unary and not a continuation of the line above.
-            if (idol_parser_lead(
-                @intCast(@backingInt(tok.kind)),
-                @intCast(tok.loc.line),
-                @intCast(self.prev_line),
-            )) break;
+            if (try self.currentParserLead()) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
             if (self.idol_mode) {
@@ -6109,7 +5855,7 @@ pub const Parser = struct {
                 if (tok.kind != close_kind) continue;
                 depth -= 1;
                 if (depth != 0) continue;
-                const span = tokenSourceSpan(scan.items[0..end], tok) orelse break;
+                const span = tokenSourceSpan(scan.items[0..end], tok, false) orelse break;
                 if (span.end != end) break;
                 return span.start;
             }
@@ -6466,7 +6212,7 @@ pub const Parser = struct {
             .dot => self.parse_field_projection(),
             .colon => self.parse_method_reference(),
             else => {
-                if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) {
+                if (try self.currentParserPrimitive()) {
                     const type_tok = try self.adv();
                     return self.new_expr(.{ .name = .{ .loc = type_tok.loc, .ident = type_tok.kind.spelling() } });
                 }
@@ -6641,7 +6387,7 @@ pub const Parser = struct {
         defer self.restoreState(saved);
         _ = try self.adv();
         const rel = try self.pk();
-        if (!is_name_like_kind(rel.kind)) return false;
+        if (!try self.currentParserMember()) return false;
         if (rel.loc.line != at_tok.loc.line) return false;
         return rel.loc.col == at_tok.loc.col + @as(u32, @intCast(at_tok.text.len));
     }
@@ -7012,7 +6758,7 @@ pub const Parser = struct {
 
     fn starts_paren_pack(self: *Parser) ParseError!bool {
         const first = try self.pk();
-        if (first.kind != .name and !idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(first.kind)))) return false;
+        if (first.kind != .name and !try self.currentParserPrimitive()) return false;
         const saved = self.saveState();
         const saved_line = self.prev_line;
         const saved_end = self.prev_end_col;
@@ -7120,7 +6866,7 @@ pub const Parser = struct {
             }
             return (try self.pk()).kind == .assign;
         }
-        if (first.kind != .name and !idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(first.kind)))) return false;
+        if (first.kind != .name and !try self.currentParserPrimitive()) return false;
         _ = try self.adv();
         return (try self.pk()).kind == .assign;
     }
@@ -7166,7 +6912,7 @@ pub const Parser = struct {
                 try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
                 continue;
             }
-            if (tok.kind != .name and tok.kind != .kw_else and !idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) break;
+            if (tok.kind != .name and tok.kind != .kw_else and !try self.currentParserPrimitive()) break;
             const key_text = if (tok.kind == .name) tok.text else tok.kind.spelling();
             _ = try self.adv();
             const eq = try self.expect(.assign);
@@ -7669,16 +7415,9 @@ pub const Parser = struct {
 
     fn parse_at_path_segment(self: *Parser) ParseError!Token {
         const tok = try self.pk();
-        if (tok.kind == .name) return self.adv();
-        const text = tok.kind.spelling();
-        if (text.len > 0 and (std.ascii.isAlphabetic(text[0]) or text[0] == '_')) {
-            for (text[1..]) |c| {
-                if (!(std.ascii.isAlphanumeric(c) or c == '_')) return self.expect(.name);
-            }
-            _ = try self.adv();
-            return .{ .kind = .name, .text = text, .loc = tok.loc };
-        }
-        return self.expect(.name);
+        if (!try self.currentParserMember()) return self.expect(.name);
+        _ = try self.adv();
+        return .{ .kind = .name, .text = tok.text, .loc = tok.loc };
     }
 
     const compatibility_at_diagnostic = "@{s} is retained compatibility syntax; prefix compiler directives have no canonical Idol spelling";
@@ -7768,15 +7507,15 @@ pub const Parser = struct {
 
     fn try_parse_layout_type_arg(self: *Parser, loc: ast.Loc) ParseError!?*ast.Expr {
         const tok = try self.pk();
-        if (!layout_arg_can_start_type(tok)) return null;
+        if (!try self.layout_arg_can_start_type(tok)) return null;
         const typ = try self.parse_type();
         if ((try self.pk()).kind != .rparen) return null;
         _ = try self.adv();
         return self.new_expr(.{ .quoted = .{ .loc = loc, .val = try self.type_expr_c_name(typ) } });
     }
 
-    fn layout_arg_can_start_type(tok: Token) bool {
-        if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) return true;
+    fn layout_arg_can_start_type(self: *Parser, tok: Token) ParseError!bool {
+        if (try self.currentParserPrimitive()) return true;
         return switch (tok.kind) {
             .star, .question, .lbracket, .lbrace => true,
             .name => tok.text.len > 0 and tok.text[0] >= 'A' and tok.text[0] <= 'Z',
@@ -7957,7 +7696,7 @@ pub const Parser = struct {
                     const saved = self.saveState();
                     _ = try self.advRaw(); // consume ':'
                     const after_colon = try self.pk();
-                    if (idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(after_colon.kind)))) {
+                    if (try self.currentParserPrimitive()) {
                         // name : i64 = ...  —  this is a typed binding; don't consume
                         self.restoreState(saved);
                         break;
@@ -8143,7 +7882,7 @@ pub const Parser = struct {
                     e = try self.new_expr(.{ .unwrap_expr = .{ .loc = tok.loc, .operand = e } });
                 },
                 else => {
-                    if (!idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind)))) break;
+                    if (!try self.currentParserQuoted()) break;
                     if (tok.loc.line > e.loc().line) break;
                     const saved = self.saveState();
                     _ = try self.adv();
@@ -8279,7 +8018,7 @@ pub const Parser = struct {
                 .home = self.descriptor_home,
             })),
             else => {
-                if (idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind)))) {
+                if (try self.currentParserQuoted()) {
                     try args.append(self.alloc, try self.parse_simple_expr());
                 } else {
                     term.locErr(tok.loc, "expected function arguments", .{});
@@ -8314,6 +8053,9 @@ pub const Parser = struct {
         var fields: std.ArrayList(ast.TableField) = .empty;
         while (!(try self.check(.rbrace))) {
             const tok = try self.pk();
+            const quoted = try self.currentParserQuoted();
+            const literal = try self.currentParserLiteral();
+            const primitive = try self.currentParserPrimitive();
             if (tok.kind == .concat) {
                 _ = try self.adv();
                 const spread_expr = try self.parse_expr();
@@ -8325,9 +8067,7 @@ pub const Parser = struct {
                 _ = try self.expect(.assign);
                 const val = try self.parse_expr();
                 try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
-            } else if (idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind))) or
-                idol_parser_is_literal_kind(@intCast(@backingInt(tok.kind))))
-            {
+            } else if (quoted or literal) {
                 // Sugar: "key" = val  or  1 = val  (unboxed literal key, desugars to indexed)
                 // quoted covers text/bytes/compat; literal_kind covers int_lit (and re-quote too).
                 // Check if next token is `=` via saveState lookahead
@@ -8335,7 +8075,7 @@ pub const Parser = struct {
                 _ = try self.adv(); // consume the literal
                 if (try self.check(.assign)) {
                     _ = try self.adv(); // consume `=`
-                    const key = try self.new_expr(if (idol_parser_is_quoted_kind(@intCast(@backingInt(tok.kind))))
+                    const key = try self.new_expr(if (quoted)
                         ast.Expr{ .quoted = .{ .loc = tok.loc, .val = tok.text, .quote = quoteOf(tok.kind) } }
                     else
                         ast.Expr{ .int_lit = .{ .loc = tok.loc, .val = tok.int_val } });
@@ -8351,7 +8091,7 @@ pub const Parser = struct {
                     }
                     try fields.append(self.alloc, .{ .positional = val });
                 }
-            } else if (tok.kind == .name or tok.kind == .kw_else or idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(tok.kind)))) {
+            } else if (tok.kind == .name or tok.kind == .kw_else or primitive) {
                 // Speculate: name '=' and name ':' Type '=' mean named fields;
                 // otherwise the entry is positional. A type name is an ORDINARY
                 // name here, so `{ i32 = 69 }` parses like `{ foo = 69 }`.
@@ -8415,10 +8155,11 @@ pub const Parser = struct {
             // per line, which is the canonical shape.
             if (try self.eat(.comma) == null and try self.eat(.semi) == null) {
                 const next = try self.pk();
+                const next_primitive = try self.currentParserPrimitive();
+                const next_quoted = try self.currentParserQuoted();
                 if (next.kind != .name and next.kind != .lbracket and next.kind != .concat and
                     next.kind != .int_lit and next.kind != .rbrace and next.kind != .kw_else and
-                    !idol_parser_is_primitive_descriptor_kind(@intCast(@backingInt(next.kind))) and
-                    !idol_parser_is_quoted_kind(@intCast(@backingInt(next.kind)))) break;
+                    !next_primitive and !next_quoted) break;
             }
         }
         _ = try self.expect(.rbrace);
@@ -9025,6 +8766,23 @@ test "parse: if/elseif/else without then" {
         \\elseif true
         \\else
         \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .if_stmt);
+    try testing.expectEqual(@as(usize, 1), stmt.if_stmt.elseifs.len);
+    try testing.expect(stmt.if_stmt.else_body != null);
+}
+
+test "parse: return-closes body without losing following clause face" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\if true
+        \\    return 1
+        \\elseif false
+        \\    return 2
+        \\else
+        \\    return 3
     , &arena);
     const stmt = mod.body.stmts[0];
     try testing.expect(stmt == .if_stmt);
@@ -10992,8 +10750,8 @@ test "parse: same-line void call then concat (F-13813-1)" {
 //
 // The negative control is the second half and it is not optional: `#` is the
 // COMMENT OPENER in canonical source, so a refusal that convicts an ordinary
-// comment has replaced a silent wrong answer with a loud one. Remove the
-// Remove the `idol_parser_demands_operand` guard and row 3 fails; remove the
+// comment has replaced a silent wrong answer with a loud one.
+// Remove the whole-pack demand-bit guard and row 3 fails; remove the
 // later-line guard and row 4 fails; remove the abutting-character guard and
 // rows 5–8 fail.
 test "parse: `#` is refused in every position, and comments are not" {
@@ -11794,25 +11552,22 @@ test "apply-one: a comprehension is a stream, and takes no pack stance" {
 test "parse: production header pack executes the Idol relation" {
     const run = struct {
         fn check(kinds: []const TK, allow: bool, want: bool) !void {
-            const facts = try testing.allocator.alloc(i64, 1 + kinds.len * 2);
+            const facts = try testing.allocator.alloc(i64, 1 + (kinds.len + 1) * 2);
             defer testing.allocator.free(facts);
             facts[0] = 0; // physical padding preserves Idol sequence index one
+            facts[1] = @intCast(@as(u64, @backingInt(TK.name)) | (@as(u64, 1) << 8) | (@as(u64, 1) << 36));
+            facts[2] = 0;
             for (kinds, 0..) |kind, index| {
-                facts[1 + index * 2] = @intCast(
+                facts[3 + index * 2] = @intCast(
                     @as(u64, @backingInt(kind)) |
                         (@as(u64, 1) << 8) |
                         (@as(u64, index + 1) << 36),
                 );
-                facts[2 + index * 2] = 0;
+                facts[4 + index * 2] = 0;
             }
-            try testing.expectEqual(want, idol_parser_header_pack(
-                facts.ptr,
-                @intCast(kinds.len),
-                0,
-                allow,
-                0,
-                @backingInt(TK.name),
-            ));
+            const decision = try parserDecisionForTest(facts, 1, false);
+            const shift: u6 = if (allow) 5 else 4;
+            try testing.expectEqual(want, ((decision >> shift) & 1) != 0);
         }
     }.check;
 
@@ -11823,7 +11578,9 @@ test "parse: production header pack executes the Idol relation" {
 
     const high_line: u64 = (1 << 28) - 1;
     const high_column: u64 = (1 << 27) - 1;
-    const bounds = [_]i64{
+    var bounds = [_]i64{
+        0,
+        @intCast(@as(u64, @backingInt(TK.name)) | (@as(u64, 1) << 8) | (@as(u64, 1) << 36)),
         0,
         @intCast(@as(u64, @backingInt(TK.lparen)) | (@as(u64, 1) << 8) | (@as(u64, 1) << 36)),
         0,
@@ -11836,14 +11593,7 @@ test "parse: production header pack executes the Idol relation" {
         @intCast(@as(u64, @backingInt(TK.eof)) | (high_line << 8) | (high_column << 36)),
         0,
     };
-    try testing.expect(idol_parser_header_pack(
-        &bounds,
-        5,
-        0,
-        true,
-        @intCast(high_column - 1),
-        @backingInt(TK.name),
-    ));
+    try testing.expect(((try parserDecisionForTest(&bounds, 1, true)) >> 5) & 1 != 0);
 }
 
 test "parse: parser fact packing refuses an out-of-range location" {
@@ -11860,34 +11610,32 @@ test "parse: parser fact packing refuses an out-of-range location" {
     try testing.expect(parser.parser_facts == null);
 }
 
-test "parse: production line-head decision executes the Idol relation" {
-    for (grammar_roles.rows) |row| {
-        const kind = row.kind orelse continue;
-        const physical: i64 = @intCast(@backingInt(kind));
-        try testing.expect(!idol_parser_lead(physical, 2, 2));
-        try testing.expectEqual(row.opens_line, idol_parser_lead(physical, 2, 1));
+test "parse: production line-head decision executes through whole-pack event" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        var facts = [5]i64{ 0, 0 + 1 * 256, 0, @as(i64, @intCast(index)) + 2 * 256, 0 };
+        var events = [4]i64{ 0, 0, 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        try testing.expectEqual(row.opens_line, ((events[1] >> 22) & 1) != 0);
     }
 }
 
-test "parse: production prefix decision executes the Idol relation" {
-    for (grammar_roles.rows) |row| {
-        const kind = row.kind orelse continue;
-        const physical: i64 = @intCast(@backingInt(kind));
-        try testing.expectEqual(row.prefix, idol_parser_prefix(physical));
+test "parse: production prefix decision executes through whole-pack event" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        try testing.expectEqual(row.prefix, ((event >> 20) & 1) != 0);
     }
 }
 
-test "parse: production infix_prec decision executes the Idol relation" {
+test "parse: production infix decision executes through whole-pack event" {
     // For every kind whose owner row is a real infix operator with non-none
-    // associativity, the packed `idol_parser_infix_prec` triple must agree
+    // associativity, the packed event triple must agree
     // with the three row reads (`lookup`, `infixRelation`) it replaced. The
     // packed layout: bits 0..7 = Relation ordinal, bits 8..15 = left
     // precedence, bits 16..23 = right precedence. A non-infix or
     // assoc == .none kind must round-trip to zero.
-    for (grammar_roles.rows) |row| {
-        const kind = row.kind orelse continue;
-        const physical: i64 = @intCast(@backingInt(kind));
-        const triple = idol_parser_infix_prec(physical);
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        const triple = (event >> 23) & 0xFFFFFF;
         const want_nothing = !row.infix or row.assoc == .none;
         if (want_nothing) {
             try testing.expectEqual(@as(i64, 0), triple);
@@ -11911,26 +11659,20 @@ test "parse: production infix_prec decision executes the Idol relation" {
     }
 }
 
-test "parse: production unary glue and update decisions execute Idol relations" {
-    for (grammar_roles.rows) |row| {
-        const kind = row.kind orelse continue;
-        const physical: i64 = @intCast(@backingInt(kind));
+test "parse: production unary glue and update decisions execute through whole-pack event" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
         const relation: i64 = if (row.relation) |value| @intCast(@backingInt(value)) else -1;
         const unary: i64 = if (row.unary) |value| @intCast(@backingInt(value)) else -1;
         const expected_glue: i64 = if (row.glue) relation else -1;
         const expected_update: i64 = if (row.update) relation else -1;
         if (row.glue or row.update) try testing.expect(relation >= 0);
-        try testing.expectEqual(unary, idol_parser_unary(physical));
-        try testing.expectEqual(expected_glue, idol_parser_glue(physical));
-        try testing.expectEqual(expected_update, idol_parser_update(physical));
+        try testing.expectEqual(unary, ((event >> 47) & 0x1F) - 1);
+        try testing.expectEqual(expected_glue, ((event >> 52) & 0x1F) - 1);
+        try testing.expectEqual(expected_update, ((event >> 57) & 0x1F) - 1);
     }
-    const past: i64 = @intCast(grammar_roles.rows.len);
-    try testing.expectEqual(@as(i64, -1), idol_parser_unary(-1));
-    try testing.expectEqual(@as(i64, -1), idol_parser_unary(past));
-    try testing.expectEqual(@as(i64, -1), idol_parser_glue(-1));
-    try testing.expectEqual(@as(i64, -1), idol_parser_glue(past));
-    try testing.expectEqual(@as(i64, -1), idol_parser_update(-1));
-    try testing.expectEqual(@as(i64, -1), idol_parser_update(past));
+    const invalid = try parserEventForTest(@intCast(grammar_roles.rows.len), true);
+    try testing.expectEqual(@as(i64, 0), (invalid >> 23) & 0x7FFFFFFFFF);
 }
 
 test "parse: relation ABI ordinal decode refuses values outside generated enums" {
@@ -11944,58 +11686,35 @@ test "parse: relation ABI ordinal decode refuses values outside generated enums"
     try testing.expectEqual(ast.UnOp.neg, Parser.prefix_from_ordinal(0).?);
 }
 
-test "parse: production is_primitive_descriptor_kind decision executes the Idol relation" {
-    // For every role slot, the `idol_parser_is_primitive_descriptor_kind` ABI
-    // call must agree with the `descriptor` row field the host
-    // `grammar_roles.isDescriptor(kind)` read answered. The relation reads the
-    // producer's `roledescriptor` row directly, so the parser-side predicate
-    // and the row emitter cannot drift apart: damaging the owner regenerates
-    // both. Distinct from `is_descriptor_kind` (the broader
-    // `roledescriptor OR is_type_kind` predicate used by `colon_is_method_call_lx`);
-    // this test exercises only the primitive-descriptor-only ABI that the 10
-    // host `grammar_roles.isDescriptor` call sites collapsed onto.
-    for (grammar_roles.rows) |row| {
-        const kind = row.kind orelse continue;
-        const physical: i64 = @intCast(@backingInt(kind));
-        const got = idol_parser_is_primitive_descriptor_kind(physical);
-        try testing.expectEqual(row.descriptor, got);
+test "parse: primitive, literal, and quoted identities execute through whole-pack event" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        try testing.expectEqual(row.descriptor, ((event >> 17) & 1) != 0);
+        try testing.expectEqual(row.literal_kind, ((event >> 18) & 1) != 0);
+        try testing.expectEqual(row.quoted, ((event >> 19) & 1) != 0);
     }
 }
 
-test "parse: production is_literal_kind decision executes the Idol relation" {
-    // For every role slot, the `idol_parser_is_literal_kind` ABI call must
-    // agree with the `literal_kind` row field the host
-    // `grammar_roles.isLiteralKind(kind)` read answered. The relation reads
-    // the producer's `literal(): str` row directly, so the parser-side
-    // predicate and the row emitter cannot drift apart: damaging the owner
-    // regenerates both. This test exercises the literal-kind-only ABI that
-    // the host `grammar_roles.isLiteralKind` call sites collapsed onto
-    // across `parse_stmt`, `parse_match_arm`, `parse_descriptor_slot`, and
-    // the deduped `int_lit` case in `parse_table_literal`.
-    for (grammar_roles.rows) |row| {
-        const kind = row.kind orelse continue;
-        const physical: i64 = @intCast(@backingInt(kind));
-        const got = idol_parser_is_literal_kind(physical);
-        try testing.expectEqual(row.literal_kind, got);
+test "parse: production member identity executes through whole-pack event" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        const expected = if (row.kind) |kind| kind == .name or row.keyword else false;
+        try testing.expectEqual(expected, ((event >> 9) & 1) != 0);
     }
 }
 
-test "parse: production is_quoted_kind decision executes the Idol relation" {
-    // For every role slot, the `idol_parser_is_quoted_kind` ABI call must
-    // agree with the `quoted` row field the host
-    // `grammar_roles.isQuotedKind(kind)` read answered. The relation reads
-    // the producer's `quoted(): str` row directly, so the parser-side
-    // predicate and the row emitter cannot drift apart: damaging the owner
-    // regenerates both. This test exercises the quoted-payload-only ABI
-    // that the host `grammar_roles.isQuotedKind` call sites collapsed onto
-    // across `parse_stmt`, `parse_match_arm`, `parse_descriptor_slot`,
-    // `parse_table_literal`, and the call-argument table-sugar arm.
-    for (grammar_roles.rows) |row| {
-        const kind = row.kind orelse continue;
-        const physical: i64 = @intCast(@backingInt(kind));
-        const got = idol_parser_is_quoted_kind(physical);
-        try testing.expectEqual(row.quoted, got);
-    }
+test "parse: member context admits keywords and refuses literal labels" {
+    var keyword_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer keyword_arena.deinit();
+    _ = try parseDuoSource("value = {}\nx = value.end", &keyword_arena);
+
+    var integer_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer integer_arena.deinit();
+    try testing.expectError(error.ExpectedToken, parseDuoSource("value = {}\nx = value. 1", &integer_arena));
+
+    var quoted_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer quoted_arena.deinit();
+    try testing.expectError(error.ExpectedToken, parseDuoSource("value = {}\nx = value.\"field\"", &quoted_arena));
 }
 
 test "parse: production line-head relation separates prefix from continuation" {
@@ -12034,19 +11753,15 @@ test "parse: production return-value decision executes the Idol relation" {
         }
     }.e;
     const run = struct {
-        fn check(start: usize, kind: TK, line: u32, want: i64) !void {
-            const facts = [_]i64{
+        fn check(kind: TK, line: u32, want: i64) !void {
+            var facts = [_]i64{
+                0,
+                encode(.kw_return, 1, 1),
                 0,
                 encode(kind, line, 1),
                 0,
             };
-            try testing.expectEqual(want, idol_parser_return_starts_value(
-                &facts,
-                1,
-                @intCast(start),
-                1,
-                true,
-            ));
+            try testing.expectEqual(want, ((try parserDecisionForTest(&facts, 1, true)) >> 2) & 3);
         }
     }.check;
 
@@ -12057,29 +11772,26 @@ test "parse: production return-value decision executes the Idol relation" {
     try testing.expect(!grammar_roles.canBeginExpression(.plus));
 
     // kind-switch: line-terminators are silent 0
-    try run(0, .kw_end, 1, 0);
-    try run(0, .kw_else, 1, 0);
-    try run(0, .kw_elseif, 1, 0);
-    try run(0, .kw_until, 1, 0);
-    try run(0, .kw_catch, 1, 0);
-    try run(0, .eof, 1, 0);
-    try run(0, .semi, 1, 0);
-
-    // out-of-pack returns 0
-    try run(99, .name, 1, 0);
+    try run(.kw_end, 1, 0);
+    try run(.kw_else, 1, 0);
+    try run(.kw_elseif, 1, 0);
+    try run(.kw_until, 1, 0);
+    try run(.kw_catch, 1, 0);
+    try run(.eof, 1, 0);
+    try run(.semi, 1, 0);
 
     // same-line expression starters are 1
-    try run(0, .name, 1, 1);
-    try run(0, .int_lit, 1, 1);
-    try run(0, .text_lit, 1, 1);
-    try run(0, .lparen, 1, 1);
+    try run(.name, 1, 1);
+    try run(.int_lit, 1, 1);
+    try run(.text_lit, 1, 1);
+    try run(.lparen, 1, 1);
 
     // idol_mode line check: cross-line next token is silent 0
-    try run(0, .name, 2, 0);
+    try run(.name, 2, 0);
 
     // idol_mode expression-start check: kinds the owner does not admit there.
-    try run(0, .rparen, 1, 2);
-    try run(0, .plus, 1, 2);
+    try run(.rparen, 1, 2);
+    try run(.plus, 1, 2);
 }
 
 test "parse: return-value decision without idol_mode ignores layout and role" {
@@ -12088,30 +11800,18 @@ test "parse: return-value decision without idol_mode ignores layout and role" {
             return @intCast(@as(u64, @backingInt(kind)) | (@as(u64, line) << 8));
         }
     }.e;
-    const facts = [_]i64{ 0, encode(.rparen, 5), 0 };
+    var facts = [_]i64{ 0, encode(.kw_return, 1), 0, encode(.rparen, 5), 0 };
 
     // rparen cannot begin an expression; with idol_mode=false the
     // rolebeginexpr gate is skipped, so the decision is 1 (the same-line
     // line-check is also gated on idol_mode).
-    try testing.expectEqual(@as(i64, 1), idol_parser_return_starts_value(
-        &facts,
-        1,
-        0,
-        1,
-        false,
-    ));
+    try testing.expectEqual(@as(i64, 1), ((try parserDecisionForTest(&facts, 1, false)) >> 2) & 3);
     // end, else, etc. are still silent 0 in non-idol mode (the kind switch
     // is the unconditional decision).
     const line_terminators = [_]TK{ .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi };
     for (line_terminators) |kind| {
-        const one = [_]i64{ 0, encode(kind, 1), 0 };
-        try testing.expectEqual(@as(i64, 0), idol_parser_return_starts_value(
-            &one,
-            1,
-            0,
-            1,
-            false,
-        ));
+        var one = [_]i64{ 0, encode(.kw_return, 1), 0, encode(kind, 1), 0 };
+        try testing.expectEqual(@as(i64, 0), ((try parserDecisionForTest(&one, 1, false)) >> 2) & 3);
     }
 }
 
@@ -12144,11 +11844,7 @@ test "parse: production match-arm decision executes the Idol relation" {
                 facts[1 + index * 2] = meta(kind, line, @intCast(index + 1));
                 facts[2 + index * 2] = word(text);
             }
-            try testing.expectEqual(want, idol_parser_match_clause(
-                facts.ptr,
-                @intCast(kinds.len),
-                0,
-            ));
+            try testing.expectEqual(want, (try parserDecisionForTest(facts, 0, true)) & 3);
         }
     }.check;
 
@@ -12171,88 +11867,81 @@ test "parse: production match-arm decision executes the Idol relation" {
     try run(&.{ .rparen, .fat_arrow }, &.{ 1, 1 }, &.{ ")", "=>" }, 0);
 }
 
-// Exhaustive layout-frame and layout-verdict tests covering the ten
-// scenarios the parent audit enumerated (module/no-opener, Lua/non-offside,
-// empty/terminator, inline body, indented body, first continuation,
-// exact body column, dedent close, odd-column terminator close, odd-column
-// ordinary-token misindent). The host `open_layout` switch carried every
-// branch; the host `layout_verdict` switch carried every other branch;
-// together they were the host's offside recognition. Both now cross the
-// parser.id ABI.
-test "parse: layout-terminator decisions execute the Idol relations" {
-    // Spot-check the six layout-terminator identities (kw_end=10,
-    // kw_else=8, kw_elseif=9, kw_until=27, kw_catch=46, eof=109). The full
-    // 114-slot iteration is the parser-artifact verify_layout_faces()
-    // probe in tools/node/dev/parser/artifact; here we exercise the
-    // Zig-side ABI and the five-vs-six empty-body carve-out.
-    try testing.expect(idol_parser_layout_terminator(10));
-    try testing.expect(idol_parser_layout_terminator(8));
-    try testing.expect(idol_parser_layout_terminator(9));
-    try testing.expect(idol_parser_layout_terminator(27));
-    try testing.expect(idol_parser_layout_terminator(46));
-    try testing.expect(idol_parser_layout_terminator(109));
-    try testing.expect(!idol_parser_layout_terminator(0)); // name
-    try testing.expect(!idol_parser_layout_terminator(5)); // kw_break
-    try testing.expect(!idol_parser_layout_terminator(17)); // kw_if
-    // The empty-body list excludes eof: every member of the empty-body
-    // list is in the layout-terminator list, but eof is only in the latter.
-    try testing.expect(idol_parser_empty_body_terminator(10));
-    try testing.expect(idol_parser_empty_body_terminator(8));
-    try testing.expect(idol_parser_empty_body_terminator(9));
-    try testing.expect(idol_parser_empty_body_terminator(27));
-    try testing.expect(idol_parser_empty_body_terminator(46));
-    try testing.expect(!idol_parser_empty_body_terminator(109));
-    // Out-of-range kinds return false.
-    try testing.expectEqual(false, idol_parser_layout_terminator(-1));
-    try testing.expectEqual(false, idol_parser_empty_body_terminator(-1));
+fn parserEventsForTest(facts: []i64, events: []i64, idol: bool) !void {
+    try testing.expect(facts.len >= 1);
+    const count = (facts.len - 1) / 2;
+    try testing.expectEqual(count * 2 + 1, facts.len);
+    try testing.expectEqual(count * 2, events.len);
+    const count_i64 = std.math.cast(i64, count) orelse return error.InvalidRecordCount;
+    const capacity = std.math.cast(i64, events.len) orelse return error.InvalidRecordCount;
+    try testing.expectEqual(count_i64, idol_parser_event(facts.ptr, count_i64, events.ptr, capacity, idol));
 }
 
-test "parse: opening ABI encodes the host open_layout decision" {
-    // 1. Module/no-opener (idol_mode=false OR open_col=0): returns 0.
-    try testing.expectEqual(@as(i64, 0), idol_parser_opening(false, 1, 5, 0, 1, 6));
-    try testing.expectEqual(@as(i64, 0), idol_parser_opening(true, 0, 0, 0, 1, 6));
-    // 2. Lua mode + first_is_terminator (kw_end=10): returns 0 because Lua.
-    try testing.expectEqual(@as(i64, 0), idol_parser_opening(false, 1, 5, 10, 2, 9));
-    // 3. Empty/terminator (idol_mode=true, first is layout terminator): offside
-    //    bit NOT set, but open_col still packed.
-    const empty_bits = idol_parser_opening(true, 1, 5, 10, 2, 9);
+fn parserDecisionForTest(facts: []i64, start: usize, idol: bool) !i64 {
+    try testing.expect(facts.len >= 1);
+    const count = (facts.len - 1) / 2;
+    try testing.expect(start < count);
+    const events = try testing.allocator.alloc(i64, count * 2);
+    defer testing.allocator.free(events);
+    try parserEventsForTest(facts, events, idol);
+    return events[count + start];
+}
+
+fn parserEventForTest(kind: i64, idol: bool) !i64 {
+    var facts = [3]i64{ 0, kind, 0 };
+    var events = [2]i64{ 0, 0 };
+    try parserEventsForTest(facts[0..], events[0..], idol);
+    return events[0];
+}
+
+test "parse: layout identities execute through whole-pack event" {
+    const cases = [_]struct { kind: i64, layout: bool, empty: bool }{
+        .{ .kind = 10, .layout = true, .empty = true },
+        .{ .kind = 8, .layout = true, .empty = true },
+        .{ .kind = 9, .layout = true, .empty = true },
+        .{ .kind = 27, .layout = true, .empty = true },
+        .{ .kind = 46, .layout = true, .empty = true },
+        .{ .kind = 109, .layout = true, .empty = false },
+        .{ .kind = 0, .layout = false, .empty = false },
+        .{ .kind = 5, .layout = false, .empty = false },
+        .{ .kind = 17, .layout = false, .empty = false },
+    };
+    for (cases) |case| {
+        const event = try parserEventForTest(case.kind, true);
+        try testing.expectEqual(case.layout, ((event >> 15) & 1) != 0);
+        try testing.expectEqual(case.empty, ((event >> 16) & 1) != 0);
+    }
+}
+
+test "parse: boundary opening face consumes whole-pack event" {
+    const ordinary = try parserEventForTest(0, true);
+    const terminator = try parserEventForTest(10, true);
+    try testing.expectEqual(@as(i64, 0), idol_parser_boundary(true, 0, false, 1, 5, 0, ordinary, 1, 0, 6, false));
+    try testing.expectEqual(@as(i64, 0), idol_parser_boundary(true, 0, false, 0, 0, 0, ordinary, 1, 0, 6, true));
+    try testing.expectEqual(@as(i64, 0), idol_parser_boundary(true, 0, false, 1, 5, 0, terminator, 2, 0, 9, false));
+    const empty_bits = idol_parser_boundary(true, 0, false, 1, 5, 0, terminator, 2, 0, 9, true);
     try testing.expectEqual(@as(i64, 0), empty_bits & 1);
     try testing.expectEqual(@as(i64, 5), (empty_bits >> 8) & 0x0FFFFFFF);
-    // 4. Inline body (first.line == open.line): bit 0 (offside) + bit 2
-    //    (inline) set; body_col remains 0.
-    const inline_bits = idol_parser_opening(true, 1, 5, 0, 1, 6);
+    const inline_bits = idol_parser_boundary(true, 0, false, 1, 5, 0, ordinary, 1, 0, 6, true);
     try testing.expectEqual(@as(i64, 1), inline_bits & 1);
     try testing.expectEqual(@as(i64, 4), inline_bits & 4);
     try testing.expectEqual(@as(i64, 0), (inline_bits >> 36) & 0x0FFFFFFF);
-    // 5. Indented body (first.line > open.line AND first.col > open.col):
-    //    offside set; body_col packed into bits 36..63.
-    const indented_bits = idol_parser_opening(true, 1, 5, 0, 2, 9);
+    const indented_bits = idol_parser_boundary(true, 0, false, 1, 5, 0, ordinary, 2, 0, 9, true);
     try testing.expectEqual(@as(i64, 1), indented_bits & 1);
     try testing.expectEqual(@as(i64, 9), (indented_bits >> 36) & 0x0FFFFFFF);
-    // 6. First token left of opener (first.col <= open.col): offside NOT
-    //    set — the host's "no layout" branch.
-    const left_bits = idol_parser_opening(true, 1, 5, 0, 2, 5);
+    const left_bits = idol_parser_boundary(true, 0, false, 1, 5, 0, ordinary, 2, 0, 5, true);
     try testing.expectEqual(@as(i64, 0), left_bits & 1);
 }
 
-test "parse: layout_verdict ABI encodes the host verdict decision" {
-    // 1. No offside: verdict 0 (keep) regardless of column.
-    try testing.expectEqual(@as(i64, 0), idol_parser_layout_verdict(false, 5, 0, 0, 2, 3) & 0x3);
-    try testing.expectEqual(@as(i64, 0), idol_parser_layout_verdict(false, 5, 8, 10, 2, 100) & 0x3);
-    // 2. Dedent close (col <= open_col): verdict 1.
-    try testing.expectEqual(@as(i64, 1), idol_parser_layout_verdict(true, 5, 8, 0, 2, 5) & 0x3);
-    try testing.expectEqual(@as(i64, 1), idol_parser_layout_verdict(true, 5, 8, 0, 2, 3) & 0x3);
-    // 3. First continuation establishing body column (body_col == 0,
-    //    col > open_col): verdict 0 with the new body column in bits 8..35.
-    const first_continuation = idol_parser_layout_verdict(true, 5, 0, 0, 2, 8);
+test "parse: boundary event encodes the layout verdict" {
+    const ordinary = try parserEventForTest(0, true);
+    const terminator = try parserEventForTest(10, true);
+    try testing.expectEqual(@as(i64, 0), idol_parser_boundary(false, 1, false, 0, 5, 0, ordinary, 2, 1, 3, true) & 0x3);
+    try testing.expectEqual(@as(i64, 1), idol_parser_boundary(false, 1, true, 0, 5, 8, ordinary, 2, 1, 5, true) & 0x3);
+    const first_continuation = idol_parser_boundary(false, 1, true, 0, 5, 0, ordinary, 2, 1, 8, true);
     try testing.expectEqual(@as(i64, 0), first_continuation & 0x3);
     try testing.expectEqual(@as(i64, 8), (first_continuation >> 8) & 0x0FFFFFFF);
-    // 4. Exact body column (col == body_col): verdict 0.
-    try testing.expectEqual(@as(i64, 0), idol_parser_layout_verdict(true, 5, 8, 0, 2, 8) & 0x3);
-    // 5. Odd-column terminator close (col != body_col, kind is layout
-    //    terminator kw_end=10): verdict 1.
-    try testing.expectEqual(@as(i64, 1), idol_parser_layout_verdict(true, 5, 8, 10, 2, 7) & 0x3);
-    // 6. Odd-column ordinary-token misindent (col != body_col, kind is
-    //    not a layout terminator): verdict 2.
-    try testing.expectEqual(@as(i64, 2), idol_parser_layout_verdict(true, 5, 8, 0, 2, 7) & 0x3);
+    try testing.expectEqual(@as(i64, 0), idol_parser_boundary(false, 1, true, 0, 5, 8, ordinary, 2, 1, 8, true) & 0x3);
+    try testing.expectEqual(@as(i64, 1), idol_parser_boundary(false, 1, true, 0, 5, 8, terminator, 2, 1, 7, true) & 0x3);
+    try testing.expectEqual(@as(i64, 2), idol_parser_boundary(false, 1, true, 0, 5, 8, ordinary, 2, 1, 7, true) & 0x3);
 }

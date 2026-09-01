@@ -2292,26 +2292,15 @@ __attribute__((visibility("default"))) duo_rec_735fa21981531a8e peek2(duo_rec_ae
 __attribute__((visibility("default"))) bool is_infix_kind(int64_t k);
 __attribute__((visibility("default"))) bool can_start_body_kind(int64_t k);
 __attribute__((visibility("default"))) bool is_descriptor_kind(int64_t k);
-__attribute__((visibility("default"))) bool is_primitive_descriptor_kind(int64_t k);
 __attribute__((visibility("default"))) bool colon_is_method_call_lx(duo_rec_ae78087612f938ba *lx);
 __attribute__((visibility("default"))) bool header_signal_lx(int64_t fact[], int64_t count, int64_t start, bool allow, int64_t offside, int64_t before);
 __attribute__((visibility("default"))) int64_t return_starts_value_lx(int64_t fact[], int64_t count, int64_t start, int64_t return_line, bool idol_mode);
 __attribute__((visibility("default"))) int64_t _clause(int64_t fact[], int64_t count, int64_t start);
-__attribute__((visibility("default"))) bool lead(int64_t kind, int64_t line, int64_t before);
-__attribute__((visibility("default"))) bool prefix(int64_t kind);
-__attribute__((visibility("default"))) bool demands_operand(int64_t kind);
 __attribute__((visibility("default"))) int64_t _ordinal(const char* row, int64_t kind);
-__attribute__((visibility("default"))) int64_t infix_prec(int64_t kind);
-__attribute__((visibility("default"))) bool is_literal_kind(int64_t kind);
-__attribute__((visibility("default"))) bool is_quoted_kind(int64_t kind);
-__attribute__((visibility("default"))) int64_t _unary(int64_t kind);
-__attribute__((visibility("default"))) int64_t _glue(int64_t kind);
-__attribute__((visibility("default"))) int64_t _update(int64_t kind);
-__attribute__((visibility("default"))) bool _layout_terminator(int64_t kind);
-__attribute__((visibility("default"))) bool _empty_body_terminator(int64_t kind);
-__attribute__((visibility("default"))) int64_t _opening(bool idol_mode, int64_t open_line, int64_t open_col, int64_t first_kind, int64_t first_line, int64_t first_col);
-__attribute__((visibility("default"))) int64_t _layout_verdict(bool offside, int64_t open_col, int64_t body_col, int64_t kind, int64_t line, int64_t col);
 __attribute__((visibility("default"))) int64_t _at_face(int64_t fact[], int64_t count, int64_t start);
+__attribute__((visibility("default"))) int64_t _layout_verdict(bool offside, int64_t open_col, int64_t body_col, bool terminator, int64_t line, int64_t col);
+__attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t count, int64_t out[], int64_t capacity, bool idol);
+__attribute__((visibility("default"))) int64_t boundary(bool opening, int64_t count, bool offside, int64_t open_line, int64_t open, int64_t body, int64_t edge, int64_t line, int64_t before, int64_t col, bool idol);
 __attribute__((visibility("default"))) bool paren_header_signal_lx(duo_rec_ae78087612f938ba *lx, bool allow, int64_t offside, int64_t before);
 __attribute__((visibility("default"))) bool statement_header_signal_lx(duo_rec_ae78087612f938ba *lx, duo_rec_735fa21981531a8e *name, bool allow_untyped_comma);
 __attribute__((visibility("default"))) const char* join(const char* a, const char* b);
@@ -2631,10 +2620,6 @@ __attribute__((visibility("default"))) bool is_descriptor_kind(int64_t k) {
     return (token_grammarrole__roledescriptor(k) || is_type_kind(k));
 }
 
-__attribute__((visibility("default"))) bool is_primitive_descriptor_kind(int64_t k) {
-    return token_grammarrole__roledescriptor(k);
-}
-
 __attribute__((visibility("default"))) bool colon_is_method_call_lx(duo_rec_ae78087612f938ba *lx) {
     duo_rec_8126e0d62b0fd79 st = compiler_lexer__save_state(lx);
     duo_rec_735fa21981531a8e m = compiler_lexer__peek(lx);
@@ -2695,15 +2680,15 @@ __attribute__((visibility("default"))) bool header_signal_lx(int64_t fact[], int
                         comma = true;
         }
         if ((((((kind == INT64_C(78)) && (depth == 1)) && (bracket == 0)) && (brace == 0)) && (previous == INT64_C(0)))) {
-            int64_t member = INT64_C(109);
+            int64_t part = INT64_C(109);
                         following = INT64_C(109);
             if (((index + 1) < count)) {
-                                member = ((int64_t)((fact[(((index + 1) * 2) + 1)]) & (255)));
+                                part = ((int64_t)((fact[(((index + 1) * 2) + 1)]) & (255)));
             }
             if (((index + 2) < count)) {
                                 following = ((int64_t)((fact[(((index + 2) * 2) + 1)]) & (255)));
             }
-            if ((!(((member == INT64_C(0)) || token_grammarrole__roledescriptor(member)) && (following == INT64_C(58))))) {
+            if ((!(((part == INT64_C(0)) || token_grammarrole__roledescriptor(part)) && (following == INT64_C(58))))) {
                                 typed = true;
             }
         }
@@ -2898,39 +2883,6 @@ __attribute__((visibility("default"))) int64_t _clause(int64_t fact[], int64_t c
     return 0;
 }
 
-__attribute__((visibility("default"))) bool lead(int64_t kind, int64_t line, int64_t before) {
-    if ((kind < 0)) {
-        return false;
-    }
-    const char* bits = token_grammarrole__lead();
-    if ((kind >= ((int64_t)strlen(bits)))) {
-        return false;
-    }
-    return ((line != before) && (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49));
-}
-
-__attribute__((visibility("default"))) bool prefix(int64_t kind) {
-    if ((kind < 0)) {
-        return false;
-    }
-    const char* bits = token_grammarrole__prefix();
-    if ((kind >= ((int64_t)strlen(bits)))) {
-        return false;
-    }
-    return (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49);
-}
-
-__attribute__((visibility("default"))) bool demands_operand(int64_t kind) {
-    if ((kind < 0)) {
-        return false;
-    }
-    const char* bits = token_grammarrole__demand();
-    if ((kind >= ((int64_t)strlen(bits)))) {
-        return false;
-    }
-    return (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49);
-}
-
 __attribute__((visibility("default"))) int64_t _ordinal(const char* row, int64_t kind) {
     if (((kind < 0) || (kind >= ((int64_t)strlen(row))))) {
         return (-(1));
@@ -2943,136 +2895,6 @@ __attribute__((visibility("default"))) int64_t _ordinal(const char* row, int64_t
         return (-(1));
     }
     return (code - 65);
-}
-
-__attribute__((visibility("default"))) int64_t infix_prec(int64_t kind) {
-    if ((kind < 0)) {
-        return 0;
-    }
-    if ((!token_grammarrole___roleinfix(kind))) {
-        return 0;
-    }
-    int64_t prec = token_grammarrole__roleprecedence(kind);
-    if ((prec == 0)) {
-        return 0;
-    }
-    int64_t a = token_grammarrole__roleassoc(kind);
-    if ((a == 0)) {
-        return 0;
-    }
-    int64_t op = _ordinal(token_grammarrole__relation(), kind);
-    if ((op < 0)) {
-        return 0;
-    }
-    int64_t left = prec;
-    int64_t right = left;
-    if ((a == 1)) {
-                right = (left + 1);
-    }
-    if ((a == 2)) {
-                right = (left - 1);
-    }
-    return ((int64_t)((((int64_t)((op) | (((int64_t)(((uint64_t)(left)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(right)) << ((uint64_t)(16) & 63u))))));
-}
-
-__attribute__((visibility("default"))) bool is_literal_kind(int64_t kind) {
-    if ((kind < 0)) {
-        return false;
-    }
-    const char* bits = token_grammarrole__literal();
-    if ((kind >= ((int64_t)strlen(bits)))) {
-        return false;
-    }
-    return (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49);
-}
-
-__attribute__((visibility("default"))) bool is_quoted_kind(int64_t kind) {
-    if ((kind < 0)) {
-        return false;
-    }
-    const char* bits = token_grammarrole__quoted();
-    if ((kind >= ((int64_t)strlen(bits)))) {
-        return false;
-    }
-    return (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49);
-}
-
-__attribute__((visibility("default"))) int64_t _unary(int64_t kind) {
-    return _ordinal(token_grammarrole__unary(), kind);
-}
-
-__attribute__((visibility("default"))) int64_t _glue(int64_t kind) {
-    if ((!token_grammarrole___roleglue(kind))) {
-        return (-(1));
-    }
-    return _ordinal(token_grammarrole__relation(), kind);
-}
-
-__attribute__((visibility("default"))) int64_t _update(int64_t kind) {
-    if ((!token_grammarrole___roleupdate(kind))) {
-        return (-(1));
-    }
-    return _ordinal(token_grammarrole__relation(), kind);
-}
-
-__attribute__((visibility("default"))) bool _layout_terminator(int64_t kind) {
-    if ((kind < 0)) {
-        return false;
-    }
-    const char* bits = token_grammarrole__layoutterminator();
-    if ((kind >= ((int64_t)strlen(bits)))) {
-        return false;
-    }
-    return (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49);
-}
-
-__attribute__((visibility("default"))) bool _empty_body_terminator(int64_t kind) {
-    if ((kind < 0)) {
-        return false;
-    }
-    const char* bits = token_grammarrole__emptybodyterminator();
-    if ((kind >= ((int64_t)strlen(bits)))) {
-        return false;
-    }
-    return (((int64_t)(unsigned char)(bits[(kind + 1) - 1])) == 49);
-}
-
-__attribute__((visibility("default"))) int64_t _opening(bool idol_mode, int64_t open_line, int64_t open_col, int64_t first_kind, int64_t first_line, int64_t first_col) {
-    if ((!idol_mode)) {
-        return 0;
-    }
-    if (((open_line == 0) || (open_col == 0))) {
-        return 0;
-    }
-    if (_layout_terminator(first_kind)) {
-        return ((int64_t)(((uint64_t)(open_col)) << ((uint64_t)(8) & 63u)));
-    }
-    if ((first_line == open_line)) {
-        return ((int64_t)((((int64_t)((1) | (4)))) | (((int64_t)(((uint64_t)(open_col)) << ((uint64_t)(8) & 63u))))));
-    }
-    if (((first_line > open_line) && (first_col > open_col))) {
-        return ((int64_t)((((int64_t)((1) | (((int64_t)(((uint64_t)(open_col)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(first_col)) << ((uint64_t)(36) & 63u))))));
-    }
-    return ((int64_t)(((uint64_t)(open_col)) << ((uint64_t)(8) & 63u)));
-}
-
-__attribute__((visibility("default"))) int64_t _layout_verdict(bool offside, int64_t open_col, int64_t body_col, int64_t kind, int64_t line, int64_t col) {
-    if ((!offside)) {
-        return 0;
-    }
-    if ((col <= open_col)) {
-        return 1;
-    }
-    if ((body_col == 0)) {
-        return ((int64_t)(((uint64_t)(col)) << ((uint64_t)(8) & 63u)));
-    }
-    if ((col == body_col)) {
-        return 0;
-    }
-    if (_layout_terminator(kind)) {
-        return 1;
-    }
-    return 2;
 }
 
 __attribute__((visibility("default"))) int64_t _at_face(int64_t fact[], int64_t count, int64_t start) {
@@ -3162,6 +2984,9 @@ __attribute__((visibility("default"))) int64_t _at_face(int64_t fact[], int64_t 
     if ((s0 == 32476702104445447)) {
         return 2;
     }
+    if ((s0 == 32776920252310790)) {
+        return 2;
+    }
     if ((s0 == 32217217260020487)) {
         return 2;
     }
@@ -3234,9 +3059,6 @@ __attribute__((visibility("default"))) int64_t _at_face(int64_t fact[], int64_t 
     if ((s0 == 27988534160352775)) {
         return 2;
     }
-    if ((s0 == 32776920252310790)) {
-        return 2;
-    }
         int64_t sec = 0;
         int64_t s1 = 0;
     if ((s0 == 25345)) {
@@ -3276,6 +3098,100 @@ __attribute__((visibility("default"))) int64_t _at_face(int64_t fact[], int64_t 
     }
         int64_t s2 = 0;
         int64_t thr = 0;
+    if ((s0 == 418564631812)) {
+                sec = (first + 1);
+        while (((sec < count) && (((int64_t)((fact[((sec * 2) + 1)]) & (255))) == INT64_C(80)))) {
+                        sec = (sec + 1);
+        }
+        if (((sec >= count) || (((int64_t)((fact[((sec * 2) + 1)]) & (255))) != INT64_C(0)))) {
+            return 0;
+        }
+                s1 = fact[((sec * 2) + 2)];
+        if ((s1 == 28550371717572870)) {
+            return 2;
+        }
+        if ((s1 == 29674094025731591)) {
+            return 2;
+        }
+        if ((s1 == 1953458179)) {
+            return 2;
+        }
+        if ((s1 == 431315968772)) {
+            return 2;
+        }
+        if ((s1 == 435711995908)) {
+            return 2;
+        }
+        if ((s1 == 28259009574301702)) {
+            return 2;
+        }
+        if ((s1 == 2002874883)) {
+            return 2;
+        }
+        if ((s1 == 29676237331852807)) {
+            return 2;
+        }
+        if ((s1 == 30515186162102279)) {
+            return 2;
+        }
+        if ((s1 == 30518523401762054)) {
+            return 2;
+        }
+        if ((s1 == 27977564880724999)) {
+            return 2;
+        }
+        if ((s1 == 30792288878553351)) {
+            return 2;
+        }
+        if ((s1 == 28559167910667270)) {
+            return 2;
+        }
+        if ((s1 == 28538277256848390)) {
+            return 2;
+        }
+        if ((s1 == 32776920252310790)) {
+            return 2;
+        }
+        if ((s1 == 28557015847298567)) {
+            return 2;
+        }
+        if ((s1 == 25345)) {
+                        thr = (sec + 1);
+            while (((thr < count) && (((int64_t)((fact[((thr * 2) + 1)]) & (255))) == INT64_C(80)))) {
+                                thr = (thr + 1);
+            }
+            if (((thr >= count) || (((int64_t)((fact[((thr * 2) + 1)]) & (255))) != INT64_C(0)))) {
+                return 0;
+            }
+                        s2 = fact[((thr * 2) + 2)];
+            if ((s2 == 32776920252310790)) {
+                return 2;
+            }
+            if ((s2 == 465674789636)) {
+                return 2;
+            }
+            if ((s2 == 1768318467)) {
+                return 2;
+            }
+            if ((s2 == 30239221573640966)) {
+                return 2;
+            }
+            if ((s2 == 28552639590327046)) {
+                return 2;
+            }
+            if ((s2 == 32776920251590918)) {
+                return 1;
+            }
+            if ((s2 == 499984983300)) {
+                return 1;
+            }
+            if ((s2 == 28276606056163591)) {
+                return 1;
+            }
+            return 0;
+        }
+        return 0;
+    }
     if ((s0 == 482872353540)) {
                 sec = (first + 1);
         while (((sec < count) && (((int64_t)((fact[((sec * 2) + 1)]) & (255))) == INT64_C(80)))) {
@@ -3407,101 +3323,280 @@ __attribute__((visibility("default"))) int64_t _at_face(int64_t fact[], int64_t 
         }
         return 0;
     }
-    if ((s0 == 418564631812)) {
-                sec = (first + 1);
-        while (((sec < count) && (((int64_t)((fact[((sec * 2) + 1)]) & (255))) == INT64_C(80)))) {
-                        sec = (sec + 1);
-        }
-        if (((sec >= count) || (((int64_t)((fact[((sec * 2) + 1)]) & (255))) != INT64_C(0)))) {
-            return 0;
-        }
-                s1 = fact[((sec * 2) + 2)];
-        if ((s1 == 28550371717572870)) {
-            return 2;
-        }
-        if ((s1 == 29674094025731591)) {
-            return 2;
-        }
-        if ((s1 == 1953458179)) {
-            return 2;
-        }
-        if ((s1 == 431315968772)) {
-            return 2;
-        }
-        if ((s1 == 435711995908)) {
-            return 2;
-        }
-        if ((s1 == 28259009574301702)) {
-            return 2;
-        }
-        if ((s1 == 2002874883)) {
-            return 2;
-        }
-        if ((s1 == 29676237331852807)) {
-            return 2;
-        }
-        if ((s1 == 30515186162102279)) {
-            return 2;
-        }
-        if ((s1 == 30518523401762054)) {
-            return 2;
-        }
-        if ((s1 == 27977564880724999)) {
-            return 2;
-        }
-        if ((s1 == 30792288878553351)) {
-            return 2;
-        }
-        if ((s1 == 28559167910667270)) {
-            return 2;
-        }
-        if ((s1 == 28538277256848390)) {
-            return 2;
-        }
-        if ((s1 == 32776920252310790)) {
-            return 2;
-        }
-        if ((s1 == 28557015847298567)) {
-            return 2;
-        }
-        if ((s1 == 25345)) {
-                        thr = (sec + 1);
-            while (((thr < count) && (((int64_t)((fact[((thr * 2) + 1)]) & (255))) == INT64_C(80)))) {
-                                thr = (thr + 1);
-            }
-            if (((thr >= count) || (((int64_t)((fact[((thr * 2) + 1)]) & (255))) != INT64_C(0)))) {
-                return 0;
-            }
-                        s2 = fact[((thr * 2) + 2)];
-            if ((s2 == 32776920252310790)) {
-                return 2;
-            }
-            if ((s2 == 465674789636)) {
-                return 2;
-            }
-            if ((s2 == 1768318467)) {
-                return 2;
-            }
-            if ((s2 == 30239221573640966)) {
-                return 2;
-            }
-            if ((s2 == 28552639590327046)) {
-                return 2;
-            }
-            if ((s2 == 32776920251590918)) {
-                return 1;
-            }
-            if ((s2 == 499984983300)) {
-                return 1;
-            }
-            if ((s2 == 28276606056163591)) {
-                return 1;
-            }
-            return 0;
-        }
+    return 0;
+}
+
+__attribute__((visibility("default"))) int64_t _layout_verdict(bool offside, int64_t open_col, int64_t body_col, bool terminator, int64_t line, int64_t col) {
+    if ((!offside)) {
         return 0;
     }
-    return 0;
+    if ((col <= open_col)) {
+        return 1;
+    }
+    if ((body_col == 0)) {
+        return ((int64_t)(((uint64_t)(col)) << ((uint64_t)(8) & 63u)));
+    }
+    if ((col == body_col)) {
+        return 0;
+    }
+    if (terminator) {
+        return 1;
+    }
+    return 2;
+}
+
+__attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t count, int64_t out[], int64_t capacity, bool idol) {
+    if ((((count < 0) || (capacity < 0)) || (count > ((double)(capacity) / (double)(2))))) {
+        return (-(1));
+    }
+    const char* statements = token_grammarrole__statement();
+    const char* admissions = token_grammarrole__admission();
+    const char* members = token_grammarrole__member();
+    const char* boundaries = token_grammarrole__boundary();
+    const char* branches = token_grammarrole__branch();
+    const char* terminators = token_grammarrole__layoutterminator();
+    const char* empties = token_grammarrole__emptybodyterminator();
+    const char* prefixes = token_grammarrole__prefix();
+    const char* demands = token_grammarrole__demand();
+    const char* leads = token_grammarrole__lead();
+    const char* literals = token_grammarrole__literal();
+    const char* quoteds = token_grammarrole__quoted();
+    const char* relations = token_grammarrole__relation();
+    const char* unaries = token_grammarrole__unary();
+    int64_t before = 0;
+    int64_t opener = 0;
+    int64_t prior = INT64_C(109);
+    int64_t index = 0;
+    while ((index < count)) {
+        int64_t encoded = fact[((index * 2) + 1)];
+        int64_t kind = ((int64_t)((encoded) & (255)));
+        int64_t line = ((int64_t)((((int64_t)(((uint64_t)(encoded)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
+        int64_t dispatch = 0;
+        if (((kind >= 0) && (kind < ((int64_t)strlen(statements))))) {
+            int64_t statementmark = ((int64_t)(unsigned char)(statements[(kind + 1) - 1]));
+            if (((statementmark >= 65) && (statementmark <= 87))) {
+                                dispatch = (statementmark - 65);
+            }
+        }
+        int64_t admission = 0;
+        if (((kind >= 0) && (kind < ((int64_t)strlen(admissions))))) {
+            int64_t admissionmark = ((int64_t)(unsigned char)(admissions[(kind + 1) - 1]));
+            if (((admissionmark >= 65) && (admissionmark <= 73))) {
+                int64_t choice = (admissionmark - 65);
+                if (((choice == 1) || idol)) {
+                                        admission = choice;
+                }
+            }
+        }
+        int64_t member = 0;
+        if ((((kind >= 0) && (kind < ((int64_t)strlen(members)))) && (((int64_t)(unsigned char)(members[(kind + 1) - 1])) == 49))) {
+                        member = 1;
+        }
+        int64_t boundaryface = 0;
+        if ((((kind >= 0) && (kind < ((int64_t)strlen(boundaries)))) && (((int64_t)(unsigned char)(boundaries[(kind + 1) - 1])) == 49))) {
+                        boundaryface = 1;
+        }
+        int64_t branchface = 0;
+        if ((((kind >= 0) && (kind < ((int64_t)strlen(branches)))) && (((int64_t)(unsigned char)(branches[(kind + 1) - 1])) == 49))) {
+            if ((kind == INT64_C(9))) {
+                                branchface = 1;
+            } else {
+                                branchface = 2;
+            }
+        }
+        int64_t returns = 0;
+        if ((kind == INT64_C(24))) {
+                        returns = 1;
+        }
+        int64_t ending = 0;
+        if ((kind == INT64_C(10))) {
+                        ending = 1;
+        }
+        int64_t terminator = 0;
+        if ((((kind >= 0) && (kind < ((int64_t)strlen(terminators)))) && (((int64_t)(unsigned char)(terminators[(kind + 1) - 1])) == 49))) {
+                        terminator = 1;
+        }
+        int64_t empty = 0;
+        if ((((kind >= 0) && (kind < ((int64_t)strlen(empties)))) && (((int64_t)(unsigned char)(empties[(kind + 1) - 1])) == 49))) {
+                        empty = 1;
+        }
+        int64_t primitive = 0;
+        if (((kind >= 0) && token_grammarrole__roledescriptor(kind))) {
+                        primitive = 1;
+        }
+        int64_t literal = 0;
+        if ((((kind >= 0) && (kind < ((int64_t)strlen(literals)))) && (((int64_t)(unsigned char)(literals[(kind + 1) - 1])) == 49))) {
+                        literal = 1;
+        }
+        int64_t quoted = 0;
+        if ((((kind >= 0) && (kind < ((int64_t)strlen(quoteds)))) && (((int64_t)(unsigned char)(quoteds[(kind + 1) - 1])) == 49))) {
+                        quoted = 1;
+        }
+        int64_t prefixface = 0;
+        if ((((kind >= 0) && (kind < ((int64_t)strlen(prefixes)))) && (((int64_t)(unsigned char)(prefixes[(kind + 1) - 1])) == 49))) {
+                        prefixface = 1;
+        }
+        int64_t demandface = 0;
+        if ((((kind >= 0) && (kind < ((int64_t)strlen(demands)))) && (((int64_t)(unsigned char)(demands[(kind + 1) - 1])) == 49))) {
+                        demandface = 1;
+        }
+        bool visible = ((kind >= 0) && (kind < INT64_C(110)));
+        if ((visible && (line != before))) {
+                        opener = ((int64_t)(((uint64_t)(encoded)) >> ((uint64_t)(36) & 63u)));
+        }
+        int64_t leadface = 0;
+        if ((((visible && (line != before)) && (kind < ((int64_t)strlen(leads)))) && (((int64_t)(unsigned char)(leads[(kind + 1) - 1])) == 49))) {
+                        leadface = 1;
+        }
+        int64_t infix = 0;
+        int64_t unaryface = 0;
+        int64_t glueface = 0;
+        int64_t updateface = 0;
+        if (((kind >= 0) && (kind < ((int64_t)strlen(statements))))) {
+            int64_t relation = _ordinal(relations, kind);
+            int64_t unary = _ordinal(unaries, kind);
+            if ((unary >= 0)) {
+                                unaryface = (unary + 1);
+            }
+            if ((token_grammarrole___roleglue(kind) && (relation >= 0))) {
+                                glueface = (relation + 1);
+            }
+            if ((token_grammarrole___roleupdate(kind) && (relation >= 0))) {
+                                updateface = (relation + 1);
+            }
+            if ((token_grammarrole___roleinfix(kind) && (relation >= 0))) {
+                int64_t prec = token_grammarrole__roleprecedence(kind);
+                int64_t assoc = token_grammarrole__roleassoc(kind);
+                if (((prec > 0) && (assoc > 0))) {
+                    int64_t right = prec;
+                    if ((assoc == 1)) {
+                                                right = (prec + 1);
+                    }
+                    if ((assoc == 2)) {
+                                                right = (prec - 1);
+                    }
+                                        infix = ((int64_t)((((int64_t)((relation) | (((int64_t)(((uint64_t)(prec)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(right)) << ((uint64_t)(16) & 63u))))));
+                }
+            }
+        }
+        out[index] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((dispatch) | (((int64_t)(((uint64_t)(admission)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(member)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(boundaryface)) << ((uint64_t)(10) & 63u))))))) | (((int64_t)(((uint64_t)(branchface)) << ((uint64_t)(11) & 63u))))))) | (((int64_t)(((uint64_t)(returns)) << ((uint64_t)(13) & 63u))))))) | (((int64_t)(((uint64_t)(ending)) << ((uint64_t)(14) & 63u))))))) | (((int64_t)(((uint64_t)(terminator)) << ((uint64_t)(15) & 63u))))))) | (((int64_t)(((uint64_t)(empty)) << ((uint64_t)(16) & 63u))))))) | (((int64_t)(((uint64_t)(primitive)) << ((uint64_t)(17) & 63u))))))) | (((int64_t)(((uint64_t)(literal)) << ((uint64_t)(18) & 63u))))))) | (((int64_t)(((uint64_t)(quoted)) << ((uint64_t)(19) & 63u))))))) | (((int64_t)(((uint64_t)(prefixface)) << ((uint64_t)(20) & 63u))))))) | (((int64_t)(((uint64_t)(demandface)) << ((uint64_t)(21) & 63u))))))) | (((int64_t)(((uint64_t)(leadface)) << ((uint64_t)(22) & 63u))))))) | (((int64_t)(((uint64_t)(infix)) << ((uint64_t)(23) & 63u))))))) | (((int64_t)(((uint64_t)(unaryface)) << ((uint64_t)(47) & 63u))))))) | (((int64_t)(((uint64_t)(glueface)) << ((uint64_t)(52) & 63u))))))) | (((int64_t)(((uint64_t)(updateface)) << ((uint64_t)(57) & 63u))))))) | (((int64_t)(((uint64_t)(_at_face(fact, count, index))) << ((uint64_t)(62) & 63u))))));
+        int64_t clauseface = _clause(fact, count, index);
+        int64_t returnface = return_starts_value_lx(fact, count, index, before, idol);
+        int64_t head = 0;
+        if (((kind == INT64_C(0)) && (fact[((index * 2) + 2)] == 435678704644))) {
+            int64_t following = INT64_C(109);
+            if (((index + 1) < count)) {
+                                following = ((int64_t)((fact[(((index + 1) * 2) + 1)]) & (255)));
+            }
+            if ((following != INT64_C(58))) {
+                                head = 1;
+            }
+        }
+        int64_t offside = 0;
+        if (idol) {
+                        offside = opener;
+        }
+        int64_t headerplain = 0;
+        int64_t headercomma = 0;
+        if ((kind == INT64_C(58))) {
+            if (header_signal_lx(fact, count, index, false, offside, prior)) {
+                                headerplain = 1;
+            }
+            if (header_signal_lx(fact, count, index, true, offside, prior)) {
+                                headercomma = 1;
+            }
+        }
+        out[(count + index)] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((clauseface) | (((int64_t)(((uint64_t)(returnface)) << ((uint64_t)(2) & 63u))))))) | (((int64_t)(((uint64_t)(headerplain)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(headercomma)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(head)) << ((uint64_t)(6) & 63u))))));
+        if (((headerplain == 1) && (index > 0))) {
+            int64_t start = (index - 1);
+            if ((((int64_t)((fact[((start * 2) + 1)]) & (255))) == INT64_C(0))) {
+                if ((((start >= 2) && (((int64_t)((fact[(((start - 1) * 2) + 1)]) & (255))) == INT64_C(78))) && (((int64_t)((fact[(((start - 2) * 2) + 1)]) & (255))) == INT64_C(0)))) {
+                                        start = (start - 2);
+                }
+                while ((((start >= 2) && (((int64_t)((fact[(((start - 1) * 2) + 1)]) & (255))) == INT64_C(80))) && (((int64_t)((fact[(((start - 2) * 2) + 1)]) & (255))) == INT64_C(0)))) {
+                                        start = (start - 2);
+                }
+                out[(count + start)] = ((int64_t)((out[(count + start)]) | (128)));
+            }
+        }
+        if (visible) {
+                        before = line;
+                        prior = kind;
+        }
+                index = (index + 1);
+    }
+    return count;
+}
+
+__attribute__((visibility("default"))) int64_t boundary(bool opening, int64_t count, bool offside, int64_t open_line, int64_t open, int64_t body, int64_t edge, int64_t line, int64_t before, int64_t col, bool idol) {
+    if (opening) {
+        if ((!idol)) {
+            return 0;
+        }
+        if (((open_line == 0) || (open == 0))) {
+            return 0;
+        }
+        if ((((int64_t)((((int64_t)(((uint64_t)(edge)) >> ((uint64_t)(15) & 63u)))) & (1))) == 1)) {
+            return ((int64_t)(((uint64_t)(open)) << ((uint64_t)(8) & 63u)));
+        }
+        if ((line == open_line)) {
+            return ((int64_t)((((int64_t)((1) | (4)))) | (((int64_t)(((uint64_t)(open)) << ((uint64_t)(8) & 63u))))));
+        }
+        if (((line > open_line) && (col > open))) {
+            return ((int64_t)((((int64_t)((1) | (((int64_t)(((uint64_t)(open)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(col)) << ((uint64_t)(36) & 63u))))));
+        }
+        return ((int64_t)(((uint64_t)(open)) << ((uint64_t)(8) & 63u)));
+    }
+    int64_t column = body;
+    bool ending = (((int64_t)((((int64_t)(((uint64_t)(edge)) >> ((uint64_t)(14) & 63u)))) & (1))) == 1);
+    int64_t closing = 4;
+    if (ending) {
+                closing = 1;
+        if (((offside && (line != before)) && (col > open))) {
+                        closing = 2;
+        }
+        if (((offside && (line != before)) && (col < open))) {
+                        closing = 0;
+        }
+    } else if (offside) {
+                closing = 0;
+    } else if (idol) {
+                closing = 3;
+    }
+    int64_t sealed = ((int64_t)(((uint64_t)(closing)) << ((uint64_t)(4) & 63u)));
+    int64_t branchface = ((int64_t)((((int64_t)(((uint64_t)(edge)) >> ((uint64_t)(11) & 63u)))) & (3)));
+    if ((branchface > 2)) {
+                branchface = 0;
+    }
+    bool branch = (branchface > 0);
+    int64_t face = 0;
+    if ((branch && ((!offside) || (col >= open)))) {
+                face = branchface;
+    }
+    if (((count > 0) && (line != before))) {
+        bool terminator = (((int64_t)((((int64_t)(((uint64_t)(edge)) >> ((uint64_t)(15) & 63u)))) & (1))) == 1);
+        int64_t verdict = _layout_verdict(offside, open, body, terminator, line, col);
+        int64_t action = ((int64_t)((verdict) & (3)));
+        if ((action != 0)) {
+            return ((int64_t)((((int64_t)((((int64_t)((action) | (((int64_t)(((uint64_t)(face)) << ((uint64_t)(2) & 63u))))))) | (sealed)))) | (((int64_t)(((uint64_t)(column)) << ((uint64_t)(8) & 63u))))));
+        }
+        if ((body == 0)) {
+                        column = ((int64_t)((((int64_t)(((uint64_t)(verdict)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
+        }
+    }
+    if ((((int64_t)((((int64_t)(((uint64_t)(edge)) >> ((uint64_t)(10) & 63u)))) & (1))) == 1)) {
+        return ((int64_t)((((int64_t)((((int64_t)((1) | (((int64_t)(((uint64_t)(face)) << ((uint64_t)(2) & 63u))))))) | (sealed)))) | (((int64_t)(((uint64_t)(column)) << ((uint64_t)(8) & 63u))))));
+    }
+    if (branch) {
+        if (((!offside) || (col <= open))) {
+            return ((int64_t)((((int64_t)((((int64_t)((1) | (((int64_t)(((uint64_t)(face)) << ((uint64_t)(2) & 63u))))))) | (sealed)))) | (((int64_t)(((uint64_t)(column)) << ((uint64_t)(8) & 63u))))));
+        }
+        return ((int64_t)((((int64_t)((((int64_t)(((uint64_t)(face)) << ((uint64_t)(2) & 63u)))) | (sealed)))) | (((int64_t)(((uint64_t)(column)) << ((uint64_t)(8) & 63u))))));
+    }
+    if ((((int64_t)((((int64_t)(((uint64_t)(edge)) >> ((uint64_t)(13) & 63u)))) & (1))) == 1)) {
+        return ((int64_t)((((int64_t)((3) | (sealed)))) | (((int64_t)(((uint64_t)(column)) << ((uint64_t)(8) & 63u))))));
+    }
+    return ((int64_t)((sealed) | (((int64_t)(((uint64_t)(column)) << ((uint64_t)(8) & 63u))))));
 }
 
 __attribute__((visibility("default"))) bool paren_header_signal_lx(duo_rec_ae78087612f938ba *lx, bool allow, int64_t offside, int64_t before) {

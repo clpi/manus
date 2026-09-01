@@ -456,12 +456,42 @@ literal(): str
     kind += 1
   out
 
+# Static-member identities. Once `.` / `:` / `@` has fixed member position,
+# an ordinary name or any keyword identity names the member. Literal payloads
+# and punctuation do not. The host used to inspect the first byte of the
+# generated display spelling, which classified the literal labels `integer`,
+# `float`, `text`, and `bytes` as member names and accepted `value."field"`
+# while refusing the contextual `value.end`. This row carries identity rather
+# than reconstructing it from presentation text.
+member(): str
+  out = ""
+  kind = 0
+  while kind < roleslotcount
+    bit = "0"
+    if kind == kindname or (kind >= kindand and kind <= kindlet)
+      bit = "1"
+    out = "{out}{bit}"
+    kind += 1
+  out
+
 # Quoted-payload identities (text / bytes / compat). One character per
 # producer slot, "1" where the kind is a quoted payload (the same set the
 # generated role row marks `.quoted = true`). Mirrors `rolequoted` so the
 # parser-side fact and the role-row emit agree; damaging the predicate
 # regenerates both projections. Slot 3 stays unpublished and never reads as
 # quoted. Same zero-arg row shape as `literal()` / `prefix()` / `demand()`.
+quoted(): str
+  out = ""
+  kind = 0
+  while kind < roleslotcount
+    bit = "0"
+    if (kind >= kindtextlit and kind <= kindcompatlongtextlit)
+      bit = "1"
+    out = "{out}{bit}"
+    kind += 1
+  out
+
+# Layout terminators own the six identities that close an offside frame.
 layoutterminator(): str
   out = ""
   kind = 0
@@ -494,14 +524,121 @@ emptybodyterminator(): str
     kind += 1
   out
 
-quoted(): str
+# Unconditional block boundary identities. These always return control to the
+# construct that opened the block; bracket closers belong to their opener and
+# never begin a statement.
+boundary(): str
   out = ""
   kind = 0
   while kind < roleslotcount
     bit = "0"
-    if (kind >= kindtextlit and kind <= kindcompatlongtextlit)
+    if kind == kindend or kind == kinduntil or kind == kindeof
+      bit = "1"
+    if kind == kindrparen or kind == kindrbrace or kind == kindrbracket
       bit = "1"
     out = "{out}{bit}"
+    kind += 1
+  out
+
+# Conditional branch identities. `else` / `elseif` close the current block
+# unless an offside frame proves they sit at that block's exact body column, in
+# which case they belong to a nested conditional statement.
+branch(): str
+  out = ""
+  kind = 0
+  while kind < roleslotcount
+    bit = "0"
+    if kind == kindelse or kind == kindelseif
+      bit = "1"
+    out = "{out}{bit}"
+    kind += 1
+  out
+
+# Direct statement dispatch face. `A` is expression/default; `B` is the `@`
+# contextual path; `W` is contextual name. Every other nonzero face selects one
+# direct production branch. Contextual name/attribute lookahead and source-law
+# retired-keyword admission remain in the parser until the whole producer pack
+# supplies those decisions too.
+statement(): str
+  alphabet = "ABCDEFGHIJKLMNOPQRSTUVW"
+  out = ""
+  kind = 0
+  while kind < roleslotcount
+    face: i64 = 0
+    if kind == kindat
+      face = 1
+    if kind == kindlocal
+      face = 2
+    if kind == kindglobal
+      face = 3
+    if kind == kindconst
+      face = 4
+    if kind == kindfunction or kind == kindfun
+      face = 5
+    if kind == kindasync
+      face = 6
+    if kind == kindenum
+      face = 7
+    if kind == kindconcept
+      face = 8
+    if kind == kindalias
+      face = 9
+    if kind == kindif
+      face = 10
+    if kind == kindwhile
+      face = 11
+    if kind == kindrepeat
+      face = 12
+    if kind == kindfor
+      face = 13
+    if kind == kinddo
+      face = 14
+    if kind == kindmatch
+      face = 15
+    if kind == kindtry
+      face = 16
+    if kind == kinddefer
+      face = 17
+    if kind == kindgoto
+      face = 18
+    if kind == kindbreak
+      face = 19
+    if kind == kindcontinue
+      face = 20
+    if kind == kinddcolon
+      face = 21
+    if kind == kindname
+      face = 22
+    out = "{out}{alphabet:sub(face + 1, face + 1)}"
+    kind += 1
+  out
+
+# Statement admission face. `A` is accepted; `B` is macro (denied in every
+# family); `C`..`I` are the source-law retirements denied only in canonical Idol.
+# Diagnostic prose stays physical; this row owns which token identity selects it.
+admission(): str
+  alphabet = "ABCDEFGHI"
+  out = ""
+  kind = 0
+  while kind < roleslotcount
+    face: i64 = 0
+    if kind == kindmacro
+      face = 1
+    if kind == kindtry or kind == kindcatch
+      face = 2
+    if kind == kinddefer
+      face = 3
+    if kind == kindgoto
+      face = 4
+    if kind == kindextends
+      face = 5
+    if kind == kindprivate
+      face = 6
+    if kind == kindasync or kind == kindawait
+      face = 7
+    if kind == kindlet
+      face = 8
+    out = "{out}{alphabet:sub(face + 1, face + 1)}"
     kind += 1
   out
 
@@ -913,16 +1050,22 @@ idbody: str = ()
   s = "{s}\n_roleinfix: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _infix[kind + 1] > 0\n"
   s = "{s}\n_roleupdate: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _update[kind + 1] > 0\n"
   s = "{s}\n_roleglue: bool = (kind: i64)\n  kind >= 0 and kind < rolecount and _glue[kind + 1] > 0\n"
-  # These two carry the SAME zero-parameter row shape they have in the owner,
-  # for the same reason: a generated column-1 table plus a parameterised
-  # accessor is a new module-scope declaration and the freeze admits none.
+  # Zero-parameter rows carry exact owner facts into the generated home without
+  # adding another semantic table. Parameterised parser relations now pass only
+  # through the graph-backed vocabulary witness; the row shape remains the
+  # compact owner projection rather than a spelling registry.
   s = "{s}\ndemand(): str\n  \"{demand()}\"\n"
   s = "{s}\nlead(): str\n  \"{lead()}\"\n"
   s = "{s}\nprefix(): str\n  \"{prefix()}\"\n"
   s = "{s}\nliteral(): str\n  \"{literal()}\"\n"
   s = "{s}\nquoted(): str\n  \"{quoted()}\"\n"
+  s = "{s}\nmember(): str\n  \"{member()}\"\n"
   s = "{s}\nlayoutterminator(): str\n  \"{layoutterminator()}\"\n"
   s = "{s}\nemptybodyterminator(): str\n  \"{emptybodyterminator()}\"\n"
+  s = "{s}\nboundary(): str\n  \"{boundary()}\"\n"
+  s = "{s}\nbranch(): str\n  \"{branch()}\"\n"
+  s = "{s}\nstatement(): str\n  \"{statement()}\"\n"
+  s = "{s}\nadmission(): str\n  \"{admission()}\"\n"
   s = "{s}\nrelation(): str\n  \"{_encode(0)}\"\n"
   s = "{s}\nunary(): str\n  \"{_encode(1)}\"\n"
   s
