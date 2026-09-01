@@ -33150,12 +33150,12 @@ const duo_runtime =
     \\    duo_dyn_wrap_12, duo_dyn_wrap_13, duo_dyn_wrap_14, duo_dyn_wrap_15,
     \\};
     \\
-    \\static const char* duo_compiler_path(void) {
-    \\    const char* from_env = getenv("DUO");
+    \\static const char* idol_compiler_path(void) {
+    \\    const char* from_env = getenv("IDOL");
     \\    if (from_env && from_env[0]) return from_env;
-    \\    if (access("./zig-out/bin/duo", X_OK) == 0) return "./zig-out/bin/duo";
-    \\    if (access("../zig-out/bin/duo", X_OK) == 0) return "../zig-out/bin/duo";
-    \\    return "duo";
+    \\    if (access("./zig-out/bin/idol", X_OK) == 0) return "./zig-out/bin/idol";
+    \\    if (access("../zig-out/bin/idol", X_OK) == 0) return "../zig-out/bin/idol";
+    \\    return "idol";
     \\}
     \\
     \\/* IDOL_PRIVATE_TEMP_BEGIN -- GAP-141 executable extraction boundary. */
@@ -33263,7 +33263,7 @@ const duo_runtime =
     \\}
     \\
     \\static int duo_compile_load_chunk(const char* lua_path, const char* dlib_path, char* err, size_t err_sz) {
-    \\    const char* duo = duo_compiler_path();
+    \\    const char* idol = idol_compiler_path();
     \\    char err_path[512];
     \\    if (duo_make_temp_path(err_path, sizeof err_path, ".err") != 0) {
     \\        snprintf(err, err_sz, "failed to create temp error file");
@@ -33271,9 +33271,9 @@ const duo_runtime =
     \\    }
     \\    char cmd[8192];
     \\    if (duo_jit_compile_flags[0]) {
-    \\        snprintf(cmd, sizeof cmd, "%s compile --load-chunk %s -o %s%s 2>%s", duo, lua_path, dlib_path, duo_jit_compile_flags, err_path);
+    \\        snprintf(cmd, sizeof cmd, "%s compile --load-chunk %s -o %s%s 2>%s", idol, lua_path, dlib_path, duo_jit_compile_flags, err_path);
     \\    } else {
-    \\        snprintf(cmd, sizeof cmd, "%s compile --load-chunk %s -o %s 2>%s", duo, lua_path, dlib_path, err_path);
+    \\        snprintf(cmd, sizeof cmd, "%s compile --load-chunk %s -o %s 2>%s", idol, lua_path, dlib_path, err_path);
     \\    }
     \\    int rc = system(cmd);
     \\    if (rc != 0) {
@@ -33283,7 +33283,7 @@ const duo_runtime =
     \\            err[n] = '\0';
     \\            fclose(ef);
     \\        } else {
-    \\            snprintf(err, err_sz, "duo compile failed (exit %d)", rc);
+    \\            snprintf(err, err_sz, "idol compile failed (exit %d)", rc);
     \\        }
     \\        unlink(err_path);
     \\        return -1;
@@ -34267,8 +34267,11 @@ test "runtime: temporary artifact path is reserved with its suffix" {
 test "runtime: dynamic source loading never invokes the application as the compiler" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "_NSGetExecutablePath") == null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "/proc/self/exe") == null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "getenv(\"DUO\")") != null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "./zig-out/bin/duo") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "getenv(\"IDOL\")") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "./zig-out/bin/idol") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "duo_compiler_path") == null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "getenv(\"DUO\")") == null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "zig-out/bin/duo") == null);
 }
 
 test "runtime: pattern matcher emits one-byte NUL character constants" {
