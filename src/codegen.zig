@@ -33262,7 +33262,7 @@ const duo_runtime =
     \\    return 0;
     \\}
     \\
-    \\static int duo_compile_load_chunk(const char* lua_path, const char* dlib_path, char* err, size_t err_sz) {
+    \\static int idol_compile_load_chunk(const char* lua_path, const char* dlib_path, char* err, size_t err_sz) {
     \\    const char* idol = idol_compiler_path();
     \\    char err_path[512];
     \\    if (duo_make_temp_path(err_path, sizeof err_path, ".err") != 0) {
@@ -33301,7 +33301,7 @@ const duo_runtime =
     \\        lua_mret_push(lua_val_lit("failed to create temp library path"));
     \\        return lua_val_nil();
     \\    }
-    \\    if (duo_compile_load_chunk(path, dlib_path, err, sizeof err) != 0) {
+    \\    if (idol_compile_load_chunk(path, dlib_path, err, sizeof err) != 0) {
     \\        unlink(dlib_path);
     \\        lua_mret_push(lua_val_nil());
     \\        lua_mret_push(lua_val_from_str(strdup(err)));
@@ -34269,7 +34269,9 @@ test "runtime: dynamic source loading never invokes the application as the compi
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "/proc/self/exe") == null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "getenv(\"IDOL\")") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "./zig-out/bin/idol") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "idol_compile_load_chunk") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "duo_compiler_path") == null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "duo_compile_load_chunk") == null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "getenv(\"DUO\")") == null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "zig-out/bin/duo") == null);
 }
