@@ -425,6 +425,23 @@ if [ "$generic_arms" -ne 0 ] || [ "$record_arms" -ne 1 ]; then
     bad "type-primary host arms drifted: generic=$generic_arms record-total=$record_arms"
 fi
 
+# Integer type-primary and expression-primary recognition share the primary
+# lane with the mutually exclusive closure and matching-parenthesis coordinates.
+# The owner literal and quoted facts separate integer from `()` at lane value
+# two; Zig materializes the integer value without a
+# residual `.int_lit` primary switch arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindintlit' \
+    'event lost the integer primary face'
+has "$PARSER" 'fn currentParserInteger(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the integer primary consumer'
+has "$PARSER" 'if (try self.currentParserInteger()) {' \
+    'parse_simple_expr bypasses the settled integer face'
+integer_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.int_lit => ' || true)
+examined=$((examined + 1))
+if [ "$integer_arms" -ne 0 ]; then
+    bad "parse_simple_expr retained $integer_arms .int_lit host arm(s)"
+fi
+
 # The expression-group primary consumes parser.id's existing exact matching
 # delimiter boundary. A nonzero boundary is produced only at `(` and carries
 # the coordinate after its matching close. Zig no longer owns a `.lparen`
@@ -433,7 +450,7 @@ has "$ROOT/lib/compiler/parser.id" 'delimiter = probe' \
     'event lost the matching-delimiter primary fact'
 has "$PARSER" 'fn currentParserExpressionGroup(self: *Parser) ParseError!bool {' \
     'parser.zig lost the expression-group primary consumer'
-has "$PARSER" 'return (try self.currentParserDecision()) >> 13 > 1;' \
+has "$PARSER" 'return (try self.currentParserDecision()) >> 13 > 1 and' \
     'expression-group primary no longer consumes the matching delimiter fact'
 has "$PARSER" 'if (try self.currentParserExpressionGroup()) {' \
     'parse_simple_expr bypasses the settled expression-group face'
@@ -1381,7 +1398,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=6' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=7' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'

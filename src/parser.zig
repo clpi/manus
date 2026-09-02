@@ -403,7 +403,8 @@ pub const Parser = struct {
     }
 
     fn currentParserExpressionGroup(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 > 1;
+        return (try self.currentParserDecision()) >> 13 > 1 and
+            !try self.currentParserLiteral();
     }
 
     fn currentParserClosure(self: *Parser) ParseError!bool {
@@ -441,6 +442,12 @@ pub const Parser = struct {
 
     fn currentParserTypeRecord(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 12) & 1) != 0;
+    }
+
+    fn currentParserInteger(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 2 and
+            try self.currentParserLiteral() and
+            !try self.currentParserQuoted();
     }
 
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
@@ -6078,6 +6085,10 @@ pub const Parser = struct {
     fn parse_simple_expr(self: *Parser) ParseError!*ast.Expr {
         const tok = try self.pk();
         if (try self.currentParserClosure()) return self.parse_closure_expr();
+        if (try self.currentParserInteger()) {
+            _ = try self.adv();
+            return self.new_expr(.{ .int_lit = .{ .loc = tok.loc, .val = tok.int_val } });
+        }
         if (try self.currentParserExpressionGroup()) {
             if (try self.starts_parenthesized_func_expr()) {
                 const l = (try self.pk()).loc;
@@ -6103,10 +6114,6 @@ pub const Parser = struct {
             return e;
         }
         return switch (tok.kind) {
-            .int_lit => blk: {
-                _ = try self.adv();
-                break :blk self.new_expr(.{ .int_lit = .{ .loc = tok.loc, .val = tok.int_val } });
-            },
             .float_lit => blk: {
                 _ = try self.adv();
                 break :blk self.new_expr(.{ .float_lit = .{ .loc = tok.loc, .val = tok.float_val } });
