@@ -6375,9 +6375,44 @@ const Arm64Compiler = struct {
     ) Error!u5 {
         const off = self.spilled_regs.get(reg) orelse return reg;
         const reload_off = self.stack_frame_bytes - off - 8;
-        const fresh = self.allocRegExcluding(null) catch |e| {
+        const fresh = self.allocRegExcluding(null) catch |e| blk: {
             if (e != error.RegisterExhausted or !self.gate_transport) return e;
-            return try self.reclaimSpilledReg();
+            // THE RECLAIMED REGISTER IS A DESTINATION, NOT AN ANSWER.
+            //
+            // This `catch` used to `return` it, and a returned register is what
+            // the caller reads `reg`'s VALUE out of — `evalDnirValue` hands it
+            // straight back as the register holding the `.local`/`.temp` it was
+            // asked for. But nothing had loaded it: the `ldr` below is the only
+            // instruction that moves `[sp, #reload_off]` into a register, and
+            // returning above it skipped that, the `spilled_regs` removal, the
+            // slot release, and the temp remap in one step. So the read got
+            // whatever the reclaimed register last held, which is not this
+            // value: a register reaches `spilled_regs` because something else
+            // needed it, and when the reclaim returns `reg` itself the register
+            // holds that something else. A wrong value with no diagnostic, on
+            // the one path in this function whose entire job is to make a
+            // spilled value readable again.
+            //
+            // Breaking out instead makes the reclaim supply `fresh` and lets the
+            // rest of the function run as written: `reg`'s value is loaded, its
+            // `spilled_regs` entry drops, its slot returns to `free_spill_slots`,
+            // and every temp still naming `reg` names the loaded register. When
+            // the reclaim hands back `reg` itself all four steps stay correct —
+            // the load reads a slot nothing has overwritten, the removal is
+            // idempotent against the one `reclaimSpilledReg` already did, the
+            // slot is genuinely dead once the value is in a register, and the
+            // remap is `reg` -> `reg`.
+            //
+            // NO NEW OWNER IS BROKEN. When the reclaim returns some OTHER
+            // spilled register, its previous owner was already abandoned by
+            // `reclaimSpilledReg` dropping the `spilled_regs` entry that would
+            // have reloaded it — the two-owner hazard this gap is open on,
+            // bounded to gate transport and unchanged here. This adds `reg`'s
+            // owner to that register's readers, which is the same aliasing the
+            // abandonment already established, and removes one guaranteed wrong
+            // read. Not the closure: closure is authoritative `register`/`frame`
+            // assignment before emission, per this gap's record.
+            break :blk try self.reclaimSpilledReg();
         };
         try self.emitLdrSp(fresh, reload_off);
         _ = self.spilled_regs.remove(reg);
@@ -16797,4 +16832,77 @@ test "the divisors this realization refuses keep the sdiv path" {
     for ([_]i64{ -9223372036854775807 - 1, -1000000, -7, -2, -1, 0, 1, 2, 4, 8, 1024, (@as(i64, 1) << 62) }) |k| {
         try std.testing.expectEqual(@as(?Arm64Compiler.FlooredMagic, null), Arm64Compiler.magicFlooredDivisor(k));
     }
+}
+
+// GAP-148. THE ONLY INSTRUCTION THAT MAKES A SPILLED VALUE READABLE AGAIN.
+//
+// `ensureRegLiveRemap` is what `evalDnirValue` calls for a `.local` or `.temp`
+// whose register has been spilled, and its result is handed back as THE register
+// holding that value. Under gate transport its exhaustion path reclaims a
+// register; a reclaimed register is a destination for the reload, and this
+// measures that the reload is what the caller receives.
+//
+// The compiler is built directly rather than through a source program because
+// the path needs an exhausted pool AND an exhausted spill area at the same
+// instant — a condition a fixture reaches only incidentally, and then stops
+// reaching the next time allocation changes.
+test "a gate-transport reclaim reloads the value it hands a register for" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // GATE TRANSPORT WITH NO PRE-RESERVED SPILL AREA. `spillReg` then falls to
+    // its last-resort branch, which refuses outright under gate transport
+    // (moving `sp` mid-body invalidates every offset the prologue handed out),
+    // so every rung of the `allocRegExcluding` cascade raises
+    // `RegisterExhausted` and the reclaim is the only way this call returns.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    const spilled: u5 = 10;
+    const off: u16 = 8;
+    try compiler.spilled_regs.put(alloc, spilled, off);
+    // Busy everywhere else, and the spilled register NOT `used_regs` — exactly
+    // the state `spillReg` leaves behind.
+    compiler.used_regs = @splat(true);
+    compiler.used_regs[spilled] = false;
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    const owner: u32 = 7;
+    try temps.put(alloc, owner, spilled);
+
+    const before = compiler.code.items.len;
+    const live = try compiler.ensureRegLiveRemap(&temps, spilled);
+
+    // ONE `ldr`, from this value's slot, into the register that was returned.
+    // Without it the caller reads whatever the reclaimed register last held.
+    const reload_off: u16 = compiler.stack_frame_bytes - off - 8;
+    const want: u32 = 0xf94003e0 | ((@as(u32, reload_off) / 8) << 10) | @as(u32, live);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        want,
+        std.mem.readInt(u32, compiler.code.items[before..][0..4], .little),
+    );
+
+    // …and the ownership facts that load pays for: no reload still owed, the
+    // owner naming the loaded register, that register claimed, and the frame
+    // slot returned to the pool now that nothing has to be read out of it.
+    try std.testing.expect(!compiler.spilled_regs.contains(spilled));
+    try std.testing.expectEqual(@as(?u5, live), temps.get(owner));
+    try std.testing.expect(compiler.used_regs[live]);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
 }
