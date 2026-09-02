@@ -4664,14 +4664,37 @@ test "a bootstrap unit is selected by a REACHED partition's need, not only the e
     const reached: []const []const u8 = &.{ "idol_tmp_helper__value", "duo_str_to_i64" };
     try std.testing.expect(bootstrapUnits(reached).str);
 
-    const joined: []const []const u8 = &.{ entry[0], reached[0], reached[1] };
-    const units = bootstrapUnits(joined);
+    // THROUGH THE PRODUCER, not a union built here. A hand-joined slice pins
+    // this test's arithmetic and nothing about the compiler; `needUnion` is what
+    // `directLinkLine` hands the selection on both linking paths.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const units = bootstrapUnits(try needUnion(arena.allocator(), entry, reached));
     try std.testing.expect(units.str);
     // AND NOTHING MORE. A union that pulled in every unit would link and answer
     // too, so a passing subject could not tell the union apart from
     // "materialize all three always" — which is why this asserts the negatives.
     try std.testing.expect(!units.io);
     try std.testing.expect(!units.classify);
+}
+
+test "an artifact that reaches nothing still selects the units its OWN object needs" {
+    // THE SHARED-LIBRARY HOLE, below the seam that needs macOS to execute. The
+    // dylib arm handed `directLinkInputs` the literal `&.{}` rather than
+    // `artifact.need`, so the first line is what its link line was decided from
+    // and the second is what the same decision looks like once the need is read.
+    try std.testing.expect(!bootstrapUnits(&.{}).str);
+    const own: []const []const u8 = &.{ "idol_tmp_lib__value", "duo_str_to_i64" };
+    try std.testing.expect(bootstrapUnits(own).str);
+
+    // A single-partition artifact reaches nothing, and its own needs must
+    // survive that: `needUnion` returns them, not an empty list, which is the
+    // one way the fast path could have reproduced the defect it replaces.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alone = try needUnion(arena.allocator(), own, &.{});
+    try std.testing.expect(bootstrapUnits(alone).str);
+    try std.testing.expectEqual(own.len, alone.len);
 }
 
 fn directLinkInputs(
@@ -4923,6 +4946,64 @@ fn reachedHomeClosure(
         .object = try objects.toOwnedSlice(alloc),
         .need = try need.toOwnedSlice(alloc),
     };
+}
+
+/// The undefined symbols a link line must answer for: an artifact's own,
+/// together with those of every partition it reaches.
+///
+/// NO DEDUP. `bootstrapUnits` is a set-valued selection, so a symbol named by
+/// both the artifact and a partition it reaches selects the same unit once.
+///
+/// Returns `own` unchanged when nothing was reached — the arena owns every
+/// string either way, and the overwhelmingly common single-partition artifact
+/// allocates nothing here.
+fn needUnion(
+    alloc: std.mem.Allocator,
+    own: []const []const u8,
+    reached: []const []const u8,
+) ![]const []const u8 {
+    if (reached.len == 0) return own;
+    var joined: std.ArrayListUnmanaged([]const u8) = .empty;
+    try joined.appendSlice(alloc, own);
+    try joined.appendSlice(alloc, reached);
+    return joined.toOwnedSlice(alloc);
+}
+
+/// Every link input a direct-native artifact needs beyond its own object: the
+/// bootstrap units its needs select, plus the object of every source partition
+/// it reaches and the units THOSE need.
+///
+/// ONE PRODUCER, AND THAT IS THE SECOND HALF OF GAP-232. The first half was a
+/// dropped `need`; this is a dropped PRODUCER. Two artifact kinds link — the
+/// executable and the shared library — and each built its own line. The
+/// executable's learned to carry the union; the shared library's answer was the
+/// literal `&.{}`, so a dylib got neither the units its OWN object referenced
+/// nor the partitions it reached, and failed at the linker on `_duo_str_to_i64`
+/// with the need list sitting unread in its artifact. A fact with two producers
+/// is a fact that can be repaired in one of them, which is exactly what
+/// happened, so the repair is to leave one.
+///
+/// THE REACHED CLOSURE RUNS FIRST, and that order is load-bearing: the unit
+/// selection reads the UNION, so a closure computed after `directLinkInputs`
+/// could only ever have been decided from the artifact's own needs.
+fn directLinkLine(
+    alloc: std.mem.Allocator,
+    io: Io,
+    mod: *const ast.Module,
+    target: []const u8,
+    cc: []const u8,
+    entry_path: []const u8,
+    graph: *const semantic_graph.SemanticGraph,
+    own_need: []const []const u8,
+) ![]const []const u8 {
+    const reached = try reachedHomeClosure(alloc, io, entry_path, graph);
+    const need = try needUnion(alloc, own_need, reached.need);
+    const unit = try directLinkInputs(alloc, io, mod, target, cc, null, need);
+    if (reached.object.len == 0) return unit;
+    var joined: std.ArrayListUnmanaged([]const u8) = .empty;
+    try joined.appendSlice(alloc, unit);
+    try joined.appendSlice(alloc, reached.object);
+    return joined.toOwnedSlice(alloc);
 }
 
 /// The canonical file identity of a source spelling, or the spelling itself
@@ -6574,35 +6655,15 @@ fn do_compile(
                     if (artifact_result) |artifact_value| {
                         var artifact = artifact_value;
                         defer artifact.deinit(alloc);
-                        // REALIZATION CLOSES OVER WHAT RESOLUTION REACHED.
-                        // Empty for a single-partition program, which is why
-                        // the common case pays nothing. See
-                        // `reachedHomeClosure` for the measurement.
+                        // REALIZATION CLOSES OVER WHAT RESOLUTION REACHED, and
+                        // the units that closure needs join the units this
+                        // artifact needs. Empty for a single-partition program,
+                        // which is why the common case pays nothing.
                         //
-                        // IT RUNS BEFORE `directLinkInputs`, and that order is
-                        // the repair. It used to run after, so the only `need`
-                        // the link line could be built from was the ENTRY's.
-                        const reached = try reachedHomeClosure(alloc, io, src_path, &direct_graph);
-                        const home_extra = reached.object;
-                        // THE UNION, not the entry's needs alone (GAP-232). No
-                        // dedup: `bootstrapUnits` is a set-valued selection, so
-                        // a symbol named by both the entry and a partition it
-                        // reaches selects the same unit once.
-                        const link_need = blk_need: {
-                            if (reached.need.len == 0) break :blk_need @as([]const []const u8, artifact.need);
-                            var joined: std.ArrayListUnmanaged([]const u8) = .empty;
-                            try joined.appendSlice(alloc, artifact.need);
-                            try joined.appendSlice(alloc, reached.need);
-                            break :blk_need try joined.toOwnedSlice(alloc);
-                        };
-                        const boot_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null, link_need);
-                        const direct_extra = blk_extra: {
-                            if (home_extra.len == 0) break :blk_extra boot_extra;
-                            var joined: std.ArrayListUnmanaged([]const u8) = .empty;
-                            try joined.appendSlice(alloc, boot_extra);
-                            try joined.appendSlice(alloc, home_extra);
-                            break :blk_extra try joined.toOwnedSlice(alloc);
-                        };
+                        // ONE PRODUCER FOR BOTH KINDS THAT LINK — see
+                        // `directLinkLine`. This arm used to inline it, and the
+                        // shared arm below answered `&.{}`.
+                        const direct_extra = try directLinkLine(alloc, io, &ps.mod, mt, cc, src_path, &direct_graph, artifact.need);
                         const obj_path = blk: {
                             var oh = std.hash.Wyhash.init(0);
                             const scratch_salt = scratch.salt();
@@ -6729,7 +6790,18 @@ fn do_compile(
                 });
                 const cwd = Io.Dir.cwd();
                 try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = artifact.bytes });
-                try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, false, true, &.{}, null);
+                // THE SAME LINK LINE THE EXECUTABLE GETS, and this argument used
+                // to be `&.{}`. A shared library links, so it has a link line,
+                // and it was the only one built from nothing: the `need` this
+                // artifact carries — the very list GAP-232 is about — was
+                // computed here, written into `artifact.need`, and then not
+                // read, so a dylib whose own code converts text went undefined
+                // on `_duo_str_to_i64` and one reaching a sibling partition went
+                // undefined on that partition's relation. `-dynamiclib` defaults
+                // to `-undefined error`, so both are linker failures naming a
+                // symbol, which is the failure class this path exists to remove.
+                const shared_extra = try directLinkLine(alloc, io, &ps.mod, mt, cc, src_path, &direct_graph, artifact.need);
+                try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, false, true, shared_extra, null);
                 if (phase_timer) |*t| trace_phase(io, t, "native dylib", out_path);
                 if (term.build_report != .plain and !test_mode) {
                     const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
