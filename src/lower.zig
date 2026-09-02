@@ -9,7 +9,10 @@
 //! 1. STATIC — `Authority.fixedAgainst` proves no dynamic enforcement can
 //!    ever observe a violation, so the plan carries the witnessing authority
 //!    facts and zero cost (the "zero overhead when authority is statically
-//!    fixed" rung).
+//!    fixed" rung). The proof quantifies over the program's OWN accesses, so
+//!    the rung stands only in a world without the `foreign_boundary` fact:
+//!    foreign code in-image can forge pointers, and a proof over this
+//!    program's accesses covers none of its (`world.enforces`' ruling).
 //! 2. DYNAMIC — the cheapest admitted mechanism whose `world.enforces`
 //!    superset covers the demand, costed under an explicit access/crossing
 //!    profile (`law.cost.explain`: the answer carries why).
@@ -194,11 +197,14 @@ pub fn select(
     profile: ?Profile,
 ) Selection {
     const demanded = world.demandOf(attack, auth);
-    if (auth.fixedAgainst(demanded)) return .{ .plan = .{ .static = auth } };
+    // The static rung's proof quantifies over the program's own accesses; a
+    // `foreign_boundary` world carries in-image code that can forge pointers,
+    // so zero enforcement is not admissible there (`world.enforces`' ruling).
+    if (!attack.has(.foreign_boundary) and auth.fixedAgainst(demanded)) return .{ .plan = .{ .static = auth } };
     var best: ?Dynamic = null;
     for (std.meta.tags(Mechanism)) |m| {
         if (!target.admits(m)) continue;
-        if (!world.enforces(m).supersetOf(demanded)) continue;
+        if (!world.enforces(m, attack).supersetOf(demanded)) continue;
         // A capability that cannot be constructed statically is not a
         // realization: derivability is an admissibility condition.
         const capability: ?Capability = if (m == .cheri) capabilityOf(auth) else null;
@@ -436,6 +442,57 @@ test "lower: no admissible mechanism refuses closed" {
     const bare = world.TargetWorld.of(.{ .arch = .aarch64, .os = .none, .abi = .none });
     const hostile = observation.ordinary_executable.with(.security_adversary);
     const selection = select(exposedAuthority(), hostile, bare, .{ .accesses = 1, .crossings = 1 });
+    try std.testing.expectEqual(Refusal.no_admissible_mechanism, selection.refused);
+}
+
+test "lower: foreign_boundary moves selection to a boundary the forger cannot cross" {
+    // The SAME authority, profile and target — only the world fact changes.
+    // Without it MPK wins; under it the permission-register write is one the
+    // foreign code can issue for itself, so the answer is the page-table
+    // boundary.
+    const auth = exposedAuthority();
+    const target = world.TargetWorld.of(.{ .arch = .x86_64, .os = .linux, .abi = .gnu });
+    const profile: Profile = .{ .accesses = 1000, .crossings = 10 };
+    const plain = select(auth, observation.ordinary_executable, target, profile).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, plain.mechanism);
+    const forged = select(auth, observation.ordinary_executable.with(.foreign_boundary), target, profile).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.process, forged.mechanism);
+}
+
+test "lower: foreign_boundary keeps cheri admissible — the ruling discriminates" {
+    // The fact narrows admissibility; it does not carpet-ban. A capability is
+    // unforgeable, so on a capability world the same adversarial demand is
+    // answered by CHERI — with the construction still derived from the
+    // authority facts — rather than by a costlier boundary.
+    const auth = exposedAuthority();
+    const hostile = observation.ordinary_executable.with(.security_adversary).with(.foreign_boundary);
+    const target = world.TargetWorld.of(.{ .arch = .x86_64, .os = .linux, .abi = .gnu }).with(.cheri);
+    const plan = select(auth, hostile, target, .{ .accesses = 500, .crossings = 5 }).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.cheri, plan.mechanism);
+    try std.testing.expectEqual(@as(u32, 64), plan.capability.?.extent);
+}
+
+test "lower: foreign_boundary denies the static rung" {
+    // The same facts that realize at zero cost in an ordinary world cannot
+    // witness spatial or immutability against in-image code that forges
+    // pointers: the proof covers the program's own accesses and no foreign
+    // ones, so zero enforcement is not admissible and the cheapest surviving
+    // boundary answers instead.
+    const target = world.TargetWorld.of(.{ .arch = .x86_64, .os = .linux, .abi = .gnu });
+    const profile: Profile = .{ .accesses = 1000, .crossings = 100 };
+    const plain = select(fixedAuthority(), observation.ordinary_executable, target, profile);
+    try std.testing.expect(std.meta.activeTag(plain.plan) == .static);
+    const forged = select(fixedAuthority(), observation.ordinary_executable.with(.foreign_boundary), target, profile);
+    try std.testing.expectEqual(Mechanism.process, forged.plan.dynamic.mechanism);
+}
+
+test "lower: foreign_boundary on a bare target refuses closed" {
+    // The freestanding target admitted the software check and nothing else;
+    // with that arm void there is no admissible enforcement at all, and the
+    // answer is a refusal, never a weakening.
+    const bare = world.TargetWorld.of(.{ .arch = .aarch64, .os = .none, .abi = .none });
+    const forged = observation.ordinary_executable.with(.foreign_boundary);
+    const selection = select(exposedAuthority(), forged, bare, .{ .accesses = 1, .crossings = 1 });
     try std.testing.expectEqual(Refusal.no_admissible_mechanism, selection.refused);
 }
 

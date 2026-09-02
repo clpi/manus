@@ -22,9 +22,18 @@
 //! carries), and what remains is the backend that calls it per census place
 //! during realization.
 //!
-//! BOUNDED: this slice does not model what a `foreign_boundary` world fact does
-//! to enforcement admissibility (foreign code in-image can forge pointers);
-//! that is a later, separately witnessed ruling.
+//! `foreign_boundary` IS modeled, as an admissibility ruling over the
+//! observation world (`observation.WorldFact.foreign_boundary`): foreign code
+//! in-image can forge pointers, so an enforcement that is a CONVENTION in-image
+//! code participates in preserves nothing against it — the foreign code was
+//! never compiled to follow it. What survives is what the forger cannot cross
+//! from inside the image: unforgeable hardware capabilities (`.cheri`), the
+//! page-table boundary (`.process`), a transport boundary
+//! (`.network_isolation`), and the Wasm engine's mandatory per-access
+//! linear-memory check (`.wasm_sandbox`) — engine semantics on every access,
+//! not a convention the checked code follows. The same premise denies
+//! `lower.select`'s static rung: a proof over the program's own accesses
+//! quantifies over no foreign ones.
 
 const std = @import("std");
 const place = @import("place.zig");
@@ -120,10 +129,30 @@ pub const Property = enum {
 
 pub const PropertySet = std.EnumSet(Property);
 
-/// What a mechanism preserves — the admissibility relation. Each arm is a
-/// physical fact about the mechanism, stated where it is declared, so a
-/// selection question never re-derives hardware truth at a call site.
-pub fn enforces(m: Mechanism) PropertySet {
+/// What a mechanism preserves AGAINST an observation/attack model — the
+/// admissibility relation. Each arm is a physical fact about the mechanism,
+/// stated where it is declared, so a selection question never re-derives
+/// hardware truth at a call site.
+///
+/// The `foreign_boundary` ruling: foreign code in-image can forge pointers,
+/// so a mechanism whose enforcement is a CONVENTION in-image code participates
+/// in preserves nothing against it. `.software_check` is a test+trap emitted
+/// around this compiler's own accesses; the foreign code carries no such
+/// branch. `.bounds` is a base+limit register the access path is built to
+/// consult; the forger's access path is not. `.mpk`'s domain switch is an
+/// unprivileged permission-register write any in-image instruction stream can
+/// issue for itself. All three read as the empty set under the fact. `.cheri`
+/// (a capability cannot be minted), `.process` (the page table is not an
+/// in-image convention), `.network_isolation` (a transport) and
+/// `.wasm_sandbox` (the engine checks every linear-memory access, whoever
+/// authored the code) are what a forger cannot cross from inside the image.
+pub fn enforces(m: Mechanism, attack: observation.World) PropertySet {
+    if (attack.has(.foreign_boundary)) {
+        switch (m) {
+            .software_check, .bounds, .mpk => return .{},
+            else => {},
+        }
+    }
     var p: PropertySet = .{};
     switch (m) {
         // Statically witnessed authority has no dynamic enforcement; the
@@ -403,17 +432,44 @@ test "world: statically fixed authority discharges only non-adversarial demand" 
 }
 
 test "world: enforces is the admissibility relation, ordered by strength" {
-    try std.testing.expectEqual(@as(usize, 0), enforces(.none).count());
-    const software = enforces(.software_check);
+    const ordinary = observation.ordinary_executable;
+    try std.testing.expectEqual(@as(usize, 0), enforces(.none, ordinary).count());
+    const software = enforces(.software_check, ordinary);
     try std.testing.expect(software.contains(.spatial));
     try std.testing.expect(!software.contains(.confidentiality));
     try std.testing.expect(!software.contains(.timing));
     // CHERI, MPK and process confine; a Wasm sandbox admits no sub-region
     // immutability under current Wasm law.
-    try std.testing.expect(enforces(.cheri).contains(.confidentiality));
-    try std.testing.expect(enforces(.cheri).contains(.timing));
-    try std.testing.expect(!enforces(.wasm_sandbox).contains(.immutability));
-    try std.testing.expect(enforces(.network_isolation).supersetOf(enforces(.cheri)));
+    try std.testing.expect(enforces(.cheri, ordinary).contains(.confidentiality));
+    try std.testing.expect(enforces(.cheri, ordinary).contains(.timing));
+    try std.testing.expect(!enforces(.wasm_sandbox, ordinary).contains(.immutability));
+    try std.testing.expect(enforces(.network_isolation, ordinary).supersetOf(enforces(.cheri, ordinary)));
+}
+
+test "world: foreign_boundary voids the in-image-cooperative mechanisms" {
+    // The ruling's premise: foreign code in-image can forge pointers, so an
+    // enforcement that is a convention in-image code participates in —
+    // an emitted test+trap, a bounds register the access path is built to
+    // consult, an unprivileged permission-register write — preserves nothing
+    // against it. The foreign code was never compiled to follow any of them.
+    const forged = observation.ordinary_executable.with(.foreign_boundary);
+    try std.testing.expectEqual(@as(usize, 0), enforces(.software_check, forged).count());
+    try std.testing.expectEqual(@as(usize, 0), enforces(.bounds, forged).count());
+    try std.testing.expectEqual(@as(usize, 0), enforces(.mpk, forged).count());
+
+    // What the forger cannot cross from inside the image is untouched: the
+    // fact narrows admissibility, it does not carpet-ban.
+    const ordinary = observation.ordinary_executable;
+    try std.testing.expectEqual(enforces(.cheri, ordinary), enforces(.cheri, forged));
+    try std.testing.expectEqual(enforces(.process, ordinary), enforces(.process, forged));
+    try std.testing.expectEqual(enforces(.wasm_sandbox, ordinary), enforces(.wasm_sandbox, forged));
+    try std.testing.expectEqual(enforces(.network_isolation, ordinary), enforces(.network_isolation, forged));
+
+    // ...and the mechanisms it voids are exactly the cooperative ones:
+    // without the fact they carry the properties the relation has always stated.
+    try std.testing.expect(enforces(.software_check, ordinary).contains(.spatial));
+    try std.testing.expect(enforces(.bounds, ordinary).contains(.spatial));
+    try std.testing.expect(enforces(.mpk, ordinary).contains(.confidentiality));
 }
 
 test "world: target availability is derived from triple facts, honestly" {
