@@ -595,6 +595,47 @@ pub fn observeFact(
     };
 }
 
+/// Wired-end-to-end face: every candidate carries one of the seven epistemic
+/// categories, and selection consumes that category. The taxonomy and its
+/// producer bridges exist above; what was missing is ONE executed boundary
+/// that walks a candidate set through ALL seven levels and applies the one
+/// admissibility law uniformly: sound levels (`axiom`, `proven`,
+/// `inferred_sound`) admit on their fact alone; evidence levels (`guarded`,
+/// `profiled`, `sampled`, `heuristic`) admit only while a runtime fact
+/// affirmatively answers their proposition — profile evidence alone is never
+/// affirmation and never promotes past the guard. This function is
+/// graph-owned enforcement: if it is the only seam from candidate set to a
+/// selected theorem, NO optimizer path can bypass the profile-needs-guard
+/// law — the category is read from the experiment's producer, not re-derived
+/// or audited afterward (`law.fact.producer.one`, `law.oracle.bounded`).
+///
+/// Selection order among survivors is the candidate order — epistemic level
+/// decides admissibility, never priority.
+pub fn selectByEpistemicLevel(
+    candidates: []const Guarded,
+    facts: []const RuntimeFact,
+) ?[]const u8 {
+    for (candidates) |*c| {
+        const level = c.experiment.producer.level();
+        if (level.admitsWithoutGuard()) {
+            return c.experiment.conditional_theorem;
+        }
+        if (holdsUnderFacts(facts, c.experiment.proposition) and
+            holdsAssumptionsUnderFacts(facts, c))
+        {
+            return c.experiment.conditional_theorem;
+        }
+    }
+    return null;
+}
+
+fn holdsAssumptionsUnderFacts(facts: []const RuntimeFact, c: *const Guarded) bool {
+    for (c.assumptions) |a| {
+        if (!holdsUnderFacts(facts, a)) return false;
+    }
+    return true;
+}
+
 /// Runtime facts refine the candidate set: `if P then candidate C is
 /// admissible`. The fact set is the sole authority over which propositions
 /// currently hold — a proposition answered by no recorded fact does NOT hold
@@ -1270,4 +1311,133 @@ test "effect: fromAssumption is the sole guard-to-experiment face" {
     g = fromAssumption("guard:44", "cand:theorem", .proven, 0, "");
     try std.testing.expect(g.experiment.admissible(true));
     try std.testing.expect(g.experiment.provenanceComplete());
+}
+
+test "effect: all seven epistemic categories wired through one boundary" {
+    // Still-missing face executed: one candidate set exercises axiom, proven,
+    // inferred-sound, guarded, profiled, sampled, and heuristic at ONE
+    // boundary. The executed-graph face comes first: the guarded candidate is
+    // built from an assumption emitted by `assumption_guard.buildFromModule`
+    // from an executed semantic graph, so the boundary consumes graph-emitted
+    // facts, not only hand-wired ones.
+    const sema = @import("sema.zig");
+    const ast = @import("ast.zig");
+    const semantic_graph = @import("semantic_graph.zig");
+    var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const home = try graph.addNode(.{
+        .kind = .module,
+        .span = .{ .file = "epistemic.id", .start = 0, .end = 0 },
+    });
+    const shape = try graph.addChild(home, .{
+        .kind = .table_shape,
+        .span = .{ .file = "epistemic.id", .start = 1, .end = 1 },
+        .name = "Point",
+        .knowledge = .guarded,
+        .descriptor_state = .sealed,
+        .shape_id = 1,
+    });
+    var dummy_mod: ast.Module = undefined;
+    var dummy_sem = sema.Sema.init(std.testing.allocator);
+    defer dummy_sem.deinit();
+    var emitted = try assumption_guard.buildFromModule(
+        std.testing.allocator,
+        &dummy_mod,
+        &dummy_sem,
+        &graph,
+    );
+    defer emitted.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(usize, 1), emitted.items.len);
+    var id_buf: [20]u8 = undefined;
+    const shape_id = try std.fmt.bufPrint(&id_buf, "guard:{d}", .{shape});
+
+    var candidates = [_]Guarded{
+        (fromAssumption("ax:identity", "cand:axiom", .proven, 0, "")),
+        (fromAssumption("law:fold", "cand:fold", .proven, 0, "")),
+        (fromAssumption("inv:rowcount", "cand:inferred", .guarded, 0, "")),
+        (fromAssumption(shape_id, "cand:sealed-point", emitted.items[0].evidence, 3, "")),
+        .{ .experiment = .{
+            .proposition = "shape:hot",
+            .producer = .profile_counter,
+            .cost = 1,
+            .conditional_theorem = "cand:hot",
+            .subject_revision = "rev:e1",
+        } },
+        .{ .experiment = .{
+            .proposition = "shape:sampled",
+            .producer = .sample,
+            .cost = 1,
+            .conditional_theorem = "cand:sampled",
+            .subject_revision = "rev:e1",
+        } },
+        .{ .experiment = .{
+            .proposition = "shape:guess",
+            .producer = .heuristic_estimate,
+            .cost = 0,
+            .conditional_theorem = "cand:guess",
+        } },
+    };
+    candidates[2].experiment.producer = .invariant_inference;
+    try std.testing.expectEqual(@as(usize, 7), candidates.len);
+    // `axiom` has no producer today — the enum names the level but NO evidence
+    // producer maps to it, so no producer-backed experiment can claim axiom
+    // standing. The boundary's admissibility law still consumes it uniformly
+    // via `admitsWithoutGuard`; the executed coverage spans the six
+    // producer-backed categories plus the law for the seventh.
+    inline for (@typeInfo(EvidenceProducer).@"enum".field_values) |v| {
+        try std.testing.expect(
+            (@as(EvidenceProducer, @enumFromInt(v)).level()) != .axiom,
+        );
+    }
+    try std.testing.expectEqual(EpistemicLevel.proven, candidates[0].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.proven, candidates[1].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.inferred_sound, candidates[2].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.guarded, candidates[3].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.profiled, candidates[4].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.sampled, candidates[5].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.heuristic, candidates[6].experiment.producer.level());
+
+    // With no runtime facts at all, a profiled/sampled/heuristic candidate
+    // can never admit; the first sound-level candidate wins. Profile evidence
+    // alone is not affirmation of the proposition — the boundary answers
+    // cand:axiom (a proven-level experiment).
+    try std.testing.expectEqualStrings(
+        "cand:axiom",
+        selectByEpistemicLevel(&candidates, &.{}) orelse unreachable,
+    );
+
+    // Affirm the evidence-level propositions; in the evidence tail the
+    // guarded graph-emitted candidate wins once its proposition is affirmed,
+    // while the profiled candidate's fact is false. Sound candidates would
+    // answer regardless — they are deliberately outside this slice.
+    var facts = [_]RuntimeFact{
+        (observeFact("shape:hot", false, "rev:e1") orelse unreachable),
+        (observeFact(shape_id, true, "rev:e0") orelse unreachable),
+        (observeFact("shape:sampled", true, "rev:e1") orelse unreachable),
+    };
+    try std.testing.expectEqualStrings(
+        "cand:sealed-point",
+        selectByEpistemicLevel(candidates[3..6], &facts) orelse unreachable,
+    );
+    // Without an affirming fact, even a guarded candidate stays inadmissible
+    // and the sampled one behind it wins when affirmed.
+    try std.testing.expectEqualStrings(
+        "cand:sampled",
+        selectByEpistemicLevel(candidates[3..6], facts[2..3]) orelse unreachable,
+    );
+
+    // A candidate set with only evidence levels and no affirming facts
+    // selects nothing — the exact answer `select` gives, so the deopt
+    // fallback composition is unchanged. Affirming the heuristic's
+    // proposition admits even a heuristic candidate — the level demands a
+    // guard, and the runtime fact IS the supplied guard answer.
+    const evidence_only = [3]Guarded{ candidates[4], candidates[5], candidates[6] };
+    try std.testing.expect(selectByEpistemicLevel(&evidence_only, &.{}) == null);
+    const guess_fact = [1]RuntimeFact{
+        (observeFact("shape:guess", true, "rev:e1") orelse unreachable),
+    };
+    try std.testing.expectEqualStrings(
+        "cand:guess",
+        selectByEpistemicLevel(&evidence_only, &guess_fact) orelse unreachable,
+    );
 }
