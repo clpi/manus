@@ -53,6 +53,42 @@
 # name fails, so a subject cannot be dropped from measurement by deleting one
 # line. It is a ratchet, not a list.
 #
+# ═══ AND WHAT SHAPES EXIST HAS ONE PRODUCER: `materialize`'s OWN ARMS ══════
+#
+# The reverse direction needs an ENUMERATION of the shapes this file serves, and
+# that enumeration was a second copy — `SHAPES='duo trio fan text'`, a constant
+# beside the `case` that actually decides. This gate's own N4 section states the
+# rule that breaks: "A fact with two producers is a fact that can be repaired in
+# one of them, and that is what had happened." It had happened here, in the
+# ratchet whose entire job is catching exactly this between two OTHER files.
+#
+# MEASURED, on aarch64-linux, by planting into a copy and reading the exit
+# status against an undamaged copy's 3:
+#
+#   * a new `materialize` arm, absent from that constant and from the roster —
+#     the shape is served, no row names it, and the reverse check does not look
+#     for it because it consults the copy. Exit 3, indistinguishable from
+#     undamaged. On macOS it is exit 0: four rows measured, green, and a shape
+#     this file can build measured by nothing.
+#   * a roster row naming `solo`, the POSITIVE CONTROL's shape. Which arms are
+#     subjects and which are controls was written down nowhere, so the row was
+#     accepted, and on macOS it answers 7, satisfies its pin, and is counted in
+#     "N subject(s) examined" — a row that measures no reach at all, inflating
+#     the one number this gate reports.
+#
+# Both are silent on EVERY host, which is what makes them this gate's own class
+# rather than a host limit. The repair is that `materialize`'s arms ARE the
+# enumeration: each carries `#shape:subject` or `#shape:control`, and the roll is
+# read out of this file. An arm cannot be served without appearing in the roll,
+# because the arm is the roll. Three things are then convicted with no compiler:
+# an arm carrying no role (the marker itself going stale), a subject arm no row
+# names, and a row naming a control arm.
+#
+# AND A ROLL THAT COMES BACK EMPTY IS A FAILURE, never a clean run. A reverse
+# check over zero shapes passes vacuously, which is GAP-201's rule one layer up
+# from the roster: this file reading no arms out of itself would report agreement
+# it never looked for.
+#
 # AND THAT RATCHET NEEDS NO COMPILER, SO IT RUNS BEFORE THE HOST IS CLASSIFIED.
 # Every measurement below the classification needs macOS/aarch64 — the direct
 # backend refuses every other host by name — and the ratchet used to sit below it
@@ -216,6 +252,10 @@ set -u
 
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 root=$(CDPATH='' cd -- "$here/.." && pwd)
+# THIS FILE IS ITS OWN SHAPE ENUMERATION, so it has to be able to name itself.
+# `materialize`'s case arms are the one producer of "what shapes exist and which
+# of them are subjects"; a constant beside them was a second copy of that fact.
+self=$here/$(basename -- "$0")
 cd "$root" || { printf 'crosspartition: cannot enter root\n' >&2; exit 3; }
 
 # `zig-out/bin/idol` AND NOT `out/bin/idol`. The latter is a stale artifact
@@ -251,18 +291,24 @@ trap 'cleanup; exit 129' HUP
 # `damage` is the N1 control's hook: it is the empty string for a real subject
 # and a factor for the deliberately-wrong one, so the control travels through
 # the same materializer as the thing it is controlling for.
+#
+# EVERY ARM CARRIES ITS ROLE, and the arms are the enumeration. `#shape:subject`
+# is a roster row's shape; `#shape:control` is a shape only a control below
+# materializes by name. `shape_roll` reads them back out of this file, so there is
+# no second list to drift, and `shape_arms` reads them all — an arm added without
+# a role is convicted rather than served silently.
 materialize() {
     shape=$1
     dir=$2
     factor=${3:-2}
     mkdir -p "$dir" || return 1
     case $shape in
-        duo)
+        duo) #shape:subject
             # One entry, one reached partition. 21 * 2 = 42.
             printf 'twice: i64 = (x: i64)\n  x * %s\n' "$factor" >"$dir/helper.id" || return 1
             printf 'main: i64 = ()\n  helper.twice(21)\n' >"$dir/main.id" || return 1
             ;;
-        trio)
+        trio) #shape:subject
             # TRANSITIVE. The entry never names `deeper`; only the partition it
             # reaches does. (21 + 1) * 2 = 44. A closure that stops at depth one
             # links `helper` and still fails at the linker on `deeper`.
@@ -270,14 +316,14 @@ materialize() {
             printf 'twice: i64 = (x: i64)\n  deeper.plus(x) * %s\n' "$factor" >"$dir/helper.id" || return 1
             printf 'main: i64 = ()\n  helper.twice(21)\n' >"$dir/main.id" || return 1
             ;;
-        fan)
+        fan) #shape:subject
             # TWO partitions reached from one entry, so the link line has to
             # carry more than one extra object. 10 * 2 + (4 + 1) = 25.
             printf 'plus: i64 = (x: i64)\n  x + 1\n' >"$dir/deeper.id" || return 1
             printf 'twice: i64 = (x: i64)\n  x * %s\n' "$factor" >"$dir/helper.id" || return 1
             printf 'main: i64 = ()\n  helper.twice(10) + deeper.plus(4)\n' >"$dir/main.id" || return 1
             ;;
-        text)
+        text) #shape:subject
             # THE REACHED PARTITION NEEDS A BOOTSTRAP UNIT and the entry needs
             # none. `"21":to(i64)` references `duo_str_to_i64`, which lives in
             # `idol_str_runtime.o`; the entry only adds. 21 + 11 * 2 = 43.
@@ -289,8 +335,10 @@ materialize() {
             printf 'value: i64 = (x: i64)\n  "21":to(i64) + x * %s\n' "$factor" >"$dir/helper.id" || return 1
             printf 'main: i64 = ()\n  helper.value(11)\n' >"$dir/main.id" || return 1
             ;;
-        solo)
-            # No reach at all — the positive control's shape.
+        solo) #shape:control
+            # No reach at all — the positive control's shape. IT IS NOT A ROSTER
+            # SUBJECT: a row naming it would measure no cross-partition reach and
+            # still be counted among "N subject(s) examined".
             printf 'main: i64 = ()\n  7\n' >"$dir/main.id" || return 1
             ;;
         *)
@@ -299,7 +347,25 @@ materialize() {
     esac
     return 0
 }
-SHAPES='duo trio fan text'
+
+# ── the shapes this file serves, read out of the arms that serve them ──────
+# `shape_arms` is every case label in `materialize`; `shape_roll` is the subset
+# carrying one role. Bounded to that function's own body, so the `case` statements
+# elsewhere in this file are not mistaken for shapes.
+shape_arms() {
+    awk '
+        /^materialize\(\) \{$/ { inside = 1; next }
+        inside && /^\}$/       { inside = 0 }
+        inside && $0 ~ /^ *[a-z][a-z]*\)/ { sub(/\).*/, ""); sub(/^ */, ""); print }
+    ' "$self"
+}
+shape_roll() {
+    awk -v want="$1" '
+        /^materialize\(\) \{$/ { inside = 1; next }
+        inside && /^\}$/       { inside = 0 }
+        inside && $0 ~ ("^ *[a-z][a-z]*\\) *#shape:" want "$") { sub(/\).*/, ""); sub(/^ */, ""); print }
+    ' "$self"
+}
 
 # ── quoting a compiler log into a CONVICTION ───────────────────────────────
 # `gate/all.sh` reads a failing gate's log and counts it HOST-BOUND rather than
@@ -407,11 +473,49 @@ run_subject() {
 # ONE PARSE. The validated rows are written to `$work/measure` and the
 # measurement pass reads THAT, so the roster's fields have one producer, and a
 # row that passes here and is then not measured is a finding of its own.
+#
+# AND ONE PRODUCER OF THE SHAPES TOO. What this file can materialize, and which
+# of those are subjects rather than controls, is read out of `materialize`'s own
+# arms rather than from a constant beside them; see the section on that above for
+# the two damages the constant hid on every host.
 ratchet=0
 rows=0
 subjects=0
 named=''
 : >"$work/measure" || exit 3
+
+# ── the shape roll, before any row is read against it ──────────────────────
+# Every arm of `materialize`, and the two roles split out of them. An arm with no
+# role is a shape this file serves that neither roll knows about, which is the
+# drift the roll exists to remove; an empty roll would make the coverage check
+# below pass over nothing.
+#
+# SPACE-SEPARATED, DELIBERATELY. The membership tests below are `case " $roll "`
+# against `*" $name "*`, and a roll still carrying its newlines matches only the
+# name that happens to sit beside a space — measured, it convicted four correctly
+# marked arms as unmarked, which is a checker that cannot be trusted either way.
+arms=$(shape_arms | tr '\n' ' ')
+subjectroll=$(shape_roll subject | tr '\n' ' ')
+controlroll=$(shape_roll control | tr '\n' ' ')
+if [ -z "$arms" ]; then
+    printf 'crosspartition: FAIL — read no shape arms out of %s; the roster coverage check would have passed over nothing.\n' \
+        "$self" >&2
+    exit 1
+fi
+if [ -z "$subjectroll" ]; then
+    printf 'crosspartition: FAIL — no arm is marked #shape:subject, so no roster row could be required and 0 shapes would be covered.\n' >&2
+    exit 1
+fi
+for arm in $arms; do
+    case " $subjectroll $controlroll " in
+        *" $arm "*) ;;
+        *)
+            printf 'crosspartition: FAIL — materialize serves shape %s and marks it neither #shape:subject nor #shape:control; the roll cannot require a row for it or refuse one.\n' \
+                "$arm" >&2
+            ratchet=$((ratchet + 1))
+            ;;
+    esac
+done
 
 while IFS= read -r line || [ -n "$line" ]; do
     case $line in ''|\#*) continue ;; esac
@@ -424,6 +528,18 @@ while IFS= read -r line || [ -n "$line" ]; do
         ratchet=$((ratchet + 1))
         continue
     fi
+    # A CONTROL'S SHAPE IS NOT A SUBJECT. `solo` reaches nothing and is
+    # materialized by control P by name; a row naming it would compile, run,
+    # answer, satisfy a pin, and be counted among the subjects examined while
+    # measuring no cross-partition reach at all.
+    case " $controlroll " in
+        *" $shape "*)
+            printf 'crosspartition: FAIL — roster row names %s, which materialize marks #shape:control; it reaches nothing and would be counted as a subject.\n' \
+                "$shape" >&2
+            ratchet=$((ratchet + 1))
+            continue
+            ;;
+    esac
     materialize "$shape" "$work/subject.$shape"
     case $? in
         0) ;;
@@ -443,8 +559,8 @@ while IFS= read -r line || [ -n "$line" ]; do
     printf '%s %s %s\n' "$shape" "$expect" "$defines" >>"$work/measure"
 done <"$roster"
 
-# ── the roster covers every shape, and only shapes that exist ──────────────
-for shape in $SHAPES; do
+# ── the roster covers every subject arm, and only shapes that exist ────────
+for shape in $subjectroll; do
     case " $named " in
         *" $shape "*) ;;
         *)
