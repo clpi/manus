@@ -2238,6 +2238,9 @@ fn emitCallExtern(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
     clearStaged(e);
     if (sig.inline_op) |o| {
         try b.op(o);
+        // f32 result: demote f64→f32 bits — the inline op produces f64
+        // and `dnir_lower` set `ins.ty = .f32` for `math.sqrt(f32)` etc.
+        if (ins.ty == .f32) try b.op(op_f32_demote_f64);
     } else if (sig.helper) |h| {
         try b.call(helperIndex(h));
     } else {
