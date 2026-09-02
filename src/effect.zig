@@ -493,6 +493,93 @@ pub fn deoptBoundary(
     return boundary;
 }
 
+/// Still-missing face: runtime facts refine the candidate set — `if P then
+/// candidate C is admissible`. Assumption truth must enter as a FACT, not as
+/// a caller-supplied boolean function: a `RuntimeFact` is one measured
+/// observation that proposition `P` currently holds (or is observed false) on
+/// one measured subject revision (`law.evidence.subject.one`). As with
+/// hardware counters, there is exactly one construction seam — `observeFact`
+/// — and a runtime observation that names no measured subject revision
+/// constructs NO fact; provenance is the admission condition, not an audit
+/// flag. A runtime fact is world-qualified evidence, never semantic truth:
+/// it refines which already-guarded candidates are admissible NOW, and it
+/// never promotes a candidate past its guard (`law.oracle.bounded`).
+pub const RuntimeFact = struct {
+    /// Stable identity of the observed proposition, e.g. "shape:42".
+    proposition: []const u8,
+    /// The observed truth on the measured subject at `subject_revision`.
+    /// True means P currently holds; false means P was observed false.
+    holds: bool,
+    /// The exact measured subject revision this observation was taken on.
+    subject_revision: []const u8,
+
+    /// One fact answers one runtime truth query. A fact recorded over a
+    /// different proposition answers nothing — refinement is keyed on the
+    /// proposition identity alone, so an unrelated observation never touches
+    /// this candidate (the same sound invalidation discipline as
+    /// `invalidatedExperiment`).
+    pub fn answers(self: *const RuntimeFact, proposition: []const u8) ?bool {
+        if (!std.mem.eql(u8, self.proposition, proposition)) return null;
+        return self.holds;
+    }
+};
+
+pub fn observeFact(
+    proposition: []const u8,
+    holds: bool,
+    subject_revision: []const u8,
+) ?RuntimeFact {
+    if (subject_revision.len == 0) return null;
+    return .{
+        .proposition = proposition,
+        .holds = holds,
+        .subject_revision = subject_revision,
+    };
+}
+
+/// Runtime facts refine the candidate set: `if P then candidate C is
+/// admissible`. The fact set is the sole authority over which propositions
+/// currently hold — a proposition answered by no recorded fact does NOT hold
+/// (a guarded realization is admissible only under its stated assumptions;
+/// absent affirmation is not affirmation). This is the fact-family face of
+/// the `assumption_holds` callback: callers that have measured runtime facts
+/// route them through this one seam instead of re-deriving a truth function
+/// at every boundary (`law.fact.producer.one`).
+pub fn holdsUnderFacts(facts: []const RuntimeFact, proposition: []const u8) bool {
+    for (facts) |*f| {
+        if (f.answers(proposition)) |holds| return holds;
+    }
+    return false;
+}
+
+/// Refine the candidate set under measured runtime facts and select the
+/// conditional theorem of the first refined-admissible candidate. Returns
+/// null when no candidate survives refinement — the same answer `select`
+/// gives, so `deoptOrFallback` composes verbatim. Selection order among the
+/// refined survivors is exactly the candidate order: facts refine
+/// admissibility, never reprioritize (`law.profile.evidence` handles
+/// preference separately through `SemanticShare`).
+pub fn refine(
+    candidates: []const Guarded,
+    false_proposition: []const u8,
+    facts: []const RuntimeFact,
+) ?[]const u8 {
+    for (candidates) |*c| {
+        const invalidated = invalidatedExperiment(&c.experiment, false_proposition);
+        if (!c.experiment.admissible(invalidated)) continue;
+        if (!holdsUnderFacts(facts, c.experiment.proposition)) continue;
+        var assumptions_hold = true;
+        for (c.assumptions) |a| {
+            if (!holdsUnderFacts(facts, a)) {
+                assumptions_hold = false;
+                break;
+            }
+        }
+        if (assumptions_hold) return c.experiment.conditional_theorem;
+    }
+    return null;
+}
+
 test "effect: epistemic levels admit or require guard" {
     try std.testing.expect(EpistemicLevel.axiom.admitsWithoutGuard());
     try std.testing.expect(EpistemicLevel.proven.admitsWithoutGuard());
@@ -776,6 +863,104 @@ test "effect: hardware counters are fact-producers with construction-forced prov
     const free = (observeCounter("shape:7", "cycles", 0, 0, "cand:cached", "rev:abc")).?;
     try std.testing.expect(realizesZero(&free.experiment));
     try std.testing.expect(!free.experiment.producesTruth());
+}
+
+fn holdsNone(proposition: []const u8) bool {
+    _ = proposition;
+    return false;
+}
+
+test "effect: runtime facts refine the candidate set" {
+    // Still-missing face: `if P then candidate C is admissible`. Runtime
+    // facts are world-qualified evidence with construction-forced provenance
+    // (`law.evidence.subject.one`); a proposition answered by no fact does
+    // not hold, and a fact recorded over an unrelated proposition never
+    // touches this candidate.
+    const hot = Guarded{
+        .experiment = .{
+            .proposition = "shape:7",
+            .producer = .guard_observation,
+            .cost = 1,
+            .conditional_theorem = "cand:mono",
+        },
+        .assumptions = &.{"version:12"},
+    };
+    const cold = Guarded{
+        .experiment = .{
+            .proposition = "shape:9",
+            .producer = .guard_observation,
+            .cost = 1,
+            .conditional_theorem = "cand:poly",
+        },
+    };
+    const candidates = [_]Guarded{ hot, cold };
+
+    // No fact recorded: nothing holds, no candidate is admissible.
+    try std.testing.expect(refine(&candidates, "shape:never", &.{}) == null);
+
+    // Every recorded fact names its measured subject revision; a fact cannot
+    // be constructed without it (provenance is the admission condition).
+    try std.testing.expect(observeFact("shape:7", true, "") == null);
+
+    const shape7 = (observeFact("shape:7", true, "rev:abc")).?;
+    const version12 = (observeFact("version:12", true, "rev:abc")).?;
+    const shape9false = (observeFact("shape:9", false, "rev:abc")).?;
+
+    // P holds and every stated assumption holds ⇒ the candidate is refined-admissible.
+    const yes = [_]RuntimeFact{ shape7, version12 };
+    try std.testing.expectEqualStrings("cand:mono", refine(&candidates, "shape:never", &yes).?);
+
+    // Stated assumption unanswered ⇒ the candidate is inadmissible even while
+    // its own proposition holds; refinement moves to the next candidate whose
+    // proposition the fact set affirms.
+    const no_version = [_]RuntimeFact{shape7};
+    try std.testing.expect(!holdsUnderFacts(&no_version, "version:12"));
+    try std.testing.expect(refine(&candidates, "shape:never", &no_version) == null);
+
+    // A fact observing the second candidate's proposition FALSE never admits
+    // it; refinement falls past both when the first is excluded too.
+    const stale = [_]RuntimeFact{ shape7, version12, shape9false };
+    try std.testing.expectEqualStrings("cand:mono", refine(&candidates, "shape:never", &stale).?);
+    try std.testing.expect(refine(&candidates, "shape:7", &no_version) == null);
+
+    // Guard invalidation composes: the first candidate's proposition is
+    // recorded false, and the survivor is admissible only because the fact
+    // set affirmatively answers ITS proposition — absent affirmation is not
+    // affirmation, so refinement never falls through to an unwitnessed
+    // candidate (order 4 + the refinement face in one walk).
+    const shape9true = (observeFact("shape:9", true, "rev:abc")).?;
+    const affirmed = [_]RuntimeFact{ shape7, version12, shape9true };
+    try std.testing.expectEqualStrings("cand:poly", refine(&candidates, "shape:7", &affirmed).?);
+
+    // A fact recorded over an unrelated proposition answers nothing and
+    // never admits the candidate it does not name.
+    const unrelated = [_]RuntimeFact{(observeFact("kind:packed", true, "rev:abc")).?};
+    try std.testing.expect(unrelated[0].answers("shape:7") == null);
+    try std.testing.expect(refine(&candidates, "shape:never", &unrelated) == null);
+
+    // Facts never promote past the guard: a sound candidate stays admissible
+    // under any fact set — its theorem did not depend on the observation.
+    const proved = Guarded{
+        .experiment = .{
+            .proposition = "law:fold",
+            .producer = .static_proof,
+            .cost = 0,
+            .conditional_theorem = "cand:theorem",
+        },
+    };
+    try std.testing.expect(proved.experiment.admissible(true));
+    // Refined admissibility answers null exactly as `select` does, so the
+    // recorded fallback composes verbatim through the same boundary.
+    const none = [_]Guarded{hot};
+    try std.testing.expect(refine(&none, "shape:never", &.{}) == null);
+    const invalidation = Invalidation{
+        .experiment_proposition = "shape:never",
+        .fallback_candidate = "cand:generic",
+    };
+    try std.testing.expectEqualStrings(
+        "cand:generic",
+        deoptOrFallback(invalidation, &none, &holdsNone),
+    );
 }
 
 test "effect: no assumption catalog lives here" {
