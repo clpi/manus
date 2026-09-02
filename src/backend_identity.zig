@@ -263,3 +263,29 @@ test "backend_identity: direct/freebsd/elf produces elf-freebsd-x86_64 intermedi
     // The two identities must differ — freebsd ELF != linux ELF
     try std.testing.expect(!std.mem.eql(u8, m.intermediate, linux_m.intermediate));
 }
+
+test "backend_identity: direct/windows/coff produces coff-x86_64 identity distinct from ELF and Mach-O" {
+    const m = inferFromCompile(.direct, "x86_64-windows-msvc", true, true);
+    try std.testing.expectEqual(Backend.direct, m.backend);
+    // The identity must be COFF, not ELF or Mach-O
+    try std.testing.expectEqualStrings("coff-x86_64", m.intermediate);
+
+    // Must differ from direct/linux/elf
+    const linux_m = inferFromCompile(.direct, "x86_64-linux-gnu", true, true);
+    try std.testing.expect(!std.mem.eql(u8, m.intermediate, linux_m.intermediate));
+
+    // Must differ from direct/macos/macho
+    const macos_m = inferFromCompile(.direct, "aarch64-macos", true, true);
+    try std.testing.expect(!std.mem.eql(u8, m.intermediate, macos_m.intermediate));
+}
+
+test "backend_identity: direct/windows/coff on aarch64 produces coff-aarch64 identity distinct from coff-x86_64" {
+    const m = inferFromCompile(.direct, "aarch64-windows-msvc", true, true);
+    try std.testing.expectEqual(Backend.direct, m.backend);
+    // The identity must be aarch64 COFF, not x86_64 COFF
+    try std.testing.expectEqualStrings("coff-aarch64", m.intermediate);
+
+    // Must differ from direct/windows/coff on x86_64 — same object format, different arch
+    const x86_m = inferFromCompile(.direct, "x86_64-windows-msvc", true, true);
+    try std.testing.expect(!std.mem.eql(u8, m.intermediate, x86_m.intermediate));
+}

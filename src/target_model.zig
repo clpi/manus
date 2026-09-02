@@ -567,3 +567,42 @@ test "target_model: aarch64-freebsd direct backend produces elf-freebsd-aarch64 
     try std.testing.expectEqual(ObjectFormat.elf, triple.objectFormat());
     try std.testing.expectEqualStrings("elf-freebsd-aarch64", bt.intermediate());
 }
+
+test "target_model: direct/windows/coff identity is distinct from direct/linux/elf and direct/macos/macho" {
+    // x86_64-windows-msvc with direct backend: COFF
+    const windows_triple = parseStructuredTarget("x86_64-windows-msvc", .obj).?.triple;
+    const windows_bt = BackendTarget.from(windows_triple, "direct");
+    try std.testing.expectEqual(ObjectFormat.coff, windows_triple.objectFormat());
+    try std.testing.expectEqualStrings("coff-x86_64", windows_bt.intermediate());
+
+    // x86_64-linux-gnu with direct backend: ELF
+    const linux_triple = parseStructuredTarget("x86_64-linux-gnu", .obj).?.triple;
+    const linux_bt = BackendTarget.from(linux_triple, "direct");
+    try std.testing.expectEqualStrings("elf-x86_64", linux_bt.intermediate());
+
+    // aarch64-macos with direct backend: Mach-O
+    const macos_triple = parseStructuredTarget("aarch64-macos", .obj).?.triple;
+    const macos_bt = BackendTarget.from(macos_triple, "direct");
+    try std.testing.expectEqualStrings("mach-o-arm64", macos_bt.intermediate());
+
+    // The three identities must all differ — coff != elf != mach-o
+    try std.testing.expect(!std.mem.eql(u8, windows_bt.intermediate(), linux_bt.intermediate()));
+    try std.testing.expect(!std.mem.eql(u8, windows_bt.intermediate(), macos_bt.intermediate()));
+    try std.testing.expect(!std.mem.eql(u8, linux_bt.intermediate(), macos_bt.intermediate()));
+}
+
+test "target_model: aarch64-windows direct backend produces coff-aarch64 identity distinct from coff-x86_64" {
+    // aarch64-windows-msvc with direct backend: COFF on aarch64
+    const aarch64_triple = parseStructuredTarget("aarch64-windows-msvc", .obj).?.triple;
+    const aarch64_bt = BackendTarget.from(aarch64_triple, "direct");
+    try std.testing.expectEqual(ObjectFormat.coff, aarch64_triple.objectFormat());
+    try std.testing.expectEqualStrings("coff-aarch64", aarch64_bt.intermediate());
+
+    // x86_64-windows-msvc with direct backend: COFF on x86_64
+    const x86_triple = parseStructuredTarget("x86_64-windows-msvc", .obj).?.triple;
+    const x86_bt = BackendTarget.from(x86_triple, "direct");
+    try std.testing.expectEqualStrings("coff-x86_64", x86_bt.intermediate());
+
+    // Same object format, different arch — the arch dimension must be captured
+    try std.testing.expect(!std.mem.eql(u8, aarch64_bt.intermediate(), x86_bt.intermediate()));
+}
