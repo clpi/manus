@@ -477,6 +477,10 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 6;
     }
 
+    fn currentParserBytes(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 7;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6148,6 +6152,14 @@ pub const Parser = struct {
             const val = try self.decodeLiteral(tok, &protected);
             return self.desugar_string_interpolation(tok.loc, val, protected.items, .text);
         }
+        if (try self.currentParserBytes()) {
+            _ = try self.adv();
+            return self.new_expr(.{ .quoted = .{
+                .loc = tok.loc,
+                .val = try self.alloc.dupe(u8, tok.text),
+                .quote = .bytes,
+            } });
+        }
         if (try self.currentParserTable()) return self.parse_table();
         if (try self.currentParserName()) {
             const name_tok = try self.adv();
@@ -6178,14 +6190,6 @@ pub const Parser = struct {
             return e;
         }
         return switch (tok.kind) {
-            .bytes_lit => blk: {
-                _ = try self.adv();
-                break :blk self.new_expr(.{ .quoted = .{
-                    .loc = tok.loc,
-                    .val = try self.alloc.dupe(u8, tok.text),
-                    .quote = .bytes,
-                } });
-            },
             .compat_long_text_lit => blk: {
                 _ = try self.adv();
                 break :blk self.new_expr(.{ .quoted = .{

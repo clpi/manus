@@ -559,6 +559,34 @@ if [ "$text_old" -ne 1 ] || [ "$text_new" -ne 1 ]; then
     bad "the canonical-text primary detector is broken: old=$text_old new=$text_new"
 fi
 
+# Bytes expression-primary recognition has its own exact face at primary value
+# seven. Zig retains bytes materialization but no longer selects it from a
+# `.bytes_lit` switch arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindbyteslit' \
+    'event lost the bytes primary face'
+has "$ROOT/src/parser/projection.c" 'kind == INT64_C(106)' \
+    'tracked projection lost the bytes primary face'
+has "$PARSER" 'fn currentParserBytes(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the bytes primary consumer'
+has "$PARSER" 'if (try self.currentParserBytes()) {' \
+    'parse_simple_expr bypasses the settled bytes face'
+bytes_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.bytes_lit => ' || true)
+examined=$((examined + 1))
+if [ "$bytes_arms" -ne 0 ]; then
+    bad "parse_simple_expr retained $bytes_arms .bytes_lit host arm(s)"
+fi
+
+bytesprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate bytes primary scratch' >&2; exit 2; }
+printf '%s\n' '.bytes_lit => parse_bytes(),' >"$bytesprobe/old.zig"
+printf '%s\n' 'return (try self.currentParserDecision()) >> 13 == 7;' >"$bytesprobe/new.zig"
+bytes_old=$(grep -cF '.bytes_lit => ' "$bytesprobe/old.zig")
+bytes_new=$(grep -cF 'currentParserDecision()) >> 13 == 7' "$bytesprobe/new.zig")
+rm -rf -- "$bytesprobe"
+examined=$((examined + 1))
+if [ "$bytes_old" -ne 1 ] || [ "$bytes_new" -ne 1 ]; then
+    bad "the bytes primary detector is broken: old=$bytes_old new=$bytes_new"
+fi
+
 # The expression-group primary consumes parser.id's existing exact matching
 # delimiter boundary. A nonzero boundary is produced only at `(` and carries
 # the coordinate after its matching close. Zig no longer owns a `.lparen`
