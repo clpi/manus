@@ -403,7 +403,17 @@ fn emitPrototype(e: *Emitter, function: dnir.Function, is_entry: bool) Error!voi
     if (function.params.len == 0) {
         try w.writeAll("void");
     } else for (function.params, 0..) |param, i| {
-        if (!scalarType(param.ty) or param.record != null) return e.refuse("parameter-not-i64");
+        // Two distinct refusal facts, two distinct notes. A sealed-record
+        // parameter (`param.record`) is an AGGREGATE SHAPE one `int64_t`
+        // slot cannot carry, whatever slot type sits beside it; a
+        // non-scalar `param.ty` is the slot type itself being outside the
+        // i64/bool/str slice. The conflated check reported
+        // `parameter-not-i64` for a record parameter whose slot type WAS
+        // i64-shaped — the note blamed a fact that was not the one that
+        // refused. Record shape is checked first so its note wins; it is
+        // the fact the caller can act on.
+        if (param.record != null) return e.refuse("parameter-is-record");
+        if (!scalarType(param.ty)) return e.refuse("parameter-not-i64");
         if (i != 0) try w.writeAll(", ");
         try w.print("int64_t s{d}", .{i});
     }
@@ -1258,4 +1268,28 @@ test "C backend refuses damaged operation and control" {
         .functions = &.{.{ .name = "badcmp", .ret = .i64, .blocks = &.{.{ .instrs = &damaged_cmp }} }},
     }, "", null, &diagnostic));
     try std.testing.expectEqualStrings("cmp-not-comparison", diagnostic.note().?);
+}
+
+test "C backend splits the parameter refusal: record shape vs slot type" {
+    const body = [_]dnir.Instr{
+        .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+    };
+    var diagnostic: Diagnostic = .{};
+    // A sealed-record parameter refuses on its aggregate shape: one
+    // `int64_t` slot cannot carry it. The slot type written beside it is
+    // i64-shaped, so the pre-split note (`parameter-not-i64`) blamed a fact
+    // that was not the one that refused; the split note names the record.
+    const record_param = [_]dnir.Param{.{ .name = "point", .ty = .i64, .record = "point" }};
+    try std.testing.expectError(error.UnsupportedProgram, emitSource(std.testing.allocator, .{
+        .functions = &.{.{ .name = "takesrec", .ret = .i64, .params = &record_param, .blocks = &.{.{ .instrs = &body }} }},
+    }, "", null, &diagnostic));
+    try std.testing.expectEqualStrings("parameter-is-record", diagnostic.note().?);
+    try std.testing.expectEqualStrings("takesrec", diagnostic.functionName().?);
+
+    // A non-scalar slot type with no record shape keeps the type fact.
+    const float_param = [_]dnir.Param{.{ .name = "x", .ty = .f64 }};
+    try std.testing.expectError(error.UnsupportedProgram, emitSource(std.testing.allocator, .{
+        .functions = &.{.{ .name = "takesf64", .ret = .i64, .params = &float_param, .blocks = &.{.{ .instrs = &body }} }},
+    }, "", null, &diagnostic));
+    try std.testing.expectEqualStrings("parameter-not-i64", diagnostic.note().?);
 }
