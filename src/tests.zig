@@ -42,6 +42,7 @@ test {
     _ = @import("optimization_outcome.zig");
     _ = @import("explain_pipeline.zig");
     _ = @import("assumption_guard.zig");
+    _ = @import("effect.zig");
     _ = @import("repair_candidate.zig");
     _ = @import("evidence.zig");
     _ = @import("place.zig");

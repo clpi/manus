@@ -259,6 +259,59 @@ pub fn producerForOutcomeEvidence(ev: optimization_outcome.Evidence) EvidencePro
     };
 }
 
+/// The cost of realizing zero when an experiment's own observation cost is
+/// zero: `P` answers from realized state rather than from execution. Zero-cost
+/// observation is lawful nonexecution (`law.realization.contract` — cached,
+/// theorem, or materialized answers are admissible candidate strategies), not
+/// an optimization hint.
+pub fn realizesZero(e: *const Experiment) bool {
+    return e.cost == 0;
+}
+
+/// Required order 4 witness: deopt selection is exactly a walk of the
+/// candidate set under world qualification plus the one recorded
+/// invalidation. Callers supply the current truth of each proposition; this
+/// function adds no second authority over which propositions hold. It exists
+/// so the deopt layer consumes the experiment family through one seam rather
+/// than re-deriving admissibility at every boundary.
+pub fn invalidatedExperiment(
+    e: *const Experiment,
+    false_proposition: []const u8,
+) bool {
+    // Sound experiments (axiom/proven/inferred-sound) are never invalidated by
+    // any proposition: their theorem did not depend on the observation.
+    if (e.producer.level().admitsWithoutGuard()) return false;
+    return std.mem.eql(u8, e.proposition, false_proposition);
+}
+
+/// An `Experiment` is the experiment-shaped face of an emitted assumption
+/// guard: one experiment plus the assumptions under which its conditional
+/// theorem is admissible. This function is the sole bridge that constructs
+/// that face — callers must route through it rather than hand-wiring an
+/// `Experiment` from guard fields, so the two fact families cannot drift.
+/// The assumption's evidence strength selects the producer through the
+/// existing producer bridge; the guard face keeps no second epistemic table
+/// (`law.catalog.zero`). The measured subject revision carries over verbatim:
+/// if the guard face names none, provenance is exactly as complete as the
+/// assumption's evidence demands (`law.evidence.subject.one`).
+pub fn fromAssumption(
+    id: []const u8,
+    conditional_theorem: []const u8,
+    evidence: optimization_outcome.Evidence,
+    cost: u32,
+    subject_revision: []const u8,
+) Guarded {
+    return .{
+        .experiment = .{
+            .proposition = id,
+            .producer = producerForOutcomeEvidence(evidence),
+            .cost = cost,
+            .conditional_theorem = conditional_theorem,
+            .subject_revision = subject_revision,
+        },
+    };
+}
+
 test "effect: epistemic levels admit or require guard" {
     try std.testing.expect(EpistemicLevel.axiom.admitsWithoutGuard());
     try std.testing.expect(EpistemicLevel.proven.admitsWithoutGuard());
@@ -446,4 +499,92 @@ test "effect: no assumption catalog lives here" {
     try std.testing.expect(!@hasDecl(@This(), "catalog"));
     try std.testing.expect(!@hasDecl(@This(), "experiment_catalog"));
     try std.testing.expect(!@hasDecl(@This(), "writeCatalogJson"));
+}
+
+test "effect: experiment invalidation is keyed on the proposition alone" {
+    // Required order 4: an evidence-level experiment becomes inadmissible only
+    // when ITS proposition is the false one; an unrelated false proposition
+    // never touches it, and sound experiments are never invalidated at all —
+    // their theorem did not depend on the observation.
+    const guarded_exp = Experiment{
+        .proposition = "shape:7",
+        .producer = .guard_observation,
+        .cost = 3,
+        .conditional_theorem = "cand:mono",
+    };
+    try std.testing.expect(invalidatedExperiment(&guarded_exp, "shape:7"));
+    try std.testing.expect(!invalidatedExperiment(&guarded_exp, "shape:9"));
+    const proved_exp = Experiment{
+        .proposition = "shape:7",
+        .producer = .static_proof,
+        .cost = 0,
+        .conditional_theorem = "cand:mono",
+    };
+    try std.testing.expect(!invalidatedExperiment(&proved_exp, "shape:7"));
+    // A profiled experiment invalidated by its own proposition admits nothing
+    // until re-proven or re-guarded.
+    const profiled_exp = Experiment{
+        .proposition = "shape:7",
+        .producer = .profile_counter,
+        .cost = 1,
+        .conditional_theorem = "cand:mono",
+        .subject_revision = "rev:abc",
+    };
+    try std.testing.expect(invalidatedExperiment(&profiled_exp, "shape:7"));
+    try std.testing.expect(!profiled_exp.admissible(true));
+}
+
+test "effect: zero-cost observation is lawful nonexecution, not truth" {
+    // law.realization.contract: cost zero means the proposition answers from
+    // realized state. It never upgrades the epistemic level — a zero-cost
+    // profile is still profiled evidence and still demands a guard or proof.
+    const free_profile = Experiment{
+        .proposition = "shape:7",
+        .producer = .profile_counter,
+        .cost = 0,
+        .conditional_theorem = "cand:cached",
+        .subject_revision = "rev:abc",
+    };
+    try std.testing.expect(realizesZero(&free_profile));
+    try std.testing.expect(!free_profile.producesTruth());
+    try std.testing.expect(profileNeedsGuard(free_profile.producer.level()));
+    const free_proof = Experiment{
+        .proposition = "law:fold",
+        .producer = .static_proof,
+        .cost = 0,
+        .conditional_theorem = "cand:theorem",
+    };
+    try std.testing.expect(realizesZero(&free_proof));
+    try std.testing.expect(free_proof.producesTruth());
+    const paid_guard = Experiment{
+        .proposition = "shape:7",
+        .producer = .guard_observation,
+        .cost = 3,
+        .conditional_theorem = "cand:mono",
+    };
+    try std.testing.expect(!realizesZero(&paid_guard));
+}
+
+test "effect: fromAssumption is the sole guard-to-experiment face" {
+    // One taxonomy, no drift: building the guarded face from an emitted
+    // assumption's evidence strength must agree with both bridges, and the
+    // face itself is inadmissible once invalidated (required order 4).
+    var g = fromAssumption("guard:42", "cand:sealed-table", .guarded, 3, "");
+    try std.testing.expectEqualStrings("guard:42", g.experiment.proposition);
+    try std.testing.expectEqual(EvidenceProducer.guard_observation, g.experiment.producer);
+    try std.testing.expectEqual(levelForOutcomeEvidence(.guarded), g.experiment.producer.level());
+    try std.testing.expect(g.admissible(false, &holdsAll));
+    try std.testing.expect(!g.admissible(true, &holdsAll));
+    // A measured-strength assumption keeps evidence standing: provenance
+    // demands its subject revision, and it never produces truth (order 5).
+    g = fromAssumption("guard:43", "cand:mono", .measured, 1, "");
+    try std.testing.expect(!g.experiment.provenanceComplete());
+    g = fromAssumption("guard:43", "cand:mono", .measured, 1, "rev:head");
+    try std.testing.expect(g.experiment.provenanceComplete());
+    try std.testing.expect(!g.experiment.admissible(true));
+    try std.testing.expect(!g.experiment.producesTruth());
+    // A proven-strength assumption is admissible regardless of invalidation.
+    g = fromAssumption("guard:44", "cand:theorem", .proven, 0, "");
+    try std.testing.expect(g.experiment.admissible(true));
+    try std.testing.expect(g.experiment.provenanceComplete());
 }

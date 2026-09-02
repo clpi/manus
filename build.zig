@@ -1243,6 +1243,19 @@ pub fn build(b: *std.Build) void {
     });
     const run_native_module_barrier = b.addRunArtifact(native_module_barrier);
 
+    // GAP-182 focused slice: the experiment/guard fact family in src/effect.zig.
+    const effect_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/effect.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"effect:"},
+    });
+    const run_effect_tests = b.addRunArtifact(effect_tests);
+    const effect_test_step = b.step("effect-test", "Run GAP-182 experiment/guard fact tests only");
+    effect_test_step.dependOn(&run_effect_tests.step);
+
     const native_module_target = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/target_model.zig"),
