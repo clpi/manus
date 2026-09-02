@@ -469,6 +469,10 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 4;
     }
 
+    fn currentParserCompatText(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 5;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6116,6 +6120,13 @@ pub const Parser = struct {
             _ = try self.adv();
             return self.new_expr(.{ .nil = tok.loc });
         }
+        if (try self.currentParserCompatText()) {
+            _ = try self.adv();
+            var protected: std.ArrayList(bool) = .empty;
+            defer protected.deinit(self.alloc);
+            const decoded = try self.decodeLiteral(tok, &protected);
+            return self.desugar_string_interpolation(tok.loc, decoded, protected.items, .compat_text);
+        }
         if (try self.currentParserTable()) return self.parse_table();
         if (try self.currentParserName()) {
             const name_tok = try self.adv();
@@ -6146,13 +6157,6 @@ pub const Parser = struct {
             return e;
         }
         return switch (tok.kind) {
-            .compat_text_lit => blk: {
-                _ = try self.adv();
-                var protected: std.ArrayList(bool) = .empty;
-                defer protected.deinit(self.alloc);
-                const decoded = try self.decodeLiteral(tok, &protected);
-                break :blk try self.desugar_string_interpolation(tok.loc, decoded, protected.items, .compat_text);
-            },
             .text_lit => blk: {
                 _ = try self.adv();
                 // The lexer already scans escape sequences to find the closing quote,
