@@ -624,8 +624,10 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # bit 9 member; bit 10 boundary; bits 11..12 branch face (1 elseif, 2 else);
 # bit 13 return; bit 14 end; bit 15 layout terminator; bit 16 empty terminator.
 # Lane two carries clause bits 0..1, return bits 2..3, callable-header bits 4..5,
-# and the contextual `type` alias head in bit 6. Bit 3 also carries the array
-# type-primary face at its mutually exclusive `[` identity. A qualifying
+# and the contextual `type` alias head in bit 6. Static-lane bit 61 carries the
+# type-primary face, including the generic `<` identity; its existing infix
+# facts distinguish that face without another lane. Bit 3 also carries the
+# array type-primary face at its mutually exclusive `[` identity. A qualifying
 # callable header
 # propagates the bare declaration head to bit 7 on its starting name coordinate.
 # Bit 8 carries assignment-body recognition, bits 9..12 carry the attributed
@@ -697,7 +699,7 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
         if kind >= 0 and token.grammarrole.roledescriptor(kind)
             primitive = 1
         primary: i64 = 0
-        if kind == token.kindname or kind == token.kindintlit or kind == token.kindfloatlit or kind == token.kindstar or kind == token.kindquestion or kind == token.kindlparen
+        if kind == token.kindname or kind == token.kindintlit or kind == token.kindfloatlit or kind == token.kindstar or kind == token.kindquestion or kind == token.kindlparen or kind == token.kindlt
             primary = 1
         literal: i64 = 0
         if kind >= 0 and kind < literals:len() and literals:byte(kind + 1) == 49

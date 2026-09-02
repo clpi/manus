@@ -425,6 +425,12 @@ pub const Parser = struct {
             ((event >> 18) & 1) == 0;
     }
 
+    fn currentParserTypeGeneric(self: *Parser) ParseError!bool {
+        const event = try self.currentParserEvent();
+        return ((event >> 61) & 1) != 0 and
+            ((event >> 23) & 0xFFFFFF) != 0;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -1591,6 +1597,19 @@ pub const Parser = struct {
             inner.* = try self.parse_type();
             return .{ .optional = inner };
         }
+        if (try self.currentParserTypeGeneric()) {
+            _ = try self.adv();
+            // Parse type parameters for generics: <T, U>
+            var params: std.ArrayList(ast.TypeExpr) = .empty;
+            try params.append(self.alloc, try self.parse_type());
+            while (try self.eat(.comma) != null) {
+                try params.append(self.alloc, try self.parse_type());
+            }
+            _ = try self.expect(.gt);
+            const base = try self.alloc.create(ast.TypeExpr);
+            base.* = try self.parse_type();
+            return .{ .generic = .{ .base = base, .params = try params.toOwnedSlice(self.alloc) } };
+        }
         if (try self.currentParserTypeGroup()) {
             _ = try self.adv();
             var params: std.ArrayList(ast.TypeExpr) = .empty;
@@ -1666,19 +1685,6 @@ pub const Parser = struct {
             return .{ .named = t.text };
         }
         return switch (tok.kind) {
-            .lt => {
-                _ = try self.adv();
-                // Parse type parameters for generics: <T, U>
-                var params: std.ArrayList(ast.TypeExpr) = .empty;
-                try params.append(self.alloc, try self.parse_type());
-                while (try self.eat(.comma) != null) {
-                    try params.append(self.alloc, try self.parse_type());
-                }
-                _ = try self.expect(.gt);
-                const base = try self.alloc.create(ast.TypeExpr);
-                base.* = try self.parse_type();
-                return .{ .generic = .{ .base = base, .params = try params.toOwnedSlice(self.alloc) } };
-            },
             .lbrace => {
                 // Inline record-type literal: { name: T, name2: T2, ... }
                 _ = try self.adv(); // consume '{'

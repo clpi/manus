@@ -402,6 +402,22 @@ fi
 
 # ── 2e''. bare declaration path executes from whole-pack lane two ────────────
 #
+# The generic type-primary face consumes the existing static primary and infix
+# facts. The type parser no longer owns a `.lt` switch arm; `.lbrace` is the
+# one residual host-owned type-primary arm.
+has "$ROOT/lib/compiler/parser.id" 'or kind == token.kindlt' \
+    'event lost the generic type-primary face'
+has "$PARSER" 'fn currentParserTypeGeneric(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the generic type-primary consumer'
+has "$PARSER" 'if (try self.currentParserTypeGeneric()) {' \
+    'parse_type_primary bypasses the settled generic face'
+generic_arms=$(grep -cF '.lt => {' "$PARSER" || true)
+record_arms=$(grep -cF '.lbrace => {' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$generic_arms" -ne 0 ] || [ "$record_arms" -ne 2 ]; then
+    bad "type-primary residual arms drifted: generic=$generic_arms record-total=$record_arms"
+fi
+
 # Header bit 4 is settled at `(`. Event walks backward over the exact admitted
 # name (`.` name)* (`:` name)? path and writes bit 7 at the starting name. Zig
 # statement and attribute consumers select that coordinate without a second
