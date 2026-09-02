@@ -220,6 +220,64 @@ pub fn deoptOrFallback(
     return select(candidates, invalidation.experiment_proposition, assumption_holds) orelse invalidation.fallback_candidate;
 }
 
+/// Still-missing face: guard invalidation as a NAMED fact, not a decision
+/// outcome. `DeoptBoundary.invalidate` and `select` answer WHICH candidate
+/// survives; the invalidation itself was a caller-supplied string with no
+/// fact identity of its own. `guardFalse` is the one construction seam for
+/// the invalidation fact: assumption false ⇒ realization inadmissible, named
+/// as `guard <proposition> is false on <measured subject revision>` — there
+/// is no third state. Provenance is enforced AT CONSTRUCTION
+/// (`law.evidence.subject.one`): an invalidation that cannot name the
+/// measured subject revision on which the falsehood was observed constructs
+/// NO fact — null, never a fact with incomplete provenance and never a
+/// sentinel in-band. The fact names the proposition alone; selection among
+/// candidates remains exactly the walk `select` already owns, so this face
+/// adds identity without adding a second authority over which realizations
+/// hold (`law.fact.producer.one`).
+pub const GuardInvalidation = struct {
+    /// Stable identity of the assumption proposition observed false.
+    proposition: []const u8,
+    /// The exact measured subject revision on which the falsehood was
+    /// observed — never implicit "at HEAD".
+    subject_revision: []const u8,
+};
+
+pub fn guardFalse(
+    proposition: []const u8,
+    subject_revision: []const u8,
+) ?GuardInvalidation {
+    if (subject_revision.len == 0) return null;
+    return .{
+        .proposition = proposition,
+        .subject_revision = subject_revision,
+    };
+}
+
+/// A named invalidation fact invalidates exactly the experiment whose
+/// proposition it names. Sound experiments are untouched — their theorem did
+/// not depend on the observation (same discipline as `invalidatedExperiment`,
+/// now consuming the named fact rather than a bare string).
+pub fn invalidationRefutes(
+    fact: *const GuardInvalidation,
+    e: *const Experiment,
+) bool {
+    return invalidatedExperiment(e, fact.proposition);
+}
+
+/// Deopt selection under a named invalidation fact: the refuted candidate
+/// ceases to be admissible (`law.guard` — assumption false ⇒ realization
+/// inadmissible) and the walk selects the first surviving candidate's
+/// conditional theorem exactly as `select` does. The fact's measured subject
+/// revision is carried by the fact itself; the walk remains a pure function
+/// of fact names + world truth (`assumption_holds`).
+pub fn selectUnderInvalidation(
+    candidates: []const Guarded,
+    fact: *const GuardInvalidation,
+    assumption_holds: *const fn (proposition: []const u8) bool,
+) ?[]const u8 {
+    return select(candidates, fact.proposition, assumption_holds);
+}
+
 /// Whether profile-shaped evidence is ever sufficient on its own for a
 /// semantics-changing optimization. The answer is always no; this exists so
 /// callers route through the fact instead of re-deriving it.
@@ -271,6 +329,48 @@ pub fn producerForOutcomeEvidence(ev: optimization_outcome.Evidence) EvidencePro
 /// an optimization hint.
 pub fn realizesZero(e: *const Experiment) bool {
     return e.cost == 0;
+}
+
+/// Required order 5 / closure face: hardware counters as a fact-producer.
+/// A counter observation is one measured reading of one named hardware counter
+/// on one measured subject revision (`law.evidence.subject.one`). It is
+/// evidence, never semantic truth: the constructed experiment's producer is
+/// always `hardware_counter` and therefore never admits without a guard
+/// (`law.oracle.bounded`). There is exactly one construction seam — this
+/// function — so no caller can mint a hardware-counter fact over a different
+/// producer (`law.fact.producer.one`). Provenance is enforced AT CONSTRUCTION,
+/// not audited afterward: a counter reading that cannot name the measured
+/// subject revision it was taken on constructs no fact at all — null, never a
+/// fact with incomplete provenance and never a sentinel in-band.
+pub const CounterObservation = struct {
+    /// Stable identity of the observed counter (e.g. "cycles", "branch_miss").
+    counter: []const u8,
+    /// The measured reading. An ordinary measurement value, never a sentinel.
+    value: u64,
+    /// The experiment-shaped fact this reading stands behind.
+    experiment: Experiment,
+};
+
+pub fn observeCounter(
+    proposition: []const u8,
+    counter: []const u8,
+    value: u64,
+    cost: u32,
+    conditional_theorem: []const u8,
+    subject_revision: []const u8,
+) ?CounterObservation {
+    if (subject_revision.len == 0) return null;
+    return .{
+        .counter = counter,
+        .value = value,
+        .experiment = .{
+            .proposition = proposition,
+            .producer = .hardware_counter,
+            .cost = cost,
+            .conditional_theorem = conditional_theorem,
+            .subject_revision = subject_revision,
+        },
+    };
 }
 
 /// Required order 2: semantic probability and compiler epistemic probability
@@ -449,6 +549,134 @@ pub fn deoptBoundary(
         boundary.count += 1;
     }
     return boundary;
+}
+
+/// Still-missing face: runtime facts refine the candidate set — `if P then
+/// candidate C is admissible`. Assumption truth must enter as a FACT, not as
+/// a caller-supplied boolean function: a `RuntimeFact` is one measured
+/// observation that proposition `P` currently holds (or is observed false) on
+/// one measured subject revision (`law.evidence.subject.one`). As with
+/// hardware counters, there is exactly one construction seam — `observeFact`
+/// — and a runtime observation that names no measured subject revision
+/// constructs NO fact; provenance is the admission condition, not an audit
+/// flag. A runtime fact is world-qualified evidence, never semantic truth:
+/// it refines which already-guarded candidates are admissible NOW, and it
+/// never promotes a candidate past its guard (`law.oracle.bounded`).
+pub const RuntimeFact = struct {
+    /// Stable identity of the observed proposition, e.g. "shape:42".
+    proposition: []const u8,
+    /// The observed truth on the measured subject at `subject_revision`.
+    /// True means P currently holds; false means P was observed false.
+    holds: bool,
+    /// The exact measured subject revision this observation was taken on.
+    subject_revision: []const u8,
+
+    /// One fact answers one runtime truth query. A fact recorded over a
+    /// different proposition answers nothing — refinement is keyed on the
+    /// proposition identity alone, so an unrelated observation never touches
+    /// this candidate (the same sound invalidation discipline as
+    /// `invalidatedExperiment`).
+    pub fn answers(self: *const RuntimeFact, proposition: []const u8) ?bool {
+        if (!std.mem.eql(u8, self.proposition, proposition)) return null;
+        return self.holds;
+    }
+};
+
+pub fn observeFact(
+    proposition: []const u8,
+    holds: bool,
+    subject_revision: []const u8,
+) ?RuntimeFact {
+    if (subject_revision.len == 0) return null;
+    return .{
+        .proposition = proposition,
+        .holds = holds,
+        .subject_revision = subject_revision,
+    };
+}
+
+/// Wired-end-to-end face: every candidate carries one of the seven epistemic
+/// categories, and selection consumes that category. The taxonomy and its
+/// producer bridges exist above; what was missing is ONE executed boundary
+/// that walks a candidate set through ALL seven levels and applies the one
+/// admissibility law uniformly: sound levels (`axiom`, `proven`,
+/// `inferred_sound`) admit on their fact alone; evidence levels (`guarded`,
+/// `profiled`, `sampled`, `heuristic`) admit only while a runtime fact
+/// affirmatively answers their proposition — profile evidence alone is never
+/// affirmation and never promotes past the guard. This function is
+/// graph-owned enforcement: if it is the only seam from candidate set to a
+/// selected theorem, NO optimizer path can bypass the profile-needs-guard
+/// law — the category is read from the experiment's producer, not re-derived
+/// or audited afterward (`law.fact.producer.one`, `law.oracle.bounded`).
+///
+/// Selection order among survivors is the candidate order — epistemic level
+/// decides admissibility, never priority.
+pub fn selectByEpistemicLevel(
+    candidates: []const Guarded,
+    facts: []const RuntimeFact,
+) ?[]const u8 {
+    for (candidates) |*c| {
+        const level = c.experiment.producer.level();
+        if (level.admitsWithoutGuard()) {
+            return c.experiment.conditional_theorem;
+        }
+        if (holdsUnderFacts(facts, c.experiment.proposition) and
+            holdsAssumptionsUnderFacts(facts, c))
+        {
+            return c.experiment.conditional_theorem;
+        }
+    }
+    return null;
+}
+
+fn holdsAssumptionsUnderFacts(facts: []const RuntimeFact, c: *const Guarded) bool {
+    for (c.assumptions) |a| {
+        if (!holdsUnderFacts(facts, a)) return false;
+    }
+    return true;
+}
+
+/// Runtime facts refine the candidate set: `if P then candidate C is
+/// admissible`. The fact set is the sole authority over which propositions
+/// currently hold — a proposition answered by no recorded fact does NOT hold
+/// (a guarded realization is admissible only under its stated assumptions;
+/// absent affirmation is not affirmation). This is the fact-family face of
+/// the `assumption_holds` callback: callers that have measured runtime facts
+/// route them through this one seam instead of re-deriving a truth function
+/// at every boundary (`law.fact.producer.one`).
+pub fn holdsUnderFacts(facts: []const RuntimeFact, proposition: []const u8) bool {
+    for (facts) |*f| {
+        if (f.answers(proposition)) |holds| return holds;
+    }
+    return false;
+}
+
+/// Refine the candidate set under measured runtime facts and select the
+/// conditional theorem of the first refined-admissible candidate. Returns
+/// null when no candidate survives refinement — the same answer `select`
+/// gives, so `deoptOrFallback` composes verbatim. Selection order among the
+/// refined survivors is exactly the candidate order: facts refine
+/// admissibility, never reprioritize (`law.profile.evidence` handles
+/// preference separately through `SemanticShare`).
+pub fn refine(
+    candidates: []const Guarded,
+    false_proposition: []const u8,
+    facts: []const RuntimeFact,
+) ?[]const u8 {
+    for (candidates) |*c| {
+        const invalidated = invalidatedExperiment(&c.experiment, false_proposition);
+        if (!c.experiment.admissible(invalidated)) continue;
+        if (!holdsUnderFacts(facts, c.experiment.proposition)) continue;
+        var assumptions_hold = true;
+        for (c.assumptions) |a| {
+            if (!holdsUnderFacts(facts, a)) {
+                assumptions_hold = false;
+                break;
+            }
+        }
+        if (assumptions_hold) return c.experiment.conditional_theorem;
+    }
+    return null;
 }
 
 test "effect: epistemic levels admit or require guard" {
@@ -702,6 +930,210 @@ test "effect: outcome evidence producer bridge agrees with the level bridge" {
     try std.testing.expect(!producerForOutcomeEvidence(.measured).level().admitsWithoutGuard());
 }
 
+test "effect: hardware counters are fact-producers with construction-forced provenance" {
+    // Closure face: a hardware counter produces an experiment-shaped fact
+    // with exactly one construction seam. A reading that names no measured
+    // subject revision constructs NO fact — provenance is the admission
+    // condition, not an audit flag (law.evidence.subject.one).
+    const reading = (observeCounter(
+        "shape:7",
+        "cycles",
+        4200,
+        1,
+        "cand:fast-table",
+        "rev:abc",
+    )).?;
+    try std.testing.expectEqualStrings("cycles", reading.counter);
+    try std.testing.expectEqual(@as(u64, 4200), reading.value);
+    try std.testing.expectEqual(EvidenceProducer.hardware_counter, reading.experiment.producer);
+    try std.testing.expectEqual(EpistemicLevel.profiled, reading.experiment.producer.level());
+    try std.testing.expect(reading.experiment.producer.isEvidence());
+    try std.testing.expect(reading.experiment.provenanceComplete());
+    // The reading is evidence, never truth — it still demands a guard or
+    // proof before a semantics-changing realization may rely on it.
+    try std.testing.expect(!reading.experiment.producesTruth());
+    try std.testing.expect(!reading.experiment.admissible(true));
+    try std.testing.expect(reading.experiment.admissible(false));
+    try std.testing.expect(profileNeedsGuard(reading.experiment.producer.level()));
+    // No revision, no fact: provenance enforced at construction.
+    try std.testing.expect(observeCounter("shape:7", "cycles", 1, 1, "cand:x", "") == null);
+    // A zero-cost counter observation is lawful nonexecution but still
+    // profiled evidence — cost never upgrades the epistemic level.
+    const free = (observeCounter("shape:7", "cycles", 0, 0, "cand:cached", "rev:abc")).?;
+    try std.testing.expect(realizesZero(&free.experiment));
+    try std.testing.expect(!free.experiment.producesTruth());
+}
+
+fn holdsNone(proposition: []const u8) bool {
+    _ = proposition;
+    return false;
+}
+
+test "effect: runtime facts refine the candidate set" {
+    // Still-missing face: `if P then candidate C is admissible`. Runtime
+    // facts are world-qualified evidence with construction-forced provenance
+    // (`law.evidence.subject.one`); a proposition answered by no fact does
+    // not hold, and a fact recorded over an unrelated proposition never
+    // touches this candidate.
+    const hot = Guarded{
+        .experiment = .{
+            .proposition = "shape:7",
+            .producer = .guard_observation,
+            .cost = 1,
+            .conditional_theorem = "cand:mono",
+        },
+        .assumptions = &.{"version:12"},
+    };
+    const cold = Guarded{
+        .experiment = .{
+            .proposition = "shape:9",
+            .producer = .guard_observation,
+            .cost = 1,
+            .conditional_theorem = "cand:poly",
+        },
+    };
+    const candidates = [_]Guarded{ hot, cold };
+
+    // No fact recorded: nothing holds, no candidate is admissible.
+    try std.testing.expect(refine(&candidates, "shape:never", &.{}) == null);
+
+    // Every recorded fact names its measured subject revision; a fact cannot
+    // be constructed without it (provenance is the admission condition).
+    try std.testing.expect(observeFact("shape:7", true, "") == null);
+
+    const shape7 = (observeFact("shape:7", true, "rev:abc")).?;
+    const version12 = (observeFact("version:12", true, "rev:abc")).?;
+    const shape9false = (observeFact("shape:9", false, "rev:abc")).?;
+
+    // P holds and every stated assumption holds ⇒ the candidate is refined-admissible.
+    const yes = [_]RuntimeFact{ shape7, version12 };
+    try std.testing.expectEqualStrings("cand:mono", refine(&candidates, "shape:never", &yes).?);
+
+    // Stated assumption unanswered ⇒ the candidate is inadmissible even while
+    // its own proposition holds; refinement moves to the next candidate whose
+    // proposition the fact set affirms.
+    const no_version = [_]RuntimeFact{shape7};
+    try std.testing.expect(!holdsUnderFacts(&no_version, "version:12"));
+    try std.testing.expect(refine(&candidates, "shape:never", &no_version) == null);
+
+    // A fact observing the second candidate's proposition FALSE never admits
+    // it; refinement falls past both when the first is excluded too.
+    const stale = [_]RuntimeFact{ shape7, version12, shape9false };
+    try std.testing.expectEqualStrings("cand:mono", refine(&candidates, "shape:never", &stale).?);
+    try std.testing.expect(refine(&candidates, "shape:7", &no_version) == null);
+
+    // Guard invalidation composes: the first candidate's proposition is
+    // recorded false, and the survivor is admissible only because the fact
+    // set affirmatively answers ITS proposition — absent affirmation is not
+    // affirmation, so refinement never falls through to an unwitnessed
+    // candidate (order 4 + the refinement face in one walk).
+    const shape9true = (observeFact("shape:9", true, "rev:abc")).?;
+    const affirmed = [_]RuntimeFact{ shape7, version12, shape9true };
+    try std.testing.expectEqualStrings("cand:poly", refine(&candidates, "shape:7", &affirmed).?);
+
+    // A fact recorded over an unrelated proposition answers nothing and
+    // never admits the candidate it does not name.
+    const unrelated = [_]RuntimeFact{(observeFact("kind:packed", true, "rev:abc")).?};
+    try std.testing.expect(unrelated[0].answers("shape:7") == null);
+    try std.testing.expect(refine(&candidates, "shape:never", &unrelated) == null);
+
+    // Facts never promote past the guard: a sound candidate stays admissible
+    // under any fact set — its theorem did not depend on the observation.
+    const proved = Guarded{
+        .experiment = .{
+            .proposition = "law:fold",
+            .producer = .static_proof,
+            .cost = 0,
+            .conditional_theorem = "cand:theorem",
+        },
+    };
+    try std.testing.expect(proved.experiment.admissible(true));
+    // Refined admissibility answers null exactly as `select` does, so the
+    // recorded fallback composes verbatim through the same boundary.
+    const none = [_]Guarded{hot};
+    try std.testing.expect(refine(&none, "shape:never", &.{}) == null);
+    const invalidation = Invalidation{
+        .experiment_proposition = "shape:never",
+        .fallback_candidate = "cand:generic",
+    };
+    try std.testing.expectEqualStrings(
+        "cand:generic",
+        deoptOrFallback(invalidation, &none, &holdsNone),
+    );
+}
+
+test "effect: guard invalidation is a named fact with construction-forced provenance" {
+    // Still-missing face: guard invalidation as a NAMED fact. `guardFalse` is
+    // the one construction seam; an invalidation naming no measured subject
+    // revision constructs NO fact (law.evidence.subject.one).
+    try std.testing.expect(guardFalse("shape:7", "") == null);
+    const fact = (guardFalse("shape:7", "rev:abc")).?;
+    try std.testing.expectEqualStrings("shape:7", fact.proposition);
+    try std.testing.expectEqualStrings("rev:abc", fact.subject_revision);
+
+    // The named fact refutes exactly the experiment whose proposition it
+    // names; sound experiments are untouched (same discipline as
+    // `invalidatedExperiment`, through the fact face).
+    const guarded_exp = Experiment{
+        .proposition = "shape:7",
+        .producer = .guard_observation,
+        .cost = 3,
+        .conditional_theorem = "cand:mono",
+    };
+    const proved_exp = Experiment{
+        .proposition = "shape:7",
+        .producer = .static_proof,
+        .cost = 0,
+        .conditional_theorem = "cand:theorem",
+    };
+    try std.testing.expect(invalidationRefutes(&fact, &guarded_exp));
+    try std.testing.expect(!invalidationRefutes(&fact, &proved_exp));
+    const other = (guardFalse("shape:9", "rev:abc")).?;
+    try std.testing.expect(!invalidationRefutes(&other, &guarded_exp));
+
+    // Assumption false ⇒ realization inadmissible, as a fact-driven walk:
+    // the refuted candidate ceases to be admissible and deopt selects the
+    // next surviving candidate — exactly the `select` answer, now keyed on
+    // the named fact rather than a bare string.
+    const candidates = [_]Guarded{
+        .{ .experiment = guarded_exp },
+        .{ .experiment = .{
+            .proposition = "shape:9",
+            .producer = .guard_observation,
+            .cost = 1,
+            .conditional_theorem = "cand:poly",
+        } },
+        .{ .experiment = proved_exp },
+    };
+    try std.testing.expectEqualStrings(
+        "cand:mono",
+        selectUnderInvalidation(&candidates, &other, &holdsAll).?,
+    );
+    try std.testing.expectEqualStrings(
+        "cand:poly",
+        selectUnderInvalidation(&candidates, &fact, &holdsAll).?,
+    );
+
+    // When both evidence-level candidates are refuted, only the sound
+    // theorem survives — a named fact never promotes or demotes anything
+    // else, and no answer remains a null exactly as `select` answers null.
+    const both = [_]Guarded{ .{ .experiment = guarded_exp } };
+    try std.testing.expect(selectUnderInvalidation(&both, &fact, &holdsAll) == null);
+
+    // Composes with the existing boundary verbatim: the fact's proposition
+    // answers the same candidate `select` and `deoptOrFallback` already
+    // answer, so the fallback path is unchanged.
+    const invalidation = Invalidation{
+        .experiment_proposition = fact.proposition,
+        .fallback_candidate = "cand:generic",
+        .subject_revision = fact.subject_revision,
+    };
+    try std.testing.expectEqualStrings(
+        "cand:generic",
+        deoptOrFallback(invalidation, &both, &holdsAll),
+    );
+}
+
 test "effect: no assumption catalog lives here" {
     try std.testing.expect(!@hasDecl(@This(), "catalog"));
     try std.testing.expect(!@hasDecl(@This(), "experiment_catalog"));
@@ -879,4 +1311,133 @@ test "effect: fromAssumption is the sole guard-to-experiment face" {
     g = fromAssumption("guard:44", "cand:theorem", .proven, 0, "");
     try std.testing.expect(g.experiment.admissible(true));
     try std.testing.expect(g.experiment.provenanceComplete());
+}
+
+test "effect: all seven epistemic categories wired through one boundary" {
+    // Still-missing face executed: one candidate set exercises axiom, proven,
+    // inferred-sound, guarded, profiled, sampled, and heuristic at ONE
+    // boundary. The executed-graph face comes first: the guarded candidate is
+    // built from an assumption emitted by `assumption_guard.buildFromModule`
+    // from an executed semantic graph, so the boundary consumes graph-emitted
+    // facts, not only hand-wired ones.
+    const sema = @import("sema.zig");
+    const ast = @import("ast.zig");
+    const semantic_graph = @import("semantic_graph.zig");
+    var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const home = try graph.addNode(.{
+        .kind = .module,
+        .span = .{ .file = "epistemic.id", .start = 0, .end = 0 },
+    });
+    const shape = try graph.addChild(home, .{
+        .kind = .table_shape,
+        .span = .{ .file = "epistemic.id", .start = 1, .end = 1 },
+        .name = "Point",
+        .knowledge = .guarded,
+        .descriptor_state = .sealed,
+        .shape_id = 1,
+    });
+    var dummy_mod: ast.Module = undefined;
+    var dummy_sem = sema.Sema.init(std.testing.allocator);
+    defer dummy_sem.deinit();
+    var emitted = try assumption_guard.buildFromModule(
+        std.testing.allocator,
+        &dummy_mod,
+        &dummy_sem,
+        &graph,
+    );
+    defer emitted.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(usize, 1), emitted.items.len);
+    var id_buf: [20]u8 = undefined;
+    const shape_id = try std.fmt.bufPrint(&id_buf, "guard:{d}", .{shape});
+
+    var candidates = [_]Guarded{
+        (fromAssumption("ax:identity", "cand:axiom", .proven, 0, "")),
+        (fromAssumption("law:fold", "cand:fold", .proven, 0, "")),
+        (fromAssumption("inv:rowcount", "cand:inferred", .guarded, 0, "")),
+        (fromAssumption(shape_id, "cand:sealed-point", emitted.items[0].evidence, 3, "")),
+        .{ .experiment = .{
+            .proposition = "shape:hot",
+            .producer = .profile_counter,
+            .cost = 1,
+            .conditional_theorem = "cand:hot",
+            .subject_revision = "rev:e1",
+        } },
+        .{ .experiment = .{
+            .proposition = "shape:sampled",
+            .producer = .sample,
+            .cost = 1,
+            .conditional_theorem = "cand:sampled",
+            .subject_revision = "rev:e1",
+        } },
+        .{ .experiment = .{
+            .proposition = "shape:guess",
+            .producer = .heuristic_estimate,
+            .cost = 0,
+            .conditional_theorem = "cand:guess",
+        } },
+    };
+    candidates[2].experiment.producer = .invariant_inference;
+    try std.testing.expectEqual(@as(usize, 7), candidates.len);
+    // `axiom` has no producer today — the enum names the level but NO evidence
+    // producer maps to it, so no producer-backed experiment can claim axiom
+    // standing. The boundary's admissibility law still consumes it uniformly
+    // via `admitsWithoutGuard`; the executed coverage spans the six
+    // producer-backed categories plus the law for the seventh.
+    inline for (@typeInfo(EvidenceProducer).@"enum".field_values) |v| {
+        try std.testing.expect(
+            (@as(EvidenceProducer, @enumFromInt(v)).level()) != .axiom,
+        );
+    }
+    try std.testing.expectEqual(EpistemicLevel.proven, candidates[0].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.proven, candidates[1].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.inferred_sound, candidates[2].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.guarded, candidates[3].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.profiled, candidates[4].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.sampled, candidates[5].experiment.producer.level());
+    try std.testing.expectEqual(EpistemicLevel.heuristic, candidates[6].experiment.producer.level());
+
+    // With no runtime facts at all, a profiled/sampled/heuristic candidate
+    // can never admit; the first sound-level candidate wins. Profile evidence
+    // alone is not affirmation of the proposition — the boundary answers
+    // cand:axiom (a proven-level experiment).
+    try std.testing.expectEqualStrings(
+        "cand:axiom",
+        selectByEpistemicLevel(&candidates, &.{}) orelse unreachable,
+    );
+
+    // Affirm the evidence-level propositions; in the evidence tail the
+    // guarded graph-emitted candidate wins once its proposition is affirmed,
+    // while the profiled candidate's fact is false. Sound candidates would
+    // answer regardless — they are deliberately outside this slice.
+    var facts = [_]RuntimeFact{
+        (observeFact("shape:hot", false, "rev:e1") orelse unreachable),
+        (observeFact(shape_id, true, "rev:e0") orelse unreachable),
+        (observeFact("shape:sampled", true, "rev:e1") orelse unreachable),
+    };
+    try std.testing.expectEqualStrings(
+        "cand:sealed-point",
+        selectByEpistemicLevel(candidates[3..6], &facts) orelse unreachable,
+    );
+    // Without an affirming fact, even a guarded candidate stays inadmissible
+    // and the sampled one behind it wins when affirmed.
+    try std.testing.expectEqualStrings(
+        "cand:sampled",
+        selectByEpistemicLevel(candidates[3..6], facts[2..3]) orelse unreachable,
+    );
+
+    // A candidate set with only evidence levels and no affirming facts
+    // selects nothing — the exact answer `select` gives, so the deopt
+    // fallback composition is unchanged. Affirming the heuristic's
+    // proposition admits even a heuristic candidate — the level demands a
+    // guard, and the runtime fact IS the supplied guard answer.
+    const evidence_only = [3]Guarded{ candidates[4], candidates[5], candidates[6] };
+    try std.testing.expect(selectByEpistemicLevel(&evidence_only, &.{}) == null);
+    const guess_fact = [1]RuntimeFact{
+        (observeFact("shape:guess", true, "rev:e1") orelse unreachable),
+    };
+    try std.testing.expectEqualStrings(
+        "cand:guess",
+        selectByEpistemicLevel(&evidence_only, &guess_fact) orelse unreachable,
+    );
 }
