@@ -171,6 +171,19 @@ static int verify_type(const char *source, bool expected) {
     return 0;
 }
 
+static int verify_layout_type(const char *source, bool expected) {
+    int64_t facts[256] = {0};
+    int64_t events[256] = {0};
+    int64_t count = tokenize(source, facts);
+    int64_t written = idol_parser_event(facts, count, events, count * 2, true);
+    bool found = ((events[0] >> 62) & 1) != 0;
+    if (written != count || found != expected) {
+        fprintf(stderr, "%s layout-type-event=%d written=%lld expected=%d\n", source, found, (long long)written, expected);
+        return 1;
+    }
+    return 0;
+}
+
 static int verify_statement(const char *source, bool expected) {
     int64_t facts[256] = {0};
     int64_t events[256] = {0};
@@ -276,6 +289,8 @@ static int64_t expected_face(const char *row, bool admitted, int64_t kind) {
     return ordinal < 0 ? 0 : ordinal + 1;
 }
 
+static int64_t first_kind(const char *source);
+
 static int64_t expected_event(int64_t kind, bool idol) {
     const int64_t member = kind == 0 || (kind >= 4 && kind <= 57);
     const int64_t boundary = kind == 10 || kind == 27 || kind == 59 ||
@@ -296,13 +311,16 @@ static int64_t expected_event(int64_t kind, bool idol) {
     const int64_t unary = expected_face(token_grammarrole__unary(), true, kind);
     const int64_t glue = expected_face(token_grammarrole__relation(), token_grammarrole___roleglue(kind), kind);
     const int64_t update = expected_face(token_grammarrole__relation(), token_grammarrole___roleupdate(kind), kind);
+    const int64_t layout_type = primitive || kind == first_kind("*") ||
+        kind == first_kind("?") || kind == first_kind("[") || kind == first_kind("{");
     return expected_statement(kind) |
         (expected_admission(kind, idol) << 5) |
         (member << 9) | (boundary << 10) | (branch << 11) |
         (returns << 13) | (ending << 14) | (terminator << 15) |
         (empty << 16) | (primitive << 17) | (literal << 18) |
         (quoted << 19) | (prefix << 20) | (demand << 21) | (lead << 22) |
-        (infix << 23) | (unary << 47) | (glue << 52) | (update << 57);
+        (infix << 23) | (unary << 47) | (glue << 52) | (update << 57) |
+        (layout_type << 62);
 }
 
 static int verify_event(void) {
@@ -573,6 +591,14 @@ int main(void) {
     failed += verify_type("type (x)", false);
     failed += verify_type("typed UserId = i64", false);
     failed += verify_type("type\nUserId = i64", true);
+    failed += verify_layout_type("i64", true);
+    failed += verify_layout_type("*i64", true);
+    failed += verify_layout_type("?i64", true);
+    failed += verify_layout_type("[4]i64", true);
+    failed += verify_layout_type("{x: i64}", true);
+    failed += verify_layout_type("User", true);
+    failed += verify_layout_type("user", false);
+    failed += verify_layout_type("42", false);
     failed += verify_event();
     failed += verify_event_lead_trivia();
     failed += verify_event_boundary();
@@ -583,7 +609,7 @@ int main(void) {
     failed += verify_boundary_closure();
     failed += verify_layout_faces();
     failed += verify_boundary_opening();
-    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 lead-slots=%zu prefix-slots=%zu relation-slots=%zu statement-slots=%zu event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=%zu boundary-slots=%zu boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=%zu empty-terminators=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__statement()), strlen(token_grammarrole__member()), strlen(token_grammarrole__boundary()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
+    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 layout-type-cases=8 lead-slots=%zu prefix-slots=%zu relation-slots=%zu statement-slots=%zu event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=%zu boundary-slots=%zu boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=%zu empty-terminators=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__statement()), strlen(token_grammarrole__member()), strlen(token_grammarrole__boundary()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
     return failed != 0;
 }
 EOF

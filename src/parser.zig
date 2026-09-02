@@ -389,6 +389,10 @@ pub const Parser = struct {
         return (((try self.currentParserEvent()) >> 9) & 1) != 0;
     }
 
+    fn currentParserLayoutType(self: *Parser) ParseError!bool {
+        return (((try self.currentParserEvent()) >> 62) & 1) != 0;
+    }
+
     /// Free the immutable pack and reset the parser-owned mirror. Mirrors
     /// `ensureProducerPack` symmetry: install + release pair is the parser
     /// API for the immutable producer pack.
@@ -7506,21 +7510,11 @@ pub const Parser = struct {
     }
 
     fn try_parse_layout_type_arg(self: *Parser, loc: ast.Loc) ParseError!?*ast.Expr {
-        const tok = try self.pk();
-        if (!try self.layout_arg_can_start_type(tok)) return null;
+        if (!try self.currentParserLayoutType()) return null;
         const typ = try self.parse_type();
         if ((try self.pk()).kind != .rparen) return null;
         _ = try self.adv();
         return self.new_expr(.{ .quoted = .{ .loc = loc, .val = try self.type_expr_c_name(typ) } });
-    }
-
-    fn layout_arg_can_start_type(self: *Parser, tok: Token) ParseError!bool {
-        if (try self.currentParserPrimitive()) return true;
-        return switch (tok.kind) {
-            .star, .question, .lbracket, .lbrace => true,
-            .name => tok.text.len > 0 and tok.text[0] >= 'A' and tok.text[0] <= 'Z',
-            else => false,
-        };
     }
 
     fn type_expr_c_name(self: *Parser, typ: ast.TypeExpr) ParseError![]const u8 {

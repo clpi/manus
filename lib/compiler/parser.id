@@ -713,6 +713,7 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
         unaryface: i64 = 0
         glueface: i64 = 0
         updateface: i64 = 0
+        layouttype: i64 = 0
         if kind >= 0 and kind < statements:len()
             relation = _ordinal(relations, kind)
             unary = _ordinal(unaries, kind)
@@ -732,7 +733,14 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
                     if assoc == 2
                         right = prec - 1
                     infix = relation | (prec << 8) | (right << 16)
-        out[index] = dispatch | (admission << 5) | (member << 9) | (boundaryface << 10) | (branchface << 11) | (returns << 13) | (ending << 14) | (terminator << 15) | (empty << 16) | (primitive << 17) | (literal << 18) | (quoted << 19) | (prefixface << 20) | (demandface << 21) | (leadface << 22) | (infix << 23) | (unaryface << 47) | (glueface << 52) | (updateface << 57)
+        if primitive == 1 or kind == token.kindstar or kind == token.kindquestion or kind == token.kindlbracket or kind == token.kindlbrace
+            layouttype = 1
+        if kind == token.kindname
+            word = fact[index * 2 + 2]
+            first = (word >> 8) & 255
+            if first >= 65 and first <= 90
+                layouttype = 1
+        out[index] = dispatch | (admission << 5) | (member << 9) | (boundaryface << 10) | (branchface << 11) | (returns << 13) | (ending << 14) | (terminator << 15) | (empty << 16) | (primitive << 17) | (literal << 18) | (quoted << 19) | (prefixface << 20) | (demandface << 21) | (leadface << 22) | (infix << 23) | (unaryface << 47) | (glueface << 52) | (updateface << 57) | (layouttype << 62)
         clauseface = _clause(fact, count, index)
         returnface = return_starts_value_lx(fact, count, index, before, idol)
         head = 0

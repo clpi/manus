@@ -1257,6 +1257,14 @@ has "$ROOT/lib/compiler/parser.id" '(returns << 13) | (ending << 14) | (terminat
     'event lost return/end/layout/empty static facts'
 has "$PARSER" 'const edge = try self.currentParserEvent();' \
     'close_block no longer supplies the whole-pack event to boundary'
+has "$ROOT/lib/compiler/parser.id" '(layouttype << 62)' \
+    'whole-pack event lost layout type-start recognition'
+has "$PARSER" 'fn currentParserLayoutType(self: *Parser) ParseError!bool {' \
+    'parser no longer consumes the settled layout type-start fact'
+has "$PARSER" 'if (!try self.currentParserLayoutType()) return null;' \
+    'layout type argument path bypasses the settled fact'
+forbid "$PARSER" 'fn layout_arg_can_start_type(' \
+    'parser.zig retained the host layout type-start recognizer'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'
 forbid "$PARSER" '(decision >> 41)' \

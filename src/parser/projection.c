@@ -3022,6 +3022,7 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
         int64_t unaryface = 0;
         int64_t glueface = 0;
         int64_t updateface = 0;
+        int64_t layouttype = 0;
         if (((kind >= 0) && (kind < ((int64_t)strlen(statements))))) {
             int64_t relation = _ordinal(relations, kind);
             int64_t unary = _ordinal(unaries, kind);
@@ -3049,7 +3050,17 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                 }
             }
         }
-        out[index] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((dispatch) | (((int64_t)(((uint64_t)(admission)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(member)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(boundaryface)) << ((uint64_t)(10) & 63u))))))) | (((int64_t)(((uint64_t)(branchface)) << ((uint64_t)(11) & 63u))))))) | (((int64_t)(((uint64_t)(returns)) << ((uint64_t)(13) & 63u))))))) | (((int64_t)(((uint64_t)(ending)) << ((uint64_t)(14) & 63u))))))) | (((int64_t)(((uint64_t)(terminator)) << ((uint64_t)(15) & 63u))))))) | (((int64_t)(((uint64_t)(empty)) << ((uint64_t)(16) & 63u))))))) | (((int64_t)(((uint64_t)(primitive)) << ((uint64_t)(17) & 63u))))))) | (((int64_t)(((uint64_t)(literal)) << ((uint64_t)(18) & 63u))))))) | (((int64_t)(((uint64_t)(quoted)) << ((uint64_t)(19) & 63u))))))) | (((int64_t)(((uint64_t)(prefixface)) << ((uint64_t)(20) & 63u))))))) | (((int64_t)(((uint64_t)(demandface)) << ((uint64_t)(21) & 63u))))))) | (((int64_t)(((uint64_t)(leadface)) << ((uint64_t)(22) & 63u))))))) | (((int64_t)(((uint64_t)(infix)) << ((uint64_t)(23) & 63u))))))) | (((int64_t)(((uint64_t)(unaryface)) << ((uint64_t)(47) & 63u))))))) | (((int64_t)(((uint64_t)(glueface)) << ((uint64_t)(52) & 63u))))))) | (((int64_t)(((uint64_t)(updateface)) << ((uint64_t)(57) & 63u))))));
+        if ((((((primitive == 1) || (kind == INT64_C(66))) || (kind == INT64_C(82))) || (kind == INT64_C(60))) || (kind == INT64_C(62)))) {
+                        layouttype = 1;
+        }
+        if ((kind == INT64_C(0))) {
+            int64_t word = fact[((index * 2) + 2)];
+            int64_t first = ((int64_t)((((int64_t)(((uint64_t)(word)) >> ((uint64_t)(8) & 63u)))) & (255)));
+            if (((first >= 65) && (first <= 90))) {
+                                layouttype = 1;
+            }
+        }
+        out[index] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((dispatch) | (((int64_t)(((uint64_t)(admission)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(member)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(boundaryface)) << ((uint64_t)(10) & 63u))))))) | (((int64_t)(((uint64_t)(branchface)) << ((uint64_t)(11) & 63u))))))) | (((int64_t)(((uint64_t)(returns)) << ((uint64_t)(13) & 63u))))))) | (((int64_t)(((uint64_t)(ending)) << ((uint64_t)(14) & 63u))))))) | (((int64_t)(((uint64_t)(terminator)) << ((uint64_t)(15) & 63u))))))) | (((int64_t)(((uint64_t)(empty)) << ((uint64_t)(16) & 63u))))))) | (((int64_t)(((uint64_t)(primitive)) << ((uint64_t)(17) & 63u))))))) | (((int64_t)(((uint64_t)(literal)) << ((uint64_t)(18) & 63u))))))) | (((int64_t)(((uint64_t)(quoted)) << ((uint64_t)(19) & 63u))))))) | (((int64_t)(((uint64_t)(prefixface)) << ((uint64_t)(20) & 63u))))))) | (((int64_t)(((uint64_t)(demandface)) << ((uint64_t)(21) & 63u))))))) | (((int64_t)(((uint64_t)(leadface)) << ((uint64_t)(22) & 63u))))))) | (((int64_t)(((uint64_t)(infix)) << ((uint64_t)(23) & 63u))))))) | (((int64_t)(((uint64_t)(unaryface)) << ((uint64_t)(47) & 63u))))))) | (((int64_t)(((uint64_t)(glueface)) << ((uint64_t)(52) & 63u))))))) | (((int64_t)(((uint64_t)(updateface)) << ((uint64_t)(57) & 63u))))))) | (((int64_t)(((uint64_t)(layouttype)) << ((uint64_t)(62) & 63u))))));
         int64_t clauseface = _clause(fact, count, index);
         int64_t returnface = return_starts_value_lx(fact, count, index, before, idol);
         int64_t head = 0;
