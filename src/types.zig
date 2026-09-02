@@ -370,21 +370,62 @@ pub fn narrowFitConst(v: i64, ty: ResolvedType) i64 {
     return @bitCast(kept >> shift);
 }
 
+/// The descriptor a bare type NAME projects, or null when no descriptor answers
+/// to that spelling.
+///
+/// THE ROSTER OF SCALAR DESCRIPTOR IDENTITIES IS THE ONE PRODUCER OF THE ROSTER
+/// OF THEIR SPELLINGS. A payload-free `ResolvedType` identity *is* its own
+/// source face — `i32` the tag and `i32` the annotation are one identity read
+/// from two sides — so this projects the union's own tag names rather than
+/// writing a second list beside them. A second list is what drifts: a new
+/// scalar identity added to the union above would be a type the annotation face
+/// silently did not know, and there is no such possibility here.
+///
+/// Payload-carrying identities (`array`, `pointer`, `struct`, `result`,
+/// `option`, `table_type`, ...) are refused: their spelling in source is a
+/// COMPOSITION and cannot be reconstructed from a bare word. A declared nominal
+/// descriptor is the one non-scalar word that names a descriptor, and it
+/// projects through the same single owner (`nominalNamed`) every other nominal
+/// query already uses.
+pub fn descriptorNamed(name: []const u8) ?ResolvedType {
+    const Tag = @typeInfo(ResolvedType).@"union".tag_type.?;
+    const tag = std.meta.stringToEnum(Tag, name) orelse return nominalNamed(name);
+    switch (tag) {
+        inline else => |t| {
+            if (@FieldType(ResolvedType, @tagName(t)) != void) return nominalNamed(name);
+            return @unionInit(ResolvedType, @tagName(t), {});
+        },
+    }
+}
+
 /// The declared narrow width of a TYPE EXPRESSION, or null for everything else.
 ///
 /// `i32` is included even though `resolveType` already answers `.i32`: nothing
 /// downstream had ever acted on that answer, so `h: i32 = 2147483647; h = h + 1`
 /// printed 2147483648 where C printed -2147483648.
+///
+/// DERIVED, NOT TABULATED — this is the ANNOTATION FACE of `narrowFit`, and the
+/// name roster it replaced was a second statement of which widths are narrow
+/// and a fifth statement of width and signedness. `narrowFit` already composes
+/// through a nominal descriptor while this list could not see one, so a place
+/// declared `p: tick = ...` over a nominal-over-`i32` reached `codegen` as
+/// `int32_t` and truncated while `dnir_lower` and `comptime` were handed no
+/// width at all and kept the full 64-bit ring. That is the same
+/// two-realizations-of-one-fact defect `narrowFit`'s own comment records
+/// against itself, arriving one seam earlier through the AST annotation.
+///
+/// The answer is the PHYSICAL descriptor, because the width of a place is a
+/// physical question (`law.nominal` §46): a nominal identity delegates it to
+/// its representation exactly as `narrowFit`, `c_type` and ARC already do, and
+/// the caller receives a scalar it can put in an `Instr.ty`. Filtering on
+/// `narrowFit` is why no wider or real name can leak: the fit exists only for
+/// an integral, single-lane, sub-register width.
 pub fn narrowIntOfType(t: ast.TypeExpr) ?ResolvedType {
     if (t != .named) return null;
-    const n = t.named;
-    if (std.mem.eql(u8, n, "u8")) return .u8;
-    if (std.mem.eql(u8, n, "u16")) return .u16;
-    if (std.mem.eql(u8, n, "u32")) return .u32;
-    if (std.mem.eql(u8, n, "i8")) return .i8;
-    if (std.mem.eql(u8, n, "i16")) return .i16;
-    if (std.mem.eql(u8, n, "i32")) return .i32;
-    return null;
+    const named = descriptorNamed(t.named) orelse return null;
+    const physical = nominalReprOf(named) orelse named;
+    if (physical.narrowFit() == null) return null;
+    return physical;
 }
 pub const ResolvedType = union(enum) {
     // Primitive native types (map directly to C types)
@@ -2412,6 +2453,77 @@ test "types: the write projection is derived from the facts so a descriptor inhe
     // Identity is still withheld: inheriting the physics is not accepting the
     // representation.
     try testing.expect(tick.numericAcceptsDescriptor(.i32) == null);
+}
+
+test "types: the annotation face of the write projection is derived from the same facts" {
+    // EVERY payload-free descriptor identity answers to its own tag name, and
+    // this control is written over the union's tags rather than over a list, so
+    // a scalar identity added above cannot be one the annotation face does not
+    // know. A payload-carrying identity is refused: `array` is a composition.
+    const Tag = @typeInfo(ResolvedType).@"union".tag_type.?;
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        const named = descriptorNamed(field_name);
+        if (field_type == void) {
+            try testing.expect(named != null);
+            try testing.expectEqual(@field(Tag, field_name), @as(Tag, named.?));
+        } else {
+            try testing.expect(named == null);
+        }
+    }
+
+    // PINNED EQUAL TO THE RETIRED NAME ROSTER on every spelling it listed, so
+    // no program on the scalar annotation path can gain or lose a truncation.
+    try testing.expectEqual(ResolvedType.u8, narrowIntOfType(.{ .named = "u8" }).?);
+    try testing.expectEqual(ResolvedType.u16, narrowIntOfType(.{ .named = "u16" }).?);
+    try testing.expectEqual(ResolvedType.u32, narrowIntOfType(.{ .named = "u32" }).?);
+    try testing.expectEqual(ResolvedType.i8, narrowIntOfType(.{ .named = "i8" }).?);
+    try testing.expectEqual(ResolvedType.i16, narrowIntOfType(.{ .named = "i16" }).?);
+    try testing.expectEqual(ResolvedType.i32, narrowIntOfType(.{ .named = "i32" }).?);
+
+    // And equal on everything it declined. `i64`/`u64` are the register width,
+    // the reals have no truncation ring, and `lanes` keeps `v8i32` off the
+    // scalar place path even though it carries width 32.
+    try testing.expect(narrowIntOfType(.{ .named = "i64" }) == null);
+    try testing.expect(narrowIntOfType(.{ .named = "u64" }) == null);
+    try testing.expect(narrowIntOfType(.{ .named = "f32" }) == null);
+    try testing.expect(narrowIntOfType(.{ .named = "f64" }) == null);
+    try testing.expect(narrowIntOfType(.{ .named = "v8i32" }) == null);
+    try testing.expect(narrowIntOfType(.{ .named = "bool" }) == null);
+    try testing.expect(narrowIntOfType(.{ .named = "str" }) == null);
+    try testing.expect(narrowIntOfType(.{ .named = "any" }) == null);
+    try testing.expect(narrowIntOfType(.{ .named = "void" }) == null);
+    try testing.expect(narrowIntOfType(.{ .named = "Missing" }) == null);
+    try testing.expect(narrowIntOfType(.inferred) == null);
+    var elem: ResolvedType = .i32;
+    _ = &elem;
+    try testing.expect(narrowIntOfType(.{ .array = .{
+        .elem = @constCast(&ast.TypeExpr{ .named = "i32" }),
+        .size = 4,
+    } }) == null);
+
+    // THE REPAIR. The annotation face and `narrowFit` now answer one question
+    // from one derivation, so a nominal-over-narrow place carries its width
+    // into `dnir_lower` and `comptime` instead of only into `c_type`.
+    const alloc = std.heap.page_allocator; // process-global map; see above
+    try declareNominal(alloc, "beat", .i32);
+    try testing.expectEqual(ResolvedType.i32, narrowIntOfType(.{ .named = "beat" }).?);
+    try testing.expectEqual(
+        nominalNamed("beat").?.narrowFit().?.bits,
+        narrowIntOfType(.{ .named = "beat" }).?.narrowFit().?.bits,
+    );
+    try testing.expectEqual(@as(i64, -2147483648), narrowFitConst(
+        2147483648,
+        narrowIntOfType(.{ .named = "beat" }).?,
+    ));
+
+    // A nominal descriptor inherits the ABSENCE just as exactly, and a nominal
+    // name is still not a scalar identity.
+    try declareNominal(alloc, "epoch", .i64);
+    try testing.expect(narrowIntOfType(.{ .named = "epoch" }) == null);
+    try declareNominal(alloc, "chain", .f64);
+    try testing.expect(narrowIntOfType(.{ .named = "chain" }) == null);
+    try testing.expect(descriptorNamed("beat").? == .@"struct");
 }
 
 test "CallShape: method call shape" {
