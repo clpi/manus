@@ -6404,51 +6404,58 @@ const Arm64Compiler = struct {
         const reload_off = self.stack_frame_bytes - off - 8;
         const fresh = self.allocRegExcluding(null) catch |e| blk: {
             if (e != error.RegisterExhausted or !self.gate_transport) return e;
-            // THE RECLAIMED REGISTER IS A DESTINATION, NOT AN ANSWER.
+            // THE VALUE'S OWN REGISTER IS THE DESTINATION THAT COSTS NOTHING.
             //
-            // This `catch` used to `return` it, and a returned register is what
-            // the caller reads `reg`'s VALUE out of — `evalDnirValue` hands it
-            // straight back as the register holding the `.local`/`.temp` it was
-            // asked for. But nothing had loaded it: the `ldr` below is the only
-            // instruction that moves `[sp, #reload_off]` into a register, and
-            // returning above it skipped that, the `spilled_regs` removal, the
-            // slot release, and the temp remap in one step. So the read got
-            // whatever the reclaimed register last held, which is not this
-            // value: a register reaches `spilled_regs` because something else
-            // needed it, and when the reclaim returns `reg` itself the register
-            // holds that something else. A wrong value with no diagnostic, on
-            // the one path in this function whose entire job is to make a
-            // spilled value readable again.
+            // This arm needs a register to load `[sp, #reload_off]` into, and
+            // it used to ask `reclaimSpilledReg` for one. A reclaim frees a
+            // register by dropping the `spilled_regs` entry that would have
+            // reloaded it, which abandons that register's value in the frame
+            // with nothing left able to read it — the two-owner hazard this gap
+            // is open on. But `reg` IS a spilled register, and it is the one
+            // whose entry this function drops anyway a few lines down, because
+            // its value is being loaded out of the frame. Reloading into `reg`
+            // therefore frees exactly the one register the reclaim would have
+            // freed and abandons nobody: the reclaim's arbitrary hash-order
+            // choice was never anything but a strictly worse spelling of this
+            // one, and when it happened to pick `reg` it was this one.
             //
-            // Breaking out instead makes the reclaim supply `fresh` and lets the
-            // rest of the function run as written: `reg`'s value is loaded, its
-            // `spilled_regs` entry drops, its slot returns to `free_spill_slots`,
-            // and every temp still naming `reg` names the loaded register. When
-            // the reclaim hands back `reg` itself all four steps stay correct —
-            // the load reads a slot nothing has overwritten, the removal is
-            // idempotent against the one `reclaimSpilledReg` already did, the
-            // slot is genuinely dead once the value is in a register, and the
-            // remap is `reg` -> `reg`.
+            // Every fact the rest of the function needs already holds. `reg`'s
+            // value is at `off`, and no OTHER value is in `reg`: `spillReg` put
+            // it in `spilled_regs` and both free scans in `allocRegExcluding`
+            // skip anything that map contains, so nothing has been handed `reg`
+            // since. `used_regs[reg]` is false for the same reason, and
+            // `claimReg` is the claim the loaded value is owed —
+            // `ensureRegLive`, which is this same reload into this same
+            // register, pays exactly it. `gp_reg_owner[reg]` is untouched,
+            // which is what `spillReg` preserved it across the store FOR: the
+            // sweep releases this claim on the same owner record, at the same
+            // index, as it would have had the register never spilled. The
+            // reclaim nulled that record on the register it returned, so
+            // reaching `reg` through it stranded the reload's own destination
+            // under a null owner — `sweepGpLive` skips an unowned register.
             //
-            // NO NEW OWNER IS BROKEN. When the reclaim returns some OTHER
-            // spilled register, its previous owner was already abandoned by
-            // `reclaimSpilledReg` dropping the `spilled_regs` entry that would
-            // have reloaded it — the two-owner hazard this gap is open on,
-            // bounded to gate transport and unchanged here. This adds `reg`'s
-            // owner to that register's readers, which is the same aliasing the
-            // abandonment already established, and removes one guaranteed wrong
-            // read. Not the closure: closure is authoritative `register`/`frame`
-            // assignment before emission, per this gap's record.
-            break :blk try self.reclaimSpilledReg();
+            // `reclaimSpilledReg` keeps its remaining caller at the bottom of
+            // `allocRegExcluding`, where there is genuinely no register to give.
+            // The abandonment there is unchanged and still bounded to gate
+            // transport. Not the closure: closure is authoritative
+            // `register`/`frame` assignment before emission, per this gap's
+            // record.
+            self.claimReg(reg);
+            break :blk reg;
         };
         try self.emitLdrSp(fresh, reload_off);
         // THE SLOT IS RELEASED BY WHOEVER REMOVES THE ENTRY, AND ONLY THEN.
         //
-        // When the `catch` above reclaimed `reg` ITSELF, `reclaimSpilledReg`
-        // already removed this entry and returned this slot. An unconditional
-        // append here would put one frame slot in `free_spill_slots` twice, and
-        // then two later spills store two live values over each other at the
-        // same offset — the removal is idempotent but a release is not.
+        // The removal is idempotent; a release is not. An unconditional append
+        // behind a removal that took nothing puts one frame slot in
+        // `free_spill_slots` twice, and then two later spills store two live
+        // values over each other at the same offset. That was reachable while
+        // the exhaustion arm above went through `reclaimSpilledReg`, which
+        // removes and releases the entry it takes; the arm takes nothing now,
+        // so this removal is what empties the entry and this append is the one
+        // release of the slot. The guard states the rule rather than the
+        // reachability, because it is the rule that has to hold for the next
+        // caller.
         if (self.spilled_regs.remove(reg)) {
             try self.free_spill_slots.append(self.alloc, off);
         }
@@ -16941,9 +16948,11 @@ test "the divisors this realization refuses keep the sdiv path" {
 //
 // `ensureRegLiveRemap` is what `evalDnirValue` calls for a `.local` or `.temp`
 // whose register has been spilled, and its result is handed back as THE register
-// holding that value. Under gate transport its exhaustion path reclaims a
-// register; a reclaimed register is a destination for the reload, and this
-// measures that the reload is what the caller receives.
+// holding that value. Under gate transport its exhaustion path has to supply
+// that register itself, and this measures that what the caller receives is the
+// register the reload actually landed in. The arm reached its destination
+// through `reclaimSpilledReg` when this test was written and now uses `reg`
+// itself, which is why one spilled register is the whole state this needs.
 //
 // The compiler is built directly rather than through a source program because
 // the path needs an exhausted pool AND an exhausted spill area at the same
@@ -17236,4 +17245,119 @@ test "a remapped reload moves the owner to the register it loaded into" {
     // for the rest of the function and the pool is one register smaller.
     try std.testing.expect(!compiler.used_regs[fresh]);
     try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[fresh]);
+}
+
+// GAP-148. A RELOAD DOES NOT HAVE TO SPEND ANOTHER VALUE TO GET A REGISTER.
+//
+// The exhaustion arm of `ensureRegLiveRemap` needs one register to load a
+// spilled value into. It used to take one from `reclaimSpilledReg`, which frees
+// a register by dropping the `spilled_regs` entry that would have reloaded it —
+// the only thing that could still read that value out of the frame. So a read
+// of one spilled value destroyed another, chosen by hash order.
+//
+// It never had to. `reg` is itself spilled, and its entry is the one this
+// function drops anyway, because its value is the value being loaded out. Both
+// choices free exactly one register; only one of them abandons a value.
+//
+// Built directly rather than through a source program for the same reason as
+// the reclaim, reload, and remap tests above: the arm needs an exhausted pool
+// AND an exhausted spill area at one instant, which a fixture reaches only
+// incidentally and stops reaching the next time allocation changes.
+test "a reload under exhaustion abandons no other spilled value" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // GATE TRANSPORT WITH NO PRE-RESERVED SPILL AREA, so `spillReg` refuses at
+    // its last-resort branch and every rung of the `allocRegExcluding` cascade
+    // raises `RegisterExhausted` — the exhaustion arm is the only way this call
+    // returns.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // TWO spilled values, exactly the state `spillReg` leaves behind for each:
+    // an entry, `used_regs` cleared, and the owner record deliberately kept.
+    const a: u5 = 10;
+    const b: u5 = 11;
+    const off_a: u16 = 8;
+    const off_b: u16 = 16;
+    const owner_a: u32 = 3;
+    const owner_b: u32 = 4;
+    try compiler.spilled_regs.put(alloc, a, off_a);
+    try compiler.spilled_regs.put(alloc, b, off_b);
+    compiler.used_regs = @splat(true);
+    compiler.used_regs[a] = false;
+    compiler.used_regs[b] = false;
+    compiler.gp_reg_owner[a] = owner_a;
+    compiler.gp_reg_owner[b] = owner_b;
+
+    // READ THE VALUE THE RECLAIM WOULD NOT HAVE TAKEN. `reclaimSpilledReg`
+    // returns the first entry this same iteration order reaches, so making the
+    // read target the OTHER one is what forces the old arm to abandon somebody
+    // rather than to pick the register it was already emptying.
+    var it = compiler.spilled_regs.iterator();
+    const bystander = it.next().?.key_ptr.*;
+    const target: u5 = if (bystander == a) b else a;
+    const target_off: u16 = if (target == a) off_a else off_b;
+    const target_owner: u32 = if (target == a) owner_a else owner_b;
+    const bystander_off: u16 = if (bystander == a) off_a else off_b;
+    const bystander_owner: u32 = if (bystander == a) owner_a else owner_b;
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    try temps.put(alloc, target_owner, target);
+
+    const before = compiler.code.items.len;
+    const live = try compiler.ensureRegLiveRemap(&temps, target);
+
+    // THE OTHER VALUE IS UNTOUCHED, WHICH IS THE WHOLE FACT. Its entry is the
+    // only thing that can move it out of the frame again, its owner still names
+    // the register that entry reloads, and its slot is not in the free pool
+    // where a later spill would store a second live value over it.
+    try std.testing.expectEqual(@as(?u16, bystander_off), compiler.spilled_regs.get(bystander));
+    try std.testing.expectEqual(@as(?u32, bystander_owner), compiler.gp_reg_owner[bystander]);
+
+    // …and the read itself is complete: one `ldr` from this value's slot into
+    // the register that was returned, which is this value's own register.
+    try std.testing.expectEqual(target, live);
+    const reload_off: u16 = compiler.stack_frame_bytes - target_off - 8;
+    const want: u32 = 0xf94003e0 | ((@as(u32, reload_off) / 8) << 10) | @as(u32, live);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        want,
+        std.mem.readInt(u32, compiler.code.items[before..][0..4], .little),
+    );
+    try std.testing.expect(!compiler.spilled_regs.contains(target));
+    try std.testing.expectEqual(@as(?u5, target), temps.get(target_owner));
+
+    // THE LOADED REGISTER IS CLAIMED AND STILL OWNED. The reclaim nulled the
+    // owner of whatever it returned, so reaching this register through it left
+    // a live value under a null owner and `sweepGpLive` skips one of those
+    // forever. Here the record `spillReg` preserved across the store is the
+    // record the sweep releases, at the same index it always would have.
+    try std.testing.expect(compiler.used_regs[live]);
+    try std.testing.expectEqual(@as(?u32, target_owner), compiler.gp_reg_owner[live]);
+
+    // ONE slot released, this value's, by the one removal that took its entry.
+    // The bystander's slot is still reserved to the bystander.
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(target_off, compiler.free_spill_slots.items[0]);
+
+    // The sweep releases the loaded register off that preserved owner record,
+    // so the pool does not shrink by one on the path whose whole job is to
+    // relieve register pressure.
+    compiler.sweepGpLive(1);
+    try std.testing.expect(!compiler.used_regs[live]);
 }
