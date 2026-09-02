@@ -316,6 +316,29 @@ pub fn nominalReprAdmissible(repr: ResolvedType) bool {
 /// unsigned division/shift/compare, which is a separate defect.
 pub const NarrowFit = struct { bits: u7, signed: bool };
 
+/// Numeric meaning projected by one descriptor.
+///
+/// `ResolvedType` remains the bootstrap carrier, but consumers no longer have
+/// to reconstruct numeric law from its tag. Width is the lane width; `lanes`
+/// keeps vector cardinality orthogonal to it. An absent range is unknown, not a
+/// sentinel (notably the scalar `u64` range does not fit in an `i64` pair).
+pub const NumericFacts = struct {
+    pub const Domain = enum { integral, real };
+    pub const Format = enum { twos_complement, ieee754_binary };
+    pub const Overflow = enum { wrap, ieee754 };
+    pub const Rounding = enum { exact, nearest_even };
+    pub const Range = struct { min: i64, max: i64 };
+
+    domain: Domain,
+    width: u7,
+    lanes: u8 = 1,
+    signed: bool,
+    format: Format,
+    overflow: Overflow,
+    rounding: Rounding,
+    range: ?Range = null,
+};
+
 /// The value a write of `v` to a place of type `ty` leaves behind.
 ///
 /// `native_backend.emitNarrowFit` MUST agree with this bit for bit, and
@@ -477,24 +500,41 @@ pub const ResolvedType = union(enum) {
         };
     }
 
-    pub fn is_integer(self: ResolvedType) bool {
+    /// The compositional numeric facts carried by this descriptor.
+    ///
+    /// This is the sole host-bootstrap projection from `ResolvedType` tags. A
+    /// nominal descriptor delegates only its numeric facts to its
+    /// representation; its semantic identity remains nominal and `eql` does
+    /// not look through it.
+    pub fn numericFacts(self: ResolvedType) ?NumericFacts {
         return switch (self) {
-            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => true,
-            // law.nominal: a PHYSICAL question about `feet` is a question about
-            // the double behind it. The semantic questions (`eql`, and the sema
-            // rule that refuses a bare f64 where `feet` is demanded) are the
-            // ones that must NOT look through.
-            .@"struct" => |s| if (nominal_reprs.get(s.name)) |nr| nr.is_integer() else false,
-            else => false,
+            .i8 => .{ .domain = .integral, .width = 8, .signed = true, .format = .twos_complement, .overflow = .wrap, .rounding = .exact, .range = .{ .min = -128, .max = 127 } },
+            .i16 => .{ .domain = .integral, .width = 16, .signed = true, .format = .twos_complement, .overflow = .wrap, .rounding = .exact, .range = .{ .min = -32768, .max = 32767 } },
+            .i32 => .{ .domain = .integral, .width = 32, .signed = true, .format = .twos_complement, .overflow = .wrap, .rounding = .exact, .range = .{ .min = -2147483648, .max = 2147483647 } },
+            .i64 => .{ .domain = .integral, .width = 64, .signed = true, .format = .twos_complement, .overflow = .wrap, .rounding = .exact, .range = .{ .min = std.math.minInt(i64), .max = std.math.maxInt(i64) } },
+            .u8 => .{ .domain = .integral, .width = 8, .signed = false, .format = .twos_complement, .overflow = .wrap, .rounding = .exact, .range = .{ .min = 0, .max = 255 } },
+            .u16 => .{ .domain = .integral, .width = 16, .signed = false, .format = .twos_complement, .overflow = .wrap, .rounding = .exact, .range = .{ .min = 0, .max = 65535 } },
+            .u32 => .{ .domain = .integral, .width = 32, .signed = false, .format = .twos_complement, .overflow = .wrap, .rounding = .exact, .range = .{ .min = 0, .max = 4294967295 } },
+            .u64 => .{ .domain = .integral, .width = 64, .signed = false, .format = .twos_complement, .overflow = .wrap, .rounding = .exact },
+            .f32 => .{ .domain = .real, .width = 32, .signed = true, .format = .ieee754_binary, .overflow = .ieee754, .rounding = .nearest_even },
+            .f64 => .{ .domain = .real, .width = 64, .signed = true, .format = .ieee754_binary, .overflow = .ieee754, .rounding = .nearest_even },
+            .v4f64 => .{ .domain = .real, .width = 64, .lanes = 4, .signed = true, .format = .ieee754_binary, .overflow = .ieee754, .rounding = .nearest_even },
+            .v4i64 => .{ .domain = .integral, .width = 64, .lanes = 4, .signed = true, .format = .twos_complement, .overflow = .wrap, .rounding = .exact },
+            .v8f32 => .{ .domain = .real, .width = 32, .lanes = 8, .signed = true, .format = .ieee754_binary, .overflow = .ieee754, .rounding = .nearest_even },
+            .v8i32 => .{ .domain = .integral, .width = 32, .lanes = 8, .signed = true, .format = .twos_complement, .overflow = .wrap, .rounding = .exact },
+            .@"struct" => |s| if (nominal_reprs.get(s.name)) |repr| repr.numericFacts() else null,
+            else => null,
         };
     }
 
+    pub fn is_integer(self: ResolvedType) bool {
+        const facts = self.numericFacts() orelse return false;
+        return facts.domain == .integral;
+    }
+
     pub fn is_float(self: ResolvedType) bool {
-        return switch (self) {
-            .f32, .f64, .v4f64, .v8f32 => true,
-            .@"struct" => |s| if (nominal_reprs.get(s.name)) |nr| nr.is_float() else false,
-            else => false,
-        };
+        const facts = self.numericFacts() orelse return false;
+        return facts.domain == .real;
     }
 
     pub fn is_vector(self: ResolvedType) bool {
@@ -1107,7 +1147,6 @@ pub const ResolvedType = union(enum) {
     }
 };
 
-
 /// Element storage for the GAP-145 byte-sequence descriptor (`law.text.byte`).
 var quoted_byte_sequence_elem: ResolvedType = .u8;
 
@@ -1132,7 +1171,6 @@ pub fn quotedLiteralType(quote: ast.Quote) ResolvedType {
 pub fn isQuotedByteSequence(descriptor: ResolvedType) bool {
     return quotedLiteralType(.bytes).eql(descriptor);
 }
-
 
 pub const c_type_marker_prefix = "__c_type:";
 
@@ -2191,6 +2229,42 @@ test "CallShape: equal fingerprints cannot select semantic facts" {
     };
     try testing.expectEqual(a.fingerprint(), b.fingerprint());
     try testing.expect(!CallShape.eql(a, b));
+}
+
+test "numeric descriptor facts compose domain width sign format and range" {
+    const signed_type: ResolvedType = .i32;
+    const signed = signed_type.numericFacts().?;
+    try testing.expectEqual(NumericFacts.Domain.integral, signed.domain);
+    try testing.expectEqual(@as(u7, 32), signed.width);
+    try testing.expectEqual(@as(u8, 1), signed.lanes);
+    try testing.expect(signed.signed);
+    try testing.expectEqual(NumericFacts.Format.twos_complement, signed.format);
+    try testing.expectEqual(NumericFacts.Overflow.wrap, signed.overflow);
+    try testing.expectEqual(NumericFacts.Rounding.exact, signed.rounding);
+    try testing.expectEqual(@as(i64, -2147483648), signed.range.?.min);
+    try testing.expectEqual(@as(i64, 2147483647), signed.range.?.max);
+
+    const float_type: ResolvedType = .f32;
+    const float = float_type.numericFacts().?;
+    try testing.expectEqual(NumericFacts.Domain.real, float.domain);
+    try testing.expectEqual(@as(u7, 32), float.width);
+    try testing.expectEqual(NumericFacts.Format.ieee754_binary, float.format);
+    try testing.expectEqual(NumericFacts.Overflow.ieee754, float.overflow);
+    try testing.expectEqual(NumericFacts.Rounding.nearest_even, float.rounding);
+    try testing.expect(float.range == null);
+
+    const vector_type: ResolvedType = .v8i32;
+    const vector = vector_type.numericFacts().?;
+    try testing.expectEqual(NumericFacts.Domain.integral, vector.domain);
+    try testing.expectEqual(@as(u7, 32), vector.width);
+    try testing.expectEqual(@as(u8, 8), vector.lanes);
+
+    const unsigned_type: ResolvedType = .u64;
+    const unsigned = unsigned_type.numericFacts().?;
+    try testing.expect(!unsigned.signed);
+    try testing.expect(unsigned.range == null);
+    const text_type: ResolvedType = .str;
+    try testing.expect(text_type.numericFacts() == null);
 }
 
 test "CallShape: method call shape" {

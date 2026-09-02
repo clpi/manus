@@ -1575,42 +1575,13 @@ pub const Sema = struct {
         };
     }
 
-    /// Inclusive bounds of a sized integer descriptor; null for everything else.
-    /// `u64`'s max is deliberately clamped to i64 max — the literal arrives as an
-    /// i64 and a wider bound could not be represented to compare against, so the
-    /// honest thing is to not claim a check we cannot perform.
-    fn intMin(t: RT) ?i64 {
-        return switch (t) {
-            .i8 => -128,
-            .i16 => -32768,
-            .i32 => -2147483648,
-            .i64 => std.math.minInt(i64),
-            .u8, .u16, .u32, .u64 => 0,
-            else => null,
-        };
-    }
-
-    fn intMax(t: RT) ?i64 {
-        return switch (t) {
-            .i8 => 127,
-            .i16 => 32767,
-            .i32 => 2147483647,
-            .i64, .u64 => std.math.maxInt(i64),
-            .u8 => 255,
-            .u16 => 65535,
-            .u32 => 4294967295,
-            else => null,
-        };
-    }
-
     /// The literal, when it provably does not fit the annotation. Null means
     /// either "fits" or "not a literal" — this never guesses at a computed value,
     /// which is a range-fact question for the checker, not a lexical one.
     fn literalOutOfRange(ann: RT, e: *const ast.Expr) ?i64 {
-        const lo = intMin(ann) orelse return null;
-        const hi = intMax(ann) orelse return null;
+        const range = (ann.numericFacts() orelse return null).range orelse return null;
         const v = ast.intLiteralValue(e) orelse return null;
-        if (v < lo or v > hi) return v;
+        if (v < range.min or v > range.max) return v;
         return null;
     }
 
@@ -3265,7 +3236,8 @@ pub const Sema = struct {
                             if (i < ld.inits.len) {
                                 if (literalOutOfRange(ann, ld.inits[i])) |lit| {
                                     var rb: [128]u8 = undefined;
-                                    self.err(lname.loc, "literal {d} does not fit in '{s}' (range {d}..{d})", .{ lit, ann.duo_name(&rb), intMin(ann).?, intMax(ann).? });
+                                    const range = ann.numericFacts().?.range.?;
+                                    self.err(lname.loc, "literal {d} does not fit in '{s}' (range {d}..{d})", .{ lit, ann.duo_name(&rb), range.min, range.max });
                                 }
                             }
                         }
