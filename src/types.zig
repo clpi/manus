@@ -294,15 +294,97 @@ pub fn nominalNamed(name: []const u8) ?ResolvedType {
     return ResolvedType{ .@"struct" = .{ .name = name } };
 }
 
+/// Whether this descriptor identity is a SCALAR PHYSICAL REPRESENTATION — one
+/// value in one cell, one register wide.
+///
+/// DERIVED, NOT TABULATED. The twelve-tag switch this replaced was another
+/// statement of which identities are scalar, beside the one owner
+/// `numericFacts`, and it could not compose: a scalar identity added to the
+/// union above was one it silently did not know, which reads as "not a scalar"
+/// — the wrong answer in the safe-looking direction. `lanes == 1` is the whole
+/// numeric filter, because a vector identity is a numeric fact owner that is
+/// not one cell (`v4i32` is four), and `nominalReprOf` is null-checked because
+/// a nominal descriptor DELEGATES its numeric facts to its representation on
+/// purpose (`law.nominal` §46) while remaining a distinct identity that is not
+/// itself a representation.
+///
+/// `bool` and `str` stay explicit because no numeric owner can answer for
+/// them: they are the two scalars that carry no arithmetic. That is a
+/// statement about arithmetic, not a roster of widths.
+pub fn scalarRepr(repr: ResolvedType) bool {
+    if (repr.numericFacts()) |facts| {
+        return facts.lanes == 1 and nominalReprOf(repr) == null;
+    }
+    return repr == .bool or repr == .str;
+}
+
 /// Which targets may carry a nominal descriptor. Deliberately narrow: a
 /// descriptor over an aggregate is an ordinary record alias and must keep
 /// behaving like one, so only the SCALARS — the representations that cost
 /// nothing to be nominal over — are admitted.
 pub fn nominalReprAdmissible(repr: ResolvedType) bool {
-    return switch (repr) {
-        .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64, .bool, .str => true,
-        else => false,
-    };
+    return scalarRepr(repr);
+}
+
+/// A pointer descriptor over `pointee`.
+fn pointerTo(alloc: std.mem.Allocator, pointee: ResolvedType) std.mem.Allocator.Error!ResolvedType {
+    const ptr = try alloc.create(ResolvedType);
+    ptr.* = pointee;
+    return ResolvedType{ .pointer = ptr };
+}
+
+/// The legacy or foreign SPELLING of a scalar descriptor, mapped to the
+/// canonical one. These three are irreducible: `isize`, `usize` and `string`
+/// are not `ResolvedType` identities and no owner can derive them, so they are
+/// a compatibility spelling face and nothing more. Nothing may be added here
+/// that names an identity the union already spells.
+fn memSpellingOf(name: []const u8) []const u8 {
+    if (std.mem.eql(u8, name, "isize")) return "i64";
+    if (std.mem.eql(u8, name, "usize")) return "u64";
+    if (std.mem.eql(u8, name, "string")) return "str";
+    return name;
+}
+
+/// The descriptor a MEMORY-LEVEL type name projects — the `T` of
+/// `mem.store(T)(p, v)` and `mem.load(T)(p)`, in either the canonical type-value
+/// spelling or the graveyarded `"T"` string.
+///
+/// DERIVED, NOT TABULATED, AND OWNED ONCE. This roster of spellings existed
+/// TWICE, identically, as `sema.mem_type_from_name` and
+/// `codegen.mem_type_from_name` — one deciding which memory type names are
+/// ADMITTED and the other deciding what each one REALIZES AS. That is the
+/// two-realizations-of-one-fact shape: the two lists agreed only because
+/// nobody had edited one of them yet, and a scalar identity added to the union
+/// would have been refused by sema for the reason that nobody wrote the line,
+/// not for any reason a law states.
+///
+/// A memory level names a place, so the question is exactly `scalarRepr` — one
+/// value in one cell — plus the two compositions a cell address admits: `void`
+/// (an untyped cell, which is what `ptr` points at) and a pointer, whose
+/// spelling `*T` composes over this same face. Every identity the retired
+/// rosters declined is declined here by that fact rather than by absence:
+/// `any` is boxed and opaque, `nil` and `never` are not values in cells, and
+/// the vector identities are numeric fact owners spanning several cells.
+///
+/// A NOMINAL DESCRIPTOR IS NOT ADMITTED HERE, and that is the retired
+/// divergence made explicit rather than inherited. `codegen` accepted one
+/// because the same function also answered the result type of `v:to(inch)`,
+/// where the nominal name is the point; `sema` refused one, so no
+/// `mem.store(feet)` ever reached `codegen` anyway. The nominal tail belongs to
+/// that conversion consumer, which composes it on top of this face, not to the
+/// memory level.
+pub fn memDescriptorNamed(alloc: std.mem.Allocator, name: []const u8) std.mem.Allocator.Error!?ResolvedType {
+    if (name.len == 0) return null;
+    if (name[0] == '*') {
+        const inner = try memDescriptorNamed(alloc, name[1..]) orelse return null;
+        return try pointerTo(alloc, inner);
+    }
+    if (std.mem.eql(u8, name, "ptr") or std.mem.eql(u8, name, "void*")) {
+        return try pointerTo(alloc, .void);
+    }
+    const descriptor = descriptorNamed(memSpellingOf(name)) orelse return null;
+    if (descriptor == .void or scalarRepr(descriptor)) return descriptor;
+    return null;
 }
 
 /// Resolved type after semantic analysis.
@@ -2524,6 +2606,124 @@ test "types: the annotation face of the write projection is derived from the sam
     try declareNominal(alloc, "chain", .f64);
     try testing.expect(narrowIntOfType(.{ .named = "chain" }) == null);
     try testing.expect(descriptorNamed("beat").? == .@"struct");
+}
+
+// The retired memory-level roster, verbatim, as the oracle. It existed TWICE —
+// `sema.mem_type_from_name` deciding which memory type names are ADMITTED, and
+// `codegen.mem_type_from_name` deciding what each one REALIZES AS — from two
+// hand-kept lists that could only ever agree by hand. This is the `sema` copy,
+// which is the one with no nominal tail; `codegen`'s nominal tail belonged to
+// the `v:to(T)` conversion consumer and is composed there on top of the derived
+// face.
+fn retiredMemTypeFromName(alloc: std.mem.Allocator, name: []const u8) !?ResolvedType {
+    if (name.len == 0) return null;
+    if (name[0] == '*') {
+        const inner = try retiredMemTypeFromName(alloc, name[1..]) orelse return null;
+        const ptr = try alloc.create(ResolvedType);
+        ptr.* = inner;
+        return ResolvedType{ .pointer = ptr };
+    }
+    if (std.mem.eql(u8, name, "void")) return .void;
+    if (std.mem.eql(u8, name, "i8")) return .i8;
+    if (std.mem.eql(u8, name, "i16")) return .i16;
+    if (std.mem.eql(u8, name, "i32")) return .i32;
+    if (std.mem.eql(u8, name, "i64") or std.mem.eql(u8, name, "isize")) return .i64;
+    if (std.mem.eql(u8, name, "u8")) return .u8;
+    if (std.mem.eql(u8, name, "u16")) return .u16;
+    if (std.mem.eql(u8, name, "u32")) return .u32;
+    if (std.mem.eql(u8, name, "u64") or std.mem.eql(u8, name, "usize")) return .u64;
+    if (std.mem.eql(u8, name, "f32")) return .f32;
+    if (std.mem.eql(u8, name, "f64")) return .f64;
+    if (std.mem.eql(u8, name, "bool")) return .bool;
+    if (std.mem.eql(u8, name, "str") or std.mem.eql(u8, name, "string")) return .str;
+    if (std.mem.eql(u8, name, "ptr") or std.mem.eql(u8, name, "void*")) {
+        const ptr = try alloc.create(ResolvedType);
+        ptr.* = .void;
+        return ResolvedType{ .pointer = ptr };
+    }
+    return null;
+}
+
+test "types: the memory-level face is derived from the same facts and owned once" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // PINNED EQUAL TO THE RETIRED ROSTER on every spelling it listed AND every
+    // spelling it declined, so no memory level can gain or lose a type from
+    // this. The declined half carries the load: the derivation reaches
+    // `descriptorNamed`, which answers for identities the roster never listed,
+    // and `scalarRepr` is what refuses them — `any` is boxed and opaque, `nil`
+    // and `never` are not values in cells, and the vector identities are
+    // numeric fact owners spanning several cells, not one.
+    const spellings = [_][]const u8{
+        // listed: scalars, the untyped cell, and the legacy spellings
+        "void",  "i8",     "i16",    "i32",    "i64",     "isize",
+        "u8",    "u16",    "u32",    "u64",    "usize",   "f32",
+        "f64",   "bool",   "str",    "string",
+        // listed: pointer compositions, which compose over the same face
+         "ptr",     "void*",
+        "*i32",  "*u8",    "*bool",  "*str",   "**i64",   "*ptr",
+        "*void", "*isize",
+        // declined: numeric fact owners and non-representational identities
+          "any",     "nil",
+        "never", "v4f64",  "v4i64",  "v8f32",  "v8i32",   "*any",
+        "*v4f64",
+        // declined: payload-carrying identities, whose source spelling is a
+        // composition and not a bare word
+        "array",  "pointer", "func",   "struct", "result",
+        "option", "table",  "foreign",
+        // declined: foreign spellings, the empty name, a bare star, unknowns
+         "int32_t", "double", "float",   "",
+        "*",     "*",      "nosuch", "*nosuch",
+    };
+    for (spellings) |name| {
+        const retired = try retiredMemTypeFromName(alloc, name);
+        const derived = try memDescriptorNamed(alloc, name);
+        if (retired) |want| {
+            try testing.expect(derived != null);
+            try testing.expect(want.eql(derived.?));
+        } else {
+            try testing.expect(derived == null);
+        }
+    }
+
+    // A NOMINAL DESCRIPTOR IS NOT A MEMORY LEVEL, which is the retired
+    // divergence made explicit: `sema` refused one and `codegen` accepted one,
+    // from the same duplicated roster, because `codegen`'s copy also answered
+    // the result type of `v:to(inch)`. The conversion consumer keeps that tail;
+    // the memory level does not have it.
+    //
+    // NOT AN ARENA for the declaration — `declareNominal` writes a
+    // process-global map keyed by text that outlives this test.
+    try declareNominal(std.heap.page_allocator, "fathom", .f64);
+    try testing.expect(nominalNamed("fathom") != null);
+    try testing.expect((try memDescriptorNamed(alloc, "fathom")) == null);
+    try testing.expect((try retiredMemTypeFromName(alloc, "fathom")) == null);
+    // Its PHYSICS still delegates, so refusing it here is an identity ruling
+    // and not a claim that it has no representation.
+    try testing.expect(nominalNamed("fathom").?.numericFacts() != null);
+
+    // `scalarRepr` is the one owner both questions ask, and it is derived from
+    // `numericFacts` rather than tabulated: this control is written over the
+    // union's own tags, so a scalar identity added above cannot be one the
+    // memory level or the nominal-target rule silently does not know.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type != void) continue;
+        const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+        // Retired twelve-tag switch, verbatim.
+        const want = switch (identity) {
+            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64, .bool, .str => true,
+            else => false,
+        };
+        try testing.expectEqual(want, scalarRepr(identity));
+        try testing.expectEqual(want, nominalReprAdmissible(identity));
+        // Every scalar identity is a memory level under its own tag name, and
+        // `void` is the one non-scalar that is: an untyped cell.
+        const level = try memDescriptorNamed(alloc, field_name);
+        try testing.expectEqual(want or identity == .void, level != null);
+    }
 }
 
 test "CallShape: method call shape" {
