@@ -431,6 +431,10 @@ pub const Parser = struct {
             ((event >> 23) & 0xFFFFFF) != 0;
     }
 
+    fn currentParserTypeRecord(self: *Parser) ParseError!bool {
+        return (((try self.currentParserDecision()) >> 12) & 1) != 0;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -1610,6 +1614,46 @@ pub const Parser = struct {
             base.* = try self.parse_type();
             return .{ .generic = .{ .base = base, .params = try params.toOwnedSlice(self.alloc) } };
         }
+        if (try self.currentParserTypeRecord()) {
+            // Inline record-type literal: { name: T, name2: T2, ... }
+            _ = try self.adv(); // consume '{'
+            var fields: std.ArrayList(ast.RecordField) = .empty;
+            if (!(try self.check(.rbrace))) {
+                while (true) {
+                    const fl = (try self.pk()).loc;
+                    const fn_tok = try self.expect(.name);
+                    if (try self.parse_descriptor_slot(fn_tok.text, fl)) {
+                        if (try self.eat(.comma) == null and !(try self.check(.name))) break;
+                        continue;
+                    }
+                    _ = try self.expect(.colon);
+                    const ft = (try self.parse_inline_caseset(fn_tok.text, fl)) orelse
+                        try self.parse_field_type();
+                    try fields.append(self.alloc, ast.RecordField{
+                        .name = fn_tok.text,
+                        .typ = ft,
+                        .loc = fl,
+                    });
+                    if (try self.eat(.comma) == null) {
+                        // X8 (§7): "≥2 named fields → one per
+                        // line, always". So the newline IS the canonical
+                        // separator and the comma is the optional one —
+                        // the golden `user` and `token` descriptors of §20
+                        // are written without commas and did not parse.
+                        //
+                        // Unambiguous: §3 makes a newline insignificant
+                        // inside an open `{`, so the only tokens that may
+                        // follow a field are `}` or the next field's name.
+                        if (!(try self.check(.name))) break;
+                    }
+                }
+            }
+            _ = try self.expect(.rbrace);
+            const rt = try self.alloc.create(ast.TypeExpr.RecordType);
+            rt.* = .{ .fields = try fields.toOwnedSlice(self.alloc) };
+            rt.layout = try self.parse_layout_refinements();
+            return .{ .record = rt };
+        }
         if (try self.currentParserTypeGroup()) {
             _ = try self.adv();
             var params: std.ArrayList(ast.TypeExpr) = .empty;
@@ -1684,52 +1728,8 @@ pub const Parser = struct {
             const t = try self.adv();
             return .{ .named = t.text };
         }
-        return switch (tok.kind) {
-            .lbrace => {
-                // Inline record-type literal: { name: T, name2: T2, ... }
-                _ = try self.adv(); // consume '{'
-                var fields: std.ArrayList(ast.RecordField) = .empty;
-                if (!(try self.check(.rbrace))) {
-                    while (true) {
-                        const fl = (try self.pk()).loc;
-                        const fn_tok = try self.expect(.name);
-                        if (try self.parse_descriptor_slot(fn_tok.text, fl)) {
-                            if (try self.eat(.comma) == null and !(try self.check(.name))) break;
-                            continue;
-                        }
-                        _ = try self.expect(.colon);
-                        const ft = (try self.parse_inline_caseset(fn_tok.text, fl)) orelse
-                            try self.parse_field_type();
-                        try fields.append(self.alloc, ast.RecordField{
-                            .name = fn_tok.text,
-                            .typ = ft,
-                            .loc = fl,
-                        });
-                        if (try self.eat(.comma) == null) {
-                            // X8 (§7): "≥2 named fields → one per
-                            // line, always". So the newline IS the canonical
-                            // separator and the comma is the optional one —
-                            // the golden `user` and `token` descriptors of §20
-                            // are written without commas and did not parse.
-                            //
-                            // Unambiguous: §3 makes a newline insignificant
-                            // inside an open `{`, so the only tokens that may
-                            // follow a field are `}` or the next field's name.
-                            if (!(try self.check(.name))) break;
-                        }
-                    }
-                }
-                _ = try self.expect(.rbrace);
-                const rt = try self.alloc.create(ast.TypeExpr.RecordType);
-                rt.* = .{ .fields = try fields.toOwnedSlice(self.alloc) };
-                rt.layout = try self.parse_layout_refinements();
-                return .{ .record = rt };
-            },
-            else => {
-                term.locErr(tok.loc, "expected type, got '{s}'", .{tok.kind.spelling()});
-                return ParseError.ExpectedToken;
-            },
-        };
+        term.locErr(tok.loc, "expected type, got '{s}'", .{tok.kind.spelling()});
+        return ParseError.ExpectedToken;
     }
 
     fn maybe_type_ann(self: *Parser) ParseError!ast.TypeExpr {

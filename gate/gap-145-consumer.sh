@@ -403,19 +403,26 @@ fi
 # ── 2e''. bare declaration path executes from whole-pack lane two ────────────
 #
 # The generic type-primary face consumes the existing static primary and infix
-# facts. The type parser no longer owns a `.lt` switch arm; `.lbrace` is the
-# one residual host-owned type-primary arm.
+# facts. The record face shares declaration bit 12; their `{` and name
+# coordinates are mutually exclusive. The type parser no longer
+# owns either host kind switch arm.
 has "$ROOT/lib/compiler/parser.id" 'or kind == token.kindlt' \
     'event lost the generic type-primary face'
 has "$PARSER" 'fn currentParserTypeGeneric(self: *Parser) ParseError!bool {' \
     'parser.zig lost the generic type-primary consumer'
 has "$PARSER" 'if (try self.currentParserTypeGeneric()) {' \
     'parse_type_primary bypasses the settled generic face'
+has "$ROOT/lib/compiler/parser.id" '(recordface << 12)' \
+    'event lost the record type-primary face'
+has "$PARSER" 'fn currentParserTypeRecord(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the record type-primary consumer'
+has "$PARSER" 'if (try self.currentParserTypeRecord()) {' \
+    'parse_type_primary bypasses the settled record face'
 generic_arms=$(grep -cF '.lt => {' "$PARSER" || true)
 record_arms=$(grep -cF '.lbrace => {' "$PARSER" || true)
 examined=$((examined + 1))
-if [ "$generic_arms" -ne 0 ] || [ "$record_arms" -ne 2 ]; then
-    bad "type-primary residual arms drifted: generic=$generic_arms record-total=$record_arms"
+if [ "$generic_arms" -ne 0 ] || [ "$record_arms" -ne 1 ]; then
+    bad "type-primary host arms drifted: generic=$generic_arms record-total=$record_arms"
 fi
 
 # Header bit 4 is settled at `(`. Event walks backward over the exact admitted
