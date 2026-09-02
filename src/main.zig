@@ -4625,6 +4625,55 @@ fn boot(symbol: []const u8) ?[]const u8 {
     return null;
 }
 
+/// Which embedded bootstrap units a set of undefined symbols selects.
+///
+/// SEPARATE FROM MATERIALIZATION ON PURPOSE. The selection is a pure function of
+/// the symbol set and is the only part of the link line that a host without a
+/// direct native realization can still measure: `gate/crosspartition.sh` needs
+/// macOS/aarch64 to compile and run a subject at all, so on every other host the
+/// question "does a REACHED partition's need reach the link line" has no
+/// executable answer above this seam. Below it, it has one — see the unit test.
+const BootstrapUnits = struct {
+    classify: bool = false,
+    io: bool = false,
+    str: bool = false,
+};
+
+fn bootstrapUnits(needed: []const []const u8) BootstrapUnits {
+    var units: BootstrapUnits = .{};
+    for (needed) |symbol| {
+        const source = boot(symbol) orelse continue;
+        if (std.mem.eql(u8, source, "keyword_classify.c")) units.classify = true;
+        if (std.mem.eql(u8, source, "idol_io_runtime.o")) units.io = true;
+        if (std.mem.eql(u8, source, "idol_str_runtime.o")) units.str = true;
+    }
+    return units;
+}
+
+test "a bootstrap unit is selected by a REACHED partition's need, not only the entry's" {
+    // The entry of the shape `gate/crosspartition.sh` calls `text`: it adds two
+    // numbers and needs no runtime at all.
+    const entry: []const []const u8 = &.{"idol_tmp_main__main"};
+    try std.testing.expect(!bootstrapUnits(entry).str);
+
+    // The partition it reaches converts a str, and `duo_str_to_i64` lives in
+    // `idol_str_runtime.o`. THIS is the union GAP-232 was about: before the
+    // repair the reached artifact's `need` was dropped with its bytes kept, so
+    // this second slice never reached `directLinkInputs` and the link failed on
+    // `_duo_str_to_i64` — from the reached partition's own object.
+    const reached: []const []const u8 = &.{ "idol_tmp_helper__value", "duo_str_to_i64" };
+    try std.testing.expect(bootstrapUnits(reached).str);
+
+    const joined: []const []const u8 = &.{ entry[0], reached[0], reached[1] };
+    const units = bootstrapUnits(joined);
+    try std.testing.expect(units.str);
+    // AND NOTHING MORE. A union that pulled in every unit would link and answer
+    // too, so a passing subject could not tell the union apart from
+    // "materialize all three always" — which is why this asserts the negatives.
+    try std.testing.expect(!units.io);
+    try std.testing.expect(!units.classify);
+}
+
 fn directLinkInputs(
     alloc: std.mem.Allocator,
     io: Io,
@@ -4639,22 +4688,14 @@ fn directLinkInputs(
     _ = mod;
     if (runtime_needing) |slot| slot.* = 0;
     var inputs: std.ArrayListUnmanaged([]const u8) = .empty;
-    var classify = false;
-    var io_boot = false;
-    var str_boot = false;
-    for (needed) |symbol| {
-        const source = boot(symbol) orelse continue;
-        if (std.mem.eql(u8, source, "keyword_classify.c")) classify = true;
-        if (std.mem.eql(u8, source, "idol_io_runtime.o")) io_boot = true;
-        if (std.mem.eql(u8, source, "idol_str_runtime.o")) str_boot = true;
-    }
+    const units = bootstrapUnits(needed);
     // Materialize from the EMBEDDED copy every time, never from the cwd. A
     // compiler that answers differently depending on where the caller happens to
     // be standing is not one answer, and the version that read the cwd refused
     // three edges from every directory but one. See `materializeBootstrapC`.
-    if (classify) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "keyword_classify.c"));
-    if (io_boot) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "idol_io_runtime.o"));
-    if (str_boot) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "idol_str_runtime.o"));
+    if (units.classify) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "keyword_classify.c"));
+    if (units.io) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "idol_io_runtime.o"));
+    if (units.str) try inputs.append(alloc, try materializeBootstrapC(alloc, io, "idol_str_runtime.o"));
     return inputs.toOwnedSlice(alloc);
 }
 
@@ -4720,18 +4761,34 @@ fn directLinkInputs(
 // pays no runtime cost for source partitions" is preserved by the linker, not
 // by refusing to link.
 
-/// Realize ONE reached source partition as an object, and report the homes it
-/// reaches in turn.
+/// Realize ONE reached source partition as an object, and report both what it
+/// reaches in turn and what it NEEDS.
 ///
 /// `out_reached` is appended with the source paths this partition itself
 /// reached, so the caller's worklist closes transitively: a program that calls
 /// a sibling which calls a third partition links all three.
+///
+/// `out_need` is appended with the undefined symbols THIS OBJECT references, and
+/// that second output is GAP-232. The version without it kept the artifact's
+/// BYTES and dropped its `need` at this exact line, so `directLinkInputs` was
+/// handed the entry's needs alone: an entry that needs no bootstrap runtime,
+/// reaching a partition that does, linked without it and failed at the linker on
+/// `_duo_str_sub` — referenced from the reached partition's own object.
+///
+/// THIS DOES NOT REOPEN THE `need`-VERSUS-GRAPH RULING ABOVE. That ruling is
+/// about which HOMES to realize, and it stands: homes come from
+/// `graph.reachedHomes` because reading a home out of `idol_<h>__<n>` would
+/// reconstruct meaning from a spelling. A bootstrap unit is not a home and is
+/// not reconstructed from anything — `boot()` matches a CLOSED, hand-written set
+/// of runtime symbol names it owns, which is the same question the entry's own
+/// artifact already answers the same way. No spelling is parsed here.
 fn realizeReachedPartition(
     alloc: std.mem.Allocator,
     io: Io,
     source_path: []const u8,
     target: []const u8,
     out_reached: *std.ArrayListUnmanaged([]const u8),
+    out_need: *std.ArrayListUnmanaged([]const u8),
 ) ![]const u8 {
     // A diagnostic raised while realizing a REACHED partition must quote that
     // partition; a diagnostic raised afterwards must go back to quoting the
@@ -4765,6 +4822,11 @@ fn realizeReachedPartition(
     );
     defer artifact.deinit(alloc);
 
+    // OWNED COPIES, because `artifact.deinit` frees these strings on the way out
+    // of this function and the link line is decided after every partition has
+    // been realized.
+    for (artifact.need) |symbol| try out_need.append(alloc, try alloc.dupe(u8, symbol));
+
     // CONTENT-ADDRESSED, like `materializeBootstrapC` and for the same reason:
     // the link line must not move between runs of the same compiler on the
     // same input, and two partitions must not collide on a stem.
@@ -4779,16 +4841,26 @@ fn realizeReachedPartition(
 }
 
 /// Every object the entry's link line needs beyond its own, closed
-/// transitively over the source partitions resolution reached.
+/// transitively over the source partitions resolution reached, TOGETHER WITH the
+/// bootstrap symbols those objects reference.
 ///
-/// Returns an empty slice for the overwhelmingly common single-partition
+/// The two travel as one value because they are one fact — what the link line
+/// must carry — and separating them is what GAP-232 was: the objects arrived and
+/// their needs did not.
+///
+/// Returns empty slices for the overwhelmingly common single-partition
 /// program, which is why this costs nothing where nothing is reached.
-fn reachedHomeObjects(
+const ReachedClosure = struct {
+    object: []const []const u8 = &.{},
+    need: []const []const u8 = &.{},
+};
+
+fn reachedHomeClosure(
     alloc: std.mem.Allocator,
     io: Io,
     entry_path: []const u8,
     graph: *const semantic_graph.SemanticGraph,
-) ![]const []const u8 {
+) !ReachedClosure {
     // A REACHED PARTITION IS NEVER THE PROCESS IMAGE, so it is realized as an
     // OBJECT whatever the entry's artifact kind is. Passing the entry's target
     // down would ask the emitter for a second `native-exe`, which is where the
@@ -4797,7 +4869,7 @@ fn reachedHomeObjects(
     const target = "native-object";
     const first = try graph.reachedHomes(alloc);
     defer alloc.free(first);
-    if (first.len == 0) return &.{};
+    if (first.len == 0) return .{};
 
     const saved_view = term.currentSource();
     defer term.restoreSource(saved_view);
@@ -4821,6 +4893,8 @@ fn reachedHomeObjects(
 
     var objects: std.ArrayListUnmanaged([]const u8) = .empty;
     errdefer objects.deinit(alloc);
+    var need: std.ArrayListUnmanaged([]const u8) = .empty;
+    errdefer need.deinit(alloc);
 
     var head: usize = 0;
     while (head < pending.items.len) : (head += 1) {
@@ -4835,7 +4909,7 @@ fn reachedHomeObjects(
             continue;
         }
         try done.append(alloc, real);
-        const obj = realizeReachedPartition(alloc, io, source_path, target, &pending) catch |e| {
+        const obj = realizeReachedPartition(alloc, io, source_path, target, &pending, &need) catch |e| {
             // FAIL CLOSED, BY NAME. The alternative — dropping this input and
             // linking anyway — reproduces the exact undefined-symbol failure
             // this whole path removes, one layer further from its cause.
@@ -4845,7 +4919,10 @@ fn reachedHomeObjects(
         };
         try objects.append(alloc, obj);
     }
-    return objects.toOwnedSlice(alloc);
+    return .{
+        .object = try objects.toOwnedSlice(alloc),
+        .need = try need.toOwnedSlice(alloc),
+    };
 }
 
 /// The canonical file identity of a source spelling, or the spelling itself
@@ -6497,12 +6574,28 @@ fn do_compile(
                     if (artifact_result) |artifact_value| {
                         var artifact = artifact_value;
                         defer artifact.deinit(alloc);
-                        const boot_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null, artifact.need);
                         // REALIZATION CLOSES OVER WHAT RESOLUTION REACHED.
                         // Empty for a single-partition program, which is why
                         // the common case pays nothing. See
-                        // `reachedHomeObjects` for the measurement.
-                        const home_extra = try reachedHomeObjects(alloc, io, src_path, &direct_graph);
+                        // `reachedHomeClosure` for the measurement.
+                        //
+                        // IT RUNS BEFORE `directLinkInputs`, and that order is
+                        // the repair. It used to run after, so the only `need`
+                        // the link line could be built from was the ENTRY's.
+                        const reached = try reachedHomeClosure(alloc, io, src_path, &direct_graph);
+                        const home_extra = reached.object;
+                        // THE UNION, not the entry's needs alone (GAP-232). No
+                        // dedup: `bootstrapUnits` is a set-valued selection, so
+                        // a symbol named by both the entry and a partition it
+                        // reaches selects the same unit once.
+                        const link_need = blk_need: {
+                            if (reached.need.len == 0) break :blk_need @as([]const []const u8, artifact.need);
+                            var joined: std.ArrayListUnmanaged([]const u8) = .empty;
+                            try joined.appendSlice(alloc, artifact.need);
+                            try joined.appendSlice(alloc, reached.need);
+                            break :blk_need try joined.toOwnedSlice(alloc);
+                        };
+                        const boot_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc, null, link_need);
                         const direct_extra = blk_extra: {
                             if (home_extra.len == 0) break :blk_extra boot_extra;
                             var joined: std.ArrayListUnmanaged([]const u8) = .empty;

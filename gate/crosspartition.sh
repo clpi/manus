@@ -20,7 +20,7 @@
 #
 # The C transfer route closed its half of this and has `gate/lower/fallback.sh`
 # holding it closed. The direct native route closed its half with
-# `main.reachedHomeObjects` and landed with NO GATE AT ALL — its evidence was
+# `main.reachedHomeClosure` and landed with NO GATE AT ALL — its evidence was
 # prose in a commit message. This file is that missing instrument.
 #
 # ═══ WHAT IS MEASURED, AND WHY IT IS EXECUTION AND NOT INSPECTION ══════════
@@ -36,7 +36,9 @@
 # correctly with the definition absent would mean the answer came from
 # somewhere other than the partition under test — constant folding, a stale
 # artifact, an aliased binary — and this column is what tells those apart from
-# the thing being claimed.
+# the thing being claimed. A pin written `!name` inverts it and requires the
+# symbol to be ABSENT, which is how a subject states what its link line must NOT
+# have been given; see the `text` shape below for what that is for.
 #
 # ═══ THE SUBJECT ROSTER IS A FILE, so zero subjects is reachable ═══════════
 #
@@ -76,25 +78,34 @@
 #      the undefined symbol one layer further from its cause, which is the
 #      fail-open this whole path exists to remove.
 #
-# ═══ WHAT THIS GATE DELIBERATELY DOES NOT COVER, and why saying so here ════
+# ═══ A REACHED PARTITION'S OWN BOOTSTRAP NEEDS, the `text` shape ═══════════
 #
-# A reached partition's OWN bootstrap needs are not on the link line. Measured
-# at this commit, an entry reaching `lib/token/grammarrole.id`:
+# Where the three arithmetic shapes above ask whether the reached partition is
+# COMPILED AND LINKED, `text` asks whether what that partition NEEDS is. Its
+# reached relation converts text (`"21":to(i64)`), which references
+# `duo_str_to_i64` from `idol_str_runtime.o`; its entry does arithmetic on the
+# result and needs no runtime of its own. `directLinkInputs` used to be handed
+# the ENTRY's `artifact.need` alone — the recursive realization kept each reached
+# artifact's BYTES and dropped its needs — so this shape failed at the linker:
 #
-#     _idol_<…>_token_grammarrole__roleprecedence   — DEFINED now (was the
-#                                                     GAP-134 undefined symbol)
-#     _duo_str_sub                                  — UNDEFINED, referenced
-#                                                     from the reached
-#                                                     partition's own object
+#     _idol_<…>_helper__value   DEFINED (the reach, which the shapes above pin)
+#     _duo_str_to_i64           UNDEFINED, referenced from the reached
+#                               partition's own object
 #
-# `directLinkInputs` is handed the ENTRY's `artifact.need` and nothing else, so
-# a reached partition that needs `idol_str_runtime.o` still fails at the
-# linker — a DIFFERENT hole, one layer past the one closed here, and it fails
-# loudly rather than silently. Every subject below is arithmetic precisely so
-# that this gate measures the reach and not that second gap, and this paragraph
-# exists so that a green run here is not read as covering it. When the needs of
-# reached partitions join the link line, the honest edit is a fourth shape
-# whose reached partition needs the string runtime.
+# That was GAP-232, and `main.reachedHomeClosure` now carries objects and needs
+# out as ONE value because they are one fact: what the link line must carry.
+#
+# ITS CALL BOUNDARY IS DELIBERATELY `duo`'s. One i64 argument, one i64 result,
+# so the ONLY thing that differs between `duo` and `text` is that the reached
+# partition needs a bootstrap unit. Had this shape also passed a `str` across the
+# boundary, a failure could have been argument lowering rather than the link
+# line, and the subject would not isolate the variable it exists for.
+#
+# AND THE UNION MUST BE SELECTIVE, which is why `duo`, `trio` and `fan` each
+# carry `!duo_str_to_i64`. A compiler that materialized all three bootstrap
+# units on every link line would satisfy `text` and prove nothing — the pin
+# would be true of a compiler that had never read a `need` at all. The absence
+# rows are what make the presence row mean something.
 #
 # ═══ SOURCE PATH ═══════════════════════════════════════════════════════════
 #
@@ -168,6 +179,18 @@ materialize() {
             printf 'twice: i64 = (x: i64)\n  x * %s\n' "$factor" >"$dir/helper.id" || return 1
             printf 'main: i64 = ()\n  helper.twice(10) + deeper.plus(4)\n' >"$dir/main.id" || return 1
             ;;
+        text)
+            # THE REACHED PARTITION NEEDS A BOOTSTRAP UNIT and the entry needs
+            # none. `"21":to(i64)` references `duo_str_to_i64`, which lives in
+            # `idol_str_runtime.o`; the entry only adds. 21 + 11 * 2 = 43.
+            #
+            # The boundary is `duo`'s exactly — one i64 in, one i64 out — so the
+            # only variable between the two shapes is the reached need. Passing
+            # a `str` across the boundary instead would have made an argument
+            # lowering defect indistinguishable from a link-line defect.
+            printf 'value: i64 = (x: i64)\n  "21":to(i64) + x * %s\n' "$factor" >"$dir/helper.id" || return 1
+            printf 'main: i64 = ()\n  helper.value(11)\n' >"$dir/main.id" || return 1
+            ;;
         solo)
             # No reach at all — the positive control's shape.
             printf 'main: i64 = ()\n  7\n' >"$dir/main.id" || return 1
@@ -178,12 +201,13 @@ materialize() {
     esac
     return 0
 }
-SHAPES='duo trio fan'
+SHAPES='duo trio fan text'
 
 # ── one subject, measured ──────────────────────────────────────────────────
 # Compiles `$1/main.id` with `--backend=direct`, runs it, and requires the exit
-# status to equal `$2`. When `$3` is non-empty it must also name a relation the
-# linked image DEFINES.
+# status to equal `$2`. `$3` is a comma-separated pin list read against the
+# linked image: a bare name must be DEFINED in it, and `!name` must be ABSENT
+# from it.
 #
 # Writes its own account to `$work/why` so the caller can print WHAT went wrong
 # rather than only that something did. Returns 0 only on a full pass.
@@ -218,13 +242,25 @@ run_subject() {
     if [ -n "$defines" ]; then
         # PATH-INDEPENDENT TAIL ONLY. The full symbol carries the work
         # directory, which changes every run.
-        if ! nm -g "$dir/prog" 2>/dev/null | awk '$2 == "T" { print $3 }' \
-            | grep -q -- "$defines\$"
-        then
-            printf 'answered %s but the reached relation %s is not DEFINED in the image' \
-                "$got" "$defines" >"$work/why"
-            return 1
-        fi
+        nm -g "$dir/prog" 2>/dev/null | awk '$2 == "T" { print $3 }' >"$work/defined"
+        for pin in $(printf '%s\n' "$defines" | tr ',' ' '); do
+            case $pin in
+                !*)
+                    if grep -q -- "${pin#!}\$" "$work/defined"; then
+                        printf 'answered %s but %s is DEFINED in the image; this link line was not selective, so a presence pin elsewhere would prove nothing' \
+                            "$got" "${pin#!}" >"$work/why"
+                        return 1
+                    fi
+                    ;;
+                *)
+                    if ! grep -q -- "$pin\$" "$work/defined"; then
+                        printf 'answered %s but %s is not DEFINED in the image' \
+                            "$got" "$pin" >"$work/why"
+                        return 1
+                    fi
+                    ;;
+            esac
+        done
     fi
     return 0
 }
@@ -261,6 +297,22 @@ rm -f "$work/ctl.gone/helper.id"
 if run_subject "$work/ctl.gone" 42 ''; then
     printf 'crosspartition control N2: FAIL — the entry produced a working 42 with its reached partition deleted.\n' >&2
     printf 'crosspartition:   the reach is being ignored, not realized.\n' >&2
+    exit 1
+fi
+
+# ══ CONTROL N3 — both pin directions actually fire ═════════════════════════
+# The `text` shape's whole claim rests on `nm` pins, and a pin reader that never
+# refuses would make every one of them decoration. Both directions are exercised
+# against the POSITIVE control's image, which answers 7 either way, so only the
+# pin can decide the outcome.
+if run_subject "$work/ctl.solo" 7 '_no__image__defines__this'; then
+    printf 'crosspartition control N3: FAIL — a presence pin naming a symbol no image defines was accepted.\n' >&2
+    printf 'crosspartition:   the defined-relation column is not being read; the text shape would prove nothing.\n' >&2
+    exit 1
+fi
+if run_subject "$work/ctl.solo" 7 '!_main__main'; then
+    printf 'crosspartition control N3: FAIL — an absence pin was accepted against an image that DEFINES the symbol.\n' >&2
+    printf 'crosspartition:   the selectivity pins on duo/trio/fan are not being read.\n' >&2
     exit 1
 fi
 
