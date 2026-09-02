@@ -43,8 +43,18 @@ NOT_P0 = "(not P0)"
 # P0 subject that had been picked up became invisible to the census while the
 # roster still dispatched at it — the projection was blamed for naming a gap the
 # census had silently dropped. Being worked on is the least retired a gap can be.
+# `OWNER-BLOCKED` is the same ruling one step further out: `00c0473d` marked
+# GAP-146 blocked on GAP-119 and the census dropped it the same afternoon,
+# blocking every lane's commit. Waiting on another owner is not retirement — it
+# is live P0 work with a named dependency, which is MORE dispatchable, not less.
+# The shape rather than the one word is admitted, so the next `*-BLOCKED`
+# spelling (`IMPLEMENTATION-BLOCKED` is already written in this tree) cannot
+# repeat the outage. Retirement is CLOSED, SUPERSEDED or REFUTED, and being
+# blocked is none of them.
 ACTIVE_STATUS = re.compile(
-    r"^\*\*Status:\*\*[ \t]*(OPEN|REOPENED|IN_PROGRESS)([ \t\u00b7(:\u2014-]|$)",
+    r"^\*\*Status:\*\*[ \t]*"
+    r"(OPEN|REOPENED|IN_PROGRESS|(?!(?:CLOSED|SUPERSEDED|REFUTED)-)[A-Z_][A-Z_-]*-BLOCKED)"
+    r"([ \t\u00b7(:\u2014]|$)",
     re.IGNORECASE,
 )
 ACTIVE_P0 = re.compile(r"^\*\*(Status|Priority):\*\*.*P0", re.IGNORECASE)
@@ -465,6 +475,14 @@ def census_controls():
         # the exact header shape carried by GAP-146 on disk
         "**Status:** IN_PROGRESS \u00b7 **Filed:** !2026-08-10T12:08:03Z\n"
         "**Priority:** P0 \u00b7 **Kind:** regression",
+        # BLOCKED IS NOT RETIRED. `00c0473d` marked GAP-146 OWNER-BLOCKED on
+        # GAP-119 and the census dropped it, so the roster dispatched at a gap
+        # the census refused and every lane's commit was blocked. The shape is
+        # admitted, not the one word.
+        "**Status:** OWNER-BLOCKED \u00b7 **Filed:** !2026-08-10T12:08:03Z\n"
+        "**Priority:** P0 \u00b7 **Kind:** regression",
+        "**Status:** IMPLEMENTATION-BLOCKED\n**Priority:** P0",
+        "**Status:** SEMANTIC-VOCABULARY-BLOCKED\n**Priority:** P0",
     )
     for index, header in enumerate(selected, 1):
         if not is_active_p0(header):
@@ -482,6 +500,10 @@ def census_controls():
         "**Status:** IN_PROGRESS\n**Priority:** P2",
         # a longer word that merely STARTS with an active one is not that word
         "**Status:** IN_PROGRESSING\n**Priority:** P0",
+        # a retired lifecycle is retired however it is qualified, and a blocked
+        # spelling is only live because BLOCKED is what it says
+        "**Status:** CLOSED-BLOCKED\n**Priority:** P0",
+        "**Status:** OWNER-PENDING\n**Priority:** P0",
         # a subject with no status header at all is not active
         "**Priority:** P0",
     )
