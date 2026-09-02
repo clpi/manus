@@ -458,6 +458,20 @@ if [ "$float_arms" -ne 0 ]; then
     bad "parse_simple_expr retained $float_arms .float_lit host arm(s)"
 fi
 
+# Nil expression-primary recognition shares the primary lane at value four.
+# Zig materializes absence without a residual `.kw_nil` primary switch arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindnil' \
+    'event lost the nil primary face'
+has "$PARSER" 'fn currentParserNil(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the nil primary consumer'
+has "$PARSER" 'if (try self.currentParserNil()) {' \
+    'parse_simple_expr bypasses the settled nil face'
+nil_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.kw_nil => ' || true)
+examined=$((examined + 1))
+if [ "$nil_arms" -ne 0 ]; then
+    bad "parse_simple_expr retained $nil_arms .kw_nil host arm(s)"
+fi
+
 # The expression-group primary consumes parser.id's existing exact matching
 # delimiter boundary. A nonzero boundary is produced only at `(` and carries
 # the coordinate after its matching close. Zig no longer owns a `.lparen`

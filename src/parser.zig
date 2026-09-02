@@ -456,6 +456,10 @@ pub const Parser = struct {
             !try self.currentParserQuoted();
     }
 
+    fn currentParserNil(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 4;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6099,6 +6103,10 @@ pub const Parser = struct {
             _ = try self.adv();
             return self.new_expr(.{ .float_lit = .{ .loc = tok.loc, .val = tok.float_val } });
         }
+        if (try self.currentParserNil()) {
+            _ = try self.adv();
+            return self.new_expr(.{ .nil = tok.loc });
+        }
         if (try self.currentParserExpressionGroup()) {
             if (try self.starts_parenthesized_func_expr()) {
                 const l = (try self.pk()).loc;
@@ -6163,10 +6171,6 @@ pub const Parser = struct {
                     .val = try self.alloc.dupe(u8, tok.text),
                     .quote = .compat_long,
                 } });
-            },
-            .kw_nil => blk: {
-                _ = try self.adv();
-                break :blk self.new_expr(.{ .nil = tok.loc });
             },
             .kw_true => blk: {
                 _ = try self.adv();

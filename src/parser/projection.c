@@ -102,6 +102,47 @@ static inline char* duo_str_trim_cstr(const char* s) {
     if (!res) return (char*)s;
     memcpy(res, b, len); res[len] = '\0'; return res;
 }
+typedef struct { char* buf; const char** items; int64_t len; } duo_str_split_list;
+static inline duo_str_split_list duo_str_split_cstr(const char* src, const char* sep) {
+    duo_str_split_list out; out.buf = NULL; out.items = NULL; out.len = 0;
+    if (!src) src = "";
+    if (!sep) sep = "";
+    size_t src_len = strlen(src);
+    size_t sep_len = strlen(sep);
+    out.buf = (char*)malloc(src_len + 1);
+    if (!out.buf) return out;
+    memcpy(out.buf, src, src_len + 1);
+    if (sep_len == 0) {
+        out.items = (const char**)malloc(sizeof(char*));
+        if (!out.items) return out;
+        out.items[0] = out.buf; out.len = 1; return out;
+    }
+    int64_t count = 1;
+    char* scan = out.buf;
+    while (1) {
+        char* hit = strstr(scan, sep);
+        if (!hit) break;
+        count += 1;
+        scan = hit + sep_len;
+    }
+    out.items = (const char**)malloc((size_t)count * sizeof(char*));
+    if (!out.items) return out;
+    out.len = count;
+    int64_t i = 0;
+    char* part = out.buf;
+    while (1) {
+        out.items[i++] = part;
+        char* hit = strstr(part, sep);
+        if (!hit) break;
+        memset(hit, 0, sep_len);
+        part = hit + sep_len;
+    }
+    return out;
+}
+static inline const char* duo_str_split_get(duo_str_split_list list, int64_t i) {
+    if (i < 1 || i > list.len || !list.items) return "";
+    return list.items[(size_t)(i - 1)];
+}
 static inline __attribute__((noreturn)) void duo_fatal(const char* msg) {
     fprintf(stderr, "%s\n", msg);
     abort();
@@ -152,6 +193,17 @@ static inline char* duo_io_read_path(const char* path) {
     buf[got] = '\0';
     return buf;
 }
+static inline char* duo_fstream_readline(FILE* f) {
+    char* buf = (char*)malloc(8192);
+    if (!buf) duo_fatal("read: out of memory");
+    if (!fgets(buf, 8192, f)) { free(buf); return NULL; }
+    return buf;
+}
+#if !defined(__wasm__) && !defined(_WIN32)
+extern FILE* popen(const char*, const char*);
+extern int pclose(FILE*);
+#endif
+static inline FILE* _DUO_popen(const char* cmd, const char* mode) { return popen(cmd, mode); }
 /* --- Duo loop-versioning bound helpers --- */
 #ifndef DUO_LVB_DEFINED
 #define DUO_LVB_DEFINED
@@ -3166,6 +3218,8 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                         delimiter = 2;
         } else if ((kind == INT64_C(2))) {
                         delimiter = 3;
+        } else if ((kind == INT64_C(20))) {
+                        delimiter = 4;
         } else if ((kind == INT64_C(58))) {
             int64_t depth = 1;
             int64_t probe = (index + 1);
