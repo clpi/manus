@@ -132,6 +132,8 @@ pub fn writeImmediateDispatchJson(w: *std.Io.Writer) !void {
 pub fn writeCatalogJson(w: *std.Io.Writer) !void {
     try w.print("{{\"schema\":\"{s}\",\"provenance\":\"", .{SCHEMA_VERSION});
     try jsonEscape(w, PROVENANCE);
+    try w.print("\",\"foreign_law\":\"", .{});
+    try jsonEscape(w, wasm_semantic.FOREIGN_LAW);
     try w.print("\",\"validator_table\":", .{});
     try writeValidatorTableJson(w);
     try w.print(",\"immediate_dispatch\":", .{});
@@ -147,7 +149,9 @@ pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
         \\# Canonical opcode facts: src/wasm_semantic.zig
         \\
         \\GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
-        \\INSTRUCTION_COUNT = 
+        \\CANONICAL_OWNER = "src/wasm_semantic.zig"
+        \\FOREIGN_LAW = "wasm-core-1.0"
+        \\INSTRUCTION_COUNT =
     );
     try w.print("{d}\n\n", .{wasm_semantic.mvpCount()});
     try w.writeAll("INSTRUCTION_IDS = {\n");
@@ -184,6 +188,9 @@ pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
         \\
         \\generator_owner: str = ()
         \\  GENERATOR_OWNER
+        \\
+        \\foreign_law: str = ()
+        \\  FOREIGN_LAW
         \\
         \\instruction_count: i64 = ()
         \\  INSTRUCTION_COUNT
@@ -251,6 +258,7 @@ pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
         \\
         \\GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
         \\CANONICAL_OWNER = "src/wasm_semantic.zig"
+        \\FOREIGN_LAW = "wasm-core-1.0"
         \\
     );
     for (wasm_semantic.mvp_instructions) |inst| {
@@ -275,7 +283,14 @@ pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
     // ARE the module. No `M = {}` wrapper and no trailing bare `M` — both are
     // graveyard idiom. With no tail expression duo already exports an implicit
     // table of every module-level binding, which is exactly the right shape.
-    try w.writeAll("\ncanonical_owner: str = ()\n  CANONICAL_OWNER\n");
+    try w.writeAll(
+        \\canonical_owner: str = ()
+        \\  CANONICAL_OWNER
+        \\
+        \\foreign_law: str = ()
+        \\  FOREIGN_LAW
+        \\
+    );
 }
 
 pub fn emitWardMvpOpcodesFile(alloc: std.mem.Allocator, io: std.Io, path: []const u8) !void {
@@ -312,6 +327,36 @@ test "wasm_semantic_gen: emit duo lookup includes i32.add" {
     try emitDuoOpcodeLookup(&aw.writer);
     const out = aw.written();
     try std.testing.expect(std.mem.indexOf(u8, out, "wasm.i32.add") != null);
+}
+
+test "wasm_semantic_gen: duo lookup carries foreign_law identity" {
+    // tools/wasm SOURCE-ZERO closure: the generated `.id` projection must
+    // carry the foreign-law identity so tools/wasm can ask the canonical
+    // semantic graph producer (via this file) whether a fact is foreign or
+    // native, instead of inferring it from the instruction id.
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try emitDuoOpcodeLookup(&aw.writer);
+    const out = aw.written();
+    try std.testing.expect(std.mem.indexOf(u8, out, "FOREIGN_LAW = \"wasm-core-1.0\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "foreign_law: str = ()") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "  FOREIGN_LAW") != null);
+}
+
+test "wasm_semantic_gen: ward projection carries foreign_law identity" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try emitWardMvpOpcodes(&aw.writer);
+    const out = aw.written();
+    try std.testing.expect(std.mem.indexOf(u8, out, "FOREIGN_LAW = \"wasm-core-1.0\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "foreign_law: str = ()") != null);
+}
+
+test "wasm_semantic_gen: catalog JSON carries foreign_law identity" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try writeCatalogJson(&aw.writer);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "\"foreign_law\":\"wasm-core-1.0\"") != null);
 }
 
 test "wasm_semantic_gen: i32.add stack pop 2 push 1" {
