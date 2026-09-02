@@ -624,7 +624,9 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # bit 9 member; bit 10 boundary; bits 11..12 branch face (1 elseif, 2 else);
 # bit 13 return; bit 14 end; bit 15 layout terminator; bit 16 empty terminator.
 # Lane two carries clause bits 0..1, return bits 2..3, callable-header bits 4..5,
-# and the contextual `type` alias head in bit 6. A qualifying callable header
+# and the contextual `type` alias head in bit 6. Bit 3 also carries the array
+# type-primary face at its mutually exclusive `[` identity. A qualifying
+# callable header
 # propagates the bare declaration head to bit 7 on its starting name coordinate.
 # Bit 8 carries assignment-body recognition, bits 9..12 carry the attributed
 # declaration face, and bits 13..63 carry the exclusive matching-parenthesis
@@ -760,6 +762,9 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
         out[index] = dispatch | (admission << 5) | (member << 9) | (boundaryface << 10) | (branchface << 11) | (returns << 13) | (ending << 14) | (terminator << 15) | (empty << 16) | (primitive << 17) | (literal << 18) | (quoted << 19) | (prefixface << 20) | (demandface << 21) | (leadface << 22) | (infix << 23) | (unaryface << 47) | (glueface << 52) | (updateface << 57) | (primary << 61) | (layouttype << 62)
         clauseface = _clause(fact, count, index)
         returnface = return_starts_value_lx(fact, count, index, before, idol)
+        arrayface = 0
+        if kind == token.kindlbracket
+            arrayface = 1
         head = 0
         if kind == token.kindname and fact[index * 2 + 2] == 435678704644
             following = token.kindeof
@@ -841,7 +846,7 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
                 headerplain = 1
             if header_signal_lx(fact, count, index, true, offside, prior)
                 headercomma = 1
-        out[count + index] = clauseface | (returnface << 2) | (headerplain << 4) | (headercomma << 5) | (head << 6) | (assignment << 8) | (declaration << 9) | (delimiter << 13)
+        out[count + index] = clauseface | (returnface << 2) | (arrayface << 3) | (headerplain << 4) | (headercomma << 5) | (head << 6) | (assignment << 8) | (declaration << 9) | (delimiter << 13)
         if headerplain == 1 and index > 0
             start = index - 1
             if (fact[start * 2 + 1] & 255) == token.kindname

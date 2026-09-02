@@ -425,6 +425,10 @@ pub const Parser = struct {
             ((event >> 18) & 1) == 0;
     }
 
+    fn currentParserTypeArray(self: *Parser) ParseError!bool {
+        return (((try self.currentParserDecision()) >> 3) & 1) != 0;
+    }
+
     fn currentParserTypeNumber(self: *Parser) ParseError!bool {
         const event = try self.currentParserEvent();
         return ((event >> 61) & 1) != 0 and ((event >> 18) & 1) != 0;
@@ -1607,6 +1611,28 @@ pub const Parser = struct {
             }
             return .{ .tuple = try params.toOwnedSlice(self.alloc) };
         }
+        if (try self.currentParserTypeArray()) {
+            _ = try self.adv();
+            var size: ?usize = null;
+            if (try self.check(.int_lit)) {
+                const n = try self.adv();
+                size = @intCast(n.int_val);
+                _ = try self.expect(.rbracket);
+                const elem = try self.alloc.create(ast.TypeExpr);
+                elem.* = try self.parse_type();
+                return .{ .array = .{ .elem = elem, .size = size } };
+            } else if (!(try self.check(.rbracket))) {
+                const elem = try self.alloc.create(ast.TypeExpr);
+                elem.* = try self.parse_type();
+                _ = try self.expect(.rbracket);
+                return .{ .array = .{ .elem = elem, .size = null } };
+            } else {
+                _ = try self.expect(.rbracket);
+            }
+            const elem = try self.alloc.create(ast.TypeExpr);
+            elem.* = try self.parse_type();
+            return .{ .array = .{ .elem = elem, .size = size } };
+        }
         if (try self.currentParserTypeName()) {
             // WIDTH AS AN OPERAND, not as a suffix on the name. `i64` bakes
             // a numeric taxonomy into an identity, which LAW-16 forbids for
@@ -1640,28 +1666,6 @@ pub const Parser = struct {
             return .{ .named = t.text };
         }
         return switch (tok.kind) {
-            .lbracket => {
-                _ = try self.adv();
-                var size: ?usize = null;
-                if (try self.check(.int_lit)) {
-                    const n = try self.adv();
-                    size = @intCast(n.int_val);
-                    _ = try self.expect(.rbracket);
-                    const elem = try self.alloc.create(ast.TypeExpr);
-                    elem.* = try self.parse_type();
-                    return .{ .array = .{ .elem = elem, .size = size } };
-                } else if (!(try self.check(.rbracket))) {
-                    const elem = try self.alloc.create(ast.TypeExpr);
-                    elem.* = try self.parse_type();
-                    _ = try self.expect(.rbracket);
-                    return .{ .array = .{ .elem = elem, .size = null } };
-                } else {
-                    _ = try self.expect(.rbracket);
-                }
-                const elem = try self.alloc.create(ast.TypeExpr);
-                elem.* = try self.parse_type();
-                return .{ .array = .{ .elem = elem, .size = size } };
-            },
             .lt => {
                 _ = try self.adv();
                 // Parse type parameters for generics: <T, U>

@@ -385,6 +385,21 @@ if [ "$type_old" -ne 4 ] || [ "$type_new" -ne 4 ] || [ "$type_clean" -ne 0 ]; th
     bad "the contextual-type detector is broken: old=$type_old new=$type_new clean=$type_clean"
 fi
 
+# The array type-primary decision shares lane-two bit 3 with the mutually
+# exclusive return face. Zig consumes that settled face before the residual
+# generic/record switch and no longer switches on `.lbracket` there.
+has "$ROOT/lib/compiler/parser.id" '(arrayface << 3)' \
+    'event lost the array type-primary face'
+has "$PARSER" 'fn currentParserTypeArray(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the array type-primary consumer'
+has "$PARSER" 'if (try self.currentParserTypeArray()) {' \
+    'parse_type_primary bypasses the settled array face'
+array_arms=$(grep -cF '.lbracket => {' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$array_arms" -ne 1 ]; then
+    bad "the residual non-type parser must contain exactly one .lbracket arm (found=$array_arms)"
+fi
+
 # ── 2e''. bare declaration path executes from whole-pack lane two ────────────
 #
 # Header bit 4 is settled at `(`. Event walks backward over the exact admitted
