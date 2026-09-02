@@ -402,6 +402,13 @@ pub const Parser = struct {
         return (((try self.currentParserDecision()) >> 9) & 0xF) == 12;
     }
 
+    fn currentParserTypePointer(self: *Parser) ParseError!bool {
+        const event = try self.currentParserEvent();
+        return ((event >> 61) & 1) != 0 and
+            ((event >> 62) & 1) != 0 and
+            ((event >> 9) & 1) == 0;
+    }
+
     fn currentParserTypeNumber(self: *Parser) ParseError!bool {
         const event = try self.currentParserEvent();
         return ((event >> 61) & 1) != 0 and ((event >> 18) & 1) != 0;
@@ -1552,6 +1559,12 @@ pub const Parser = struct {
             const cname = strip_quotes(attr.args orelse "");
             return .{ .named = try std.mem.concat(self.alloc, u8, &.{ types.c_type_marker_prefix, cname }) };
         }
+        if (try self.currentParserTypePointer()) {
+            _ = try self.adv();
+            const inner = try self.alloc.create(ast.TypeExpr);
+            inner.* = try self.parse_type();
+            return .{ .pointer = inner };
+        }
         if (try self.currentParserTypeName()) {
             // WIDTH AS AN OPERAND, not as a suffix on the name. `i64` bakes
             // a numeric taxonomy into an identity, which LAW-16 forbids for
@@ -1585,12 +1598,6 @@ pub const Parser = struct {
             return .{ .named = t.text };
         }
         return switch (tok.kind) {
-            .star => {
-                _ = try self.adv();
-                const inner = try self.alloc.create(ast.TypeExpr);
-                inner.* = try self.parse_type();
-                return .{ .pointer = inner };
-            },
             .question => {
                 // Optional type: ?T
                 _ = try self.adv();
