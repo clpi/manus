@@ -427,6 +427,48 @@ pub fn abiDescriptorNamed(name: []const u8) ?ResolvedType {
     return descriptor;
 }
 
+/// The C printf/scanf conversion specifier that renders a scalar of this
+/// PHYSICAL representation — `"%d"`, `"%u"`, `"%lld"`, `"%llu"`, `"%.17g"`, or
+/// `"%s"` — or null when the identity is not a scalar the emitter formats with
+/// a bare specifier.
+///
+/// DERIVED, NOT TABULATED. This is the RENDERING FACE of `scalarRepr`, and the
+/// roster it replaced stood TWICE, verbatim, in `codegen` — the `print` arm and
+/// the interpolation arm each kept the same six-arm switch from tag to
+/// specifier, two statements of one fact that could only ever agree by hand.
+/// The specifier is not a new fact: an integral scalar prints signed or
+/// unsigned by `numericFacts.signed`, a real scalar prints `%.17g` by
+/// `numericFacts.domain`, and the one distinction the switch added beyond the
+/// numeric owner is the REGISTER WIDTH the C variadic ABI needs — a 64-bit
+/// integer is passed as `long long` and takes `%lld`/`%llu` where a narrower
+/// one takes `%d`/`%u` — which is `numericFacts.width == 64`, a fact the owner
+/// already carries.
+///
+/// A roster could not compose: a scalar identity added to the union gained
+/// numeric facts but stayed unknown to the hand-lists, which took the `else`
+/// arm and emitted `"%s"` on a numeric value — the exact defect the
+/// interpolation site's own comment records against `feet`, where `"%s"` on a
+/// `double` segfaulted. Every non-scalar identity is declined by the
+/// `numericFacts`/`scalarRepr` fact rather than by absence: the vectors span
+/// several cells (`lanes != 1`), `any` is boxed, and `void`/`nil`/`never` are
+/// not values a specifier renders. The caller keeps its own `"%s"` default for
+/// the null answer, so a boxed or composed value still routes to the string
+/// path exactly as before.
+///
+/// `bool` and `str` answer `"%s"` explicitly for the reason `scalarRepr` names
+/// them explicitly: they are the two scalars that carry no arithmetic, so no
+/// numeric owner can answer for them.
+pub fn cFormatSpec(repr: ResolvedType) ?[]const u8 {
+    if (repr.numericFacts()) |facts| {
+        if (facts.lanes != 1) return null;
+        if (facts.domain == .real) return "%.17g";
+        if (facts.width == 64) return if (facts.signed) "%lld" else "%llu";
+        return if (facts.signed) "%d" else "%u";
+    }
+    if (repr == .bool or repr == .str) return "%s";
+    return null;
+}
+
 /// The scalar descriptor a C TYPE SPELLING projects — the inverse of `c_type`.
 /// A foreign ingress site that meets `int32_t`, `const char*` or `double` and
 /// has to learn which `ResolvedType` identity it realizes asks this.
@@ -2961,6 +3003,71 @@ test "types: the C-spelling face of the scalar roster is derived from the same f
     try declareNominal(std.heap.page_allocator, "cubit", .i32);
     try testing.expect(nominalNamed("cubit") != null);
     try testing.expect(descriptorByCSpelling("cubit") == null);
+}
+
+// The retired printf-specifier roster, verbatim, as the oracle. It stood TWICE
+// in `codegen` — once in the `print` arm and once in the string-interpolation
+// arm — each mapping a scalar's PHYSICAL representation to the C conversion
+// specifier that renders it. The two copies agreed on every scalar and both
+// answered `"%s"` for everything else (the interpolation copy spelled `bool`
+// and `str` out; the print copy folded them into its `else`), so this single
+// oracle stands for both.
+fn retiredFormatSpec(repr: ResolvedType) []const u8 {
+    return switch (repr) {
+        .i8, .i16, .i32 => "%d",
+        .i64 => "%lld",
+        .u8, .u16, .u32 => "%u",
+        .u64 => "%llu",
+        .f32, .f64 => "%.17g",
+        else => "%s",
+    };
+}
+
+test "types: the rendering face of the scalar roster is derived from the same facts" {
+    // PINNED EQUAL TO THE RETIRED ROSTER on every identity it mapped AND every
+    // identity it folded into `else`, so no emitter site can gain or lose a
+    // specifier from this. The caller keeps `"%s"` as its default for the null
+    // answer, so `cFormatSpec(x) orelse "%s"` is `retiredFormatSpec(x)` for
+    // every `x`: this is the exact substitution the two `codegen` sites made.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type != void) continue;
+        const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+        const derived = cFormatSpec(identity) orelse "%s";
+        try testing.expect(std.mem.eql(u8, derived, retiredFormatSpec(identity)));
+    }
+
+    // The specifier is the numeric owner's facts, not a fourth statement of
+    // width and signedness: an integral scalar reads `signed`, a real scalar
+    // reads `domain`, and the register-width `%lld`/`%llu` split reads
+    // `width == 64`. Every scalar that carries facts answers a non-null
+    // specifier; the two arithmetic-free scalars answer `"%s"`.
+    try testing.expect(std.mem.eql(u8, cFormatSpec(.i16).?, "%d"));
+    try testing.expect(std.mem.eql(u8, cFormatSpec(.u16).?, "%u"));
+    try testing.expect(std.mem.eql(u8, cFormatSpec(.i64).?, "%lld"));
+    try testing.expect(std.mem.eql(u8, cFormatSpec(.u64).?, "%llu"));
+    try testing.expect(std.mem.eql(u8, cFormatSpec(.f32).?, "%.17g"));
+    try testing.expect(std.mem.eql(u8, cFormatSpec(.bool).?, "%s"));
+    try testing.expect(std.mem.eql(u8, cFormatSpec(.str).?, "%s"));
+
+    // DECLINED BY A FACT, NOT BY ABSENCE. The vectors are numeric fact owners
+    // that are not one cell (`lanes != 1`), and the boxed/void/composed
+    // identities carry no facts and are not `bool`/`str`. Each answers null and
+    // the caller's `"%s"` default renders it exactly as the retired `else` did.
+    try testing.expect(cFormatSpec(.v4i64) == null);
+    try testing.expect(cFormatSpec(.v8f32) == null);
+    try testing.expect(cFormatSpec(.any) == null);
+    try testing.expect(cFormatSpec(.void) == null);
+
+    // A NOMINAL DESCRIPTOR RENDERS AS THE THING IT IS. Its facts delegate to
+    // its representation on purpose (`law.nominal` §46), so a nominal-over-`i32`
+    // takes `"%d"` — the exact repair the interpolation site's own comment
+    // records against `feet`, where the retired `else` emitted `"%s"` on a
+    // `double` and segfaulted. The `codegen` sites pass `nominalReprOf(t) orelse
+    // t`, so the physical repr reaches this face; a bare nominal identity here
+    // still answers through the same delegation.
+    try declareNominal(std.heap.page_allocator, "tick", .i32);
+    try testing.expect(std.mem.eql(u8, cFormatSpec(nominalNamed("tick").?).?, "%d"));
 }
 
 test "CallShape: method call shape" {

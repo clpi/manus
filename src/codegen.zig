@@ -1472,14 +1472,7 @@ pub const CodeGen = struct {
             }
         }
         const phys = types.nominalReprOf(t) orelse t;
-        const spec: []const u8 = switch (phys) {
-            .i8, .i16, .i32 => "%d",
-            .i64 => "%lld",
-            .u8, .u16, .u32 => "%u",
-            .u64 => "%llu",
-            .f32, .f64 => "%.17g",
-            else => "%s",
-        };
+        const spec: []const u8 = types.cFormatSpec(phys) orelse "%s";
         self.p("fprintf({s}, \"{s}\", ", .{ stream, spec });
         if (std.mem.eql(u8, spec, "%s") and self.expr_emits_lua_value(arg)) {
             self.p("lua_to_str(", .{});
@@ -16046,16 +16039,7 @@ pub const CodeGen = struct {
                 // site as silent no-output before the descriptor reached the
                 // emitter at all.
                 const phys = types.nominalReprOf(t) orelse t;
-                break :blk switch (phys) {
-                    .i8, .i16, .i32 => "%d",
-                    .i64 => "%lld",
-                    .u8, .u16, .u32 => "%u",
-                    .u64 => "%llu",
-                    .f32, .f64 => "%.17g",
-                    .bool => "%s",
-                    .str => "%s",
-                    else => "%s",
-                };
+                break :blk types.cFormatSpec(phys) orelse "%s";
             };
             try fmt_buf.appendSlice(self.alloc, spec);
         }
