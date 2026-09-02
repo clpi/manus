@@ -28,10 +28,14 @@
 //!
 //! DELETION WITNESS (`law.bridge.death`): host owner before — this module;
 //! Idol owner after — realization selection as a witnessed graph transform
-//! over world facts; next host boundary — the BACKEND lowering consumer that
-//! calls `selectPlace` per census place during realization (`selectPlace`
-//! below is the graph-facing half: authority facts reach `select` through the
-//! census the graph carries, not through a host projection).
+//! over world facts; the BACKEND lowering consumer LANDED — `selectModule`
+//! below is called per census place during realization by the graph-backed
+//! C99 realization arm in `main.zig` (`selectPlace` remains the graph-facing
+//! selection over one census row: authority facts reach `select` through the
+//! census the graph carries, not through a host projection). Next host
+//! boundary — the per-place PLANS constraining lowering (the static rung
+//! eliding the enforcement `dnir_lower` emits) and measured per-mechanism
+//! costs replacing `costOf`'s stated orders.
 
 const std = @import("std");
 const observation = @import("observation.zig");
@@ -259,6 +263,63 @@ pub fn selectPlace(
     else
         null;
     return select(world.Authority.of(p.facts), attack, target, profile);
+}
+
+/// THE backend realization walk's answer over one module census: every census
+/// place selected, counted by rung — or the first place with no admissible
+/// enforcement, named, so realization fails closed on the place rather than
+/// weakening its demand.
+pub const CensusSelection = union(enum) {
+    /// Every census place selected, counted by rung.
+    realized: Realized,
+    /// The first census place with no admissible enforcement.
+    refused: PlaceRefusal,
+
+    pub const Realized = struct {
+        /// Census places the walk selected over — the census size, exactly,
+        /// so the walk's completeness is a measured fact rather than a loop
+        /// invariant asserted but never observed.
+        places: usize,
+        /// Places whose authority is statically witnessed: the zero-cost rung.
+        static_plans: usize,
+        /// Places committed to a dynamic mechanism.
+        dynamic_plans: usize,
+    };
+
+    pub const PlaceRefusal = struct {
+        /// The census place's own name — the subject identity, borrowed from
+        /// the census and sharing its lifetime.
+        place: []const u8,
+        refusal: Refusal,
+    };
+};
+
+/// THE backend consumer (GAP-185): ONE call per realization walks the census
+/// the graph carries and selects per place — `selectPlace` applied to every
+/// census row, never a second census and never a host projection
+/// (`law.fact.producer.one`). The graph-backed C99 realization arm in
+/// `main.zig` calls this between the graph lift and graph-to-DNIR lowering;
+/// other backends consume the same walk when their boundary comes.
+pub fn selectModule(
+    census: *const place.Census,
+    attack: observation.World,
+    target: world.TargetWorld,
+    crossings: u64,
+) CensusSelection {
+    var realized: CensusSelection.Realized = .{ .places = 0, .static_plans = 0, .dynamic_plans = 0 };
+    for (census.places.items) |*p| {
+        switch (selectPlace(p, attack, target, crossings)) {
+            .plan => |plan| {
+                realized.places += 1;
+                switch (plan) {
+                    .static => realized.static_plans += 1,
+                    .dynamic => realized.dynamic_plans += 1,
+                }
+            },
+            .refused => |r| return .{ .refused = .{ .place = p.name, .refusal = r } },
+        }
+    }
+    return .{ .realized = realized };
 }
 
 /// The selection record as structured evidence — names, never ordinals
@@ -633,4 +694,121 @@ test "lower: a census place with no admissible enforcement refuses closed" {
     const wasi = world.TargetWorld.of(.{ .arch = .wasm32, .os = .wasi, .abi = .none });
     const selection = selectPlace(p, hostile, wasi, 1);
     try std.testing.expectEqual(Refusal.no_admissible_mechanism, selection.refused);
+}
+
+// ===========================================================================
+// THE backend consumer, measured — the realization walk over census rows
+// with KNOWN facts. These rows are built directly, not through `censusOf`:
+// the walk's subject is `selectModule` — completeness, rung counts,
+// fail-closed naming — and the GAP-145 table-primary parser regression
+// blocks producing a census from source at HEAD. Census PRODUCTION is the
+// graph-wiring tests' subject above; selection consumes only `facts` and the
+// recorded access counts, so a direct row is the walk's honest input.
+// ===========================================================================
+
+/// One census row with known facts. `binding` is never read on the selection
+/// path — `selectPlace` consumes `facts` and access counts — so it stays
+/// unwritten rather than pointing at a fabricated statement.
+fn row(id: u32, name: []const u8, facts: place.Facts) place.Place {
+    return .{
+        .id = id,
+        .name = name,
+        .binding = undefined,
+        .shape = .scalar,
+        .region = .module,
+        .bind_origin = .declaration,
+        .init = null,
+        .facts = facts,
+    };
+}
+
+/// The facts a census records for a word nothing names, writes or aliases:
+/// every demanded property statically witnessed — the zero-cost rung.
+fn fixedFacts() place.Facts {
+    return .{
+        .alias = .no,
+        .escape = .no,
+        .mutation = .no,
+        .immutability = .yes,
+        .determinacy = .exact,
+    };
+}
+
+/// The facts a census records for a word another region names: the escape is
+/// observed, so the static rung is unavailable.
+fn escapedFacts() place.Facts {
+    return .{
+        .alias = .no,
+        .escape = .yes,
+        .mutation = .no,
+        .immutability = .yes,
+        .determinacy = .exact,
+    };
+}
+
+test "lower: the backend realization walk selects every census place" {
+    // GAP-185's backend consumer, measured: the walk selects ONE plan per
+    // census row — the count is the census size exactly — and the rung split
+    // is the per-place `selectPlace` answer under the world the graph-backed
+    // C realization arm selects in: portable C99 source admits the software
+    // check and nothing else.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var census = place.Census.init(alloc);
+    defer census.deinit();
+    try census.places.append(alloc, row(0, "hidden", fixedFacts()));
+    try census.places.append(alloc, row(1, "seen", escapedFacts()));
+    const portable = world.TargetWorld.of(.{ .arch = .unknown, .os = .unknown, .abi = .unknown });
+    const selection = selectModule(&census, observation.ordinary_executable, portable, 0);
+    const realized = selection.realized;
+    try std.testing.expectEqual(census.count(), realized.places);
+    try std.testing.expectEqual(realized.places, realized.static_plans + realized.dynamic_plans);
+    try std.testing.expectEqual(@as(usize, 1), realized.static_plans);
+    try std.testing.expectEqual(@as(usize, 1), realized.dynamic_plans);
+
+    // The anchors, row by row: the authority nothing names is statically
+    // witnessed (the zero-cost rung); the escaped authority, with only the
+    // software check admitted, is that check.
+    const hidden = census.find("hidden").?;
+    try std.testing.expect(std.meta.activeTag(selectPlace(hidden, observation.ordinary_executable, portable, 0).plan) == .static);
+    const seen = census.find("seen").?;
+    try std.testing.expectEqual(Mechanism.software_check, selectPlace(seen, observation.ordinary_executable, portable, 0).plan.dynamic.mechanism);
+
+    // The aggregate IS the per-place walk: recounting by hand agrees.
+    var static_count: usize = 0;
+    var dynamic_count: usize = 0;
+    for (census.places.items) |*p| {
+        switch (selectPlace(p, observation.ordinary_executable, portable, 0)) {
+            .plan => |plan| switch (plan) {
+                .static => static_count += 1,
+                .dynamic => dynamic_count += 1,
+            },
+            .refused => return error.TestUnexpectedResult,
+        }
+    }
+    try std.testing.expectEqual(static_count, realized.static_plans);
+    try std.testing.expectEqual(dynamic_count, realized.dynamic_plans);
+}
+
+test "lower: the backend realization walk fails closed on the refusing place" {
+    // WASI admits the software check and the Wasm sandbox; the adversary's
+    // confidentiality and timing demands fit neither, so BOTH rows have no
+    // admissible enforcement — and the walk names the FIRST refusing row, a
+    // real census place `selectPlace` itself refuses on, rather than
+    // weakening the demand.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var census = place.Census.init(alloc);
+    defer census.deinit();
+    try census.places.append(alloc, row(0, "hidden", fixedFacts()));
+    try census.places.append(alloc, row(1, "seen", escapedFacts()));
+    const hostile = observation.ordinary_executable.with(.security_adversary);
+    const wasi = world.TargetWorld.of(.{ .arch = .wasm32, .os = .wasi, .abi = .none });
+    const selection = selectModule(&census, hostile, wasi, 0);
+    try std.testing.expectEqual(Refusal.no_admissible_mechanism, selection.refused.refusal);
+    try std.testing.expectEqualStrings("hidden", selection.refused.place);
+    const p = census.find(selection.refused.place).?;
+    try std.testing.expectEqual(Refusal.no_admissible_mechanism, selectPlace(p, hostile, wasi, 0).refused);
 }

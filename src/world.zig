@@ -16,11 +16,14 @@
 //!
 //! DELETION WITNESS (`law.bridge.death`): host owner before — this module and
 //! `lower.zig`; Idol owner after — graph-carried world/authority facts with
-//! realization selection as a witnessed transform; next host boundary — the
-//! BACKEND lowering consumer: `lower.selectPlace` is already the graph-facing
-//! consumer (authority facts reach selection through the census the graph
-//! carries), and what remains is the backend that calls it per census place
-//! during realization.
+//! realization selection as a witnessed transform; the BACKEND lowering
+//! consumer LANDED — the graph-backed C99 realization arm in `main.zig` calls
+//! `lower.selectModule` per census place during realization (`lower.selectPlace`
+//! is the graph-facing selection over one census row: authority facts reach
+//! selection through the census the graph carries). Next host boundary — the
+//! per-place PLANS constraining lowering (the static rung eliding the
+//! enforcement `dnir_lower` emits) and measured per-mechanism costs replacing
+//! `lower.costOf`'s stated orders.
 //!
 //! `foreign_boundary` IS modeled, as an admissibility ruling over the
 //! observation world (`observation.WorldFact.foreign_boundary`): foreign code

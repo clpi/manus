@@ -27,8 +27,10 @@ const wasm_backend = @import("wasm_backend.zig");
 const demand = @import("demand.zig");
 const obseq = @import("obseq.zig");
 const loop_closure = @import("loop_closure.zig");
+const lower = @import("lower.zig");
 const observation = @import("observation.zig");
 const observer_demand = @import("observer_demand.zig");
+const world = @import("world.zig");
 
 /// §7 makes "how much of a compile goes through C" a NUMBER this
 /// repository owes, so the code that routes each `req`'d module says which way
@@ -6196,6 +6198,32 @@ fn do_compile(
         var graph = semantic_graph.SemanticGraph.init(alloc);
         defer graph.deinit();
         const root = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
+
+        // GAP-185's BACKEND CONSUMER: enforcement selection runs here, during
+        // realization, over the census the graph carries — one `selectPlace`
+        // per census place through `lower.selectModule`, never a second census
+        // and never a host projection (`law.fact.producer.one`). Portable C99
+        // source admits the software check and nothing else, which is exactly
+        // the mechanism this arm realizes (the test+trap `dnir_lower` already
+        // lowers); a place with no admissible enforcement fails the realization
+        // closed, named, rather than having its demand silently weakened.
+        // `crossings` is 0 because this arm realizes one authority domain and
+        // the census carries no composition facts — and under a world admitting
+        // exactly one dynamic mechanism the number cannot change any selection.
+        try graph.liftPlaces(&ps.mod);
+        const census = if (graph.places) |*c| c else {
+            term.err("C99 realizer: the graph carries no place census", .{});
+            std.process.exit(1);
+        };
+        const portable_world = world.TargetWorld.of(.{ .arch = .unknown, .os = .unknown, .abi = .unknown });
+        switch (lower.selectModule(census, observation.ordinary_executable, portable_world, 0)) {
+            .realized => {},
+            .refused => |r| {
+                term.err("C99 realizer: no admissible enforcement for place '{s}' ({s})", .{ r.place, r.refusal.name() });
+                std.process.exit(1);
+            },
+        }
+
         var lowering: dnir_lower.Diagnostic = .{};
         const lowered = dnir_lower.lowerModuleWithGraphObserved(alloc, &ps.mod, &graph, &lowering) catch |err| {
             term.err("C99 realizer: graph-to-DNIR refused ({s})", .{@errorName(err)});
