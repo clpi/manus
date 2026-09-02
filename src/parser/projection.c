@@ -102,6 +102,47 @@ static inline char* duo_str_trim_cstr(const char* s) {
     if (!res) return (char*)s;
     memcpy(res, b, len); res[len] = '\0'; return res;
 }
+typedef struct { char* buf; const char** items; int64_t len; } duo_str_split_list;
+static inline duo_str_split_list duo_str_split_cstr(const char* src, const char* sep) {
+    duo_str_split_list out; out.buf = NULL; out.items = NULL; out.len = 0;
+    if (!src) src = "";
+    if (!sep) sep = "";
+    size_t src_len = strlen(src);
+    size_t sep_len = strlen(sep);
+    out.buf = (char*)malloc(src_len + 1);
+    if (!out.buf) return out;
+    memcpy(out.buf, src, src_len + 1);
+    if (sep_len == 0) {
+        out.items = (const char**)malloc(sizeof(char*));
+        if (!out.items) return out;
+        out.items[0] = out.buf; out.len = 1; return out;
+    }
+    int64_t count = 1;
+    char* scan = out.buf;
+    while (1) {
+        char* hit = strstr(scan, sep);
+        if (!hit) break;
+        count += 1;
+        scan = hit + sep_len;
+    }
+    out.items = (const char**)malloc((size_t)count * sizeof(char*));
+    if (!out.items) return out;
+    out.len = count;
+    int64_t i = 0;
+    char* part = out.buf;
+    while (1) {
+        out.items[i++] = part;
+        char* hit = strstr(part, sep);
+        if (!hit) break;
+        memset(hit, 0, sep_len);
+        part = hit + sep_len;
+    }
+    return out;
+}
+static inline const char* duo_str_split_get(duo_str_split_list list, int64_t i) {
+    if (i < 1 || i > list.len || !list.items) return "";
+    return list.items[(size_t)(i - 1)];
+}
 static inline __attribute__((noreturn)) void duo_fatal(const char* msg) {
     fprintf(stderr, "%s\n", msg);
     abort();
@@ -152,6 +193,17 @@ static inline char* duo_io_read_path(const char* path) {
     buf[got] = '\0';
     return buf;
 }
+static inline char* duo_fstream_readline(FILE* f) {
+    char* buf = (char*)malloc(8192);
+    if (!buf) duo_fatal("read: out of memory");
+    if (!fgets(buf, 8192, f)) { free(buf); return NULL; }
+    return buf;
+}
+#if !defined(__wasm__) && !defined(_WIN32)
+extern FILE* popen(const char*, const char*);
+extern int pclose(FILE*);
+#endif
+static inline FILE* _DUO_popen(const char* cmd, const char* mode) { return popen(cmd, mode); }
 /* --- Duo loop-versioning bound helpers --- */
 #ifndef DUO_LVB_DEFINED
 #define DUO_LVB_DEFINED
@@ -3077,9 +3129,9 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
         out[index] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((dispatch) | (((int64_t)(((uint64_t)(admission)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(member)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(boundaryface)) << ((uint64_t)(10) & 63u))))))) | (((int64_t)(((uint64_t)(branchface)) << ((uint64_t)(11) & 63u))))))) | (((int64_t)(((uint64_t)(returns)) << ((uint64_t)(13) & 63u))))))) | (((int64_t)(((uint64_t)(ending)) << ((uint64_t)(14) & 63u))))))) | (((int64_t)(((uint64_t)(terminator)) << ((uint64_t)(15) & 63u))))))) | (((int64_t)(((uint64_t)(empty)) << ((uint64_t)(16) & 63u))))))) | (((int64_t)(((uint64_t)(primitive)) << ((uint64_t)(17) & 63u))))))) | (((int64_t)(((uint64_t)(literal)) << ((uint64_t)(18) & 63u))))))) | (((int64_t)(((uint64_t)(quoted)) << ((uint64_t)(19) & 63u))))))) | (((int64_t)(((uint64_t)(prefixface)) << ((uint64_t)(20) & 63u))))))) | (((int64_t)(((uint64_t)(demandface)) << ((uint64_t)(21) & 63u))))))) | (((int64_t)(((uint64_t)(leadface)) << ((uint64_t)(22) & 63u))))))) | (((int64_t)(((uint64_t)(infix)) << ((uint64_t)(23) & 63u))))))) | (((int64_t)(((uint64_t)(unaryface)) << ((uint64_t)(47) & 63u))))))) | (((int64_t)(((uint64_t)(glueface)) << ((uint64_t)(52) & 63u))))))) | (((int64_t)(((uint64_t)(updateface)) << ((uint64_t)(57) & 63u))))))) | (((int64_t)(((uint64_t)(primary)) << ((uint64_t)(61) & 63u))))))) | (((int64_t)(((uint64_t)(layouttype)) << ((uint64_t)(62) & 63u))))));
         int64_t clauseface = _clause(fact, count, index);
         int64_t returnface = return_starts_value_lx(fact, count, index, before, idol);
-        int64_t braceface = 0;
+        int64_t recordface = 0;
         if ((kind == INT64_C(62))) {
-                        braceface = 1;
+                        recordface = 1;
         }
         int64_t arrayface = 0;
         if ((kind == INT64_C(60))) {
@@ -3166,6 +3218,8 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                         delimiter = 2;
         } else if ((kind == INT64_C(2))) {
                         delimiter = 3;
+        } else if ((kind == INT64_C(20))) {
+                        delimiter = 4;
         } else if ((kind == INT64_C(58))) {
             int64_t depth = 1;
             int64_t probe = (index + 1);
@@ -3214,7 +3268,7 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                 }
             }
         }
-        out[(count + index)] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((clauseface) | (((int64_t)(((uint64_t)(returnface)) << ((uint64_t)(2) & 63u))))))) | (((int64_t)(((uint64_t)(arrayface)) << ((uint64_t)(3) & 63u))))))) | (((int64_t)(((uint64_t)(headerplain)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(headercomma)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(widthface)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(head)) << ((uint64_t)(6) & 63u))))))) | (((int64_t)(((uint64_t)(assignment)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(declaration)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(braceface)) << ((uint64_t)(12) & 63u))))))) | (((int64_t)(((uint64_t)(delimiter)) << ((uint64_t)(13) & 63u))))));
+        out[(count + index)] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((clauseface) | (((int64_t)(((uint64_t)(returnface)) << ((uint64_t)(2) & 63u))))))) | (((int64_t)(((uint64_t)(arrayface)) << ((uint64_t)(3) & 63u))))))) | (((int64_t)(((uint64_t)(headerplain)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(headercomma)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(widthface)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(head)) << ((uint64_t)(6) & 63u))))))) | (((int64_t)(((uint64_t)(assignment)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(declaration)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(recordface)) << ((uint64_t)(12) & 63u))))))) | (((int64_t)(((uint64_t)(delimiter)) << ((uint64_t)(13) & 63u))))));
         if (((headerplain == 1) && (index > 0))) {
             int64_t start = (index - 1);
             if ((((int64_t)((fact[((start * 2) + 1)]) & (255))) == INT64_C(0))) {
