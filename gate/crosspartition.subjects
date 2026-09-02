@@ -28,6 +28,14 @@
 # cannot materialize fails; a shape the gate can materialize that no row names
 # also fails. Deleting a line does not quietly drop a subject.
 #
+# AND THE THIRD COLUMN IS DERIVED, NOT DECLARED HERE. Which direction a row must
+# pin `duo_str_to_i64` in, and which RELATION its reach pin may name, are both
+# decided by the `materialize` arm that wrote the subject's sources — it converts
+# text or it does not, and it declares the relation or it does not. The gate reads
+# both off those sources, so a pin edited here to name something the arm never
+# wrote is refused rather than silently satisfied. Editing a pin means editing the
+# arm.
+#
 # shape  answer  pins
 duo      42      _helper__twice,!duo_str_to_i64
 trio     44      _deeper__plus,!duo_str_to_i64

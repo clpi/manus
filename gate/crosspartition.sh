@@ -131,6 +131,43 @@
 # absence and the presence pin is satisfied by a compiler that puts all three
 # bootstrap units on every link line without ever reading a `need`.
 #
+# ═══ AND WHICH RELATION A ROW PINS: THE ARM DECLARED IT ════════════════════
+#
+# The direction above is about ONE symbol, `duo_str_to_i64`. The column's other
+# presence pins name RELATIONS, and that is the pin the section on what is
+# measured calls the second one — the reached relation must be DEFINED in the
+# image, so a correct answer cannot have come from anywhere but the partition
+# under test. WHICH relation is not the roster's fact either: the arm declared it.
+# That copy was the last one in this column, and it sat on the pin that makes
+# every row's answer attributable.
+#
+# MEASURED, on aarch64-linux, by planting into a copy of these two files and
+# reading the exit status against an undamaged copy's 3:
+#
+#   * `duo`'s `_helper__twice` redirected to `_main__main`             was exit 3
+#   * `duo`'s reach pin deleted, leaving only `!duo_str_to_i64`        was exit 3
+#   * `duo`'s two pins separated by a space rather than a comma, which
+#     puts the reach pin in a fourth field this file never reads       was exit 3
+#   * `text`'s `_helper__value` redirected to `_helper__twice`, a
+#     relation that shape's partition does not declare                 was exit 3
+#
+# THE FIRST THREE ARE GREEN ON MACOS, NOT MERELY UNOBSERVED HERE. `_main__main` is
+# defined by the subject's own entry, so it satisfies a presence pin in an image
+# that proves nothing about the reach — the same shape of damage as pointing an
+# absence pin at `!duo_str_sub`, one column-half over. A row left with absence pins
+# alone has no reach pin to satisfy at all, and its exit status is a number a
+# compiler that folded the call could answer; the third arrives at exactly that
+# state through a whitespace typo rather than a deletion, which is the likelier
+# route to it. The fourth is loud on macOS and silent here, so it is the one this
+# adds a host to rather than a verdict.
+#
+# DECLARATION AND NOT CALL, and the narrowness is deliberate: any relation
+# declared by a partition the arm wrote beyond the entry is admitted, and what is
+# refused is a pin no reached partition could define. `duo_str_to_i64` is exempt
+# because it is a bootstrap symbol rather than a relation, and it is the one such
+# symbol this file names; a shape needing another would name it in the same place,
+# which is this requirement one symbol further on rather than an exception to it.
+#
 # AND THAT RATCHET NEEDS NO COMPILER, SO IT RUNS BEFORE THE HOST IS CLASSIFIED.
 # Every measurement below the classification needs macOS/aarch64 — the direct
 # backend refuses every other host by name — and the ratchet used to sit below it
@@ -621,13 +658,28 @@ while IFS= read -r line || [ -n "$line" ]; do
     # text literal in a partition OTHER than the entry is the only route any arm
     # here takes to that runtime. Read it off the sources instead of trusting the
     # copy, and both directions become requirements rather than prose.
+    #
+    # THE SAME SOURCES DECIDE WHICH RELATION THE ROW MAY PIN, which is the other
+    # half of this column and is collected here rather than in a second walk: the
+    # relations a partition DECLARES are what a link line can define for it, and
+    # the arm that wrote the declaration is the only producer of that fact. See
+    # the check below the direction block.
     reachedsrc=0
     converts=0
+    reachedrelation=''
     for src in "$work/subject.$shape"/*.id; do
         [ -f "$src" ] || continue
         case ${src##*/} in main.id) continue ;; esac
         reachedsrc=$((reachedsrc + 1))
         if grep -q '"' "$src"; then converts=1; fi
+        # `_<stem>__<relation>`, the path-independent tail `run_subject` matches.
+        # THE SAME ALPHABET `shape_arms` READS, one lowercase word, because that
+        # is what LAW-ONE admits as a relation name and what every arm writes.
+        stem=${src##*/}
+        stem=${stem%.id}
+        for relation in $(sed -n 's/^\([a-z][a-z]*\):.*/\1/p' "$src"); do
+            reachedrelation="$reachedrelation _${stem}__${relation}"
+        done
     done
     if [ "$reachedsrc" -eq 0 ]; then
         printf 'crosspartition: FAIL — subject %s materializes no partition beyond its entry, so it measures no reach and no pin direction can be derived for it.\n' \
@@ -674,6 +726,51 @@ while IFS= read -r line || [ -n "$line" ]; do
         printf 'crosspartition: FAIL — roster row %s does not pin %s, and %s.\n' \
             "$shape" "$wantpin" "$why" >&2
         printf 'crosspartition:   a pin only refuses what it is asked to check, so this row asserts nothing about the union GAP-232 is about — on any host.\n' >&2
+        ratchet=$((ratchet + 1))
+        continue
+    fi
+    # ── and WHICH relation a row pins comes from the same sources ────────────
+    # The direction block above owns ONE symbol, `$str_unit_symbol`. Every other
+    # presence pin in the column names a RELATION, and that is the pin this gate's
+    # header calls its second one: the reached relation must be DEFINED in the
+    # image, so that a correct answer cannot have come from anywhere but the
+    # partition under test. Which relation that is, is decided by the arm that
+    # declared it, and the roster carried a second copy of that decision.
+    #
+    # A pin can only refuse what it is asked to check, so a row that asks about a
+    # relation NO reached partition declares asks nothing: a symbol the ENTRY
+    # defines passes on every host and guards nothing, and a row carrying only
+    # absence pins has no reach pin left to satisfy. Both are green everywhere.
+    #
+    # THE DERIVATION IS DECLARATION AND NOT CALL, deliberately narrow: a relation
+    # declared by any partition the arm wrote beyond the entry is admitted, and
+    # what is refused is a pin no reached partition could define. `$str_unit_symbol`
+    # is exempt because it is a bootstrap symbol and not a relation, and it is the
+    # only one this file names — a shape needing another would name it here beside
+    # that one, which is the same requirement one symbol further on.
+    sawreach=0
+    strayed=''
+    for pin in $(printf '%s\n' "$defines" | tr ',' ' '); do
+        case $pin in
+            !*) continue ;;
+            "$str_unit_symbol") continue ;;
+        esac
+        case " $reachedrelation " in
+            *" $pin "*) sawreach=$((sawreach + 1)) ;;
+            *) strayed="$strayed $pin" ;;
+        esac
+    done
+    if [ -n "$strayed" ]; then
+        printf 'crosspartition: FAIL — roster row %s pins%s, which no partition it reaches declares; the partitions its arm wrote declare%s.\n' \
+            "$shape" "$strayed" "$reachedrelation" >&2
+        printf 'crosspartition:   a symbol its own ENTRY defines satisfies that pin on every host while guarding nothing, so the answer would no longer be attributable to the reach.\n' >&2
+        ratchet=$((ratchet + 1))
+        continue
+    fi
+    if [ "$sawreach" -eq 0 ]; then
+        printf 'crosspartition: FAIL — roster row %s pins no relation of any partition it reaches; the partitions its arm wrote declare%s.\n' \
+            "$shape" "$reachedrelation" >&2
+        printf 'crosspartition:   without that pin the row checks an exit status alone, which a compiler that never realized the reach can produce by folding.\n' >&2
         ratchet=$((ratchet + 1))
         continue
     fi
