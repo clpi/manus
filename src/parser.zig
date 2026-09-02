@@ -443,14 +443,14 @@ pub const Parser = struct {
 
     /// Index of the next parser-visible producer token. Trivia remains in the
     /// immutable pack for formatter/cache observers but is not parser input.
-    pub fn producerStreamIndex(self: *const Parser) usize {
+    pub fn producerStreamIndex(self: *Parser) usize {
         const toks = self.pack_tokens orelse return 0;
+        const events = self.ensureParserEvents() catch return toks.len;
+        if (events.len != toks.len * 2) return toks.len;
+        const count = toks.len;
         var index = @min(self.pack_index, toks.len);
         while (index < toks.len) : (index += 1) {
-            switch (toks[index].kind) {
-                .shebang, .comment, .compat_comment, .compat_long_comment => continue,
-                else => break,
-            }
+            if (((events[count + index] >> 9) & 0xF) != 15) break;
         }
         return index;
     }
