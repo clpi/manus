@@ -2169,6 +2169,8 @@ fn finishCallResult(e: *Emitter, b: *Buf, ins: dnir.Instr, results: []const Slot
         if (results[0] != want) {
             if (results[0] == .i64 and want == .f64) {
                 try b.op(op_f64_convert_i64_s);
+            } else if (results[0] == .f64 and want == .f32) {
+                try b.op(op_f32_demote_f64);
             } else {
                 return e.refuse("call-result-type");
             }
