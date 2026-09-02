@@ -1099,6 +1099,42 @@ pub const ConceptFact = struct {
     relation_count: u32,
     shape_count: u32,
     application_count: u32,
+    /// THE DEMAND JOIN the gap names: how many distinct caller relations drive
+    /// two or more RESOLVED applications onto this module's relations. Zero
+    /// means the module's applied relations share no caller — the graph-side
+    /// sign of "a relation cohort sharing no demand" — and it is published as
+    /// a counted fact rather than decided here, for the same reason
+    /// `application_count` is: the producer publishes, the adjudicator below
+    /// reads.
+    shared_demand_count: u32,
+};
+
+/// THE STATED REFUSAL SHAPE the gap asks for: a utility bucket, read off the
+/// concept column and named exactly.
+///
+/// One row per module the adjudicator refused. `reason` is the enumerated
+/// refusal, not prose a consumer re-parses: today there is exactly one reason
+/// (`no_shared_demand`), and a future reason joins this enum rather than
+/// minting a second refusal column. `split` names the cohort the refusal is
+/// about — the distinct relations of this module that are applied from
+/// elsewhere, in graph id order, which IS the split the module refuses to be.
+///
+/// Absence of a row is a fact, not a pass: a graph lifted without the checked
+/// pipeline has no concept column and therefore no refusal rows either, and
+/// `conceptRefusal` answers null for exactly that case.
+pub const ConceptRefusal = struct {
+    pub const Reason = enum {
+        no_shared_demand,
+
+        pub fn name(self: Reason) []const u8 {
+            return @tagName(self);
+        }
+    };
+
+    module: id,
+    reason: Reason,
+    split_start: u32,
+    split_len: u32,
 };
 
 pub const SemanticGraph = struct {
@@ -1280,6 +1316,13 @@ pub const SemanticGraph = struct {
     /// "not asked", never as a licence to derive a concept from a path.
     concept_facts: std.ArrayListUnmanaged(ConceptFact) = .empty,
     concept_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
+    /// The adjudication column `publishConceptRefusals` produced from the
+    /// concept facts, and the packed split relations `ConceptRefusal`'s range
+    /// names. A graph without the checked pipeline has neither: refusal is a
+    /// produced fact over a produced identity, never a re-derivation.
+    concept_refusals: std.ArrayListUnmanaged(ConceptRefusal) = .empty,
+    concept_refusal_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
+    concept_split: std.ArrayListUnmanaged(id) = .empty,
     pub fn init(alloc: std.mem.Allocator) SemanticGraph {
         return .{ .alloc = alloc, .launch_worlds = subject_home.injectedWorlds() };
     }
@@ -1344,6 +1387,9 @@ pub const SemanticGraph = struct {
         self.callable_linkage_rows.deinit(self.alloc);
         self.concept_facts.deinit(self.alloc);
         self.concept_rows.deinit(self.alloc);
+        self.concept_refusals.deinit(self.alloc);
+        self.concept_refusal_rows.deinit(self.alloc);
+        self.concept_split.deinit(self.alloc);
         if (self.home) |h| self.alloc.free(h);
     }
 
@@ -2969,6 +3015,34 @@ pub const SemanticGraph = struct {
         return fact;
     }
 
+    /// THE REFUSAL produced against a module's concept, as a fact.
+    ///
+    /// Answered only from the refusal column `publishConceptRefusals`
+    /// produced; null means "no refusal produced" — never read as a pass, for
+    /// the same reason `conceptIdentity`'s null is "not asked".
+    pub fn conceptRefusal(self: *const SemanticGraph, module: id) ?*const ConceptRefusal {
+        const row = self.concept_refusal_rows.get(module) orelse return null;
+        if (row >= self.concept_refusals.items.len) return null;
+        const refusal = &self.concept_refusals.items[row];
+        if (refusal.module != module) return null;
+        if (refusal.split_start + refusal.split_len > self.concept_split.items.len) return null;
+        return refusal;
+    }
+
+    /// The exact cohort a refusal splits: the distinct relations of the module
+    /// applied from elsewhere, in graph id order. Valid only on a produced
+    /// refusal; an unfilled range is a damaged column, not an empty cohort.
+    pub fn conceptRefusalSplit(self: *const SemanticGraph, refusal: *const ConceptRefusal) ?[]const id {
+        if (self.conceptRefusal(refusal.module) != refusal) return null;
+        const start = refusal.split_start;
+        const end = start + refusal.split_len;
+        if (end > self.concept_split.items.len) return null;
+        for (self.concept_split.items[start..end]) |relation| {
+            _ = self.get(relation) orelse return null;
+        }
+        return self.concept_split.items[start..end];
+    }
+
     /// THE ONE PRODUCER of `ConceptFact` (`law.fact.producer.one`).
     ///
     /// Runs at the END of checked lift, after every child, application and
@@ -3012,15 +3086,37 @@ pub const SemanticGraph = struct {
                 }
             }
             var application_count: u32 = 0;
+            // THE DEMAND JOIN, gathered while the applications are already in
+            // hand. Caller relation -> distinct applied targets of this module,
+            // so a caller that applies the same relation twice still counts its
+            // demand ONCE. A caller may also BE one of the applied relations
+            // (a cohort member calling its sibling); the distinct-target count
+            // is what decides, not the caller's own membership.
+            var applied_of_caller: std.AutoHashMapUnmanaged(id, std.AutoHashMapUnmanaged(id, void)) = .empty;
+            defer {
+                var it = applied_of_caller.iterator();
+                while (it.next()) |entry| entry.value_ptr.deinit(self.alloc);
+                applied_of_caller.deinit(self.alloc);
+            }
             for (self.application_facts.items) |fact| {
                 if (self.get(fact.application) == null) continue;
                 const target = switch (fact.target) {
                     .one => |entity| entity,
                     .unknown, .none => continue,
                 };
-                if (self.homeOf(target)) |target_home| {
-                    if (target_home == module) application_count += 1;
-                }
+                const target_home = self.homeOf(target) orelse continue;
+                if (target_home != module) continue;
+                application_count += 1;
+                const occurrence_node = self.get(fact.application) orelse continue;
+                const caller = self.enclosingCallable(occurrence_node.scope orelse continue) orelse continue;
+                const slot = try applied_of_caller.getOrPut(self.alloc, caller);
+                if (!slot.found_existing) slot.value_ptr.* = .empty;
+                try slot.value_ptr.put(self.alloc, target, {});
+            }
+            var shared_demand_count: u32 = 0;
+            var demand_it = applied_of_caller.iterator();
+            while (demand_it.next()) |entry| {
+                if (entry.value_ptr.count() >= 2) shared_demand_count += 1;
             }
             const row = try coordinateForLength(self.concept_facts.items.len);
             try self.concept_facts.append(self.alloc, .{
@@ -3029,9 +3125,69 @@ pub const SemanticGraph = struct {
                 .relation_count = relation_count,
                 .shape_count = shape_count,
                 .application_count = application_count,
+                .shared_demand_count = shared_demand_count,
             });
             errdefer _ = self.concept_facts.pop();
             try self.concept_rows.putNoClobber(self.alloc, module, row);
+        }
+    }
+
+    /// THE ADJUDICATOR the gap names, over the concept column the producer
+    /// above published (`law.fact.producer.one`: it reads, it does not
+    /// re-derive).
+    ///
+    /// A module is refused as a UTILITY BUCKET exactly when its relations are
+    /// applied from elsewhere but no caller relation drives two of them — the
+    /// "relation cohort sharing no demand" the gap defines, read as a count
+    /// rather than guessed from a filename. A file with no applications at all
+    /// (a library of never-yet-applied relations), a single applied relation,
+    /// or a cohort with a shared caller is NOT refused: the producer counts,
+    /// this pass refuses, and neither borrows the other's judgment.
+    ///
+    /// The refusal is a produced FACT with a stated shape — reason enum, plus
+    /// the exact applied cohort — not a boolean, so a consumer (gate, MCP,
+    /// docs) reads the same structured finding the compiler holds. A module
+    /// with no concept row is skipped: absence of the identity is `null` at
+    /// `conceptIdentity`, and there is nothing here to adjudicate.
+    fn publishConceptRefusals(self: *SemanticGraph) !void {
+        try self.requireOpen();
+        for (self.concept_facts.items) |fact| {
+            if (self.conceptIdentity(fact.module) == null) continue;
+            // The split cohort: this module's distinct relations applied from
+            // elsewhere, in graph id order — which is exactly the order a
+            // graph-id walk produces, so no sort is minted.
+            var split: std.ArrayListUnmanaged(id) = .empty;
+            defer split.deinit(self.alloc);
+            for (self.application_facts.items) |published| {
+                if (self.get(published.application) == null) continue;
+                const target = switch (published.target) {
+                    .one => |entity| entity,
+                    .unknown, .none => continue,
+                };
+                const target_home = self.homeOf(target) orelse continue;
+                if (target_home != fact.module) continue;
+                var seen = false;
+                for (split.items) |known| {
+                    if (known == target) {
+                        seen = true;
+                        break;
+                    }
+                }
+                if (!seen) try split.append(self.alloc, target);
+            }
+            if (split.items.len < 2) continue;
+            if (fact.shared_demand_count != 0) continue;
+            const split_start = try coordinateForLength(self.concept_split.items.len);
+            try self.concept_split.appendSlice(self.alloc, split.items);
+            const refusal_row = try coordinateForLength(self.concept_refusals.items.len);
+            try self.concept_refusals.append(self.alloc, .{
+                .module = fact.module,
+                .reason = .no_shared_demand,
+                .split_start = split_start,
+                .split_len = @intCast(split.items.len),
+            });
+            errdefer _ = self.concept_refusals.pop();
+            try self.concept_refusal_rows.putNoClobber(self.alloc, fact.module, refusal_row);
         }
     }
 
@@ -6551,6 +6707,9 @@ pub const SemanticGraph = struct {
         // `law.file.one`, LAST — after every child, application and world fact
         // exists, so the concept counts are answers over the finished graph.
         try self.publishConceptIdentities();
+        // THE ADJUDICATOR, after the identities it reads exist. Same column
+        // order: publish, then decide, never decide mid-publish.
+        try self.publishConceptRefusals();
         return module;
     }
 
@@ -8472,7 +8631,8 @@ pub const SemanticGraph = struct {
                 published.home.ptr != fact.home.ptr or
                 published.relation_count != fact.relation_count or
                 published.shape_count != fact.shape_count or
-                published.application_count != fact.application_count)
+                published.application_count != fact.application_count or
+                published.shared_demand_count != fact.shared_demand_count)
             {
                 return error.InvalidConceptFact;
             }
@@ -8487,7 +8647,47 @@ pub const SemanticGraph = struct {
             try appendJsonInt(buf, alloc, fact.shape_count);
             try buf.appendSlice(alloc, ",\"applications\":");
             try appendJsonInt(buf, alloc, fact.application_count);
+            try buf.appendSlice(alloc, ",\"shared_demand\":");
+            try appendJsonInt(buf, alloc, fact.shared_demand_count);
             try buf.append(alloc, '}');
+        }
+        try buf.append(alloc, ']');
+    }
+
+    /// The adjudication column, projected — the structured refusal finding the
+    /// gap asks to exist across compiler, MCP and docs. Every row is re-read
+    /// through `conceptRefusal` and its cohort through `conceptRefusalSplit`
+    /// before it is written, so a refusal whose module, range, or cohort no
+    /// longer verifies refuses the export instead of publishing a split the
+    /// graph no longer backs.
+    fn appendConceptRefusalsJson(
+        self: *const SemanticGraph,
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+    ) !void {
+        try buf.appendSlice(alloc, ",\"refusals\":[");
+        for (self.concept_refusals.items, 0..) |*refusal, i| {
+            const published = self.conceptRefusal(refusal.module) orelse
+                return error.InvalidConceptFact;
+            if (published != refusal or published.reason != refusal.reason or
+                published.split_start != refusal.split_start or
+                published.split_len != refusal.split_len)
+            {
+                return error.InvalidConceptFact;
+            }
+            const split = self.conceptRefusalSplit(refusal) orelse
+                return error.InvalidConceptFact;
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"module\":");
+            try appendJsonInt(buf, alloc, refusal.module);
+            try buf.appendSlice(alloc, ",\"reason\":\"");
+            try buf.appendSlice(alloc, refusal.reason.name());
+            try buf.appendSlice(alloc, "\",\"split\":[");
+            for (split, 0..) |relation, j| {
+                if (j > 0) try buf.append(alloc, ',');
+                try appendJsonInt(buf, alloc, relation);
+            }
+            try buf.appendSlice(alloc, "]}");
         }
         try buf.append(alloc, ']');
     }
@@ -8588,7 +8788,17 @@ pub const SemanticGraph = struct {
         // guessing from the filename — exactly the spelling-derived meaning
         // the graph exists to stop. gaps/GAP-120.md. A v15 reader pointed at a
         // v16 export sees a key it did not expect, and that is the point.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":16,\"file\":\"");
+        //
+        // version 17: `refusals` plus `shared_demand` on every `concepts[]`
+        // row. Version 16 published the concept's composition but ADJUDICATED
+        // nothing, so the utility bucket the gap names stayed a prose suspicion
+        // instead of a structured finding a consumer could read. The refusal
+        // column carries the reason enum and the exact applied cohort; the new
+        // count on the concept row is the demand join the refusal derives
+        // from, so a reader can re-derive the answer without trusting it.
+        // gaps/GAP-120.md. A v16 reader pointed at a v17 export sees a key it
+        // did not expect, and that is the point.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":17,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         switch (self.root_source_law_edition) {
@@ -8795,6 +9005,7 @@ pub const SemanticGraph = struct {
         try out.append(alloc, ']');
         try self.appendCallableLinkagesJson(out, alloc);
         try self.appendConceptsJson(out, alloc);
+        try self.appendConceptRefusalsJson(out, alloc);
         try out.appendSlice(alloc, ",\"unresolved_applications\":[");
         var first_unresolved = true;
         var candidates = self.application_candidates.iterator(.{});
@@ -9562,7 +9773,7 @@ test "semantic_graph: checked callable linkage is one id keyed fact" {
     try graph.writeJson(alloc, "linkage.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 16), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 17), parsed.value.object.get("version").?.integer);
     const exported = parsed.value.object.get("callable_linkages").?.array.items;
     try std.testing.expectEqual(@as(usize, 4), exported.len);
     try std.testing.expectEqual(@as(i64, external), exported[3].object.get("callable").?.integer);
@@ -9616,13 +9827,28 @@ test "semantic_graph: checked lift publishes a durable concept identity per modu
 
     // THE COUNTS ARE THE GRAPH'S OWN CENSUS: one relation (`step` — `main` is
     // the process entry and is also a declared relation), zero shapes, and the
-    // one application resolved onto it.
+    // one application resolved onto it. THE DEMAND JOIN is zero: one caller
+    // (`main`) drives one applied relation, so no caller shares two targets.
     try std.testing.expectEqual(@as(u32, 2), concept.relation_count);
     try std.testing.expectEqual(@as(u32, 0), concept.shape_count);
     try std.testing.expectEqual(@as(u32, 1), concept.application_count);
+    try std.testing.expectEqual(@as(u32, 0), concept.shared_demand_count);
+
+    // NO REFUSAL, AND THAT IS A FACT: one applied relation is not a cohort,
+    // so the adjudicator refuses nothing here.
+    try std.testing.expect(graph.conceptRefusal(root) == null);
+    var untouched = SemanticGraph.init(alloc);
+    defer untouched.deinit();
+    try std.testing.expect(untouched.conceptRefusalSplit(@ptrCast(@alignCast(&ConceptRefusal{
+        .module = root,
+        .reason = .no_shared_demand,
+        .split_start = 0,
+        .split_len = 1,
+    }))) == null);
 
     // THE EXPORT CARRIES THE SAME FACT twice — `concepts[]` and the module
-    // node face — so a reader of either sees the identical identity.
+    // node face — so a reader of either sees the identical identity, and the
+    // refusal column is present and empty.
     var json: std.ArrayListUnmanaged(u8) = .empty;
     defer json.deinit(alloc);
     try graph.writeJson(alloc, "concept.id", &json, null);
@@ -9632,6 +9858,8 @@ test "semantic_graph: checked lift publishes a durable concept identity per modu
     try std.testing.expectEqual(@as(usize, 1), rows.len);
     try std.testing.expectEqualStrings(concept.home, rows[0].object.get("home").?.string);
     try std.testing.expectEqual(@as(u32, concept.relation_count), @as(u32, @intCast(rows[0].object.get("relations").?.integer)));
+    try std.testing.expectEqual(@as(i64, 0), rows[0].object.get("shared_demand").?.integer);
+    try std.testing.expectEqual(@as(usize, 0), parsed.value.object.get("refusals").?.array.items.len);
     var node_concepts: usize = 0;
     for (parsed.value.object.get("nodes").?.array.items) |node| {
         if (node.object.get("concept")) |face| {
@@ -9644,6 +9872,124 @@ test "semantic_graph: checked lift publishes a durable concept identity per modu
     // DAMAGING THE ROW INDEX DOES NOT RECOVER AN IDENTITY FROM THE PATH.
     _ = graph.concept_rows.remove(root);
     try std.testing.expect(graph.conceptIdentity(root) == null);
+}
+
+test "semantic_graph: the adjudicator refuses a cohort whose relations share no demand" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // THE UTILITY BUCKET THE GAP NAMES: two relations, each applied by its own
+    // caller, sharing no caller between them. `main` and `entry` live HERE and
+    // are the callers, so the module's applied relations (`plus`, `minus`) have
+    // no caller driving both.
+    const source =
+        \\plus: i64 = (a: i64, b: i64)
+        \\    a + b
+        \\minus: i64 = (a: i64, b: i64)
+        \\    a - b
+        \\main: i64 = ()
+        \\    plus(2, 3)
+        \\entry: i64 = ()
+        \\    minus(7, 4)
+    ;
+    var lexer = Lexer.init(source, "bucket.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    checked.source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const root = try graph.liftModuleWithCheckedCalls(&module, &checked, "bucket.id");
+
+    // THE IDENTITY IS PUBLISHED, AND THE DEMAND JOIN SAYS ZERO: two applied
+    // relations, two callers, no caller driving both.
+    const concept = graph.conceptIdentity(root) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(u32, 4), concept.relation_count);
+    try std.testing.expectEqual(@as(u32, 2), concept.application_count);
+    try std.testing.expectEqual(@as(u32, 0), concept.shared_demand_count);
+
+    // THE REFUSAL IS A PRODUCED FACT with a reason and the exact split cohort.
+    const refusal = graph.conceptRefusal(root) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(ConceptRefusal.Reason.no_shared_demand, refusal.reason);
+    const split = graph.conceptRefusalSplit(refusal) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(usize, 2), split.len);
+    for (split) |relation| {
+        try std.testing.expect(graph.callable(relation));
+        const home = graph.homeOf(relation) orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(root, home);
+    }
+
+    // THE EXPORT CARRIES THE SAME STRUCTURED FINDING — `refusals[]` with the
+    // reason spelled and the cohort named — so a consumer reading the graph
+    // JSON answers the same refusal the compiler holds.
+    var json: std.ArrayListUnmanaged(u8) = .empty;
+    defer json.deinit(alloc);
+    try graph.writeJson(alloc, "bucket.id", &json, null);
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
+    defer parsed.deinit();
+    const refusals = parsed.value.object.get("refusals").?.array.items;
+    try std.testing.expectEqual(@as(usize, 1), refusals.len);
+    try std.testing.expectEqualStrings("no_shared_demand", refusals[0].object.get("reason").?.string);
+    try std.testing.expectEqual(@as(i64, root), refusals[0].object.get("module").?.integer);
+    try std.testing.expectEqual(@as(usize, 2), refusals[0].object.get("split").?.array.items.len);
+
+    // DAMAGING THE REFUSAL ROW DOES NOT ANSWER FROM THE CONCEPT COUNTS.
+    _ = graph.concept_refusal_rows.remove(root);
+    try std.testing.expect(graph.conceptRefusal(root) == null);
+}
+
+test "semantic_graph: a cohort with a shared caller is not refused" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // THE SAME TWO RELATIONS, but one caller drives both — the demand the
+    // bucket above lacked. This is one concept, and the adjudicator must
+    // refuse nothing.
+    const source =
+        \\plus: i64 = (a: i64, b: i64)
+        \\    a + b
+        \\minus: i64 = (a: i64, b: i64)
+        \\    a - b
+        \\main: i64 = ()
+        \\    plus(2, 3)
+        \\    minus(plus(1, 1), 4)
+    ;
+    var lexer = Lexer.init(source, "cohort.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    checked.source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const root = try graph.liftModuleWithCheckedCalls(&module, &checked, "cohort.id");
+
+    const concept = graph.conceptIdentity(root) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(@as(u32, 3), concept.application_count);
+    try std.testing.expectEqual(@as(u32, 1), concept.shared_demand_count);
+    try std.testing.expect(graph.conceptRefusal(root) == null);
+
+    var json: std.ArrayListUnmanaged(u8) = .empty;
+    defer json.deinit(alloc);
+    try graph.writeJson(alloc, "cohort.id", &json, null);
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqual(@as(usize, 0), parsed.value.object.get("refusals").?.array.items.len);
 }
 
 test "semantic_graph: an unchecked graph publishes no concept identity" {
@@ -9740,7 +10086,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 16), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 17), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
     try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
@@ -10249,7 +10595,7 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Color\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Red\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"storage_class\"") == null);
-    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":16") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":17") != null);
     try std.testing.expectEqualStrings(
         "unknown",
         parsed.value.object.get("root_source_law").?.object.get("card").?.string,
@@ -11175,7 +11521,7 @@ test "semantic_graph: module mutation keeps binding identity and local shadow" {
     var json: std.ArrayListUnmanaged(u8) = .empty;
     defer json.deinit(alloc);
     try graph.writeJson(alloc, "module-mutation.id", &json, null);
-    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"version\":16") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"version\":17") != null);
     try std.testing.expect(std.mem.indexOf(u8, json.items, "\"mutations\":[{") != null);
 
     // THE CARDINALITY, AND THE THREE STATES THAT MUST NOT COLLAPSE. The
