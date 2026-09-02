@@ -417,6 +417,14 @@ pub const Parser = struct {
             ((event >> 23) & 0xFFFFFF) == 0;
     }
 
+    fn currentParserTypeGroup(self: *Parser) ParseError!bool {
+        const event = try self.currentParserEvent();
+        return ((event >> 61) & 1) != 0 and
+            ((event >> 62) & 1) == 0 and
+            ((event >> 9) & 1) == 0 and
+            ((event >> 18) & 1) == 0;
+    }
+
     fn currentParserTypeNumber(self: *Parser) ParseError!bool {
         const event = try self.currentParserEvent();
         return ((event >> 61) & 1) != 0 and ((event >> 18) & 1) != 0;
@@ -1579,6 +1587,26 @@ pub const Parser = struct {
             inner.* = try self.parse_type();
             return .{ .optional = inner };
         }
+        if (try self.currentParserTypeGroup()) {
+            _ = try self.adv();
+            var params: std.ArrayList(ast.TypeExpr) = .empty;
+            if (!(try self.check(.rparen))) {
+                try params.append(self.alloc, try self.parse_type());
+                while (try self.eat(.comma) != null) {
+                    try params.append(self.alloc, try self.parse_type());
+                }
+            }
+            _ = try self.expect(.rparen);
+            if (try self.eat(.arrow) != null) {
+                const ret = try self.alloc.create(ast.TypeExpr);
+                ret.* = try self.parse_type();
+                return .{ .func = .{
+                    .params = try params.toOwnedSlice(self.alloc),
+                    .ret = ret,
+                } };
+            }
+            return .{ .tuple = try params.toOwnedSlice(self.alloc) };
+        }
         if (try self.currentParserTypeName()) {
             // WIDTH AS AN OPERAND, not as a suffix on the name. `i64` bakes
             // a numeric taxonomy into an identity, which LAW-16 forbids for
@@ -1612,29 +1640,6 @@ pub const Parser = struct {
             return .{ .named = t.text };
         }
         return switch (tok.kind) {
-            .lparen => {
-                // Tuple type: `(T, U)` or Function type: `(T, U) -> R`
-                _ = try self.adv(); // consume '('
-                var params: std.ArrayList(ast.TypeExpr) = .empty;
-                if (!(try self.check(.rparen))) {
-                    try params.append(self.alloc, try self.parse_type());
-                    while (try self.eat(.comma) != null) {
-                        try params.append(self.alloc, try self.parse_type());
-                    }
-                }
-                _ = try self.expect(.rparen);
-                // If followed by `->`, it's a function type; otherwise it's a tuple
-                if (try self.eat(.arrow) != null) {
-                    const ret = try self.alloc.create(ast.TypeExpr);
-                    ret.* = try self.parse_type();
-                    return .{ .func = .{
-                        .params = try params.toOwnedSlice(self.alloc),
-                        .ret = ret,
-                    } };
-                } else {
-                    return .{ .tuple = try params.toOwnedSlice(self.alloc) };
-                }
-            },
             .lbracket => {
                 _ = try self.adv();
                 var size: ?usize = null;
