@@ -48,6 +48,7 @@ halt = (code: i64)
   os.exit(code)
 
 # Positive control — run/evidence algebra (revision-bound smoke).
+# Negative control: ensure status reflects actual child, not transport exit.
 main: i64 = ()
   w = command("printf ok")
   r = run(w.line)
@@ -59,4 +60,6 @@ main: i64 = ()
   r2 = run("false")
   if r2.outcome != "failed"
     return 3
+  if r2.status != 1
+    return 4
   0

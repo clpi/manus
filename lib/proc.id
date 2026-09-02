@@ -1,17 +1,19 @@
-exec: i64 = (cmd: str)
+exec: { status: i64 } = (cmd: str)
   rc = os.execute(cmd)
   if rc == nil
-    return -1
-  rc
+    { status = -1 }
+  { status = rc }
 
-capture: str = (cmd: str)
-  f = io.popen(cmd, "r")
+capture: { output: str, status: i64 } = (cmd: str)
+  f = io.popen(cmd .. " 2>&1; echo \"\\n$?\"", "r")
   if f == nil
-    ""
-  out = ""
-  line = f:read()
-  while line != nil
-    out = out .. line .. "\n"
-    line = f:read()
+    { output = "", status = -1 }
+  raw = f:read("*a") or ""
   f:close()
-  out
+  last_nl = raw:find("\n[^\n]*$")
+  if last_nl
+    output = raw:sub(1, last_nl - 1)
+    code_str = raw:sub(last_nl + 1)
+    code = code_str:match("%d+") or "0"
+    { output = output, status = code:to(i64) or 0 }
+  { output = raw, status = 0 }
