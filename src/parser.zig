@@ -406,7 +406,15 @@ pub const Parser = struct {
         const event = try self.currentParserEvent();
         return ((event >> 61) & 1) != 0 and
             ((event >> 62) & 1) != 0 and
-            ((event >> 9) & 1) == 0;
+            ((event >> 57) & 0xF) != 0;
+    }
+
+    fn currentParserTypeOptional(self: *Parser) ParseError!bool {
+        const event = try self.currentParserEvent();
+        return ((event >> 61) & 1) != 0 and
+            ((event >> 62) & 1) != 0 and
+            ((event >> 9) & 1) == 0 and
+            ((event >> 23) & 0xFFFFFF) == 0;
     }
 
     fn currentParserTypeNumber(self: *Parser) ParseError!bool {
@@ -1565,6 +1573,12 @@ pub const Parser = struct {
             inner.* = try self.parse_type();
             return .{ .pointer = inner };
         }
+        if (try self.currentParserTypeOptional()) {
+            _ = try self.adv();
+            const inner = try self.alloc.create(ast.TypeExpr);
+            inner.* = try self.parse_type();
+            return .{ .optional = inner };
+        }
         if (try self.currentParserTypeName()) {
             // WIDTH AS AN OPERAND, not as a suffix on the name. `i64` bakes
             // a numeric taxonomy into an identity, which LAW-16 forbids for
@@ -1598,13 +1612,6 @@ pub const Parser = struct {
             return .{ .named = t.text };
         }
         return switch (tok.kind) {
-            .question => {
-                // Optional type: ?T
-                _ = try self.adv();
-                const inner = try self.alloc.create(ast.TypeExpr);
-                inner.* = try self.parse_type();
-                return .{ .optional = inner };
-            },
             .lparen => {
                 // Tuple type: `(T, U)` or Function type: `(T, U) -> R`
                 _ = try self.adv(); // consume '('
