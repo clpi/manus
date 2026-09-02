@@ -393,6 +393,10 @@ pub const Parser = struct {
         return (((try self.currentParserEvent()) >> 62) & 1) != 0;
     }
 
+    fn currentParserTypeAttribute(self: *Parser) ParseError!bool {
+        return (((try self.currentParserDecision()) >> 9) & 0xF) == 12;
+    }
+
     fn currentParserBodyAssignment(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 8) & 1) != 0;
     }
@@ -1519,26 +1523,26 @@ pub const Parser = struct {
             _ = try self.adv();
             return .{ .named = tok.kind.spelling() };
         }
+        if (try self.currentParserTypeAttribute()) {
+            const attr = try self.parse_one_attribute();
+            // THE ALIAS TABLE DECIDES, not the literal `"c.type"`.
+            // Comparing the short spelling made type position the ONE place
+            // where one compatibility spelling was refused while another
+            // worked. Four spellings resolve to `__c_type`; all four now
+            // name the same descriptor here, as they already do everywhere
+            // else (`isAttachingCInterfaceAttribute` reads the same table).
+            const resolves_to_c_type = if (meta_module.resolveBuiltin(attr.name)) |internal|
+                std.mem.eql(u8, internal, "__c_type")
+            else
+                false;
+            if (!resolves_to_c_type) {
+                term.locErr(tok.loc, "expected @c.type(...) in type position, got '@{s}'", .{attr.name});
+                return ParseError.UnexpectedToken;
+            }
+            const cname = strip_quotes(attr.args orelse "");
+            return .{ .named = try std.mem.concat(self.alloc, u8, &.{ types.c_type_marker_prefix, cname }) };
+        }
         return switch (tok.kind) {
-            .at => {
-                const attr = try self.parse_one_attribute();
-                // THE ALIAS TABLE DECIDES, not the literal `"c.type"`.
-                // Comparing the short spelling made type position the ONE place
-                // where one compatibility spelling was refused while another
-                // worked. Four spellings resolve to `__c_type`; all four now
-                // name the same descriptor here, as they already do everywhere
-                // else (`isAttachingCInterfaceAttribute` reads the same table).
-                const resolves_to_c_type = if (meta_module.resolveBuiltin(attr.name)) |internal|
-                    std.mem.eql(u8, internal, "__c_type")
-                else
-                    false;
-                if (!resolves_to_c_type) {
-                    term.locErr(tok.loc, "expected @c.type(...) in type position, got '@{s}'", .{attr.name});
-                    return ParseError.UnexpectedToken;
-                }
-                const cname = strip_quotes(attr.args orelse "");
-                return .{ .named = try std.mem.concat(self.alloc, u8, &.{ types.c_type_marker_prefix, cname }) };
-            },
             .name => {
                 // WIDTH AS AN OPERAND, not as a suffix on the name. `i64` bakes
                 // a numeric taxonomy into an identity, which LAW-16 forbids for
