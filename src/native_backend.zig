@@ -6435,6 +6435,41 @@ const Arm64Compiler = struct {
                 return reg;
             }
         }
+        // THE SPILL PASSES BELOW CANNOT PRODUCE A REGISTER, AND OUTSIDE GATE
+        // TRANSPORT THEY NEVER COULD. Refuse here instead of proving it again by
+        // emitting the stores.
+        //
+        // `spillReg` clears `used_regs[victim]` and puts the victim in
+        // `spilled_regs` — and BOTH free scans above skip anything
+        // `spilled_regs` contains (that skip is the fail-closed guard, see its
+        // comment). So a spill moves a register from "busy" to "reserved to its
+        // owner" and the recursion re-scans a pool with exactly as many
+        // allocatable registers as before: zero. Nothing else in the call can
+        // change that. `spillReg`'s only removal from `spilled_regs` is
+        // `ensureRegLive(victim)`, which touches the victim alone and re-adds it
+        // one line later; `emitStrSp`/`emitLdrSp`/`emitSubSp` allocate nothing;
+        // and `sweepGpLive`, the one path that does free a spilled register, is
+        // never reached from here. So the recursion walks x28..x9 and then
+        // x7..x0, spills every non-home register on the way down, and arrives at
+        // the `error.RegisterExhausted` below with an empty pool — always.
+        //
+        // Discarded work, not a wrong answer: `probeCalleeSaveUse` compiles each
+        // ladder rung on a FRESH `Arm64Compiler`, and the sole catch of this
+        // error (`ensureRegLiveRemap`) rethrows it outside gate transport, so no
+        // emitted `str`, no moved `sp`, and no `.spill` ledger entry from this
+        // path ever reaches an artifact. Returning early is therefore the same
+        // refusal, minus ~20 spill stores and recursion levels per doomed rung —
+        // and each doomed rung is walked before the ladder can step down.
+        //
+        // GATE TRANSPORT IS THE EXCEPTION AND KEEPS THE PASSES VERBATIM: there
+        // the cascade is load-bearing, because it is what populates
+        // `spilled_regs` for the `reclaimSpilledReg` at the bottom of this
+        // function. That reclaim hands back a register whose value is still in
+        // the frame and drops the `spilled_regs` entry that would reload it —
+        // the GAP-148 two-owner hazard, bounded to bootstrap transport. Not
+        // widened, not repaired, and not closed by this fact.
+        if (!self.gate_transport) return error.RegisterExhausted;
+
         // SPILL A TEMP BEFORE A HOME, AND NEVER SPILL A CALL-SURVIVING HOME AT
         // ALL — see `gp_call_home_regs` for why the second is a wrong answer and
         // not merely a slow one.

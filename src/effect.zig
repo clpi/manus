@@ -16,6 +16,7 @@
 
 const std = @import("std");
 const optimization_outcome = @import("optimization_outcome.zig");
+const assumption_guard = @import("assumption_guard.zig");
 
 pub const SCHEMA_VERSION = "gap182-experiment-v1";
 
@@ -153,6 +154,10 @@ pub const Invalidation = struct {
     experiment_proposition: []const u8,
     /// Stable identity of the next candidate selected after invalidation.
     fallback_candidate: []const u8,
+    /// The measured subject revision on which the invalidating observation
+    /// was taken (`law.evidence.subject.one`) — separate from the artifact
+    /// revision; never implicit "at HEAD" provenance.
+    subject_revision: []const u8 = "",
 };
 
 /// A guarded realization candidate: one experiment plus the stated
@@ -310,6 +315,80 @@ pub fn fromAssumption(
             .subject_revision = subject_revision,
         },
     };
+}
+
+/// Required order 4 executed-graph integration: one deopt boundary from the
+/// emitted assumption guard to the experiment fact family. Emitted guards that
+/// name a fallback candidate (the recorded realization to select when the
+/// guard's proposition becomes false) become `Guarded` candidates in the
+/// order given; the deopt walk is `select` plus the first fallback as the
+/// explicit no-candidate answer (`deoptOrFallback`). An emitted guard whose
+/// fallback is absent contributes nothing: there is no recorded next
+/// candidate to select, so no boundary fact exists — never a sentinel
+/// in-band and never a second seam around the bridges.
+///
+/// Allocation-free: the output faces borrow proposition, theorem, and
+/// fallback identity slices directly from the caller's assumptions; the
+/// caller keeps them alive for the walk.
+pub const DeoptBoundary = struct {
+    candidates: [max_boundary_candidates]Guarded,
+    count: usize,
+    /// The first emitted fallback in the input order — the explicit answer
+    /// when the invalidation leaves no candidate admissible.
+    fallback: []const u8,
+
+    /// One measured invalidation: the proposition that became false selects
+    /// the next admissible candidate's conditional theorem, or the recorded
+    /// fallback when none survives. The measured subject revision (`subject`)
+    /// travels with the invalidation so the boundary satisfies
+    /// `law.evidence.subject.one` — the observation was taken on exactly
+    /// that revision, never "at HEAD". Sound candidates are untouched by any
+    /// invalidation inside `select`; evidence-level candidates whose
+    /// proposition is the false one cease to be admissible.
+    pub fn invalidate(
+        self: *const DeoptBoundary,
+        false_proposition: []const u8,
+        subject: []const u8,
+        assumption_holds: *const fn (proposition: []const u8) bool,
+    ) []const u8 {
+        return deoptOrFallback(.{
+            .experiment_proposition = false_proposition,
+            .fallback_candidate = self.fallback,
+            .subject_revision = subject,
+        }, self.live(), assumption_holds);
+    }
+
+    fn live(self: *const DeoptBoundary) []const Guarded {
+        return self.candidates[0..self.count];
+    }
+};
+
+pub const max_boundary_candidates = 8;
+
+pub fn deoptBoundary(
+    assumptions: []const assumption_guard.Assumption,
+    conditional_theorems: []const []const u8,
+    subject_revision: []const u8,
+) DeoptBoundary {
+    var boundary = DeoptBoundary{
+        .candidates = undefined,
+        .count = 0,
+        .fallback = "",
+    };
+    for (assumptions, 0..) |*a, i| {
+        const fallback = a.fallback orelse continue;
+        if (boundary.count == max_boundary_candidates) break;
+        if (boundary.count == 0) boundary.fallback = fallback;
+        boundary.candidates[boundary.count] = fromAssumption(
+            a.id,
+            conditional_theorems[i],
+            a.evidence,
+            0,
+            subject_revision,
+        );
+        boundary.count += 1;
+    }
+    return boundary;
 }
 
 test "effect: epistemic levels admit or require guard" {
@@ -563,6 +642,91 @@ test "effect: zero-cost observation is lawful nonexecution, not truth" {
         .conditional_theorem = "cand:mono",
     };
     try std.testing.expect(!realizesZero(&paid_guard));
+}
+
+test "effect: graph-emitted guards drive a measured deopt boundary" {
+    // Required order 4 integration: the deopt boundary consumes assumptions
+    // emitted by `assumption_guard.buildFromModule` from an executed semantic
+    // graph — not hand-constructed facts. A guarded shape node emits exactly
+    // one assumption whose fallback names the next realization. Measured
+    // invalidation of its proposition selects the fallback; invalidating an
+    // unrelated proposition keeps the guarded candidate.
+    const sema = @import("sema.zig");
+    const ast = @import("ast.zig");
+    const semantic_graph = @import("semantic_graph.zig");
+    var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const home = try graph.addNode(.{
+        .kind = .module,
+        .span = .{ .file = "boundary.id", .start = 0, .end = 0 },
+    });
+    const shape = try graph.addChild(home, .{
+        .kind = .table_shape,
+        .span = .{ .file = "boundary.id", .start = 1, .end = 1 },
+        .name = "Point",
+        .knowledge = .guarded,
+        .descriptor_state = .sealed,
+        .shape_id = 1,
+    });
+    var dummy_mod: ast.Module = undefined;
+    var dummy_sem = sema.Sema.init(std.testing.allocator);
+    defer dummy_sem.deinit();
+    var emitted = try assumption_guard.buildFromModule(
+        std.testing.allocator,
+        &dummy_mod,
+        &dummy_sem,
+        &graph,
+    );
+    defer emitted.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(usize, 1), emitted.items.len);
+
+    const theorems = [1][]const u8{"cand:sealed-point"};
+    var id_buf: [20]u8 = undefined;
+    const shape_id = try std.fmt.bufPrint(&id_buf, "guard:{d}", .{shape});
+    const boundary = deoptBoundary(emitted.items, &theorems, "rev:boundary");
+    try std.testing.expectEqual(@as(usize, 1), boundary.count);
+    try std.testing.expectEqualStrings("general table realization", boundary.fallback);
+
+    // Measured invalidation: the proposition that became false is the emitted
+    // guard's own; deopt selects the recorded next realization, exactly the
+    // assumption's fallback edge — never a sentinel.
+    try std.testing.expectEqualStrings(
+        "general table realization",
+        boundary.invalidate(shape_id, "rev:boundary", &holdsAll),
+    );
+    // An unrelated false proposition invalidates nothing; the guarded
+    // candidate still holds under its assumptions.
+    try std.testing.expectEqualStrings(
+        "cand:sealed-point",
+        boundary.invalidate("shape:elsewhere", "rev:boundary", &holdsAll),
+    );
+    // An assumption judged false by the world makes the candidate
+    // inadmissible even without an invalidation record.
+    const none_hold = struct {
+        fn f(proposition: []const u8) bool {
+            _ = proposition;
+            return false;
+        }
+    }.f;
+    try std.testing.expectEqualStrings(
+        "general table realization",
+        boundary.invalidate("shape:elsewhere", "rev:boundary", &none_hold),
+    );
+    // Guards that record no fallback contribute no boundary candidate.
+    const no_fallback = assumption_guard.Assumption{
+        .id = "guard:plain",
+        .subject_entity = "0",
+        .predicate = .shape_id_matches,
+        .origin = .graph_lift,
+        .scope = .module,
+        .invalidation = null,
+        .fallback = null,
+        .evidence = .guarded,
+    };
+    const plain = [1]assumption_guard.Assumption{no_fallback};
+    const one_theorem = [1][]const u8{"cand:plain"};
+    const empty = deoptBoundary(&plain, &one_theorem, "rev:boundary");
+    try std.testing.expectEqual(@as(usize, 0), empty.count);
 }
 
 test "effect: fromAssumption is the sole guard-to-experiment face" {

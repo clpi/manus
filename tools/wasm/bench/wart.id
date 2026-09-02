@@ -9,18 +9,23 @@
 # against wasmtime, bench/run.id has a wart column that only reports SIGILL or
 # a wall time, and bench/perf.id has no wart column at all.
 #
-# THE PROBLEM THIS HARNESS SOLVES. `wart run <mod>` can only invoke `_start`,
-# and it prints nothing for a function that returns a value. 24 of the 44
-# modules in bench/ export only `run`, so wart cannot reach them; of the 17
-# that export `_start`, only 2 print anything. So on the existing corpus wart's
-# ANSWER is observable for 2 modules out of 44, and a "the engine vs wart" row built
-# on the other 42 would be timing two runtimes with no evidence either computed
-# the right thing. That is the shape of claim CLAUDE.md §3 was written about.
+# THE PROBLEM THIS HARNESS SOLVES. `wart run <mod>` invokes `_start` by
+# default and prints nothing for a function that returns a value. 24 of the 44
+# modules in bench/ export only `run`, so wart's default entry cannot reach
+# them; of the 17 that export `_start`, only 2 print anything. So on the
+# existing corpus wart's default-entry ANSWER is observable for 2 modules out
+# of 44, and a "the engine vs wart" row built on the other 42 would be timing
+# two runtimes with no evidence either computed the right thing. That is the
+# shape of claim CLAUDE.md §3 was written about.
 #
 # THE REPAIR. Generate the kernel, ask wasmtime for the answer, then emit a
-# SECOND module with the same kernel whose `_start` traps unless the value
+# SECOND module with the same kernel whose `run` export traps unless the value
 # matches. wart's exit status becomes a value check, and the engine's `result=-1`
-# bail becomes one too. The expected constant comes from the oracle at run
+# bail becomes one too. Wart's `--function run` flag (invoke-by-export) is what
+# lets the oracle reach the `run` export by name — the same export wasmtime
+# (`--invoke run`) and the engine (`DUO_WASM_INVOKE=run`) read. wart still
+# prints no return value, so the exit status of the trap-on-mismatch `run` is
+# the value agreement. The expected constant comes from the oracle at run
 # time, never from this file # and the kernels are generated from a seed, so
 # no recognizer anywhere can key on a function name, a literal, or a loop
 # bound and still pass.
@@ -78,11 +83,12 @@ _body: str = (seed: i64, iters: i64)
 _run_wat: str = (body: str)
   "(module\n (func (export \"run\") (result i32)\n  (local $i i32) (local $acc i32)" .. body .. "\n  (local.get $acc)))\n"
 
-# The trapping form. Identical kernel; `_start` is void, so the only thing that
-# escapes is whether it trapped # which is exactly what makes wart, whose CLI
-# prints no return value, into a checkable oracle.
+# The trapping form. Identical kernel, now under a `run` export so wart invokes
+# it BY EXPORT NAME (`--function run`) rather than the default `_start`. wart
+# still prints no return value, so the value check stays trap-on-mismatch: a
+# mismatch traps (exit != 0), a match returns $acc (exit 0).
 _assert_wat: str = (body: str, want: str)
-  "(module\n (func (export \"_start\")\n  (local $i i32) (local $acc i32)" .. body .. "\n  (if (i32.ne (local.get $acc) (i32.const " .. want .. ")) (then (unreachable)))))\n"
+  "(module\n (func (export \"run\") (result i32)\n  (local $i i32) (local $acc i32)" .. body .. "\n  (if (i32.ne (local.get $acc) (i32.const " .. want .. ")) (then (unreachable)))\n  (local.get $acc)))\n"
 
 _build: str = (dir: str, name: str, text: str)
   wat = dir .. "/" .. name .. ".wat"
@@ -116,24 +122,30 @@ _field: str = (raw: str, key: str)
 #                   diagnostic to stderr. Before that commit a trap and a
 #                   legitimate result were both `result=-1`, indistinguishable
 #                   from a function that genuinely returns -1.
-#   result=0     # a void `_start` that ran to completion. Checking only the
-#                   exit status would score "the engine never started" as agreement.
+#   result line  # a `run` export that ran to completion prints a result line;
+#                   checking only the exit status would score "the engine
+#                   never started" as agreement.
 #
 # Requiring both means a future change to either channel shows up as
 # `no-result` rather than as a silent pass.
 _expect: str = (binary: str, wasm: str)
-  cmd = "DUO_WASM_MODULE=" .. wasm .. " DUO_WASM_INVOKE=_start DUO_WASM_ENGINE=jit timeout 300 " .. binary
+  cmd = "DUO_WASM_MODULE=" .. wasm .. " DUO_WASM_INVOKE=run DUO_WASM_ENGINE=jit timeout 300 " .. binary
   rc = script.status(cmd .. " >/dev/null 2>&1")
   raw = script.capture(cmd .. " 2>/dev/null")
   r = _field(raw, "result")
-  if rc == 0 and r == "0"
+  if rc == 0 and r != ""
     return "agree"
   if rc != 0
     return "DISAGREE"
   "no-result"
 
+# wart as the oracle. `--function run` is Wart's invoke-by-export: it invokes the
+# named `run` export instead of the default `_start`, so the oracle reaches the same
+# export the engine (`DUO_WASM_INVOKE=run`) and wasmtime (`--invoke run`) read. wart
+# still prints no return value, so the trap-on-mismatch body above is what turns
+# wart's exit status into a value check.
 _wart_assert: str = (wart: str, wasm: str)
-  if script.status("timeout 300 " .. wart .. " run --jit " .. wasm) == 0
+  if script.status("timeout 300 " .. wart .. " run --jit --function run " .. wasm) == 0
     return "agree"
   "DISAGREE"
 
