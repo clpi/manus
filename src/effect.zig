@@ -14,9 +14,10 @@
 //! travel with the evidence. No catalog of assumptions lives here
 //! (`law.catalog.zero`); an `Experiment` is one conditional theorem.
 
+const std = @import("std");
 const optimization_outcome = @import("optimization_outcome.zig");
 
-pub const SCHEMA_VERSION = "gap182-experiment-v0";
+pub const SCHEMA_VERSION = "gap182-experiment-v1";
 
 /// Epistemic category of a runtime-observed proposition. Profile and sample
 /// evidence are evidence only — they never justify a semantics-changing
@@ -120,6 +121,66 @@ pub const Invalidation = struct {
     fallback_candidate: []const u8,
 };
 
+/// A guarded realization candidate: one experiment plus the stated
+/// assumptions under which its conditional theorem is admissible. The
+/// experiment's own proposition is an implicit assumption; `assumptions`
+/// carries every additional stated assumption identity. A guard is a
+/// conditional witness (`law.guard`): it admisses nothing by itself.
+pub const Guarded = struct {
+    experiment: Experiment,
+    /// Stated assumption proposition identities beyond the experiment's own
+    /// proposition. Empty means the experiment proposition is the only
+    /// assumption.
+    assumptions: []const []const u8 = &.{},
+
+    /// Admissible iff every stated assumption currently holds AND the
+    /// experiment is admissible under invalidation state. `assumption_holds`
+    /// is the current world qualification of each assumption — the caller
+    /// (graph/deopt layer) supplies runtime truth; this file owns no clock
+    /// and no observation loop.
+    pub fn admissible(
+        self: *const Guarded,
+        invalidated: bool,
+        assumption_holds: *const fn (proposition: []const u8) bool,
+    ) bool {
+        if (!self.experiment.admissible(invalidated)) return false;
+        if (!assumption_holds(self.experiment.proposition)) return false;
+        for (self.assumptions) |a| {
+            if (!assumption_holds(a)) return false;
+        }
+        return true;
+    }
+};
+
+/// Deopt candidate selection after an invalidation: the proposition that
+/// became false names the experiment whose guarded candidates are now
+/// inadmissible. Select the first remaining admissible candidate's
+/// conditional theorem; deopt picks the next candidate, never a stalled one.
+pub fn select(
+    candidates: []const Guarded,
+    false_proposition: []const u8,
+    assumption_holds: *const fn (proposition: []const u8) bool,
+) ?[]const u8 {
+    for (candidates) |*c| {
+        const invalidated = std.mem.eql(u8, c.experiment.proposition, false_proposition);
+        if (c.admissible(invalidated, assumption_holds)) {
+            return c.experiment.conditional_theorem;
+        }
+    }
+    return null;
+}
+
+/// Convenience for the single-invalidation boundary: when no candidate
+/// remains admissible, deopt falls back to the invalidation's recorded
+/// fallback candidate — explicit, never a sentinel value in-band.
+pub fn deoptOrFallback(
+    invalidation: Invalidation,
+    candidates: []const Guarded,
+    assumption_holds: *const fn (proposition: []const u8) bool,
+) []const u8 {
+    return select(candidates, invalidation.experiment_proposition, assumption_holds) orelse invalidation.fallback_candidate;
+}
+
 /// Whether profile-shaped evidence is ever sufficient on its own for a
 /// semantics-changing optimization. The answer is always no; this exists so
 /// callers route through the fact instead of re-deriving it.
@@ -140,7 +201,6 @@ pub fn levelForOutcomeEvidence(ev: optimization_outcome.Evidence) EpistemicLevel
 }
 
 test "effect: epistemic levels admit or require guard" {
-    const std = @import("std");
     try std.testing.expect(EpistemicLevel.axiom.admitsWithoutGuard());
     try std.testing.expect(EpistemicLevel.proven.admitsWithoutGuard());
     try std.testing.expect(EpistemicLevel.inferred_sound.admitsWithoutGuard());
@@ -151,7 +211,6 @@ test "effect: epistemic levels admit or require guard" {
 }
 
 test "effect: producers map to their epistemic level" {
-    const std = @import("std");
     try std.testing.expectEqual(EpistemicLevel.proven, EvidenceProducer.static_proof.level());
     try std.testing.expectEqual(EpistemicLevel.inferred_sound, EvidenceProducer.invariant_inference.level());
     try std.testing.expectEqual(EpistemicLevel.guarded, EvidenceProducer.guard_observation.level());
@@ -162,7 +221,6 @@ test "effect: producers map to their epistemic level" {
 }
 
 test "effect: experiment admissibility follows invalidation and level" {
-    const std = @import("std");
     const guarded_exp = Experiment{
         .proposition = "shape:7",
         .producer = .guard_observation,
@@ -180,8 +238,64 @@ test "effect: experiment admissibility follows invalidation and level" {
     try std.testing.expect(proved_exp.admissible(true));
 }
 
+fn holdsAll(proposition: []const u8) bool {
+    _ = proposition;
+    return true;
+}
+
+fn holdsOnlyShape(proposition: []const u8) bool {
+    return std.mem.eql(u8, proposition, "shape:7");
+}
+
+test "effect: guarded realization admissible only under stated assumptions" {
+    const guarded_candidate = Guarded{
+        .experiment = .{
+            .proposition = "shape:7",
+            .producer = .guard_observation,
+            .cost = 3,
+            .conditional_theorem = "cand:sealed-table",
+        },
+        .assumptions = &.{"version:12"},
+    };
+    try std.testing.expect(guarded_candidate.admissible(false, &holdsAll));
+    // Stated assumption false ⇒ inadmissible even while the guard proposition holds.
+    try std.testing.expect(!guarded_candidate.admissible(false, &holdsOnlyShape));
+    // Invalidated guard ⇒ inadmissible even with every assumption holding.
+    try std.testing.expect(!guarded_candidate.admissible(true, &holdsAll));
+}
+
+test "effect: invalidation makes candidate inadmissible and deopt selects another" {
+    const first = Guarded{
+        .experiment = .{
+            .proposition = "shape:7",
+            .producer = .guard_observation,
+            .cost = 3,
+            .conditional_theorem = "cand:mono",
+        },
+    };
+    const next = Guarded{
+        .experiment = .{
+            .proposition = "kind:packed",
+            .producer = .guard_observation,
+            .cost = 3,
+            .conditional_theorem = "cand:poly",
+        },
+    };
+    const candidates = [_]Guarded{ first, next };
+    // While the first assumption holds, the first candidate wins.
+    try std.testing.expectEqualStrings("cand:mono", select(&candidates, "shape:never", &holdsAll).?);
+    // Assumption false ⇒ first candidate ceases to be admissible; deopt selects the next.
+    try std.testing.expectEqualStrings("cand:poly", select(&candidates, "shape:7", &holdsAll).?);
+    // Explicit fallback when no candidate survives.
+    const invalidation = Invalidation{
+        .experiment_proposition = "shape:7",
+        .fallback_candidate = "cand:generic",
+    };
+    const one = [_]Guarded{first};
+    try std.testing.expectEqualStrings("cand:generic", deoptOrFallback(invalidation, &one, &holdsAll));
+}
+
 test "effect: profile evidence never admits alone" {
-    const std = @import("std");
     try std.testing.expect(profileNeedsGuard(.profiled));
     try std.testing.expect(profileNeedsGuard(.sampled));
     try std.testing.expect(profileNeedsGuard(.heuristic));
@@ -189,7 +303,6 @@ test "effect: profile evidence never admits alone" {
 }
 
 test "effect: no assumption catalog lives here" {
-    const std = @import("std");
     try std.testing.expect(!@hasDecl(@This(), "catalog"));
     try std.testing.expect(!@hasDecl(@This(), "experiment_catalog"));
     try std.testing.expect(!@hasDecl(@This(), "writeCatalogJson"));

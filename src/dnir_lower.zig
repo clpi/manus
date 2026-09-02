@@ -659,12 +659,33 @@ fn typeOfGlobal(t: ast.TypeExpr, init: ?*const Expr) RT {
 /// table any relation writes — `M = { A = 3 }` with `M.A = 9` — carries
 /// `mutation != .no`, earns `Refusal.mutated`, keeps its word, and keeps
 /// refusing. This admits only what §18 has already proved absent.
+///
+/// `init` extends the answer for a SECOND, INDEPENDENT reason a positional
+/// aggregate takes no `__DATA` word: every element is a literal of one kind
+/// and nothing in the module writes, rebinds or aliases the binding. That is
+/// `moduleConstTableKindGraph`'s verdict, and it is what the lowering already
+/// records the elements under — without it, `global NAMES = { ... 37 text
+/// rows ... }` would still register the binding as a global and the publish
+/// step would refuse `global-init-not-constant:NAMES` because
+/// `constGlobalInit` cannot fold a table literal into one i64 word.
+///
+/// The two reasons answer the SAME storage question and stay fail-closed:
+/// residencyRefusal is the OLD gate (determinacy must be exact, no alias, no
+/// escape), moduleConstTableKindGraph is the NEW gate (every element is a
+/// literal of one kind, use is at most `dyn_read`). Either admit is enough;
+/// either refuse keeps the word.
 fn moduleBindingIsAbsentAggregate(
     graph: *const semantic_graph.SemanticGraph,
+    mod: *const ast.Module,
     name: []const u8,
+    init: ?*const Expr,
 ) bool {
     const p = graph.placeNamed(name) orelse return false;
-    return place.residencyRefusal(p) == .none;
+    if (place.residencyRefusal(p) == .none) return true;
+    if (init) |v| {
+        if (moduleConstTableKindGraph(graph, true, mod, name, v) != null) return true;
+    }
+    return false;
 }
 
 fn collectModuleGlobals(
@@ -695,9 +716,11 @@ fn collectModuleGlobals(
                 // a reason to drop the binding — asm_for resetting `_p2` must
                 // not erase `global _p2` from the map other functions read.
                 //
-                // EXCEPT WHERE §18 RULES THE BINDING PHYSICALLY ABSENT.
-                if (moduleBindingIsAbsentAggregate(graph, n.ident)) continue;
+                // EXCEPT WHERE §18 RULES THE BINDING PHYSICALLY ABSENT, OR
+                // THE BINDING IS A POSITIONAL CONSTANT TABLE OF ONE KIND —
+                // two independent reasons no `__DATA` word is needed.
                 const init: ?*const Expr = if (i < gd.inits.len) gd.inits[i] else null;
+                if (moduleBindingIsAbsentAggregate(graph, mod, n.ident, init)) continue;
                 try out.types.put(alloc, n.ident, typeOfGlobal(n.typ, init));
                 try out.order.append(alloc, .{ .name = n.ident, .init = init });
             },
@@ -9563,9 +9586,16 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
         ctx.table_lens.get(len_slot) orelse return bail(ctx.diagnostic, @src())
     else
         ctx.module_consts.ints.get(len_key) orelse return bail(ctx.diagnostic, @src());
-    // As on the write side: wide tables are memory-backed from their binding and
-    // resolve through `ptrSlotOf` before reaching this chain.
-    if (len == 0 or len > select_chain_max) return bail(ctx.diagnostic, @src());
+    const is_module_table = ctx.locals.get(len_key) == null;
+    // The local path bails above `select_chain_max` because a wide LOCAL table
+    // is supposed to materialize into memory at its binding — and the read path
+    // would only see it via `ptrSlotOf` above, not here. Module-level positional
+    // tables are different: their elements are literals already living in
+    // `module_consts.strs` / `module_consts.ints`, the select chain lowers each
+    // element as an immediate, and there is no `__DATA` word that COULD hold a
+    // base pointer — so the cap would block a path the table has to walk.
+    if (len == 0) return bail(ctx.diagnostic, @src());
+    if (!is_module_table and len > select_chain_max) return bail(ctx.diagnostic, @src());
 
     const idx_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = try lowerExpr(ctx, key_expr), .ty = .any });
