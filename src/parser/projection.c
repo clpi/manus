@@ -2994,6 +2994,10 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
         if (((kind >= 0) && token_grammarrole__roledescriptor(kind))) {
                         primitive = 1;
         }
+        int64_t primary = 0;
+        if ((((((((kind == INT64_C(0)) || (kind == INT64_C(1))) || (kind == INT64_C(2))) || (kind == INT64_C(66))) || (kind == INT64_C(82))) || (kind == INT64_C(58))) || (kind == INT64_C(73)))) {
+                        primary = 1;
+        }
         int64_t literal = 0;
         if ((((kind >= 0) && (kind < ((int64_t)strlen(literals)))) && (((int64_t)(unsigned char)(literals[(kind + 1) - 1])) == 49))) {
                         literal = 1;
@@ -3053,16 +3057,34 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
         if ((((((primitive == 1) || (kind == INT64_C(66))) || (kind == INT64_C(82))) || (kind == INT64_C(60))) || (kind == INT64_C(62)))) {
                         layouttype = 1;
         }
+                int64_t word = 0;
         if ((kind == INT64_C(0))) {
-            int64_t word = fact[((index * 2) + 2)];
+                        word = fact[((index * 2) + 2)];
             int64_t first = ((int64_t)((((int64_t)(((uint64_t)(word)) >> ((uint64_t)(8) & 63u)))) & (255)));
             if (((first >= 65) && (first <= 90))) {
                                 layouttype = 1;
             }
         }
-        out[index] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((dispatch) | (((int64_t)(((uint64_t)(admission)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(member)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(boundaryface)) << ((uint64_t)(10) & 63u))))))) | (((int64_t)(((uint64_t)(branchface)) << ((uint64_t)(11) & 63u))))))) | (((int64_t)(((uint64_t)(returns)) << ((uint64_t)(13) & 63u))))))) | (((int64_t)(((uint64_t)(ending)) << ((uint64_t)(14) & 63u))))))) | (((int64_t)(((uint64_t)(terminator)) << ((uint64_t)(15) & 63u))))))) | (((int64_t)(((uint64_t)(empty)) << ((uint64_t)(16) & 63u))))))) | (((int64_t)(((uint64_t)(primitive)) << ((uint64_t)(17) & 63u))))))) | (((int64_t)(((uint64_t)(literal)) << ((uint64_t)(18) & 63u))))))) | (((int64_t)(((uint64_t)(quoted)) << ((uint64_t)(19) & 63u))))))) | (((int64_t)(((uint64_t)(prefixface)) << ((uint64_t)(20) & 63u))))))) | (((int64_t)(((uint64_t)(demandface)) << ((uint64_t)(21) & 63u))))))) | (((int64_t)(((uint64_t)(leadface)) << ((uint64_t)(22) & 63u))))))) | (((int64_t)(((uint64_t)(infix)) << ((uint64_t)(23) & 63u))))))) | (((int64_t)(((uint64_t)(unaryface)) << ((uint64_t)(47) & 63u))))))) | (((int64_t)(((uint64_t)(glueface)) << ((uint64_t)(52) & 63u))))))) | (((int64_t)(((uint64_t)(updateface)) << ((uint64_t)(57) & 63u))))))) | (((int64_t)(((uint64_t)(layouttype)) << ((uint64_t)(62) & 63u))))));
+        int64_t attempt = 0;
+        if ((terminator == 1)) {
+                        attempt = 1;
+        }
+        if ((returns == 1)) {
+                        attempt = 2;
+        }
+                returns = ((int64_t)(((uint64_t)(attempt)) >> ((uint64_t)(1) & 63u)));
+                terminator = ((int64_t)((attempt) & (1)));
+        out[index] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((dispatch) | (((int64_t)(((uint64_t)(admission)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(member)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(boundaryface)) << ((uint64_t)(10) & 63u))))))) | (((int64_t)(((uint64_t)(branchface)) << ((uint64_t)(11) & 63u))))))) | (((int64_t)(((uint64_t)(returns)) << ((uint64_t)(13) & 63u))))))) | (((int64_t)(((uint64_t)(ending)) << ((uint64_t)(14) & 63u))))))) | (((int64_t)(((uint64_t)(terminator)) << ((uint64_t)(15) & 63u))))))) | (((int64_t)(((uint64_t)(empty)) << ((uint64_t)(16) & 63u))))))) | (((int64_t)(((uint64_t)(primitive)) << ((uint64_t)(17) & 63u))))))) | (((int64_t)(((uint64_t)(literal)) << ((uint64_t)(18) & 63u))))))) | (((int64_t)(((uint64_t)(quoted)) << ((uint64_t)(19) & 63u))))))) | (((int64_t)(((uint64_t)(prefixface)) << ((uint64_t)(20) & 63u))))))) | (((int64_t)(((uint64_t)(demandface)) << ((uint64_t)(21) & 63u))))))) | (((int64_t)(((uint64_t)(leadface)) << ((uint64_t)(22) & 63u))))))) | (((int64_t)(((uint64_t)(infix)) << ((uint64_t)(23) & 63u))))))) | (((int64_t)(((uint64_t)(unaryface)) << ((uint64_t)(47) & 63u))))))) | (((int64_t)(((uint64_t)(glueface)) << ((uint64_t)(52) & 63u))))))) | (((int64_t)(((uint64_t)(updateface)) << ((uint64_t)(57) & 63u))))))) | (((int64_t)(((uint64_t)(primary)) << ((uint64_t)(61) & 63u))))))) | (((int64_t)(((uint64_t)(layouttype)) << ((uint64_t)(62) & 63u))))));
         int64_t clauseface = _clause(fact, count, index);
         int64_t returnface = return_starts_value_lx(fact, count, index, before, idol);
+        int64_t recordface = 0;
+        if ((kind == INT64_C(62))) {
+                        recordface = 1;
+        }
+        int64_t arrayface = 0;
+        if ((kind == INT64_C(60))) {
+                        arrayface = 1;
+        }
         int64_t head = 0;
                 int64_t following = 0;
         if (((kind == INT64_C(0)) && (fact[((index * 2) + 2)] == 435678704644))) {
@@ -3075,6 +3097,7 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
             }
         }
         int64_t assignment = 0;
+                int64_t width = 0;
         if ((kind == INT64_C(0))) {
             int64_t cursor = (index + 1);
             while (((((cursor + 1) < count) && (((int64_t)((fact[((cursor * 2) + 1)]) & (255))) == INT64_C(80))) && (((int64_t)((fact[(((cursor + 1) * 2) + 1)]) & (255))) == INT64_C(0)))) {
@@ -3090,7 +3113,7 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                     if ((((int64_t)((following) & (255))) == INT64_C(75))) {
                                                 line = ((int64_t)((((int64_t)(((uint64_t)(candidate)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
                         int64_t column = ((int64_t)(((uint64_t)(candidate)) >> ((uint64_t)(36) & 63u)));
-                        int64_t width = ((int64_t)((fact[((cursor * 2) + 2)]) & (255)));
+                                                width = ((int64_t)((fact[((cursor * 2) + 2)]) & (255)));
                         int64_t nextline = ((int64_t)((((int64_t)(((uint64_t)(following)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
                         int64_t nextcolumn = ((int64_t)(((uint64_t)(following)) >> ((uint64_t)(36) & 63u)));
                         if (((nextline == line) && (nextcolumn == (column + width)))) {
@@ -3111,10 +3134,14 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                         declaration = 4;
         } else if ((kind == INT64_C(51))) {
                         declaration = 5;
-        } else if (((kind == INT64_C(19)) || (kind == INT64_C(15)))) {
+        } else if ((kind == INT64_C(19))) {
                         declaration = 6;
+        } else if ((kind == INT64_C(15))) {
+                        declaration = 11;
         } else if ((kind == INT64_C(12))) {
                         declaration = 7;
+        } else if ((kind == INT64_C(81))) {
+                        declaration = 12;
         } else if ((kind == INT64_C(0))) {
                         following = INT64_C(109);
             if (((index + 1) < count)) {
@@ -3123,6 +3150,14 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
             if (((head == 1) || (following == INT64_C(78)))) {
                                 declaration = 8;
             }
+        }
+        if (((prior == INT64_C(73)) && (kind == INT64_C(0)))) {
+                        declaration = 9;
+        } else if (((prior == INT64_C(73)) && (kind == INT64_C(29)))) {
+                        declaration = 10;
+        }
+        if ((!visible)) {
+                        declaration = 15;
         }
         int64_t delimiter = 0;
         if ((kind == INT64_C(58))) {
@@ -3155,7 +3190,25 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                                 headercomma = 1;
             }
         }
-        out[(count + index)] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((clauseface) | (((int64_t)(((uint64_t)(returnface)) << ((uint64_t)(2) & 63u))))))) | (((int64_t)(((uint64_t)(headerplain)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(headercomma)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(head)) << ((uint64_t)(6) & 63u))))))) | (((int64_t)(((uint64_t)(assignment)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(declaration)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(delimiter)) << ((uint64_t)(13) & 63u))))));
+        int64_t widthface = 0;
+        if (((kind == INT64_C(0)) && ((index + 3) < count))) {
+                        word = fact[((index * 2) + 2)];
+            if ((((word == 26881) || (word == 29953)) || (word == 26113))) {
+                int64_t opening = fact[(((index + 1) * 2) + 1)];
+                                width = fact[(((index + 2) * 2) + 1)];
+                int64_t closing = fact[(((index + 3) * 2) + 1)];
+                if ((((((int64_t)((opening) & (255))) == INT64_C(58)) && (((int64_t)((width) & (255))) == INT64_C(1))) && (((int64_t)((closing) & (255))) == INT64_C(59)))) {
+                    int64_t startline = ((int64_t)((((int64_t)(((uint64_t)(encoded)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
+                    int64_t startcol = ((int64_t)(((uint64_t)(encoded)) >> ((uint64_t)(36) & 63u)));
+                    int64_t openline = ((int64_t)((((int64_t)(((uint64_t)(opening)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
+                    int64_t opencol = ((int64_t)(((uint64_t)(opening)) >> ((uint64_t)(36) & 63u)));
+                    if (((openline == startline) && (opencol == (startcol + 1)))) {
+                                                widthface = 1;
+                    }
+                }
+            }
+        }
+        out[(count + index)] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((clauseface) | (((int64_t)(((uint64_t)(returnface)) << ((uint64_t)(2) & 63u))))))) | (((int64_t)(((uint64_t)(arrayface)) << ((uint64_t)(3) & 63u))))))) | (((int64_t)(((uint64_t)(headerplain)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(headercomma)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(widthface)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(head)) << ((uint64_t)(6) & 63u))))))) | (((int64_t)(((uint64_t)(assignment)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(declaration)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(recordface)) << ((uint64_t)(12) & 63u))))))) | (((int64_t)(((uint64_t)(delimiter)) << ((uint64_t)(13) & 63u))))));
         if (((headerplain == 1) && (index > 0))) {
             int64_t start = (index - 1);
             if ((((int64_t)((fact[((start * 2) + 1)]) & (255))) == INT64_C(0))) {

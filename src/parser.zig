@@ -448,6 +448,10 @@ pub const Parser = struct {
         return ((event >> 61) & 1) != 0 and ((event >> 18) & 1) != 0;
     }
 
+    fn currentParserTypeWidth(self: *Parser) ParseError!bool {
+        return (((try self.currentParserDecision()) >> 4) & 1) != 0;
+    }
+
     fn currentParserBodyAssignment(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 8) & 1) != 0;
     }
@@ -1514,29 +1518,13 @@ pub const Parser = struct {
     /// and then mismatched later. Adjacency is required, so `i (64)` — a name
     /// applied to a group — still means what it meant.
     fn appliedWidthType(self: *Parser) ParseError!?[]const u8 {
+        if (!try self.currentParserTypeWidth()) return null;
         const t = try self.pk();
-        if (t.kind != .name) return null;
-        if (t.text.len != 1) return null;
         const stem = t.text[0];
-        if (stem != 'i' and stem != 'u' and stem != 'f') return null;
-        const saved = self.saveState();
-        const saved_line = self.prev_line;
-        const saved_end = self.prev_end_col;
-        var ok = false;
-        defer if (!ok) {
-            self.restoreState(saved);
-            self.prev_line = saved_line;
-            self.prev_end_col = saved_end;
-        };
         _ = try self.adv();
-        const lp = try self.pk();
-        if (lp.kind != .lparen) return null;
-        if (lp.loc.line != t.loc.line or lp.loc.col != t.loc.col + 1) return null;
         _ = try self.adv();
         const w = try self.pk();
-        if (w.kind != .int_lit) return null;
         _ = try self.adv();
-        if ((try self.pk()).kind != .rparen) return null;
         _ = try self.adv();
         const named: ?[]const u8 = switch (stem) {
             'i' => switch (w.int_val) {
@@ -1564,7 +1552,6 @@ pub const Parser = struct {
             term.locErr(t.loc, "`{c}({d})` is not a width that exists", .{ stem, w.int_val });
             return error.UnexpectedToken;
         };
-        ok = true;
         return n;
     }
 

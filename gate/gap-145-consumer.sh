@@ -443,6 +443,21 @@ if [ "$expression_group_arms" -ne 0 ]; then
     bad "parse_simple_expr retained $expression_group_arms .lparen host arm(s)"
 fi
 
+# The applied-width type-primary recognizer consumes header bit 4 at its
+# mutually exclusive name coordinate. Zig retains descriptor validation, but
+# no longer walks token kinds to decide whether the shape is `i(64)`.
+has "$ROOT/lib/compiler/parser.id" '(widthface << 4)' \
+    'event lost the applied-width type-primary face'
+has "$PARSER" 'fn currentParserTypeWidth(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the applied-width type-primary consumer'
+has "$PARSER" 'if (!try self.currentParserTypeWidth()) return null;' \
+    'appliedWidthType bypasses the settled applied-width face'
+widthbody=$(sed -n '/fn appliedWidthType/,/fn parse_type_primary/p' "$PARSER")
+examined=$((examined + 1))
+if printf '%s\n' "$widthbody" | grep -Eq 'kind != \.(name|lparen|int_lit|rparen)'; then
+    bad 'appliedWidthType reacquired a host token-kind recognizer'
+fi
+
 # Header bit 4 is settled at `(`. Event walks backward over the exact admitted
 # name (`.` name)* (`:` name)? path and writes bit 7 at the starting name. Zig
 # statement and attribute consumers select that coordinate without a second
