@@ -88,6 +88,18 @@ pub const EvidenceProducer = enum(u8) {
             .heuristic_estimate => .heuristic,
         };
     }
+
+    /// GAP-182 required order 5: profiles, samples, and hardware counters are
+    /// evidence producers — observations of one measured subject on one
+    /// revision, never semantic truth. Sound producers (proof, inference)
+    /// are not evidence in this sense; guard observations are the guard's
+    /// own witness, not aggregate evidence over runs.
+    pub fn isEvidence(self: EvidenceProducer) bool {
+        return switch (self) {
+            .profile_counter, .hardware_counter, .sample, .heuristic_estimate => true,
+            .static_proof, .invariant_inference, .guard_observation => false,
+        };
+    }
 };
 
 /// experiment(P) = { proposition, evidence kind, cost, conditional theorem }.
@@ -103,6 +115,12 @@ pub const Experiment = struct {
     cost: u32,
     /// Stable identity of the realization candidate admitted iff P holds.
     conditional_theorem: []const u8,
+    /// The exact measured subject revision (`law.evidence.subject.one`):
+    /// every evidence producer must name the revision its observations were
+    /// taken on, separately from the artifact revision itself. Empty means no
+    /// revision travels with the fact — lawful only for sound producers whose
+    /// theorem does not depend on any measurement.
+    subject_revision: []const u8 = "",
 
     /// A sound experiment (proof-derived) stays admissible when invalidated —
     /// the theorem did not depend on the observation. Evidence-level
@@ -110,6 +128,22 @@ pub const Experiment = struct {
     pub fn admissible(self: *const Experiment, invalidated: bool) bool {
         if (self.producer.level().admitsWithoutGuard()) return true;
         return !invalidated;
+    }
+
+    /// Required order 5: evidence is evidence only. No producer of
+    /// evidence-level standing ever produces semantic truth; only sound
+    /// levels make a statement about the semantics regardless of measurement.
+    pub fn producesTruth(self: *const Experiment) bool {
+        return self.producer.level().admitsWithoutGuard();
+    }
+
+    /// Provenance is complete iff every evidence producer names the measured
+    /// subject revision. Sound producers may omit it; evidence producers
+    /// (`isEvidence`) may not. This is the executable face of
+    /// `law.evidence.subject.one` on the experiment fact family.
+    pub fn provenanceComplete(self: *const Experiment) bool {
+        if (!self.producer.isEvidence()) return true;
+        return self.subject_revision.len > 0;
     }
 };
 
@@ -300,6 +334,47 @@ test "effect: profile evidence never admits alone" {
     try std.testing.expect(profileNeedsGuard(.sampled));
     try std.testing.expect(profileNeedsGuard(.heuristic));
     try std.testing.expect(!profileNeedsGuard(.proven));
+}
+
+fn experiment(producer: EvidenceProducer, revision: []const u8) Experiment {
+    return .{
+        .proposition = "shape:7",
+        .producer = producer,
+        .cost = 1,
+        .conditional_theorem = "cand:x",
+        .subject_revision = revision,
+    };
+}
+
+test "effect: profiles, samples, and hardware counters are evidence producers" {
+    // Required order 5: these producers are evidence, never semantic truth.
+    const evidence_producers = [_]EvidenceProducer{ .profile_counter, .hardware_counter, .sample, .heuristic_estimate };
+    for (evidence_producers) |p| {
+        try std.testing.expect(p.isEvidence());
+        try std.testing.expect(!experiment(p, "rev:abc").producesTruth());
+    }
+    const sound_producers = [_]EvidenceProducer{ .static_proof, .invariant_inference, .guard_observation };
+    for (sound_producers) |p| {
+        try std.testing.expect(!p.isEvidence());
+    }
+    // Sound experiments state semantics regardless of measurement.
+    try std.testing.expect(experiment(.static_proof, "").producesTruth());
+    // But a guarded experiment still cannot admit without its guard.
+    try std.testing.expect(!experiment(.guard_observation, "").producesTruth());
+}
+
+test "effect: evidence provenance requires the measured subject revision" {
+    // law.evidence.subject.one on the experiment fact family: an evidence
+    // fact naming no measured subject revision has incomplete provenance.
+    try std.testing.expect(!experiment(.profile_counter, "").provenanceComplete());
+    try std.testing.expect(!experiment(.hardware_counter, "").provenanceComplete());
+    try std.testing.expect(!experiment(.sample, "").provenanceComplete());
+    try std.testing.expect(!experiment(.heuristic_estimate, "").provenanceComplete());
+    try std.testing.expect(experiment(.profile_counter, "rev:abc").provenanceComplete());
+    try std.testing.expect(experiment(.hardware_counter, "rev:abc").provenanceComplete());
+    // Sound producers are complete with or without a revision naming.
+    try std.testing.expect(experiment(.static_proof, "").provenanceComplete());
+    try std.testing.expect(experiment(.guard_observation, "").provenanceComplete());
 }
 
 test "effect: no assumption catalog lives here" {
