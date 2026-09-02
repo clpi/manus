@@ -316,6 +316,7 @@ static int64_t expected_face(const char *row, bool admitted, int64_t kind) {
 }
 
 static int64_t first_kind(const char *source);
+static int64_t first_kind_at(const char *source, const char *file);
 
 static int64_t expected_event(int64_t kind, bool idol) {
     const int64_t member = kind == 0 || (kind >= 4 && kind <= 57);
@@ -383,6 +384,10 @@ static int verify_event(void) {
                 if (delimiter != 2) failed += 1;
             } else if (kind == first_kind("3.5")) {
                 if (delimiter != 3) failed += 1;
+            } else if (kind == first_kind_at("'compat'", "probe.duo")) {
+                if (delimiter != 5) failed += 1;
+            } else if (kind == first_kind("\"text\"")) {
+                if (delimiter != 6) failed += 1;
             } else if (kind != first_kind("(") && delimiter != 0) failed += 1;
         }
     }
@@ -591,7 +596,11 @@ static int verify_boundary_opening(void) {
 }
 
 static int64_t first_kind(const char *source) {
-    duo_lexer lexer = compiler_lexer__new(source, "probe.id", 1);
+    return first_kind_at(source, "probe.id");
+}
+
+static int64_t first_kind_at(const char *source, const char *file) {
+    duo_lexer lexer = compiler_lexer__new(source, file, 1);
     return compiler_lexer__next(&lexer).kind;
 }
 
