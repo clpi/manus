@@ -53,12 +53,35 @@
 # name fails, so a subject cannot be dropped from measurement by deleting one
 # line. It is a ratchet, not a list.
 #
+# AND THAT RATCHET NEEDS NO COMPILER, SO IT RUNS BEFORE THE HOST IS CLASSIFIED.
+# Every measurement below the classification needs macOS/aarch64 — the direct
+# backend refuses every other host by name — and the ratchet used to sit below it
+# too, reached only after the host had already been found capable. Measured on
+# aarch64-linux: this file exited 3 NOT MEASURED without ever opening the roster,
+# so a row naming a shape that no longer exists, a shape no row names, a
+# malformed row, and a roster emptied to zero rows were all invisible on every
+# host but one. Whether the roster agrees with this gate is a fact about THESE
+# TWO FILES, not about a host, and it is now convicted wherever they are checked
+# out. What remains host-bound is the half that genuinely is: compiled, run,
+# answered, pins read.
+#
+# SPLITTING IT DOES NOT WEAKEN THE ORDERING THE CONTROLS BELOW DEPEND ON. The
+# ratchet WRITES subject sources and reports no subject's ANSWER; the roster it
+# validated is handed to the measurement pass as `$work/measure`, so the rows are
+# parsed by one producer and a row that survives validation and then goes
+# unmeasured is itself a failure.
+#
 # ═══ THE CONTROLS ══════════════════════════════════════════════════════════
 #
 # A gate that refuses everything passes every ratchet it owns and measures
 # nothing, and a gate that reads only exit status agrees with a compiler that
 # links the world and computes garbage. The controls run BEFORE any subject is
 # reported, each proving a different way to be wrong:
+#
+#   R  THE ROSTER RATCHET, and it is not in this list because it is not a
+#      control: it asks nothing of the compiler, so it runs above the host
+#      classification and convicts on hosts where nothing else here can. See
+#      the roster section above.
 #
 #   P  POSITIVE. A SINGLE-partition program must compile and answer. Nothing
 #      here is about cross-partition reach, so if this cannot pass, the
@@ -327,7 +350,12 @@ run_subject() {
     fi
     # A CRASH IS NOT AN ANSWER. 128+n is a signal, and reading one as an exit
     # status would let a segfaulting program match a numeric expectation.
-    "$dir/prog" >/dev/null 2>&1
+    #
+    # STDIN IS CLOSED FOR THE SUBJECT, because the loop that calls this reads the
+    # validated roster on stdin: a subject that read a byte would eat a row, and
+    # the row would vanish between being named and being answered rather than
+    # failing. No subject here reads stdin; the point is that it cannot.
+    "$dir/prog" >/dev/null 2>&1 </dev/null
     got=$?
     if [ "$got" -gt 125 ]; then
         printf 'program did not answer (status %s — signal or exec failure)' "$got" >"$work/why"
@@ -362,6 +390,82 @@ run_subject() {
     fi
     return 0
 }
+
+# ══ THE ROSTER RATCHET — NO COMPILER IS ASKED, SO NO HOST IS EXCUSED ═══════
+# Whether `gate/crosspartition.subjects` agrees with this file is a fact about
+# these two files. It was measured below the host classification, which on every
+# host but macOS/aarch64 means never: this gate exited 3 having never opened the
+# roster, so a row naming a shape that no longer exists, a shape no row names, a
+# malformed row, and a roster emptied to zero rows (GAP-201, the rule the roster
+# is a separate file FOR) were all unobservable outside one host.
+#
+# IT MATERIALIZES, AND REPORTS NO ANSWER. Writing a subject's sources needs
+# nothing but a filesystem, and doing it here is what proves the shape EXISTS;
+# every controls-before-subjects ordering below is untouched, because no subject
+# is compiled, run or reported until they have all passed.
+#
+# ONE PARSE. The validated rows are written to `$work/measure` and the
+# measurement pass reads THAT, so the roster's fields have one producer, and a
+# row that passes here and is then not measured is a finding of its own.
+ratchet=0
+rows=0
+subjects=0
+named=''
+: >"$work/measure" || exit 3
+
+while IFS= read -r line || [ -n "$line" ]; do
+    case $line in ''|\#*) continue ;; esac
+    rows=$((rows + 1))
+    shape=$(printf '%s\n' "$line" | awk '{print $1}')
+    expect=$(printf '%s\n' "$line" | awk '{print $2}')
+    defines=$(printf '%s\n' "$line" | awk '{print $3}')
+    if [ -z "$shape" ] || [ -z "$expect" ] || [ -z "$defines" ]; then
+        printf 'crosspartition: FAIL — malformed roster row: %s\n' "$line" >&2
+        ratchet=$((ratchet + 1))
+        continue
+    fi
+    materialize "$shape" "$work/subject.$shape"
+    case $? in
+        0) ;;
+        2)
+            printf 'crosspartition: FAIL — roster names a shape this gate cannot materialize: %s\n' "$shape" >&2
+            ratchet=$((ratchet + 1))
+            continue
+            ;;
+        *)
+            printf 'crosspartition: FAIL — cannot write subject %s\n' "$shape" >&2
+            ratchet=$((ratchet + 1))
+            continue
+            ;;
+    esac
+    named="$named $shape"
+    subjects=$((subjects + 1))
+    printf '%s %s %s\n' "$shape" "$expect" "$defines" >>"$work/measure"
+done <"$roster"
+
+# ── the roster covers every shape, and only shapes that exist ──────────────
+for shape in $SHAPES; do
+    case " $named " in
+        *" $shape "*) ;;
+        *)
+            printf 'crosspartition: FAIL — shape %s exists here and the roster does not name it; it would go unmeasured.\n' "$shape" >&2
+            ratchet=$((ratchet + 1))
+            ;;
+    esac
+done
+
+# ── GAP-201: zero subjects is a failure, never a clean run ─────────────────
+if [ "$subjects" -eq 0 ]; then
+    printf 'crosspartition: FAIL — 0 subjects examined (roster held %s row(s)); absence of a subject is not absence of a defect.\n' \
+        "$rows" >&2
+    ratchet=$((ratchet + 1))
+fi
+
+if [ "$ratchet" -ne 0 ]; then
+    printf 'crosspartition: FAIL — the roster and this gate disagree (%s finding(s)); no host had to compile anything for that to be wrong.\n' \
+        "$ratchet" >&2
+    exit 1
+fi
 
 # ══ THE EXECUTABLE KIND IS CLASSIFIED BEFORE CONTROL P IS READ ═════════════
 # `gate/realization/direct.sh` is the ONE PRODUCER of "can this host realize a
@@ -578,63 +682,31 @@ for pin in _helper__value duo_str_to_i64; do
     fi
 done
 
-# ══ THE ROSTER ═════════════════════════════════════════════════════════════
+# ══ THE ROSTER, MEASURED ═══════════════════════════════════════════════════
+# Every row here was validated and materialized by the ratchet above, which
+# needed no host. What is left is the half that does: compile with
+# `--backend=direct`, run, check the answer, read the pins.
 examined=0
 failed=0
-rows=0
-named=''
 
-while IFS= read -r line || [ -n "$line" ]; do
-    case $line in ''|\#*) continue ;; esac
-    rows=$((rows + 1))
-    shape=$(printf '%s\n' "$line" | awk '{print $1}')
-    expect=$(printf '%s\n' "$line" | awk '{print $2}')
-    defines=$(printf '%s\n' "$line" | awk '{print $3}')
-    if [ -z "$shape" ] || [ -z "$expect" ] || [ -z "$defines" ]; then
-        printf 'crosspartition: FAIL — malformed roster row: %s\n' "$line" >&2
-        failed=$((failed + 1))
-        continue
-    fi
-    dir=$work/subject.$shape
-    materialize "$shape" "$dir"
-    case $? in
-        0) ;;
-        2)
-            printf 'crosspartition: FAIL — roster names a shape this gate cannot materialize: %s\n' "$shape" >&2
-            failed=$((failed + 1))
-            continue
-            ;;
-        *)
-            printf 'crosspartition: FAIL — cannot write subject %s\n' "$shape" >&2
-            failed=$((failed + 1))
-            continue
-            ;;
-    esac
-    named="$named $shape"
+while read -r shape expect defines; do
     examined=$((examined + 1))
-    if run_subject "$dir" "$expect" "$defines"; then
+    if run_subject "$work/subject.$shape" "$expect" "$defines"; then
         printf 'crosspartition: %-6s PASS  answer=%s defines=%s\n' "$shape" "$expect" "$defines"
     else
         printf 'crosspartition: %-6s FAIL  %s\n' "$shape" "$(cat "$work/why")" >&2
         failed=$((failed + 1))
     fi
-done <"$roster"
+done <"$work/measure"
 
-# ── the roster covers every shape, and only shapes that exist ──────────────
-for shape in $SHAPES; do
-    case " $named " in
-        *" $shape "*) ;;
-        *)
-            printf 'crosspartition: FAIL — shape %s exists here and the roster does not name it; it would go unmeasured.\n' "$shape" >&2
-            failed=$((failed + 1))
-            ;;
-    esac
-done
-
-# ── GAP-201: zero subjects is a failure, never a clean run ─────────────────
-if [ "$examined" -eq 0 ]; then
-    printf 'crosspartition: FAIL — 0 subjects examined (roster held %s row(s)); absence of a subject is not absence of a defect.\n' \
-        "$rows" >&2
+# ── a validated row that goes unmeasured is a dropped subject ──────────────
+# The ratchet counted the subjects it accepted; this pass counts the ones it
+# actually measured. It is what holds the two passes to one number, so a future
+# edit that skips a row here — a `continue` before `run_subject`, an early
+# `break` — fails instead of quietly reporting a smaller roster as a clean run.
+if [ "$examined" -ne "$subjects" ]; then
+    printf 'crosspartition: FAIL — the ratchet accepted %s subject(s) and %s were measured.\n' \
+        "$subjects" "$examined" >&2
     exit 1
 fi
 
