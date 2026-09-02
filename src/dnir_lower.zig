@@ -6708,6 +6708,23 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
+    
+    // GAP-174: Preserve value-carrying tail expressions in value-carrying contexts.
+    // When the block is in a value-carrying context (saved_answering is true) and has
+    // a value-carrying tail expression, we need to preserve that value even though
+    // allow_return is false (because we're not in a function return context).
+    // This fixes multi-statement if/else branches used as values.
+    if (saved_answering) {
+        if (block.tail_expr) |tail| {
+            if (tail.* != .table and !effect(tail)) {
+                // This is a value-carrying tail expression in a value-carrying context.
+                // Preserve it by lowering it with .single consumption so the value is available.
+                _ = try lowerExprCons(ctx, tail, .single);
+                return false;
+            }
+        }
+    }
+    
     try lowerBlockTailEffect(ctx, block);
     return false;
 }
