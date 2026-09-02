@@ -107,9 +107,12 @@ world projection, and its remaining bulk is `std.script.*` whose canonical
 targets are vocabulary-blocked.
 
 **6 Realization One** — `GAP-121`, `GAP-126`, `GAP-130`, `GAP-144`, `GAP-148`,
-`GAP-151`, `GAP-174`, `GAP-204`, `GAP-205`, `GAP-207`.
+`GAP-151`, `GAP-174` (not P0), `GAP-204`, `GAP-205`, `GAP-207`.
 `GAP-148` reproduces exactly (`spilled_regs` still keyed by a physical register).
-`GAP-174` is one law with two realizations and only one migrated. `GAP-207` is a
+`GAP-174` — one law with two realizations and only one migrated — is CLOSED and
+reclassified below: `9e59d168` preserves the value-carrying tail of a
+multi-statement branch in the lowering both non-direct emitters share, which is
+upstream of each of them, and `23e0a53e` recorded it. `GAP-207` is a
 live silent wrong answer — see below. `GAP-144` owns runtime-sized table
 realization and `GAP-169` (not P0) routes to it by name; its rejection half is crossed
 and its construction half is unstarted, so it is the growable-table hole rather
@@ -230,6 +233,7 @@ commit. Neither was superseded.
 | `GAP-225` | CLOSED | the lift names the module binding a relation writes and `publishApplicationMutations` publishes its cardinality; the census movement and the hazard row are what `sh gate/effect.sh` and `sh gate/speculation.sh` print, and the floors are pinned in those runners; regression `examples/place/mutate.id` |
 | `GAP-115` | CLOSED | `99673d63` "evidence: a fixed /tmp name is a fact any concurrent session can rewrite"; doctor/census/projection/positive-controls now mint run-private mktemp roots, pinned by `gate/gap-115-evidence.sh` |
 | `GAP-221` | CLOSED | `aa936dfa` "GAP-221: eliminate two-store shape in module field storage resolution" — `moduleFieldWord` returns the type and the storage key together, so the by-spelling `storageKey` lookup after the binding check has no call site; `gate/gap-221-shadowstore.sh` pins the answer and the deletion witness, which is exactly what the withdrawal below found missing |
+| `GAP-174` | CLOSED | `9e59d168` preserves the value-carrying tail of a multi-statement branch in a saved-answering context in `src/dnir_lower.zig` — the lowering both non-direct emitters share, which is upstream of each of them, as the row-for-row identical wrongness said it had to be; recorded by `23e0a53e` |
 Each carries its evidence in its own file. No gap was reclassified on the
 strength of its own prose.
 
