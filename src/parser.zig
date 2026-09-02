@@ -414,6 +414,14 @@ pub const Parser = struct {
         return @intCast(face);
     }
 
+    fn currentParserLocalAttribute(self: *Parser) ParseError!u2 {
+        return switch (try self.currentParserAttributeDispatch()) {
+            9 => 1,
+            10 => 2,
+            else => 0,
+        };
+    }
+
     fn currentParserAttributeBoundary(self: *Parser) ParseError!?usize {
         const boundary = (try self.currentParserDecision()) >> 13;
         if (boundary == 0) return null;
@@ -2886,14 +2894,13 @@ pub const Parser = struct {
         const typ = try self.maybe_type_ann();
         var attrib: ?[]const u8 = null;
         if (try self.eat(.lt) != null) {
-            const attr_tok = try self.pk();
-            attrib = switch (attr_tok.kind) {
-                .name => blk: {
+            attrib = switch (try self.currentParserLocalAttribute()) {
+                1 => blk: {
                     const a = try self.adv();
                     _ = try self.expect(.gt);
                     break :blk a.text;
                 },
-                .kw_const => blk: {
+                2 => blk: {
                     _ = try self.adv();
                     _ = try self.expect(.gt);
                     break :blk "const";
