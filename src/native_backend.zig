@@ -4909,7 +4909,7 @@ const Arm64Compiler = struct {
             .load_index, .store_index => |op| switch (ins.ty) {
                 .i64 => {
                     const is_const_store = op == .store_index and b: {
-                        const base_id: ?u32 = switch (ins.lhs) {
+                        const base_id = switch (ins.lhs) {
                             .temp, .local => |id| id,
                             else => break :b false,
                         };
@@ -4989,7 +4989,7 @@ const Arm64Compiler = struct {
                 },
                 .f64 => {
                     const is_const_store = op == .store_index and b: {
-                        const base_id: ?u32 = switch (ins.lhs) {
+                        const base_id = switch (ins.lhs) {
                             .temp, .local => |id| id,
                             else => break :b false,
                         };
@@ -5007,7 +5007,7 @@ const Arm64Compiler = struct {
                     };
                     if (const_off) |off| {
                         if (op == .load_index) {
-                            const dst = try self.allocReg(.fp);
+                            const dst = try self.allocReg();
                             try self.emitLdrBaseImmFp(dst, base, off);
                             if (ins.result) |t| try temps.put(self.alloc, t, dst);
                         } else {
@@ -5022,7 +5022,7 @@ const Arm64Compiler = struct {
                     const biased = try self.allocReg();
                     try self.emitSubImm(biased, idx, 1);
                     if (op == .load_index) {
-                        const dst = try self.allocReg(.fp);
+                        const dst = try self.allocReg();
                         try self.emitLdrScaledFp(dst, base, biased);
                         if (ins.result) |t| try temps.put(self.alloc, t, dst);
                     } else {
@@ -5053,7 +5053,7 @@ const Arm64Compiler = struct {
                     } else {
                         const bits = try self.allocReg();
                         try self.emitLdrScaled(bits, base, biased);
-                        const dst = try self.allocReg(.fp);
+                        const dst = try self.allocReg();
                         try self.emitFmovFromGpr(dst, bits);
                         if (ins.result) |t| try temps.put(self.alloc, t, dst);
                         self.releaseReg(bits);
@@ -5337,6 +5337,14 @@ const Arm64Compiler = struct {
                 if (self.imm_hoist.get(bits)) |r| break :blk r;
                 const r = try self.allocReg();
                 try self.emitMovImm(r, @bitCast(n));
+                break :blk r;
+            },
+            .f32 => |n| blk: {
+                // f32 bits in low 4 bytes of the 8-byte slot.
+                const bits: i64 = @intCast(@as(u32, @bitCast(n)));
+                if (self.imm_hoist.get(bits)) |r| break :blk r;
+                const r = try self.allocReg();
+                try self.emitMovImm(r, bits);
                 break :blk r;
             },
             .str => |s| blk: {
