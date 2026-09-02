@@ -90,6 +90,9 @@ SEMA     table_apply.zig
 SEMA     const_table.zig
 SEMA     proof_carrying.zig
 SEMA     assumption_guard.zig
+SEMA     effect.zig
+SEMA     world.zig
+SEMA     lower.zig
 
 IR       types.zig
 IR       native_ir.zig

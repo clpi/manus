@@ -813,54 +813,42 @@ fn collectModuleTableFieldGlobals(
     }
 }
 
-/// THE MODULE'S TABLE IS NOT EVERY BINDING THAT SPELLS ITS NAME.
-///
-/// A relation that DECLARES its own `M` owns a different entity that merely
-/// shares a spelling, and `M.x` inside it means that entity's field. The graph
-/// already says so: the relation's body census carries the binding, and
-/// `place.BindOrigin` now says whether the census recorded a DECLARATION or an
-/// assignment — the distinction it computed and discarded until this consumer
-/// needed it.
-///
-/// The distinction is load-bearing in BOTH directions, which is why a bare
-/// "does this body bind the name" test will not do. A bare `M = { … }` in a
-/// relation ASSIGNS to the module binding — measured: `g = 1` at module scope,
-/// `g = 5` in a relation, a second relation reading `g` answers 5 — and it
-/// also produces a body place. Diverting it to a frame slot would turn a
-/// module write into a local one. Only the DECLARATION is a shadow.
-///
-/// Module scope is exempt for the same reason `walkBindingAssigns` exempts the
-/// owner: at module scope the declaration IS this binding.
-fn bodyDeclaresBinding(ctx: *const LowerCtx, name: []const u8) bool {
-    const owner = ctx.function orelse return false;
-    const owner_node = ctx.graph.get(owner) orelse return false;
-    if (owner_node.scope == null) return false;
-    const body = ctx.graph.bodyOf(owner) orelse return false;
-    const p = body.places.find(name) orelse return false;
-    return p.bind_origin == .declaration;
-}
-
 /// The module word behind `<base>.<field>`, or null when this body declares its
 /// own `base`.
 ///
-/// ONE CONSULT, NOT FOUR. `ctx.module_globals` is keyed by SPELLING, and four
-/// separate sites — the record-literal explosion, its assign face, the field
-/// write target and the field read — each looked a dotted key up directly. A
-/// shadow therefore had to be defended against four times, and it was defended
-/// against nowhere: measured at 09b20611, a module table owning field storage
-/// and shadowed by a relation-local declaration answered the shadow's write
-/// from the module's word (`0 99 99`; the identical program with the shadow
-/// spelled differently answers `0 99 7`).
+/// DELETION WITNESS FOR GAP-221: this function MUST use binding identity from
+/// the semantic graph, not spelling-based lookups with a shadow guard. The
+/// two-store shape (shadow check followed by spelling lookup) is the defect, not
+/// the repair.
+///
+/// The correct approach: resolve the exact binding the current body sees for
+/// `base`, then check if that binding is at module scope. Only when the binding
+/// identity is the module-level binding does module storage apply.
 fn moduleFieldWord(ctx: *const LowerCtx, base: []const u8, key: []const u8) ?RT {
-    if (bodyDeclaresBinding(ctx, base)) return null;
+    const relation = ctx.function orelse return null;
+    const base_binding = ctx.graph.bindingNamedIn(relation, base) orelse return null;
+    const base_node = ctx.graph.get(base_binding) orelse return null;
+    
+    // Only use module storage when the binding is at module scope
+    if (base_node.scope != ctx.graph.module_root) return null;
+    
     return ctx.module_globals.types.get(key);
 }
 
 /// Does `name` own module-scope FIELD storage — i.e. is there any `name.f`
 /// word? Asked at every bare mention of the name, because the fields being
 /// storage is exactly what leaves the whole table without a value.
+///
+/// DELETION WITNESS FOR GAP-221: uses binding identity from the semantic graph,
+/// not spelling-based lookups with a shadow guard.
 fn moduleFieldStorageBase(ctx: *const LowerCtx, name: []const u8) bool {
-    if (bodyDeclaresBinding(ctx, name)) return false;
+    const relation = ctx.function orelse return false;
+    const binding = ctx.graph.bindingNamedIn(relation, name) orelse return false;
+    const node = ctx.graph.get(binding) orelse return false;
+    
+    // Only use module storage when the binding is at module scope
+    if (node.scope != ctx.graph.module_root) return false;
+    
     var it = ctx.module_globals.types.keyIterator();
     while (it.next()) |k| {
         const key = k.*;
@@ -6655,7 +6643,7 @@ const BlockDeclaration = struct { name: []const u8, prior: ?u32 };
 /// lift's roster performs (`liftBindingsInBlock` shrinks its `declared` roster
 /// at block exit). A bare assignment is not recorded because it is not a new
 /// binding — it targets whatever binding is visible, and diverting it would be
-/// the opposite defect (`bodyDeclaresBinding` documents the measured pair).
+/// the opposite defect.
 fn noteBlockDeclarations(
     ctx: *LowerCtx,
     block: *const ast.Block,
@@ -13410,6 +13398,22 @@ fn lowerSubjectTo(
     return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
 }
 
+/// `mem.load(T)(p)` / `mem.store(T)(p,v)` — extract the type tag from the
+/// type-descriptor argument so the backend can emit the right-width load/store.
+fn lowerMemType(ctx: *LowerCtx, type_expr: *const ast.Expr) ?RT {
+    _ = ctx;
+    if (type_expr.* == .name) {
+        const name = type_expr.name.ident;
+        if (std.mem.eql(u8, name, "f64")) return .f64;
+        if (std.mem.eql(u8, name, "f32")) return .f32;
+        if (std.mem.eql(u8, name, "i64")) return .i64;
+        if (std.mem.eql(u8, name, "u64")) return .i64;
+        if (std.mem.eql(u8, name, "i32") or std.mem.eql(u8, name, "u32")) return .i64;
+        if (std.mem.eql(u8, name, "i8") or std.mem.eql(u8, name, "u8")) return .any;
+    }
+    return null;
+}
+
 /// A CALLER'S BYTE OFFSET AS THE BACKEND'S 1-BASED ELEMENT INDEX.
 ///
 /// `load_index`/`store_index` at `.ty = .i64` address `base + (idx - 1) * 8`;
@@ -13768,14 +13772,33 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                     try ctx.emit(.{ .op = .store_index, .ty = .any, .lhs = base, .rhs = .{ .temp = one }, .third = val });
                     return .void;
                 }
-                if (std.mem.eql(u8, f.field, "write_i64") and c.args.len == 3) {
+                if (std.mem.eql(u8, f.field, "write_f64") and c.args.len == 3) {
                     const base = try lowerExpr(ctx, c.args[0]);
                     const idx = try lowerScaledElementIndex(ctx, c.args[1]);
                     const val = try lowerExpr(ctx, c.args[2]);
-                    try ctx.emit(.{ .op = .store_index, .ty = .i64, .lhs = base, .rhs = idx, .third = val });
+                    try ctx.emit(.{ .op = .store_index, .ty = .f64, .lhs = base, .rhs = idx, .third = val });
                     return .void;
                 }
-                if (std.mem.eql(u8, f.field, "write_f64") and c.args.len == 3) {
+                // `mem.load(T)(p)` — typed load. T is a descriptor; args[0] is the
+                // address. Lowered to load_index with T determining width and register
+                // class. f64/f32 are 8/4 bytes at natural alignment.
+                if (std.mem.eql(u8, f.field, "load") and c.args.len == 2) {
+                    const ptr = try lowerExpr(ctx, c.args[0]);
+                    const t = ctx.freshTemp();
+                    const ty: RT = lowerMemType(ctx, c.args[1]) orelse .i64;
+                    try ctx.emit(.{ .op = .load_index, .result = t, .ty = ty, .lhs = ptr, .rhs = .{ .i64 = 1 } });
+                    return .{ .temp = t };
+                }
+                // `mem.store(T)(p, v)` — typed store. T is a descriptor; args[0] is
+                // the address; args[1] is the value.
+                if (std.mem.eql(u8, f.field, "store") and c.args.len == 3) {
+                    const ptr = try lowerExpr(ctx, c.args[0]);
+                    const val = try lowerExpr(ctx, c.args[2]);
+                    const ty: RT = lowerMemType(ctx, c.args[1]) orelse .i64;
+                    try ctx.emit(.{ .op = .store_index, .ty = ty, .lhs = ptr, .rhs = .{ .i64 = 1 }, .third = val });
+                    return .void;
+                }
+                if (std.mem.eql(u8, f.field, "zero") and c.args.len == 2) {
                     const base = try lowerExpr(ctx, c.args[0]);
                     const idx = try lowerScaledElementIndex(ctx, c.args[1]);
                     const val = try lowerExpr(ctx, c.args[2]);

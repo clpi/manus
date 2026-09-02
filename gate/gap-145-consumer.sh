@@ -412,7 +412,7 @@ has "$PARSER" 'fn currentParserTypeGeneric(self: *Parser) ParseError!bool {' \
     'parser.zig lost the generic type-primary consumer'
 has "$PARSER" 'if (try self.currentParserTypeGeneric()) {' \
     'parse_type_primary bypasses the settled generic face'
-has "$ROOT/lib/compiler/parser.id" '(recordface << 12)' \
+has "$ROOT/lib/compiler/parser.id" '(braceface << 12)' \
     'event lost the record type-primary face'
 has "$PARSER" 'fn currentParserTypeRecord(self: *Parser) ParseError!bool {' \
     'parser.zig lost the record type-primary consumer'
@@ -440,6 +440,37 @@ integer_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | 
 examined=$((examined + 1))
 if [ "$integer_arms" -ne 0 ]; then
     bad "parse_simple_expr retained $integer_arms .int_lit host arm(s)"
+fi
+
+# Floating expression-primary recognition shares the primary lane at value
+# three. The owner literal and quoted facts separate it from the matching
+# delimiter coordinate; Zig materializes the floating value without a residual
+# `.float_lit` primary switch arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindfloatlit' \
+    'event lost the floating primary face'
+has "$PARSER" 'fn currentParserFloat(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the floating primary consumer'
+has "$PARSER" 'if (try self.currentParserFloat()) {' \
+    'parse_simple_expr bypasses the settled floating face'
+float_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.float_lit => ' || true)
+examined=$((examined + 1))
+if [ "$float_arms" -ne 0 ]; then
+    bad "parse_simple_expr retained $float_arms .float_lit host arm(s)"
+fi
+
+# Expression table-primary recognition consumes the same exact brace face as
+# inline-record type position. The parser context selects the materializer;
+# Zig no longer owns a `.lbrace` primary switch arm.
+has "$ROOT/lib/compiler/parser.id" 'braceface = 1' \
+    'event lost the brace primary face'
+has "$PARSER" 'fn currentParserTable(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the table primary consumer'
+has "$PARSER" 'if (try self.currentParserTable()) return self.parse_table();' \
+    'parse_simple_expr bypasses the settled table face'
+table_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.lbrace => ' || true)
+examined=$((examined + 1))
+if [ "$table_arms" -ne 0 ]; then
+    bad "parse_simple_expr retained $table_arms .lbrace host arm(s)"
 fi
 
 # The expression-group primary consumes parser.id's existing exact matching
@@ -1398,7 +1429,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=7' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=8' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'
