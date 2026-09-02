@@ -444,6 +444,10 @@ pub const Parser = struct {
         return (((try self.currentParserDecision()) >> 12) & 1) != 0;
     }
 
+    fn currentParserTable(self: *Parser) ParseError!bool {
+        return (((try self.currentParserDecision()) >> 12) & 1) != 0;
+    }
+
     fn currentParserInteger(self: *Parser) ParseError!bool {
         return (try self.currentParserDecision()) >> 13 == 2 and
             try self.currentParserLiteral() and
@@ -6099,6 +6103,7 @@ pub const Parser = struct {
             _ = try self.adv();
             return self.new_expr(.{ .float_lit = .{ .loc = tok.loc, .val = tok.float_val } });
         }
+        if (try self.currentParserTable()) return self.parse_table();
         if (try self.currentParserExpressionGroup()) {
             if (try self.starts_parenthesized_func_expr()) {
                 const l = (try self.pk()).loc;
@@ -6210,7 +6215,6 @@ pub const Parser = struct {
                 }
                 break :blk self.parse_macro_call_expr();
             },
-            .lbrace => self.parse_table(),
             .kw_if => self.parse_if_expr(),
             .kw_match => self.parse_match_expr(),
             .dot => self.parse_field_projection(),
@@ -8320,6 +8324,17 @@ test "parse: closure primary consumes the whole-pack face" {
     try testing.expect(value.* == .func_expr);
     try testing.expectEqual(@as(usize, 1), value.func_expr.params.len);
     try testing.expectEqualStrings("x", value.func_expr.params[0].name);
+}
+
+test "parse: table primary consumes the whole-pack face" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource("value = { answer = 42 }", &arena);
+    const value = mod.body.stmts[0].assign.values[0];
+    try testing.expect(value.* == .table);
+    try testing.expectEqual(@as(usize, 1), value.table.fields.len);
+    try testing.expect(value.table.fields[0] == .named);
+    try testing.expectEqualStrings("answer", value.table.fields[0].named.key);
 }
 
 test "parse: type declaration spelling" {
