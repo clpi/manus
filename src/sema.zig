@@ -1661,6 +1661,7 @@ pub const Sema = struct {
         // Result[T, E] accepts T
         if (ann == .result) {
             if (ann.result.ok.eql(init_t)) return true;
+            if (ann.result.ok.numericAcceptsDescriptor(init_t)) |accepts| return accepts;
         }
         return false;
     }
@@ -16760,6 +16761,19 @@ test "sema: optional numeric demand composes descriptor domain facts" {
     try testing.expect(Sema.type_annotation_accepts_init(maybe_real, .f64));
     try testing.expect(!Sema.type_annotation_accepts_init(maybe_integer, .f64));
     try testing.expect(!Sema.type_annotation_accepts_init(maybe_real, .i64));
+}
+
+test "sema: result numeric demand composes through its value descriptor" {
+    var integer: RT = .i32;
+    var real: RT = .f32;
+    var failure: RT = .str;
+    const integer_result = RT{ .result = .{ .ok = &integer, .err = &failure } };
+    const real_result = RT{ .result = .{ .ok = &real, .err = &failure } };
+
+    try testing.expect(Sema.type_annotation_accepts_init(integer_result, .u64));
+    try testing.expect(Sema.type_annotation_accepts_init(real_result, .f64));
+    try testing.expect(!Sema.type_annotation_accepts_init(integer_result, .f64));
+    try testing.expect(!Sema.type_annotation_accepts_init(real_result, .i64));
 }
 
 test "sema: migration boundary symbols fail closed before realization" {
