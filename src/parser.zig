@@ -402,7 +402,7 @@ pub const Parser = struct {
         return (((try self.currentParserDecision()) >> 9) & 0xF) == 12;
     }
 
-    fn currentParserTypeInteger(self: *Parser) ParseError!bool {
+    fn currentParserTypeNumber(self: *Parser) ParseError!bool {
         const event = try self.currentParserEvent();
         return ((event >> 61) & 1) != 0 and ((event >> 18) & 1) != 0;
     }
@@ -1580,7 +1580,7 @@ pub const Parser = struct {
             }
             return .{ .named = t.text };
         }
-        if (try self.currentParserTypeInteger()) {
+        if (try self.currentParserTypeNumber()) {
             const t = try self.adv();
             return .{ .named = t.text };
         }
