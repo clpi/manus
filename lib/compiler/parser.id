@@ -694,6 +694,9 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
         primitive: i64 = 0
         if kind >= 0 and token.grammarrole.roledescriptor(kind)
             primitive = 1
+        typename: i64 = 0
+        if kind == token.kindname
+            typename = 1
         literal: i64 = 0
         if kind >= 0 and kind < literals:len() and literals:byte(kind + 1) == 49
             literal = 1
@@ -754,7 +757,7 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             attempt = 2
         returns = attempt >> 1
         terminator = attempt & 1
-        out[index] = dispatch | (admission << 5) | (member << 9) | (boundaryface << 10) | (branchface << 11) | (returns << 13) | (ending << 14) | (terminator << 15) | (empty << 16) | (primitive << 17) | (literal << 18) | (quoted << 19) | (prefixface << 20) | (demandface << 21) | (leadface << 22) | (infix << 23) | (unaryface << 47) | (glueface << 52) | (updateface << 57) | (layouttype << 62)
+        out[index] = dispatch | (admission << 5) | (member << 9) | (boundaryface << 10) | (branchface << 11) | (returns << 13) | (ending << 14) | (terminator << 15) | (empty << 16) | (primitive << 17) | (literal << 18) | (quoted << 19) | (prefixface << 20) | (demandface << 21) | (leadface << 22) | (infix << 23) | (unaryface << 47) | (glueface << 52) | (updateface << 57) | (typename << 61) | (layouttype << 62)
         clauseface = _clause(fact, count, index)
         returnface = return_starts_value_lx(fact, count, index, before, idol)
         head = 0
