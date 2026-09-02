@@ -531,6 +531,34 @@ if [ "$compattext_old" -ne 1 ] || [ "$compattext_new" -ne 1 ]; then
     bad "the compatibility-text primary detector is broken: old=$compattext_old new=$compattext_new"
 fi
 
+# Canonical-text expression-primary recognition has its own exact face at
+# primary value six. Zig retains decoding and interpolation materialization,
+# but no longer selects that work from a `.text_lit` switch arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindtextlit' \
+    'event lost the canonical-text primary face'
+has "$ROOT/src/parser/projection.c" 'kind == INT64_C(105)' \
+    'tracked projection lost the canonical-text primary face'
+has "$PARSER" 'fn currentParserText(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the canonical-text primary consumer'
+has "$PARSER" 'if (try self.currentParserText()) {' \
+    'parse_simple_expr bypasses the settled canonical-text face'
+text_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.text_lit => ' || true)
+examined=$((examined + 1))
+if [ "$text_arms" -ne 0 ]; then
+    bad "parse_simple_expr retained $text_arms .text_lit host arm(s)"
+fi
+
+textprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate canonical-text primary scratch' >&2; exit 2; }
+printf '%s\n' '.text_lit => parse_text(),' >"$textprobe/old.zig"
+printf '%s\n' 'return (try self.currentParserDecision()) >> 13 == 6;' >"$textprobe/new.zig"
+text_old=$(grep -cF '.text_lit => ' "$textprobe/old.zig")
+text_new=$(grep -cF 'currentParserDecision()) >> 13 == 6' "$textprobe/new.zig")
+rm -rf -- "$textprobe"
+examined=$((examined + 1))
+if [ "$text_old" -ne 1 ] || [ "$text_new" -ne 1 ]; then
+    bad "the canonical-text primary detector is broken: old=$text_old new=$text_new"
+fi
+
 # The expression-group primary consumes parser.id's existing exact matching
 # delimiter boundary. A nonzero boundary is produced only at `(` and carries
 # the coordinate after its matching close. Zig no longer owns a `.lparen`

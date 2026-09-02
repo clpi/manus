@@ -473,6 +473,10 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 5;
     }
 
+    fn currentParserText(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 6;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6127,6 +6131,23 @@ pub const Parser = struct {
             const decoded = try self.decodeLiteral(tok, &protected);
             return self.desugar_string_interpolation(tok.loc, decoded, protected.items, .compat_text);
         }
+        if (try self.currentParserText()) {
+            _ = try self.adv();
+            // The lexer already scans escape sequences to find the closing quote,
+            // so accepting `"a\nb"` while emitting the raw bytes made the escape
+            // syntax lex-only: canonical text had no way to spell a newline.
+            //
+            // `protected` is which decoded bytes came from an ESCAPE, and it
+            // is the only thing that can tell `\{` from `{` — they are the
+            // same byte by the time the value exists. It does NOT outlive
+            // this block: `desugar_string_interpolation` reads it and either
+            // copies what it needs or returns a value that does not depend
+            // on it.
+            var protected: std.ArrayList(bool) = .empty;
+            defer protected.deinit(self.alloc);
+            const val = try self.decodeLiteral(tok, &protected);
+            return self.desugar_string_interpolation(tok.loc, val, protected.items, .text);
+        }
         if (try self.currentParserTable()) return self.parse_table();
         if (try self.currentParserName()) {
             const name_tok = try self.adv();
@@ -6157,23 +6178,6 @@ pub const Parser = struct {
             return e;
         }
         return switch (tok.kind) {
-            .text_lit => blk: {
-                _ = try self.adv();
-                // The lexer already scans escape sequences to find the closing quote,
-                // so accepting `"a\nb"` while emitting the raw bytes made the escape
-                // syntax lex-only: canonical text had no way to spell a newline.
-                //
-                // `protected` is which decoded bytes came from an ESCAPE, and it
-                // is the only thing that can tell `\{` from `{` — they are the
-                // same byte by the time the value exists. It does NOT outlive
-                // this block: `desugar_string_interpolation` reads it and either
-                // copies what it needs or returns a value that does not depend
-                // on it.
-                var protected: std.ArrayList(bool) = .empty;
-                defer protected.deinit(self.alloc);
-                const val = try self.decodeLiteral(tok, &protected);
-                break :blk try self.desugar_string_interpolation(tok.loc, val, protected.items, .text);
-            },
             .bytes_lit => blk: {
                 _ = try self.adv();
                 break :blk self.new_expr(.{ .quoted = .{
