@@ -17,8 +17,10 @@
 //! DELETION WITNESS (`law.bridge.death`): host owner before — this module and
 //! `lower.zig`; Idol owner after — graph-carried world/authority facts with
 //! realization selection as a witnessed transform; next host boundary — the
-//! demand/place consumers that call `lower.select` once authority facts reach
-//! the lowering pipeline through the graph rather than a host projection.
+//! BACKEND lowering consumer: `lower.selectPlace` is already the graph-facing
+//! consumer (authority facts reach selection through the census the graph
+//! carries), and what remains is the backend that calls it per census place
+//! during realization.
 //!
 //! BOUNDED: this slice does not model what a `foreign_boundary` world fact does
 //! to enforcement admissibility (foreign code in-image can forge pointers);

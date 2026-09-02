@@ -25,11 +25,14 @@
 //!
 //! DELETION WITNESS (`law.bridge.death`): host owner before — this module;
 //! Idol owner after — realization selection as a witnessed graph transform
-//! over world facts; next host boundary — the demand/lowering consumer that
-//! calls `select` once authority facts flow through the graph.
+//! over world facts; next host boundary — the BACKEND lowering consumer that
+//! calls `selectPlace` per census place during realization (`selectPlace`
+//! below is the graph-facing half: authority facts reach `select` through the
+//! census the graph carries, not through a host projection).
 
 const std = @import("std");
 const observation = @import("observation.zig");
+const place = @import("place.zig");
 const world = @import("world.zig");
 
 const Mechanism = world.Mechanism;
@@ -180,12 +183,15 @@ pub const Selection = union(enum) {
 ///
 /// Ties resolve to the EARLIER candidate in the `Mechanism` index — the
 /// weakest sufficient enforcement — which is deterministic and is the least
-/// authority consistent with the demand.
+/// authority consistent with the demand. A NULL profile is not a small one:
+/// it is the absence of workload facts, so every admissible candidate ties on
+/// cost and the weakest sufficient mechanism is the whole answer, with no
+/// cost claim attached.
 pub fn select(
     auth: world.Authority,
     attack: observation.World,
     target: world.TargetWorld,
-    profile: Profile,
+    profile: ?Profile,
 ) Selection {
     const demanded = world.demandOf(attack, auth);
     if (auth.fixedAgainst(demanded)) return .{ .plan = .{ .static = auth } };
@@ -203,14 +209,50 @@ pub fn select(
             .cost = costOf(m),
             .capability = capability,
         };
+        // The tie rule, applied: with no workload facts every admissible
+        // candidate ties, so the first one in index order is the answer.
+        if (profile == null) return .{ .plan = .{ .dynamic = candidate } };
         if (best) |incumbent| {
-            if (candidate.cost.total(profile) < incumbent.cost.total(profile)) best = candidate;
+            if (candidate.cost.total(profile.?) < incumbent.cost.total(profile.?)) best = candidate;
         } else {
             best = candidate;
         }
     }
     if (best) |d| return .{ .plan = .{ .dynamic = d } };
     return .{ .refused = .no_admissible_mechanism };
+}
+
+// ===========================================================================
+// The graph wiring — one census place IS one authority subject
+// ===========================================================================
+
+/// THE graph-facing consumer: a row of the place census the graph carries
+/// (`SemanticGraph.places` IS a `place.Census`) is one authority subject, and
+/// this is where those facts reach selection — through the census the graph
+/// already produces, never through a second AST walk or a host projection
+/// (`law.fact.producer.one`). The authority projection itself stays in
+/// `world.Authority.of`; nothing here re-inverts `alias` or `escape`.
+///
+/// The workload profile is derived, not assumed: enforced ACCESSES are the
+/// census's own read/write counts weighted by their recorded multiplicities.
+/// CROSSINGS are a composition fact — which authority domains the realized
+/// program crosses — and one place's census does not carry them, so the
+/// caller supplies them. An UNKNOWN multiplicity is an unknown workload,
+/// never a small one (`place.Mult.upperOrNull`): selection then carries no
+/// cost claim and `select`'s tie rule decides.
+pub fn selectPlace(
+    p: *const place.Place,
+    attack: observation.World,
+    target: world.TargetWorld,
+    crossings: u64,
+) Selection {
+    const reads = p.readCount().upperOrNull();
+    const writes = p.writeCount().upperOrNull();
+    const profile: ?Profile = if (reads != null and writes != null)
+        Profile{ .accesses = reads.? +| writes.?, .crossings = crossings }
+    else
+        null;
+    return select(world.Authority.of(p.facts), attack, target, profile);
 }
 
 /// The selection record as structured evidence — names, never ordinals
@@ -410,4 +452,128 @@ test "lower: the evidence record is structured and names its decision" {
     try std.testing.expectEqualStrings("mpk", parsed.value.object.get("mechanism").?.string);
     const demanded = parsed.value.object.get("demanded").?.array;
     try std.testing.expectEqual(@as(usize, 4), demanded.items.len);
+}
+
+// ===========================================================================
+// The graph wiring, measured over real censuses — authority facts reaching
+// `select` through `place.analyzeModule` output, never a hand-built bundle.
+// ===========================================================================
+
+const Lexer = @import("lexer.zig").Lexer;
+const Parser = @import("parser.zig").Parser;
+
+fn censusOf(arena: *std.heap.ArenaAllocator, src: []const u8) !place.Census {
+    const alloc = arena.allocator();
+    const owned = try alloc.dupe(u8, src);
+    var lexer = Lexer.init(owned, "lower_test.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    const mod = try parser.parse_module();
+    return try place.analyzeModule(alloc, &mod);
+}
+
+test "lower: a census place with statically fixed authority realizes at zero cost" {
+    // GAP-185 required order 5, THROUGH THE GRAPH'S CENSUS: a module word that
+    // nothing names, writes or aliases has every demanded property statically
+    // witnessed, so the plan carries the authority facts and no dynamic
+    // enforcement — the zero-overhead rung is reached from census facts alone.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var census = try censusOf(&arena,
+        \\hidden: i64 = 2
+        \\
+    );
+    defer census.deinit();
+    const p = census.find("hidden").?;
+    const linux = world.TargetWorld.of(.{ .arch = .x86_64, .os = .linux, .abi = .gnu });
+    const selection = selectPlace(p, observation.ordinary_executable, linux, 1);
+    const witness = selection.plan.static;
+    try std.testing.expectEqual(world.Tri.yes, witness.unique);
+    try std.testing.expectEqual(world.Tri.yes, witness.nonescape);
+    try std.testing.expectEqual(world.Tri.yes, witness.readonly);
+
+    // The same census facts under an adversary cannot discharge
+    // confidentiality or timing: a mechanism is selected, not assumed away.
+    const hostile = observation.ordinary_executable.with(.security_adversary);
+    const dynamic = selectPlace(p, hostile, linux, 1).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, dynamic.mechanism);
+}
+
+test "lower: one census place selects different enforcement per target world" {
+    // GAP-185's evidence shape through the graph wiring: the SAME census row,
+    // the SAME derived authority — only the target world changes the answer.
+    // `peek` names `seen`, so the census records the escape and the static
+    // rung is unavailable; the adversary demands confinement and timing.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var census = try censusOf(&arena,
+        \\seen: i64 = 1
+        \\peek: i64 = ()
+        \\    seen
+        \\
+    );
+    defer census.deinit();
+    const p = census.find("seen").?;
+    try std.testing.expectEqual(place.Tri.yes, p.facts.escape);
+    const hostile = observation.ordinary_executable.with(.security_adversary);
+
+    // One read of `seen`, recorded exactly: accesses = 1, crossings = 1.
+    const linux = world.TargetWorld.of(.{ .arch = .x86_64, .os = .linux, .abi = .gnu });
+    const on_linux = selectPlace(p, hostile, linux, 1).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, on_linux.mechanism);
+    try std.testing.expectEqual(@as(u64, 32), on_linux.cost.total(.{ .accesses = 1, .crossings = 1 }));
+
+    const macos = world.TargetWorld.of(.{ .arch = .aarch64, .os = .macos, .abi = .gnu });
+    const on_macos = selectPlace(p, hostile, macos, 1).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.process, on_macos.mechanism);
+    try std.testing.expectEqual(@as(u64, 2048), on_macos.cost.total(.{ .accesses = 1, .crossings = 1 }));
+}
+
+test "lower: an unknown census multiplicity is an unknown workload, never a small one" {
+    // A read inside a loop whose trip count the census cannot bound leaves the
+    // multiplicity UNKNOWN. Selection must not manufacture a workload: with no
+    // cost claim the weakest sufficient admitted mechanism wins.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var census = try censusOf(&arena,
+        \\total: i64 = 0
+        \\walk: i64 = (n: i64)
+        \\    i = 0
+        \\    while i < n
+        \\        total += 1
+        \\        i += 1
+        \\    total
+        \\
+    );
+    defer census.deinit();
+    const p = census.find("total").?;
+    try std.testing.expectEqual(@as(?u64, null), p.writeCount().upperOrNull());
+    const linux = world.TargetWorld.of(.{ .arch = .x86_64, .os = .linux, .abi = .gnu });
+    const unknown_workload = selectPlace(p, observation.ordinary_executable, linux, 1).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.software_check, unknown_workload.mechanism);
+
+    // A KNOWN profile over the same authority answers the cost question
+    // instead: crossings dominate at 1, so MPK's free in-domain access wins.
+    const auth = world.Authority.of(p.facts);
+    const known = select(auth, observation.ordinary_executable, linux, .{ .accesses = 10000, .crossings = 1 }).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, known.mechanism);
+}
+
+test "lower: a census place with no admissible enforcement refuses closed" {
+    // WASI admits the software check and the Wasm sandbox; an adversary's
+    // timing demand fits neither. The refusal is an outcome, not a weakening.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var census = try censusOf(&arena,
+        \\seen: i64 = 1
+        \\peek: i64 = ()
+        \\    seen
+        \\
+    );
+    defer census.deinit();
+    const p = census.find("seen").?;
+    const hostile = observation.ordinary_executable.with(.security_adversary);
+    const wasi = world.TargetWorld.of(.{ .arch = .wasm32, .os = .wasi, .abi = .none });
+    const selection = selectPlace(p, hostile, wasi, 1);
+    try std.testing.expectEqual(Refusal.no_admissible_mechanism, selection.refused);
 }
