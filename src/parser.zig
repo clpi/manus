@@ -393,6 +393,14 @@ pub const Parser = struct {
         return (((try self.currentParserEvent()) >> 62) & 1) != 0;
     }
 
+    fn currentParserTypeName(self: *Parser) ParseError!bool {
+        return (((try self.currentParserEvent()) >> 61) & 1) != 0;
+    }
+
+    fn currentParserTypeAttribute(self: *Parser) ParseError!bool {
+        return (((try self.currentParserDecision()) >> 9) & 0xF) == 12;
+    }
+
     fn currentParserBodyAssignment(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 8) & 1) != 0;
     }
@@ -1519,54 +1527,54 @@ pub const Parser = struct {
             _ = try self.adv();
             return .{ .named = tok.kind.spelling() };
         }
+        if (try self.currentParserTypeAttribute()) {
+            const attr = try self.parse_one_attribute();
+            // THE ALIAS TABLE DECIDES, not the literal `"c.type"`.
+            // Comparing the short spelling made type position the ONE place
+            // where one compatibility spelling was refused while another
+            // worked. Four spellings resolve to `__c_type`; all four now
+            // name the same descriptor here, as they already do everywhere
+            // else (`isAttachingCInterfaceAttribute` reads the same table).
+            const resolves_to_c_type = if (meta_module.resolveBuiltin(attr.name)) |internal|
+                std.mem.eql(u8, internal, "__c_type")
+            else
+                false;
+            if (!resolves_to_c_type) {
+                term.locErr(tok.loc, "expected @c.type(...) in type position, got '@{s}'", .{attr.name});
+                return ParseError.UnexpectedToken;
+            }
+            const cname = strip_quotes(attr.args orelse "");
+            return .{ .named = try std.mem.concat(self.alloc, u8, &.{ types.c_type_marker_prefix, cname }) };
+        }
+        if (try self.currentParserTypeName()) {
+            // WIDTH AS AN OPERAND, not as a suffix on the name. `i64` bakes
+            // a numeric taxonomy into an identity, which LAW-16 forbids for
+            // the same reason `rec2` did: the specializer belongs in the
+            // operand position. `i(64)` says the same thing with the width
+            // applied, and resolves to the SAME descriptor — one identity
+            // `i`, specialized by a width, rather than ten unrelated
+            // keywords that happen to share a prefix.
+            //
+            // Additive: `i(64)` was a parse error before, so nothing that
+            // compiled can change meaning, and `i64` keeps working.
+            if (try self.appliedWidthType()) |named| return .{ .named = named };
+            const t = try self.adv();
+            // `T: Concept` is a constraint on the type just named, so it is
+            // written beside it. On a NEW line the `:` is the next
+            // statement's, and §20's `token` slot is exactly that case:
+            //
+            //     token = (): token | error
+            //         :skip(space)
+            //
+            // The alternative `error` swallowed the sibling call as its
+            // constraint, so the body began one statement late and the
+            // failure surfaced as an offside error two lines further down.
+            if ((try self.pk()).loc.line == t.loc.line and try self.eat(.colon) != null) {
+                return try self.parse_constrained_type_param(t.text);
+            }
+            return .{ .named = t.text };
+        }
         return switch (tok.kind) {
-            .at => {
-                const attr = try self.parse_one_attribute();
-                // THE ALIAS TABLE DECIDES, not the literal `"c.type"`.
-                // Comparing the short spelling made type position the ONE place
-                // where one compatibility spelling was refused while another
-                // worked. Four spellings resolve to `__c_type`; all four now
-                // name the same descriptor here, as they already do everywhere
-                // else (`isAttachingCInterfaceAttribute` reads the same table).
-                const resolves_to_c_type = if (meta_module.resolveBuiltin(attr.name)) |internal|
-                    std.mem.eql(u8, internal, "__c_type")
-                else
-                    false;
-                if (!resolves_to_c_type) {
-                    term.locErr(tok.loc, "expected @c.type(...) in type position, got '@{s}'", .{attr.name});
-                    return ParseError.UnexpectedToken;
-                }
-                const cname = strip_quotes(attr.args orelse "");
-                return .{ .named = try std.mem.concat(self.alloc, u8, &.{ types.c_type_marker_prefix, cname }) };
-            },
-            .name => {
-                // WIDTH AS AN OPERAND, not as a suffix on the name. `i64` bakes
-                // a numeric taxonomy into an identity, which LAW-16 forbids for
-                // the same reason `rec2` did: the specializer belongs in the
-                // operand position. `i(64)` says the same thing with the width
-                // applied, and resolves to the SAME descriptor — one identity
-                // `i`, specialized by a width, rather than ten unrelated
-                // keywords that happen to share a prefix.
-                //
-                // Additive: `i(64)` was a parse error before, so nothing that
-                // compiled can change meaning, and `i64` keeps working.
-                if (try self.appliedWidthType()) |named| return .{ .named = named };
-                const t = try self.adv();
-                // `T: Concept` is a constraint on the type just named, so it is
-                // written beside it. On a NEW line the `:` is the next
-                // statement's, and §20's `token` slot is exactly that case:
-                //
-                //     token = (): token | error
-                //         :skip(space)
-                //
-                // The alternative `error` swallowed the sibling call as its
-                // constraint, so the body began one statement late and the
-                // failure surfaced as an offside error two lines further down.
-                if ((try self.pk()).loc.line == t.loc.line and try self.eat(.colon) != null) {
-                    return try self.parse_constrained_type_param(t.text);
-                }
-                return .{ .named = t.text };
-            },
             .int_lit => {
                 const t = try self.adv();
                 return .{ .named = t.text };
