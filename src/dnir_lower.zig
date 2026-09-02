@@ -824,7 +824,7 @@ fn collectModuleTableFieldGlobals(
 /// The correct approach: resolve the exact binding the current body sees for
 /// `base`, then check if that binding is at module scope. Only when the binding
 /// identity is the module-level binding does module storage apply.
-fn moduleFieldWord(ctx: *const LowerCtx, base: []const u8, key: []const u8) ?RT {
+fn moduleFieldWord(ctx: *const LowerCtx, base: []const u8, key: []const u8) ?struct { RT, []const u8 } {
     const relation = ctx.function orelse return null;
     const base_binding = ctx.graph.bindingNamedIn(relation, base) orelse return null;
     const base_node = ctx.graph.get(base_binding) orelse return null;
@@ -832,7 +832,9 @@ fn moduleFieldWord(ctx: *const LowerCtx, base: []const u8, key: []const u8) ?RT 
     // Only use module storage when the binding is at module scope
     if (base_node.scope != ctx.graph.module_root) return null;
     
-    return ctx.module_globals.types.get(key);
+    const gty = ctx.module_globals.types.get(key) orelse return null;
+    const storage_key = ctx.module_globals.storageKey(key) orelse return null;
+    return .{ gty, storage_key };
 }
 
 /// Does `name` own module-scope FIELD storage — i.e. is there any `name.f`
@@ -5215,12 +5217,14 @@ fn tryEmitTailDemandReturn(ctx: *LowerCtx, block: *const ast.Block) Error!bool {
                     target.field.field,
                 }) catch "";
                 if (fkey.len > 0 and ctx.locals.get(fkey) == null) {
-                    if (moduleFieldWord(ctx, target.field.obj.name.ident, fkey)) |gty| {
+                    if (moduleFieldWord(ctx, target.field.obj.name.ident, fkey)) |pair| {
+                        const gty = pair[0];
+                        const storage_key = pair[1];
                         const t = ctx.freshTemp();
                         try ctx.emit(.{
                             .op = .load_global,
                             .result = t,
-                            .field = ctx.module_globals.storageKey(fkey).?,
+                            .field = storage_key,
                             .ty = gty,
                         });
                         try ctx.emit(.{
@@ -5405,10 +5409,12 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
     // this key in scope it minted one, so `M.x = 1` in a relation body wrote a
     // register the module body could not see and the module body's own write
     // went to a different register still — two stores describing one field.
-    if (moduleFieldWord(ctx, obj.name.ident, fk)) |gty| {
+    if (moduleFieldWord(ctx, obj.name.ident, fk)) |pair| {
+        const gty = pair[0];
+        const storage_key = pair[1];
         try ctx.emit(.{
             .op = .store_global,
-            .field = ctx.module_globals.storageKey(fk).?,
+            .field = storage_key,
             .lhs = v,
             .ty = gty,
         });
@@ -9756,11 +9762,13 @@ fn lowerRecordLiteralFields(ctx: *LowerCtx, prefix: []const u8, table: *const as
         // The base is the OUTERMOST segment: `o.i.x` belongs to the binding
         // `o`, so a body that declares its own `o` owns the whole chain.
         const base = prefix[0 .. std.mem.indexOfScalar(u8, prefix, '.') orelse prefix.len];
-        if (moduleFieldWord(ctx, base, fk)) |gty| {
+        if (moduleFieldWord(ctx, base, fk)) |pair| {
+            const gty = pair[0];
+            const storage_key = pair[1];
             const gv = try lowerExpr(ctx, nf.val);
             try ctx.emit(.{
                 .op = .store_global,
-                .field = ctx.module_globals.storageKey(fk).?,
+                .field = storage_key,
                 .lhs = gv,
                 .ty = gty,
             });
@@ -14318,12 +14326,14 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
         if (ctx.module_consts.strs.get(key)) |sv| return .{ .str = sv };
         // A WRITTEN module-scope table field is READ FROM ITS STORAGE, never
         // folded and never resolved to a frame slot of some other body.
-        if (moduleFieldWord(ctx, fld.obj.name.ident, key)) |gty| {
+        if (moduleFieldWord(ctx, fld.obj.name.ident, key)) |pair| {
+            const gty = pair[0];
+            const storage_key = pair[1];
             const t = ctx.freshTemp();
             try ctx.emit(.{
                 .op = .load_global,
                 .result = t,
-                .field = ctx.module_globals.storageKey(key).?,
+                .field = storage_key,
                 .ty = gty,
             });
             if (gty == .f64) try ctx.f64_slots.put(ctx.alloc, t, {});
