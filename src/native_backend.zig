@@ -6589,10 +6589,26 @@ const Arm64Compiler = struct {
     /// `free_spill_slots` on exactly this removal; this makes the two paths
     /// agree. Not the closure — closure is authoritative `register`/`frame`
     /// assignment before emission, per this gap's record.
-    fn reclaimSpilledReg(self: *Arm64Compiler) Error!u5 {
+    ///
+    /// `exclude` IS THE CALLER'S, AND HASH ORDER MUST NOT REACH IT. Every other
+    /// path in `allocRegExcluding` keeps that promise — both free scans skip
+    /// `exclude`, and so do all three spill passes, which is why this call can
+    /// never be what put `exclude` into `spilled_regs`. Only a register spilled
+    /// BEFORE the call can be here, and `emitIfConverted` and
+    /// `emitIfConvertedTwoSided` both open that window: each holds a register
+    /// across evaluation that allocates, and then excludes it. Handing it back
+    /// is worse than the spill
+    /// the exclusion exists to prevent — the drop above abandons the caller's
+    /// own value in the frame, the caller writes its second value into the same
+    /// register, and both reads are wrong with no diagnostic. Skipping the entry
+    /// costs the reclaim one candidate out of a map the cascade filled with
+    /// every allocatable register; when it is genuinely the last one, the
+    /// refusal below is the same bail this function already answers with.
+    fn reclaimSpilledReg(self: *Arm64Compiler, exclude: ?u5) Error!u5 {
         var it = self.spilled_regs.iterator();
         while (it.next()) |entry| {
             const reg = entry.key_ptr.*;
+            if (exclude != null and reg == exclude.?) continue;
             const off = entry.value_ptr.*;
             _ = self.spilled_regs.remove(reg);
             self.gp_reg_owner[reg] = null;
@@ -6723,7 +6739,7 @@ const Arm64Compiler = struct {
             try self.spillReg(victim);
             return self.allocRegExcluding(exclude);
         }
-        if (self.gate_transport) return self.reclaimSpilledReg();
+        if (self.gate_transport) return self.reclaimSpilledReg(exclude);
         return error.RegisterExhausted;
     }
 
@@ -6913,13 +6929,43 @@ const Arm64Compiler = struct {
         return reg;
     }
 
+    /// THE RELEASE DROPPED THE ENTRY AND KEPT THE SLOT.
+    ///
+    /// Taking a register out of `spilled_regs` is what makes the frame slot
+    /// behind it unreadable: `ensureRegLive` and `ensureRegLiveRemap` are that
+    /// slot's only readers and both key on the entry this line removes. So the
+    /// removal is also the moment the slot becomes dead, and every other path
+    /// that performs it hands the slot back on the spot — `sweepGpLive` and
+    /// `reclaimSpilledReg` for a register they take from its owner, both reloads
+    /// for a value they move out of the frame. This one kept it, and a slot
+    /// nothing can ever read again stayed reserved for the rest of the function:
+    /// `spillReg` stepped `gate_spill_cursor` past it toward `gate_spill_end`
+    /// and then refused a spill the pre-reserved area still had room for, which
+    /// is the condition that drives `ensureRegLiveRemap` into its exhaustion arm
+    /// and `allocRegExcluding` into the reclaim at its bottom.
+    ///
+    /// The release is safe for the same reason it is owed: this body is reached
+    /// only with `gp_reg_owner[reg]` null, so no owner is left to read the slot
+    /// either. The removal is idempotent and a release is not — the emit paths
+    /// release the same register more than once, `releaseReg(addr)` beside
+    /// `releaseReg(base)` where both resolved to one register — so the append
+    /// belongs to the removal that actually took the entry, exactly as
+    /// `sweepGpLive` writes it.
+    ///
+    /// Bounded to gate transport with the rest of GAP-148: `allocRegExcluding`
+    /// refuses above its spill loops otherwise, so `spilled_regs` is empty
+    /// elsewhere and this is the `used_regs` clear alone. Not the closure —
+    /// closure is authoritative `register`/`frame` assignment before emission,
+    /// per that gap's record.
     fn releaseReg(self: *Arm64Compiler, reg: u5) void {
         if (reg >= 29) return;
         if (reg == platform_reserved_reg) return;
         if (reg >= 9 and reg < 29 and self.gp_home_regs[reg]) return;
         if (self.gp_reg_owner[reg] != null) return;
         self.used_regs[reg] = false;
-        _ = self.spilled_regs.remove(reg);
+        if (self.spilled_regs.fetchRemove(reg)) |entry| {
+            self.free_spill_slots.append(self.alloc, entry.value) catch {};
+        }
     }
 
     /// Before an argument is written into a caller-saved ABI register (x0-x7),
@@ -17061,7 +17107,7 @@ test "a gate-transport reclaim leaves nothing of the owner it abandons" {
     compiler.used_regs[spilled] = false;
     compiler.gp_reg_owner[spilled] = abandoned;
 
-    const reg = try compiler.reclaimSpilledReg();
+    const reg = try compiler.reclaimSpilledReg(null);
     try std.testing.expectEqual(spilled, reg);
     try std.testing.expect(compiler.used_regs[reg]);
     try std.testing.expect(!compiler.spilled_regs.contains(reg));
@@ -17360,4 +17406,178 @@ test "a reload under exhaustion abandons no other spilled value" {
     // relieve register pressure.
     compiler.sweepGpLive(1);
     try std.testing.expect(!compiler.used_regs[live]);
+}
+
+// GAP-148. THE ONE REGISTER THE ALLOCATION SAID NOT TO TOUCH.
+//
+// `allocRegExcluding(exclude)` makes exactly one promise, and every path in it
+// keeps that promise but the last. Both free scans skip `exclude`; all three
+// spill passes skip `exclude`, which is also why this call can never be what
+// puts `exclude` into `spilled_regs`. Then the bottom hands the whole decision
+// to `reclaimSpilledReg`, which took no `exclude` at all and iterated the map
+// in hash order — so when `exclude` was already spilled when the call arrived,
+// the caller could be handed back the register it had just named as holding a
+// value it was still using.
+//
+// The exclusion is not a preference. `emitBinopFlooredConstDivisor` states the
+// reason at its own call: `dst` is claimed by the caller and a plain `allocReg`
+// could spill it, leaving `dst` mapped to a slot holding the value it had
+// BEFORE the sequence. The reclaim is worse than that spill, because it drops
+// the `spilled_regs` entry as well: the caller's value is abandoned in the
+// frame with nothing able to read it back, the caller writes its second value
+// into the same register, and both reads are wrong with no diagnostic.
+//
+// The excluded register has to have been spilled BEFORE the call, and those
+// windows are ordinary. `emitIfConverted` reads the binding into `old`, then
+// evaluates both operands — each of which allocates, and can therefore spill
+// `old` — before asking for `allocRegExcluding(old)`. `emitIfConvertedTwoSided`
+// holds the then-arm's `rt` across the whole else arm and then asks for
+// `allocRegExcluding(rt)`.
+//
+// Built directly rather than through a source program for the same reason as
+// the reclaim, reload, and remap tests above: this needs the exact state the
+// spill cascade leaves at the bottom of `allocRegExcluding` — nothing claimed,
+// because everything allocatable is already spilled — which a fixture reaches
+// only incidentally.
+test "a gate-transport reclaim refuses the register the allocation excluded" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 256;
+
+    // The state the recursion arrives in: every allocatable register spilled,
+    // so both free scans skip every register, and all three spill passes fall
+    // through on `!used_regs[victim]` — `spillReg` cleared each one as it went.
+    // Only the reclaim at the bottom is left.
+    var reg: u5 = 0;
+    while (reg < 29) : (reg += 1) {
+        if (reg == Arm64Compiler.platform_reserved_reg) continue;
+        try compiler.spilled_regs.put(alloc, reg, @as(u16, reg) * 8);
+        compiler.gp_reg_owner[reg] = @as(u32, reg) + 100;
+    }
+
+    // EXCLUDE THE ONE THE RECLAIM WOULD OTHERWISE TAKE. Its choice is the map's
+    // iteration order, so reading that order here is what makes this the
+    // excluded register rather than one of twenty-seven others.
+    var it = compiler.spilled_regs.iterator();
+    const held: u5 = it.next().?.key_ptr.*;
+    const held_off = compiler.spilled_regs.get(held).?;
+    const held_owner = compiler.gp_reg_owner[held].?;
+
+    const got = try compiler.allocRegExcluding(held);
+
+    // THE PROMISE. Whatever came back, it is not the register the caller named
+    // as still holding a value, and it is a register the caller may write.
+    try std.testing.expect(got != held);
+    try std.testing.expect(compiler.used_regs[got]);
+    try std.testing.expect(!compiler.spilled_regs.contains(got));
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[got]);
+
+    // …and the excluded register keeps all three of the records a reclaim
+    // clears: its value is still in the frame, its entry is still the only
+    // thing that can read it back, and its owner still names it. The slot it
+    // occupies is not in the free pool for a later spill to store over.
+    try std.testing.expectEqual(@as(?u16, held_off), compiler.spilled_regs.get(held));
+    try std.testing.expectEqual(@as(?u32, held_owner), compiler.gp_reg_owner[held]);
+    try std.testing.expect(!compiler.used_regs[held]);
+    for (compiler.free_spill_slots.items) |slot| try std.testing.expect(slot != held_off);
+}
+
+// GAP-148. THE RELEASE DROPPED THE ENTRY AND KEPT THE SLOT.
+//
+// Four paths take a register out of `spilled_regs`, and taking the entry out is
+// what makes the frame slot behind it unreadable: `ensureRegLive` and
+// `ensureRegLiveRemap` are its only readers and both key on the entry. Three of
+// the four hand the slot back to `free_spill_slots` on exactly that removal —
+// the two reloads, and `sweepGpLive`. `releaseReg` was the fourth and kept it,
+// so a slot nothing could ever read again stayed reserved for the rest of the
+// function, `spillReg` stepped `gate_spill_cursor` past it toward
+// `gate_spill_end`, and the refusal that follows is a spill the pre-reserved
+// area still had room for.
+//
+// Built directly rather than through a source program for the same reason as
+// the reclaim, reload, and remap tests above: this is a state the allocator
+// passes through between a spill and the release of the scratch that was
+// spilled, not a state a fixture names.
+test "a released scratch register returns the frame slot it kept" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport: `allocRegExcluding` refuses above
+    // its spill loops otherwise, so `spilled_regs` is empty everywhere else and
+    // this whole body is the `used_regs` clear alone.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // The state `spillReg` leaves behind for a SCRATCH register — the value is
+    // in a frame slot, the register is out of `used_regs`, and no owner record
+    // names it, which is the ordinary state of a register `allocReg` handed out
+    // for one instruction's operand.
+    const scratch: u5 = 10;
+    const off: u16 = 8;
+    try compiler.spilled_regs.put(alloc, scratch, off);
+    compiler.used_regs[scratch] = false;
+
+    // An OWNED spilled register beside it. `releaseReg` returns above every
+    // record it holds, so the fix must not reach this one: its value is still
+    // owed a reload.
+    const owned: u5 = 11;
+    const owned_off: u16 = 24;
+    try compiler.spilled_regs.put(alloc, owned, owned_off);
+    compiler.gp_reg_owner[owned] = 7;
+
+    const before = compiler.code.items.len;
+    compiler.releaseReg(scratch);
+
+    // A release emits nothing; it moves records only.
+    try std.testing.expectEqual(before, compiler.code.items.len);
+
+    // The entry is gone — that part was already true, and it is what makes the
+    // slot dead — and the slot is back in the pool for the next spill.
+    try std.testing.expect(!compiler.spilled_regs.contains(scratch));
+    try std.testing.expect(!compiler.used_regs[scratch]);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
+
+    // ONCE, NOT ONCE PER CALL. The emit paths release the same register more
+    // than once — `releaseReg(addr)` beside `releaseReg(base)` where the two
+    // resolved to one register — and a slot in `free_spill_slots` twice is two
+    // later spills storing two live values at one offset. The removal is
+    // idempotent; the release is not, so the release belongs to the removal
+    // that actually took the entry.
+    compiler.releaseReg(scratch);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+
+    // The owned neighbour is untouched: entry, owner, and unreleased slot.
+    compiler.releaseReg(owned);
+    try std.testing.expectEqual(@as(?u16, owned_off), compiler.spilled_regs.get(owned));
+    try std.testing.expectEqual(@as(?u32, 7), compiler.gp_reg_owner[owned]);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
 }

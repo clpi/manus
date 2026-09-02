@@ -15,6 +15,11 @@ from pathlib import Path
 SCHEMA = "idol.gap.frontier.v1"
 BEGIN = "<!-- idol-gap-frontier:v1:begin -->"
 END = "<!-- idol-gap-frontier:v1:end -->"
+# The two lifecycle states a required frontier may publish. The gate does not
+# choose between them — the gap's own **Status:** header does, and the block is
+# required to AGREE. Requiring OPEN here made closing a gap a repository-wide
+# commit block.
+LIFECYCLE = ("OPEN", "CLOSED")
 BOOTSTRAP = "docs/bootstrap.md"
 CONTRACT = "docs/spec/convergence-contract.md"
 REQUIRED = (
@@ -22,6 +27,7 @@ REQUIRED = (
     "GAP-137",
     "GAP-144",
     "GAP-145",
+    "GAP-149",
     "GAP-202",
     "GAP-205",
     "GAP-207",
@@ -33,8 +39,23 @@ ROSTER_END = "## Findings that outrank the classification"
 RECLASSIFIED_ROW = re.compile(r"^\|\s*`(GAP-\d{3})`\s*\|")
 GAP_REF = re.compile(r"(GAP-\d{3})`?[ \t]*(\(not P0\))?")
 NOT_P0 = "(not P0)"
+# The status words that mean WORK IS STILL LIVE. `IN_PROGRESS` was missing, so a
+# P0 subject that had been picked up became invisible to the census while the
+# roster still dispatched at it — the projection was blamed for naming a gap the
+# census had silently dropped. Being worked on is the least retired a gap can be.
+# `OWNER-BLOCKED` is the same ruling one step further out: `00c0473d` marked
+# GAP-146 blocked on GAP-119 and the census dropped it the same afternoon,
+# blocking every lane's commit. Waiting on another owner is not retirement — it
+# is live P0 work with a named dependency, which is MORE dispatchable, not less.
+# The shape rather than the one word is admitted, so the next `*-BLOCKED`
+# spelling (`IMPLEMENTATION-BLOCKED` is already written in this tree) cannot
+# repeat the outage. Retirement is CLOSED, SUPERSEDED or REFUTED, and being
+# blocked is none of them.
 ACTIVE_STATUS = re.compile(
-    r"^\*\*Status:\*\*[ \t]*(OPEN|REOPENED)([ \t\u00b7(:\u2014-]|$)", re.IGNORECASE
+    r"^\*\*Status:\*\*[ \t]*"
+    r"(OPEN|REOPENED|IN_PROGRESS|(?!(?:CLOSED|SUPERSEDED|REFUTED)-)[A-Z_][A-Z_-]*-BLOCKED)"
+    r"([ \t\u00b7(:\u2014]|$)",
+    re.IGNORECASE,
 )
 ACTIVE_P0 = re.compile(r"^\*\*(Status|Priority):\*\*.*P0", re.IGNORECASE)
 ROOT_EDGES = {
@@ -106,19 +127,42 @@ def validate_text(text, expected_gap):
         raise FrontierError(f"schema must be {SCHEMA}")
     if frontier["gap"] != expected_gap:
         raise FrontierError(f"gap must be {expected_gap}")
-    if frontier["status"] != "OPEN":
-        raise FrontierError("status must be OPEN")
+    # THE PROSE HEADER DECIDES, THE BLOCK AGREES. This asserted OPEN on both
+    # faces, so closing a required gap failed the gate and blocked every commit
+    # in the repository until someone edited this file — which is the copied-
+    # census decay the gate exists to refuse, reproduced by the gate itself.
+    # `fe41f1d6` closed GAP-221 and left it on the REQUIRED roster; main was
+    # commit-blocked for every lane. The lifecycle is now derived from the one
+    # header that states it, and only the AGREEMENT is enforced.
     status_headers = re.findall(
         r"^\*\*Status:\*\*[ \t]+([A-Z]+)",
         "\n".join(lines[:begin]),
         flags=re.MULTILINE,
     )
-    if status_headers != ["OPEN"]:
-        raise FrontierError("frontier status disagrees with an unambiguous OPEN prose header")
+    if len(status_headers) != 1 or status_headers[0] not in LIFECYCLE:
+        raise FrontierError(
+            "prose must carry exactly one **Status:** header naming "
+            f"{' or '.join(sorted(LIFECYCLE))}"
+        )
+    status = status_headers[0]
+    if frontier["status"] != status:
+        raise FrontierError(
+            f"frontier status is {frontier['status']} but the prose header "
+            f"states {status}; they must agree"
+        )
 
     require_string(frontier["root_program"], "root_program")
-    require_string_list(frontier["current_blockers"], "current_blockers")
     require_string_list(frontier["superseded_observations"], "superseded_observations")
+    # A blocker list is the one field the lifecycle inverts. An OPEN frontier
+    # with no blocker states nothing; a CLOSED one that still lists a blocker
+    # is not closed, and that half-edit is exactly how a closure goes stale.
+    if status == "OPEN":
+        require_string_list(frontier["current_blockers"], "current_blockers")
+    else:
+        if frontier["current_blockers"] != []:
+            raise FrontierError(
+                "a CLOSED frontier must carry no current_blockers"
+            )
 
     if expected_gap in ROOT_EDGES:
         first, last = ROOT_EDGES[expected_gap]
@@ -245,10 +289,13 @@ def validate_blockers(frontiers):
                         f"{gap} blocker cites {ref} as blocking, but its "
                         f"frontier status is {other['status']}"
                     )
-    # while GAP-145 is OPEN, GAP-134 blockers must name it
+    # while GAP-145 is OPEN, GAP-134 blockers must name it — but only while
+    # GAP-134 is itself OPEN. A CLOSED frontier carries no blockers by rule
+    # above, so demanding one here would make closing GAP-134 a commit block,
+    # which is the same defect this gate just stopped reproducing.
     if (
         frontiers.get("GAP-145", {}).get("status") == "OPEN"
-        and frontiers.get("GAP-134") is not None
+        and frontiers.get("GAP-134", {}).get("status") == "OPEN"
     ):
         if not any(
             "GAP-145" in blocker
@@ -259,7 +306,7 @@ def validate_blockers(frontiers):
             )
 
 
-def sample(frontier=None):
+def sample(frontier=None, header="OPEN"):
     value = frontier or {
         "schema": SCHEMA,
         "gap": "GAP-000",
@@ -271,7 +318,7 @@ def sample(frontier=None):
     return "\n".join((
         "# GAP-000 — control",
         "",
-        "**Status:** OPEN",
+        f"**Status:** {header}",
         "",
         BEGIN,
         "```json",
@@ -284,8 +331,24 @@ def sample(frontier=None):
     ))
 
 
+def closed(blockers=None):
+    """A CLOSED frontier: the header states it, the block agrees, no blockers."""
+    return {
+        "schema": SCHEMA,
+        "gap": "GAP-000",
+        "status": "CLOSED",
+        "root_program": "owner -> consumer",
+        "current_blockers": [] if blockers is None else blockers,
+        "superseded_observations": ["#historical-observation"],
+    }
+
+
 def controls():
     validate_text(sample(), "GAP-000")
+    # A CLOSED frontier is ADMITTED, and that is the whole repair: requiring
+    # OPEN made a closure fail the gate, so closing a required gap blocked every
+    # commit in the repository. The header decides and the block agrees.
+    validate_text(sample(closed(), header="CLOSED"), "GAP-000")
     damaged = []
     damaged.append(sample().replace(BEGIN, ""))
     damaged.append(sample().replace(BEGIN, BEGIN + "\n" + BEGIN))
@@ -301,7 +364,12 @@ def controls():
     damaged.append(sample(empty))
     damaged.append(sample().replace("#historical-observation", "#absent-observation"))
     damaged.append(sample().replace('"status": "OPEN"', '"status": "CLOSED"'))
-
+    # Every HALF-EDIT of a closure is refused, in both directions, because a
+    # half-edited closure is how the roster went stale in the first place.
+    damaged.append(sample(closed(), header="OPEN"))
+    damaged.append(sample(header="CLOSED"))
+    damaged.append(sample(closed(["A blocker a closed gap cannot have."]), header="CLOSED"))
+    damaged.append(sample(closed(), header="REOPENED"))
     # root-edge discipline: GAP-134 must start at lib/compiler/token.id
     # and end at src/parser.zig; damage each edge independently
     edge_sample = {
@@ -334,7 +402,14 @@ def controls():
             continue
         raise FrontierError(f"root edge damage control {index} was not rejected")
 
-    return len(damaged) + 1 + projection_controls() + order_controls() + blocker_controls()
+    return (
+        len(damaged)
+        + 1
+        + projection_controls()
+        + order_controls()
+        + blocker_controls()
+        + census_controls()
+    )
 
 
 def blocker_sample(gap="GAP-000", status="OPEN", blockers=None):
@@ -382,6 +457,63 @@ def blocker_controls():
         raise FrontierError("blocker discipline damage control was not rejected")
 
     return 3
+
+
+def census_controls():
+    """The census VOCABULARY is pinned here, not just asserted in a comment.
+
+    `IN_PROGRESS` was absent from `ACTIVE_STATUS`, so the one P0 subject carrying
+    it (`GAP-146`) dropped out of the active set while `gaps/ROOT-PROGRAM.md`
+    still dispatched at it — and the gate blamed the projection for naming a gap
+    the census had silently retired. Being worked on is the least retired a gap
+    can be. These controls fail closed if that word is ever dropped again.
+    """
+    selected = (
+        "**Status:** OPEN\n**Priority:** P0",
+        "**Status:** REOPENED\n**Priority:** P0",
+        "**Status:** IN_PROGRESS\n**Priority:** P0",
+        # the exact header shape carried by GAP-146 on disk
+        "**Status:** IN_PROGRESS \u00b7 **Filed:** !2026-08-10T12:08:03Z\n"
+        "**Priority:** P0 \u00b7 **Kind:** regression",
+        # BLOCKED IS NOT RETIRED. `00c0473d` marked GAP-146 OWNER-BLOCKED on
+        # GAP-119 and the census dropped it, so the roster dispatched at a gap
+        # the census refused and every lane's commit was blocked. The shape is
+        # admitted, not the one word.
+        "**Status:** OWNER-BLOCKED \u00b7 **Filed:** !2026-08-10T12:08:03Z\n"
+        "**Priority:** P0 \u00b7 **Kind:** regression",
+        "**Status:** IMPLEMENTATION-BLOCKED\n**Priority:** P0",
+        "**Status:** SEMANTIC-VOCABULARY-BLOCKED\n**Priority:** P0",
+    )
+    for index, header in enumerate(selected, 1):
+        if not is_active_p0(header):
+            raise FrontierError(
+                f"census positive control {index} was not selected"
+            )
+
+    rejected = (
+        # retired lifecycles are not active, whatever their priority says
+        "**Status:** CLOSED\n**Priority:** P0",
+        "**Status:** SUPERSEDED\n**Priority:** P0",
+        "**Status:** REFUTED\n**Priority:** P0",
+        # active lifecycles that are not P0 are not in the active-P0 census
+        "**Status:** OPEN\n**Priority:** P1",
+        "**Status:** IN_PROGRESS\n**Priority:** P2",
+        # a longer word that merely STARTS with an active one is not that word
+        "**Status:** IN_PROGRESSING\n**Priority:** P0",
+        # a retired lifecycle is retired however it is qualified, and a blocked
+        # spelling is only live because BLOCKED is what it says
+        "**Status:** CLOSED-BLOCKED\n**Priority:** P0",
+        "**Status:** OWNER-PENDING\n**Priority:** P0",
+        # a subject with no status header at all is not active
+        "**Priority:** P0",
+    )
+    for index, header in enumerate(rejected, 1):
+        if is_active_p0(header):
+            raise FrontierError(
+                f"census damage control {index} was not rejected"
+            )
+
+    return len(selected) + len(rejected)
 
 
 def projection_sample(roster="`GAP-001`, `GAP-002`", table="| `GAP-003` | CLOSED | x |"):

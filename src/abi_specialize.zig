@@ -2,24 +2,9 @@
 const std = @import("std");
 const sim = @import("sim.zig");
 const transform_engine = @import("transform_engine.zig");
+const types = @import("types.zig");
 
 pub const TRANSFORM_ID: []const u8 = "abi.specialize";
-
-fn isNativeScalarLabel(label: []const u8) bool {
-    return std.mem.eql(u8, label, "f64") or
-        std.mem.eql(u8, label, "f32") or
-        std.mem.eql(u8, label, "i64") or
-        std.mem.eql(u8, label, "i32") or
-        std.mem.eql(u8, label, "i16") or
-        std.mem.eql(u8, label, "i8") or
-        std.mem.eql(u8, label, "u64") or
-        std.mem.eql(u8, label, "u32") or
-        std.mem.eql(u8, label, "u16") or
-        std.mem.eql(u8, label, "u8") or
-        std.mem.eql(u8, label, "bool") or
-        std.mem.eql(u8, label, "double") or
-        std.mem.eql(u8, label, "float");
-}
 
 fn recordEntityByName(entities: []const sim.Entity, name: []const u8) ?sim.Entity {
     for (entities) |ent| {
@@ -31,7 +16,7 @@ fn recordEntityByName(entities: []const sim.Entity, name: []const u8) ?sim.Entit
 fn recordHasNativeLayout(ent: sim.Entity) bool {
     if (ent.fields.len == 0) return false;
     for (ent.fields) |f| {
-        if (!isNativeScalarLabel(f.type_name)) return false;
+        if (types.abiDescriptorNamed(f.type_name) == null) return false;
     }
     return ent.size_bytes != null and ent.align_bytes != null;
 }
@@ -56,7 +41,7 @@ fn specializeRecord(alloc: std.mem.Allocator, ent: *sim.Entity) !void {
 }
 
 fn passByForParam(entities: []const sim.Entity, param: sim.Param) []const u8 {
-    if (isNativeScalarLabel(param.type_name)) return "value";
+    if (types.abiDescriptorNamed(param.type_name) != null) return "value";
     if (param.type_name.len > 1 and param.type_name[param.type_name.len - 1] == '*') return "pointer";
     if (recordEntityByName(entities, param.type_name)) |rec| {
         if (rec.size_bytes) |sz| {

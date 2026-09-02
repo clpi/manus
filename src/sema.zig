@@ -1914,33 +1914,12 @@ pub const Sema = struct {
         return .any;
     }
 
+    /// The descriptor a memory-level type name projects. Owned once by
+    /// `types.memDescriptorNamed` — this was a roster of scalar spellings
+    /// duplicated verbatim in `codegen`, deciding ADMISSION here and
+    /// REALIZATION there from two lists that could only agree by hand.
     fn mem_type_from_name(self: *Sema, name: []const u8) SemaError!?RT {
-        if (name.len == 0) return null;
-        if (name[0] == '*') {
-            const inner = try self.mem_type_from_name(name[1..]) orelse return null;
-            const ptr = try self.alloc.create(RT);
-            ptr.* = inner;
-            return RT{ .pointer = ptr };
-        }
-        if (std.mem.eql(u8, name, "void")) return .void;
-        if (std.mem.eql(u8, name, "i8")) return .i8;
-        if (std.mem.eql(u8, name, "i16")) return .i16;
-        if (std.mem.eql(u8, name, "i32")) return .i32;
-        if (std.mem.eql(u8, name, "i64") or std.mem.eql(u8, name, "isize")) return .i64;
-        if (std.mem.eql(u8, name, "u8")) return .u8;
-        if (std.mem.eql(u8, name, "u16")) return .u16;
-        if (std.mem.eql(u8, name, "u32")) return .u32;
-        if (std.mem.eql(u8, name, "u64") or std.mem.eql(u8, name, "usize")) return .u64;
-        if (std.mem.eql(u8, name, "f32")) return .f32;
-        if (std.mem.eql(u8, name, "f64")) return .f64;
-        if (std.mem.eql(u8, name, "bool")) return .bool;
-        if (std.mem.eql(u8, name, "str") or std.mem.eql(u8, name, "string")) return .str;
-        if (std.mem.eql(u8, name, "ptr") or std.mem.eql(u8, name, "void*")) {
-            const ptr = try self.alloc.create(RT);
-            ptr.* = .void;
-            return RT{ .pointer = ptr };
-        }
-        return null;
+        return try types.memDescriptorNamed(self.alloc, name);
     }
 
     fn mem_type_arg(self: *Sema, args: []const *ast.Expr, index: usize) SemaError!?RT {

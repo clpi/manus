@@ -386,6 +386,10 @@ static int verify_event(void) {
                 if (delimiter != 3) failed += 1;
             } else if (kind == first_kind_at("'compat'", "probe.duo")) {
                 if (delimiter != 5) failed += 1;
+            } else if (kind == first_kind("\"text\"")) {
+                if (delimiter != 6) failed += 1;
+            } else if (kind == first_kind("'bytes'")) {
+                if (delimiter != 7) failed += 1;
             } else if (kind != first_kind("(") && delimiter != 0) failed += 1;
         }
     }
