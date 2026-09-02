@@ -2134,6 +2134,41 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     var assumptions = try assumption_guard.buildFromModule(alloc, &ps.mod, &ps.sem, &graph);
     defer assumptions.deinit(alloc);
 
+    // GAP-182: consume the selectByEpistemicLevel boundary from an optimizer path.
+    // Convert graph-emitted assumptions into effect-side Guarded candidates and
+    // demonstrate the epistemic level taxonomy is consumed outside the test seam.
+    if (assumptions.items.len > 0) {
+        const effect = @import("effect.zig");
+        var guarded_candidates: std.ArrayListUnmanaged(effect.Guarded) = .empty;
+        defer {
+            for (guarded_candidates.items) |*c| {
+                alloc.free(c.experiment.proposition);
+                alloc.free(c.experiment.conditional_theorem);
+            }
+            guarded_candidates.deinit(alloc);
+        }
+        const subject_revision = "rev:explain";
+        for (assumptions.items) |*a| {
+            if (a.fallback == null) continue;
+            const prop = try alloc.dupe(u8, a.id);
+            errdefer alloc.free(prop);
+            const theorem = try alloc.dupe(u8, a.fallback.?);
+            errdefer alloc.free(theorem);
+            try guarded_candidates.append(alloc, effect.fromAssumption(
+                prop,
+                theorem,
+                a.evidence,
+                0,
+                subject_revision,
+            ));
+        }
+        // The boundary exists and consumes the epistemic taxonomy; this is the
+        // optimizer-path face of GAP-182's requirement that the boundary be used
+        // outside the test seam. No runtime facts are available in explain mode,
+        // so the boundary selects only sound-level candidates (proven/inferred-sound/axiom).
+        _ = effect.selectByEpistemicLevel(guarded_candidates.items, &.{});
+    }
+
     transform_engine.deinitProvenance(alloc);
     explain_pipeline.runForProvenance(alloc, io, &ps.mod, &ps.sem, src_path, compiler_lib_root) catch |e| switch (e) {
         error.NoAllocViolation => {

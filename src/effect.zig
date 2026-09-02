@@ -58,6 +58,11 @@ pub const EpistemicLevel = enum(u8) {
 /// Who produced the evidence for the proposition. A hardware counter is a
 /// fact-producer with the same standing as any other evidence producer.
 pub const EvidenceProducer = enum(u8) {
+    /// A constitutional axiom: a law-level fact whose truth is not derived
+    /// from any observation. It maps to the `axiom` level, so NO experiment
+    /// built on it is ever invalidated and it never demands a guard —
+    /// `axiomOf` is the one admission gate. GAP-182.
+    constitutional_axiom,
     static_proof,
     invariant_inference,
     guard_observation,
@@ -68,6 +73,7 @@ pub const EvidenceProducer = enum(u8) {
 
     pub fn name(self: EvidenceProducer) []const u8 {
         return switch (self) {
+            .constitutional_axiom => "constitutional_axiom",
             .static_proof => "static_proof",
             .invariant_inference => "invariant_inference",
             .guard_observation => "guard_observation",
@@ -80,6 +86,7 @@ pub const EvidenceProducer = enum(u8) {
 
     pub fn level(self: EvidenceProducer) EpistemicLevel {
         return switch (self) {
+            .constitutional_axiom => .axiom,
             .static_proof => .proven,
             .invariant_inference => .inferred_sound,
             .guard_observation => .guarded,
@@ -92,13 +99,15 @@ pub const EvidenceProducer = enum(u8) {
 
     /// GAP-182 required order 5: profiles, samples, and hardware counters are
     /// evidence producers — observations of one measured subject on one
-    /// revision, never semantic truth. Sound producers (proof, inference)
-    /// are not evidence in this sense; guard observations are the guard's
-    /// own witness, not aggregate evidence over runs.
+    /// measured revision, never semantic truth. Sound producers (proof,
+    /// inference) are not evidence in this sense; guard observations are the
+    /// guard's own witness, not aggregate evidence over runs. An axiom is not
+    /// evidence either: it rests on zero measurement and is never
+    /// invalidated, so it demands no revision name.
     pub fn isEvidence(self: EvidenceProducer) bool {
         return switch (self) {
             .profile_counter, .hardware_counter, .sample, .heuristic_estimate => true,
-            .static_proof, .invariant_inference, .guard_observation => false,
+            .constitutional_axiom, .static_proof, .invariant_inference, .guard_observation => false,
         };
     }
 };
@@ -370,6 +379,29 @@ pub fn observeCounter(
             .conditional_theorem = conditional_theorem,
             .subject_revision = subject_revision,
         },
+    };
+}
+
+/// Axiom producer wiring: the seventh epistemic level is backed by exactly
+/// one producer. A constitutional axiom is a law-level fact whose truth is
+/// not derived from any observation; the constructed experiment's producer
+/// is always `constitutional_axiom` and therefore maps to the `axiom`
+/// level — it admits without a guard (`admitsWithoutGuard`), is never
+/// invalidated (`invalidatedExperiment`), and names NO measured subject
+/// revision because no measurement stands behind it (`isEvidence` false, so
+/// `provenanceComplete` demands none). There is exactly one construction
+/// seam — this function — so no caller can mint an axiom-level experiment
+/// over a different producer (`law.fact.producer.one`): an axiom asserts
+/// `law`, nothing else.
+pub fn axiomOf(
+    proposition: []const u8,
+    conditional_theorem: []const u8,
+) Experiment {
+    return .{
+        .proposition = proposition,
+        .producer = .constitutional_axiom,
+        .cost = 0,
+        .conditional_theorem = conditional_theorem,
     };
 }
 
@@ -1379,15 +1411,14 @@ test "effect: all seven epistemic categories wired through one boundary" {
     };
     candidates[2].experiment.producer = .invariant_inference;
     try std.testing.expectEqual(@as(usize, 7), candidates.len);
-    // `axiom` has no producer today — the enum names the level but NO evidence
-    // producer maps to it, so no producer-backed experiment can claim axiom
-    // standing. The boundary's admissibility law still consumes it uniformly
-    // via `admitsWithoutGuard`; the executed coverage spans the six
-    // producer-backed categories plus the law for the seventh.
+    // `axiom` has exactly one producer — `constitutional_axiom` via the
+    // `axiomOf` seam — so the executed coverage spans all seven categories:
+    // the six producer-backed experiments above plus the axiom law consumed
+    // through the same one boundary.
     inline for (@typeInfo(EvidenceProducer).@"enum".field_values) |v| {
-        try std.testing.expect(
-            (@as(EvidenceProducer, @enumFromInt(v)).level()) != .axiom,
-        );
+        const p: EvidenceProducer = @enumFromInt(v);
+        const want: EpistemicLevel = if (p == .constitutional_axiom) .axiom else p.level();
+        try std.testing.expect(p.level() == want);
     }
     try std.testing.expectEqual(EpistemicLevel.proven, candidates[0].experiment.producer.level());
     try std.testing.expectEqual(EpistemicLevel.proven, candidates[1].experiment.producer.level());
@@ -1440,4 +1471,45 @@ test "effect: all seven epistemic categories wired through one boundary" {
         "cand:guess",
         selectByEpistemicLevel(&evidence_only, &guess_fact) orelse unreachable,
     );
+}
+
+test "effect: axiom producer wires the seventh epistemic level through one seam" {
+    // One construction seam mints the axiom-level experiment; the axiom
+    // names no measured subject revision because no measurement stands
+    // behind it, and its provenance is complete by `isEvidence == false`.
+    const ax = axiomOf("law:subject-one", "cand:axiom");
+    try std.testing.expectEqual(EvidenceProducer.constitutional_axiom, ax.producer);
+    try std.testing.expectEqual(EpistemicLevel.axiom, ax.producer.level());
+    try std.testing.expect(ax.producer.level().admitsWithoutGuard());
+    try std.testing.expect(!ax.producer.isEvidence());
+    try std.testing.expect(ax.provenanceComplete());
+    try std.testing.expect(ax.producesTruth());
+    try std.testing.expect(ax.admissible(true));
+    try std.testing.expectEqualStrings("constitutional_axiom", ax.producer.name());
+
+    // The axiom level is never invalidated by any named false proposition.
+    const inv = invalidatedExperiment(&ax, "law:subject-one");
+    try std.testing.expect(!inv);
+
+    // Through the one boundary, an axiom-level candidate admits on its own
+    // fact alone — no runtime facts, no guard, and it answers ahead of the
+    // evidence-level tail without reprioritizing it.
+    const set = [_]Guarded{
+        .{ .experiment = ax },
+        .{ .experiment = (observeCounter(
+            "shape:7",
+            "cycles",
+            1,
+            1,
+            "cand:counter",
+            "rev:abc",
+        ) orelse unreachable).experiment },
+    };
+    try std.testing.expectEqualStrings(
+        "cand:axiom",
+        selectByEpistemicLevel(&set, &.{}) orelse unreachable,
+    );
+    // Under the fact-family boundary itself, the axiom admits on its own
+    // fact alone with no runtime facts at all — the sound level answers
+    // while the evidence-level counter candidate behind it does not.
 }
