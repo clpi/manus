@@ -634,7 +634,8 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # Header bit 4 also carries the applied-width type-primary face at its mutually
 # exclusive name coordinate.
 # Bit 8 carries assignment-body recognition, bits 9..12 carry the attributed
-# declaration face, and bits 13..63 carry the exclusive matching-parenthesis
+# declaration face, and bits 13..63 carry the primary face: one selects a
+# closure, while any greater value is the exclusive matching-parenthesis
 # boundary.
 # Capacity refusal precedes every mutation.
 event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
@@ -832,7 +833,9 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
         if !visible
             declaration = 15
         delimiter = 0
-        if kind == token.kindlparen
+        if kind == token.kindpipe
+            delimiter = 1
+        elseif kind == token.kindlparen
             depth = 1
             probe = index + 1
             while probe < count and depth > 0

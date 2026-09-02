@@ -403,7 +403,11 @@ pub const Parser = struct {
     }
 
     fn currentParserExpressionGroup(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 != 0;
+        return (try self.currentParserDecision()) >> 13 > 1;
+    }
+
+    fn currentParserClosure(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 1;
     }
 
     fn currentParserTypePointer(self: *Parser) ParseError!bool {
@@ -6073,6 +6077,7 @@ pub const Parser = struct {
 
     fn parse_simple_expr(self: *Parser) ParseError!*ast.Expr {
         const tok = try self.pk();
+        if (try self.currentParserClosure()) return self.parse_closure_expr();
         if (try self.currentParserExpressionGroup()) {
             if (try self.starts_parenthesized_func_expr()) {
                 const l = (try self.pk()).loc;
@@ -6098,7 +6103,6 @@ pub const Parser = struct {
             return e;
         }
         return switch (tok.kind) {
-            .pipe => self.parse_closure_expr(),
             .int_lit => blk: {
                 _ = try self.adv();
                 break :blk self.new_expr(.{ .int_lit = .{ .loc = tok.loc, .val = tok.int_val } });
@@ -8293,6 +8297,16 @@ test "parse: postfix generic type annotation" {
     try testing.expectEqualStrings("List", typ.generic.base.named);
     try testing.expectEqual(@as(usize, 1), typ.generic.params.len);
     try testing.expectEqualStrings("i64", typ.generic.params[0].named);
+}
+
+test "parse: closure primary consumes the whole-pack face" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource("f = |x| x", &arena);
+    const value = mod.body.stmts[0].assign.values[0];
+    try testing.expect(value.* == .func_expr);
+    try testing.expectEqual(@as(usize, 1), value.func_expr.params.len);
+    try testing.expectEqualStrings("x", value.func_expr.params[0].name);
 }
 
 test "parse: type declaration spelling" {

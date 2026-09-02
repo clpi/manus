@@ -433,7 +433,7 @@ has "$ROOT/lib/compiler/parser.id" 'delimiter = probe' \
     'event lost the matching-delimiter primary fact'
 has "$PARSER" 'fn currentParserExpressionGroup(self: *Parser) ParseError!bool {' \
     'parser.zig lost the expression-group primary consumer'
-has "$PARSER" 'return (try self.currentParserDecision()) >> 13 != 0;' \
+has "$PARSER" 'return (try self.currentParserDecision()) >> 13 > 1;' \
     'expression-group primary no longer consumes the matching delimiter fact'
 has "$PARSER" 'if (try self.currentParserExpressionGroup()) {' \
     'parse_simple_expr bypasses the settled expression-group face'
@@ -441,6 +441,21 @@ expression_group_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$P
 examined=$((examined + 1))
 if [ "$expression_group_arms" -ne 0 ]; then
     bad "parse_simple_expr retained $expression_group_arms .lparen host arm(s)"
+fi
+
+# The closure primary shares the matching-boundary lane at its mutually
+# exclusive `|` identity. One selects closure; greater values carry a matching
+# parenthesis coordinate. Zig no longer owns the `.pipe` primary switch arm.
+has "$ROOT/lib/compiler/parser.id" 'if kind == token.kindpipe' \
+    'event lost the closure primary face'
+has "$PARSER" 'fn currentParserClosure(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the closure primary consumer'
+has "$PARSER" 'if (try self.currentParserClosure()) return self.parse_closure_expr();' \
+    'parse_simple_expr bypasses the settled closure face'
+closure_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.pipe => ' || true)
+examined=$((examined + 1))
+if [ "$closure_arms" -ne 0 ]; then
+    bad "parse_simple_expr retained $closure_arms .pipe host arm(s)"
 fi
 
 # The applied-width type-primary recognizer consumes header bit 4 at its
@@ -1366,7 +1381,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=5' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=6' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'
