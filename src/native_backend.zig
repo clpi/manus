@@ -4906,135 +4906,190 @@ const Arm64Compiler = struct {
                 try self.emitAddSpImm(dst, off);
                 try temps.put(self.alloc, t, dst);
             },
-            .load_index, .store_index => |op| if (ins.ty == .i64) {
-                // THE INITIALIZING RUN OF A PROMOTED TABLE IS NOT EMITTED.
-                //
-                // This is the whole win: `mov` the literal / `str` it at a folded
-                // offset, twice per element, replaced by nothing. It is only safe
-                // because `const_table.recognize` proved these stores are the ONLY
-                // writes this base ever receives and that they all precede every
-                // read — a table that is written anywhere else never reaches here,
-                // it keeps its frame region and every one of these instructions.
-                //
-                // BOTH FACES OF THE BASE. The initializing run addresses the
-                // region as a `.temp`; once the table's name is bound to the same
-                // id every later mention arrives as a `.local`. They are one
-                // storage (`evalDnirValue` resolves both through `temps`), so
-                // both have to be recognized here.
-                if (op == .store_index) {
-                    const base_id: ?u32 = switch (ins.lhs) {
-                        .temp, .local => |id| id,
-                        else => null,
+            .load_index, .store_index => |op| switch (ins.ty) {
+                .i64 => {
+                    const is_const_store = op == .store_index and b: {
+                        const base_id: ?u32 = switch (ins.lhs) {
+                            .temp, .local => |id| id,
+                            else => break :b false,
+                        };
+                        break :b self.const_bases.contains(base_id);
                     };
-                    if (base_id) |id| if (self.const_bases.contains(id)) return;
-                }
-                // Memory-backed positional table: 8-byte elements, Idol-indexed
-                // from 1, so element `i` is at `base + (i - 1) * 8`. The scaled
-                // register form `[base, idx, lsl #3]` does the multiply for
-                // free, so only the 1-based bias costs an instruction.
-                const base = try self.evalDnirValue(temps, ins.lhs);
-
-                // A CONSTANT INDEX NEEDS NO INDEX REGISTER AT ALL.
-                //
-                // `base + (k - 1) * 8` is a compile-time number when `k` is, so
-                // the whole address computation collapses into the load/store's
-                // own unsigned-offset field. That removed three instructions per
-                // element from the materialization of a positional table — the
-                // binding emits one `store_index` per element with a LITERAL
-                // index, and was paying `mov idx / mov one / sub` to rediscover
-                // a number the compiler already had. A 32-element table cost 160
-                // instructions to set up; it now costs 64. Same for a constant
-                // read: `t(3)` is one `ldr`.
-                //
-                // The guard is the encoding's, not a heuristic: the offset field
-                // is a 12-bit count of 8-byte units, so `k` must be at least 1
-                // (Idol's own lower bound) and no more than 4096. Anything else
-                // falls through to the register form below, which is correct at
-                // every index.
-                const const_off: ?u16 = blk: {
-                    const k = switch (ins.rhs) {
-                        .i64 => |n| n,
-                        else => break :blk null,
+                    if (is_const_store) {
+                        // THE INITIALIZING RUN OF A PROMOTED TABLE IS NOT EMITTED.
+                        //
+                        // This is the whole win: `mov` the literal / `str` it at a folded
+                        // offset, twice per element, replaced by nothing. It is only safe
+                        // because `const_table.recognize` proved these stores are the ONLY
+                        // writes this base ever receives and that they all precede every
+                        // read — a table that is written anywhere else never reaches here,
+                        // it keeps its frame region and every one of these instructions.
+                        //
+                        // BOTH FACES OF THE BASE. The initializing run addresses the
+                        // region as a `.temp`; once the table's name is bound to the same
+                        // id every later mention arrives as a `.local`. They are one
+                        // storage (`evalDnirValue` resolves both through `temps`), so
+                        // both have to be recognized here.
+                        return;
+                    }
+                    const base = try self.evalDnirValue(temps, ins.lhs);
+                    // A CONSTANT INDEX NEEDS NO INDEX REGISTER AT ALL.
+                    //
+                    // `base + (k - 1) * 8` is a compile-time number when `k` is, so
+                    // the whole address computation collapses into the load/store's
+                    // own unsigned-offset field. That removed three instructions per
+                    // element from the materialization of a positional table — the
+                    // binding emits one `store_index` per element with a LITERAL
+                    // index, and was paying `mov idx / mov one / sub` to rediscover
+                    // a number the compiler already had. A 32-element table cost 160
+                    // instructions to set up; it now costs 64. Same for a constant
+                    // read: `t(3)` is one `ldr`.
+                    //
+                    // The guard is the encoding's, not a heuristic: the offset field
+                    // is a 12-bit count of 8-byte units, so `k` must be at least 1
+                    // (Idol's own lower bound) and no more than 4096. Anything else
+                    // falls through to the register form below, which is correct at
+                    // every index.
+                    const const_off: ?u16 = blk: {
+                        const k = switch (ins.rhs) {
+                            .i64 => |n| n,
+                            else => break :blk null,
+                        };
+                        if (k < 1 or k > 4096) break :blk null;
+                        break :blk @intCast((k - 1) * 8);
                     };
-                    if (k < 1 or k > 4096) break :blk null;
-                    break :blk @intCast((k - 1) * 8);
-                };
-                if (const_off) |off| {
+                    if (const_off) |off| {
+                        if (op == .load_index) {
+                            const dst = try self.allocReg();
+                            try self.emitLdrBaseImm(dst, base, off);
+                            if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                        } else {
+                            const val = try self.evalDnirValueBits(temps, ins.third);
+                            try self.emitStrBaseImm(val, base, off);
+                            self.releaseDnirTemp(pinned, ins.third, val);
+                        }
+                        self.releaseDnirTemp(pinned, ins.lhs, base);
+                        return;
+                    }
+                    const idx = try self.evalDnirValue(temps, ins.rhs);
+                    const biased = try self.allocReg();
+                    try self.emitSubImm(biased, idx, 1);
                     if (op == .load_index) {
                         const dst = try self.allocReg();
-                        try self.emitLdrBaseImm(dst, base, off);
+                        try self.emitLdrScaled(dst, base, biased);
                         if (ins.result) |t| try temps.put(self.alloc, t, dst);
                     } else {
                         const val = try self.evalDnirValueBits(temps, ins.third);
-                        try self.emitStrBaseImm(val, base, off);
+                        try self.emitStrScaled(val, base, biased);
                         self.releaseDnirTemp(pinned, ins.third, val);
                     }
-                    // Same ownership rule as the register path: the base is
-                    // shared by every element's store and is released by whoever
-                    // owns it, not here.
+                    self.releaseReg(biased);
                     self.releaseDnirTemp(pinned, ins.lhs, base);
-                    return;
-                }
-
-                const idx = try self.evalDnirValue(temps, ins.rhs);
-                const biased = try self.allocReg();
-                try self.emitSubImm(biased, idx, 1);
-                if (op == .load_index) {
-                    const dst = try self.allocReg();
-                    try self.emitLdrScaled(dst, base, biased);
-                    if (ins.result) |t| try temps.put(self.alloc, t, dst);
-                } else {
-                    const val = try self.evalDnirValueBits(temps, ins.third);
-                    try self.emitStrScaled(val, base, biased);
-                    self.releaseDnirTemp(pinned, ins.third, val);
-                }
-                self.releaseReg(biased);
-                // Only release registers this instruction owns. A base or index
-                // that came from a slot is still live in `temps`: materializing a
-                // table emits one store per element off the *same* base, and
-                // releasing it after the first store handed x9 straight back to
-                // the next index constant, so element 2 stored through `[2]` as
-                // an address.
-                self.releaseDnirTemp(pinned, ins.lhs, base);
-                self.releaseDnirTemp(pinned, ins.rhs, idx);
-            } else if (op == .store_index) {
-                // Byte-width store: the mirror of the byte load below, sharing
-                // ONE index origin (`base + (i - 1)`) so a raw buffer
-                // normalizes at the lowering instead of giving the backend a
-                // second convention.
-                //
-                // releaseDnirTemp, NOT releaseReg — the same discipline the
-                // scaled path above documents. A base that came from a slot is
-                // still live in `temps`, and string.char emits two stores off
-                // the SAME base: releasing it after the first handed the
-                // register straight to the second store's index constant, and
-                // the write went through an address instead of a pointer.
-                // That was the segfault.
-                const sbase = try self.evalDnirValue(temps, ins.lhs);
-                const sidx = try self.evalDnirValue(temps, ins.rhs);
-                const sval = try self.evalDnirValue(temps, ins.third);
-                const saddr = try self.allocReg();
-                try self.emitSubImm(saddr, sidx, 1);
-                try self.emitAddReg(saddr, sbase, saddr);
-                try self.emitStrb(sval, saddr);
-                self.releaseReg(saddr);
-                self.releaseDnirTemp(pinned, ins.lhs, sbase);
-                self.releaseDnirTemp(pinned, ins.rhs, sidx);
-                self.releaseDnirTemp(pinned, ins.third, sval);
-            } else {
-                // `string.byte(s, i)`: Idol indexes strings from 1, C pointers
-                // from 0, so the byte lives at `base + (i - 1)`.
-                const base = try self.evalDnirValue(temps, ins.lhs);
-                const idx = try self.evalDnirValue(temps, ins.rhs);
-                const addr = try self.allocReg();
-                try self.emitSubImm(addr, idx, 1);
-                try self.emitAddReg(addr, base, addr);
-                const dst = try self.allocReg();
-                try self.emitLdrb(dst, addr);
-                self.releaseReg(addr);
-                if (!Arm64Compiler.regIsPinned(pinned, base)) self.releaseReg(base);
-                if (!Arm64Compiler.regIsPinned(pinned, idx)) self.releaseReg(idx);
-                if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                    self.releaseDnirTemp(pinned, ins.rhs, idx);
+                },
+                .f64 => {
+                    const is_const_store = op == .store_index and b: {
+                        const base_id: ?u32 = switch (ins.lhs) {
+                            .temp, .local => |id| id,
+                            else => break :b false,
+                        };
+                        break :b self.const_bases.contains(base_id);
+                    };
+                    if (is_const_store) return;
+                    const base = try self.evalDnirValue(temps, ins.lhs);
+                    const const_off: ?u16 = blk: {
+                        const k = switch (ins.rhs) {
+                            .i64 => |n| n,
+                            else => break :blk null,
+                        };
+                        if (k < 1 or k > 4096) break :blk null;
+                        break :blk @intCast((k - 1) * 8);
+                    };
+                    if (const_off) |off| {
+                        if (op == .load_index) {
+                            const dst = try self.allocReg(.fp);
+                            try self.emitLdrBaseImmFp(dst, base, off);
+                            if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                        } else {
+                            const val = try self.evalDnirValueFp(temps, ins.third);
+                            try self.emitStrBaseImmFp(val, base, off);
+                            self.releaseDnirTemp(pinned, ins.third, val);
+                        }
+                        self.releaseDnirTemp(pinned, ins.lhs, base);
+                        return;
+                    }
+                    const idx = try self.evalDnirValue(temps, ins.rhs);
+                    const biased = try self.allocReg();
+                    try self.emitSubImm(biased, idx, 1);
+                    if (op == .load_index) {
+                        const dst = try self.allocReg(.fp);
+                        try self.emitLdrScaledFp(dst, base, biased);
+                        if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                    } else {
+                        const val = try self.evalDnirValueFp(temps, ins.third);
+                        try self.emitStrScaledFp(val, base, biased);
+                        self.releaseDnirTemp(pinned, ins.third, val);
+                    }
+                    self.releaseReg(biased);
+                    self.releaseDnirTemp(pinned, ins.lhs, base);
+                    self.releaseDnirTemp(pinned, ins.rhs, idx);
+                },
+                .f32 => {
+                    // 4-byte elements, Idol-indexed from 1. No const-index fast path
+                    // (offset field counts 8-byte units); always use register form.
+                    // `emitLdrScaled` / `emitStrScaled` are integer-only (GP registers),
+                    // so load/store through GP and convert to/from FP at the boundary.
+                    const base = try self.evalDnirValue(temps, ins.lhs);
+                    const idx = try self.evalDnirValue(temps, ins.rhs);
+                    const biased = try self.allocReg();
+                    try self.emitSubImm(biased, idx, 1);
+                    if (op == .store_index) {
+                        const val = try self.evalDnirValueFp(temps, ins.third);
+                        const val_bits = try self.allocReg();
+                        try self.emitFmovToGpr(val_bits, val);
+                        try self.emitStrScaled(val_bits, base, biased);
+                        self.releaseDnirTemp(pinned, ins.third, val);
+                        self.releaseReg(val_bits);
+                    } else {
+                        const bits = try self.allocReg();
+                        try self.emitLdrScaled(bits, base, biased);
+                        const dst = try self.allocReg(.fp);
+                        try self.emitFmovFromGpr(dst, bits);
+                        if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                        self.releaseReg(bits);
+                    }
+                    self.releaseReg(biased);
+                    self.releaseDnirTemp(pinned, ins.lhs, base);
+                    self.releaseDnirTemp(pinned, ins.rhs, idx);
+                },
+                else => {
+                    // Byte-width: string.byte / string.char semantics.
+                    if (op == .store_index) {
+                        const sbase = try self.evalDnirValue(temps, ins.lhs);
+                        const sidx = try self.evalDnirValue(temps, ins.rhs);
+                        const sval = try self.evalDnirValue(temps, ins.third);
+                        const saddr = try self.allocReg();
+                        try self.emitSubImm(saddr, sidx, 1);
+                        try self.emitAddReg(saddr, sbase, saddr);
+                        try self.emitStrb(sval, saddr);
+                        self.releaseReg(saddr);
+                        self.releaseDnirTemp(pinned, ins.lhs, sbase);
+                        self.releaseDnirTemp(pinned, ins.rhs, sidx);
+                        self.releaseDnirTemp(pinned, ins.third, sval);
+                    } else {
+                        const base = try self.evalDnirValue(temps, ins.lhs);
+                        const idx = try self.evalDnirValue(temps, ins.rhs);
+                        const addr = try self.allocReg();
+                        try self.emitSubImm(addr, idx, 1);
+                        try self.emitAddReg(addr, base, addr);
+                        const dst = try self.allocReg();
+                        try self.emitLdrb(dst, addr);
+                        self.releaseReg(addr);
+                        if (!Arm64Compiler.regIsPinned(pinned, base)) self.releaseReg(base);
+                        if (!Arm64Compiler.regIsPinned(pinned, idx)) self.releaseReg(idx);
+                        if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                    }
+                },
             },
             .hw_fence => {
                 if (dnir_hardware.arm64FixedWord(.fence)) |word| {
@@ -7776,6 +7831,40 @@ const Arm64Compiler = struct {
         try self.emitFmt(
             0xf9400000 | ((@as(u32, offset) / 8) << 10) | (@as(u32, base) << 5) | @as(u32, dst),
             "ldr x{d}, [x{d}, #{d}]",
+            .{ dst, base, offset },
+        );
+    }
+
+    /// `ldr dd, [xbase, xidx, lsl #3]` — 8-byte scaled indexed load into FP register.
+    fn emitLdrScaledFp(self: *Arm64Compiler, dst: u5, base: u5, idx: u5) Error!void {
+        try self.ensureRegLive(base);
+        try self.ensureRegLive(idx);
+        try self.emitFmt(
+            0xf8607800 | ((@as(u32, idx) << 16)) | ((@as(u32, base) << 5)) | @as(u32, dst),
+            "ldr d{d}, [x{d}, x{d}, lsl #3]",
+            .{ dst, base, idx },
+        );
+    }
+
+    /// `str ds, [xbase, xidx, lsl #3]` — 8-byte scaled indexed store from FP register.
+    fn emitStrScaledFp(self: *Arm64Compiler, src: u5, base: u5, idx: u5) Error!void {
+        try self.ensureRegLive(base);
+        try self.ensureRegLive(idx);
+        try self.ensureRegLive(src);
+        try self.emitFmt(
+            0xf8207800 | ((@as(u32, idx) << 16)) | ((@as(u32, base) << 5)) | @as(u32, src),
+            "str d{d}, [x{d}, x{d}, lsl #3]",
+            .{ src, base, idx },
+        );
+    }
+
+    /// `ldr dd, [xbase, #imm]` — 8-byte load into FP register at a constant offset.
+    fn emitLdrBaseImmFp(self: *Arm64Compiler, dst: u5, base: u5, offset: u16) Error!void {
+        if (offset % 8 != 0 or offset / 8 > 4095) return self.refuse(@src());
+        try self.ensureRegLive(base);
+        try self.emitFmt(
+            0xfd400000 | ((@as(u32, offset) / 8) << 10) | ((@as(u32, base) << 5)) | @as(u32, dst),
+            "ldr d{d}, [x{d}, #{d}]",
             .{ dst, base, offset },
         );
     }

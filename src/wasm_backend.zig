@@ -287,8 +287,12 @@ const op_global_set: u8 = 0x24;
 const op_i32_load: u8 = 0x28;
 const op_i64_load: u8 = 0x29;
 const op_i64_load8_u: u8 = 0x31; // 0x30 is load8_S — the sign is the whole difference
+const op_f32_load: u8 = 0x38;
+const op_f64_load: u8 = 0x39;
 const op_i32_store: u8 = 0x36;
 const op_i64_store: u8 = 0x37;
+const op_f32_store: u8 = 0x3a;
+const op_f64_store: u8 = 0x3b;
 const op_i32_store8: u8 = 0x3a;
 const op_i64_store8: u8 = 0x3c;
 const op_i32_const: u8 = 0x41;
@@ -1507,12 +1511,11 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
         .load_index => {
             const t = ins.result orelse return e.refuse("load-index-no-result");
             try emitIndexAddress(e, b, ins);
-            if (ins.ty == .i64) {
-                try b.mem(op_i64_load, 3, 0);
-            } else {
-                // `string.byte(s, i)`: Idol indexes strings from 1, C pointers
-                // from 0, and the byte is zero-extended exactly as `ldrb` does.
-                try b.mem(op_i64_load8_u, 0, 0);
+            switch (ins.ty) {
+                .i64 => try b.mem(op_i64_load, 3, 0),
+                .f64 => try b.mem(op_f64_load, 3, 0),
+                .f32 => try b.mem(op_f32_load, 3, 0),
+                else => try b.mem(op_i64_load8_u, 0, 0),
             }
             try b.set(t);
         },
@@ -1520,10 +1523,11 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
         .store_index => {
             try emitIndexAddress(e, b, ins);
             try pushValue(e, b, ins.third, .i64);
-            if (ins.ty == .i64) {
-                try b.mem(op_i64_store, 3, 0);
-            } else {
-                try b.mem(op_i64_store8, 0, 0);
+            switch (ins.ty) {
+                .i64 => try b.mem(op_i64_store, 3, 0),
+                .f64 => try b.mem(op_f64_store, 3, 0),
+                .f32 => try b.mem(op_f32_store, 3, 0),
+                else => try b.mem(op_i64_store8, 0, 0),
             }
         },
 
@@ -1630,7 +1634,11 @@ fn emitFrameRestore(e: *Emitter, b: *Buf) Error!void {
 /// `base + (index - 1) * width`, the one index origin both faces of a positional
 /// table share. Leaves an i32 address on the stack.
 fn emitIndexAddress(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
-    const scale: i32 = if (ins.ty == .i64) 8 else 1;
+    const scale: i32 = switch (ins.ty) {
+        .i64, .f64 => 8,
+        .f32 => 4,
+        else => 1,
+    };
     try pushAddr(e, b, ins.lhs);
     try pushValue(e, b, ins.rhs, .i64);
     try b.op(op_i32_wrap_i64);

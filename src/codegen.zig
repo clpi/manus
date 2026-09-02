@@ -5955,7 +5955,9 @@ pub const CodeGen = struct {
                             (std.mem.eql(u8, f.field, "write_byte") and nargs == 3) or
                             (std.mem.eql(u8, f.field, "write_i64") and nargs == 3) or
                             (std.mem.eql(u8, f.field, "zero") and nargs == 2) or
-                            (std.mem.eql(u8, f.field, "addr") and nargs == 1);
+                            (std.mem.eql(u8, f.field, "addr") and nargs == 1) or
+                            (std.mem.eql(u8, f.field, "load") and nargs == 2) or
+                            (std.mem.eql(u8, f.field, "store") and nargs == 3);
                         if (ok_mem) {
                             for (call.args) |a| {
                                 if (!self.expr_is_native_scalar(a)) break :blk false;

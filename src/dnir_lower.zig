@@ -13410,6 +13410,22 @@ fn lowerSubjectTo(
     return invalidGraphFacts(ctx.diagnostic, @src(), "unsupported-conversion");
 }
 
+/// `mem.load(T)(p)` / `mem.store(T)(p,v)` — extract the type tag from the
+/// type-descriptor argument so the backend can emit the right-width load/store.
+fn lowerMemType(ctx: *LowerCtx, type_expr: *const ast.Expr) ?RT {
+    _ = ctx;
+    if (type_expr.* == .name) {
+        const name = type_expr.name.ident;
+        if (std.mem.eql(u8, name, "f64")) return .f64;
+        if (std.mem.eql(u8, name, "f32")) return .f32;
+        if (std.mem.eql(u8, name, "i64")) return .i64;
+        if (std.mem.eql(u8, name, "u64")) return .i64;
+        if (std.mem.eql(u8, name, "i32") or std.mem.eql(u8, name, "u32")) return .i64;
+        if (std.mem.eql(u8, name, "i8") or std.mem.eql(u8, name, "u8")) return .any;
+    }
+    return null;
+}
+
 /// A CALLER'S BYTE OFFSET AS THE BACKEND'S 1-BASED ELEMENT INDEX.
 ///
 /// `load_index`/`store_index` at `.ty = .i64` address `base + (idx - 1) * 8`;
@@ -13768,14 +13784,33 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                     try ctx.emit(.{ .op = .store_index, .ty = .any, .lhs = base, .rhs = .{ .temp = one }, .third = val });
                     return .void;
                 }
-                if (std.mem.eql(u8, f.field, "write_i64") and c.args.len == 3) {
+                if (std.mem.eql(u8, f.field, "write_f64") and c.args.len == 3) {
                     const base = try lowerExpr(ctx, c.args[0]);
                     const idx = try lowerScaledElementIndex(ctx, c.args[1]);
                     const val = try lowerExpr(ctx, c.args[2]);
-                    try ctx.emit(.{ .op = .store_index, .ty = .i64, .lhs = base, .rhs = idx, .third = val });
+                    try ctx.emit(.{ .op = .store_index, .ty = .f64, .lhs = base, .rhs = idx, .third = val });
                     return .void;
                 }
-                if (std.mem.eql(u8, f.field, "write_f64") and c.args.len == 3) {
+                // `mem.load(T)(p)` — typed load. T is a descriptor; args[0] is the
+                // address. Lowered to load_index with T determining width and register
+                // class. f64/f32 are 8/4 bytes at natural alignment.
+                if (std.mem.eql(u8, f.field, "load") and c.args.len == 2) {
+                    const ptr = try lowerExpr(ctx, c.args[0]);
+                    const t = ctx.freshTemp();
+                    const ty: RT = lowerMemType(ctx, c.args[1]) orelse .i64;
+                    try ctx.emit(.{ .op = .load_index, .result = t, .ty = ty, .lhs = ptr, .rhs = .{ .i64 = 1 } });
+                    return .{ .temp = t };
+                }
+                // `mem.store(T)(p, v)` — typed store. T is a descriptor; args[0] is
+                // the address; args[1] is the value.
+                if (std.mem.eql(u8, f.field, "store") and c.args.len == 3) {
+                    const ptr = try lowerExpr(ctx, c.args[0]);
+                    const val = try lowerExpr(ctx, c.args[2]);
+                    const ty: RT = lowerMemType(ctx, c.args[1]) orelse .i64;
+                    try ctx.emit(.{ .op = .store_index, .ty = ty, .lhs = ptr, .rhs = .{ .i64 = 1 }, .third = val });
+                    return .void;
+                }
+                if (std.mem.eql(u8, f.field, "zero") and c.args.len == 2) {
                     const base = try lowerExpr(ctx, c.args[0]);
                     const idx = try lowerScaledElementIndex(ctx, c.args[1]);
                     const val = try lowerExpr(ctx, c.args[2]);
