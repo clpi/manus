@@ -239,3 +239,16 @@ test "backend_identity: elf-x86_64 and mach-o-arm64 identities are distinct" {
     const macos_m = inferFromCompile(.direct, "aarch64-macos", true, true);
     try std.testing.expect(!std.mem.eql(u8, linux_m.intermediate, macos_m.intermediate));
 }
+
+test "backend_identity: wasm32-wasi intermediate identity is distinct from direct" {
+    const wasm_m = inferFromCompile(.wasm, "wasm32-wasi", true, true);
+    try std.testing.expectEqual(Backend.wasm, wasm_m.backend);
+    try std.testing.expectEqual(RepresentationProfile.native, wasm_m.representation);
+    try std.testing.expectEqual(RuntimeProfile.minimal, wasm_m.runtime);
+    // The wasm backend identity is the WASM intermediate, never ELF or Mach-O
+    try std.testing.expect(std.mem.eql(u8, wasm_m.intermediate, "wasm32-wasi"));
+
+    const direct_m = inferFromCompile(.direct, "x86_64-linux-gnu", true, true);
+    // The two identities must differ — wasm32-wasi != elf-x86_64
+    try std.testing.expect(!std.mem.eql(u8, wasm_m.intermediate, direct_m.intermediate));
+}

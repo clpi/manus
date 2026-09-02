@@ -517,3 +517,23 @@ test "target_model: BackendTarget.parseTarget resolves x86_64-linux-gnu" {
         return error.ParseFailed;
     }
 }
+
+test "target_model: wasm32-wasi backend identity is distinct from any direct backend identity" {
+    // wasm backend on wasm32-wasi target: distinct WASM identity, not ELF/Mach-O
+    const wasi_triple = parseStructuredTarget("wasm32-wasi", .wasm).?.triple;
+    const wasi_bt = BackendTarget.from(wasi_triple, "wasm");
+    try std.testing.expectEqual(Arch.wasm32, wasi_triple.arch);
+    try std.testing.expectEqual(Os.wasi, wasi_triple.os);
+    try std.testing.expectEqual(ObjectFormat.wasm, wasi_triple.objectFormat());
+    try std.testing.expectEqualStrings("wasm32-wasi", wasi_bt.intermediate());
+
+    // wasm backend on bare wasm32-linux target: generic WASM identity
+    const wasm_bt = BackendTarget.from(parseStructuredTarget("wasm32-linux", .wasm).?.triple, "wasm");
+    try std.testing.expectEqualStrings("wasm", wasm_bt.intermediate());
+
+    // The wasm intermediate identity must differ from direct backend identities
+    const direct_triple = parseStructuredTarget("x86_64-linux-gnu", .obj).?.triple;
+    const direct_bt = BackendTarget.from(direct_triple, "direct");
+    try std.testing.expect(!std.mem.eql(u8, wasi_bt.intermediate(), direct_bt.intermediate()));
+    try std.testing.expect(!std.mem.eql(u8, wasm_bt.intermediate(), direct_bt.intermediate()));
+}
