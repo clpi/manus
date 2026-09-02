@@ -345,6 +345,14 @@ pub const NumericFacts = struct {
     pub fn acceptsSource(self: NumericFacts, source: Domain) bool {
         return source == .integral or self.domain == .real;
     }
+
+    /// Whether this descriptor demand accepts a value that already carries the
+    /// supplied numeric facts. Existing values do not regain the freedom of a
+    /// bare source face: only one numeric domain satisfies another. Width and
+    /// signedness remain realization facts handled by the existing projection.
+    pub fn acceptsDescriptor(self: NumericFacts, supplied: NumericFacts) bool {
+        return self.domain == supplied.domain;
+    }
 };
 
 /// The value a write of `v` to a place of type `ty` leaves behind.
@@ -2278,6 +2286,11 @@ test "numeric descriptor facts compose domain width sign format and range" {
     try testing.expect(!signed.acceptsSource(.real));
     try testing.expect(float.acceptsSource(.integral));
     try testing.expect(float.acceptsSource(.real));
+
+    try testing.expect(signed.acceptsDescriptor(unsigned));
+    try testing.expect(float.acceptsDescriptor((ResolvedType{ .f32 = {} }).numericFacts().?));
+    try testing.expect(!signed.acceptsDescriptor(float));
+    try testing.expect(!float.acceptsDescriptor(signed));
 }
 
 test "CallShape: method call shape" {

@@ -1601,7 +1601,9 @@ pub const Sema = struct {
         // silently become a plain double either. The repair for both is the
         // conversion edge, which is the whole reason the trie exists.
         if (types.nominalReprOf(ann) != null or types.nominalReprOf(init_t) != null) return false;
-        if (ann.is_integer() and init_t.is_integer()) return true;
+        if (ann.numericFacts()) |demand| {
+            if (init_t.numericFacts()) |supplied| return demand.acceptsDescriptor(supplied);
+        }
         return type_annotation_accepts_init_rest(ann, init_t);
     }
 
@@ -1653,7 +1655,6 @@ pub const Sema = struct {
     }
 
     fn type_annotation_accepts_init_rest(ann: RT, init_t: RT) bool {
-        if (ann.is_float() and init_t.is_float()) return true;
         // ?T accepts T (optional accepts its inner type)
         if (ann == .option) {
             if (ann.option.eql(init_t)) return true;
@@ -16741,6 +16742,14 @@ test "sema: numeric source faces defer descriptor choice to demand facts" {
     try testing.expect(Sema.numericDemandAcceptsLiteral(.i8, &neg_expr));
     try testing.expect(!Sema.numericDemandAcceptsLiteral(.i64, &real_expr));
     try testing.expect(!Sema.numericDemandAcceptsLiteral(.str, &int_expr));
+}
+
+test "sema: existing numeric descriptors compose by facts, not tags" {
+    try testing.expect(Sema.type_annotation_accepts_init(.u8, .i64));
+    try testing.expect(Sema.type_annotation_accepts_init(.f32, .f64));
+    try testing.expect(!Sema.type_annotation_accepts_init(.f64, .i64));
+    try testing.expect(!Sema.type_annotation_accepts_init(.i64, .f64));
+    try testing.expect(!Sema.type_annotation_accepts_init(.str, .i64));
 }
 
 test "sema: migration boundary symbols fail closed before realization" {
