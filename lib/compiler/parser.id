@@ -743,6 +743,17 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             first = (word >> 8) & 255
             if first >= 65 and first <= 90
                 layouttype = 1
+        # The try-body consumer has three actions: parse an ordinary statement,
+        # stop at one of the six layout terminators, or parse return and stop.
+        # Preserve the settled action in the existing return/terminator bits so
+        # no third event lane or downstream token-kind switch is needed.
+        attempt = 0
+        if terminator == 1
+            attempt = 1
+        if returns == 1
+            attempt = 2
+        returns = attempt >> 1
+        terminator = attempt & 1
         out[index] = dispatch | (admission << 5) | (member << 9) | (boundaryface << 10) | (branchface << 11) | (returns << 13) | (ending << 14) | (terminator << 15) | (empty << 16) | (primitive << 17) | (literal << 18) | (quoted << 19) | (prefixface << 20) | (demandface << 21) | (leadface << 22) | (infix << 23) | (unaryface << 47) | (glueface << 52) | (updateface << 57) | (layouttype << 62)
         clauseface = _clause(fact, count, index)
         returnface = return_starts_value_lx(fact, count, index, before, idol)

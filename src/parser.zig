@@ -397,6 +397,11 @@ pub const Parser = struct {
         return (((try self.currentParserDecision()) >> 8) & 1) != 0;
     }
 
+    fn currentParserTryDispatch(self: *Parser) ParseError!u2 {
+        const event = try self.currentParserEvent();
+        return @intCast(((event >> 15) & 1) | (((event >> 13) & 1) << 1));
+    }
+
     fn currentParserAttributeDeclaration(self: *Parser) ParseError!bool {
         const decision = try self.currentParserDecision();
         return ((decision >> 9) & 0xF) != 0 or
@@ -3975,15 +3980,15 @@ pub const Parser = struct {
         var stmts: std.ArrayList(ast.Stmt) = .empty;
         while (true) {
             while (try self.eat(.semi) != null) {}
-            const tok = try self.pk();
-            switch (tok.kind) {
-                .kw_end, .kw_catch, .kw_else, .kw_elseif, .kw_until, .eof => break,
-                .kw_return => {
+            switch (try self.currentParserTryDispatch()) {
+                1 => break,
+                2 => {
                     try stmts.append(self.alloc, try self.parse_return());
                     _ = try self.eat(.semi);
                     break;
                 },
-                else => try stmts.append(self.alloc, try self.parse_stmt()),
+                0 => try stmts.append(self.alloc, try self.parse_stmt()),
+                else => return ParseError.UnexpectedToken,
             }
         }
         // Extract implicit tail expression.
