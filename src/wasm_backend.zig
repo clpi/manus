@@ -228,6 +228,13 @@ const Buf = struct {
         try self.bytes(&raw);
     }
 
+    fn f32c(self: *Buf, v: f32) Error!void {
+        try self.byte(op_f32_const);
+        var raw: [4]u8 = undefined;
+        std.mem.writeInt(u32, &raw, @bitCast(v), .little);
+        try self.bytes(&raw);
+    }
+
     fn get(self: *Buf, idx: u32) Error!void {
         try self.byte(op_local_get);
         try self.u32v(idx);
@@ -1525,10 +1532,14 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
                     // answers it with `allocReg()` — an UNDEFINED register whose
                     // contents cannot be read, because the path is dead. Zero is
                     // the same nothing, said deterministically.
-                    if (want == .f64) try b.f64c(0) else try b.i64c(0);
+                    if (want == .f64) try b.f64c(0)
+                    else if (want == .f32) try b.f32c(0)
+                    else try b.i64c(0);
                 } else if (want == .i64) {
                     try pushValue(e, b, ins.lhs, .i64);
                     try emitNarrowFit(b, e.cur_ret);
+                } else if (want == .f32) {
+                    try pushValue(e, b, ins.lhs, .f32);
                 } else {
                     try pushValue(e, b, ins.lhs, .f64);
                 }
@@ -2429,6 +2440,10 @@ fn emitStart(e: *Emitter, entry_index: u32, entry_result: ?SlotType) Error![]u8 
         // build's `exit(main())` gets.
         if (r == .f64) {
             try b.op(op_i64_reinterpret_f64);
+        } else if (r == .f32) {
+            // f32 entry result: reinterpret i32 bits to f32.
+            try b.op(op_i32_wrap_i64);
+            try b.op(op_f32_reinterpret_i32);
         }
         // `& 0xFF` — THE POSIX EXIT CONTRACT, not a convenience. The AArch64
         // build ends in `exit(main())` and the kernel keeps the LOW EIGHT BITS:
