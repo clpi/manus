@@ -6456,6 +6456,44 @@ const Arm64Compiler = struct {
         while (it.next()) |entry| {
             if (entry.value_ptr.* == reg) entry.value_ptr.* = fresh;
         }
+        // THE OWNER RECORD IS PART OF THE MOVE, NOT A SEPARATE BOOKKEEPING STEP.
+        //
+        // Everything above relocates this value from `reg` to `fresh` — the
+        // `ldr`, the dropped `spilled_regs` entry, the released slot, and every
+        // temp that named `reg`. `gp_reg_owner` is the fifth record naming the
+        // same thing and was the only one left behind, which is the identical
+        // relocation `preserveArgReg` performs and finishes by writing
+        // `gp_reg_owner[fresh]`. Leaving both ends untouched is wrong in both
+        // directions at once:
+        //
+        //   - `reg` keeps an owner it no longer holds. `spillReg` cleared
+        //     `used_regs[reg]` and the removal above took it out of
+        //     `spilled_regs`, so both free scans in `allocRegExcluding` hand it
+        //     out — and then `sweepGpLive`, reading that stale owner against a
+        //     `value_free_at` whose reads are behind emission, clears
+        //     `used_regs[reg]` for the register a live value was just given, and
+        //     the pool hands it out a second time. Two owners, one register, no
+        //     diagnostic: this gap's shape, reached here rather than through
+        //     `reclaimSpilledReg`.
+        //   - `fresh` holds a live value under a null owner, and `sweepGpLive`
+        //     skips an unowned register. Nothing reclaims it for the rest of the
+        //     function, so the pool shrinks by one on the one path whose whole
+        //     job is to relieve register pressure. `preserveArgReg` names this
+        //     failure from the other side — owner null there ran `tree.id` out
+        //     of registers.
+        //
+        // The owner that travels is the one `spillReg` deliberately preserved
+        // across the store: it already IS the record the sweep would have
+        // released had the register never spilled. When the `catch` above
+        // reclaimed `reg` itself, `fresh == reg` and there is nothing to move.
+        // A home register is excluded for the same reason `sweepGpLive` skips
+        // it — a home is not the sweep's to release.
+        if (fresh != reg) {
+            if (self.gp_reg_owner[reg]) |owner| {
+                self.gp_reg_owner[reg] = null;
+                if (!self.gp_home_regs[fresh]) self.gp_reg_owner[fresh] = owner;
+            }
+        }
         return fresh;
     }
 
@@ -17115,4 +17153,87 @@ test "a reload reclaims the register it loaded the value into" {
     compiler.sweepGpLive(1);
     try std.testing.expect(!compiler.used_regs[spilled]);
     try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[spilled]);
+}
+
+// GAP-148. A VALUE THAT CHANGES REGISTERS TAKES ITS OWNER RECORD WITH IT.
+//
+// `ensureRegLiveRemap` moves a spilled value into a DIFFERENT register and
+// rewrites every temp that named the old one — the same relocation
+// `preserveArgReg` performs, which finishes by writing `gp_reg_owner[fresh]`
+// for exactly this reason. This one wrote neither end, and each end is a defect
+// in the opposite direction:
+//
+//   - `gp_reg_owner[reg]` still named the value, which no longer lives there.
+//     `spillReg` left the register out of `used_regs` and the reload removed its
+//     `spilled_regs` entry, so both free scans in `allocRegExcluding` now hand
+//     it out — and then `sweepGpLive`, reading the stale owner, frees it again
+//     under the value it was just given. Two owners, one register, no
+//     diagnostic: the shape this gap is open on.
+//   - `gp_reg_owner[fresh]` stayed null for a register a live value now
+//     occupies. `sweepGpLive` skips an unowned register, so nothing ever
+//     reclaims it, and the pool shrinks by one on the one path whose whole job
+//     is to relieve register pressure. `preserveArgReg` names the same failure
+//     from the other side — owner null there ran `tree.id` out of registers.
+//
+// Built directly rather than through a source program for the same reason as
+// the reclaim and reload tests above: the state under test is one the allocator
+// passes through, not one a fixture names.
+test "a remapped reload moves the owner to the register it loaded into" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    compiler.stack_frame_bytes = 64;
+
+    // Exactly the state `spillReg` leaves behind, plus one free register for the
+    // reload to land in, so the remap arm runs rather than the reclaim arm.
+    const spilled: u5 = 10;
+    const free: u5 = 11;
+    const off: u16 = 8;
+    const owner: u32 = 3;
+    try compiler.spilled_regs.put(alloc, spilled, off);
+    compiler.used_regs = @splat(true);
+    compiler.used_regs[spilled] = false;
+    compiler.used_regs[free] = false;
+    compiler.gp_reg_owner[spilled] = owner;
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    try temps.put(alloc, owner, spilled);
+
+    const fresh = try compiler.ensureRegLiveRemap(&temps, spilled);
+    try std.testing.expectEqual(free, fresh);
+    try std.testing.expectEqual(free, temps.get(owner).?);
+    try std.testing.expect(!compiler.spilled_regs.contains(spilled));
+
+    // THE OWNER IS WHERE THE VALUE IS, AND NOWHERE ELSE.
+    try std.testing.expectEqual(@as(?u32, owner), compiler.gp_reg_owner[fresh]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[spilled]);
+
+    // The vacated register is allocatable again, and it is the next one the pool
+    // reaches. `owner` is absent from `value_free_at`, which the sweep reads as
+    // dead at every index — the ordinary state of an owner whose reads are
+    // behind emission — so a stale record on this register frees it under the
+    // value the allocation just handed it to.
+    const reused = try compiler.allocRegExcluding(null);
+    try std.testing.expectEqual(spilled, reused);
+    compiler.sweepGpLive(1);
+    try std.testing.expect(compiler.used_regs[reused]);
+
+    // …and the register the value MOVED to is reclaimed by that same sweep, off
+    // the owner record that travelled with it. Without the record it is claimed
+    // for the rest of the function and the pool is one register smaller.
+    try std.testing.expect(!compiler.used_regs[fresh]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[fresh]);
 }
