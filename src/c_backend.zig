@@ -557,9 +557,10 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
         // other extern the program consumed through a subject-oriented or
         // app-shaped relation. `dnir.Function` does not carry the extern
         // signature here, so the prototype the host will eventually link is
-        // the C compiler's view of the symbol — accepted because every
-        // extern the lowerer binds returns or accepts only i64 / const char*
-        // sized arguments in this ABI.
+        // the C compiler's view of the symbol — accepted for the externs the
+        // lowerer binds that return and accept only i64 / const char* sized
+        // arguments in this ABI; the f64-shaped ones refuse below, before any
+        // source exists.
         .call_extern => {
             // Each `call_extern` prints exactly the `aN` slots the dnir
             // populated for IT, not the union over all calls in the
@@ -589,6 +590,20 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
             // pointer type preserves the bit pattern that the callee
             // reinterprets. The C compiler accepts the explicit cast
             // without the "makes pointer from integer" diagnostic.
+            // An f64-typed extern result crosses the C ABI in the float
+            // register class: `duo_str_to_f64` is declared `double` in this
+            // unit, and the libm kernels (`sqrt`, `sin`, `cos`, `fabs`,
+            // `floor`, `ceil`) have no declaration here at all. Assigning
+            // the returned `double` into an `int64_t` slot is a C value
+            // conversion, not the bit transfer the dnir slot convention
+            // means — `("1.5"):to(f64)` would materialize 1 at exit 0 with
+            // no diagnostic — while the direct backend takes the same
+            // call's result from d0 (`src/native_backend.zig`). This slice
+            // carries no float ABI witness, so refuse before source exists,
+            // exactly as `print_value` refuses its f64 arm. A DISCARDED f64
+            // call writes no slot and stays emitted.
+            if (instruction.ty == .f64 and instruction.result != null)
+                return e.refuse("extern-result-f64-not-in-c99-slice");
             const argc = e.args_this_call;
             const has_lhs_arg = instruction.lhs != .void;
             e.args_this_call = 0;
@@ -1151,6 +1166,50 @@ test "C backend refuses f64 print without a float ABI witness" {
         &diagnostic,
     ));
     try std.testing.expectEqualStrings("print-value-f64-not-in-c99-slice", diagnostic.note().?);
+}
+
+test "C backend refuses an f64 extern result the integer slot cannot carry" {
+    // `("1.5"):to(f64)` lowers to `call_extern duo_str_to_f64` with
+    // `.ty = .f64`; the emitted unit declares that symbol `double`, so the
+    // pre-refusal source silently converted the double result into the
+    // `int64_t` slot — a wrong answer at exit 0. The libm kernels refuse on
+    // the same fact and, worse, had no declaration in the unit at all.
+    const convert = [_]dnir.Instr{
+        .{ .op = .call_extern, .result = 0, .callee = "duo_str_to_f64", .lhs = .{ .str = "1.5" }, .ty = .f64 },
+        .{ .op = .ret, .lhs = .{ .temp = 0 } },
+    };
+    const kernel = [_]dnir.Instr{
+        .{ .op = .call_extern, .result = 0, .callee = "sqrt", .lhs = .{ .temp = 0 }, .ty = .f64 },
+        .{ .op = .ret, .lhs = .{ .temp = 0 } },
+    };
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(error.UnsupportedProgram, emitSource(std.testing.allocator, .{
+        .functions = &.{.{ .name = "wantsconvert", .ret = .i64, .blocks = &.{.{ .instrs = &convert }} }},
+    }, "", null, &diagnostic));
+    try std.testing.expectEqualStrings("extern-result-f64-not-in-c99-slice", diagnostic.note().?);
+    try std.testing.expectEqualStrings("wantsconvert", diagnostic.functionName().?);
+
+    try std.testing.expectError(error.UnsupportedProgram, emitSource(std.testing.allocator, .{
+        .functions = &.{.{ .name = "wantskernel", .ret = .i64, .blocks = &.{.{ .instrs = &kernel }} }},
+    }, "", null, &diagnostic));
+    try std.testing.expectEqualStrings("extern-result-f64-not-in-c99-slice", diagnostic.note().?);
+}
+
+test "C backend keeps a discarded f64 extern call emitted" {
+    // A `to(f64)` conversion in discard position writes no slot, so there is
+    // no integer-slot lie to refuse: the declared `double` return is simply
+    // dropped, which is exactly what the dnir discard shape asks for.
+    const instructions = [_]dnir.Instr{
+        .{ .op = .call_extern, .callee = "duo_str_to_f64", .lhs = .{ .str = "1.5" }, .ty = .f64 },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+    };
+    const functions = [_]dnir.Function{
+        .{ .name = "entry", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
+    };
+    var diagnostic: Diagnostic = .{};
+    const source = try emitSource(std.testing.allocator, .{ .functions = &functions }, "", "entry", &diagnostic);
+    defer std.testing.allocator.free(source);
+    try std.testing.expect(std.mem.indexOf(u8, source, "duo_str_to_f64((int64_t)") != null);
 }
 
 // gap[109] pinned closed. The recorded defect: a file-scope keyed table
