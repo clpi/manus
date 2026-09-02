@@ -7,19 +7,29 @@
 #
 # One row per subject:
 #
-#     <shape>  <expected exit status>  <path-independent tail of a relation the
-#                                       linked image must DEFINE>
+#     <shape>  <expected exit status>  <comma-separated `nm` pin list: a bare
+#                                       name must be DEFINED in the linked
+#                                       image, `!name` must be ABSENT from it>
 #
 # The expected status is the answer the ENTRY returns, and it is chosen so that
-# only the reached partition can produce it. The third column is the second
-# pin: a correct answer with the reached relation absent from the image would
-# mean the answer came from somewhere other than the partition under test.
+# only the reached partition can produce it. The pin list is the second pin: a
+# correct answer with the reached relation absent from the image would mean the
+# answer came from somewhere other than the partition under test.
+#
+# THE `!` PINS ARE WHAT MAKE THE `text` ROW MEAN ANYTHING. `text` requires
+# `duo_str_to_i64` to be DEFINED, because its reached partition needs the string
+# runtime and the entry does not — GAP-232, where the reached artifact's `need`
+# was dropped and only the entry's reached the link line. A compiler that put all
+# three bootstrap units on every link line would satisfy that row without ever
+# reading a `need`, so every shape whose reached partition needs NO runtime
+# requires the same symbol to be ABSENT.
 #
 # The roster is checked in both directions. A row naming a shape the gate
 # cannot materialize fails; a shape the gate can materialize that no row names
 # also fails. Deleting a line does not quietly drop a subject.
 #
-# shape  answer  defined-relation-tail
-duo      42      _helper__twice
-trio     44      _deeper__plus
-fan      25      _deeper__plus
+# shape  answer  pins
+duo      42      _helper__twice,!duo_str_to_i64
+trio     44      _deeper__plus,!duo_str_to_i64
+fan      25      _deeper__plus,!duo_str_to_i64
+text     43      _helper__value,duo_str_to_i64

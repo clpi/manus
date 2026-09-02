@@ -3,11 +3,25 @@
 //! Single source of truth for opcode facts, stack effects, immediates, and
 //! provenance hooks. Decoder/validator tables are generated from this module
 //! in P9-05; Ward must not maintain parallel opcode constants long-term.
+//!
+//! FOREIGN LAW: every fact in `mvp_instructions` originates in the Wasm Core
+//! 1.0 specification (`FOREIGN_LAW`). tools/wasm has SOURCE-ZERO debt until
+//! the canonical semantic graph producer can identify these instructions as
+//! foreign-origin rather than treating `wasm.i32.add` as a native Idol
+//! operation; the `foreign_law` field on the JSON catalog below is the one
+//! bounded fact that closes that seam.
 const std = @import("std");
 
 pub const SCHEMA_VERSION = "wasm-instruction-v0";
 pub const MVP_FEATURE = "wasm1.0-mvp";
 pub const PROVENANCE = "src/wasm_semantic.zig";
+/// Foreign-law identity for every fact in this module. The canonical semantic
+/// graph (`docs/spec/source.md` § Foreign source) classifies a source law by
+/// its `family` field; `wasm-core-1.0` is the family name tools/wasm facts
+/// carry. Keeping it here, alongside the producer, makes the foreign origin a
+/// single source of truth: re-rooting Wasm facts in a newer spec edition is
+/// one constant change, not a rewire.
+pub const FOREIGN_LAW = "wasm-core-1.0";
 
 pub const ValueKind = enum(u8) {
     i32,
@@ -326,6 +340,8 @@ pub fn writeDecoderTableJson(w: *std.Io.Writer) !void {
 pub fn writeCatalogJson(w: *std.Io.Writer) !void {
     try w.print("{{\"schema\":\"{s}\",\"provenance\":\"", .{SCHEMA_VERSION});
     try jsonEscape(w, PROVENANCE);
+    try w.print("\",\"foreign_law\":\"", .{});
+    try jsonEscape(w, FOREIGN_LAW);
     try w.print("\",\"feature\":\"", .{});
     try jsonEscape(w, MVP_FEATURE);
     try w.print("\",\"instruction_count\":{d},\"instructions\":[", .{mvp_instructions.len});
@@ -375,6 +391,19 @@ test "wasm_semantic: JSON export non-empty" {
     try writeCatalogJson(&aw.writer);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "wasm.i32.add") != null);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "\"decoder_table\"") != null);
+}
+
+test "wasm_semantic: catalog declares foreign_law identity" {
+    // The catalog must carry its foreign-law provenance so the canonical
+    // semantic graph producer can recognize every instruction here as foreign
+    // (tools/wasm SOURCE-ZERO closure). The string `wasm-core-1.0` is the
+    // single bounded fact this seam admits.
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try writeCatalogJson(&aw.writer);
+    const out = aw.written();
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"foreign_law\":\"wasm-core-1.0\"") != null);
+    try std.testing.expectEqualStrings("wasm-core-1.0", FOREIGN_LAW);
 }
 
 test "wasm_semantic: decoder table resolves i32.add" {
