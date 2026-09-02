@@ -403,6 +403,12 @@ pub const Parser = struct {
             (self.func_body_depth == 0 and ((decision >> 7) & 1) != 0);
     }
 
+    fn currentParserAttributeBoundary(self: *Parser) ParseError!?usize {
+        const boundary = (try self.currentParserDecision()) >> 10;
+        if (boundary == 0) return null;
+        return std.math.cast(usize, boundary) orelse error.InvalidRecordCount;
+    }
+
     /// Free the immutable pack and reset the parser-owned mirror. Mirrors
     /// `ensureProducerPack` symmetry: install + release pair is the parser
     /// API for the immutable producer pack.
@@ -2114,19 +2120,8 @@ pub const Parser = struct {
                 (is_c_export or is_known_attribute(qualified));
             if (!is_known) return false;
             if ((try self.pk()).kind == .lparen) {
-                var depth: u32 = 0;
-                while (true) {
-                    const tok = try self.adv();
-                    switch (tok.kind) {
-                        .lparen => depth += 1,
-                        .rparen => {
-                            depth -= 1;
-                            if (depth == 0) break;
-                        },
-                        .eof => return false,
-                        else => {},
-                    }
-                }
+                const boundary = try self.currentParserAttributeBoundary() orelse return false;
+                while (self.producerStreamIndex() < boundary) _ = try self.adv();
             }
             if (is_directive) {
                 // Standalone module directives (@comp.define.derive, @comp.pipeline, …)

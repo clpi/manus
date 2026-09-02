@@ -3112,6 +3112,23 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                                 declaration = 1;
             }
         }
+        int64_t delimiter = 0;
+        if ((kind == INT64_C(58))) {
+            int64_t depth = 1;
+            int64_t probe = (index + 1);
+            while (((probe < count) && (depth > 0))) {
+                int64_t part = ((int64_t)((fact[((probe * 2) + 1)]) & (255)));
+                if ((part == INT64_C(58))) {
+                                        depth = (depth + 1);
+                } else if ((part == INT64_C(59))) {
+                                        depth = (depth - 1);
+                }
+                                probe = (probe + 1);
+            }
+            if ((depth == 0)) {
+                                delimiter = probe;
+            }
+        }
         int64_t offside = 0;
         if (idol) {
                         offside = opener;
@@ -3126,7 +3143,7 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                                 headercomma = 1;
             }
         }
-        out[(count + index)] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((clauseface) | (((int64_t)(((uint64_t)(returnface)) << ((uint64_t)(2) & 63u))))))) | (((int64_t)(((uint64_t)(headerplain)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(headercomma)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(head)) << ((uint64_t)(6) & 63u))))))) | (((int64_t)(((uint64_t)(assignment)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(declaration)) << ((uint64_t)(9) & 63u))))));
+        out[(count + index)] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((clauseface) | (((int64_t)(((uint64_t)(returnface)) << ((uint64_t)(2) & 63u))))))) | (((int64_t)(((uint64_t)(headerplain)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(headercomma)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(head)) << ((uint64_t)(6) & 63u))))))) | (((int64_t)(((uint64_t)(assignment)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(declaration)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(delimiter)) << ((uint64_t)(10) & 63u))))));
         if (((headerplain == 1) && (index > 0))) {
             int64_t start = (index - 1);
             if ((((int64_t)((fact[((start * 2) + 1)]) & (255))) == INT64_C(0))) {

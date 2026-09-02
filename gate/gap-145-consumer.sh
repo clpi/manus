@@ -1279,6 +1279,17 @@ forbid "$PARSER" 'return switch (nxt.kind) {' \
     'parser.zig retained the host attribute declaration switch'
 has "$ROOT/tools/node/dev/parser/artifact" 'declaration-lane-cases=7' \
     'parser artifact lost the exact attribute declaration control count'
+has "$ROOT/lib/compiler/parser.id" '(delimiter << 10)' \
+    'whole-pack decision lost attribute delimiter extent'
+has "$PARSER" 'currentParserAttributeBoundary() orelse return false' \
+    'attribute lookahead bypasses the immutable-pack delimiter boundary'
+attribute_switch=$(sed -n '/fn parse_at_starts_attribute_decl/,/fn is_known_attribute/p' "$PARSER" | grep -cF 'switch (tok.kind) {' || true)
+examined=$((examined + 1))
+if [ "$attribute_switch" -ne 0 ]; then
+    bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
+fi
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=5' \
+    'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'
 forbid "$PARSER" '(decision >> 41)' \

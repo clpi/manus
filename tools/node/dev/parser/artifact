@@ -197,6 +197,19 @@ static int verify_declaration(const char *source, bool expected) {
     return 0;
 }
 
+static int verify_delimiter(const char *source, int64_t expected) {
+    int64_t facts[256] = {0};
+    int64_t events[256] = {0};
+    int64_t count = tokenize(source, facts);
+    int64_t written = idol_parser_event(facts, count, events, count * 2, true);
+    int64_t found = events[count] >> 10;
+    if (written != count || found != expected) {
+        fprintf(stderr, "%s delimiter-event=%lld written=%lld expected=%lld\n", source, (long long)found, (long long)written, (long long)expected);
+        return 1;
+    }
+    return 0;
+}
+
 static int verify_statement(const char *source, bool expected) {
     int64_t facts[256] = {0};
     int64_t events[256] = {0};
@@ -355,7 +368,10 @@ static int verify_event(void) {
         if (out[0] != 71 || out[229] != 75) failed += 1;
         for (int64_t kind = 0; kind < 114; ++kind) {
             if (out[1 + kind] != expected_event(kind, idol != 0)) failed += 1;
-            if (out[1 + 114 + kind] < 0 || (out[1 + 114 + kind] & ~INT64_C(1023)) != 0) failed += 1;
+            const int64_t decision = out[1 + 114 + kind];
+            const int64_t delimiter = decision >> 10;
+            if (decision < 0 || delimiter > 114) failed += 1;
+            if (kind != first_kind("(") && delimiter != 0) failed += 1;
         }
     }
     return failed;
@@ -619,6 +635,11 @@ int main(void) {
     failed += verify_declaration("name(x)", false);
     failed += verify_declaration("return x", false);
     failed += verify_declaration("42", false);
+    failed += verify_delimiter("(x)", 3);
+    failed += verify_delimiter("((x))", 5);
+    failed += verify_delimiter("(call(x))", 6);
+    failed += verify_delimiter("(", 0);
+    failed += verify_delimiter("x", 0);
     failed += verify_event();
     failed += verify_event_lead_trivia();
     failed += verify_event_boundary();
@@ -629,7 +650,7 @@ int main(void) {
     failed += verify_boundary_closure();
     failed += verify_layout_faces();
     failed += verify_boundary_opening();
-    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 layout-type-cases=8 declaration-lane-cases=7 lead-slots=%zu prefix-slots=%zu relation-slots=%zu statement-slots=%zu event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=%zu boundary-slots=%zu boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=%zu empty-terminators=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__statement()), strlen(token_grammarrole__member()), strlen(token_grammarrole__boundary()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
+    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 layout-type-cases=8 declaration-lane-cases=7 delimiter-lane-cases=5 lead-slots=%zu prefix-slots=%zu relation-slots=%zu statement-slots=%zu event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=%zu boundary-slots=%zu boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=%zu empty-terminators=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__statement()), strlen(token_grammarrole__member()), strlen(token_grammarrole__boundary()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
     return failed != 0;
 }
 EOF
