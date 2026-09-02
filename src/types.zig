@@ -337,6 +337,14 @@ pub const NumericFacts = struct {
     overflow: Overflow,
     rounding: Rounding,
     range: ?Range = null,
+
+    /// Whether a descriptor carrying these facts can satisfy the domain a bare
+    /// numeric source face contributes. An integral face may be realized by an
+    /// integral or real demand; a real face requires a real demand. Width,
+    /// signedness and representation come from the demand, never the token.
+    pub fn acceptsSource(self: NumericFacts, source: Domain) bool {
+        return source == .integral or self.domain == .real;
+    }
 };
 
 /// The value a write of `v` to a place of type `ty` leaves behind.
@@ -2265,6 +2273,11 @@ test "numeric descriptor facts compose domain width sign format and range" {
     try testing.expect(unsigned.range == null);
     const text_type: ResolvedType = .str;
     try testing.expect(text_type.numericFacts() == null);
+
+    try testing.expect(signed.acceptsSource(.integral));
+    try testing.expect(!signed.acceptsSource(.real));
+    try testing.expect(float.acceptsSource(.integral));
+    try testing.expect(float.acceptsSource(.real));
 }
 
 test "CallShape: method call shape" {

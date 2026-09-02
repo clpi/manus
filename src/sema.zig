@@ -1622,16 +1622,32 @@ pub const Sema = struct {
     ///
     /// The representation still has to fit: `d: feet = "3"` is refused, because
     /// CDR directs realization and does not invent one.
+    fn numericLiteralDomain(e: *const ast.Expr) ?types.NumericFacts.Domain {
+        return switch (e.*) {
+            .int_lit => .integral,
+            .float_lit => .real,
+            // A sign does not establish a descriptor. Preserve the source
+            // face's domain and let the surrounding demand own the descriptor.
+            .unop => |u| if (u.op == .neg) numericLiteralDomain(u.operand) else null,
+            else => null,
+        };
+    }
+
+    /// Whether an otherwise descriptor-less numeric source face can satisfy an
+    /// exact descriptor demand. This is deliberately fact-based: no consumer
+    /// reconstructs integral/real membership from `ResolvedType` tags.
+    fn numericDemandAcceptsLiteral(demand: RT, e: *const ast.Expr) bool {
+        const source = numericLiteralDomain(e) orelse return false;
+        const facts = demand.numericFacts() orelse return false;
+        return facts.acceptsSource(source);
+    }
+
     fn nominal_accepts_literal(ann: RT, e: *const ast.Expr) bool {
         const repr = types.nominalReprOf(ann) orelse return false;
+        if (numericDemandAcceptsLiteral(repr, e)) return true;
         return switch (e.*) {
-            .int_lit => repr.is_numeric(),
-            .float_lit => repr.is_float(),
             .quoted => |lit| repr == .str and !ast.quotedLiteralIsByteSequence(lit.quote),
             .true_lit, .false_lit => repr == .bool,
-            // `-3.0` is one literal wearing a sign, not an operation on a value
-            // that already has a descriptor.
-            .unop => |u| u.op == .neg and nominal_accepts_literal(ann, u.operand),
             else => false,
         };
     }
@@ -16712,6 +16728,19 @@ fn checkSource(alloc: std.mem.Allocator, src: []const u8, path: []const u8) !Sem
 fn firstDiagnostic(s: *const Sema) []const u8 {
     if (s.diagnostics.items.len == 0) return "";
     return s.diagnostics.items[0].message;
+}
+
+test "sema: numeric source faces defer descriptor choice to demand facts" {
+    var int_expr = ast.Expr{ .int_lit = .{ .val = 3, .loc = .{ .file = "probe.id", .line = 1, .col = 1 } } };
+    const real_expr = ast.Expr{ .float_lit = .{ .val = 3.0, .loc = .{ .file = "probe.id", .line = 1, .col = 1 } } };
+    const neg_expr = ast.Expr{ .unop = .{ .op = .neg, .operand = &int_expr, .loc = .{ .file = "probe.id", .line = 1, .col = 1 } } };
+
+    try testing.expect(Sema.numericDemandAcceptsLiteral(.u8, &int_expr));
+    try testing.expect(Sema.numericDemandAcceptsLiteral(.f32, &int_expr));
+    try testing.expect(Sema.numericDemandAcceptsLiteral(.f32, &real_expr));
+    try testing.expect(Sema.numericDemandAcceptsLiteral(.i8, &neg_expr));
+    try testing.expect(!Sema.numericDemandAcceptsLiteral(.i64, &real_expr));
+    try testing.expect(!Sema.numericDemandAcceptsLiteral(.str, &int_expr));
 }
 
 test "sema: migration boundary symbols fail closed before realization" {
