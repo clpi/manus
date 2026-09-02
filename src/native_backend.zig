@@ -6646,11 +6646,44 @@ const Arm64Compiler = struct {
     /// costs the reclaim one candidate out of a map the cascade filled with
     /// every allocatable register; when it is genuinely the last one, the
     /// refusal below is the same bail this function already answers with.
+    ///
+    /// A HOME IS NOT A REGISTER ANYONE CAN GIVE BACK, so it is not one this
+    /// function may take. The abandonment above is symmetric for a temp — one
+    /// owner loses its reload — but a home is abandoned in a second, independent
+    /// direction at the same time, against the value the reclaim hands the
+    /// register TO. `markGpHome` sets `gp_home_regs[reg]` and nothing clears it
+    /// for the rest of the function: `sweepGpLive` skips a home, `releaseReg`
+    /// returns above one, and only the hoist unwind or the per-function reset
+    /// touches the array. So the returned register arrives still flagged as
+    /// somebody's home, no release path can ever take it back, and the pool
+    /// shrinks by one for the rest of the function — on the one path whose whole
+    /// job is to relieve register pressure. `ensureRegLiveRemap` compounds it
+    /// from the other side: it refuses to write `gp_reg_owner` for a home
+    /// destination, so a value later relocated into this register lives under a
+    /// null owner the sweep also skips.
+    ///
+    /// Only a LEAF's home can be here. The first spill pass in
+    /// `allocRegExcluding` skips every home and the second skips
+    /// `gp_call_home_regs`, which a calling function sets for its whole bank and
+    /// a leaf never sets at all — the leaf victim `gp_call_home_regs` names and
+    /// leaves unrepaired, reached through the reclaim rather than through the
+    /// reload. The reload path answers it by returning a home to the register
+    /// every map already names; this path has no such answer, because the value
+    /// it is asked for is not the home's.
+    ///
+    /// The cost is the `exclude` skip's cost, one candidate, and the same
+    /// argument covers it: when a home is genuinely the only entry, the refusal
+    /// below is the bail this function already answers with, and a refusal is a
+    /// bail while the alternative is a wrong answer. Not the closure — closure
+    /// is authoritative `register`/`frame` assignment before emission, per this
+    /// gap's record, under which a home's location is carried by the assignment
+    /// and is not a register the reclaim can bid for.
     fn reclaimSpilledReg(self: *Arm64Compiler, exclude: ?u5) Error!u5 {
         var it = self.spilled_regs.iterator();
         while (it.next()) |entry| {
             const reg = entry.key_ptr.*;
             if (exclude != null and reg == exclude.?) continue;
+            if (self.gp_home_regs[reg]) continue;
             const off = entry.value_ptr.*;
             _ = self.spilled_regs.remove(reg);
             self.gp_reg_owner[reg] = null;
@@ -17739,4 +17772,111 @@ test "a spilled local home reloads into the register its pin still names" {
     try std.testing.expectEqual(home, again);
     try std.testing.expectEqual(before + 4, compiler.code.items.len);
     try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+}
+
+// GAP-148. THE RECLAIM TOOK A HOME, AND NOTHING CAN GIVE A HOME BACK.
+//
+// `reclaimSpilledReg` frees a register by dropping the `spilled_regs` entry
+// that would have reloaded it. For a temp that abandons the temp's value, which
+// is this gap's documented and still-open hazard. For a HOME it is worse in a
+// second, independent direction, and that direction is what this test names.
+//
+// `markGpHome` sets `gp_home_regs[reg]` and that bit is never cleared for the
+// rest of the function — `sweepGpLive` skips a home, `releaseReg` returns above
+// one, and only the hoist unwind or the per-function reset clears the array. So
+// the register the reclaim hands out arrives already flagged as somebody's home:
+// no release path will ever take it back, the pool shrinks by one for the rest
+// of the function, and `ensureRegLiveRemap` refuses to write `gp_reg_owner` for
+// a home destination, so a value later relocated into it lives under a null
+// owner that `sweepGpLive` also skips. All of that on the one path whose entire
+// job is to relieve register pressure.
+//
+// Reached in a LEAF. The second spill pass in `allocRegExcluding` skips only
+// `gp_call_home_regs`, and a leaf sets no bit there, so pressure walking x28
+// down spills leaf homes into `spilled_regs` — and the reclaim below the passes
+// then iterates that map in hash order with no home check at all.
+//
+// Skipping a home costs the reclaim one candidate, which is the argument the
+// `exclude` skip in the same function already makes; when a home is genuinely
+// the only entry, the refusal is the bail this function already ends with, and a
+// refusal is a bail while the alternative is a wrong answer. Not the closure —
+// closure is authoritative `register`/`frame` assignment before emission, per
+// this gap's record, under which a home's location is carried by the assignment
+// and is not a register the reclaim can bid for.
+test "the spilled-register reclaim passes over a home and takes a temp" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport, and so does this reclaim:
+    // `allocRegExcluding` refuses above its three spill passes otherwise.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // A LEAF's home — in the callee bank, with no `gp_call_home_regs` bit, which
+    // is what the second spill pass needs to reach it as a victim.
+    const home: u5 = 20;
+    compiler.markGpHome(home);
+    try std.testing.expectEqual(@as(u32, 0), compiler.gp_call_home_regs & (@as(u32, 1) << home));
+
+    // The state `spillReg` leaves behind for that home.
+    const home_off: u16 = 8;
+    try compiler.spilled_regs.put(alloc, home, home_off);
+    compiler.used_regs[home] = false;
+
+    // A HOME ALONE IS NOT A CANDIDATE. The map is non-empty and every entry in
+    // it is a home, so the answer is the refusal, not the home.
+    try std.testing.expectError(error.RegisterExhausted, compiler.reclaimSpilledReg(null));
+
+    // And the home is exactly as it was: the entry that reloads it still there,
+    // still a home, still unclaimed, and its slot NOT in the free pool — a
+    // released slot is a second value stored over this one.
+    try std.testing.expectEqual(@as(?u16, home_off), compiler.spilled_regs.get(home));
+    try std.testing.expect(compiler.gp_home_regs[home]);
+    try std.testing.expect(!compiler.used_regs[home]);
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+
+    // Now a spilled TEMP beside it. The reclaim's hazard against a temp is this
+    // gap's and is unchanged; the fact under test is WHICH entry it reaches, and
+    // it must be this one no matter which the map's iteration order offers
+    // first.
+    const temp: u5 = 21;
+    const temp_off: u16 = 24;
+    const owner: u32 = 11;
+    try compiler.spilled_regs.put(alloc, temp, temp_off);
+    compiler.gp_reg_owner[temp] = owner;
+    compiler.used_regs[temp] = false;
+
+    const got = try compiler.reclaimSpilledReg(null);
+    try std.testing.expectEqual(temp, got);
+
+    // The temp was taken the way the reclaim takes one: entry dropped, owner
+    // cleared so the sweep cannot free a register a live value now holds, slot
+    // returned, register claimed.
+    try std.testing.expect(!compiler.spilled_regs.contains(temp));
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[temp]);
+    try std.testing.expect(compiler.used_regs[temp]);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(temp_off, compiler.free_spill_slots.items[0]);
+
+    // THE HOME IS STILL WHOLE, which is the whole point: its reload survives a
+    // reclaim that happened beside it.
+    try std.testing.expectEqual(@as(?u16, home_off), compiler.spilled_regs.get(home));
+    try std.testing.expect(compiler.gp_home_regs[home]);
+    try std.testing.expect(!compiler.used_regs[home]);
+
+    // A reclaim emits nothing; it moves records only.
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
 }
