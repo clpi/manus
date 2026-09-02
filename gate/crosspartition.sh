@@ -82,6 +82,14 @@
 #      `text` row and the selectivity of the other three, so a pin reader that
 #      never refuses would make all four decorations. See the `text` section.
 #
+#   P2 POSITIVE, FOR THE SECOND ARTIFACT KIND. Control P established that this
+#      host realizes an EXECUTABLE. N4 measures a SHARED LIBRARY, which is a
+#      DIFFERENT realization — `resolveCompileBackend` answers `native-dylib`
+#      rather than `native-exe`, and the link step differs too, since the shared
+#      line carries `-dynamiclib`. P therefore decides measurability for the
+#      wrong kind. P2 asks the same question P asks, of the kind N4 actually
+#      uses, and it also proves this file can READ symbols out of that kind.
+#
 #   N4 THE OTHER ARTIFACT KIND THAT LINKS. Every subject in the roster is an
 #      EXECUTABLE; a shared library links too, and its line was built by a
 #      SECOND producer that answered the literal `&.{}`. See below.
@@ -111,6 +119,31 @@
 # gate's subjects are ANSWERS. The roster's second column is an exit status;
 # this measurement has none, and giving it a fake one would put an unrunnable
 # row in a file whose whole contract is compiled, run, answered.
+#
+# AND BECAUSE IT HAS NO ANSWER, ITS ENTIRE VERDICT IS `nm`. That is what control
+# P2 exists for. N4's only two ways to observe are "did the link succeed" and
+# "does the reader find these symbols", and BOTH have a host-shaped failure that
+# is not the producer:
+#
+#   * the shared kind is a distinct realization from the executable one, so a
+#     host that links an exe and not a library refuses here for a reason that
+#     has nothing to do with a link line;
+#   * `nm -g` does not read every shared object. Measured on aarch64-linux: a
+#     STRIPPED ELF shared object answers `nm -g` with "no symbols" while `nm -D`
+#     lists every exported one. A reader asking only `-g` would report a library
+#     that defines both pinned symbols as defining neither.
+#
+# Either one, uncontrolled, makes N4 print that `main.directLinkLine` is not
+# feeding the shared line — naming a producer it never reached. P2 turns both
+# into NOT MEASURED, which is what they are.
+#
+# AND IT DOES NOT TURN EVERYTHING INTO NOT MEASURED, which is the opposite
+# failure and the more expensive one. The refusal is classified by the DNB004
+# identity, and a shared compile that fails for any OTHER reason — or reports
+# success and writes no library — is a FAIL on a host where control P realized
+# an executable. `gate/realization/direct.sh` separates `no` from `broken` for
+# exactly this reason and its header says why: a defect must not wear a host
+# limit's excuse.
 #
 # ═══ A REACHED PARTITION'S OWN BOOTSTRAP NEEDS, the `text` shape ═══════════
 #
@@ -350,10 +383,88 @@ if run_subject "$work/ctl.solo" 7 '!_main__main'; then
     exit 1
 fi
 
+# ── the defined symbols of a shared library ────────────────────────────────
+# ONE READER, used by control P2 and control N4 alike, for the same reason N1
+# travels through `materialize`: a control that observes the artifact differently
+# from the thing it is controlling for proves nothing about it. P2's whole claim
+# is that THIS function can read THIS kind of artifact, so N4 has to be the
+# caller it makes that claim on behalf of.
+#
+# BOTH `-g` AND `-D`, and that is measured rather than assumed. On aarch64-linux
+# a stripped ELF shared object answers `nm -g` with "no symbols" while `nm -D`
+# still lists every exported one; on a Mach-O host `-g` is the one that answers
+# and an unsupported `-D` contributes nothing. Reading both means the pins see a
+# defined symbol wherever either tool can see it, instead of the intersection of
+# two platforms' defaults. Only PRESENCE pins are read from this — a union is the
+# conservative direction for those, where for an absence pin it would not be.
+dylib_defines() {
+    { nm -g "$1" 2>/dev/null; nm -D "$1" 2>/dev/null; } |
+        awk '$2 == "T" { print $3 }' | sort -u
+}
+
+# ══ CONTROL P2 — the second artifact kind is realizable, and readable ══════
+# AFTER P AND BEFORE N4. P proved an EXECUTABLE compiles, links and answers
+# here; N4 measures a SHARED LIBRARY, which `resolveCompileBackend` sends to
+# `native-dylib` and which links through a different line. P cannot decide
+# whether that kind is measurable, and N4 has no answer to fall back on, so
+# without this control every host-shaped refusal below is printed as a finding
+# about `main.directLinkLine`.
+#
+# ITS MODULE REACHES NOTHING AND NEEDS NOTHING, deliberately. Everything N4 is
+# about is a link line carrying what the compiled module does not contain, so a
+# probe carrying any of that could fail for exactly the reason N4 exists to
+# find, and this control would swallow the finding instead of enabling it. It
+# asks two things only: does this host emit a shared library at all, and can
+# `dylib_defines` see a symbol inside one.
+mkdir -p "$work/ctl.onlylib" 2>/dev/null &&
+    printf 'exported: i64 = (x: i64)\n  x + 1\n' >"$work/ctl.onlylib/only.id" || {
+    printf 'crosspartition: NOT MEASURED — cannot write the shared-kind positive control\n' >&2
+    exit 3
+}
+if ! ( CDPATH='' cd -- "$work/ctl.onlylib" && "$IDOL" compile --backend=direct --emit dylib only.id -o only.dylib ) \
+    >"$work/compile.log" 2>&1
+then
+    # DNB004 OR NOT, AND THE DIFFERENCE IS THE WHOLE VERDICT. Control P already
+    # established that this host realizes an executable, so a refusal here is
+    # either the shared KIND being unsupported where the executable kind is —
+    # a host limit, NOT MEASURED — or the compiler failing for some other
+    # reason, which is a defect and must not wear a host limit's excuse. The
+    # refusal is read as the identity `gate/realization/direct.sh` reads,
+    # DNB004 from `directDiagnostic(error.UnsupportedTarget)`, and not as prose;
+    # measured on aarch64-linux it names the target `native-dylib`, which is why
+    # the two kinds cannot share one probe.
+    if grep -q 'DNB004' "$work/compile.log"; then
+        printf 'crosspartition control P2: NOT MEASURED — this host emits no shared library, though control P got an executable: %s\n' \
+            "$(tail -3 "$work/compile.log" | tr '\n' ' ')" >&2
+        printf 'crosspartition:   the shared kind is its own realization (native-dylib, linked with -dynamiclib); nothing control N4 could say about main.directLinkLine would be earned here.\n' >&2
+        exit 3
+    fi
+    printf 'crosspartition control P2: FAIL — the shared compile of a module that reaches nothing failed, and not with DNB004: %s\n' \
+        "$(tail -3 "$work/compile.log" | tr '\n' ' ')" >&2
+    printf 'crosspartition:   control P realized an executable here, so this is a defect and not a host limit.\n' >&2
+    exit 1
+fi
+if [ ! -s "$work/ctl.onlylib/only.dylib" ]; then
+    # `-s` AND NOT `-f`. `gate/vacuity.sh` found this exact hole in
+    # `gate/realization/direct.sh` by planting a compiler that is `exit 0` and
+    # nothing else: an empty file satisfies `-f`, so a host with no realization
+    # would be classified as having one. And this is a FAIL, not NOT MEASURED —
+    # the compiler REPORTED SUCCESS, which is `broken` in that file's
+    # vocabulary and never a host limit.
+    printf 'crosspartition control P2: FAIL — the shared compile reported success and produced no library.\n' >&2
+    exit 1
+fi
+if ! dylib_defines "$work/ctl.onlylib/only.dylib" | grep -q -- '_only__exported$'; then
+    printf 'crosspartition control P2: NOT MEASURED — a shared library linked here and this file cannot read its own exported relation out of it.\n' >&2
+    printf 'crosspartition:   control N4 has no answer to check and decides entirely from this reader, so it would report a symbol it cannot see as a link line that was never given one.\n' >&2
+    exit 3
+fi
+
 # ══ CONTROL N4 — the other artifact kind that links ════════════════════════
-# AFTER CONTROL P, DELIBERATELY. A host with no direct-native realization must
-# leave here having said NOT MEASURED, not FAIL; this control measures the
-# compiler and only P can decide whether the compiler is measurable at all.
+# AFTER CONTROLS P AND P2, DELIBERATELY. Between them they establish that this
+# host realizes both artifact kinds and that this file can read symbols out of
+# the one measured here, which is what makes a refusal below attributable to the
+# producer rather than to the host or to `nm`.
 mkdir -p "$work/ctl.shared" 2>/dev/null &&
     printf 'value: i64 = (x: i64)\n  "21":to(i64) + x\n' >"$work/ctl.shared/helper.id" &&
     printf 'call: i64 = (x: i64)\n  helper.value(x)\n' >"$work/ctl.shared/lib.id" || {
@@ -363,16 +474,19 @@ mkdir -p "$work/ctl.shared" 2>/dev/null &&
 if ! ( CDPATH='' cd -- "$work/ctl.shared" && "$IDOL" compile --backend=direct --emit dylib lib.id -o lib.dylib ) \
     >"$work/compile.log" 2>&1
 then
-    printf 'crosspartition control N4: FAIL — a shared library does not link over what it reaches: %s\n' \
+    printf 'crosspartition control N4: FAIL — a shared library does not link over what it reaches, on a host where control P2 linked one that reaches nothing: %s\n' \
         "$(tail -3 "$work/compile.log" | tr '\n' ' ')" >&2
     printf 'crosspartition:   the shared link line is not coming from main.directLinkLine.\n' >&2
     exit 1
 fi
-if [ ! -f "$work/ctl.shared/lib.dylib" ]; then
+if [ ! -s "$work/ctl.shared/lib.dylib" ]; then
+    # `-s`, for the reason control P2 states: an empty file satisfies `-f`, so a
+    # compiler that is `exit 0` and nothing else would reach the pins below and
+    # be reported as a link line missing its symbols.
     printf 'crosspartition control N4: FAIL — the shared compile reported success and produced no library.\n' >&2
     exit 1
 fi
-nm -g "$work/ctl.shared/lib.dylib" 2>/dev/null | awk '$2 == "T" { print $3 }' >"$work/defined"
+dylib_defines "$work/ctl.shared/lib.dylib" >"$work/defined"
 for pin in _helper__value duo_str_to_i64; do
     if ! grep -q -- "$pin\$" "$work/defined"; then
         printf 'crosspartition control N4: FAIL — the dylib linked and does not DEFINE %s.\n' "$pin" >&2
