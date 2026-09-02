@@ -27,6 +27,7 @@ REQUIRED = (
     "GAP-137",
     "GAP-144",
     "GAP-145",
+    "GAP-149",
     "GAP-202",
     "GAP-205",
     "GAP-207",

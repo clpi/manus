@@ -387,6 +387,46 @@ pub fn memDescriptorNamed(alloc: std.mem.Allocator, name: []const u8) std.mem.Al
     return null;
 }
 
+/// The C SPELLING of a scalar descriptor, mapped to the canonical one. These two
+/// are irreducible for the same reason `memSpellingOf`'s three are: `double` and
+/// `float` are C's names for `f64` and `f32`, they are not `ResolvedType`
+/// identities, and no owner can derive them. They belong to the FOREIGN INGRESS
+/// boundary — a SIM entity imported from C carries C's word — and nothing may be
+/// added here that names an identity the union already spells.
+fn abiSpellingOf(name: []const u8) []const u8 {
+    if (std.mem.eql(u8, name, "double")) return "f64";
+    if (std.mem.eql(u8, name, "float")) return "f32";
+    return name;
+}
+
+/// The descriptor an ABI TYPE LABEL projects — the `type_name` a SIM record
+/// field or function parameter carries, when that label names a value the ABI
+/// passes in a register.
+///
+/// DERIVED, NOT TABULATED. This is the REALIZATION FACE of `scalarRepr`, and the
+/// roster it replaced (`abi_specialize.isNativeScalarLabel`) was a sixth
+/// statement of which identities are scalar and of their widths, standing at the
+/// one seam that decides whether a foreign value is passed by value or by
+/// pointer. A roster cannot compose: a scalar identity added to the union above
+/// was one the ABI face silently did not know, and "not a native scalar" routes
+/// the value to `target-default` — a wrong answer in the safe-looking direction,
+/// which is the direction that does not get noticed.
+///
+/// The question an ABI label asks is exactly `scalarRepr` — one value in one
+/// cell — MINUS `str`. That subtraction is not a roster entry: `str` is a
+/// managed reference (`const char*`), so its ABI is a POINTER and the pointer
+/// spelling is already the next question the consumer asks. Every identity the
+/// retired roster declined is declined here by a fact rather than by absence:
+/// `void` and `nil` and `never` are not values passed in a register, `any` is
+/// boxed and opaque, the vector identities span several registers, and a nominal
+/// descriptor is an identity rather than a representation.
+pub fn abiDescriptorNamed(name: []const u8) ?ResolvedType {
+    const descriptor = descriptorNamed(abiSpellingOf(name)) orelse return null;
+    if (descriptor == .str) return null;
+    if (!scalarRepr(descriptor)) return null;
+    return descriptor;
+}
+
 /// Resolved type after semantic analysis.
 /// During sema, each expression gets a `ResolvedType` attached.
 /// The declared width of a sub-64-bit integer descriptor, and whether
@@ -2723,6 +2763,90 @@ test "types: the memory-level face is derived from the same facts and owned once
         // `void` is the one non-scalar that is: an untyped cell.
         const level = try memDescriptorNamed(alloc, field_name);
         try testing.expectEqual(want or identity == .void, level != null);
+    }
+}
+
+// The retired ABI scalar-label roster, verbatim, as the oracle. It stood in
+// `abi_specialize.isNativeScalarLabel` and decided, at the foreign ingress seam,
+// whether a record has a native layout and whether a parameter is passed by
+// value or by pointer.
+fn retiredIsNativeScalarLabel(label: []const u8) bool {
+    return std.mem.eql(u8, label, "f64") or
+        std.mem.eql(u8, label, "f32") or
+        std.mem.eql(u8, label, "i64") or
+        std.mem.eql(u8, label, "i32") or
+        std.mem.eql(u8, label, "i16") or
+        std.mem.eql(u8, label, "i8") or
+        std.mem.eql(u8, label, "u64") or
+        std.mem.eql(u8, label, "u32") or
+        std.mem.eql(u8, label, "u16") or
+        std.mem.eql(u8, label, "u8") or
+        std.mem.eql(u8, label, "bool") or
+        std.mem.eql(u8, label, "double") or
+        std.mem.eql(u8, label, "float");
+}
+
+test "types: the realization face of the scalar roster is derived from the same facts" {
+    // PINNED EQUAL TO THE RETIRED ROSTER on every label it listed AND every
+    // label it declined, so no foreign record layout and no pass-by decision
+    // can change from this. The declined half carries the load: the derivation
+    // reaches `descriptorNamed`, which answers for identities the roster never
+    // listed, and `scalarRepr` plus the `str` subtraction are what refuse them.
+    const labels = [_][]const u8{
+        // listed: the eleven scalar identities and the two C spellings
+        "i8",     "i16",     "i32",   "i64",    "u8",      "u16",
+        "u32",    "u64",     "f32",   "f64",    "bool",    "double",
+        "float",
+        // declined: scalar-adjacent identities that are not register values
+              "str",     "void",  "any",    "nil",     "never",
+        // declined: numeric fact owners spanning several registers
+        "v4f64",  "v4i64",   "v8f32", "v8i32",
+        // declined: payload-carrying identities, whose source spelling is a
+        // composition and not a bare word
+                                              "array",   "pointer",
+        "func",   "struct",  "result", "option", "table_type",
+        // declined: legacy and foreign spellings this face does not own, the
+        // empty name, a pointer spelling, and unknowns
+        "isize",  "usize",   "string", "int32_t", "long",  "char",
+        "",       "i32*",    "*i32",   "ptr",     "void*", "nosuch",
+    };
+    for (labels) |label| {
+        try testing.expectEqual(
+            retiredIsNativeScalarLabel(label),
+            abiDescriptorNamed(label) != null,
+        );
+    }
+
+    // The label projects the DESCRIPTOR, not a boolean, so the seam that decides
+    // pass-by can read the facts it is deciding from. A roster could only ever
+    // answer yes or no.
+    try testing.expect(abiDescriptorNamed("double").?.eql(.f64));
+    try testing.expect(abiDescriptorNamed("float").?.eql(.f32));
+    try testing.expectEqual(@as(u7, 16), abiDescriptorNamed("u16").?.numericFacts().?.width);
+
+    // A NOMINAL DESCRIPTOR IS NOT AN ABI LABEL. It is an identity, not a
+    // representation, and admitting one here would let a foreign field named
+    // after a declared descriptor claim a native layout it was never checked
+    // for. Its PHYSICS still delegates, so this is an identity ruling.
+    //
+    // NOT AN ARENA — `declareNominal` writes a process-global map keyed by text.
+    try declareNominal(std.heap.page_allocator, "furlong", .i32);
+    try testing.expect(nominalNamed("furlong") != null);
+    try testing.expect(abiDescriptorNamed("furlong") == null);
+    try testing.expect(!retiredIsNativeScalarLabel("furlong"));
+    try testing.expect(nominalNamed("furlong").?.numericFacts() != null);
+
+    // Written over the union's own tags rather than over a list, so a scalar
+    // identity added above cannot be one the ABI face silently does not know.
+    // `str` is the one scalar this face subtracts, and it subtracts it for a
+    // stated reason rather than by omission.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type != void) continue;
+        const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+        const want = scalarRepr(identity) and identity != .str;
+        try testing.expectEqual(want, abiDescriptorNamed(field_name) != null);
+        try testing.expectEqual(want, retiredIsNativeScalarLabel(field_name));
     }
 }
 
