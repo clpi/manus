@@ -504,16 +504,27 @@ pub const ResolvedType = union(enum) {
     /// 9. Two implementations of one fact, one of them absent — which is the
     /// failure `dnir_lower`'s own `narrowFitConst` comment names and then could
     /// not prevent, because the folder could not see the function.
+    ///
+    /// SO IT IS DERIVED, NOT TABULATED. The tag switch this replaced was a
+    /// FOURTH statement of width and signedness, which `numericFacts` already
+    /// owns — and a table cannot compose. `c_type` delegates a nominal
+    /// descriptor to its representation (`feet` and `f64` answer the same six
+    /// characters), so a place declared over a nominal-over-`i32` reached the C
+    /// emitter as `int32_t` and truncated, while the same place reached
+    /// `dnir_lower` and `native_backend` with no fit at all and kept the full
+    /// 64-bit ring. Two realizations of one descriptor's write projection
+    /// disagreeing is the same defect one paragraph up, arriving through a
+    /// wrapper the table could not see.
+    ///
+    /// Width alone does not settle it: `lanes` keeps vector cardinality
+    /// orthogonal, so `v8i32` carries width 32 and is not a narrow scalar, and
+    /// `i64`/`u64` are already the register width and must not gain an
+    /// instruction from this.
     pub fn narrowFit(self: ResolvedType) ?NarrowFit {
-        return switch (self) {
-            .u8 => .{ .bits = 8, .signed = false },
-            .u16 => .{ .bits = 16, .signed = false },
-            .u32 => .{ .bits = 32, .signed = false },
-            .i8 => .{ .bits = 8, .signed = true },
-            .i16 => .{ .bits = 16, .signed = true },
-            .i32 => .{ .bits = 32, .signed = true },
-            else => null,
-        };
+        const facts = self.numericFacts() orelse return null;
+        if (facts.domain != .integral or facts.lanes != 1) return null;
+        if (facts.width >= 64) return null;
+        return .{ .bits = facts.width, .signed = facts.signed };
     }
 
     /// The compositional numeric facts carried by this descriptor.
@@ -2345,6 +2356,62 @@ test "types: a nominal descriptor delegates its physics and withholds its accept
 
     // Ordinary descriptors are untouched by the guard.
     try testing.expectEqual(true, (ResolvedType{ .f64 = {} }).numericAcceptsDescriptor(.f32).?);
+}
+
+test "types: the write projection is derived from the facts so a descriptor inherits it" {
+    // Every non-nominal answer is what the retired tag table answered, so no
+    // program on the scalar path can gain or lose an instruction from this.
+    try testing.expectEqual(@as(u7, 8), (ResolvedType{ .i8 = {} }).narrowFit().?.bits);
+    try testing.expect((ResolvedType{ .i8 = {} }).narrowFit().?.signed);
+    try testing.expectEqual(@as(u7, 16), (ResolvedType{ .i16 = {} }).narrowFit().?.bits);
+    try testing.expectEqual(@as(u7, 32), (ResolvedType{ .i32 = {} }).narrowFit().?.bits);
+    try testing.expect((ResolvedType{ .i32 = {} }).narrowFit().?.signed);
+    try testing.expectEqual(@as(u7, 8), (ResolvedType{ .u8 = {} }).narrowFit().?.bits);
+    try testing.expect(!(ResolvedType{ .u8 = {} }).narrowFit().?.signed);
+    try testing.expectEqual(@as(u7, 16), (ResolvedType{ .u16 = {} }).narrowFit().?.bits);
+    try testing.expectEqual(@as(u7, 32), (ResolvedType{ .u32 = {} }).narrowFit().?.bits);
+    try testing.expect(!(ResolvedType{ .u32 = {} }).narrowFit().?.signed);
+
+    // Already the register width: a fit here would be a wasted instruction on
+    // the i64 path.
+    try testing.expect((ResolvedType{ .i64 = {} }).narrowFit() == null);
+    try testing.expect((ResolvedType{ .u64 = {} }).narrowFit() == null);
+    // Real, and not integral, so no truncation ring exists.
+    try testing.expect((ResolvedType{ .f32 = {} }).narrowFit() == null);
+    try testing.expect((ResolvedType{ .f64 = {} }).narrowFit() == null);
+    // `lanes` is why width alone cannot decide: `v8i32` carries width 32 and is
+    // not a narrow scalar place.
+    try testing.expect((ResolvedType{ .v8i32 = {} }).narrowFit() == null);
+    try testing.expect((ResolvedType{ .v4i64 = {} }).narrowFit() == null);
+    try testing.expect((ResolvedType{ .str = {} }).narrowFit() == null);
+    try testing.expect((ResolvedType{ .bool = {} }).narrowFit() == null);
+    try testing.expect((ResolvedType{ .any = {} }).narrowFit() == null);
+
+    // THE REPAIR. `c_type` already delegates a nominal descriptor to its
+    // representation, so a place declared over `tick` reached the C emitter as
+    // `int32_t` and truncated while the tag table left `dnir_lower` and
+    // `native_backend` with no fit at all — two realizations of one
+    // descriptor's write projection, disagreeing.
+    const alloc = std.heap.page_allocator; // process-global map; see above
+    try declareNominal(alloc, "tick", .i32);
+    const tick = nominalNamed("tick").?;
+    try testing.expectEqual(@as(u7, 32), tick.narrowFit().?.bits);
+    try testing.expect(tick.narrowFit().?.signed);
+    try testing.expectEqual(@as(i64, -2147483648), narrowFitConst(2147483648, tick));
+
+    var cbuf: [64]u8 = undefined;
+    try testing.expectEqualStrings("int32_t", tick.c_type(&cbuf));
+
+    // A nominal descriptor over a full-width or real representation inherits
+    // the absence just as exactly.
+    try declareNominal(alloc, "stamp", .i64);
+    try testing.expect(nominalNamed("stamp").?.narrowFit() == null);
+    try declareNominal(alloc, "furlong", .f64);
+    try testing.expect(nominalNamed("furlong").?.narrowFit() == null);
+
+    // Identity is still withheld: inheriting the physics is not accepting the
+    // representation.
+    try testing.expect(tick.numericAcceptsDescriptor(.i32) == null);
 }
 
 test "CallShape: method call shape" {
