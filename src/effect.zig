@@ -273,6 +273,66 @@ pub fn realizesZero(e: *const Experiment) bool {
     return e.cost == 0;
 }
 
+/// Required order 2: semantic probability and compiler epistemic probability
+/// are distinct categories that must never be confused.
+///
+/// A SEMANTIC probability is a fact about the SUBJECT: the measured
+/// distribution over runtime states at one site on one measured revision
+/// (e.g. shape hit counts at a call site). It is selection evidence — it may
+/// prefer one already-admissible candidate over another (`law.profile.evidence`:
+/// profile data selects realization) and it never rewrites truth, so it can
+/// neither promote an inadmissible candidate nor demote an admissible one.
+///
+/// A COMPILER EPISTEMIC probability is a fact about the compiler's own
+/// knowledge — confidence that the fact set is complete — never a fact about
+/// the subject. It may order exploration of the realization space
+/// (`law.optimizer.economy` meta-cost); it may never enter admissibility,
+/// selection, or invalidation. Keeping the two as separate variants with no
+/// shared arithmetic is the executable face of the distinction: there is no
+/// operation that consumes an epistemic probability as if it were observed
+/// subject evidence.
+pub const SemanticShare = struct {
+    /// Runs in which the proposition held, of `total` measured runs on the
+    /// experiment's measured subject revision. `total == 0` is no evidence.
+    held: u64,
+    total: u64,
+
+    /// Measured fraction in milli-per-unit; no evidence answers zero.
+    pub fn milli(self: SemanticShare) u64 {
+        if (self.total == 0) return 0;
+        return (self.held * 1000) / self.total;
+    }
+};
+
+/// Preference among admissible candidates from measured semantic shares.
+/// `shares[i]` is the measured share of `candidates[i]`'s proposition.
+/// Selection law: admissibility is computed EXACTLY as in `select` — the
+/// share is consulted only after, only among the survivors. An inadmissible
+/// candidate with a maximal share stays inadmissible; an admissible
+/// candidate with share zero stays admissible (order, not share, breaks the
+/// tie at zero evidence). Returns null when no candidate is admissible —
+/// the same answer `select` gives, so `deoptOrFallback` composes verbatim.
+pub fn selectPreferred(
+    candidates: []const Guarded,
+    shares: []const SemanticShare,
+    false_proposition: []const u8,
+    assumption_holds: *const fn (proposition: []const u8) bool,
+) ?[]const u8 {
+    std.debug.assert(shares.len >= candidates.len);
+    var best: ?usize = null;
+    var best_milli: u64 = 0;
+    for (candidates, 0..) |*c, i| {
+        const invalidated = invalidatedExperiment(&c.experiment, false_proposition);
+        if (!c.admissible(invalidated, assumption_holds)) continue;
+        const m = shares[i].milli();
+        if (best == null or m > best_milli) {
+            best = i;
+            best_milli = m;
+        }
+    }
+    return if (best) |i| candidates[i].experiment.conditional_theorem else null;
+}
+
 /// Required order 4 witness: deopt selection is exactly a walk of the
 /// candidate set under world qualification plus the one recorded
 /// invalidation. Callers supply the current truth of each proposition; this
@@ -484,6 +544,74 @@ test "effect: invalidation makes candidate inadmissible and deopt selects anothe
     };
     const one = [_]Guarded{first};
     try std.testing.expectEqualStrings("cand:generic", deoptOrFallback(invalidation, &one, &holdsAll));
+}
+
+test "effect: semantic share selects among admissible, never promotes" {
+    // Required order 2 + law.profile.evidence required pattern: measured
+    // subject shares select the realization among admissible candidates;
+    // they never rewrite admissibility.
+    const hot = Guarded{
+        .experiment = .{
+            .proposition = "shape:7",
+            .producer = .guard_observation,
+            .cost = 1,
+            .conditional_theorem = "cand:mono",
+        },
+    };
+    const cold = Guarded{
+        .experiment = .{
+            .proposition = "shape:9",
+            .producer = .guard_observation,
+            .cost = 1,
+            .conditional_theorem = "cand:poly",
+        },
+    };
+    const candidates = [_]Guarded{ hot, cold };
+    // No evidence: admissibility order alone decides, exactly as `select`.
+    const none = [_]SemanticShare{ .{ .held = 0, .total = 0 }, .{ .held = 0, .total = 0 } };
+    try std.testing.expectEqualStrings(
+        "cand:mono",
+        selectPreferred(&candidates, &none, "shape:never", &holdsAll).?,
+    );
+    // Measured share prefers the second candidate when the first is
+    // admissible too: evidence file probability high → specialize,
+    // guard and fallback unchanged (semantic truth unchanged).
+    const skew = [_]SemanticShare{ .{ .held = 1, .total = 100 }, .{ .held = 99, .total = 100 } };
+    try std.testing.expectEqualStrings(
+        "cand:poly",
+        selectPreferred(&candidates, &skew, "shape:never", &holdsAll).?,
+    );
+    // A maximal share never promotes an invalidated candidate: the guard's
+    // proposition is false, so the hot candidate is inadmissible whatever
+    // the profile says; selection falls to the admissible survivor.
+    try std.testing.expectEqualStrings(
+        "cand:poly",
+        selectPreferred(&candidates, &skew, "shape:7", &holdsAll).?,
+    );
+    // With every candidate inadmissible the answer is null — the same
+    // answer `select` gives, so `deoptOrFallback` supplies the fallback.
+    const invalidated = Invalidation{
+        .experiment_proposition = "shape:never",
+        .fallback_candidate = "cand:generic",
+    };
+    const all_false = struct {
+        fn f(proposition: []const u8) bool {
+            _ = proposition;
+            return false;
+        }
+    }.f;
+    try std.testing.expect(selectPreferred(&candidates, &skew, "shape:never", &all_false) == null);
+    try std.testing.expectEqualStrings(
+        "cand:generic",
+        deoptOrFallback(invalidated, &candidates, &all_false),
+    );
+    // Shares are subject facts, not compiler confidence: they never touch
+    // the candidate's own admissibility — admissible(true) is unchanged by
+    // any share, and a measured share carries no epistemic promotion.
+    try std.testing.expect(!hot.experiment.admissible(true));
+    try std.testing.expect(!hot.experiment.producesTruth());
+    try std.testing.expectEqual(@as(u64, 0), (SemanticShare{ .held = 7, .total = 0 }).milli());
+    try std.testing.expectEqual(@as(u64, 875), (SemanticShare{ .held = 7, .total = 8 }).milli());
 }
 
 test "effect: profile evidence never admits alone" {
