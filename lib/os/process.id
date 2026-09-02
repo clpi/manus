@@ -266,16 +266,10 @@ env_get: any = (name: str)
   env(name)
 
 env_set: any = (name: str, value: str)
-  # Use C setenv for persistent environment changes in the current process
-  @comp.c.emit("setenv(" .. name .. ", " .. value .. ", 1)")
-  
   env(name) = value
   { ok = true }
 
 env_unset: any = (name: str)
-  # Use C unsetenv for persistent environment changes
-  @comp.c.emit("unsetenv(" .. name .. ")")
-  
   env:remove(name)
   { ok = true }
 
