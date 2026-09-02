@@ -6355,12 +6355,39 @@ const Arm64Compiler = struct {
     }
 
     /// ARM64 `str xN, [sp, #imm]` scaled offset is limited (~32 KiB frame).
+    ///
+    /// THE RELOAD RESTORES THE CLAIM IT IS UNDOING, NOT ONLY THE VALUE.
+    ///
+    /// `spillReg` performs two halves of one act: it moves the value out of the
+    /// register (`str`, `spilled_regs.put`) and it stops the register standing
+    /// for that value (`used_regs[victim] = false`). This function is the exact
+    /// inverse and used to undo only the first half. The value came back into
+    /// THAT SAME register while the register stayed unclaimed — and the entry
+    /// that had been substituting for the claim went away in the same breath,
+    /// because both free scans in `allocRegExcluding` skip a register
+    /// `spilled_regs` contains and neither skips this one now. So the next
+    /// allocation of any kind returns a register holding a live value whose
+    /// owner still names it, and the second owner's first write is a silent
+    /// wrong answer for the first.
+    ///
+    /// Restoring the claim returns the register to the state it held before the
+    /// spill, which is also why it cannot leak: `spillReg` never cleared
+    /// `gp_reg_owner[victim]`, so `sweepGpLive` releases this claim on the same
+    /// owner record, at the same index, as it would have had the register never
+    /// spilled at all.
+    ///
+    /// Bounded to gate transport with the rest of GAP-148: `spillReg` is reached
+    /// only from `allocRegExcluding`, which refuses above its spill loops unless
+    /// `gate_transport`, so `spilled_regs` is empty elsewhere and this whole body
+    /// is skipped. Not the closure — closure is authoritative `register`/`frame`
+    /// assignment before emission, per that gap's record.
     fn ensureRegLive(self: *Arm64Compiler, reg: u5) Error!void {
         if (self.spilled_regs.get(reg)) |off| {
             const reload_off = self.stack_frame_bytes - off - 8;
             try self.emitLdrSp(reg, reload_off);
             _ = self.spilled_regs.remove(reg);
             try self.free_spill_slots.append(self.alloc, off);
+            self.claimReg(reg);
         }
     }
 
@@ -17006,4 +17033,86 @@ test "a gate-transport reclaim leaves nothing of the owner it abandons" {
     // it toward `gate_spill_end` refuses a spill the frame has room for.
     try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
     try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
+}
+
+// GAP-148. A RELOAD PUTS THE VALUE BACK IN THE REGISTER, AND MUST PUT THE
+// REGISTER BACK IN THE POOL'S BUSY SET.
+//
+// `spillReg` clears `used_regs[victim]` because after the store the register no
+// longer holds the value. `ensureRegLive` is the exact inverse — it loads the
+// value back into THAT SAME register — but it restored only the half of the
+// state that stops a reload being owed. The register was left unclaimed while
+// holding a live value, and it was no longer in `spilled_regs` either, so the
+// one guard that had been standing in for the claim was gone too: both free
+// scans in `allocRegExcluding` skip a spilled register, and neither skips this
+// one. The next allocation therefore hands out a register whose value is live
+// and whose owner still names it, and the two writes race with no diagnostic.
+//
+// Bounded to gate transport with the rest of this gap: `spillReg` is reached
+// only from `allocRegExcluding`, which refuses above its spill loops unless
+// `gate_transport`, so `spilled_regs` is empty everywhere else and
+// `ensureRegLive` is a no-op there.
+//
+// Built directly rather than through a source program for the same reason as
+// the two reclaim tests above: the state under test is one the allocator passes
+// through, not one a fixture names.
+test "a reload reclaims the register it loaded the value into" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    compiler.stack_frame_bytes = 64;
+
+    // Exactly the state `spillReg` leaves behind: the value is in a frame slot,
+    // the register is out of `used_regs`, and `gp_reg_owner` still names the
+    // value that will read it back.
+    const spilled: u5 = 10;
+    const off: u16 = 8;
+    const owner: u32 = 3;
+    try compiler.spilled_regs.put(alloc, spilled, off);
+    compiler.used_regs = @splat(true);
+    compiler.used_regs[spilled] = false;
+    compiler.gp_reg_owner[spilled] = owner;
+
+    const before = compiler.code.items.len;
+    try compiler.ensureRegLive(spilled);
+
+    // One `ldr`, from this value's slot, into the register it was spilled from.
+    const reload_off: u16 = compiler.stack_frame_bytes - off - 8;
+    const want: u32 = 0xf94003e0 | ((@as(u32, reload_off) / 8) << 10) | @as(u32, spilled);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        want,
+        std.mem.readInt(u32, compiler.code.items[before..][0..4], .little),
+    );
+    try std.testing.expect(!compiler.spilled_regs.contains(spilled));
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
+
+    // THE REGISTER IS BUSY AGAIN. Every other register here is claimed, so an
+    // allocation that reads this one as free returns exactly it, and the value
+    // the `ldr` above just loaded is overwritten by its second owner. With the
+    // claim restored the pool has nothing to give and says so, which is the
+    // answer: refusing is a bail, allocating is a wrong result.
+    try std.testing.expect(compiler.used_regs[spilled]);
+    try std.testing.expectError(error.RegisterExhausted, compiler.allocRegExcluding(null));
+
+    // …and it is not busy forever. The claim is released by the same sweep that
+    // would have released it had the register never spilled, off the owner
+    // record `spillReg` preserved across the store.
+    compiler.sweepGpLive(1);
+    try std.testing.expect(!compiler.used_regs[spilled]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[spilled]);
 }
