@@ -768,9 +768,9 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
         out[index] = dispatch | (admission << 5) | (member << 9) | (boundaryface << 10) | (branchface << 11) | (returns << 13) | (ending << 14) | (terminator << 15) | (empty << 16) | (primitive << 17) | (literal << 18) | (quoted << 19) | (prefixface << 20) | (demandface << 21) | (leadface << 22) | (infix << 23) | (unaryface << 47) | (glueface << 52) | (updateface << 57) | (primary << 61) | (layouttype << 62)
         clauseface = _clause(fact, count, index)
         returnface = return_starts_value_lx(fact, count, index, before, idol)
-        braceface = 0
+        recordface = 0
         if kind == token.kindlbrace
-            braceface = 1
+            recordface = 1
         arrayface = 0
         if kind == token.kindlbracket
             arrayface = 1
@@ -875,7 +875,7 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
                     opencol = opening >> 36
                     if openline == startline and opencol == startcol + 1
                         widthface = 1
-        out[count + index] = clauseface | (returnface << 2) | (arrayface << 3) | (headerplain << 4) | (headercomma << 5) | (widthface << 4) | (head << 6) | (assignment << 8) | (declaration << 9) | (braceface << 12) | (delimiter << 13)
+        out[count + index] = clauseface | (returnface << 2) | (arrayface << 3) | (headerplain << 4) | (headercomma << 5) | (widthface << 4) | (head << 6) | (assignment << 8) | (declaration << 9) | (recordface << 12) | (delimiter << 13)
         if headerplain == 1 and index > 0
             start = index - 1
             if (fact[start * 2 + 1] & 255) == token.kindname
