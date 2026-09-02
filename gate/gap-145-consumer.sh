@@ -521,6 +521,37 @@ if [ "$expression_group_arms" -ne 0 ]; then
     bad "parse_simple_expr retained $expression_group_arms .lparen host arm(s)"
 fi
 
+# Name expression-primary and type-primary recognition share lane-two bit 5
+# with the mutually exclusive `(` comma-header face. The owner emits that exact
+# identity once; neither consumer retains a `.name` arm or rebuilds it from the
+# broader primary/literal facts.
+has "$ROOT/lib/compiler/parser.id" '(nameface << 5)' \
+    'event lost the exact name primary face'
+has "$ROOT/src/parser/projection.c" 'nameface = 1;' \
+    'tracked projection lost the exact name primary face'
+has "$PARSER" 'fn currentParserName(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the expression-name primary consumer'
+has "$PARSER" 'fn currentParserTypeName(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the type-name primary consumer'
+member_consumers=$(grep -cF 'try self.currentParserMember();' "$PARSER" || true)
+name_consumers=$(grep -cF 'currentParserDecision()) >> 5' "$PARSER" || true)
+name_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.name => ' || true)
+examined=$((examined + 1))
+if [ "$name_consumers" -ne 2 ] || [ "$member_consumers" -ne 2 ] || [ "$name_arms" -ne 0 ]; then
+    bad "name primary transfer drifted: decision=$name_consumers member=$member_consumers arms=$name_arms"
+fi
+
+nameprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate name-primary scratch' >&2; exit 2; }
+printf '%s\n' '.name => parse_name(),' >"$nameprobe/old.zig"
+printf '%s\n' 'return (((try self.currentParserDecision()) >> 5) & 1) != 0;' >"$nameprobe/new.zig"
+name_old=$(grep -cF '.name => ' "$nameprobe/old.zig")
+name_new=$(grep -cF 'currentParserDecision()) >> 5' "$nameprobe/new.zig")
+rm -rf -- "$nameprobe"
+examined=$((examined + 1))
+if [ "$name_old" -ne 1 ] || [ "$name_new" -ne 1 ]; then
+    bad "the name-primary detector is broken: old=$name_old new=$name_new"
+fi
+
 # The closure primary shares the matching-boundary lane at its mutually
 # exclusive `|` identity. One selects closure; greater values carry a matching
 # parenthesis coordinate. Zig no longer owns the `.pipe` primary switch arm.
@@ -1120,8 +1151,8 @@ has "$PARSER" 'fn currentParserMember(self: *Parser) ParseError!bool {' \
     'Parser lost its whole-pack member observer'
 member_calls=$(grep -cF 'self.currentParserMember()' "$PARSER" || true)
 examined=$((examined + 1))
-if [ "$member_calls" -ne 3 ]; then
-    bad "all three production member consumers must index event bit 9 (calls=$member_calls)"
+if [ "$member_calls" -ne 5 ]; then
+    bad "all five production member consumers must index event bit 9 (calls=$member_calls)"
 fi
 forbid "$PARSER" 'idol_parser_member(' \
     'parser.zig retained the standalone member ABI'

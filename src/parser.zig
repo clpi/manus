@@ -394,8 +394,13 @@ pub const Parser = struct {
     }
 
     fn currentParserTypeName(self: *Parser) ParseError!bool {
-        const event = try self.currentParserEvent();
-        return ((event >> 61) & 1) != 0 and ((event >> 18) & 1) == 0;
+        return (((try self.currentParserDecision()) >> 5) & 1) != 0 and
+            try self.currentParserMember();
+    }
+
+    fn currentParserName(self: *Parser) ParseError!bool {
+        return (((try self.currentParserDecision()) >> 5) & 1) != 0 and
+            try self.currentParserMember();
     }
 
     fn currentParserTypeAttribute(self: *Parser) ParseError!bool {
@@ -6112,6 +6117,10 @@ pub const Parser = struct {
             return self.new_expr(.{ .nil = tok.loc });
         }
         if (try self.currentParserTable()) return self.parse_table();
+        if (try self.currentParserName()) {
+            const name_tok = try self.adv();
+            return self.new_expr(.{ .name = .{ .loc = name_tok.loc, .ident = name_tok.text } });
+        }
         if (try self.currentParserExpressionGroup()) {
             if (try self.starts_parenthesized_func_expr()) {
                 const l = (try self.pk()).loc;
@@ -6193,10 +6202,6 @@ pub const Parser = struct {
                 const l = (try self.adv()).loc;
                 const fb = try self.new_fb(try self.parse_func_body(l));
                 break :blk self.new_expr(.{ .func_expr = fb });
-            },
-            .name => blk: {
-                const name_tok = try self.adv();
-                break :blk self.new_expr(.{ .name = .{ .loc = name_tok.loc, .ident = name_tok.text } });
             },
             .backtick => {
                 term.locErr(tok.loc, "c0 law.backtick.zero: backtick is reserved and has no canonical meaning", .{});
