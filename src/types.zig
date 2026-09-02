@@ -427,6 +427,43 @@ pub fn abiDescriptorNamed(name: []const u8) ?ResolvedType {
     return descriptor;
 }
 
+/// The scalar descriptor a C TYPE SPELLING projects — the inverse of `c_type`.
+/// A foreign ingress site that meets `int32_t`, `const char*` or `double` and
+/// has to learn which `ResolvedType` identity it realizes asks this.
+///
+/// DERIVED, NOT TABULATED. The roster this replaced (`codegen.type_from_c_name`)
+/// was a SEVENTH statement of the scalar identity↔spelling correspondence, and
+/// the one that ran BACKWARDS: `c_type` already owns "which C spelling does this
+/// identity emit as", so a second list answering "which identity does this C
+/// spelling name" is the same fact written twice and could only ever agree by
+/// hand. It could not compose — a scalar identity added to the union gains a
+/// `c_type` spelling but stays unknown here, which reads as "not a C type", the
+/// wrong answer in the safe-looking direction that routes a foreign value to
+/// `any` and boxes it.
+///
+/// The question is exactly the inverse of `c_type` over the SCALARS: the scalar
+/// identities are the ones whose C spelling is a bare word an ingress label can
+/// carry (`scalarRepr`, which is `bool` and `str` plus every one-cell numeric
+/// owner), and each such identity's `c_type` spelling is unique, so a spelling
+/// match is a scalar identity match. The non-scalar identities are declined by
+/// that fact rather than by absence: `void`, `any`, `nil` and `never` are not
+/// scalar values, the vectors span several cells, and a payload-carrying
+/// identity's C spelling is a composition, not a bare label word.
+pub fn descriptorByCSpelling(name: []const u8) ?ResolvedType {
+    if (name.len == 0) return null;
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type == void) {
+            const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+            if (scalarRepr(identity)) {
+                var buf: [32]u8 = undefined;
+                if (std.mem.eql(u8, identity.c_type(&buf), name)) return identity;
+            }
+        }
+    }
+    return null;
+}
+
 /// Resolved type after semantic analysis.
 /// During sema, each expression gets a `ResolvedType` attached.
 /// The declared width of a sub-64-bit integer descriptor, and whether
@@ -2848,6 +2885,82 @@ test "types: the realization face of the scalar roster is derived from the same 
         try testing.expectEqual(want, abiDescriptorNamed(field_name) != null);
         try testing.expectEqual(want, retiredIsNativeScalarLabel(field_name));
     }
+}
+
+// The retired C-spelling roster, verbatim, as the oracle. It stood in
+// `codegen.type_from_c_name` and decided, at the foreign ingress seam, which
+// `ResolvedType` identity a C type spelling realizes. It was the SEVENTH
+// statement of the scalar identity↔spelling correspondence and the one that ran
+// backwards from `c_type`.
+fn retiredTypeFromCName(name: []const u8) ?ResolvedType {
+    if (std.mem.eql(u8, name, "int8_t")) return .i8;
+    if (std.mem.eql(u8, name, "int16_t")) return .i16;
+    if (std.mem.eql(u8, name, "int32_t")) return .i32;
+    if (std.mem.eql(u8, name, "int64_t")) return .i64;
+    if (std.mem.eql(u8, name, "uint8_t")) return .u8;
+    if (std.mem.eql(u8, name, "uint16_t")) return .u16;
+    if (std.mem.eql(u8, name, "uint32_t")) return .u32;
+    if (std.mem.eql(u8, name, "uint64_t")) return .u64;
+    if (std.mem.eql(u8, name, "float")) return .f32;
+    if (std.mem.eql(u8, name, "double")) return .f64;
+    if (std.mem.eql(u8, name, "bool")) return .bool;
+    if (std.mem.eql(u8, name, "const char*")) return .str;
+    return null;
+}
+
+test "types: the C-spelling face of the scalar roster is derived from the same facts" {
+    // PINNED EQUAL TO THE RETIRED ROSTER on every spelling it listed AND every
+    // spelling it declined, so no foreign ingress site can gain or lose an
+    // identity from this. The retired roster's scalar arm is the whole of what
+    // `descriptorByCSpelling` owns; the graveyarded/pointer/void spellings that
+    // used to fall through to the memory level are still the memory level's and
+    // are declined HERE by the same `scalarRepr` fact `abiDescriptorNamed` uses.
+    const spellings = [_][]const u8{
+        // listed: the twelve scalar C spellings the roster mapped by hand
+        "int8_t",  "int16_t", "int32_t", "int64_t", "uint8_t",  "uint16_t",
+        "uint32_t", "uint64_t", "float",  "double",  "bool",    "const char*",
+        // declined: spellings the roster fell through to the memory level for,
+        // the C spellings of non-scalar identities, the empty name, unknowns
+        "void",    "void*",   "lua_Value", "v4f64",  "v8i32",   "duo_furlong",
+        "i32",     "isize",   "usize",   "string",  "",        "nosuch",
+        "int8_t*", "*int32_t",
+    };
+    for (spellings) |name| {
+        const retired = retiredTypeFromCName(name);
+        const derived = descriptorByCSpelling(name);
+        if (retired) |want| {
+            try testing.expect(derived != null);
+            try testing.expect(want.eql(derived.?));
+        } else {
+            try testing.expect(derived == null);
+        }
+    }
+
+    // The face projects the SCALAR IDENTITY, and it is the exact inverse of
+    // `c_type`: for every scalar identity, its C spelling round-trips back to
+    // it. Written over the union's own tags rather than over a list, so a
+    // scalar identity added above cannot be one this face silently does not
+    // know. Every non-scalar identity is declined by that fact, not by absence.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type != void) continue;
+        const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+        if (scalarRepr(identity)) {
+            var buf: [32]u8 = undefined;
+            const spelling = identity.c_type(&buf);
+            const back = descriptorByCSpelling(spelling);
+            try testing.expect(back != null);
+            try testing.expect(identity.eql(back.?));
+        }
+    }
+
+    // A NOMINAL DESCRIPTOR IS NOT A C SPELLING. Its bare word is not a C type
+    // name at all (`c_type` emits `duo_<name>` or its representation), so the
+    // ingress face never meets one; the `v:to(inch)` conversion tail that does
+    // is composed by its consumer, not here.
+    try declareNominal(std.heap.page_allocator, "cubit", .i32);
+    try testing.expect(nominalNamed("cubit") != null);
+    try testing.expect(descriptorByCSpelling("cubit") == null);
 }
 
 test "CallShape: method call shape" {

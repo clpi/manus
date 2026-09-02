@@ -3535,18 +3535,12 @@ pub const CodeGen = struct {
     }
 
     fn type_from_c_name(self: *CodeGen, name: []const u8) ?RT {
-        if (std.mem.eql(u8, name, "int8_t")) return .i8;
-        if (std.mem.eql(u8, name, "int16_t")) return .i16;
-        if (std.mem.eql(u8, name, "int32_t")) return .i32;
-        if (std.mem.eql(u8, name, "int64_t")) return .i64;
-        if (std.mem.eql(u8, name, "uint8_t")) return .u8;
-        if (std.mem.eql(u8, name, "uint16_t")) return .u16;
-        if (std.mem.eql(u8, name, "uint32_t")) return .u32;
-        if (std.mem.eql(u8, name, "uint64_t")) return .u64;
-        if (std.mem.eql(u8, name, "float")) return .f32;
-        if (std.mem.eql(u8, name, "double")) return .f64;
-        if (std.mem.eql(u8, name, "bool")) return .bool;
-        if (std.mem.eql(u8, name, "const char*")) return .str;
+        // DERIVED: the scalar arm is the inverse of `c_type`, owned once in
+        // `types.descriptorByCSpelling`. This function used to restate the
+        // twelve scalar identity↔C-spelling pairs by hand — a seventh copy of
+        // a correspondence `c_type` already owns, running backwards. The tail
+        // is the graveyarded/pointer/void spellings the memory level owns.
+        if (types.descriptorByCSpelling(name)) |scalar| return scalar;
         return self.mem_type_from_name(name);
     }
 
