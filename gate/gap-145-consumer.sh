@@ -425,6 +425,24 @@ if [ "$generic_arms" -ne 0 ] || [ "$record_arms" -ne 1 ]; then
     bad "type-primary host arms drifted: generic=$generic_arms record-total=$record_arms"
 fi
 
+# The expression-group primary consumes parser.id's existing exact matching
+# delimiter boundary. A nonzero boundary is produced only at `(` and carries
+# the coordinate after its matching close. Zig no longer owns a `.lparen`
+# switch arm.
+has "$ROOT/lib/compiler/parser.id" 'delimiter = probe' \
+    'event lost the matching-delimiter primary fact'
+has "$PARSER" 'fn currentParserExpressionGroup(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the expression-group primary consumer'
+has "$PARSER" 'return (try self.currentParserDecision()) >> 13 != 0;' \
+    'expression-group primary no longer consumes the matching delimiter fact'
+has "$PARSER" 'if (try self.currentParserExpressionGroup()) {' \
+    'parse_simple_expr bypasses the settled expression-group face'
+expression_group_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.lparen => ' || true)
+examined=$((examined + 1))
+if [ "$expression_group_arms" -ne 0 ]; then
+    bad "parse_simple_expr retained $expression_group_arms .lparen host arm(s)"
+fi
+
 # Header bit 4 is settled at `(`. Event walks backward over the exact admitted
 # name (`.` name)* (`:` name)? path and writes bit 7 at the starting name. Zig
 # statement and attribute consumers select that coordinate without a second

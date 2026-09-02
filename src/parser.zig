@@ -402,6 +402,10 @@ pub const Parser = struct {
         return (((try self.currentParserDecision()) >> 9) & 0xF) == 12;
     }
 
+    fn currentParserExpressionGroup(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 != 0;
+    }
+
     fn currentParserTypePointer(self: *Parser) ParseError!bool {
         const event = try self.currentParserEvent();
         return ((event >> 61) & 1) != 0 and
@@ -6082,6 +6086,30 @@ pub const Parser = struct {
 
     fn parse_simple_expr(self: *Parser) ParseError!*ast.Expr {
         const tok = try self.pk();
+        if (try self.currentParserExpressionGroup()) {
+            if (try self.starts_parenthesized_func_expr()) {
+                const l = (try self.pk()).loc;
+                const fb = try self.new_fb(try self.parse_func_body(l));
+                return self.new_expr(.{ .func_expr = fb });
+            }
+            const open_tok = try self.adv();
+            // `()` is the explicit pack delimiter. A labeled slot at slot
+            // level (`name = value`) makes this a pack, not a group.
+            if (try self.starts_paren_pack()) return try self.parse_paren_pack(open_tok.loc);
+            if ((try self.pk()).kind == .rparen) {
+                // `()` — the empty pack.
+                _ = try self.adv();
+                return try self.new_expr(.{ .table = .{ .loc = open_tok.loc, .fields = &.{} } });
+            }
+            const e = try self.parse_expr();
+            // A comma means this was a pack all along, and a TRAILING comma
+            // is how a one-slot pack is spelled — `(a)` is grouping, `(a,)`
+            // is a pack of one. Without that distinction there is no way to
+            // write a single-slot pack at all.
+            if ((try self.pk()).kind == .comma) return try self.finish_positional_pack(open_tok.loc, e);
+            _ = try self.expect(.rparen);
+            return e;
+        }
         return switch (tok.kind) {
             .pipe => self.parse_closure_expr(),
             .int_lit => blk: {
@@ -6177,30 +6205,6 @@ pub const Parser = struct {
                     break :blk self.new_expr(.{ .name = .{ .loc = l, .ident = "self" } });
                 }
                 break :blk self.parse_macro_call_expr();
-            },
-            .lparen => blk: {
-                if (try self.starts_parenthesized_func_expr()) {
-                    const l = (try self.pk()).loc;
-                    const fb = try self.new_fb(try self.parse_func_body(l));
-                    break :blk self.new_expr(.{ .func_expr = fb });
-                }
-                const open_tok = try self.adv();
-                // `()` is the explicit pack delimiter. A labeled slot at slot
-                // level (`name = value`) makes this a pack, not a group.
-                if (try self.starts_paren_pack()) break :blk try self.parse_paren_pack(open_tok.loc);
-                if ((try self.pk()).kind == .rparen) {
-                    // `()` — the empty pack.
-                    _ = try self.adv();
-                    break :blk try self.new_expr(.{ .table = .{ .loc = open_tok.loc, .fields = &.{} } });
-                }
-                const e = try self.parse_expr();
-                // A comma means this was a pack all along, and a TRAILING comma
-                // is how a one-slot pack is spelled — `(a)` is grouping, `(a,)`
-                // is a pack of one. Without that distinction there is no way to
-                // write a single-slot pack at all.
-                if ((try self.pk()).kind == .comma) break :blk try self.finish_positional_pack(open_tok.loc, e);
-                _ = try self.expect(.rparen);
-                break :blk e;
             },
             .lbrace => self.parse_table(),
             .kw_if => self.parse_if_expr(),
