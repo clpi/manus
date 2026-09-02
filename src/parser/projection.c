@@ -3064,13 +3064,40 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
         int64_t clauseface = _clause(fact, count, index);
         int64_t returnface = return_starts_value_lx(fact, count, index, before, idol);
         int64_t head = 0;
+                int64_t following = 0;
         if (((kind == INT64_C(0)) && (fact[((index * 2) + 2)] == 435678704644))) {
-            int64_t following = INT64_C(109);
+                        following = INT64_C(109);
             if (((index + 1) < count)) {
                                 following = ((int64_t)((fact[(((index + 1) * 2) + 1)]) & (255)));
             }
             if ((following != INT64_C(58))) {
                                 head = 1;
+            }
+        }
+        int64_t assignment = 0;
+        if ((kind == INT64_C(0))) {
+            int64_t cursor = (index + 1);
+            while (((((cursor + 1) < count) && (((int64_t)((fact[((cursor * 2) + 1)]) & (255))) == INT64_C(80))) && (((int64_t)((fact[(((cursor + 1) * 2) + 1)]) & (255))) == INT64_C(0)))) {
+                                cursor = (cursor + 2);
+            }
+            if ((cursor < count)) {
+                int64_t candidate = fact[((cursor * 2) + 1)];
+                int64_t face = ((int64_t)((candidate) & (255)));
+                if (((face == INT64_C(75)) || token_grammarrole___roleupdate(face))) {
+                                        assignment = 1;
+                } else if ((token_grammarrole___roleglue(face) && ((cursor + 1) < count))) {
+                                        following = fact[(((cursor + 1) * 2) + 1)];
+                    if ((((int64_t)((following) & (255))) == INT64_C(75))) {
+                                                line = ((int64_t)((((int64_t)(((uint64_t)(candidate)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
+                        int64_t column = ((int64_t)(((uint64_t)(candidate)) >> ((uint64_t)(36) & 63u)));
+                        int64_t width = ((int64_t)((fact[((cursor * 2) + 2)]) & (255)));
+                        int64_t nextline = ((int64_t)((((int64_t)(((uint64_t)(following)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
+                        int64_t nextcolumn = ((int64_t)(((uint64_t)(following)) >> ((uint64_t)(36) & 63u)));
+                        if (((nextline == line) && (nextcolumn == (column + width)))) {
+                                                        assignment = 1;
+                        }
+                    }
+                }
             }
         }
         int64_t offside = 0;
@@ -3087,7 +3114,7 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                                 headercomma = 1;
             }
         }
-        out[(count + index)] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((clauseface) | (((int64_t)(((uint64_t)(returnface)) << ((uint64_t)(2) & 63u))))))) | (((int64_t)(((uint64_t)(headerplain)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(headercomma)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(head)) << ((uint64_t)(6) & 63u))))));
+        out[(count + index)] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((clauseface) | (((int64_t)(((uint64_t)(returnface)) << ((uint64_t)(2) & 63u))))))) | (((int64_t)(((uint64_t)(headerplain)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(headercomma)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(head)) << ((uint64_t)(6) & 63u))))))) | (((int64_t)(((uint64_t)(assignment)) << ((uint64_t)(8) & 63u))))));
         if (((headerplain == 1) && (index > 0))) {
             int64_t start = (index - 1);
             if ((((int64_t)((fact[((start * 2) + 1)]) & (255))) == INT64_C(0))) {

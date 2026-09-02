@@ -750,6 +750,26 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
                 following = fact[(index + 1) * 2 + 1] & 255
             if following != token.kindlparen
                 head = 1
+        assignment = 0
+        if kind == token.kindname
+            cursor = index + 1
+            while cursor + 1 < count and (fact[cursor * 2 + 1] & 255) == token.kinddot and (fact[(cursor + 1) * 2 + 1] & 255) == token.kindname
+                cursor += 2
+            if cursor < count
+                candidate = fact[cursor * 2 + 1]
+                face = candidate & 255
+                if face == token.kindassign or token.grammarrole._roleupdate(face)
+                    assignment = 1
+                elseif token.grammarrole._roleglue(face) and cursor + 1 < count
+                    following = fact[(cursor + 1) * 2 + 1]
+                    if (following & 255) == token.kindassign
+                        line = (candidate >> 8) & 268435455
+                        column = candidate >> 36
+                        width = fact[cursor * 2 + 2] & 255
+                        nextline = (following >> 8) & 268435455
+                        nextcolumn = following >> 36
+                        if nextline == line and nextcolumn == column + width
+                            assignment = 1
         offside: i64 = 0
         if idol
             offside = opener
@@ -760,7 +780,7 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
                 headerplain = 1
             if header_signal_lx(fact, count, index, true, offside, prior)
                 headercomma = 1
-        out[count + index] = clauseface | (returnface << 2) | (headerplain << 4) | (headercomma << 5) | (head << 6)
+        out[count + index] = clauseface | (returnface << 2) | (headerplain << 4) | (headercomma << 5) | (head << 6) | (assignment << 8)
         if headerplain == 1 and index > 0
             start = index - 1
             if (fact[start * 2 + 1] & 255) == token.kindname

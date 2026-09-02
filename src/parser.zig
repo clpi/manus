@@ -393,6 +393,10 @@ pub const Parser = struct {
         return (((try self.currentParserEvent()) >> 62) & 1) != 0;
     }
 
+    fn currentParserBodyAssignment(self: *Parser) ParseError!bool {
+        return (((try self.currentParserDecision()) >> 8) & 1) != 0;
+    }
+
     /// Free the immutable pack and reset the parser-owned mirror. Mirrors
     /// `ensureProducerPack` symmetry: install + release pair is the parser
     /// API for the immutable producer pack.
@@ -3347,7 +3351,7 @@ pub const Parser = struct {
                 stmts[0] = try self.parse_stmt();
                 break :blk ast.Block{ .loc = body_tok.loc, .stmts = stmts, .tail_expr = null };
             }
-            if (try self.func_body_should_use_expr_stmt()) {
+            if (try self.currentParserBodyAssignment()) {
                 const stmt = try self.parse_expr_stmt();
                 break :blk switch (stmt) {
                     .expr_stmt => |es| ast.Block{
@@ -4737,25 +4741,6 @@ pub const Parser = struct {
         });
         try params.appendSlice(self.alloc, fb.params);
         fb.params = try params.toOwnedSlice(self.alloc);
-    }
-
-    /// Single-line function bodies use `parse_expr` unless the body begins with assignment syntax.
-    fn func_body_should_use_expr_stmt(self: *Parser) ParseError!bool {
-        const tok = try self.pk();
-        if (tok.kind != .name) return false;
-        const saved = self.saveState();
-        defer self.restoreState(saved);
-        _ = try self.adv();
-        var nxt = try self.pk();
-        if (nxt.kind == .dot) {
-            while (try self.eat(.dot) != null) {
-                if ((try self.pk()).kind != .name) return false;
-                _ = try self.adv();
-            }
-            nxt = try self.pk();
-        }
-        if (nxt.kind == .assign or (try self.compound_assign_op()) != null) return true;
-        return (try self.peek_glued_assign(nxt)) != null;
     }
 
     /// §3 — `Type:method = (…) …` or `Type.method = (…) …` assign-form func decl.

@@ -1265,6 +1265,12 @@ has "$PARSER" 'if (!try self.currentParserLayoutType()) return null;' \
     'layout type argument path bypasses the settled fact'
 forbid "$PARSER" 'fn layout_arg_can_start_type(' \
     'parser.zig retained the host layout type-start recognizer'
+has "$ROOT/lib/compiler/parser.id" '(assignment << 8)' \
+    'whole-pack decision lost assignment-body recognition'
+has "$PARSER" 'if (try self.currentParserBodyAssignment()) {' \
+    'single-line function body bypasses the settled assignment fact'
+forbid "$PARSER" 'fn func_body_should_use_expr_stmt(' \
+    'parser.zig retained the host assignment-body recognizer'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'
 forbid "$PARSER" '(decision >> 41)' \
