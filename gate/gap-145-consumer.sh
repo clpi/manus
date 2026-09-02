@@ -616,6 +616,35 @@ if [ "$compatlongold" -ne 1 ] || [ "$compatlongnew" -ne 1 ]; then
     bad "the compatibility long-text primary detector is broken: old=$compatlongold new=$compatlongnew"
 fi
 
+# Boolean expression-primary recognition has exact true/false faces at primary
+# values nine and ten. Zig materializes the selected value without retaining
+# either keyword arm in the residual token-kind switch.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindtrue' \
+    'event lost the true primary face'
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindfalse' \
+    'event lost the false primary face'
+has "$PARSER" 'fn currentParserBoolean(self: *Parser) ParseError!u2 {' \
+    'parser.zig lost the boolean primary consumer'
+has "$PARSER" 'switch (try self.currentParserBoolean()) {' \
+    'parse_simple_expr bypasses the settled boolean face'
+truearms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.kw_true => ' || true)
+falsearms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.kw_false => ' || true)
+examined=$((examined + 1))
+if [ "$truearms" -ne 0 ] || [ "$falsearms" -ne 0 ]; then
+    bad "parse_simple_expr retained boolean host arms: true=$truearms false=$falsearms"
+fi
+
+booleanprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate boolean primary scratch' >&2; exit 2; }
+printf '%s\n' '.kw_true => true, .kw_false => false' >"$booleanprobe/old.zig"
+printf '%s\n' 'return face == 9 or face == 10;' >"$booleanprobe/new.zig"
+booleanold=$(grep -cF '.kw_true => ' "$booleanprobe/old.zig")
+booleannew=$(grep -cF 'face == 9 or face == 10' "$booleanprobe/new.zig")
+rm -rf -- "$booleanprobe"
+examined=$((examined + 1))
+if [ "$booleanold" -ne 1 ] || [ "$booleannew" -ne 1 ]; then
+    bad "the boolean primary detector is broken: old=$booleanold new=$booleannew"
+fi
+
 # The expression-group primary consumes parser.id's existing exact matching
 # delimiter boundary. A nonzero boundary is produced only at `(` and carries
 # the coordinate after its matching close. Zig no longer owns a `.lparen`
@@ -1603,7 +1632,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=8' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=10' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'

@@ -485,6 +485,11 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 8;
     }
 
+    fn currentParserBoolean(self: *Parser) ParseError!u2 {
+        const face = (try self.currentParserDecision()) >> 13;
+        return if (face == 9 or face == 10) @intCast(face - 8) else 0;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6172,6 +6177,17 @@ pub const Parser = struct {
                 .quote = .compat_long,
             } });
         }
+        switch (try self.currentParserBoolean()) {
+            1 => {
+                _ = try self.adv();
+                return self.new_expr(.{ .true_lit = tok.loc });
+            },
+            2 => {
+                _ = try self.adv();
+                return self.new_expr(.{ .false_lit = tok.loc });
+            },
+            else => {},
+        }
         if (try self.currentParserTable()) return self.parse_table();
         if (try self.currentParserName()) {
             const name_tok = try self.adv();
@@ -6202,14 +6218,6 @@ pub const Parser = struct {
             return e;
         }
         return switch (tok.kind) {
-            .kw_true => blk: {
-                _ = try self.adv();
-                break :blk self.new_expr(.{ .true_lit = tok.loc });
-            },
-            .kw_false => blk: {
-                _ = try self.adv();
-                break :blk self.new_expr(.{ .false_lit = tok.loc });
-            },
             .dots => blk: {
                 _ = try self.adv();
                 break :blk self.new_expr(.{ .vararg = tok.loc });
