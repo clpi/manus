@@ -252,3 +252,14 @@ test "backend_identity: wasm32-wasi intermediate identity is distinct from direc
     // The two identities must differ — wasm32-wasi != elf-x86_64
     try std.testing.expect(!std.mem.eql(u8, wasm_m.intermediate, direct_m.intermediate));
 }
+
+test "backend_identity: direct/freebsd/elf produces elf-freebsd-x86_64 intermediate identity" {
+    const m = inferFromCompile(.direct, "x86_64-freebsd", true, true);
+    try std.testing.expectEqual(Backend.direct, m.backend);
+    // The identity must be freebsd ELF, not conflated with linux ELF
+    try std.testing.expect(std.mem.eql(u8, m.intermediate, "elf-freebsd-x86_64"));
+
+    const linux_m = inferFromCompile(.direct, "x86_64-linux-gnu", true, true);
+    // The two identities must differ — freebsd ELF != linux ELF
+    try std.testing.expect(!std.mem.eql(u8, m.intermediate, linux_m.intermediate));
+}

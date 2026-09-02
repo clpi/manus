@@ -222,10 +222,17 @@ pub const BackendTarget = struct {
                 .x86_64 => "mach-o-x86_64",
                 else => "mach-o-unknown",
             },
-            .elf => switch (arch) {
-                .aarch64 => "elf-aarch64",
-                .x86_64 => "elf-x86_64",
-                else => "elf-unknown",
+            .elf => switch (self.triple.os) {
+                .freebsd => switch (arch) {
+                    .aarch64 => "elf-freebsd-aarch64",
+                    .x86_64 => "elf-freebsd-x86_64",
+                    else => "elf-freebsd-unknown",
+                },
+                else => switch (arch) {
+                    .aarch64 => "elf-aarch64",
+                    .x86_64 => "elf-x86_64",
+                    else => "elf-unknown",
+                },
             },
             .coff => switch (arch) {
                 .aarch64 => "coff-aarch64",
@@ -536,4 +543,27 @@ test "target_model: wasm32-wasi backend identity is distinct from any direct bac
     const direct_bt = BackendTarget.from(direct_triple, "direct");
     try std.testing.expect(!std.mem.eql(u8, wasi_bt.intermediate(), direct_bt.intermediate()));
     try std.testing.expect(!std.mem.eql(u8, wasm_bt.intermediate(), direct_bt.intermediate()));
+}
+
+test "target_model: direct/freebsd/elf identity is distinct from direct/linux/elf" {
+    // x86_64-freebsd with direct backend: ELF, but distinct FreeBSD identity
+    const freebsd_triple = parseStructuredTarget("x86_64-freebsd", .obj).?.triple;
+    const freebsd_bt = BackendTarget.from(freebsd_triple, "direct");
+    try std.testing.expectEqual(ObjectFormat.elf, freebsd_triple.objectFormat());
+    try std.testing.expectEqualStrings("elf-freebsd-x86_64", freebsd_bt.intermediate());
+
+    // x86_64-linux-gnu with direct backend: generic ELF identity
+    const linux_triple = parseStructuredTarget("x86_64-linux-gnu", .obj).?.triple;
+    const linux_bt = BackendTarget.from(linux_triple, "direct");
+    try std.testing.expectEqualStrings("elf-x86_64", linux_bt.intermediate());
+
+    // The two ELF identities must differ — freebsd is not conflated with linux
+    try std.testing.expect(!std.mem.eql(u8, freebsd_bt.intermediate(), linux_bt.intermediate()));
+}
+
+test "target_model: aarch64-freebsd direct backend produces elf-freebsd-aarch64 identity" {
+    const triple = parseStructuredTarget("aarch64-freebsd", .obj).?.triple;
+    const bt = BackendTarget.from(triple, "direct");
+    try std.testing.expectEqual(ObjectFormat.elf, triple.objectFormat());
+    try std.testing.expectEqualStrings("elf-freebsd-aarch64", bt.intermediate());
 }
