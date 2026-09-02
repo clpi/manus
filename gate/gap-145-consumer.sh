@@ -634,6 +634,33 @@ if [ "$truearms" -ne 0 ] || [ "$falsearms" -ne 0 ]; then
     bad "parse_simple_expr retained boolean host arms: true=$truearms false=$falsearms"
 fi
 
+# Vararg expression-primary recognition has exact face eleven. Zig retains
+# only value materialization and no longer selects it from a `.dots` arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kinddots' \
+    'event lost the vararg primary face'
+has "$ROOT/src/parser/projection.c" 'kind == INT64_C(86)' \
+    'tracked projection lost the vararg primary face'
+has "$PARSER" 'fn currentParserVararg(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the vararg primary consumer'
+has "$PARSER" 'if (try self.currentParserVararg()) {' \
+    'parse_simple_expr bypasses the settled vararg face'
+varargarms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.dots => ' || true)
+examined=$((examined + 1))
+if [ "$varargarms" -ne 0 ]; then
+    bad "parse_simple_expr retained $varargarms .dots host arm(s)"
+fi
+
+varargprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate vararg primary scratch' >&2; exit 2; }
+printf '%s\n' '.dots => parse_vararg(),' >"$varargprobe/old.zig"
+printf '%s\n' 'return (try self.currentParserDecision()) >> 13 == 11;' >"$varargprobe/new.zig"
+varargold=$(grep -cF '.dots => ' "$varargprobe/old.zig")
+varargnew=$(grep -cF 'currentParserDecision()) >> 13 == 11' "$varargprobe/new.zig")
+rm -rf -- "$varargprobe"
+examined=$((examined + 1))
+if [ "$varargold" -ne 1 ] || [ "$varargnew" -ne 1 ]; then
+    bad "the vararg primary detector is broken: old=$varargold new=$varargnew"
+fi
+
 booleanprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate boolean primary scratch' >&2; exit 2; }
 printf '%s\n' '.kw_true => true, .kw_false => false' >"$booleanprobe/old.zig"
 printf '%s\n' 'return face == 9 or face == 10;' >"$booleanprobe/new.zig"
@@ -1632,7 +1659,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=10' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=11' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'

@@ -490,6 +490,10 @@ pub const Parser = struct {
         return if (face == 9 or face == 10) @intCast(face - 8) else 0;
     }
 
+    fn currentParserVararg(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 11;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6188,6 +6192,10 @@ pub const Parser = struct {
             },
             else => {},
         }
+        if (try self.currentParserVararg()) {
+            _ = try self.adv();
+            return self.new_expr(.{ .vararg = tok.loc });
+        }
         if (try self.currentParserTable()) return self.parse_table();
         if (try self.currentParserName()) {
             const name_tok = try self.adv();
@@ -6218,10 +6226,6 @@ pub const Parser = struct {
             return e;
         }
         return switch (tok.kind) {
-            .dots => blk: {
-                _ = try self.adv();
-                break :blk self.new_expr(.{ .vararg = tok.loc });
-            },
             .kw_function, .kw_fun => blk: {
                 const l = (try self.adv()).loc;
                 const fb = try self.new_fb(try self.parse_func_body(l));
