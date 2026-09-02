@@ -273,6 +273,48 @@ pub fn realizesZero(e: *const Experiment) bool {
     return e.cost == 0;
 }
 
+/// Required order 5 / closure face: hardware counters as a fact-producer.
+/// A counter observation is one measured reading of one named hardware counter
+/// on one measured subject revision (`law.evidence.subject.one`). It is
+/// evidence, never semantic truth: the constructed experiment's producer is
+/// always `hardware_counter` and therefore never admits without a guard
+/// (`law.oracle.bounded`). There is exactly one construction seam — this
+/// function — so no caller can mint a hardware-counter fact over a different
+/// producer (`law.fact.producer.one`). Provenance is enforced AT CONSTRUCTION,
+/// not audited afterward: a counter reading that cannot name the measured
+/// subject revision it was taken on constructs no fact at all — null, never a
+/// fact with incomplete provenance and never a sentinel in-band.
+pub const CounterObservation = struct {
+    /// Stable identity of the observed counter (e.g. "cycles", "branch_miss").
+    counter: []const u8,
+    /// The measured reading. An ordinary measurement value, never a sentinel.
+    value: u64,
+    /// The experiment-shaped fact this reading stands behind.
+    experiment: Experiment,
+};
+
+pub fn observeCounter(
+    proposition: []const u8,
+    counter: []const u8,
+    value: u64,
+    cost: u32,
+    conditional_theorem: []const u8,
+    subject_revision: []const u8,
+) ?CounterObservation {
+    if (subject_revision.len == 0) return null;
+    return .{
+        .counter = counter,
+        .value = value,
+        .experiment = .{
+            .proposition = proposition,
+            .producer = .hardware_counter,
+            .cost = cost,
+            .conditional_theorem = conditional_theorem,
+            .subject_revision = subject_revision,
+        },
+    };
+}
+
 /// Required order 2: semantic probability and compiler epistemic probability
 /// are distinct categories that must never be confused.
 ///
@@ -700,6 +742,40 @@ test "effect: outcome evidence producer bridge agrees with the level bridge" {
     );
     try std.testing.expect(producerForOutcomeEvidence(.measured).isEvidence());
     try std.testing.expect(!producerForOutcomeEvidence(.measured).level().admitsWithoutGuard());
+}
+
+test "effect: hardware counters are fact-producers with construction-forced provenance" {
+    // Closure face: a hardware counter produces an experiment-shaped fact
+    // with exactly one construction seam. A reading that names no measured
+    // subject revision constructs NO fact — provenance is the admission
+    // condition, not an audit flag (law.evidence.subject.one).
+    const reading = (observeCounter(
+        "shape:7",
+        "cycles",
+        4200,
+        1,
+        "cand:fast-table",
+        "rev:abc",
+    )).?;
+    try std.testing.expectEqualStrings("cycles", reading.counter);
+    try std.testing.expectEqual(@as(u64, 4200), reading.value);
+    try std.testing.expectEqual(EvidenceProducer.hardware_counter, reading.experiment.producer);
+    try std.testing.expectEqual(EpistemicLevel.profiled, reading.experiment.producer.level());
+    try std.testing.expect(reading.experiment.producer.isEvidence());
+    try std.testing.expect(reading.experiment.provenanceComplete());
+    // The reading is evidence, never truth — it still demands a guard or
+    // proof before a semantics-changing realization may rely on it.
+    try std.testing.expect(!reading.experiment.producesTruth());
+    try std.testing.expect(!reading.experiment.admissible(true));
+    try std.testing.expect(reading.experiment.admissible(false));
+    try std.testing.expect(profileNeedsGuard(reading.experiment.producer.level()));
+    // No revision, no fact: provenance enforced at construction.
+    try std.testing.expect(observeCounter("shape:7", "cycles", 1, 1, "cand:x", "") == null);
+    // A zero-cost counter observation is lawful nonexecution but still
+    // profiled evidence — cost never upgrades the epistemic level.
+    const free = (observeCounter("shape:7", "cycles", 0, 0, "cand:cached", "rev:abc")).?;
+    try std.testing.expect(realizesZero(&free.experiment));
+    try std.testing.expect(!free.experiment.producesTruth());
 }
 
 test "effect: no assumption catalog lives here" {
