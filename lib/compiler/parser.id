@@ -626,8 +626,9 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # Lane two carries clause bits 0..1, return bits 2..3, callable-header bits 4..5,
 # and the contextual `type` alias head in bit 6. A qualifying callable header
 # propagates the bare declaration head to bit 7 on its starting name coordinate.
-# Bit 8 carries assignment-body recognition, bit 9 carries attribute declaration
-# recognition, and bits 10..63 carry the exclusive matching-parenthesis boundary.
+# Bit 8 carries assignment-body recognition, bits 9..12 carry the attributed
+# declaration face, and bits 13..63 carry the exclusive matching-parenthesis
+# boundary.
 # Capacity refusal precedes every mutation.
 event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
     if count < 0 or capacity < 0 or count > capacity / 2
@@ -773,14 +774,26 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
                         if nextline == line and nextcolumn == column + width
                             assignment = 1
         declaration = 0
-        if kind == token.kindfunction or kind == token.kindfun or kind == token.kindasync or kind == token.kindenum or kind == token.kindconcept or kind == token.kindalias or kind == token.kindlocal or kind == token.kindglobal or kind == token.kindfor
+        if kind == token.kindfunction or kind == token.kindfun
             declaration = 1
+        elseif kind == token.kindasync
+            declaration = 2
+        elseif kind == token.kindenum
+            declaration = 3
+        elseif kind == token.kindconcept
+            declaration = 4
+        elseif kind == token.kindalias
+            declaration = 5
+        elseif kind == token.kindlocal or kind == token.kindglobal
+            declaration = 6
+        elseif kind == token.kindfor
+            declaration = 7
         elseif kind == token.kindname
             following = token.kindeof
             if index + 1 < count
                 following = fact[(index + 1) * 2 + 1] & 255
             if head == 1 or following == token.kindcolon
-                declaration = 1
+                declaration = 8
         delimiter = 0
         if kind == token.kindlparen
             depth = 1
@@ -804,7 +817,7 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
                 headerplain = 1
             if header_signal_lx(fact, count, index, true, offside, prior)
                 headercomma = 1
-        out[count + index] = clauseface | (returnface << 2) | (headerplain << 4) | (headercomma << 5) | (head << 6) | (assignment << 8) | (declaration << 9) | (delimiter << 10)
+        out[count + index] = clauseface | (returnface << 2) | (headerplain << 4) | (headercomma << 5) | (head << 6) | (assignment << 8) | (declaration << 9) | (delimiter << 13)
         if headerplain == 1 and index > 0
             start = index - 1
             if (fact[start * 2 + 1] & 255) == token.kindname

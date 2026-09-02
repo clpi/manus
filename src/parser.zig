@@ -399,12 +399,18 @@ pub const Parser = struct {
 
     fn currentParserAttributeDeclaration(self: *Parser) ParseError!bool {
         const decision = try self.currentParserDecision();
-        return ((decision >> 9) & 1) != 0 or
+        return ((decision >> 9) & 0xF) != 0 or
             (self.func_body_depth == 0 and ((decision >> 7) & 1) != 0);
     }
 
+    fn currentParserAttributeDispatch(self: *Parser) ParseError!u8 {
+        const face = ((try self.currentParserDecision()) >> 9) & 0xF;
+        if (face > 8) return ParseError.UnexpectedToken;
+        return @intCast(face);
+    }
+
     fn currentParserAttributeBoundary(self: *Parser) ParseError!?usize {
-        const boundary = (try self.currentParserDecision()) >> 10;
+        const boundary = (try self.currentParserDecision()) >> 13;
         if (boundary == 0) return null;
         return std.math.cast(usize, boundary) orelse error.InvalidRecordCount;
     }
@@ -2267,15 +2273,15 @@ pub const Parser = struct {
         // §15 applies to attributed declarations too, or `@inline async f()`
         // is a hole straight through the ruling.
         try self.denyRetiredStmtKeyword(tok, try self.statement_admission());
-        return switch (tok.kind) {
-            .kw_function, .kw_fun => self.parse_func_decl_with_attrs(false, attrs_slice),
-            .kw_async => self.parse_async_func_decl_with_attrs(attrs_slice),
+        return switch (try self.currentParserAttributeDispatch()) {
+            1 => self.parse_func_decl_with_attrs(false, attrs_slice),
+            2 => self.parse_async_func_decl_with_attrs(attrs_slice),
             // NOTE: there is no `.kw_struct` case.
-            .kw_enum => self.parse_enum_def_with_attrs(attrs_slice),
-            .kw_concept => self.parse_concept_def_with_attrs(attrs_slice),
-            .kw_alias => self.parse_alias_def_with_attrs(attrs_slice),
-            .kw_local, .kw_global => self.parse_local_or_global_with_attrs(attrs_slice),
-            .kw_for => blk: {
+            3 => self.parse_enum_def_with_attrs(attrs_slice),
+            4 => self.parse_concept_def_with_attrs(attrs_slice),
+            5 => self.parse_alias_def_with_attrs(attrs_slice),
+            6 => self.parse_local_or_global_with_attrs(attrs_slice),
+            7 => blk: {
                 // @unroll(N) before a for loop: parse the for and attach unroll
                 var stmt = try self.parse_for();
                 if (stmt == .num_for) {

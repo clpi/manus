@@ -1272,14 +1272,21 @@ has "$PARSER" 'if (try self.currentParserBodyAssignment()) {' \
 forbid "$PARSER" 'fn func_body_should_use_expr_stmt(' \
     'parser.zig retained the host assignment-body recognizer'
 has "$ROOT/lib/compiler/parser.id" '(declaration << 9)' \
-    'whole-pack decision lost attribute declaration recognition'
+    'whole-pack decision lost attributed-declaration dispatch recognition'
+has "$PARSER" 'switch (try self.currentParserAttributeDispatch()) {' \
+    'attributed declaration bypasses the settled dispatch face'
 has "$PARSER" 'return self.currentParserAttributeDeclaration();' \
     'attribute attachment bypasses the settled declaration fact'
 forbid "$PARSER" 'return switch (nxt.kind) {' \
     'parser.zig retained the host attribute declaration switch'
-has "$ROOT/tools/node/dev/parser/artifact" 'declaration-lane-cases=7' \
+attributed_switch=$(sed -n '/fn parse_attributed_decl/,/fn strip_quotes/p' "$PARSER" | grep -cF 'switch (tok.kind) {' || true)
+examined=$((examined + 1))
+if [ "$attributed_switch" -ne 0 ]; then
+    bad 'parser.zig retained the host attributed-declaration dispatch switch'
+fi
+has "$ROOT/tools/node/dev/parser/artifact" 'declaration-lane-cases=12' \
     'parser artifact lost the exact attribute declaration control count'
-has "$ROOT/lib/compiler/parser.id" '(delimiter << 10)' \
+has "$ROOT/lib/compiler/parser.id" '(delimiter << 13)' \
     'whole-pack decision lost attribute delimiter extent'
 has "$PARSER" 'currentParserAttributeBoundary() orelse return false' \
     'attribute lookahead bypasses the immutable-pack delimiter boundary'
