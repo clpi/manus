@@ -394,11 +394,17 @@ pub const Parser = struct {
     }
 
     fn currentParserTypeName(self: *Parser) ParseError!bool {
-        return (((try self.currentParserEvent()) >> 61) & 1) != 0;
+        const event = try self.currentParserEvent();
+        return ((event >> 61) & 1) != 0 and ((event >> 18) & 1) == 0;
     }
 
     fn currentParserTypeAttribute(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 9) & 0xF) == 12;
+    }
+
+    fn currentParserTypeInteger(self: *Parser) ParseError!bool {
+        const event = try self.currentParserEvent();
+        return ((event >> 61) & 1) != 0 and ((event >> 18) & 1) != 0;
     }
 
     fn currentParserBodyAssignment(self: *Parser) ParseError!bool {
@@ -1574,11 +1580,11 @@ pub const Parser = struct {
             }
             return .{ .named = t.text };
         }
+        if (try self.currentParserTypeInteger()) {
+            const t = try self.adv();
+            return .{ .named = t.text };
+        }
         return switch (tok.kind) {
-            .int_lit => {
-                const t = try self.adv();
-                return .{ .named = t.text };
-            },
             .star => {
                 _ = try self.adv();
                 const inner = try self.alloc.create(ast.TypeExpr);
