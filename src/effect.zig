@@ -223,14 +223,39 @@ pub fn profileNeedsGuard(level: EpistemicLevel) bool {
 }
 
 /// Bridge to the existing guard-emission taxonomy: map an emitted guard onto
-/// its epistemic level. `none` is a proof, not an experiment.
+/// its epistemic level. `proven` alone is sound. `measured` is an observation
+/// of one subject on one revision — evidence only, never semantic truth
+/// (`law.oracle.bounded`, GAP-182 required order 5); it maps to the evidence
+/// level `profiled` and therefore still demands a guard or a proof before any
+/// semantics-changing realization may rely on it. `assumed` / `estimated`
+/// carry no witness at all and map to `heuristic`.
 pub fn levelForOutcomeEvidence(ev: optimization_outcome.Evidence) EpistemicLevel {
     return switch (ev) {
-        .proven, .measured => .proven,
+        .proven => .proven,
+        .measured => .profiled,
         .guarded => .guarded,
         .assumed => .heuristic,
         .profiled => .profiled,
         .estimated => .heuristic,
+    };
+}
+
+/// Bridge to the existing guard-emission taxonomy: map an emitted guard's
+/// evidence strength onto the producer that stands behind it. `proven` is a
+/// static proof; `guarded` is the guard's own observation witness; `measured`
+/// and `profiled` are profile/counter observations of one measured subject on
+/// one revision (`law.evidence.subject.one`); `assumed` / `estimated` are
+/// heuristic estimates with no witness. The level bridge above must be
+/// exactly `producerForOutcomeEvidence(ev).level()` — one taxonomy, two
+/// faces, no drift.
+pub fn producerForOutcomeEvidence(ev: optimization_outcome.Evidence) EvidenceProducer {
+    return switch (ev) {
+        .proven => .static_proof,
+        .measured => .profile_counter,
+        .guarded => .guard_observation,
+        .assumed => .heuristic_estimate,
+        .profiled => .profile_counter,
+        .estimated => .heuristic_estimate,
     };
 }
 
@@ -375,6 +400,46 @@ test "effect: evidence provenance requires the measured subject revision" {
     // Sound producers are complete with or without a revision naming.
     try std.testing.expect(experiment(.static_proof, "").provenanceComplete());
     try std.testing.expect(experiment(.guard_observation, "").provenanceComplete());
+}
+
+test "effect: measured outcome evidence stays evidence, never truth" {
+    // Required order 5 bridge: a measured profile/counter observation on one
+    // subject revision is evidence only. Only `proven` admits without a guard.
+    try std.testing.expectEqual(EpistemicLevel.proven, levelForOutcomeEvidence(.proven));
+    try std.testing.expectEqual(EpistemicLevel.guarded, levelForOutcomeEvidence(.guarded));
+    try std.testing.expectEqual(EpistemicLevel.profiled, levelForOutcomeEvidence(.measured));
+    try std.testing.expect(!levelForOutcomeEvidence(.measured).admitsWithoutGuard());
+}
+
+test "effect: outcome evidence producer bridge agrees with the level bridge" {
+    // One taxonomy, two faces: mapping an emitted guard's evidence strength
+    // onto its producer and taking that producer's level must equal mapping
+    // the evidence strength onto its level directly (`law.catalog.zero` —
+    // the bridges are faces of one fact family, not two registries).
+    const all = [_]optimization_outcome.Evidence{
+        .proven, .guarded, .assumed, .profiled, .estimated, .measured,
+    };
+    for (all) |ev| {
+        try std.testing.expectEqual(
+            levelForOutcomeEvidence(ev),
+            producerForOutcomeEvidence(ev).level(),
+        );
+    }
+    // Only the proof producer is sound; measured keeps no aggregate standing.
+    try std.testing.expectEqual(
+        EvidenceProducer.static_proof,
+        producerForOutcomeEvidence(.proven),
+    );
+    try std.testing.expectEqual(
+        EvidenceProducer.profile_counter,
+        producerForOutcomeEvidence(.measured),
+    );
+    try std.testing.expectEqual(
+        EvidenceProducer.guard_observation,
+        producerForOutcomeEvidence(.guarded),
+    );
+    try std.testing.expect(producerForOutcomeEvidence(.measured).isEvidence());
+    try std.testing.expect(!producerForOutcomeEvidence(.measured).level().admitsWithoutGuard());
 }
 
 test "effect: no assumption catalog lives here" {
