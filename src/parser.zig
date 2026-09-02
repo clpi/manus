@@ -397,6 +397,12 @@ pub const Parser = struct {
         return (((try self.currentParserDecision()) >> 8) & 1) != 0;
     }
 
+    fn currentParserAttributeDeclaration(self: *Parser) ParseError!bool {
+        const decision = try self.currentParserDecision();
+        return ((decision >> 9) & 1) != 0 or
+            (self.func_body_depth == 0 and ((decision >> 7) & 1) != 0);
+    }
+
     /// Free the immutable pack and reset the parser-owned mirror. Mirrors
     /// `ensureProducerPack` symmetry: install + release pair is the parser
     /// API for the immutable producer pack.
@@ -2136,58 +2142,10 @@ pub const Parser = struct {
                 // `@comp.hint.fence()` / `@comp.bit.popcount(n)` at statement scope are
                 // expression calls (DNIR hardware path), not standalone module directives.
                 // Only treat as directive when a declaration follows (@comp.derive on a decl).
-                const nxt = try self.pk();
-                return switch (nxt.kind) {
-                    .kw_function,
-                    .kw_fun,
-                    .kw_async,
-                    .kw_enum,
-                    .kw_concept,
-                    .kw_alias,
-                    .kw_local,
-                    .kw_global,
-                    .kw_for,
-                    => true,
-                    .name => blk: {
-                        if ((((try self.currentParserDecision()) >> 6) & 1) != 0) break :blk true;
-                        const s2 = self.saveState();
-                        _ = try self.adv();
-                        const after = try self.pk();
-                        self.restoreState(s2);
-                        if (after.kind == .colon) break :blk true;
-                        // Bare function declaration (GR-001): `@c.export("n")
-                        // name(x: i64): i64 ... end`. `c.export` is an *attaching*
-                        // attribute that isMetaAttribute() also reports as a
-                        // directive, so it lands here; without this the attribute is
-                        // re-parsed as an expression statement and lowers to a
-                        // runtime `__c_export(...)` call no profile declares.
-                        if (self.func_body_depth == 0 and (((try self.currentParserDecision()) >> 7) & 1) != 0) break :blk true;
-                        break :blk false;
-                    },
-                    else => false,
-                };
+                return self.currentParserAttributeDeclaration();
             }
         }
-        const tok = try self.pk();
-        return switch (tok.kind) {
-            .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_concept, .kw_alias, .kw_local, .kw_global, .kw_for => true,
-            .name => blk: {
-                if ((((try self.currentParserDecision()) >> 6) & 1) != 0) break :blk true;
-                const s2 = self.saveState();
-                _ = try self.adv();
-                const after = try self.pk();
-                self.restoreState(s2);
-                if (after.kind == .colon) break :blk true;
-                // Bare function declaration (GR-001): `@c.export("n") name(x: i64): i64`.
-                // Bare functions are the canonical form, so an attribute must attach to
-                // one exactly as it attaches to a `fun` decl. Without this the whole
-                // attribute is re-parsed as an expression statement, and `@c.export`
-                // lowers to a runtime `__c_export(...)` call that no profile declares.
-                if (self.func_body_depth == 0 and (((try self.currentParserDecision()) >> 7) & 1) != 0) break :blk true;
-                break :blk false;
-            },
-            else => false,
-        };
+        return self.currentParserAttributeDeclaration();
     }
 
     fn is_known_attribute(name: []const u8) bool {

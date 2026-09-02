@@ -184,6 +184,19 @@ static int verify_layout_type(const char *source, bool expected) {
     return 0;
 }
 
+static int verify_declaration(const char *source, bool expected) {
+    int64_t facts[256] = {0};
+    int64_t events[256] = {0};
+    int64_t count = tokenize(source, facts);
+    int64_t written = idol_parser_event(facts, count, events, count * 2, true);
+    bool found = ((events[count] >> 9) & 1) != 0;
+    if (written != count || found != expected) {
+        fprintf(stderr, "%s declaration-event=%d written=%lld expected=%d\n", source, found, (long long)written, expected);
+        return 1;
+    }
+    return 0;
+}
+
 static int verify_statement(const char *source, bool expected) {
     int64_t facts[256] = {0};
     int64_t events[256] = {0};
@@ -342,7 +355,7 @@ static int verify_event(void) {
         if (out[0] != 71 || out[229] != 75) failed += 1;
         for (int64_t kind = 0; kind < 114; ++kind) {
             if (out[1 + kind] != expected_event(kind, idol != 0)) failed += 1;
-            if (out[1 + 114 + kind] < 0 || out[1 + 114 + kind] > 15) failed += 1;
+            if (out[1 + 114 + kind] < 0 || (out[1 + 114 + kind] & ~INT64_C(1023)) != 0) failed += 1;
         }
     }
     return failed;
@@ -599,6 +612,13 @@ int main(void) {
     failed += verify_layout_type("User", true);
     failed += verify_layout_type("user", false);
     failed += verify_layout_type("42", false);
+    failed += verify_declaration("fun f()", true);
+    failed += verify_declaration("enum E", true);
+    failed += verify_declaration("type T = i64", true);
+    failed += verify_declaration("name: value", true);
+    failed += verify_declaration("name(x)", false);
+    failed += verify_declaration("return x", false);
+    failed += verify_declaration("42", false);
     failed += verify_event();
     failed += verify_event_lead_trivia();
     failed += verify_event_boundary();
@@ -609,7 +629,7 @@ int main(void) {
     failed += verify_boundary_closure();
     failed += verify_layout_faces();
     failed += verify_boundary_opening();
-    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 layout-type-cases=8 lead-slots=%zu prefix-slots=%zu relation-slots=%zu statement-slots=%zu event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=%zu boundary-slots=%zu boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=%zu empty-terminators=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__statement()), strlen(token_grammarrole__member()), strlen(token_grammarrole__boundary()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
+    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 layout-type-cases=8 declaration-lane-cases=7 lead-slots=%zu prefix-slots=%zu relation-slots=%zu statement-slots=%zu event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=%zu boundary-slots=%zu boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=%zu empty-terminators=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__statement()), strlen(token_grammarrole__member()), strlen(token_grammarrole__boundary()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
     return failed != 0;
 }
 EOF

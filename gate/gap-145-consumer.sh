@@ -346,8 +346,8 @@ if [ "$type_text" -ne 0 ]; then
 fi
 type_lane=$(grep -cF 'currentParserDecision()) >> 6' "$PARSER" || true)
 examined=$((examined + 1))
-if [ "$type_lane" -ne 4 ]; then
-    bad "all four contextual type consumers must select lane-two bit 6 (calls=$type_lane)"
+if [ "$type_lane" -ne 2 ]; then
+    bad "the two remaining contextual type consumers must select lane-two bit 6 (calls=$type_lane)"
 fi
 has "$ROOT/lib/compiler/parser.id" 'fact[index * 2 + 2] == 435678704644' \
     'parser.id lost the exact contextual type source-word fact'
@@ -400,8 +400,8 @@ if [ "$bare_calls" -ne 0 ]; then
 fi
 bare_lane=$(grep -cF 'currentParserDecision()) >> 7' "$PARSER" || true)
 examined=$((examined + 1))
-if [ "$bare_lane" -ne 4 ]; then
-    bad "all four bare-declaration consumers must select lane-two bit 7 (calls=$bare_lane)"
+if [ "$bare_lane" -ne 2 ]; then
+    bad "the two remaining bare-declaration consumers must select lane-two bit 7 (calls=$bare_lane)"
 fi
 has "$ROOT/lib/compiler/parser.id" 'out[count + start] = out[count + start] | (1 << 7)' \
     'event lost the propagated bare-declaration head bit'
@@ -1271,6 +1271,14 @@ has "$PARSER" 'if (try self.currentParserBodyAssignment()) {' \
     'single-line function body bypasses the settled assignment fact'
 forbid "$PARSER" 'fn func_body_should_use_expr_stmt(' \
     'parser.zig retained the host assignment-body recognizer'
+has "$ROOT/lib/compiler/parser.id" '(declaration << 9)' \
+    'whole-pack decision lost attribute declaration recognition'
+has "$PARSER" 'return self.currentParserAttributeDeclaration();' \
+    'attribute attachment bypasses the settled declaration fact'
+forbid "$PARSER" 'return switch (nxt.kind) {' \
+    'parser.zig retained the host attribute declaration switch'
+has "$ROOT/tools/node/dev/parser/artifact" 'declaration-lane-cases=7' \
+    'parser artifact lost the exact attribute declaration control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'
 forbid "$PARSER" '(decision >> 41)' \
