@@ -70,14 +70,17 @@ name purge only.
 
 **2 Application/Graph Sovereignty** — `GAP-124`, `GAP-137`, `GAP-201`,
 `GAP-202`, `GAP-125`, `GAP-132`, `GAP-153`, `GAP-161`, `GAP-165`,
-`GAP-221`.
+`GAP-221` (not P0).
 `GAP-201` is the umbrella that owns the remaining bridge inventory; `GAP-137`
 owns one fact being optional and fail-open and is one row from closed;
 `GAP-202` owns making the one application algebra complete enough that scalar
 multiplication needs no subsystem of its own. `GAP-132` is the sharpest live
-defect in the program and reproduces in one command. `GAP-221` is a fact the
-graph does not publish (per-body binding origin) read off a spelling instead;
-its wrong ANSWER is crossed and its deletion witness and its pin are not.
+defect in the program and reproduces in one command. `GAP-221` — a fact the
+graph did not publish (per-body binding origin) read off a spelling instead —
+is CLOSED and reclassified below: `aa936dfa` returns the type and the storage
+key from `moduleFieldWord` together, so the second by-spelling lookup has no
+call site, and `gate/gap-221-shadowstore.sh` pins both the answer and the
+deletion witness that the withdrawal below said nothing pinned.
 The module-binding write that used to sit beside it — a write read off a
 spelling because the lift minted a same-spelled local for it — is CLOSED and
 reclassified below.
@@ -226,6 +229,7 @@ commit. Neither was superseded.
 | `GAP-142` | SUPERSEDED | `gate/admission.id` + `gate/admission.sh` + `evidence/mop/merge/readiness.md`; every adjudicated branch retired |
 | `GAP-225` | CLOSED | the lift names the module binding a relation writes and `publishApplicationMutations` publishes its cardinality; the census movement and the hazard row are what `sh gate/effect.sh` and `sh gate/speculation.sh` print, and the floors are pinned in those runners; regression `examples/place/mutate.id` |
 | `GAP-115` | CLOSED | `99673d63` "evidence: a fixed /tmp name is a fact any concurrent session can rewrite"; doctor/census/projection/positive-controls now mint run-private mktemp roots, pinned by `gate/gap-115-evidence.sh` |
+| `GAP-221` | CLOSED | `aa936dfa` "GAP-221: eliminate two-store shape in module field storage resolution" — `moduleFieldWord` returns the type and the storage key together, so the by-spelling `storageKey` lookup after the binding check has no call site; `gate/gap-221-shadowstore.sh` pins the answer and the deletion witness, which is exactly what the withdrawal below found missing |
 Each carries its evidence in its own file. No gap was reclassified on the
 strength of its own prose.
 
@@ -250,7 +254,13 @@ condition.**
   answer: `git grep -n shadowstore -- gate/ build.zig tests/ tools/ scripts/` is
   empty, so a re-regression would be silent. One manual run at one revision is
   the evidentiary shape that produced the false SUPERSEDED reading of `GAP-207`,
-  which is the live wrong answer this same pass found.
+  which is the live wrong answer this same pass found. **Crossed since:** the
+  withdrawal named the two missing things, and `aa936dfa` supplied both — the
+  deletion witness is met and `gate/gap-221-shadowstore.sh` makes that same
+  `git grep` non-empty, so the gap is CLOSED and its row is in the
+  reclassification table above. The withdrawal stands as the RULING it was: a
+  quiet headline is not a closure, and the closure came from the witness and the
+  pin rather than from the answer.
 
 Both now carry gated `idol.gap.frontier.v1` blocks that say which half is
 crossed, so the measurement is kept and the obligation is not.
