@@ -57,8 +57,8 @@
 #
 # A gate that refuses everything passes every ratchet it owns and measures
 # nothing, and a gate that reads only exit status agrees with a compiler that
-# links the world and computes garbage. Three controls, run BEFORE any subject
-# is reported, each proving a different way to be wrong:
+# links the world and computes garbage. The controls run BEFORE any subject is
+# reported, each proving a different way to be wrong:
 #
 #   P  POSITIVE. A SINGLE-partition program must compile and answer. Nothing
 #      here is about cross-partition reach, so if this cannot pass, the
@@ -77,6 +77,40 @@
 #      that silently drops an unrealizable input and links anyway reproduces
 #      the undefined symbol one layer further from its cause, which is the
 #      fail-open this whole path exists to remove.
+#
+#   N3 NEGATIVE, BOTH PIN DIRECTIONS REFUSE. The `nm` column decides the
+#      `text` row and the selectivity of the other three, so a pin reader that
+#      never refuses would make all four decorations. See the `text` section.
+#
+#   N4 THE OTHER ARTIFACT KIND THAT LINKS. Every subject in the roster is an
+#      EXECUTABLE; a shared library links too, and its line was built by a
+#      SECOND producer that answered the literal `&.{}`. See below.
+#
+# ═══ TWO ARTIFACT KINDS LINK, AND ONE PRODUCER DECIDES BOTH ════════════════
+#
+# `main.directLinkLine` is that producer: bootstrap units selected from the
+# union of an artifact's own needs and its reached partitions', plus those
+# partitions' objects. Control N4 is what holds it to one.
+#
+# It was TWO. The executable's line learned to carry the union; the shared
+# library's was handed `&.{}`, so a dylib got neither the units its own object
+# referenced nor the partitions it reached — with the need list computed and
+# sitting unread in its artifact — and `-dynamiclib` defaults to
+# `-undefined error`, so both went undefined at the linker by symbol name.
+# A fact with two producers is a fact that can be repaired in one of them, and
+# that is what had happened.
+#
+# N4's module is GAP-232's own shape moved to the shared kind: the dylib's
+# exported relation reaches a sibling partition, and that partition is what
+# converts text. Both outputs of the producer are pinned in one link — the
+# reached partition's OBJECT by `_helper__value`, the unit its need selects by
+# `duo_str_to_i64` — because passing the needs while dropping the objects, or
+# the reverse, are independent ways to be wrong.
+#
+# IT IS A CONTROL AND NOT A ROSTER ROW because a dylib is not run and this
+# gate's subjects are ANSWERS. The roster's second column is an exit status;
+# this measurement has none, and giving it a fake one would put an unrunnable
+# row in a file whose whole contract is compiled, run, answered.
 #
 # ═══ A REACHED PARTITION'S OWN BOOTSTRAP NEEDS, the `text` shape ═══════════
 #
@@ -315,6 +349,37 @@ if run_subject "$work/ctl.solo" 7 '!_main__main'; then
     printf 'crosspartition:   the selectivity pins on duo/trio/fan are not being read.\n' >&2
     exit 1
 fi
+
+# ══ CONTROL N4 — the other artifact kind that links ════════════════════════
+# AFTER CONTROL P, DELIBERATELY. A host with no direct-native realization must
+# leave here having said NOT MEASURED, not FAIL; this control measures the
+# compiler and only P can decide whether the compiler is measurable at all.
+mkdir -p "$work/ctl.shared" 2>/dev/null &&
+    printf 'value: i64 = (x: i64)\n  "21":to(i64) + x\n' >"$work/ctl.shared/helper.id" &&
+    printf 'call: i64 = (x: i64)\n  helper.value(x)\n' >"$work/ctl.shared/lib.id" || {
+    printf 'crosspartition: NOT MEASURED — cannot write the shared-kind control\n' >&2
+    exit 3
+}
+if ! ( CDPATH='' cd -- "$work/ctl.shared" && "$IDOL" compile --backend=direct --emit dylib lib.id -o lib.dylib ) \
+    >"$work/compile.log" 2>&1
+then
+    printf 'crosspartition control N4: FAIL — a shared library does not link over what it reaches: %s\n' \
+        "$(tail -3 "$work/compile.log" | tr '\n' ' ')" >&2
+    printf 'crosspartition:   the shared link line is not coming from main.directLinkLine.\n' >&2
+    exit 1
+fi
+if [ ! -f "$work/ctl.shared/lib.dylib" ]; then
+    printf 'crosspartition control N4: FAIL — the shared compile reported success and produced no library.\n' >&2
+    exit 1
+fi
+nm -g "$work/ctl.shared/lib.dylib" 2>/dev/null | awk '$2 == "T" { print $3 }' >"$work/defined"
+for pin in _helper__value duo_str_to_i64; do
+    if ! grep -q -- "$pin\$" "$work/defined"; then
+        printf 'crosspartition control N4: FAIL — the dylib linked and does not DEFINE %s.\n' "$pin" >&2
+        printf 'crosspartition:   one of the two things that producer carries — reached objects, or the units their needs select — did not reach this link line.\n' >&2
+        exit 1
+    fi
+done
 
 # ══ THE ROSTER ═════════════════════════════════════════════════════════════
 examined=0

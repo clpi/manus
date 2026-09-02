@@ -1,4 +1,9 @@
 //! WP-18 — structured target triple + emit kind (replaces ambiguous "native-*" names).
+//!
+//! Backend × target identity: `direct/linux/elf` is a distinct identity fact
+//! from `direct/macos/macho`. This is encoded in BackendTarget, which derives
+//! the intermediate representation identity from the actual target triple's
+//! object format — never from a hardcoded constant.
 const std = @import("std");
 const builtin = @import("builtin");
 
@@ -176,6 +181,74 @@ pub const TargetTriple = struct {
     }
 };
 
+/// Backend × target identity: a bounded fact that distinguishes the direct
+/// backend's identity on one platform/object-format from another.
+/// `direct/macos/macho` and `direct/linux/elf` are distinct identity facts,
+/// not two spellings of the same thing.
+///
+/// `backend` is the backend name string (e.g. "direct", "auto", "c", "wasm")
+/// rather than a Backend enum to avoid a circular import. backend_identity.zig,
+/// which owns the Backend enum, imports this module and passes the name.
+pub const BackendTarget = struct {
+    backend: []const u8,
+    triple: TargetTriple,
+
+    /// Compute the intermediate representation identity string from the
+    /// actual target triple's object format and architecture, not from a
+    /// hardcoded constant. This makes `direct/linux/elf` produce
+    /// `elf-x86_64` (or `elf-aarch64`) while `direct/macos/macho` keeps
+    /// `mach-o-arm64`.
+    ///
+    /// No allocation: all outputs are string literals selected by a switch
+    /// on (Arch, Os) × object format. The aarch64 arch renders as "arm64"
+    /// in Mach-O identity (matching the canonical triple), and "aarch64"
+    /// in ELF/COFF identity.
+    pub fn intermediate(self: BackendTarget) []const u8 {
+        if (std.mem.eql(u8, self.backend, "auto") or std.mem.eql(u8, self.backend, "direct")) {
+            return self.formatBackendIdentity();
+        }
+        if (std.mem.eql(u8, self.backend, "c")) return "generated-c";
+        if (std.mem.eql(u8, self.backend, "wasm")) {
+            return if (self.triple.os == .wasi) "wasm32-wasi" else "wasm";
+        }
+        return "unknown";
+    }
+
+    fn formatBackendIdentity(self: BackendTarget) []const u8 {
+        const arch = self.triple.arch;
+        return switch (self.triple.objectFormat()) {
+            .macho => switch (arch) {
+                .aarch64 => "mach-o-arm64",
+                .x86_64 => "mach-o-x86_64",
+                else => "mach-o-unknown",
+            },
+            .elf => switch (arch) {
+                .aarch64 => "elf-aarch64",
+                .x86_64 => "elf-x86_64",
+                else => "elf-unknown",
+            },
+            .coff => switch (arch) {
+                .aarch64 => "coff-aarch64",
+                .x86_64 => "coff-x86_64",
+                else => "coff-unknown",
+            },
+            .wasm => "wasm",
+            .unknown => "unknown",
+        };
+    }
+
+    /// Parse a target string (e.g. "x86_64-linux-gnu") into a BackendTarget
+    /// identity. Returns null if the string cannot be parsed.
+    pub fn parseTarget(backend: []const u8, target_str: []const u8) ?BackendTarget {
+        const resolved = resolveLegacyTarget(target_str) orelse parseStructuredTarget(target_str, .exe) orelse return null;
+        return .from(resolved.triple, backend);
+    }
+
+    pub fn from(triple: TargetTriple, backend: []const u8) BackendTarget {
+        return .{ .backend = backend, .triple = triple };
+    }
+};
+
 pub const ResolvedTarget = struct {
     triple: TargetTriple,
     emit: EmitKind,
@@ -344,7 +417,7 @@ pub fn writeArchitectureMatrixJson(w: *std.Io.Writer) !void {
     try w.writeAll("[");
     for (architecture_matrix, 0..) |cell, i| {
         if (i > 0) try w.writeAll(",");
-        try w.print("{{\"feature\":\"{s}\",\"target\":\"{s}\",\"backend\":\"{s}\",\"status\":\"{s}\"}}", .{
+        try w.print("{\"feature\":\"{s}\",\"target\":\"{s}\",\"backend\":\"{s}\",\"status\":\"{s}\"}", .{
             cell.feature_id,
             cell.target,
             cell.backend,
@@ -409,4 +482,38 @@ test "target_model: architecture matrix includes wasm decode row" {
         if (std.mem.eql(u8, cell.feature_id, "wasm_decode_hot")) found = true;
     }
     try std.testing.expect(found);
+}
+
+test "target_model: direct/linux/elf identity is distinct from direct/macos/macho" {
+    // x86_64-linux-gnu with direct backend: ELF, not Mach-O
+    const linux_triple = parseStructuredTarget("x86_64-linux-gnu", .obj).?.triple;
+    const linux_bt = BackendTarget.from(linux_triple, "direct");
+    try std.testing.expectEqual(ObjectFormat.elf, linux_triple.objectFormat());
+    try std.testing.expectEqualStrings("elf-x86_64", linux_bt.intermediate());
+
+    // aarch64-macos with direct backend: Mach-O
+    const macos_triple = parseStructuredTarget("aarch64-macos", .obj).?.triple;
+    const macos_bt = BackendTarget.from(macos_triple, "direct");
+    try std.testing.expectEqual(ObjectFormat.macho, macos_triple.objectFormat());
+    try std.testing.expectEqualStrings("mach-o-arm64", macos_bt.intermediate());
+
+    // The two identities must differ — direct/linux/elf != direct/macos/macho
+    try std.testing.expect(!std.mem.eql(u8, linux_bt.intermediate(), macos_bt.intermediate()));
+}
+
+test "target_model: aarch64-linux direct backend produces elf-aarch64 identity" {
+    const triple = parseStructuredTarget("aarch64-linux-gnu", .obj).?.triple;
+    const bt = BackendTarget.from(triple, "direct");
+    try std.testing.expectEqual(ObjectFormat.elf, triple.objectFormat());
+    try std.testing.expectEqualStrings("elf-aarch64", bt.intermediate());
+}
+
+test "target_model: BackendTarget.parseTarget resolves x86_64-linux-gnu" {
+    if (BackendTarget.parseTarget("direct", "x86_64-linux-gnu")) |bt| {
+        try std.testing.expectEqual(Arch.x86_64, bt.triple.arch);
+        try std.testing.expectEqual(Os.linux, bt.triple.os);
+        try std.testing.expectEqualStrings("elf-x86_64", bt.intermediate());
+    } else {
+        return error.ParseFailed;
+    }
 }

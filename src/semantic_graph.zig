@@ -1068,6 +1068,39 @@ pub const CallableLinkage = struct {
     symbol: []const u8,
 };
 
+/// THE CONCEPT A FILE IS THE DURABLE HOME OF — C0 `law.file.one`, ON THE GRAPH.
+///
+/// `law.file.one` says a file is the durable home of ONE semantic concept, and
+/// GAP-120 measured the hole: the graph could inventory paths but attached no
+/// concept identity, so a utility bucket and a cohesive concept were
+/// indistinguishable to every consumer. This fact is the identity, published
+/// from the persistent graph — never from a filename regex, which would
+/// reconstruct meaning from a spelling (`docs/spec/source.md` forbids by name).
+///
+/// The IDENTITY is the module's dotted home: the same fact `selfHome` answers
+/// for the root and `Node.foreign_home` answers for a reached partition. The
+/// three counts are the graph's own census of what that concept is made of —
+/// its relations, its descriptor shapes, and the applications resolved onto
+/// its relations — so a reader can answer "is this file one concept or an
+/// unrelated declaration bundle" from facts, not from the path's spelling.
+///
+/// ONE PRODUCER: `publishConceptIdentities`, run once at the end of checked
+/// lift, after every child and application fact exists. A manually assembled
+/// graph has NO row, and `conceptIdentity` refuses to synthesize one — the
+/// same rule `callableLinkage` follows (`law.fact.producer.one`): absence of a
+/// produced fact is not permission to reconstruct it from names.
+///
+/// `home` is BORROWED from the graph's own storage (`self.home` or the module
+/// node's `foreign_home`), exactly as `ReachedHome` borrows; nothing is copied
+/// and nothing here owns a deinit.
+pub const ConceptFact = struct {
+    module: id,
+    home: []const u8,
+    relation_count: u32,
+    shape_count: u32,
+    application_count: u32,
+};
+
 pub const SemanticGraph = struct {
     alloc: std.mem.Allocator,
     /// Coordinate assigned only by an owning `History`. The semantic entity
@@ -1241,6 +1274,12 @@ pub const SemanticGraph = struct {
     /// no linkage column; a checked graph may never reinterpret missing rows as
     /// permission to reconstruct them.
     callable_linkage_required: bool = false,
+    /// `law.file.one` — one row per module the lift witnessed, root first.
+    /// Produced by `publishConceptIdentities` at the end of checked lift; a
+    /// manually assembled graph has none, and consumers must read absence as
+    /// "not asked", never as a licence to derive a concept from a path.
+    concept_facts: std.ArrayListUnmanaged(ConceptFact) = .empty,
+    concept_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
     pub fn init(alloc: std.mem.Allocator) SemanticGraph {
         return .{ .alloc = alloc, .launch_worlds = subject_home.injectedWorlds() };
     }
@@ -1303,6 +1342,8 @@ pub const SemanticGraph = struct {
         for (self.callable_linkages.items) |fact| self.alloc.free(fact.symbol);
         self.callable_linkages.deinit(self.alloc);
         self.callable_linkage_rows.deinit(self.alloc);
+        self.concept_facts.deinit(self.alloc);
+        self.concept_rows.deinit(self.alloc);
         if (self.home) |h| self.alloc.free(h);
     }
 
@@ -2910,6 +2951,88 @@ pub const SemanticGraph = struct {
 
     pub fn requiresCallableLinkage(self: *const SemanticGraph) bool {
         return self.callable_linkage_required;
+    }
+
+    /// `law.file.one` — THE CONCEPT IDENTITY OF A FILE, as a produced fact.
+    ///
+    /// Answered only from the concept column `publishConceptIdentities`
+    /// produced. A graph lifted without the checked pipeline carries no rows,
+    /// and `null` here must never be repaired by deriving a concept from the
+    /// file path — that is the filename-regex shape GAP-120 forbids.
+    pub fn conceptIdentity(self: *const SemanticGraph, module: id) ?*const ConceptFact {
+        const row = self.concept_rows.get(module) orelse return null;
+        if (row >= self.concept_facts.items.len) return null;
+        const fact = &self.concept_facts.items[row];
+        if (fact.module != module) return null;
+        const node = self.get(module) orelse return null;
+        if (node.kind != .module) return null;
+        return fact;
+    }
+
+    /// THE ONE PRODUCER of `ConceptFact` (`law.fact.producer.one`).
+    ///
+    /// Runs at the END of checked lift, after every child, application and
+    /// world fact exists, so the counts are answers over the finished graph
+    /// rather than a snapshot taken mid-lift. One row per `.module` node the
+    /// lift witnessed: the root module and every reached foreign partition.
+    ///
+    /// THE IDENTITY IS THE HOME, AND THE HOME COMES FROM THE NODE. The root's
+    /// home is `self.home`; a reached partition's is its own `foreign_home` —
+    /// the same derivation `homeOfPath` made once for the definer. When the
+    /// project root was undetectable the home never resolved, and a file with
+    /// no home has no durable identity to publish: it is skipped, and the
+    /// absence is observable (`conceptIdentity` answers null), which is the
+    /// honest answer and not a name-keyed guess.
+    ///
+    /// THE COUNTS ARE THE CONCEPT'S COMPOSITION, from the graph's own
+    /// adjacency: relations declared inside the module, descriptor shapes it
+    /// owns, and applications RESOLVED ONTO its relations (the `.binding` edge
+    /// `publishApplication` made). They are the facts a reader of
+    /// `law.file.one` needs to tell "one concept" from "a utility bucket":
+    /// the second is exactly the file whose relations share no demand with
+    /// each other, which these counts expose to the consumer that adjudicates
+    /// the split. This producer does NOT adjudicate; it publishes.
+    fn publishConceptIdentities(self: *SemanticGraph) !void {
+        try self.requireOpen();
+        const module_root = self.module_root orelse return;
+        for (self.nodes.items, 0..) |node, node_index| {
+            if (node.kind != .module) continue;
+            const module = std.math.cast(id, node_index) orelse
+                return error.GraphCoordinateExhausted;
+            if (module != module_root and node.foreign_home == null) continue;
+            const home = node.foreign_home orelse self.home orelse continue;
+            var relation_count: u32 = 0;
+            var shape_count: u32 = 0;
+            for (self.nested.of(module)) |child| {
+                const child_node = self.get(child) orelse continue;
+                switch (child_node.kind) {
+                    .func, .relation => relation_count += 1,
+                    .table_shape, .enum_shape => shape_count += 1,
+                    else => {},
+                }
+            }
+            var application_count: u32 = 0;
+            for (self.application_facts.items) |fact| {
+                if (self.get(fact.application) == null) continue;
+                const target = switch (fact.target) {
+                    .one => |entity| entity,
+                    .unknown, .none => continue,
+                };
+                if (self.homeOf(target)) |target_home| {
+                    if (target_home == module) application_count += 1;
+                }
+            }
+            const row = try coordinateForLength(self.concept_facts.items.len);
+            try self.concept_facts.append(self.alloc, .{
+                .module = module,
+                .home = home,
+                .relation_count = relation_count,
+                .shape_count = shape_count,
+                .application_count = application_count,
+            });
+            errdefer _ = self.concept_facts.pop();
+            try self.concept_rows.putNoClobber(self.alloc, module, row);
+        }
     }
 
     /// `owns_process_symbol` is `ast.Module.sourceProcessEntry` already asked,
@@ -6425,6 +6548,9 @@ pub const SemanticGraph = struct {
         // does. Running it inside `liftModuleCalls` would have made the sweep
         // the owner of every checked operand literal instead.
         try self.liftLiteralFacts(file, module, &mod.body, true);
+        // `law.file.one`, LAST — after every child, application and world fact
+        // exists, so the concept counts are answers over the finished graph.
+        try self.publishConceptIdentities();
         return module;
     }
 
@@ -8328,6 +8454,44 @@ pub const SemanticGraph = struct {
         try buf.append(alloc, ']');
     }
 
+    /// `law.file.one` — the concept column, projected. Every row is re-read
+    /// through `conceptIdentity` before it is written, so a row whose key, id,
+    /// kind, or home no longer verifies refuses the export instead of
+    /// publishing an identity the graph no longer backs. Same shape as
+    /// `appendCallableLinkagesJson` above.
+    fn appendConceptsJson(
+        self: *const SemanticGraph,
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+    ) !void {
+        try buf.appendSlice(alloc, ",\"concepts\":[");
+        for (self.concept_facts.items, 0..) |fact, i| {
+            const published = self.conceptIdentity(fact.module) orelse
+                return error.InvalidConceptFact;
+            if (published.module != fact.module or
+                published.home.ptr != fact.home.ptr or
+                published.relation_count != fact.relation_count or
+                published.shape_count != fact.shape_count or
+                published.application_count != fact.application_count)
+            {
+                return error.InvalidConceptFact;
+            }
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"module\":");
+            try appendJsonInt(buf, alloc, fact.module);
+            try buf.appendSlice(alloc, ",\"home\":\"");
+            try jsonEscapeAppend(buf, alloc, fact.home);
+            try buf.appendSlice(alloc, "\",\"relations\":");
+            try appendJsonInt(buf, alloc, fact.relation_count);
+            try buf.appendSlice(alloc, ",\"shapes\":");
+            try appendJsonInt(buf, alloc, fact.shape_count);
+            try buf.appendSlice(alloc, ",\"applications\":");
+            try appendJsonInt(buf, alloc, fact.application_count);
+            try buf.append(alloc, '}');
+        }
+        try buf.append(alloc, ']');
+    }
+
     fn appendMembersJson(
         self: *const SemanticGraph,
         buf: *std.ArrayListUnmanaged(u8),
@@ -8417,7 +8581,14 @@ pub const SemanticGraph = struct {
         // `_skip_ws` advances) projected `effect: none` and a reader had no
         // way to derive the observation. The read rows are raw; the
         // observation is the join against `mutations`. gaps/GAP-229.md.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":15,\"file\":\"");
+        //
+        // version 16: `concepts`. Version 15 published the module PATH but no
+        // concept identity (`law.file.one`), so a downstream reader could not
+        // tell a durable one-concept home from a utility bucket without
+        // guessing from the filename — exactly the spelling-derived meaning
+        // the graph exists to stop. gaps/GAP-120.md. A v15 reader pointed at a
+        // v16 export sees a key it did not expect, and that is the point.
+        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":16,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         switch (self.root_source_law_edition) {
@@ -8455,6 +8626,17 @@ pub const SemanticGraph = struct {
             if (node.scope) |scope| {
                 try out.appendSlice(alloc, ",\"scope\":");
                 try appendJsonInt(out, alloc, scope);
+            }
+            // `law.file.one` — a module node carrying a produced concept row
+            // projects it on the node face, so a consumer reading `nodes[]`
+            // answers the same identity `concepts[]` carries. Absence of the
+            // key is the honest "not asked"; it is never a path-derived guess.
+            if (node.kind == .module) {
+                if (self.conceptIdentity(entity)) |concept| {
+                    try out.appendSlice(alloc, ",\"concept\":\"");
+                    try jsonEscapeAppend(out, alloc, concept.home);
+                    try out.append(alloc, '"');
+                }
             }
             if (self.hasTableDescriptorFacts(entity)) {
                 try out.appendSlice(alloc, ",\"home\":");
@@ -8612,6 +8794,7 @@ pub const SemanticGraph = struct {
         }
         try out.append(alloc, ']');
         try self.appendCallableLinkagesJson(out, alloc);
+        try self.appendConceptsJson(out, alloc);
         try out.appendSlice(alloc, ",\"unresolved_applications\":[");
         var first_unresolved = true;
         var candidates = self.application_candidates.iterator(.{});
@@ -9379,7 +9562,7 @@ test "semantic_graph: checked callable linkage is one id keyed fact" {
     try graph.writeJson(alloc, "linkage.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 15), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 16), parsed.value.object.get("version").?.integer);
     const exported = parsed.value.object.get("callable_linkages").?.array.items;
     try std.testing.expectEqual(@as(usize, 4), exported.len);
     try std.testing.expectEqual(@as(i64, external), exported[3].object.get("callable").?.integer);
@@ -9391,6 +9574,96 @@ test "semantic_graph: checked callable linkage is one id keyed fact" {
     _ = graph.callable_linkage_rows.remove(ordinary);
     try std.testing.expect(graph.callableLinkage(ordinary) == null);
     try std.testing.expect(graph.requiresCallableLinkage());
+}
+
+test "semantic_graph: checked lift publishes a durable concept identity per module" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\step: i64 = (n: i64)
+        \\    n + 1
+        \\main: i64 = ()
+        \\    step(2)
+    ;
+    var lexer = Lexer.init(source, "concept.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    checked.source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const root = try graph.liftModuleWithCheckedCalls(&module, &checked, "concept.id");
+
+    // THE FACT EXISTS, AND ITS IDENTITY IS THE HOME — not the file spelling.
+    const concept = graph.conceptIdentity(root) orelse return error.TestExpectedEqual;
+    try std.testing.expect(concept.module == root);
+    if (graph.selfHome()) |home| {
+        try std.testing.expectEqualStrings(home, concept.home);
+    } else {
+        // A bare filename outside any project root never resolved a home; the
+        // producer must then publish NO identity rather than a path-shaped one.
+        return error.TestUnexpectedResult;
+    }
+
+    // THE COUNTS ARE THE GRAPH'S OWN CENSUS: one relation (`step` — `main` is
+    // the process entry and is also a declared relation), zero shapes, and the
+    // one application resolved onto it.
+    try std.testing.expectEqual(@as(u32, 2), concept.relation_count);
+    try std.testing.expectEqual(@as(u32, 0), concept.shape_count);
+    try std.testing.expectEqual(@as(u32, 1), concept.application_count);
+
+    // THE EXPORT CARRIES THE SAME FACT twice — `concepts[]` and the module
+    // node face — so a reader of either sees the identical identity.
+    var json: std.ArrayListUnmanaged(u8) = .empty;
+    defer json.deinit(alloc);
+    try graph.writeJson(alloc, "concept.id", &json, null);
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
+    defer parsed.deinit();
+    const rows = parsed.value.object.get("concepts").?.array.items;
+    try std.testing.expectEqual(@as(usize, 1), rows.len);
+    try std.testing.expectEqualStrings(concept.home, rows[0].object.get("home").?.string);
+    try std.testing.expectEqual(@as(u32, concept.relation_count), @as(u32, @intCast(rows[0].object.get("relations").?.integer)));
+    var node_concepts: usize = 0;
+    for (parsed.value.object.get("nodes").?.array.items) |node| {
+        if (node.object.get("concept")) |face| {
+            node_concepts += 1;
+            try std.testing.expectEqualStrings(concept.home, face.string);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), node_concepts);
+
+    // DAMAGING THE ROW INDEX DOES NOT RECOVER AN IDENTITY FROM THE PATH.
+    _ = graph.concept_rows.remove(root);
+    try std.testing.expect(graph.conceptIdentity(root) == null);
+}
+
+test "semantic_graph: an unchecked graph publishes no concept identity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const module = try graph.addNode(.{
+        .kind = .module,
+        .span = .{ .file = "hand-built.id", .start = 0, .end = 0 },
+        .name = "hand-built.id",
+    });
+    try std.testing.expect(graph.conceptIdentity(module) == null);
+    var json: std.ArrayListUnmanaged(u8) = .empty;
+    defer json.deinit(alloc);
+    try graph.writeJson(alloc, "hand-built.id", &json, null);
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqual(@as(usize, 0), parsed.value.object.get("concepts").?.array.items.len);
 }
 
 test "semantic_graph: nested positional access owns aggregate member and result packs" {
@@ -9467,7 +9740,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 15), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 16), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
     try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
@@ -9976,7 +10249,7 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Color\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Red\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"storage_class\"") == null);
-    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":15") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":16") != null);
     try std.testing.expectEqualStrings(
         "unknown",
         parsed.value.object.get("root_source_law").?.object.get("card").?.string,
@@ -10902,7 +11175,7 @@ test "semantic_graph: module mutation keeps binding identity and local shadow" {
     var json: std.ArrayListUnmanaged(u8) = .empty;
     defer json.deinit(alloc);
     try graph.writeJson(alloc, "module-mutation.id", &json, null);
-    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"version\":15") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"version\":16") != null);
     try std.testing.expect(std.mem.indexOf(u8, json.items, "\"mutations\":[{") != null);
 
     // THE CARDINALITY, AND THE THREE STATES THAT MUST NOT COLLAPSE. The
