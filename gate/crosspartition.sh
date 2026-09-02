@@ -66,6 +66,14 @@
 #      instead of reporting a cross-partition finding it did not earn. This is
 #      what stops "refuse everything" from being a pass.
 #
+#      AND "NOT MEASURED" IS DECIDED BEFORE IT, NOT BY IT. Whether this host
+#      realizes the executable kind at all is `gate/realization/direct.sh`'s
+#      fact, and that library answers `no` (DNB004 — a host limit) apart from
+#      `broken` (failed for another reason — a defect). Control P used to
+#      collapse both into exit 3, so a direct backend that miscompiles a
+#      three-line program was reported as an unmeasurable host. The
+#      classification runs first; control P's own failure is now a FAIL.
+#
 #   N1 NEGATIVE, THE CHECKER SEES A WRONG ANSWER. The two-partition subject is
 #      materialized with the reached partition DAMAGED — `x * 3` where the
 #      expected answer wants `x * 2` — and the SAME `run_subject` used for real
@@ -270,6 +278,29 @@ materialize() {
 }
 SHAPES='duo trio fan text'
 
+# ── quoting a compiler log into a CONVICTION ───────────────────────────────
+# `gate/all.sh` reads a failing gate's log and counts it HOST-BOUND rather than
+# a law violation when that log names the unsupported-target refusal identity.
+# That is the RIGHT answer for every NOT MEASURED path here, and the wrong one
+# for every FAIL: a conviction that quotes a compiler log naming that identity —
+# or that names it in its own prose — is filed as a host limit and vanishes from
+# the law total. A gate that cannot convict is the fail-open this whole file is
+# about, one layer up.
+#
+# MEASURED, on aarch64-linux, by feeding this file's own output to that exact
+# grep: the `broken` conviction above matched it, and so did control P2's FAIL
+# sentence, which carried the token in prose on the DYLIB path — the half of
+# GAP-232 that needs macOS to execute and would therefore have been laundered
+# the first time it ever convicted.
+#
+# THE SUBSTITUTION IS IDENTITY-PRESERVING, not a redaction: the code and the
+# error it maps are one fact — `gate/realization/direct.sh` documents the pair —
+# so a reader learns exactly as much from the source-level name, and the
+# enumerator stops reading a defect as a host.
+log_tail() {
+    tail -3 "$1" | tr '\n' ' ' | sed 's/DNB004/error.UnsupportedTarget/g'
+}
+
 # ── one subject, measured ──────────────────────────────────────────────────
 # Compiles `$1/main.id` with `--backend=direct`, runs it, and requires the exit
 # status to equal `$2`. `$3` is a comma-separated pin list read against the
@@ -287,7 +318,7 @@ run_subject() {
     if ! ( CDPATH='' cd -- "$dir" && "$IDOL" compile --backend=direct main.id -o prog ) \
         >"$work/compile.log" 2>&1
     then
-        printf 'compile failed: %s' "$(tail -3 "$work/compile.log" | tr '\n' ' ')" >"$work/why"
+        printf 'compile failed: %s' "$(log_tail "$work/compile.log")" >"$work/why"
         return 1
     fi
     if [ ! -x "$dir/prog" ]; then
@@ -332,16 +363,63 @@ run_subject() {
     return 0
 }
 
+# ══ THE EXECUTABLE KIND IS CLASSIFIED BEFORE CONTROL P IS READ ═════════════
+# `gate/realization/direct.sh` is the ONE PRODUCER of "can this host realize a
+# direct-native artifact", and it answers four ways, not two: `yes`, `no`
+# (refused BY NAME with DNB004 — a host limit), `unbuilt`, and `broken` (failed
+# for some OTHER reason — a defect that must not wear a host limit's excuse).
+# Control P below was written against a two-way world: ANY failure printed NOT
+# MEASURED and exited 3. So a direct backend that is present and WRONG — one
+# that miscompiles `main: i64 = ()\n 7`, or reports success and writes no
+# executable — was reported as an unmeasurable host, which is the same fail-open
+# this file's own P2 section condemns in one sentence: "a defect must not wear a
+# host limit's excuse".
+#
+# IT IS ALSO THE SECOND-PRODUCER CLASS THIS GATE EXISTS FOR. `main.directLinkLine`
+# had to become one producer because a fact with two can be repaired in one of
+# them; the DNB004 identity read is that same fact, and this gate was reading it
+# in its own words while the library that owns it sat unsourced.
+#
+# THE PROBE ASKS THE COMPILER AND NOT `uname`, so this does not hardcode
+# Darwin/arm64 and does not go stale the day another host realizes natively.
+. "$root/gate/realization/direct.sh"
+direct_native_probe "$IDOL"
+case ${IDOL_DIRECT_NATIVE:-} in
+    yes) ;;
+    no)
+        direct_native_note 'every subject and control here (each needs a direct-native artifact that links and answers)'
+        exit 3
+        ;;
+    unbuilt)
+        printf 'crosspartition: NOT MEASURED — no compiler to ask: %s\n' "$IDOL" >&2
+        exit 3
+        ;;
+    *)
+        # `broken`, or a classification this file does not know. Either way it is
+        # NOT a host limit, and exiting 3 here is how a real defect would have
+        # been spelled as an excuse.
+        printf 'crosspartition: FAIL — the direct backend failed on a trivial program and NOT by name, so this is a defect and not a host limit: %s\n' \
+            "${IDOL_DIRECT_NATIVE_WHY:-no reason recorded}" >&2
+        printf 'crosspartition:   a refusal by name (the identity `directDiagnostic(error.UnsupportedTarget)` emits) is a host limit and exits 3; anything else is the compiler under test.\n' >&2
+        exit 1
+        ;;
+esac
+
 # ══ CONTROL P — a single partition compiles, links and answers ═════════════
+# ITS FAILURE IS NOW A FAIL, because the classification above already answered
+# the question that used to make it a skip. The probe established that this host
+# realizes an executable and writes a non-empty one; what is left for control P
+# to add is the ANSWER, and a three-line single-partition program that links here
+# and does not answer 7 is the compiler under test, not the host.
 materialize solo "$work/ctl.solo" || {
     printf 'crosspartition: NOT MEASURED — cannot write the positive control\n' >&2
     exit 3
 }
 if ! run_subject "$work/ctl.solo" 7 ''; then
-    printf 'crosspartition control P: NOT MEASURED — a single-partition program does not compile and answer here: %s\n' \
+    printf 'crosspartition control P: FAIL — a single-partition program does not compile and answer here, on a host that realized the trivial direct-native probe: %s\n' \
         "$(cat "$work/why")" >&2
-    printf 'crosspartition:   nothing this gate reports about cross-partition reach would be earned.\n' >&2
-    exit 3
+    printf 'crosspartition:   nothing this gate reports about cross-partition reach would be earned, and this is a defect and not a host limit.\n' >&2
+    exit 1
 fi
 
 # ══ CONTROL N1 — the checker sees a wrong answer ═══════════════════════════
@@ -434,13 +512,18 @@ then
     # measured on aarch64-linux it names the target `native-dylib`, which is why
     # the two kinds cannot share one probe.
     if grep -q 'DNB004' "$work/compile.log"; then
+        # RAW TAIL, DELIBERATELY, and the only one left in this file. This branch
+        # is a NOT MEASURED, so `gate/all.sh` reading the identity out of the log
+        # and filing this run as host-bound is the CORRECT outcome. `log_tail` is
+        # for convictions; routing this line through it would hide the very fact
+        # that makes the classification right.
         printf 'crosspartition control P2: NOT MEASURED — this host emits no shared library, though control P got an executable: %s\n' \
             "$(tail -3 "$work/compile.log" | tr '\n' ' ')" >&2
         printf 'crosspartition:   the shared kind is its own realization (native-dylib, linked with -dynamiclib); nothing control N4 could say about main.directLinkLine would be earned here.\n' >&2
         exit 3
     fi
-    printf 'crosspartition control P2: FAIL — the shared compile of a module that reaches nothing failed, and not with DNB004: %s\n' \
-        "$(tail -3 "$work/compile.log" | tr '\n' ' ')" >&2
+    printf 'crosspartition control P2: FAIL — the shared compile of a module that reaches nothing failed, and not by name: %s\n' \
+        "$(log_tail "$work/compile.log")" >&2
     printf 'crosspartition:   control P realized an executable here, so this is a defect and not a host limit.\n' >&2
     exit 1
 fi
@@ -475,7 +558,7 @@ if ! ( CDPATH='' cd -- "$work/ctl.shared" && "$IDOL" compile --backend=direct --
     >"$work/compile.log" 2>&1
 then
     printf 'crosspartition control N4: FAIL — a shared library does not link over what it reaches, on a host where control P2 linked one that reaches nothing: %s\n' \
-        "$(tail -3 "$work/compile.log" | tr '\n' ' ')" >&2
+        "$(log_tail "$work/compile.log")" >&2
     printf 'crosspartition:   the shared link line is not coming from main.directLinkLine.\n' >&2
     exit 1
 fi
