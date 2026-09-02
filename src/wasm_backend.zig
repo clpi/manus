@@ -3798,6 +3798,158 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
     return out.items.toOwnedSlice(alloc);
 }
 
+fn runTestSourceWasm(source: []const u8) !u8 {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const lowered = try dnir_lower.lowerTestSourceWithGraph(
+        alloc,
+        source,
+        "wasm-branch-value.id",
+        &graph,
+    );
+    defer dnir.deinitModule(alloc, lowered);
+    const entry_name = for (lowered.functions) |function| {
+        if (function.params.len == 0) break function.name;
+    } else return error.TestExpectedEqual;
+
+    var diagnostic: Diagnostic = .{};
+    const bytes = try emitFromDnir(alloc, lowered, entry_name, &diagnostic);
+    defer alloc.free(bytes);
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(std.testing.io, .{
+        .sub_path = "branch.wasm",
+        .data = bytes,
+    });
+    const result = std.process.run(std.testing.allocator, std.testing.io, .{
+        .argv = &.{ "wasmtime", "run", "branch.wasm" },
+        .cwd = .{ .dir = tmp.dir },
+    }) catch |err| switch (err) {
+        error.FileNotFound => return error.SkipZigTest,
+        else => return err,
+    };
+    defer std.testing.allocator.free(result.stdout);
+    defer std.testing.allocator.free(result.stderr);
+    return switch (result.term) {
+        .exited => |status| status,
+        else => error.TestUnexpectedResult,
+    };
+}
+
+test "wasm backend preserves values from multi-statement conditional arms" {
+    const rows = [_]struct {
+        source: []const u8,
+        want: u8,
+    }{
+        .{
+            .source =
+            \\f: i64 = (n: i64)
+            \\    if n < 2
+            \\        0
+            \\    else
+            \\        answer = 7
+            \\        answer
+            \\main: i64 = ()
+            \\    f(11)
+            ,
+            .want = 7,
+        },
+        .{
+            .source =
+            \\f: i64 = (n: i64)
+            \\    if n < 2
+            \\        0
+            \\    else
+            \\        answer = 7
+            \\        answer + 0
+            \\main: i64 = ()
+            \\    f(11)
+            ,
+            .want = 7,
+        },
+        .{
+            .source =
+            \\f: i64 = (n: i64)
+            \\    if n < 2
+            \\        0
+            \\    else
+            \\        a = 1
+            \\        b = 6
+            \\        a + b
+            \\main: i64 = ()
+            \\    f(11)
+            ,
+            .want = 7,
+        },
+        .{
+            .source =
+            \\f: i64 = (n: i64)
+            \\    if n > 0
+            \\        answer = 7
+            \\        answer
+            \\    else
+            \\        0
+            \\main: i64 = ()
+            \\    f(11)
+            ,
+            .want = 7,
+        },
+        .{
+            .source =
+            \\f: i64 = (n: i64)
+            \\    if n > 0
+            \\        7
+            \\    else
+            \\        answer = 9
+            \\        answer
+            \\main: i64 = ()
+            \\    f(0 - 1)
+            ,
+            .want = 9,
+        },
+    };
+
+    for (rows) |row| {
+        try std.testing.expectEqual(row.want, try runTestSourceWasm(row.source));
+    }
+}
+
+test "wasm backend density sieve observes its multi-statement prime result" {
+    const source =
+        \\prime: i64 = (n: i64)
+        \\    if n < 2
+        \\        0
+        \\    else if n % 2 == 0
+        \\        if n == 2
+        \\            1
+        \\        else
+        \\            0
+        \\    else
+        \\        d = 3
+        \\        answer = 1
+        \\        while d * d <= n
+        \\            if n % d == 0
+        \\                answer = 0
+        \\                d = n
+        \\            d += 2
+        \\        answer
+        \\main: i64 = ()
+        \\    count = 0
+        \\    n = 2
+        \\    while n < 30
+        \\        if prime(n) == 1
+        \\            count += 1
+        \\        n += 1
+        \\    count
+    ;
+    try std.testing.expectEqual(@as(u8, 10), try runTestSourceWasm(source));
+}
+
 test "wasm backend consumes the DNIR global initializer at its storage word" {
     const testing = std.testing;
     const globals = [_]dnir.Global{
