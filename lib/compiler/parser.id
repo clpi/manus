@@ -635,8 +635,8 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # exclusive name coordinate.
 # Bit 8 carries assignment-body recognition, bits 9..12 carry the attributed
 # declaration face, and bits 13..63 carry the primary face: one selects a
-# closure, two selects an integer, while any value at `(` is the exclusive
-# matching-parenthesis boundary.
+# closure, two selects an integer, three selects a float, while any value at
+# `(` is the exclusive matching-parenthesis boundary.
 # Capacity refusal precedes every mutation.
 event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
     if count < 0 or capacity < 0 or count > capacity / 2
@@ -837,6 +837,8 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             delimiter = 1
         elseif kind == token.kindintlit
             delimiter = 2
+        elseif kind == token.kindfloatlit
+            delimiter = 3
         elseif kind == token.kindlparen
             depth = 1
             probe = index + 1

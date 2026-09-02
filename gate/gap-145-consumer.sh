@@ -442,6 +442,22 @@ if [ "$integer_arms" -ne 0 ]; then
     bad "parse_simple_expr retained $integer_arms .int_lit host arm(s)"
 fi
 
+# Floating expression-primary recognition shares the primary lane at value
+# three. The owner literal and quoted facts separate it from the matching
+# delimiter coordinate; Zig materializes the floating value without a residual
+# `.float_lit` primary switch arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindfloatlit' \
+    'event lost the floating primary face'
+has "$PARSER" 'fn currentParserFloat(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the floating primary consumer'
+has "$PARSER" 'if (try self.currentParserFloat()) {' \
+    'parse_simple_expr bypasses the settled floating face'
+float_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.float_lit => ' || true)
+examined=$((examined + 1))
+if [ "$float_arms" -ne 0 ]; then
+    bad "parse_simple_expr retained $float_arms .float_lit host arm(s)"
+fi
+
 # The expression-group primary consumes parser.id's existing exact matching
 # delimiter boundary. A nonzero boundary is produced only at `(` and carries
 # the coordinate after its matching close. Zig no longer owns a `.lparen`
@@ -1398,7 +1414,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=7' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=8' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'

@@ -450,6 +450,12 @@ pub const Parser = struct {
             !try self.currentParserQuoted();
     }
 
+    fn currentParserFloat(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 3 and
+            try self.currentParserLiteral() and
+            !try self.currentParserQuoted();
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6089,6 +6095,10 @@ pub const Parser = struct {
             _ = try self.adv();
             return self.new_expr(.{ .int_lit = .{ .loc = tok.loc, .val = tok.int_val } });
         }
+        if (try self.currentParserFloat()) {
+            _ = try self.adv();
+            return self.new_expr(.{ .float_lit = .{ .loc = tok.loc, .val = tok.float_val } });
+        }
         if (try self.currentParserExpressionGroup()) {
             if (try self.starts_parenthesized_func_expr()) {
                 const l = (try self.pk()).loc;
@@ -6114,10 +6124,6 @@ pub const Parser = struct {
             return e;
         }
         return switch (tok.kind) {
-            .float_lit => blk: {
-                _ = try self.adv();
-                break :blk self.new_expr(.{ .float_lit = .{ .loc = tok.loc, .val = tok.float_val } });
-            },
             .compat_text_lit => blk: {
                 _ = try self.adv();
                 var protected: std.ArrayList(bool) = .empty;
