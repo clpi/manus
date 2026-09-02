@@ -412,7 +412,7 @@ has "$PARSER" 'fn currentParserTypeGeneric(self: *Parser) ParseError!bool {' \
     'parser.zig lost the generic type-primary consumer'
 has "$PARSER" 'if (try self.currentParserTypeGeneric()) {' \
     'parse_type_primary bypasses the settled generic face'
-has "$ROOT/lib/compiler/parser.id" '(recordface << 12)' \
+has "$ROOT/lib/compiler/parser.id" '(braceface << 12)' \
     'event lost the record type-primary face'
 has "$PARSER" 'fn currentParserTypeRecord(self: *Parser) ParseError!bool {' \
     'parser.zig lost the record type-primary consumer'
@@ -423,6 +423,37 @@ record_arms=$(grep -cF '.lbrace => {' "$PARSER" || true)
 examined=$((examined + 1))
 if [ "$generic_arms" -ne 0 ] || [ "$record_arms" -ne 1 ]; then
     bad "type-primary host arms drifted: generic=$generic_arms record-total=$record_arms"
+fi
+
+# Expression table-primary and inline-record type-primary consume the exact
+# brace face. The full declaration nibble distinguishes it from the `@` face
+# that also sets bit 12; testing that bit alone is the retracted, unsound form.
+has "$ROOT/lib/compiler/parser.id" 'braceface = 1' \
+    'event lost the brace primary face'
+has "$PARSER" 'fn currentParserTable(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the table primary consumer'
+brace_consumers=$(grep -cF 'currentParserDecision()) >> 9) & 0xF) == 8' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$brace_consumers" -ne 2 ]; then
+    bad "brace consumers must distinguish the exact face from @ (found=$brace_consumers)"
+fi
+has "$PARSER" 'if (try self.currentParserTable()) return self.parse_table();' \
+    'parse_simple_expr bypasses the settled table face'
+table_arms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.lbrace => ' || true)
+examined=$((examined + 1))
+if [ "$table_arms" -ne 0 ]; then
+    bad "parse_simple_expr retained $table_arms .lbrace host arm(s)"
+fi
+
+braceprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate brace scratch' >&2; exit 2; }
+printf '%s\n' 'return ((decision >> 12) & 1) != 0;' >"$braceprobe/old.zig"
+printf '%s\n' 'return ((decision >> 9) & 0xF) == 8;' >"$braceprobe/new.zig"
+brace_old=$(grep -cF '>> 12) & 1' "$braceprobe/old.zig")
+brace_new=$(grep -cF '>> 9) & 0xF) == 8' "$braceprobe/new.zig")
+rm -rf -- "$braceprobe"
+examined=$((examined + 1))
+if [ "$brace_old" -ne 1 ] || [ "$brace_new" -ne 1 ]; then
+    bad "the exact-brace detector is broken: old=$brace_old new=$brace_new"
 fi
 
 # Integer type-primary and expression-primary recognition share the primary

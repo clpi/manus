@@ -441,7 +441,11 @@ pub const Parser = struct {
     }
 
     fn currentParserTypeRecord(self: *Parser) ParseError!bool {
-        return (((try self.currentParserDecision()) >> 12) & 1) != 0;
+        return (((try self.currentParserDecision()) >> 9) & 0xF) == 8;
+    }
+
+    fn currentParserTable(self: *Parser) ParseError!bool {
+        return (((try self.currentParserDecision()) >> 9) & 0xF) == 8;
     }
 
     fn currentParserInteger(self: *Parser) ParseError!bool {
@@ -6107,6 +6111,7 @@ pub const Parser = struct {
             _ = try self.adv();
             return self.new_expr(.{ .nil = tok.loc });
         }
+        if (try self.currentParserTable()) return self.parse_table();
         if (try self.currentParserExpressionGroup()) {
             if (try self.starts_parenthesized_func_expr()) {
                 const l = (try self.pk()).loc;
@@ -6214,7 +6219,6 @@ pub const Parser = struct {
                 }
                 break :blk self.parse_macro_call_expr();
             },
-            .lbrace => self.parse_table(),
             .kw_if => self.parse_if_expr(),
             .kw_match => self.parse_match_expr(),
             .dot => self.parse_field_projection(),
