@@ -543,9 +543,28 @@ pub const ResolvedType = union(enum) {
         };
     }
 
-    /// Project descriptor compatibility from the two fact sets. Null means at
-    /// least one descriptor is not numeric; it never stands for rejection.
+    /// Project descriptor compatibility from the two fact sets. Null means this
+    /// projection has no answer — either descriptor is not numeric, or the
+    /// question is not the numeric facts' to answer. It never stands for
+    /// rejection; the caller owns the default.
+    ///
+    /// law.nominal (§46) — A NOMINAL DESCRIPTOR HAS NO NUMERIC FACTS TO OFFER
+    /// *THIS* QUESTION. `numericFacts` delegates `feet` to the double behind it
+    /// deliberately, because every PHYSICAL query — `narrowFit`, `is_float`,
+    /// ARC, rendering — is a question about the representation. Acceptance is
+    /// not one of those: it is a question about IDENTITY, and answering it from
+    /// the representation is precisely the shortcut that makes `feet`
+    /// decorative.
+    ///
+    /// The guard lives HERE, beside the derivation, rather than at each
+    /// consumer — because a consumer has to REMEMBER it and one already forgot.
+    /// `sema` refused `d: feet = x` at the top level and then admitted
+    /// `d: ?feet = x` and `d: result[feet, str] = x`, since neither `?feet` nor
+    /// `result[feet, str]` is itself nominal and the guard only ever looked at
+    /// the outer descriptor. One derivation, asked by every wrapper, is the
+    /// only shape of this rule that a new wrapper cannot reopen.
     pub fn numericAcceptsDescriptor(self: ResolvedType, supplied: ResolvedType) ?bool {
+        if (nominalReprOf(self) != null or nominalReprOf(supplied) != null) return null;
         const demand = self.numericFacts() orelse return null;
         const value = supplied.numericFacts() orelse return null;
         return demand.acceptsDescriptor(value);
@@ -2299,9 +2318,33 @@ test "numeric descriptor facts compose domain width sign format and range" {
     try testing.expect(float.acceptsDescriptor((ResolvedType{ .f32 = {} }).numericFacts().?));
     try testing.expect(!signed.acceptsDescriptor(float));
     try testing.expect(!float.acceptsDescriptor(signed));
+
     try testing.expectEqual(true, signed_type.numericAcceptsDescriptor(.u64).?);
     try testing.expectEqual(false, signed_type.numericAcceptsDescriptor(.f64).?);
     try testing.expect(signed_type.numericAcceptsDescriptor(.str) == null);
+}
+
+test "types: a nominal descriptor delegates its physics and withholds its acceptance" {
+    // NOT AN ARENA — `declareNominal` writes a process-global map keyed by text
+    // that outlives this test, so an arena leaves it holding a freed store.
+    const alloc = std.heap.page_allocator;
+    try declareNominal(alloc, "league", .f64);
+    const league = nominalNamed("league").?;
+
+    // PHYSICAL queries delegate, and must keep delegating: this is what lets
+    // `d:floor()` resolve and what `narrowFit`/ARC/rendering all read.
+    try testing.expectEqual(NumericFacts.Domain.real, league.numericFacts().?.domain);
+    try testing.expect(league.is_float());
+
+    // ACCEPTANCE does not. Null is "not this projection's question", which is
+    // the answer the caller turns into a refusal — in both directions, and
+    // through any wrapper that composes this one derivation.
+    try testing.expect(league.numericAcceptsDescriptor(.f64) == null);
+    try testing.expect((ResolvedType{ .f64 = {} }).numericAcceptsDescriptor(league) == null);
+    try testing.expect(league.numericAcceptsDescriptor(league) == null);
+
+    // Ordinary descriptors are untouched by the guard.
+    try testing.expectEqual(true, (ResolvedType{ .f64 = {} }).numericAcceptsDescriptor(.f32).?);
 }
 
 test "CallShape: method call shape" {

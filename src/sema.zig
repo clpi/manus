@@ -1591,16 +1591,21 @@ pub const Sema = struct {
         // REFUSING the representation shortcut, not by adding a rule.
         //
         // `feet` and `f64` are the same double and `is_float()` says so, which
-        // is exactly what makes the next two lines dangerous: without this
-        // guard a nominal descriptor would accept any value of its own
-        // representation and would not be nominal at all. A descriptor that
-        // accepts anything is a comment.
+        // is exactly what makes numeric composition dangerous here: if the
+        // acceptance projection looked through a nominal descriptor it would
+        // accept any value of its own representation and would not be nominal
+        // at all. A descriptor that accepts anything is a comment.
         //
         // Both directions refuse. `d: feet = x` (x: f64) is the obvious one;
         // `y: f64 = d` is the same law read the other way — a `feet` does not
         // silently become a plain double either. The repair for both is the
         // conversion edge, which is the whole reason the trie exists.
-        if (types.nominalReprOf(ann) != null or types.nominalReprOf(init_t) != null) return false;
+        //
+        // The refusal is NOT restated here. `numericAcceptsDescriptor` answers
+        // null for a nominal on either side, and every wrapper that composes
+        // through it — `?feet`, `result[feet, str]`, and the next one — inherits
+        // the same answer. This function held the guard once and the wrappers
+        // below it went unguarded for exactly that reason.
         if (ann.numericAcceptsDescriptor(init_t)) |accepts| return accepts;
         return type_annotation_accepts_init_rest(ann, init_t);
     }
@@ -16774,6 +16779,32 @@ test "sema: result numeric demand composes through its value descriptor" {
     try testing.expect(Sema.type_annotation_accepts_init(real_result, .f64));
     try testing.expect(!Sema.type_annotation_accepts_init(integer_result, .f64));
     try testing.expect(!Sema.type_annotation_accepts_init(real_result, .i64));
+}
+
+test "sema: a nominal descriptor stays nominal through every numeric wrapper" {
+    // NOT AN ARENA. `declareNominal` lands the descriptor in a process-global
+    // map that outlives the test; see the `feet` conformance test above.
+    const alloc = std.heap.page_allocator;
+    try types.declareNominal(alloc, "fathom", .f64);
+    var fathom: RT = types.nominalNamed("fathom").?;
+    var failure: RT = .str;
+    const maybe_fathom = RT{ .option = &fathom };
+    const fathom_result = RT{ .result = .{ .ok = &fathom, .err = &failure } };
+
+    // The top-level refusal, which held before the guard moved.
+    try testing.expect(!Sema.type_annotation_accepts_init(fathom, .f64));
+    try testing.expect(!Sema.type_annotation_accepts_init(.f64, fathom));
+
+    // The same law through a wrapper. Both of these ADMITTED a plain double,
+    // because the guard read the outer descriptor and neither `?fathom` nor
+    // `result[fathom, str]` is itself nominal.
+    try testing.expect(!Sema.type_annotation_accepts_init(maybe_fathom, .f64));
+    try testing.expect(!Sema.type_annotation_accepts_init(fathom_result, .f64));
+
+    // Positive control: the wrapper still accepts its own descriptor, so the
+    // refusal is nominality and not the wrapper losing its value.
+    try testing.expect(Sema.type_annotation_accepts_init(maybe_fathom, fathom));
+    try testing.expect(Sema.type_annotation_accepts_init(fathom_result, fathom));
 }
 
 test "sema: migration boundary symbols fail closed before realization" {
