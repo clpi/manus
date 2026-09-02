@@ -89,6 +89,48 @@
 # from the roster: this file reading no arms out of itself would report agreement
 # it never looked for.
 #
+# ═══ AND SO DOES THE PIN COLUMN'S DIRECTION: THE ARM WROTE THE SOURCE ══════
+#
+# The roster's first column had two producers and now has one. Its THIRD column
+# still had two, and it is the column GAP-232's acceptance 2 rests on entirely:
+# `text` requires `duo_str_to_i64` to be DEFINED because its reached partition
+# converts text, and `duo`, `trio` and `fan` require the same symbol to be ABSENT
+# because theirs do arithmetic. WHICH of those a shape is, is not the roster's
+# fact — the `materialize` arm decides it, by writing a text literal into the
+# reached partition or not writing one. The roster carried a second copy of that
+# decision, in the one place where a wrong copy costs the most.
+#
+# MEASURED, on aarch64-linux, by planting into a copy of these two files and
+# reading the exit status against an undamaged copy's 3:
+#
+#   * `duo` loses its `!duo_str_to_i64` entirely                      was exit 3
+#   * all three absence pins are redirected to `!duo_str_sub`, a real
+#     string-runtime symbol that no shape here ever reaches             was exit 3
+#   * `text` loses the `duo_str_to_i64` presence pin                  was exit 3
+#
+# NONE OF THE THREE IS CAUGHT BY THE HOST-BOUND HALF EITHER, and that follows
+# from `run_subject` rather than from any host: a pin can only refuse a subject it
+# is ASKED to check, so deleting a pin or pointing it at a symbol no link line was
+# going to carry cannot turn a passing measurement into a failing one anywhere.
+# The second one is the sharpest, because `!duo_str_sub` reads as correct: it
+# names a symbol that really is in `idol_str_runtime.o` and really is quoted in
+# `gaps/GAP-232.md`'s own filing section, and it guards against a link line no arm
+# here can produce. The selectivity argument the roster header calls load-bearing
+# would be decoration, and every row would stay green.
+#
+# THE DERIVATION IS NARROW AND SAYS SO. A text literal in a partition other than
+# the entry is the only route to the string runtime any arm here takes, so that
+# literal is what the direction is read from. An arm that reached that runtime
+# some other way would derive ABSENCE, be held to it, and fail at the pin — which
+# is loud and repairable, and not the silent drift this removes.
+#
+# BOTH DIRECTIONS MUST BE REQUIRED OF SOMETHING, which is GAP-201's rule again at
+# the level of the argument rather than the roster. If no subject's reached
+# partition converts text, the presence direction is asked of no row and
+# acceptance 2 has no positive side; if every subject's does, no row requires
+# absence and the presence pin is satisfied by a compiler that puts all three
+# bootstrap units on every link line without ever reading a `need`.
+#
 # AND THAT RATCHET NEEDS NO COMPILER, SO IT RUNS BEFORE THE HOST IS CLASSIFIED.
 # Every measurement below the classification needs macOS/aarch64 — the direct
 # backend refuses every other host by name — and the ratchet used to sit below it
@@ -100,6 +142,15 @@
 # TWO FILES, not about a host, and it is now convicted wherever they are checked
 # out. What remains host-bound is the half that genuinely is: compiled, run,
 # answered, pins read.
+#
+# WHICH MEANT NOTHING IN AN UNBUILT TREE, because one line above the ratchet
+# still required the compiler to EXIST. Measured on aarch64-linux with
+# `zig-out/bin/idol` removed: a roster row naming a shape this file cannot
+# materialize exited 3 saying the compiler is not executable, having never opened
+# the roster — the same defect moved up by a few lines rather than removed. The
+# `unbuilt` classification below is the one producer of "there is no compiler to
+# ask", and it already answers exactly that, so the requirement now sits with it
+# and nothing above the ratchet asks for a binary the ratchet never uses.
 #
 # SPLITTING IT DOES NOT WEAKEN THE ORDERING THE CONTROLS BELOW DEPEND ON. The
 # ratchet WRITES subject sources and reports no subject's ANSWER; the roster it
@@ -263,10 +314,17 @@ cd "$root" || { printf 'crosspartition: cannot enter root\n' >&2; exit 3; }
 IDOL=${IDOL:-"$root/zig-out/bin/idol"}
 roster=$here/crosspartition.subjects
 
-if [ ! -x "$IDOL" ]; then
-    printf 'crosspartition: NOT MEASURED — compiler is not executable: %s\n' "$IDOL" >&2
-    exit 3
-fi
+# THE STRING RUNTIME'S ENTRY POINT, named once. `materialize`'s `text` arm reaches
+# it (`"21":to(i64)`), the roster pins it in both directions, and control N4 pins
+# it on the shared kind. It was written out at every one of those uses; the
+# ratchet below reads the ROSTER's uses against the arms, so this file's own uses
+# have to come from one place or the ratchet is checking a copy of itself.
+str_unit_symbol=duo_str_to_i64
+
+# NO `-x $IDOL` HERE. The ratchet below asks no compiler, and requiring one above
+# it made every conviction it owns invisible in an unbuilt tree — measured. The
+# `unbuilt` arm of the classification further down is the one producer of that
+# fact and is where the requirement now lives.
 if [ ! -r "$roster" ]; then
     printf 'crosspartition: FAIL — subject roster is unreadable: %s (0 subjects examined)\n' "$roster" >&2
     exit 1
@@ -481,6 +539,8 @@ run_subject() {
 ratchet=0
 rows=0
 subjects=0
+present=0
+absent=0
 named=''
 : >"$work/measure" || exit 3
 
@@ -554,10 +614,90 @@ while IFS= read -r line || [ -n "$line" ]; do
             continue
             ;;
     esac
+    # ── the pin DIRECTION comes from the source the arm just wrote ──────────
+    # `text` pins the string runtime PRESENT and the arithmetic shapes pin it
+    # ABSENT, and which of those a shape is was copied into the roster from the
+    # arm that decides it. The arm has just run, so its decision is on disk: a
+    # text literal in a partition OTHER than the entry is the only route any arm
+    # here takes to that runtime. Read it off the sources instead of trusting the
+    # copy, and both directions become requirements rather than prose.
+    reachedsrc=0
+    converts=0
+    for src in "$work/subject.$shape"/*.id; do
+        [ -f "$src" ] || continue
+        case ${src##*/} in main.id) continue ;; esac
+        reachedsrc=$((reachedsrc + 1))
+        if grep -q '"' "$src"; then converts=1; fi
+    done
+    if [ "$reachedsrc" -eq 0 ]; then
+        printf 'crosspartition: FAIL — subject %s materializes no partition beyond its entry, so it measures no reach and no pin direction can be derived for it.\n' \
+            "$shape" >&2
+        ratchet=$((ratchet + 1))
+        continue
+    fi
+    sawpresent=0
+    sawabsent=0
+    for pin in $(printf '%s\n' "$defines" | tr ',' ' '); do
+        case $pin in
+            "!$str_unit_symbol") sawabsent=1 ;;
+            "$str_unit_symbol") sawpresent=1 ;;
+        esac
+    done
+    if [ "$converts" -eq 1 ]; then
+        why='its reached partition converts a text literal, so the object of that partition references it'
+        want=$sawpresent
+        other=$sawabsent
+        wantpin=$str_unit_symbol
+        otherpin="!$str_unit_symbol"
+        present=$((present + 1))
+    else
+        why='no partition it reaches converts text, so nothing it links needs the string runtime'
+        want=$sawabsent
+        other=$sawpresent
+        wantpin="!$str_unit_symbol"
+        otherpin=$str_unit_symbol
+        absent=$((absent + 1))
+    fi
+    if [ "$other" -eq 1 ] && [ "$want" -eq 1 ]; then
+        printf 'crosspartition: FAIL — roster row %s pins %s in BOTH directions; one of the two is unsatisfiable, so the row cannot state what its link line must have carried.\n' \
+            "$shape" "$str_unit_symbol" >&2
+        ratchet=$((ratchet + 1))
+        continue
+    fi
+    if [ "$other" -eq 1 ]; then
+        printf 'crosspartition: FAIL — roster row %s pins %s, and %s; the pin must be %s.\n' \
+            "$shape" "$otherpin" "$why" "$wantpin" >&2
+        ratchet=$((ratchet + 1))
+        continue
+    fi
+    if [ "$want" -ne 1 ]; then
+        printf 'crosspartition: FAIL — roster row %s does not pin %s, and %s.\n' \
+            "$shape" "$wantpin" "$why" >&2
+        printf 'crosspartition:   a pin only refuses what it is asked to check, so this row asserts nothing about the union GAP-232 is about — on any host.\n' >&2
+        ratchet=$((ratchet + 1))
+        continue
+    fi
     named="$named $shape"
     subjects=$((subjects + 1))
     printf '%s %s %s\n' "$shape" "$expect" "$defines" >>"$work/measure"
 done <"$roster"
+
+# ── both pin directions are required of SOMETHING ──────────────────────────
+# GAP-201's rule at the level of the argument rather than the roster. The
+# presence pin and the absence pins are one claim in two halves: that the link
+# line carried the unit the reached partition needed, and that it did not carry
+# it for everyone. A roster where either half is asked of no row states the other
+# half about a compiler that could never have read a `need`.
+if [ "$present" -eq 0 ]; then
+    printf 'crosspartition: FAIL — no subject requires %s to be DEFINED; nothing here would notice the need of a reached partition never reaching the link line.\n' \
+        "$str_unit_symbol" >&2
+    ratchet=$((ratchet + 1))
+fi
+if [ "$absent" -eq 0 ]; then
+    printf 'crosspartition: FAIL — no subject requires %s to be ABSENT; the presence pin would be satisfied by a compiler that puts every bootstrap unit on every link line.\n' \
+        "$str_unit_symbol" >&2
+    ratchet=$((ratchet + 1))
+fi
 
 # ── the roster covers every subject arm, and only shapes that exist ────────
 for shape in $subjectroll; do
@@ -790,7 +930,7 @@ if [ ! -s "$work/ctl.shared/lib.dylib" ]; then
     exit 1
 fi
 dylib_defines "$work/ctl.shared/lib.dylib" >"$work/defined"
-for pin in _helper__value duo_str_to_i64; do
+for pin in _helper__value "$str_unit_symbol"; do
     if ! grep -q -- "$pin\$" "$work/defined"; then
         printf 'crosspartition control N4: FAIL — the dylib linked and does not DEFINE %s.\n' "$pin" >&2
         printf 'crosspartition:   one of the two things that producer carries — reached objects, or the units their needs select — did not reach this link line.\n' >&2
