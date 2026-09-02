@@ -2253,23 +2253,8 @@ pub const Parser = struct {
         const attrs_slice = try attrs.toOwnedSlice(self.alloc);
 
         const tok = try self.pk();
-        if (tok.kind == .name and (((try self.currentParserDecision()) >> 6) & 1) != 0) {
-            return self.parse_alias_def_with_attrs(attrs_slice);
-        }
-        // Bare function declaration with attributes (GR-001): `@c.export("n")
-        // name(x: i64): i64 ... end`. Bare functions are the canonical form, so an
-        // attribute must attach to one exactly as it attaches to a `fun` decl —
-        // otherwise the attribute falls through to the Jai type-def path, degrades
-        // into a plain statement, and `@c.export` lowers to a runtime
-        // `__c_export(...)` call that no profile declares.
-        if (tok.kind == .name and
-            self.func_body_depth == 0 and (((try self.currentParserDecision()) >> 7) & 1) != 0)
-        {
-            return self.parse_bare_func_decl_with_attrs(false, attrs_slice);
-        }
-        if (tok.kind == .name) {
-            return self.parse_jai_type_def_with_attrs(attrs_slice);
-        }
+        const typehead = (((try self.currentParserDecision()) >> 6) & 1) != 0;
+        const barehead = (((try self.currentParserDecision()) >> 7) & 1) != 0;
         // §15 applies to attributed declarations too, or `@inline async f()`
         // is a hole straight through the ruling.
         try self.denyRetiredStmtKeyword(tok, try self.statement_admission());
@@ -2298,6 +2283,14 @@ pub const Parser = struct {
                 }
                 break :blk stmt;
             },
+            0 => if (self.func_body_depth == 0 and barehead)
+                self.parse_bare_func_decl_with_attrs(false, attrs_slice)
+            else
+                ParseError.UnexpectedToken,
+            8 => if (typehead)
+                self.parse_alias_def_with_attrs(attrs_slice)
+            else
+                self.parse_jai_type_def_with_attrs(attrs_slice),
             else => {
                 term.locErr(tok.loc, "expected declaration after attribute(s), got '{s}'", .{
                     tok.kind.spelling(),
