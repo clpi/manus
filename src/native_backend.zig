@@ -6401,6 +6401,48 @@ const Arm64Compiler = struct {
         reg: u5,
     ) Error!u5 {
         const off = self.spilled_regs.get(reg) orelse return reg;
+        // A HOME IS NAMED BY A MAP THIS FUNCTION CANNOT REWRITE, SO IT RELOADS
+        // INTO ITSELF.
+        //
+        // The remap below rewrites `temps`, and `temps` is the SECOND map
+        // `evalDnirValue` consults for a local. The first is `pinned`, which
+        // this function does not receive and cannot rewrite, and `imm_hoist` is
+        // a third with the same problem for a hoisted immediate. Move a value
+        // out of `reg` and leave those naming it, and the next read of that
+        // local answers `reg` — a register the move left free, so the pool hands
+        // it to the next allocation and the read returns that instead. Wrong
+        // answer, no diagnostic. `gp_call_home_regs` states this failure and its
+        // measurement (`sha.id` answered 0 instead of 16, `native.id` fell from
+        // 210 agreements to 128) and buys the calling function out of it by
+        // making the callee-bank homes unspillable. It says in the same breath
+        // that a LEAF's home is still a spill victim and carries the hazard
+        // unrepaired, because a leaf has no `probeFunctionPlan` ladder to step
+        // down and taking its victims away would refuse programs that compile
+        // today. This is that repair, and it takes no victim away: the home
+        // still spills, it just comes back to the register every map already
+        // names.
+        //
+        // Reloading into `reg` is available here for the reason the exhaustion
+        // arm below states at length — a register in `spilled_regs` holds
+        // nothing, because both free scans in `allocRegExcluding` skip that map
+        // and all three of its spill passes require `used_regs`, which
+        // `spillReg` cleared. So the destination is free, no owner is abandoned,
+        // and `ensureRegLive` is already exactly this reload: the `ldr` into
+        // `reg`, the entry removed, the slot released once on that removal, and
+        // the `claimReg` the loaded value is owed. Nothing else in the function
+        // below applies to a home — `temps` names `reg` and still should,
+        // `gp_reg_owner[reg]` is null because `markGpHome` nulls it, and
+        // `sweepGpLive` and `releaseReg` both return above a home rather than
+        // freeing one.
+        //
+        // Not the closure: closure is authoritative `register`/`frame`
+        // assignment before emission, per this gap's record — under which a
+        // home's location is a fact the assignment carries, not one four maps
+        // restate.
+        if (self.gp_home_regs[reg]) {
+            try self.ensureRegLive(reg);
+            return reg;
+        }
         const reload_off = self.stack_frame_bytes - off - 8;
         const fresh = self.allocRegExcluding(null) catch |e| blk: {
             if (e != error.RegisterExhausted or !self.gate_transport) return e;
@@ -17579,5 +17621,122 @@ test "a released scratch register returns the frame slot it kept" {
     compiler.releaseReg(owned);
     try std.testing.expectEqual(@as(?u16, owned_off), compiler.spilled_regs.get(owned));
     try std.testing.expectEqual(@as(?u32, 7), compiler.gp_reg_owner[owned]);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+}
+
+// GAP-148. A SPILLED HOME MOVED, AND THE PIN THAT NAMES IT DID NOT.
+//
+// `evalDnirValue` reads a local through `pinned` FIRST and `temps` second.
+// `ensureRegLiveRemap` rewrites `temps` and cannot reach `pinned` — it is not
+// handed the map — nor `imm_hoist`, which names a hoisted immediate's register
+// the same way. So relocating a home's value to a fresh register left both of
+// those naming the register the value LEFT, and that register is free after the
+// move: the pool hands it to the next allocation and the next read of the local
+// answers with whatever landed there.
+//
+// `gp_call_home_regs` documents this failure and its measurement — `sha.id`
+// answered 0 instead of 16, `native.id` fell from 210 agreements to 128 — and
+// buys the CALLING function out of it by refusing to spill a callee-bank home,
+// which costs nothing because `probeFunctionPlan` steps its ladder down. It says
+// in the same breath that a LEAF's home is still a spill victim and carries the
+// hazard unrepaired, because a leaf has no ladder and taking its victims away
+// would refuse programs that compile today. The second spill pass in
+// `allocRegExcluding` skips only `gp_call_home_regs`, and a leaf sets no bit
+// there, so a leaf home is reached whenever pressure walks x28 down past the
+// unhomed registers.
+//
+// The repair takes no victim away: the home still spills, and it comes back to
+// the register every map already names. Built directly rather than through a
+// source program for the same reason as the reclaim, reload, remap, and release
+// tests above — this is a state the allocator passes through between a spill and
+// the next read of the local, not a state a fixture names.
+test "a spilled local home reloads into the register its pin still names" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport: `allocRegExcluding` refuses above
+    // its three spill passes otherwise, so `spilled_regs` is empty everywhere
+    // else and no home is ever a victim.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // A LEAF's home, in the callee bank but with no `gp_call_home_regs` bit,
+    // which is exactly what `allocHomeReg` leaves behind when the function does
+    // not call. `markGpHome` is the producer of the rest of that state.
+    const home: u5 = 20;
+    compiler.markGpHome(home);
+    try std.testing.expect(compiler.gp_home_regs[home]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[home]);
+    try std.testing.expectEqual(@as(u32, 0), compiler.gp_call_home_regs & (@as(u32, 1) << home));
+
+    // The state `spillReg` leaves behind: the value is in a frame slot, the
+    // entry reserves the register to it, and `used_regs` is clear.
+    const off: u16 = 8;
+    try compiler.spilled_regs.put(alloc, home, off);
+    compiler.used_regs[home] = false;
+
+    // The three maps that name this home. `pinned` is the one `evalDnirValue`
+    // consults first and the one this function cannot rewrite.
+    const slot: u32 = 3;
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    try temps.put(alloc, slot, home);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    try pinned.put(alloc, slot, home);
+    compiler.eval_pinned = &pinned;
+
+    const before = compiler.code.items.len;
+    const live = try compiler.ensureRegLiveRemap(&temps, home);
+
+    // THE READ ANSWERS THE REGISTER THE PIN NAMES. This is the whole fact: a
+    // fresh register here and the pin is stale for every later read of `slot`.
+    try std.testing.expectEqual(home, live);
+    try std.testing.expectEqual(@as(?u5, live), pinned.get(slot));
+    try std.testing.expectEqual(@as(?u5, live), temps.get(slot));
+
+    // One `ldr` from this value's slot into that same register.
+    const reload_off: u16 = compiler.stack_frame_bytes - off - 8;
+    const want: u32 = 0xf94003e0 | ((@as(u32, reload_off) / 8) << 10) | @as(u32, live);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        want,
+        std.mem.readInt(u32, compiler.code.items[before..][0..4], .little),
+    );
+
+    // The home survives the round trip intact: still a home, claimed again by
+    // the reload, entry gone, and its slot back in the pool exactly once.
+    try std.testing.expect(compiler.gp_home_regs[live]);
+    try std.testing.expect(compiler.used_regs[live]);
+    try std.testing.expect(!compiler.spilled_regs.contains(home));
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
+
+    // NOTHING ELSE WAS TAKEN. Reloading into the home costs the pool no
+    // register, so the scratch the relocation would have consumed is still
+    // free — `allocRegExcluding` scans x9 upward and x9 is where it would have
+    // gone.
+    try std.testing.expect(!compiler.used_regs[9]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[9]);
+
+    // AND THE READ IS REPEATABLE. The second read finds no entry and answers
+    // the same register without emitting or releasing anything, which is what a
+    // home read looks like when the home was never spilled at all.
+    const again = try compiler.ensureRegLiveRemap(&temps, home);
+    try std.testing.expectEqual(home, again);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
     try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
 }
