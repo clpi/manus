@@ -481,6 +481,10 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 7;
     }
 
+    fn currentParserCompatLongText(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 8;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6160,6 +6164,14 @@ pub const Parser = struct {
                 .quote = .bytes,
             } });
         }
+        if (try self.currentParserCompatLongText()) {
+            _ = try self.adv();
+            return self.new_expr(.{ .quoted = .{
+                .loc = tok.loc,
+                .val = try self.alloc.dupe(u8, tok.text),
+                .quote = .compat_long,
+            } });
+        }
         if (try self.currentParserTable()) return self.parse_table();
         if (try self.currentParserName()) {
             const name_tok = try self.adv();
@@ -6190,14 +6202,6 @@ pub const Parser = struct {
             return e;
         }
         return switch (tok.kind) {
-            .compat_long_text_lit => blk: {
-                _ = try self.adv();
-                break :blk self.new_expr(.{ .quoted = .{
-                    .loc = tok.loc,
-                    .val = try self.alloc.dupe(u8, tok.text),
-                    .quote = .compat_long,
-                } });
-            },
             .kw_true => blk: {
                 _ = try self.adv();
                 break :blk self.new_expr(.{ .true_lit = tok.loc });

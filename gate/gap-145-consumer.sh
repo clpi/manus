@@ -587,6 +587,35 @@ if [ "$bytes_old" -ne 1 ] || [ "$bytes_new" -ne 1 ]; then
     bad "the bytes primary detector is broken: old=$bytes_old new=$bytes_new"
 fi
 
+# Compatibility long-text expression-primary recognition has its own exact
+# face at primary value eight. Zig retains byte copying and quoted-value
+# materialization, but no longer selects that work from a
+# `.compat_long_text_lit` switch arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindcompatlongtextlit' \
+    'event lost the compatibility long-text primary face'
+has "$ROOT/src/parser/projection.c" 'kind == INT64_C(108)' \
+    'tracked projection lost the compatibility long-text primary face'
+has "$PARSER" 'fn currentParserCompatLongText(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the compatibility long-text primary consumer'
+has "$PARSER" 'if (try self.currentParserCompatLongText()) {' \
+    'parse_simple_expr bypasses the settled compatibility long-text face'
+compatlongarms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.compat_long_text_lit => ' || true)
+examined=$((examined + 1))
+if [ "$compatlongarms" -ne 0 ]; then
+    bad "parse_simple_expr retained $compatlongarms .compat_long_text_lit host arm(s)"
+fi
+
+compatlongprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate compatibility long-text primary scratch' >&2; exit 2; }
+printf '%s\n' '.compat_long_text_lit => parse_text(),' >"$compatlongprobe/old.zig"
+printf '%s\n' 'return (try self.currentParserDecision()) >> 13 == 8;' >"$compatlongprobe/new.zig"
+compatlongold=$(grep -cF '.compat_long_text_lit => ' "$compatlongprobe/old.zig")
+compatlongnew=$(grep -cF 'currentParserDecision()) >> 13 == 8' "$compatlongprobe/new.zig")
+rm -rf -- "$compatlongprobe"
+examined=$((examined + 1))
+if [ "$compatlongold" -ne 1 ] || [ "$compatlongnew" -ne 1 ]; then
+    bad "the compatibility long-text primary detector is broken: old=$compatlongold new=$compatlongnew"
+fi
+
 # The expression-group primary consumes parser.id's existing exact matching
 # delimiter boundary. A nonzero boundary is produced only at `(` and carries
 # the coordinate after its matching close. Zig no longer owns a `.lparen`
