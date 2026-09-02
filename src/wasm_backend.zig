@@ -440,6 +440,7 @@ const Helper = enum {
     write_cstr, // (i64 ptr) -> ()
     puts_cstr, //  (i64 ptr) -> ()
     print_i64, //  (i64 v, i64 nl) -> ()
+    print_f64, //  (f64 v, i64 nl) -> ()
     malloc, //     (i64 n) -> i64
     memset, //     (i64 p, i64 c, i64 n) -> i64
     memcpy, //     (i64 d, i64 s, i64 n) -> i64
@@ -2388,13 +2389,26 @@ fn emitPrint(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
             try b.i64c(if (nonl) 0 else 1);
             try b.call(helperIndex(.print_i64));
         },
-        .f64 => return e.refuse("print-f64"),
+        .f64 => {
+            try pushValue(e, b, ins.lhs, .f64);
+            try b.i64c(if (nonl) 0 else 1);
+            try b.call(helperIndex(.print_f64));
+        },
         else => {
             if (nonl) return;
             try b.i64c(@intCast(try e.strings.intern("\n")));
             try b.call(helperIndex(.write_cstr));
         },
     }
+}
+
+test "wasm backend prints f64 via snprintf" {
+    const source =
+        \\x: f64 = 3.14159
+        \\main: i64 = ()
+        \\print(x)
+    ;
+    try std.testing.expectEqual(@as(u8, 0), try runTestSourceWasm(source));
 }
 
 test "wasm backend refuses byte-sequence print without an extent carrier" {
@@ -2475,6 +2489,7 @@ fn emitHelpers(e: *Emitter) Error!void {
     try putHelper(e, .write_cstr, &.{vt_i64}, &.{}, helperWriteCstr);
     try putHelper(e, .puts_cstr, &.{vt_i64}, &.{}, helperPutsCstr);
     try putHelper(e, .print_i64, &.{ vt_i64, vt_i64 }, &.{}, helperPrintI64);
+    try putHelper(e, .print_f64, &.{ vt_f64, vt_i64 }, &.{}, helperPrintF64);
     try putHelper(e, .malloc, &.{vt_i64}, &.{vt_i64}, helperMalloc);
     try putHelper(e, .memset, &.{ vt_i64, vt_i64, vt_i64 }, &.{vt_i64}, helperMemset);
     try putHelper(e, .memcpy, &.{ vt_i64, vt_i64, vt_i64 }, &.{vt_i64}, helperMemcpy);
@@ -3569,6 +3584,37 @@ fn helperPrintI64(e: *Emitter, b: *Buf) Error!void {
     try b.op(op_i32_sub);
     try b.op(op_i64_extend_i32_u);
     try b.call(helperIndex(.write_bytes));
+}
+
+/// `(f64 v, i64 nl)` — prints `v` via `snprintf(scratch, "%g")` then `write_cstr`.
+/// If `nl` is zero, appends a newline via `puts_cstr`.
+fn helperPrintF64(e: *Emitter, b: *Buf) Error!void {
+    // params: 0 = v (f64), 1 = nl (i64)
+    // Scratch buffer is the `numbuf` region, already used by `print_i64`; since
+    // helpers run serially (one function body at a time) there is no conflict.
+    const scratch: i64 = @intCast(addr_numbuf);
+    const cap: i64 = @intCast(numbuf_len);
+
+    // Call snprintf(scratch, cap, "%g", v)
+    try b.i64c(scratch);
+    try b.i64c(cap);
+    try b.i64c(@intCast(try e.strings.intern("%g")));
+    try b.get(0); // f64 v — stays as f64 on the value stack
+    try b.call(helperIndex(.snprintf));
+
+    // write_cstr(scratch)
+    try b.i64c(scratch);
+    try b.call(helperIndex(.write_cstr));
+
+    // newline if nl == 0
+    try b.get(1);
+    try b.i64c(0);
+    try b.op(op_i64_eqz);
+    try b.byte(op_if);
+    try b.byte(bt_void);
+    try b.i64c(@intCast(try e.strings.intern("\n")));
+    try b.call(helperIndex(.puts_cstr));
+    try b.byte(op_end);
 }
 
 /// A bump allocator. `free` is a no-op, which is the same contract the direct
