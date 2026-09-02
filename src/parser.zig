@@ -405,7 +405,7 @@ pub const Parser = struct {
 
     fn currentParserAttributeDispatch(self: *Parser) ParseError!u8 {
         const face = ((try self.currentParserDecision()) >> 9) & 0xF;
-        if (face > 8) return ParseError.UnexpectedToken;
+        if (face > 11) return ParseError.UnexpectedToken;
         return @intCast(face);
     }
 
@@ -2265,7 +2265,7 @@ pub const Parser = struct {
             3 => self.parse_enum_def_with_attrs(attrs_slice),
             4 => self.parse_concept_def_with_attrs(attrs_slice),
             5 => self.parse_alias_def_with_attrs(attrs_slice),
-            6 => self.parse_local_or_global_with_attrs(attrs_slice),
+            6 => self.parse_local_or_global_with_attrs(attrs_slice, true),
             7 => blk: {
                 // @unroll(N) before a for loop: parse the for and attach unroll
                 var stmt = try self.parse_for();
@@ -2291,6 +2291,7 @@ pub const Parser = struct {
                 self.parse_alias_def_with_attrs(attrs_slice)
             else
                 self.parse_jai_type_def_with_attrs(attrs_slice),
+            11 => self.parse_local_or_global_with_attrs(attrs_slice, false),
             else => {
                 term.locErr(tok.loc, "expected declaration after attribute(s), got '{s}'", .{
                     tok.kind.spelling(),
@@ -2332,9 +2333,8 @@ pub const Parser = struct {
 
     /// Parse a `local` or `global` declaration that has been preceded by
     /// attribute(s). The attributes are attached to each parsed `LocalName`.
-    fn parse_local_or_global_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
-        const tok = try self.pk();
-        var stmt = if (tok.kind == .kw_local)
+    fn parse_local_or_global_with_attrs(self: *Parser, attrs: []ast.Attribute, local: bool) ParseError!ast.Stmt {
+        var stmt = if (local)
             try self.parse_local()
         else
             try self.parse_global();

@@ -784,8 +784,10 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             declaration = 4
         elseif kind == token.kindalias
             declaration = 5
-        elseif kind == token.kindlocal or kind == token.kindglobal
+        elseif kind == token.kindlocal
             declaration = 6
+        elseif kind == token.kindglobal
+            declaration = 11
         elseif kind == token.kindfor
             declaration = 7
         elseif kind == token.kindname
