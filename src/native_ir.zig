@@ -236,6 +236,7 @@ pub const Value = union(enum) {
     void,
     i64: i64,
     f64: f64,
+    f32: f32,
     str: []const u8,
     local: u32,
     temp: u32,

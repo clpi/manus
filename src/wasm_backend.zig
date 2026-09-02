@@ -298,6 +298,7 @@ const op_i64_store8: u8 = 0x3c;
 const op_i32_const: u8 = 0x41;
 const op_i64_const: u8 = 0x42;
 const op_f64_const: u8 = 0x44;
+const op_f32_const: u8 = 0x43;
 const op_i32_eqz: u8 = 0x45;
 const op_i32_eq: u8 = 0x46;
 const op_i32_ne: u8 = 0x47;
@@ -354,24 +355,29 @@ const op_i32_wrap_i64: u8 = 0xa7;
 const op_i64_extend_i32_s: u8 = 0xac;
 const op_i64_extend_i32_u: u8 = 0xad;
 const op_f64_convert_i64_s: u8 = 0xb9;
+const op_f32_demote_f64: u8 = 0xb6;
+const op_f64_promote_f32: u8 = 0xbb;
 const op_i64_reinterpret_f64: u8 = 0xbd;
 const op_f64_reinterpret_i64: u8 = 0xbf;
 const op_i64_extend8_s: u8 = 0xc2;
 const op_i64_extend16_s: u8 = 0xc3;
 const op_i64_extend32_s: u8 = 0xc4;
+const op_f32_reinterpret_i32: u8 = 0xbc;
 
 const vt_i32: u8 = 0x7f;
 const vt_i64: u8 = 0x7e;
 const vt_f64: u8 = 0x7c;
+const vt_f32: u8 = 0x7d;
 /// `blocktype` for a block that neither takes nor returns a value.
 const bt_void: u8 = 0x40;
 
-const SlotType = enum { i64, f64 };
+const SlotType = enum { i64, f64, f32 };
 
 fn slotValType(t: SlotType) u8 {
     return switch (t) {
         .i64 => vt_i64,
         .f64 => vt_f64,
+        .f32 => vt_i64,
     };
 }
 
@@ -616,18 +622,34 @@ const Emitter = struct {
 // SLOT TYPING
 // ---------------------------------------------------------------------------
 
-fn markF64(e: *Emitter, slot: ?u32, changed: *bool) Error!void {
+fn markSlotType(e: *Emitter, slot: ?u32, ty: SlotType, changed: *bool) Error!void {
     const s = slot orelse return;
     const got = try e.slot_ty.getOrPut(e.alloc, s);
-    if (got.found_existing and got.value_ptr.* == .f64) return;
-    got.value_ptr.* = .f64;
+    if (got.found_existing and got.value_ptr.* == ty) return;
+    got.value_ptr.* = ty;
     changed.* = true;
+}
+
+fn markF64(e: *Emitter, slot: ?u32, changed: *bool) Error!void {
+    try markSlotType(e, slot, .f64, changed);
+}
+
+fn markF32(e: *Emitter, slot: ?u32, changed: *bool) Error!void {
+    try markSlotType(e, slot, .f32, changed);
 }
 
 fn valueIsF64(e: *const Emitter, v: dnir.Value) bool {
     return switch (v) {
         .f64 => true,
         .local, .temp => |s| (e.slot_ty.get(s) orelse .i64) == .f64,
+        else => false,
+    };
+}
+
+fn valueIsF32(e: *const Emitter, v: dnir.Value) bool {
+    return switch (v) {
+        .f32 => true,
+        .local, .temp => |s| (e.slot_ty.get(s) orelse .i64) == .f32,
         else => false,
     };
 }
@@ -648,9 +670,17 @@ fn computeSlotTypes(e: *Emitter, instrs: []const dnir.Instr, params: []const Slo
         var changed = false;
         for (instrs) |ins| {
             switch (ins.op) {
-                .@"const" => if (ins.ty == .f64 or ins.lhs == .f64) try markF64(e, ins.result, &changed),
-                .store_local => if (ins.ty == .f64 or valueIsF64(e, ins.lhs)) {
-                    try markF64(e, ins.result, &changed);
+                .@"const" => {
+                    if (ins.ty == .f64 or ins.lhs == .f64) try markF64(e, ins.result, &changed);
+                    if (ins.ty == .f32 or ins.lhs == .f32) try markF32(e, ins.result, &changed);
+                },
+                .store_local => {
+                    if (ins.ty == .f64 or valueIsF64(e, ins.lhs)) {
+                        try markF64(e, ins.result, &changed);
+                    }
+                    if (ins.ty == .f32 or valueIsF32(e, ins.lhs)) {
+                        try markF32(e, ins.result, &changed);
+                    }
                 },
                 .binop => {
                     // A COMPARISON ANSWERS WITH A BOOLEAN whatever its operands
@@ -661,8 +691,15 @@ fn computeSlotTypes(e: *Emitter, instrs: []const dnir.Instr, params: []const Slo
                     if (ins.ty == .f64 or valueIsF64(e, ins.lhs) or valueIsF64(e, ins.rhs)) {
                         try markF64(e, ins.result, &changed);
                     }
+                    if (ins.ty == .f32 or valueIsF32(e, ins.lhs) or valueIsF32(e, ins.rhs)) {
+                        try markF32(e, ins.result, &changed);
+                    }
                 },
-                .call_direct, .call_extern, .load_global => if (ins.ty == .f64) {
+                .load_global => {
+                    if (ins.ty == .f64) try markF64(e, ins.result, &changed);
+                    if (ins.ty == .f32) try markF32(e, ins.result, &changed);
+                },
+                .call_direct, .call_extern => if (ins.ty == .f64) {
                     try markF64(e, ins.result, &changed);
                 },
                 else => {},
@@ -719,7 +756,7 @@ fn paramSlotTypes(e: *Emitter, f: dnir.Function) Error![]SlotType {
             for (rec.kinds) |_| try out.append(e.alloc, .i64);
             continue;
         }
-        try out.append(e.alloc, if (p.ty == .f64) .f64 else .i64);
+        try out.append(e.alloc, if (p.ty == .f64) .f64 else if (p.ty == .f32) .f32 else .i64);
     }
     return out.toOwnedSlice(e.alloc);
 }
@@ -1302,6 +1339,7 @@ fn pushValue(e: *Emitter, b: *Buf, v: dnir.Value, want: SlotType) Error!void {
             // general register in exactly this position (`evalDnirValue`), and
             // `print_value` reads it back the same way.
             .f64 => |x| try b.i64c(@bitCast(x)),
+            .f32 => |x| try b.i64c(@intCast(@as(u32, @bitCast(x)))),
             .str => |s| try b.i64c(@intCast(try e.strings.intern(s))),
             .local, .temp => |s| {
                 if (s >= e.slot_count) return e.refuse("slot-out-of-range");
@@ -1316,6 +1354,11 @@ fn pushValue(e: *Emitter, b: *Buf, v: dnir.Value, want: SlotType) Error!void {
         },
         .f64 => switch (v) {
             .f64 => |x| try b.f64c(x),
+            .f32 => |x| {
+                // f32 bits → f32 slot → promote to f64.
+                try b.i32c(@bitCast(x));
+                try b.op(op_f64_promote_f32);
+            },
             // An integer immediate in a float position is a LOSSLESS WIDENING —
             // `scvtf` on AArch64, `f64.convert_i64_s` here.
             .i64 => |n| {
@@ -1326,6 +1369,34 @@ fn pushValue(e: *Emitter, b: *Buf, v: dnir.Value, want: SlotType) Error!void {
                 if (s >= e.slot_count) return e.refuse("slot-out-of-range");
                 try b.get(s);
                 if (slotTypeOf(e, s) == .i64) try b.op(op_f64_convert_i64_s);
+            },
+            .str => return e.refuse("str-in-float-position"),
+            .void => return e.refuse("void-operand"),
+            .record => return e.refuse("record-operand"),
+        },
+        .f32 => switch (v) {
+            .f32 => |x| try b.i32c(@bitCast(x)),
+            .f64 => |x| {
+                // Narrow f64 to f32 before emitting.
+                try b.f64c(x);
+                try b.op(op_f32_demote_f64);
+            },
+            .i64 => |n| {
+                // f32 uses i32 bit pattern storage; push as i64 then demote.
+                try b.i64c(n);
+                try b.op(op_i32_wrap_i64);
+                try b.op(op_f32_reinterpret_i32);
+            },
+            .local, .temp => |s| {
+                if (s >= e.slot_count) return e.refuse("slot-out-of-range");
+                try b.get(s);
+                if (slotTypeOf(e, s) == .f64) {
+                    try b.op(op_f32_demote_f64);
+                } else if (slotTypeOf(e, s) == .i64) {
+                    try b.op(op_i32_wrap_i64);
+                    try b.op(op_f32_reinterpret_i32);
+                }
+                // f32 local: already in correct slot type, nothing needed.
             },
             .str => return e.refuse("str-in-float-position"),
             .void => return e.refuse("void-operand"),
@@ -1535,9 +1606,14 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
             const t = ins.result orelse return e.refuse("load-global-no-result");
             if (ins.field.len == 0) return e.refuse("load-global-unnamed");
             const off = e.globals.get(ins.field) orelse return e.refuse("load-global-unknown");
+            const ty = slotTypeOf(e, t);
             try b.i32c(0);
-            try b.mem(op_i64_load, 3, globals_base + off);
-            if (slotTypeOf(e, t) == .f64) try b.op(op_f64_reinterpret_i64);
+            switch (ty) {
+                .f64 => try b.mem(op_f64_load, 3, globals_base + off),
+                .f32 => try b.mem(op_f32_load, 3, globals_base + off),
+                .i64 => try b.mem(op_i64_load, 3, globals_base + off),
+            }
+            if (ty == .f64) try b.op(op_f64_reinterpret_i64);
             try b.set(t);
         },
 
@@ -1548,10 +1624,18 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
             if (valueIsF64(e, ins.lhs)) {
                 try pushValue(e, b, ins.lhs, .f64);
                 try b.op(op_i64_reinterpret_f64);
+                try b.mem(op_i64_store, 3, globals_base + off);
+            } else if (valueIsF32(e, ins.lhs)) {
+                // f32 is stored in the lower 4 bytes of its 8-byte slot. Read
+                // the current 8-byte slot, pack the f32 bits into the low 4, and
+                // write the full 8 bytes back. The upper 4 bytes are indeterminate
+                // after the store but are never read as part of an f32 global.
+                try pushValue(e, b, ins.lhs, .i64);
+                try b.mem(op_i64_store, 3, globals_base + off);
             } else {
                 try pushValue(e, b, ins.lhs, .i64);
+                try b.mem(op_i64_store, 3, globals_base + off);
             }
-            try b.mem(op_i64_store, 3, globals_base + off);
         },
 
         // A fence and a spin hint are both no-ops in a single-threaded module.
@@ -3606,6 +3690,7 @@ fn appendGlobalData(e: *Emitter, out: *Buf) Error!u32 {
         const word: u64 = switch (global.init) {
             .i64 => |value| @bitCast(value),
             .f64 => |value| @bitCast(value),
+            .f32 => |value| @intCast(@as(u32, @bitCast(value))),
             else => {
                 e.diagnostic.remember("global-init-kind");
                 return error.UnsupportedProgram;
