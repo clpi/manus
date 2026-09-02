@@ -220,6 +220,64 @@ pub fn deoptOrFallback(
     return select(candidates, invalidation.experiment_proposition, assumption_holds) orelse invalidation.fallback_candidate;
 }
 
+/// Still-missing face: guard invalidation as a NAMED fact, not a decision
+/// outcome. `DeoptBoundary.invalidate` and `select` answer WHICH candidate
+/// survives; the invalidation itself was a caller-supplied string with no
+/// fact identity of its own. `guardFalse` is the one construction seam for
+/// the invalidation fact: assumption false ⇒ realization inadmissible, named
+/// as `guard <proposition> is false on <measured subject revision>` — there
+/// is no third state. Provenance is enforced AT CONSTRUCTION
+/// (`law.evidence.subject.one`): an invalidation that cannot name the
+/// measured subject revision on which the falsehood was observed constructs
+/// NO fact — null, never a fact with incomplete provenance and never a
+/// sentinel in-band. The fact names the proposition alone; selection among
+/// candidates remains exactly the walk `select` already owns, so this face
+/// adds identity without adding a second authority over which realizations
+/// hold (`law.fact.producer.one`).
+pub const GuardInvalidation = struct {
+    /// Stable identity of the assumption proposition observed false.
+    proposition: []const u8,
+    /// The exact measured subject revision on which the falsehood was
+    /// observed — never implicit "at HEAD".
+    subject_revision: []const u8,
+};
+
+pub fn guardFalse(
+    proposition: []const u8,
+    subject_revision: []const u8,
+) ?GuardInvalidation {
+    if (subject_revision.len == 0) return null;
+    return .{
+        .proposition = proposition,
+        .subject_revision = subject_revision,
+    };
+}
+
+/// A named invalidation fact invalidates exactly the experiment whose
+/// proposition it names. Sound experiments are untouched — their theorem did
+/// not depend on the observation (same discipline as `invalidatedExperiment`,
+/// now consuming the named fact rather than a bare string).
+pub fn invalidationRefutes(
+    fact: *const GuardInvalidation,
+    e: *const Experiment,
+) bool {
+    return invalidatedExperiment(e, fact.proposition);
+}
+
+/// Deopt selection under a named invalidation fact: the refuted candidate
+/// ceases to be admissible (`law.guard` — assumption false ⇒ realization
+/// inadmissible) and the walk selects the first surviving candidate's
+/// conditional theorem exactly as `select` does. The fact's measured subject
+/// revision is carried by the fact itself; the walk remains a pure function
+/// of fact names + world truth (`assumption_holds`).
+pub fn selectUnderInvalidation(
+    candidates: []const Guarded,
+    fact: *const GuardInvalidation,
+    assumption_holds: *const fn (proposition: []const u8) bool,
+) ?[]const u8 {
+    return select(candidates, fact.proposition, assumption_holds);
+}
+
 /// Whether profile-shaped evidence is ever sufficient on its own for a
 /// semantics-changing optimization. The answer is always no; this exists so
 /// callers route through the fact instead of re-deriving it.
@@ -960,6 +1018,78 @@ test "effect: runtime facts refine the candidate set" {
     try std.testing.expectEqualStrings(
         "cand:generic",
         deoptOrFallback(invalidation, &none, &holdsNone),
+    );
+}
+
+test "effect: guard invalidation is a named fact with construction-forced provenance" {
+    // Still-missing face: guard invalidation as a NAMED fact. `guardFalse` is
+    // the one construction seam; an invalidation naming no measured subject
+    // revision constructs NO fact (law.evidence.subject.one).
+    try std.testing.expect(guardFalse("shape:7", "") == null);
+    const fact = (guardFalse("shape:7", "rev:abc")).?;
+    try std.testing.expectEqualStrings("shape:7", fact.proposition);
+    try std.testing.expectEqualStrings("rev:abc", fact.subject_revision);
+
+    // The named fact refutes exactly the experiment whose proposition it
+    // names; sound experiments are untouched (same discipline as
+    // `invalidatedExperiment`, through the fact face).
+    const guarded_exp = Experiment{
+        .proposition = "shape:7",
+        .producer = .guard_observation,
+        .cost = 3,
+        .conditional_theorem = "cand:mono",
+    };
+    const proved_exp = Experiment{
+        .proposition = "shape:7",
+        .producer = .static_proof,
+        .cost = 0,
+        .conditional_theorem = "cand:theorem",
+    };
+    try std.testing.expect(invalidationRefutes(&fact, &guarded_exp));
+    try std.testing.expect(!invalidationRefutes(&fact, &proved_exp));
+    const other = (guardFalse("shape:9", "rev:abc")).?;
+    try std.testing.expect(!invalidationRefutes(&other, &guarded_exp));
+
+    // Assumption false ⇒ realization inadmissible, as a fact-driven walk:
+    // the refuted candidate ceases to be admissible and deopt selects the
+    // next surviving candidate — exactly the `select` answer, now keyed on
+    // the named fact rather than a bare string.
+    const candidates = [_]Guarded{
+        .{ .experiment = guarded_exp },
+        .{ .experiment = .{
+            .proposition = "shape:9",
+            .producer = .guard_observation,
+            .cost = 1,
+            .conditional_theorem = "cand:poly",
+        } },
+        .{ .experiment = proved_exp },
+    };
+    try std.testing.expectEqualStrings(
+        "cand:mono",
+        selectUnderInvalidation(&candidates, &other, &holdsAll).?,
+    );
+    try std.testing.expectEqualStrings(
+        "cand:poly",
+        selectUnderInvalidation(&candidates, &fact, &holdsAll).?,
+    );
+
+    // When both evidence-level candidates are refuted, only the sound
+    // theorem survives — a named fact never promotes or demotes anything
+    // else, and no answer remains a null exactly as `select` answers null.
+    const both = [_]Guarded{ .{ .experiment = guarded_exp } };
+    try std.testing.expect(selectUnderInvalidation(&both, &fact, &holdsAll) == null);
+
+    // Composes with the existing boundary verbatim: the fact's proposition
+    // answers the same candidate `select` and `deoptOrFallback` already
+    // answer, so the fallback path is unchanged.
+    const invalidation = Invalidation{
+        .experiment_proposition = fact.proposition,
+        .fallback_candidate = "cand:generic",
+        .subject_revision = fact.subject_revision,
+    };
+    try std.testing.expectEqualStrings(
+        "cand:generic",
+        deoptOrFallback(invalidation, &both, &holdsAll),
     );
 }
 
