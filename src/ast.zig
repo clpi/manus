@@ -1,6 +1,7 @@
 const std = @import("std");
 pub const Loc = @import("lexer.zig").Loc;
-const RT = @import("types.zig").ResolvedType;
+const types = @import("types.zig");
+const RT = types.ResolvedType;
 
 /// §4.1 — the surface FACE an application was written through.
 ///
@@ -141,36 +142,47 @@ pub const TypeExpr = union(enum) {
         ret: *TypeExpr,
     };
 
+    /// The scalar numeric facts a bare TYPE-EXPRESSION SPELLING names, or null.
+    ///
+    /// DERIVED, NOT TABULATED — this is the SOURCE FACE of `numericFacts`, and
+    /// the three name rosters below (`is_numeric`, `is_integer`, `is_float`)
+    /// were three further statements of which spellings are numeric, integral
+    /// and real, beside the one owner in `types.zig`. They are now one query
+    /// through `descriptorNamed`, exactly as `narrowIntOfType` — the annotation
+    /// face of the WRITE projection — already derives its width from the same
+    /// facts. A roster cannot compose: a spelling added to the `ResolvedType`
+    /// union is one these switches silently did not know, and a fact answered
+    /// three ways drifts three ways.
+    ///
+    /// The face this preserves is the scalar-SPELLING face, so two filters keep
+    /// it exact rather than widening it. `nominalReprOf` is null-checked because
+    /// a nominal descriptor DELEGATES `numericFacts` to its representation on
+    /// purpose (physics is a representation question, `law.nominal` §46) — but
+    /// `feet` is not a numeric SPELLING and never answered these three, so the
+    /// source face must not look through it. `lanes == 1` is required because a
+    /// vector identity (`v4f64`) is a numeric fact owner the old roster also did
+    /// not list; its bare spelling is not a scalar type expression.
+    fn scalarFacts(self: TypeExpr) ?types.NumericFacts {
+        if (self != .named) return null;
+        const named = types.descriptorNamed(self.named) orelse return null;
+        if (types.nominalReprOf(named) != null) return null;
+        const facts = named.numericFacts() orelse return null;
+        if (facts.lanes != 1) return null;
+        return facts;
+    }
+
     pub fn is_numeric(self: TypeExpr) bool {
-        return switch (self) {
-            .named => |n| for ([_][]const u8{
-                "i8",  "i16", "i32", "i64",
-                "u8",  "u16", "u32", "u64",
-                "f32", "f64",
-            }) |t| {
-                if (std.mem.eql(u8, n, t)) break true;
-            } else false,
-            else => false,
-        };
+        return self.scalarFacts() != null;
     }
 
     pub fn is_integer(self: TypeExpr) bool {
-        return switch (self) {
-            .named => |n| for ([_][]const u8{
-                "i8", "i16", "i32", "i64",
-                "u8", "u16", "u32", "u64",
-            }) |t| {
-                if (std.mem.eql(u8, n, t)) break true;
-            } else false,
-            else => false,
-        };
+        const facts = self.scalarFacts() orelse return false;
+        return facts.domain == .integral;
     }
 
     pub fn is_float(self: TypeExpr) bool {
-        return switch (self) {
-            .named => |n| std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64"),
-            else => false,
-        };
+        const facts = self.scalarFacts() orelse return false;
+        return facts.domain == .real;
     }
 
     /// Structural equality. Two record types are equal iff their field sets
@@ -1136,6 +1148,54 @@ test "TypeExpr.is_float" {
     try testing.expect((TypeExpr{ .named = "f32" }).is_float());
     try testing.expect((TypeExpr{ .named = "f64" }).is_float());
     try testing.expect(!(TypeExpr{ .named = "i32" }).is_float());
+    try testing.expect(!((@as(TypeExpr, .inferred)).is_float()));
+}
+
+// The derived source face equals the retired roster on the ten scalar
+// spellings it listed AND on the spellings it declined. The old switches
+// enumerated i8..u64/f32/f64; the derivation reads `descriptorNamed` →
+// `numericFacts` and filters nominal and vector identities so that no numeric
+// fact owner the roster did not list leaks in. A vector identity (`v4f64`) is
+// a numeric fact owner whose bare spelling must stay non-numeric here, and a
+// declared nominal name delegates its facts on purpose yet is not a numeric
+// SPELLING — both are pinned so a scalar added to the union cannot change the
+// source face silently.
+test "TypeExpr numeric face: derived equals retired roster, declines vectors and nominals" {
+    const numeric = [_][]const u8{
+        "i8", "i16", "i32", "i64",
+        "u8", "u16", "u32", "u64",
+        "f32", "f64",
+    };
+    const integral = [_][]const u8{
+        "i8", "i16", "i32", "i64",
+        "u8", "u16", "u32", "u64",
+    };
+    const real = [_][]const u8{ "f32", "f64" };
+
+    for (numeric) |n| {
+        const t = TypeExpr{ .named = n };
+        try testing.expect(t.is_numeric());
+        const want_int = for (integral) |m| {
+            if (std.mem.eql(u8, n, m)) break true;
+        } else false;
+        try testing.expectEqual(want_int, t.is_integer());
+        const want_real = for (real) |m| {
+            if (std.mem.eql(u8, n, m)) break true;
+        } else false;
+        try testing.expectEqual(want_real, t.is_float());
+    }
+
+    // Declined: vector identities own numeric facts but are not scalar
+    // spellings, non-numeric words, and structural faces.
+    const declined = [_][]const u8{ "v4f64", "v4i64", "v8f32", "v8i32", "bool", "str", "void", "any", "nil" };
+    for (declined) |n| {
+        const t = TypeExpr{ .named = n };
+        try testing.expect(!t.is_numeric());
+        try testing.expect(!t.is_integer());
+        try testing.expect(!t.is_float());
+    }
+    try testing.expect(!((@as(TypeExpr, .inferred)).is_numeric()));
+    try testing.expect(!((@as(TypeExpr, .inferred)).is_integer()));
     try testing.expect(!((@as(TypeExpr, .inferred)).is_float()));
 }
 
