@@ -543,6 +543,14 @@ pub const ResolvedType = union(enum) {
         };
     }
 
+    /// Project descriptor compatibility from the two fact sets. Null means at
+    /// least one descriptor is not numeric; it never stands for rejection.
+    pub fn numericAcceptsDescriptor(self: ResolvedType, supplied: ResolvedType) ?bool {
+        const demand = self.numericFacts() orelse return null;
+        const value = supplied.numericFacts() orelse return null;
+        return demand.acceptsDescriptor(value);
+    }
+
     pub fn is_integer(self: ResolvedType) bool {
         const facts = self.numericFacts() orelse return false;
         return facts.domain == .integral;
@@ -2291,6 +2299,9 @@ test "numeric descriptor facts compose domain width sign format and range" {
     try testing.expect(float.acceptsDescriptor((ResolvedType{ .f32 = {} }).numericFacts().?));
     try testing.expect(!signed.acceptsDescriptor(float));
     try testing.expect(!float.acceptsDescriptor(signed));
+    try testing.expectEqual(true, signed_type.numericAcceptsDescriptor(.u64).?);
+    try testing.expectEqual(false, signed_type.numericAcceptsDescriptor(.f64).?);
+    try testing.expect(signed_type.numericAcceptsDescriptor(.str) == null);
 }
 
 test "CallShape: method call shape" {

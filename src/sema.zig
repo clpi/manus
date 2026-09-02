@@ -1601,9 +1601,7 @@ pub const Sema = struct {
         // silently become a plain double either. The repair for both is the
         // conversion edge, which is the whole reason the trie exists.
         if (types.nominalReprOf(ann) != null or types.nominalReprOf(init_t) != null) return false;
-        if (ann.numericFacts()) |demand| {
-            if (init_t.numericFacts()) |supplied| return demand.acceptsDescriptor(supplied);
-        }
+        if (ann.numericAcceptsDescriptor(init_t)) |accepts| return accepts;
         return type_annotation_accepts_init_rest(ann, init_t);
     }
 
@@ -1658,7 +1656,7 @@ pub const Sema = struct {
         // ?T accepts T (optional accepts its inner type)
         if (ann == .option) {
             if (ann.option.eql(init_t)) return true;
-            if (ann.option.is_numeric() and init_t.is_numeric()) return true;
+            if (ann.option.numericAcceptsDescriptor(init_t)) |accepts| return accepts;
         }
         // Result[T, E] accepts T
         if (ann == .result) {
@@ -16750,6 +16748,18 @@ test "sema: existing numeric descriptors compose by facts, not tags" {
     try testing.expect(!Sema.type_annotation_accepts_init(.f64, .i64));
     try testing.expect(!Sema.type_annotation_accepts_init(.i64, .f64));
     try testing.expect(!Sema.type_annotation_accepts_init(.str, .i64));
+}
+
+test "sema: optional numeric demand composes descriptor domain facts" {
+    var integer: RT = .i32;
+    var real: RT = .f32;
+    const maybe_integer = RT{ .option = &integer };
+    const maybe_real = RT{ .option = &real };
+
+    try testing.expect(Sema.type_annotation_accepts_init(maybe_integer, .u64));
+    try testing.expect(Sema.type_annotation_accepts_init(maybe_real, .f64));
+    try testing.expect(!Sema.type_annotation_accepts_init(maybe_integer, .f64));
+    try testing.expect(!Sema.type_annotation_accepts_init(maybe_real, .i64));
 }
 
 test "sema: migration boundary symbols fail closed before realization" {
