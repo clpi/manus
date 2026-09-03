@@ -2947,6 +2947,52 @@ if [ "$cmt_status" -ne 0 ]; then
     bad 'tree-sitter comment rules are authored or drifted, not emitted from the lexical owner'
 fi
 
+# ── 3.8. await / comptime / not expression-prefix variant face ───────────────
+# `parse_prec` and `parse_match_scrutinee_prec` each reconstructed a three-way
+# prefix selection from token kind: await -> await_expr, comptime -> refusal,
+# not -> deprecated-.not unary. Event lane-two delimiter faces 27/28/29 now
+# settle await/comptime/not; Zig reads the settled faces and no longer replays
+# token identity at expression head. `not` gets its own face (29) so its
+# deprecation warning stays distinct from the canonical `!` negation, whose
+# unary relation is the identical `.not`.
+has "$ROOT/lib/compiler/parser.id" 'kindawait' \
+    'parser.id lost the await identity reference'
+has "$ROOT/lib/compiler/parser.id" 'delimiter = 27' \
+    'event lost the await expression-prefix face'
+has "$ROOT/lib/compiler/parser.id" 'delimiter = 28' \
+    'event lost the comptime expression-prefix face'
+has "$ROOT/lib/compiler/parser.id" 'delimiter = 29' \
+    'event lost the not keyword face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 27;' \
+    'tracked projection lost the await prefix face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 28;' \
+    'tracked projection lost the comptime prefix face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 29;' \
+    'tracked projection lost the not keyword face'
+has "$PARSER" 'fn currentParserAwait(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the await prefix consumer'
+has "$PARSER" 'fn currentParserComptime(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the comptime prefix consumer'
+has "$PARSER" 'fn currentParserNot(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the not keyword consumer'
+forbid "$PARSER" 'tok.kind == .kw_await' \
+    'expression head still replays await token identity'
+forbid "$PARSER" 'tok.kind == .kw_comptime' \
+    'expression head still replays comptime token identity'
+forbid "$PARSER" 'tok.kind == .kw_not' \
+    'expression head still replays not token identity'
+
+awaitprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate await scratch' >&2; exit 2; }
+printf '%s\n' 'if (tok.kind == .kw_await) {' >"$awaitprobe/old.zig"
+printf '%s\n' 'if (try self.currentParserAwait()) {' >"$awaitprobe/new.zig"
+awaitold=$(grep -cF 'tok.kind == .kw_await' "$awaitprobe/old.zig")
+awaitnew=$(grep -cF 'try self.currentParserAwait()' "$awaitprobe/new.zig")
+rm -rf -- "$awaitprobe"
+examined=$((examined + 1))
+if [ "$awaitold" -ne 1 ] || [ "$awaitnew" -ne 1 ]; then
+    bad "the await-prefix detector is broken: old=$awaitold new=$awaitnew"
+fi
+
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then

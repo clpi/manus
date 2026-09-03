@@ -539,6 +539,18 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 18;
     }
 
+    fn currentParserAwait(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 27;
+    }
+
+    fn currentParserComptime(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 28;
+    }
+
+    fn currentParserNot(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 29;
+    }
+
     fn currentParserTableEntry(self: *Parser) ParseError!bool {
         return (try self.currentParserDecision()) >> 13 == 23;
     }
@@ -4341,19 +4353,19 @@ pub const Parser = struct {
         var lhs: *ast.Expr = undefined;
         {
             const tok = try self.pk();
-            if (tok.kind == .kw_await) {
+            if (try self.currentParserAwait()) {
                 try self.denyRetiredStmtKeyword(tok, try self.statement_admission());
                 _ = try self.adv(); // consume `await`
                 const operand = try self.parse_match_scrutinee_prec(20);
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
             } else {
-                if (tok.kind == .kw_comptime and self.idol_mode) {
+                if (try self.currentParserComptime() and self.idol_mode) {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
                 const op: ?ast.UnOp = try self.unary_relation();
                 if (op) |uop| {
-                    if (tok.kind == .kw_not and self.idol_mode)
+                    if (try self.currentParserNot() and self.idol_mode)
                         term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
                     _ = try self.adv();
                     const operand = try self.parse_match_scrutinee_prec(20);
@@ -5566,19 +5578,19 @@ pub const Parser = struct {
         var lhs: *ast.Expr = undefined;
         {
             const tok = try self.pk();
-            if (tok.kind == .kw_await) {
+            if (try self.currentParserAwait()) {
                 try self.denyRetiredStmtKeyword(tok, try self.statement_admission());
                 _ = try self.adv(); // consume `await`
                 const operand = try self.parse_prec(20);
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
             } else {
-                if (tok.kind == .kw_comptime and self.idol_mode) {
+                if (try self.currentParserComptime() and self.idol_mode) {
                     term.locErr(tok.loc, "'comptime' is not valid in .id files; compile-time behavior is an ordinary relation over graph, world, and stage facts", .{});
                     return ParseError.UnexpectedToken;
                 }
                 const op: ?ast.UnOp = try self.unary_relation();
                 if (op) |uop| {
-                    if (tok.kind == .kw_not and self.idol_mode)
+                    if (try self.currentParserNot() and self.idol_mode)
                         term.locWarn(tok.loc, "warning: 'not' is deprecated in .id; use prefix !", .{});
                     _ = try self.adv();
                     if (uop == .neg and (try self.pk()).int_class == .min_magnitude) {
