@@ -5361,6 +5361,46 @@ const Arm64Compiler = struct {
         };
     }
 
+    /// A HOISTED CONSTANT IS READ OUT OF A THIRD MAP, AND IT IS SPILLABLE TOO.
+    ///
+    /// `ensureRegLiveRemap` names the rule: a value's register is only where the
+    /// value is while `spilled_regs` does not contain it, and the maps that name
+    /// a register cannot rewrite themselves. It answers that for the two maps a
+    /// `.local` is read through — `pinned` and `temps`, both reached below — by
+    /// reloading a spilled home into the register they already name. `imm_hoist`
+    /// is the third such map, named in that same comment, and the three constant
+    /// arms are its only readers that hand back a register. They handed it back
+    /// without consulting `spilled_regs` at all.
+    ///
+    /// A hoisted constant's register is a spill victim exactly where a leaf home
+    /// is one, and in a CALLING function too: `immHoistEnter` takes it from
+    /// `allocReg`, not `allocHomeReg`, so `markGpHome` flags it while
+    /// `gp_call_home_regs` — the mask the second spill pass in
+    /// `allocRegExcluding` skips — stays clear for it. The first pass skips every
+    /// home, the second takes this one.
+    ///
+    /// After that spill the value is in the frame and the register is not the
+    /// answer. `spillReg` clears `used_regs`, and `used_regs` is the whole save
+    /// set `emitSaveCallerRegs` builds — so the spill takes the constant out of
+    /// the save set while `imm_hoist` still names its register, the next `bl`
+    /// clobbers x9..x17, and every later read of that constant answers with the
+    /// call's leavings. No diagnostic: the read looks like the reuse it was
+    /// written to be.
+    ///
+    /// `ensureRegLive` is the whole repair, and it is the same reload the home
+    /// branch of `ensureRegLiveRemap` already performs: the `ldr` back into the
+    /// register every map names, the entry removed, the slot released once on
+    /// that removal, and the `claimReg` the loaded value is owed — which is also
+    /// the save-set membership the spill took away. Nothing else applies to a
+    /// hoisted home: `gp_reg_owner` is null because `markGpHome` nulls it, and
+    /// `sweepGpLive` and `releaseReg` both return above a home. It is a no-op
+    /// on every unspilled read, which is every read outside gate transport,
+    /// because `allocRegExcluding` refuses above its spill passes otherwise.
+    ///
+    /// Not the closure — closure is authoritative `register`/`frame` assignment
+    /// before emission, per GAP-148's record, under which a hoisted constant's
+    /// location is carried by the assignment rather than restated by a map each
+    /// reader has to remember to check against a second one.
     fn evalDnirValue(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
         if (self.crossFile(v, false)) return self.refuse(@src());
         return switch (v) {
@@ -5368,14 +5408,20 @@ const Arm64Compiler = struct {
             .i64 => |n| blk: {
                 // A loop-invariant constant already sits in a reserved register;
                 // reuse it instead of re-emitting a mov/movk chain (FTCFTW debt (1)).
-                if (self.imm_hoist.get(n)) |r| break :blk r;
+                if (self.imm_hoist.get(n)) |r| {
+                    try self.ensureRegLive(r);
+                    break :blk r;
+                }
                 const r = try self.allocReg();
                 try self.emitMovImm(r, n);
                 break :blk r;
             },
             .f64 => |n| blk: {
                 const bits: i64 = @bitCast(n);
-                if (self.imm_hoist.get(bits)) |r| break :blk r;
+                if (self.imm_hoist.get(bits)) |r| {
+                    try self.ensureRegLive(r);
+                    break :blk r;
+                }
                 const r = try self.allocReg();
                 try self.emitMovImm(r, @bitCast(n));
                 break :blk r;
@@ -5383,7 +5429,10 @@ const Arm64Compiler = struct {
             .f32 => |n| blk: {
                 // f32 bits in low 4 bytes of the 8-byte slot.
                 const bits: i64 = @intCast(@as(u32, @bitCast(n)));
-                if (self.imm_hoist.get(bits)) |r| break :blk r;
+                if (self.imm_hoist.get(bits)) |r| {
+                    try self.ensureRegLive(r);
+                    break :blk r;
+                }
                 const r = try self.allocReg();
                 try self.emitMovImm(r, bits);
                 break :blk r;
@@ -18019,4 +18068,135 @@ test "the hoist unwind returns the frame slot with the register it releases" {
         if (reg != home) compiler.used_regs[reg] = true;
     }
     try std.testing.expectEqual(home, try compiler.allocReg());
+}
+
+// GAP-148. THE HOISTED CONSTANT WAS READ OUT OF A MAP, NOT OUT OF THE FRAME.
+//
+// `ensureRegLiveRemap` states the rule and names the gap in its own coverage:
+// the maps that name a value's register cannot rewrite themselves, so a read
+// through one of them has to consult `spilled_regs` before it answers. It does
+// that for `pinned` and for `temps`, the two maps a `.local` is read through.
+// `imm_hoist` is the third, and the three constant arms of `evalDnirValue` are
+// its only readers that hand back a register — they answered from the map alone.
+//
+// A hoisted constant's register is a spill victim in a CALLING function, not
+// only a leaf: `immHoistEnter` takes it from `allocReg` rather than
+// `allocHomeReg`, so `markGpHome` flags it as a home while `gp_call_home_regs`
+// stays clear for it, and the second spill pass in `allocRegExcluding` skips
+// only that mask. After the spill the value is in the frame and `used_regs` is
+// clear — and `used_regs` is the entire save set `emitSaveCallerRegs` builds, so
+// the constant leaves the save set while `imm_hoist` still names its register
+// and the next `bl` clobbers x9..x17 out from under every later read.
+//
+// Built directly rather than through a source program for the same reason as the
+// reclaim, reload, remap, release, home, and unwind tests above — this is a state
+// the allocator passes through between a spill and the next read of a hoisted
+// constant, not a state a fixture names.
+test "a hoisted constant reloads before the read that names its register" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport: `allocRegExcluding` refuses above
+    // its spill passes otherwise, so `spilled_regs` is empty everywhere else and
+    // this whole read is the map lookup it always was.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // What `immHoistEnter` leaves behind for one hoisted constant: a register
+    // from the ordinary pool, flagged a home, with no `gp_call_home_regs` bit —
+    // which is what makes it reachable by the second spill pass.
+    const home: u5 = 20;
+    const hoisted: i64 = 4096;
+    compiler.markGpHome(home);
+    try compiler.imm_hoist.put(alloc, hoisted, home);
+    try std.testing.expectEqual(@as(u32, 0), compiler.gp_call_home_regs & (@as(u32, 1) << home));
+
+    // And what `spillReg` leaves behind: the value at a frame slot, the entry
+    // standing in for the claim it dropped, and `used_regs` clear — which is the
+    // save set `emitSaveCallerRegs` builds, so the constant is no longer in it.
+    const off: u16 = 8;
+    try compiler.spilled_regs.put(alloc, home, off);
+    compiler.used_regs[home] = false;
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+
+    const before = compiler.code.items.len;
+    const live = try compiler.evalDnirValue(&temps, .{ .i64 = hoisted });
+
+    // THE READ ANSWERS THE REGISTER `imm_hoist` NAMES — it always did, and that
+    // is not the fact. The fact is what has to be true of that register first.
+    try std.testing.expectEqual(home, live);
+
+    // One `ldr` from this constant's slot back into that same register.
+    const reload_off: u16 = compiler.stack_frame_bytes - off - 8;
+    const want: u32 = 0xf94003e0 | ((@as(u32, reload_off) / 8) << 10) | @as(u32, live);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        want,
+        std.mem.readInt(u32, compiler.code.items[before..][0..4], .little),
+    );
+
+    // The claim is back, which is the save-set membership the spill took away,
+    // and the home records `markGpHome` wrote are untouched by the round trip.
+    try std.testing.expect(compiler.used_regs[live]);
+    try std.testing.expect(compiler.gp_home_regs[live]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[live]);
+
+    // The entry is gone and its slot went back exactly once, on the removal that
+    // took it — the rule `sweepGpLive`, `releaseReg`, and both reloads share.
+    try std.testing.expect(!compiler.spilled_regs.contains(home));
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
+
+    // NOTHING ELSE WAS TAKEN. Reloading into the register every map already
+    // names costs the pool nothing, so the scratch a relocation would have
+    // consumed is still free — `allocRegExcluding` scans x9 upward.
+    try std.testing.expect(!compiler.used_regs[9]);
+
+    // AND THE READ IS REPEATABLE. A second read finds no entry, emits nothing,
+    // and releases nothing: a hoisted constant that was never spilled reads
+    // exactly as it did before this repair.
+    const again = try compiler.evalDnirValue(&temps, .{ .i64 = hoisted });
+    try std.testing.expectEqual(home, again);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+
+    // THE OTHER TWO ARMS READ THE SAME MAP AND OWE THE SAME RELOAD. `.f64` and
+    // `.f32` hoist their bit patterns into a GP register the identical way, so
+    // the repair is the class and not the `.i64` specimen.
+    const fhome: u5 = 21;
+    const fval: f64 = 2.5;
+    const fbits: i64 = @bitCast(fval);
+    compiler.markGpHome(fhome);
+    try compiler.imm_hoist.put(alloc, fbits, fhome);
+    const foff: u16 = 24;
+    try compiler.spilled_regs.put(alloc, fhome, foff);
+    compiler.used_regs[fhome] = false;
+
+    const fbefore = compiler.code.items.len;
+    const flive = try compiler.evalDnirValue(&temps, .{ .f64 = fval });
+    try std.testing.expectEqual(fhome, flive);
+    const freload_off: u16 = compiler.stack_frame_bytes - foff - 8;
+    const fwant: u32 = 0xf94003e0 | ((@as(u32, freload_off) / 8) << 10) | @as(u32, flive);
+    try std.testing.expectEqual(fbefore + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        fwant,
+        std.mem.readInt(u32, compiler.code.items[fbefore..][0..4], .little),
+    );
+    try std.testing.expect(compiler.used_regs[flive]);
+    try std.testing.expect(!compiler.spilled_regs.contains(fhome));
 }
