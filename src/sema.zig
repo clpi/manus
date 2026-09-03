@@ -13498,8 +13498,8 @@ pub const Sema = struct {
             const result = switch (expr.*) {
                 .nil => .nil,
                 .true_lit, .false_lit => .bool,
-                .int_lit => .i64,
-                .float_lit => .f64,
+                .int_lit => types.literalDefaultDescriptor(.integral),
+                .float_lit => types.literalDefaultDescriptor(.real),
                 .quoted => |lit| types.quotedLiteralType(lit.quote),
                 .name => |n| blk: {
                     if (self.param_index(n.ident)) |pi| {
@@ -16725,6 +16725,30 @@ test "sema: numeric source faces defer descriptor choice to demand facts" {
     try testing.expect(Sema.numericDemandAcceptsLiteral(.i8, &neg_expr));
     try testing.expect(!Sema.numericDemandAcceptsLiteral(.i64, &real_expr));
     try testing.expect(!Sema.numericDemandAcceptsLiteral(.str, &int_expr));
+}
+
+test "sema: the native-infer bare-literal default is derived from the same facts" {
+    // The NATIVE-INFER bare-literal default face — the descriptor
+    // `try_specialize_native_func`'s `NativeInfer.infer_expr` gives an
+    // unqualified numeric literal before its own unification hint refines it —
+    // was a FIFTH statement of the bare-literal default that the sema literal
+    // sites already delegate to `types.literalDefaultDescriptor`. It read raw
+    // `.int_lit => .i64` / `.float_lit => .f64` tags — two more hand-listed
+    // copies of one default beside the numeric owner, agreeing with the other
+    // four sites only until someone edits one of them. A scalar identity whose
+    // register-width signed single-lane form changed would leave this consumer
+    // answering the old tag by hand while `infer_literal_type` and
+    // `check_expr_inner` moved, the wrong answer in the safe-looking direction.
+    //
+    // It now delegates to the same owner. This control PINS the owner to the
+    // exact answers the retired tags gave — `.i64` for a bare integer literal,
+    // `.f64` for a bare real literal — so no native-inferred literal can gain or
+    // lose a default. Reachability of `NativeInfer` through a real caller is
+    // bounded at the unit surface by `GAP-134`/`GAP-145` fixture debt exactly as
+    // every sibling face above; what is pinned is that the default this consumer
+    // now reads equals the default it hand-stated.
+    try testing.expectEqual(RT.i64, types.literalDefaultDescriptor(.integral));
+    try testing.expectEqual(RT.f64, types.literalDefaultDescriptor(.real));
 }
 
 test "sema: existing numeric descriptors compose by facts, not tags" {
