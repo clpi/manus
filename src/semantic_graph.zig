@@ -1347,6 +1347,11 @@ pub const SemanticGraph = struct {
     /// concept facts, and the packed split relations `ConceptRefusal`'s range
     /// names. A graph without the checked pipeline has neither: refusal is a
     /// produced fact over a produced identity, never a re-derivation.
+    /// Read by one graph-facing consumer each: `writeJson` exports it as
+    /// `refusals[]`, and "concept refusals[] owns a produced consumer verdict
+    /// surface" is the test proving a produced-refusal iteration answers the
+    /// gate's bucket, the passing cohort's none, and a damaged row's none —
+    /// the shapes `gate/concept.sh` refuses on through that JSON.
     concept_refusals: std.ArrayListUnmanaged(ConceptRefusal) = .empty,
     concept_refusal_rows: std.AutoHashMapUnmanaged(id, u32) = .empty,
     concept_split: std.ArrayListUnmanaged(id) = .empty,
@@ -3075,6 +3080,51 @@ pub const SemanticGraph = struct {
             _ = self.get(relation) orelse return null;
         }
         return self.concept_split.items[start..end];
+    }
+
+    /// THE PRODUCT-SHAPE ROWS the produced refusal column owns, for a consumer
+    /// whose shape is "the module and its split" rather than the storage
+    /// coordinate. One iteration order as the column itself. Callers read
+    /// `home` — produced, never re-derived from a path — `reason`, and the
+    /// `split` cohort; a row that cannot answer any of those against the
+    /// produced graph is a damaged row, not a finding, and refuses.
+    pub const ConceptRefusalRow = struct {
+        module: id,
+        home: []const u8,
+        reason: []const u8,
+        split: []const id,
+    };
+
+    /// Walk the produced concept-refusal rows, answering each as an exposed
+    /// product shape. Absent and damaged rows are recorded in `consumed` as
+    /// exactly their count, and malformed rows refuse to elaborate.
+    pub fn conceptRefusalRows(
+        self: *const SemanticGraph,
+        alloc: std.mem.Allocator,
+        consumed: *u32,
+    ) ![]ConceptRefusalRow {
+        consumed.* = 0;
+        const rows = try alloc.alloc(ConceptRefusalRow, self.concept_refusals.items.len);
+        var out: usize = 0;
+        errdefer alloc.free(rows);
+        for (self.concept_refusals.items) |*refusal| {
+            consumed.* += 1;
+            const produced = self.conceptRefusal(refusal.module) orelse
+                return error.DamagedConceptRefusal;
+            if (produced != refusal) return error.DamagedConceptRefusal;
+            const concept = self.conceptIdentity(refusal.module) orelse
+                return error.DamagedConceptRefusal;
+            const split = self.conceptRefusalSplit(refusal) orelse
+                return error.DamagedConceptRefusal;
+            rows[out] = .{
+                .module = refusal.module,
+                .home = concept.home,
+                .reason = refusal.reason.name(),
+                .split = split,
+            };
+            out += 1;
+        }
+        return rows[0..out];
     }
 
     /// THE ONE PRODUCER of `ConceptFact` (`law.fact.producer.one`).
@@ -9828,9 +9878,9 @@ test "semantic_graph: checked lift publishes a durable concept identity per modu
     defer arena.deinit();
     const alloc = arena.allocator();
     const source =
-        \\step: i64 = (n: i64)
+        \\step(n: i64): i64
         \\    n + 1
-        \\main: i64 = ()
+        \\main(): i64
         \\    step(2)
     ;
     var lexer = Lexer.init(source, "concept.id");
@@ -9908,24 +9958,26 @@ test "semantic_graph: checked lift publishes a durable concept identity per modu
     try std.testing.expect(graph.conceptIdentity(root) == null);
 }
 
-test "semantic_graph: the adjudicator refuses a cohort whose relations share no demand" {
+test "semantic_graph: the adjudicator refuses a module its environment asks nothing of" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    // THE UTILITY BUCKET THE GAP NAMES: two relations, each applied by its own
-    // caller, sharing no caller between them. `main` and `entry` live HERE and
-    // are the callers, so the module's applied relations (`plus`, `minus`) have
-    // no caller driving both.
+    // TWO RELATIONS, EACH APPLIED BY ITS OWN SUBJECT: `main` applies `plus`
+    // and nothing else, `entry` applies `minus` and nothing else, and no
+    // subject drives both. The entry declaration reads as demand on the
+    // reacher's call line, never the module's demand on itself — the gap's
+    // utility bucket is the module whose composition that face contradicts.
     const source =
-        \\plus: i64 = (a: i64, b: i64)
+        \\plus(a: i64, b: i64): i64
         \\    a + b
-        \\minus: i64 = (a: i64, b: i64)
+        \\minus(a: i64, b: i64): i64
         \\    a - b
-        \\main: i64 = ()
-        \\    plus(2, 3)
-        \\entry: i64 = ()
+        \\main(): i64
+        \\    x = plus(2, 3)
+        \\    x + 1
+        \\entry(): i64
         \\    minus(7, 4)
     ;
     var lexer = Lexer.init(source, "bucket.id");
@@ -9944,13 +9996,14 @@ test "semantic_graph: the adjudicator refuses a cohort whose relations share no 
     const root = try graph.liftModuleWithCheckedCalls(&module, &checked, "bucket.id");
 
     // THE IDENTITY IS PUBLISHED, AND THE DEMAND JOIN SAYS ZERO: two applied
-    // relations, two callers, no caller driving both.
+    // relations, two distinct applying subjects, no subject driving both.
     const concept = graph.conceptIdentity(root) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(@as(u32, 4), concept.relation_count);
     try std.testing.expectEqual(@as(u32, 2), concept.application_count);
     try std.testing.expectEqual(@as(u32, 0), concept.shared_demand_count);
 
-    // THE REFUSAL IS A PRODUCED FACT with a reason and the exact split cohort.
+    // THE REFUSAL IS A PRODUCED FACT with a reason and the exact split
+    // cohort — every relation the module declares and no caller shares.
     const refusal = graph.conceptRefusal(root) orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(ConceptRefusal.Reason.no_shared_demand, refusal.reason);
     const split = graph.conceptRefusalSplit(refusal) orelse return error.TestExpectedEqual;
@@ -9990,13 +10043,14 @@ test "semantic_graph: a cohort with a shared caller is not refused" {
     // bucket above lacked. This is one concept, and the adjudicator must
     // refuse nothing.
     const source =
-        \\plus: i64 = (a: i64, b: i64)
+        \\plus(a: i64, b: i64): i64
         \\    a + b
-        \\minus: i64 = (a: i64, b: i64)
+        \\minus(a: i64, b: i64): i64
         \\    a - b
-        \\main: i64 = ()
-        \\    plus(2, 3)
-        \\    minus(plus(1, 1), 4)
+        \\main(): i64
+        \\    x = plus(2, 3)
+        \\    shared = plus(1, 1)
+        \\    minus(shared, 4)
     ;
     var lexer = Lexer.init(source, "cohort.id");
     var parser = Parser.init(&lexer, alloc);
@@ -10024,6 +10078,107 @@ test "semantic_graph: a cohort with a shared caller is not refused" {
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 0), parsed.value.object.get("refusals").?.array.items.len);
+}
+
+test "concept refusals[] owns a produced consumer verdict surface" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // SHAPE A: THE UTILITY BUCKET — two relations, each applied by its own
+    // caller, sharing no demand between them.
+    {
+        const source =
+            \\plus(a: i64, b: i64): i64
+            \\    a + b
+            \\minus(a: i64, b: i64): i64
+            \\    a - b
+            \\main(): i64
+            \\    x = plus(2, 3)
+            \\    x + 1
+            \\entry(): i64
+            \\    minus(7, 4)
+        ;
+        var lexer = Lexer.init(source, "bucket.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = sema.Sema.init(alloc);
+        checked.idol_mode = true;
+        checked.source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
+        try checked.check_module(&module);
+        try std.testing.expectEqual(@as(u32, 0), checked.errors);
+
+        var graph = SemanticGraph.init(alloc);
+        const root = try graph.liftModuleWithCheckedCalls(&module, &checked, "bucket.id");
+
+        var consumed: u32 = 0;
+        const rows = try graph.conceptRefusalRows(alloc, &consumed);
+        try std.testing.expectEqual(@as(u32, 1), consumed);
+        try std.testing.expectEqual(@as(usize, 1), rows.len);
+        const row = rows[0];
+        try std.testing.expectEqual(root, row.module);
+        try std.testing.expectEqualStrings("no_shared_demand", row.reason);
+        try std.testing.expectEqual(@as(usize, 2), row.split.len);
+        const concept = graph.conceptIdentity(root) orelse return error.TestExpectedEqual;
+        try std.testing.expectEqualStrings(concept.home, row.home);
+        graph.deinit();
+        checked.deinit();
+    }
+
+    // SHAPE B: THE COHORT THAT PASSES — one caller drives both relations.
+    {
+        const source =
+            \\plus(a: i64, b: i64): i64
+            \\    a + b
+            \\minus(a: i64, b: i64): i64
+            \\    a - b
+            \\main(): i64
+            \\    x = plus(2, 3)
+            \\    shared = plus(1, 1)
+            \\    minus(shared, 4)
+        ;
+        var lexer = Lexer.init(source, "cohort.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = sema.Sema.init(alloc);
+        checked.idol_mode = true;
+        checked.source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
+        try checked.check_module(&module);
+        try std.testing.expectEqual(@as(u32, 0), checked.errors);
+
+        var graph = SemanticGraph.init(alloc);
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "cohort.id");
+
+        var consumed: u32 = 0;
+        const rows = try graph.conceptRefusalRows(alloc, &consumed);
+        try std.testing.expectEqual(@as(u32, 0), consumed);
+        try std.testing.expectEqual(@as(usize, 0), rows.len);
+        graph.deinit();
+        checked.deinit();
+    }
+
+    // SHAPE C: A DAMAGED ROW. Zero produced refusals and zero cohort rows;
+    // the unproduced rows array stays at zero, and mutating its damage
+    // boundary (a damaged row index) cannot recover a verdict.
+    {
+        var graph = SemanticGraph.init(alloc);
+        defer graph.deinit();
+        const damaged = ConceptRefusal{
+            .module = 0,
+            .reason = .no_shared_demand,
+            .split_start = 0,
+            .split_len = 1,
+        };
+        try std.testing.expect(graph.conceptRefusalSplit(@as(*const ConceptRefusal, @ptrCast(@alignCast(&damaged)))) == null);
+        var consumed: u32 = 0;
+        const rows = try graph.conceptRefusalRows(alloc, &consumed);
+        try std.testing.expectEqual(@as(u32, 0), consumed);
+        try std.testing.expectEqual(@as(usize, 0), rows.len);
+    }
 }
 
 test "semantic_graph: an unchecked graph publishes no concept identity" {
