@@ -1,11 +1,11 @@
 //! Duo-native keyword classifier projection (P12-WS6/WS7).
 //!
-//! Emits `lib/token/classify.id` and `src/keyword_classify.c` from the
-//! `.keyword` rows of `src/grammar_role_table.zig` — the generated projection
-//! of the ONE grammar-fact owner, `lib/compiler/token.id` (`law.grammar.one`,
-//! `law.fact.producer.one`). This generator used to read a second 54-row host
-//! table (`src/token_semantic.zig`); that table is deleted and the owner's
-//! rows are the only keyword-identity producer the emit reads.
+//! Emits `lib/token/classify.id` and the compiler, LSP, and WASM keyword C
+//! projections from the `.keyword` rows of `src/grammar_role_table.zig` — the
+//! generated projection of the ONE grammar-fact owner, `lib/compiler/token.id`
+//! (`law.grammar.one`, `law.fact.producer.one`). This generator used to read a
+//! second 54-row host table (`src/token_semantic.zig`); that table is deleted
+//! and the owner's rows are the only keyword-identity producer the emit reads.
 //!
 //! Projections emitted here: classifier (3 candidate realizations) and
 //! spelling. Kind ids are lexer.TokenKind ordinals straight off the owner's

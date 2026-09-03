@@ -1,15 +1,17 @@
 /* GENERATED from src/token_classify_gen.zig — do not edit by hand.
- * Regenerate: duo token-tables emit
- * Canonical Duo projection: lib/std/token/classify.id (@c.export classify)
- * Production consumer: src/duo_keyword_bridge.zig → src/lexer.zig
+ * Regenerate: idol token-tables emit
+ * Canonical Duo projection: lib/token/classify.id (@c.export classify)
+ * Production consumer: src/main.zig boot() — the direct backend's link
+ * input for user programs importing the symbol. The compiler's own
+ * lexer reads the owner's rows (src/keyword_bridge.zig), not this.
  */
 #include <stdint.h>
 #include <string.h>
 
 /* weak: this generated table is the PROJECTION of
- * lib/std/token/classify.id. A program that embeds the canonical Duo
+ * lib/token/classify.id. A program that embeds the canonical Duo
  * source emits its own definition of the same symbol, and A3 ONE EDGE
- * says there is one fact behind both — so the Duo-emitted one must be
+ * says there is one fact behind both — so the idol-emitted one must be
  * allowed to win rather than colliding. Without this, anything pulling
  * in SH-02's artifact AND SH-03's lexer fails to link with
  * `duplicate symbol '_duo_keyword_classify'`. */

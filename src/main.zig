@@ -1364,8 +1364,12 @@ fn mainInner(init: std.process.Init) !void {
         }
         try token_classify_gen.emitTokenClassifyFile(alloc, io, "lib/token/classify.id");
         try token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, "src/keyword_classify.c");
+        try token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, "tools/lsp/src/duo_keyword_classify.c");
+        try token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, "tools/wasm/src/duo_keyword_classify.c");
         term.print("wrote lib/token/classify.id\n", .{});
         term.print("wrote src/keyword_classify.c\n", .{});
+        term.print("wrote tools/lsp/src/duo_keyword_classify.c\n", .{});
+        term.print("wrote tools/wasm/src/duo_keyword_classify.c\n", .{});
         term.print("lib/token/grammarrole.id is emitted by the Idol grammar-role\n", .{});
         term.print("owner: idol run lib/compiler/token.id\n", .{});
         return;

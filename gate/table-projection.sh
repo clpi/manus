@@ -49,17 +49,12 @@ broke() { printf 'table projection: CANNOT MEASURE — %s\n' "$*" >&2; exit 2; }
 # they are run in. §2 refuses if the commands write anything else, or omit
 # any of these, so this list cannot silently fall behind the generators.
 #
-# DELIBERATELY NOT HERE: tools/wasm/src/duo_keyword_classify.c and
-# tools/lsp/src/duo_keyword_classify.c. gate/generated.manifest names
-# src/token_classify_gen.zig as their generator, but no invocation of it
-# writes those paths and their banners cite `lib/std/token/classify.id` and
-# `src/duo_keyword_bridge.zig`, neither of which exists in this repository.
-# They are vendored copies from another tree, and claiming this gate covers
-# them would be the exact lie this gate was written to stop.
 SUBJECTS='lib/wasm/opcode_lookup.id
 lib/wasm/ward_mvp_opcodes.id
 lib/token/classify.id
-src/keyword_classify.c'
+src/keyword_classify.c
+tools/lsp/src/duo_keyword_classify.c
+tools/wasm/src/duo_keyword_classify.c'
 
 # ---------------------------------------------------------------------------
 # THE RETIRED-SYNTAX SCANNER (§5).
