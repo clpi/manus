@@ -8776,6 +8776,71 @@ pub const SemanticGraph = struct {
         try buf.append(alloc, ']');
     }
 
+    /// THE DOCS/MCP DEDICATED PROJECTION the gap leaves open after the
+    /// `refusals[]` consumer land: the same produced concept verdict
+    /// `writeJson` exports, rendered as one object a docs generator, MCP
+    /// reader, or LSP surface consumes without parsing the full graph JSON.
+    /// `idol explain` is its first reader. Every identity row is re-read
+    /// through `conceptIdentity` and every refusal through
+    /// `conceptRefusalRows` — the produced consumer surface the gate holds —
+    /// so this projection and the gate hold the same rows, and damage
+    /// refuses the render instead of publishing a verdict the graph no
+    /// longer backs. gaps/GAP-120.md.
+    pub fn appendConceptVerdictJson(
+        self: *const SemanticGraph,
+        buf: *std.ArrayListUnmanaged(u8),
+        alloc: std.mem.Allocator,
+    ) !void {
+        try buf.appendSlice(alloc, "{\"concepts\":[");
+        for (self.concept_facts.items, 0..) |fact, i| {
+            const published = self.conceptIdentity(fact.module) orelse
+                return error.InvalidConceptFact;
+            if (published.module != fact.module or
+                published.home.ptr != fact.home.ptr or
+                published.relation_count != fact.relation_count or
+                published.shape_count != fact.shape_count or
+                published.application_count != fact.application_count or
+                published.shared_demand_count != fact.shared_demand_count)
+            {
+                return error.InvalidConceptFact;
+            }
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"module\":");
+            try appendJsonInt(buf, alloc, fact.module);
+            try buf.appendSlice(alloc, ",\"home\":\"");
+            try jsonEscapeAppend(buf, alloc, fact.home);
+            try buf.appendSlice(alloc, "\",\"relations\":");
+            try appendJsonInt(buf, alloc, fact.relation_count);
+            try buf.appendSlice(alloc, ",\"shapes\":");
+            try appendJsonInt(buf, alloc, fact.shape_count);
+            try buf.appendSlice(alloc, ",\"applications\":");
+            try appendJsonInt(buf, alloc, fact.application_count);
+            try buf.appendSlice(alloc, ",\"shared_demand\":");
+            try appendJsonInt(buf, alloc, fact.shared_demand_count);
+            try buf.append(alloc, '}');
+        }
+        try buf.appendSlice(alloc, "],\"refusals\":[");
+        var consumed: u32 = 0;
+        const rows = try self.conceptRefusalRows(alloc, &consumed);
+        defer alloc.free(rows);
+        for (rows, 0..) |row, i| {
+            if (i > 0) try buf.append(alloc, ',');
+            try buf.appendSlice(alloc, "{\"module\":");
+            try appendJsonInt(buf, alloc, row.module);
+            try buf.appendSlice(alloc, ",\"home\":\"");
+            try jsonEscapeAppend(buf, alloc, row.home);
+            try buf.appendSlice(alloc, "\",\"reason\":\"");
+            try buf.appendSlice(alloc, row.reason);
+            try buf.appendSlice(alloc, "\",\"split\":[");
+            for (row.split, 0..) |relation, j| {
+                if (j > 0) try buf.append(alloc, ',');
+                try appendJsonInt(buf, alloc, relation);
+            }
+            try buf.appendSlice(alloc, "]}");
+        }
+        try buf.appendSlice(alloc, "]}");
+    }
+
     fn appendMembersJson(
         self: *const SemanticGraph,
         buf: *std.ArrayListUnmanaged(u8),
@@ -10179,6 +10244,63 @@ test "concept refusals[] owns a produced consumer verdict surface" {
         try std.testing.expectEqual(@as(u32, 0), consumed);
         try std.testing.expectEqual(@as(usize, 0), rows.len);
     }
+}
+
+test "semantic_graph: the explain verdict projects the produced concept finding" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // THE SAME BUCKET the gate holds: the explain projection must answer the
+    // identical produced finding — one identity row with zero shared demand
+    // and one refusal naming the two-relation cohort.
+    const source =
+        \\plus(a: i64, b: i64): i64
+        \\    a + b
+        \\minus(a: i64, b: i64): i64
+        \\    a - b
+        \\main(): i64
+        \\    x = plus(2, 3)
+        \\    x + 1
+        \\entry(): i64
+        \\    minus(7, 4)
+    ;
+    var lexer = Lexer.init(source, "bucket.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    checked.source_law_edition = authority_projection.SourceLawEdition.idolCurrent();
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const root = try graph.liftModuleWithCheckedCalls(&module, &checked, "bucket.id");
+    const concept = graph.conceptIdentity(root) orelse return error.TestExpectedEqual;
+
+    var verdict: std.ArrayListUnmanaged(u8) = .empty;
+    defer verdict.deinit(alloc);
+    try graph.appendConceptVerdictJson(&verdict, alloc);
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, verdict.items, .{});
+    defer parsed.deinit();
+    const identities = parsed.value.object.get("concepts").?.array.items;
+    try std.testing.expectEqual(@as(usize, 1), identities.len);
+    try std.testing.expectEqualStrings(concept.home, identities[0].object.get("home").?.string);
+    try std.testing.expectEqual(@as(i64, 0), identities[0].object.get("shared_demand").?.integer);
+    const refusals = parsed.value.object.get("refusals").?.array.items;
+    try std.testing.expectEqual(@as(usize, 1), refusals.len);
+    try std.testing.expectEqualStrings(concept.home, refusals[0].object.get("home").?.string);
+    try std.testing.expectEqualStrings("no_shared_demand", refusals[0].object.get("reason").?.string);
+    try std.testing.expectEqual(@as(usize, 2), refusals[0].object.get("split").?.array.items.len);
+
+    // DAMAGING THE PRODUCED ROW REFUSES THE RENDER: the explain face never
+    // publishes a verdict the graph no longer backs.
+    _ = graph.concept_refusal_rows.remove(root);
+    try std.testing.expectError(error.DamagedConceptRefusal, graph.appendConceptVerdictJson(&verdict, alloc));
 }
 
 test "semantic_graph: an unchecked graph publishes no concept identity" {

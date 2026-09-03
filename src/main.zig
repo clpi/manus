@@ -2224,6 +2224,18 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     try optimization_outcome.writeJson(&outcomes, &fw.interface);
     try fw.interface.print(",\"assumptions\":", .{});
     try assumption_guard.writeModuleJson(&assumptions, &fw.interface);
+    // GAP-120 docs/MCP dedicated projection: the produced concept verdict —
+    // the same identity and refusal rows `idol graph` exports — rendered as
+    // one object so a docs generator, MCP reader, or LSP surface consumes it
+    // without parsing the full graph JSON. Damage refuses the render here
+    // rather than publishing a verdict the graph no longer backs.
+    try fw.interface.print(",\"concept\":", .{});
+    {
+        var verdict: std.ArrayListUnmanaged(u8) = .empty;
+        defer verdict.deinit(alloc);
+        try graph.appendConceptVerdictJson(&verdict, alloc);
+        try fw.interface.writeAll(verdict.items);
+    }
     // H-8 output totality: the transform engine's provenance and its tier-1
     // registry contract are compiler state with no other projection. Rendering
     // them here is what lets the dispatch gate be asserted from outside the
