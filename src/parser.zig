@@ -544,6 +544,19 @@ pub const Parser = struct {
         return if ((((try self.currentParserEvent()) >> 63) & 1) != 0) 3 else 0;
     }
 
+    fn currentParserSuffix(self: *Parser) ParseError!u4 {
+        const face = (try self.currentParserDecision()) >> 13;
+        return switch (face) {
+            15 => 1,
+            17 => 2,
+            19 => 3,
+            16 => 4,
+            24 => 7,
+            25 => 8,
+            else => if (try self.currentParserTable()) 5 else if ((((try self.currentParserEvent()) >> 63) & 1) != 0) 6 else if (try self.currentParserQuoted()) 9 else 0,
+        };
+    }
+
     fn currentParserCallArgument(self: *Parser) ParseError!u2 {
         if ((((try self.currentParserEvent()) >> 63) & 1) != 0) return 1;
         if (try self.currentParserTable()) return 2;
@@ -7611,8 +7624,8 @@ pub const Parser = struct {
         var e = try self.parse_simple_expr();
         while (true) {
             const tok = try self.pk();
-            switch (tok.kind) {
-                .dot => {
+            switch (try self.currentParserSuffix()) {
+                1 => {
                     // §4, and §20's `peek = () if .pos < #.src .src[.pos] else nil`:
                     // `#.src .src[.pos]` is a comparison against `#.src` followed
                     // by the one-line then-expression, not `#((.src).src[.pos])`.
@@ -7671,7 +7684,7 @@ pub const Parser = struct {
                     }
                     e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = fld } });
                 },
-                .at => {
+                2 => {
                     // §2 THE ANCHOR — **postfix `X@rel` MOVES it and
                     // retrieves** (never invokes). §4's character catalog says
                     // the same in one line: "@ the anchor: name it (bare), move
@@ -7761,13 +7774,13 @@ pub const Parser = struct {
                     const rel = try self.expect_name_like();
                     e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = rel, .anchored = true } });
                 },
-                .lbracket => {
+                3 => {
                     _ = try self.adv();
                     const key = try self.parse_expr();
                     _ = try self.expect(.rbracket);
                     e = try self.new_expr(.{ .index = .{ .loc = tok.loc, .obj = e, .key = key } });
                 },
-                .colon => {
+                4 => {
                     // Peek ahead to distinguish type annotation from method call.
                     // Type annotation: name : Type = value
                     // Method call:     obj : method ( args )
@@ -7878,7 +7891,7 @@ pub const Parser = struct {
                         } });
                     }
                 },
-                .lbrace => {
+                5 => {
                     // Same rule as `(` and a string literal below (F-13813-1): a
                     // `{` on a new line starts a fresh expression, not a Lua
                     // `f{...}` table-call argument.
@@ -7929,7 +7942,7 @@ pub const Parser = struct {
                         e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs, .form = .braced } });
                     }
                 },
-                .lparen => {
+                6 => {
                     if (tok.loc.line > e.loc().line) break;
                     const callargs = try self.parse_call_args();
                     // §9 — `decode(u64)(v)`: the FIRST group is the
@@ -7951,16 +7964,15 @@ pub const Parser = struct {
                     }
                     e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs, .form = .parenthesized } });
                 },
-                .question => {
+                7 => {
                     _ = try self.adv();
                     e = try self.new_expr(.{ .try_expr = .{ .loc = tok.loc, .operand = e } });
                 },
-                .bang => {
+                8 => {
                     _ = try self.adv();
                     e = try self.new_expr(.{ .unwrap_expr = .{ .loc = tok.loc, .operand = e } });
                 },
-                else => {
-                    if (!try self.currentParserQuoted()) break;
+                9 => {
                     if (tok.loc.line > e.loc().line) break;
                     const saved = self.saveState();
                     _ = try self.adv();
@@ -7974,6 +7986,7 @@ pub const Parser = struct {
                     }
                     e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs, .form = .parenless } });
                 },
+                else => break,
             }
         }
         return e;

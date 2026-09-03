@@ -396,8 +396,8 @@ has "$PARSER" 'if (try self.currentParserTypeArray()) {' \
     'parse_type_primary bypasses the settled array face'
 array_arms=$(grep -cF '.lbracket => {' "$PARSER" || true)
 examined=$((examined + 1))
-if [ "$array_arms" -ne 1 ]; then
-    bad "the residual non-type parser must contain exactly one .lbracket arm (found=$array_arms)"
+if [ "$array_arms" -ne 0 ]; then
+    bad "the parser retained $array_arms .lbracket host arm(s) after suffix transfer"
 fi
 
 # ── 2e''. bare declaration path executes from whole-pack lane two ────────────
@@ -421,7 +421,7 @@ has "$PARSER" 'if (try self.currentParserTypeRecord()) {' \
 generic_arms=$(grep -cF '.lt => {' "$PARSER" || true)
 record_arms=$(grep -cF '.lbrace => {' "$PARSER" || true)
 examined=$((examined + 1))
-if [ "$generic_arms" -ne 0 ] || [ "$record_arms" -ne 1 ]; then
+if [ "$generic_arms" -ne 0 ] || [ "$record_arms" -ne 0 ]; then
     bad "type-primary host arms drifted: generic=$generic_arms record-total=$record_arms"
 fi
 
@@ -913,6 +913,38 @@ rm -rf -- "$matchprobe"
 examined=$((examined + 1))
 if [ "$matchold" -ne 1 ] || [ "$matchnew" -ne 1 ]; then
     bad "the match-suffix detector is broken: old=$matchold new=$matchnew"
+fi
+
+# General suffix selection consumes one parser.id face. Zig retains field,
+# anchor, index, method, brace-call, ordinary-call, try, unwrap, and quoted-call
+# materialization without selecting any of them through TokenKind.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindquestion' \
+    'event lost the postfix try suffix face'
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindbang' \
+    'event lost the postfix unwrap suffix face'
+has "$ROOT/src/parser/projection.c" 'kind == INT64_C(82)' \
+    'tracked projection lost the postfix try suffix face'
+has "$ROOT/src/parser/projection.c" 'kind == INT64_C(83)' \
+    'tracked projection lost the postfix unwrap suffix face'
+has "$PARSER" 'fn currentParserSuffix(self: *Parser) ParseError!u4 {' \
+    'parser.zig lost the general suffix consumer'
+has "$PARSER" 'switch (try self.currentParserSuffix()) {' \
+    'general suffix parsing bypasses the settled suffix face'
+suffixswitches=$(sed -n '/fn parse_suffixed_expr/,/fn parse_nn_block_desugar/p' "$PARSER" | grep -cF 'switch (tok.kind)' || true)
+examined=$((examined + 1))
+if [ "$suffixswitches" -ne 0 ]; then
+    bad "general suffix parsing retained $suffixswitches tok.kind host switch(es)"
+fi
+
+suffixprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate general-suffix scratch' >&2; exit 2; }
+printf '%s\n' 'switch (tok.kind) {' >"$suffixprobe/old.zig"
+printf '%s\n' 'switch (try self.currentParserSuffix()) {' >"$suffixprobe/new.zig"
+suffixold=$(grep -cF 'switch (tok.kind)' "$suffixprobe/old.zig")
+suffixnew=$(grep -cF 'switch (try self.currentParserSuffix())' "$suffixprobe/new.zig")
+rm -rf -- "$suffixprobe"
+examined=$((examined + 1))
+if [ "$suffixold" -ne 1 ] || [ "$suffixnew" -ne 1 ]; then
+    bad "the general-suffix detector is broken: old=$suffixold new=$suffixnew"
 fi
 
 # Call-argument entry composes the event's parenthesized-call bit, exact brace
