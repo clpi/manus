@@ -2746,14 +2746,27 @@ fn lowerModuleFromGraph(
         // wrong — measured when the guard was first removed.
         var it = module_globals.types.iterator();
         while (it.next()) |entry| {
-            switch (entry.value_ptr.*) {
-                .i8, .i16, .i32, .u8, .u16, .u32 => {
-                    var name_buf: [64]u8 = undefined;
-                    const note = std.fmt.bufPrint(&name_buf, "mod-global-written:{s}", .{entry.key_ptr.*}) catch
-                        "mod-global-written:<name>";
-                    return bailWith(diagnostic, @src(), note);
-                },
-                else => {},
+            // DERIVED, NOT TABULATED. "Narrower than the i64 word" is exactly a
+            // NARROW INTEGRAL SCALAR, which the numeric owner already answers:
+            // `narrowFit` is non-null only for an integral, single-lane
+            // descriptor of width < 64, so `i64`/`u64` (register width),
+            // `f32`/`f64` (reals — a store to a real slot is not a masked
+            // integer write) and the vectors all return null and keep their
+            // storage. `scalarRepr` gates the nominal exactly as the retired
+            // bare-tag switch did: it listed only `.i8..u32`, so a
+            // nominal-over-`i32` (a `.struct` tag) fell to `else` and was NOT
+            // refused, and `scalarRepr` withholds the nominal (`law.nominal`
+            // §46) so the composed predicate declines it identically. A scalar
+            // identity added to the union gains this refusal by its own facts
+            // rather than staying silently unrefused in a hand-list — the wrong
+            // answer in the safe-looking direction, an out-of-width store that
+            // the mask path does not yet cover admitted by absence.
+            const t = entry.value_ptr.*;
+            if (types.scalarRepr(t) and t.narrowFit() != null) {
+                var name_buf: [64]u8 = undefined;
+                const note = std.fmt.bufPrint(&name_buf, "mod-global-written:{s}", .{entry.key_ptr.*}) catch
+                    "mod-global-written:<name>";
+                return bailWith(diagnostic, @src(), note);
             }
         }
     }

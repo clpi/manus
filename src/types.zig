@@ -3780,6 +3780,77 @@ test "types: the field-cell face of the scalar roster is derived from the same f
     try testing.expect(!scalarRepr(.v8i32));
 }
 
+test "types: the module-global-written narrow face is derived from the same facts" {
+    // THE WRITTEN-MODULE-GLOBAL REFUSAL FACE — whether a written module global
+    // is NARROWER THAN THE i64 WORD, the question `dnir_lower.lowerModuleFromGraph`
+    // asks per global before it refuses `mod-global-written:` — is now derived
+    // from the same owner. It stood there as a bare-tag switch
+    // (`.i8,.i16,.i32,.u8,.u16,.u32 => refuse`, else keep) that restated which
+    // integral scalars are narrower than the register word beside `narrowFit`,
+    // `numericFacts` and every scalar-roster face above. A switch could not
+    // compose: a scalar identity added to the union stayed unknown to the list,
+    // took its `else` arm, and its written global kept full-word storage while
+    // the mask path does not yet cover the declared width — an out-of-width
+    // store admitted by absence, the wrong answer in the safe-looking direction.
+    //
+    // The composed predicate is `scalarRepr(t) and t.narrowFit() != null`:
+    // `narrowFit` is non-null only for an integral, single-lane descriptor of
+    // width < 64, and `scalarRepr` gates the nominal exactly as the retired
+    // bare-tag switch did.
+    const retiredNarrowGlobal = struct {
+        fn f(t: ResolvedType) bool {
+            return switch (t) {
+                .i8, .i16, .i32, .u8, .u16, .u32 => true,
+                else => false,
+            };
+        }
+    }.f;
+    const derivedNarrowGlobal = struct {
+        fn f(t: ResolvedType) bool {
+            return scalarRepr(t) and t.narrowFit() != null;
+        }
+    }.f;
+
+    // PINNED EQUAL TO THE RETIRED SWITCH on every payload-free identity — the
+    // six narrow integrals it refused AND the `i64`/`u64` (register width),
+    // `f32`/`f64` (reals), `bool`/`str` (no numeric owner), vector, boxed, void
+    // and composed identities it kept — iterated over the union's own tags
+    // rather than a list, so a scalar identity added to the union cannot be one
+    // the written-global face silently does not know.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |name, ty| {
+        if (ty != void) continue;
+        const t = @as(ResolvedType, @field(ResolvedType, name));
+        try testing.expectEqual(retiredNarrowGlobal(t), derivedNarrowGlobal(t));
+    }
+
+    // DERIVED, NOT TABULATED — the six narrow integrals refuse; `i64`/`u64` are
+    // already the register width and keep their storage; `f32` is real (a real
+    // slot is not a masked integer write) and keeps it too, the one place
+    // `width < 64` alone would over-refuse but `narrowFit`'s `domain` filter
+    // does not.
+    try testing.expect(derivedNarrowGlobal(.i8));
+    try testing.expect(derivedNarrowGlobal(.u32));
+    try testing.expect(!derivedNarrowGlobal(.i64));
+    try testing.expect(!derivedNarrowGlobal(.u64));
+    try testing.expect(!derivedNarrowGlobal(.f32));
+    try testing.expect(!derivedNarrowGlobal(.f64));
+    try testing.expect(!derivedNarrowGlobal(.bool));
+    try testing.expect(!derivedNarrowGlobal(.v8i32));
+
+    // A NOMINAL DESCRIPTOR IS WITHHELD, not delegated — the retired switch
+    // listed only bare scalar tags, so a nominal-over-`i32` (a `.struct` tag)
+    // fell to `else` and was NOT refused, and `scalarRepr` withholds it
+    // identically even though its representation `narrowFit`s narrow. Uses the
+    // process-global map with `page_allocator`, the pattern the field-cell test
+    // above already established.
+    const alloc = std.heap.page_allocator;
+    try declareNominal(alloc, "beat", .i32);
+    const nominal = nominalNamed("beat").?;
+    try testing.expect(nominal.narrowFit() != null); // representation is narrow
+    try testing.expect(!derivedNarrowGlobal(nominal)); // identity is withheld
+}
+
 test "types: the boxing face of the scalar roster is derived from the same facts" {
     // The retired boxing partition, verbatim, as the oracle. It stood at two
     // `codegen` per-tag SWITCHES that hand-listed all eight integral tags
