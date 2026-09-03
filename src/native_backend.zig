@@ -4018,6 +4018,55 @@ const Arm64Compiler = struct {
                             _ = temps.remove(slot);
                             if (!Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
                         } else if (pinned.get(slot) orelse temps.get(slot)) |local_reg| {
+                            // THE STORE IS THIS REGISTER'S RELOAD, SO THE ENTRY
+                            // THAT WOULD RELOAD IT HAS TO GO.
+                            //
+                            // `spilled_regs` says the value is in the frame and
+                            // the register is not the answer; every read path in
+                            // this backend honours that, and `ensureRegLive` is
+                            // the `ldr` that makes it true again. The move below
+                            // makes it FALSE — it writes this local's new value
+                            // into the register the maps name, and the frame
+                            // copy it wrote over is the local's PREVIOUS value,
+                            // which nothing may read after the store. Leaving
+                            // the entry left `ensureRegLiveRemap`'s home branch
+                            // free to fire on the very next read and put that
+                            // previous value back over the one just stored: a
+                            // silent wrong answer for every later read of the
+                            // local, on the one path that had just written it.
+                            //
+                            // A LEAF's home is the victim that reaches here —
+                            // the first spill pass in `allocRegExcluding` skips
+                            // every home and the second skips only
+                            // `gp_call_home_regs`, which a leaf never sets.
+                            // Bounded to gate transport with the rest of
+                            // GAP-148, since that function refuses above its
+                            // spill passes otherwise and `spilled_regs` is empty
+                            // everywhere else.
+                            //
+                            // The claim goes back for the reason `ensureRegLive`
+                            // states: `spillReg` performs two halves of one act,
+                            // and the half this store does not perform is the
+                            // one that stopped the register standing for the
+                            // value. `markGpHome` below pays it again for a
+                            // homeable register; a `temps`-only local in x0..x7
+                            // has no other payer, and restoring it returns the
+                            // register to exactly the state it held before the
+                            // spill. The slot is released by the removal that
+                            // actually took the entry — the removal is
+                            // idempotent and a release is not — which is the
+                            // rule `sweepGpLive`, `releaseReg`, the hoist unwind
+                            // and both reloads already share.
+                            //
+                            // Not the closure: closure is authoritative
+                            // `register`/`frame` assignment before emission, per
+                            // GAP-148's record, under which a local's location
+                            // is carried by the assignment rather than restated
+                            // by a map the store has to remember to retire.
+                            if (self.spilled_regs.fetchRemove(local_reg)) |entry| {
+                                try self.free_spill_slots.append(self.alloc, entry.value);
+                                self.claimReg(local_reg);
+                            }
                             try self.emitMovRegFit(local_reg, val_reg, ins.ty);
                             if (val_reg != local_reg and !Arm64Compiler.regIsPinned(pinned, val_reg)) {
                                 self.releaseReg(val_reg);
@@ -18199,4 +18248,134 @@ test "a hoisted constant reloads before the read that names its register" {
     );
     try std.testing.expect(compiler.used_regs[flive]);
     try std.testing.expect(!compiler.spilled_regs.contains(fhome));
+}
+
+// A STORE INTO A SPILLED HOME KILLS THE FRAME COPY, AND THE ENTRY HAS TO DIE
+// WITH IT (GAP-148).
+//
+// Every fact this gap has recorded so far lives on a READ path — which entry a
+// reclaim may take, where a reloaded value lands, what the reclaim, the remap,
+// the release and the unwind leave behind. This one is the WRITE path.
+// `store_local`'s register-homed arm writes the local's new value straight into
+// the register `pinned`/`temps` names, with `emitMovRegFit`, and left
+// `spilled_regs` naming that register. The entry then says the value is in the
+// frame while the register holds the value just stored, and `ensureRegLive` —
+// reached by the very next read, through `ensureRegLiveRemap`'s home branch —
+// emits the `ldr` that puts the OLD value back over the new one. A silent wrong
+// answer for every read of that local after the store.
+//
+// Built directly rather than through a source program for the same reason as the
+// reclaim, reload, remap, release, home, unwind and hoist tests above: this is a
+// state the allocator passes through between a spill of a home and the next
+// store into it, not a state a fixture names.
+test "a store into a spilled home retires the entry that would reload it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport: `allocRegExcluding` refuses above
+    // its spill passes otherwise, so `spilled_regs` is empty everywhere else and
+    // this store is the move it always was.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    // What a homed local looks like: one register for the whole function, named
+    // by both maps `evalDnirValue` consults.
+    const slot: u32 = 3;
+    const home: u5 = 20;
+    compiler.markGpHome(home);
+    try pinned.put(alloc, slot, home);
+    try temps.put(alloc, slot, home);
+
+    // And what `spillReg` leaves behind. A LEAF's home is a spill victim: the
+    // first pass in `allocRegExcluding` skips every home and the second skips
+    // only `gp_call_home_regs`, which a leaf never sets.
+    const off: u16 = 8;
+    try compiler.spilled_regs.put(alloc, home, off);
+    compiler.used_regs[home] = false;
+    try std.testing.expectEqual(@as(u32, 0), compiler.gp_call_home_regs & (@as(u32, 1) << home));
+
+    // The value being stored, in an ordinary scratch register.
+    const src_temp: u32 = 7;
+    const src_reg: u5 = 9;
+    compiler.claimReg(src_reg);
+    try temps.put(alloc, src_temp, src_reg);
+
+    const before = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .store_local,
+        .result = slot,
+        .lhs = .{ .temp = src_temp },
+        .ty = .i64,
+    }, &branch_patches, null);
+
+    // THE STORE IS ONE MOVE INTO THE HOME, unchanged by this repair.
+    const want_mov: u32 = 0xaa0003e0 | (@as(u32, src_reg) << 16) | @as(u32, home);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        want_mov,
+        std.mem.readInt(u32, compiler.code.items[before..][0..4], .little),
+    );
+
+    // THE ENTRY IS GONE. It named a frame copy the store just superseded, and
+    // it is the only thing that can still write to this register behind the
+    // program's back.
+    try std.testing.expectEqual(@as(?u16, null), compiler.spilled_regs.get(home));
+
+    // Its slot went back exactly once, on the removal that took it — the rule
+    // `sweepGpLive`, `releaseReg`, the unwind and both reloads already share.
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
+
+    // The claim is back and the home records are untouched: the register stands
+    // for this local again, exactly as it did before the spill.
+    try std.testing.expect(compiler.used_regs[home]);
+    try std.testing.expect(compiler.gp_home_regs[home]);
+    try std.testing.expectEqual(@as(?u5, home), pinned.get(slot));
+    try std.testing.expectEqual(@as(?u5, home), temps.get(slot));
+
+    // AND THE NEXT READ EMITS NOTHING. This is the failure itself: with the
+    // entry alive, `ensureRegLiveRemap`'s home branch reloads the pre-store
+    // value over the value just stored, and answers with it.
+    const after_store = compiler.code.items.len;
+    const read = try compiler.evalDnirValue(&temps, .{ .local = slot });
+    try std.testing.expectEqual(home, read);
+    try std.testing.expectEqual(after_store, compiler.code.items.len);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+
+    // A NEIGHBOUR THE STORE DID NOT NAME KEEPS EVERYTHING. Only the register
+    // written to has a dead frame copy.
+    const other: u5 = 21;
+    const other_off: u16 = 24;
+    compiler.markGpHome(other);
+    try compiler.spilled_regs.put(alloc, other, other_off);
+    compiler.used_regs[other] = false;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .store_local,
+        .result = slot,
+        .lhs = .{ .temp = src_temp },
+        .ty = .i64,
+    }, &branch_patches, null);
+    try std.testing.expectEqual(@as(?u16, other_off), compiler.spilled_regs.get(other));
+    try std.testing.expect(!compiler.used_regs[other]);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
 }

@@ -745,20 +745,14 @@ fn hashTypeArgs(type_args: []const RT) u64 {
 }
 
 fn appendTypeName(alloc: Allocator, buf: *std.ArrayListUnmanaged(u8), t: RT) !void {
+    // The scalar identity->source-word correspondence is owned once by
+    // `types.mangleFragment` (`duo_name` over `scalarRepr` plus `any`); those
+    // words are already valid C identifier fragments, so they append verbatim.
+    if (types.mangleFragment(t)) |word| {
+        try buf.appendSlice(alloc, word);
+        return;
+    }
     switch (t) {
-        .i8 => try buf.appendSlice(alloc, "i8"),
-        .i16 => try buf.appendSlice(alloc, "i16"),
-        .i32 => try buf.appendSlice(alloc, "i32"),
-        .i64 => try buf.appendSlice(alloc, "i64"),
-        .u8 => try buf.appendSlice(alloc, "u8"),
-        .u16 => try buf.appendSlice(alloc, "u16"),
-        .u32 => try buf.appendSlice(alloc, "u32"),
-        .u64 => try buf.appendSlice(alloc, "u64"),
-        .f32 => try buf.appendSlice(alloc, "f32"),
-        .f64 => try buf.appendSlice(alloc, "f64"),
-        .bool => try buf.appendSlice(alloc, "bool"),
-        .str => try buf.appendSlice(alloc, "str"),
-        .any => try buf.appendSlice(alloc, "any"),
         .@"struct" => |s| try appendSanitized(alloc, buf, s.name),
         .enum_type => |e| try appendSanitized(alloc, buf, e.name),
         else => {

@@ -515,6 +515,10 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 16;
     }
 
+    fn currentParserAnchor(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 17;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6255,27 +6259,27 @@ pub const Parser = struct {
             _ = try self.expect(.rparen);
             return e;
         }
+        if (try self.currentParserAnchor()) {
+            // §2, the @ DYAD — **bare `@` NAMES** the anchor. §20's lexer
+            // hands it to a callable it retrieved from a table:
+            // `if r = read[b] return r(@)`. The anchor of a slot body is
+            // its receiver, which `parse_descriptor_slot` already binds as
+            // the first parameter, so naming it is the whole lowering —
+            // no new node, and nothing downstream re-derives a stance.
+            //
+            // Recognised only where there is NOTHING for `@` to name (an
+            // argument-list closer), so every prefix spelling still
+            // reaches the macro path with its bytes untouched.
+            if (try self.at_is_bare_anchor()) {
+                const l = (try self.adv()).loc;
+                return self.new_expr(.{ .name = .{ .loc = l, .ident = "self" } });
+            }
+            return self.parse_macro_call_expr();
+        }
         return switch (tok.kind) {
             .backtick => {
                 term.locErr(tok.loc, "c0 law.backtick.zero: backtick is reserved and has no canonical meaning", .{});
                 return ParseError.UnexpectedToken;
-            },
-            .at => blk: {
-                // §2, the @ DYAD — **bare `@` NAMES** the anchor. §20's lexer
-                // hands it to a callable it retrieved from a table:
-                // `if r = read[b] return r(@)`. The anchor of a slot body is
-                // its receiver, which `parse_descriptor_slot` already binds as
-                // the first parameter, so naming it is the whole lowering —
-                // no new node, and nothing downstream re-derives a stance.
-                //
-                // Recognised only where there is NOTHING for `@` to name (an
-                // argument-list closer), so every prefix spelling still
-                // reaches the macro path with its bytes untouched.
-                if (try self.at_is_bare_anchor()) {
-                    const l = (try self.adv()).loc;
-                    break :blk self.new_expr(.{ .name = .{ .loc = l, .ident = "self" } });
-                }
-                break :blk self.parse_macro_call_expr();
             },
             else => {
                 if (try self.currentParserPrimitive()) {

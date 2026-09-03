@@ -576,6 +576,43 @@ pub fn reflectName(repr: ResolvedType) ?[]const u8 {
     return null;
 }
 
+/// The MANGLED NAME FRAGMENT a monomorphized specialization carries for one
+/// type argument, when that argument is an identity whose fragment is its own
+/// bare source word — or null when the identity is a composition the mangler
+/// must render and sanitize itself, so the caller keeps its debug-render tail.
+///
+/// DERIVED, NOT TABULATED. This is the MANGLING FACE of the scalar roster, and
+/// the roster it replaced (`mono.appendTypeName`'s explicit arms) was a TENTH
+/// statement of the scalar identity↔source-spelling correspondence that
+/// `duo_name` already owns. A deterministic C symbol appends each type
+/// argument's source word after `duo_`, so each scalar's fragment is the word
+/// `duo_name` renders — a second hand-kept list of the same ten numeric scalars
+/// plus `bool`/`str`/`any`, agreeing with `duo_name` only until someone edits
+/// one of them. A roster could not compose: a scalar identity added to the
+/// union gained a `duo_name` word but stayed unknown to the mangle list, took
+/// its `else` arm, and got a SANITIZED DEBUG rendering instead of its own word
+/// — two specializations over two different scalars could then mangle to the
+/// same symbol if their debug renderings sanitized alike, the wrong answer in
+/// the safe-looking direction that silently merges distinct definitions.
+///
+/// The question a mangle fragment asks is exactly `scalarRepr` — one value in
+/// one cell — PLUS `any`, the identities whose `duo_name` is a bare word that
+/// is already a valid C identifier fragment (`[a-z0-9]+`), so no sanitization
+/// changes it. Every other identity is declined by that fact rather than by
+/// absence and routes to the caller's sanitized-debug tail: `void`/`nil`/
+/// `never` are not type arguments a specialization carries, the vectors span
+/// several cells, and a struct/enum/pointer/array/composition renders a name or
+/// compound the mangler must still sanitize itself. A struct and an enum keep
+/// their own arms in the caller because their fragment is a DECLARED NAME that
+/// must be sanitized to a C identifier, which `duo_name` does not do.
+pub fn mangleFragment(repr: ResolvedType) ?[]const u8 {
+    if (scalarRepr(repr) or repr == .any) {
+        var buf: [1]u8 = undefined;
+        return repr.duo_name(&buf);
+    }
+    return null;
+}
+
 /// Resolved type after semantic analysis.
 /// During sema, each expression gets a `ResolvedType` attached.
 /// The declared width of a sub-64-bit integer descriptor, and whether
@@ -3264,6 +3301,85 @@ test "types: the reflection face of the scalar roster is derived from the same f
     // directly rather than folding it to `"any"`.
     try declareNominal(std.heap.page_allocator, "cadence", .i32);
     try testing.expect(std.mem.eql(u8, reflectName(nominalNamed("cadence").?).?, "cadence"));
+}
+
+/// The retired `mono.appendTypeName` scalar roster: the explicit arms that
+/// mapped an identity directly to a bare mangle-fragment word, null for every
+/// identity that fell to `appendSanitized`'s struct/enum/debug tail.
+fn retiredMangleFragment(t: ResolvedType) ?[]const u8 {
+    return switch (t) {
+        .i8 => "i8",
+        .i16 => "i16",
+        .i32 => "i32",
+        .i64 => "i64",
+        .u8 => "u8",
+        .u16 => "u16",
+        .u32 => "u32",
+        .u64 => "u64",
+        .f32 => "f32",
+        .f64 => "f64",
+        .bool => "bool",
+        .str => "str",
+        .any => "any",
+        else => null,
+    };
+}
+
+test "types: the mangling face of the scalar roster is derived from the same facts" {
+    // PINNED EQUAL TO THE RETIRED ROSTER on every identity it mapped to a bare
+    // word AND every identity it folded into the struct/enum/debug tail, so no
+    // monomorphized specialization can gain or lose a name fragment from this.
+    // The caller keeps its own sanitized-debug rendering for the null answer, so
+    // `mangleFragment(x)` is the retired explicit arm for every payload-free `x`
+    // and null exactly where the retired switch fell through to `else`.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type != void) continue;
+        const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+        const derived = mangleFragment(identity);
+        const retired = retiredMangleFragment(identity);
+        if (retired) |word| {
+            try testing.expect(derived != null);
+            try testing.expect(std.mem.eql(u8, derived.?, word));
+        } else {
+            try testing.expect(derived == null);
+        }
+    }
+
+    // The fragment is `duo_name` over the mangle set, not a tenth statement of
+    // it: every scalar mangles to its own source word, and `any` — the one
+    // non-numeric identity the roster carried — mangles to `any`.
+    try testing.expect(std.mem.eql(u8, mangleFragment(.i8).?, "i8"));
+    try testing.expect(std.mem.eql(u8, mangleFragment(.u32).?, "u32"));
+    try testing.expect(std.mem.eql(u8, mangleFragment(.f64).?, "f64"));
+    try testing.expect(std.mem.eql(u8, mangleFragment(.bool).?, "bool"));
+    try testing.expect(std.mem.eql(u8, mangleFragment(.str).?, "str"));
+    try testing.expect(std.mem.eql(u8, mangleFragment(.any).?, "any"));
+
+    // Every mangle fragment is a valid C identifier fragment, so appending it
+    // verbatim after `duo_` needs no sanitization — the property that lets the
+    // scalar arms drop into one owner while struct/enum keep theirs.
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type != void) continue;
+        const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+        if (mangleFragment(identity)) |word| {
+            for (word) |ch| {
+                const ok = (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_';
+                try testing.expect(ok);
+            }
+        }
+    }
+
+    // DECLINED BY A FACT, NOT BY ABSENCE. The vectors are numeric fact owners
+    // that are not one cell (`scalarRepr` is false because `lanes != 1`), and
+    // `void`/`nil`/`never` are not type arguments a specialization carries; each
+    // answers null and the caller renders and sanitizes it exactly as the retired
+    // `else` arm did.
+    try testing.expect(mangleFragment(.v4f64) == null);
+    try testing.expect(mangleFragment(.v8i32) == null);
+    try testing.expect(mangleFragment(.void) == null);
+    try testing.expect(mangleFragment(.nil) == null);
+    try testing.expect(mangleFragment(.never) == null);
 }
 
 test "CallShape: method call shape" {

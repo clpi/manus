@@ -803,6 +803,33 @@ if [ "$methodold" -ne 1 ] || [ "$methodnew" -ne 1 ]; then
     bad "the subject-method-reference primary detector is broken: old=$methodold new=$methodnew"
 fi
 
+# The at-sign expression primary has exact face seventeen. Zig retains the
+# existing bare-anchor versus macro-call materialization without a `.at` arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindat' \
+    'event lost the macro/anchor primary face'
+has "$ROOT/src/parser/projection.c" 'kind == INT64_C(81)' \
+    'tracked projection lost the macro/anchor primary face'
+has "$PARSER" 'fn currentParserAnchor(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the macro/anchor primary consumer'
+has "$PARSER" 'if (try self.currentParserAnchor()) {' \
+    'parse_simple_expr bypasses the settled macro/anchor primary face'
+atarms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.at => ' || true)
+examined=$((examined + 1))
+if [ "$atarms" -ne 0 ]; then
+    bad "parse_simple_expr retained $atarms .at host arm(s)"
+fi
+
+atprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate macro/anchor primary scratch' >&2; exit 2; }
+printf '%s\n' '.at => parse_anchor_or_macro(),' >"$atprobe/old.zig"
+printf '%s\n' 'return (try self.currentParserDecision()) >> 13 == 17;' >"$atprobe/new.zig"
+atold=$(grep -cF '.at => ' "$atprobe/old.zig")
+atnew=$(grep -cF 'currentParserDecision()) >> 13 == 17' "$atprobe/new.zig")
+rm -rf -- "$atprobe"
+examined=$((examined + 1))
+if [ "$atold" -ne 1 ] || [ "$atnew" -ne 1 ]; then
+    bad "the macro/anchor primary detector is broken: old=$atold new=$atnew"
+fi
+
 booleanprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate boolean primary scratch' >&2; exit 2; }
 printf '%s\n' '.kw_true => true, .kw_false => false' >"$booleanprobe/old.zig"
 printf '%s\n' 'return face == 9 or face == 10;' >"$booleanprobe/new.zig"
@@ -1801,7 +1828,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=17' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=18' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'
