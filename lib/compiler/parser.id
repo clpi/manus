@@ -860,6 +860,9 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             delimiter = 3
         elseif kind == token.kindnil
             delimiter = 4
+        # Faces five through eight are also the exact quoted-source form. A
+        # consumer that needs text/bytes/compatibility identity reads this
+        # settled face; it never switches on the producer token kind again.
         elseif kind == token.kindcompattextlit
             delimiter = 5
         elseif kind == token.kindtextlit

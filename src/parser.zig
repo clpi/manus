@@ -377,6 +377,16 @@ pub const Parser = struct {
         return (((try self.currentParserEvent()) >> 19) & 1) != 0;
     }
 
+    fn currentParserQuote(self: *Parser) ParseError!?ast.Quote {
+        return switch ((try self.currentParserDecision()) >> 13) {
+            5 => .compat_text,
+            6 => .text,
+            7 => .bytes,
+            8 => .compat_long,
+            else => null,
+        };
+    }
+
     fn currentParserLead(self: *Parser) ParseError!bool {
         return (((try self.currentParserEvent()) >> 22) & 1) != 0;
     }
@@ -5988,16 +5998,6 @@ pub const Parser = struct {
         return expr;
     }
 
-    fn quoteOf(kind: TK) ast.Quote {
-        return switch (kind) {
-            .text_lit => .text,
-            .bytes_lit => .bytes,
-            .compat_text_lit => .compat_text,
-            .compat_long_text_lit => .compat_long,
-            else => .host,
-        };
-    }
-
     /// §9 / `law.literal.text` — a `{…}` hole in a canonical text literal is an
     /// EXPRESSION segment. Holes desugar to `..` concat at parse time
     /// (idol_mode).
@@ -8128,7 +8128,8 @@ pub const Parser = struct {
         var fields: std.ArrayList(ast.TableField) = .empty;
         while (!(try self.check(.rbrace))) {
             const tok = try self.pk();
-            const quoted = try self.currentParserQuoted();
+            const quote = try self.currentParserQuote();
+            const quoted = quote != null;
             const literal = try self.currentParserLiteral();
             const primitive = try self.currentParserPrimitive();
             if (tok.kind == .concat) {
@@ -8151,7 +8152,7 @@ pub const Parser = struct {
                 if (try self.check(.assign)) {
                     _ = try self.adv(); // consume `=`
                     const key = try self.new_expr(if (quoted)
-                        ast.Expr{ .quoted = .{ .loc = tok.loc, .val = tok.text, .quote = quoteOf(tok.kind) } }
+                        ast.Expr{ .quoted = .{ .loc = tok.loc, .val = tok.text, .quote = quote.? } }
                     else
                         ast.Expr{ .int_lit = .{ .loc = tok.loc, .val = tok.int_val } });
                     const val = try self.parse_expr();

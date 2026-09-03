@@ -945,6 +945,30 @@ if [ "$argumentold" -ne 1 ] || [ "$argumentnew" -ne 1 ]; then
     bad "the call-argument detector is broken: old=$argumentold new=$argumentnew"
 fi
 
+# Quoted pack keys consume parser.id primary faces five through eight. Zig
+# retains quote materialization without reconstructing the form from TokenKind.
+has "$ROOT/lib/compiler/parser.id" 'Faces five through eight are also the exact quoted-source form' \
+    'parser.id lost the exact quoted-source face contract'
+has "$PARSER" 'fn currentParserQuote(self: *Parser) ParseError!?ast.Quote {' \
+    'parser.zig lost the quoted-source face consumer'
+has "$PARSER" 'const quote = try self.currentParserQuote();' \
+    'parse_pack_body bypasses the settled quoted-source face'
+forbid "$PARSER" 'fn quoteOf(' \
+    'parser.zig retained the host token-kind quote recognizer'
+forbid "$PARSER" 'quoteOf(tok.kind)' \
+    'quoted pack keys reconstruct their source form from TokenKind'
+
+quoteprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate quote-face scratch' >&2; exit 2; }
+printf '%s\n' 'fn quoteOf(kind: TK) ast.Quote {' 'return switch (kind) {' >"$quoteprobe/old.zig"
+printf '%s\n' 'const quote = try self.currentParserQuote();' >"$quoteprobe/new.zig"
+quoteold=$(grep -cE 'fn quoteOf\(|switch \(kind\)' "$quoteprobe/old.zig")
+quotenew=$(grep -cF 'currentParserQuote' "$quoteprobe/new.zig")
+rm -rf -- "$quoteprobe"
+examined=$((examined + 1))
+if [ "$quoteold" -ne 2 ] || [ "$quotenew" -ne 1 ]; then
+    bad "the quoted-source face detector is broken: old=$quoteold new=$quotenew"
+fi
+
 # The first token inside an expression-statement brace selects table value or
 # destructuring target through parser.id face 23.  Zig keeps materialization
 # only; the token-kind switch and name/assign speculative walk are gone.
@@ -1298,8 +1322,8 @@ has "$PARSER" 'fn currentParserLiteral(self: *Parser) ParseError!bool {' \
     'Parser lost literal event bit 18'
 has "$PARSER" 'fn currentParserQuoted(self: *Parser) ParseError!bool {' \
     'Parser lost quoted event bit 19'
-has "$PARSER" 'const quoted = try self.currentParserQuoted();' \
-    'parse_pack no longer preserves quoted identity before advancing'
+has "$PARSER" 'const quote = try self.currentParserQuote();' \
+    'parse_pack no longer preserves exact quoted identity before advancing'
 forbid "$PARSER" 'idol_parser_is_primitive_descriptor_kind(' \
     'parser.zig retained the primitive ABI'
 forbid "$PARSER" 'idol_parser_is_literal_kind(' \
