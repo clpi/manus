@@ -4355,9 +4355,61 @@ const Arm64Compiler = struct {
                         try self.emitSubSp(16);
                         try self.emitStrSp(0, 0);
                     }
+                    // A SPILLED REGISTER IS NOT FREE HERE EITHER (GAP-148).
+                    //
+                    // This is the call-result face one arm below, reached
+                    // through the pack instead of through `ins.result`, and it
+                    // asks the same question the same wrong way. `used_regs[i]`
+                    // is clear in two states, not one: x_i is idle — or
+                    // `spillReg` took it, and the store that moved the value to
+                    // the frame is exactly what cleared `used_regs[i]`, leaving
+                    // the entry standing for an owner whose reads are still
+                    // ahead.
+                    //
+                    // Read as "no conflict", the arm below takes the second
+                    // state's register for the pack answer with `claimReg(i)`
+                    // and `temps.put(temp, i)`. That is one register with two
+                    // owners. `spilled_regs` still names x_i and
+                    // `gp_reg_owner[i]` still names the spilled owner, so the
+                    // next read of EITHER id reaches `ensureRegLive` or
+                    // `ensureRegLiveRemap`, and the reload puts the frame copy
+                    // over the callee's answer — or carries the answer's id
+                    // away with the owner's remap. The sweep is the other
+                    // direction: `sweepGpLive` reads that preserved owner
+                    // record dead at this index and clears `used_regs[i]` for
+                    // the register the pack answer was just given.
+                    //
+                    // The callee wrote x_i and no other register can answer for
+                    // it, so unlike the call result this cannot be met by
+                    // taking a different destination — and the entry may not be
+                    // retired to make room, because its value is not the pack's
+                    // and dropping the only thing that reloads it is the
+                    // abandonment `reclaimSpilledReg` documents. The answer the
+                    // conflict path already has is the right one: the pack is
+                    // parked in the frame at the call and reloaded into
+                    // registers `allocReg` proves free, and both of its free
+                    // scans skip anything `spilled_regs` contains. The window
+                    // between `sub sp` and `add sp` emits no reload — the save,
+                    // the `bl`, the park stores and the restore all address sp
+                    // directly — so the moved stack pointer reaches no
+                    // spill-slot offset.
+                    //
+                    // Bounded to gate transport with the rest of this gap:
+                    // `allocRegExcluding` refuses above its spill passes
+                    // otherwise, so `spilled_regs` is empty elsewhere, the added
+                    // term is false, and the conflict is the one it always was.
+                    // Not the closure — closure is authoritative
+                    // `register`/`frame` assignment before emission, per this
+                    // gap's record, under which a pack result is assigned a
+                    // location rather than inheriting whichever ABI register the
+                    // map had not finished describing.
                     var pack_conflict = false;
                     for (ins.pack_results, 0..) |result, i| {
-                        if (result.temp != null and self.used_regs[i]) pack_conflict = true;
+                        if (result.temp == null) continue;
+                        const abi: u5 = @intCast(i);
+                        if (self.used_regs[abi] or self.spilled_regs.contains(abi)) {
+                            pack_conflict = true;
+                        }
                     }
                     const pack_bytes: u16 = if (pack_conflict)
                         @intCast(std.mem.alignForward(usize, ins.pack_results.len * 8, 16))
@@ -18942,4 +18994,137 @@ test "preserving an argument register refuses when the pool has only that regist
     // staged over anything.
     try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
     try std.testing.expectEqual(@as(?u5, slot), temps.get(owner_id));
+}
+
+// A PACK RESULT TOOK THE ABI REGISTER THE SPILL MAP WAS STILL DESCRIBING
+// (GAP-148).
+//
+// The call-result face above asked "is x0 in the save set" and read a spilled
+// register as an idle one. The pack asks the same question in its own words —
+// `used_regs[i]` — and read it the same wrong way, because `spillReg` CLEARS
+// `used_regs[victim]`: the store that moved the value to the frame is what
+// makes the register look free here, while `spilled_regs` still reserves it to
+// its owner and `gp_reg_owner[i]` still names that owner.
+//
+// With no conflict declared the pack arm claims x_i for the callee's answer and
+// publishes `temps[temp] = i`. One register, two owners. The next read of the
+// spilled owner reloads its frame copy into x_i, over the answer, or remaps it
+// out and takes the answer's id along; and `sweepGpLive`, reading the preserved
+// owner record dead at this index, clears `used_regs[i]` for the register the
+// answer was just given.
+//
+// The callee wrote x_i and no other register can answer for it, so the repair
+// is not a different destination but the park the conflict path already has:
+// the pack is stored to the frame at the call and reloaded into registers
+// `allocReg` proves free — both of its free scans skip anything `spilled_regs`
+// contains.
+//
+// Built directly rather than through a source program for the same reason as
+// the reclaim, reload, remap, release, home, unwind, hoist, store, band and
+// call-result tests above: this is a state the allocator passes through between
+// a spill of an ABI register and the next call, not a state a fixture names.
+test "a pack result refuses the ABI register the spill map still names" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport: `allocRegExcluding` refuses above
+    // its spill passes otherwise, so `spilled_regs` is empty everywhere else,
+    // the term this test names is false, and the conflict is the one it always
+    // was.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    // The state `spillReg` leaves behind on x1 — the SECOND pack slot, so the
+    // first is an ordinary idle register and the differential is the spill
+    // alone: value in a frame slot, entry reserving the register to it,
+    // `used_regs` clear, and the owner record preserved across the store so the
+    // sweep can still release it.
+    const spilled: u5 = 1;
+    const off: u16 = 8;
+    const owner_id: u32 = 41;
+    try compiler.spilled_regs.put(alloc, spilled, off);
+    compiler.used_regs[spilled] = false;
+    compiler.gp_reg_owner[spilled] = owner_id;
+    try temps.put(alloc, owner_id, spilled);
+
+    // A two-value pack with no operand: nothing touches x0 or x1 before the
+    // save, so the entry is still standing when the pack arm runs.
+    const first: u32 = 7;
+    const second: u32 = 8;
+    const pack = [_]dnir.PackResult{
+        .{ .value = 100, .temp = first, .ty = .i64 },
+        .{ .value = 101, .temp = second, .ty = .i64 },
+    };
+    const before = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .call_direct,
+        .lhs = .void,
+        .callee = "f",
+        .ty = .i64,
+        .pack_results = &pack,
+    }, &branch_patches, null);
+
+    // NEITHER ANSWER IS IN AN ABI REGISTER. The park took both to the frame and
+    // brought them back in the two registers `allocReg` scans first, which is
+    // the whole fact: x1 is spoken for, and the pack cannot keep a register the
+    // map is still describing merely because the callee wrote it.
+    try std.testing.expectEqual(@as(?u5, 10), temps.get(second));
+    try std.testing.expectEqual(@as(?u5, 9), temps.get(first));
+    try std.testing.expect(compiler.used_regs[9] and compiler.used_regs[10]);
+
+    // Nothing was taken from the spilled owner: the entry stands, its slot is
+    // not in the free pool, `used_regs` is still clear, and the owner record
+    // `sweepGpLive` will release it by is untouched.
+    try std.testing.expectEqual(@as(?u16, off), compiler.spilled_regs.get(spilled));
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+    try std.testing.expect(!compiler.used_regs[spilled]);
+    try std.testing.expectEqual(@as(?u32, owner_id), compiler.gp_reg_owner[spilled]);
+
+    // AND NO RELOAD OF x1 ANYWHERE IN THE WINDOW. The park moves `sp` twice,
+    // and a spill-slot offset is measured from the frame base; an `ldr x1,
+    // [sp, #…]` emitted between those two moves would read the wrong slot and
+    // land over the callee's answer besides.
+    const reload_off: u16 = compiler.stack_frame_bytes - off - 8;
+    const reload_word: u32 = 0xf94003e0 | ((@as(u32, reload_off) / 8) << 10) | @as(u32, spilled);
+    var i: usize = before;
+    while (i < compiler.code.items.len) : (i += 4) {
+        try std.testing.expect(
+            std.mem.readInt(u32, compiler.code.items[i..][0..4], .little) != reload_word,
+        );
+    }
+
+    // AND THE FAILURE ITSELF. Reading the spilled owner reloads its frame copy
+    // and remaps every `temps` entry that named x1. With the second answer
+    // parked in x1 the remap takes that answer with it and the two ids come
+    // back as one register; here the owner moves alone and both answers stay
+    // where the park put them.
+    const owner_reg = try compiler.evalDnirValue(&temps, .{ .temp = owner_id });
+    try std.testing.expectEqual(@as(?u5, owner_reg), temps.get(owner_id));
+    try std.testing.expect(owner_reg != 9 and owner_reg != 10);
+    try std.testing.expectEqual(@as(?u5, 9), temps.get(first));
+    try std.testing.expectEqual(@as(?u5, 10), temps.get(second));
+    try std.testing.expectEqual(@as(?u32, owner_id), compiler.gp_reg_owner[owner_reg]);
+    try std.testing.expect(!compiler.spilled_regs.contains(spilled));
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
 }
