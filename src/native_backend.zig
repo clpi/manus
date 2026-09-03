@@ -2595,6 +2595,44 @@ const Arm64Compiler = struct {
 
     /// Once emission has passed a loop's latch, release its reserved registers
     /// so the loop-exit code and any sibling loop can reuse them.
+    ///
+    /// A RELEASE THAT LEAVES THE SPILL ENTRY GIVES THE REGISTER BACK TO NOBODY.
+    ///
+    /// The three lines below are the whole release, and they are the release of
+    /// a register that is still IN one: `gp_home_regs`, `gp_reg_owner`, and
+    /// `used_regs` are exactly the records `markGpHome` wrote, and none of them
+    /// is what keeps a spilled register out of the pool. `spilled_regs` is —
+    /// both free scans in `allocRegExcluding` skip anything that map contains,
+    /// which is the fail-closed guard that stands in for the claim `spillReg`
+    /// dropped. So a hoist home that was spilled came out of this loop with
+    /// `used_regs` clear, no home flag, no owner, and an entry that makes every
+    /// scan pass over it: unallocatable for the rest of the function, on the one
+    /// path whose whole job is to hand the register back. Its frame slot goes
+    /// the same way — `ensureRegLive` and `ensureRegLiveRemap` are that slot's
+    /// only readers and both key on the entry, so nothing can read it again,
+    /// while holding it keeps `spillReg` stepping `gate_spill_cursor` toward
+    /// `gate_spill_end` and refusing spills the pre-reserved area still had room
+    /// for. Both are the failure `reclaimSpilledReg` records, reached through
+    /// the unwind instead, and only that emergency reclaim could still take the
+    /// entry — once the home flag above cleared, which is what let it.
+    ///
+    /// Only a LEAF's hoist home can be here. The first spill pass in
+    /// `allocRegExcluding` skips every home and the second skips
+    /// `gp_call_home_regs`, which a calling function sets for its whole bank and
+    /// a leaf never sets, so a hoisted constant's reserved register is a victim
+    /// exactly where `gp_call_home_regs` says a leaf home is one.
+    ///
+    /// The value is not owed a reload, which is why the entry may simply go:
+    /// `imm_hoist` is the only reader of a hoisted constant's register
+    /// (`evalDnirValue`'s three constant arms and `constRetImm`), the loop above
+    /// removes that entry in the same step, and `immHoistEnter` never re-hoists
+    /// a constant an enclosing loop already holds, so no surviving entry names
+    /// `r`. Releasing the slot on the removal that actually took the entry is
+    /// what `sweepGpLive` and `releaseReg` both already do; this makes the third
+    /// path agree. Not the closure — closure is authoritative `register`/`frame`
+    /// assignment before emission, per GAP-148's record, under which a hoisted
+    /// constant's location is carried by the assignment rather than restated by
+    /// a map the unwind has to remember to clear.
     fn immHoistExit(self: *Arm64Compiler, flat_idx: u32) void {
         while (self.hoist_depth > 0) {
             const top = self.hoist_active[self.hoist_depth - 1];
@@ -2609,6 +2647,9 @@ const Arm64Compiler = struct {
                 self.gp_home_regs[r] = false;
                 self.gp_reg_owner[r] = null;
                 self.used_regs[r] = false;
+                if (self.spilled_regs.fetchRemove(r)) |entry| {
+                    self.free_spill_slots.append(self.alloc, entry.value) catch {};
+                }
             }
             self.hoist_depth -= 1;
         }
@@ -17879,4 +17920,103 @@ test "the spilled-register reclaim passes over a home and takes a temp" {
 
     // A reclaim emits nothing; it moves records only.
     try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+}
+
+// GAP-148. THE HOIST UNWIND GAVE BACK A REGISTER THE POOL COULD NOT TAKE.
+//
+// `immHoistExit` exists to release a loop's reserved constant registers "so the
+// loop-exit code and any sibling loop can reuse them", and it released the three
+// records `markGpHome` wrote — `gp_home_regs`, `gp_reg_owner`, `used_regs`. None
+// of those is what keeps a SPILLED register out of the pool. `spilled_regs` is:
+// both free scans in `allocRegExcluding` skip anything that map contains, which
+// is the fail-closed guard standing in for the claim `spillReg` dropped. So a
+// hoist home that had been spilled left the unwind unallocatable for the rest of
+// the function, and its frame slot — whose only readers, `ensureRegLive` and
+// `ensureRegLiveRemap`, both key on that entry — stayed reserved with nothing
+// able to read it, pushing `spillReg` toward the `gate_spill_end` refusal.
+//
+// Only a LEAF's hoist home reaches the map: the first spill pass in
+// `allocRegExcluding` skips every home and the second skips `gp_call_home_regs`,
+// which a leaf never sets. Built directly rather than through a source program
+// for the same reason as the reclaim, reload, remap, release, and home tests
+// above — this is a state the allocator passes through between a spill and a
+// latch, not a state a fixture names.
+test "the hoist unwind returns the frame slot with the register it releases" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport: `allocRegExcluding` refuses above
+    // its spill loops otherwise, so `spilled_regs` is empty everywhere else.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // One loop holding one hoisted constant in a reserved home, exactly as
+    // `immHoistEnter` leaves it.
+    const home: u5 = 20;
+    const hoisted: i64 = 4096;
+    compiler.markGpHome(home);
+    try compiler.imm_hoist.put(alloc, hoisted, home);
+    var active: Arm64Compiler.HoistActive = .{ .latch = 4 };
+    active.values[0] = hoisted;
+    active.regs[0] = home;
+    active.count = 1;
+    compiler.hoist_active[0] = active;
+    compiler.hoist_depth = 1;
+
+    // The state `spillReg` leaves behind: the value is at a frame slot, and the
+    // register is out of `used_regs` with the `spilled_regs` entry standing in
+    // for the claim.
+    const off: u16 = 16;
+    try compiler.spilled_regs.put(alloc, home, off);
+    compiler.used_regs[home] = false;
+
+    // A spilled register belonging to somebody else, to prove the unwind takes
+    // only the entries of the registers it is releasing.
+    const other: u5 = 11;
+    const other_off: u16 = 32;
+    try compiler.spilled_regs.put(alloc, other, other_off);
+    compiler.gp_reg_owner[other] = 7;
+
+    const before = compiler.code.items.len;
+    compiler.immHoistExit(5);
+
+    // An unwind emits nothing; it moves records only.
+    try std.testing.expectEqual(before, compiler.code.items.len);
+
+    // The records the unwind already cleared.
+    try std.testing.expectEqual(@as(u8, 0), compiler.hoist_depth);
+    try std.testing.expect(!compiler.gp_home_regs[home]);
+    try std.testing.expect(compiler.imm_hoist.get(hoisted) == null);
+
+    // And the one that decides whether the release is a release at all.
+    try std.testing.expectEqual(@as(?u16, null), compiler.spilled_regs.get(home));
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
+
+    // The neighbour keeps its entry, its owner, and its unreleased slot.
+    try std.testing.expectEqual(@as(?u16, other_off), compiler.spilled_regs.get(other));
+    try std.testing.expectEqual(@as(?u32, 7), compiler.gp_reg_owner[other]);
+
+    // The register is back in the pool, which is the whole point of the unwind:
+    // with every other allocatable register busy, the free scan reaches it. With
+    // the entry left behind, both scans pass over it and the allocation falls
+    // into the spill cascade instead.
+    var reg: u5 = 0;
+    while (reg < 29) : (reg += 1) {
+        if (reg != home) compiler.used_regs[reg] = true;
+    }
+    try std.testing.expectEqual(home, try compiler.allocReg());
 }

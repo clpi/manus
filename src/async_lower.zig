@@ -624,25 +624,13 @@ pub const AsyncLower = struct {
     }
 };
 
-/// Map a resolved type to a C type name for frame fields. Mirrors the subset
-/// codegen needs for async frames; dynamic values fall back to `lua_Value`.
+/// Map a resolved type to a C type name for frame fields. DERIVED FROM THE ONE
+/// OWNER: `types.cFrameType` is the async-frame face of the scalar roster, so the
+/// eleven scalars plus `void` spell exactly as `c_type` emits them and every
+/// dynamic value falls back to `lua_Value` — the retired hand-kept subset that
+/// could only agree with `c_type` by hand.
 fn cTypeName(t: RT) []const u8 {
-    return switch (t) {
-        .i8 => "int8_t",
-        .i16 => "int16_t",
-        .i32 => "int32_t",
-        .i64 => "int64_t",
-        .u8 => "uint8_t",
-        .u16 => "uint16_t",
-        .u32 => "uint32_t",
-        .u64 => "uint64_t",
-        .f32 => "float",
-        .f64 => "double",
-        .bool => "bool",
-        .void => "void",
-        .str => "const char*",
-        else => "lua_Value",
-    };
+    return types.cFrameType(t) orelse "lua_Value";
 }
 
 /// Pipeline guard (Requirement 25.4 / Task 10.3): async + WASM cannot use the

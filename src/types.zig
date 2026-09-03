@@ -506,6 +506,38 @@ pub fn descriptorByCSpelling(name: []const u8) ?ResolvedType {
     return null;
 }
 
+/// The C spelling an ASYNC FRAME FIELD carries, when the field holds a value the
+/// frame stores BY REPRESENTATION rather than as a dynamic box — or null when the
+/// identity is not one a frame carries unboxed, so the caller keeps `lua_Value`.
+///
+/// DERIVED, NOT TABULATED. This is the ASYNC-FRAME FACE of the scalar roster, and
+/// the roster it replaced (`async_lower.cTypeName`) was an EIGHTH statement of the
+/// scalar identity↔C-spelling correspondence that `c_type` already owns. An async
+/// frame materialises a suspended call's result and locals as C struct fields, so
+/// each field's C spelling is the one `c_type` emits — a second hand-kept list of
+/// the same eleven scalars plus `void`, agreeing with `c_type` only until someone
+/// edits one of them. A roster could not compose: a scalar identity added to the
+/// union gained a `c_type` spelling but stayed unknown to the frame list, took its
+/// `else` arm, and got boxed to `lua_Value` — a frame field silently widened to a
+/// dynamic box on a value that has a register representation, the wrong answer in
+/// the safe-looking direction.
+///
+/// The question a frame field asks is exactly `scalarRepr` — one value in one
+/// cell — PLUS `void`, the two identities a frame stores as their own C type. For
+/// that set `c_type` returns a bare literal spelling and never touches the buffer,
+/// so the spelling is the frame field's type verbatim. Every other identity is
+/// declined by that fact rather than by absence and routes to the caller's
+/// `lua_Value`: `any` is already boxed, `nil`/`never` are not frame values, the
+/// vectors span several cells, and a pointer/struct/array is a composition a frame
+/// field does not carry inline.
+pub fn cFrameType(repr: ResolvedType) ?[]const u8 {
+    if (scalarRepr(repr) or repr == .void) {
+        var buf: [1]u8 = undefined;
+        return repr.c_type(&buf);
+    }
+    return null;
+}
+
 /// Resolved type after semantic analysis.
 /// During sema, each expression gets a `ResolvedType` attached.
 /// The declared width of a sub-64-bit integer descriptor, and whether
@@ -3068,6 +3100,67 @@ test "types: the rendering face of the scalar roster is derived from the same fa
     // still answers through the same delegation.
     try declareNominal(std.heap.page_allocator, "tick", .i32);
     try testing.expect(std.mem.eql(u8, cFormatSpec(nominalNamed("tick").?).?, "%d"));
+}
+
+fn retiredCFrameType(t: ResolvedType) []const u8 {
+    return switch (t) {
+        .i8 => "int8_t",
+        .i16 => "int16_t",
+        .i32 => "int32_t",
+        .i64 => "int64_t",
+        .u8 => "uint8_t",
+        .u16 => "uint16_t",
+        .u32 => "uint32_t",
+        .u64 => "uint64_t",
+        .f32 => "float",
+        .f64 => "double",
+        .bool => "bool",
+        .void => "void",
+        .str => "const char*",
+        else => "lua_Value",
+    };
+}
+
+test "types: the async-frame face of the scalar roster is derived from the same facts" {
+    // PINNED EQUAL TO THE RETIRED ROSTER on every identity it mapped AND every
+    // identity it folded into `else`, so no async frame field can gain or lose a
+    // C spelling from this. The caller keeps `lua_Value` as its default for the
+    // null answer, so `cFrameType(x) orelse "lua_Value"` is `retiredCFrameType(x)`
+    // for every `x`: this is the exact substitution `async_lower.cTypeName` made.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type != void) continue;
+        const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+        const derived = cFrameType(identity) orelse "lua_Value";
+        try testing.expect(std.mem.eql(u8, derived, retiredCFrameType(identity)));
+    }
+
+    // The spelling is `c_type` over the frame set, not an eighth statement of
+    // it: every scalar plus `void` answers the exact spelling `c_type` emits.
+    try testing.expect(std.mem.eql(u8, cFrameType(.i32).?, "int32_t"));
+    try testing.expect(std.mem.eql(u8, cFrameType(.u64).?, "uint64_t"));
+    try testing.expect(std.mem.eql(u8, cFrameType(.f32).?, "float"));
+    try testing.expect(std.mem.eql(u8, cFrameType(.f64).?, "double"));
+    try testing.expect(std.mem.eql(u8, cFrameType(.bool).?, "bool"));
+    try testing.expect(std.mem.eql(u8, cFrameType(.void).?, "void"));
+    try testing.expect(std.mem.eql(u8, cFrameType(.str).?, "const char*"));
+
+    // DECLINED BY A FACT, NOT BY ABSENCE. `any` is already boxed, `nil`/`never`
+    // are not frame values, the vectors span several cells (`lanes != 1`), and a
+    // pointer/struct is a composition a frame field does not carry inline. Each
+    // answers null and the caller's `lua_Value` default carries it exactly as the
+    // retired `else` did.
+    try testing.expect(cFrameType(.any) == null);
+    try testing.expect(cFrameType(.nil) == null);
+    try testing.expect(cFrameType(.never) == null);
+    try testing.expect(cFrameType(.v4i64) == null);
+    try testing.expect(cFrameType(.v8f32) == null);
+
+    // A NOMINAL DESCRIPTOR IS NOT A REPRESENTATION, so it declines here and the
+    // frame carries the boxed default — `scalarRepr` withholds a nominal identity
+    // on purpose (`law.nominal` §46), exactly as it does for `abiDescriptorNamed`.
+    try declareNominal(std.heap.page_allocator, "beat", .i32);
+    try testing.expect(cFrameType(nominalNamed("beat").?) == null);
 }
 
 test "CallShape: method call shape" {
