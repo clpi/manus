@@ -661,6 +661,46 @@ pub const NumericFacts = struct {
     pub fn acceptsDescriptor(self: NumericFacts, supplied: NumericFacts) bool {
         return self.domain == supplied.domain;
     }
+
+    /// Whether a value carrying `self`'s facts widens without loss into a place
+    /// carrying `target`'s facts. This is a single-lane scalar question: a
+    /// vector spans several cells and a field migration does not cast one lane
+    /// count into another, so `lanes != 1` on either side has no widening
+    /// answer. `self == target` is not this projection's to answer — a value
+    /// already of the target descriptor is not a WIDENING, and the caller owns
+    /// that equal-descriptor case ahead of asking.
+    ///
+    /// The three arms are the numeric containment lattice, not a roster:
+    ///   * real → real widens to a strictly wider real (`f32` → `f64`);
+    ///   * integral → real widens a SUB-REGISTER integral (width < 64) into the
+    ///     double, whose mantissa represents every such value exactly; a
+    ///     register-width integral (`i64`/`u64`) does NOT widen into `f64`,
+    ///     because a 64-bit integer exceeds the double's 53-bit exact-integer
+    ///     range and the cast loses precision, and no integral widens into
+    ///     `f32` at all;
+    ///   * integral → integral widens to a strictly wider integral of the same
+    ///     signedness, and an unsigned source additionally widens into the
+    ///     register-width signed integral that dominates its whole range.
+    /// A real never narrows into an integral, and a signed source never crosses
+    /// into unsigned. Every one of these is a fact `self`/`target` already
+    /// carry (`domain`, `width`, `signed`), so a scalar identity added to the
+    /// numeric owner gains its widening answer here rather than staying unknown
+    /// to a hand-kept list.
+    pub fn widensTo(self: NumericFacts, target: NumericFacts) bool {
+        if (self.lanes != 1 or target.lanes != 1) return false;
+        return switch (self.domain) {
+            .real => target.domain == .real and target.width > self.width,
+            .integral => switch (target.domain) {
+                .real => target.width >= 64 and self.width < 64,
+                .integral => if (self.signed == target.signed)
+                    target.width > self.width
+                else if (!self.signed and target.signed)
+                    target.width >= 64 and self.width < 64
+                else
+                    false,
+            },
+        };
+    }
 };
 
 /// The value a write of `v` to a place of type `ty` leaves behind.
@@ -928,6 +968,26 @@ pub const ResolvedType = union(enum) {
         const demand = self.numericFacts() orelse return null;
         const value = supplied.numericFacts() orelse return null;
         return demand.acceptsDescriptor(value);
+    }
+
+    /// Whether `self` widens without loss into `new_t`. Null means this
+    /// projection has no answer — one side is not numeric — and never stands
+    /// for rejection; the caller owns the non-numeric widenings (`str` → `any`)
+    /// and the non-widening default.
+    ///
+    /// DERIVED, NOT TABULATED — the widening lattice this replaced was a
+    /// per-tag switch that restated numeric containment a fourth time beside
+    /// `numericFacts`, `narrowFit` and `acceptsDescriptor`. Unlike acceptance,
+    /// widening delegates a nominal descriptor to its representation on purpose:
+    /// a C field migration casts the physical value, so a place over a
+    /// nominal-over-`i32` widens exactly as `i32` (`law.nominal` §46, the same
+    /// delegation `narrowFit` and `c_type` already make). The equal-descriptor
+    /// case is the caller's, ahead of this call, because two identical
+    /// descriptors are a COPY, not a widening.
+    pub fn widensTo(self: ResolvedType, new_t: ResolvedType) ?bool {
+        const from = self.numericFacts() orelse return null;
+        const to = new_t.numericFacts() orelse return null;
+        return from.widensTo(to);
     }
 
     pub fn is_integer(self: ResolvedType) bool {
@@ -3380,6 +3440,90 @@ test "types: the mangling face of the scalar roster is derived from the same fac
     try testing.expect(mangleFragment(.void) == null);
     try testing.expect(mangleFragment(.nil) == null);
     try testing.expect(mangleFragment(.never) == null);
+}
+
+/// The retired per-tag widening lattice, verbatim, as the negative control's
+/// oracle. It answers the NUMERIC arms only — the `str` → `any` arm was never
+/// this projection's, it is the caller's non-numeric widening — so the derived
+/// `ResolvedType.widensTo` (which returns null for a non-numeric side) is pinned
+/// equal to it on every ordered pair of payload-free identities.
+fn retiredNumericWidening(old_t: ResolvedType, new_t: ResolvedType) ?bool {
+    return switch (old_t) {
+        .i8 => new_t == .i16 or new_t == .i32 or new_t == .i64 or new_t == .f64,
+        .i16 => new_t == .i32 or new_t == .i64 or new_t == .f64,
+        .i32 => new_t == .i64 or new_t == .f64,
+        .u8 => new_t == .u16 or new_t == .u32 or new_t == .u64 or new_t == .i64 or new_t == .f64,
+        .u16 => new_t == .u32 or new_t == .u64 or new_t == .i64 or new_t == .f64,
+        .u32 => new_t == .u64 or new_t == .i64 or new_t == .f64,
+        .f32 => new_t == .f64,
+        .i64, .u64, .f64 => false,
+        else => null,
+    };
+}
+
+test "types: the widening face of the scalar roster is derived from the same facts" {
+    // PINNED EQUAL TO THE RETIRED LATTICE on every ORDERED PAIR of payload-free
+    // identities — the pairs it declared widening AND the pairs it declined —
+    // so no field migration can gain or lose a safe cast from this. The retired
+    // lattice named only numeric sources; where it has a numeric answer, the
+    // derived `widensTo` must equal it, and where a side is not numeric the
+    // derived face returns null and the caller (`type_diff.isWidening`) owns the
+    // default, which is exactly where the retired switch fell to `else`.
+    @setEvalBranchQuota(20000);
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |old_name, old_type| {
+        if (old_type != void) continue;
+        const old_t = @as(ResolvedType, @field(ResolvedType, old_name));
+        inline for (info.field_names, info.field_types) |new_name, new_type| {
+            if (new_type != void) continue;
+            const new_t = @as(ResolvedType, @field(ResolvedType, new_name));
+            const derived = old_t.widensTo(new_t);
+            const both_numeric = old_t.numericFacts() != null and new_t.numericFacts() != null;
+            if (both_numeric) {
+                // Both sides numeric: the derived face must have an answer, and
+                // it must equal the retired lattice bit for bit. The lattice
+                // named the widening source arms explicitly and declined
+                // `i64`/`u64`/`f64` (and the vectors) as sources; the derived
+                // face declines them by the `lanes`/`width` fact, not by absence.
+                const retired = retiredNumericWidening(old_t, new_t) orelse false;
+                try testing.expect(derived != null);
+                try testing.expectEqual(retired, derived.?);
+            } else {
+                // A non-numeric side: this projection has no answer and the
+                // caller (`type_diff.isWidening`) owns the default, including the
+                // `str` → `any` non-numeric widening. This is exactly where the
+                // retired per-tag switch fell through to `else`.
+                try testing.expect(derived == null);
+            }
+        }
+    }
+
+    // DERIVED, NOT TABULATED — the lattice is numeric containment over
+    // `numericFacts`: a real widens to a strictly wider real, an integral
+    // widens into the double, a same-sign integral widens to a strictly wider
+    // one, and an unsigned integral additionally widens into the register-width
+    // signed integral that dominates its range.
+    try testing.expectEqual(@as(?bool, true), ResolvedType.widensTo(.i32, .i64));
+    try testing.expectEqual(@as(?bool, true), ResolvedType.widensTo(.f32, .f64));
+    try testing.expectEqual(@as(?bool, true), ResolvedType.widensTo(.u8, .i64));
+    try testing.expectEqual(@as(?bool, true), ResolvedType.widensTo(.i8, .f64));
+
+    // DECLINED BY A FACT, NOT BY ABSENCE. A signed source never crosses into
+    // unsigned; a real never narrows into an integral; an unsigned source
+    // reaches only the register-width signed integral, not a narrower one; and
+    // the equal-descriptor case is a COPY, not a widening, so this projection
+    // answers false and the caller short-circuits it ahead of the call.
+    try testing.expectEqual(@as(?bool, false), ResolvedType.widensTo(.i8, .u16));
+    try testing.expectEqual(@as(?bool, false), ResolvedType.widensTo(.f32, .i64));
+    try testing.expectEqual(@as(?bool, false), ResolvedType.widensTo(.u8, .i16));
+    try testing.expectEqual(@as(?bool, false), ResolvedType.widensTo(.i64, .i64));
+
+    // A NOMINAL DESCRIPTOR DELEGATES its physical widening on purpose — a field
+    // migration casts the value, and the C cast is over the representation
+    // (`law.nominal` §46), the same delegation `narrowFit` and `c_type` make.
+    // `str` → `any` stays the caller's non-numeric arm: the numeric owner has no
+    // facts for either side, so `widensTo` returns null and `isWidening` owns it.
+    try testing.expect(ResolvedType.widensTo(.str, .any) == null);
 }
 
 test "CallShape: method call shape" {

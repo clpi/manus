@@ -5,19 +5,20 @@ const RT = types.ResolvedType;
 const FieldType = types.FieldType;
 
 /// Returns true when `new_t` is a safe widening of `old_t` (i32→i64, f32→f64, etc.).
+///
+/// DERIVED, NOT TABULATED — the numeric arms are `ResolvedType.widensTo`, which
+/// reads the containment lattice off `numericFacts` (domain, width, signed)
+/// rather than a per-tag switch. A roster could not compose: a scalar identity
+/// added to the numeric owner stayed unknown to the hand-list and was silently
+/// declared non-widenable, so a migration that should have cast defaulted the
+/// field to zero — a silent data loss in the safe-looking direction. `str` →
+/// `any` is the one non-numeric widening (a managed reference into the top
+/// type); the numeric owner has no facts for it, so it stays explicit exactly
+/// as `defaultInit` keeps `str`/`bool` explicit.
 pub fn isWidening(old_t: RT, new_t: RT) bool {
     if (old_t.eql(new_t)) return true;
-    return switch (old_t) {
-        .i8 => new_t == .i16 or new_t == .i32 or new_t == .i64 or new_t == .f64,
-        .i16 => new_t == .i32 or new_t == .i64 or new_t == .f64,
-        .i32 => new_t == .i64 or new_t == .f64,
-        .u8 => new_t == .u16 or new_t == .u32 or new_t == .u64 or new_t == .i64 or new_t == .f64,
-        .u16 => new_t == .u32 or new_t == .u64 or new_t == .i64 or new_t == .f64,
-        .u32 => new_t == .u64 or new_t == .i64 or new_t == .f64,
-        .f32 => new_t == .f64,
-        .str => new_t == .any,
-        else => false,
-    };
+    if (old_t.widensTo(new_t)) |numeric| return numeric;
+    return old_t == .str and new_t == .any;
 }
 
 fn findField(fields: []const FieldType, name: []const u8) ?FieldType {
@@ -112,6 +113,37 @@ pub fn emitMigration(
 
     try buf.appendSlice(alloc, "    return neu;\n}\n");
     return buf.toOwnedSlice(alloc);
+}
+
+test "type_diff: isWidening composes the derived numeric face with the non-numeric arm" {
+    // PINNED EQUAL TO THE RETIRED FULL LATTICE on every ordered pair of
+    // payload-free identities. `isWidening` now composes three arms — the
+    // equal-descriptor copy, the derived numeric `widensTo`, and the one
+    // non-numeric widening `str` → `any` — and their union must reproduce the
+    // retired per-tag switch bit for bit, so no field migration gains or loses a
+    // safe cast. The oracle here is that retired switch, verbatim.
+    @setEvalBranchQuota(20000);
+    const RTU = @typeInfo(RT).@"union";
+    inline for (RTU.field_names, RTU.field_types) |old_name, old_type| {
+        if (old_type != void) continue;
+        const old_t = @as(RT, @field(RT, old_name));
+        inline for (RTU.field_names, RTU.field_types) |new_name, new_type| {
+            if (new_type != void) continue;
+            const new_t = @as(RT, @field(RT, new_name));
+            const expected = old_t.eql(new_t) or switch (old_t) {
+                .i8 => new_t == .i16 or new_t == .i32 or new_t == .i64 or new_t == .f64,
+                .i16 => new_t == .i32 or new_t == .i64 or new_t == .f64,
+                .i32 => new_t == .i64 or new_t == .f64,
+                .u8 => new_t == .u16 or new_t == .u32 or new_t == .u64 or new_t == .i64 or new_t == .f64,
+                .u16 => new_t == .u32 or new_t == .u64 or new_t == .i64 or new_t == .f64,
+                .u32 => new_t == .u64 or new_t == .i64 or new_t == .f64,
+                .f32 => new_t == .f64,
+                .str => new_t == .any,
+                else => false,
+            };
+            try std.testing.expectEqual(expected, isWidening(old_t, new_t));
+        }
+    }
 }
 
 test "type_diff: emit migration copies shared fields and defaults new" {
