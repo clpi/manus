@@ -6302,6 +6302,9 @@ fn do_compile(
                 std.process.exit(1);
             },
         }
+        // GAP-185: populate the per-place plans so `dnir_lower` can elide
+        // enforcement for places whose authority is statically fixed.
+        graph.static_places = lower.collectStaticPlaces(alloc, census, observation.ordinary_executable, portable_world, 0);
 
         var lowering: dnir_lower.Diagnostic = .{};
         const lowered = dnir_lower.lowerModuleWithGraphObserved(alloc, &ps.mod, &graph, &lowering) catch |err| {

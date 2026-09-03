@@ -9433,6 +9433,16 @@ fn staticTableLen(ctx: *const LowerCtx, name: []const u8) ?i64 {
     return ctx.table_lens.get(len_slot);
 }
 
+/// GAP-185: is this place's authority statically fixed — the zero-cost rung?
+/// Reads the per-place plans `lower.collectStaticPlaces` populated on the
+/// graph. When true, the compiler's own proof (unique, nonescape, readonly,
+/// exact determinacy) covers spatial safety and the runtime bounds check
+/// can be elided.
+fn placeAuthorityIsStatic(ctx: *const LowerCtx, name: []const u8) bool {
+    const set = ctx.graph.static_places orelse return false;
+    return set.contains(name);
+}
+
 /// The index to use for a MEMORY-BACKED access, with the range decided first.
 ///
 /// The register-exploded representation has always refused a statically
@@ -9462,7 +9472,12 @@ fn guardedTableIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
     const idx_slot = ctx.freshTemp();
     const raw = try lowerExpr(ctx, key_expr);
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = raw, .ty = .any });
-    try emitIndexBoundsTrap(ctx, idx_slot, len);
+    // GAP-185: elide the bounds check when the place's authority is
+    // statically fixed — the zero-cost rung. The compiler's own proof
+    // (unique, nonescape, readonly, exact determinacy) covers spatial
+    // safety, so no runtime enforcement is needed.
+    if (!placeAuthorityIsStatic(ctx, table_name))
+        try emitIndexBoundsTrap(ctx, idx_slot, len);
     return .{ .local = idx_slot };
 }
 
@@ -9583,7 +9598,9 @@ fn lowerIndexAssignTarget(
     // re-run side effects per candidate slot.
     const idx_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = try lowerExpr(ctx, key_expr), .ty = .any });
-    try emitIndexBoundsTrap(ctx, idx_slot, len);
+    // GAP-185: elide the bounds check when the place's authority is statically fixed.
+    if (!placeAuthorityIsStatic(ctx, table_name))
+        try emitIndexBoundsTrap(ctx, idx_slot, len);
     const val_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = val_slot, .lhs = try lowerExprCons(ctx, value, .single), .ty = .any });
 
@@ -9643,7 +9660,9 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
 
     const idx_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = try lowerExpr(ctx, key_expr), .ty = .any });
-    try emitIndexBoundsTrap(ctx, idx_slot, len);
+    // GAP-185: elide the bounds check when the place's authority is statically fixed.
+    if (!placeAuthorityIsStatic(ctx, table_name))
+        try emitIndexBoundsTrap(ctx, idx_slot, len);
 
     const out_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = out_slot, .lhs = .{ .i64 = 0 }, .ty = .any });

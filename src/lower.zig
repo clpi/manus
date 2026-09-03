@@ -32,10 +32,12 @@
 //! below is called per census place during realization by the graph-backed
 //! C99 realization arm in `main.zig` (`selectPlace` remains the graph-facing
 //! selection over one census row: authority facts reach `select` through the
-//! census the graph carries, not through a host projection). Next host
-//! boundary — the per-place PLANS constraining lowering (the static rung
-//! eliding the enforcement `dnir_lower` emits) and measured per-mechanism
-//! costs replacing `costOf`'s stated orders.
+//! census the graph carries, not through a host projection). The per-place
+//! PLANS constraining lowering LANDED — `collectStaticPlaces` populates
+//! `graph.static_places` so `dnir_lower` elides the enforcement it would
+//! emit per place when the authority is statically fixed. Next host
+//! boundary — measured per-mechanism costs replacing `costOf`'s stated
+//! orders.
 
 const std = @import("std");
 const observation = @import("observation.zig");
@@ -320,6 +322,41 @@ pub fn selectModule(
         }
     }
     return .{ .realized = realized };
+}
+
+/// The per-place plans as a name-keyed set: every census place whose
+/// authority is statically fixed — the zero-cost rung — is a member.
+/// `dnir_lower` consumes this to elide the enforcement it would otherwise
+/// emit per place: when the plan is static, the compiler's own proof
+/// covers spatial safety and no runtime check is needed.
+///
+/// Returned as a `StringHashMapUnmanaged(void)` so the caller (the graph)
+/// owns the set and `dnir_lower` reads it through `graph.static_places`.
+/// Null when any place refused (the caller checks `selectModule` first).
+pub fn collectStaticPlaces(
+    alloc: std.mem.Allocator,
+    census: *const place.Census,
+    attack: observation.World,
+    target: world.TargetWorld,
+    crossings: u64,
+) ?std.StringHashMapUnmanaged(void) {
+    var set: std.StringHashMapUnmanaged(void) = .empty;
+    for (census.places.items) |*p| {
+        switch (selectPlace(p, attack, target, crossings)) {
+            .plan => |plan| switch (plan) {
+                .static => set.put(alloc, p.name, {}) catch {
+                    set.deinit(alloc);
+                    return null;
+                },
+                .dynamic => {},
+            },
+            .refused => {
+                set.deinit(alloc);
+                return null;
+            },
+        }
+    }
+    return set;
 }
 
 /// The selection record as structured evidence — names, never ordinals
@@ -811,4 +848,57 @@ test "lower: the backend realization walk fails closed on the refusing place" {
     try std.testing.expectEqualStrings("hidden", selection.refused.place);
     const p = census.find(selection.refused.place).?;
     try std.testing.expectEqual(Refusal.no_admissible_mechanism, selectPlace(p, hostile, wasi, 0).refused);
+}
+
+// ===========================================================================
+// collectStaticPlaces — the per-place plans as a name-keyed set
+// ===========================================================================
+
+test "lower: collectStaticPlaces marks statically fixed places" {
+    // The same census as the backend walk test: `hidden` is statically fixed,
+    // `seen` escapes. On a portable world the static rung is available for
+    // `hidden` (ordinary_executable, no foreign_boundary, no adversary).
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var census = place.Census.init(alloc);
+    defer census.deinit();
+    try census.places.append(alloc, row(0, "hidden", fixedFacts()));
+    try census.places.append(alloc, row(1, "seen", escapedFacts()));
+    const portable = world.TargetWorld.of(.{ .arch = .unknown, .os = .unknown, .abi = .unknown });
+    var set = collectStaticPlaces(alloc, &census, observation.ordinary_executable, portable, 0).?;
+    defer set.deinit(alloc);
+    // `hidden` is statically fixed; `seen` is not.
+    try std.testing.expect(set.contains("hidden"));
+    try std.testing.expect(!set.contains("seen"));
+}
+
+test "lower: collectStaticPlaces returns null on refusal" {
+    // WASI + adversary: no admissible mechanism for `hidden`, so the
+    // function returns null rather than a partial set.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var census = place.Census.init(alloc);
+    defer census.deinit();
+    try census.places.append(alloc, row(0, "hidden", fixedFacts()));
+    try census.places.append(alloc, row(1, "seen", escapedFacts()));
+    const hostile = observation.ordinary_executable.with(.security_adversary);
+    const wasi = world.TargetWorld.of(.{ .arch = .wasm32, .os = .wasi, .abi = .none });
+    try std.testing.expectEqual(@as(?std.StringHashMapUnmanaged(void), null), collectStaticPlaces(alloc, &census, hostile, wasi, 0));
+}
+
+test "lower: collectStaticPlaces is empty when no place is statically fixed" {
+    // Both places escape; no static rung is available.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var census = place.Census.init(alloc);
+    defer census.deinit();
+    try census.places.append(alloc, row(0, "a", escapedFacts()));
+    try census.places.append(alloc, row(1, "b", escapedFacts()));
+    const portable = world.TargetWorld.of(.{ .arch = .unknown, .os = .unknown, .abi = .unknown });
+    var set = collectStaticPlaces(alloc, &census, observation.ordinary_executable, portable, 0).?;
+    defer set.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 0), set.count());
 }

@@ -1286,6 +1286,12 @@ pub const SemanticGraph = struct {
     /// answers: a graph lifted by `liftModule` alone has NOT been asked, and a
     /// consumer must not read absence as proof.
     places: ?place.Census = null,
+    /// GAP-185: per-place enforcement plans — the names of census places
+    /// whose authority is statically fixed (the zero-cost rung). `dnir_lower`
+    /// reads this to elide the enforcement it would otherwise emit per place.
+    /// Populated by `lower.collectStaticPlaces` after `selectModule` succeeds;
+    /// null means no selection has been made (not "no static places").
+    static_places: ?std.StringHashMapUnmanaged(void) = null,
     /// §18's census and SOURCE-CONTROL-ONE's regions, PER RELATION.
     ///
     /// `places` above is the MODULE-scope census and `place.zig` states why it
@@ -1398,6 +1404,7 @@ pub const SemanticGraph = struct {
         self.origin.deinit(self.alloc);
         self.value_by_ast.deinit(self.alloc);
         if (self.places) |*census| census.deinit();
+        if (self.static_places) |*set| set.deinit(self.alloc);
         for (self.bodies.items) |*body| {
             body.places.deinit();
             body.regions.deinit();

@@ -20,9 +20,10 @@
 //! consumer LANDED — the graph-backed C99 realization arm in `main.zig` calls
 //! `lower.selectModule` per census place during realization (`lower.selectPlace`
 //! is the graph-facing selection over one census row: authority facts reach
-//! selection through the census the graph carries). Next host boundary — the
-//! per-place PLANS constraining lowering (the static rung eliding the
-//! enforcement `dnir_lower` emits) and measured per-mechanism costs replacing
+//! selection through the census the graph carries). The per-place PLANS
+//! constraining lowering LANDED — `lower.collectStaticPlaces` populates
+//! `graph.static_places` so `dnir_lower` elides enforcement for statically
+//! fixed places. Next host boundary — measured per-mechanism costs replacing
 //! `lower.costOf`'s stated orders.
 //!
 //! `foreign_boundary` IS modeled, as an admissibility ruling over the
