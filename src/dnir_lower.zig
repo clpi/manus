@@ -18410,3 +18410,66 @@ test "dnir_lower: a runtime index into a determined table folds from graph facts
         );
     }
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// GAP-221 — THE GUARD'S PREMISE, MEASURED.
+//
+// `moduleFieldWord` admits the module's field word only when
+// `graph.bindingNamedIn(relation, base)` yields a binding whose scope IS
+// `graph.module_root`. THOSE TWO CONDITIONS CANNOT BOTH HOLD.
+// `bindingNamedIn` skips every node whose `enclosingCallable` is not the
+// relation it was asked about, and a module-scope binding's enclosing callable
+// is the module — so the query answers null for the module's binding and
+// answers a relation-scoped binding for a shadow. The guard declines in both
+// cases, and a module table field's `__DATA` word is therefore unreachable
+// from every relation body, including the one that genuinely wrote it.
+//
+// MEASURED THROUGH THE LUA FACE ON PURPOSE. At 2954038e the `.id` grammar
+// refuses every shape the `examples/shadowstore.id` acceptance run needs — a
+// typed binding, a descriptor, a subject relation, even two bare relations in
+// one file — so the acceptance run cannot be obtained on this head at all
+// (GAP-145). The lift is the same lift for both faces, and this question is
+// asked of the lift's output, so the face the source wore does not enter it.
+test "dnir_lower: GAP-221 a module field base is unresolvable from a relation body" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\M = { x = 1 }
+        \\
+        \\function poke()
+        \\  M.x = 7
+        \\  return M.x
+        \\end
+        \\
+        \\function bump(M)
+        \\  M.x = 99
+        \\  return M.x
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "gap221.lua");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    const module = try parser.parse_module();
+
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const mod_id = try graph.liftModule(&module, "gap221.lua");
+
+    const poke = graph.resolveInHome(mod_id, "poke", .func) orelse
+        return error.TestExpectedEqual;
+    const bump = graph.resolveInHome(mod_id, "bump", .func) orelse
+        return error.TestExpectedEqual;
+
+    // THE CONTROL. `bump`'s `M` is its own parameter, so the query resolves it
+    // and its scope is not the module's. The guard declines, and declining is
+    // RIGHT here: the shadow's write is not the module's.
+    const shadow = graph.bindingNamedIn(bump, "M") orelse
+        return error.TestExpectedEqual;
+    try std.testing.expect(graph.get(shadow).?.scope != graph.module_root);
+
+    // THE DEFECT. `poke` declares no `M` at all, so its `M.x = 7` is a write to
+    // the MODULE's binding — and the query has nothing to answer with, so the
+    // guard declines the very word that write owns. The two arms are the same
+    // `orelse return null`, which is why one repair produced both answers.
+    try std.testing.expect(graph.bindingNamedIn(poke, "M") == null);
+}

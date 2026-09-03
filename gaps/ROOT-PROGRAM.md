@@ -70,17 +70,25 @@ name purge only.
 
 **2 Application/Graph Sovereignty** — `GAP-124`, `GAP-137`, `GAP-201`,
 `GAP-202`, `GAP-125`, `GAP-132`, `GAP-153`, `GAP-161`, `GAP-165`,
-`GAP-221` (not P0).
+`GAP-221`.
 `GAP-201` is the umbrella that owns the remaining bridge inventory; `GAP-137`
 owns one fact being optional and fail-open and is one row from closed;
 `GAP-202` owns making the one application algebra complete enough that scalar
 multiplication needs no subsystem of its own. `GAP-132` is the sharpest live
 defect in the program and reproduces in one command. `GAP-221` — a fact the
 graph did not publish (per-body binding origin) read off a spelling instead —
-is CLOSED and reclassified below: `aa936dfa` returns the type and the storage
-key from `moduleFieldWord` together, so the second by-spelling lookup has no
-call site, and `gate/gap-221-shadowstore.sh` pins both the answer and the
-deletion witness that the withdrawal below said nothing pinned.
+was reclassified CLOSED in this pass and is REOPENED at `2954038e`. Its
+deletion witness holds and is not in question. Its guard is dead:
+`moduleFieldWord` admits the module's word only for a binding
+`bindingNamedIn` resolves AND whose scope is `module_root`, and those two
+cannot both hold, so it returns null in every relation body — including the
+one that wrote the field. Measured by the unit test
+`dnir_lower: GAP-221 a module field base is unresolvable from a relation body`,
+which carries its own control. The reclassification said
+`gate/gap-221-shadowstore.sh` pinned the answer; the gate ran four `grep`s and
+no program, and the repair it certified was landed with "Fixture execution
+requires backend support" in its own commit message. The gate now runs the four
+fixtures and reports BLOCKED rather than PASS while they refuse at parse.
 The module-binding write that used to sit beside it — a write read off a
 spelling because the lift minted a same-spelled local for it — is CLOSED and
 reclassified below.
@@ -107,12 +115,17 @@ world projection, and its remaining bulk is `std.script.*` whose canonical
 targets are vocabulary-blocked.
 
 **6 Realization One** — `GAP-121`, `GAP-126`, `GAP-130`, `GAP-144`, `GAP-148`,
-`GAP-151`, `GAP-174` (not P0), `GAP-204`, `GAP-205`, `GAP-207`.
+`GAP-151`, `GAP-174`, `GAP-204`, `GAP-205`, `GAP-207`.
 `GAP-148` reproduces exactly (`spilled_regs` still keyed by a physical register).
-`GAP-174` — one law with two realizations and only one migrated — is CLOSED and
-reclassified below: `9e59d168` preserves the value-carrying tail of a
-multi-statement branch in the lowering both non-direct emitters share, which is
-upstream of each of them, and `23e0a53e` recorded it. `GAP-207` is a
+`GAP-174` — one law with two realizations and only one migrated — was
+reclassified CLOSED in this pass on `9e59d168`, which preserves the
+value-carrying tail of a multi-statement branch in the lowering both non-direct
+emitters share, recorded by `23e0a53e`. **Its owner reopened it at `ac05e4ea`
+("GAP-174: reopen discarded branch result") and its header reads OPEN · P0**, so
+the marker and the reclassification row are withdrawn here and the evidence is
+kept in prose below. This is bookkeeping in the projection, not a verdict on
+`GAP-174`: the census the gate computes reads the gap's own header, and the
+projection was the half that had gone stale. `GAP-207` is a
 live silent wrong answer — see below. `GAP-144` owns runtime-sized table
 realization and `GAP-169` (not P0) routes to it by name; its rejection half is crossed
 and its construction half is unstarted, so it is the growable-table hole rather
@@ -232,8 +245,16 @@ commit. Neither was superseded.
 | `GAP-142` | SUPERSEDED | `gate/admission.id` + `gate/admission.sh` + `evidence/mop/merge/readiness.md`; every adjudicated branch retired |
 | `GAP-225` | CLOSED | the lift names the module binding a relation writes and `publishApplicationMutations` publishes its cardinality; the census movement and the hazard row are what `sh gate/effect.sh` and `sh gate/speculation.sh` print, and the floors are pinned in those runners; regression `examples/place/mutate.id` |
 | `GAP-115` | CLOSED | `99673d63` "evidence: a fixed /tmp name is a fact any concurrent session can rewrite"; doctor/census/projection/positive-controls now mint run-private mktemp roots, pinned by `gate/gap-115-evidence.sh` |
-| `GAP-221` | CLOSED | `aa936dfa` "GAP-221: eliminate two-store shape in module field storage resolution" — `moduleFieldWord` returns the type and the storage key together, so the by-spelling `storageKey` lookup after the binding check has no call site; `gate/gap-221-shadowstore.sh` pins the answer and the deletion witness, which is exactly what the withdrawal below found missing |
-| `GAP-174` | CLOSED | `9e59d168` preserves the value-carrying tail of a multi-statement branch in a saved-answering context in `src/dnir_lower.zig` — the lowering both non-direct emitters share, which is upstream of each of them, as the row-for-row identical wrongness said it had to be; recorded by `23e0a53e` |
+`GAP-174`'s row stood here and is withdrawn: `9e59d168` preserves the
+value-carrying tail of a multi-statement branch in a saved-answering context in
+`src/dnir_lower.zig` — the lowering both non-direct emitters share, which is
+upstream of each of them, as the row-for-row identical wrongness said it had to
+be; recorded by `23e0a53e`. That evidence stands. The verdict does not: the gap
+was reopened at `ac05e4ea` and the census selects it again. A row left behind a
+reopening is the same half-edit `31676024` had to repair for `GAP-221`, and it
+had the same effect — `gate/frontier.sh` BLOCKED, so `gate/admission-all.sh`
+refused every commit in the repository for reasons no staged diff could fix.
+
 Each carries its evidence in its own file. No gap was reclassified on the
 strength of its own prose.
 
@@ -258,13 +279,17 @@ condition.**
   answer: `git grep -n shadowstore -- gate/ build.zig tests/ tools/ scripts/` is
   empty, so a re-regression would be silent. One manual run at one revision is
   the evidentiary shape that produced the false SUPERSEDED reading of `GAP-207`,
-  which is the live wrong answer this same pass found. **Crossed since:** the
-  withdrawal named the two missing things, and `aa936dfa` supplied both — the
-  deletion witness is met and `gate/gap-221-shadowstore.sh` makes that same
-  `git grep` non-empty, so the gap is CLOSED and its row is in the
-  reclassification table above. The withdrawal stands as the RULING it was: a
-  quiet headline is not a closure, and the closure came from the witness and the
-  pin rather than from the answer.
+  which is the live wrong answer this same pass found. **Half crossed, then
+  reopened:** the withdrawal named two missing things and `aa936dfa` supplied
+  one. The deletion witness is met. The pin is not a pin — `gate/gap-221-shadowstore.sh`
+  made that `git grep` non-empty with four `grep`s over `src/dnir_lower.zig` and
+  no program, so the answer stayed exactly as unpinned as the withdrawal found
+  it, and the repair certified by it was landed with "Fixture execution requires
+  backend support" in its own commit message. `2954038e` measures the guard
+  that repair installed to be dead. The gap is OPEN. The withdrawal stands as
+  the RULING it was, and reads further than it was written: a quiet headline is
+  not a closure, and neither is a met deletion witness when the acceptance it
+  was supposed to unblock was never run.
 
 Both now carry gated `idol.gap.frontier.v1` blocks that say which half is
 crossed, so the measurement is kept and the obligation is not.
