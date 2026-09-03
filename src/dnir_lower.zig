@@ -13494,6 +13494,16 @@ fn lowerMemType(ctx: *LowerCtx, type_expr: *const ast.Expr) ?RT {
         if (std.mem.eql(u8, name, "i32") or std.mem.eql(u8, name, "u32")) return .i64;
         if (std.mem.eql(u8, name, "i8") or std.mem.eql(u8, name, "u8")) return .any;
     }
+    // `"f64"` / `"f32"` — quoted-string type spelling used by the engine.
+    if (type_expr.* == .quoted) {
+        const lit = type_expr.quoted;
+        if (std.mem.eql(u8, lit, "f64")) return .f64;
+        if (std.mem.eql(u8, lit, "f32")) return .f32;
+        if (std.mem.eql(u8, lit, "i64")) return .i64;
+        if (std.mem.eql(u8, lit, "u64")) return .i64;
+        if (std.mem.eql(u8, lit, "i32") or std.mem.eql(u8, lit, "u32")) return .i64;
+        if (std.mem.eql(u8, lit, "i8") or std.mem.eql(u8, lit, "u8")) return .any;
+    }
     return null;
 }
 
@@ -13693,28 +13703,30 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
     //
     // Three spellings:
     //
-    // Spelling A — `mem.load(f64)(fb)`:
+    // Spelling A — flat `mem.load(T, p)` / `mem.store(T, p, v)`:
     //   c.func.* == .call
     //   c.func.call.func.* == .name "mem"
-    //   c.func.call.args[0].* == .name "load"
-    //   c.args[0].* == .name "f64"
-    //   c.args[1].* == .name "fb"
+    //   c.func.call.args[0].* == .name "load" / "store"
+    //   c.args[0].* == pointer (fb)
+    //   c.args[1].* == type ("f64")  [c.args[2] == value for store]
     //
-    // Spelling B — `mem.load(f64)(fb)`:
-    //   c.func.* == .method_call  (the `(fb)` wraps the method call)
+    // Spelling B — curried `mem.load(T)(p)`:
+    //   c.func.* == .method_call  (the outer `(p)` wraps the method call)
     //   c.func.method_call.obj.* == .name "mem"
     //   c.func.method_call.method == "load"
     //   c.func.method_call.args[0].* == .name "f64"
-    //   c.args[0].* == .name "fb"
+    //   c.args[0].* == pointer (fb)
     //
-    // Spelling C — `mem.store(f64)(fb, 3.14)`:
+    // Spelling C — curried `mem.store(T)(p, v)`:
     //   c.func.* == .method_call
     //   c.func.method_call.method == "store"
     //   c.func.method_call.args[0].* == .name "f64"
-    //   c.args[0].* == .name "fb"
-    //   c.args[1].* == .literal 3.14
+    //   c.args[0].* == pointer (fb)
+    //   c.args[1].* == value (3.14)
     //
-    // Pointer-first args to match the sema canonical `mem.load(T, p)`.
+    // Pointer-first args: the engine's flat `mem.load(T, p)` has type at
+    // c.args[0] and pointer at c.args[1]; the canonical sema order is
+    // pointer-first, so swap when lowering to load_index.
     if (c.func.* == .call and c.args.len >= 2) {
         const inner = c.func.call;
         // Spelling A: inner.func is `.name` `mem`
@@ -13723,16 +13735,16 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         {
             const op = inner.args[0].name.ident;
             if (std.mem.eql(u8, op, "load") and c.args.len == 2) {
-                const ptr = try lowerExpr(ctx, c.args[1]);
+                const ptr = try lowerExpr(ctx, c.args[0]);
                 const t = ctx.freshTemp();
-                const ty: RT = lowerMemType(ctx, c.args[0]) orelse .i64;
+                const ty: RT = lowerMemType(ctx, c.args[1]) orelse .i64;
                 try ctx.emit(.{ .op = .load_index, .result = t, .ty = ty, .lhs = ptr, .rhs = .{ .i64 = 1 } });
                 return .{ .temp = t };
             }
             if (std.mem.eql(u8, op, "store") and c.args.len == 3) {
-                const ptr = try lowerExpr(ctx, c.args[1]);
-                const val = try lowerExpr(ctx, c.args[2]);
-                const ty: RT = lowerMemType(ctx, c.args[0]) orelse .i64;
+                const ptr = try lowerExpr(ctx, c.args[0]);
+                const val = try lowerExpr(ctx, c.args[1]);
+                const ty: RT = lowerMemType(ctx, c.args[2]) orelse .i64;
                 try ctx.emit(.{ .op = .store_index, .ty = ty, .lhs = ptr, .rhs = .{ .i64 = 1 }, .third = val });
                 return .void;
             }
