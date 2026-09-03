@@ -6729,23 +6729,28 @@ fn lowerBlockReturns(ctx: *LowerCtx, block: *const ast.Block, allow_return: bool
         try lowerStmt(ctx, stmt, tail_here);
     }
     if (allow_return) return try tryEmitTailDemandReturn(ctx, block);
-    
-    // GAP-174: Preserve value-carrying tail expressions in value-carrying contexts.
-    // When the block is in a value-carrying context (saved_answering is true) and has
-    // a value-carrying tail expression, we need to preserve that value even though
-    // allow_return is false (because we're not in a function return context).
-    // This fixes multi-statement if/else branches used as values.
+
+    // The enclosing block demands an answer even though this arm was not
+    // admitted as its syntactic return slot.  The tail operand is therefore
+    // the function answer when this arm is selected.  Lowering it and throwing
+    // the operand away preserved only its effects; the join then observed the
+    // other arm's value (or zero).  Carry the existing answer fact to the
+    // function boundary and tell the branch builder this arm terminated.
     if (saved_answering) {
         if (block.tail_expr) |tail| {
             if (tail.* != .table and !effect(tail)) {
-                // This is a value-carrying tail expression in a value-carrying context.
-                // Preserve it by lowering it with .single consumption so the value is available.
-                _ = try lowerExprCons(ctx, tail, .single);
-                return false;
+                const ret_ty: RT = if (exprIsF64(ctx, tail))
+                    .f64
+                else if (exprIsPointer(ctx, tail))
+                    physical_pointer
+                else
+                    .any;
+                try ctx.emit(.{ .op = .ret, .lhs = try lowerExprCons(ctx, tail, .single), .ty = ret_ty });
+                return true;
             }
         }
     }
-    
+
     try lowerBlockTailEffect(ctx, block);
     return false;
 }
