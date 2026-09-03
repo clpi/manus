@@ -1678,6 +1678,64 @@ tokens: str = ()
 spell: str = ()
     "or and < > <= >= ~= != == in | & ~ << >> |> cat + - * / // % ^"
 
+# The owner spelling an enumerated bar maps to. `~=` shares the `.neq`
+# identity's spelling `!=`; `cat` is this file's avoidance-spelling for the
+# concat bar, whose owner spelling is `..`.
+opkey: str = (sp: str)
+    if sp == "~="
+        return "!="
+    if sp == "cat"
+        return ".."
+    sp
+
+# The one bridge row whose `.spell` equals `key` and whose `.infix = true`.
+# Absent bridge or row refuses: the enumeration above and the owner must not
+# drift apart silently.
+oprow: str = (key: str)
+    body: str = slurp("src/grammar_role_table.zig")
+    if body == ""
+        print("treesitter emit: FAIL — src/grammar_role_table.zig is absent or empty.")
+        print("  The operator ladder reads the owner's generated bridge;")
+        print("  regenerate it with gate/grammar-projection.sh before emitting.")
+        os.exit(2)
+    q: str = "\""
+    needle: str = ".spell = {q}{key}{q}"
+    rows = body:split("\n")
+    found: str = ""
+    i: i64 = 1
+    while i <= rows:len()
+        row: str = rows[i]
+        if row:find(".infix = true") > 0
+            if row:find(needle) > 0
+                found = row
+        i += 1
+    if found == ""
+        print("treesitter emit: FAIL — the owner bridge has no infix row for spelling {key}.")
+        print("  The enumerated operator surface and the owner have drifted; teach")
+        print("  the emitter the owner's identity or refuse, do not answer by guess.")
+        os.exit(2)
+    found
+
+# The owner's associativity for one enumerated bar, read off the bridge row.
+# `.nonassoc` collapses to `left` because tree-sitter has no nonassoc face.
+opassoc: str = (key: str)
+    row: str = oprow(key)
+    at: i64 = row:find(".assoc = .")
+    if at == 0
+        print("treesitter emit: FAIL — the owner infix row for {key} has no .assoc: {row}")
+        os.exit(2)
+    start: i64 = at + 10
+    stop: i64 = row:find(",", start)
+    if stop == 0
+        print("treesitter emit: FAIL — the owner infix row for {key} has an unterminated .assoc: {row}")
+        os.exit(2)
+    side: str = row:sub(start, stop - 1)
+    if side == "nonassoc"
+        return "left"
+    if side == "none"
+        return "left"
+    side
+
 # Tree-sitter binding power. Tighter binds higher. These are the RANKS of
 # `roleprecedence` in `lib/compiler/token.id`, the one grammar-fact owner —
 # not a translation of a documentation table.
@@ -1704,12 +1762,26 @@ spell: str = ()
 level: str = ()
     "2 3 4 4 4 4 4 4 4 4 5 7 6 8 8 1 9 10 10 11 11 11 11 13"
 
-# `roleassoc` in the owner: 1 left, 2 right, 3 nonassoc. tree-sitter has no
-# nonassoc, so the eight comparison identities the owner marks nonassoc are
-# rendered `prec.left`; `cat` and `^` are the owner's two right-associative
-# identities and `cat` was rendered left here until 2026-08-23.
+# The operator associativity row, ordered by `spell()` above. NO LONGER
+# AUTHORED: each entry is the owner's `.assoc` read off the bridge row for that
+# bar (`opassoc`), so this file is not a second producer of an associativity
+# fact (`law.fact.producer.one`). `.nonassoc` renders `left` because
+# tree-sitter has no nonassoc face; `cat` and `^` are the owner's two
+# right-associative bars.
 assoc: str = ()
-    "left left left left left left left left left left left left left left left left right left left left left left left right"
+    sp: str = spell()
+    parts = sp:split(" ")
+    out: str = ""
+    i: i64 = 1
+    while i <= parts:len()
+        bar: str = parts[i]
+        side: str = opassoc(opkey(bar))
+        if i > 1
+            out = "{out} {side}"
+        else
+            out = side
+        i += 1
+    out
 
 field: str = (row: str, n: i64)
     parts = row:split(" ")
