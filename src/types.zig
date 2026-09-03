@@ -613,6 +613,59 @@ pub fn mangleFragment(repr: ResolvedType) ?[]const u8 {
     return null;
 }
 
+/// The physical cell a scalar descriptor MATERIALIZES IN when it is a field of
+/// a natively-lowered record, table row, or parameter — one of the three the
+/// native IR carries (`native_ir.FieldKind = { i64, str, f64 }`). This owner
+/// names the class as its own three-variant enum rather than the IR one,
+/// because `types.zig` is IR and `native_ir.zig` is a codegen carrier below it;
+/// the one consumer maps this class to its own `FieldKind` by name at the seam,
+/// which is a rename over the same three identities, not a second authority.
+///
+/// DERIVED, NOT TABULATED. This is the FIELD-CELL FACE of the scalar roster.
+/// The partition existed TWICE in `dnir_lower`, as `graphFieldFact` (which also
+/// carries the sub-register store width) and `tableFieldKind` (which drops it),
+/// each a per-tag switch mapping `str`→str, `f64`→f64, and every integral
+/// spelling plus `bool`→i64. Two statements of one fact that agree only until
+/// someone edits one: a `ResolvedType` value in one cell has a domain
+/// (`numericFacts.domain`) and, if not numeric, is `bool` or `str`
+/// (`scalarRepr`). A roster could not compose: a scalar identity added to the
+/// union gained numeric facts but stayed unknown to the hand-lists, took their
+/// `else` arm, and was silently declared NOT A NATIVE FIELD — a record that
+/// should lower natively fell back to a boxed row, the wrong answer in the
+/// safe-looking direction.
+///
+/// The three cells are NOT the whole scalar roster, and this face preserves the
+/// two exclusions the retired switches encoded by omission rather than widening
+/// them:
+///   * only the 64-bit real is a field cell (`f64`); `f32` has NO native field
+///     cell and answered `else`/null, so `domain == .real` alone is not the
+///     test — `width == 64` is;
+///   * a NOMINAL DESCRIPTOR is withheld, not delegated: the retired switches
+///     listed only bare scalar tags, so a nominal-over-`i32` (a `.struct` tag)
+///     fell to `else`, and `scalarRepr` withholds it identically
+///     (`nominalReprOf != null`). This is the one physical face where the
+///     nominal takes the caller's boxed row rather than its representation's
+///     cell.
+/// Every non-scalar identity is declined by the `scalarRepr` fact rather than
+/// by absence: the vectors span several cells (`lanes != 1`), `any` is boxed,
+/// `void`/`nil`/`never` are not field values, and a pointer/array/struct/
+/// composition is not a scalar cell.
+pub const ScalarFieldCell = enum { i64, str, f64 };
+
+pub fn scalarFieldCell(repr: ResolvedType) ?ScalarFieldCell {
+    if (!scalarRepr(repr)) return null;
+    if (repr == .str) return .str;
+    // A scalar that is not `str` is `bool` (no numeric facts, register-integer
+    // cell) or a one-cell numeric owner. Only the 64-bit real is a field cell;
+    // `f32` has no native field cell and is declined here exactly as the retired
+    // switches declined it by listing only `f64`.
+    const facts = repr.numericFacts() orelse return .i64;
+    return switch (facts.domain) {
+        .integral => .i64,
+        .real => if (facts.width == 64) .f64 else null,
+    };
+}
+
 /// Resolved type after semantic analysis.
 /// During sema, each expression gets a `ResolvedType` attached.
 /// The declared width of a sub-64-bit integer descriptor, and whether
@@ -3524,6 +3577,65 @@ test "types: the widening face of the scalar roster is derived from the same fac
     // `str` → `any` stays the caller's non-numeric arm: the numeric owner has no
     // facts for either side, so `widensTo` returns null and `isWidening` owns it.
     try testing.expect(ResolvedType.widensTo(.str, .any) == null);
+}
+
+test "types: the field-cell face of the scalar roster is derived from the same facts" {
+    // PINNED EQUAL TO THE RETIRED SWITCHES on every payload-free identity — the
+    // scalars each one placed in a cell AND the vector, boxed, void and
+    // composed identities they folded into `else` — iterated over the union's
+    // own tags rather than a list, so a scalar identity added to the union
+    // cannot be one the field-cell face silently does not know. Two functions
+    // (`dnir_lower.graphFieldFact` and `dnir_lower.tableFieldKind`) shared this
+    // partition; `retiredFieldCell` is their common non-width answer.
+    const retiredFieldCell = struct {
+        fn f(t: ResolvedType) ?ScalarFieldCell {
+            return switch (t) {
+                .str => .str,
+                .f64 => .f64,
+                .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .bool => .i64,
+                else => null,
+            };
+        }
+    }.f;
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |name, ty| {
+        if (ty != void) continue;
+        const t = @as(ResolvedType, @field(ResolvedType, name));
+        try testing.expectEqual(retiredFieldCell(t), scalarFieldCell(t));
+    }
+
+    // DERIVED, NOT TABULATED — a 64-bit real takes the double cell, an integral
+    // or `bool` value the register-integer cell, and `str` the reference cell.
+    // `f32` has NO native field cell: the retired switches listed only `f64`,
+    // so `domain == .real` is not enough and `width == 64` is the test.
+    try testing.expectEqual(@as(?ScalarFieldCell, .f64), scalarFieldCell(.f64));
+    try testing.expectEqual(@as(?ScalarFieldCell, null), scalarFieldCell(.f32));
+    try testing.expectEqual(@as(?ScalarFieldCell, .i64), scalarFieldCell(.i32));
+    try testing.expectEqual(@as(?ScalarFieldCell, .i64), scalarFieldCell(.bool));
+    try testing.expectEqual(@as(?ScalarFieldCell, .str), scalarFieldCell(.str));
+
+    // DECLINED BY THE `scalarRepr` FACT, NOT BY ABSENCE: the vectors span
+    // several cells, `any` is boxed, and `void`/`nil`/`never` are not field
+    // values, so none of them is a scalar cell.
+    try testing.expectEqual(@as(?ScalarFieldCell, null), scalarFieldCell(.v4i64));
+    try testing.expectEqual(@as(?ScalarFieldCell, null), scalarFieldCell(.any));
+    try testing.expectEqual(@as(?ScalarFieldCell, null), scalarFieldCell(.void));
+
+    // A NOMINAL DESCRIPTOR IS WITHHELD, not delegated — the retired switches
+    // listed only bare scalar tags, so a nominal-over-`i32` (a `.struct` tag)
+    // fell to `else`, and `scalarRepr` withholds it identically. This is the
+    // one physical field face where the nominal takes the caller's boxed row
+    // rather than its representation's cell, matching the retired switch bit for
+    // bit. Uses the process-global map with `page_allocator`, the pattern the
+    // `narrowFit` nominal test above already established.
+    const alloc = std.heap.page_allocator;
+    try declareNominal(alloc, "tick", .i32);
+    const nominal = nominalNamed("tick").?;
+    try testing.expectEqual(@as(?ScalarFieldCell, null), scalarFieldCell(nominal));
+
+    // Planting a vector widening in `scalarFieldCell` (via `scalarRepr`) is
+    // refused by the `lanes != 1` fact: no non-scalar cell is invented here.
+    try testing.expect(!scalarRepr(.v8i32));
 }
 
 test "CallShape: method call shape" {

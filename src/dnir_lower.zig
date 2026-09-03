@@ -3750,14 +3750,29 @@ const GraphFieldFact = struct {
     width: ?RT,
 };
 
-fn graphFieldFact(descriptor: RT) ?GraphFieldFact {
-    return switch (descriptor) {
-        .str => .{ .kind = .str, .width = null },
-        .f64 => .{ .kind = .f64, .width = null },
-        .i8, .i16, .i32, .u8, .u16, .u32 => .{ .kind = .i64, .width = descriptor },
-        .i64, .u64, .bool => .{ .kind = .i64, .width = null },
-        else => null,
+/// Rename the owned scalar-cell class to the native-IR carrier's `FieldKind`
+/// at this one seam. The two enums are the same three identities; mapping by
+/// NAME rather than ordinal keeps the correspondence explicit and refuses to
+/// silently agree by shared integer tag (`law.magic.code.zero`).
+fn fieldKindOf(cell: types.ScalarFieldCell) dnir.FieldKind {
+    return switch (cell) {
+        .i64 => .i64,
+        .str => .str,
+        .f64 => .f64,
     };
+}
+
+/// DERIVED, NOT TABULATED — the FIELD-CELL FACE of the scalar roster. The
+/// per-tag switch this replaced was one of two statements of which cell each
+/// scalar materialises in; `types.scalarFieldCell` owns the partition, and the
+/// sub-register store width is exactly the descriptor when `narrowFit` gives it
+/// one (the narrow integrals), null otherwise (`i64`/`u64`/`bool`, already the
+/// register width). A scalar identity added to the union now gains its field
+/// cell here rather than falling to `else` and being declared not-a-field.
+fn graphFieldFact(descriptor: RT) ?GraphFieldFact {
+    const cell = types.scalarFieldCell(descriptor) orelse return null;
+    const width: ?RT = if (descriptor.narrowFit() != null) descriptor else null;
+    return .{ .kind = fieldKindOf(cell), .width = width };
 }
 
 fn shapeOnStack(stack: []const semantic_graph.id, shape: semantic_graph.id) bool {
@@ -4119,13 +4134,13 @@ fn recordFieldKindForParam(
     return null;
 }
 
+/// DERIVED, NOT TABULATED — the same FIELD-CELL FACE, kind only. This was the
+/// second statement of the partition `graphFieldFact` carried, dropping the
+/// store width because a table row cell does not narrow. It now reads the one
+/// owner too, so the two cannot drift apart.
 fn tableFieldKind(field: types.FieldType) ?dnir.FieldKind {
-    return switch (field.typ) {
-        .str => .str,
-        .f64 => .f64,
-        .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .bool => .i64,
-        else => null,
-    };
+    const cell = types.scalarFieldCell(field.typ) orelse return null;
+    return fieldKindOf(cell);
 }
 
 fn recordFieldPrefixPresent(record: dnir.RecordDesc, prefix: []const u8) bool {
