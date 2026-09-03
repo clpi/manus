@@ -35,13 +35,21 @@
 //! census the graph carries, not through a host projection). The per-place
 //! PLANS constraining lowering LANDED — `collectStaticPlaces` populates
 //! `graph.static_places` so `dnir_lower` elides the enforcement it would
-//! emit per place when the authority is statically fixed. Next host
-//! boundary — measured per-mechanism costs replacing `costOf`'s stated
-//! orders.
+//! emit per place when the authority is statically fixed. The measured-cost
+//! face LANDED — a `MeasuredCost` fact names one mechanism, one target
+//! triple, one unit and the exact measured subject revision, and
+//! `selectMeasured` lets measured costs decide ONLY a uniform comparison
+//! (every admissible candidate measured on the named target in one unit);
+//! anything less leaves `costOf`'s stated orders to decide.
+//! `gate/lower/cost.sh` measures the software check's per-access cost on the
+//! host. Next host boundary — measured costs for the boundary mechanisms
+//! (the process and network crossings, MPK on x86_64) and measured facts
+//! reaching the realization walk (`selectPlace`/`selectModule`).
 
 const std = @import("std");
 const observation = @import("observation.zig");
 const place = @import("place.zig");
+const target_model = @import("target_model.zig");
 const world = @import("world.zig");
 
 const Mechanism = world.Mechanism;
@@ -98,6 +106,71 @@ pub fn costOf(m: Mechanism) Cost {
         // cycles and up).
         .network_isolation => .{ .access = 0, .crossing = 65536 },
     };
+}
+
+/// The physical unit a cost is stated in. The stated relation (`costOf`)
+/// speaks in cycle-scale ORDERS; a measurement names its own unit, and two
+/// costs are comparable only within one unit — a measured nanosecond never
+/// settles a comparison against a stated cycle estimate.
+pub const CostUnit = enum {
+    /// The stated relation's own scale: cycle-scale orders.
+    cycle_order,
+    /// Measured wall-clock nanoseconds per event on the named target.
+    nanoseconds,
+
+    pub fn name(self: CostUnit) []const u8 {
+        return switch (self) {
+            .cycle_order => "cycle_order",
+            .nanoseconds => "nanoseconds",
+        };
+    }
+};
+
+/// A MEASURED per-mechanism cost — the replacement for `costOf`'s stated
+/// order once a target exists to measure the mechanism on. The fact names
+/// the mechanism, the target triple it was measured on, the unit the numbers
+/// are in, and the exact measured subject revision
+/// (`law.evidence.subject.one`): a measurement that cannot name what was
+/// measured constructs NO fact.
+pub const MeasuredCost = struct {
+    mechanism: Mechanism,
+    triple: target_model.TargetTriple,
+    unit: CostUnit,
+    cost: Cost,
+    /// The subject revision the measurement ran against (a git commit id).
+    /// Empty means the measurement names no subject — no fact.
+    subject_revision: []const u8,
+};
+
+/// The measured fact naming one mechanism on one target triple, or none.
+/// A measurement with no subject revision constructs no fact
+/// (`law.evidence.subject.one`), and a measurement on another triple is a
+/// fact about THAT target, not this one.
+pub fn measurementOf(m: Mechanism, triple: target_model.TargetTriple, measured: []const MeasuredCost) ?MeasuredCost {
+    for (measured) |fact| {
+        if (fact.subject_revision.len == 0) continue;
+        if (fact.mechanism == m and std.meta.eql(fact.triple, triple)) return fact;
+    }
+    return null;
+}
+
+/// The uniform-measurement rule: measured costs decide a comparison ONLY
+/// when every candidate was measured on the target in one shared unit. A
+/// partial measurement, a foreign-triple measurement, or mixed units leave
+/// the stated orders to decide — the rule returns the shared unit when the
+/// whole comparison is measured, null otherwise.
+fn uniformMeasurement(triple: target_model.TargetTriple, candidates: []const Dynamic, measured: []const MeasuredCost) ?CostUnit {
+    if (candidates.len == 0) return null;
+    var unit: ?CostUnit = null;
+    for (candidates) |c| {
+        const fact = measurementOf(c.mechanism, triple, measured) orelse return null;
+        if (unit) |u| {
+            if (fact.unit != u) return null;
+        } else {
+            unit = fact.unit;
+        }
+    }
+    return unit;
 }
 
 // ===========================================================================
@@ -168,6 +241,9 @@ pub const Dynamic = struct {
     mechanism: Mechanism,
     demanded: PropertySet,
     cost: Cost,
+    /// The unit `cost` is stated in — `cycle_order` for the stated relation,
+    /// the measured unit when a uniform measurement decided.
+    unit: CostUnit = .cycle_order,
     /// The derived construction when the mechanism is `.cheri`.
     capability: ?Capability,
 };
@@ -196,18 +272,37 @@ pub const Selection = union(enum) {
 /// it is the absence of workload facts, so every admissible candidate ties on
 /// cost and the weakest sufficient mechanism is the whole answer, with no
 /// cost claim attached.
+///
+/// This is the stated-order face: costs come from `costOf`. `selectMeasured`
+/// is the same selection under measured cost facts.
 pub fn select(
     auth: world.Authority,
     attack: observation.World,
     target: world.TargetWorld,
     profile: ?Profile,
 ) Selection {
+    return selectMeasured(auth, attack, target, profile, &.{});
+}
+
+/// Selection under measured cost facts. `measured` facts decide ONLY a
+/// uniform comparison — every admissible candidate measured on this target
+/// in one unit (`uniformMeasurement`); anything less leaves the stated
+/// orders to decide, and a measured fact never mixes with a stated estimate
+/// in one comparison.
+pub fn selectMeasured(
+    auth: world.Authority,
+    attack: observation.World,
+    target: world.TargetWorld,
+    profile: ?Profile,
+    measured: []const MeasuredCost,
+) Selection {
     const demanded = world.demandOf(attack, auth);
     // The static rung's proof quantifies over the program's own accesses; a
     // `foreign_boundary` world carries in-image code that can forge pointers,
     // so zero enforcement is not admissible there (`world.enforces`' ruling).
     if (!attack.has(.foreign_boundary) and auth.fixedAgainst(demanded)) return .{ .plan = .{ .static = auth } };
-    var best: ?Dynamic = null;
+    var candidates: [Mechanism.count]Dynamic = undefined;
+    var n: usize = 0;
     for (std.meta.tags(Mechanism)) |m| {
         if (!target.admits(m)) continue;
         if (!world.enforces(m, attack).supersetOf(demanded)) continue;
@@ -215,23 +310,31 @@ pub fn select(
         // realization: derivability is an admissibility condition.
         const capability: ?Capability = if (m == .cheri) capabilityOf(auth) else null;
         if (m == .cheri and capability == null) continue;
-        const candidate: Dynamic = .{
+        candidates[n] = .{
             .mechanism = m,
             .demanded = demanded,
             .cost = costOf(m),
             .capability = capability,
         };
-        // The tie rule, applied: with no workload facts every admissible
-        // candidate ties, so the first one in index order is the answer.
-        if (profile == null) return .{ .plan = .{ .dynamic = candidate } };
-        if (best) |incumbent| {
-            if (candidate.cost.total(profile.?) < incumbent.cost.total(profile.?)) best = candidate;
-        } else {
-            best = candidate;
+        n += 1;
+    }
+    if (n == 0) return .{ .refused = .no_admissible_mechanism };
+    // The tie rule, applied: with no workload facts every admissible
+    // candidate ties, so the first one in index order is the answer.
+    if (profile == null) return .{ .plan = .{ .dynamic = candidates[0] } };
+    // A uniform measurement replaces the stated orders for every candidate
+    // at once, so the comparison below never mixes units.
+    if (uniformMeasurement(target.triple, candidates[0..n], measured)) |unit| {
+        for (candidates[0..n]) |*c| {
+            c.cost = measurementOf(c.mechanism, target.triple, measured).?.cost;
+            c.unit = unit;
         }
     }
-    if (best) |d| return .{ .plan = .{ .dynamic = d } };
-    return .{ .refused = .no_admissible_mechanism };
+    var best = candidates[0];
+    for (candidates[1..n]) |candidate| {
+        if (candidate.cost.total(profile.?) < best.cost.total(profile.?)) best = candidate;
+    }
+    return .{ .plan = .{ .dynamic = best } };
 }
 
 // ===========================================================================
@@ -380,7 +483,7 @@ pub fn writeJson(w: *std.Io.Writer, selection: Selection) !void {
                     first = false;
                 }
                 try w.writeAll("]");
-                try w.print(",\"cost\":{{\"access\":{},\"crossing\":{}}}", .{ d.cost.access, d.cost.crossing });
+                try w.print(",\"cost\":{{\"access\":{},\"crossing\":{},\"unit\":\"{s}\"}}", .{ d.cost.access, d.cost.crossing, d.unit.name() });
                 if (d.capability) |cap| {
                     try w.print(",\"capability\":{{\"extent\":{},\"sealed\":{},\"global\":{},\"permissions\":[", .{ cap.extent, cap.sealed, cap.global });
                     var pfirst = true;
@@ -480,6 +583,106 @@ test "lower: the cost model is a relation, not a priority list" {
     try std.testing.expectEqual(Mechanism.software_check, hot_crossing.mechanism);
     // software_check: 8; mpk: 32000. The branch is cheaper.
     try std.testing.expectEqual(@as(u64, 8), hot_crossing.cost.total(.{ .accesses = 4, .crossings = 1000 }));
+}
+
+// ===========================================================================
+// The measured-cost face — measured facts decide only a uniform comparison
+// ===========================================================================
+
+/// The measured-cost fixture's target and subject: one triple, one revision,
+/// four facts covering every mechanism the target admits for the fixture's
+/// demand (software_check, mpk, process, network_isolation).
+const measured_triple: target_model.TargetTriple = .{ .arch = .x86_64, .os = .linux, .abi = .gnu };
+const measured_revision = "9f62a9dcf0000000000000000000000000000001";
+
+fn measuredSet(unit: CostUnit) [4]MeasuredCost {
+    return .{
+        .{ .mechanism = .software_check, .triple = measured_triple, .unit = unit, .cost = .{ .access = 1, .crossing = 0 }, .subject_revision = measured_revision },
+        .{ .mechanism = .mpk, .triple = measured_triple, .unit = unit, .cost = .{ .access = 0, .crossing = 900 }, .subject_revision = measured_revision },
+        .{ .mechanism = .process, .triple = measured_triple, .unit = unit, .cost = .{ .access = 0, .crossing = 3000 }, .subject_revision = measured_revision },
+        .{ .mechanism = .network_isolation, .triple = measured_triple, .unit = unit, .cost = .{ .access = 0, .crossing = 100000 }, .subject_revision = measured_revision },
+    };
+}
+
+test "lower: a uniform measurement replaces the stated orders and can flip the winner" {
+    // The stated relation's answer on this target is MPK (320 under the
+    // profile). The measured facts say the software check's enforced access
+    // is one nanosecond and every boundary crossing costs hundreds more, so
+    // under measurement the same authority, demand and profile select the
+    // software check — the measurement, not the estimate, decides.
+    const auth = exposedAuthority();
+    const attack = observation.ordinary_executable;
+    const target = world.TargetWorld.of(measured_triple);
+    const profile: Profile = .{ .accesses = 1000, .crossings = 10 };
+
+    const stated = select(auth, attack, target, profile).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, stated.mechanism);
+    try std.testing.expectEqual(CostUnit.cycle_order, stated.unit);
+
+    const measured = measuredSet(.nanoseconds);
+    const plan = selectMeasured(auth, attack, target, profile, &measured).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.software_check, plan.mechanism);
+    try std.testing.expectEqual(CostUnit.nanoseconds, plan.unit);
+    // 1ns * 1000 accesses: the measured total, not the stated 2*1000.
+    try std.testing.expectEqual(@as(u64, 1000), plan.cost.total(profile));
+}
+
+test "lower: a partial measurement leaves the stated orders to decide" {
+    // Only the software check was measured; MPK, process and network carry
+    // stated estimates. A measured nanosecond never settles a comparison
+    // against a stated cycle estimate, so the stated relation decides and
+    // MPK wins exactly as without the measurement.
+    const auth = exposedAuthority();
+    const target = world.TargetWorld.of(measured_triple);
+    const profile: Profile = .{ .accesses = 1000, .crossings = 10 };
+    const partial = [_]MeasuredCost{measuredSet(.nanoseconds)[0]};
+    const plan = selectMeasured(auth, observation.ordinary_executable, target, profile, &partial).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, plan.mechanism);
+    try std.testing.expectEqual(CostUnit.cycle_order, plan.unit);
+}
+
+test "lower: a measurement on another target constructs no fact here" {
+    // All four facts are present but name aarch64-macos; the selection's
+    // target is x86_64-linux. A measurement is a fact about the target it
+    // was measured ON, so nothing is measured here and the stated orders
+    // decide.
+    const auth = exposedAuthority();
+    const target = world.TargetWorld.of(measured_triple);
+    const profile: Profile = .{ .accesses = 1000, .crossings = 10 };
+    var foreign = measuredSet(.nanoseconds);
+    const macos: target_model.TargetTriple = .{ .arch = .aarch64, .os = .macos, .abi = .gnu };
+    for (&foreign) |*fact| fact.triple = macos;
+    const plan = selectMeasured(auth, observation.ordinary_executable, target, profile, &foreign).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, plan.mechanism);
+    try std.testing.expectEqual(CostUnit.cycle_order, plan.unit);
+}
+
+test "lower: mixed units are not a comparison" {
+    // Three facts in nanoseconds and one in cycle-scale orders is not a
+    // uniform measurement; the stated relation decides for all four.
+    const auth = exposedAuthority();
+    const target = world.TargetWorld.of(measured_triple);
+    const profile: Profile = .{ .accesses = 1000, .crossings = 10 };
+    var mixed = measuredSet(.nanoseconds);
+    mixed[2].unit = .cycle_order;
+    const plan = selectMeasured(auth, observation.ordinary_executable, target, profile, &mixed).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, plan.mechanism);
+    try std.testing.expectEqual(CostUnit.cycle_order, plan.unit);
+}
+
+test "lower: a measurement without a subject revision constructs no fact" {
+    // `law.evidence.subject.one`: a measurement that cannot name what was
+    // measured is not a fact. All four facts present, all revisions empty —
+    // the stated orders decide.
+    const auth = exposedAuthority();
+    const target = world.TargetWorld.of(measured_triple);
+    const profile: Profile = .{ .accesses = 1000, .crossings = 10 };
+    var unowned = measuredSet(.nanoseconds);
+    for (&unowned) |*fact| fact.subject_revision = "";
+    try std.testing.expectEqual(@as(?MeasuredCost, null), measurementOf(.software_check, measured_triple, &unowned));
+    const plan = selectMeasured(auth, observation.ordinary_executable, target, profile, &unowned).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, plan.mechanism);
+    try std.testing.expectEqual(CostUnit.cycle_order, plan.unit);
 }
 
 test "lower: cheri is selected on a capability world, with derived construction" {
@@ -607,6 +810,10 @@ test "lower: the evidence record is structured and names its decision" {
     try std.testing.expectEqualStrings("mpk", parsed.value.object.get("mechanism").?.string);
     const demanded = parsed.value.object.get("demanded").?.array;
     try std.testing.expectEqual(@as(usize, 4), demanded.items.len);
+    // The cost record names the unit its numbers are in — the stated
+    // relation's scale here.
+    const cost = parsed.value.object.get("cost").?.object;
+    try std.testing.expectEqualStrings("cycle_order", cost.get("unit").?.string);
 }
 
 // ===========================================================================

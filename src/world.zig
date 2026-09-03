@@ -23,8 +23,11 @@
 //! selection through the census the graph carries). The per-place PLANS
 //! constraining lowering LANDED — `lower.collectStaticPlaces` populates
 //! `graph.static_places` so `dnir_lower` elides enforcement for statically
-//! fixed places. Next host boundary — measured per-mechanism costs replacing
-//! `lower.costOf`'s stated orders.
+//! fixed places. The measured-cost face LANDED in `lower.zig`: a
+//! `MeasuredCost` fact (mechanism, target triple, unit, measured subject
+//! revision) decides a selection only as a uniform comparison;
+//! `gate/lower/cost.sh` measures the software check on the host. Next host
+//! boundary — measured costs for the boundary mechanisms.
 //!
 //! `foreign_boundary` IS modeled, as an admissibility ruling over the
 //! observation world (`observation.WorldFact.foreign_boundary`): foreign code
