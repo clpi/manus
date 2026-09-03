@@ -642,7 +642,8 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # nine and ten select booleans, eleven selects vararg, twelve selects a
 # function expression, thirteen selects an if expression, and fourteen selects
 # a match expression. Fifteen selects field projection; its existing prefix
-# fact distinguishes that face from a matching-parenthesis coordinate. Lane-two
+# fact distinguishes that face from a matching-parenthesis coordinate. Sixteen
+# selects a leading subject-method reference. Lane-two
 # bit 5 carries the exact name face at its mutually exclusive coordinate; at
 # `(` it remains the comma-header face.
 # Capacity refusal precedes every mutation.
@@ -871,6 +872,8 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             delimiter = 14
         elseif kind == token.kinddot
             delimiter = 15
+        elseif kind == token.kindcolon
+            delimiter = 16
         elseif kind == token.kindlparen
             depth = 1
             probe = index + 1
