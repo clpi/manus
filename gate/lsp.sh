@@ -209,6 +209,40 @@ demand_error unreadable-subject "$req" -32000
 demand_error malformed '{oops' -32700
 demand_error adjacent '{"jsonrpc":"2.0","id":15,"method":"ping","params":{}} {"jsonrpc":"2.0","id":16,"method":"ping","params":{}}' -32700
 
+# ── notification-zero ────────────────────────────────────────────────────
+# NOTIFICATION-ZERO: an object WITHOUT an id member is a notification, and
+# the server must never reply to one — no result, no error, even for a bad
+# method or uri. Zero reply bytes, exit 0; the face consumes the line and
+# moves on. A present `id: null` still answers. The rows below are the
+# contract a served arm would otherwise never have held before landing.
+# demand_silence <label> <request-json>: consumes the line, answers zero bytes.
+demand_silence() {
+    resp=$work/respSilent.json
+    printf '%s\n' "$2" | sh "$hover" >"$resp" 2>"$resp.diag" || {
+        printf 'lsp: FAIL — %s exited nonzero on a notification\n' "$1" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    examined=$((examined + 1))
+    [ ! -s "$resp" ] || {
+        printf 'lsp: FAIL — %s replied to a notification (%s bytes); silence is demanded\n' "$1" "$(wc -c <"$resp" | tr -d ' ')" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+}
+
+req=$(jq -n -c --arg u "$cohort_uri" \
+    '{jsonrpc:"2.0",method:"textDocument/hover",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
+demand_silence notification-silent "$req"
+
+req=$(jq -n -c \
+    '{jsonrpc:"2.0",method:"textDocument/definition",params:{textDocument:{uri:"file:///x.id"},position:{line:0,character:0}}}') || exit 3
+demand_silence notification-bad-method "$req"
+
+req=$(jq -n -c --arg u "$cohort_uri" \
+    '{jsonrpc:"2.0",id:null,method:"textDocument/hover",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
+demand_hover null "$cohort_uri" 0 0 "verdict: HELD one concept"
 [ "$examined" -gt 0 ] || {
     printf 'lsp: FAIL — 0 hover contracts examined\n' >&2
     exit 1

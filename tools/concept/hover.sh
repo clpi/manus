@@ -91,6 +91,15 @@ fi
 
 idjson=$(jq -c '.id // null' <"$work/request.json" 2>/dev/null) || idjson="null"
 
+# NOTIFICATION-ZERO. An object without an `id` member is a notification, and
+# JSON-RPC demands the server NEVER reply to one — not a result, not an
+# error, not even on a bad method or bad uri. A hover face that answers a
+# notification corrupts the stream a reader frames by. `id: null` PRESENT is
+# still a request (discouraged, but the id is a member) and keeps the answer
+# path; absent is the notification. No reply is ever fabricated, so a
+# notification consumes one line and responds with zero bytes, exit 0.
+jq -e 'has("id")' <"$work/request.json" >/dev/null 2>&1 || exit 0
+
 respond_error() {
   code=$1
   message=$2
