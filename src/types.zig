@@ -1223,6 +1223,36 @@ pub const ResolvedType = union(enum) {
         return from.widensTo(to);
     }
 
+    /// Whether a scalar counter's boxed `int64_t` value AGREES with its `double`
+    /// value — the question the `while`-bound fast-arm specialization asks per
+    /// counter type before it hoists a boxed compare out of the loop body.
+    ///
+    /// DERIVED, NOT TABULATED. This is the LOOP-COUNTER FAST-ARM face of
+    /// `numericFacts`, and the roster it replaced was another statement of which
+    /// scalars carry the same value through both arms, beside the one owner. The
+    /// boxed arm spells the counter `lua_val_from_int((int64_t)(i))` and the fast
+    /// arm spells it `(double)(i)`; the two agree for every single-lane numeric
+    /// owner EXCEPT `u64`, because a `u64` value past `i64` max wraps NEGATIVE
+    /// through the `int64_t` box while `(double)` keeps it positive — the exact
+    /// value divergence the retired roster encoded by simply never listing `u64`.
+    /// That is a fact the owner already carries: it is precisely an
+    /// unsigned integral of the register width (`domain == .integral`,
+    /// `!signed`, `width == 64`), so a scalar identity added to the numeric owner
+    /// gains its fast-arm answer here rather than staying unknown to a hand-kept
+    /// list and silently taking the wrong arm.
+    ///
+    /// Every non-scalar identity is declined by the numeric owner's own null
+    /// rather than by absence: a vector spans several cells (`lanes != 1`) and is
+    /// not a loop counter, and `bool`/`str`/composed identities carry no numeric
+    /// facts. A NOMINAL DESCRIPTOR delegates its numeric facts to its
+    /// representation on purpose (`law.nominal` §46), exactly as `narrowFit` and
+    /// `widensTo` do, because the counter's realized value is the representation's.
+    pub fn intBoxAgreesWithDouble(self: ResolvedType) bool {
+        const facts = self.numericFacts() orelse return false;
+        if (facts.lanes != 1) return false;
+        return !(facts.domain == .integral and !facts.signed and facts.width == 64);
+    }
+
     pub fn is_integer(self: ResolvedType) bool {
         const facts = self.numericFacts() orelse return false;
         return facts.domain == .integral;
@@ -3949,6 +3979,80 @@ test "types: the module-global-written narrow face is derived from the same fact
     const nominal = nominalNamed("beat").?;
     try testing.expect(nominal.narrowFit() != null); // representation is narrow
     try testing.expect(!derivedNarrowGlobal(nominal)); // identity is withheld
+}
+
+test "types: the loop-counter fast-arm face is derived from the same facts" {
+    // THE LOOP-COUNTER FAST-ARM face — whether a scalar counter's boxed
+    // `int64_t` value AGREES with its `double` value, the question
+    // `codegen.rt_is_native_numeric` asks before it hoists a boxed compare out
+    // of a `while` body — is now derived from the same owner. It stood there as
+    // a bare-tag switch (`.i8,.i16,.i32,.i64,.u8,.u16,.u32,.f32,.f64 => true`,
+    // else false) that restated which scalars carry the same value through both
+    // the boxed arm (`lua_val_from_int((int64_t)(i))`) and the fast arm
+    // (`(double)(i)`), beside `numericFacts`. `u64` is the one deliberate
+    // absence: a `u64` past `i64` max wraps NEGATIVE through the `int64_t` box
+    // while `(double)` keeps it positive. A switch could not compose: a scalar
+    // identity added to the union stayed unknown to the list, took its `else`
+    // arm, and was denied the fast arm even when its two arms agree — or, worse,
+    // a new register-width unsigned identity could be listed by hand and take
+    // the fast arm while its box diverges, the wrong answer in the safe-looking
+    // direction.
+    const retiredNativeNumeric = struct {
+        fn f(t: ResolvedType) bool {
+            return switch (t) {
+                .i8, .i16, .i32, .i64, .u8, .u16, .u32, .f32, .f64 => true,
+                else => false,
+            };
+        }
+    }.f;
+
+    // PINNED EQUAL TO THE RETIRED SWITCH on every payload-free identity — the
+    // nine scalars it listed AND the `u64`, `bool`/`str`, vector, boxed, void
+    // and composed identities it folded into `else` — iterated over the union's
+    // own tags rather than a list, so a scalar identity added to the union
+    // cannot be one the fast-arm face silently does not know.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |name, ty| {
+        if (ty != void) continue;
+        const t = @as(ResolvedType, @field(ResolvedType, name));
+        try testing.expectEqual(retiredNativeNumeric(t), t.intBoxAgreesWithDouble());
+    }
+
+    // DERIVED, NOT TABULATED — the sub-register and register-width SIGNED
+    // integrals and the sub-register UNSIGNED integrals agree through both
+    // arms; the reals agree; only the register-width unsigned integral (`u64`)
+    // diverges, and it is declined by the `!signed and width == 64` fact rather
+    // than by absence.
+    try testing.expect((@as(ResolvedType, .i8)).intBoxAgreesWithDouble());
+    try testing.expect((@as(ResolvedType, .i64)).intBoxAgreesWithDouble());
+    try testing.expect((@as(ResolvedType, .u8)).intBoxAgreesWithDouble());
+    try testing.expect((@as(ResolvedType, .u32)).intBoxAgreesWithDouble());
+    try testing.expect((@as(ResolvedType, .f32)).intBoxAgreesWithDouble());
+    try testing.expect((@as(ResolvedType, .f64)).intBoxAgreesWithDouble());
+    try testing.expect(!(@as(ResolvedType, .u64)).intBoxAgreesWithDouble());
+
+    // DECLINED BY A FACT, NOT BY ABSENCE. A vector is a numeric fact owner that
+    // is not one cell (`lanes != 1`) and is not a loop counter; the
+    // arithmetic-free scalars and the boxed/void identities carry no numeric
+    // facts.
+    try testing.expect(!(@as(ResolvedType, .v4i64)).intBoxAgreesWithDouble());
+    try testing.expect(!(@as(ResolvedType, .v8f32)).intBoxAgreesWithDouble());
+    try testing.expect(!(@as(ResolvedType, .bool)).intBoxAgreesWithDouble());
+    try testing.expect(!(@as(ResolvedType, .str)).intBoxAgreesWithDouble());
+    try testing.expect(!(@as(ResolvedType, .any)).intBoxAgreesWithDouble());
+    try testing.expect(!(@as(ResolvedType, .void)).intBoxAgreesWithDouble());
+
+    // A NOMINAL DESCRIPTOR DELEGATES its numeric facts to its representation on
+    // purpose (`law.nominal` §46), exactly as `narrowFit` and `widensTo` do —
+    // the counter's realized value is the representation's — so a
+    // nominal-over-`i32` agrees through both arms and a nominal-over-`u64` does
+    // not. Uses the process-global map with `page_allocator`, the pattern the
+    // narrow/default-init tests above already established.
+    const alloc = std.heap.page_allocator;
+    try declareNominal(alloc, "cadence", .i32);
+    try declareNominal(alloc, "epoch", .u64);
+    try testing.expect(nominalNamed("cadence").?.intBoxAgreesWithDouble());
+    try testing.expect(!nominalNamed("epoch").?.intBoxAgreesWithDouble());
 }
 
 test "types: the boxing face of the scalar roster is derived from the same facts" {

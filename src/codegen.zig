@@ -13322,11 +13322,15 @@ pub const CodeGen = struct {
     /// so a u64 past i64 max wraps negative there, while `(double)(i)` on the
     /// fast arm keeps it positive. Everything listed converts to double the
     /// same way through both arms.
+    ///
+    /// DERIVED, NOT TABULATED — this is `types.ResolvedType.intBoxAgreesWithDouble`,
+    /// the numeric owner's own answer to "does the `int64_t` box agree with the
+    /// `double` cast": single-lane numeric except the register-width unsigned
+    /// integral (`u64`). A roster restated that beside `numericFacts` and could
+    /// not compose — a scalar identity added to the union stayed unknown to the
+    /// list and silently took the wrong arm.
     fn rt_is_native_numeric(t: RT) bool {
-        return switch (t) {
-            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .f32, .f64 => true,
-            else => false,
-        };
+        return t.intBoxAgreesWithDouble();
     }
 
     /// A `while` whose bound is a boxed value pays a boxed compare per
