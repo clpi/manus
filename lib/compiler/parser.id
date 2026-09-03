@@ -655,7 +655,12 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # variants (both are owner prefix identities with no unary relation), and
 # twenty-nine selects the `not` keyword so its deprecation warning stays
 # distinct from the canonical `!` negation, whose unary relation is the same
-# `.not`. The host no longer replays token identity at expression head. Lane-two
+# `.not`. The host no longer replays token identity at expression head. Thirty
+# selects the `by` range-step keyword, which demands an operand without applying
+# a relation: after the concat operator closes `a..b`, a following `by` unwraps
+# the concat binop into a ranged expression carrying the step operand. The
+# delimiter face is keyed by producer identity, not by the concat that preceded
+# it, so the host never reconstructs `kw_by` beside the settled relation. Lane-two
 # bit 5 carries the exact name face at its mutually exclusive coordinate; at
 # `(` it remains the comma-header face.
 # Capacity refusal precedes every mutation.
@@ -924,6 +929,8 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             delimiter = 28
         elseif kind == token.kindnot
             delimiter = 29
+        elseif kind == token.kindby
+            delimiter = 30
         elseif kind == token.kindlparen
             depth = 1
             probe = index + 1

@@ -576,6 +576,10 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 29;
     }
 
+    fn currentParserBy(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 30;
+    }
+
     fn currentParserTableEntry(self: *Parser) ParseError!bool {
         return (try self.currentParserDecision()) >> 13 == 23;
     }
@@ -5689,8 +5693,7 @@ pub const Parser = struct {
             } });
             // `a..b by step` — after parsing `a..b` as concat, check for `by step`
             if (inf.op == .concat) {
-                const next = try self.pk();
-                if (next.kind == .kw_by) {
+                if (try self.currentParserBy()) {
                     _ = try self.adv(); // consume `by`
                     const step = try self.parse_prec(inf.right);
                     // Unwrap the concat binop into a range expression

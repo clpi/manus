@@ -2993,6 +2993,33 @@ if [ "$awaitold" -ne 1 ] || [ "$awaitnew" -ne 1 ]; then
     bad "the await-prefix detector is broken: old=$awaitold new=$awaitnew"
 fi
 
+# ── 3.9. `by` range-step keyword face ────────────────────────────────────────
+# After the concat operator closes `a..b`, `parse_prec` used to reconstruct the
+# `by` range-step keyword from token identity (`next.kind == .kw_by`). Event
+# lane-two delimiter face 30 now settles `by` from producer identity; Zig reads
+# the settled face and no longer replays token identity beside the relation.
+has "$ROOT/lib/compiler/parser.id" 'kindby' \
+    'parser.id lost the by identity reference'
+has "$ROOT/lib/compiler/parser.id" 'delimiter = 30' \
+    'event lost the by range-step keyword face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 30;' \
+    'tracked projection lost the by range-step keyword face'
+has "$PARSER" 'fn currentParserBy(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the by keyword consumer'
+forbid "$PARSER" 'next.kind == .kw_by' \
+    'concat binop path still replays by token identity'
+
+byprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate by scratch' >&2; exit 2; }
+printf '%s\n' 'if (next.kind == .kw_by) {' >"$byprobe/old.zig"
+printf '%s\n' 'if (try self.currentParserBy()) {' >"$byprobe/new.zig"
+byold=$(grep -cF 'next.kind == .kw_by' "$byprobe/old.zig")
+bynew=$(grep -cF 'try self.currentParserBy()' "$byprobe/new.zig")
+rm -rf -- "$byprobe"
+examined=$((examined + 1))
+if [ "$byold" -ne 1 ] || [ "$bynew" -ne 1 ]; then
+    bad "the by-keyword detector is broken: old=$byold new=$bynew"
+fi
+
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
