@@ -11,8 +11,8 @@
 # else, is the MCP boundary — framing, id round-trip, argv file passing, and
 # fail-closed errors.
 #
-# THE ROSTER CARRIES BOTH DIRECTIONS, so a one-sided gate cannot call itself
-# an enforcement:
+# THE ROSTER CARRIES EVERY PRODUCED DIRECTION, so a one-sided gate cannot
+# call itself an enforcement:
 #   bucket refused: the produced refusal for the no-shared-demand cohort
 #     must reach the caller as a text result. THE NEGATIVE DIRECTION: a
 #     projection that stops refusing is convicted. The subject file carries
@@ -22,6 +22,12 @@
 #   cohort held: one subject drives both relations, so no refusal may be
 #     produced and the result must read HELD. THE POSITIVE DIRECTION: a
 #     projection that refuses a lawful cohort is convicted.
+#   unwitnessed held: nothing applies the module's one relation, so no
+#     refusal may be produced and the result must read HELD. THE THIRD
+#     DIRECTION: a projection that refuses a lawful single is convicted.
+#     Its produced evidence differs from the cohort's (shared_demand 0,
+#     zero refusals, one applied relation), so this row holds the HELD
+#     render across the boundary from different facts.
 # Fail-closed controls: unknown tool or method answers -32601; a missing or
 # non-string file answers -32602; an unreadable subject answers an error
 # carrying the refusal to render (never a verdict-shaped result); an
@@ -63,12 +69,14 @@ trap 'cleanup; exit 143' TERM
 trap 'cleanup; exit 129' HUP
 
 # ── the subjects ─────────────────────────────────────────────────────────
-# Same two shapes `gate/concept.sh` materializes (bucket: no subject drives
-# both relations — refused; cohort: one subject drives both — held). The
+# Same three shapes `gate/concept.sh` materializes (bucket: no subject drives
+# both relations — refused; cohort: one subject drives both — held;
+# unwitnessed: nothing applies the one relation — held). The
 # verdict-correctness of those shapes is owned there; here they are the
 # positive controls that the verdict crossed the MCP boundary intact.
 printf 'plus(a: i64, b: i64): i64\n  a + b\nminus(a: i64, b: i64): i64\n  a - b\nmain(): i64\n  x = plus(2, 3)\n  x + 1\nentry(): i64\n  minus(7, 4)\n' >"$work/my bucket.id" || exit 3
 printf 'plus(a: i64, b: i64): i64\n  a + b\nminus(a: i64, b: i64): i64\n  a - b\nmain(): i64\n  x = plus(2, 3)\n  y = plus(1, 1)\n  minus(y, 4)\n' >"$work/cohort.id" || exit 3
+printf 'plus(a: i64, b: i64): i64\n  a + b\nmain(): i64\n  x = plus(2, 3)\n  x + 1\n' >"$work/unwitnessed.id" || exit 3
 
 examined=0
 failed=0
@@ -130,16 +138,17 @@ demand_error() {
     }
 }
 
-# ── both directions ──────────────────────────────────────────────────────
+# ── every produced direction ─────────────────────────────────────────────
 demand_text 1 "$work/my bucket.id" "verdict: REFUSED no_shared_demand"
 demand_text 2 "$work/cohort.id" "verdict: HELD one concept"
+demand_text 3 "$work/unwitnessed.id" "verdict: HELD one concept"
 
 # The id is opaque: member order and string ids round-trip untouched.
 req=$(jq -n -c --arg f "$work/cohort.id" \
-    '{method:"tools/call",params:{name:"concept",arguments:{file:$f}},jsonrpc:"2.0",id:3}') || exit 3
+    '{method:"tools/call",params:{name:"concept",arguments:{file:$f}},jsonrpc:"2.0",id:4}') || exit 3
 resp=$work/respOrder.json
-call 3 "$req" "$resp" || true
-jq -e '.id == 3 and .result.content[0].text != ""' <"$resp" >/dev/null 2>&1 || {
+call 4 "$req" "$resp" || true
+jq -e '.id == 4 and .result.content[0].text != ""' <"$resp" >/dev/null 2>&1 || {
     printf 'mcp: FAIL — id-last member order did not round-trip\n' >&2
     failed=$((failed + 1))
 }
@@ -147,25 +156,25 @@ demand_text '"held"' "$work/cohort.id" "verdict: HELD one concept"
 
 # ── fail-closed ──────────────────────────────────────────────────────────
 req=$(jq -n -c --arg f "$work/cohort.id" \
-    '{jsonrpc:"2.0",id:4,method:"tools/call",params:{name:"status",arguments:{file:$f}}}') || exit 3
+    '{jsonrpc:"2.0",id:5,method:"tools/call",params:{name:"status",arguments:{file:$f}}}') || exit 3
 demand_error unknown-tool "$req" -32601
 
 req=$(jq -n -c \
-    '{jsonrpc:"2.0",id:5,method:"tools/list",params:{}}') || exit 3
+    '{jsonrpc:"2.0",id:6,method:"tools/list",params:{}}') || exit 3
 demand_error wrong-method "$req" -32601
 
-req=$(jq -n -c '{jsonrpc:"2.0",id:6,method:"tools/call",params:{name:"concept",arguments:{}}}') || exit 3
+req=$(jq -n -c '{jsonrpc:"2.0",id:7,method:"tools/call",params:{name:"concept",arguments:{}}}') || exit 3
 demand_error missing-file "$req" -32602
 
-req=$(jq -n -c '{jsonrpc:"2.0",id:7,method:"tools/call",params:{name:"concept",arguments:{file:7}}}') || exit 3
+req=$(jq -n -c '{jsonrpc:"2.0",id:8,method:"tools/call",params:{name:"concept",arguments:{file:7}}}') || exit 3
 demand_error nonstring-file "$req" -32602
 
 req=$(jq -n -c --arg f "$work/absent.id" \
-    '{jsonrpc:"2.0",id:8,method:"tools/call",params:{name:"concept",arguments:{file:$f}}}') || exit 3
+    '{jsonrpc:"2.0",id:9,method:"tools/call",params:{name:"concept",arguments:{file:$f}}}') || exit 3
 demand_error unreadable-subject "$req" -32000
 
 demand_error malformed '{oops' -32700
-demand_error adjacent '{"jsonrpc":"2.0","id":9,"method":"ping","params":{}} {"jsonrpc":"2.0","id":10,"method":"ping","params":{}}' -32700
+demand_error adjacent '{"jsonrpc":"2.0","id":11,"method":"ping","params":{}} {"jsonrpc":"2.0","id":12,"method":"ping","params":{}}' -32700
 
 [ "$examined" -gt 0 ] || {
     printf 'mcp: FAIL — 0 tool contracts examined\n' >&2
