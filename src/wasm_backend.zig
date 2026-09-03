@@ -118,7 +118,12 @@ pub const Diagnostic = struct {
 // program would show up in a byte-comparison as a backend disagreement.
 // ---------------------------------------------------------------------------
 
-/// WASI `ciovec` — {ptr:i32, len:i32} — and the `nwritten` cell after it.
+/// `fd_read` result buffer. `fd_read` fills it; the caller then copies
+/// the bytes into a malloc'd region. 32 bytes is enough for one `stdin:read()`
+/// call between any two wasmtime checkpoint calls.
+const addr_inbuf: u32 = 32;
+const inbuf_len: u32 = 32;
+/// WASI `ciovec` — {ptr:i32, len:i32} — and the `n written` cell after it.
 /// 0..64 is never addressed: a null `str` is a REAL VALUE in this IR (`os.env`
 /// of an unset name) and `print_value` tests for it, so address 0 must not name
 /// a legal object, exactly as it does not under Mach-O.
@@ -435,6 +440,7 @@ const TypeTable = struct {
 const Helper = enum {
     fd_write, // import 0
     proc_exit, // import 1
+    fd_read, //  import 2
     strlen, //   (i64 ptr) -> i64
     write_bytes, // (i64 ptr, i64 len) -> ()
     write_cstr, // (i64 ptr) -> ()
@@ -458,7 +464,7 @@ const Helper = enum {
 };
 
 const helper_count: u32 = @typeInfo(Helper).@"enum".field_names.len;
-const import_count: u32 = 2;
+const import_count: u32 = 3;
 
 fn helperIndex(h: Helper) u32 {
     return @backingInt(h);
@@ -516,6 +522,7 @@ const Emitter = struct {
     /// disagree.
     ty_fd_write: u32 = 0,
     ty_proc_exit: u32 = 0,
+    ty_fd_read: u32 = 0,
     func_index: std.StringHashMapUnmanaged(u32) = .empty,
     func_sig: std.StringHashMapUnmanaged(FuncSig) = .empty,
     /// `load_global` / `store_global` name -> offset from `globals_base`.
@@ -857,6 +864,7 @@ pub fn emitFromDnir(
 
     e.ty_fd_write = try e.types.intern(&.{ vt_i32, vt_i32, vt_i32, vt_i32 }, &.{vt_i32});
     e.ty_proc_exit = try e.types.intern(&.{vt_i32}, &.{});
+    e.ty_fd_read = try e.types.intern(&.{ vt_i32, vt_i32, vt_i32, vt_i32 }, &.{vt_i32});
 
     const entry_name = entry orelse return e.refuse("no-entry-function");
 
@@ -2219,6 +2227,8 @@ fn externSignature(callee: []const u8) ?ExternSig {
     if (std.mem.eql(u8, callee, "sqrt")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_sqrt };
     if (std.mem.eql(u8, callee, "fabs")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_abs };
     if (std.mem.eql(u8, callee, "floor")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_floor };
+    if (std.mem.eql(u8, callee, "idol_io_read_stdin")) return .{ .params = one_i, .result = .i64, .helper = .fd_read };
+    if (std.mem.eql(u8, callee, "idol_io_read_line")) return .{ .params = one_i, .result = .i64, .helper = .fd_read };
     if (std.mem.eql(u8, callee, "ceil")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_ceil };
     return null;
 }
@@ -2426,6 +2436,20 @@ test "wasm backend prints f32 via snprintf" {
     try std.testing.expectEqual(@as(u8, 0), try runTestSourceWasm(source));
 }
 
+test "wasm backend stdin:read calls fd_read via helper" {
+    // Structurally: externSignature resolves idol_io_read_stdin to .fd_read,
+    // so `emitCallExtern` does not refuse it as "extern:idol_io_read_stdin".
+    // Before the fd_read host-face, externSignature returned null for this name.
+    const sig = externSignature("idol_io_read_stdin");
+    try std.testing.expect(sig != null);
+    try std.testing.expect(sig.?.helper != null);
+    try std.testing.expect(sig.?.helper.? == .fd_read);
+    //idol_io_read_line also resolves to the same helper
+    const sig2 = externSignature("idol_io_read_line");
+    try std.testing.expect(sig2 != null);
+    try std.testing.expect(sig2.?.helper.? == .fd_read);
+}
+
 test "wasm backend refuses byte-sequence print without an extent carrier" {
     var diagnostic: Diagnostic = .{};
     var emitter = Emitter{
@@ -2532,6 +2556,9 @@ const g_heap: u32 = 1;
 const g_sn_d: u32 = 2;
 const g_sn_n: u32 = 3;
 const g_sn_cap: u32 = 4;
+/// Bytes read by the last `fd_read` call. Copied to the caller's result
+/// pointer before this helper returns.
+const g_inbuf_len: u32 = 5;
 /// Digit scratch for `sn_puti`, disjoint from the region `print_i64` writes
 /// backwards from the top of.
 const addr_snbuf: u32 = addr_numbuf;
@@ -3457,6 +3484,47 @@ fn helperStrlen(e: *Emitter, b: *Buf) Error!void {
     try b.op(op_i64_extend_i32_u);
 }
 
+/// `idol_io_read_stdin(dst: i64)` — reads up to `inbuf_len` bytes from stdin
+/// (fd 0) into `addr_inbuf`, copies them to `dst`, and returns the byte count.
+/// End of input returns 0. `idol_io_read_line` uses the same helper; both map
+/// to `fd_read` since WASI preview1 has no line-oriented read.
+///
+/// Signature: (i64 dst_ptr) -> i64 byte_count
+fn helperFdRead(_: *Emitter, b: *Buf) Error!void {
+    // params: 0 = dst (malloc'd pointer to receive the bytes)
+    // iov.ptr = addr_inbuf
+    try b.i32c(@intCast(addr_iovec));
+    try b.i32c(@intCast(addr_inbuf));
+    try b.mem(op_i32_store, 2, 0);
+    // iov.len = inbuf_len
+    try b.i32c(@intCast(addr_iovec));
+    try b.i32c(@intCast(inbuf_len));
+    try b.mem(op_i32_store, 2, 4);
+    // fd_read(0, iov, 1, &g_inbuf_len)
+    try b.i32c(0); // fd 0 = stdin
+    try b.i32c(@intCast(addr_iovec));
+    try b.i32c(1); // 1 iovec
+    try b.i32c(@intCast(addr_nwritten));
+    try b.call(helperIndex(.fd_read));
+    try b.op(op_drop); // discard errno — byte count is what matters
+
+    // Save the byte count to global so it survives the memcpy
+    try gset(b, g_inbuf_len);
+
+    // memcpy(dst, addr_inbuf, g_inbuf_len)
+    // params: 0=dst, 1=src=addr_inbuf, 2=n=g_inbuf_len
+    try b.get(0); // dst
+    try b.i32c(@intCast(addr_inbuf));
+    try b.i32c(@intCast(addr_inbuf));
+    try b.op(op_i32_wrap_i64);
+    try b.get(1); // len = g_inbuf_len (i32 on stack, sign-extended)
+    try b.call(helperIndex(.memcpy));
+
+    // Return the byte count
+    try gget(b, g_inbuf_len);
+    try b.op(op_i64_extend_i32_u);
+}
+
 /// `write_bytes(p, len)` — one `fd_write` on fd 1 through the fixed iovec.
 fn helperWriteBytes(e: *Emitter, b: *Buf) Error!void {
     _ = e;
@@ -3861,7 +3929,7 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
     {
         var s = Buf{ .alloc = alloc };
         defer s.deinit();
-        try s.u32v(2);
+        try s.u32v(3);
         try s.name("wasi_snapshot_preview1");
         try s.name("fd_write");
         try s.byte(0x00);
@@ -3870,6 +3938,10 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
         try s.name("proc_exit");
         try s.byte(0x00);
         try s.u32v(e.ty_proc_exit);
+        try s.name("wasi_snapshot_preview1");
+        try s.name("fd_read");
+        try s.byte(0x00);
+        try s.u32v(e.ty_fd_read);
         try section(&out, 2, s.items.items);
     }
 
@@ -3897,7 +3969,7 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
     {
         var s = Buf{ .alloc = alloc };
         defer s.deinit();
-        try s.u32v(5);
+        try s.u32v(6);
         try s.byte(vt_i32);
         try s.byte(0x01); // $__sp, mutable
         try s.i32c(@intCast(stack_top));
@@ -3916,6 +3988,10 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
         try s.byte(op_end);
         try s.byte(vt_i32);
         try s.byte(0x01); // $sn_cap
+        try s.i32c(0);
+        try s.byte(op_end);
+        try s.byte(vt_i32);
+        try s.byte(0x01); // $inbuf_len
         try s.i32c(0);
         try s.byte(op_end);
         try section(&out, 6, s.items.items);
