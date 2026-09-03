@@ -13496,7 +13496,7 @@ fn lowerMemType(ctx: *LowerCtx, type_expr: *const ast.Expr) ?RT {
     }
     // `"f64"` / `"f32"` — quoted-string type spelling used by the engine.
     if (type_expr.* == .quoted) {
-        const lit = type_expr.quoted;
+        const lit = type_expr.quoted.val;
         if (std.mem.eql(u8, lit, "f64")) return .f64;
         if (std.mem.eql(u8, lit, "f32")) return .f32;
         if (std.mem.eql(u8, lit, "i64")) return .i64;
@@ -18255,6 +18255,33 @@ test "dnir_lower: GAP-204 constant-index read answers recorded text, refuses wri
         try std.testing.expect(!rig.consts.str_tables.contains("strs"));
         try std.testing.expectError(error.UnsupportedConstruct, gap204ConstIndexRead(alloc, &rig.graph, &rig.consts, 2));
     }
+}
+
+test "dnir_lower: GAP-204 out-of-range constant index refuses the admitted text table" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const clean_src =
+        \\a = "alpha"
+        \\b = "beta"
+        \\global strs = { a, b }
+        \\main: i64 = ()
+        \\    0
+    ;
+    var rig = try gap204CollectConstIndex(alloc, clean_src);
+    defer rig.graph.deinit();
+    defer rig.consts.deinit(alloc);
+    // The table IS admitted — verdict and both elements recorded — so this
+    // measures the fallback's missing-key arm, not the unrecorded-table
+    // refusal the constant-index negative controls already pin.
+    try std.testing.expectEqual(ModuleTableKind.text, rig.verdict);
+    try std.testing.expectEqualStrings("beta", rig.consts.strs.get("strs.2").?);
+    // Tables are 1-indexed: 0 and len + 1 name no recorded key, so the read
+    // bails instead of answering a neighbour element or a blank. The
+    // compile-time analog of the unguarded-load refusal `constTableRead`
+    // already pins for register-exploded tables.
+    try std.testing.expectError(error.UnsupportedConstruct, gap204ConstIndexRead(alloc, &rig.graph, &rig.consts, 0));
+    try std.testing.expectError(error.UnsupportedConstruct, gap204ConstIndexRead(alloc, &rig.graph, &rig.consts, 3));
 }
 
 test "dnir_lower: a module const of INT_MIN lowers instead of crashing the compiler" {
