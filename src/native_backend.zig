@@ -7345,11 +7345,54 @@ const Arm64Compiler = struct {
             }
         }
         const t = victim orelse return;
-        const fresh = try self.allocReg();
-        if (fresh == slot) {
-            self.releaseReg(fresh);
-            return;
-        }
+        // THE REGISTER BEING PRESERVED IS NOT A DESTINATION IT MAY BE HANDED
+        // (GAP-148).
+        //
+        // This asked `allocReg` for somewhere to put `slot`'s value while
+        // holding `slot` across the call, and `allocReg` is
+        // `allocRegExcluding(null)` — it may return `slot` itself. The old
+        // `fresh == slot` arm read that as "nothing to do" and returned. It is
+        // the opposite: a victim was already found, so `temps` names `slot`,
+        // and the caller's very next instruction writes the staged argument
+        // into `slot` (`emitMovImm`, `emitAdrpAdd`, `emitMovReg`). Returning
+        // leaves every id that named `slot` reading that argument instead of
+        // its own value — the exact miscompile this function was written for
+        // (`fib(n-1) + fib(n-2)` collapsing to `(n-2) + f(n-2)`), reached
+        // through the allocator rather than through the marshaling.
+        //
+        // `slot` comes back in two states, and both are this gap's shape. In
+        // the free scan, x9..x28 are all busy and the x0..x7 fallback reaches
+        // `slot` because `used_regs[slot]` is false while `temps` still names
+        // it — the released-but-named register `releaseDnirTemp` documents at
+        // the `call_direct` operand, and the state that makes a victim findable
+        // at all. Under gate transport `reclaimSpilledReg` reaches it a second
+        // way: the cascade spills `slot`, the reclaim drops the `spilled_regs`
+        // entry that was the only thing able to reload it, and hands `slot`
+        // back with its value abandoned in the frame. Then `releaseReg(fresh)`
+        // frees `slot` for the argument, and there is no longer anything that
+        // holds the value at all.
+        //
+        // `exclude` is what every other holder-across-allocation already uses
+        // for this, and `reclaimSpilledReg` states the promise in its own name:
+        // hash order must not reach the caller's register. `emitIfConverted`
+        // and `emitIfConvertedTwoSided` open the identical window and both
+        // close it. This one did not.
+        //
+        // When the pool has nothing but `slot`, the exclusion refuses instead
+        // of relocating. That is the trade this file makes everywhere else — a
+        // refusal is a bail while the alternative is a wrong answer — and it
+        // costs the case where the victim `temps` named was already dead:
+        // nothing removes a temp entry when its value dies, so a stale name can
+        // reach here, and the exclusion cannot tell it from a live one because
+        // `preserveArgReg` has no instruction index to read `value_free_at`
+        // against. Recorded in `gaps/GAP-148.md`, not repaired here: threading
+        // the index is a second change and this one is the two-owner face.
+        //
+        // Not the closure — closure is authoritative `register`/`frame`
+        // assignment before emission, per this gap's record, under which the
+        // value in an ABI slot has a location the assignment names and is not
+        // one the scratch allocator can bid for.
+        const fresh = try self.allocRegExcluding(slot);
         try self.emitMovReg(fresh, slot);
         var wit = temps.iterator();
         while (wit.next()) |entry| {
@@ -18754,4 +18797,149 @@ test "a call result refuses the ABI register the spill map still names" {
     try std.testing.expect(!compiler.spilled_regs.contains(spilled));
     try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
     try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
+}
+
+// THE ARGUMENT REGISTER WAS PRESERVED INTO ITSELF (GAP-148).
+//
+// `preserveArgReg` exists to move a live value OUT of an x0..x7 slot before the
+// caller stages an argument into it. It asked `allocReg` for the destination,
+// and `allocReg` is `allocRegExcluding(null)`: when x9..x28 are all busy its
+// x0..x7 fallback scans from x0 up and returns the slot itself, because
+// `used_regs[slot]` is false — the released-but-still-named state that is what
+// makes a victim findable here in the first place. The old arm read `fresh ==
+// slot` as "nothing to do", released it, and returned, so the argument the
+// caller wrote one instruction later landed on top of the value, and every id
+// that named the slot read the argument instead. One register, two owners: this
+// gap's shape, reached through the allocator rather than through the
+// marshaling.
+//
+// Not gate transport. The free scan reaches this with `spilled_regs` empty, so
+// unlike the spill, reclaim, reload, remap, release, home, unwind, hoist, store,
+// band and call-result faces above, the bound this one carries is register
+// pressure alone — nineteen busy registers and an ABI slot that a
+// `releaseDnirTemp` freed without unnaming.
+//
+// Built directly rather than through a source program for the same reason as
+// those: it is a state the allocator passes through, not one a fixture names.
+test "an argument register is not preserved into itself" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+
+    // The pressure that sends the allocator to its x0..x7 fallback: every
+    // register the first scan walks is busy. x18 is the platform register and
+    // is not in the pool either way.
+    var reg: u5 = 9;
+    while (reg < 29) : (reg += 1) compiler.used_regs[reg] = true;
+
+    // The slot being marshaled into, in the state `preserveArgReg` is called
+    // for: unclaimed, so the fallback scan will offer it, and named by two ids
+    // at once — the binding and the value that produced it, which is the pair
+    // the function's own comment says must both travel.
+    const slot: u5 = 0;
+    const binding_id: u32 = 12;
+    const value_id: u32 = 13;
+    compiler.used_regs[slot] = false;
+    try temps.put(alloc, binding_id, slot);
+    try temps.put(alloc, value_id, slot);
+
+    // One register left for the value to go to, and it is not x0. x1 and x2 are
+    // busy so the destination is x3 whichever way the scan is entered, which is
+    // what makes the emitted move exact below.
+    compiler.used_regs[1] = true;
+    compiler.used_regs[2] = true;
+    compiler.used_regs[3] = false;
+    reg = 4;
+    while (reg < 8) : (reg += 1) compiler.used_regs[reg] = true;
+
+    try compiler.preserveArgReg(&temps, &pinned, slot);
+
+    // THE VALUE LEFT x0. Both ids name the destination, it is claimed, and the
+    // slot is free for the argument the caller stages next.
+    const fresh: u5 = 3;
+    try std.testing.expectEqual(@as(?u5, fresh), temps.get(binding_id));
+    try std.testing.expectEqual(@as(?u5, fresh), temps.get(value_id));
+    try std.testing.expect(compiler.used_regs[fresh]);
+    try std.testing.expect(!compiler.used_regs[slot]);
+
+    // And the move is really there. The old arm emitted nothing at all, which
+    // is the whole of the failure: the value stayed in x0 and the argument was
+    // written over it.
+    try std.testing.expectEqual(@as(usize, 4), compiler.code.items.len);
+    const mov_word: u32 = 0xaa0003e0 | (@as(u32, slot) << 16) | @as(u32, fresh);
+    try std.testing.expectEqual(
+        mov_word,
+        std.mem.readInt(u32, compiler.code.items[0..4], .little),
+    );
+}
+
+// AND THE COST OF THE EXCLUSION, STATED (GAP-148).
+//
+// With the slot excluded, a pool that has nothing else to give refuses rather
+// than relocating. That is the trade this file makes everywhere else — a
+// refusal is a bail while the alternative is a wrong answer — and it is worth a
+// test of its own because it is what the previous arm bought its silence with:
+// the old code answered this state by returning the slot, doing nothing, and
+// letting the argument overwrite the value.
+test "preserving an argument register refuses when the pool has only that register" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+
+    var reg: u5 = 9;
+    while (reg < 29) : (reg += 1) compiler.used_regs[reg] = true;
+    reg = 1;
+    while (reg < 8) : (reg += 1) compiler.used_regs[reg] = true;
+
+    const slot: u5 = 0;
+    const owner_id: u32 = 12;
+    compiler.used_regs[slot] = false;
+    try temps.put(alloc, owner_id, slot);
+
+    // Outside gate transport `allocRegExcluding` refuses above its spill passes,
+    // so this is the whole answer the allocator has.
+    try std.testing.expectError(
+        error.RegisterExhausted,
+        compiler.preserveArgReg(&temps, &pinned, slot),
+    );
+
+    // Nothing was emitted and nothing was moved: the refusal is a bail, and the
+    // caller's `try` carries it out of the function before an argument is
+    // staged over anything.
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u5, slot), temps.get(owner_id));
 }
