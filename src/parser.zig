@@ -519,6 +519,10 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 17;
     }
 
+    fn currentParserBacktick(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 18;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6276,20 +6280,16 @@ pub const Parser = struct {
             }
             return self.parse_macro_call_expr();
         }
-        return switch (tok.kind) {
-            .backtick => {
-                term.locErr(tok.loc, "c0 law.backtick.zero: backtick is reserved and has no canonical meaning", .{});
-                return ParseError.UnexpectedToken;
-            },
-            else => {
-                if (try self.currentParserPrimitive()) {
-                    const type_tok = try self.adv();
-                    return self.new_expr(.{ .name = .{ .loc = type_tok.loc, .ident = type_tok.kind.spelling() } });
-                }
-                term.locErr(tok.loc, "expected expression, got '{s}'", .{tok.kind.spelling()});
-                return ParseError.ExpectedToken;
-            },
-        };
+        if (try self.currentParserBacktick()) {
+            term.locErr(tok.loc, "c0 law.backtick.zero: backtick is reserved and has no canonical meaning", .{});
+            return ParseError.UnexpectedToken;
+        }
+        if (try self.currentParserPrimitive()) {
+            const type_tok = try self.adv();
+            return self.new_expr(.{ .name = .{ .loc = type_tok.loc, .ident = type_tok.kind.spelling() } });
+        }
+        term.locErr(tok.loc, "expected expression, got '{s}'", .{tok.kind.spelling()});
+        return ParseError.ExpectedToken;
     }
 
     /// DESCRIPTOR-EXPECTED POSITION, as a POSITION and not as a shape: the

@@ -830,6 +830,33 @@ if [ "$atold" -ne 1 ] || [ "$atnew" -ne 1 ]; then
     bad "the macro/anchor primary detector is broken: old=$atold new=$atnew"
 fi
 
+# Reserved backtick rejection has exact primary face eighteen. Zig retains the
+# law diagnostic without selecting it through a `.backtick` host switch arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindbacktick' \
+    'event lost the reserved backtick primary face'
+has "$ROOT/src/parser/projection.c" 'kind == INT64_C(84)' \
+    'tracked projection lost the reserved backtick primary face'
+has "$PARSER" 'fn currentParserBacktick(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the reserved backtick primary consumer'
+has "$PARSER" 'if (try self.currentParserBacktick()) {' \
+    'parse_simple_expr bypasses the settled reserved backtick face'
+backtickarms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.backtick => ' || true)
+examined=$((examined + 1))
+if [ "$backtickarms" -ne 0 ]; then
+    bad "parse_simple_expr retained $backtickarms .backtick host arm(s)"
+fi
+
+backtickprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate reserved backtick primary scratch' >&2; exit 2; }
+printf '%s\n' '.backtick => reject_backtick(),' >"$backtickprobe/old.zig"
+printf '%s\n' 'return (try self.currentParserDecision()) >> 13 == 18;' >"$backtickprobe/new.zig"
+backtickold=$(grep -cF '.backtick => ' "$backtickprobe/old.zig")
+backticknew=$(grep -cF 'currentParserDecision()) >> 13 == 18' "$backtickprobe/new.zig")
+rm -rf -- "$backtickprobe"
+examined=$((examined + 1))
+if [ "$backtickold" -ne 1 ] || [ "$backticknew" -ne 1 ]; then
+    bad "the reserved backtick primary detector is broken: old=$backtickold new=$backticknew"
+fi
+
 booleanprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate boolean primary scratch' >&2; exit 2; }
 printf '%s\n' '.kw_true => true, .kw_false => false' >"$booleanprobe/old.zig"
 printf '%s\n' 'return face == 9 or face == 10;' >"$booleanprobe/new.zig"
