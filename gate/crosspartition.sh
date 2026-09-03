@@ -84,6 +84,13 @@
 # an arm carrying no role (the marker itself going stale), a subject arm no row
 # names, and a row naming a control arm.
 #
+# MEASURED, on aarch64-linux at 909f205d, by planting each into a copy and
+# reading the exit status against an undamaged copy's 3: a bare arm, a row
+# naming `solo`, and a new subject arm with no roster row each convict with
+# exit 1, and so do both empty rolls — no arms read out of this file at all,
+# and no arm left marked #shape:subject. No conviction names DNB004 or NOT
+# MEASURED, so `gate/all.sh` files each as law and not as a host limit.
+#
 # AND A ROLL THAT COMES BACK EMPTY IS A FAILURE, never a clean run. A reverse
 # check over zero shapes passes vacuously, which is GAP-201's rule one layer up
 # from the roster: this file reading no arms out of itself would report agreement
