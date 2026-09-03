@@ -915,6 +915,36 @@ if [ "$matchold" -ne 1 ] || [ "$matchnew" -ne 1 ]; then
     bad "the match-suffix detector is broken: old=$matchold new=$matchnew"
 fi
 
+# Call-argument entry composes the event's parenthesized-call bit, exact brace
+# face, and quoted role. Zig retains argument materialization without selecting
+# those mutually exclusive choices through TokenKind.
+has "$ROOT/lib/compiler/parser.id" 'callface << 63' \
+    'event lost the parenthesized call-argument face'
+has "$ROOT/lib/compiler/parser.id" 'braceface = 1' \
+    'event lost the exact brace argument face'
+has "$ROOT/lib/compiler/parser.id" '(quoted << 19)' \
+    'event lost the quoted argument role'
+has "$PARSER" 'fn currentParserCallArgument(self: *Parser) ParseError!u2 {' \
+    'parser.zig lost the call-argument face consumer'
+has "$PARSER" 'switch (try self.currentParserCallArgument()) {' \
+    'parse_call_args bypasses the settled argument face'
+argumentswitches=$(sed -n '/fn parse_call_args/,/fn parse_table/p' "$PARSER" | grep -cF 'switch (tok.kind)' || true)
+examined=$((examined + 1))
+if [ "$argumentswitches" -ne 0 ]; then
+    bad "parse_call_args retained $argumentswitches tok.kind host switch(es)"
+fi
+
+argumentprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate call-argument scratch' >&2; exit 2; }
+printf '%s\n' 'switch (tok.kind) {' >"$argumentprobe/old.zig"
+printf '%s\n' 'switch (try self.currentParserCallArgument()) {' >"$argumentprobe/new.zig"
+argumentold=$(grep -cF 'switch (tok.kind)' "$argumentprobe/old.zig")
+argumentnew=$(grep -cF 'switch (try self.currentParserCallArgument())' "$argumentprobe/new.zig")
+rm -rf -- "$argumentprobe"
+examined=$((examined + 1))
+if [ "$argumentold" -ne 1 ] || [ "$argumentnew" -ne 1 ]; then
+    bad "the call-argument detector is broken: old=$argumentold new=$argumentnew"
+fi
+
 # The first token inside an expression-statement brace selects table value or
 # destructuring target through parser.id face 23.  Zig keeps materialization
 # only; the token-kind switch and name/assign speculative walk are gone.

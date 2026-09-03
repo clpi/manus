@@ -534,6 +534,12 @@ pub const Parser = struct {
         return if ((((try self.currentParserEvent()) >> 63) & 1) != 0) 3 else 0;
     }
 
+    fn currentParserCallArgument(self: *Parser) ParseError!u2 {
+        if ((((try self.currentParserEvent()) >> 63) & 1) != 0) return 1;
+        if (try self.currentParserTable()) return 2;
+        return if (try self.currentParserQuoted()) 3 else 0;
+    }
+
     fn currentParserPattern(self: *Parser) ParseError!u5 {
         const decision = try self.currentParserDecision();
         if (((decision >> 9) & 0xF) == 8) return 8;
@@ -8068,8 +8074,8 @@ pub const Parser = struct {
         // `map(.x)` gets its lens stance. Only the parenthesised arm counts: a
         // brace-call `f{ ... }` is a table and a string-call is a literal,
         // neither of which can carry a leading `.` expression.
-        switch (tok.kind) {
-            .lparen => {
+        switch (try self.currentParserCallArgument()) {
+            1 => {
                 _ = try self.adv();
                 self.call_arg_depth += 1;
                 defer self.call_arg_depth -= 1;
@@ -8085,17 +8091,14 @@ pub const Parser = struct {
             // `f{ x = 1 }` and `f({ x = 1 })` were the same tree until this bit
             // existed. `parse_table` reads the same bytes either way; only the
             // stance differs, because there is one brace form and not two.
-            .lbrace => try args.append(self.alloc, try self.parse_pack(.{
+            2 => try args.append(self.alloc, try self.parse_pack(.{
                 .applied = true,
                 .home = self.descriptor_home,
             })),
+            3 => try args.append(self.alloc, try self.parse_simple_expr()),
             else => {
-                if (try self.currentParserQuoted()) {
-                    try args.append(self.alloc, try self.parse_simple_expr());
-                } else {
-                    term.locErr(tok.loc, "expected function arguments", .{});
-                    return ParseError.UnexpectedToken;
-                }
+                term.locErr(tok.loc, "expected function arguments", .{});
+                return ParseError.UnexpectedToken;
             },
         }
         return args.toOwnedSlice(self.alloc);
