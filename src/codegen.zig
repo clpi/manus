@@ -24083,31 +24083,28 @@ pub const CodeGen = struct {
         return true;
     }
 
+    // The result-coercion pair unwraps a boxed runtime call's `lua_Value`
+    // result back into a native place — the SAME scalar→coercion-wrapper fact
+    // `emit_lua_value_coercion_start`/`_end` already read off the one owner
+    // `types.luaCoerceClass`. It stood here as a fourth statement of that fact:
+    // a per-tag switch listing `str`/`bool` and every numeric scalar spelling,
+    // with a nominal descriptor (a `.struct` tag) and `any` falling to `else`
+    // and emitting no wrapper. `luaCoerceClass` withholds the nominal on purpose
+    // (`law.nominal` §46 — it is an identity, not a representation) and returns
+    // null for `any` (already a `lua_Value`, coerced by identity), so the
+    // `orelse` here reproduces the retired `else` arm exactly. A scalar identity
+    // added to the union now gains its coercion wrapper here rather than
+    // silently taking the box-less tail.
     fn emit_lua_result_coerce_prefix(self: *CodeGen, result_rt: RT) bool {
-        switch (result_rt) {
-            .str => {
-                self.p("lua_to_str(", .{});
-                return true;
-            },
-            .bool => {
-                self.p("lua_to_bool(", .{});
-                return true;
-            },
-            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => {
-                var buf: [64]u8 = undefined;
-                self.p("(({s})lua_to_num(", .{result_rt.c_type(&buf)});
-                return true;
-            },
-            else => return false,
-        }
+        const cls = types.luaCoerceClass(result_rt) orelse return false;
+        var buf: [160]u8 = undefined;
+        self.p("{s}", .{cls.open(&buf)});
+        return true;
     }
 
     fn emit_lua_result_coerce_suffix(self: *CodeGen, result_rt: RT) void {
-        switch (result_rt) {
-            .str, .bool => self.p(")", .{}),
-            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => self.p("))", .{}),
-            else => {},
-        }
+        const cls = types.luaCoerceClass(result_rt) orelse return;
+        self.p("{s}", .{cls.close()});
     }
 
     fn emit_boxed_runtime_call(self: *CodeGen, mapped: []const u8, args: []*ast.Expr, expected: usize, result_rt: RT) E!void {

@@ -4246,6 +4246,107 @@ test "types: the coercion face of the scalar roster is derived from the same fac
     try testing.expect(luaCoerceClass(nominalReprOf(nominal).?) != null);
 }
 
+test "types: the boxed-call result-coercion face is derived from the same facts" {
+    // The BOXED-CALL RESULT-COERCION pair — `codegen.emit_lua_result_coerce_prefix`
+    // and `emit_lua_result_coerce_suffix` — unwraps a boxed runtime call's
+    // `lua_Value` result back into a native place. It stood as a FOURTH statement
+    // of the scalar→coercion-wrapper fact `luaCoerceClass` already owns (beside
+    // the three `emit_lua_value_coercion_*` switches the coercion face retired):
+    // a per-tag switch listing `str`/`bool` and every numeric scalar spelling,
+    // with a nominal descriptor (a `.struct` tag) and `any` falling to `else`
+    // and emitting NO wrapper — a `bool` telling the caller whether a suffix is
+    // owed. Two statements of one fact that could only agree by hand, and the
+    // defect a switch cannot avoid: a scalar identity added to the union gains a
+    // coercion wrapper at `emit_lua_value_coercion_*` but stayed unknown here,
+    // took the `else` arm, and its boxed-call result was left UNCOERCED — read
+    // as a raw `lua_Value` in a native place, the wrong answer in the
+    // safe-looking direction.
+    //
+    // The oracle reproduces each retired arm of the PREFIX/SUFFIX pair: `str`/
+    // `bool` unwrap with a named call and one paren; a numeric scalar casts
+    // through `lua_to_num` to its OWN C spelling and closes two parens; a
+    // nominal descriptor and `any` and every non-scalar identity emit no wrapper
+    // (prefix returns false, suffix emits nothing).
+    const OracleArm = struct { prefix: bool, open: []const u8, close: []const u8 };
+    const retiredResult = struct {
+        fn f(t: ResolvedType) OracleArm {
+            return switch (t) {
+                .str => .{ .prefix = true, .open = "lua_to_str(", .close = ")" },
+                .bool => .{ .prefix = true, .open = "lua_to_bool(", .close = ")" },
+                .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => blk: {
+                    var buf: [64]u8 = undefined;
+                    // The C spelling is compared separately below; carry it in
+                    // `open` and rebuild the retired open at the callsite.
+                    break :blk .{ .prefix = true, .open = t.c_type(&buf), .close = "))" };
+                },
+                else => .{ .prefix = false, .open = "", .close = "" },
+            };
+        }
+    }.f;
+
+    // PINNED EQUAL TO THE RETIRED PAIR on every payload-free identity — the
+    // scalars it wrapped AND the `any`, vector, void, nil, never and composed
+    // identities it left to the else arm — iterated over the union's own tags
+    // rather than a list, so a scalar identity added to the union cannot be one
+    // the boxed-call result-coercion face silently does not know. The migrated
+    // pair is `luaCoerceClass(t) orelse (return false | no-op)`, so the prefix
+    // owes a suffix exactly when a class exists.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |name, ty| {
+        if (ty != void) continue;
+        const t = @as(ResolvedType, @field(ResolvedType, name));
+        const want = retiredResult(t);
+
+        const cls = luaCoerceClass(t);
+        // The prefix emits (and owes a suffix) exactly when a coercion class
+        // exists. `any` is the one identity `luaCoerceAccepts` admits but has no
+        // class for — and the RESULT pair's retired `else` refused it too, so
+        // the derived prefix returns false for `any`, matching the oracle.
+        const derived_prefix = cls != null;
+        try testing.expectEqual(want.prefix, derived_prefix);
+
+        if (cls) |c| {
+            var buf: [160]u8 = undefined;
+            const open = c.open(&buf);
+            const close = c.close();
+            switch (c) {
+                .num => {
+                    var ob: [160]u8 = undefined;
+                    const wo = std.fmt.bufPrint(&ob, "(({s})lua_to_num(", .{want.open}) catch unreachable;
+                    try testing.expect(std.mem.eql(u8, wo, open));
+                    try testing.expect(std.mem.eql(u8, "))", close));
+                },
+                else => {
+                    try testing.expect(std.mem.eql(u8, want.open, open));
+                    try testing.expect(std.mem.eql(u8, want.close, close));
+                },
+            }
+        } else {
+            // No wrapper, exactly as the retired else arm.
+            try testing.expect(std.mem.eql(u8, "", want.open));
+            try testing.expect(std.mem.eql(u8, "", want.close));
+        }
+    }
+
+    // `any` is refused a wrapper by the RESULT pair (its retired else arm),
+    // unlike the value-coercion accept set which admits `any` for an identity
+    // wrap. Both paths emit no wrapper for `any`; here the prefix returns false.
+    try testing.expect(luaCoerceClass(.any) == null);
+
+    // DECLINED BY THE `scalarRepr` FACT, NOT BY ABSENCE.
+    try testing.expect(luaCoerceClass(.v4i64) == null);
+    try testing.expect(luaCoerceClass(.void) == null);
+
+    // A NOMINAL DESCRIPTOR is WITHHELD as an identity, exactly as the retired
+    // switch's bare scalar tags let a nominal-over-`i32` (a `.struct` tag) fall
+    // to its else arm — no wrapper — while its representation still coerces.
+    const alloc = std.heap.page_allocator;
+    try declareNominal(alloc, "phase", .i32);
+    const nominal = nominalNamed("phase").?;
+    try testing.expect(luaCoerceClass(nominal) == null);
+    try testing.expect(luaCoerceClass(nominalReprOf(nominal).?) != null);
+}
+
 test "CallShape: method call shape" {
     const shape = CallShape{
         .callee_kind = .method,
