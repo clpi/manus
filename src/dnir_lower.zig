@@ -18424,12 +18424,14 @@ test "dnir_lower: a runtime index into a determined table folds from graph facts
 // cases, and a module table field's `__DATA` word is therefore unreachable
 // from every relation body, including the one that genuinely wrote it.
 //
-// MEASURED THROUGH THE LUA FACE ON PURPOSE. At 2954038e the `.id` grammar
-// refuses every shape the `examples/shadowstore.id` acceptance run needs — a
-// typed binding, a descriptor, a subject relation, even two bare relations in
-// one file — so the acceptance run cannot be obtained on this head at all
-// (GAP-145). The lift is the same lift for both faces, and this question is
-// asked of the lift's output, so the face the source wore does not enter it.
+// MEASURED THROUGH THE LUA FACE ON PURPOSE. The `.id` acceptance run cannot be
+// obtained while the grammar is mid-transfer: at 2954038e nothing parsed at all
+// (no typed binding, no descriptor, no subject relation), and at 29d77ed0 a
+// module carrying MORE THAN ONE RELATION still does not, which is every fixture
+// this gap owns (GAP-145). The lift is the same lift for both faces and this
+// question is asked of the lift's output, so the face the source wore does not
+// enter it — which is why this measurement held unchanged across both heads
+// while the grammar moved under it.
 test "dnir_lower: GAP-221 a module field base is unresolvable from a relation body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

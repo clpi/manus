@@ -77,7 +77,7 @@ owns one fact being optional and fail-open and is one row from closed;
 multiplication needs no subsystem of its own. `GAP-132` is the sharpest live
 defect in the program and reproduces in one command. `GAP-221` — a fact the
 graph did not publish (per-body binding origin) read off a spelling instead —
-was reclassified CLOSED in this pass and is REOPENED at `2954038e`. Its
+was reclassified CLOSED in this pass and is REOPENED at `29d77ed0`. Its
 deletion witness holds and is not in question. Its guard is dead:
 `moduleFieldWord` admits the module's word only for a binding
 `bindingNamedIn` resolves AND whose scope is `module_root`, and those two
@@ -88,7 +88,13 @@ which carries its own control. The reclassification said
 `gate/gap-221-shadowstore.sh` pinned the answer; the gate ran four `grep`s and
 no program, and the repair it certified was landed with "Fixture execution
 requires backend support" in its own commit message. The gate now runs the four
-fixtures and reports BLOCKED rather than PASS while they refuse at parse.
+fixtures and reports BLOCKED rather than PASS while they refuse at parse, and
+checks first that they still match HEAD byte for byte. The host half of that
+blocker is narrower than it was recorded: `.id` programs DO execute here via
+`--backend=c --emit=c` plus `tools/node/dev/grammar/idol_c_runtime_shim.c` plus
+`cc` — `print(7)` prints 7 — so what is missing is not execution but table
+field access, which the C99 slice refuses and the direct backend has no
+aarch64-linux realization for.
 The module-binding write that used to sit beside it — a write read off a
 spelling because the lift minted a same-spelled local for it — is CLOSED and
 reclassified below.
@@ -285,11 +291,23 @@ condition.**
   made that `git grep` non-empty with four `grep`s over `src/dnir_lower.zig` and
   no program, so the answer stayed exactly as unpinned as the withdrawal found
   it, and the repair certified by it was landed with "Fixture execution requires
-  backend support" in its own commit message. `2954038e` measures the guard
-  that repair installed to be dead. The gap is OPEN. The withdrawal stands as
-  the RULING it was, and reads further than it was written: a quiet headline is
+  backend support" in its own commit message. `2954038e` and `29d77ed0` both
+  measure the guard that repair installed to be dead. The gap is OPEN. The
+  withdrawal stands as the RULING it was, and reads further than it was written:
+  a quiet headline is
   not a closure, and neither is a met deletion witness when the acceptance it
-  was supposed to unblock was never run.
+  was supposed to unblock was never run. **And the reopening's own first draft
+  made the same mistake one layer out:** it quoted a compile diagnostic that had
+  been read off a corpus file `idol fmt` had silently rewritten, not off the
+  file in Git. `idol fmt` ends in an unconditional `writeFile` with no
+  `--check`, so on a mid-transfer grammar it exits 0 having written a DIFFERENT
+  legal program — seven of the first sixty `examples/*.id` and this gap's own
+  acceptance fixture, reproduced deterministically. `GAP-223` closed this
+  corruption mode for its specific cause and its "Blast radius" predicted this
+  recurrence verbatim; the hazard is live and is now the quieter shape, since
+  the rewrite parses. The eight files are reverted and
+  `gate/gap-221-shadowstore.sh` arm 0 now refuses to report an answer about a
+  fixture that does not match HEAD.
 
 Both now carry gated `idol.gap.frontier.v1` blocks that say which half is
 crossed, so the measurement is kept and the obligation is not.
