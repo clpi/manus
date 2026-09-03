@@ -12,6 +12,16 @@
 # framing, id round-trip, file-uri passing, position-independence, and
 # fail-closed errors.
 #
+# `tools/concept/definition.sh` is the LSP DEFINITION face of the same
+# finding: the produced module-node home (the `concept` field on the
+# kind==module node) returned as the definition of the concept — the subject
+# uri byte-for-byte at the produced file-boundary line — and held by the
+# definition rows below. What is measured there, and nowhere else, is the
+# definition boundary: the produced home crosses as the definition target,
+# the definition is position-independent, and the fail-closed errors refuse.
+# Verdict-correctness and the node-face agreement stay owned by
+# `gate/concept.sh` and `gate/node.sh` respectively.
+#
 # THE ROSTER CARRIES EVERY PRODUCED DIRECTION, so a one-sided gate cannot
 # call itself an enforcement:
 #   bucket refused: the produced refusal for the no-shared-demand cohort
@@ -48,6 +58,7 @@ cd "$root" || { printf 'lsp: cannot enter root\n' >&2; exit 3; }
 
 IDOL=${IDOL:-"$root/zig-out/bin/idol"}
 hover=$here/../tools/concept/hover.sh
+definition=$here/../tools/concept/definition.sh
 self=$here/$(basename -- "$0")
 
 if [ ! -x "$IDOL" ]; then
@@ -56,6 +67,10 @@ if [ ! -x "$IDOL" ]; then
 fi
 if [ ! -x "$hover" ]; then
     printf 'lsp: NOT MEASURED — %s is not executable (the hover projection was required)\n' "$hover" >&2
+    exit 3
+fi
+if [ ! -x "$definition" ]; then
+    printf 'lsp: NOT MEASURED — %s is not executable (the definition projection was required)\n' "$definition" >&2
     exit 3
 fi
 
@@ -209,36 +224,156 @@ demand_error unreadable-subject "$req" -32000
 demand_error malformed '{oops' -32700
 demand_error adjacent '{"jsonrpc":"2.0","id":15,"method":"ping","params":{}} {"jsonrpc":"2.0","id":16,"method":"ping","params":{}}' -32700
 
-# ── notification-zero ────────────────────────────────────────────────────
-# NOTIFICATION-ZERO: an object WITHOUT an id member is a notification, and
-# the server must never reply to one — no result, no error, even for a bad
-# method or uri. Zero reply bytes, exit 0; the face consumes the line and
-# moves on. A present `id: null` still answers. The rows below are the
-# contract a served arm would otherwise never have held before landing.
-# demand_silence <label> <request-json>: consumes the line, answers zero bytes.
-demand_silence() {
-    resp=$work/respSilent.json
-    printf '%s\n' "$2" | sh "$hover" >"$resp" 2>"$resp.diag" || {
-        printf 'lsp: FAIL — %s exited nonzero on a notification\n' "$1" >&2
+# ── definition face ──────────────────────────────────────────────────────
+# tools/concept/definition.sh answers textDocument/definition with the
+# produced concept home: the subject uri byte-for-byte, at the produced
+# module-node file-boundary line. Verdict-correctness stays owned by
+# gate/concept.sh; node-face agreement stays owned by gate/node.sh; what is
+# measured here, and nowhere else, is the definition boundary.
+# demand_definition <id-json> <uri> <line> <character> <home-needle>: the
+# produced home must cross as the definition target.
+demand_definition() {
+    resp=$work/respDef.json
+    req=$(jq -n -c --arg u "$2" --argjson id "$1" --argjson line "$3" --argjson char "$4" \
+        '{jsonrpc:"2.0",id:$id,method:"textDocument/definition",params:{textDocument:{uri:$u},position:{line:$line,character:$char}}}') || {
+        printf 'lsp: FAIL — definition request could not be framed for id %s\n' "$1" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    printf '%s\n' "$req" | IDOL="$IDOL" sh "$definition" >"$resp" 2>"$resp.diag" || {
+        printf 'lsp: FAIL — definition exited nonzero on id %s\n' "$1" >&2
         failed=$((failed + 1))
         return 1
     }
     examined=$((examined + 1))
-    [ ! -s "$resp" ] || {
-        printf 'lsp: FAIL — %s replied to a notification (%s bytes); silence is demanded\n' "$1" "$(wc -c <"$resp" | tr -d ' ')" >&2
+    [ "$(wc -l <"$resp" | tr -d ' ')" = "1" ] || {
+        printf 'lsp: FAIL — definition id %s answered %s lines, one line was demanded\n' "$1" "$(wc -l <"$resp")" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    jq -e --argjson id "$1" '.id == $id and (has("error") | not)' <"$resp" >/dev/null 2>&1 || {
+        printf 'lsp: FAIL — definition id %s lost its id or carried an error where a home was demanded\n' "$1" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    jq -e --arg u "$2" '.result.uri == $u' <"$resp" >/dev/null 2>&1 || {
+        printf 'lsp: FAIL — definition id %s uri is not the subject uri byte-for-byte\n' "$1" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    jq -e '.result.range.start.line == 0 and .result.range.start.character == 0' <"$resp" >/dev/null 2>&1 || {
+        printf 'lsp: FAIL — definition id %s range is not the produced file boundary\n' "$1" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    jq -r '.result.concept // ""' <"$resp" 2>/dev/null | grep -Fq "$5" || {
+        printf 'lsp: FAIL — definition id %s home misses %s\n' "$1" "$5" >&2
         cat "$resp" >&2
         failed=$((failed + 1))
         return 1
     }
 }
 
+# The produced home of each subject crosses as its definition. The home is
+# the graph's dotted derivation of the subject path, so the needle names the
+# produced shape without depending on the subject's directory: the spaced
+# bucket keeps its space in the produced home (the positive control for argv
+# passing plus uri decoding on the definition face), the cohort and
+# unwitnessed keep their own names.
+demand_definition 20 "$bucket_uri" 0 0 "my bucket"
+demand_definition 21 "$cohort_uri" 0 0 "cohort"
+demand_definition 22 "$unwitnessed_uri" 0 0 "unwitnessed"
+
+# The definition is a file-home fact: a second position answers the same
+# Location. A projection that derives per-line definitions is convicted.
+demand_definition 23 "$cohort_uri" 5 3 "cohort"
+
+# ── fail-closed (definition) ─────────────────────────────────────────────
+# demand_def_error <label> <request-json> <code>: a definition failure must
+# refuse with the demanded code and never a Location-shaped result.
+demand_def_error() {
+    resp=$work/respDefErr.json
+    printf '%s\n' "$2" | IDOL="$IDOL" sh "$definition" >"$resp" 2>"$resp.diag" || {
+        printf 'lsp: FAIL — definition %s exited nonzero\n' "$1" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    examined=$((examined + 1))
+    jq -e --argjson code "$3" 'has("error") and .error.code == $code and (.error.message | type == "string")' \
+        <"$resp" >/dev/null 2>&1 || {
+        printf 'lsp: FAIL — definition %s refused with the wrong shape (demanded error %s)\n' "$1" "$3" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    jq -e '(has("result") | not)' <"$resp" >/dev/null 2>&1 || {
+        printf 'lsp: FAIL — definition %s carried a result beside its error; a refusal is never Location-shaped\n' "$1" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+}
+
 req=$(jq -n -c --arg u "$cohort_uri" \
-    '{jsonrpc:"2.0",method:"textDocument/hover",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
-demand_silence notification-silent "$req"
+    '{jsonrpc:"2.0",id:24,method:"textDocument/hover",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
+demand_def_error def-wrong-method "$req" -32601
+
+req=$(jq -n -c \
+    '{jsonrpc:"2.0",id:25,method:"textDocument/definition",params:{position:{line:0,character:0}}}') || exit 3
+demand_def_error def-missing-uri "$req" -32602
+
+req=$(jq -n -c \
+    '{jsonrpc:"2.0",id:26,method:"textDocument/definition",params:{textDocument:{uri:"untitled:Tab-1"},position:{line:0,character:0}}}') || exit 3
+demand_def_error def-non-file-scheme "$req" -32602
+
+req=$(jq -n -c --arg u "file://$work/absent.id" \
+    '{jsonrpc:"2.0",id:27,method:"textDocument/definition",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
+demand_def_error def-unreadable-subject "$req" -32000
+
+req=$(jq -n -c --arg u "file://$work/broken.id" \
+    '{jsonrpc:"2.0",id:28,method:"textDocument/definition",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
+printf 'oops {{{\n' >"$work/broken.id" || exit 3
+demand_def_error def-unparseable-subject "$req" -32000
+
+# ── notification-zero ────────────────────────────────────────────────────
+# NOTIFICATION-ZERO: an object WITHOUT an id member is a notification, and
+# the server must never reply to one — no result, no error, even for a bad
+# method or uri. Zero reply bytes, exit 0; the face consumes the line and
+# moves on. A present `id: null` still answers. The rows below are the
+# contract a served arm would otherwise never have held before landing.
+# demand_silence <projection> <label> <request-json>: consumes the line,
+# answers zero bytes.
+demand_silence() {
+    resp=$work/respSilent.json
+    printf '%s\n' "$3" | sh "$1" >"$resp" 2>"$resp.diag" || {
+        printf 'lsp: FAIL — %s exited nonzero on a notification\n' "$2" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    examined=$((examined + 1))
+    [ ! -s "$resp" ] || {
+        printf 'lsp: FAIL — %s replied to a notification (%s bytes); silence is demanded\n' "$2" "$(wc -c <"$resp" | tr -d ' ')" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+}
 
 req=$(jq -n -c \
     '{jsonrpc:"2.0",method:"textDocument/definition",params:{textDocument:{uri:"file:///x.id"},position:{line:0,character:0}}}') || exit 3
-demand_silence notification-bad-method "$req"
+demand_silence "$definition" notification-bad-method "$req"
+
+req=$(jq -n -c --arg u "$cohort_uri" \
+    '{jsonrpc:"2.0",method:"textDocument/hover",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
+demand_silence "$hover" notification-silent "$req"
+
+# definition notification-zero: the silence duty is the base protocol's, so
+# it holds on the definition face too — no result, no error, zero bytes.
+req=$(jq -n -c --arg u "$cohort_uri" \
+    '{jsonrpc:"2.0",method:"textDocument/definition",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
+demand_silence "$definition" def-notification-silent "$req"
 
 req=$(jq -n -c --arg u "$cohort_uri" \
     '{jsonrpc:"2.0",id:null,method:"textDocument/hover",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
