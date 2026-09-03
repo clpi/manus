@@ -3033,6 +3033,36 @@ if [ "$byold" -ne 1 ] || [ "$bynew" -ne 1 ]; then
     bad "the by-keyword detector is broken: old=$byold new=$bynew"
 fi
 
+# ── 3.10. match-arm separator face ──────────────────────────────────────────
+# After a pattern and optional `if` guard, `parse_match_arm` peeked the next
+# token and replayed three producer identities (`kw_then`, `kw_do`, `fat_arrow`)
+# to decide whether to consume the arm separator. Event lane-two delimiter face
+# 31 now settles that one selection from producer identity; Zig reads the
+# settled face and no longer reconstructs token kind at the pattern/body seam.
+has "$ROOT/lib/compiler/parser.id" 'kindthen or kind == token.kinddo or kind == token.kindfatarrow' \
+    'parser.id lost the match-arm separator identity reference'
+has "$ROOT/lib/compiler/parser.id" 'delimiter = 31' \
+    'event lost the match-arm separator face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 31;' \
+    'tracked projection lost the match-arm separator face'
+has "$PARSER" 'fn currentParserMatchSeparator(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the match-arm separator consumer'
+has "$PARSER" 'if (try self.currentParserMatchSeparator()) {' \
+    'parse_match_arm bypasses the settled separator face'
+forbid "$PARSER" 'separator.kind == .kw_then or separator.kind == .kw_do or separator.kind == .fat_arrow' \
+    'parse_match_arm still replays three token identities for the separator'
+
+separatorprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate separator scratch' >&2; exit 2; }
+printf '%s\n' 'if (separator.kind == .kw_then or separator.kind == .kw_do or separator.kind == .fat_arrow) {' >"$separatorprobe/old.zig"
+printf '%s\n' 'if (try self.currentParserMatchSeparator()) {' >"$separatorprobe/new.zig"
+separatorold=$(grep -cF 'separator.kind == .kw_then' "$separatorprobe/old.zig")
+separatornew=$(grep -cF 'try self.currentParserMatchSeparator()' "$separatorprobe/new.zig")
+rm -rf -- "$separatorprobe"
+examined=$((examined + 1))
+if [ "$separatorold" -ne 1 ] || [ "$separatornew" -ne 1 ]; then
+    bad "the match-arm separator detector is broken: old=$separatorold new=$separatornew"
+fi
+
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then

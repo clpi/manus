@@ -662,7 +662,13 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # a relation: after the concat operator closes `a..b`, a following `by` unwraps
 # the concat binop into a ranged expression carrying the step operand. The
 # delimiter face is keyed by producer identity, not by the concat that preceded
-# it, so the host never reconstructs `kw_by` beside the settled relation. Lane-two
+# it, so the host never reconstructs `kw_by` beside the settled relation.
+# Thirty-one selects the match-arm separator: `then`, `do`, and `=>` all close
+# a pattern and open its arm body, and the host previously replayed three
+# producer identities (`kw_then`, `kw_do`, `fat_arrow`) to make that one
+# selection. The face is keyed by producer identity, so the consumer reads the
+# settled face and never reconstructs token kind at the pattern/body seam.
+# Lane-two
 # bit 5 carries the exact name face at its mutually exclusive coordinate; at
 # `(` it remains the comma-header face.
 # Capacity refusal precedes every mutation.
@@ -939,6 +945,8 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             delimiter = 29
         elseif kind == token.kindby
             delimiter = 30
+        elseif kind == token.kindthen or kind == token.kinddo or kind == token.kindfatarrow
+            delimiter = 31
         elseif kind == token.kindlparen
             depth = 1
             probe = index + 1

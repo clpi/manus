@@ -627,6 +627,10 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 30;
     }
 
+    fn currentParserMatchSeparator(self: *Parser) ParseError!bool {
+        return (try self.currentParserFace()) == 31;
+    }
+
     fn currentParserTableEntry(self: *Parser) ParseError!bool {
         return (try self.currentParserFace()) == 23;
     }
@@ -4571,7 +4575,7 @@ pub const Parser = struct {
         }
 
         const separator = try self.pk();
-        if (separator.kind == .kw_then or separator.kind == .kw_do or separator.kind == .fat_arrow) {
+        if (try self.currentParserMatchSeparator()) {
             _ = try self.adv();
         } else if (case_syntax or else_syntax) {
             // `case pattern statement` remains accepted for older local sources.
