@@ -26779,12 +26779,19 @@ pub const CodeGen = struct {
             break :blk false;
         };
         if (needs_lua_box) {
-            switch (ft.func.ret.*) {
-                .str => self.p("lua_val_from_str(", .{}),
-                .i64, .u64, .i32, .u32, .i16, .u16, .i8, .u8 => self.p("lua_val_from_int((int64_t)(", .{}),
-                .f64, .f32 => self.p("lua_val_from_num((double)(", .{}),
-                .bool => self.p("lua_val_from_bool(", .{}),
-                else => self.p("(", .{}),
+            // Boxing face of the scalar roster (`types.luaBoxClass`): the
+            // constructor string is owned once by `LuaBoxClass.ctor`. The int
+            // and number boxes cast and wrap the call in an extra paren pair;
+            // `str`/`bool` box directly; a non-scalar return keeps the identity
+            // paren pair (`(` / `)`). Vectors and nominals answer null and take
+            // that identity path exactly as the retired bare-tag switch did.
+            if (types.luaBoxClass(ft.func.ret.*)) |cls| {
+                switch (cls) {
+                    .int, .num => self.p("{s}(", .{cls.ctor()}),
+                    .@"bool", .str => self.p("{s}", .{cls.ctor()}),
+                }
+            } else {
+                self.p("(", .{});
             }
         }
         self.p("{s}(", .{mname});
@@ -26823,11 +26830,16 @@ pub const CodeGen = struct {
         self.p(")", .{});
         self.current_func_body = saved_body;
         if (needs_lua_box) {
-            switch (ft.func.ret.*) {
-                .str => self.p(")", .{}),
-                .i64, .u64, .i32, .u32, .i16, .u16, .i8, .u8, .f64, .f32 => self.p("))", .{}),
-                .bool => self.p(")", .{}),
-                else => self.p(")", .{}),
+            // Close mirror of the boxing open above: the int/number boxes close
+            // their extra paren pair (`))`); `str`/`bool` and the non-scalar
+            // identity path close one (`)`).
+            if (types.luaBoxClass(ft.func.ret.*)) |cls| {
+                switch (cls) {
+                    .int, .num => self.p("))", .{}),
+                    .@"bool", .str => self.p(")", .{}),
+                }
+            } else {
+                self.p(")", .{});
             }
         }
         return true;
@@ -27199,11 +27211,13 @@ pub const CodeGen = struct {
                     // fact the declaration emitter used to choose the C type, so
                     // consulting it here cannot disagree with it. Deriving the
                     // type a second time from the expression is what disagreed.
-                    const wrap: ?[]const u8 = switch (grt) {
-                        .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => "lua_val_from_int((int64_t)",
-                        .f32, .f64 => "lua_val_from_num((double)",
-                        .bool => "lua_val_from_bool(",
-                        else => null,
+                    // The retired switch boxed integrals, reals and `bool` here
+                    // and fell a `str` global through to `emit_as_lua_value`, so
+                    // this site's box set is `luaBoxClass` MINUS `str` — the one
+                    // scalar whose reference boxing the general path owns.
+                    const wrap: ?[]const u8 = switch (types.luaBoxClass(grt) orelse .str) {
+                        .str => null,
+                        else => |cls| cls.ctor(),
                     };
                     if (wrap) |w| {
                         self.p("{s}", .{w});

@@ -666,6 +666,77 @@ pub fn scalarFieldCell(repr: ResolvedType) ?ScalarFieldCell {
     };
 }
 
+/// The `lua_Value` CONSTRUCTOR a scalar descriptor boxes through, when a native
+/// value crosses into the dynamic runtime — or null when the identity is not a
+/// scalar the runtime boxes with a bare constructor, so the caller keeps its
+/// own boxing tail (`lua_val_nil()`, an identity passthrough, or a fallback to
+/// `emit_as_lua_value`).
+///
+/// DERIVED, NOT TABULATED. This is the BOXING FACE of the scalar roster. The
+/// constructor↔representation correspondence stood in `codegen` as two per-tag
+/// SWITCHES that hand-listed all eight integral tags
+/// (`.i8,.i16,.i32,.i64,.u8,.u16,.u32,.u64 => "lua_val_from_int((int64_t)"`,
+/// reals → `lua_val_from_num((double)`, then `bool`/`str`, else the box-less
+/// tail) — one at a native module-call return boundary and one at a native
+/// scalar-global export. Which constructor a scalar boxes through is not a new
+/// fact: an integral scalar boxes as an integer (`lua_val_from_int`), a real
+/// scalar as a number (`lua_val_from_num`) — that is `numericFacts.domain` —
+/// and the two arithmetic-free scalars box as themselves (`bool`, `str`), the
+/// same two `scalarRepr` names explicitly.
+///
+/// The integer arm is not merely a cast: routing an integral through the double
+/// constructor SILENTLY ROUNDED every value above 2^53 — the defect
+/// `emit_native_scalar_to_lua_value`'s own comment records, where `crc64.final`
+/// returned `0x2B9C7EE4E2780C8A` and the number box handed back its low 9 bits
+/// cleared. So `domain` is exactly the fact that must decide it, and a switch
+/// that lists integral tags by hand is one a new integral identity is silently
+/// absent from — folding to `else`, boxing as a passthrough, and losing the
+/// integer box.
+///
+/// A switch could not compose: a scalar identity added to the union gained
+/// numeric facts but stayed unknown to the two switch sites, took their box-less
+/// tail — the wrong answer in the safe-looking direction. Every non-scalar
+/// identity is declined by the `numericFacts`/`scalarRepr` fact rather than by
+/// absence: the vectors span several cells (`lanes != 1`) and were absent from
+/// the retired switches' bare-tag lists exactly so; `any` is already boxed; and
+/// `void`/`nil`/`never`/composed identities are not scalars the runtime boxes
+/// with a bare constructor. A NOMINAL DESCRIPTOR is withheld here as an
+/// identity, exactly as `scalarRepr` withholds it (`law.nominal` §46); the
+/// retired switches listed only bare scalar tags, so a nominal-over-`i32`
+/// (a `.struct` tag) fell to the box-less tail identically.
+pub const LuaBoxClass = enum {
+    int,
+    num,
+    @"bool",
+    str,
+
+    /// The C constructor OPEN this box class emits, including the cast the
+    /// integer and number boxes require. The caller closes with its own paren
+    /// tail. This is the one place the constructor string is stated.
+    pub fn ctor(self: LuaBoxClass) []const u8 {
+        return switch (self) {
+            .int => "lua_val_from_int((int64_t)",
+            .num => "lua_val_from_num((double)",
+            .@"bool" => "lua_val_from_bool(",
+            .str => "lua_val_from_str(",
+        };
+    }
+};
+
+pub fn luaBoxClass(repr: ResolvedType) ?LuaBoxClass {
+    if (!scalarRepr(repr)) return null;
+    if (repr == .str) return .str;
+    // A scalar that is not `str` is `bool` (no numeric facts) or a one-cell
+    // numeric owner. `bool` boxes as itself; a numeric owner boxes by domain —
+    // an integral as an integer so a value above 2^53 is not rounded through
+    // the double box, a real as a number.
+    const facts = repr.numericFacts() orelse return .@"bool";
+    return switch (facts.domain) {
+        .integral => .int,
+        .real => .num,
+    };
+}
+
 /// Resolved type after semantic analysis.
 /// During sema, each expression gets a `ResolvedType` attached.
 /// The declared width of a sub-64-bit integer descriptor, and whether
@@ -3636,6 +3707,87 @@ test "types: the field-cell face of the scalar roster is derived from the same f
     // Planting a vector widening in `scalarFieldCell` (via `scalarRepr`) is
     // refused by the `lanes != 1` fact: no non-scalar cell is invented here.
     try testing.expect(!scalarRepr(.v8i32));
+}
+
+test "types: the boxing face of the scalar roster is derived from the same facts" {
+    // The retired boxing partition, verbatim, as the oracle. It stood at two
+    // `codegen` per-tag SWITCHES that hand-listed all eight integral tags
+    // (`.i8,.i16,.i32,.i64,.u8,.u16,.u32,.u64 => "lua_val_from_int(...)"`, reals
+    // → `lua_val_from_num`, then `bool`/`str`) — one at a native module-call
+    // return boundary and one at a native scalar-global export. This oracle is
+    // the constructor OPEN each retired switch emitted for a scalar and null for
+    // everything they folded into their box-less tail. It boxes an integral as
+    // an integer, a real as a number, and the two arithmetic-free scalars as
+    // themselves.
+    const retiredBoxCtor = struct {
+        fn f(t: ResolvedType) ?[]const u8 {
+            return switch (t) {
+                .str => "lua_val_from_str(",
+                .bool => "lua_val_from_bool(",
+                .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => "lua_val_from_int((int64_t)",
+                .f32, .f64 => "lua_val_from_num((double)",
+                else => null,
+            };
+        }
+    }.f;
+
+    // PINNED EQUAL TO THE RETIRED PARTITION on every payload-free identity — the
+    // four scalar box classes it named AND the vector, boxed, void and composed
+    // identities it folded into its box-less tail — iterated over the union's
+    // own tags rather than a list, so a scalar identity added to the union
+    // cannot be one the boxing face silently does not know. `luaBoxClass(t)`
+    // composed with `LuaBoxClass.ctor` is the retired constructor for every `t`.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |name, ty| {
+        if (ty != void) continue;
+        const t = @as(ResolvedType, @field(ResolvedType, name));
+        const want = retiredBoxCtor(t);
+        const got: ?[]const u8 = if (luaBoxClass(t)) |cls| cls.ctor() else null;
+        if (want) |w| {
+            try testing.expect(got != null);
+            try testing.expect(std.mem.eql(u8, w, got.?));
+        } else {
+            try testing.expect(got == null);
+        }
+    }
+
+    // DERIVED, NOT TABULATED — the constructor is `numericFacts.domain` plus the
+    // two arithmetic-free scalars. An integral boxes as an integer so a value
+    // above 2^53 is not rounded through the number box (the `crc64.final`
+    // defect the site comments record); a real boxes as a number.
+    try testing.expectEqual(@as(?LuaBoxClass, .int), luaBoxClass(.i16));
+    try testing.expectEqual(@as(?LuaBoxClass, .int), luaBoxClass(.u64));
+    try testing.expectEqual(@as(?LuaBoxClass, .num), luaBoxClass(.f32));
+    try testing.expectEqual(@as(?LuaBoxClass, .num), luaBoxClass(.f64));
+    try testing.expectEqual(@as(?LuaBoxClass, .@"bool"), luaBoxClass(.bool));
+    try testing.expectEqual(@as(?LuaBoxClass, .str), luaBoxClass(.str));
+
+    // DECLINED BY THE `numericFacts`/`scalarRepr` FACT, NOT BY ABSENCE: the
+    // vectors span several cells (`lanes != 1`), `any` is already boxed, and
+    // `void`/`nil`/`never` are not scalars the runtime boxes with a bare
+    // constructor. Each answers null and the caller keeps its own box-less tail.
+    try testing.expectEqual(@as(?LuaBoxClass, null), luaBoxClass(.v4i64));
+    try testing.expectEqual(@as(?LuaBoxClass, null), luaBoxClass(.v8f32));
+    try testing.expectEqual(@as(?LuaBoxClass, null), luaBoxClass(.any));
+    try testing.expectEqual(@as(?LuaBoxClass, null), luaBoxClass(.void));
+
+    // A NOMINAL DESCRIPTOR is WITHHELD by this owner, exactly as `scalarRepr`
+    // withholds it: the box class is a question about identity. The two retired
+    // switch sites listed only bare scalar tags, so a nominal-over-`i32`
+    // (a `.struct` tag) fell to their box-less tail identically, and the global
+    // export site's `luaBoxClass(grt) orelse .str` maps it to a null wrap the
+    // same way. This is the one behavioural pin the derivation must match.
+    const alloc = std.heap.page_allocator;
+    try declareNominal(alloc, "beat", .i32);
+    const nominal = nominalNamed("beat").?;
+    try testing.expectEqual(@as(?LuaBoxClass, null), luaBoxClass(nominal));
+    // Its PHYSICS still delegates, so withholding it here is an identity ruling
+    // and not a claim that its representation has no box class.
+    try testing.expectEqual(@as(?LuaBoxClass, .int), luaBoxClass(nominalReprOf(nominal).?));
+
+    // Planting a widening — treating a real as an integer box — is refused by
+    // the `domain` fact: a real answers `.num`, never `.int`.
+    try testing.expect(luaBoxClass(.f64).? == .num);
 }
 
 test "CallShape: method call shape" {
