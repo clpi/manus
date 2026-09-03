@@ -10883,8 +10883,14 @@ fn lowerExprCons(
                 break :blk try lowerDynamicIndex(ctx, ix.obj.name.ident, ix.key);
             const key = try std.fmt.allocPrint(ctx.alloc, "{s}.{d}", .{ ix.obj.name.ident, n });
             defer ctx.alloc.free(key);
-            const slot = ctx.locals.get(key) orelse return bail(ctx.diagnostic, @src());
-            break :blk dnir.Value{ .local = slot };
+            if (ctx.locals.get(key)) |slot|
+                break :blk dnir.Value{ .local = slot };
+            // Module-level constant table elements
+            if (ctx.module_consts.strs.get(key)) |sv|
+                break :blk dnir.Value{ .str = sv };
+            if (ctx.module_consts.ints.get(key)) |iv|
+                break :blk dnir.Value{ .i64 = iv };
+            return bail(ctx.diagnostic, @src());
         },
         .call => try lowerCall(ctx, expr, consumption),
         .method_call => try lowerSubjectCall(ctx, expr, consumption),
