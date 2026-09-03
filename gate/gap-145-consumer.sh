@@ -2112,6 +2112,33 @@ examined=$((examined + 1))
 if [ "$at_refusal_walk" -ne 0 ]; then
     bad "contextual @ refusal retained $at_refusal_walk host token advance(s)"
 fi
+has "$PARSER" 'const refusal = try self.currentParserAtRefusal();' \
+    'expression parsing bypasses the settled contextual @ refusal'
+has "$PARSER" 'switch (refusal) {' \
+    'expression parsing no longer selects the settled contextual @ refusal'
+expression_refusal_walk=$(awk '
+    index($0, "fn parse_macro_call_expr") { inside = 1 }
+    inside && index($0, "switch (refusal)") { print advances + 0; exit }
+    inside && index($0, "try self.expect(.at)") { advances += 1 }
+' "$PARSER")
+examined=$((examined + 1))
+if [ "$expression_refusal_walk" -ne 0 ]; then
+    bad "expression contextual @ refusal retained $expression_refusal_walk host token advance(s) before selection"
+fi
+refusalprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate refusal scratch' >&2; exit 2; }
+printf '%s\n' 'try self.expect(.at);' 'switch (try self.currentParserAtRefusal()) {' >"$refusalprobe/old.zig"
+printf '%s\n' 'switch (try self.currentParserAtRefusal()) {' 'try self.expect(.at);' >"$refusalprobe/new.zig"
+refusal_old=$(awk 'index($0, "switch (try self.currentParserAtRefusal())") { print advances + 0; exit } index($0, "try self.expect(.at)") { advances += 1 }' "$refusalprobe/old.zig")
+refusal_new=$(awk 'index($0, "switch (try self.currentParserAtRefusal())") { print advances + 0; exit } index($0, "try self.expect(.at)") { advances += 1 }' "$refusalprobe/new.zig")
+rm -rf -- "$refusalprobe"
+examined=$((examined + 1))
+if [ "$refusal_old" -ne 1 ] || [ "$refusal_new" -ne 0 ]; then
+    bad "the expression @ refusal order detector is broken: old=$refusal_old new=$refusal_new"
+fi
+forbid "$PARSER" '.name = "const"' \
+    'parser retained the host @const spelling row after both consumers transferred'
+forbid "$PARSER" '.name = "comptime"' \
+    'parser retained the host @comptime spelling row after both consumers transferred'
 has "$ROOT/lib/compiler/parser.id" '(delimiter << 13)' \
     'whole-pack decision lost attribute delimiter extent'
 has "$PARSER" 'currentParserAttributeBoundary() orelse return false' \

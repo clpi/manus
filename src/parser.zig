@@ -7433,8 +7433,6 @@ pub const Parser = struct {
     fn bannedAtDirectiveSuggestion(qualified: []const u8) ?[]const u8 {
         const Entry = struct { name: []const u8, hint: []const u8 };
         const banned = [_]Entry{
-            .{ .name = "const", .hint = "prefix compiler directives have no canonical Idol spelling (see GR-007)" },
-            .{ .name = "comptime", .hint = "prefix compiler directives have no canonical Idol spelling (see GR-007)" },
             .{ .name = "comptime_expr", .hint = "prefix compiler directives have no canonical Idol spelling (see GR-007)" },
             .{ .name = "comptimeexpr", .hint = "prefix compiler directives have no canonical Idol spelling (see GR-007)" },
             .{ .name = "compile_time", .hint = "prefix compiler directives have no canonical Idol spelling (see GR-007)" },
@@ -7449,7 +7447,22 @@ pub const Parser = struct {
     }
 
     fn parse_macro_call_expr(self: *Parser) ParseError!*ast.Expr {
-        const l = (try self.expect(.at)).loc;
+        const refusal = try self.currentParserAtRefusal();
+        const l = (try self.pk()).loc;
+        switch (refusal) {
+            1 => {
+                term.locErr(l, "'@const' is not an Idol directive", .{});
+                term.locHint(l, "prefix compiler directives have no canonical Idol spelling (see GR-007)", .{});
+                return ParseError.ExpectedToken;
+            },
+            2 => {
+                term.locErr(l, "'@comptime' is not an Idol directive", .{});
+                term.locHint(l, "prefix compiler directives have no canonical Idol spelling (see GR-007)", .{});
+                return ParseError.ExpectedToken;
+            },
+            else => {},
+        }
+        _ = try self.expect(.at);
         // GR-007: reject @const / @comptime / @comptime_expr / @compile_time in
         // expression position too, before parse_at_path_segment errors generically
         // on the keyword token. Refusal does not elect a replacement directive.
