@@ -636,6 +636,13 @@ pub const Parser = struct {
         return face == 22 or face == 23;
     }
 
+    fn currentParserPackName(self: *Parser) ParseError!u2 {
+        const face = try self.currentParserFace();
+        if (face == 23) return 1;
+        if (face == 20 or try self.currentParserPrimitive()) return 2;
+        return 0;
+    }
+
     fn currentParserMatchSuffix(self: *Parser) ParseError!u2 {
         const face = try self.currentParserFace();
         if (face == 15) return 1;
@@ -8271,7 +8278,7 @@ pub const Parser = struct {
             const quote = try self.currentParserQuote();
             const quoted = quote != null;
             const literal = try self.currentParserLiteral();
-            const primitive = try self.currentParserPrimitive();
+            const name = try self.currentParserPackName();
             if (face == 22) {
                 _ = try self.adv();
                 const spread_expr = try self.parse_expr();
@@ -8307,7 +8314,7 @@ pub const Parser = struct {
                     }
                     try fields.append(self.alloc, .{ .positional = val });
                 }
-            } else if (tok.kind == .name or tok.kind == .kw_else or primitive) {
+            } else if (name != 0) {
                 // Speculate: name '=' and name ':' Type '=' mean named fields;
                 // otherwise the entry is positional. A type name is an ORDINARY
                 // name here, so `{ i32 = 69 }` parses like `{ foo = 69 }`.
@@ -8317,7 +8324,7 @@ pub const Parser = struct {
                 // z }` — giving `else` the same meaning inside a pack that it
                 // has in a conditional chain. It is a key only; nothing here
                 // makes `else` a name anywhere else.
-                const key_text = if (tok.kind == .name) tok.text else tok.kind.spelling();
+                const key_text = if (name == 1) tok.text else tok.kind.spelling();
                 const saved = self.saveState();
                 _ = try self.adv();
                 if (try self.check(.assign)) {

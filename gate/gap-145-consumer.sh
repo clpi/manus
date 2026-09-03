@@ -3113,6 +3113,30 @@ if [ "$computedold" -ne 1 ] || [ "$computednew" -ne 1 ]; then
     bad "the computed-key face detector is broken: old=$computedold new=$computednew"
 fi
 
+# Ordinary pack named-key selection consumes the exact name, else, and
+# primitive faces already projected by the immutable event. Zig retains only
+# spelling selection and field materialization; it no longer replays `.name`
+# or `.kw_else` at the entry seam.
+has "$PARSER" 'fn currentParserPackName(self: *Parser) ParseError!u2 {' \
+    'ordinary pack parsing lost the settled named-key consumer'
+has "$PARSER" '} else if (name != 0) {' \
+    'ordinary pack parsing bypasses the settled named-key face'
+packnames=$(sed -n '/fn parse_pack_body/,/fn finish_list_comp/p' "$PARSER" | grep -cE 'tok\.kind == \.(name|kw_else)' || true)
+if [ "$packnames" -ne 0 ]; then
+    bad "ordinary pack named-key entry retained host recognition: count=$packnames"
+fi
+
+nameprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate named-key scratch' >&2; exit 2; }
+printf '%s\n' '} else if (tok.kind == .name or tok.kind == .kw_else or primitive) {' >"$nameprobe/old.zig"
+printf '%s\n' '} else if (name != 0) {' >"$nameprobe/new.zig"
+nameold=$(grep -cE 'tok\.kind == \.(name|kw_else)' "$nameprobe/old.zig")
+namenew=$(grep -cF 'name != 0' "$nameprobe/new.zig")
+rm -rf -- "$nameprobe"
+examined=$((examined + 1))
+if [ "$nameold" -ne 1 ] || [ "$namenew" -ne 1 ]; then
+    bad "the named-key face detector is broken: old=$nameold new=$namenew"
+fi
+
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
