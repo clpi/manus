@@ -1587,6 +1587,38 @@ pub const SemanticGraph = struct {
         return node.result_descriptor != null;
     }
 
+    /// The NUMERIC FACTS a graph value entity carries — its observable domain,
+    /// width, sign, lane count, format, overflow and rounding — or null when the
+    /// entity is not present, carries no checked descriptor, or carries one that
+    /// is not numeric.
+    ///
+    /// GRAPH-OWNED, DERIVED, NOT TABULATED. `GAP-149`'s frontier records that
+    /// "the graph does not own the numeric fact projection": a graph node
+    /// already carries its checked `descriptor` (`Node.descriptor`), but no
+    /// projection on the graph read the numeric meaning off it, so every
+    /// consumer that wanted a value's domain or width had to reach past the
+    /// graph to the `ResolvedType` tag and re-answer a question the numeric
+    /// owner in `types.zig` already owns. This is the SAME single derivation
+    /// every scalar-roster face reads — `ResolvedType.numericFacts`,
+    /// constitution §46 numeric meaning — asked from the graph's own entity id
+    /// rather than from a host enum tag.
+    ///
+    /// It is not a second numeric ontology and cannot become one: it reads the
+    /// descriptor fact the checker already published and delegates the meaning
+    /// to the one owner, so a scalar identity added to the union gains its graph
+    /// numeric projection here rather than staying unknown to a hand-kept list.
+    /// A NOMINAL DESCRIPTOR DELEGATES its numeric facts to its representation on
+    /// purpose (`law.nominal` §46), exactly as `numericFacts` does at every
+    /// physical query, because the graph value's observable numeric law is the
+    /// law of the representation it realizes as. Every non-numeric descriptor —
+    /// a record, an option, a table, `str`, `any` — is declined by the numeric
+    /// owner's own null rather than by a roster here.
+    pub fn numericFacts(self: *const SemanticGraph, entity: id) ?types.NumericFacts {
+        const node = self.get(entity) orelse return null;
+        const descriptor = node.descriptor orelse return null;
+        return descriptor.numericFacts();
+    }
+
     /// Descriptor-home facts (members, descriptor edges, or sealed descriptor
     /// state) — not table_shape/enum_shape tags (`law.tag.authority`).
     pub fn hasDescriptorFacts(self: *const SemanticGraph, entity: id) bool {
@@ -9466,6 +9498,75 @@ test "semantic_graph: function identities carry resolved result descriptors" {
     try std.testing.expectEqual(types.ResolvedType.str, g.functionResultDescriptor(label).?);
     try std.testing.expectEqual(types.ResolvedType.bool, g.functionResultDescriptor(ready).?);
     try std.testing.expect(g.resolveInHome(home, "missing", .func) == null);
+}
+
+test "semantic_graph: the numeric fact projection is graph-owned and derived from the same owner" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+
+    const span = SpanRef{ .file = "numeric-projection.id", .start = 0, .end = 0 };
+
+    // A value entity carrying `feet: f64` as its checked descriptor, so the
+    // graph projection must DELEGATE the nominal's numeric facts to its
+    // representation exactly as the numeric owner does (`law.nominal` §46).
+    try types.declareNominal(alloc, "feet", .f64);
+    const nominal_feet = types.nominalNamed("feet").?;
+
+    // The projection is pinned equal to the ONE numeric owner over the union's
+    // own tags rather than over a hand-kept list, so a scalar identity added to
+    // `ResolvedType` cannot be one the graph numeric face silently does not
+    // know. Every payload-free identity is exercised: the numeric scalars and
+    // vectors it projects AND the boolean, string, void, dynamic and
+    // non-representational identities the owner declines with its own null.
+    const info = @typeInfo(types.ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type == void) {
+            const identity = @as(types.ResolvedType, @field(types.ResolvedType, field_name));
+            const entity = try g.addNode(.{
+                .kind = .value,
+                .span = span,
+                .descriptor = identity,
+                .knowledge = .stable,
+                .stage = .sema,
+            });
+            try std.testing.expectEqual(identity.numericFacts(), g.numericFacts(entity));
+        }
+    }
+
+    // The nominal descriptor delegates its facts to its representation and the
+    // graph projection reads exactly that, so `feet` answers the `f64` facts
+    // while remaining a distinct semantic identity.
+    const feet_entity = try g.addNode(.{
+        .kind = .value,
+        .span = span,
+        .descriptor = nominal_feet,
+        .knowledge = .stable,
+        .stage = .sema,
+    });
+    try std.testing.expectEqual(nominal_feet.numericFacts(), g.numericFacts(feet_entity));
+    const f64_identity: types.ResolvedType = .f64;
+    try std.testing.expectEqual(f64_identity.numericFacts(), g.numericFacts(feet_entity));
+
+    // A value entity carrying no checked descriptor has no numeric projection,
+    // and neither does one that is present but non-numeric (`str`), so the
+    // graph declines by the owner's own null rather than by a roster here.
+    const undescribed = try g.addNode(.{ .kind = .value, .span = span, .knowledge = .stable, .stage = .sema });
+    try std.testing.expect(g.numericFacts(undescribed) == null);
+    const string_entity = try g.addNode(.{
+        .kind = .value,
+        .span = span,
+        .descriptor = .str,
+        .knowledge = .stable,
+        .stage = .sema,
+    });
+    try std.testing.expect(g.numericFacts(string_entity) == null);
+
+    // An entity id the graph does not contain answers null, never a crash.
+    try std.testing.expect(g.numericFacts(@intCast(g.nodes.items.len + 4)) == null);
 }
 
 test "semantic_graph: tuple return descriptor publishes one semantic result pack" {
