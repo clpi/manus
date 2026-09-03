@@ -235,7 +235,8 @@ pub fn emitExperimentFacts(
 /// side states the law (`effect.profileNeedsGuard`); this walk is the graph
 /// side and fails closed over the facts the graph actually carries. Every
 /// experiment fact whose producer is an EVIDENCE producer (profile counter,
-/// hardware counter, sample, heuristic estimate — `EvidenceProducer.isEvidence`)
+/// hardware counter, sample, inline cache, heuristic estimate —
+/// `EvidenceProducer.isEvidence`)
 /// must (a) name its measured subject revision (`law.evidence.subject.one`;
 /// the `ExperimentFact.subject_revision` contract already states an empty
 /// revision is lawful only for sound producers) and (b) be covered by a guard

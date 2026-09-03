@@ -288,7 +288,8 @@ fn appendExperiment(
 test "gap182: graph enforcement refuses evidence experiments without a graph guard" {
     // The graph-owned face of the evidence-only rule: an experiment fact whose
     // producer is an evidence producer (profile counter, hardware counter,
-    // sample, heuristic estimate) is inadmissible unless the GRAPH carries a
+    // sample, inline cache, heuristic estimate) is inadmissible unless the
+    // GRAPH carries a
     // guard over the same proposition — the effect-side law
     // (`profileNeedsGuard`) enforced over the graph's own facts, so no
     // optimizer path reading `graph.experiments` can bypass it.
@@ -297,6 +298,18 @@ test "gap182: graph enforcement refuses evidence experiments without a graph gua
         var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
         defer graph.deinit();
         try appendExperiment(&graph, "shape:7", "profile_counter", "rev:9");
+        try std.testing.expectError(
+            error.EvidenceUnguarded,
+            assumption_guard.enforceExperimentGuards(&graph),
+        );
+    }
+    {
+        // An inline cache observation is evidence too: named by the one
+        // reverse map, refused without a graph-carried guard even with full
+        // provenance.
+        var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+        defer graph.deinit();
+        try appendExperiment(&graph, "site:17", "inline_cache", "rev:9");
         try std.testing.expectError(
             error.EvidenceUnguarded,
             assumption_guard.enforceExperimentGuards(&graph),

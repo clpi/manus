@@ -71,6 +71,11 @@ pub const EvidenceProducer = enum(u8) {
     profile_counter,
     hardware_counter,
     sample,
+    /// An inline cache observation: the shape witnessed at one call site on
+    /// one measured subject revision. GAP-182 closure face — the foreign
+    /// inline cache expressed as an evidence producer of the one experiment
+    /// fact family, never a separate JIT subsystem (deletion witness).
+    inline_cache,
     heuristic_estimate,
 
     pub fn name(self: EvidenceProducer) []const u8 {
@@ -82,6 +87,7 @@ pub const EvidenceProducer = enum(u8) {
             .profile_counter => "profile_counter",
             .hardware_counter => "hardware_counter",
             .sample => "sample",
+            .inline_cache => "inline_cache",
             .heuristic_estimate => "heuristic_estimate",
         };
     }
@@ -95,20 +101,21 @@ pub const EvidenceProducer = enum(u8) {
             .profile_counter => .profiled,
             .hardware_counter => .profiled,
             .sample => .sampled,
+            .inline_cache => .profiled,
             .heuristic_estimate => .heuristic,
         };
     }
 
-    /// GAP-182 required order 5: profiles, samples, and hardware counters are
-    /// evidence producers — observations of one measured subject on one
-    /// measured revision, never semantic truth. Sound producers (proof,
-    /// inference) are not evidence in this sense; guard observations are the
-    /// guard's own witness, not aggregate evidence over runs. An axiom is not
-    /// evidence either: it rests on zero measurement and is never
-    /// invalidated, so it demands no revision name.
+    /// GAP-182 required order 5: profiles, samples, hardware counters, and
+    /// inline cache observations are evidence producers — observations of one
+    /// measured subject on one measured revision, never semantic truth. Sound
+    /// producers (proof, inference) are not evidence in this sense; guard
+    /// observations are the guard's own witness, not aggregate evidence over
+    /// runs. An axiom is not evidence either: it rests on zero measurement
+    /// and is never invalidated, so it demands no revision name.
     pub fn isEvidence(self: EvidenceProducer) bool {
         return switch (self) {
-            .profile_counter, .hardware_counter, .sample, .heuristic_estimate => true,
+            .profile_counter, .hardware_counter, .sample, .inline_cache, .heuristic_estimate => true,
             .constitutional_axiom, .static_proof, .invariant_inference, .guard_observation => false,
         };
     }
@@ -130,6 +137,7 @@ pub const EvidenceProducer = enum(u8) {
             .{ "profile_counter", .profile_counter },
             .{ "hardware_counter", .hardware_counter },
             .{ "sample", .sample },
+            .{ "inline_cache", .inline_cache },
             .{ "heuristic_estimate", .heuristic_estimate },
         };
         inline for (map) |entry| {
@@ -592,6 +600,51 @@ pub fn observeSample(
         .experiment = .{
             .proposition = proposition,
             .producer = .sample,
+            .cost = cost,
+            .conditional_theorem = conditional_theorem,
+            .subject_revision = subject_revision,
+        },
+    };
+}
+
+/// Closure face: inline caches as a fact-producer. An inline cache
+/// observation is the shape witnessed at one named call site on one measured
+/// subject revision (`law.evidence.subject.one`). It is evidence, never
+/// semantic truth: the constructed experiment's producer is always
+/// `inline_cache`, mapping to the `profiled` level and therefore never
+/// admitting without a guard (`law.oracle.bounded`). There is exactly one
+/// construction seam — this function — so no caller can mint an inline-cache
+/// fact over a different producer (`law.fact.producer.one`). Provenance is
+/// enforced AT CONSTRUCTION, not audited afterward: a cache observation that
+/// cannot name the measured subject revision it was taken on constructs no
+/// fact at all — null, never a fact with incomplete provenance and never a
+/// sentinel in-band. This is the foreign inline cache expressed inside the
+/// one experiment fact family, not a separate JIT subsystem (deletion
+/// witness).
+pub const InlineCacheObservation = struct {
+    /// Stable identity of the observed call site (e.g. "site:17").
+    site: []const u8,
+    /// Stable identity of the shape witnessed at the site (e.g. "shape:42").
+    shape: []const u8,
+    /// The experiment-shaped fact this observation stands behind.
+    experiment: Experiment,
+};
+
+pub fn observeInlineCache(
+    proposition: []const u8,
+    site: []const u8,
+    shape: []const u8,
+    cost: u32,
+    conditional_theorem: []const u8,
+    subject_revision: []const u8,
+) ?InlineCacheObservation {
+    if (subject_revision.len == 0) return null;
+    return .{
+        .site = site,
+        .shape = shape,
+        .experiment = .{
+            .proposition = proposition,
+            .producer = .inline_cache,
             .cost = cost,
             .conditional_theorem = conditional_theorem,
             .subject_revision = subject_revision,
@@ -1227,7 +1280,7 @@ fn experiment(producer: EvidenceProducer, revision: []const u8) Experiment {
 
 test "effect: profiles, samples, and hardware counters are evidence producers" {
     // Required order 5: these producers are evidence, never semantic truth.
-    const evidence_producers = [_]EvidenceProducer{ .profile_counter, .hardware_counter, .sample, .heuristic_estimate };
+    const evidence_producers = [_]EvidenceProducer{ .profile_counter, .hardware_counter, .sample, .inline_cache, .heuristic_estimate };
     for (evidence_producers) |p| {
         try std.testing.expect(p.isEvidence());
         try std.testing.expect(!experiment(p, "rev:abc").producesTruth());
@@ -1248,9 +1301,11 @@ test "effect: evidence provenance requires the measured subject revision" {
     try std.testing.expect(!experiment(.profile_counter, "").provenanceComplete());
     try std.testing.expect(!experiment(.hardware_counter, "").provenanceComplete());
     try std.testing.expect(!experiment(.sample, "").provenanceComplete());
+    try std.testing.expect(!experiment(.inline_cache, "").provenanceComplete());
     try std.testing.expect(!experiment(.heuristic_estimate, "").provenanceComplete());
     try std.testing.expect(experiment(.profile_counter, "rev:abc").provenanceComplete());
     try std.testing.expect(experiment(.hardware_counter, "rev:abc").provenanceComplete());
+    try std.testing.expect(experiment(.inline_cache, "rev:abc").provenanceComplete());
     // Sound producers are complete with or without a revision naming.
     try std.testing.expect(experiment(.static_proof, "").provenanceComplete());
     try std.testing.expect(experiment(.guard_observation, "").provenanceComplete());
@@ -1378,6 +1433,50 @@ test "effect: samples are fact-producers with construction-forced provenance" {
     ) == null);
     // Observation cost never promotes evidence to semantic truth.
     const free = (observeSample("shape:sampled", 42, 0, "cand:sampled", "rev:sample")).?;
+    try std.testing.expect(realizesZero(&free.experiment));
+    try std.testing.expect(!free.experiment.producesTruth());
+}
+
+test "effect: inline caches are fact-producers with construction-forced provenance" {
+    // Closure face: an inline cache observation produces an experiment-shaped
+    // fact with exactly one construction seam. A site observation that names
+    // no measured subject revision constructs NO fact — provenance is the
+    // admission condition, not an audit flag (law.evidence.subject.one).
+    const hit = (observeInlineCache(
+        "site:17",
+        "site:17",
+        "shape:42",
+        1,
+        "cand:mono-site",
+        "rev:abc",
+    )).?;
+    try std.testing.expectEqualStrings("site:17", hit.site);
+    try std.testing.expectEqualStrings("shape:42", hit.shape);
+    try std.testing.expectEqual(EvidenceProducer.inline_cache, hit.experiment.producer);
+    try std.testing.expectEqual(EpistemicLevel.profiled, hit.experiment.producer.level());
+    try std.testing.expect(hit.experiment.producer.isEvidence());
+    try std.testing.expect(hit.experiment.provenanceComplete());
+    // The observation is evidence, never truth — it still demands a guard or
+    // proof before a semantics-changing realization may rely on it, and a
+    // witnessed shape going stale invalidates exactly this candidate.
+    try std.testing.expect(!hit.experiment.producesTruth());
+    try std.testing.expect(!hit.experiment.admissible(true));
+    try std.testing.expect(hit.experiment.admissible(false));
+    try std.testing.expect(profileNeedsGuard(hit.experiment.producer.level()));
+    try std.testing.expect(invalidatedExperiment(&hit.experiment, "site:17"));
+    try std.testing.expect(!invalidatedExperiment(&hit.experiment, "site:18"));
+    // No revision, no fact: provenance enforced at construction.
+    try std.testing.expect(observeInlineCache("site:17", "site:17", "shape:42", 1, "cand:x", "") == null);
+    // The producer round-trips through the graph face by NAME, never by
+    // ordinal — the one reverse map consumes it (law.magic.code.zero).
+    try std.testing.expectEqualStrings("inline_cache", EvidenceProducer.inline_cache.name());
+    try std.testing.expectEqual(
+        EvidenceProducer.inline_cache,
+        EvidenceProducer.fromName("inline_cache").?,
+    );
+    // A zero-cost cache observation is lawful nonexecution but still
+    // profiled evidence — cost never upgrades the epistemic level.
+    const free = (observeInlineCache("site:17", "site:17", "shape:42", 0, "cand:cached", "rev:abc")).?;
     try std.testing.expect(realizesZero(&free.experiment));
     try std.testing.expect(!free.experiment.producesTruth());
 }
