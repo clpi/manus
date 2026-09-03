@@ -745,6 +745,64 @@ if [ "$matchprimaryold" -ne 1 ] || [ "$matchprimarynew" -ne 1 ]; then
     bad "the match-expression primary detector is broken: old=$matchprimaryold new=$matchprimarynew"
 fi
 
+# Field projection has exact primary face fifteen. The existing prefix fact
+# distinguishes it from a parenthesis boundary at the same absolute pack
+# coordinate. Zig retains projection materialization without a `.dot` arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kinddot' \
+    'event lost the field-projection primary face'
+has "$ROOT/src/parser/projection.c" 'kind == INT64_C(80)' \
+    'tracked projection lost the field-projection primary face'
+has "$PARSER" 'fn currentParserField(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the field-projection primary consumer'
+has "$PARSER" 'if (try self.currentParserField()) return self.parse_field_projection();' \
+    'parse_simple_expr bypasses the settled field-projection face'
+has "$PARSER" '!try self.currentParserPrefix();' \
+    'field projection lost its parenthesis-boundary discriminator'
+fieldarms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.dot => ' || true)
+examined=$((examined + 1))
+if [ "$fieldarms" -ne 0 ]; then
+    bad "parse_simple_expr retained $fieldarms field-projection host arm(s)"
+fi
+
+fieldprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate field-projection primary scratch' >&2; exit 2; }
+printf '%s\n' '.dot => parse_field_projection(),' >"$fieldprobe/old.zig"
+printf '%s\n' 'return (try self.currentParserDecision()) >> 13 == 15 and !try self.currentParserPrefix();' >"$fieldprobe/new.zig"
+fieldold=$(grep -cF '.dot => ' "$fieldprobe/old.zig")
+fieldnew=$(grep -cF 'currentParserDecision()) >> 13 == 15' "$fieldprobe/new.zig")
+fieldguard=$(grep -cF '!try self.currentParserPrefix()' "$fieldprobe/new.zig")
+rm -rf -- "$fieldprobe"
+examined=$((examined + 1))
+if [ "$fieldold" -ne 1 ] || [ "$fieldnew" -ne 1 ] || [ "$fieldguard" -ne 1 ]; then
+    bad "the field-projection primary detector is broken: old=$fieldold new=$fieldnew guard=$fieldguard"
+fi
+
+# A leading subject-method reference has exact primary face sixteen. Zig
+# retains method-reference materialization without a `.colon` arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindcolon' \
+    'event lost the subject-method-reference primary face'
+has "$ROOT/src/parser/projection.c" 'kind == INT64_C(78)' \
+    'tracked projection lost the subject-method-reference primary face'
+has "$PARSER" 'fn currentParserMethod(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the subject-method-reference primary consumer'
+has "$PARSER" 'if (try self.currentParserMethod()) return self.parse_method_reference();' \
+    'parse_simple_expr bypasses the settled subject-method-reference face'
+methodarms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.colon => ' || true)
+examined=$((examined + 1))
+if [ "$methodarms" -ne 0 ]; then
+    bad "parse_simple_expr retained $methodarms .colon host arm(s)"
+fi
+
+methodprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate subject-method-reference primary scratch' >&2; exit 2; }
+printf '%s\n' '.colon => parse_method_reference(),' >"$methodprobe/old.zig"
+printf '%s\n' 'return (try self.currentParserDecision()) >> 13 == 16;' >"$methodprobe/new.zig"
+methodold=$(grep -cF '.colon => ' "$methodprobe/old.zig")
+methodnew=$(grep -cF 'currentParserDecision()) >> 13 == 16' "$methodprobe/new.zig")
+rm -rf -- "$methodprobe"
+examined=$((examined + 1))
+if [ "$methodold" -ne 1 ] || [ "$methodnew" -ne 1 ]; then
+    bad "the subject-method-reference primary detector is broken: old=$methodold new=$methodnew"
+fi
+
 booleanprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate boolean primary scratch' >&2; exit 2; }
 printf '%s\n' '.kw_true => true, .kw_false => false' >"$booleanprobe/old.zig"
 printf '%s\n' 'return face == 9 or face == 10;' >"$booleanprobe/new.zig"
@@ -1743,7 +1801,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=15' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=17' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'

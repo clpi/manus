@@ -441,6 +441,7 @@ const Helper = enum {
     puts_cstr, //  (i64 ptr) -> ()
     print_i64, //  (i64 v, i64 nl) -> ()
     print_f64, //  (f64 v, i64 nl) -> ()
+    print_f32, //  (f32 v, i64 nl) -> ()
     malloc, //     (i64 n) -> i64
     memset, //     (i64 p, i64 c, i64 n) -> i64
     memcpy, //     (i64 d, i64 s, i64 n) -> i64
@@ -2394,6 +2395,11 @@ fn emitPrint(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
             try b.i64c(if (nonl) 0 else 1);
             try b.call(helperIndex(.print_f64));
         },
+        .f32 => {
+            try pushValue(e, b, ins.lhs, .f32);
+            try b.i64c(if (nonl) 0 else 1);
+            try b.call(helperIndex(.print_f32));
+        },
         else => {
             if (nonl) return;
             try b.i64c(@intCast(try e.strings.intern("\n")));
@@ -2405,6 +2411,15 @@ fn emitPrint(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
 test "wasm backend prints f64 via snprintf" {
     const source =
         \\x: f64 = 3.14159
+        \\main: i64 = ()
+        \\print(x)
+    ;
+    try std.testing.expectEqual(@as(u8, 0), try runTestSourceWasm(source));
+}
+
+test "wasm backend prints f32 via snprintf" {
+    const source =
+        \\x: f32 = 2.71828
         \\main: i64 = ()
         \\print(x)
     ;
@@ -2490,6 +2505,7 @@ fn emitHelpers(e: *Emitter) Error!void {
     try putHelper(e, .puts_cstr, &.{vt_i64}, &.{}, helperPutsCstr);
     try putHelper(e, .print_i64, &.{ vt_i64, vt_i64 }, &.{}, helperPrintI64);
     try putHelper(e, .print_f64, &.{ vt_f64, vt_i64 }, &.{}, helperPrintF64);
+    try putHelper(e, .print_f32, &.{ vt_f32, vt_i64 }, &.{}, helperPrintF32);
     try putHelper(e, .malloc, &.{vt_i64}, &.{vt_i64}, helperMalloc);
     try putHelper(e, .memset, &.{ vt_i64, vt_i64, vt_i64 }, &.{vt_i64}, helperMemset);
     try putHelper(e, .memcpy, &.{ vt_i64, vt_i64, vt_i64 }, &.{vt_i64}, helperMemcpy);
@@ -3600,6 +3616,36 @@ fn helperPrintF64(e: *Emitter, b: *Buf) Error!void {
     try b.i64c(cap);
     try b.i64c(@intCast(try e.strings.intern("%g")));
     try b.get(0); // f64 v — stays as f64 on the value stack
+    try b.call(helperIndex(.snprintf));
+
+    // write_cstr(scratch)
+    try b.i64c(scratch);
+    try b.call(helperIndex(.write_cstr));
+
+    // newline if nl == 0
+    try b.get(1);
+    try b.i64c(0);
+    try b.op(op_i64_eqz);
+    try b.byte(op_if);
+    try b.byte(bt_void);
+    try b.i64c(@intCast(try e.strings.intern("\n")));
+    try b.call(helperIndex(.puts_cstr));
+    try b.byte(op_end);
+}
+
+/// `(f32 v, i64 nl)` — promotes `v` to f64, then the same snprintf path as `print_f64`.
+/// If `nl` is zero, appends a newline via `puts_cstr`.
+fn helperPrintF32(e: *Emitter, b: *Buf) Error!void {
+    // params: 0 = v (f32), 1 = nl (i64)
+    // Promote f32 → f64, then reuse the f64 print path.
+    try b.op(op_f64_promote_f32);
+    const scratch: i64 = @intCast(addr_numbuf);
+    const cap: i64 = @intCast(numbuf_len);
+
+    // Call snprintf(scratch, cap, "%g", v_f64)
+    try b.i64c(scratch);
+    try b.i64c(cap);
+    try b.i64c(@intCast(try e.strings.intern("%g")));
     try b.call(helperIndex(.snprintf));
 
     // write_cstr(scratch)
