@@ -1010,7 +1010,9 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
         # is local to the non-parenthesis delimiter space and therefore does
         # not collide with a matching-delimiter coordinate.
         if prior == token.kindlbrace
-            entry = kind == token.kindlbracket or kind == token.kindconcat or kind == token.kindintlit or quoted == 1
+            # Spread already owns exact face 22. Preserve it rather than
+            # replacing it with the table-versus-destructure aggregate face.
+            entry = kind == token.kindlbracket or kind == token.kindintlit or quoted == 1
             if kind == token.kindname and index + 1 < count
                 entry = (fact[(index + 1) * 2 + 1] & 255) == token.kindassign
             if entry

@@ -632,7 +632,8 @@ pub const Parser = struct {
     }
 
     fn currentParserTableEntry(self: *Parser) ParseError!bool {
-        return (try self.currentParserFace()) == 23;
+        const face = try self.currentParserFace();
+        return face == 22 or face == 23;
     }
 
     fn currentParserMatchSuffix(self: *Parser) ParseError!u2 {
@@ -8267,11 +8268,12 @@ pub const Parser = struct {
         var fields: std.ArrayList(ast.TableField) = .empty;
         while (!(try self.check(.rbrace))) {
             const tok = try self.pk();
+            const face = try self.currentParserFace();
             const quote = try self.currentParserQuote();
             const quoted = quote != null;
             const literal = try self.currentParserLiteral();
             const primitive = try self.currentParserPrimitive();
-            if (tok.kind == .concat) {
+            if (face == 22) {
                 _ = try self.adv();
                 const spread_expr = try self.parse_expr();
                 try fields.append(self.alloc, .{ .spread = spread_expr });
