@@ -455,8 +455,31 @@ pub const Parser = struct {
             ((event >> 23) & 0xFFFFFF) != 0;
     }
 
+    /// The brace face, and the reason it is a CONJUNCTION.
+    ///
+    /// `braceface` is bit 12 of the decision word and the four-bit
+    /// `declaration` field starts at bit 9, so `declaration` OWNS bit 12 as
+    /// its high bit. Two different facts therefore present the same nibble:
+    ///
+    ///     `{`                       declaration=0, braceface=1  -> 8
+    ///     a NAME opening a decl,
+    ///     or followed by `:`        declaration=8, braceface=0  -> 8
+    ///
+    /// Reading the nibble alone answered "this token is a brace" for the name
+    /// in `x: i64 = 1`, `main: i64 = ()` and `a:len()` — every typed binding,
+    /// every callable declaration and every subject receiver in the language.
+    /// `parse_simple_expr` then took `parse_table`, which demands a `{` nobody
+    /// wrote, and the whole corpus failed at its first statement with
+    /// "write `{` at this token edge".
+    ///
+    /// `declaration = 8` is emitted for a NAME token and for nothing else, and
+    /// the name face is its own bit, so the brace fact is the nibble WITHOUT
+    /// the name face. Testing bit 12 alone is the separately retracted unsound
+    /// form (the `@` face sets it too); this narrows the settled nibble rather
+    /// than replacing it.
     fn currentParserTypeRecord(self: *Parser) ParseError!bool {
-        return (((try self.currentParserDecision()) >> 9) & 0xF) == 8;
+        return (((try self.currentParserDecision()) >> 9) & 0xF) == 8 and
+            !try self.currentParserName();
     }
 
     fn currentParserDescriptorEntry(self: *Parser) ParseError!i64 {
@@ -465,8 +488,10 @@ pub const Parser = struct {
         return 0;
     }
 
+    /// Same fact, same conjunction — see `currentParserTypeRecord`.
     fn currentParserTable(self: *Parser) ParseError!bool {
-        return (((try self.currentParserDecision()) >> 9) & 0xF) == 8;
+        return (((try self.currentParserDecision()) >> 9) & 0xF) == 8 and
+            !try self.currentParserName();
     }
 
     fn currentParserInteger(self: *Parser) ParseError!bool {
