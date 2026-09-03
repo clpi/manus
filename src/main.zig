@@ -690,7 +690,7 @@ fn emitDirectCompileProofArtifact(
         .representation = .native,
         .runtime = .freestanding,
         .target = target,
-        .intermediate = "mach-o-arm64",
+        .intermediate = backend_identity.inferIntermediateFromTarget(.direct, target),
         .external_compiler = null,
         .boxing_mode = "none",
     };
