@@ -18075,6 +18075,188 @@ test "dnir_lower: module positional integer tables require graph facts" {
     try std.testing.expectEqual(@as(?ModuleTableKind, null), moduleConstTableKindGraph(&missing, true, &mod, "xs", table));
 }
 
+/// GAP-204 constant-index control rig. a93930e6 gave `lowerExprCons`'
+/// constant-index arm a module-const fallback
+/// (`module_consts.strs/ints.get("{s}.{d}")`) with NO read-site verdict
+/// check: safety rests entirely on `collectModuleConsts` recording only what
+/// the shared `moduleConstTableKindGraph` verdict admits. This rig measures
+/// that contract at the exact map the fallback reads.
+///
+/// Parser-independent by necessity: at this head no positional LITERAL
+/// parses (358ca074), so the skeletons bind positional NAMES (which parse)
+/// and the rig grafts literal elements onto the `strs` binding before sema.
+/// The grafted nodes are shape-identical to parsed literals, so the producer
+/// publishes the same facts for them.
+const Gap204ConstIndex = struct {
+    mod: ast.Module,
+    graph: semantic_graph.SemanticGraph,
+    consts: ModuleConsts,
+    table: *const Expr,
+    verdict: ?ModuleTableKind,
+};
+
+fn gap204CollectConstIndex(alloc: std.mem.Allocator, src: []const u8) !Gap204ConstIndex {
+    var lex = @import("lexer.zig").Lexer.init(src, "gap204_const_index.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    var mod = try parser.parse_module();
+    // Graft literal elements onto the parsable `{ a, b }` skeleton.
+    var table: ?*const Expr = null;
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .global_decl) continue;
+        const gd = stmt.global_decl;
+        if (gd.names.len != 1 or gd.inits.len != 1) continue;
+        if (!std.mem.eql(u8, gd.names[0].ident, "strs")) continue;
+        if (gd.inits[0].* != .table) continue;
+        const fields = gd.inits[0].table.fields;
+        if (fields.len != 2) continue;
+        const first = if (fields[0] == .positional) fields[0].positional else continue;
+        const second = if (fields[1] == .positional) fields[1].positional else continue;
+        if (first.* != .name or second.* != .name) continue;
+        const alpha = try alloc.create(Expr);
+        alpha.* = .{ .quoted = .{ .loc = first.loc(), .val = "alpha", .quote = .text } };
+        const beta = try alloc.create(Expr);
+        beta.* = .{ .quoted = .{ .loc = second.loc(), .val = "beta", .quote = .text } };
+        fields[0].positional = alpha;
+        fields[1].positional = beta;
+        table = gd.inits[0];
+    }
+    const bound = table orelse return error.Gap204StrsTableMissing;
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&mod);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    errdefer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&mod, &checked, "gap204_const_index.id");
+    const verdict = moduleConstTableKindGraph(&graph, true, &mod, "strs", bound);
+    var consts = try collectModuleConsts(alloc, &mod, &graph, true);
+    errdefer consts.deinit(alloc);
+    return .{ .mod = mod, .graph = graph, .consts = consts, .table = bound, .verdict = verdict };
+}
+
+/// Lower one constant-index read `strs[idx]` through the real `lowerExprCons`
+/// `.index` arm — the exact a93930e6 fallback lines — with a hand-built read
+/// node, which carries no graph occurrence and therefore reaches the fallback
+/// rather than the aggregate path. Returns the answered value, or the refusal
+/// when the table was never recorded.
+fn gap204ConstIndexRead(
+    alloc: std.mem.Allocator,
+    graph: *const semantic_graph.SemanticGraph,
+    consts: *const ModuleConsts,
+    idx: i64,
+) !dnir.Value {
+    const l: @import("source_cursor.zig").Loc = .{ .file = "gap204_const_index.id", .line = 1, .col = 1 };
+    var obj: Expr = .{ .name = .{ .loc = l, .ident = "strs" } };
+    var key: Expr = .{ .int_lit = .{ .loc = l, .val = idx } };
+    const read: Expr = .{ .index = .{ .loc = l, .obj = &obj, .key = &key } };
+    var diagnostic: Diagnostic = .{};
+    var occurrences = try OccurrenceBridge.init(alloc, graph, &diagnostic);
+    defer occurrences.deinit();
+    var externs: std.ArrayList(dnir.Extern) = .empty;
+    defer externs.deinit(alloc);
+    var func_record_returns: std.StringHashMapUnmanaged([]const u8) = .empty;
+    defer func_record_returns.deinit(alloc);
+    var entity_linkage: std.AutoHashMapUnmanaged(semantic_graph.id, []const u8) = .empty;
+    defer entity_linkage.deinit(alloc);
+    var ctx: LowerCtx = .{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .records = &.{},
+        .graph = graph,
+        .occurrences = &occurrences,
+        .require_graph_facts = true,
+        .externs = &externs,
+        .func_record_returns = &func_record_returns,
+        .entity_linkage = &entity_linkage,
+        .module_consts = consts,
+    };
+    defer ctx.deinit();
+    return lowerExprCons(&ctx, &read, .single);
+}
+
+test "dnir_lower: GAP-204 constant-index read answers recorded text, refuses written/rebound tables" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const clean_src =
+        \\a = "alpha"
+        \\b = "beta"
+        \\global strs = { a, b }
+        \\main: i64 = ()
+        \\    0
+    ;
+    // POSITIVE: the shared verdict admits the untouched table, the recording
+    // holds both elements under the exact keys the fallback spells, and the
+    // read answers the recorded literal — twice, identically.
+    {
+        var rig = try gap204CollectConstIndex(alloc, clean_src);
+        defer rig.graph.deinit();
+        defer rig.consts.deinit(alloc);
+        try std.testing.expectEqual(ModuleTableKind.text, rig.verdict);
+        try std.testing.expectEqualStrings("alpha", rig.consts.strs.get("strs.1").?);
+        try std.testing.expectEqualStrings("beta", rig.consts.strs.get("strs.2").?);
+        try std.testing.expectEqual(@as(?i64, 2), rig.consts.ints.get("strs.len"));
+        try std.testing.expect(rig.consts.str_tables.contains("strs"));
+        const first = try gap204ConstIndexRead(alloc, &rig.graph, &rig.consts, 2);
+        try std.testing.expect(first == .str);
+        try std.testing.expectEqualStrings("beta", first.str);
+        // Determinism re-check: an independent collection and an independent
+        // read answer the same literal, so no run answers stale or blank.
+        var rig2 = try gap204CollectConstIndex(alloc, clean_src);
+        defer rig2.graph.deinit();
+        defer rig2.consts.deinit(alloc);
+        const second = try gap204ConstIndexRead(alloc, &rig2.graph, &rig2.consts, 2);
+        try std.testing.expect(second == .str);
+        try std.testing.expectEqualStrings(first.str, second.str);
+    }
+    // NEGATIVE (write): `strs[1] = "changed"` is an integer-indexed write, so
+    // the binding-stability count cannot see it — the shared verdict must.
+    // Nothing is recorded, so the constant-index read refuses instead of
+    // answering the original element.
+    {
+        const write_src =
+            \\a = "alpha"
+            \\b = "beta"
+            \\global strs = { a, b }
+            \\strs[1] = "changed"
+            \\main: i64 = ()
+            \\    0
+        ;
+        var rig = try gap204CollectConstIndex(alloc, write_src);
+        defer rig.graph.deinit();
+        defer rig.consts.deinit(alloc);
+        try std.testing.expectEqual(@as(?ModuleTableKind, null), rig.verdict);
+        try std.testing.expect(rig.consts.strs.get("strs.1") == null);
+        try std.testing.expect(rig.consts.strs.get("strs.2") == null);
+        try std.testing.expect(!rig.consts.str_tables.contains("strs"));
+        try std.testing.expectError(error.UnsupportedConstruct, gap204ConstIndexRead(alloc, &rig.graph, &rig.consts, 2));
+    }
+    // NEGATIVE (rebound): a second binding replaces the table, so the
+    // stability count already skips it and the verdict agrees. The read
+    // refuses rather than answering either generation's element.
+    {
+        const rebound_src =
+            \\a = "alpha"
+            \\b = "beta"
+            \\c = "x"
+            \\d = "y"
+            \\global strs = { a, b }
+            \\strs = { c, d }
+            \\main: i64 = ()
+            \\    0
+        ;
+        var rig = try gap204CollectConstIndex(alloc, rebound_src);
+        defer rig.graph.deinit();
+        defer rig.consts.deinit(alloc);
+        try std.testing.expectEqual(@as(?ModuleTableKind, null), rig.verdict);
+        try std.testing.expect(rig.consts.strs.get("strs.1") == null);
+        try std.testing.expect(rig.consts.strs.get("strs.2") == null);
+        try std.testing.expect(!rig.consts.str_tables.contains("strs"));
+        try std.testing.expectError(error.UnsupportedConstruct, gap204ConstIndexRead(alloc, &rig.graph, &rig.consts, 2));
+    }
+}
+
 test "dnir_lower: a module const of INT_MIN lowers instead of crashing the compiler" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
