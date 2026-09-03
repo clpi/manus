@@ -9696,30 +9696,18 @@ pub const CodeGen = struct {
     }
 
     fn rt_accepts_lua_value_coercion(rt: RT) bool {
-        return switch (rt) {
-            .any, .str, .bool, .f32, .f64, .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => true,
-            else => false,
-        };
+        return types.luaCoerceAccepts(rt);
     }
 
     fn emit_lua_value_coercion_start(self: *CodeGen, rt: RT) void {
-        switch (rt) {
-            .str => self.p("lua_to_str(", .{}),
-            .bool => self.p("lua_to_bool(", .{}),
-            .f32, .f64, .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => {
-                var buf: [64]u8 = undefined;
-                self.p("(({s})lua_to_num(", .{rt.c_type(&buf)});
-            },
-            else => {},
-        }
+        const cls = types.luaCoerceClass(rt) orelse return;
+        var buf: [160]u8 = undefined;
+        self.p("{s}", .{cls.open(&buf)});
     }
 
     fn emit_lua_value_coercion_end(self: *CodeGen, rt: RT) void {
-        switch (rt) {
-            .str, .bool => self.p(")", .{}),
-            .f32, .f64, .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => self.p("))", .{}),
-            else => {},
-        }
+        const cls = types.luaCoerceClass(rt) orelse return;
+        self.p("{s}", .{cls.close()});
     }
 
     fn emit_default_for_param(self: *CodeGen, param: *const ast.FuncParam, param_type: RT) E!bool {

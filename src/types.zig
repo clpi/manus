@@ -737,6 +737,77 @@ pub fn luaBoxClass(repr: ResolvedType) ?LuaBoxClass {
     };
 }
 
+/// How a scalar descriptor UNWRAPS a `lua_Value` back into its native
+/// representation — the inverse of `LuaBoxClass`. Where the box class owns the
+/// constructor that crosses a native scalar INTO the dynamic runtime, this owns
+/// the coercion that crosses a `lua_Value` back OUT into a native place.
+///
+/// The `num` variant carries the descriptor because its unwrap casts through
+/// the scalar's own C spelling — `((int32_t)lua_to_num(...))` — a width the box
+/// class did not need (every integral boxes through one `int64_t` cast) but the
+/// unwrap does, since it lands in a place of exactly that width. `str` and
+/// `bool` carry no width: `lua_to_str`/`lua_to_bool` name their own result.
+pub const LuaCoerceClass = union(enum) {
+    str,
+    @"bool",
+    num: ResolvedType,
+
+    /// The C coercion OPEN this class emits. The caller closes with `close()`.
+    /// This is the one place the coercion strings are stated. `num` renders the
+    /// scalar's C spelling into the caller's buffer, so the value lands in a
+    /// place of exactly its declared width rather than the boxed 64-bit ring.
+    pub fn open(self: LuaCoerceClass, buf: []u8) []const u8 {
+        return switch (self) {
+            .str => "lua_to_str(",
+            .@"bool" => "lua_to_bool(",
+            .num => |repr| blk: {
+                var cbuf: [128]u8 = undefined;
+                break :blk std.fmt.bufPrint(buf, "(({s})lua_to_num(", .{repr.c_type(&cbuf)}) catch "((lua_to_num(";
+            },
+        };
+    }
+
+    /// The C coercion CLOSE matching `open`. `str`/`bool` unwrap with one call
+    /// and close with one paren; `num` opens the cast paren and the call paren
+    /// and closes both.
+    pub fn close(self: LuaCoerceClass) []const u8 {
+        return switch (self) {
+            .str, .@"bool" => ")",
+            .num => "))",
+        };
+    }
+};
+
+/// The coercion class a scalar descriptor unwraps a `lua_Value` through, or
+/// null for an identity coercion (`any`, which is already a `lua_Value`) and
+/// for every non-scalar identity. This is the inverse partition of
+/// `luaBoxClass`: it gates on the SAME `scalarRepr` fact, answers `str`/`bool`
+/// for the two arithmetic-free scalars, and reads `numericFacts` for the
+/// numeric owners — but it discards the box class's integral/real DOMAIN split
+/// because every scalar leaves the box through one `lua_to_num`, differing only
+/// in the C spelling it casts to, which the `num` variant carries.
+///
+/// A NOMINAL DESCRIPTOR is WITHHELD here as an identity, exactly as `scalarRepr`
+/// withholds it and exactly as the retired `codegen` switches' bare scalar tags
+/// let a nominal-over-`i32` (a `.struct` tag) fall to their else arm.
+pub fn luaCoerceClass(repr: ResolvedType) ?LuaCoerceClass {
+    if (!scalarRepr(repr)) return null;
+    if (repr == .str) return .str;
+    // A scalar that is not `str` is `bool` (no numeric facts) or a one-cell
+    // numeric owner. `bool` unwraps as itself; a numeric owner unwraps through
+    // `lua_to_num` and casts to its own C spelling.
+    if (repr.numericFacts() == null) return .@"bool";
+    return LuaCoerceClass{ .num = repr };
+}
+
+/// Whether a scalar place ACCEPTS coercion from a `lua_Value`. This is
+/// `luaCoerceClass` plus `any`: `any` is accepted but coerces by identity (it
+/// already IS a `lua_Value`), so it has no coercion class and the caller emits
+/// no wrapper. Every other non-scalar identity is refused.
+pub fn luaCoerceAccepts(repr: ResolvedType) bool {
+    return repr == .any or luaCoerceClass(repr) != null;
+}
+
 /// Resolved type after semantic analysis.
 /// During sema, each expression gets a `ResolvedType` attached.
 /// The declared width of a sub-64-bit integer descriptor, and whether
@@ -3788,6 +3859,116 @@ test "types: the boxing face of the scalar roster is derived from the same facts
     // Planting a widening — treating a real as an integer box — is refused by
     // the `domain` fact: a real answers `.num`, never `.int`.
     try testing.expect(luaBoxClass(.f64).? == .num);
+}
+
+test "types: the coercion face of the scalar roster is derived from the same facts" {
+    // The retired coercion partition, verbatim, as the oracle. It stood at three
+    // `codegen` per-tag switches — `rt_accepts_lua_value_coercion` (accept set),
+    // `emit_lua_value_coercion_start` (the unwrap OPEN) and
+    // `emit_lua_value_coercion_end` (its CLOSE) — the inverse of the boxing face
+    // above: where the box ctor crosses a native scalar INTO a `lua_Value`, this
+    // coerces a `lua_Value` back OUT into a native place. The oracle reproduces
+    // each retired arm: `str`/`bool` unwrap with a named call and one paren, a
+    // numeric scalar casts through `lua_to_num` to its own C spelling and closes
+    // two parens, `any` is accepted with an empty (identity) wrap, everything
+    // else is refused.
+    const OracleArm = struct { accept: bool, open: []const u8, close: []const u8 };
+    const retiredCoerce = struct {
+        fn f(t: ResolvedType) OracleArm {
+            return switch (t) {
+                .str => .{ .accept = true, .open = "lua_to_str(", .close = ")" },
+                .bool => .{ .accept = true, .open = "lua_to_bool(", .close = ")" },
+                .f32, .f64, .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => blk: {
+                    var buf: [64]u8 = undefined;
+                    const c = t.c_type(&buf);
+                    // Compare on the fixed structure and the C spelling separately
+                    // below; the open string is rebuilt from `c` at the callsite.
+                    break :blk .{ .accept = true, .open = c, .close = "))" };
+                },
+                .any => .{ .accept = true, .open = "", .close = "" },
+                else => .{ .accept = false, .open = "", .close = "" },
+            };
+        }
+    }.f;
+
+    // PINNED EQUAL TO THE RETIRED PARTITION on every payload-free identity — the
+    // scalars it accepted and wrapped, `any` (accepted, identity wrap) AND the
+    // vector, void, nil, never and composed identities it refused — iterated
+    // over the union's own tags rather than a list, so a scalar identity added
+    // to the union cannot be one the coercion face silently does not know.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |name, ty| {
+        if (ty != void) continue;
+        const t = @as(ResolvedType, @field(ResolvedType, name));
+        const want = retiredCoerce(t);
+
+        // Accept set = `luaCoerceAccepts`.
+        try testing.expectEqual(want.accept, luaCoerceAccepts(t));
+
+        const cls = luaCoerceClass(t);
+        if (cls) |c| {
+            var buf: [160]u8 = undefined;
+            const open = c.open(&buf);
+            const close = c.close();
+            switch (c) {
+                // A numeric scalar rebuilds the retired open from its own C
+                // spelling; the oracle carried that spelling in `want.open`.
+                .num => {
+                    var ob: [160]u8 = undefined;
+                    const wo = std.fmt.bufPrint(&ob, "(({s})lua_to_num(", .{want.open}) catch unreachable;
+                    try testing.expect(std.mem.eql(u8, wo, open));
+                    try testing.expect(std.mem.eql(u8, "))", close));
+                },
+                else => {
+                    try testing.expect(std.mem.eql(u8, want.open, open));
+                    try testing.expect(std.mem.eql(u8, want.close, close));
+                },
+            }
+        } else {
+            // No class means either `any` (accepted, identity wrap — the retired
+            // switches' empty else arm) or a refused identity. Either way the
+            // retired open and close were empty.
+            try testing.expect(std.mem.eql(u8, "", want.open));
+            try testing.expect(std.mem.eql(u8, "", want.close));
+        }
+    }
+
+    // DERIVED, NOT TABULATED — the accept set gates on `scalarRepr` (plus `any`),
+    // and the numeric variant reads the descriptor so the unwrap casts to its
+    // OWN C spelling: an `i32` place lands as `((int32_t)lua_to_num(...))`, not
+    // the boxed 64-bit ring. The box class discarded that width because every
+    // integral boxes through one `int64_t` cast; the unwrap cannot.
+    {
+        var buf: [160]u8 = undefined;
+        const c32 = luaCoerceClass(.i32).?;
+        try testing.expect(std.mem.eql(u8, "((int32_t)lua_to_num(", c32.open(&buf)));
+        try testing.expect(std.mem.eql(u8, "))", c32.close()));
+        const cf = luaCoerceClass(.f32).?;
+        try testing.expect(std.mem.eql(u8, "((float)lua_to_num(", cf.open(&buf)));
+    }
+
+    // `any` is ACCEPTED but has no class: it is already a `lua_Value`, so the
+    // coercion is identity and the caller emits no wrapper.
+    try testing.expect(luaCoerceAccepts(.any));
+    try testing.expect(luaCoerceClass(.any) == null);
+
+    // DECLINED BY THE `scalarRepr` FACT, NOT BY ABSENCE: the vectors span
+    // several cells (`lanes != 1`), `void`/`nil`/`never` are not scalar values,
+    // and a composed identity is not a bare scalar the runtime coerces.
+    try testing.expect(!luaCoerceAccepts(.v4i64));
+    try testing.expect(!luaCoerceAccepts(.void));
+    try testing.expect(luaCoerceClass(.v8f32) == null);
+
+    // A NOMINAL DESCRIPTOR is WITHHELD by this owner, exactly as `scalarRepr`
+    // withholds it and exactly as the retired switches' bare scalar tags let a
+    // nominal-over-`i32` (a `.struct` tag) fall to their else arm — refused.
+    const alloc = std.heap.page_allocator;
+    try declareNominal(alloc, "gain", .i32);
+    const nominal = nominalNamed("gain").?;
+    try testing.expect(!luaCoerceAccepts(nominal));
+    try testing.expect(luaCoerceClass(nominal) == null);
+    // Its PHYSICS still coerces, so withholding it here is an identity ruling.
+    try testing.expect(luaCoerceClass(nominalReprOf(nominal).?) != null);
 }
 
 test "CallShape: method call shape" {
