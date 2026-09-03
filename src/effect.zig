@@ -568,6 +568,37 @@ pub fn observeProfile(
     };
 }
 
+/// Required order 5: a runtime sample is an evidence producer, never
+/// semantic truth. The sampled value belongs to one named proposition on one
+/// measured subject revision. Missing revision provenance constructs no fact
+/// (`law.evidence.subject.one`), and the producer is fixed at this one
+/// construction seam (`law.fact.producer.one`).
+pub const SampleObservation = struct {
+    /// The observed sample value. An ordinary measurement, never a sentinel.
+    value: u64,
+    experiment: Experiment,
+};
+
+pub fn observeSample(
+    proposition: []const u8,
+    value: u64,
+    cost: u32,
+    conditional_theorem: []const u8,
+    subject_revision: []const u8,
+) ?SampleObservation {
+    if (subject_revision.len == 0) return null;
+    return .{
+        .value = value,
+        .experiment = .{
+            .proposition = proposition,
+            .producer = .sample,
+            .cost = cost,
+            .conditional_theorem = conditional_theorem,
+            .subject_revision = subject_revision,
+        },
+    };
+}
+
 /// Axiom producer wiring: the seventh epistemic level is backed by exactly
 /// one producer. A constitutional axiom is a law-level fact whose truth is
 /// not derived from any observation; the constructed experiment's producer
@@ -1321,6 +1352,34 @@ test "effect: profiles are fact-producers with construction-forced provenance" {
         "cand:straight",
         "",
     ) == null);
+}
+
+test "effect: samples are fact-producers with construction-forced provenance" {
+    const sample = (observeSample(
+        "shape:sampled",
+        42,
+        3,
+        "cand:sampled",
+        "rev:sample",
+    )).?;
+    try std.testing.expectEqual(@as(u64, 42), sample.value);
+    try std.testing.expectEqual(EvidenceProducer.sample, sample.experiment.producer);
+    try std.testing.expectEqual(EpistemicLevel.sampled, sample.experiment.producer.level());
+    try std.testing.expect(sample.experiment.producer.isEvidence());
+    try std.testing.expect(sample.experiment.provenanceComplete());
+    try std.testing.expect(!sample.experiment.producesTruth());
+    try std.testing.expect(profileNeedsGuard(sample.experiment.producer.level()));
+    try std.testing.expect(observeSample(
+        "shape:sampled",
+        42,
+        3,
+        "cand:sampled",
+        "",
+    ) == null);
+    // Observation cost never promotes evidence to semantic truth.
+    const free = (observeSample("shape:sampled", 42, 0, "cand:sampled", "rev:sample")).?;
+    try std.testing.expect(realizesZero(&free.experiment));
+    try std.testing.expect(!free.experiment.producesTruth());
 }
 
 fn holdsNone(proposition: []const u8) bool {
