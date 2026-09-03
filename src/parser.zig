@@ -4499,18 +4499,9 @@ pub const Parser = struct {
                 var vals: std.ArrayList(*ast.Expr) = .empty;
                 const nxt = try self.pk();
                 if (try self.returnStartsValue(ret_loc, nxt)) {
-                    switch (nxt.kind) {
-                        .name => {
-                            try vals.append(self.alloc, try self.parse_match_scrutinee());
-                            while (try self.eat(.comma) != null)
-                                try vals.append(self.alloc, try self.parse_match_scrutinee());
-                        },
-                        else => {
-                            try vals.append(self.alloc, try self.parse_match_scrutinee());
-                            while (try self.eat(.comma) != null)
-                                try vals.append(self.alloc, try self.parse_match_scrutinee());
-                        },
-                    }
+                    try vals.append(self.alloc, try self.parse_match_scrutinee());
+                    while (try self.eat(.comma) != null)
+                        try vals.append(self.alloc, try self.parse_match_scrutinee());
                 }
                 try stmts.append(self.alloc, ast.Stmt{ .ret = .{
                     .loc = ret_loc,

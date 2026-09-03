@@ -284,6 +284,27 @@ if [ "$return_old" -ne 1 ] || [ "$return_new" -ne 1 ] || [ "$host_switch_count" 
     bad "the return lane detector is broken: old=$return_old new=$return_new host=$host_switch_count"
 fi
 
+# Match-arm return entry is the same settled return face. The retired host
+# switch selected identical materialization for `name` and every other admitted
+# value, so no subtype fact or parallel face survives after the transfer.
+has "$ROOT/lib/compiler/parser.id" 'This is the complete return-value-entry answer.' \
+    'parser.id lost the complete match-arm return-entry contract'
+forbid "$PARSER" 'switch (nxt.kind) {' \
+    'match-arm return parsing retained the dead host token-kind switch'
+has "$PARSER" 'if (try self.returnStartsValue(ret_loc, nxt)) {' \
+    'match-arm return parsing bypasses the settled return face'
+
+returnmatchprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate match-return scratch' >&2; exit 2; }
+printf '%s\n' 'switch (nxt.kind) { .name => parse(), else => parse() }' >"$returnmatchprobe/old.zig"
+printf '%s\n' 'if (returnface != 0) parse()' >"$returnmatchprobe/new.zig"
+returnmatchold=$(grep -cF 'switch (nxt.kind)' "$returnmatchprobe/old.zig")
+returnmatchnew=$(grep -cF 'returnface != 0' "$returnmatchprobe/new.zig")
+rm -rf -- "$returnmatchprobe"
+examined=$((examined + 1))
+if [ "$returnmatchold" -ne 1 ] || [ "$returnmatchnew" -ne 1 ]; then
+    bad "the match-return detector is broken: old=$returnmatchold new=$returnmatchnew"
+fi
+
 # ── 2e. match-arm classification executes from whole-pack lane two ───────────
 #
 # Contextual `case` remains a name token, so the physical pack carries a short
