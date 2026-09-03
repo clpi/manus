@@ -8276,7 +8276,7 @@ pub const Parser = struct {
                 _ = try self.adv();
                 const spread_expr = try self.parse_expr();
                 try fields.append(self.alloc, .{ .spread = spread_expr });
-            } else if (tok.kind == .lbracket) {
+            } else if (face == 19) {
                 _ = try self.adv();
                 const key = try self.parse_expr();
                 _ = try self.expect(.rbracket);
@@ -11388,6 +11388,19 @@ test "parse: table spread ..source in table literal" {
     try testing.expectEqualStrings("base", table.fields[0].spread.name.ident);
     try testing.expect(table.fields[1] == .named);
     try testing.expectEqualStrings("x", table.fields[1].named.key);
+}
+
+test "parse: computed pack key consumes the producer face" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\t = { [key] = value }
+    , &arena);
+    const fields = mod.body.stmts[0].assign.values[0].table.fields;
+    try testing.expectEqual(@as(usize, 1), fields.len);
+    try testing.expect(fields[0] == .indexed);
+    try testing.expectEqualStrings("key", fields[0].indexed.key.name.ident);
+    try testing.expectEqualStrings("value", fields[0].indexed.val.name.ident);
 }
 
 test "parse: table literal statement not destructure pattern" {

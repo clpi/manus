@@ -3092,6 +3092,29 @@ fi
 
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
+# The ordinary-pack computed-key entry consumes the exact bracket identity
+# already projected as face 19. Zig retains only key/value materialization and
+# no longer replays `.lbracket` at that entry seam.
+has "$PARSER" '} else if (face == 19) {' \
+    'ordinary pack parsing bypasses the settled computed-key face'
+packbrackets=$(sed -n '/fn parse_pack_body/,/fn parse_table_comp/p' "$PARSER" | grep -cF 'tok.kind == .lbracket' || true)
+if [ "$packbrackets" -ne 0 ]; then
+    bad "ordinary pack computed-key entry retained host recognition: count=$packbrackets"
+fi
+
+computedprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate computed-key scratch' >&2; exit 2; }
+printf '%s\n' '} else if (tok.kind == .lbracket) {' >"$computedprobe/old.zig"
+printf '%s\n' '} else if (face == 19) {' >"$computedprobe/new.zig"
+computedold=$(grep -cF 'tok.kind == .lbracket' "$computedprobe/old.zig")
+computednew=$(grep -cF 'face == 19' "$computedprobe/new.zig")
+rm -rf -- "$computedprobe"
+examined=$((examined + 1))
+if [ "$computedold" -ne 1 ] || [ "$computednew" -ne 1 ]; then
+    bad "the computed-key face detector is broken: old=$computedold new=$computednew"
+fi
+
+# ── 4. the identity-count parity probe must be able to run ──────────────────
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then
