@@ -649,7 +649,8 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # pattern or index suffix at its shared `[` identity, twenty selects an else
 # pattern, and twenty-one selects a negative literal pattern; those latter two
 # faces are consumed only in pattern position. Twenty-four and twenty-five
-# select the postfix try and unwrap faces. Lane-two
+# select the postfix try and unwrap faces. Twenty-six selects a colon whose
+# following applied descriptor closes immediately before assignment. Lane-two
 # bit 5 carries the exact name face at its mutually exclusive coordinate; at
 # `(` it remains the comma-header face.
 # Capacity refusal precedes every mutation.
@@ -915,6 +916,23 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
                 probe += 1
             if depth == 0
                 delimiter = probe
+        if kind == token.kindcolon and index + 2 < count
+            name = fact[(index + 1) * 2 + 1]
+            opening = fact[(index + 2) * 2 + 1]
+            if (name & 255) == token.kindname and (opening & 255) == token.kindlparen
+                line = (encoded >> 8) & 268435455
+                nameline = (name >> 8) & 268435455
+                depth = 1
+                probe = index + 3
+                while probe < count and depth > 0
+                    part = fact[probe * 2 + 1] & 255
+                    if part == token.kindlparen
+                        depth += 1
+                    elseif part == token.kindrparen
+                        depth -= 1
+                    probe += 1
+                if nameline == line and depth == 0 and probe < count and (fact[probe * 2 + 1] & 255) == token.kindassign
+                    delimiter = 26
         offside: i64 = 0
         if idol
             offside = opener

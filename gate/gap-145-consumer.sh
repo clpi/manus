@@ -947,6 +947,36 @@ if [ "$suffixold" -ne 1 ] || [ "$suffixnew" -ne 1 ]; then
     bad "the general-suffix detector is broken: old=$suffixold new=$suffixnew"
 fi
 
+# Applied-descriptor suffix refusal is settled by the whole-pack producer. Zig
+# no longer balances nested parentheses through a host token-kind switch to
+# distinguish `x: T(U) = value` from a subject call.
+has "$ROOT/lib/compiler/parser.id" 'delimiter = 26' \
+    'event lost the applied-descriptor suffix face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 26;' \
+    'tracked projection lost the applied-descriptor suffix face'
+has "$PARSER" '26 => 10,' \
+    'parser.zig lost the applied-descriptor suffix consumer'
+has "$PARSER" '10 => break,' \
+    'general suffix parsing bypasses the applied-descriptor refusal face'
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=21' \
+    'parser artifact lost the applied-descriptor differential controls'
+appliedswitches=$(sed -n '/fn parse_suffixed_expr/,/fn parse_nn_block_desugar/p' "$PARSER" | grep -cF 'switch (t.kind)' || true)
+examined=$((examined + 1))
+if [ "$appliedswitches" -ne 0 ]; then
+    bad "applied-descriptor suffix retained $appliedswitches host token-kind switch(es)"
+fi
+
+appliedprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate applied-descriptor scratch' >&2; exit 2; }
+printf '%s\n' 'switch (t.kind) { .lparen => depth += 1, .rparen => depth -= 1 }' >"$appliedprobe/old.zig"
+printf '%s\n' 'if depth == 0 and probe < count and (fact[probe * 2 + 1] & 255) == token.kindassign' 'delimiter = 26' >"$appliedprobe/new.id"
+appliedold=$(grep -cF 'switch (t.kind)' "$appliedprobe/old.zig")
+appliednew=$(grep -cF 'delimiter = 26' "$appliedprobe/new.id")
+rm -rf -- "$appliedprobe"
+examined=$((examined + 1))
+if [ "$appliedold" -ne 1 ] || [ "$appliednew" -ne 1 ]; then
+    bad "the applied-descriptor detector is broken: old=$appliedold new=$appliednew"
+fi
+
 # Call-argument entry composes the event's parenthesized-call bit, exact brace
 # face, and quoted role. Zig retains argument materialization without selecting
 # those mutually exclusive choices through TokenKind.
@@ -2028,7 +2058,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=18' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=21' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'

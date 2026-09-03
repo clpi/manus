@@ -553,6 +553,7 @@ pub const Parser = struct {
             16 => 4,
             24 => 7,
             25 => 8,
+            26 => 10,
             else => if (try self.currentParserTable()) 5 else if ((((try self.currentParserEvent()) >> 63) & 1) != 0) 6 else if (try self.currentParserQuoted()) 9 else 0,
         };
     }
@@ -7625,6 +7626,7 @@ pub const Parser = struct {
         while (true) {
             const tok = try self.pk();
             switch (try self.currentParserSuffix()) {
+                10 => break,
                 1 => {
                     // §4, and §20's `peek = () if .pos < #.src .src[.pos] else nil`:
                     // `#.src .src[.pos]` is a comparison against `#.src` followed
@@ -7836,30 +7838,7 @@ pub const Parser = struct {
                             self.restoreState(saved);
                             break;
                         }
-                        // `x: i(64) = 5` — an APPLIED type, not the subject call
-                        // `x:i(64)`. Both shapes are `name : name ( … )`, so the
-                        // `=` after the closing paren is what separates them:
-                        // assigning to the result of a call is never valid, so a
-                        // trailing `=` admits only the binding reading. Scanning
-                        // the parens balanced keeps `x:f(g(1))` working.
-                        if (after_name.kind == .lparen) {
-                            _ = try self.advRaw();
-                            var depth: usize = 1;
-                            while (depth > 0) {
-                                const t = try self.advRaw();
-                                switch (t.kind) {
-                                    .lparen => depth += 1,
-                                    .rparen => depth -= 1,
-                                    .eof => break,
-                                    else => {},
-                                }
-                            }
-                            const after_paren = try self.pk();
-                            self.restoreState(saved);
-                            if (after_paren.kind == .assign) break;
-                        } else {
-                            self.restoreState(saved);
-                        }
+                        self.restoreState(saved);
                     } else {
                         self.restoreState(saved);
                     }

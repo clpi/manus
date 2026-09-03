@@ -3278,6 +3278,28 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                                 delimiter = probe;
             }
         }
+        if (((kind == INT64_C(78)) && ((index + 2) < count))) {
+            int64_t name = fact[(((index + 1) * 2) + 1)];
+            int64_t opening = fact[(((index + 2) * 2) + 1)];
+            if (((((int64_t)((name) & (255))) == INT64_C(0)) && (((int64_t)((opening) & (255))) == INT64_C(58)))) {
+                int64_t line = ((int64_t)((((int64_t)(((uint64_t)(encoded)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
+                int64_t nameline = ((int64_t)((((int64_t)(((uint64_t)(name)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
+                int64_t depth = 1;
+                int64_t probe = (index + 3);
+                while (((probe < count) && (depth > 0))) {
+                    int64_t part = ((int64_t)((fact[((probe * 2) + 1)]) & (255)));
+                    if ((part == INT64_C(58))) {
+                                                depth = (depth + 1);
+                    } else if ((part == INT64_C(59))) {
+                                                depth = (depth - 1);
+                    }
+                                        probe = (probe + 1);
+                }
+                if (((((nameline == line) && (depth == 0)) && (probe < count)) && (((int64_t)((fact[((probe * 2) + 1)]) & (255))) == INT64_C(75)))) {
+                                        delimiter = 26;
+                }
+            }
+        }
         int64_t offside = 0;
         if (idol) {
                         offside = opener;
