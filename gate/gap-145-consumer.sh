@@ -3137,6 +3137,28 @@ if [ "$nameold" -ne 1 ] || [ "$namenew" -ne 1 ]; then
     bad "the named-key face detector is broken: old=$nameold new=$namenew"
 fi
 
+# After an optional separator, ordinary pack parsing consumes one settled
+# answer for every identity that may open another entry. The closing brace
+# remains the loop's structural boundary and is not part of this face.
+has "$PARSER" 'if (!try self.check(.rbrace)) switch (try self.currentParserFace()) {' \
+    'ordinary pack parsing bypasses the settled continuation answer'
+packtailkinds=$(sed -n '/fn parse_pack_body/,/fn finish_list_comp/p' "$PARSER" | \
+    grep -cE 'next\.kind != \.(name|lbracket|concat|int_lit|kw_else)' || true)
+if [ "$packtailkinds" -ne 0 ]; then
+    bad "ordinary pack continuation retained host recognition: count=$packtailkinds"
+fi
+
+tailprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate pack-entry scratch' >&2; exit 2; }
+printf '%s\n' 'if (next.kind != .name and next.kind != .lbracket) break;' >"$tailprobe/old.zig"
+printf '%s\n' 'switch (try self.currentParserFace()) {' >"$tailprobe/new.zig"
+tailold=$(grep -cE 'next\.kind != \.(name|lbracket)' "$tailprobe/old.zig")
+tailnew=$(grep -cF 'switch (try self.currentParserFace())' "$tailprobe/new.zig")
+rm -rf -- "$tailprobe"
+examined=$((examined + 1))
+if [ "$tailold" -ne 1 ] || [ "$tailnew" -ne 1 ]; then
+    bad "the pack-entry detector is broken: old=$tailold new=$tailnew"
+fi
+
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then

@@ -8377,12 +8377,10 @@ pub const Parser = struct {
             // was standing on — `subject:match{ … else = z }` written one arm
             // per line, which is the canonical shape.
             if (try self.eat(.comma) == null and try self.eat(.semi) == null) {
-                const next = try self.pk();
-                const next_primitive = try self.currentParserPrimitive();
-                const next_quoted = try self.currentParserQuoted();
-                if (next.kind != .name and next.kind != .lbracket and next.kind != .concat and
-                    next.kind != .int_lit and next.kind != .rbrace and next.kind != .kw_else and
-                    !next_primitive and !next_quoted) break;
+                if (!try self.check(.rbrace)) switch (try self.currentParserFace()) {
+                    2, 5, 6, 7, 8, 19, 20, 22, 23 => {},
+                    else => if (!try self.currentParserPrimitive()) break,
+                };
             }
         }
         _ = try self.expect(.rbrace);
