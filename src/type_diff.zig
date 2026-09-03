@@ -28,13 +28,18 @@ fn findField(fields: []const FieldType, name: []const u8) ?FieldType {
     return null;
 }
 
+/// The C zero-initializer literal a migration field takes when there is no old
+/// value to cast from.
+///
+/// DERIVED, NOT TABULATED — this is `types.zeroInitLiteral`, the DEFAULT-INIT
+/// FACE of `scalarRepr`. The per-tag switch this replaced restated the numeric
+/// domain a value initializes as (reals `0.0`, integrals `0`) beside the one
+/// owner `numericFacts`, plus the two arithmetic-free scalars `str`/`bool`. A
+/// roster could not compose: a scalar identity added to the union took the
+/// `else` arm and was initialized `"0"`, and for a managed reference like `str`
+/// that reads `(const char*)0` — a NULL where the empty string `""` belongs.
 fn defaultInit(rt: RT) []const u8 {
-    return switch (rt) {
-        .f32, .f64 => "0.0",
-        .str => "\"\"",
-        .bool => "false",
-        else => "0",
-    };
+    return types.zeroInitLiteral(rt);
 }
 
 /// Generate a C migration function from `old_name`/`old_fields` to `new_name`/`new_fields`.

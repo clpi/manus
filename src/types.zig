@@ -469,6 +469,44 @@ pub fn cFormatSpec(repr: ResolvedType) ?[]const u8 {
     return null;
 }
 
+/// The C ZERO-INITIALIZER LITERAL a scalar descriptor takes when a migration
+/// field has no old value to cast from — `"0.0"` for a real, `"0"` for an
+/// integral, `"\"\""` for `str`, `"false"` for `bool`, and `"0"` for every
+/// identity that is not a scalar the migration writes a bare literal into.
+///
+/// DERIVED, NOT TABULATED. This is the DEFAULT-INIT FACE of `scalarRepr`, and
+/// the roster it replaced (`type_diff.defaultInit`) was a per-tag switch that
+/// restated the numeric domain a value initializes as — reals as `0.0`,
+/// integrals as `0` — beside the one owner `numericFacts`, plus the two
+/// arithmetic-free scalars whose zero is not a number. The literal FORM is not
+/// a new fact: whether a scalar's zero is written as an integer or a floating
+/// constant is exactly `numericFacts.domain`, single-lane, and the two scalars
+/// that carry no arithmetic (`bool`, `str`) name their own zero for the same
+/// reason `scalarRepr` names them explicitly.
+///
+/// A roster could not compose: a scalar identity added to the union gained a
+/// domain but stayed unknown to the hand-list, took its `else` arm, and was
+/// initialized as `"0"` — and where that identity is a managed reference like
+/// `str` the `else` arm reads `(const char*)0`, a NULL pointer where an empty
+/// string `""` belongs, a field that segfaults on read rather than holding a
+/// valid empty value; the wrong answer in the safe-looking direction. Every
+/// non-scalar identity is declined by the `scalarRepr` fact rather than by
+/// absence and takes the caller's `"0"` default: the vectors span several
+/// cells (`lanes != 1`), a NOMINAL DESCRIPTOR is an identity rather than a
+/// representation (`law.nominal` §46, withheld here exactly as `scalarRepr`
+/// withholds it, since the retired switch's bare scalar tags let a
+/// nominal-over-`f64` (a `.struct` tag) fall to `else` and take `"0"`), and
+/// `void`/`nil`/`never`/`any`/composed identities are not scalar values the
+/// migration writes a bare zero literal into.
+pub fn zeroInitLiteral(repr: ResolvedType) []const u8 {
+    if (scalarRepr(repr)) {
+        if (repr == .str) return "\"\"";
+        if (repr == .bool) return "false";
+        if (repr.numericFacts().?.domain == .real) return "0.0";
+    }
+    return "0";
+}
+
 /// The scalar descriptor a C TYPE SPELLING projects — the inverse of `c_type`.
 /// A foreign ingress site that meets `int32_t`, `const char*` or `double` and
 /// has to learn which `ResolvedType` identity it realizes asks this.
@@ -3430,6 +3468,68 @@ test "types: the rendering face of the scalar roster is derived from the same fa
     // still answers through the same delegation.
     try declareNominal(std.heap.page_allocator, "tick", .i32);
     try testing.expect(std.mem.eql(u8, cFormatSpec(nominalNamed("tick").?).?, "%d"));
+}
+
+// The retired default-init roster, verbatim, as the oracle. It stood in
+// `type_diff.defaultInit` as a per-tag switch mapping a scalar's zero to the C
+// literal a migration field takes when there is no old value to cast from:
+// reals as a floating constant, the two arithmetic-free scalars as their own
+// zero, and everything else — integrals and every non-scalar identity — as the
+// integer literal `0`.
+fn retiredZeroInit(repr: ResolvedType) []const u8 {
+    return switch (repr) {
+        .f32, .f64 => "0.0",
+        .str => "\"\"",
+        .bool => "false",
+        else => "0",
+    };
+}
+
+test "types: the default-init face of the scalar roster is derived from the same facts" {
+    // PINNED EQUAL TO THE RETIRED ROSTER on every payload-free identity it
+    // mapped AND every identity it folded into `else`, iterated over the
+    // union's own tags rather than a list, so a scalar identity added to the
+    // union cannot be one the default-init face silently does not know.
+    // `zeroInitLiteral` returns the literal directly (no null default at the
+    // caller), so it must equal `retiredZeroInit` for every `x` — the exact
+    // substitution `type_diff.defaultInit` made.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type != void) continue;
+        const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+        try testing.expect(std.mem.eql(u8, zeroInitLiteral(identity), retiredZeroInit(identity)));
+    }
+
+    // The literal FORM is the numeric owner's `domain`, single-lane, not a
+    // fourth statement of which spellings are real: an integral scalar takes
+    // the integer zero and a real scalar takes the floating zero. The two
+    // arithmetic-free scalars name their own zero because no numeric owner can.
+    try testing.expect(std.mem.eql(u8, zeroInitLiteral(.i16), "0"));
+    try testing.expect(std.mem.eql(u8, zeroInitLiteral(.u64), "0"));
+    try testing.expect(std.mem.eql(u8, zeroInitLiteral(.f32), "0.0"));
+    try testing.expect(std.mem.eql(u8, zeroInitLiteral(.f64), "0.0"));
+    try testing.expect(std.mem.eql(u8, zeroInitLiteral(.str), "\"\""));
+    try testing.expect(std.mem.eql(u8, zeroInitLiteral(.bool), "false"));
+
+    // DECLINED BY A FACT, NOT BY ABSENCE. A REAL VECTOR is a numeric fact owner
+    // whose `domain` is real but which is not one cell (`lanes != 1`), so
+    // `scalarRepr` withholds it and it takes `"0"` exactly as the retired `else`
+    // did — the one place a bare `domain == .real` read would over-answer
+    // `"0.0"`. The boxed/void/composed identities carry no facts and are not
+    // `bool`/`str`, so they take `"0"` too.
+    try testing.expect(std.mem.eql(u8, zeroInitLiteral(.v4f64), "0"));
+    try testing.expect(std.mem.eql(u8, zeroInitLiteral(.v8f32), "0"));
+    try testing.expect(std.mem.eql(u8, zeroInitLiteral(.any), "0"));
+    try testing.expect(std.mem.eql(u8, zeroInitLiteral(.void), "0"));
+
+    // A NOMINAL DESCRIPTOR IS WITHHELD, not delegated, here. Its facts delegate
+    // to its representation for every PHYSICAL query, but the retired switch's
+    // bare scalar tags let a nominal-over-`f64` (a `.struct` tag) fall to `else`
+    // and take `"0"`, and `scalarRepr` withholds it identically — so a real
+    // nominal does NOT gain the `"0.0"` its representation would, and no
+    // migration field changes its initializer.
+    try declareNominal(std.heap.page_allocator, "span", .f64);
+    try testing.expect(std.mem.eql(u8, zeroInitLiteral(nominalNamed("span").?), "0"));
 }
 
 fn retiredCFrameType(t: ResolvedType) []const u8 {
