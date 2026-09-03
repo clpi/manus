@@ -523,6 +523,13 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 18;
     }
 
+    fn currentParserMatchSuffix(self: *Parser) ParseError!u2 {
+        const face = (try self.currentParserDecision()) >> 13;
+        if (face == 15) return 1;
+        if (face == 16) return 2;
+        return if ((((try self.currentParserEvent()) >> 63) & 1) != 0) 3 else 0;
+    }
+
     fn currentParserPattern(self: *Parser) ParseError!u5 {
         const decision = try self.currentParserDecision();
         if (((decision >> 9) & 0xF) == 8) return 8;
@@ -4340,13 +4347,13 @@ pub const Parser = struct {
         var e = try self.parse_simple_expr();
         while (true) {
             const tok = try self.pk();
-            switch (tok.kind) {
-                .dot => {
+            switch (try self.currentParserMatchSuffix()) {
+                1 => {
                     _ = try self.adv();
                     const fld = try self.expect_name_like();
                     e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = fld } });
                 },
-                .colon => {
+                2 => {
                     _ = try self.adv();
                     const method = try self.expect_name_like();
                     // Only allow parenthesized call args after method
@@ -4363,7 +4370,7 @@ pub const Parser = struct {
                         e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = method } });
                     }
                 },
-                .lparen => {
+                3 => {
                     const callargs = try self.parse_call_args();
                     // DESCRIPTOR APPLICATION. `point(3, 4)` is the same
                     // application grammar as any other call; what differs is

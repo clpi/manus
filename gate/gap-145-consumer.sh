@@ -888,6 +888,33 @@ if [ "$patternold" -ne 1 ] || [ "$patternnew" -ne 1 ]; then
     bad "the pattern-face detector is broken: old=$patternold new=$patternnew"
 fi
 
+# Match scrutinee suffix selection consumes one exact parser.id face. Zig keeps
+# field, method, and call materialization without selecting them by TokenKind.
+has "$ROOT/lib/compiler/parser.id" 'callface << 63' \
+    'event lost the match-scrutinee call suffix face'
+has "$ROOT/src/parser/projection.c" 'callface)) << ((uint64_t)(63)' \
+    'tracked projection lost the match-scrutinee call suffix face'
+has "$PARSER" 'fn currentParserMatchSuffix(self: *Parser) ParseError!u2 {' \
+    'parser.zig lost the match-scrutinee suffix consumer'
+has "$PARSER" 'switch (try self.currentParserMatchSuffix()) {' \
+    'match scrutinee bypasses the settled suffix face'
+matchswitches=$(sed -n '/fn parse_match_scrutinee_suffixed/,/fn matchClause/p' "$PARSER" | grep -cF 'switch (tok.kind)' || true)
+examined=$((examined + 1))
+if [ "$matchswitches" -ne 0 ]; then
+    bad "match scrutinee retained $matchswitches tok.kind host switch(es)"
+fi
+
+matchprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate match-suffix scratch' >&2; exit 2; }
+printf '%s\n' 'switch (tok.kind) {' >"$matchprobe/old.zig"
+printf '%s\n' 'switch (try self.currentParserMatchSuffix()) {' >"$matchprobe/new.zig"
+matchold=$(grep -cF 'switch (tok.kind)' "$matchprobe/old.zig")
+matchnew=$(grep -cF 'switch (try self.currentParserMatchSuffix())' "$matchprobe/new.zig")
+rm -rf -- "$matchprobe"
+examined=$((examined + 1))
+if [ "$matchold" -ne 1 ] || [ "$matchnew" -ne 1 ]; then
+    bad "the match-suffix detector is broken: old=$matchold new=$matchnew"
+fi
+
 booleanprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate boolean primary scratch' >&2; exit 2; }
 printf '%s\n' '.kw_true => true, .kw_false => false' >"$booleanprobe/old.zig"
 printf '%s\n' 'return face == 9 or face == 10;' >"$booleanprobe/new.zig"
