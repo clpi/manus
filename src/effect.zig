@@ -17,6 +17,7 @@
 const std = @import("std");
 const optimization_outcome = @import("optimization_outcome.zig");
 const assumption_guard = @import("assumption_guard.zig");
+const semantic_graph = @import("semantic_graph.zig");
 
 pub const SCHEMA_VERSION = "gap182-experiment-v1";
 
@@ -109,6 +110,31 @@ pub const EvidenceProducer = enum(u8) {
             .profile_counter, .hardware_counter, .sample, .heuristic_estimate => true,
             .constitutional_axiom, .static_proof, .invariant_inference, .guard_observation => false,
         };
+    }
+
+    /// Reverse of `name` over the graph-emitted producer identity. The graph
+    /// face (`semantic_graph.ExperimentFact.producer`) carries the producer as
+    /// its stable NAME — never an ordinal (`law.magic.code.zero`): an ordinal
+    /// would force the consumer to reconstruct semantic meaning from an
+    /// integer selected by the producer's declaration order. An unrecognized
+    /// name consumes to NO producer — never a nearest-match guess and never a
+    /// default, because a producer that cannot be named is not a fact with
+    /// complete provenance (`law.fact.producer.one`).
+    pub fn fromName(name_id: []const u8) ?EvidenceProducer {
+        const map = .{
+            .{ "constitutional_axiom", .constitutional_axiom },
+            .{ "static_proof", .static_proof },
+            .{ "invariant_inference", .invariant_inference },
+            .{ "guard_observation", .guard_observation },
+            .{ "profile_counter", .profile_counter },
+            .{ "hardware_counter", .hardware_counter },
+            .{ "sample", .sample },
+            .{ "heuristic_estimate", .heuristic_estimate },
+        };
+        inline for (map) |entry| {
+            if (std.mem.eql(u8, name_id, entry[0])) return entry[1];
+        }
+        return null;
     }
 };
 
@@ -620,6 +646,49 @@ pub fn deoptBoundary(
         boundary.count += 1;
     }
     return boundary;
+}
+
+/// Required orders 3+4 graph-consumption seam: one `Guarded` candidate from a
+/// graph-emitted `ExperimentFact` plus the stated assumption identities the
+/// emitting guard recorded. This is the ONLY bridge from the order-1 graph
+/// tuple face into the runtime fact family — the same discipline as
+/// `fromAssumption` (`law.fact.producer.one`): callers never hand-wire an
+/// `Experiment` from graph tuple fields, so fact identity, producer identity,
+/// and provenance cannot drift into a second authority.
+///
+/// - Producer: consumed by NAME through `EvidenceProducer.fromName`; an
+///   unrecognized name consumes to NO candidate — an experiment whose producer
+///   cannot be named is a fact with broken provenance, never a heuristic
+///   default (`law.magic.code.zero`).
+/// - Stated assumptions: the caller names every assumption predicate identity
+///   beyond the experiment's own proposition (order 3: admissible only under
+///   its stated assumptions; an experiment emitted with no assumption
+///   identities carries an empty set, exactly as `fromAssumption` does).
+/// - Provenance: the tuple's measured subject revision carries over verbatim;
+///   evidence-strength producers with no revision name construct a face whose
+///   `provenanceComplete` is false — never promoted (`law.evidence.subject.one`).
+/// - Invalidation (order 4) is NOT stored here: it is a runtime `GuardInvalidation`
+///   fact applied by `selectUnderInvalidation`; the candidate face holds only
+///   the experiment + stated assumptions, so a guard false on its proposition
+///   ceases admissible and deopt selects another — one walk, one authority.
+pub const fromExperimentFactErrors = error{ ProducerUnnamed };
+
+pub fn fromExperimentFact(
+    fact: *const semantic_graph.ExperimentFact,
+    stated_assumptions: []const []const u8,
+) fromExperimentFactErrors!Guarded {
+    const producer = EvidenceProducer.fromName(fact.producer) orelse
+        return error.ProducerUnnamed;
+    return .{
+        .experiment = .{
+            .proposition = fact.proposition,
+            .producer = producer,
+            .cost = fact.cost,
+            .conditional_theorem = fact.conditional_theorem,
+            .subject_revision = fact.subject_revision,
+        },
+        .assumptions = stated_assumptions,
+    };
 }
 
 /// Still-missing face: runtime facts refine the candidate set — `if P then
@@ -1319,7 +1388,6 @@ test "effect: graph-emitted guards drive a measured deopt boundary" {
     // unrelated proposition keeps the guarded candidate.
     const sema = @import("sema.zig");
     const ast = @import("ast.zig");
-    const semantic_graph = @import("semantic_graph.zig");
     var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
     defer graph.deinit();
     const home = try graph.addNode(.{
@@ -1428,7 +1496,6 @@ test "effect: all seven epistemic categories wired through one boundary" {
     // facts, not only hand-wired ones.
     const sema = @import("sema.zig");
     const ast = @import("ast.zig");
-    const semantic_graph = @import("semantic_graph.zig");
     var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
     defer graph.deinit();
     const home = try graph.addNode(.{

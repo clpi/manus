@@ -1256,6 +1256,22 @@ pub fn build(b: *std.Build) void {
     const effect_test_step = b.step("effect-test", "Run GAP-182 experiment/guard fact tests only");
     effect_test_step.dependOn(&run_effect_tests.step);
 
+    // GAP-182 orders 3+4 focused slice: graph-emitted experiment tuple consumed
+    // through the one effect bridge, stated-assumption admissibility, and named
+    // invalidation selecting the next candidate. Own step so maskable mass
+    // failures elsewhere cannot hide this seam.
+    const order34_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/gap182_order34.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    linkProductionIdolFrontend(b, order34_tests.root_module);
+    const run_order34_tests = b.addRunArtifact(order34_tests);
+    const order34_test_step = b.step("gap182-order34", "Run GAP-182 orders 3+4 graph-consumption tests only");
+    order34_test_step.dependOn(&run_order34_tests.step);
+
     const native_module_target = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/target_model.zig"),

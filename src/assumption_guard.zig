@@ -349,9 +349,9 @@ test "assumption_guard: graph-emitted experiment facts (GAP-182 order 1)" {
         .descriptor_state = .sealed,
         .shape_id = 1,
     });
-    
+
     try emitExperimentFacts(std.testing.allocator, &graph);
-    
+
     try std.testing.expectEqual(@as(usize, 1), graph.experiments.items.len);
     const exp = graph.experiments.items[0];
     var id_buf: [20]u8 = undefined;
@@ -361,4 +361,121 @@ test "assumption_guard: graph-emitted experiment facts (GAP-182 order 1)" {
     try std.testing.expectEqual(@as(u32, 1), exp.cost);
     try std.testing.expectEqualStrings("general table realization", exp.conditional_theorem);
     try std.testing.expectEqualStrings("", exp.subject_revision);
+}
+
+test "assumption_guard: orders 3+4 over a graph-emitted experiment fact" {
+    // GAP-182 required order 3: a guarded realization is admissible ONLY under
+    // its stated assumptions. Required order 4: invalidation — the assumption
+    // becomes false ⇒ the candidate ceases to be admissible and deoptimization
+    // selects another. Both laws must hold over the graph-emitted tuple face,
+    // not only over test fixtures built through the assumption seam.
+    const effect = @import("effect.zig");
+    var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const home = try graph.addNode(.{
+        .kind = .module,
+        .span = .{ .file = "orders34.id", .start = 0, .end = 0 },
+    });
+    _ = try graph.addChild(home, .{
+        .kind = .table_shape,
+        .span = .{ .file = "orders34.id", .start = 1, .end = 1 },
+        .name = "Point",
+        .knowledge = .guarded,
+        .descriptor_state = .sealed,
+        .shape_id = 1,
+    });
+    try emitExperimentFacts(std.testing.allocator, &graph);
+    try std.testing.expectEqual(@as(usize, 1), graph.experiments.items.len);
+    const fact = &graph.experiments.items[0];
+
+    // One bridge consumes the graph tuple by NAME. An unnamed-producer tuple
+    // constructs NO candidate (provenance broken at the seam, never defaulted).
+    var broken = fact.*;
+    broken.producer = "never_emitted";
+    try std.testing.expectError(
+        effect.fromExperimentFactErrors.ProducerUnnamed,
+        effect.fromExperimentFact(&broken, &.{}),
+    );
+
+    // The stated assumption beyond the guard's own proposition is the emitting
+    // guard's predicate identity — carried by buildFromModule on the SAME node.
+    var dummy_mod: ast.Module = undefined;
+    var dummy_sem = sema.Sema.init(std.testing.allocator);
+    defer dummy_sem.deinit();
+    var emitted = try buildFromModule(std.testing.allocator, &dummy_mod, &dummy_sem, &graph);
+    defer emitted.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(usize, 1), emitted.items.len);
+    const stated = [1][]const u8{emitted.items[0].predicate.name()};
+
+    const guarded = try effect.fromExperimentFact(fact, &stated);
+
+    // Order 3: admissible only while its own proposition AND every stated
+    // assumption are affirmatively answered by facts. Absent affirmation is
+    // not affirmation — an empty fact set admits nothing.
+    const yes = [2]effect.RuntimeFact{
+        (effect.observeFact(fact.proposition, true, "rev:34") orelse return error.TestUnexpectedResult),
+        (effect.observeFact(stated[0], true, "rev:34") orelse return error.TestUnexpectedResult),
+    };
+    const no_stated = [1]effect.RuntimeFact{
+        (effect.observeFact(fact.proposition, true, "rev:34") orelse return error.TestUnexpectedResult),
+    };
+    const candidates = [1]effect.Guarded{guarded};
+    try std.testing.expectEqualStrings(
+        "general table realization",
+        effect.refine(&candidates, "shape:never", &yes).?,
+    );
+    // Stated assumption unanswered ⇒ inadmissible even with the guard holding.
+    try std.testing.expect(effect.refine(&candidates, "shape:never", &no_stated) == null);
+
+    // Order 4: the guard proposition goes false as a NAMED invalidation fact ⇒
+    // the candidate ceases admissible; the epistemic-level boundary selects
+    // nothing because the experiment is refuted and absent affirmation of the
+    // stated assumptions admits nothing.
+    const refusal = effect.guardFalse(fact.proposition, "rev:34") orelse
+        return error.TestUnexpectedResult;
+    try std.testing.expectEqual(
+        @as(?[]const u8, null),
+        effect.selectUnderInvalidation(&candidates, &refusal, struct {
+            fn f(_: []const u8) bool {
+                return true;
+            }
+        }.f),
+    );
+    // An invalidation naming an unrelated proposition refutes nothing.
+    const other = effect.guardFalse("shape:elsewhere", "rev:34") orelse
+        return error.TestUnexpectedResult;
+    try std.testing.expect(!effect.invalidationRefutes(&other, &guarded.experiment));
+    try std.testing.expect(effect.invalidationRefutes(&refusal, &guarded.experiment));
+
+    // Deopt selects ANOTHER candidate after invalidation: a second candidate
+    // over a sound proposition survives the same named fact, and the one walk
+    // selects its conditional theorem exactly as `select` answers.
+    const holdsAllWorld = struct {
+        fn f(_: []const u8) bool {
+            return true;
+        }
+    }.f;
+    const survives = effect.Guarded{
+        .experiment = .{
+            .proposition = "kind:packed",
+            .producer = .guard_observation,
+            .cost = 1,
+            .conditional_theorem = "cand:poly",
+            .subject_revision = "rev:34",
+        },
+    };
+    const pair = [2]effect.Guarded{ guarded, survives };
+    try std.testing.expectEqualStrings(
+        "cand:poly",
+        effect.selectUnderInvalidation(&pair, &refusal, holdsAllWorld).?,
+    );
+    // Before the invalidation, the pair walks to the refuted candidate first.
+    const quiet = [2]effect.RuntimeFact{
+        (effect.observeFact(fact.proposition, true, "rev:34") orelse return error.TestUnexpectedResult),
+        (effect.observeFact(stated[0], true, "rev:34") orelse return error.TestUnexpectedResult),
+    };
+    try std.testing.expectEqualStrings(
+        "general table realization",
+        effect.refine(&pair, "shape:never", &quiet).?,
+    );
 }

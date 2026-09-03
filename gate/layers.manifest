@@ -149,6 +149,7 @@ DRIVER   property_tests.zig
 # measurement.
 DRIVER   poison.zig
 DRIVER   sovereign.zig
+DRIVER   gap182_order34.zig
 DRIVER   term.zig
 DRIVER   debug_trace.zig
 DRIVER   explain_pipeline.zig
