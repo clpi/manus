@@ -398,6 +398,8 @@ static int verify_event(void) {
                 if (delimiter != 10) failed += 1;
             } else if (kind == first_kind("...")) {
                 if (delimiter != 11) failed += 1;
+            } else if (kind == first_kind("function") || kind == first_kind("fun")) {
+                if (delimiter != 12) failed += 1;
             } else if (kind != first_kind("(") && delimiter != 0) failed += 1;
         }
     }
@@ -682,6 +684,8 @@ int main(void) {
     failed += verify_delimiter("true", 9);
     failed += verify_delimiter("false", 10);
     failed += verify_delimiter("...", 11);
+    failed += verify_delimiter("function", 12);
+    failed += verify_delimiter("fun", 12);
     failed += verify_event();
     failed += verify_event_lead_trivia();
     failed += verify_event_boundary();
@@ -692,7 +696,7 @@ int main(void) {
     failed += verify_boundary_closure();
     failed += verify_layout_faces();
     failed += verify_boundary_opening();
-    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 layout-type-cases=8 declaration-lane-cases=12 delimiter-lane-cases=11 lead-slots=%zu prefix-slots=%zu relation-slots=%zu statement-slots=%zu event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=%zu boundary-slots=%zu boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=%zu empty-terminators=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__statement()), strlen(token_grammarrole__member()), strlen(token_grammarrole__boundary()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
+    printf("typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 layout-type-cases=8 declaration-lane-cases=12 delimiter-lane-cases=13 lead-slots=%zu prefix-slots=%zu relation-slots=%zu statement-slots=%zu event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=%zu boundary-slots=%zu boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=%zu empty-terminators=%zu failed=%d\n", strlen(token_grammarrole__lead()), strlen(token_grammarrole__prefix()), strlen(token_grammarrole__relation()), strlen(token_grammarrole__statement()), strlen(token_grammarrole__member()), strlen(token_grammarrole__boundary()), strlen(token_grammarrole__layoutterminator()), strlen(token_grammarrole__emptybodyterminator()), failed);
     return failed != 0;
 }
 EOF

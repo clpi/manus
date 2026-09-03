@@ -494,6 +494,10 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 11;
     }
 
+    fn currentParserFunction(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 12;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6196,6 +6200,11 @@ pub const Parser = struct {
             _ = try self.adv();
             return self.new_expr(.{ .vararg = tok.loc });
         }
+        if (try self.currentParserFunction()) {
+            const l = (try self.adv()).loc;
+            const fb = try self.new_fb(try self.parse_func_body(l));
+            return self.new_expr(.{ .func_expr = fb });
+        }
         if (try self.currentParserTable()) return self.parse_table();
         if (try self.currentParserName()) {
             const name_tok = try self.adv();
@@ -6226,11 +6235,6 @@ pub const Parser = struct {
             return e;
         }
         return switch (tok.kind) {
-            .kw_function, .kw_fun => blk: {
-                const l = (try self.adv()).loc;
-                const fb = try self.new_fb(try self.parse_func_body(l));
-                break :blk self.new_expr(.{ .func_expr = fb });
-            },
             .backtick => {
                 term.locErr(tok.loc, "c0 law.backtick.zero: backtick is reserved and has no canonical meaning", .{});
                 return ParseError.UnexpectedToken;

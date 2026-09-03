@@ -661,6 +661,34 @@ if [ "$varargold" -ne 1 ] || [ "$varargnew" -ne 1 ]; then
     bad "the vararg primary detector is broken: old=$varargold new=$varargnew"
 fi
 
+# Function-expression primary recognition has exact face twelve for both
+# compatibility spellings. Zig retains body and value materialization but no
+# longer selects it through the `.kw_function, .kw_fun` host switch arm.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindfunction or kind == token.kindfun' \
+    'event lost the function-expression primary face'
+has "$ROOT/src/parser/projection.c" 'kind == INT64_C(13)) || (kind == INT64_C(14)' \
+    'tracked projection lost the function-expression primary face'
+has "$PARSER" 'fn currentParserFunction(self: *Parser) ParseError!bool {' \
+    'parser.zig lost the function-expression primary consumer'
+has "$PARSER" 'if (try self.currentParserFunction()) {' \
+    'parse_simple_expr bypasses the settled function-expression face'
+functionarms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.kw_function, .kw_fun => ' || true)
+examined=$((examined + 1))
+if [ "$functionarms" -ne 0 ]; then
+    bad "parse_simple_expr retained $functionarms function-expression host arm(s)"
+fi
+
+functionprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate function-expression primary scratch' >&2; exit 2; }
+printf '%s\n' '.kw_function, .kw_fun => parse_function(),' >"$functionprobe/old.zig"
+printf '%s\n' 'return (try self.currentParserDecision()) >> 13 == 12;' >"$functionprobe/new.zig"
+functionold=$(grep -cF '.kw_function, .kw_fun => ' "$functionprobe/old.zig")
+functionnew=$(grep -cF 'currentParserDecision()) >> 13 == 12' "$functionprobe/new.zig")
+rm -rf -- "$functionprobe"
+examined=$((examined + 1))
+if [ "$functionold" -ne 1 ] || [ "$functionnew" -ne 1 ]; then
+    bad "the function-expression primary detector is broken: old=$functionold new=$functionnew"
+fi
+
 booleanprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate boolean primary scratch' >&2; exit 2; }
 printf '%s\n' '.kw_true => true, .kw_false => false' >"$booleanprobe/old.zig"
 printf '%s\n' 'return face == 9 or face == 10;' >"$booleanprobe/new.zig"
@@ -1659,7 +1687,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=11' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=13' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'
