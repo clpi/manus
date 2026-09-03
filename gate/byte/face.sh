@@ -77,8 +77,23 @@ fi
 # backend, named nowhere in the output.
 . "$root/gate/realization/direct.sh"
 direct_native_probe "$IDOL"
+direct_available=1
 if direct_native_absent; then
+    direct_available=0
     direct_native_note 'the printed-answer comparison needs to EXECUTE each subject, and none can be built'
+fi
+
+# The wasm column measures the COMPILE-TIME byte-face verdict and needs only
+# the compiler, which the check above already established. It is independent
+# of the direct backend, so it runs on a host with no direct-native
+# realization — the exact host where the direct column cannot. This is the
+# column GAP-207's blocker names: the gate's PASS used to say nothing about
+# the wasm answer because every subject went through `idol run`, the direct
+# realization and only that one.
+wasm_available=1
+
+if [ "$direct_available" -eq 0 ] && [ "$wasm_available" -eq 0 ]; then
+    printf 'byte face: no realization to measure — nothing was measured\n' >&2
     exit 2
 fi
 
@@ -148,6 +163,52 @@ verdict_of() {
             ;;
         *)
             printf 'unknown expectation kind [%s]\n' "$vk"
+            ;;
+    esac
+}
+
+# ── THE WASM COMPARATOR ────────────────────────────────────────────────────
+#
+# The direct column above measures the RUN answer. The wasm column measures
+# the COMPILE-TIME byte-face verdict, which is the only thing a host with no
+# wasm runner can still measure and the exact thing GAP-207's blocker says the
+# gate was silent about: the wasm backend used to COMPILE `s = 'abc';
+# print(s)` and print a data-segment offset at exit 0, while the direct
+# backend refused it by name. The repair made wasm refuse at compile, so the
+# wasm verdict is read off the compile status, not a run.
+#
+#   wasm_verdict EXPECTKIND ACTUALSTATUS ACTUALOUT ACTUALERR
+#     -> prints 'agree' or a reason, exit status unused
+wasm_verdict() {
+    wk=$1
+    wstatus=$2
+    wout=$3
+    werr=$4
+    case "$wk" in
+        refuse)
+            if [ "$wstatus" -eq 0 ]; then
+                printf 'wasm: expected a named refusal, got compile exit 0 (the pointer-print shape)\n'
+                return 0
+            fi
+            if [ -s "$wout" ]; then
+                printf 'wasm: refused at exit %s but wrote to stdout first\n' "$wstatus"
+                return 0
+            fi
+            if ! grep -q 'error:' "$werr"; then
+                printf 'wasm: exited %s with no diagnostic — a crash is not a refusal\n' "$wstatus"
+                return 0
+            fi
+            printf 'agree\n'
+            ;;
+        answer)
+            if [ "$wstatus" -ne 0 ]; then
+                printf 'wasm: expected the byte face to compile, got exit %s\n' "$wstatus"
+                return 0
+            fi
+            printf 'agree\n'
+            ;;
+        *)
+            printf 'unknown wasm expectation kind [%s]\n' "$wk"
             ;;
     esac
 }
@@ -225,6 +286,52 @@ if [ "$control_subjects" -eq 0 ] || [ "$control_convictions" -ne "$control_subje
     exit 2
 fi
 
+# ── 1b. the wasm comparator is controlled on the recorded defect ────────────
+#
+# The wasm column's comparator is controlled on the SAME recorded defect the
+# direct column is: the wasm backend used to COMPILE `s = 'abc'; print(s)`
+# (exit 0, no diagnostic) and print a data-segment offset at run time. A
+# compile that succeeds on a byte-face print is the pointer-print shape, so
+# the wasm comparator must convict a compile exit 0 on a refuse subject, and
+# must NOT convict a clean named refusal. If it cannot tell those apart, the
+# wasm column below is worthless.
+wasm_control_convictions=0
+wasm_control_subjects=0
+wconvict() {
+    wasm_control_subjects=$((wasm_control_subjects + 1))
+    : > "$scratch/wcout"
+    printf '%s' "$3" > "$scratch/wcerr"
+    wcv=$(wasm_verdict "$1" "$2" "$scratch/wcout" "$scratch/wcerr")
+    if [ "$wcv" = 'agree' ]; then
+        printf 'byte face: WASM CONTROL NOT CONVICTED — comparator called [%s] an agreement with exit %s\n' "$1" "$2" >&2
+    else
+        wasm_control_convictions=$((wasm_control_convictions + 1))
+    fi
+}
+# The recorded wasm defect: compile exit 0 on a byte-face print, no diagnostic.
+wconvict refuse 0 ''
+# A clean named refusal must NOT be convicted.
+: > "$scratch/wcout"
+printf 'error: wasm32-wasi: no native realization (UnsupportedProgram)\n' > "$scratch/wcerr"
+if [ "$(wasm_verdict refuse 1 "$scratch/wcout" "$scratch/wcerr")" != 'agree' ]; then
+    printf 'byte face: WASM CONTROL BROKEN — comparator refuses a clean named refusal\n' >&2
+    exit 2
+fi
+wasm_control_subjects=$((wasm_control_subjects + 1))
+wasm_control_convictions=$((wasm_control_convictions + 1))
+# A byte-face egress that must still COMPILE (answer) must not be convicted.
+if [ "$(wasm_verdict answer 0 "$scratch/wcout" "$scratch/wcerr")" != 'agree' ]; then
+    printf 'byte face: WASM CONTROL BROKEN — comparator refuses a clean compile\n' >&2
+    exit 2
+fi
+wasm_control_subjects=$((wasm_control_subjects + 1))
+wasm_control_convictions=$((wasm_control_convictions + 1))
+if [ "$wasm_control_subjects" -eq 0 ] || [ "$wasm_control_convictions" -ne "$wasm_control_subjects" ]; then
+    printf 'byte face: wasm comparator control failed (%s/%s convicted) — measuring nothing\n' \
+        "$wasm_control_convictions" "$wasm_control_subjects" >&2
+    exit 2
+fi
+
 # ── 2. the subjects ────────────────────────────────────────────────────────
 #
 # `run_subject NAME EXPECTKIND EXPECTTEXT` reads the program on stdin.
@@ -250,14 +357,30 @@ run_subject() {
     # RUN FROM THE SCRATCH DIRECTORY: `idol run` writes the linked binary
     # beside the invocation, and a gate that drops `subject.out` into the
     # repository root is editing the tree it is measuring.
-    ( cd "$scratch" && "$IDOL" run "$sfile" ) > "$scratch/out" 2> "$scratch/err"
-    sstatus=$?
-    want_file "$scratch/want" "$stext" "$send"
-    snamed=silent
-    if grep -q 'error:' "$scratch/err"; then snamed=named; fi
-    sv=$(verdict_of "$skind" "$scratch/want" "$scratch/out" "$sstatus" "$snamed")
-    if [ "$sv" != 'agree' ]; then
-        fail "$sname: $sv"
+    if [ "$direct_available" -eq 1 ]; then
+        ( cd "$scratch" && "$IDOL" run "$sfile" ) > "$scratch/out" 2> "$scratch/err"
+        sstatus=$?
+        want_file "$scratch/want" "$stext" "$send"
+        snamed=silent
+        if grep -q 'error:' "$scratch/err"; then snamed=named; fi
+        sv=$(verdict_of "$skind" "$scratch/want" "$scratch/out" "$sstatus" "$snamed")
+        if [ "$sv" != 'agree' ]; then
+            fail "$sname: $sv"
+        fi
+    fi
+    # The wasm column: the COMPILE-TIME byte-face verdict, measured on the same
+    # subject. The direct column above runs the program; the wasm column asks
+    # whether the wasm backend refuses the byte face BY NAME at compile, which
+    # is the only thing a host with no wasm runner can still measure and the
+    # exact thing GAP-207's blocker says the gate was silent about.
+    if [ "$wasm_available" -eq 1 ]; then
+        ( cd "$scratch" && "$IDOL" compile --backend=wasm --target=wasm32-wasi -o "$scratch/subject.wasm" "$sfile" ) \
+            > "$scratch/wout" 2> "$scratch/werr"
+        wstatus=$?
+        wv=$(wasm_verdict "$skind" "$wstatus" "$scratch/wout" "$scratch/werr")
+        if [ "$wv" != 'agree' ]; then
+            fail "$sname (wasm): $wv"
+        fi
     fi
 }
 
@@ -400,10 +523,21 @@ if [ "$subjects" -eq 0 ]; then
     exit 1
 fi
 if [ "$violations" -ne 0 ]; then
-    printf 'byte face: FAIL %s of %s subject(s); comparator convicted %s/%s recorded defects\n' \
-        "$violations" "$subjects" "$control_convictions" "$control_subjects" >&2
+    printf 'byte face: FAIL %s of %s subject(s); comparator convicted %s/%s recorded defects; wasm comparator convicted %s/%s\n' \
+        "$violations" "$subjects" "$control_convictions" "$control_subjects" \
+        "$wasm_control_convictions" "$wasm_control_subjects" >&2
     exit 1
 fi
-printf 'byte face: PASS %s subject(s); comparator convicted %s/%s recorded defects\n' \
-    "$subjects" "$control_convictions" "$control_subjects"
+if [ "$direct_available" -eq 1 ] && [ "$wasm_available" -eq 1 ]; then
+    printf 'byte face: PASS %s subject(s) on direct and wasm; comparator convicted %s/%s recorded defects; wasm comparator convicted %s/%s\n' \
+        "$subjects" "$control_convictions" "$control_subjects" \
+        "$wasm_control_convictions" "$wasm_control_subjects"
+elif [ "$wasm_available" -eq 1 ]; then
+    printf 'byte face: PASS %s subject(s) on wasm (direct column not measured on this host); comparator convicted %s/%s recorded defects; wasm comparator convicted %s/%s\n' \
+        "$subjects" "$control_convictions" "$control_subjects" \
+        "$wasm_control_convictions" "$wasm_control_subjects"
+else
+    printf 'byte face: PASS %s subject(s) on direct; comparator convicted %s/%s recorded defects\n' \
+        "$subjects" "$control_convictions" "$control_subjects"
+fi
 exit 0
