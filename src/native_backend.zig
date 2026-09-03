@@ -1344,6 +1344,16 @@ const Arm64Compiler = struct {
         /// a string address), so the call must hand it back. A `.temp`/`.local`
         /// register is owned by the slot map and outlives the call.
         scratch: bool = false,
+        /// `reg` HOLDS THIS ARGUMENT NOW — the tail's counterpart of
+        /// `pending_arg_regs`, and the fact `reclaimSpilledReg` reads.
+        ///
+        /// `operand == null` alone cannot say it. A slot inside
+        /// `pending_vararg_count` that no `mov_arg` ever wrote is `.{}`, whose
+        /// operand is null and whose `reg` is 0, so reading the cleared operand
+        /// as "materialized" reserves x0 for a hole. `materializePendingVarargs`
+        /// sets this where it assigns `reg`, and the whole-struct `.{}` writes
+        /// in `mov_arg` and `emitPopVarargs` are what clear it.
+        staged: bool = false,
     };
 
     const CallPatch = struct {
@@ -7077,6 +7087,47 @@ const Arm64Compiler = struct {
     /// closure — closure is authoritative `register`/`frame` assignment before
     /// emission, per this gap's record, under which an argument's location is
     /// carried by the assignment and no scratch allocator bids against it.
+    ///
+    /// THE VARIADIC TAIL IS THE SAME RESERVATION, AND `pending_arg_regs` DOES
+    /// NOT COVER IT (GAP-148).
+    ///
+    /// Apple's ARM64 ABI passes every argument past a variadic function's last
+    /// named parameter in MEMORY, so `materializePendingVarargs` evaluates each
+    /// one into an ordinary allocatable register and records it in
+    /// `pending_varargs[i].reg`; `emitPushVarargs` stores those registers to
+    /// [sp, #i*8] after `emitSaveCallerRegs`. Between the two the register holds
+    /// an argument for the `bl` being built — the identical statement
+    /// `markStagedArgReg` makes about x_k — and `pending_arg_regs` cannot carry
+    /// it, because it is eight bits describing x0..x7 and a tail register is
+    /// whatever the pool gave, normally x9..x28.
+    ///
+    /// The window is the materialization's own loop: slot 0's register is
+    /// staged while slot 1's operand is evaluated, and that evaluation
+    /// allocates. Both free scans in `allocRegExcluding` do pass over a staged
+    /// tail register, but for the wrong reason — `used_regs` is set, and the
+    /// cascade's spill passes take exactly the registers `used_regs` names.
+    /// After `spillReg` the claim is gone, the value is in the frame and the
+    /// entry is in this map, and this function took it: entry dropped,
+    /// `gp_reg_owner` nulled, `claimReg`, and the staged tail argument handed
+    /// back as scratch. The caller's first write lands on it, `emitPushVarargs`
+    /// stores that write into the callee's memory-argument slot, and the
+    /// variadic call is made with it. A wrong argument with no diagnostic —
+    /// `printf`/`snprintf`'s tail is where every such call in this compiler
+    /// goes.
+    ///
+    /// A spill alone does not clobber it: a register in this map is skipped by
+    /// both free scans, so the bytes survive and `emitPushVarargs` happens to
+    /// store the right ones. THIS is the arm that makes it wrong, and it is the
+    /// arm no reservation was ever stated to.
+    ///
+    /// The skip is the `exclude` skip's shape and carries its cost — one
+    /// candidate out of a map the cascade filled with every allocatable
+    /// register, and when a staged tail register is genuinely the last entry the
+    /// refusal below is the bail this function already answers with. Not the
+    /// closure — closure is authoritative `register`/`frame` assignment before
+    /// emission, per this gap's record, under which a tail argument's location
+    /// is carried by the assignment rather than by a register the marshaling
+    /// holds across an allocation that may bid for it.
     fn reclaimSpilledReg(self: *Arm64Compiler, exclude: ?u5) Error!u5 {
         var it = self.spilled_regs.iterator();
         while (it.next()) |entry| {
@@ -7085,6 +7136,7 @@ const Arm64Compiler = struct {
             if (self.gp_home_regs[reg]) continue;
             if (reg < 8 and
                 self.pending_arg_regs & (@as(u8, 1) << @as(u3, @intCast(reg))) != 0) continue;
+            if (self.stagedTailReg(reg)) continue;
             const off = entry.value_ptr.*;
             _ = self.spilled_regs.remove(reg);
             self.gp_reg_owner[reg] = null;
@@ -7459,6 +7511,26 @@ const Arm64Compiler = struct {
     /// as scratch while a later argument's operand is loaded. Cleared by `emitBl`.
     fn markStagedArgReg(self: *Arm64Compiler, slot: u5) void {
         if (slot < 8) self.pending_arg_regs |= (@as(u8, 1) << @as(u3, @intCast(slot)));
+    }
+
+    /// The same question `pending_arg_regs` answers for x0..x7, asked for the
+    /// VARIADIC TAIL — whose arguments are staged in ordinary allocatable
+    /// registers and written to the callee's memory-argument area, not into a
+    /// parameter register.
+    ///
+    /// Derived from `pending_varargs` rather than restated in a second mask:
+    /// `reg` is already recorded there and `staged` is already the fact that it
+    /// holds the argument, so there is nothing here for the two to disagree
+    /// about. Empty outside a call being marshaled — `pending_vararg_count` is
+    /// zero until `mov_arg` stages a tail and `emitPopVarargs` returns it to
+    /// zero — so this is false everywhere else.
+    fn stagedTailReg(self: *const Arm64Compiler, reg: u5) bool {
+        var i: u5 = 0;
+        while (i < self.pending_vararg_count) : (i += 1) {
+            const slot = self.pending_varargs[i];
+            if (slot.staged and slot.reg == reg) return true;
+        }
+        return false;
     }
 
     fn preserveArgReg(
@@ -8439,6 +8511,10 @@ const Arm64Compiler = struct {
             slot.reg = reg;
             slot.operand = null;
             slot.scratch = !owned and !Arm64Compiler.regIsPinned(pinned, reg);
+            // From here to `emitPushVarargs` this register is the marshaling's,
+            // exactly as `markStagedArgReg` says x_k is for a named argument.
+            // The remaining slots of this same loop allocate underneath it.
+            slot.staged = true;
         }
     }
 
@@ -18603,6 +18679,124 @@ test "the spilled-register reclaim passes over a staged argument register" {
     // ordinary temp the reclaim has always taken — so this is one term, not a
     // register the reclaim can no longer reach.
     compiler.pending_arg_regs = 0;
+    try std.testing.expectEqual(staged, try compiler.reclaimSpilledReg(null));
+    try std.testing.expect(!compiler.spilled_regs.contains(staged));
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[staged]);
+    try std.testing.expect(compiler.used_regs[staged]);
+
+    // A reclaim emits nothing; it moves records only.
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+}
+
+// GAP-148. THE RECLAIM BID FOR A REGISTER THE VARIADIC TAIL HAD ALREADY BEEN
+// GIVEN.
+//
+// Apple's ARM64 ABI passes a variadic tail in MEMORY, so those arguments never
+// reach x0..x7 and `pending_arg_regs` — eight bits describing exactly those
+// eight registers — cannot state the reservation for them.
+// `materializePendingVarargs` evaluates each one into an ordinary allocatable
+// register, records it in `pending_varargs[i].reg`, and `emitPushVarargs`
+// stores the lot to [sp, #i*8] after the save. Between the two the register
+// holds an argument for the `bl` being built.
+//
+// The window is that loop's own: slot 0's register is staged while slot 1's
+// operand is evaluated, and evaluation allocates. Both free scans in
+// `allocRegExcluding` pass over the register, but only because `used_regs`
+// names it — and `used_regs` is precisely what the cascade's spill passes take.
+// After `spillReg` the claim is gone and the entry is in `spilled_regs`, where
+// the reclaim took it: entry dropped, owner nulled, `claimReg`, handed back as
+// scratch. The caller's first write lands on the staged argument and
+// `emitPushVarargs` stores that write into the callee's memory-argument slot.
+//
+// A spill ALONE does not clobber it — both free scans skip anything
+// `spilled_regs` contains, so the bytes survive and the push happens to store
+// the right ones. The reclaim is the one arm that makes it wrong, and it is the
+// arm no reservation had ever been stated to.
+//
+// Built directly, like every test this gap has recorded: this is a state the
+// allocator passes through between a stale spill and the next tail operand
+// under pressure, not one a fixture names.
+test "the spilled-register reclaim passes over a staged variadic tail register" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport, and so does this reclaim:
+    // `allocRegExcluding` refuses above its three spill passes otherwise.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // Tail slot 0 materialized into x21, and the allocation for a later slot
+    // spilled it — the claim dropped, the value in the frame, the entry here.
+    const staged: u5 = 21;
+    const staged_off: u16 = 8;
+    const staged_owner: u32 = 5;
+    compiler.pending_varargs[0] = .{ .reg = staged, .staged = true, .scratch = true };
+    compiler.pending_vararg_count = 1;
+    try compiler.spilled_regs.put(alloc, staged, staged_off);
+    compiler.gp_reg_owner[staged] = staged_owner;
+    compiler.used_regs[staged] = false;
+
+    // A STAGED TAIL REGISTER ALONE IS NOT A CANDIDATE. The map is non-empty and
+    // its only entry names a register this call has already been given, so the
+    // answer is the refusal, not the argument.
+    try std.testing.expectError(error.RegisterExhausted, compiler.reclaimSpilledReg(null));
+
+    // And x21 is exactly as it was: entry, owner, claim and frame slot all
+    // untouched — dropping the entry is what hands the register out, and
+    // releasing the slot is what stores a second value over this one.
+    try std.testing.expectEqual(@as(?u16, staged_off), compiler.spilled_regs.get(staged));
+    try std.testing.expectEqual(@as(?u32, staged_owner), compiler.gp_reg_owner[staged]);
+    try std.testing.expect(!compiler.used_regs[staged]);
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+
+    // A spilled TEMP beside it. The reclaim's hazard against a temp is this
+    // gap's and is unchanged; the fact under test is WHICH entry it reaches,
+    // and it must be this one whichever the map's iteration order offers first.
+    const temp: u5 = 22;
+    try compiler.spilled_regs.put(alloc, temp, 24);
+    compiler.gp_reg_owner[temp] = 11;
+    compiler.used_regs[temp] = false;
+
+    try std.testing.expectEqual(temp, try compiler.reclaimSpilledReg(null));
+    try std.testing.expect(!compiler.spilled_regs.contains(temp));
+    try std.testing.expect(compiler.used_regs[temp]);
+
+    // THE STAGED TAIL ARGUMENT IS STILL WHOLE, which is the whole point: it
+    // survives a reclaim that happened beside it.
+    try std.testing.expectEqual(@as(?u16, staged_off), compiler.spilled_regs.get(staged));
+    try std.testing.expect(!compiler.used_regs[staged]);
+
+    // A HOLE IS NOT A RESERVATION. A slot inside `pending_vararg_count` that no
+    // `mov_arg` wrote is `.{}` — operand null, `reg` 0 — so reading the cleared
+    // operand as "materialized" would reserve x0 for nothing. `staged` is the
+    // fact, and an ordinary spilled x0 beside a hole is still the reclaim's.
+    compiler.pending_varargs[1] = .{};
+    compiler.pending_vararg_count = 2;
+    try compiler.spilled_regs.put(alloc, 0, 40);
+    compiler.gp_reg_owner[0] = 13;
+    compiler.used_regs[0] = false;
+    try std.testing.expectEqual(@as(u5, 0), try compiler.reclaimSpilledReg(null));
+    try std.testing.expect(!compiler.spilled_regs.contains(0));
+
+    // THE SKIP IS THE STAGING FACT AND NOTHING ELSE. `emitPopVarargs` clears
+    // the tail, and after it the same entry in the same state is the ordinary
+    // temp the reclaim has always taken — so this is one term, not a register
+    // the reclaim can no longer reach.
+    compiler.pending_varargs[0] = .{};
+    compiler.pending_vararg_count = 0;
     try std.testing.expectEqual(staged, try compiler.reclaimSpilledReg(null));
     try std.testing.expect(!compiler.spilled_regs.contains(staged));
     try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[staged]);
