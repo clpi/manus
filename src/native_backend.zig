@@ -3604,11 +3604,11 @@ const Arm64Compiler = struct {
                 var extra_consumed: u32 = 0;
                 if (ifconv) |plan| {
                     if (fuse_branch or fuse_named) self.countTightDefAdmission(ins, flat_idx);
-                    try self.emitIfConverted(&temps, &pinned, plan, &branch_patches);
+                    try self.emitIfConverted(&temps, &pinned, plan, &branch_patches, flat_idx);
                     extra_consumed = plan.extra;
                 } else if (ifconv2) |plan| {
                     if (fuse_branch or fuse_named) self.countTightDefAdmission(ins, flat_idx);
-                    try self.emitIfConvertedTwoSided(&temps, &pinned, plan, &branch_patches);
+                    try self.emitIfConvertedTwoSided(&temps, &pinned, plan, &branch_patches, flat_idx);
                     extra_consumed = plan.extra;
                 } else if (fuse_branch) {
                     self.countTightDefAdmission(ins, flat_idx);
@@ -3622,7 +3622,7 @@ const Arm64Compiler = struct {
                     try self.emitFusedMulAdd(&temps, &pinned, ins, b.instrs[bi + 1]);
                     extra_consumed = 1;
                 } else if (fuse_tail) {
-                    try self.emitTailCallDirect(&temps, &pinned, ins);
+                    try self.emitTailCallDirect(&temps, &pinned, ins, flat_idx);
                     extra_consumed = 1;
                 } else {
                     const preferred_result = if (bi + 1 < b.instrs.len)
@@ -3630,7 +3630,7 @@ const Arm64Compiler = struct {
                             self.returnConstDestination(ins, b.instrs[bi + 1], flat_idx)
                     else
                         null;
-                    try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches, preferred_result);
+                    try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches, preferred_result, flat_idx);
                 }
                 const fact_count: u2 = @as(u2, @intFromBool(ins.relation != null)) +
                     @as(u2, @intFromBool(ins.application != null)) +
@@ -3844,6 +3844,11 @@ const Arm64Compiler = struct {
         return 0;
     }
 
+    /// `at` is the flat instruction index of `ins` in the function being
+    /// lowered — the same index `sweepGpLive` and `immHoistExit` are given
+    /// after this returns. It is here because `preserveArgReg` reads
+    /// `value_free_at` against it to tell a `temps` entry whose value is still
+    /// owed a register from one that only still names one (GAP-148).
     fn compileDnirInstr(
         self: *Arm64Compiler,
         temps: *std.AutoHashMapUnmanaged(u32, u5),
@@ -3851,6 +3856,7 @@ const Arm64Compiler = struct {
         ins: dnir.Instr,
         branch_patches: *std.ArrayList(DnirBranchPatch),
         preferred_result: ?u5,
+        at: u32,
     ) Error!void {
         switch (ins.op) {
             .@"const" => switch (ins.ty) {
@@ -3928,13 +3934,13 @@ const Arm64Compiler = struct {
                 }
                 switch (ins.lhs) {
                     .i64 => |n| {
-                        try self.preserveArgReg(temps, pinned, slot);
+                        try self.preserveArgReg(temps, pinned, slot, at);
                         try self.emitMovImm(slot, n);
                         self.markStagedArgReg(slot);
                         return;
                     },
                     .str => |s| {
-                        try self.preserveArgReg(temps, pinned, slot);
+                        try self.preserveArgReg(temps, pinned, slot, at);
                         const sym = try self.internString(s);
                         try self.emitAdrpAdd(slot, sym);
                         self.markStagedArgReg(slot);
@@ -3944,7 +3950,7 @@ const Arm64Compiler = struct {
                 }
                 const reg = try self.evalDnirValue(temps, ins.lhs);
                 if (reg != slot) {
-                    try self.preserveArgReg(temps, pinned, slot);
+                    try self.preserveArgReg(temps, pinned, slot, at);
                     try self.emitMovReg(slot, reg);
                 }
                 if (slot == 0 and ins.lhs == .temp) {
@@ -4332,7 +4338,7 @@ const Arm64Compiler = struct {
                     if (ins.lhs != .void) {
                         const arg_reg = try self.evalDnirValue(temps, ins.lhs);
                         if (arg_reg != 0) {
-                            try self.preserveArgReg(temps, pinned, 0);
+                            try self.preserveArgReg(temps, pinned, 0, at);
                             try self.emitMovReg(0, arg_reg);
                         }
                         // Passing a local as an argument must not free the local:
@@ -7424,6 +7430,7 @@ const Arm64Compiler = struct {
         temps: *std.AutoHashMapUnmanaged(u32, u5),
         pinned: *const std.AutoHashMapUnmanaged(u32, u5),
         slot: u5,
+        at: u32,
     ) Error!void {
         if (slot >= 8) return;
         if (Arm64Compiler.regIsPinned(pinned, slot)) return;
@@ -7457,6 +7464,34 @@ const Arm64Compiler = struct {
             if (entry.value_ptr.* != slot) continue;
             const id = entry.key_ptr.*;
             const last = self.value_free_at.get(id) orelse std.math.maxInt(u32);
+            // A STALE NAME IS NOT A VALUE (GAP-148).
+            //
+            // Nothing removes a `temps` entry when its value dies —
+            // `sweepGpLive` clears `gp_reg_owner` and `used_regs` and leaves
+            // `temps` alone — so an id whose last read is already behind
+            // emission goes on naming this register for the rest of the
+            // function. Relocating for it costs a move and a register nobody
+            // needed, and when the pool has nothing but `slot` the exclusion
+            // below turns that cost into a REFUSAL of a program with no live
+            // value in the slot at all. `value_free_at` is the fact that tells
+            // the two apart, and `at` is the instruction index it has to be
+            // read against — which is the whole reason this function is handed
+            // one.
+            //
+            // `last < at`, not the `last <= idx` `sweepGpLive` uses. The sweep
+            // runs AFTER the instruction at `idx` and may retire an id that
+            // instruction read; this runs BEFORE the marshaling it guards
+            // completes, so an id whose last read IS the call being marshaled
+            // is still owed its value and stays a victim.
+            //
+            // An id ABSENT from the map stays a victim too, which is what
+            // `orelse maxInt` above already spells. Absence is "no read this
+            // compiler attributed to the id", not "no read": `sweepGpLive`
+            // reads it as dead at every index, and the register it hands back
+            // for it is the abandonment `reclaimSpilledReg` records. On a path
+            // whose act is to MOVE a live value, the safe reading of the same
+            // silence is the opposite one.
+            if (last < at) continue;
             if (victim == null or last > victim_last) {
                 victim = id;
                 victim_last = last;
@@ -7498,13 +7533,12 @@ const Arm64Compiler = struct {
         //
         // When the pool has nothing but `slot`, the exclusion refuses instead
         // of relocating. That is the trade this file makes everywhere else — a
-        // refusal is a bail while the alternative is a wrong answer — and it
-        // costs the case where the victim `temps` named was already dead:
-        // nothing removes a temp entry when its value dies, so a stale name can
-        // reach here, and the exclusion cannot tell it from a live one because
-        // `preserveArgReg` has no instruction index to read `value_free_at`
-        // against. Recorded in `gaps/GAP-148.md`, not repaired here: threading
-        // the index is a second change and this one is the two-owner face.
+        // refusal is a bail while the alternative is a wrong answer — and it is
+        // now paid only for a value that is actually live: the victim scan
+        // above reads `value_free_at` against `at` and passes over an id whose
+        // last read is already behind emission, so a slot named only by dead
+        // ids leaves this function without a move, without a register, and
+        // without a bail.
         //
         // Not the closure — closure is authoritative `register`/`frame`
         // assignment before emission, per this gap's record, under which the
@@ -7757,11 +7791,12 @@ const Arm64Compiler = struct {
         temps: *std.AutoHashMapUnmanaged(u32, u5),
         pinned: *const std.AutoHashMapUnmanaged(u32, u5),
         ins: dnir.Instr,
+        at: u32,
     ) Error!void {
         if (ins.lhs != .void) {
             const arg_reg = try self.evalDnirValue(temps, ins.lhs);
             if (arg_reg != 0) {
-                try self.preserveArgReg(temps, pinned, 0);
+                try self.preserveArgReg(temps, pinned, 0, at);
                 try self.emitMovReg(0, arg_reg);
             }
             self.releaseDnirTemp(pinned, ins.lhs, arg_reg);
@@ -9247,6 +9282,7 @@ const Arm64Compiler = struct {
         pinned: *std.AutoHashMapUnmanaged(u32, u5),
         plan: IfConvPlan,
         branch_patches: *std.ArrayList(DnirBranchPatch),
+        at: u32,
     ) Error!void {
         const l = plan.store.result.?;
         const t = plan.op.result.?;
@@ -9299,7 +9335,7 @@ const Arm64Compiler = struct {
         if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
             self.gp_reg_owner[dst] = t;
         }
-        try self.compileDnirInstr(temps, pinned, plan.store, branch_patches, null);
+        try self.compileDnirInstr(temps, pinned, plan.store, branch_patches, null, at);
     }
 
     // ------------------------------------------------------------------
@@ -9806,13 +9842,14 @@ const Arm64Compiler = struct {
         store: dnir.Instr,
         branch_patches: *std.ArrayList(DnirBranchPatch),
         owned: *bool,
+        at: u32,
     ) Error!u5 {
         if (ops.len == 0) {
             owned.* = false;
             return try self.evalDnirValue(temps, store.lhs);
         }
         for (ops) |op| {
-            try self.compileDnirInstr(temps, pinned, op, branch_patches, null);
+            try self.compileDnirInstr(temps, pinned, op, branch_patches, null, at);
             const t = op.result.?;
             if (temps.get(t)) |r| {
                 if (r >= 9 and r < 29 and r != platform_reserved_reg and !self.gp_home_regs[r]) {
@@ -9838,15 +9875,16 @@ const Arm64Compiler = struct {
         pinned: *std.AutoHashMapUnmanaged(u32, u5),
         plan: TwoSidedPlan,
         branch_patches: *std.ArrayList(DnirBranchPatch),
+        at: u32,
     ) Error!void {
         var then_owned = false;
         var else_owned = false;
-        const rt = try self.emitIfConvArm(temps, pinned, plan.then_ops, plan.then_store, branch_patches, &then_owned);
+        const rt = try self.emitIfConvArm(temps, pinned, plan.then_ops, plan.then_store, branch_patches, &then_owned, at);
         // The then-arm's register must survive the else-arm's allocations. It
         // does because `emitIfConvArm` leaves it claimed (`allocReg` sets
         // `used_regs`) and no sweep runs inside a collapsed window — the driver
         // sweeps once per CONSUMED index, after this emitter returns.
-        const re = try self.emitIfConvArm(temps, pinned, plan.else_ops, plan.else_store, branch_patches, &else_owned);
+        const re = try self.emitIfConvArm(temps, pinned, plan.else_ops, plan.else_store, branch_patches, &else_owned, at);
 
         // The destination. Reusing the then-arm's own scratch is free — `csel`
         // writes its destination and `xd == xn` is legal — but only when that
@@ -9902,7 +9940,7 @@ const Arm64Compiler = struct {
         if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
             self.gp_reg_owner[dst] = carrier;
         }
-        try self.compileDnirInstr(temps, pinned, store, branch_patches, null);
+        try self.compileDnirInstr(temps, pinned, store, branch_patches, null, at);
         self.ifconv_admitted += 1;
     }
 
@@ -18739,7 +18777,7 @@ test "a store into a spilled home retires the entry that would reload it" {
         .result = slot,
         .lhs = .{ .temp = src_temp },
         .ty = .i64,
-    }, &branch_patches, null);
+    }, &branch_patches, null, 0);
 
     // THE STORE IS ONE MOVE INTO THE HOME, unchanged by this repair.
     const want_mov: u32 = 0xaa0003e0 | (@as(u32, src_reg) << 16) | @as(u32, home);
@@ -18787,7 +18825,7 @@ test "a store into a spilled home retires the entry that would reload it" {
         .result = slot,
         .lhs = .{ .temp = src_temp },
         .ty = .i64,
-    }, &branch_patches, null);
+    }, &branch_patches, null, 0);
     try std.testing.expectEqual(@as(?u16, other_off), compiler.spilled_regs.get(other));
     try std.testing.expect(!compiler.used_regs[other]);
     try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
@@ -18999,7 +19037,7 @@ test "a call result refuses the ABI register the spill map still names" {
         .lhs = .void,
         .callee = "f",
         .ty = .i64,
-    }, &branch_patches, null);
+    }, &branch_patches, null, 0);
 
     // THE ANSWER IS NOT IN x0. This is the whole fact: x0 is spoken for, and the
     // register that carries the result is one `allocRegOutsideSaveSet` proved
@@ -19122,7 +19160,7 @@ test "an argument register is not preserved into itself" {
     reg = 4;
     while (reg < 8) : (reg += 1) compiler.used_regs[reg] = true;
 
-    try compiler.preserveArgReg(&temps, &pinned, slot);
+    try compiler.preserveArgReg(&temps, &pinned, slot, 0);
 
     // THE VALUE LEFT x0. Both ids name the destination, it is claimed, and the
     // slot is free for the argument the caller stages next.
@@ -19187,7 +19225,7 @@ test "preserving an argument register refuses when the pool has only that regist
     // so this is the whole answer the allocator has.
     try std.testing.expectError(
         error.RegisterExhausted,
-        compiler.preserveArgReg(&temps, &pinned, slot),
+        compiler.preserveArgReg(&temps, &pinned, slot, 0),
     );
 
     // Nothing was emitted and nothing was moved: the refusal is a bail, and the
@@ -19195,6 +19233,124 @@ test "preserving an argument register refuses when the pool has only that regist
     // staged over anything.
     try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
     try std.testing.expectEqual(@as(?u5, slot), temps.get(owner_id));
+}
+
+// A DEAD NAME IN AN ARGUMENT REGISTER BOUGHT A RELOCATION AND A BAIL (GAP-148).
+//
+// The exclusion above is the repair that stopped `preserveArgReg` handing the
+// argument's own slot back as the destination, and it left a cost this gap
+// recorded and did not pay: nothing removes a `temps` entry when its value
+// dies — `sweepGpLive` clears `gp_reg_owner` and `used_regs` and leaves `temps`
+// alone — so an id whose last read is already behind emission goes on naming an
+// ABI register for the rest of the function. The victim scan found that name,
+// could not tell it from a live one, and asked for somewhere to put a value
+// nobody would read again: a move and a register when the pool had one, and
+// `error.RegisterExhausted` — a refused program — when it did not.
+//
+// `value_free_at` is the fact that separates them and it is not a new one; it
+// is what `sweepGpLive` reads one line later in the same driver iteration. What
+// was missing was the index to read it against, which is why `compileDnirInstr`,
+// the two if-conversion emitters and the tail-call emitter now carry `at` down
+// to this function.
+//
+// The boundary is `last < at` and not the sweep's `last <= idx`: the sweep runs
+// AFTER the instruction at `idx` and may retire an id that instruction read,
+// while this runs BEFORE the marshaling it guards completes, so an id whose
+// last read IS the call being marshaled is still owed its value. Both sides of
+// that boundary are asserted below.
+//
+// Not gate transport, like the two faces above it: `spilled_regs` is empty and
+// the bound is register pressure alone. Not the closure either — closure is
+// authoritative `register`/`frame` assignment before emission, per this gap's
+// record, under which a value's liveness is carried by the assignment rather
+// than recovered from a map that outlives it.
+test "a dead name in an argument register does not buy it a relocation" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+
+    // The state the marshaling arms call this function in: the slot unclaimed —
+    // released by `releaseDnirTemp` without being unnamed, which is what makes
+    // a victim findable here at all — and still named by an id whose last read
+    // the function-wide liveness pass put at instruction 3.
+    const slot: u5 = 0;
+    const id: u32 = 12;
+    const died_at: u32 = 3;
+    try compiler.value_free_at.put(alloc, id, died_at);
+    try temps.put(alloc, id, slot);
+
+    // The same pressure the two tests above build: every register the first
+    // scan walks is busy and so is every ABI register but the slot itself, so
+    // the exclusion has nothing at all to give.
+    var reg: u5 = 1;
+    while (reg < 29) : (reg += 1) compiler.used_regs[reg] = true;
+    compiler.used_regs[slot] = false;
+
+    // (A) THE NAME IS BEHIND EMISSION. This is instruction 4 and the id was
+    //     last read at 3, so nothing reads x0 again and the argument may land
+    //     on it. No move, no register — and the differential this test turns
+    //     on, no bail: the old scan asked the empty pool for a destination and
+    //     the `try` carried `error.RegisterExhausted` out of a program that had
+    //     no live value in the slot.
+    try compiler.preserveArgReg(&temps, &pinned, slot, died_at + 1);
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u5, slot), temps.get(id));
+    try std.testing.expect(!compiler.used_regs[slot]);
+
+    // (B) AND IT DOES NOT SPEND A REGISTER EITHER. Hand the pool exactly one
+    //     and it is still free afterwards: the skip is the refusal's cost
+    //     removed, not the refusal itself in another spelling.
+    const fresh: u5 = 3;
+    compiler.used_regs[fresh] = false;
+    try compiler.preserveArgReg(&temps, &pinned, slot, died_at + 1);
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u5, slot), temps.get(id));
+    try std.testing.expect(!compiler.used_regs[fresh]);
+
+    // (C) THE BOUNDARY IS ON THE LIVE SIDE. At the instruction that IS the id's
+    //     last read the value is still owed one, so the identical state
+    //     relocates — into the one register the pool now has — and every id
+    //     that named the slot travels, exactly as before this change.
+    try compiler.preserveArgReg(&temps, &pinned, slot, died_at);
+    try std.testing.expectEqual(@as(?u5, fresh), temps.get(id));
+    try std.testing.expect(compiler.used_regs[fresh]);
+    try std.testing.expect(!compiler.used_regs[slot]);
+    try std.testing.expectEqual(@as(usize, 4), compiler.code.items.len);
+    const mov_word: u32 = 0xaa0003e0 | (@as(u32, slot) << 16) | @as(u32, fresh);
+    try std.testing.expectEqual(
+        mov_word,
+        std.mem.readInt(u32, compiler.code.items[0..4], .little),
+    );
+
+    // (D) AND THE TRADE THE EXCLUSION MAKES FOR A LIVE VALUE IS UNTOUCHED. The
+    //     relocation above claimed the last register, so a live id in the slot
+    //     meets the empty pool again and the answer is still the bail — which
+    //     is what the test above measures and what this one must not have
+    //     quietly removed.
+    try temps.put(alloc, id, slot);
+    try std.testing.expectError(
+        error.RegisterExhausted,
+        compiler.preserveArgReg(&temps, &pinned, slot, died_at),
+    );
+    try std.testing.expectEqual(@as(usize, 4), compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u5, slot), temps.get(id));
 }
 
 // A PACK RESULT TOOK THE ABI REGISTER THE SPILL MAP WAS STILL DESCRIBING
@@ -19283,7 +19439,7 @@ test "a pack result refuses the ABI register the spill map still names" {
         .callee = "f",
         .ty = .i64,
         .pack_results = &pack,
-    }, &branch_patches, null);
+    }, &branch_patches, null, 0);
 
     // NEITHER ANSWER IS IN AN ABI REGISTER. The park took both to the frame and
     // brought them back in the two registers `allocReg` scans first, which is
