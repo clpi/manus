@@ -171,3 +171,100 @@ test "gap182: bridge rejects a graph tuple with an unnamed producer" {
         effect.fromExperimentFact(&tuple, &.{}),
     );
 }
+
+test "gap182: order 5 provenance evidence cannot become an applied outcome" {
+    // The production conversion seam, end to end: an entry whose evidence is
+    // an observation or estimate is recorded as a `profile_insufficient`
+    // rejection naming the guard-or-proof demand — never an applied outcome
+    // (`law.oracle.bounded`). The status `profile_insufficient` was already
+    // named by the outcome schema; this test is its executed consumer.
+    const optimization_outcome = @import("optimization_outcome.zig");
+    const transform_engine = @import("transform_engine.zig");
+    const alloc = std.testing.allocator;
+    defer optimization_outcome.deinitSession(alloc);
+    transform_engine.deinitProvenance(alloc);
+    transform_engine.setProvenanceEnabled(true);
+    transform_engine.logProvenance(alloc, "comp.why.boxed", .emit_call, 1, 2);
+    var log = try optimization_outcome.fromProvenance(alloc);
+    defer log.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 1), log.items.len);
+    const outcome = log.items[0];
+    try std.testing.expectEqual(
+        optimization_outcome.Status.profile_insufficient,
+        outcome.status,
+    );
+    try std.testing.expect(outcome.reason != null);
+    try std.testing.expect(
+        std.mem.indexOf(u8, outcome.reason.?, "demands a guard or proof") != null,
+    );
+    // The recorded evidence names WHAT was observed, never the truth it
+    // cannot carry; its own level still refuses truth when re-asked.
+    try std.testing.expect(!effect.producesTruthLevel(
+        effect.levelForOutcomeEvidence(outcome.evidence),
+    ));
+}
+
+test "gap182: speculation construction enforces provenance" {
+    // A speculation that cannot name the measured subject revision constructs
+    // NO fact — null, never a fact with incomplete provenance
+    // (`law.evidence.subject.one`).
+    const no_rev = effect.speculate(
+        "shape:42",
+        "inline_cache",
+        "generic",
+        "",
+        .profile_counter,
+    );
+    try std.testing.expect(no_rev == null);
+}
+
+test "gap182: speculation records guard, candidates, and evidence" {
+    // The one construction seam produces a named fact carrying the guard
+    // proposition, both candidate identities, the measured subject revision,
+    // and the evidence producer — all recoverable from the fact's own fields
+    // (`law.magic.code.zero`).
+    const s = effect.speculate(
+        "shape:42",
+        "inline_cache",
+        "generic",
+        "rev-abc",
+        .hardware_counter,
+    ).?;
+    try std.testing.expectEqualStrings("shape:42", s.guard_proposition);
+    try std.testing.expectEqualStrings("inline_cache", s.applied_candidate);
+    try std.testing.expectEqualStrings("generic", s.fallback_candidate);
+    try std.testing.expectEqualStrings("rev-abc", s.subject_revision);
+    try std.testing.expectEqual(effect.EvidenceProducer.hardware_counter, s.evidence);
+    // The epistemic level is recovered from the producer — one taxonomy,
+    // no second priority table.
+    try std.testing.expectEqual(effect.EpistemicLevel.profiled, s.level());
+    // Hardware-counter evidence is evidence only, never semantic truth.
+    try std.testing.expect(!s.producesTruth());
+}
+
+test "gap182: speculation deopt selects fallback" {
+    // When the guard is invalidated, the fallback candidate is selected —
+    // the speculatively applied transformation is no longer admissible.
+    const s = effect.speculate(
+        "shape:42",
+        "inline_cache",
+        "generic",
+        "rev-abc",
+        .profile_counter,
+    ).?;
+    try std.testing.expectEqualStrings("generic", s.deopt());
+}
+
+test "gap182: sound speculation produces truth" {
+    // A speculation backed by static proof produces semantic truth —
+    // its theorem did not depend on any measurement.
+    const s = effect.speculate(
+        "type:i64",
+        "unbox",
+        "boxed",
+        "rev-abc",
+        .static_proof,
+    ).?;
+    try std.testing.expect(s.producesTruth());
+    try std.testing.expectEqual(effect.EpistemicLevel.proven, s.level());
+}

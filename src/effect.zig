@@ -16,6 +16,7 @@
 
 const std = @import("std");
 const optimization_outcome = @import("optimization_outcome.zig");
+const transform_engine = @import("transform_engine.zig");
 const assumption_guard = @import("assumption_guard.zig");
 const semantic_graph = @import("semantic_graph.zig");
 
@@ -313,6 +314,91 @@ pub fn selectUnderInvalidation(
     return select(candidates, fact.proposition, assumption_holds);
 }
 
+/// Speculation: the optimizer speculatively applied a transformation under a
+/// guard. This is the "speculation" face of "guard/speculation/effect" — the
+/// optimizer records that it applied a transformation conditionally, under a
+/// guard proposition, with a named fallback candidate if the guard is
+/// invalidated. The speculation is a named fact with construction-forced
+/// provenance (`law.evidence.subject.one`): a speculation that cannot name the
+/// measured subject revision on which it was made constructs NO fact — null,
+/// never a fact with incomplete provenance and never a sentinel in-band.
+///
+/// The guard proposition is the SAME identity consumed by `GuardInvalidation`
+/// and `selectUnderInvalidation` — one proposition namespace, no second
+/// authority. The evidence field records what kind of evidence stands behind
+/// the guard (profile counter, hardware counter, guard observation, etc.),
+/// so the speculation's epistemic level is always recoverable from its own
+/// fields (`law.magic.code.zero`).
+pub const Speculation = struct {
+    /// Stable identity of the guard proposition (same namespace as
+    /// `GuardInvalidation.proposition` and `Experiment.proposition`).
+    guard_proposition: []const u8,
+    /// Stable identity of the transformation that was speculatively applied.
+    applied_candidate: []const u8,
+    /// Stable identity of the candidate selected if the guard is invalidated.
+    fallback_candidate: []const u8,
+    /// The exact measured subject revision on which the speculation was made
+    /// (`law.evidence.subject.one`) — never implicit "at HEAD".
+    subject_revision: []const u8,
+    /// What kind of evidence stands behind the guard. Recoverable epistemic
+    /// level: `self.evidence.level()` answers the level without a second table.
+    evidence: EvidenceProducer,
+
+    /// The epistemic level of this speculation's guard evidence. One taxonomy,
+    /// recovered from the producer — no second priority table.
+    pub fn level(self: *const Speculation) EpistemicLevel {
+        return self.evidence.level();
+    }
+
+    /// Whether the speculation's guard is still valid. The caller supplies
+    /// the runtime truth; this file owns no clock and no observation loop.
+    pub fn valid(
+        self: *const Speculation,
+        guard_holds: *const fn (proposition: []const u8) bool,
+    ) bool {
+        return guard_holds(self.guard_proposition);
+    }
+
+    /// When the guard is invalidated, the fallback candidate is selected.
+    /// This is the deopt path: the guard proposition became false, so the
+    /// speculatively applied transformation is no longer admissible.
+    pub fn deopt(self: *const Speculation) []const u8 {
+        return self.fallback_candidate;
+    }
+
+    /// Whether this speculation's evidence can produce semantic truth on its
+    /// own. Sound evidence (proof, inference) does; profile/counter/sample
+    /// evidence never does — it demands a guard (`law.oracle.bounded`).
+    pub fn producesTruth(self: *const Speculation) bool {
+        return self.evidence.level().admitsWithoutGuard();
+    }
+};
+
+/// The one construction seam for a speculation fact. The optimizer calls this
+/// when it speculatively applies a transformation under a guard. Provenance is
+/// enforced AT CONSTRUCTION: a speculation that cannot name the measured subject
+/// revision constructs NO fact — null, never a fact with incomplete provenance
+/// and never a sentinel in-band (`law.evidence.subject.one`). There is exactly
+/// one construction seam — this function — so no caller can mint a speculation
+/// over a different producer or with incomplete provenance
+/// (`law.fact.producer.one`).
+pub fn speculate(
+    guard_proposition: []const u8,
+    applied_candidate: []const u8,
+    fallback_candidate: []const u8,
+    subject_revision: []const u8,
+    evidence: EvidenceProducer,
+) ?Speculation {
+    if (subject_revision.len == 0) return null;
+    return .{
+        .guard_proposition = guard_proposition,
+        .applied_candidate = applied_candidate,
+        .fallback_candidate = fallback_candidate,
+        .subject_revision = subject_revision,
+        .evidence = evidence,
+    };
+}
+
 /// Whether profile-shaped evidence is ever sufficient on its own for a
 /// semantics-changing optimization. The answer is always no; this exists so
 /// callers route through the fact instead of re-deriving it.
@@ -335,6 +421,49 @@ pub fn levelForOutcomeEvidence(ev: optimization_outcome.Evidence) EpistemicLevel
         .assumed => .heuristic,
         .profiled => .profiled,
         .estimated => .heuristic,
+    };
+}
+
+/// GAP-182 required order 5, graph-owned enforcement: the transform engine's
+/// evidence taxonomy mapped onto the ONE epistemic taxonomy this file owns.
+/// `semantic_proof` is static proof; `guarded` is the guard's own observation
+/// witness; `imported` is an admitted foreign assertion (bounded by
+/// `law.oracle.bounded` to its legacy-equivalent subset); `profile`,
+/// `benchmark`, `target_estimate`, and `static_estimate` are observations or
+/// estimates — evidence levels that never admit without a guard or proof.
+/// The two taxonomies have no other mapping face, so a new engine evidence
+/// kind cannot silently acquire a sound meaning beside it (compiler error,
+/// not a default) — `law.magic.code.zero`.
+pub fn levelForTransformEvidence(ev: transform_engine.Evidence) EpistemicLevel {
+    return switch (ev) {
+        .semantic_proof => .proven,
+        .guarded => .guarded,
+        .imported => .inferred_sound,
+        .profile => .profiled,
+        .benchmark => .sampled,
+        .target_estimate => .heuristic,
+        .static_estimate => .heuristic,
+        .user_assertion => .heuristic,
+        .heuristic => .heuristic,
+    };
+}
+
+/// The truth face of the epistemic taxonomy for the outcome path: exactly
+/// `admitsWithoutGuard`, restated under this name so the outcome conversion
+/// reads as the law it applies (profile evidence is never semantic truth).
+/// One level decides — no second priority table, no per-site override
+/// (`law.profile.evidence`, `law.oracle.bounded`).
+pub fn producesTruthLevel(level: EpistemicLevel) bool {
+    return level.admitsWithoutGuard();
+}
+
+/// The outcome-log evidence face of the transform taxonomy, used when an
+/// evidence-level entry is refused: the recorded evidence names WHAT was
+/// observed, never the truth it cannot carry (`law.oracle.bounded`).
+pub fn outcomeEvidenceForTransformEvidence(ev: transform_engine.Evidence) optimization_outcome.Evidence {
+    return switch (ev) {
+        .profile, .benchmark => .profiled,
+        else => .estimated,
     };
 }
 

@@ -5,6 +5,7 @@ const std = @import("std");
 const transform_engine = @import("transform_engine.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const proof_carrying = @import("proof_carrying.zig");
+const effect = @import("effect.zig");
 
 pub const SCHEMA_VERSION = "optimization-outcome-v0";
 
@@ -63,7 +64,7 @@ pub const Outcome = struct {
     site: transform_engine.SiteKind,
     reason: ?[]const u8,
     before_repr: ?[]const u8,
-    after_repr:?[]const u8,
+    after_repr: ?[]const u8,
     inputs_hash: u64,
     output_hash: u64,
     /// P2/GAP-137: exact graph coordinates carried from provenance so
@@ -154,6 +155,16 @@ pub fn logOutcome(
 }
 
 /// Convert transform_engine provenance entries into applied outcomes.
+///
+/// GAP-182 graph-owned enforcement face (`law.oracle.bounded`): each entry's
+/// own evidence — not a blanket label — decides the outcome. An entry whose
+/// evidence maps to an evidence-level epistemic category (profile, benchmark,
+/// heuristic, target estimate) can never be recorded as an applied
+/// semantics-changing transformation on profile evidence alone: it is
+/// converted to a `profile_insufficient` rejection naming the guard or proof
+/// the realization still demands. Sound evidence (semantic proof, runtime
+/// guard, or an admitted foreign assertion) converts to `.proven` exactly as
+/// before, so existing explain output for sound entries is unchanged.
 pub fn fromProvenance(alloc: std.mem.Allocator) !OutcomeLog {
     const entries = transform_engine.provenanceEntries();
     var items: std.ArrayListUnmanaged(Outcome) = .empty;
@@ -162,13 +173,15 @@ pub fn fromProvenance(alloc: std.mem.Allocator) !OutcomeLog {
         items.deinit(alloc);
     }
     for (entries) |e| {
+        const level = effect.levelForTransformEvidence(e.evidence);
+        const applied = effect.producesTruthLevel(level);
         try items.append(alloc, .{
             .transformation = try alloc.dupe(u8, e.public_name),
             .entity = null,
-            .status = .applied,
-            .evidence = .proven,
+            .status = if (applied) .applied else .profile_insufficient,
+            .evidence = if (applied) .proven else effect.outcomeEvidenceForTransformEvidence(e.evidence),
             .site = e.site,
-            .reason = null,
+            .reason = if (applied) null else try insufficientReason(alloc, e.public_name, e.evidence),
             .before_repr = null,
             .after_repr = null,
             .inputs_hash = e.inputs_hash,
@@ -177,6 +190,21 @@ pub fn fromProvenance(alloc: std.mem.Allocator) !OutcomeLog {
         });
     }
     return .{ .items = try items.toOwnedSlice(alloc) };
+}
+
+/// The rejection reason names the guard-or-proof demand — one construction
+/// seam, structured fields, never a plain status integer crossing the seam
+/// (`law.magic.code.zero`).
+fn insufficientReason(
+    alloc: std.mem.Allocator,
+    public_name: []const u8,
+    evidence: transform_engine.Evidence,
+) ![]const u8 {
+    return std.fmt.allocPrint(
+        alloc,
+        "evidence '{s}' is observation, not truth: realization '{s}' demands a guard or proof before it may apply",
+        .{ evidence.name(), public_name },
+    );
 }
 
 fn jsonEscape(w: *std.Io.Writer, s: []const u8) !void {
@@ -265,16 +293,61 @@ pub fn writeJsonLine(log: *const OutcomeLog, w: *std.Io.Writer) !void {
     try w.print("\n", .{});
 }
 
-test "optimization_outcome: provenance converts to applied outcomes" {
+test "effect: transform evidence levels are refused as outcome truth (GAP-182 order 5)" {
+    // Graph-owned enforcement face: the level bridge answers per kind
+    // (`law.oracle.bounded`). Sound kinds admit; observation and estimate
+    // kinds never do.
+    try std.testing.expect(effect.producesTruthLevel(
+        effect.levelForTransformEvidence(.semantic_proof),
+    ));
+    try std.testing.expect(effect.producesTruthLevel(
+        effect.levelForTransformEvidence(.imported),
+    ));
+    try std.testing.expect(!effect.producesTruthLevel(
+        effect.levelForTransformEvidence(.guarded),
+    ));
+    try std.testing.expect(!effect.producesTruthLevel(
+        effect.levelForTransformEvidence(.profile),
+    ));
+    try std.testing.expect(!effect.producesTruthLevel(
+        effect.levelForTransformEvidence(.benchmark),
+    ));
+    try std.testing.expect(!effect.producesTruthLevel(
+        effect.levelForTransformEvidence(.static_estimate),
+    ));
+    try std.testing.expect(!effect.producesTruthLevel(
+        effect.levelForTransformEvidence(.target_estimate),
+    ));
+    try std.testing.expect(!effect.producesTruthLevel(
+        effect.levelForTransformEvidence(.user_assertion),
+    ));
+    try std.testing.expect(!effect.producesTruthLevel(
+        effect.levelForTransformEvidence(.heuristic),
+    ));
+}
+
+test "effect: evidence-level provenance cannot apply (GAP-182 order 5)" {
     const alloc = std.testing.allocator;
     defer deinitSession(alloc);
     transform_engine.deinitProvenance(alloc);
     transform_engine.setProvenanceEnabled(true);
+    // The engine log face stamps `heuristic` unless a caller names evidence;
+    // `heuristic` is an evidence level, so the conversion must refuse it as
+    // applied truth and record the guard-or-proof demand instead.
     transform_engine.logProvenance(alloc, "comp.why.boxed", .emit_call, 1, 2);
     var log = try fromProvenance(alloc);
     defer log.deinit(alloc);
     try std.testing.expectEqual(@as(usize, 1), log.items.len);
     try std.testing.expectEqualStrings("comp.why.boxed", log.items[0].transformation);
-    try std.testing.expectEqual(Status.applied, log.items[0].status);
-    try std.testing.expectEqual(Evidence.proven, log.items[0].evidence);
+    try std.testing.expectEqual(Status.profile_insufficient, log.items[0].status);
+    try std.testing.expect(!effect.producesTruthLevel(
+        effect.levelForOutcomeEvidence(log.items[0].evidence),
+    ));
+    try std.testing.expect(log.items[0].reason != null);
+    try std.testing.expect(
+        std.mem.indexOf(u8, log.items[0].reason.?, "demands a guard or proof") != null,
+    );
+    // The recorded evidence names WHAT was observed, never the truth it
+    // cannot carry (`law.oracle.bounded`).
+    try std.testing.expectEqualStrings("estimated", log.items[0].evidence.name());
 }
