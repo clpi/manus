@@ -268,3 +268,94 @@ test "gap182: sound speculation produces truth" {
     try std.testing.expect(s.producesTruth());
     try std.testing.expectEqual(effect.EpistemicLevel.proven, s.level());
 }
+
+fn appendExperiment(
+    graph: *semantic_graph.SemanticGraph,
+    proposition: []const u8,
+    producer: []const u8,
+    revision: []const u8,
+) !void {
+    const alloc = std.testing.allocator;
+    try graph.experiments.append(alloc, .{
+        .proposition = try alloc.dupe(u8, proposition),
+        .producer = try alloc.dupe(u8, producer),
+        .cost = 1,
+        .conditional_theorem = try alloc.dupe(u8, "cand:narrow"),
+        .subject_revision = try alloc.dupe(u8, revision),
+    });
+}
+
+test "gap182: graph enforcement refuses evidence experiments without a graph guard" {
+    // The graph-owned face of the evidence-only rule: an experiment fact whose
+    // producer is an evidence producer (profile counter, hardware counter,
+    // sample, heuristic estimate) is inadmissible unless the GRAPH carries a
+    // guard over the same proposition — the effect-side law
+    // (`profileNeedsGuard`) enforced over the graph's own facts, so no
+    // optimizer path reading `graph.experiments` can bypass it.
+    {
+        // Evidence with full provenance but no graph-carried guard: refused.
+        var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+        defer graph.deinit();
+        try appendExperiment(&graph, "shape:7", "profile_counter", "rev:9");
+        try std.testing.expectError(
+            error.EvidenceUnguarded,
+            assumption_guard.enforceExperimentGuards(&graph),
+        );
+    }
+    {
+        // Evidence naming no measured subject revision: refused on provenance
+        // before coverage is even asked (`law.evidence.subject.one`).
+        var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+        defer graph.deinit();
+        try appendExperiment(&graph, "shape:7", "hardware_counter", "");
+        try std.testing.expectError(
+            error.EvidenceRevisionMissing,
+            assumption_guard.enforceExperimentGuards(&graph),
+        );
+    }
+    {
+        // An unnamed producer constructs NO verdict — never a default
+        // (`law.fact.producer.one`, `law.magic.code.zero`).
+        var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+        defer graph.deinit();
+        try appendExperiment(&graph, "shape:7", "never_emitted", "rev:9");
+        try std.testing.expectError(
+            error.ProducerUnnamed,
+            assumption_guard.enforceExperimentGuards(&graph),
+        );
+    }
+}
+
+test "gap182: graph enforcement admits evidence only under the graph-carried guard" {
+    var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const home = try graph.addNode(.{
+        .kind = .module,
+        .span = .{ .file = "enforce.id", .start = 0, .end = 0 },
+    });
+    _ = try graph.addChild(home, .{
+        .kind = .table_shape,
+        .span = .{ .file = "enforce.id", .start = 1, .end = 1 },
+        .name = "Point",
+        .knowledge = .guarded,
+        .descriptor_state = .sealed,
+        .shape_id = 1,
+    });
+    // The guard's own observation witness passes on its fact alone.
+    try assumption_guard.emitExperimentFacts(std.testing.allocator, &graph);
+    try assumption_guard.enforceExperimentGuards(&graph);
+    // Evidence over the SAME proposition the graph-carried guard names
+    // ("guard:1" — the guarded node above), with measured revision: admitted.
+    try appendExperiment(&graph, "guard:1", "hardware_counter", "rev:11");
+    try assumption_guard.enforceExperimentGuards(&graph);
+    // Sound producers (static proof) admit with no guard and no revision.
+    try appendExperiment(&graph, "shape:1", "static_proof", "");
+    try assumption_guard.enforceExperimentGuards(&graph);
+    // Evidence over a proposition NO graph-carried guard names: refused —
+    // a guard over a different proposition covers nothing.
+    try appendExperiment(&graph, "guard:99", "sample", "rev:11");
+    try std.testing.expectError(
+        error.EvidenceUnguarded,
+        assumption_guard.enforceExperimentGuards(&graph),
+    );
+}

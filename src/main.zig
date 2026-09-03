@@ -2137,6 +2137,14 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     // GAP-182 order 1: emit graph experiment facts from guarded knowledge.
     try assumption_guard.emitExperimentFacts(alloc, &graph);
 
+    // GAP-182 graph-owned enforcement: no experiment fact the graph carries
+    // may rest on evidence (profile, sample, hardware counter, heuristic)
+    // without a graph-carried guard and a measured subject revision. This is
+    // the graph side of `effect.profileNeedsGuard`; the consumption below
+    // reads the same `graph.experiments` this walk gates, so the optimizer
+    // path cannot bypass the evidence-only rule.
+    try assumption_guard.enforceExperimentGuards(&graph);
+
     // GAP-182: consume the selectByEpistemicLevel boundary from an optimizer path.
     // Convert graph-emitted assumptions into effect-side Guarded candidates and
     // demonstrate the epistemic level taxonomy is consumed outside the test seam.

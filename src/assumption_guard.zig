@@ -3,6 +3,7 @@
 //! Canonical owner for guarded specialization, invalidation, and agent explanations.
 //! Not a second semantic graph: assumptions reference stable entity IDs from sema/graph.
 const std = @import("std");
+const effect = @import("effect.zig");
 const optimization_outcome = @import("optimization_outcome.zig");
 const sema = @import("sema.zig");
 const semantic_graph = @import("semantic_graph.zig");
@@ -229,6 +230,59 @@ pub fn emitExperimentFacts(
     }
 }
 
+/// GAP-182 graph-owned enforcement: profile evidence never justifies a
+/// semantics-changing realization without a guard or a proof. The effect
+/// side states the law (`effect.profileNeedsGuard`); this walk is the graph
+/// side and fails closed over the facts the graph actually carries. Every
+/// experiment fact whose producer is an EVIDENCE producer (profile counter,
+/// hardware counter, sample, heuristic estimate — `EvidenceProducer.isEvidence`)
+/// must (a) name its measured subject revision (`law.evidence.subject.one`;
+/// the `ExperimentFact.subject_revision` contract already states an empty
+/// revision is lawful only for sound producers) and (b) be covered by a guard
+/// the GRAPH carries — a guarded-knowledge node whose emitted proposition
+/// identity names the experiment's proposition exactly. One proposition
+/// namespace, no second authority: a guard over a different proposition
+/// covers nothing here. Sound producers (proof, inference, axiom) and the
+/// guard's own observation witness pass on their fact alone. An unnamed
+/// producer constructs NO verdict — never a default (`law.fact.producer.one`,
+/// `law.magic.code.zero`). One seam over `graph.experiments`: every consumer
+/// of the tuple routes through this walk, so no optimizer path can bypass
+/// the evidence-only rule by reading the graph face directly.
+pub const EnforceExperimentGuardsError = error{
+    ProducerUnnamed,
+    EvidenceRevisionMissing,
+    EvidenceUnguarded,
+};
+
+pub fn enforceExperimentGuards(
+    graph: *const semantic_graph.SemanticGraph,
+) EnforceExperimentGuardsError!void {
+    for (graph.experiments.items) |*fact| {
+        const producer = effect.EvidenceProducer.fromName(fact.producer) orelse
+            return error.ProducerUnnamed;
+        if (!producer.isEvidence()) continue;
+        if (fact.subject_revision.len == 0) return error.EvidenceRevisionMissing;
+        if (!graphCarriesGuard(graph, fact.proposition)) return error.EvidenceUnguarded;
+    }
+}
+
+/// The guard inventory the graph carries: the proposition identity of every
+/// guarded-knowledge node, under the same emission predicate
+/// `emitExperimentFacts` uses, so the enforced coverage and the emitted guard
+/// can never drift apart.
+fn graphCarriesGuard(graph: *const semantic_graph.SemanticGraph, proposition: []const u8) bool {
+    for (graph.nodes.items, 0..) |node, i| {
+        if (!graph.hasTableDescriptorFacts(@intCast(i))) continue;
+        if (!semantic_graph.SemanticGraph.atModuleScope(graph, &node)) continue;
+        const knowledge = node.knowledge orelse continue;
+        if (knowledge != .guarded) continue;
+        var buf: [40]u8 = undefined;
+        const name = std.fmt.bufPrint(&buf, "guard:{d}", .{i}) catch continue;
+        if (std.mem.eql(u8, name, proposition)) return true;
+    }
+    return false;
+}
+
 pub fn writeModuleJson(m: *const ModuleAssumptions, w: *std.Io.Writer) !void {
     try w.print("{{\"schema\":\"{s}\",\"assumption_count\":{d},\"assumptions\":[", .{
         SCHEMA_VERSION, m.items.len,
@@ -369,7 +423,6 @@ test "assumption_guard: orders 3+4 over a graph-emitted experiment fact" {
     // becomes false ⇒ the candidate ceases to be admissible and deoptimization
     // selects another. Both laws must hold over the graph-emitted tuple face,
     // not only over test fixtures built through the assumption seam.
-    const effect = @import("effect.zig");
     var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
     defer graph.deinit();
     const home = try graph.addNode(.{
