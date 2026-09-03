@@ -345,7 +345,7 @@ fn callApplication(expr: *const Expr) bool {
         // of this tree: 598 occurrences of `to(str)(` in 143 files, every one
         // of them answering DNB011 `unresolved-application-facts` in front of a
         // realization that was already written.
-        .call => return curriedTo(expr),
+        .call => return curriedTo(expr) or curriedMemApplication(expr),
         // FOREIGN-ONLY: namespace-first spellings retired from canonical Idol.
         // Delete each arm when graph + DNIR consume the exact relation/target id.
         .field => |f| {
@@ -375,6 +375,18 @@ fn callApplication(expr: *const Expr) bool {
                 if (std.mem.eql(u8, f.field, "write_i64") and c.args.len == 3) return true;
                 if (std.mem.eql(u8, f.field, "write_f64") and c.args.len == 3) return true;
                 if (std.mem.eql(u8, f.field, "ptr_from_addr") and c.args.len == 2) return true;
+                // THE TYPED-POINTER FACE. `mem.load(T)(p)` / `mem.store(T)(p, v)` is
+                // how the wasm runtime bitcasts floats through linear memory; the
+                // inner `mem.load(T)` (one descriptor arg, not lowered) reaches this
+                // arm at len 1 while the FLAT `mem.load(T, p)` / `mem.store(T, p, v)`
+                // reaches it at len 2 / len 3. The codegen precheck (`ok_mem`),
+                // `dnir_lower` (lowerMemType -> load_index/store_index) and the
+                // native backend's f64/f32 arms (ldr d / str d) already realize the
+                // face; this admission is the only missing link, and without it the
+                // graph marks both spellings BLOCKING (DNB011
+                // unresolved-application-facts) before any of that is reached.
+                if (std.mem.eql(u8, f.field, "load") and (c.args.len == 1 or c.args.len == 2)) return true;
+                if (std.mem.eql(u8, f.field, "store") and (c.args.len == 1 or c.args.len == 3)) return true;
             }
             if (std.mem.eql(u8, home, "os")) {
                 if (std.mem.eql(u8, f.field, "exit") and c.args.len == 1) return true;
@@ -436,6 +448,26 @@ fn curriedTo(expr: *const Expr) bool {
         .index => true,
         else => false,
     };
+}
+
+/// `mem.load(T)(p)` / `mem.store(T)(p, v)` — the OUTER half of the curried
+/// typed-pointer face. The INNER `mem.load(T)` is recognized by the `.field`
+/// arm above at arity 1; this recognizes the enclosing application
+/// `(mem.load(T))(p)` whose callee is itself a call. The descriptor `T` is the
+/// inner call's one argument and is never lowered; the outer args are `p`
+/// (mem.load) or `p, v` (mem.store), matching the flat arities the same arm
+/// admits at len 2 / len 3.
+fn curriedMemApplication(expr: *const Expr) bool {
+    const c = expr.call;
+    if (c.func.* != .call) return false;
+    const inner = c.func.call;
+    if (inner.func.* != .field) return false;
+    if (inner.args.len != 1) return false;
+    const f = inner.func.field;
+    if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "mem")) return false;
+    if (std.mem.eql(u8, f.field, "load")) return c.args.len == 1;
+    if (std.mem.eql(u8, f.field, "store")) return c.args.len == 2;
+    return false;
 }
 
 /// True when `expr` is a GAP-155 bootstrap face that `dnir_lower` realizes
@@ -667,6 +699,81 @@ test "native_bootstrap: the injected test world is a face, in any directory" {
         try std.testing.expectEqual(want, applicationExprInModule(expr, "injection_test.id"));
     }
     try std.testing.expectEqual(@as(usize, 3), seen);
+}
+
+test "native_bootstrap: typed mem.load/store is a face, curried and flat" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main: i64 = ()
+        \\    buf = mem.alloc(32)
+        \\    a = mem.load(f64)(buf)
+        \\    b = mem.load("f64", buf)
+        \\    c = mem.load(f64, buf)
+        \\    d = mem.store(f64)(buf, 1.5)
+        \\    e = mem.store("f64", buf, 1.5)
+        \\    f = mem.store(f64, buf, 1.5)
+        \\    0
+    ;
+    var mem_faces: usize = 0;
+    var curried_inners: usize = 0;
+    for (try assignmentValuesOf(alloc, src, "probe.id")) |expr| {
+        if (expr.* != .call) continue;
+        if (!isMemTypedFace(expr)) continue;
+        mem_faces += 1;
+        try std.testing.expect(applicationExpr(expr));
+        // The CURRIED spelling lifts TWO candidates — the outer `(T)(p)` and
+        // the inner `mem.load(T)`. Recognising the outer here and the inner in
+        // `callApplication`'s `.field` arm is what stops the graph refusing the
+        // module on DNB011 before any of the typed-pointer lowering runs.
+        if (expr.call.func.* == .call) {
+            curried_inners += 1;
+            try std.testing.expect(applicationExpr(expr.call.func));
+        }
+    }
+    // six source faces: curried load, string-flat load, name-flat load, curried
+    // store, string-flat store, name-flat store.
+    try std.testing.expectEqual(@as(usize, 6), mem_faces);
+    // two curried spellings, each carrying an inner `mem.load(T)`/`mem.store(T)`.
+    try std.testing.expectEqual(@as(usize, 2), curried_inners);
+}
+
+/// Every `.call` expression in the RIGHT-HAND SIDE of an assignment in `main`.
+/// `collectCallExprs` (statement/report faces) skips assignments, so the
+/// typed-pointer face — which appears in binding position in the wasm runtime —
+/// needs its own walk.
+fn assignmentValuesOf(alloc: std.mem.Allocator, src: []const u8, file: []const u8) ![]const *const Expr {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var lex = Lexer.init(src, file);
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const module = try parser.parse_module();
+    var exprs: std.ArrayListUnmanaged(*const Expr) = .empty;
+    for (module.body.stmts) |*stmt| {
+        if (stmt.* != .func_decl) continue;
+        if (!std.mem.eql(u8, stmt.func_decl.path[0], "main")) continue;
+        for (stmt.func_decl.func.body.stmts) |*bstmt| {
+            if (bstmt.* != .assign) continue;
+            for (bstmt.assign.values) |v| try exprs.append(alloc, v);
+        }
+    }
+    return exprs.items;
+}
+
+/// `mem.load` / `mem.store` — the typed-pointer face specific to this test.
+fn isMemTypedFace(expr: *const Expr) bool {
+    if (expr.* != .call) return false;
+    // FLAT: `mem.load(T, p)` / `mem.store(T, p, v)`.
+    if (expr.call.func.* == .field) {
+        const f = expr.call.func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "mem")) return false;
+        return std.mem.eql(u8, f.field, "load") or std.mem.eql(u8, f.field, "store");
+    }
+    // CURRIED OUTER: `(mem.load(T))(p)` / `(mem.store(T))(p, v)`.
+    if (expr.call.func.* == .call) return curriedMemApplication(expr);
+    return false;
 }
 
 test "native_bootstrap: the waiver is a request on a comment line, not a substring" {
