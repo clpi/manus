@@ -4376,11 +4376,56 @@ const Arm64Compiler = struct {
                     var call_result: ?u5 = null;
                     var call_result_on_stack = false;
                     if (ins.result != null and pack_bytes == 0) {
-                        if (!saveSetContains(save, 0)) {
+                        // A SPILLED REGISTER IS NOT FREE HERE EITHER (GAP-148).
+                        //
+                        // `saveSetContains(save, 0)` is false in exactly two
+                        // states, and this arm read them as one. x0 is idle —
+                        // or `spillReg` took it: the store cleared `used_regs`,
+                        // which is what kept x0 out of the save set, and left
+                        // the entry standing for a value the frame now holds
+                        // for an owner whose reads are still ahead.
+                        //
+                        // Handing x0 to the call result in that second state
+                        // gives one register two owners, which is this gap's
+                        // shape, and both halves of it are wrong at once. The
+                        // result is published as `temps[result] = 0`; the
+                        // spilled owner's own id still names 0; and the next
+                        // read of EITHER reaches `ensureRegLiveRemap`, which
+                        // reloads the frame copy and rewrites every `temps`
+                        // entry naming 0 to the register it loaded into — so
+                        // the call's answer becomes the pre-call value of an
+                        // unrelated binding, with no diagnostic. The other
+                        // direction is `gp_reg_owner[0]`, which `spillReg`
+                        // deliberately preserved and which still names the
+                        // spilled owner: `sweepGpLive` reads it dead at this
+                        // index and clears `used_regs[0]` for the register the
+                        // callee's answer was just given, and the pool hands
+                        // the same register out again.
+                        //
+                        // The entry may not be retired to make room — its value
+                        // is not the call's, and dropping the only thing that
+                        // reloads it is the abandonment `reclaimSpilledReg`
+                        // documents. So the result takes a register the map
+                        // does not name, which is the question the sibling arm
+                        // below already asks: `allocRegOutsideSaveSet` skips
+                        // `spilled_regs` in both of its scans, for this reason.
+                        // When it has nothing to give, the stack park below is
+                        // the answer it already had.
+                        //
+                        // Bounded to gate transport with the rest of this gap:
+                        // `allocRegExcluding` refuses above its spill passes
+                        // otherwise, so `spilled_regs` is empty elsewhere, this
+                        // guard is false, and the arm is the one it always was.
+                        // Not the closure — closure is authoritative
+                        // `register`/`frame` assignment before emission, per
+                        // this gap's record, under which a call result is
+                        // assigned a location rather than inheriting whichever
+                        // ABI register the map had not finished describing.
+                        if (!saveSetContains(save, 0) and !self.spilled_regs.contains(0)) {
                             self.used_regs[0] = true;
                             call_result = 0;
                         } else if (self.allocRegOutsideSaveSet(save)) |dst| {
-                            try self.emitMovReg(dst, 0);
+                            try self.emitMovRegRaw(dst, 0);
                             call_result = dst;
                         } else |_| {
                             // Every allocatable register was live at save time.
@@ -7419,6 +7464,21 @@ const Arm64Compiler = struct {
 
     fn emitMovReg(self: *Arm64Compiler, dst: u5, src: u5) Error!void {
         try self.ensureRegLive(src);
+        try self.emitMovRegRaw(dst, src);
+    }
+
+    /// `mov dst, src` for a source THIS BACKEND'S ALLOCATOR DID NOT WRITE.
+    ///
+    /// `emitMovReg` reloads its source because a source register may hold a
+    /// value this function spilled, and `spilled_regs` is where that value
+    /// went. That question is only meaningful while the entry describes the
+    /// register's CURRENT contents. After a `bl` it does not: x0 holds the
+    /// callee's answer, and any entry naming x0 describes a DIFFERENT owner's
+    /// frame copy from before the call. Reloading it there puts that copy over
+    /// the answer, and does it at an offset measured from a stack pointer the
+    /// save area has already moved. So the ABI result is copied out with the
+    /// move alone, and the entry is left to the owner it belongs to.
+    fn emitMovRegRaw(self: *Arm64Compiler, dst: u5, src: u5) Error!void {
         try self.emitFmt(0xaa0003e0 | (@as(u32, src) << 16) | @as(u32, dst), "mov x{d}, x{d}", .{ dst, src });
     }
 
@@ -18549,4 +18609,149 @@ test "the gate spill band stays inside the area the prologue reserved" {
     // The area is full, and the refusal at the end of it is the one the reserve's
     // own sizing relies on: a bound that is too tight costs a named refusal.
     try std.testing.expectError(error.RegisterExhausted, compiler.spillReg(26));
+}
+
+// THE CALL'S ANSWER TOOK THE ONE REGISTER THE SPILL MAP WAS STILL DESCRIBING
+// (GAP-148).
+//
+// `emitSaveCallerRegs` builds its save set from `used_regs`, and `spillReg`
+// CLEARS `used_regs[victim]`. So "x0 is not in the save set" — the question the
+// call-result arm asked — is true in two states, not one: x0 is idle, or x0 was
+// spilled and the frame holds its value for an owner whose reads are still
+// ahead. The arm read them as one and gave the callee's answer to x0 in both.
+//
+// In the second state that is one register with two owners, this gap's shape,
+// and it fails in both directions at once. `temps[result] = 0` while the spilled
+// owner's own id also names 0, so the next read of EITHER reaches
+// `ensureRegLiveRemap`, which reloads the frame copy and rewrites every `temps`
+// entry naming 0 to the register it loaded into — the call's answer silently
+// becomes the pre-call value of an unrelated binding. And `gp_reg_owner[0]`,
+// which `spillReg` deliberately preserved, still names the spilled owner, so
+// `sweepGpLive` reads it dead at this index and clears `used_regs[0]` for the
+// register the answer was just given.
+//
+// The entry cannot be retired to make room: its value is not the call's, and
+// dropping the only thing that reloads it is the abandonment
+// `reclaimSpilledReg` documents. So the answer takes a register the map does not
+// name — the question `allocRegOutsideSaveSet` already asks of every candidate
+// it considers, for this reason — and is copied out of x0 by a move that does
+// not consult the map, because after `bl` no entry describes x0's contents.
+//
+// Built directly rather than through a source program for the same reason as the
+// reclaim, reload, remap, release, home, unwind, hoist, store and spill-band
+// tests above:
+// this is a state the allocator passes through between a spill of an ABI
+// register and the next call, not a state a fixture names.
+test "a call result refuses the ABI register the spill map still names" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport: `allocRegExcluding` refuses above
+    // its spill passes otherwise, so `spilled_regs` is empty everywhere else,
+    // the guard this test names is false, and the arm is the one it always was.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    // The state `spillReg` leaves behind on x0: value in a frame slot, entry
+    // reserving the register to it, `used_regs` clear, and the owner record
+    // preserved across the store so the sweep can still release it. Only the
+    // third spill pass in `allocRegExcluding` reaches x0..x7, which is why this
+    // is gate transport's state and nobody else's.
+    const spilled: u5 = 0;
+    const off: u16 = 8;
+    const owner_id: u32 = 41;
+    try compiler.spilled_regs.put(alloc, spilled, off);
+    compiler.used_regs[spilled] = false;
+    compiler.gp_reg_owner[spilled] = owner_id;
+    try temps.put(alloc, owner_id, spilled);
+
+    // A SECOND spilled register the call does not name, to show the repair
+    // takes nothing from anyone else.
+    const bystander: u5 = 11;
+    const bystander_off: u16 = 24;
+    try compiler.spilled_regs.put(alloc, bystander, bystander_off);
+    compiler.used_regs[bystander] = false;
+
+    // A call with no operand: nothing touches x0 before the save, so the entry
+    // is still standing when the result arm runs. `preserveArgReg` would have
+    // reloaded it on an operand path; `.void` is the shape that reaches here.
+    const result_id: u32 = 7;
+    const before = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .call_direct,
+        .result = result_id,
+        .lhs = .void,
+        .callee = "f",
+        .ty = .i64,
+    }, &branch_patches, null);
+
+    // THE ANSWER IS NOT IN x0. This is the whole fact: x0 is spoken for, and the
+    // register that carries the result is one `allocRegOutsideSaveSet` proved
+    // free — x9, the first it scans.
+    const dst: u5 = 9;
+    try std.testing.expectEqual(@as(?u5, dst), temps.get(result_id));
+    try std.testing.expect(compiler.used_regs[dst]);
+
+    // Nothing was taken from the spilled owner: the entry stands, its slot is
+    // not in the free pool, `used_regs` is still clear, and the owner record
+    // `sweepGpLive` will release it by is untouched.
+    try std.testing.expectEqual(@as(?u16, off), compiler.spilled_regs.get(spilled));
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+    try std.testing.expect(!compiler.used_regs[spilled]);
+    try std.testing.expectEqual(@as(?u32, owner_id), compiler.gp_reg_owner[spilled]);
+    try std.testing.expectEqual(@as(?u16, bystander_off), compiler.spilled_regs.get(bystander));
+
+    // SIX INSTRUCTIONS, AND NONE OF THEM RELOADS x0. `sub sp` / `str x30` /
+    // `bl` / `mov x9, x0` / `ldr x30` / `add sp` — the save area, the call, the
+    // copy out, and the restore. An `ldr x0, [sp, #…]` anywhere in this window
+    // would be the frame copy landing over the callee's answer, at an offset
+    // measured from a stack pointer the save area has already moved.
+    try std.testing.expectEqual(before + 24, compiler.code.items.len);
+    const want_mov: u32 = 0xaa0003e0 | (@as(u32, spilled) << 16) | @as(u32, dst);
+    try std.testing.expectEqual(
+        want_mov,
+        std.mem.readInt(u32, compiler.code.items[before + 12 ..][0..4], .little),
+    );
+    const reload_off: u16 = compiler.stack_frame_bytes - off - 8;
+    const reload_word: u32 = 0xf94003e0 | ((@as(u32, reload_off) / 8) << 10) | @as(u32, spilled);
+    var i: usize = before;
+    while (i < compiler.code.items.len) : (i += 4) {
+        try std.testing.expect(
+            std.mem.readInt(u32, compiler.code.items[i..][0..4], .little) != reload_word,
+        );
+    }
+
+    // AND THE FAILURE ITSELF. Reading the spilled owner reloads its frame copy
+    // and remaps every `temps` entry that named x0. With the answer parked in
+    // x0 the remap takes the answer with it and the two ids come back as one
+    // register; here the owner moves alone and the answer stays where the call
+    // put it.
+    const owner_reg = try compiler.evalDnirValue(&temps, .{ .temp = owner_id });
+    try std.testing.expectEqual(@as(?u5, owner_reg), temps.get(owner_id));
+    try std.testing.expectEqual(@as(?u5, dst), temps.get(result_id));
+    try std.testing.expect(owner_reg != dst);
+    try std.testing.expectEqual(@as(?u32, owner_id), compiler.gp_reg_owner[owner_reg]);
+    try std.testing.expect(!compiler.spilled_regs.contains(spilled));
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
 }
