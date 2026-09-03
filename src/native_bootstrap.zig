@@ -346,6 +346,26 @@ fn callApplication(expr: *const Expr) bool {
         // of them answering DNB011 `unresolved-application-facts` in front of a
         // realization that was already written.
         .call => return curriedTo(expr) or curriedMemApplication(expr),
+        // `mem.load(f64)(p)` / `mem.store(f64)(p, v)` — the same curried
+        // face when the inner projection is `.method_call` (`mem.load(T)`) rather
+        // than a bare name call.  Idiomatically `mem.load(f64)(fb)` reads as a
+        // method call on `mem`, and the parser produces `.method_call` for it.
+        // The outer application is still a `.call` (the `(fb)` part), so both
+        // shapes arrive here with `expr.* == .call` but differ in `c.func.*`.
+        .method_call => |mc| {
+            if (mc.obj.* != .name or !std.mem.eql(u8, mc.obj.name.ident, "mem")) return false;
+            if (mc.args.len != 1) return false;
+            if (mc.args[0].* != .name) return false;
+            const t = mc.args[0].name.ident;
+            if (!std.mem.eql(u8, t, "f64") and !std.mem.eql(u8, t, "f32") and
+                !std.mem.eql(u8, t, "i64") and !std.mem.eql(u8, t, "i32") and
+                !std.mem.eql(u8, t, "i8") and !std.mem.eql(u8, t, "u8") and
+                !std.mem.eql(u8, t, "u32") and !std.mem.eql(u8, t, "u64"))
+                return false;
+            if (std.mem.eql(u8, mc.method, "load")) return true;
+            if (std.mem.eql(u8, mc.method, "store")) return c.args.len == 2;
+            return false;
+        },
         // FOREIGN-ONLY: namespace-first spellings retired from canonical Idol.
         // Delete each arm when graph + DNIR consume the exact relation/target id.
         .field => |f| {
@@ -457,16 +477,47 @@ fn curriedTo(expr: *const Expr) bool {
 /// inner call's one argument and is never lowered; the outer args are `p`
 /// (mem.load) or `p, v` (mem.store), matching the flat arities the same arm
 /// admits at len 2 / len 3.
+///
+/// Three spellings are handled:
+///   `mem.load(f64)(fb)` — inner.func is `.field` on `mem`
+///   `mem.load(f64)(fb)` — inner.func is `.name` `mem` (subject-first)
+///   `mem.load(f64)(fb)` — inner.func is `.method_call` `mem.load(f64)`
 fn curriedMemApplication(expr: *const Expr) bool {
     const c = expr.call;
     if (c.func.* != .call) return false;
     const inner = c.func.call;
-    if (inner.func.* != .field) return false;
     if (inner.args.len != 1) return false;
-    const f = inner.func.field;
-    if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "mem")) return false;
-    if (std.mem.eql(u8, f.field, "load")) return c.args.len == 1;
-    if (std.mem.eql(u8, f.field, "store")) return c.args.len == 2;
+
+    // Spelling A: `mem.load(f64)(fb)` — inner.func is `.field` on `mem`
+    if (inner.func.* == .field) {
+        const f = inner.func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "mem")) return false;
+        if (std.mem.eql(u8, f.field, "load")) return c.args.len == 1;
+        if (std.mem.eql(u8, f.field, "store")) return c.args.len == 2;
+        return false;
+    }
+
+    // Spelling B: `mem.load(f64)(fb)` — inner.func is `.name` `mem`
+    if (inner.func.* == .name and std.mem.eql(u8, inner.func.name.ident, "mem")) {
+        if (inner.args[0].* != .name) return false;
+        const method = inner.args[0].name.ident;
+        if (std.mem.eql(u8, method, "load")) return c.args.len == 1;
+        if (std.mem.eql(u8, method, "store")) return c.args.len == 2;
+        return false;
+    }
+
+    // Spelling C: `mem.load(f64)(fb)` — inner.func is `.method_call`
+    // `mem.load(f64)` is a `.method_call` on `mem`, and the curried outer
+    // wraps it: `expr = (mem.load(f64))(fb)`.
+    if (inner.func.* == .method_call) {
+        const mc = inner.func.method_call;
+        if (mc.obj.* != .name or !std.mem.eql(u8, mc.obj.name.ident, "mem")) return false;
+        if (mc.args.len != 1 or mc.args[0].* != .name) return false;
+        if (std.mem.eql(u8, mc.method, "load")) return c.args.len == 1;
+        if (std.mem.eql(u8, mc.method, "store")) return c.args.len == 2;
+        return false;
+    }
+
     return false;
 }
 

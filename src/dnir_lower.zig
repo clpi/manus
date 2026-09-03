@@ -13685,6 +13685,81 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
             return lowerSubjectTo(ctx, c.args[0], inner.args[0], consumption);
         }
     }
+    // `mem.load(T)(p)` / `mem.store(T)(p, v)` — the CURRIED spelling the engine
+    // uses.  A curried call `f(a)(b)` is a `.call` whose `func` is another
+    // `.call`, NOT a `.field`, so the field handler below never sees it.  This
+    // must live HERE (inside `lowerCall`, before `.field` is checked) and must
+    // check the inner call's `.name` spelling, not a projected fact.
+    //
+    // Three spellings:
+    //
+    // Spelling A — `mem.load(f64)(fb)`:
+    //   c.func.* == .call
+    //   c.func.call.func.* == .name "mem"
+    //   c.func.call.args[0].* == .name "load"
+    //   c.args[0].* == .name "f64"
+    //   c.args[1].* == .name "fb"
+    //
+    // Spelling B — `mem.load(f64)(fb)`:
+    //   c.func.* == .method_call  (the `(fb)` wraps the method call)
+    //   c.func.method_call.obj.* == .name "mem"
+    //   c.func.method_call.method == "load"
+    //   c.func.method_call.args[0].* == .name "f64"
+    //   c.args[0].* == .name "fb"
+    //
+    // Spelling C — `mem.store(f64)(fb, 3.14)`:
+    //   c.func.* == .method_call
+    //   c.func.method_call.method == "store"
+    //   c.func.method_call.args[0].* == .name "f64"
+    //   c.args[0].* == .name "fb"
+    //   c.args[1].* == .literal 3.14
+    //
+    // Pointer-first args to match the sema canonical `mem.load(T, p)`.
+    if (c.func.* == .call and c.args.len >= 2) {
+        const inner = c.func.call;
+        // Spelling A: inner.func is `.name` `mem`
+        if (inner.func.* == .name and std.mem.eql(u8, inner.func.name.ident, "mem") and
+            inner.args.len == 1 and inner.args[0].* == .name)
+        {
+            const op = inner.args[0].name.ident;
+            if (std.mem.eql(u8, op, "load") and c.args.len == 2) {
+                const ptr = try lowerExpr(ctx, c.args[1]);
+                const t = ctx.freshTemp();
+                const ty: RT = lowerMemType(ctx, c.args[0]) orelse .i64;
+                try ctx.emit(.{ .op = .load_index, .result = t, .ty = ty, .lhs = ptr, .rhs = .{ .i64 = 1 } });
+                return .{ .temp = t };
+            }
+            if (std.mem.eql(u8, op, "store") and c.args.len == 3) {
+                const ptr = try lowerExpr(ctx, c.args[1]);
+                const val = try lowerExpr(ctx, c.args[2]);
+                const ty: RT = lowerMemType(ctx, c.args[0]) orelse .i64;
+                try ctx.emit(.{ .op = .store_index, .ty = ty, .lhs = ptr, .rhs = .{ .i64 = 1 }, .third = val });
+                return .void;
+            }
+        }
+    }
+    // Spelling B/C: c.func is `.method_call` `mem.load(f64)` / `mem.store(f64)`
+    if (c.func.* == .method_call) {
+        const mc = c.func.method_call;
+        if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "mem") and
+            mc.args.len == 1 and mc.args[0].* == .name)
+        {
+            if (std.mem.eql(u8, mc.method, "load") and c.args.len == 1) {
+                const ptr = try lowerExpr(ctx, c.args[0]);
+                const t = ctx.freshTemp();
+                const ty: RT = lowerMemType(ctx, mc.args[0]) orelse .i64;
+                try ctx.emit(.{ .op = .load_index, .result = t, .ty = ty, .lhs = ptr, .rhs = .{ .i64 = 1 } });
+                return .{ .temp = t };
+            }
+            if (std.mem.eql(u8, mc.method, "store") and c.args.len == 2) {
+                const ptr = try lowerExpr(ctx, c.args[0]);
+                const val = try lowerExpr(ctx, c.args[1]);
+                const ty: RT = lowerMemType(ctx, mc.args[0]) orelse .i64;
+                try ctx.emit(.{ .op = .store_index, .ty = ty, .lhs = ptr, .rhs = .{ .i64 = 1 }, .third = val });
+                return .void;
+            }
+        }
+    }
     if (c.func.* == .field) {
         const f = c.func.field;
         // A DOTTED callee — `std.compiler.lexer.new` has `f.obj` as a `.field`,
