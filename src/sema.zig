@@ -1657,6 +1657,41 @@ pub const Sema = struct {
         };
     }
 
+    /// DEFER THE BARE-NUMERIC-LITERAL DEFAULT UNTIL AFTER DEMAND.
+    ///
+    /// `check_expr` records a bare numeric literal's PRE-DEMAND carrier —
+    /// `types.literalDefaultDescriptor(.integral)` / `(.real)`, i.e. `.i64` /
+    /// `.f64` — into `type_map` the moment the literal is checked, BEFORE any
+    /// annotation demand is known. That default is not the literal's identity;
+    /// it is the fallback for the one case where NO demand refines it
+    /// (numerics.md § Literals and demand). Where an annotation DOES demand a
+    /// descriptor the literal fits — `n: u8 = 3` — the recorded default `.i64`
+    /// was the wrong carrier for the literal expr: a consumer reading the
+    /// literal's recorded type off `type_map` saw `.i64` even though the demand
+    /// resolved it to `.u8`. The demand-acceptance guards
+    /// (`numericDemandAcceptsLiteral`, `nominal_accepts_literal`,
+    /// `literalOutOfRange`) already re-read the RAW AST expr rather than the
+    /// recorded default precisely to work around this eager commitment, so the
+    /// binding's own type was correct while the literal expr's recorded type
+    /// was stale.
+    ///
+    /// This moves the default APPLICATION to after demand for the annotated
+    /// binding: once the annotation `ann` is known and has been checked to
+    /// accept the literal, the literal's recorded type is corrected from its
+    /// eager default to `ann`. A bare numeric literal source face is exactly
+    /// `numericLiteralDomain(e) != null`; `ann` accepts it when the plain
+    /// numeric demand accepts it or a nominal descriptor's representation does.
+    /// A literal that does NOT fit the demand is left at its default — the
+    /// mismatch/range diagnostics above own that case — so no refused program
+    /// gains a silent re-record. The default itself is unchanged; only WHEN it
+    /// is superseded by demand moves.
+    fn deferLiteralDefaultToDemand(self: *Sema, ann: RT, e: *const ast.Expr) !void {
+        if (numericLiteralDomain(e) == null) return;
+        const accepts = numericDemandAcceptsLiteral(ann, e) or nominal_accepts_literal(ann, e);
+        if (!accepts) return;
+        _ = try self.record(e, ann);
+    }
+
     fn type_annotation_accepts_init_rest(ann: RT, init_t: RT) bool {
         // ?T accepts T (optional accepts its inner type)
         if (ann == .option) {
@@ -3246,6 +3281,11 @@ pub const Sema = struct {
                         // meet the descriptor. After the mismatch checks above
                         // so a genuine descriptor mismatch still reports as one.
                         if (i < ld.inits.len) self.check_demanded_pack(lname.typ, ld.inits[i]);
+                        // The bare-numeric-literal default `check_expr` recorded
+                        // BEFORE this annotation was known is superseded HERE,
+                        // after demand — the literal's recorded type becomes the
+                        // demanded descriptor when the demand accepts it.
+                        if (i < ld.inits.len) try self.deferLiteralDefaultToDemand(ann, ld.inits[i]);
                         t = ann;
                     }
                     const is_const = is_const_attrib(lname.attrib);
@@ -16725,6 +16765,58 @@ test "sema: numeric source faces defer descriptor choice to demand facts" {
     try testing.expect(Sema.numericDemandAcceptsLiteral(.i8, &neg_expr));
     try testing.expect(!Sema.numericDemandAcceptsLiteral(.i64, &real_expr));
     try testing.expect(!Sema.numericDemandAcceptsLiteral(.str, &int_expr));
+}
+
+test "sema: the bare-numeric-literal default is superseded by demand, after demand" {
+    // THE ORDERING FACE. `check_expr` records a bare numeric literal's
+    // PRE-DEMAND carrier — `types.literalDefaultDescriptor` (`.i64` / `.f64`) —
+    // into `type_map` the moment the literal is checked, BEFORE any annotation
+    // demand is known. Where an annotation demands a descriptor the literal
+    // fits, that eager default was the wrong carrier for the literal expr: a
+    // consumer reading the literal's recorded type off `type_map` saw the
+    // default even though the demand resolved it. `deferLiteralDefaultToDemand`
+    // moves the default APPLICATION to AFTER demand — once `ann` is known and
+    // has been checked to accept the literal, the literal's recorded type is
+    // corrected from its default to `ann`.
+    //
+    // This control drives the helper directly: it records an integer literal at
+    // its eager default, then applies each demand and reads the RECORDED type
+    // back off `type_map`. The default is the state BEFORE the helper; the
+    // demanded descriptor is the state AFTER, which is the ordering the frontier
+    // recorded as unmoved.
+    const alloc = std.testing.allocator;
+    var s = Sema.init(alloc);
+    defer s.deinit();
+
+    // A demand the literal FITS supersedes the default: `n: u8 = 3` records the
+    // literal `3` as `.u8`, not the eager `.i64`.
+    var int_expr = ast.Expr{ .int_lit = .{ .val = 3, .loc = .{ .file = "probe.id", .line = 1, .col = 1 } } };
+    _ = try s.record(&int_expr, types.literalDefaultDescriptor(.integral));
+    try testing.expectEqual(RT.i64, s.type_map.get(&int_expr).?);
+    try s.deferLiteralDefaultToDemand(.u8, &int_expr);
+    try testing.expectEqual(RT.u8, s.type_map.get(&int_expr).?);
+
+    // A real demand a real literal fits supersedes `.f64` too.
+    var real_expr = ast.Expr{ .float_lit = .{ .val = 3.0, .loc = .{ .file = "probe.id", .line = 2, .col = 1 } } };
+    _ = try s.record(&real_expr, types.literalDefaultDescriptor(.real));
+    try s.deferLiteralDefaultToDemand(.f32, &real_expr);
+    try testing.expectEqual(RT.f32, s.type_map.get(&real_expr).?);
+
+    // A demand the literal does NOT fit leaves the default UNTOUCHED — the
+    // mismatch/range diagnostics own that case, so no refused program gains a
+    // silent re-record. `.str` is not a numeric demand a bare integer meets.
+    var kept_expr = ast.Expr{ .int_lit = .{ .val = 7, .loc = .{ .file = "probe.id", .line = 4, .col = 1 } } };
+    _ = try s.record(&kept_expr, types.literalDefaultDescriptor(.integral));
+    try s.deferLiteralDefaultToDemand(.str, &kept_expr);
+    try testing.expectEqual(RT.i64, s.type_map.get(&kept_expr).?);
+
+    // A non-literal source face is never re-recorded: the default face exists
+    // only for a bare literal, so a name or call keeps whatever `check_expr`
+    // gave it. `numericLiteralDomain` gates exactly on the bare-literal shape.
+    var name_expr = ast.Expr{ .name = .{ .ident = "x", .loc = .{ .file = "probe.id", .line = 5, .col = 1 } } };
+    _ = try s.record(&name_expr, .i64);
+    try s.deferLiteralDefaultToDemand(.u8, &name_expr);
+    try testing.expectEqual(RT.i64, s.type_map.get(&name_expr).?);
 }
 
 test "sema: the native-infer bare-literal default is derived from the same facts" {

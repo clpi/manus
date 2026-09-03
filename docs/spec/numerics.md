@@ -58,9 +58,27 @@ application, value, and transformation lineage.
 ## Current implementation boundary
 
 `GAP-149` owns the remaining primitive-zero transfer. Current host enums,
-eager literal defaults, DNIR operation names, ABI maps, and backend categories
-still conflate numeric meaning with representation. They are migration debt and
-must not be copied into canonical `.id`.
+DNIR operation names, ABI maps, and backend categories still conflate numeric
+meaning with representation. They are migration debt and must not be copied
+into canonical `.id`.
+
+An unqualified numeric literal's default descriptor is one derived fact,
+`types.literalDefaultDescriptor`, read by every literal-typing site. At an
+annotated binding the default no longer becomes the literal's identity BEFORE
+demand: `sema` records the pre-demand default when the literal is checked, then
+supersedes it with the demanded descriptor once the annotation is known and has
+been checked to accept the literal (`Sema.deferLiteralDefaultToDemand`), so
+`n: u8 = 3` records the literal `3` as `u8` rather than the eager `i64`. A
+literal the demand does not accept keeps its default and is diagnosed by the
+mismatch and range checks, never silently re-recorded. The default itself is
+unchanged; only when it is superseded by demand moved. The ordering is still
+eager where no annotation supplies demand at the checking site — that remaining
+default-before-demand carrier stays `GAP-149` migration debt. Run
+
+    zig build unit-test
+
+and read `sema: the bare-numeric-literal default is superseded by demand, after
+demand`.
 
 Numeric acceptance requires graph-owned facts to survive source, demand,
 realization, machine, and object lineage. Tests vary legal realization width
