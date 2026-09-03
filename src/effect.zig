@@ -537,6 +537,37 @@ pub fn observeCounter(
     };
 }
 
+/// Required order 5: a runtime profile is an evidence producer, never
+/// semantic truth. The measured share belongs to one named proposition on one
+/// measured subject revision; its experiment names the candidate the profile
+/// may prefer only after a guard admits it. Missing revision provenance
+/// constructs no fact (`law.evidence.subject.one`).
+pub const ProfileObservation = struct {
+    share: SemanticShare,
+    experiment: Experiment,
+};
+
+pub fn observeProfile(
+    proposition: []const u8,
+    held: u64,
+    total: u64,
+    cost: u32,
+    conditional_theorem: []const u8,
+    subject_revision: []const u8,
+) ?ProfileObservation {
+    if (subject_revision.len == 0) return null;
+    return .{
+        .share = .{ .held = held, .total = total },
+        .experiment = .{
+            .proposition = proposition,
+            .producer = .profile_counter,
+            .cost = cost,
+            .conditional_theorem = conditional_theorem,
+            .subject_revision = subject_revision,
+        },
+    };
+}
+
 /// Axiom producer wiring: the seventh epistemic level is backed by exactly
 /// one producer. A constitutional axiom is a law-level fact whose truth is
 /// not derived from any observation; the constructed experiment's producer
@@ -1266,6 +1297,30 @@ test "effect: hardware counters are fact-producers with construction-forced prov
     const free = (observeCounter("shape:7", "cycles", 0, 0, "cand:cached", "rev:abc")).?;
     try std.testing.expect(realizesZero(&free.experiment));
     try std.testing.expect(!free.experiment.producesTruth());
+}
+
+test "effect: profiles are fact-producers with construction-forced provenance" {
+    const profile = (observeProfile(
+        "branch:hot",
+        99,
+        100,
+        2,
+        "cand:straight",
+        "rev:profile",
+    )).?;
+    try std.testing.expectEqual(@as(u64, 990), profile.share.milli());
+    try std.testing.expectEqual(EvidenceProducer.profile_counter, profile.experiment.producer);
+    try std.testing.expect(profile.experiment.provenanceComplete());
+    try std.testing.expect(!profile.experiment.producesTruth());
+    try std.testing.expect(profileNeedsGuard(profile.experiment.producer.level()));
+    try std.testing.expect(observeProfile(
+        "branch:hot",
+        1,
+        1,
+        1,
+        "cand:straight",
+        "",
+    ) == null);
 }
 
 fn holdsNone(proposition: []const u8) bool {
