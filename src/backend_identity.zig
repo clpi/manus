@@ -154,10 +154,18 @@ pub fn inferFromCompile(
     const intermediate: []const u8 = switch (backend) {
         .auto, .direct => inferIntermediateFromTarget(backend, target),
         .c => "generated-c",
-        .wasm => if (std.mem.eql(u8, target, "wasm32-wasi")) "wasm32-wasi" else "wasm",
+        .wasm => inferIntermediateFromTarget(backend, target),
     };
 
     const boxing: []const u8 = if (native_scalar) "none" else if (idol_mode) "typed-mixed" else "full-dynamic";
+
+    // The wasm backend writes .wasm bytes directly via wasm_backend.zig — no
+    // external C compiler is invoked. The manifest must record null, not a
+    // stale "zig cc" that names a bridge that no longer crosses the seam.
+    const external_compiler: ?[]const u8 = switch (backend) {
+        .auto, .direct, .c => null,
+        .wasm => null,
+    };
 
     return .{
         .backend = backend,
@@ -165,10 +173,7 @@ pub fn inferFromCompile(
         .runtime = runtime,
         .target = target,
         .intermediate = intermediate,
-        .external_compiler = switch (backend) {
-            .auto, .direct, .c => null,
-            .wasm => "zig cc",
-        },
+        .external_compiler = external_compiler,
         .boxing_mode = boxing,
     };
 }
@@ -247,10 +252,31 @@ test "backend_identity: wasm32-wasi intermediate identity is distinct from direc
     try std.testing.expectEqual(RuntimeProfile.minimal, wasm_m.runtime);
     // The wasm backend identity is the WASM intermediate, never ELF or Mach-O
     try std.testing.expect(std.mem.eql(u8, wasm_m.intermediate, "wasm32-wasi"));
+    // The wasm backend writes .wasm bytes directly via wasm_backend.zig — no
+    // external C compiler is invoked, so external_compiler must be null.
+    try std.testing.expect(wasm_m.external_compiler == null);
 
     const direct_m = inferFromCompile(.direct, "x86_64-linux-gnu", true, true);
     // The two identities must differ — wasm32-wasi != elf-x86_64
     try std.testing.expect(!std.mem.eql(u8, wasm_m.intermediate, direct_m.intermediate));
+}
+
+test "backend_identity: wasm intermediate identity is consistent across inferFromCompile and inferIntermediateFromTarget" {
+    // The wasm backend must route through BackendTarget.intermediate(), not a
+    // string comparison, so every wasm target gets the same identity fact from
+    // both code paths. wasm32-wasi is distinct from bare wasm, which is distinct
+    // from every direct backend.
+    const wasi_target = "wasm32-wasi";
+    const wasm_intermediate = inferIntermediateFromTarget(.wasm, wasi_target);
+    const compile_intermediate = inferFromCompile(.wasm, wasi_target, true, true).intermediate;
+    try std.testing.expectEqualSlices(u8, wasm_intermediate, compile_intermediate);
+    try std.testing.expectEqualStrings("wasm32-wasi", compile_intermediate);
+
+    // Direct backend identities must differ from wasm32-wasi
+    const linux_m = inferIntermediateFromTarget(.direct, "x86_64-linux-gnu");
+    const macos_m = inferIntermediateFromTarget(.direct, "aarch64-macos");
+    try std.testing.expect(!std.mem.eql(u8, compile_intermediate, linux_m));
+    try std.testing.expect(!std.mem.eql(u8, compile_intermediate, macos_m));
 }
 
 test "backend_identity: direct/freebsd/elf produces elf-freebsd-x86_64 intermediate identity" {

@@ -725,6 +725,23 @@ fn emitDirectCompileProofArtifact(
     try emitRepresentationManifestFile(alloc, io, object_path, manifest, l6_counts, false);
 }
 
+/// Emit the representation manifest for a wasm32-wasi compile. The wasm backend
+/// writes the `.wasm` bytes directly via `wasm_backend.zig`; this lands the
+/// backend identity face (`intermediate = "wasm32-wasi"`) as a measured
+/// artifact so the wasm backend carries the same manifest identity fact that the
+/// direct backend does, proven distinct from ELF and Mach-O intermediates.
+fn emitWasmCompileProofArtifact(
+    alloc: std.mem.Allocator,
+    io: Io,
+    wasm_path: []const u8,
+    target: []const u8,
+    bench_mode: bool,
+    idol_mode: bool,
+) !void {
+    const manifest = backend_identity.inferFromCompile(.wasm, target, true, idol_mode);
+    try emitRepresentationManifestFile(alloc, io, wasm_path, manifest, .{}, bench_mode);
+}
+
 fn emitCompileProofArtifact(
     alloc: std.mem.Allocator,
     io: Io,
@@ -6422,6 +6439,9 @@ fn do_compile(
         defer alloc.free(wasm_bytes);
         try Io.Dir.writeFile(Io.Dir.cwd(), io, .{ .sub_path = out_path, .data = wasm_bytes });
         if (phase_timer) |*t| trace_phase(io, t, "wasm emit", out_path);
+        _ = emitWasmCompileProofArtifact(alloc, io, out_path, target, bench_mode, ps.sem.idol_mode) catch |e| {
+            term.hint("wasm manifest: {s}", .{@errorName(e)});
+        };
         if (term.build_report != .plain and !test_mode) {
             const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
             term.buildPhaseDone("compile", total_ms, out_path);
