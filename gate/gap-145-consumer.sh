@@ -857,6 +857,37 @@ if [ "$backtickold" -ne 1 ] || [ "$backticknew" -ne 1 ]; then
     bad "the reserved backtick primary detector is broken: old=$backtickold new=$backticknew"
 fi
 
+# Pattern entry consumes one exact parser.id face. Zig retains pattern
+# materialization without selecting it through a host token-kind switch.
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindlbracket' \
+    'event lost the array-pattern face'
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindelse' \
+    'event lost the else-pattern face'
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindminus' \
+    'event lost the negative-literal-pattern face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 21;' \
+    'tracked projection lost the pattern faces'
+has "$PARSER" 'fn currentParserPattern(self: *Parser) ParseError!u5 {' \
+    'parser.zig lost the pattern-face consumer'
+has "$PARSER" 'switch (try self.currentParserPattern()) {' \
+    'parse_pattern bypasses the settled pattern face'
+patternswitches=$(sed -n '/fn parse_pattern/,/fn parse_table_destr_pattern/p' "$PARSER" | grep -cF 'switch (tok.kind)' || true)
+examined=$((examined + 1))
+if [ "$patternswitches" -ne 0 ]; then
+    bad "parse_pattern retained $patternswitches tok.kind host switch(es)"
+fi
+
+patternprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate pattern-face scratch' >&2; exit 2; }
+printf '%s\n' 'switch (tok.kind) {' >"$patternprobe/old.zig"
+printf '%s\n' 'switch (try self.currentParserPattern()) {' >"$patternprobe/new.zig"
+patternold=$(grep -cF 'switch (tok.kind)' "$patternprobe/old.zig")
+patternnew=$(grep -cF 'switch (try self.currentParserPattern())' "$patternprobe/new.zig")
+rm -rf -- "$patternprobe"
+examined=$((examined + 1))
+if [ "$patternold" -ne 1 ] || [ "$patternnew" -ne 1 ]; then
+    bad "the pattern-face detector is broken: old=$patternold new=$patternnew"
+fi
+
 booleanprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate boolean primary scratch' >&2; exit 2; }
 printf '%s\n' '.kw_true => true, .kw_false => false' >"$booleanprobe/old.zig"
 printf '%s\n' 'return face == 9 or face == 10;' >"$booleanprobe/new.zig"

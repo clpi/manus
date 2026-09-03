@@ -523,6 +523,20 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 18;
     }
 
+    fn currentParserPattern(self: *Parser) ParseError!u5 {
+        const decision = try self.currentParserDecision();
+        if (((decision >> 9) & 0xF) == 8) return 8;
+        if (((decision >> 5) & 1) != 0) return 22;
+        const event = try self.currentParserEvent();
+        const face = decision >> 13;
+        if (face == 19 and ((decision >> 3) & 1) != 0) return 19;
+        if (face == 20 and ((event >> 11) & 3) == 2) return 20;
+        if (face == 21 and ((event >> 47) & 0x1F) == 1) return 21;
+        if (face == 11 and ((event >> 20) & 1) != 0) return 11;
+        if (((event >> 18) & 1) != 0) return @intCast(face);
+        return 0;
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -4480,36 +4494,36 @@ pub const Parser = struct {
     /// - `name` (binding)
     fn parse_pattern(self: *Parser) ParseError!ast.Pattern {
         const tok = try self.pk();
-        switch (tok.kind) {
+        switch (try self.currentParserPattern()) {
             // Rest pattern: ...name
-            .dots => {
+            11 => {
                 _ = try self.adv();
                 const nm = try self.expect(.name);
                 return ast.Pattern{ .rest = nm.text };
             },
             // Table destructuring: {key: pat, ...}
-            .lbrace => return self.parse_table_destr_pattern(),
+            8 => return self.parse_table_destr_pattern(),
             // Array destructuring: [pat, pat, ...]
-            .lbracket => return self.parse_array_destr_pattern(),
-            .kw_nil => {
+            19 => return self.parse_array_destr_pattern(),
+            4 => {
                 const e = try self.parse_simple_expr();
                 return ast.Pattern{ .literal = e };
             },
-            .kw_true => {
+            9 => {
                 const e = try self.parse_simple_expr();
                 return ast.Pattern{ .literal = e };
             },
-            .kw_false => {
+            10 => {
                 const e = try self.parse_simple_expr();
                 return ast.Pattern{ .literal = e };
             },
             // `else` is a wildcard/catch-all pattern in match expressions
-            .kw_else => {
+            20 => {
                 _ = try self.adv();
                 return ast.Pattern.wildcard;
             },
             // Name — could be wildcard `_`, variant `Name.Variant(...)`, or binding
-            .name => {
+            22 => {
                 if (std.mem.eql(u8, tok.text, "_")) {
                     _ = try self.adv();
                     return ast.Pattern.wildcard;
@@ -4551,7 +4565,7 @@ pub const Parser = struct {
                 return ast.Pattern{ .binding = .{ .name = first_name.text, .typ = null } };
             },
             // Unary minus for negative number literals
-            .minus => {
+            21 => {
                 _ = try self.adv();
                 const num_tok = try self.pk();
                 if (num_tok.kind == .int_lit or num_tok.kind == .float_lit) {
