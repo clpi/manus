@@ -1,0 +1,21 @@
+# gate/concept.sh subject roster. Three columns: name, materialize-arm shape,
+# demanded verdict (refused or pass). The roll is read from gate/concept.sh's
+# own arms; a row naming a shape this gate cannot materialize, or a shape arm
+# no row names, fails the ratchet. Zero rows examined fails (GAP-201).
+
+# The utility bucket: two relations, each applied by its own subject, and no
+# subject driving both. The produced refusal must reach this gate. Demanding
+# `refused` is the NEGATIVE direction — a producer that stops refusing is
+# convicted.
+bucket bucket refused
+
+# The passing cohort: one subject drives both relations; no row may be
+# produced. Demanding `pass` is the POSITIVE direction — a producer that
+# refuses a lawful cohort is convicted.
+cohort cohort pass
+
+# An unwitnessed module: nothing applies its one relation. No row may be
+# produced — the adjudicator refuses a cohort sharing no demand, and one
+# applied relation is not a cohort. This row is what stops the gate from
+# reading every non-bucket as a bucket.
+unwitnessed unwitnessed pass
