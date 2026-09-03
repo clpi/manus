@@ -506,6 +506,11 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 14;
     }
 
+    fn currentParserField(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 15 and
+            !try self.currentParserPrefix();
+    }
+
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 3) & 1) != 0;
     }
@@ -6215,6 +6220,7 @@ pub const Parser = struct {
         }
         if (try self.currentParserIf()) return self.parse_if_expr();
         if (try self.currentParserMatch()) return self.parse_match_expr();
+        if (try self.currentParserField()) return self.parse_field_projection();
         if (try self.currentParserTable()) return self.parse_table();
         if (try self.currentParserName()) {
             const name_tok = try self.adv();
@@ -6266,7 +6272,6 @@ pub const Parser = struct {
                 }
                 break :blk self.parse_macro_call_expr();
             },
-            .dot => self.parse_field_projection(),
             .colon => self.parse_method_reference(),
             else => {
                 if (try self.currentParserPrimitive()) {
