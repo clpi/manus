@@ -5588,8 +5588,29 @@ pub const Parser = struct {
 
     /// `+=` and `+` request the SAME relation; the owner records the face, so
     /// this is one observation and not a sixth spelling of `add`.
+    ///
+    /// FOUR bits wide, and the width is the whole fact. `lib/compiler/parser.id`
+    /// packs `… | (updateface << 57) | (primary << 61) | …`, so bit 61 is the
+    /// PRIMARY face and was never part of this field. `updateface` is
+    /// `relation + 1` over the six `_roleupdate` identities `+= -= *= /= %= ^=`,
+    /// whose relations are `add sub mul div mod pow` — ordinals 0..6, so the
+    /// field is 7 at its widest and 57..60 holds it with a bit to spare.
+    ///
+    /// Reading five bits absorbed `primary`, which the owner sets for `name`,
+    /// `intlit`, `floatlit`, `star`, `question`, `lparen` and `lt`. Every one of
+    /// those presented `code = 16` and this answered relation ordinal 15, which
+    /// is `.lt`. So an expression statement whose NEXT token was any of them
+    /// parsed as a compound assignment: `parse_expr_stmt` consumed that token as
+    /// the operator and then demanded an expression at whatever followed it.
+    ///
+    /// That is why nothing parsed after a callable declaration. `is_digit`'s
+    /// body ends in the bare tail expression `0`, the next line opens
+    /// `skip_spaces: i64 = (…)`, and the `0` read `skip_spaces` as `<=` and died
+    /// at its `=` — `lib/compiler/parser.id:71:18`, which is the exact error
+    /// that stopped `zig build parser-artifact` from regenerating
+    /// `src/parser/projection.c` at all.
     fn compound_assign_op(self: *Parser) ParseError!?ast.BinOp {
-        const code = ((try self.currentParserEvent()) >> 57) & 0x1F;
+        const code = ((try self.currentParserEvent()) >> 57) & 0xF;
         return relation_from_ordinal(code - 1);
     }
 
