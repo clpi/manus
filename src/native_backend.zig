@@ -3406,8 +3406,9 @@ const Arm64Compiler = struct {
                 }
             }
             if (spill_reserve >= 64) {
-                self.gate_spill_base = gp_stack_bytes;
-                self.gate_spill_end = gp_stack_bytes + spill_reserve;
+                const band = gateSpillBand(self.stack_frame_bytes, gp_stack_bytes, spill_reserve);
+                self.gate_spill_base = band.base;
+                self.gate_spill_end = band.end;
                 self.gate_spill_cursor = self.gate_spill_base;
             }
             // Parameter homes are set up after the prologue so stack-relative
@@ -6683,6 +6684,62 @@ const Arm64Compiler = struct {
             }
         }
         return fresh;
+    }
+
+    /// WHICH `off` VALUES THE PRE-RESERVED SPILL AREA MAY HAND OUT — in the
+    /// coordinate the store and the reload actually address a slot with.
+    ///
+    /// `spillReg` and `ensureRegLive` both reach a slot as
+    /// `stack_frame_bytes - off - 8`, so `off` counts DOWN FROM THE TOP of the
+    /// frame. That is what the last-resort branch below means when it takes
+    /// `off = self.stack_frame_bytes` for the sixteen bytes it has just
+    /// subtracted: at that instant `off` IS the distance from the top, and it
+    /// stays correct as the frame grows underneath it.
+    ///
+    /// The prologue names its reservation at the OTHER END. It subtracts
+    /// `gp_stack_bytes + spill_reserve` in one `sub sp` and puts the spill area
+    /// at `[sp, gp_stack_bytes .. gp_stack_bytes + spill_reserve)`, directly
+    /// above the GP stack locals at `[sp, 0 .. gp_stack_bytes)` — "locals sit at
+    /// [sp,#0]…; spill temps sit above them". Handing the cursor's `off` values
+    /// out of THAT range mixes the two coordinates, and the mixture is not a
+    /// shifted area but an overlapping one: `off = gp_stack_bytes` addresses the
+    /// TOP of the reservation and the cursor then walks DOWNWARD through the
+    /// frame, out of the reserved area, across the GP stack locals, and into
+    /// whatever the frame already held.
+    ///
+    /// Measured on the layout the prologue itself builds — ten locals
+    /// (`gp_stack_bytes = 80`), `spill_reserve = 256`, nothing else in the frame
+    /// so `stack_frame_bytes = 336`. The band `[80, 336)` steps sixteen at a
+    /// time and its addresses `336 - off - 8` run 248, 232, … , 8. The first
+    /// eleven land in the reservation; the twelfth is 72 and the last is 8, and
+    /// those are the homes of locals 9 and 1. The store is a wrong answer for
+    /// the local and the local's next store is a wrong answer for the spilled
+    /// value, in both directions, with no diagnostic — the frame face of this
+    /// gap's two-owner shape. With a table or record already in the frame the
+    /// same walk runs the other way off the reservation and over the rebased
+    /// region instead.
+    ///
+    /// The band is therefore measured from the top like the offsets that read
+    /// it: it starts at whatever the frame held BEFORE this prologue's `sub` and
+    /// runs for `spill_reserve` bytes, which maps exactly onto
+    /// `[sp, gp_stack_bytes + 8 .. gp_stack_bytes + spill_reserve)` and touches
+    /// nothing else. No slot is lost — the count is `spill_reserve / 16` either
+    /// way — and `spillReg` still refuses with `RegisterExhausted` at the end of
+    /// it, which is the refusal the reserve's own sizing comment relies on.
+    ///
+    /// Bounded to gate transport with the rest of GAP-148: `spillReg` is reached
+    /// only from `allocRegExcluding`, which refuses above its spill passes
+    /// otherwise. Not the closure — closure is authoritative `register`/`frame`
+    /// assignment before emission, per that gap's record, under which a spilled
+    /// value's frame location is carried by the assignment rather than by two
+    /// coordinates that have to agree by hand.
+    fn gateSpillBand(
+        frame_bytes: u16,
+        gp_stack_bytes: u16,
+        spill_reserve: u16,
+    ) struct { base: u16, end: u16 } {
+        const base: u16 = frame_bytes - gp_stack_bytes - spill_reserve;
+        return .{ .base = base, .end = base + spill_reserve };
     }
 
     fn spillReg(self: *Arm64Compiler, victim: u5) Error!void {
@@ -18378,4 +18435,118 @@ test "a store into a spilled home retires the entry that would reload it" {
     try std.testing.expectEqual(@as(?u16, other_off), compiler.spilled_regs.get(other));
     try std.testing.expect(!compiler.used_regs[other]);
     try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+}
+
+// GAP-148: THE SPILL AREA WAS RESERVED AT ONE END OF THE FRAME AND HANDED OUT
+// FROM THE OTHER.
+//
+// Every fact this gap has recorded so far is about a MAP — which entry a reclaim
+// may take, where a reloaded value lands, what the reclaim, the remap, the
+// release, the unwind and the store leave behind. This one is about the FRAME.
+// `spillReg` and `ensureRegLive` address a slot as `stack_frame_bytes - off - 8`,
+// so `off` counts down from the top of the frame; the prologue named the band
+// `[gp_stack_bytes, gp_stack_bytes + spill_reserve)`, which is the reserved
+// area's address measured UP from `sp`. The two coordinates overlap rather than
+// shift: the cursor starts at the top of the reservation and walks downward out
+// of it, across the GP stack locals at `[sp, 0 .. gp_stack_bytes)`.
+//
+// Built directly rather than through a source program for the same reason as
+// every test above it: the collision needs the reserved area actually exhausted,
+// which a fixture reaches only incidentally.
+test "the gate spill band stays inside the area the prologue reserved" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // THE BAND, over the layouts the prologue builds. `prior` is whatever the
+    // frame already held — table regions and records, rebased above the new
+    // reservation; `gp_stack_bytes` is the locals band at `[sp,#0]`; the
+    // reservation is the `spill_reserve` bytes directly above them.
+    const priors = [_]u16{ 0, 64, 512 };
+    const locals = [_]u16{ 0, 16, 80, 512 };
+    const reserves = [_]u16{ 64, 256, 1024 };
+    for (priors) |prior| {
+        for (locals) |gp_stack_bytes| {
+            for (reserves) |spill_reserve| {
+                const frame_bytes: u16 = prior + gp_stack_bytes + spill_reserve;
+                const band = Arm64Compiler.gateSpillBand(frame_bytes, gp_stack_bytes, spill_reserve);
+                // The area is not made smaller by being put in the right place.
+                try std.testing.expectEqual(spill_reserve, band.end - band.base);
+                var cursor = band.base;
+                var slots: u16 = 0;
+                while (cursor + 16 <= band.end) : (cursor += 16) {
+                    // The address `spillReg` stores at and `ensureRegLive`
+                    // reloads from, for this `off`.
+                    const addr: u16 = frame_bytes - cursor - 8;
+                    // ABOVE THE LOCALS. Below this line the store writes over a
+                    // local's home and the local's next store writes over the
+                    // spilled value.
+                    try std.testing.expect(addr >= gp_stack_bytes);
+                    // AND INSIDE THE RESERVATION. Above this line it writes into
+                    // the table and record regions the prologue rebased.
+                    try std.testing.expect(addr + 8 <= gp_stack_bytes + spill_reserve);
+                    slots += 1;
+                }
+                try std.testing.expectEqual(spill_reserve / 16, slots);
+            }
+        }
+    }
+
+    // AND THE OFFSETS `spillReg` ACTUALLY EMITS, on the measured layout: ten
+    // locals at `slot * 8`, a 256-byte reservation above them, nothing else in
+    // the frame.
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport: `allocRegExcluding` refuses above
+    // its spill passes otherwise, so this whole area is untouched elsewhere.
+    compiler.gate_transport = true;
+
+    const gp_stack_bytes: u16 = 80;
+    const spill_reserve: u16 = 256;
+    compiler.stack_frame_bytes = gp_stack_bytes + spill_reserve;
+    var slot: u32 = 0;
+    while (slot < 10) : (slot += 1) {
+        try compiler.gp_stack_locals.put(alloc, slot, @intCast(slot * 8));
+    }
+    const band = Arm64Compiler.gateSpillBand(compiler.stack_frame_bytes, gp_stack_bytes, spill_reserve);
+    compiler.gate_spill_base = band.base;
+    compiler.gate_spill_end = band.end;
+    compiler.gate_spill_cursor = band.base;
+
+    // One spill per slot the reservation holds, on distinct registers so no
+    // reload path can return a slot to the free list mid-walk.
+    const victims = [_]u5{ 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24, 25 };
+    try std.testing.expectEqual(@as(usize, spill_reserve / 16), victims.len);
+    var seen: [victims.len]u16 = @splat(0);
+    for (victims, 0..) |victim, i| {
+        const before = compiler.code.items.len;
+        try compiler.spillReg(victim);
+        // `spillReg` emits exactly one `str` for a slot the area already holds.
+        try std.testing.expectEqual(before + 4, compiler.code.items.len);
+        const word = std.mem.readInt(u32, compiler.code.items[before..][0..4], .little);
+        try std.testing.expectEqual(@as(u32, victim), word & 0x1f);
+        const addr: u16 = @intCast(((word >> 10) & 0xfff) * 8);
+        seen[i] = addr;
+        // NOT OVER A LOCAL, and inside the reservation.
+        try std.testing.expect(addr >= gp_stack_bytes);
+        try std.testing.expect(addr + 8 <= gp_stack_bytes + spill_reserve);
+        var prev: usize = 0;
+        while (prev < i) : (prev += 1) {
+            try std.testing.expect(seen[prev] != addr);
+        }
+    }
+
+    // The area is full, and the refusal at the end of it is the one the reserve's
+    // own sizing relies on: a bound that is too tight costs a named refusal.
+    try std.testing.expectError(error.RegisterExhausted, compiler.spillReg(26));
 }
