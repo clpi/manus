@@ -2971,6 +2971,20 @@ const Arm64Compiler = struct {
         return false;
     }
 
+    /// The same question `regIsPinned` answers, asked by a function that was
+    /// never handed the map.
+    ///
+    /// `eval_pinned` is the pin map of the function being lowered, and it
+    /// exists because `evalDnirValue` consults it before `temps`. Anything that
+    /// MOVES a value between registers owes the same reader the same fact, and
+    /// `ensureRegLiveRemap` is the only such mover that cannot rewrite the map
+    /// it would invalidate. Null outside a function body, where there is no pin
+    /// to honour.
+    fn evalPinNames(self: *const Arm64Compiler, reg: u5) bool {
+        const pinned = self.eval_pinned orelse return false;
+        return regIsPinned(pinned, reg);
+    }
+
     fn compileDnirFunction(self: *Arm64Compiler, f: dnir.Function) Error!void {
         self.cur_func_name = f.name;
         self.fp_locals.clearRetainingCapacity();
@@ -6676,7 +6690,59 @@ const Arm64Compiler = struct {
         // assignment before emission, per this gap's record — under which a
         // home's location is a fact the assignment carries, not one four maps
         // restate.
-        if (self.gp_home_regs[reg]) {
+        //
+        // A PIN IS THAT MAP, AND `gp_home_regs` IS NOT THE WHOLE OF IT
+        // (GAP-148).
+        //
+        // The branch below read the home flag as if it were the question, and
+        // the question is whether `pinned` names `reg`. Those are the same set
+        // at five of the six `pinned.put` sites, each of which calls
+        // `markGpHome` first. The sixth is the one a LEAF's parameter takes:
+        // `compileDnirFunction` keeps an incoming argument in its own x0..x7
+        // register, claims it, and writes BOTH maps — and marks no home,
+        // because there is no home to mark. Its `gp_home_regs` bit is clear
+        // until a store to that slot sets it, so a parameter that is only ever
+        // READ, which is every leaf parameter this backend compiles today,
+        // is pinned and is not a home for its whole life.
+        //
+        // That register is a spill victim: the third pass in
+        // `allocRegExcluding` walks x7..x0 and takes any `used_regs` register
+        // that is neither `exclude` nor a staged argument, and a parameter at
+        // rest is neither. After the spill the value is in the frame and the
+        // remap below relocates it — rewriting `temps`, which names it, and
+        // leaving `pinned`, which names it too and which `evalDnirValue`
+        // consults FIRST. The next read of that parameter answers the vacated
+        // register, and it is vacant: `spillReg` cleared `used_regs` and the
+        // remap removed the `spilled_regs` entry, so both free scans hand it
+        // out. Whatever the pool put there is what the parameter reads. A
+        // wrong answer, no diagnostic — the same failure `gp_call_home_regs`
+        // measured for a home (`sha.id` 0 instead of 16, `native.id` 210
+        // agreements down to 128), reached through the one pinned register
+        // that was never a home to begin with.
+        //
+        // Reloading into `reg` is available here for exactly the reasons the
+        // home branch states, and none of them mention the home flag: a
+        // register in `spilled_regs` holds nothing, because both free scans in
+        // `allocRegExcluding` skip that map and all three of its spill passes
+        // require `used_regs`, which `spillReg` cleared. So the destination is
+        // free, no owner is abandoned, and `ensureRegLive` is that reload — the
+        // `ldr` into `reg`, the entry removed, the slot released once on that
+        // removal, and the `claimReg` the loaded value is owed. Nothing below
+        // applies: `temps` names `reg` and still should, and `gp_reg_owner[reg]`
+        // is whatever `spillReg` preserved across the store, at the index the
+        // sweep would have released it at had the register never spilled.
+        //
+        // It takes no victim away — the parameter still spills, it just comes
+        // back to the register both maps already name — and it costs the pool
+        // the register the relocation would have freed, which is the trade the
+        // home branch already makes. Bounded to gate transport with the rest of
+        // this gap: `allocRegExcluding` refuses above its spill passes
+        // otherwise, so `spilled_regs` is empty elsewhere and this function
+        // returns above the branch. Not the closure — closure is authoritative
+        // `register`/`frame` assignment before emission, per this gap's record,
+        // under which a parameter's location is a fact the assignment carries
+        // rather than one two maps restate and one of them cannot be reached.
+        if (self.gp_home_regs[reg] or self.evalPinNames(reg)) {
             try self.ensureRegLive(reg);
             return reg;
         }
@@ -18123,6 +18189,141 @@ test "a spilled local home reloads into the register its pin still names" {
     try std.testing.expectEqual(home, again);
     try std.testing.expectEqual(before + 4, compiler.code.items.len);
     try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+}
+
+// GAP-148. THE ONE PINNED REGISTER THAT WAS NEVER A HOME.
+//
+// The test above repaired the pin/remap face for a HOME, and `gp_home_regs` is
+// what it asked. That flag is the same set as "pinned" at five of the six
+// `pinned.put` sites, each of which calls `markGpHome` first. The sixth is a
+// LEAF's parameter: `compileDnirFunction` keeps an incoming argument in its own
+// x0..x7 register, claims it, writes `temps` and `pinned`, and marks no home
+// because there is none to mark. The bit stays clear until a store to that slot
+// sets it, so a parameter that is only ever READ is pinned and is not a home
+// for its whole life.
+//
+// It is a spill victim there: the third pass in `allocRegExcluding` walks x7..x0
+// and takes any `used_regs` register that is neither `exclude` nor a staged
+// argument, and a parameter at rest is neither. The remap then relocated it,
+// rewrote `temps`, and left `pinned` — the map `evalDnirValue` reads FIRST —
+// naming a register the move vacated: `spillReg` had cleared `used_regs` and the
+// remap removed the `spilled_regs` entry, so both free scans hand it out and the
+// next read of the parameter answers whatever landed there. The same wrong
+// answer `gp_call_home_regs` measured for a home, reached through the one pinned
+// register its flag does not cover.
+//
+// Built directly rather than through a source program for the same reason as the
+// reclaim, reload, remap, release, home, unwind, hoist, store, spill-band,
+// call-result, argument-preserve and pack-result tests around it — this is a
+// state the allocator passes through between a spill of a parameter register and
+// the next read of that parameter, not a state a fixture names.
+test "a spilled parameter that is pinned and not a home reloads into its own register" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport: `allocRegExcluding` refuses above
+    // its three spill passes otherwise, so `spilled_regs` is empty everywhere
+    // else and this read is the map lookup it always was.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // What the leaf-parameter arm of `compileDnirFunction` leaves behind: the
+    // incoming register claimed, both maps naming it, AND NO HOME FLAG. That
+    // last fact is the whole difference from the home test above.
+    const arg_reg: u5 = 0;
+    const slot: u32 = 0;
+    compiler.claimReg(arg_reg);
+    try std.testing.expect(!compiler.gp_home_regs[arg_reg]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[arg_reg]);
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    try temps.put(alloc, slot, arg_reg);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    try pinned.put(alloc, slot, arg_reg);
+    compiler.eval_pinned = &pinned;
+
+    // And what the third spill pass leaves behind: the value in a frame slot,
+    // the entry reserving the register to it, `used_regs` clear.
+    const off: u16 = 8;
+    try compiler.spilled_regs.put(alloc, arg_reg, off);
+    compiler.used_regs[arg_reg] = false;
+
+    // The read that reaches the remap, through the map it cannot rewrite.
+    const before = compiler.code.items.len;
+    const live = try compiler.evalDnirValue(&temps, .{ .local = slot });
+
+    // THE READ ANSWERS THE REGISTER THE PIN NAMES. A fresh register here and
+    // the pin is stale for every later read of this parameter.
+    try std.testing.expectEqual(arg_reg, live);
+    try std.testing.expectEqual(@as(?u5, live), pinned.get(slot));
+    try std.testing.expectEqual(@as(?u5, live), temps.get(slot));
+
+    // One `ldr` from this parameter's slot back into that same register.
+    const reload_off: u16 = compiler.stack_frame_bytes - off - 8;
+    const want: u32 = 0xf94003e0 | ((@as(u32, reload_off) / 8) << 10) | @as(u32, live);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        want,
+        std.mem.readInt(u32, compiler.code.items[before..][0..4], .little),
+    );
+
+    // The claim is back — the half of `spillReg` the store did not perform —
+    // the entry is gone, and its slot went back exactly once, on the removal
+    // that took it.
+    try std.testing.expect(compiler.used_regs[live]);
+    try std.testing.expect(!compiler.spilled_regs.contains(arg_reg));
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
+
+    // AND IT IS STILL NOT A HOME. The reload does not mint one; the pin alone
+    // is what made the register the destination.
+    try std.testing.expect(!compiler.gp_home_regs[live]);
+
+    // NOTHING ELSE WAS TAKEN. Reloading into the pinned register costs the pool
+    // no register, so the scratch the relocation would have consumed is still
+    // free — `allocRegExcluding` scans x9 upward and x9 is where it would have
+    // gone.
+    try std.testing.expect(!compiler.used_regs[9]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[9]);
+
+    // AND THE READ IS REPEATABLE. The second read finds no entry, emits
+    // nothing, and releases nothing, which is what reading a parameter that was
+    // never spilled has always looked like.
+    const again = try compiler.evalDnirValue(&temps, .{ .local = slot });
+    try std.testing.expectEqual(arg_reg, again);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+
+    // AN UNPINNED TEMP IS UNTOUCHED BY THIS TERM AND STILL RELOCATES. The pin
+    // is the fact, not the spill: no map this function cannot reach names x10,
+    // so the remap is free to move its value and rewrite the one map that does.
+    const other: u5 = 10;
+    const other_slot: u32 = 7;
+    const other_off: u16 = 24;
+    compiler.claimReg(other);
+    try temps.put(alloc, other_slot, other);
+    try compiler.spilled_regs.put(alloc, other, other_off);
+    compiler.used_regs[other] = false;
+
+    const moved = try compiler.ensureRegLiveRemap(&temps, other);
+    try std.testing.expect(moved != other);
+    try std.testing.expectEqual(@as(?u5, moved), temps.get(other_slot));
+    try std.testing.expect(!compiler.spilled_regs.contains(other));
 }
 
 // GAP-148. THE RECLAIM TOOK A HOME, AND NOTHING CAN GIVE A HOME BACK.
