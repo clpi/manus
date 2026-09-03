@@ -365,6 +365,53 @@ pub const Parser = struct {
         return events[count + index];
     }
 
+    fn currentParserCall(self: *Parser) ParseError!bool {
+        return (((try self.currentParserEvent()) >> 63) & 1) != 0;
+    }
+
+    /// The primary face — and why a `(` has none.
+    ///
+    /// Bits 13.. of the decision word carry the primary face for every token
+    /// EXCEPT `(`. `lib/compiler/parser.id` gives a `(` no face and stores the
+    /// index of the token after the matching `)` in that same field:
+    ///
+    ///     elseif kind == token.kindlparen
+    ///         …scan to the matching `)`…
+    ///         if depth == 0
+    ///             delimiter = probe
+    ///
+    /// So for a `(` that field is a COORDINATE, not a face, and the coordinate
+    /// ranges over every face value. `currentParserAttributeBoundary` reads it
+    /// as the coordinate it is; a face reader must not, because a `(` whose
+    /// matching `)` happens to be followed by token 7 is not a bytes literal.
+    ///
+    /// Measured before this repair, the identical statement `x = (1 + 2)` at
+    /// twenty statement offsets: REFUSED at exactly the five whose coordinate
+    /// collided with a primary face and accepted at the other fifteen —
+    ///
+    ///     coordinate 7  -> `bytes`     write `<eof>` at this token edge
+    ///     coordinate 10 -> `false`     write `<eof>` at this token edge
+    ///     coordinate 13 -> `if`        write `if` at this token edge
+    ///     coordinate 16 -> `method`    write `name` at this token edge
+    ///     coordinate 28 -> `comptime`  'comptime' is not valid in .id files
+    ///
+    /// — one statement, decided by where it sat in the FILE. The same collision
+    /// reached the suffix reader, where a `(` answered "field access" at 15 and
+    /// "index" at 19 and the call was never taken at all at 26.
+    ///
+    /// Whether a token is a `(` is its own settled bit (event bit 63, set for a
+    /// `(` and nothing else), so the answer is decided without the field.
+    /// Strictly additive: every `(` whose coordinate already missed all face
+    /// values reached these same answers before.
+    ///
+    /// `currentParserExpressionGroup` is the deliberate exception — it reads the
+    /// raw field because a nonzero coordinate is how a matched `(` is admitted
+    /// as a group.
+    fn currentParserFace(self: *Parser) ParseError!i64 {
+        if (try self.currentParserCall()) return 0;
+        return (try self.currentParserDecision()) >> 13;
+    }
+
     fn currentParserPrimitive(self: *Parser) ParseError!bool {
         return (((try self.currentParserEvent()) >> 17) & 1) != 0;
     }
@@ -378,7 +425,7 @@ pub const Parser = struct {
     }
 
     fn currentParserQuote(self: *Parser) ParseError!?ast.Quote {
-        return switch ((try self.currentParserDecision()) >> 13) {
+        return switch (try self.currentParserFace()) {
             5 => .compat_text,
             6 => .text,
             7 => .bytes,
@@ -423,7 +470,7 @@ pub const Parser = struct {
     }
 
     fn currentParserClosure(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 1;
+        return (try self.currentParserFace()) == 1;
     }
 
     fn currentParserTypePointer(self: *Parser) ParseError!bool {
@@ -483,7 +530,7 @@ pub const Parser = struct {
     }
 
     fn currentParserDescriptorEntry(self: *Parser) ParseError!i64 {
-        const face = (try self.currentParserDecision()) >> 13;
+        const face = try self.currentParserFace();
         if (face == 22 or face == 23) return face - 21;
         return 0;
     }
@@ -495,85 +542,85 @@ pub const Parser = struct {
     }
 
     fn currentParserInteger(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 2 and
+        return (try self.currentParserFace()) == 2 and
             try self.currentParserLiteral() and
             !try self.currentParserQuoted();
     }
 
     fn currentParserFloat(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 3 and
+        return (try self.currentParserFace()) == 3 and
             try self.currentParserLiteral() and
             !try self.currentParserQuoted();
     }
 
     fn currentParserNil(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 4;
+        return (try self.currentParserFace()) == 4;
     }
 
     fn currentParserCompatText(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 5;
+        return (try self.currentParserFace()) == 5;
     }
 
     fn currentParserText(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 6;
+        return (try self.currentParserFace()) == 6;
     }
 
     fn currentParserBytes(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 7;
+        return (try self.currentParserFace()) == 7;
     }
 
     fn currentParserCompatLongText(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 8;
+        return (try self.currentParserFace()) == 8;
     }
 
     fn currentParserBoolean(self: *Parser) ParseError!u2 {
-        const face = (try self.currentParserDecision()) >> 13;
+        const face = try self.currentParserFace();
         return if (face == 9 or face == 10) @intCast(face - 8) else 0;
     }
 
     fn currentParserVararg(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 11;
+        return (try self.currentParserFace()) == 11;
     }
 
     fn currentParserFunction(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 12;
+        return (try self.currentParserFace()) == 12;
     }
 
     fn currentParserIf(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 13;
+        return (try self.currentParserFace()) == 13;
     }
 
     fn currentParserMatch(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 14;
+        return (try self.currentParserFace()) == 14;
     }
 
     fn currentParserField(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 15 and
+        return (try self.currentParserFace()) == 15 and
             !try self.currentParserPrefix();
     }
 
     fn currentParserMethod(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 16;
+        return (try self.currentParserFace()) == 16;
     }
 
     fn currentParserAnchor(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 17;
+        return (try self.currentParserFace()) == 17;
     }
 
     fn currentParserBacktick(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 18;
+        return (try self.currentParserFace()) == 18;
     }
 
     fn currentParserAwait(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 27;
+        return (try self.currentParserFace()) == 27;
     }
 
     fn currentParserComptime(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 28;
+        return (try self.currentParserFace()) == 28;
     }
 
     fn currentParserNot(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 29;
+        return (try self.currentParserFace()) == 29;
     }
 
     fn currentParserBy(self: *Parser) ParseError!bool {
@@ -581,18 +628,18 @@ pub const Parser = struct {
     }
 
     fn currentParserTableEntry(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 == 23;
+        return (try self.currentParserFace()) == 23;
     }
 
     fn currentParserMatchSuffix(self: *Parser) ParseError!u2 {
-        const face = (try self.currentParserDecision()) >> 13;
+        const face = try self.currentParserFace();
         if (face == 15) return 1;
         if (face == 16) return 2;
-        return if ((((try self.currentParserEvent()) >> 63) & 1) != 0) 3 else 0;
+        return if (try self.currentParserCall()) 3 else 0;
     }
 
     fn currentParserSuffix(self: *Parser) ParseError!u4 {
-        const face = (try self.currentParserDecision()) >> 13;
+        const face = try self.currentParserFace();
         return switch (face) {
             15 => 1,
             17 => 2,
@@ -601,12 +648,12 @@ pub const Parser = struct {
             24 => 7,
             25 => 8,
             26 => 10,
-            else => if (try self.currentParserTable()) 5 else if ((((try self.currentParserEvent()) >> 63) & 1) != 0) 6 else if (try self.currentParserQuoted()) 9 else 0,
+            else => if (try self.currentParserTable()) 5 else if (try self.currentParserCall()) 6 else if (try self.currentParserQuoted()) 9 else 0,
         };
     }
 
     fn currentParserCallArgument(self: *Parser) ParseError!u2 {
-        if ((((try self.currentParserEvent()) >> 63) & 1) != 0) return 1;
+        if (try self.currentParserCall()) return 1;
         if (try self.currentParserTable()) return 2;
         return if (try self.currentParserQuoted()) 3 else 0;
     }
@@ -616,7 +663,7 @@ pub const Parser = struct {
         if (((decision >> 9) & 0xF) == 8) return 8;
         if (((decision >> 5) & 1) != 0) return 22;
         const event = try self.currentParserEvent();
-        const face = decision >> 13;
+        const face = try self.currentParserFace();
         if (face == 19 and ((decision >> 3) & 1) != 0) return 19;
         if (face == 20 and ((event >> 11) & 3) == 2) return 20;
         if (face == 21 and ((event >> 47) & 0x1F) == 1) return 21;
