@@ -640,7 +640,8 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # mutually exclusive identity, five selects compatibility text, and six selects
 # canonical text, seven selects bytes, eight selects compatibility long text,
 # nine and ten select booleans, eleven selects vararg, twelve selects a
-# function expression, and thirteen selects an if expression. Lane-two
+# function expression, thirteen selects an if expression, and fourteen selects
+# a match expression. Lane-two
 # bit 5 carries the exact name face at its mutually exclusive coordinate; at
 # `(` it remains the comma-header face.
 # Capacity refusal precedes every mutation.
@@ -865,6 +866,8 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             delimiter = 12
         elseif kind == token.kindif
             delimiter = 13
+        elseif kind == token.kindmatch
+            delimiter = 14
         elseif kind == token.kindlparen
             depth = 1
             probe = index + 1
