@@ -523,6 +523,10 @@ pub const Parser = struct {
         return (try self.currentParserDecision()) >> 13 == 18;
     }
 
+    fn currentParserTableEntry(self: *Parser) ParseError!bool {
+        return (try self.currentParserDecision()) >> 13 == 23;
+    }
+
     fn currentParserMatchSuffix(self: *Parser) ParseError!u2 {
         const face = (try self.currentParserDecision()) >> 13;
         if (face == 15) return 1;
@@ -4944,20 +4948,7 @@ pub const Parser = struct {
         if (first_tok.kind == .lbrace) {
             const saved = self.saveState();
             _ = try self.adv(); // consume '{'
-            var is_table_literal = false;
-            const inner = try self.pk();
-            switch (inner.kind) {
-                .lbracket, .concat, .int_lit => is_table_literal = true,
-                .name => {
-                    const name_saved = self.saveState();
-                    _ = try self.adv();
-                    if ((try self.pk()).kind == .assign) is_table_literal = true;
-                    self.restoreState(name_saved);
-                },
-                else => if (try self.currentParserQuoted()) {
-                    is_table_literal = true;
-                },
-            }
+            const is_table_literal = try self.currentParserTableEntry();
             self.restoreState(saved);
             if (!is_table_literal) {
                 const destr_saved = self.saveState();

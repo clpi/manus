@@ -915,6 +915,35 @@ if [ "$matchold" -ne 1 ] || [ "$matchnew" -ne 1 ]; then
     bad "the match-suffix detector is broken: old=$matchold new=$matchnew"
 fi
 
+# The first token inside an expression-statement brace selects table value or
+# destructuring target through parser.id face 23.  Zig keeps materialization
+# only; the token-kind switch and name/assign speculative walk are gone.
+has "$ROOT/lib/compiler/parser.id" 'if prior == token.kindlbrace' \
+    'event lost the table-entry context'
+has "$ROOT/lib/compiler/parser.id" 'out[count + index] = out[count + index] | (23 << 13)' \
+    'event lost the table-entry face'
+has "$ROOT/src/parser/projection.c" 'out[(count + index)] = ((int64_t)((out[(count + index)]) | (188416)));' \
+    'tracked projection lost the table-entry face'
+has "$PARSER" 'fn currentParserTableEntry' \
+    'parser.zig lost the table-entry consumer'
+has "$PARSER" 'const is_table_literal = try self.currentParserTableEntry();' \
+    'parse_expr_stmt bypasses the settled table-entry face'
+entryswitches=$(sed -n '/fn parse_expr_stmt/,/fn parse_assign_from_targets/p' "$PARSER" | grep -cF 'switch (inner.kind)' || true)
+entrywalks=$(sed -n '/fn parse_expr_stmt/,/fn parse_assign_from_targets/p' "$PARSER" | grep -cF 'const name_saved = self.saveState();' || true)
+if [ "$entryswitches" -ne 0 ] || [ "$entrywalks" -ne 0 ]; then
+    bad "table entry retained host recognition: switch=$entryswitches walk=$entrywalks"
+fi
+
+entryprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate table-entry scratch' >&2; exit 2; }
+printf '%s\n' 'switch (inner.kind) { .lbracket, .concat, .int_lit => true }' >"$entryprobe/old.zig"
+printf '%s\n' 'if prior == token.kindlbrace' 'out[count + index] = out[count + index] | (23 << 13)' >"$entryprobe/new.id"
+entryold=$(grep -cF 'switch (inner.kind)' "$entryprobe/old.zig")
+entrynew=$(grep -cF 'out[count + index] = out[count + index] | (23 << 13)' "$entryprobe/new.id")
+rm -rf -- "$entryprobe"
+if [ "$entryold" -ne 1 ] || [ "$entrynew" -ne 1 ]; then
+    bad "the table-entry detector is broken: old=$entryold new=$entrynew"
+fi
+
 booleanprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate boolean primary scratch' >&2; exit 2; }
 printf '%s\n' '.kw_true => true, .kw_false => false' >"$booleanprobe/old.zig"
 printf '%s\n' 'return face == 9 or face == 10;' >"$booleanprobe/new.zig"
