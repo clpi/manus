@@ -436,6 +436,45 @@ pub const SemanticShare = struct {
     }
 };
 
+/// Compiler epistemic probability: confidence that the fact set is complete.
+/// This is a fact about the COMPILER's knowledge, never about the subject.
+/// It may order exploration of the realization space (`law.optimizer.economy`
+/// meta-cost) but never enters admissibility, selection, or invalidation.
+///
+/// The representation is intentionally distinct from `SemanticShare` to prevent
+/// any arithmetic or operation from confusing the two categories. There is no
+/// conversion between `EpistemicProbability` and `SemanticShare`, and no shared
+/// operations consume one as the other.
+pub const EpistemicProbability = struct {
+    /// Confidence level in milli-per-unit (0-1000). Higher values indicate
+    /// greater confidence that the fact set is complete for this exploration
+    /// decision point. This is NOT a measured subject probability — it is a
+    /// compiler-internal meta-probability about its own knowledge state.
+    confidence: u16,
+
+    /// Create an epistemic probability from a confidence value (0-1000 mpu).
+    /// Values outside the valid range are clamped to enforce the invariant.
+    pub fn fromMilli(confidence: u16) EpistemicProbability {
+        return .{ .confidence = if (confidence > 1000) 1000 else confidence };
+    }
+
+    /// Confidence level in milli-per-unit. This is the same representation as
+    /// `SemanticShare.milli()` but the TYPE DISTINCTION prevents accidental
+    /// substitution — an `EpistemicProbability` can never be passed where a
+    /// `SemanticShare` is demanded, and vice versa.
+    pub fn milli(self: EpistemicProbability) u16 {
+        return self.confidence;
+    }
+
+    /// Compare two epistemic probabilities for ordering exploration. Higher
+    /// confidence orders earlier in the search. This operation is ONLY for
+    /// exploration ordering under `law.optimizer.economy`; it never influences
+    /// admissibility, selection, or invalidation.
+    pub fn exceeds(self: EpistemicProbability, other: EpistemicProbability) bool {
+        return self.confidence > other.confidence;
+    }
+};
+
 /// Preference among admissible candidates from measured semantic shares.
 /// `shares[i]` is the measured share of `candidates[i]`'s proposition.
 /// Selection law: admissibility is computed EXACTLY as in `select` — the
@@ -719,6 +758,41 @@ test "effect: epistemic levels admit or require guard" {
     try std.testing.expect(!EpistemicLevel.profiled.admitsWithoutGuard());
     try std.testing.expect(!EpistemicLevel.sampled.admitsWithoutGuard());
     try std.testing.expect(!EpistemicLevel.heuristic.admitsWithoutGuard());
+}
+
+test "effect: epistemic probability is distinct from semantic share" {
+    // Type distinction: EpistemicProbability and SemanticShare are separate
+    // types with no conversion between them. This is the executable face of
+    // GAP-182 order 2's requirement that semantic probability (subject fact)
+    // and compiler epistemic probability (compiler knowledge fact) never be
+    // confused.
+
+    // EpistemicProbability represents compiler confidence, not subject measurement.
+    const high_confidence = EpistemicProbability.fromMilli(950);
+    const low_confidence = EpistemicProbability.fromMilli(100);
+
+    // Confidence values are clamped to valid range (0-1000 mpu).
+    try std.testing.expectEqual(@as(u16, 950), high_confidence.milli());
+    try std.testing.expectEqual(@as(u16, 100), low_confidence.milli());
+
+    const clamped = EpistemicProbability.fromMilli(1500);
+    try std.testing.expectEqual(@as(u16, 1000), clamped.milli());
+
+    // Comparison orders exploration (higher confidence first).
+    try std.testing.expect(high_confidence.exceeds(low_confidence));
+    try std.testing.expect(!low_confidence.exceeds(high_confidence));
+
+    // SemanticShare represents measured subject probability, not compiler confidence.
+    const share = SemanticShare{ .held = 80, .total = 100 };
+    try std.testing.expectEqual(@as(u64, 800), share.milli());
+
+    // No share (total == 0) answers zero.
+    const no_share = SemanticShare{ .held = 0, .total = 0 };
+    try std.testing.expectEqual(@as(u64, 0), no_share.milli());
+
+    // The two types have the same `milli()` representation but are distinct
+    // types — the compiler cannot accidentally substitute one for the other.
+    // This is enforced by Zig's type system; there is no implicit conversion.
 }
 
 test "effect: producers map to their epistemic level" {

@@ -2134,6 +2134,9 @@ fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     var assumptions = try assumption_guard.buildFromModule(alloc, &ps.mod, &ps.sem, &graph);
     defer assumptions.deinit(alloc);
 
+    // GAP-182 order 1: emit graph experiment facts from guarded knowledge.
+    try assumption_guard.emitExperimentFacts(alloc, &graph);
+
     // GAP-182: consume the selectByEpistemicLevel boundary from an optimizer path.
     // Convert graph-emitted assumptions into effect-side Guarded candidates and
     // demonstrate the epistemic level taxonomy is consumed outside the test seam.

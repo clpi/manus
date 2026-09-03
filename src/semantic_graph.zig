@@ -949,6 +949,31 @@ pub const RangeFact = struct {
     nonneg_width: u8,
 };
 
+/// GAP-182 order 1: graph-emitted experiment(P) tuple face.
+///
+/// `experiment(P)` = { proposition, evidence kind, cost, conditional theorem }.
+/// The proposition references stable fact identities, not AST text. The conditional
+/// theorem is the realization candidate the experiment unlocks. This is the graph
+/// fact emission owner; effect.zig owns the runtime fact family and epistemic
+/// taxonomy. Producer is stored as a string name to keep graph facts simple; the
+/// effect side maps it to `EvidenceProducer`.
+pub const ExperimentFact = struct {
+    /// Stable identity of the observed proposition, e.g. "shape:42".
+    proposition: []const u8,
+    /// Evidence producer name (e.g. "guard_observation", "static_proof").
+    /// Mapped to `effect.EvidenceProducer` by the effect side.
+    producer: []const u8,
+    /// Observation cost in the unit the producer measures (cycles, samples, bytes).
+    /// Zero means the observation is free at the boundary.
+    cost: u32,
+    /// Stable identity of the realization candidate admitted iff P holds.
+    conditional_theorem: []const u8,
+    /// The exact measured subject revision (`law.evidence.subject.one`).
+    /// Empty means no revision travels with the fact — lawful only for sound
+    /// producers whose theorem does not depend on any measurement.
+    subject_revision: []const u8 = "",
+};
+
 /// The place one application VALUE reads, keyed by the exact value entity.
 ///
 /// `p:add(q)` and `q:add(p)` published BYTE-IDENTICAL normalised graphs: both
@@ -1296,6 +1321,8 @@ pub const SemanticGraph = struct {
     /// PROVED BOUNDS, keyed by the exact binding entity. §2 lists ranges among
     /// the facts this graph carries; this is the column.
     ranges: std.ArrayListUnmanaged(RangeFact) = .empty,
+    /// GAP-182 order 1: graph-emitted experiment(P) facts.
+    experiments: std.ArrayListUnmanaged(ExperimentFact) = .empty,
     /// `place[value]` for application values, ascending by value id.
     origins: std.ArrayListUnmanaged(Origin) = .empty,
     /// Exact module-binding writes, in source lift order.
@@ -1379,6 +1406,13 @@ pub const SemanticGraph = struct {
         self.mutation_closure.deinit(self.alloc);
         self.mutation_places.deinit(self.alloc);
         self.ranges.deinit(self.alloc);
+        for (self.experiments.items) |*exp| {
+            self.alloc.free(exp.proposition);
+            self.alloc.free(exp.producer);
+            self.alloc.free(exp.conditional_theorem);
+            if (exp.subject_revision.len > 0) self.alloc.free(exp.subject_revision);
+        }
+        self.experiments.deinit(self.alloc);
         self.origins.deinit(self.alloc);
         self.binding_mutations.deinit(self.alloc);
         self.binding_reads.deinit(self.alloc);

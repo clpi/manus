@@ -198,6 +198,37 @@ pub fn buildFromModule(
     return .{ .items = try items.toOwnedSlice(alloc) };
 }
 
+/// GAP-182 order 1: emit graph experiment facts from guarded knowledge.
+/// This is the graph-emitted experiment(P) tuple face. The function emits
+/// `ExperimentFact` structs into the graph for each guarded shape node.
+pub fn emitExperimentFacts(
+    alloc: std.mem.Allocator,
+    graph: *semantic_graph.SemanticGraph,
+) !void {
+    for (graph.nodes.items, 0..) |node, i| {
+        if (!graph.hasTableDescriptorFacts(@intCast(i))) continue;
+        if (!semantic_graph.SemanticGraph.atModuleScope(graph, &node)) continue;
+        const knowledge = node.knowledge orelse continue;
+        if (knowledge != .guarded) continue;
+
+        const entity_id: semantic_graph.id = @intCast(i);
+        const proposition = try std.fmt.allocPrint(alloc, "guard:{d}", .{entity_id});
+        errdefer alloc.free(proposition);
+        const producer = try alloc.dupe(u8, "guard_observation");
+        errdefer alloc.free(producer);
+        const conditional_theorem = try alloc.dupe(u8, "general table realization");
+        errdefer alloc.free(conditional_theorem);
+        
+        try graph.experiments.append(alloc, .{
+            .proposition = proposition,
+            .producer = producer,
+            .cost = 1, // Default cost for guard observation
+            .conditional_theorem = conditional_theorem,
+            .subject_revision = "", // No subject revision for graph-emitted facts
+        });
+    }
+}
+
 pub fn writeModuleJson(m: *const ModuleAssumptions, w: *std.Io.Writer) !void {
     try w.print("{{\"schema\":\"{s}\",\"assumption_count\":{d},\"assumptions\":[", .{
         SCHEMA_VERSION, m.items.len,
@@ -299,4 +330,35 @@ test "assumption_guard: speculated knowledge emits exact guard" {
     try std.testing.expectEqualStrings(expected, assumptions.items[0].subject_entity);
     try std.testing.expect(assumptions.items[0].fallback != null);
     try std.testing.expect(assumptions.items[0].invalidation != null);
+}
+
+test "assumption_guard: graph-emitted experiment facts (GAP-182 order 1)" {
+    // GAP-182 order 1: verify that the graph emits experiment(P) tuple facts
+    // for guarded knowledge nodes.
+    var graph = semantic_graph.SemanticGraph.init(std.testing.allocator);
+    defer graph.deinit();
+    const home = try graph.addNode(.{
+        .kind = .module,
+        .span = .{ .file = "experiment.id", .start = 0, .end = 0 },
+    });
+    const shape = try graph.addChild(home, .{
+        .kind = .table_shape,
+        .span = .{ .file = "experiment.id", .start = 1, .end = 1 },
+        .name = "Point",
+        .knowledge = .guarded,
+        .descriptor_state = .sealed,
+        .shape_id = 1,
+    });
+    
+    try emitExperimentFacts(std.testing.allocator, &graph);
+    
+    try std.testing.expectEqual(@as(usize, 1), graph.experiments.items.len);
+    const exp = graph.experiments.items[0];
+    var id_buf: [20]u8 = undefined;
+    const expected_prop = std.fmt.bufPrint(&id_buf, "guard:{d}", .{shape}) catch unreachable;
+    try std.testing.expectEqualStrings(expected_prop, exp.proposition);
+    try std.testing.expectEqualStrings("guard_observation", exp.producer);
+    try std.testing.expectEqual(@as(u32, 1), exp.cost);
+    try std.testing.expectEqualStrings("general table realization", exp.conditional_theorem);
+    try std.testing.expectEqualStrings("", exp.subject_revision);
 }
