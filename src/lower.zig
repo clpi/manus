@@ -42,9 +42,13 @@
 //! (every admissible candidate measured on the named target in one unit);
 //! anything less leaves `costOf`'s stated orders to decide.
 //! `gate/lower/cost.sh` measures the software check's per-access cost on the
-//! host. Next host boundary — measured costs for the boundary mechanisms
-//! (the process and network crossings, MPK on x86_64) and measured facts
-//! reaching the realization walk (`selectPlace`/`selectModule`).
+//! host. Measured facts now REACH the realization walk — `selectPlace`,
+//! `selectModule` and `collectStaticPlaces` delegate to their `*Measured`
+//! variants, which thread a measured slice through `selectMeasured`; the
+//! existing names remain the empty-measurement face so the graph-backed C99
+//! arm's current wiring is unchanged. Next host boundary — measured costs for
+//! the boundary mechanisms (the process and network crossings, MPK on
+//! x86_64).
 
 const std = @import("std");
 const observation = @import("observation.zig");
@@ -361,13 +365,28 @@ pub fn selectPlace(
     target: world.TargetWorld,
     crossings: u64,
 ) Selection {
+    return selectPlaceMeasured(p, attack, target, crossings, &.{});
+}
+
+/// `selectPlace` under measured cost facts — the same census-row selection,
+/// with `measured` threaded into `selectMeasured` so a uniform measurement of
+/// every admissible candidate on this target decides the row's cost instead of
+/// `costOf`'s stated orders. The workload profile is derived exactly as in
+/// `selectPlace`: enforced accesses are the census's own read/write counts.
+pub fn selectPlaceMeasured(
+    p: *const place.Place,
+    attack: observation.World,
+    target: world.TargetWorld,
+    crossings: u64,
+    measured: []const MeasuredCost,
+) Selection {
     const reads = p.readCount().upperOrNull();
     const writes = p.writeCount().upperOrNull();
     const profile: ?Profile = if (reads != null and writes != null)
         Profile{ .accesses = reads.? +| writes.?, .crossings = crossings }
     else
         null;
-    return select(world.Authority.of(p.facts), attack, target, profile);
+    return selectMeasured(world.Authority.of(p.facts), attack, target, profile, measured);
 }
 
 /// THE backend realization walk's answer over one module census: every census
@@ -411,9 +430,23 @@ pub fn selectModule(
     target: world.TargetWorld,
     crossings: u64,
 ) CensusSelection {
+    return selectModuleMeasured(census, attack, target, crossings, &.{});
+}
+
+/// `selectModule` under measured cost facts — the same realization walk over
+/// every census row, with `measured` threaded into each place's selection so a
+/// uniform measurement of the target decides the walk's per-place costs. The
+/// existing `selectModule` remains the empty-measurement face.
+pub fn selectModuleMeasured(
+    census: *const place.Census,
+    attack: observation.World,
+    target: world.TargetWorld,
+    crossings: u64,
+    measured: []const MeasuredCost,
+) CensusSelection {
     var realized: CensusSelection.Realized = .{ .places = 0, .static_plans = 0, .dynamic_plans = 0 };
     for (census.places.items) |*p| {
-        switch (selectPlace(p, attack, target, crossings)) {
+        switch (selectPlaceMeasured(p, attack, target, crossings, measured)) {
             .plan => |plan| {
                 realized.places += 1;
                 switch (plan) {
@@ -443,9 +476,25 @@ pub fn collectStaticPlaces(
     target: world.TargetWorld,
     crossings: u64,
 ) ?std.StringHashMapUnmanaged(void) {
+    return collectStaticPlacesMeasured(alloc, census, attack, target, crossings, &.{});
+}
+
+/// `collectStaticPlaces` under measured cost facts — the same name-keyed set
+/// of statically witnessed places, with `measured` threaded into each place's
+/// selection. Measured facts never manufacture a static witness: the static
+/// rung is decided by the authority proof alone, so a measurement can only
+/// change which DYNAMIC mechanism a non-static place selects.
+pub fn collectStaticPlacesMeasured(
+    alloc: std.mem.Allocator,
+    census: *const place.Census,
+    attack: observation.World,
+    target: world.TargetWorld,
+    crossings: u64,
+    measured: []const MeasuredCost,
+) ?std.StringHashMapUnmanaged(void) {
     var set: std.StringHashMapUnmanaged(void) = .empty;
     for (census.places.items) |*p| {
-        switch (selectPlace(p, attack, target, crossings)) {
+        switch (selectPlaceMeasured(p, attack, target, crossings, measured)) {
             .plan => |plan| switch (plan) {
                 .static => set.put(alloc, p.name, {}) catch {
                     set.deinit(alloc);
@@ -1108,4 +1157,95 @@ test "lower: collectStaticPlaces is empty when no place is statically fixed" {
     var set = collectStaticPlaces(alloc, &census, observation.ordinary_executable, portable, 0).?;
     defer set.deinit(alloc);
     try std.testing.expectEqual(@as(usize, 0), set.count());
+}
+
+// ===========================================================================
+// Measured facts reaching the realization walk — selectPlace/selectModule/
+// collectStaticPlaces under a measured slice, threaded into selectMeasured
+// ===========================================================================
+
+/// One census row with a KNOWN read multiplicity, so the walk derives a live
+/// workload profile and the cost comparison is not the tie rule.
+fn escapedRowWithAccess(alloc: std.mem.Allocator) !place.Place {
+    var p = row(0, "seen", escapedFacts());
+    try p.accesses.append(alloc, .{ .kind = .read, .point = 0, .depth = 0, .mult = .{ .exact = 1000 }, .const_index = true });
+    return p;
+}
+
+test "lower: measured facts reach the realization walk and flip a place's selection" {
+    // The same census row, the same authority and target: stated orders pick
+    // MPK (320 vs the software check's 2000), and a uniform measurement of all
+    // four admitted candidates on the target in nanoseconds flips the row to
+    // the software check (1000 vs MPK's 9000). The measured facts REACH the
+    // walk — `selectPlaceMeasured` and `selectModuleMeasured` consume the same
+    // slice `selectMeasured` does.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var census = place.Census.init(alloc);
+    defer census.deinit();
+    try census.places.append(alloc, try escapedRowWithAccess(alloc));
+
+    const attack = observation.ordinary_executable;
+    const linux = world.TargetWorld.of(measured_triple);
+    const crossings: u64 = 10;
+
+    const stated = selectPlace(census.find("seen").?, attack, linux, crossings).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, stated.mechanism);
+    try std.testing.expectEqual(CostUnit.cycle_order, stated.unit);
+
+    const measured = measuredSet(.nanoseconds);
+    const flipped = selectPlaceMeasured(census.find("seen").?, attack, linux, crossings, &measured).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.software_check, flipped.mechanism);
+    try std.testing.expectEqual(CostUnit.nanoseconds, flipped.unit);
+    try std.testing.expectEqual(@as(u64, 1000), flipped.cost.total(.{ .accesses = 1000, .crossings = 10 }));
+
+    const walk = selectModuleMeasured(&census, attack, linux, crossings, &measured).realized;
+    try std.testing.expectEqual(census.count(), walk.places);
+    try std.testing.expectEqual(@as(usize, 0), walk.static_plans);
+    try std.testing.expectEqual(@as(usize, 1), walk.dynamic_plans);
+}
+
+test "lower: a non-uniform measurement leaves the walk on stated orders" {
+    // A partial measurement (the software check alone) is not a uniform
+    // comparison, so the measured walk's per-place answer equals the empty
+    // face's: MPK, stated orders. The `*Measured` variants are the same walk
+    // under the same rule, not a second, weaker one.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var census = place.Census.init(alloc);
+    defer census.deinit();
+    try census.places.append(alloc, try escapedRowWithAccess(alloc));
+
+    const attack = observation.ordinary_executable;
+    const linux = world.TargetWorld.of(measured_triple);
+    const crossings: u64 = 10;
+
+    const partial = [_]MeasuredCost{measuredSet(.nanoseconds)[0]};
+    const empty = selectPlace(census.find("seen").?, attack, linux, crossings).plan.dynamic;
+    const measured = selectPlaceMeasured(census.find("seen").?, attack, linux, crossings, &partial).plan.dynamic;
+    try std.testing.expectEqual(empty.mechanism, measured.mechanism);
+    try std.testing.expectEqual(Mechanism.mpk, measured.mechanism);
+    try std.testing.expectEqual(CostUnit.cycle_order, measured.unit);
+}
+
+test "lower: measured facts never manufacture a static witness" {
+    // A measurement of every mechanism does not turn an escaping place static:
+    // the static rung is the authority proof alone. `collectStaticPlacesMeasured`
+    // threads measured facts for the DYNAMIC selection only, so the name-keyed
+    // static set is exactly what the empty face returns.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var census = place.Census.init(alloc);
+    defer census.deinit();
+    try census.places.append(alloc, row(0, "hidden", fixedFacts()));
+    try census.places.append(alloc, row(1, "seen", escapedFacts()));
+    const linux = world.TargetWorld.of(measured_triple);
+    const measured = measuredSet(.nanoseconds);
+    var set = collectStaticPlacesMeasured(alloc, &census, observation.ordinary_executable, linux, 0, &measured).?;
+    defer set.deinit(alloc);
+    try std.testing.expect(set.contains("hidden"));
+    try std.testing.expect(!set.contains("seen"));
 }

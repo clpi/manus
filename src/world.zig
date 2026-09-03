@@ -26,8 +26,11 @@
 //! fixed places. The measured-cost face LANDED in `lower.zig`: a
 //! `MeasuredCost` fact (mechanism, target triple, unit, measured subject
 //! revision) decides a selection only as a uniform comparison;
-//! `gate/lower/cost.sh` measures the software check on the host. Next host
-//! boundary — measured costs for the boundary mechanisms.
+//! `gate/lower/cost.sh` measures the software check on the host. Measured
+//! facts now REACH the realization walk — `lower.selectPlace`/`selectModule`/
+//! `collectStaticPlaces` delegate to `*Measured` variants that thread a
+//! measured slice through `selectMeasured`. Next host boundary — measured
+//! costs for the boundary mechanisms.
 //!
 //! `foreign_boundary` IS modeled, as an admissibility ruling over the
 //! observation world (`observation.WorldFact.foreign_boundary`): foreign code
