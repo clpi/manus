@@ -903,6 +903,12 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             delimiter = 20
         elseif kind == token.kindminus
             delimiter = 21
+        # Descriptor-table entry selection is contextual materialization over
+        # two exact producer identities. The consumer does not re-read kind.
+        elseif kind == token.kindconcat
+            delimiter = 22
+        elseif kind == token.kindname
+            delimiter = 23
         elseif kind == token.kindquestion
             delimiter = 24
         elseif kind == token.kindbang

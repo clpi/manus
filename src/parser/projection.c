@@ -3258,6 +3258,10 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                         delimiter = 20;
         } else if ((kind == INT64_C(65))) {
                         delimiter = 21;
+        } else if ((kind == INT64_C(85))) {
+                        delimiter = 22;
+        } else if ((kind == INT64_C(0))) {
+                        delimiter = 23;
         } else if ((kind == INT64_C(82))) {
                         delimiter = 24;
         } else if ((kind == INT64_C(83))) {

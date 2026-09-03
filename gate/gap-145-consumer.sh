@@ -305,6 +305,35 @@ if [ "$returnmatchold" -ne 1 ] || [ "$returnmatchnew" -ne 1 ]; then
     bad "the match-return detector is broken: old=$returnmatchold new=$returnmatchnew"
 fi
 
+# Descriptor-table entry selection consumes the exact spread/name face from
+# lane two. Zig retains only entry materialization and never re-reads tok.kind.
+has "$ROOT/lib/compiler/parser.id" 'delimiter = 22' \
+    'parser.id lost the descriptor spread-entry face'
+has "$ROOT/lib/compiler/parser.id" 'delimiter = 23' \
+    'parser.id lost the descriptor name-entry face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 22;' \
+    'tracked projection lost the descriptor spread-entry face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 23;' \
+    'tracked projection lost the descriptor name-entry face'
+has "$PARSER" 'switch (try self.currentParserDescriptorEntry()) {' \
+    'descriptor-table parsing bypasses the settled entry face'
+descriptorkinds=$(sed -n '/fn parse_descriptor_table/,/fn parse_array_destr_pattern/p' "$PARSER" | grep -cE 'tok\.kind == \.(concat|name)' || true)
+examined=$((examined + 1))
+if [ "$descriptorkinds" -ne 0 ]; then
+    bad "descriptor-table parsing retained $descriptorkinds host token-kind branch(es)"
+fi
+
+descriptorprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate descriptor-entry scratch' >&2; exit 2; }
+printf '%s\n' 'if (tok.kind == .concat) spread() else if (tok.kind == .name) named()' >"$descriptorprobe/old.zig"
+printf '%s\n' 'switch (descriptorface) { 1 => spread(), 2 => named(), else => deny() }' >"$descriptorprobe/new.zig"
+descriptorold=$(grep -oE 'tok\.kind == \.(concat|name)' "$descriptorprobe/old.zig" | wc -l | tr -d ' ')
+descriptornew=$(grep -cF 'switch (descriptorface)' "$descriptorprobe/new.zig")
+rm -rf -- "$descriptorprobe"
+examined=$((examined + 1))
+if [ "$descriptorold" -ne 2 ] || [ "$descriptornew" -ne 1 ]; then
+    bad "the descriptor-entry detector is broken: old=$descriptorold new=$descriptornew"
+fi
+
 # ── 2e. match-arm classification executes from whole-pack lane two ───────────
 #
 # Contextual `case` remains a name token, so the physical pack carries a short

@@ -459,6 +459,12 @@ pub const Parser = struct {
         return (((try self.currentParserDecision()) >> 9) & 0xF) == 8;
     }
 
+    fn currentParserDescriptorEntry(self: *Parser) ParseError!i64 {
+        const face = (try self.currentParserDecision()) >> 13;
+        if (face == 22 or face == 23) return face - 21;
+        return 0;
+    }
+
     fn currentParserTable(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 9) & 0xF) == 8;
     }
@@ -4792,53 +4798,57 @@ pub const Parser = struct {
         var entries: std.ArrayList(DescriptorEntry) = .empty;
         while (!(try self.check(.rbrace))) {
             const tok = try self.pk();
-            if (tok.kind == .concat) {
-                _ = try self.adv();
-                const spread_expr = try self.parse_expr();
-                try entries.append(self.alloc, .{ .spread = spread_expr });
-            } else if (tok.kind == .name) {
-                const field_loc = tok.loc;
-                const saved = self.saveState();
-                _ = try self.adv();
-                if (try self.check(.lparen)) {
+            switch (try self.currentParserDescriptorEntry()) {
+                1 => {
                     _ = try self.adv();
-                    var payload: ?[]ast.EnumVariant.PayloadField = null;
-                    if (!(try self.check(.rparen))) {
-                        var payload_fields: std.ArrayList(ast.EnumVariant.PayloadField) = .empty;
-                        try payload_fields.append(self.alloc, try self.parseEnumPayloadField());
-                        while (try self.eat(.comma) != null) {
+                    const spread_expr = try self.parse_expr();
+                    try entries.append(self.alloc, .{ .spread = spread_expr });
+                },
+                2 => {
+                    const field_loc = tok.loc;
+                    const saved = self.saveState();
+                    _ = try self.adv();
+                    if (try self.check(.lparen)) {
+                        _ = try self.adv();
+                        var payload: ?[]ast.EnumVariant.PayloadField = null;
+                        if (!(try self.check(.rparen))) {
+                            var payload_fields: std.ArrayList(ast.EnumVariant.PayloadField) = .empty;
                             try payload_fields.append(self.alloc, try self.parseEnumPayloadField());
+                            while (try self.eat(.comma) != null) {
+                                try payload_fields.append(self.alloc, try self.parseEnumPayloadField());
+                            }
+                            payload = try payload_fields.toOwnedSlice(self.alloc);
                         }
-                        payload = try payload_fields.toOwnedSlice(self.alloc);
-                    }
-                    _ = try self.expect(.rparen);
-                    try entries.append(self.alloc, .{
-                        .variant_payload = .{
+                        _ = try self.expect(.rparen);
+                        try entries.append(self.alloc, .{
+                            .variant_payload = .{
+                                .name = tok.text,
+                                .payload = payload,
+                            },
+                        });
+                    } else if (try self.check(.colon)) {
+                        _ = try self.adv();
+                        const typ = try self.parse_field_type();
+                        if (try self.eat(.assign) != null) _ = try self.parse_expr(); // default, consumed
+                        try entries.append(self.alloc, .{ .field = .{
+                            .loc = field_loc,
                             .name = tok.text,
-                            .payload = payload,
-                        },
-                    });
-                } else if (try self.check(.colon)) {
-                    _ = try self.adv();
-                    const typ = try self.parse_field_type();
-                    if (try self.eat(.assign) != null) _ = try self.parse_expr(); // default, consumed
-                    try entries.append(self.alloc, .{ .field = .{
-                        .loc = field_loc,
-                        .name = tok.text,
-                        .typ = typ,
-                    } });
-                } else if (try self.check(.assign)) {
-                    self.restoreState(saved);
-                    term.locErr(field_loc, "descriptor fields use 'name: Type' syntax, not '='", .{});
+                            .typ = typ,
+                        } });
+                    } else if (try self.check(.assign)) {
+                        self.restoreState(saved);
+                        term.locErr(field_loc, "descriptor fields use 'name: Type' syntax, not '='", .{});
+                        return ParseError.UnexpectedToken;
+                    } else {
+                        self.restoreState(saved);
+                        _ = try self.adv();
+                        try entries.append(self.alloc, .{ .variant = tok.text });
+                    }
+                },
+                else => {
+                    term.locErr(tok.loc, "expected descriptor field name or spread", .{});
                     return ParseError.UnexpectedToken;
-                } else {
-                    self.restoreState(saved);
-                    _ = try self.adv();
-                    try entries.append(self.alloc, .{ .variant = tok.text });
-                }
-            } else {
-                term.locErr(tok.loc, "expected descriptor field name or spread", .{});
-                return ParseError.UnexpectedToken;
+                },
             }
             _ = try self.eat(.comma);
         }
