@@ -706,6 +706,14 @@ pub const Parser = struct {
         return @intCast(face);
     }
 
+    fn currentParserAtRefusal(self: *Parser) ParseError!u2 {
+        return switch (((try self.currentParserDecision()) >> 9) & 0xF) {
+            13 => 1,
+            14 => 2,
+            else => 0,
+        };
+    }
+
     fn currentParserLocalAttribute(self: *Parser) ParseError!u2 {
         return switch (try self.currentParserAttributeDispatch()) {
             9 => 1,
@@ -2288,6 +2296,19 @@ pub const Parser = struct {
                 // spellings are keyword tokens). The parser refuses them
                 // without electing another prefix directive as their replacement.
                 {
+                    switch (try self.currentParserAtRefusal()) {
+                        1 => {
+                            term.locErr(tok.loc, "'@const' is not an Idol directive", .{});
+                            term.locHint(tok.loc, "prefix compiler directives have no canonical Idol spelling (see GR-007)", .{});
+                            return ParseError.ExpectedToken;
+                        },
+                        2 => {
+                            term.locErr(tok.loc, "'@comptime' is not an Idol directive", .{});
+                            term.locHint(tok.loc, "prefix compiler directives have no canonical Idol spelling (see GR-007)", .{});
+                            return ParseError.ExpectedToken;
+                        },
+                        else => {},
+                    }
                     const ban_saved = self.saveState();
                     _ = try self.adv(); // consume '@'
                     const after = try self.pk();

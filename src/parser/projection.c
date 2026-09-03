@@ -3212,6 +3212,14 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
         } else if (((prior == INT64_C(73)) && (kind == INT64_C(29)))) {
                         declaration = 10;
         }
+        if (((kind == INT64_C(81)) && ((index + 1) < count))) {
+                        following = ((int64_t)((fact[(((index + 1) * 2) + 1)]) & (255)));
+            if ((following == INT64_C(29))) {
+                                declaration = 13;
+            } else if ((following == INT64_C(55))) {
+                                declaration = 14;
+            }
+        }
         if ((!visible)) {
                         declaration = 15;
         }

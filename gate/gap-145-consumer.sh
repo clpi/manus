@@ -2097,8 +2097,21 @@ examined=$((examined + 1))
 if [ "$attributed_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attributed-declaration dispatch switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'declaration-lane-cases=12' \
+has "$ROOT/tools/node/dev/parser/artifact" 'declaration-lane-cases=14' \
     'parser artifact lost the exact attribute declaration control count'
+has "$ROOT/lib/compiler/parser.id" 'following == token.kindconst' \
+    'event lost the contextual @const refusal face'
+has "$ROOT/lib/compiler/parser.id" 'following == token.kindcomptime' \
+    'event lost the contextual @comptime refusal face'
+has "$PARSER" 'fn currentParserAtRefusal(self: *Parser) ParseError!u2 {' \
+    'parser lost the contextual @ refusal consumer'
+has "$PARSER" 'switch (try self.currentParserAtRefusal()) {' \
+    'statement parsing bypasses the settled contextual @ refusal'
+at_refusal_walk=$(sed -n '/switch (try self.currentParserAtRefusal())/,/const ban_saved/p' "$PARSER" | grep -cF 'try self.adv()' || true)
+examined=$((examined + 1))
+if [ "$at_refusal_walk" -ne 0 ]; then
+    bad "contextual @ refusal retained $at_refusal_walk host token advance(s)"
+fi
 has "$ROOT/lib/compiler/parser.id" '(delimiter << 13)' \
     'whole-pack decision lost attribute delimiter extent'
 has "$PARSER" 'currentParserAttributeBoundary() orelse return false' \

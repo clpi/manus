@@ -634,7 +634,9 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # Header bit 4 also carries the applied-width type-primary face at its mutually
 # exclusive name coordinate.
 # Bit 8 carries assignment-body recognition, bits 9..12 carry the attributed
-# declaration face, and bits 13..63 carry the primary face: one selects a
+# declaration face. Faces thirteen and fourteen settle the contextual
+# `@const` and `@comptime` refusals at the `@` coordinate, so the host does not
+# advance and re-read the following keyword identity. Bits 13..63 carry the primary face: one selects a
 # closure, two selects an integer, three selects a float, while any value at
 # `(` is the exclusive matching-parenthesis boundary. Four selects nil at its
 # mutually exclusive identity, five selects compatibility text, and six selects
@@ -865,6 +867,12 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             declaration = 9
         elseif prior == token.kindlt and kind == token.kindconst
             declaration = 10
+        if kind == token.kindat and index + 1 < count
+            following = fact[(index + 1) * 2 + 1] & 255
+            if following == token.kindconst
+                declaration = 13
+            elseif following == token.kindcomptime
+                declaration = 14
         if !visible
             declaration = 15
         delimiter = 0
