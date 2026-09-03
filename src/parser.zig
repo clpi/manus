@@ -4719,8 +4719,7 @@ pub const Parser = struct {
             // Unary minus for negative number literals
             21 => {
                 _ = try self.adv();
-                const num_tok = try self.pk();
-                if (num_tok.kind == .int_lit or num_tok.kind == .float_lit) {
+                if (try self.currentParserTypeNumber()) {
                     const e = try self.parse_simple_expr();
                     const neg_e = try self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = .neg, .operand = e } });
                     return ast.Pattern{ .literal = neg_e };
@@ -9753,6 +9752,23 @@ test "parse: match statement with wildcard" {
     try testing.expectEqual(@as(usize, 1), stmt.match_stmt.arms.len);
     try testing.expect(stmt.match_stmt.arms[0].pattern == .wildcard);
     try testing.expect(stmt.match_stmt.arms[0].guard == null);
+}
+
+test "parse: match statement with negative numeric patterns" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match n
+        \\  -1 then return "integer"
+        \\  -2.5 then return "float"
+        \\end
+    , &arena);
+    const arms = mod.body.stmts[0].match_stmt.arms;
+    try testing.expectEqual(@as(usize, 2), arms.len);
+    try testing.expect(arms[0].pattern == .literal);
+    try testing.expect(arms[0].pattern.literal.* == .unop);
+    try testing.expect(arms[1].pattern == .literal);
+    try testing.expect(arms[1].pattern.literal.* == .unop);
 }
 
 test "parse: match statement with literal patterns" {
