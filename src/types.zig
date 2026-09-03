@@ -1898,6 +1898,52 @@ pub fn isQuotedByteSequence(descriptor: ResolvedType) bool {
     return quotedLiteralType(.bytes).eql(descriptor);
 }
 
+/// The descriptor a bare numeric literal of `domain` takes when NO demand has
+/// refined it — the implementation default an unqualified literal falls back to
+/// so a later stage has a concrete carrier to lower.
+///
+/// DERIVED, NOT TABULATED. This is the NUMERIC analogue of `quotedLiteralType`:
+/// the one owner of "the descriptor a bare literal defaults to", asked here of
+/// the numeric domains as `quotedLiteralType` is asked of the quote identity.
+/// `sema` stated it as raw tags at two sites — `infer_literal_type` and
+/// `check_expr_inner` each answered `.int_lit => .i64` / `.float_lit => .f64`,
+/// two statements of one default beside the numeric owner that agree only until
+/// someone edits one. A default is a FACT about the domain, not a spelling:
+/// the carrier a bare literal needs is the SINGLE-LANE, REGISTER-WIDTH scalar
+/// of that domain — signed, because a bare literal carries no unsignedness — and
+/// that is `.i64` for `.integral` and `.f64` for `.real` because those are the
+/// identities whose `numericFacts` read `{ lanes = 1, width = 64, signed }`.
+///
+/// It iterates the union's OWN TAGS rather than a list, so a scalar identity
+/// added to the union that answers those facts is the default automatically; a
+/// roster would leave the new identity unknown and keep answering `.i64`/`.f64`
+/// by hand. The demand path (`numericLiteralDomain` → `acceptsSource`) is
+/// unchanged: this owns only the pre-demand fallback, and demand still refines
+/// `n: u8 = 3` to the annotation ahead of ever reaching here.
+///
+/// PRE-DEMAND, NOT SEMANTIC IDENTITY (numerics.md § Literals and demand). The
+/// answer is the migration carrier a consumer needs while primitive-zero is
+/// still open; it is not a claim that a bare `3` IS an `i64`. GAP-149 owns
+/// deferring the default until after all demand; this face makes the default a
+/// single derived fact so that deferral has one owner to move rather than two
+/// hand-kept tags.
+pub fn literalDefaultDescriptor(domain: NumericFacts.Domain) ResolvedType {
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type == void) {
+            const candidate = @as(ResolvedType, @field(ResolvedType, field_name));
+            if (candidate.numericFacts()) |facts| {
+                if (facts.lanes == 1 and facts.width == 64 and
+                    facts.signed and facts.domain == domain)
+                {
+                    return candidate;
+                }
+            }
+        }
+    }
+    unreachable; // the union owns a register-width signed scalar per domain
+}
+
 pub const c_type_marker_prefix = "__c_type:";
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -4345,6 +4391,68 @@ test "types: the boxed-call result-coercion face is derived from the same facts"
     const nominal = nominalNamed("phase").?;
     try testing.expect(luaCoerceClass(nominal) == null);
     try testing.expect(luaCoerceClass(nominalReprOf(nominal).?) != null);
+}
+
+test "types: the bare-numeric-literal default descriptor is derived from the same facts" {
+    // The BARE-LITERAL DEFAULT face — the descriptor an unqualified numeric
+    // literal takes when NO demand has refined it — stood in `sema` as raw tags
+    // at TWO sites: `infer_literal_type` and `check_expr_inner` each answered
+    // `.int_lit => .i64` / `.float_lit => .f64`, two statements of one default
+    // beside the numeric owner that agree only until someone edits one. It is
+    // now `types.literalDefaultDescriptor(domain)`, the numeric analogue of
+    // `quotedLiteralType`: the SINGLE-LANE, REGISTER-WIDTH, SIGNED scalar of the
+    // domain, found over the union's OWN TAGS rather than picked by hand.
+
+    // PINNED EQUAL TO THE RETIRED TAGS: integral defaults to `.i64`, real to
+    // `.f64` — the exact answers both sema sites hand-listed.
+    try testing.expectEqual(ResolvedType.i64, literalDefaultDescriptor(.integral));
+    try testing.expectEqual(ResolvedType.f64, literalDefaultDescriptor(.real));
+
+    // DERIVED, NOT PICKED — the answer for each domain is the union tag whose
+    // own `numericFacts` read `{ lanes = 1, width = 64, signed }`, iterated over
+    // the union's own tags, so a scalar identity added to the union that answers
+    // those facts would be the default automatically rather than staying unknown
+    // to a hand-list and keeping the old tag by hand.
+    inline for (.{ NumericFacts.Domain.integral, NumericFacts.Domain.real }) |domain| {
+        const def = literalDefaultDescriptor(domain);
+        const facts = def.numericFacts().?;
+        try testing.expectEqual(domain, facts.domain);
+        try testing.expectEqual(@as(u8, 1), facts.lanes);
+        try testing.expectEqual(@as(u7, 64), facts.width);
+        try testing.expect(facts.signed);
+
+        // The default is the SOLE register-width signed single-lane scalar of
+        // its domain: no other payload-free union tag answers those facts, so
+        // the derivation cannot pick a second identity by accident.
+        const info = @typeInfo(ResolvedType).@"union";
+        var matches: usize = 0;
+        inline for (info.field_names, info.field_types) |field_name, field_type| {
+            if (field_type == void) {
+                const candidate = @as(ResolvedType, @field(ResolvedType, field_name));
+                if (candidate.numericFacts()) |cf| {
+                    if (cf.lanes == 1 and cf.width == 64 and cf.signed and cf.domain == domain) {
+                        matches += 1;
+                    }
+                }
+            }
+        }
+        try testing.expectEqual(@as(usize, 1), matches);
+    }
+
+    // A VECTOR is a numeric fact owner that is NOT one cell, so it is not a
+    // literal default even at register width; `v4i64` reads `lanes == 4` and is
+    // declined by the `lanes == 1` filter, not by absence.
+    const int_default: ResolvedType = literalDefaultDescriptor(.integral);
+    const vec: ResolvedType = .v4i64;
+    try testing.expect(int_default.numericFacts().?.lanes == 1);
+    try testing.expect(vec.numericFacts().?.lanes != 1);
+    try testing.expectEqual(ResolvedType.i64, int_default);
+
+    // A REGISTER-WIDTH UNSIGNED integral (`u64`) is NOT the integral default: a
+    // bare literal carries no unsignedness, so the `signed` filter withholds it.
+    const unsigned64: ResolvedType = .u64;
+    try testing.expect(!unsigned64.numericFacts().?.signed);
+    try testing.expect(!int_default.eql(unsigned64));
 }
 
 test "CallShape: method call shape" {

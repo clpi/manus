@@ -1547,8 +1547,8 @@ pub const Sema = struct {
     /// Falls back to `.any` for non-literal initializers.
     fn infer_literal_type(self: *Sema, e: *const ast.Expr) RT {
         return switch (e.*) {
-            .int_lit => .i64,
-            .float_lit => .f64,
+            .int_lit => types.literalDefaultDescriptor(.integral),
+            .float_lit => types.literalDefaultDescriptor(.real),
             .quoted => |lit| types.quotedLiteralType(lit.quote),
             .true_lit, .false_lit => .bool,
             .nil => .any,
@@ -1558,17 +1558,17 @@ pub const Sema = struct {
                 b.op == .mul)
             {
                 const lt = switch (b.lhs.*) {
-                    .int_lit => .i64,
+                    .int_lit => types.literalDefaultDescriptor(.integral),
                     .binop => self.infer_literal_type(b.lhs),
                     else => .any,
                 };
                 const rt = switch (b.rhs.*) {
-                    .int_lit => .i64,
+                    .int_lit => types.literalDefaultDescriptor(.integral),
                     .binop => self.infer_literal_type(b.rhs),
                     else => .any,
                 };
-                if (lt == .i64 and rt == .i64) return .i64;
-                if (lt == .f64 or rt == .f64) return .f64;
+                if (lt == .i64 and rt == .i64) return types.literalDefaultDescriptor(.integral);
+                if (lt == .f64 or rt == .f64) return types.literalDefaultDescriptor(.real);
                 return .any;
             } else .any,
             else => .any,
@@ -4543,8 +4543,8 @@ pub const Sema = struct {
         return switch (expr.*) {
             .nil => .nil,
             .true_lit, .false_lit => .bool,
-            .int_lit => .i64,
-            .float_lit => .f64,
+            .int_lit => types.literalDefaultDescriptor(.integral),
+            .float_lit => types.literalDefaultDescriptor(.real),
             .quoted => |lit| types.quotedLiteralType(lit.quote),
             .vararg => .any,
             .quote, .unquote, .macro_call => {
