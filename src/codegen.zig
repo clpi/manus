@@ -20600,25 +20600,12 @@ pub const CodeGen = struct {
     }
 
     fn emit_resolved_type_name_string(self: *CodeGen, rt: RT) E!void {
-        const text: []const u8 = switch (rt) {
-            .i8 => "i8",
-            .i16 => "i16",
-            .i32 => "i32",
-            .i64 => "i64",
-            .u8 => "u8",
-            .u16 => "u16",
-            .u32 => "u32",
-            .u64 => "u64",
-            .f32 => "f32",
-            .f64 => "f64",
-            .bool => "bool",
-            .str => "str",
-            .void => "void",
-            .any => "any",
-            .nil => "nil",
-            .@"struct" => |s| s.name,
-            else => "any",
-        };
+        // DERIVED, NOT TABULATED. This roster was a ninth statement of the scalar
+        // identity->source-spelling correspondence `types.reflectName` (over
+        // `duo_name`) owns; `reflectName(rt) orelse "any"` is the retired roster's
+        // answer for every `rt`, so a scalar identity added to the union reports
+        // its real word here instead of silently widening to `"any"`.
+        const text: []const u8 = types.reflectName(rt) orelse "any";
         try self.emit_c_string_literal(text);
     }
 

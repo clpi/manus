@@ -538,6 +538,44 @@ pub fn cFrameType(repr: ResolvedType) ?[]const u8 {
     return null;
 }
 
+/// The REFLECTION type-name a concept field row carries — the source word a
+/// runtime reflection value reports for a field's declared type — or null when
+/// the identity is not one the reflection string names with its own word, so
+/// the caller keeps `"any"`.
+///
+/// DERIVED, NOT TABULATED. This is the REFLECTION FACE of the scalar roster, and
+/// the roster it replaced (`codegen.emit_resolved_type_name_string`) was a NINTH
+/// statement of the scalar identity↔source-spelling correspondence that
+/// `duo_name` already owns. A concept field row emits the declared type's source
+/// word as a C string literal, so each identity's word is the one `duo_name`
+/// renders — a second hand-kept list of the same ten scalars plus `void`/`any`/
+/// `nil` and the struct name, agreeing with `duo_name` only until someone edits
+/// one of them. A roster could not compose: a scalar identity added to the union
+/// gained a `duo_name` spelling but stayed unknown to the reflection list, took
+/// its `else` arm, and reported `"any"` for a field that has a real source
+/// word — a reflection value silently widened to the top type, the wrong answer
+/// in the safe-looking direction.
+///
+/// The question a reflection word asks is exactly `scalarRepr` — the identities
+/// whose source word is a bare scalar spelling — PLUS the three non-scalar
+/// identities `void`, `any` and `nil` that the reflection string still names
+/// with their own word, PLUS a struct's declared name. For that set `duo_name`
+/// returns the bare word (or the name) and never composes into the buffer, so
+/// the word is the reflection field's type verbatim. Every other identity is
+/// declined by that fact rather than by absence and routes to the caller's
+/// `"any"`: the vectors span several cells (`scalarRepr` is false because
+/// `lanes != 1`), `never` is not a value, and a pointer/array/option/result/
+/// func/enum/channel/table/generic/instantiated/tensor is a composition whose
+/// `duo_name` builds a compound string the reflection roster folded to `"any"`.
+pub fn reflectName(repr: ResolvedType) ?[]const u8 {
+    if (repr == .@"struct") return repr.@"struct".name;
+    if (scalarRepr(repr) or repr == .void or repr == .any or repr == .nil) {
+        var buf: [1]u8 = undefined;
+        return repr.duo_name(&buf);
+    }
+    return null;
+}
+
 /// Resolved type after semantic analysis.
 /// During sema, each expression gets a `ResolvedType` attached.
 /// The declared width of a sub-64-bit integer descriptor, and whether
@@ -3161,6 +3199,71 @@ test "types: the async-frame face of the scalar roster is derived from the same 
     // on purpose (`law.nominal` §46), exactly as it does for `abiDescriptorNamed`.
     try declareNominal(std.heap.page_allocator, "beat", .i32);
     try testing.expect(cFrameType(nominalNamed("beat").?) == null);
+}
+
+fn retiredReflectName(t: ResolvedType) []const u8 {
+    return switch (t) {
+        .i8 => "i8",
+        .i16 => "i16",
+        .i32 => "i32",
+        .i64 => "i64",
+        .u8 => "u8",
+        .u16 => "u16",
+        .u32 => "u32",
+        .u64 => "u64",
+        .f32 => "f32",
+        .f64 => "f64",
+        .bool => "bool",
+        .str => "str",
+        .void => "void",
+        .any => "any",
+        .nil => "nil",
+        .@"struct" => |s| s.name,
+        else => "any",
+    };
+}
+
+test "types: the reflection face of the scalar roster is derived from the same facts" {
+    // PINNED EQUAL TO THE RETIRED ROSTER on every identity it mapped AND every
+    // identity it folded into `else`, so no concept field row can gain or lose a
+    // reported type word from this. The caller keeps `"any"` as its default for
+    // the null answer, so `reflectName(x) orelse "any"` is `retiredReflectName(x)`
+    // for every payload-free `x`: this is the exact substitution
+    // `codegen.emit_resolved_type_name_string` made.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type != void) continue;
+        const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+        const derived = reflectName(identity) orelse "any";
+        try testing.expect(std.mem.eql(u8, derived, retiredReflectName(identity)));
+    }
+
+    // The word is `duo_name` over the reflection set, not a ninth statement of
+    // it: every scalar reports its source spelling, and the three non-scalar
+    // identities the reflection string names with their own word report it too.
+    try testing.expect(std.mem.eql(u8, reflectName(.i32).?, "i32"));
+    try testing.expect(std.mem.eql(u8, reflectName(.u64).?, "u64"));
+    try testing.expect(std.mem.eql(u8, reflectName(.f64).?, "f64"));
+    try testing.expect(std.mem.eql(u8, reflectName(.bool).?, "bool"));
+    try testing.expect(std.mem.eql(u8, reflectName(.str).?, "str"));
+    try testing.expect(std.mem.eql(u8, reflectName(.void).?, "void"));
+    try testing.expect(std.mem.eql(u8, reflectName(.any).?, "any"));
+    try testing.expect(std.mem.eql(u8, reflectName(.nil).?, "nil"));
+
+    // DECLINED BY A FACT, NOT BY ABSENCE. The vectors are numeric fact owners
+    // that are not one cell (`scalarRepr` is false because `lanes != 1`), `never`
+    // is not a value, and a composed identity's `duo_name` builds a compound the
+    // roster folded to `"any"`. Each answers null and the caller's `"any"`
+    // default reports it exactly as the retired `else` did.
+    try testing.expect(reflectName(.v4f64) == null);
+    try testing.expect(reflectName(.v8i32) == null);
+    try testing.expect(reflectName(.never) == null);
+
+    // A STRUCT REPORTS ITS DECLARED NAME, the one payload the reflection roster
+    // carried through — `duo_name` returns `s.name`, so the face names it
+    // directly rather than folding it to `"any"`.
+    try declareNominal(std.heap.page_allocator, "cadence", .i32);
+    try testing.expect(std.mem.eql(u8, reflectName(nominalNamed("cadence").?).?, "cadence"));
 }
 
 test "CallShape: method call shape" {
