@@ -7043,12 +7043,48 @@ const Arm64Compiler = struct {
     /// is authoritative `register`/`frame` assignment before emission, per this
     /// gap's record, under which a home's location is carried by the assignment
     /// and is not a register the reclaim can bid for.
+    ///
+    /// A STAGED ARGUMENT IS THE THIRD RESERVATION, AND IT IS THIS FUNCTION'S
+    /// ALONE TO MISS (GAP-148).
+    ///
+    /// `pending_arg_regs` is the caller's statement that x_k already holds an
+    /// argument for the `bl` being marshaled. `allocRegExcluding` honours it in
+    /// its x0..x7 free scan and again in its x7..x0 spill pass — "a staged
+    /// argument register is not a spill candidate: its live value belongs to
+    /// the call being marshaled, not to a temp we can park" — and then reaches
+    /// this reclaim at its bottom without asking the question a third time. The
+    /// entry that made `slot` reachable here is exactly the fact the marshaling
+    /// left stale: `mov_arg` writes the argument into `slot` with `emitMovImm`,
+    /// `emitAdrpAdd` or `emitMovReg`, none of which touches `spilled_regs`, so
+    /// an entry that predates the staging survives it and now describes a frame
+    /// copy the register no longer holds.
+    ///
+    /// It survives because `preserveArgReg` had nothing to move. That function
+    /// is what empties `slot` before the staging, and it reloads through
+    /// `emitMovReg`'s `ensureRegLive` for every LIVE id that names it; when the
+    /// only names are ids whose last read is already behind emission — the
+    /// stale names it now passes over — it returns without a move and the
+    /// entry stays. Then the reclaim finds `slot`, drops that entry, claims the
+    /// register and hands it back as scratch, the caller's first write lands on
+    /// top of the staged argument, and the `bl` passes it. A wrong argument, no
+    /// diagnostic, on the one register the marshaling had already declared
+    /// spoken for.
+    ///
+    /// The skip is the `exclude` skip's shape and carries its cost — one
+    /// candidate out of a map the cascade filled with every allocatable
+    /// register, and when a staged argument is genuinely the last entry the
+    /// refusal below is the bail this function already answers with. Not the
+    /// closure — closure is authoritative `register`/`frame` assignment before
+    /// emission, per this gap's record, under which an argument's location is
+    /// carried by the assignment and no scratch allocator bids against it.
     fn reclaimSpilledReg(self: *Arm64Compiler, exclude: ?u5) Error!u5 {
         var it = self.spilled_regs.iterator();
         while (it.next()) |entry| {
             const reg = entry.key_ptr.*;
             if (exclude != null and reg == exclude.?) continue;
             if (self.gp_home_regs[reg]) continue;
+            if (reg < 8 and
+                self.pending_arg_regs & (@as(u8, 1) << @as(u3, @intCast(reg))) != 0) continue;
             const off = entry.value_ptr.*;
             _ = self.spilled_regs.remove(reg);
             self.gp_reg_owner[reg] = null;
@@ -18466,6 +18502,111 @@ test "the spilled-register reclaim passes over a home and takes a temp" {
     try std.testing.expectEqual(@as(?u16, home_off), compiler.spilled_regs.get(home));
     try std.testing.expect(compiler.gp_home_regs[home]);
     try std.testing.expect(!compiler.used_regs[home]);
+
+    // A reclaim emits nothing; it moves records only.
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+}
+
+// GAP-148. THE RECLAIM BID FOR A REGISTER THE CALL HAD ALREADY BEEN GIVEN.
+//
+// `pending_arg_regs` is the marshaling's statement that x_k holds an argument
+// for the `bl` it is building. `allocRegExcluding` asks it twice — in the
+// x0..x7 free scan and in the x7..x0 spill pass, where the comment reads "a
+// staged argument register is not a spill candidate: its live value belongs to
+// the call being marshaled, not to a temp we can park" — and then falls into
+// `reclaimSpilledReg` without asking a third time.
+//
+// The entry that puts a staged register in reach is one the marshaling left
+// stale. `mov_arg` writes the argument into `slot` with `emitMovImm`,
+// `emitAdrpAdd` or `emitMovReg`, and none of them touches `spilled_regs`;
+// `preserveArgReg` is what empties `slot` first, and it moves only for an id
+// that is still LIVE, so a `slot` named nothing but stale ids keeps an entry
+// describing a frame copy the register no longer holds. The reclaim then took
+// it: entry dropped, register claimed and handed back as scratch, the caller's
+// first write over the staged argument, and the call made with it. A wrong
+// argument with no diagnostic, on the one register the marshaling had already
+// declared spoken for.
+//
+// Built directly, like every test this gap has recorded: the state is one the
+// allocator passes through between a stale spill and the next operand
+// evaluation under pressure, not one a fixture names.
+test "the spilled-register reclaim passes over a staged argument register" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport, and so does this reclaim:
+    // `allocRegExcluding` refuses above its three spill passes otherwise.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // The state the cascade leaves for a spilled x2, from before the staging.
+    const staged: u5 = 2;
+    const staged_off: u16 = 8;
+    const stale_owner: u32 = 5;
+    try compiler.spilled_regs.put(alloc, staged, staged_off);
+    compiler.gp_reg_owner[staged] = stale_owner;
+    compiler.used_regs[staged] = false;
+
+    // And the marshaling's statement, which `mov_arg` makes right after writing
+    // the argument into x2 and which nothing removes until `emitBl`.
+    compiler.markStagedArgReg(staged);
+    try std.testing.expect(compiler.pending_arg_regs & (@as(u8, 1) << 2) != 0);
+
+    // A STAGED REGISTER ALONE IS NOT A CANDIDATE. The map is non-empty and its
+    // only entry names a register this call has already been given, so the
+    // answer is the refusal, not the argument.
+    try std.testing.expectError(error.RegisterExhausted, compiler.reclaimSpilledReg(null));
+
+    // And x2 is exactly as it was: still staged, still unclaimed, its entry
+    // still there — dropping it is what hands the register out — and its slot
+    // NOT in the free pool, since a released slot is a second value stored over
+    // this one.
+    try std.testing.expectEqual(@as(?u16, staged_off), compiler.spilled_regs.get(staged));
+    try std.testing.expectEqual(@as(?u32, stale_owner), compiler.gp_reg_owner[staged]);
+    try std.testing.expect(!compiler.used_regs[staged]);
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+
+    // A spilled TEMP beside it. The reclaim's hazard against a temp is this
+    // gap's and is unchanged; the fact under test is WHICH entry it reaches,
+    // and it must be this one whichever the map's iteration order offers first.
+    const temp: u5 = 21;
+    const temp_off: u16 = 24;
+    const owner: u32 = 11;
+    try compiler.spilled_regs.put(alloc, temp, temp_off);
+    compiler.gp_reg_owner[temp] = owner;
+    compiler.used_regs[temp] = false;
+
+    try std.testing.expectEqual(temp, try compiler.reclaimSpilledReg(null));
+    try std.testing.expect(!compiler.spilled_regs.contains(temp));
+    try std.testing.expect(compiler.used_regs[temp]);
+
+    // THE STAGED ARGUMENT IS STILL WHOLE, which is the whole point: it survives
+    // a reclaim that happened beside it.
+    try std.testing.expectEqual(@as(?u16, staged_off), compiler.spilled_regs.get(staged));
+    try std.testing.expect(!compiler.used_regs[staged]);
+
+    // THE SKIP IS THE STAGING FACT AND NOTHING ELSE. `emitBl` clears
+    // `pending_arg_regs`, and after it the same entry in the same state is the
+    // ordinary temp the reclaim has always taken — so this is one term, not a
+    // register the reclaim can no longer reach.
+    compiler.pending_arg_regs = 0;
+    try std.testing.expectEqual(staged, try compiler.reclaimSpilledReg(null));
+    try std.testing.expect(!compiler.spilled_regs.contains(staged));
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[staged]);
+    try std.testing.expect(compiler.used_regs[staged]);
 
     // A reclaim emits nothing; it moves records only.
     try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
