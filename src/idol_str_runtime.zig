@@ -121,6 +121,32 @@ export fn duo_str_sub(s: ?[*:0]const u8, i: i64, j: i64) callconv(.c) [*:0]const
 }
 
 // ── exported: str -> i64 ────────────────────────────────────────────────────
+// `s:rep(n)` repeats `s` `n` times and returns a HEAP-OWNED buffer.  Mirrors
+// the C backend's `duo_str_rep` ABI: same `(const char *, int64_t)`
+// signature, same return-shape convention.  The direct backend reaches this
+// from `lowerSubjectRep` in `src/dnir_lower.zig`.
+export fn duo_str_rep(s: ?[*:0]const u8, n: i64) callconv(.c) [*:0]const u8 {
+    const str: [*:0]const u8 = s orelse "";
+    if (n <= 0) {
+        const raw = malloc(1) orelse return str;
+        const e: [*]u8 = @ptrCast(raw);
+        e[0] = 0;
+        return @ptrCast(e);
+    }
+    const len: usize = @intCast(strlen(str));
+    const total: usize = len * @as(usize, @intCast(n));
+    const raw = malloc(total + 1) orelse return str;
+    const out: [*]u8 = @ptrCast(raw);
+    var p: [*]u8 = out;
+    var i: i64 = 0;
+    while (i < n) : (i += 1) {
+        _ = memcpy(p, @ptrCast(str), len);
+        p += @intCast(len);
+    }
+    out[total] = 0;
+    return @ptrCast(out);
+}
+
 fn strFatal(msg: []const u8) noreturn {
     // `fprintf(stderr, "%s\n", msg)` on an unbuffered stream, as one write.
     var buf: [64]u8 = undefined;

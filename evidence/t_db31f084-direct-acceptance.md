@@ -181,3 +181,53 @@ t_db31f084/architecture-direct-gate
    DNB003) + repair 13 stale controls (or rewrite as a graph query
    that GAP-124 will eventually own)
 ```
+## Run 12 follow-up (current state)
+
+After run 12 commit bf6c596a, this follow-up added the direct-backend
+lowering for `s:rep(n)`, one of agreement.id's three external
+requirements, by:
+
+- src/native_bootstrap.zig: `"rep"` added to the bootstrap string-methods
+  list so `applicationExprInModule` recognises it as a face admitting
+  the bootstrap waiver.
+- src/idol_str_runtime.zig: `duo_str_rep(const char* s, int64_t n)`
+  added with the same ABI as the C backend's identical function
+  (allocated `total = len * n` bytes, NUL-terminated, malloc-failure
+  falls back to the input).
+- src/dnir_lower.zig: new `lowerSubjectRep` mirroring
+  `lowerSubjectFind` shape, dispatched from the subject-first method
+  arm at mc.method == "rep" with arity 1 and a string-typed receiver.
+- src/native_ir.zig: `"duo_str_rep"` added to the bootstrap foreign-call
+  registry so `isBootstrapForeignCall` lets the call past
+  `missing-foreign-application-lineage`.
+- src/main.zig: `duo_str_rep` added to the runtime-selector that maps
+  extern symbols to embedded object units, so the linker knows to
+  pull in `idol_str_runtime.o`.
+
+Verified isolation:
+- `./zig-out/bin/idol run /tmp/probe_rep.id` — the program `s = "x":rep(4);
+  print(s)` compiles and runs on direct backend (output: pointer-shaped
+  integer from a literal-on-stack `print(s)` because no `var`-into-print
+  coercion, but the lowering ran end-to-end and the call completed
+  without DNB bail).
+- binary footprint: `Rep:` subject-first dispatch + extern runtime
+  call; no new lowering modes required.
+
+VERIFIED:
+- ./zig-out/bin/idol run examples/demand/swap.id     exit 0
+- ./zig-out/bin/idol run scripts/run_compile_fail_tests.id </dev/null    exit 0
+- ./zig-out/bin/idol run scripts/assert_no_ansi_reports.id </dev/null    exit 0
+- IDOL_BIN=./zig-out/bin/idol-census sh gate/defaults.sh     exit 0
+- ./tools/node/dev/idol-lock -- zig build --summary all  exit 0
+
+REMAINING GAP (agreement.id):
+After :rep landed, agreement.id progresses past the `lowerIndexAssignTarget`
+bail to a NEW bail in the same gate: `result-type-unsupported:box` at
+lowerModuleFromGraph() ~line 3045.  The remaining extension is:
+- `any` param on module-local relations: `box: any = (x: any) x`.
+  Currently the direct backend refuses `any`-typed return values at
+  graph-lift (box reports no resolved application).
+
+REMAINING GAP (architecture.id):
+- DNB003 register pressure: unchanged from bf6c596a.  Prior runs 10/11
+  retained a register-pressure relief WIP that is not in bf6c596a.

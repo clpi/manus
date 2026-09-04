@@ -546,6 +546,7 @@ pub fn isBootstrapForeignCall(callee: []const u8) bool {
         "duo_str_sub",
         "duo_str_to_f64",
         "duo_str_to_i64",
+        "duo_str_rep",
         "exit",
         "fabs",
         "floor",

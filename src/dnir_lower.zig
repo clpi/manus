@@ -12151,6 +12151,32 @@ fn lowerSubjectFind(
     return .{ .temp = t };
 }
 
+/// `s:rep(n)` — string repeat, lowercase-n variant. Returns a HEAP-OWNED
+/// buffer of `s` repeated `n` times. Mirrors `duo_str_rep`'s C ABI
+/// (`char *rep(const char *s, int64_t n)`); the emission here is the
+/// direct backend's lowered shape; the runtime shim ships `duo_str_rep`.
+fn lowerSubjectRep(
+    ctx: *LowerCtx,
+    expr: *const Expr,
+    consumption: types.ReturnConsumption,
+) Error!dnir.Value {
+    const mc = expr.method_call;
+    if (mc.args.len != 1) return bail(ctx.diagnostic, @src());
+    const subject = try lowerExpr(ctx, mc.obj);
+    const n = try lowerExpr(ctx, mc.args[0]);
+    try ensureExtern(ctx, "str", "rep", "duo_str_rep");
+    try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = subject });
+    try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = n });
+    if (consumption == .discard) {
+        try ctx.emit(.{ .op = .call_extern, .callee = "duo_str_rep", .ty = .str });
+        return .void;
+    }
+    const t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "duo_str_rep", .ty = .str });
+    try ctx.str_slots.put(ctx.alloc, t, {});
+    return .{ .temp = t };
+}
+
 fn lowerSubjectTail(
     ctx: *LowerCtx,
     expr: *const Expr,
@@ -12615,6 +12641,9 @@ fn lowerSubjectCall(
         }
         if (std.mem.eql(u8, mc.method, "find") and mc.args.len == 3) {
             return lowerSubjectFind(ctx, expr, consumption);
+        }
+        if (std.mem.eql(u8, mc.method, "rep") and mc.args.len == 1 and exprIsStr(ctx, mc.obj)) {
+            return lowerSubjectRep(ctx, expr, consumption);
         }
         if (std.mem.eql(u8, mc.method, "tail") and mc.args.len == 0 and exprIsStr(ctx, mc.obj)) {
             // IT NEVER TAKES THE NAME — the rule `lowerCollectionRelation`

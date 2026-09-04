@@ -4708,7 +4708,8 @@ fn boot(symbol: []const u8) ?[]const u8 {
         std.mem.eql(u8, symbol, "idol_str_at") or
         std.mem.eql(u8, symbol, "idol_str_find") or
         std.mem.eql(u8, symbol, "idol_str_has") or
-        std.mem.eql(u8, symbol, "idol_str_match"))
+        std.mem.eql(u8, symbol, "idol_str_match") or
+        std.mem.eql(u8, symbol, "duo_str_rep"))
         return "idol_str_runtime.o";
     return null;
 }

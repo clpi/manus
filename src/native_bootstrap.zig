@@ -191,7 +191,7 @@ fn methodApplication(expr: *const Expr) bool {
     if (receiverLooksStrish(mc.obj) or
         (std.mem.eql(u8, mc.method, "sub") and mc.args.len >= 1 and mc.args.len <= 2))
     {
-        const string_methods = [_][]const u8{ "sub", "match", "byte", "len", "find", "char", "at" };
+        const string_methods = [_][]const u8{ "sub", "match", "byte", "len", "find", "char", "at", "rep" };
         for (string_methods) |method| {
             if (std.mem.eql(u8, mc.method, method)) return true;
         }
