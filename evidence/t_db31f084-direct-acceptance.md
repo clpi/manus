@@ -3,6 +3,12 @@
 Measured subject: idollang/idol @ HEAD (run 13 — see `HEAD.txt`).
 Backend: direct (aarch64-macos native).
 Host: mm.local, Zig `0.17.0-dev.1567+f0354179a`.
+Re-measured at the wrap commit `8fe0ba84` with the precedence-fix
+binary rebuilt from `f35beace` (HEAD +1 minute):
+- `./zig-out/bin/idol run examples/demand/swap.id` exit 0
+- `./zig-out/bin/idol run examples/hash/agreement.id` exit 0 (6/6 PASS)
+- `./zig-out/bin/idol run --backend=direct gate/architecture.id </dev/null`
+  exit 1 (DNB003 register pressure — fenced)
 
 ## Final measurements on this run
 
