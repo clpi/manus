@@ -146,16 +146,21 @@ pub const MeasuredCost = struct {
     subject_revision: []const u8,
 };
 
-/// The measured fact naming one mechanism on one target triple, or none.
+/// The unique measured fact naming one mechanism on one target triple, or
+/// none. Two matching rows construct no fact: accepting the first would make
+/// transport order a shadow authority over cost (`law.fact.producer.one`).
 /// A measurement with no subject revision constructs no fact
 /// (`law.evidence.subject.one`), and a measurement on another triple is a
 /// fact about THAT target, not this one.
 pub fn measurementOf(m: Mechanism, triple: target_model.TargetTriple, measured: []const MeasuredCost) ?MeasuredCost {
+    var found: ?MeasuredCost = null;
     for (measured) |fact| {
         if (fact.subject_revision.len == 0) continue;
-        if (fact.mechanism == m and std.meta.eql(fact.triple, triple)) return fact;
+        if (fact.mechanism != m or !std.meta.eql(fact.triple, triple)) continue;
+        if (found != null) return null;
+        found = fact;
     }
-    return null;
+    return found;
 }
 
 /// The uniform-measurement rule: measured costs decide a comparison ONLY
@@ -730,6 +735,22 @@ test "lower: a measurement without a subject revision constructs no fact" {
     for (&unowned) |*fact| fact.subject_revision = "";
     try std.testing.expectEqual(@as(?MeasuredCost, null), measurementOf(.software_check, measured_triple, &unowned));
     const plan = selectMeasured(auth, observation.ordinary_executable, target, profile, &unowned).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, plan.mechanism);
+    try std.testing.expectEqual(CostUnit.cycle_order, plan.unit);
+}
+
+test "lower: duplicate measurements construct no cost fact" {
+    // A mechanism and target have one cost-fact producer. Even identical
+    // duplicate rows are ambiguous provenance; slice order must never choose
+    // which producer owns the fact, so the whole comparison stays stated.
+    const auth = exposedAuthority();
+    const target = world.TargetWorld.of(measured_triple);
+    const profile: Profile = .{ .accesses = 1000, .crossings = 10 };
+    const measured = measuredSet(.nanoseconds);
+    const duplicate = measured ++ [1]MeasuredCost{measured[0]};
+
+    try std.testing.expectEqual(@as(?MeasuredCost, null), measurementOf(.software_check, measured_triple, &duplicate));
+    const plan = selectMeasured(auth, observation.ordinary_executable, target, profile, &duplicate).plan.dynamic;
     try std.testing.expectEqual(Mechanism.mpk, plan.mechanism);
     try std.testing.expectEqual(CostUnit.cycle_order, plan.unit);
 }
