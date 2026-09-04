@@ -8986,7 +8986,14 @@ pub const SemanticGraph = struct {
         // from, so a reader can re-derive the answer without trusting it.
         // gaps/GAP-120.md. A v16 reader pointed at a v17 export sees a key it
         // did not expect, and that is the point.
-        try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":17,\"file\":\"");
+        // `idol.graph.v1` is this graph's own identity: the `sim-v0` name was
+        // SIM heritage on a payload that is the canonical semantic graph
+        // (canonical.md §4 owns the edge law; law.schema.one wants a record
+        // law named for its producer, not for a retired simulator). Schema-one
+        // and producer-one: one writer (semantic_graph.zig), one reader gate
+        // (gate/vocabulary.sh). A reader pointed at a foreign schema string
+        // must refuse, and that is the point.
+        try out.appendSlice(alloc, "{\"schema\":\"idol.graph.v1\",\"version\":17,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         switch (self.root_source_law_edition) {
