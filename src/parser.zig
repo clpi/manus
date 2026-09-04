@@ -5131,7 +5131,7 @@ pub const Parser = struct {
 
         // Typed-binding without 'local': name : Type = value
         // parse_suffixed_expr breaks on ':' when followed by a type-like token.
-        if (first.* == .name and nxt.kind == .colon) {
+        if (first.* == .name and try self.currentParserMethod()) {
             const colon_tok = try self.adv(); // consume ':'
             // `point:` over an indented field region — a descriptor home with
             // no delimiters. Checked before the `{`/`@` faces because it is a

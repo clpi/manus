@@ -3210,6 +3210,27 @@ if [ "$braceold" -ne 1 ] || [ "$bracenew" -ne 1 ]; then
     bad "the expression-brace detector is broken: old=$braceold new=$bracenew"
 fi
 
+# Typed-binding entry consumes the exact colon face already projected for the
+# current token. The parsed left expression still selects the name subject;
+# Zig no longer asks the host token kind for the relation identity.
+has "$PARSER" 'if (first.* == .name and try self.currentParserMethod()) {' \
+    'typed-binding entry bypasses the settled colon face'
+typedcolon=$(sed -n '/fn parse_expr_stmt/,/fn parse_assign_from_targets/p' "$PARSER" | grep -cF 'nxt.kind == .colon' || true)
+if [ "$typedcolon" -ne 0 ]; then
+    bad "typed-binding entry retained host colon recognition: count=$typedcolon"
+fi
+
+colonprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate typed-colon scratch' >&2; exit 2; }
+printf '%s\n' 'if (first.* == .name and nxt.kind == .colon) {' >"$colonprobe/old.zig"
+printf '%s\n' 'if (first.* == .name and try self.currentParserMethod()) {' >"$colonprobe/new.zig"
+colonold=$(grep -cF 'nxt.kind == .colon' "$colonprobe/old.zig")
+colonnew=$(grep -cF 'try self.currentParserMethod()' "$colonprobe/new.zig")
+rm -rf -- "$colonprobe"
+examined=$((examined + 1))
+if [ "$colonold" -ne 1 ] || [ "$colonnew" -ne 1 ]; then
+    bad "the typed-colon detector is broken: old=$colonold new=$colonnew"
+fi
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then
