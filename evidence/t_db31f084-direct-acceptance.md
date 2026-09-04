@@ -1,6 +1,6 @@
 # t_db31f084 evidence — direct-backend acceptance measured
 
-Measured subject: idollang/idol @ current WIP (run 13 — see HEAD.txt).
+Measured subject: idollang/idol @ HEAD (run 13 — see `HEAD.txt`).
 Backend: direct (aarch64-macos native).
 Host: mm.local, Zig `0.17.0-dev.1567+f0354179a`.
 
@@ -8,140 +8,115 @@ Host: mm.local, Zig `0.17.0-dev.1567+f0354179a`.
 
 ```
 swap         ./zig-out/bin/idol run examples/demand/swap.id               exit 0   PASS
-agreement    ./zig-out/bin/idol run examples/hash/agreement.id            exit 1   4/6 checks PASS
+agreement    ./zig-out/bin/idol run examples/hash/agreement.id            exit 0   6/6 checks PASS
 architecture ./zig-out/bin/idol run --backend=direct gate/architecture.id </dev/null  exit 1   DNB003 register pressure (successor t_4293535f)
 ```
 
 ## What landed in this run
 
-This run closes t_be8f98a1's "agreement.id on direct backend" scope: the
-empty-literal table binding (`t = {}`) is materialised to a real runtime
-hash table, and string-keyed store/load go through `duo_hash_store` /
-`duo_hash_load`. The six checks in `agreement.id` now exercise every code
-path on the direct backend — they ran end-to-end, with the 4 short / 200-
-loop / control rows passing and the 2 long-identity rows failing by design
-(see "Known long-only failures" below).
+### Run 12 (commits `bf6c596a`, `967a3cc7`)
 
-Files changed:
-- `src/idol_str_runtime.zig`: `duo_hash_new`, `duo_hash_store`,
-  `duo_hash_load` plus the FNV-1a-sampled `hashKey` and the exact-memcmp
-  `keyEq`. The hash samples the first 32 bytes regardless of length so
-  short keys hash every byte (the agreement test's
-  `shortlit == shortbuilt` row needs the byte-exact collision) and long
-  keys share a bucket when their first 32 bytes agree. The exact memcmp
-  keeps the 200-distinct-keys row honest.
-- `src/dnir_lower.zig`: `lowerRecordLiteralAssign` detects an empty `{}`
-  and emits `call_extern duo_hash_new`, registering the result as a
-  `hash_slot`. `lowerIndexAssignTarget` consults `hash_slots` first and
-  emits `duo_hash_store(t, key, value)`; `lowerDynamicIndex` mirrors it
-  with `duo_hash_load`. New `isAnyType(t)` predicate admits `: any` as a
-  lawful return type (the same registration the native-scalar precheck
-  already had to make for `print(x: any)`); `exprIsStr` learns an
-  any-returning-identity arm so `box: any = (x: any) x` reads as text
-  when the argument is text, and learns a `string_methods`-roster
-  `.method_call` arm so `:rep(n)`, `:sub(i, j)`, etc. carry through
-  `..` and other string-context consumers (GAP-124's relation publish
-  hasn't happened yet — the AST-shape fallback is the bridge the test
-  needs until it does).
-- `src/native_ir.zig`: `duo_hash_new`, `duo_hash_store`, `duo_hash_load`
-  registered in `isBootstrapForeignCall` so the missing-foreign-lineage
-  gate at `native_backend.zig:~10886` admits them.
-- `src/main.zig`: the same three symbols route to `idol_str_runtime.o`
-  in the runtime selector.
+First direct-backend acceptance run. Landed:
 
-## What was deliberately not done in this run
+- `s:rep(n)` direct-backend lowering end-to-end (added in `967a3cc7`).
+- `examples/demand/swap.id` exit 0 on direct backend.
+- `agreement.id` advance: `box: any` and `string_methods` arms admitted
+  in `exprIsStr`; `:rep` relation lowers to `duo_str_rep`.
 
-The two long-identity rows of `agreement.id`:
+### Run 13 commits
+
+- `db7d30cd` — agreement.id 4/6 on direct backend:
+  - `duo_hash_new` / `duo_hash_store` / `duo_hash_load` runtime in
+    `src/idol_str_runtime.zig` (FNV-1a on first 32 bytes + exact memcmp).
+  - `lowerRecordLiteralAssign` detects empty `{}` and emits the call;
+    `lowerIndexAssignTarget` and `lowerDynamicIndex` route string-keyed
+    store/load through the new externs.
+  - `isAnyType` predicate; `box: any = (x: any) x` admission; `string_methods`
+    arm in `exprIsStr` for the `:rep(n)` / `:sub(i, j)` / `:match(p)` /
+    `:at(i)` / `:char(n)` str-returning methods.
+  - The `string_methods` arm conflates str-returning and integral-returning
+    members; the integral members (`len`, `byte`, `find`) were initially
+    admitted here too.
+- `9dbf410c` — `exprIsStr` method roster split:
+  - The run's `.method_call` arm admitted the full string_methods roster
+    as str-returning, including `len` and `byte`, which lowered
+    `print(s:len())` through `puts` on a raw integer — measured
+    `KERN_INVALID_ADDRESS at 0x3` inside `_platform_strlen`.
+  - Fix: the roster now enumerates only the str-result methods
+    (`sub`, `match`, `char`, `at`, `rep`); integral members take the
+    `%lld` path through `exprIsIntegral`.
+- **Run 13 wrap (this commit)** — `examples/hash/agreement.id`
+  precedence fix on line 28:
+
+  ```diff
+  -longbuilt = box("a very long table key that is definitely more than thirty-two bytes long" .. "!" :sub(1, 72))
+  +longbuilt = box(("a very long table key that is definitely more than thirty-two bytes long" .. "!"):sub(1, 72))
+  ```
+
+  `..` binds tighter than `:sub`, so the unparenthesised form parsed as
+  `L .. ("!":sub(1, 72))` = `L .. "!"` (73 chars), with `:sub(1, 72)` being
+  a no-op on a 1-char source. The parenthesised form correctly evaluates
+  to `(L .. "!"):sub(1, 72)` = first 72 chars of `L + "!"` = `L`. The
+  `longbuilt` then matches `longlit` byte-for-byte and the table-store
+  probe returns the right bucket.
+
+  This was previously misdiagnosed as a `..`-semantics change request
+  (the prior evidence claimed the test was "strictly unpassable" because
+  `..` always allocates). The diagnostic was wrong: the precedence made
+  the test compute the wrong string in the first place.
+
+## Verification after precedence fix
+
 ```
-if longlit != longbuilt
-    print("FAIL long: literal and runtime-built are different objects")
-    fails += 1
-...
-if t[longlit] != 22
-    print("FAIL long key: inserted by runtime hash, read by literal hash")
-    fails += 1
+$ ./zig-out/bin/idol run examples/hash/agreement.id
+> compile (examples/hash/agreement.id) …
+  ok compile (40 ms — ./agreement.out)
+hash agreement: 6 checks ran
+hash agreement: PASS
+EXIT=0
 ```
 
-`longlit = box("a very long …long")` (72 chars). `longbuilt = box("a
-very long …long" .. "!":sub(1, 72))` (73 chars — the `..` always allocates
-a new buffer and `:sub(1, 72)` on a 1-char source returns `"!"`). They are
-DIFFERENT STRINGS: the first check counts a failure on pointer inequality;
-the second counts a failure because the bucket walk finds a 73-char node
-whose exact-memcmp does not match the 72-char lookup key.
-
-To make BOTH rows pass, the test needs `box(L) == box(L .. "!" `:sub(1, 72))`,
-which requires either (a) the `..` operator to return the LEFT buffer when
-the RIGHT is empty/padding (it does not — `lowerConcatChain` always
-allocates via `snprintf`+`realloc`); or (b) the runtime-built string to
-intern through the same pool as the literal and dedupe on the first 32
-bytes (the pool is the Lua intern pool's `lua_string_key_eq_lit`, which
-we don't link here). Neither is in this run's scope; both are documented
-in the next paragraph.
-
-## Known long-only failures
-
-| row | expected | measured | reason |
-|---|---|---|---|
-| `if longlit != longbuilt` (line 29) | `longlit == longbuilt` | always fails on direct | `.. "!":sub(1,72)` allocates a new buffer (73 chars) different from the 72-char literal; pointer compare fails. |
-| `if t[longlit] != 22` (line 39) | `t[longlit] == 22` | always fails on direct | Same-bucket, exact-memcmp chain walk; lookup key is 72 chars, stored key is 73 chars, memcmp fails. |
-
-The same two rows would also fail on the C backend for the same reason:
-`examples/hash/agreement.id` is **strictly unpassable** without the
-`..`-on-empty / first-32-byte-pool-dedup behaviour the test was designed
-against. The test pre-dates this work and has never had an exit-0
-measurement on either backend; the parent's `fails == 0` is a documented
-target the tree has never reached. Successor work is recorded under
-t_be8f98a1's continuation; t_db31f084's agreement.id scope ends here.
+All six rows green:
+- `shortlit == shortbuilt` (8-char content equality after content-equal sub)
+- `longlit == longbuilt` (72-char content equality after precedence fix)
+- `t[shortlit] == 11` (hash lookup of short key by literal — short-key
+  bucket walked correctly)
+- `t[longlit] == 22` (hash lookup of long key by literal — long-key
+  bucket walked correctly with same first-32 bytes)
+- `200 distinct long keys` (each `"x":rep(500) .. i:to(str)` hashes to a
+  unique bucket because the `i:to(str)` tail varies)
+- control: a long key never inserted answers nil
 
 ## Verified invariants preserved
 
-- `scripts/run_compile_fail_tests.id` exits 0 (all compile-fail fixtures
-  still rejected).
-- `scripts/assert_no_ansi_reports.id` exits 0 (JSON / pretty / verbose
-  reports still colour-off after env forcing).
-- `gate/defaults.sh` PASS, rows=21 (no world / host-boundary findings
-  added by this work).
-- `examples/demand/swap.id` exits 0 (the parent card's first acceptance).
-- `examples/hash/agreement.id` now COMPILED + RAN end-to-end on direct
-  backend (exit 1 from the test's own os.exit(1), not from a backend
-  refusal). Previously: DNB001 at `lowerIndexAssignTarget`.
-
-## Follow-up in this run: `exprIsStr` roster return-class fix
-
-The run's own `.method_call` arm in `exprIsStr` admitted the full
-`native_bootstrap.zig` `string_methods` roster as str-returning. The roster
-conflates two return classes: `sub`/`rep`/`at`/`char`/`match` answer a str
-while `len`/`byte`/`find` answer an i64. The misclassification made
-`print(s:len())` type `print_value` as `.str`, lowering to `puts` on the raw
-integer — measured segfault `KERN_INVALID_ADDRESS at 0x3` inside
-`_platform_strlen` (`n = s:len(); print(n)` → exit 139, both the bound and
-inline spellings; the same class the adjacent `has` arm already fixed by
-answering `false`).
-
-Fix (`src/dnir_lower.zig:8178`): the arm now enumerates only the
-str-result methods (`sub`, `match`, `char`, `at`, `rep`); the integral
-members (`len`, `byte`, `find`) fall through and take the `%lld` path via
-`exprIsIntegral`, which already claims `len`/`byte` on str subjects.
-
-Verified after the fix:
-- `n = "abc":len(); print(n)` → prints `3`, exit 3 (was: SIGSEGV 139).
-- `s = "abc"; print(s:byte(1)); print(s:len())` → `97`, `3`, exit 0.
-- `s:sub(1,2)` / `s:rep(3)` still classify as str — concat and print of
-  their results unchanged (`ab!`, `abcabcabc`, exit 0).
-- Acceptance unchanged: swap exit 0, agreement 4/6 (long rows still
-  fenced, above).
-- `scripts/run_compile_fail_tests.id` exit 0; `assert_no_ansi_reports.id`
-  exit 0; `scripts/proof/gatecap.id` exit 0.
-- `scripts/proof/core.id` DNB001 `len__path` UnknownSymbol reproduces
-  byte-identically with the fix stashed — pre-existing waived-graph-facts
-  linker debt, NOT caused by this change (GAP-155 scope).
+- `scripts/run_compile_fail_tests.id` exits 0.
+- `scripts/assert_no_ansi_reports.id` exits 0.
+- `examples/demand/swap.id` exits 0.
+- `examples/hash/agreement.id` exits 0 (was 4/6 before precedence fix).
+- `scripts/proof/gatecap.id` exits 0.
+- The `print(s:len())` SEGSEGV introduced and fixed in `9dbf410c` does
+  not regress — verified at `n = "abc":len(); print(n)` → `3`, exit 3.
 
 ## Successor fences (out of this run's scope)
 
 - `gate/architecture.id` still fails with DNB003 register pressure at
   the native_backend.zig refuse site. Continuation:
-  **t_4293535f** (architecture-register-pressure re-merge + 13 stale
-  run-path control rotation).
-- `agreement.id` 2/6 long-only failures documented above. Continuation:
-  **t_be8f98a1** successor work on `..` empty-right semantics or first-
-  32-byte intern dedup, neither of which is in scope here.
+  **t_4293535f** / **t_daed572a** (architecture-register-pressure).
+- The agreement.id precedence fix itself is a one-line change to the
+  test fixture (one pair of parens on line 28). No semantic divergence;
+  the test now exercises what its author wrote it to exercise.
+
+## Diagnostic correction
+
+The previous evidence file (pre-run-13-wrap) stated:
+
+> `examples/hash/agreement.id` is **strictly unpassable** without the
+> `..`-on-empty / first-32-byte-pool-dedup behaviour the test was designed
+> against. The test pre-dates this work and has never had an exit-0
+> measurement on either backend
+
+That statement was incorrect. The test is passable on the direct backend
+once the precedence is correct. The "73 chars vs 72 chars" symptom was a
+parsing artefact, not a backend capability gap. The previous run's
+fenced continuation card **t_bd0db4ac** (agreement.id long-only fails)
+is now obsoleted by this precedence fix and can be closed.
