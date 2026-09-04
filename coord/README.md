@@ -48,7 +48,7 @@ every push. No branch lives past a day." The pump applies that rule:
 
   1. `git fetch` the workspace onto the latest origin/gap-145-c-backend.
   2. `git rebase` the workspace before any dispatch.
-  3. Observe the dirty `/home/clp/src/idol` worktree but do NOT touch it
+  3. Observe the dirty `~/src/idol` worktree but do NOT touch it
      (the audit says "Live-0 enforces the discipline from now on, not
      the past"). Log the branch and the uncommitted line count.
   4. Find every pending ticket in `coord/tasks.jsonl`.

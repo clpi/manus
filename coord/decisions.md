@@ -180,12 +180,12 @@ the full freeze/fix/ratify loop with a real downstream consumer.
 These are FACTS about this host, not decisions awaiting ratification:
 
 * **Host arch: aarch64** (Linux kernel per `uname -m`).
-* **Codex binary: x86_64 ELF** at `/home/clp/.local/bin/codex` — cannot execute on this host without `qemu-user-static` or remote runner.
-* **Devin binary: x86_64 symlink** at `/home/clp/.local/bin/devin` — same constraint as Codex.
+* **Codex binary: x86_64 ELF** at `~/.local/bin/codex` — cannot execute on this host without `qemu-user-static` or remote runner.
+* **Devin binary: x86_64 symlink** at `~/.local/bin/devin` — same constraint as Codex.
 * **`antigravity`** is a Python Easter egg (`/usr/lib/python3.13/antigravity.py`), not a CLI tool.
 * **No sudo** for the `clp` user; the `apt-get install qemu-user-static` command requires root. The `clp` user is in the `sudo` group but passwordless sudo is disabled.
 * **No qemu-user-static in nix store** at session start; `nix shell nixpkgs#qemu-user-static` would fetch ~200MB from cache.nixos.org and install x86_64 emulation. This is a future session task if Codex/Devin dispatch is wanted.
-* **Claude Code CLI** at `/home/clp/.local/bin/claude` reports "Not logged in · Please run /login" — requires interactive OAuth flow that cannot run from a shell.
+* **Claude Code CLI** at `~/.local/bin/claude` reports "Not logged in · Please run /login" — requires interactive OAuth flow that cannot run from a shell.
 
 ## Working dispatch paths on this host (verified)
 
@@ -203,7 +203,7 @@ These are FACTS about this host, not decisions awaiting ratification:
 
 ## Reconciliation done in this session (2026-08-29)
 
-* `/home/clp/src/idol` (dirty checkout on `hermes-nous-zero34-catalog-faces`) was forked from `577946a9` with 2 unique unpushed commits (`97a9a5bd`, `f4a7f58a`). I rebased onto `origin/main` at `269529d9`, resolved conflicts in `src/c_backend.zig` and `tools/node/dev/grammar/emit` by keeping the HEAD (more detailed comment) side since the bodies were functionally identical. Then pushed the rebased branch to `origin/main` via fast-forward: `7482464a` is now main.
+* `~/src/idol` (dirty checkout on `hermes-nous-zero34-catalog-faces`) was forked from `577946a9` with 2 unique unpushed commits (`97a9a5bd`, `f4a7f58a`). I rebased onto `origin/main` at `269529d9`, resolved conflicts in `src/c_backend.zig` and `tools/node/dev/grammar/emit` by keeping the HEAD (more detailed comment) side since the bodies were functionally identical. Then pushed the rebased branch to `origin/main` via fast-forward: `7482464a` is now main.
 * 9 stale `migrate/*` branches from my overnight pump runs were deleted via `git update-ref -d`.
 * `/tmp/idol-gap145-fix` (the cron fleet's worktree) was fast-forwarded to match `origin/main` at `7482464a` so the overnight pump runs against the post-merge state.
-* The HARNESS.md.norm file in `/home/clp/src/idol/.agents/` is generated content, untracked, not from my work — left as-is per charter.
+* The HARNESS.md.norm file in `~/src/idol/.agents/` is generated content, untracked, not from my work — left as-is per charter.

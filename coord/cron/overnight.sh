@@ -20,7 +20,7 @@
 # Why gap-145-c-backend and not origin/main: the human (Chris) merges
 # gap-145-c-backend -> main when the corpus is green. The overnight
 # pump never writes to main directly. The dirty worktree at
-# /home/clp/src/idol on hermes-nous-zero34-catalog-faces is pre-Live-0
+# $HOME/src/idol on hermes-nous-zero34-catalog-faces is pre-Live-0
 # and reconciles when its author rebases, not here.
 #
 # Required to run safely:
@@ -43,11 +43,11 @@ MAX_TICKETS_PER_RUN=${MAX_TICKETS_PER_RUN:-3}
 mkdir -p "$LOG_DIR"
 
 # Load env (credentials) once
-chmod 600 /home/clp/.openclaw/.env 2>/dev/null || true
-. /home/clp/.openclaw/.env
+chmod 600 $HOME/.openclaw/.env 2>/dev/null || true
+. $HOME/.openclaw/.env
 
 # Cron runs with a minimal PATH; make sure git, nix tools, etc. are reachable.
-export PATH="/home/clp/.nix-profile/bin:/home/clp/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PATH="$HOME/.nix-profile/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 # 1. REBASE THE WORKTREE onto the latest origin/$BRANCH before any
 #    dispatch. A stale base is the most common overnight failure mode
@@ -70,15 +70,15 @@ if ! git rebase origin/"$BRANCH" 2>&1 | tee -a "$LOG_DIR/rebase.log"; then
   git rebase origin/"$BRANCH" >> "$LOG_DIR/rebase.log" 2>&1 || true
 fi
 
-# 2. NEUTRALIZE THE IDLE CHECKOUT. /home/clp/src/idol is a pre-Live-0
+# 2. NEUTRALIZE THE IDLE CHECKOUT. $HOME/src/idol is a pre-Live-0
 #    leftover worktree. Do not touch it; the audit says "Live-0 enforces
 #    the discipline from now on, not the past." Just confirm it is
 #    still preserved and move on.
-if [ -d /home/clp/src/idol ]; then
-  dirty_branch=$(git -C /home/clp/src/idol branch --show-current 2>/dev/null || echo unknown)
-  dirty_state=$(git -C /home/clp/src/idol status -s 2>/dev/null | wc -l | tr -d ' ')
-  printf 'overnight: dirty /home/clp/src/idol on %s with %s uncommitted lines (do not touch)\n' \
-    "$dirty_branch" "$dirty_state" | tee -a "$LOG_DIR/observe.log"
+if [ -d $HOME/src/idol ]; then
+  dirty_branch=$(git -C $HOME/src/idol branch --show-current 2>/dev/null || echo unknown)
+  dirty_state=$(git -C $HOME/src/idol status -s 2>/dev/null | wc -l | tr -d ' ')
+  printf 'overnight: dirty %s/src/idol on %s with %s uncommitted lines (do not touch)\n' \
+    "$HOME" "$dirty_branch" "$dirty_state" | tee -a "$LOG_DIR/observe.log"
 fi
 
 # 3. FIND PENDING TASKS via Python jsonl parse (one ticket per line).
