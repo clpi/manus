@@ -7096,7 +7096,7 @@ pub const Parser = struct {
             self.prev_line = saved_line;
             self.prev_end_col = saved_end;
         }
-        if (first.kind == .lbracket) {
+        if ((try self.currentParserFace()) == 19) {
             var depth: usize = 0;
             while (true) {
                 const t = try self.adv();
@@ -7109,7 +7109,7 @@ pub const Parser = struct {
             }
             return (try self.pk()).kind == .assign;
         }
-        if (first.kind != .name and !try self.currentParserPrimitive()) return false;
+        if (!try self.currentParserName() and !try self.currentParserPrimitive()) return false;
         _ = try self.adv();
         return (try self.pk()).kind == .assign;
     }
@@ -7138,7 +7138,8 @@ pub const Parser = struct {
                 if (tok.loc.line == open.line) break;
                 col = tok.loc.col;
             } else if (tok.loc.col != col or tok.loc.line == self.prev_line) break;
-            if (tok.kind == .lbracket) {
+            const face = try self.currentParserFace();
+            if (face == 19) {
                 // `[expr] = value` — the computed slot keeps its brackets.
                 _ = try self.adv();
                 const key = try self.parse_expr();
@@ -7148,15 +7149,16 @@ pub const Parser = struct {
                 try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
                 continue;
             }
-            if (tok.kind == .int_lit) {
+            if (try self.currentParserInteger()) {
                 const key = try self.parse_prec(0);
                 _ = try self.expect(.assign);
                 const val = try self.parse_expr();
                 try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
                 continue;
             }
-            if (tok.kind != .name and tok.kind != .kw_else and !try self.currentParserPrimitive()) break;
-            const key_text = if (tok.kind == .name) tok.text else tok.kind.spelling();
+            const name = try self.currentParserPackName();
+            if (name == 0) break;
+            const key_text = if (name == 1) tok.text else tok.kind.spelling();
             _ = try self.adv();
             const eq = try self.expect(.assign);
             // A slot whose value is itself an indented slot region nests, so

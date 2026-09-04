@@ -3159,6 +3159,34 @@ if [ "$tailold" -ne 1 ] || [ "$tailnew" -ne 1 ]; then
     bad "the pack-entry detector is broken: old=$tailold new=$tailnew"
 fi
 
+# Offside packs consume the same producer-owned entry identities as delimited
+# packs. Layout and delimiter traversal remain separate structural concerns;
+# entry selection must not reconstruct bracket, integer, name, or else kinds.
+has "$PARSER" 'fn parse_offside_pack(self: *Parser, open: ast.Loc) ParseError![]ast.TableField {' \
+    'offside pack consumer is missing'
+offsidekinds=$(sed -n '/fn parse_offside_pack(self:/,/fn desugarMatch(/p' "$PARSER" | \
+    grep -cE 'tok\.kind (==|!=) \.(lbracket|int_lit|name|kw_else)' || true)
+if [ "$offsidekinds" -ne 0 ]; then
+    bad "offside pack entry selection retained host recognition: count=$offsidekinds"
+fi
+has "$PARSER" 'const face = try self.currentParserFace();' \
+    'offside pack computed-key selection bypasses the settled face'
+has "$PARSER" 'if (try self.currentParserInteger()) {' \
+    'offside pack integer-key selection bypasses the settled face'
+has "$PARSER" 'const name = try self.currentParserPackName();' \
+    'offside pack named-key selection bypasses the settled face'
+
+offsideprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate offside-pack scratch' >&2; exit 2; }
+printf '%s\n' 'if (tok.kind == .lbracket) {' 'if (tok.kind == .int_lit) {' 'if (tok.kind != .name and tok.kind != .kw_else) break;' >"$offsideprobe/old.zig"
+printf '%s\n' 'if (face == 19) {' 'if (try self.currentParserInteger()) {' 'const name = try self.currentParserPackName();' >"$offsideprobe/new.zig"
+offsideold=$(grep -cE 'tok\.kind (==|!=) \.(lbracket|int_lit|name|kw_else)' "$offsideprobe/old.zig")
+offsidenew=$(grep -cE 'face == 19|currentParserInteger|currentParserPackName' "$offsideprobe/new.zig")
+rm -rf -- "$offsideprobe"
+examined=$((examined + 1))
+if [ "$offsideold" -ne 3 ] || [ "$offsidenew" -ne 3 ]; then
+    bad "the offside-pack detector is broken: old=$offsideold new=$offsidenew"
+fi
+
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
