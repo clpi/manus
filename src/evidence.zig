@@ -173,6 +173,7 @@ pub const FrontierError = error{
     MissingOracleRevision,
     MissingOracleConfiguration,
     MissingOracleEvidence,
+    DuplicateOracle,
     MissingWorld,
     MissingTarget,
     MissingWorkload,
@@ -216,6 +217,78 @@ pub const FrontierDimension = struct {
             if (self.candidate.overlaps(lower_bound)) return .bound;
         }
         if (better) return .win;
+        return .unknownbound;
+    }
+};
+
+/// One independently attributed comparator point for a cost dimension.
+/// The oracle remains external evidence; it never becomes a semantic producer.
+pub const OraclePoint = struct {
+    oracle: Oracle,
+    interval: Interval,
+};
+
+/// A dimension compared against the complete discovered oracle envelope.
+/// A candidate is not a frontier win while any attributed oracle still beats it.
+pub const OracleFrontierDimension = struct {
+    id: []const u8,
+    unit: []const u8,
+    direction: Direction,
+    candidate: Interval,
+    oracles: []const OraclePoint,
+    lower_bound: ?Interval = null,
+    improvable: bool,
+    cause: ?DebtCause = null,
+
+    pub fn status(self: OracleFrontierDimension) FrontierError!FrontierStatus {
+        if (self.oracles.len == 0) return error.MissingOracle;
+
+        var all_bound = true;
+        var saw_win = false;
+        var saw_unknown = false;
+        for (self.oracles, 0..) |point, index| {
+            try point.oracle.validate();
+            for (self.oracles[index + 1 ..]) |other| {
+                if (std.mem.eql(u8, point.oracle.name, other.oracle.name) and
+                    std.mem.eql(u8, point.oracle.revision, other.oracle.revision) and
+                    std.mem.eql(u8, point.oracle.configuration, other.oracle.configuration))
+                {
+                    return error.DuplicateOracle;
+                }
+            }
+
+            const worse = switch (self.direction) {
+                .minimize => self.candidate.low > point.interval.high,
+                .maximize => self.candidate.high < point.interval.low,
+            };
+
+            const comparison = FrontierDimension{
+                .id = self.id,
+                .unit = self.unit,
+                .direction = self.direction,
+                .candidate = self.candidate,
+                .competitor = point.interval,
+                .lower_bound = self.lower_bound,
+                .improvable = self.improvable,
+                .cause = if (worse) self.cause else null,
+            };
+            switch (try comparison.status()) {
+                .open => return .open,
+                .unknownbound => {
+                    all_bound = false;
+                    saw_unknown = true;
+                },
+                .win => {
+                    all_bound = false;
+                    saw_win = true;
+                },
+                .bound => {},
+            }
+        }
+        if (self.cause != null) return error.UnexpectedCause;
+        if (all_bound) return .bound;
+        if (saw_unknown) return .unknownbound;
+        if (saw_win) return .win;
         return .unknownbound;
     }
 };
@@ -908,4 +981,103 @@ test "frontier dimension refuses a debt cause without an open loss" {
     };
 
     try std.testing.expectError(error.UnexpectedCause, dimension.status());
+}
+
+test "oracle frontier refuses a win hidden by a weaker oracle" {
+    const points = [_]OraclePoint{
+        .{
+            .oracle = .{
+                .name = "baseline-compiler",
+                .revision = "baseline-revision",
+                .configuration = "release",
+                .evidence = "evidence/baseline.json",
+            },
+            .interval = Interval.exact(10),
+        },
+        .{
+            .oracle = .{
+                .name = "domain-champion",
+                .revision = "champion-revision",
+                .configuration = "tuned",
+                .evidence = "evidence/champion.json",
+            },
+            .interval = Interval.exact(7),
+        },
+    };
+    const dimension = OracleFrontierDimension{
+        .id = "runtime",
+        .unit = "ns",
+        .direction = .minimize,
+        .candidate = Interval.exact(8),
+        .oracles = &points,
+        .improvable = true,
+        .cause = .wrong_algorithm,
+    };
+
+    try std.testing.expectEqual(FrontierStatus.open, try dimension.status());
+}
+
+test "oracle frontier admits a win only against every oracle" {
+    const points = [_]OraclePoint{
+        .{
+            .oracle = .{
+                .name = "compiler-a",
+                .revision = "revision-a",
+                .configuration = "tuned-a",
+                .evidence = "evidence/a.json",
+            },
+            .interval = Interval.exact(10),
+        },
+        .{
+            .oracle = .{
+                .name = "compiler-b",
+                .revision = "revision-b",
+                .configuration = "tuned-b",
+                .evidence = "evidence/b.json",
+            },
+            .interval = Interval.exact(9),
+        },
+    };
+    const dimension = OracleFrontierDimension{
+        .id = "runtime",
+        .unit = "ns",
+        .direction = .minimize,
+        .candidate = Interval.exact(8),
+        .oracles = &points,
+        .improvable = true,
+    };
+
+    try std.testing.expectEqual(FrontierStatus.win, try dimension.status());
+}
+
+test "oracle frontier requires attributed unique comparators" {
+    const oracle = Oracle{
+        .name = "compiler",
+        .revision = "revision",
+        .configuration = "tuned",
+        .evidence = "evidence/compiler.json",
+    };
+    const duplicate = [_]OraclePoint{
+        .{ .oracle = oracle, .interval = Interval.exact(10) },
+        .{ .oracle = oracle, .interval = Interval.exact(9) },
+    };
+    const empty = OracleFrontierDimension{
+        .id = "runtime",
+        .unit = "ns",
+        .direction = .minimize,
+        .candidate = Interval.exact(8),
+        .oracles = &.{},
+        .improvable = true,
+    };
+    const repeated = OracleFrontierDimension{
+        .id = "runtime",
+        .unit = "ns",
+        .direction = .minimize,
+        .candidate = Interval.exact(8),
+        .oracles = &duplicate,
+        .improvable = true,
+    };
+
+    try std.testing.expectError(error.MissingOracle, empty.status());
+    try std.testing.expectError(error.DuplicateOracle, repeated.status());
 }
