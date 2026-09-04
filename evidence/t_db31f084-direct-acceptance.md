@@ -3,12 +3,37 @@
 Measured subject: idollang/idol @ HEAD (run 13 — see `HEAD.txt`).
 Backend: direct (aarch64-macos native).
 Host: mm.local, Zig `0.17.0-dev.1567+f0354179a`.
-Re-measured at the wrap commit `8fe0ba84` with the precedence-fix
-binary rebuilt from `f35beace` (HEAD +1 minute):
+Re-measured at the wrap commit `08654042` with the precedence-fix
+binary rebuilt from `f35beace` (HEAD +1 minute), and at the diagnostic
+extension `08654042` (the previous build cycle was `8fe0ba84`):
 - `./zig-out/bin/idol run examples/demand/swap.id` exit 0
 - `./zig-out/bin/idol run examples/hash/agreement.id` exit 0 (6/6 PASS)
 - `./zig-out/bin/idol run --backend=direct gate/architecture.id </dev/null`
-  exit 1 (DNB003 register pressure — fenced)
+  exit 1 (DNB003 register pressure — fenced; diagnostic below)
+
+### Diagnostic at 08654042
+
+```
+probe fail: RegisterExhausted home_budget=10 stack_bytes=16 gp_used=1 fp_used=0 pressure=1132
+probe fail: RegisterExhausted home_budget=6  stack_bytes=16 gp_used=1 fp_used=0 pressure=1132
+probe fail: RegisterExhausted home_budget=3  stack_bytes=16 gp_used=1 fp_used=0 pressure=1132
+probe fail: RegisterExhausted home_budget=0  stack_bytes=16 gp_used=1 fp_used=0 pressure=1132
+```
+
+`pressure=1132` is `dnirGpPressure(f)` for gate/architecture.id — 1132
+simultaneously-live GP locals + temps. The gated spill area
+(`gate_spill_end - gate_spill_base`, set at `native_backend.zig:3448-3452`)
+is sized `min(spill_frame_budget - gp_stack_bytes, pressure * 16, 8192)`,
+clamped to 8 KiB. With pressure=1132 and `pressure * 16 = 18112`,
+the clamp hands the function a 8192-byte band — half what the call
+actually needs. The probe bails at `spillReg` line 7018 the first time
+`gate_spill_cursor + 16 > gate_spill_end`.
+
+Successor fences (out of this run's scope):
+- **t_4293535f** — register-pressure relief + 13 stale run-path control
+  rotation.
+- **t_daed572a** — `allocHomeReg` bank full + spill cascade, on a
+  dedicated worktree `idol/t_daed572a-architecture.id-dnb003-allochomereg-bank`.
 
 ## Final measurements on this run
 
