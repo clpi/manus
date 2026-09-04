@@ -7179,12 +7179,59 @@ const Arm64Compiler = struct {
     /// emission, per this gap's record, under which a tail argument's location
     /// is carried by the assignment rather than by a register the marshaling
     /// holds across an allocation that may bid for it.
+    ///
+    /// A PIN IS THE FIFTH RESERVATION, AND `gp_home_regs` IS NOT THE WHOLE OF
+    /// IT (GAP-148).
+    ///
+    /// The home skip above reads the home flag as if it were the question, and
+    /// the question is whether `pinned` names `reg`. `ensureRegLiveRemap` asks
+    /// it that way; this function still asks the flag. The two sets agree at
+    /// five of the six `pinned.put` sites, each of which calls `markGpHome`
+    /// first. The sixth is a LEAF's parameter: `compileDnirFunction` keeps an
+    /// incoming argument in its own x0..x7 register, claims it, writes BOTH
+    /// maps, and marks no home because there is none to mark. That bit stays
+    /// clear until a store to the slot sets it, so a parameter that is only
+    /// ever READ — which is every leaf parameter this backend compiles today —
+    /// is pinned and is not a home for its whole life.
+    ///
+    /// It is a spill victim: the third pass in `allocRegExcluding` walks x7..x0
+    /// and takes any `used_regs` register that is neither `exclude` nor a staged
+    /// argument, and a parameter at rest is neither. Once the entry is in the
+    /// map this function takes it — entry dropped, `gp_reg_owner` nulled, slot
+    /// released, `claimReg`, handed back as scratch — while `pinned` still names
+    /// the register and `evalDnirValue` consults `pinned` FIRST for a local. The
+    /// next read of that parameter therefore answers a register the caller was
+    /// just given and is about to write, and the frame copy is unreachable in
+    /// both directions at once: `ensureRegLive` and `ensureRegLiveRemap` are its
+    /// only readers and both key on the entry just dropped, and its slot is back
+    /// in `free_spill_slots` for the next spill to store a second value over. A
+    /// wrong answer with no diagnostic — the failure `gp_call_home_regs`
+    /// measured for a home (`sha.id` answered 0 instead of 16, `native.id` fell
+    /// from 210 agreements to 128), reached through the one pinned register the
+    /// home flag does not cover.
+    ///
+    /// The reload path already answers this and answers it the other way: it
+    /// returns the parameter to the register both maps name. This path has no
+    /// such answer, because the value it is asked for is not the parameter's —
+    /// which is exactly the argument the home skip above makes, with the home
+    /// flag replaced by the map that actually decides the read.
+    ///
+    /// The skip is the `exclude` skip's shape and carries its cost — one
+    /// candidate out of a map the cascade filled with every allocatable
+    /// register, and when a pinned register is genuinely the last entry the
+    /// refusal below is the bail this function already answers with. False
+    /// outside a function body, where `eval_pinned` is null and there is no pin
+    /// to honour. Not the closure — closure is authoritative `register`/`frame`
+    /// assignment before emission, per this gap's record, under which a
+    /// parameter's location is carried by the assignment rather than by a map
+    /// one path reads and another passes over.
     fn reclaimSpilledReg(self: *Arm64Compiler, exclude: ?u5) Error!u5 {
         var it = self.spilled_regs.iterator();
         while (it.next()) |entry| {
             const reg = entry.key_ptr.*;
             if (exclude != null and reg == exclude.?) continue;
             if (self.gp_home_regs[reg]) continue;
+            if (self.evalPinNames(reg)) continue;
             if (reg < 8 and
                 self.pending_arg_regs & (@as(u8, 1) << @as(u3, @intCast(reg))) != 0) continue;
             if (self.stagedTailReg(reg)) continue;
@@ -18998,6 +19045,155 @@ test "a spilled variadic tail register reloads into the register its staging nam
     try std.testing.expectEqual(@as(?u5, relocated), temps.get(staged_temp));
     try std.testing.expectEqual(@as(?u32, staged_temp), compiler.gp_reg_owner[relocated]);
     try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[staged]);
+}
+
+// GAP-148. THE RECLAIM BID FOR A REGISTER A PIN STILL NAMED.
+//
+// `reclaimSpilledReg` passes over four reservations — `exclude`, a home,
+// `pending_arg_regs`, and a staged variadic tail — and reads the HOME FLAG
+// where `ensureRegLiveRemap` reads the PIN MAP. Those are the same set at five
+// of the six `pinned.put` sites, each of which calls `markGpHome` first. The
+// sixth is a LEAF's parameter: `compileDnirFunction` keeps an incoming argument
+// in its own x0..x7 register, claims it, writes `temps` and `pinned`, and marks
+// no home because there is none to mark. The bit stays clear until a store to
+// that slot sets it, so a parameter that is only ever READ — every leaf
+// parameter this backend compiles today — is pinned and is not a home for its
+// whole life.
+//
+// It is a spill victim there: the third pass in `allocRegExcluding` walks
+// x7..x0 and takes any `used_regs` register that is neither `exclude` nor a
+// staged argument, and a parameter at rest is neither. The reclaim below the
+// passes then found that entry and took it — entry dropped, `gp_reg_owner`
+// nulled, slot released, `claimReg`, handed back as scratch — while `pinned`
+// still named the register and `evalDnirValue` consults `pinned` FIRST for a
+// local. The next read of the parameter answers a register the caller was just
+// given and is about to write, and the frame copy is gone in both directions at
+// once: `ensureRegLive` and `ensureRegLiveRemap` both key on the dropped entry,
+// and the slot is back in `free_spill_slots` for the next spill to store a
+// second value over. The same wrong answer `gp_call_home_regs` measured for a
+// home, reached through the one pinned register the home flag does not cover —
+// and through the reclaim rather than the reload, which answered it by
+// returning the parameter to the register both maps name.
+//
+// Built directly, like every test this gap has recorded: this is a state the
+// allocator passes through between a spill of a parameter register and the next
+// allocation under pressure, not one a fixture names.
+test "the spilled-register reclaim passes over a pinned parameter and takes a temp" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport, and so does this reclaim:
+    // `allocRegExcluding` refuses above its three spill passes otherwise.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // What the leaf-parameter arm of `compileDnirFunction` leaves behind: the
+    // incoming register claimed, both maps naming it, AND NO HOME FLAG. That
+    // last fact is the whole difference from the home test above.
+    const arg_reg: u5 = 0;
+    const slot: u32 = 0;
+    compiler.claimReg(arg_reg);
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    try temps.put(alloc, slot, arg_reg);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    try pinned.put(alloc, slot, arg_reg);
+    compiler.eval_pinned = &pinned;
+    try std.testing.expect(!compiler.gp_home_regs[arg_reg]);
+
+    // And what the third spill pass leaves behind: the value in a frame slot,
+    // the entry reserving the register to it, `used_regs` clear. A leaf sets no
+    // `pending_arg_regs` bit — it makes no call — so no reservation this
+    // function already asks about covers this entry.
+    const off: u16 = 8;
+    try compiler.spilled_regs.put(alloc, arg_reg, off);
+    compiler.used_regs[arg_reg] = false;
+    try std.testing.expectEqual(@as(u8, 0), compiler.pending_arg_regs);
+
+    // A PINNED PARAMETER ALONE IS NOT A CANDIDATE. The map is non-empty and its
+    // only entry is pinned, so the answer is the refusal, not the parameter.
+    try std.testing.expectError(error.RegisterExhausted, compiler.reclaimSpilledReg(null));
+
+    // And the parameter is exactly as it was: the entry that reloads it still
+    // there, both maps still naming the register, still unclaimed, and its slot
+    // NOT in the free pool — a released slot is a second value stored over this
+    // one.
+    try std.testing.expectEqual(@as(?u16, off), compiler.spilled_regs.get(arg_reg));
+    try std.testing.expectEqual(@as(?u5, arg_reg), pinned.get(slot));
+    try std.testing.expectEqual(@as(?u5, arg_reg), temps.get(slot));
+    try std.testing.expect(!compiler.used_regs[arg_reg]);
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+
+    // Now a spilled TEMP beside it. The reclaim's hazard against a temp is this
+    // gap's and is unchanged; the fact under test is WHICH entry it reaches, and
+    // it must be this one no matter which the map's iteration order offers
+    // first.
+    const temp: u5 = 21;
+    const temp_off: u16 = 24;
+    const owner: u32 = 11;
+    try compiler.spilled_regs.put(alloc, temp, temp_off);
+    compiler.gp_reg_owner[temp] = owner;
+    compiler.used_regs[temp] = false;
+
+    const got = try compiler.reclaimSpilledReg(null);
+    try std.testing.expectEqual(temp, got);
+
+    // The temp was taken the way the reclaim takes one: entry dropped, owner
+    // cleared so the sweep cannot free a register a live value now holds, slot
+    // returned, register claimed.
+    try std.testing.expect(!compiler.spilled_regs.contains(temp));
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[temp]);
+    try std.testing.expect(compiler.used_regs[temp]);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(temp_off, compiler.free_spill_slots.items[0]);
+
+    // THE PARAMETER IS STILL WHOLE, which is the whole point: its reload
+    // survives a reclaim that happened beside it.
+    try std.testing.expectEqual(@as(?u16, off), compiler.spilled_regs.get(arg_reg));
+    try std.testing.expectEqual(@as(?u5, arg_reg), pinned.get(slot));
+    try std.testing.expect(!compiler.used_regs[arg_reg]);
+
+    // A PIN THAT NAMES ANOTHER REGISTER IS NOT THIS ONE. `regIsPinned` walks the
+    // map's values, so the question is the register and not the presence of a
+    // pin map: an unpinned spilled temp beside a pinned one is still the
+    // reclaim's, and it is reached before the entry the skip protects.
+    const other: u5 = 22;
+    const other_off: u16 = 32;
+    try compiler.spilled_regs.put(alloc, other, other_off);
+    compiler.gp_reg_owner[other] = owner + 1;
+    compiler.used_regs[other] = false;
+
+    try std.testing.expectEqual(other, try compiler.reclaimSpilledReg(null));
+    try std.testing.expectEqual(@as(?u16, off), compiler.spilled_regs.get(arg_reg));
+
+    // AND WITH NO PIN MAP THERE IS NO PIN — which `eval_pinned` is outside a
+    // function body. The identical entry in the identical state is then the
+    // ordinary register the reclaim has always taken, so the skip is one term
+    // and not an entry the reclaim can no longer reach.
+    compiler.eval_pinned = null;
+    try std.testing.expectEqual(arg_reg, try compiler.reclaimSpilledReg(null));
+    try std.testing.expect(!compiler.spilled_regs.contains(arg_reg));
+    try std.testing.expect(compiler.used_regs[arg_reg]);
+    try std.testing.expectEqual(@as(usize, 3), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[2]);
+
+    // A reclaim emits nothing; it moves records only.
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
 }
 
 // GAP-148. THE HOIST UNWIND GAVE BACK A REGISTER THE POOL COULD NOT TAKE.
