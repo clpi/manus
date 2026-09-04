@@ -164,19 +164,26 @@ pub fn measurementOf(m: Mechanism, triple: target_model.TargetTriple, measured: 
 }
 
 /// The uniform-measurement rule: measured costs decide a comparison ONLY
-/// when every candidate was measured on the target in one shared unit. A
-/// partial measurement, a foreign-triple measurement, or mixed units leave
-/// the stated orders to decide — the rule returns the shared unit when the
-/// whole comparison is measured, null otherwise.
+/// when every candidate was measured on the target in one shared unit and at
+/// one shared subject revision. A partial measurement, a foreign-triple
+/// measurement, mixed units, or mixed subjects leave the stated orders to
+/// decide — the rule returns the shared unit when the whole comparison is one
+/// measurement subject, null otherwise.
 fn uniformMeasurement(triple: target_model.TargetTriple, candidates: []const Dynamic, measured: []const MeasuredCost) ?CostUnit {
     if (candidates.len == 0) return null;
     var unit: ?CostUnit = null;
+    var subject_revision: ?[]const u8 = null;
     for (candidates) |c| {
         const fact = measurementOf(c.mechanism, triple, measured) orelse return null;
         if (unit) |u| {
             if (fact.unit != u) return null;
         } else {
             unit = fact.unit;
+        }
+        if (subject_revision) |revision| {
+            if (!std.mem.eql(u8, fact.subject_revision, revision)) return null;
+        } else {
+            subject_revision = fact.subject_revision;
         }
     }
     return unit;
@@ -719,6 +726,21 @@ test "lower: mixed units are not a comparison" {
     const profile: Profile = .{ .accesses = 1000, .crossings = 10 };
     var mixed = measuredSet(.nanoseconds);
     mixed[2].unit = .cycle_order;
+    const plan = selectMeasured(auth, observation.ordinary_executable, target, profile, &mixed).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, plan.mechanism);
+    try std.testing.expectEqual(CostUnit.cycle_order, plan.unit);
+}
+
+test "lower: mixed subject revisions are not a comparison" {
+    // Rows measured against different program revisions are facts about
+    // different subjects. Combining them would construct a synthetic cost
+    // comparison that no producer measured, so stated orders decide for all
+    // candidates instead.
+    const auth = exposedAuthority();
+    const target = world.TargetWorld.of(measured_triple);
+    const profile: Profile = .{ .accesses = 1000, .crossings = 10 };
+    var mixed = measuredSet(.nanoseconds);
+    mixed[2].subject_revision = "7a310e7f00000000000000000000000000000002";
     const plan = selectMeasured(auth, observation.ordinary_executable, target, profile, &mixed).plan.dynamic;
     try std.testing.expectEqual(Mechanism.mpk, plan.mechanism);
     try std.testing.expectEqual(CostUnit.cycle_order, plan.unit);
