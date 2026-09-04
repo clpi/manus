@@ -102,47 +102,6 @@ static inline char* duo_str_trim_cstr(const char* s) {
     if (!res) return (char*)s;
     memcpy(res, b, len); res[len] = '\0'; return res;
 }
-typedef struct { char* buf; const char** items; int64_t len; } duo_str_split_list;
-static inline duo_str_split_list duo_str_split_cstr(const char* src, const char* sep) {
-    duo_str_split_list out; out.buf = NULL; out.items = NULL; out.len = 0;
-    if (!src) src = "";
-    if (!sep) sep = "";
-    size_t src_len = strlen(src);
-    size_t sep_len = strlen(sep);
-    out.buf = (char*)malloc(src_len + 1);
-    if (!out.buf) return out;
-    memcpy(out.buf, src, src_len + 1);
-    if (sep_len == 0) {
-        out.items = (const char**)malloc(sizeof(char*));
-        if (!out.items) return out;
-        out.items[0] = out.buf; out.len = 1; return out;
-    }
-    int64_t count = 1;
-    char* scan = out.buf;
-    while (1) {
-        char* hit = strstr(scan, sep);
-        if (!hit) break;
-        count += 1;
-        scan = hit + sep_len;
-    }
-    out.items = (const char**)malloc((size_t)count * sizeof(char*));
-    if (!out.items) return out;
-    out.len = count;
-    int64_t i = 0;
-    char* part = out.buf;
-    while (1) {
-        out.items[i++] = part;
-        char* hit = strstr(part, sep);
-        if (!hit) break;
-        memset(hit, 0, sep_len);
-        part = hit + sep_len;
-    }
-    return out;
-}
-static inline const char* duo_str_split_get(duo_str_split_list list, int64_t i) {
-    if (i < 1 || i > list.len || !list.items) return "";
-    return list.items[(size_t)(i - 1)];
-}
 static inline __attribute__((noreturn)) void duo_fatal(const char* msg) {
     fprintf(stderr, "%s\n", msg);
     abort();
@@ -193,17 +152,6 @@ static inline char* duo_io_read_path(const char* path) {
     buf[got] = '\0';
     return buf;
 }
-static inline char* duo_fstream_readline(FILE* f) {
-    char* buf = (char*)malloc(8192);
-    if (!buf) duo_fatal("read: out of memory");
-    if (!fgets(buf, 8192, f)) { free(buf); return NULL; }
-    return buf;
-}
-#if !defined(__wasm__) && !defined(_WIN32)
-extern FILE* popen(const char*, const char*);
-extern int pclose(FILE*);
-#endif
-static inline FILE* _DUO_popen(const char* cmd, const char* mode) { return popen(cmd, mode); }
 /* --- Duo loop-versioning bound helpers --- */
 #ifndef DUO_LVB_DEFINED
 #define DUO_LVB_DEFINED
@@ -893,7 +841,7 @@ static inline int64_t compiler_lexer___decimal_class(duo_rec_ae78087612f938ba *s
 static inline int64_t compiler_lexer___int_of(duo_rec_ae78087612f938ba *self, int64_t start, int64_t stop) {
     int64_t n = ((stop - start) + 1);
     if ((((n > 2) && (((int64_t)(unsigned char)(self->src[start - 1])) == 48)) && ((((int64_t)(unsigned char)(self->src[(start + 1) - 1])) == 120) || (((int64_t)(unsigned char)(self->src[(start + 1) - 1])) == 88)))) {
-        uint64_t v = ((uint64_t)(0));
+        uint64_t v = 0;
         int64_t i = (start + 2);
         while ((i <= stop)) {
             int64_t c = ((int64_t)(unsigned char)(self->src[i - 1]));
@@ -912,7 +860,7 @@ static inline int64_t compiler_lexer___int_of(duo_rec_ae78087612f938ba *self, in
         }
         return v;
     }
-    uint64_t v = ((uint64_t)(0));
+    uint64_t v = 0;
     int64_t i = start;
     while ((i <= stop)) {
         int64_t c = ((int64_t)(unsigned char)(self->src[i - 1]));
@@ -1342,7 +1290,7 @@ static inline int64_t compiler_lexer__duo_lexer_step(const char* src, const char
 
 static inline uint64_t compiler_lexer__duo_lexer_text_fingerprint(const char* src, const char* file, int64_t family) {
     duo_rec_ae78087612f938ba lex = compiler_lexer__new(src, file, family);
-    uint64_t h = ((uint64_t)(0));
+    uint64_t h = 0;
     while (1) {
         duo_rec_735fa21981531a8e tok = compiler_lexer__next_tok(&lex);
                 h = ((uint64_t)(((h * 31) + tok.len)));
@@ -1360,7 +1308,7 @@ static inline uint64_t compiler_lexer__duo_lexer_text_fingerprint(const char* sr
 
 static inline uint64_t compiler_lexer__duo_lexer_kind_fingerprint(const char* src, const char* file, int64_t family) {
     duo_rec_ae78087612f938ba lex = compiler_lexer__new(src, file, family);
-    uint64_t h = ((uint64_t)(0));
+    uint64_t h = 0;
     while (1) {
         duo_rec_735fa21981531a8e tok = compiler_lexer__next_tok(&lex);
                 h = ((uint64_t)(((h * 31) + tok.kind)));
@@ -3224,6 +3172,9 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                         declaration = 15;
         }
         int64_t delimiter = 0;
+                int64_t probe = 0;
+                int64_t depth = 0;
+                int64_t part = 0;
         if ((kind == INT64_C(72))) {
                         delimiter = 1;
         } else if ((kind == INT64_C(1))) {
@@ -3240,9 +3191,9 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                         delimiter = 7;
         } else if ((kind == INT64_C(108))) {
                         delimiter = 8;
-        } else if ((kind == INT64_C(18))) {
+        } else if ((kind == INT64_C(26))) {
                         delimiter = 9;
-        } else if ((kind == INT64_C(19))) {
+        } else if ((kind == INT64_C(11))) {
                         delimiter = 10;
         } else if ((kind == INT64_C(86))) {
                         delimiter = 11;
@@ -3268,7 +3219,7 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                         delimiter = 21;
         } else if ((kind == INT64_C(85))) {
                         delimiter = 22;
-        } else if ((kind == INT64_C(0))) {
+        } else if ((((kind == INT64_C(0)) && ((index + 1) < count)) && (((int64_t)((fact[(((index + 1) * 2) + 1)]) & (255))) == INT64_C(75)))) {
                         delimiter = 23;
         } else if ((kind == INT64_C(82))) {
                         delimiter = 24;
@@ -3285,10 +3236,10 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
         } else if ((((kind == INT64_C(25)) || (kind == INT64_C(7))) || (kind == INT64_C(98)))) {
                         delimiter = 31;
         } else if ((kind == INT64_C(58))) {
-            int64_t depth = 1;
-            int64_t probe = (index + 1);
+                        depth = 1;
+                        probe = (index + 1);
             while (((probe < count) && (depth > 0))) {
-                int64_t part = ((int64_t)((fact[((probe * 2) + 1)]) & (255)));
+                                part = ((int64_t)((fact[((probe * 2) + 1)]) & (255)));
                 if ((part == INT64_C(58))) {
                                         depth = (depth + 1);
                 } else if ((part == INT64_C(59))) {
@@ -3300,16 +3251,17 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                                 delimiter = probe;
             }
         }
+                int64_t opening = 0;
         if (((kind == INT64_C(78)) && ((index + 2) < count))) {
             int64_t name = fact[(((index + 1) * 2) + 1)];
-            int64_t opening = fact[(((index + 2) * 2) + 1)];
+                        opening = fact[(((index + 2) * 2) + 1)];
             if (((((int64_t)((name) & (255))) == INT64_C(0)) && (((int64_t)((opening) & (255))) == INT64_C(58)))) {
-                int64_t line = ((int64_t)((((int64_t)(((uint64_t)(encoded)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
+                                line = ((int64_t)((((int64_t)(((uint64_t)(encoded)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
                 int64_t nameline = ((int64_t)((((int64_t)(((uint64_t)(name)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
-                int64_t depth = 1;
-                int64_t probe = (index + 3);
+                                depth = 1;
+                                probe = (index + 3);
                 while (((probe < count) && (depth > 0))) {
-                    int64_t part = ((int64_t)((fact[((probe * 2) + 1)]) & (255)));
+                                        part = ((int64_t)((fact[((probe * 2) + 1)]) & (255)));
                     if ((part == INT64_C(58))) {
                                                 depth = (depth + 1);
                     } else if ((part == INT64_C(59))) {
@@ -3344,7 +3296,7 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
         if (((kind == INT64_C(0)) && ((index + 3) < count))) {
                         word = fact[((index * 2) + 2)];
             if ((((word == 26881) || (word == 29953)) || (word == 26113))) {
-                int64_t opening = fact[(((index + 1) * 2) + 1)];
+                                opening = fact[(((index + 1) * 2) + 1)];
                                 width = fact[(((index + 2) * 2) + 1)];
                 int64_t closing = fact[(((index + 3) * 2) + 1)];
                 if ((((((int64_t)((opening) & (255))) == INT64_C(58)) && (((int64_t)((width) & (255))) == INT64_C(1))) && (((int64_t)((closing) & (255))) == INT64_C(59)))) {
@@ -3359,8 +3311,11 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
             }
         }
         out[(count + index)] = ((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((((int64_t)((clauseface) | (((int64_t)(((uint64_t)(returnface)) << ((uint64_t)(2) & 63u))))))) | (((int64_t)(((uint64_t)(arrayface)) << ((uint64_t)(3) & 63u))))))) | (((int64_t)(((uint64_t)(headerplain)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(headercomma)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(nameface)) << ((uint64_t)(5) & 63u))))))) | (((int64_t)(((uint64_t)(widthface)) << ((uint64_t)(4) & 63u))))))) | (((int64_t)(((uint64_t)(head)) << ((uint64_t)(6) & 63u))))))) | (((int64_t)(((uint64_t)(assignment)) << ((uint64_t)(8) & 63u))))))) | (((int64_t)(((uint64_t)(declaration)) << ((uint64_t)(9) & 63u))))))) | (((int64_t)(((uint64_t)(braceface)) << ((uint64_t)(12) & 63u))))))) | (((int64_t)(((uint64_t)(delimiter)) << ((uint64_t)(13) & 63u))))));
-        if ((prior == INT64_C(62))) {
-            bool entry = (((kind == INT64_C(60)) || (kind == INT64_C(1))) || (quoted == 1));
+        if (((prior == INT64_C(62)) || (prior == INT64_C(79)))) {
+            bool entry = ((kind == INT64_C(60)) && (prior == INT64_C(62)));
+            if ((((kind == INT64_C(1)) || (quoted == 1)) && ((index + 1) < count))) {
+                                entry = (((int64_t)((fact[(((index + 1) * 2) + 1)]) & (255))) == INT64_C(75));
+            }
             if (((kind == INT64_C(0)) && ((index + 1) < count))) {
                                 entry = (((int64_t)((fact[(((index + 1) * 2) + 1)]) & (255))) == INT64_C(75));
             }
