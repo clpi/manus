@@ -9660,9 +9660,35 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
 
     const idx_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = idx_slot, .lhs = try lowerExpr(ctx, key_expr), .ty = .any });
-    // GAP-185: elide the bounds check when the place's authority is statically fixed.
-    if (!placeAuthorityIsStatic(ctx, table_name))
-        try emitIndexBoundsTrap(ctx, idx_slot, len);
+    // THE RANGE DECISION IS THIS CHAIN'S TOTALITY, NOT AN ENFORCEMENT MECHANISM,
+    // so the GAP-185 static-place elision (`placeAuthorityIsStatic`) is not
+    // consulted here and the trap is unconditional.
+    //
+    // Two separate reasons, and either alone settles it.
+    //
+    // 1. The chain has no out-of-range BEHAVIOUR to protect — it has an
+    //    out-of-range ANSWER. No compare matches, `out_slot` keeps the zero it
+    //    is initialized with below, and the marking two lines further down
+    //    hands that zero to consumers AS TEXT. Eliding a memory access's
+    //    check trades a fault for an unchecked access; eliding this one trades
+    //    a fault for a wrong value, and a null pointer classified as a string
+    //    is exactly the failure this gap exists around.
+    //
+    // 2. The plan being consumed says the opposite of what the emission is
+    //    doing. `static` requires `determinacy == .exact` — every access to
+    //    the place statically determined — and reaching this function means
+    //    the index is NOT a literal (`lowerExprCons`'s `.index` arm takes the
+    //    constant path first). So an emission that is itself a runtime-indexed
+    //    access would be discharging its range decision against a proof that
+    //    no runtime-indexed access exists. Measured: when the census sees the
+    //    read, the place is `.bounded` and no plan is offered — the elision
+    //    can only ever fire when the two passes disagree about the same read,
+    //    which is the drift class this gap has already paid for three times.
+    //
+    // The same shape stands unrepaired at the memory-backed read
+    // (`guardedTableIndex`) and the select-chain WRITE above; both are outside
+    // this gap's subject and are recorded in `gaps/GAP-204.md` for their owner.
+    try emitIndexBoundsTrap(ctx, idx_slot, len);
 
     const out_slot = ctx.freshTemp();
     try ctx.emit(.{ .op = .store_local, .result = out_slot, .lhs = .{ .i64 = 0 }, .ty = .any });
@@ -18795,4 +18821,226 @@ test "dnir_lower: GAP-221 a module field base is unresolvable from a relation bo
     // guard declines the very word that write owns. The two arms are the same
     // `orelse return null`, which is why one repair produced both answers.
     try std.testing.expect(graph.bindingNamedIn(poke, "M") == null);
+}
+
+/// GAP-204 runtime-index control rig. The gap's ACCEPTANCE CRITERION is a
+/// runtime index — `strs[i]` must answer the recorded element, and a written or
+/// rebound table must refuse — and until now only the CONSTANT-index arm was
+/// pinned (`lowerExprCons`'s `module_consts` fallback). This rig measures the
+/// other arm: `lowerDynamicIndex`'s select chain over `module_consts`, which is
+/// the path that printed a pointer in every experiment recorded in the gap.
+///
+/// Three facts, because the chain's correctness rests on all three and each has
+/// its own failure:
+///
+///   - the elements it selects are the recorded ones, in index order;
+///   - the result SLOT's `str` marking agrees with `exprIsStr` on the SAME
+///     node — the disagreement `lowerDynamicIndex`'s own comment names;
+///   - the range decision survives, because the chain's out-of-range answer is
+///     the zero it initialized, marked as text.
+///
+/// Parser-independent for the same reason the constant-index rig is: no
+/// positional literal parses at this head, so the skeleton binds positional
+/// NAMES and `gap204CollectConstIndex` grafts the literals before sema.
+const Gap204DynRead = struct {
+    /// The lowered read, or null when lowering refused it.
+    value: ?dnir.Value,
+    /// `emitIndexBoundsTrap`'s extent operand, or null when no trap was emitted.
+    trap_len: ?i64,
+    /// Whether the result slot was published as holding text.
+    str_marked: bool,
+    /// `exprIsStr` on the same `.index` node — the second classifier.
+    expr_is_str: bool,
+    /// Every `.str` operand stored into a slot by the chain, in emission order.
+    selected: []const []const u8,
+};
+
+/// Collect the module, optionally publish a static place plan naming the table,
+/// then lower `strs[i]` — a NAME key, so `ast.intLiteralValue` declines and the
+/// read reaches the select chain.
+///
+/// `static_plan` is written straight onto the graph rather than produced by
+/// running the census through `lower.collectStaticPlaces`: this file is the
+/// BACKEND, and importing the enforcement selector to manufacture a fact it
+/// consumes is the layering the gate forbids (`gate/layering.rules`). The
+/// consumer contract is what needs pinning anyway — the chain's range decision
+/// must not depend on this fact whatever produced it — and the producer-side
+/// measurement (a watched runtime read leaves the place `.bounded`, so no plan
+/// is offered) is recorded in `gaps/GAP-204.md` with the probe that took it.
+fn gap204DynRead(alloc: std.mem.Allocator, src: []const u8, static_plan: bool) !Gap204DynRead {
+    var rig = try gap204CollectConstIndex(alloc, src);
+    defer rig.graph.deinit();
+    defer rig.consts.deinit(alloc);
+
+    if (static_plan) {
+        var plans: std.StringHashMapUnmanaged(void) = .empty;
+        try plans.put(alloc, "strs", {});
+        rig.graph.static_places = plans;
+    }
+
+    const l: @import("source_cursor.zig").Loc = .{ .file = "gap204_dyn_index.id", .line = 1, .col = 1 };
+    var obj: Expr = .{ .name = .{ .loc = l, .ident = "strs" } };
+    var key: Expr = .{ .name = .{ .loc = l, .ident = "i" } };
+    const read: Expr = .{ .index = .{ .loc = l, .obj = &obj, .key = &key } };
+    var diagnostic: Diagnostic = .{};
+    var occurrences = try OccurrenceBridge.init(alloc, &rig.graph, &diagnostic);
+    defer occurrences.deinit();
+    var externs: std.ArrayList(dnir.Extern) = .empty;
+    defer externs.deinit(alloc);
+    var func_record_returns: std.StringHashMapUnmanaged([]const u8) = .empty;
+    defer func_record_returns.deinit(alloc);
+    var entity_linkage: std.AutoHashMapUnmanaged(semantic_graph.id, []const u8) = .empty;
+    defer entity_linkage.deinit(alloc);
+    var ctx: LowerCtx = .{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .records = &.{},
+        .graph = &rig.graph,
+        .occurrences = &occurrences,
+        .require_graph_facts = true,
+        .externs = &externs,
+        .func_record_returns = &func_record_returns,
+        .entity_linkage = &entity_linkage,
+        .module_consts = &rig.consts,
+    };
+    defer ctx.deinit();
+    const expr_is_str = exprIsStr(&ctx, &read);
+    const value: ?dnir.Value = lowerExprCons(&ctx, &read, .single) catch null;
+
+    var trap_len: ?i64 = null;
+    var selected: std.ArrayList([]const u8) = .empty;
+    for (ctx.instrs.items) |instruction| {
+        if (instruction.op == .hw_unary and std.mem.eql(u8, instruction.field, index_bounds_tag))
+            trap_len = instruction.rhs.i64;
+        if (instruction.op == .store_local and instruction.lhs == .str)
+            try selected.append(alloc, try alloc.dupe(u8, instruction.lhs.str));
+    }
+    const str_marked = if (value) |v| switch (v) {
+        .local => |slot| ctx.str_slots.contains(slot),
+        else => false,
+    } else false;
+    return .{
+        .value = value,
+        .trap_len = trap_len,
+        .str_marked = str_marked,
+        .expr_is_str = expr_is_str,
+        .selected = try selected.toOwnedSlice(alloc),
+    };
+}
+
+test "dnir_lower: GAP-204 the runtime-index select chain selects recorded text and keeps its range decision" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // POSITIVE, with no plan published — the ordinary case. Both recorded
+    // elements reach the chain in index order, the two classifiers agree that
+    // the read holds text, and the range decision is emitted over the recorded
+    // extent.
+    {
+        const rig = try gap204DynRead(alloc,
+            \\a = "alpha"
+            \\b = "beta"
+            \\global strs = { a, b }
+            \\i = 2
+            \\main: i64 = ()
+            \\    stdout:write(strs[i])
+            \\    0
+        , false);
+        try std.testing.expect(rig.value != null);
+        try std.testing.expect(rig.value.? == .local);
+        try std.testing.expect(rig.str_marked);
+        try std.testing.expect(rig.expr_is_str);
+        try std.testing.expectEqual(@as(?i64, 2), rig.trap_len);
+        try std.testing.expectEqual(@as(usize, 2), rig.selected.len);
+        try std.testing.expectEqualStrings("alpha", rig.selected[0]);
+        try std.testing.expectEqualStrings("beta", rig.selected[1]);
+
+        // Determinism: an independent collection and an independent lowering
+        // select the same elements in the same order, so no run answers stale.
+        const again = try gap204DynRead(alloc,
+            \\a = "alpha"
+            \\b = "beta"
+            \\global strs = { a, b }
+            \\i = 2
+            \\main: i64 = ()
+            \\    stdout:write(strs[i])
+            \\    0
+        , false);
+        try std.testing.expectEqual(rig.selected.len, again.selected.len);
+        for (rig.selected, again.selected) |first, second|
+            try std.testing.expectEqualStrings(first, second);
+        try std.testing.expectEqual(rig.trap_len, again.trap_len);
+    }
+
+    // THE STATIC-PLAN CONTROL, and the reason the elision is gone. A plan
+    // naming this table is published on the graph and the chain is still
+    // emitted for a runtime index. Before the repair this combination emitted
+    // NO range decision, and the chain's answer for an index outside `1..len`
+    // was the zero it initialized, published as text.
+    //
+    // The producer can reach this combination: measured with a throwaway probe
+    // over the real `lower.collectStaticPlaces`, a module whose only read of
+    // `strs` the census does not walk leaves the place `determinacy=.exact`
+    // and IS offered the plan, while a module whose runtime read the census
+    // does walk leaves it `.bounded` and is not. That measurement is recorded
+    // in `gaps/GAP-204.md`; it cannot be re-taken here, because a backend may
+    // not import the enforcement selector to build the fact it consumes.
+    {
+        const rig = try gap204DynRead(alloc,
+            \\a = "alpha"
+            \\b = "beta"
+            \\global strs = { a, b }
+            \\i = 2
+            \\main: i64 = ()
+            \\    0
+        , true);
+        try std.testing.expect(rig.str_marked);
+        try std.testing.expectEqual(@as(?i64, 2), rig.trap_len);
+    }
+
+    // NEGATIVE (write): an integer-indexed write means nothing is recorded, so
+    // the chain has no length and no elements and the read refuses instead of
+    // selecting the original generation. `exprIsStr` refuses the same node, so
+    // no consumer treats the refused read as text either. Both negatives run
+    // WITH a plan published, so the refusal is the recording's, not something
+    // the plan's absence happened to produce.
+    {
+        const rig = try gap204DynRead(alloc,
+            \\a = "alpha"
+            \\b = "beta"
+            \\global strs = { a, b }
+            \\strs[1] = "changed"
+            \\i = 2
+            \\main: i64 = ()
+            \\    stdout:write(strs[i])
+            \\    0
+        , true);
+        try std.testing.expect(rig.value == null);
+        try std.testing.expect(!rig.expr_is_str);
+        try std.testing.expectEqual(@as(?i64, null), rig.trap_len);
+        try std.testing.expectEqual(@as(usize, 0), rig.selected.len);
+    }
+
+    // NEGATIVE (rebound): a second binding replaces the table, so neither
+    // generation may be assumed and the chain refuses rather than selecting
+    // either one.
+    {
+        const rig = try gap204DynRead(alloc,
+            \\a = "alpha"
+            \\b = "beta"
+            \\c = "x"
+            \\d = "y"
+            \\global strs = { a, b }
+            \\strs = { c, d }
+            \\i = 2
+            \\main: i64 = ()
+            \\    stdout:write(strs[i])
+            \\    0
+        , true);
+        try std.testing.expect(rig.value == null);
+        try std.testing.expect(!rig.expr_is_str);
+        try std.testing.expectEqual(@as(?i64, null), rig.trap_len);
+        try std.testing.expectEqual(@as(usize, 0), rig.selected.len);
+    }
 }
