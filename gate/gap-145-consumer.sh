@@ -3189,6 +3189,27 @@ fi
 
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
+# Expression-statement entry consumes the existing exact brace face before it
+# distinguishes a table value from a destructuring target. Zig retains only
+# the contextual choice and materialization; it no longer replays `.lbrace`.
+has "$PARSER" 'if (try self.currentParserTable()) {' \
+    'expression-statement parsing bypasses the settled brace face'
+exprbrace=$(sed -n '/fn parse_expr_stmt/,/fn parse_assign_from_targets/p' "$PARSER" | grep -cF 'first_tok.kind == .lbrace' || true)
+if [ "$exprbrace" -ne 0 ]; then
+    bad "expression-statement entry retained host brace recognition: count=$exprbrace"
+fi
+
+braceprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate expression-brace scratch' >&2; exit 2; }
+printf '%s\n' 'if (first_tok.kind == .lbrace) {' >"$braceprobe/old.zig"
+printf '%s\n' 'if (try self.currentParserTable()) {' >"$braceprobe/new.zig"
+braceold=$(grep -cF 'first_tok.kind == .lbrace' "$braceprobe/old.zig")
+bracenew=$(grep -cF 'try self.currentParserTable()' "$braceprobe/new.zig")
+rm -rf -- "$braceprobe"
+examined=$((examined + 1))
+if [ "$braceold" -ne 1 ] || [ "$bracenew" -ne 1 ]; then
+    bad "the expression-brace detector is broken: old=$braceold new=$bracenew"
+fi
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then

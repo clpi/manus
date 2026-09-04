@@ -5096,7 +5096,7 @@ pub const Parser = struct {
         // §4 — the owner prefix face is bit 20 of the current pack event.
         const is_unary = try self.currentParserPrefix();
         // `{ name, age } = user` named destructuring assign
-        if (first_tok.kind == .lbrace) {
+        if (try self.currentParserTable()) {
             const saved = self.saveState();
             _ = try self.adv(); // consume '{'
             const is_table_literal = try self.currentParserTableEntry();
