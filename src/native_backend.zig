@@ -2002,10 +2002,15 @@ const Arm64Compiler = struct {
         defer probe.deinit();
         probe.compileDnirFunction(f) catch |err| {
             var gp_count: u32 = 0;
-            for (self.used_regs) |r| if (r) gp_count += 1;
+            for (self.used_regs) |r| {
+                if (r) gp_count += 1;
+            }
             var fp_count: u32 = 0;
-            for (self.used_fp_regs) |r| if (r) fp_count += 1;
-            std.debug.print("probe fail: {s} home_budget={d} stack_bytes={d} gp_used={d} fp_used={d}\n", .{ @errorName(err), home_budget, self.stack_frame_bytes, gp_count, fp_count });
+            for (self.used_fp_regs) |r| {
+                if (r) fp_count += 1;
+            }
+            const pressure = dnirGpPressure(f);
+            std.debug.print("probe fail: {s} home_budget={d} stack_bytes={d} gp_used={d} fp_used={d} pressure={d}\n", .{ @errorName(err), home_budget, self.stack_frame_bytes, gp_count, fp_count, pressure });
             return null;
         };
         return probe.callee_touched;
