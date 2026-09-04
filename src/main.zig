@@ -255,7 +255,10 @@ fn apply_env_flags(init: std.process.Init) void {
         debug_trace.applyDepth(d);
     }
     if (map.get("DUO_TEST_REPORT")) |v| {
-        if (term.parseReportStyle(v)) |s| term.setTestReport(s);
+        if (term.parseReportStyle(v)) |style| {
+            term.setTestReport(style);
+            if (style == .json) term.color = false;
+        }
     }
     if (map.get("DUO_BUILD_REPORT")) |v| {
         if (term.parseReportStyle(v)) |s| term.setBuildReport(s);
@@ -266,6 +269,7 @@ fn apply_env_flags(init: std.process.Init) void {
     if (map.get("DUO_COLOR")) |v| {
         if (env_value_truthy(v)) term.color = true;
     }
+    if (term.test_report == .json) term.color = false;
     surveyBehaviourEnv(map);
 }
 
@@ -624,7 +628,10 @@ fn apply_cli_flags(trace_flag: bool, info_flag: bool, hints_flag: bool, plain_di
     }
     if (debug_depth) |d| debug_trace.applyDepth(d);
     if (test_report) |s| {
-        if (term.parseReportStyle(s)) |style| term.setTestReport(style);
+        if (term.parseReportStyle(s)) |style| {
+            term.setTestReport(style);
+            if (style == .json) term.color = false;
+        }
     }
     if (build_report) |s| {
         if (term.parseReportStyle(s)) |style| term.setBuildReport(style);
@@ -5067,6 +5074,38 @@ fn needUnion(
 /// THE REACHED CLOSURE RUNS FIRST, and that order is load-bearing: the unit
 /// selection reads the UNION, so a closure computed after `directLinkInputs`
 /// could only ever have been decided from the artifact's own needs.
+/// Whether the graph carries a cross-home application that relies on a DEFAULT
+/// OPERAND: fewer arguments than the foreign relation declares parameters. The
+/// caller's graph lifts the foreign relation's parameters (names and arity) but
+/// NOT their default values, so such a call cannot be realized correctly —
+/// measured: the entry object passes the argument register it never wrote and
+/// the linked program answers wrong. Linking a wrong answer is worse than
+/// refusing, and the pinned refusal for this shape is the LINKER BOUNDARY
+/// (`gate/defaults.sh` `cross` row: semantic=UNKNOWN,
+/// INFRA_REFUSE:cross-home-object): the entry object already references the
+/// foreign symbol as an extern, so omitting the reached partition from the
+/// link line fails closed BY THAT SYMBOL'S NAME instead of answering 4 when
+/// the program means 7. Explicit-argument cross-home calls (every
+/// `gate/crosspartition.sh` subject) carry `arguments.len == params` and are
+/// unaffected.
+fn graphHasForeignDefaultApplication(graph: *const semantic_graph.SemanticGraph) bool {
+    for (graph.application_facts.items) |fact| {
+        const target = switch (fact.target) {
+            .one => |entity| entity,
+            .unknown, .none => continue,
+        };
+        if (graph.foreignHome(target) == null) continue;
+        const arguments = graph.applicationArguments(fact.application) orelse continue;
+        var params: usize = 0;
+        for (graph.nodes.items) |node| {
+            if (node.kind == .param and node.scope != null and node.scope.? == target)
+                params += 1;
+        }
+        if (arguments.len < params) return true;
+    }
+    return false;
+}
+
 fn directLinkLine(
     alloc: std.mem.Allocator,
     io: Io,
@@ -5077,6 +5116,14 @@ fn directLinkLine(
     graph: *const semantic_graph.SemanticGraph,
     own_need: []const []const u8,
 ) ![]const []const u8 {
+    // A default-bearing cross-home application is unrealizable today (see the
+    // helper). The entry object already carries the extern reference, so the
+    // reached partition is deliberately NOT joined: the linker refuses by the
+    // missing symbol's name — the refusal `gate/defaults.sh` pins — rather
+    // than linking a program whose answer is whatever the argument register
+    // held at entry.
+    if (graphHasForeignDefaultApplication(graph))
+        return directLinkInputs(alloc, io, mod, target, cc, null, own_need);
     const reached = try reachedHomeClosure(alloc, io, entry_path, graph);
     const need = try needUnion(alloc, own_need, reached.need);
     const unit = try directLinkInputs(alloc, io, mod, target, cc, null, need);

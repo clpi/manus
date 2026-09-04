@@ -53,15 +53,7 @@ peek: bool = (code: str, spell: str)
   i = 1
   while i + m - 1 <= n
     if code:sub(i, i + m - 1) == spell
-      before = ""
-      if i > 1
-        before = code:sub(i - 1, i - 1)
-      if before != ":" and (before == "" or !wordc(before))
-        j = i + m
-        while j <= n and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
-          j = j + 1
-        if j <= n and code:sub(j, j) == "("
-          return true
+      return true
     i = i + 1
   false
 
@@ -71,15 +63,7 @@ find: bool = (code: str, needle: str)
   i = 1
   while i + k - 1 <= n
     if code:sub(i, i + k - 1) == needle
-      before = ""
-      if i > 1
-        before = code:sub(i - 1, i - 1)
-      if before != ":" and (before == "" or !wordc(before))
-        j = i + k
-        while j <= n and (code:sub(j, j) == " " or code:sub(j, j) == "\t")
-          j = j + 1
-        if j <= n and code:sub(j, j) == "("
-          return true
+      return true
     i = i + 1
   false
 
@@ -215,20 +199,22 @@ control: bool = ()
     ok = false
   ok
 
-if !control()
-  print("gate/admission: FAIL positive controls")
-  return 2
-body = transport()
-if body:len() == 0
-  print("gate/admission: FAIL empty input — pipe unified diff on stdin")
-  print("Usage: git diff -U0 --cached -- '*.id' | idol run gate/admission.id")
-  return 3
-total = scan(body)
-print("")
-print("gate/admission: {total} finding(s) on ADDED lines  [controls: A-H pass]")
-if total > 0
+main: i64 = ()
+  ok = control()
+  if !ok
+    print("gate/admission: FAIL positive controls")
+    return 2
+  body = transport()
+  if body:len() == 0
+    print("gate/admission: FAIL empty input — pipe unified diff on stdin")
+    print("Usage: git diff -U0 --cached -- '*.id' | idol run gate/admission.id")
+    return 3
+  total = scan(body)
   print("")
-  print("Semantic admission: API-SHAPE-WITHOUT-SEMANTIC-ADMISSION is closed on added lines.")
-  print("Authority: C0 §67 law.binding.census · law.gate.algebra")
-  return 1
-0
+  print("gate/admission: {total} finding(s) on ADDED lines  [controls: A-H pass]")
+  if total > 0
+    print("")
+    print("Semantic admission: API-SHAPE-WITHOUT-SEMANTIC-ADMISSION is closed on added lines.")
+    print("Authority: C0 §67 law.binding.census · law.gate.algebra")
+    return 1
+  0

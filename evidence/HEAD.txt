@@ -1,9 +1,36 @@
-HEAD: unknown
-Date: 2026-09-02T15:09:37-07:00
-Branch: unknown
-Tree: clean
+HEAD: b1e9e4e1775990ab10c257e3bbc4dd6a324daaeb
+Date: 2026-09-04T07:39:01-07:00
+Branch: main
+Tree: dirty (11 entries)
 Integration: present
 Measurement: absent
 Compiler_B: absent
 Performance_admission: denied
 Derived: tools/node/dev/orient (law.control.derived — do not hand-edit)
+
+# Acceptance measurement (t_db31f084, run 12)
+# Law: law.evidence.subject.one — every fact below names its measured subject.
+# Run: idollang/idol @ b1e9e4e1 + uncommitted WIP (gap-148 stale-name read-side
+# guard, module-top .if_stmt precheck + graph lift, admission main() wrapper +
+# broken peek repair).
+#   - ./zig-out/bin/idol run examples/demand/swap.id   rc=0 (exit 0 — pass)
+#   - ./zig-out/bin/idol run --backend=direct gate/architecture.id </dev/null   rc=1
+#       bail: DNB003 register pressure at native_backend.zig refuse
+#       bail site. On this clean WIP (GAP-148 read-side + module-top if_stmt
+#       admission + admission main-wrapper + broken peek repair) the gate
+#       cannot lower at all — its body has ~150 captures into one main,
+#       larger than the current direct-backend spill budget admits. The
+#       prior runs 10/11's WIP had a fuller reclaim workstream that did
+#       clear DNB003; that workstream is not in scope here.
+#   - ./zig-out/bin/idol run examples/hash/agreement.id   rc=1
+#       bail: DNB001 application: 16 relation: box missing: graph-dnir-unsupported
+#       at lowerIndexAssignTarget (dnir_lower.zig ~9732)
+#       NOT MEASURED ROOT CAUSE: runtime string-keyed table store (`t[k]=v` for
+#       dynamic str key k) is outside the current direct-native subset; the
+#       existing direct backend lowers `t[k]=v` only when the binding `t={…}` is
+#       a literal table with constant fields. agreement.id builds a runtime
+#       str key (`sub`+concat+to) and inserts into an empty-literal table — a
+#       capability the direct subset has not yet admitted.
+#       path: empty-literal table binding + dynamic string-keyed store + read
+#       by literal hash (the test's purpose: compile-time/runtime hash agreement
+#       on interning)

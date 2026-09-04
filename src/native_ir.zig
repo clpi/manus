@@ -569,6 +569,7 @@ pub fn isBootstrapForeignCall(callee: []const u8) bool {
         "malloc",
         "memset",
         "printf",
+        "realloc",
         "setenv",
         "sin",
         "snprintf",

@@ -5631,7 +5631,29 @@ const Arm64Compiler = struct {
                     }
                 }
                 if (temps.get(slot)) |r| {
-                    return try self.ensureRegLiveRemap(temps, r);
+                    // A STALE NAME IS NOT A VALUE — THE READ SIDE (GAP-148).
+                    //
+                    // `temps` entries outlive the claims they stood for:
+                    // `emitPopVarargs` releases a scratch register the map
+                    // still names, and `sweepGpLive` frees by owner record
+                    // while leaving the name alone. Serving such a name hands
+                    // back whatever the pool has since put in that register —
+                    // measured as `realloc(newsize, newsize)` in a chunked
+                    // concat, where the buffer argument read the size temp
+                    // through a name `emitPopVarargs` had already released.
+                    //
+                    // A VALID name carries its owner: the emission loop rebinds
+                    // `gp_reg_owner[r]` to the defining id after every value
+                    // instruction, so a name whose register's owner is null or
+                    // names another id is exactly a name whose claim is gone.
+                    // Homes and pins restate their claims in other maps and the
+                    // ABI bank is `preserveArgReg`'s to guard, so the test is
+                    // the allocatable bank only. A stale name falls through to
+                    // the frame home — the one place a local's value is still
+                    // authoritative — instead of answering with a stranger.
+                    const stale = r >= 9 and r < 29 and r != platform_reserved_reg and
+                        !self.gp_home_regs[r] and self.gp_reg_owner[r] != slot;
+                    if (!stale) return try self.ensureRegLiveRemap(temps, r);
                 }
                 if (self.gp_stack_locals.get(slot)) |off| {
                     return try self.loadGpStackLocal(off);

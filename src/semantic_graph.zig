@@ -4967,6 +4967,14 @@ pub const SemanticGraph = struct {
                         try self.liftExprsFromExpr(v, file, parent, rc);
                     }
                 },
+                .do_block => |db| {
+                    try self.liftCallsFromBlock(&db.body, file, parent);
+                },
+                .if_stmt => |is| {
+                    try self.liftCallsFromBlock(&is.then, file, parent);
+                    for (is.elseifs) |*elif| try self.liftCallsFromBlock(&elif.body, file, parent);
+                    if (is.else_body) |*eb| try self.liftCallsFromBlock(eb, file, parent);
+                },
                 else => {},
             }
         }
@@ -6441,11 +6449,86 @@ pub const SemanticGraph = struct {
                 return results;
             },
             else => {
-                const results = try self.alloc.alloc(types.ResolvedType, 1);
-                results[0] = fact.result;
+                // SOURCE-INFER-ONE: the pack a relation's own returns declare
+                // when no tuple annotation does. `two = (x: i64) return x * 2,
+                // x * 3` is a two-member pack — uniquely recoverable from the
+                // body, the exact fact `scanReturnPackArities` recovers on the
+                // callee side of lowering. Answering ONE member here made the
+                // graph publish a one-result pack while the callee wrote two,
+                // and the caller's `v, w = two(4)` read a hardcoded 0 for w
+                // (`sources.len == 1` took the nil-fill path) — a wrong answer
+                // with no diagnostic, on both ends of one ABI.
+                const body = &fact.target.func.body;
+                var arity: usize = 1;
+                var per_member: []const ?*const ast.Expr = &.{};
+                const inferred = self.returnPackOf(body);
+                if (inferred) |inferred_pack| {
+                    arity = inferred_pack.len;
+                    per_member = @ptrCast(inferred_pack);
+                }
+                const results = try self.alloc.alloc(types.ResolvedType, arity);
+                errdefer self.alloc.free(results);
+                for (results, 0..) |*slot, i| {
+                    slot.* = if (i < per_member.len and per_member[i] != null)
+                        (checked.exprDescriptor(per_member[i].?) orelse fact.result)
+                    else
+                        fact.result;
+                }
                 return results;
             },
         }
+    }
+
+    /// The per-member return expressions every `return` in this body agrees
+    /// on, or null when none state a pack / they disagree. Mirrors the
+    /// callee-side `scanReturnPackArities` rule: all multi-value returns agree
+    /// on count, no member resolves f64, else null (single result stands).
+    fn returnPackOf(self: *SemanticGraph, body: *const ast.Block) ?[]const *const ast.Expr {
+        var members: ?[]const *const ast.Expr = null;
+        if (!self.scanReturnPack(body, &members)) return null;
+        if (members) |m| {
+            if (m.len < 2) return null;
+            return m;
+        }
+        return null;
+    }
+
+    fn scanReturnPack(
+        self: *SemanticGraph,
+        block: *const ast.Block,
+        members: *?[]const *const ast.Expr,
+    ) bool {
+        for (block.stmts) |*stmt| {
+            switch (stmt.*) {
+                .ret => |r| {
+                    if (members.* == null) {
+                        members.* = r.vals;
+                    } else if (members.*.?.len != r.vals.len) {
+                        return false;
+                    }
+                },
+                .if_stmt => |*is| {
+                    if (!self.scanReturnPack(&is.then, members)) return false;
+                    for (is.elseifs) |*elif| {
+                        if (!self.scanReturnPack(&elif.body, members)) return false;
+                    }
+                    if (is.else_body) |*eb| {
+                        if (!self.scanReturnPack(eb, members)) return false;
+                    }
+                },
+                .while_loop => |*wl| if (!self.scanReturnPack(&wl.body, members)) return false,
+                .repeat_loop => |*rl| if (!self.scanReturnPack(&rl.body, members)) return false,
+                .num_for => |*nf| if (!self.scanReturnPack(&nf.body, members)) return false,
+                .gen_for => |*gf| if (!self.scanReturnPack(&gf.body, members)) return false,
+                .do_block => |*db| if (!self.scanReturnPack(&db.body, members)) return false,
+                else => {},
+            }
+        }
+        if (block.tail_expr != null) {
+            if (members.* != null and members.*.?.len != 1) return false;
+            if (members.* == null) return false; // tail-only body: single result
+        }
+        return true;
     }
 
     fn applicationForExpression(self: *const SemanticGraph, expr: *const Expr) ?*const ApplicationFact {

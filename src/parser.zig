@@ -475,9 +475,17 @@ pub const Parser = struct {
 
     fn currentParserTypePointer(self: *Parser) ParseError!bool {
         const event = try self.currentParserEvent();
+        // `*` is the one type-position primary that is BOTH a layout-type
+        // start (bit 62) and an infix operator (bits 23..46, mul). The
+        // optional `?` has no infix role, and the generic `<` is not a
+        // layout-type start — so primary+layouttype+infix is exactly `*`.
+        // The earlier spelling read the update face (bits 57..60), which `*`
+        // never sets — that condition could not fire and every pointer type
+        // fell through to the generic face, which consumed `*u8` as
+        // `<u8…` and died demanding `>`.
         return ((event >> 61) & 1) != 0 and
             ((event >> 62) & 1) != 0 and
-            ((event >> 57) & 0xF) != 0;
+            ((event >> 23) & 0xFFFFFF) != 0;
     }
 
     fn currentParserTypeOptional(self: *Parser) ParseError!bool {
@@ -498,7 +506,12 @@ pub const Parser = struct {
 
     fn currentParserTypeGeneric(self: *Parser) ParseError!bool {
         const event = try self.currentParserEvent();
+        // `<` is the one primary with an infix role that is NOT a layout-type
+        // start: layouttype zero keeps this face exactly `<`, so a pointer `*`
+        // (layouttype one, infix nonzero) can never be misread as the generic
+        // opener even if the pointer face is consulted after this one.
         return ((event >> 61) & 1) != 0 and
+            ((event >> 62) & 1) == 0 and
             ((event >> 23) & 0xFFFFFF) != 0;
     }
 
@@ -708,7 +721,14 @@ pub const Parser = struct {
 
     fn currentParserAttributeDeclaration(self: *Parser) ParseError!bool {
         const decision = try self.currentParserDecision();
+        // Delimiter 23 is the owner's `name` followed by `=` fact — an
+        // UNTYPED binding/relation head (`f = ()`, `x = 5`), which the
+        // declaration nibble does not carry (it marks keyword decls and
+        // name+colon heads only). Without it, an attribute before an
+        // untyped callable decl was refused the attribute path and fell
+        // into expression position.
         return ((decision >> 9) & 0xF) != 0 or
+            ((decision >> 13) == 23) or
             (self.func_body_depth == 0 and ((decision >> 7) & 1) != 0);
     }
 
@@ -2434,8 +2454,12 @@ pub const Parser = struct {
             const is_meta_directive = meta_module.isMetaAttribute(qualified);
             const is_attaching = meta_module.isAttachingMetaAttribute(qualified);
             const is_type_derive = meta_module.isTypeLevelDeriveAttribute(qualified);
+            // The test family is dotted (`@test.unit`, `@test.integration`) and
+            // the exact-match known list cannot carry it; `directives.zig` owns
+            // the one answer for it, and the same table reads it in sema.
+            const is_test = @import("directives.zig").isTestDirective(qualified);
             const is_directive = is_build or is_debug or is_trace or is_meta_directive;
-            const is_known = is_directive or is_attaching or is_type_derive or
+            const is_known = is_directive or is_attaching or is_type_derive or is_test or
                 (is_c_export or is_known_attribute(qualified));
             if (!is_known) return false;
             if ((try self.pk()).kind == .lparen) {
@@ -2598,6 +2622,22 @@ pub const Parser = struct {
             },
             0 => if (self.func_body_depth == 0 and barehead)
                 self.parse_bare_func_decl_with_attrs(false, attrs_slice)
+            else if (((try self.currentParserDecision()) >> 13) == 23)
+                blk: {
+                    // Untyped binding/relation head (`f = ()`, `x = 5`) after
+                    // an attribute. The face-22 statement parse owns the shape —
+                    // it promotes `name = (params) body` to a func_decl and
+                    // keeps a plain value binding an assignment — so reuse it
+                    // and attach the attributes to whatever it produced.
+                    var stmt = try self.parse_expr_stmt();
+                    switch (stmt) {
+                        .func_decl => |*fd| fd.attributes = attrs_slice,
+                        .local_decl => |*ld| attach_attrs_to_names(ld.names, attrs_slice),
+                        .global_decl => |*gd| attach_attrs_to_names(gd.names, attrs_slice),
+                        else => {},
+                    }
+                    break :blk stmt;
+                }
             else
                 ParseError.UnexpectedToken,
             8 => if (typehead)
@@ -6412,6 +6452,23 @@ pub const Parser = struct {
             const name_tok = try self.adv();
             return self.new_expr(.{ .name = .{ .loc = name_tok.loc, .ident = name_tok.text } });
         }
+        if (try self.currentParserAnchor()) {
+            // §2, the @ DYAD — **bare `@` NAMES** the anchor. §20's lexer
+            // hands it to a callable it retrieved from a table:
+            // `if r = read[b] return r(@)`. The anchor of a slot body is
+            // its receiver, which `parse_descriptor_slot` already binds as
+            // the first parameter, so naming it is the whole lowering —
+            // no new node, and nothing downstream re-derives a stance.
+            //
+            // Recognised only where there is NOTHING for `@` to name (an
+            // argument-list closer), so every prefix spelling still
+            // reaches the macro path with its bytes untouched.
+            if (try self.at_is_bare_anchor()) {
+                const l = (try self.adv()).loc;
+                return self.new_expr(.{ .name = .{ .loc = l, .ident = "self" } });
+            }
+            return self.parse_macro_call_expr();
+        }
         if (try self.currentParserExpressionGroup()) {
             if (try self.starts_parenthesized_func_expr()) {
                 const l = (try self.pk()).loc;
@@ -6435,23 +6492,6 @@ pub const Parser = struct {
             if ((try self.pk()).kind == .comma) return try self.finish_positional_pack(open_tok.loc, e);
             _ = try self.expect(.rparen);
             return e;
-        }
-        if (try self.currentParserAnchor()) {
-            // §2, the @ DYAD — **bare `@` NAMES** the anchor. §20's lexer
-            // hands it to a callable it retrieved from a table:
-            // `if r = read[b] return r(@)`. The anchor of a slot body is
-            // its receiver, which `parse_descriptor_slot` already binds as
-            // the first parameter, so naming it is the whole lowering —
-            // no new node, and nothing downstream re-derives a stance.
-            //
-            // Recognised only where there is NOTHING for `@` to name (an
-            // argument-list closer), so every prefix spelling still
-            // reaches the macro path with its bytes untouched.
-            if (try self.at_is_bare_anchor()) {
-                const l = (try self.adv()).loc;
-                return self.new_expr(.{ .name = .{ .loc = l, .ident = "self" } });
-            }
-            return self.parse_macro_call_expr();
         }
         if (try self.currentParserBacktick()) {
             term.locErr(tok.loc, "c0 law.backtick.zero: backtick is reserved and has no canonical meaning", .{});

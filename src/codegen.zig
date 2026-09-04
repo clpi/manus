@@ -4231,8 +4231,11 @@ pub const CodeGen = struct {
                         // have fallen and a program is measured to be waiting
                         // on this line alone.
                         if (!self.type_expr_is_native_scalar(param.typ)) {
-                            self.nativeDiagFailFmt("param-type:{s}", .{typeLabel(param.typ)});
-                            return self.nofit(@src());
+                            const measured_rt = self.resolve_type(param.typ);
+                            if (measured_rt != .any) {
+                                self.nativeDiagFailFmt("param-type:{s}", .{typeLabel(param.typ)});
+                                return self.nofit(@src());
+                            }
                         }
                     }
                     self.precheck_collect_types(&fd.func);
@@ -4255,10 +4258,48 @@ pub const CodeGen = struct {
                         return self.nofit(@src());
                     }
                 },
-                .local_decl, .assign, .call_stmt, .expr_stmt, .while_loop, .if_stmt, .num_for, .do_block, .ret, .brk, .cont => {
+                .local_decl, .assign, .call_stmt, .expr_stmt, .while_loop, .num_for, .do_block, .ret, .brk, .cont => {
                     if (!self.stmt_is_native_scalar(stmt, false)) {
                         self.nativeDiagFailFmt("mod-top-stmt:{s}", .{@tagName(stmt.*)});
                         return self.nofit(@src());
+                    }
+                },
+                // Module-top `.if_stmt` lowers into a TAIL EXPRESSION of the
+                // pre-existing DISPATCH (it is the answer the direct-Native
+                // run refused to admit) — every branch lowers independently
+                // via `stmt_is_native_scalar`, and the gate's own `is the
+                // if's tail the program tail` check falls through. A `.ret`
+                // inside the body becomes the program's exit code; an
+                // `.if_stmt` with no `.ret` falls through to the next
+                // module-top statement, exactly as the offside tail rules.
+                // Module-top early-return is the EXACT gate source shape
+                // (`gate/admission.id`, `gate/host.id`) and shutting it off
+                // here cost the direct backend every gate whose entrance
+                // happens to look like a program with a bootstrap-waiver
+                // admission — see cap-shape at `examples/demand/swap.id` for
+                // a working module-tail `if`.
+                .if_stmt => |is| {
+                    if (!self.expr_is_native_scalar(is.cond)) {
+                        self.nativeDiagFailFmt("mod-top-if-cond:{s}", .{@tagName(is.cond.*)});
+                        return self.nofit(@src());
+                    }
+                    if (!self.block_is_native_scalar(is.then, true)) {
+                        self.nativeDiagFailFmt("mod-top-if-then:{s}", .{@tagName(is.cond.*)});
+                        return self.nofit(@src());
+                    }
+                    for (is.elseifs) |elseif| {
+                        if (!self.expr_is_native_scalar(elseif.cond) or
+                            !self.block_is_native_scalar(elseif.body, true))
+                        {
+                            self.nativeDiagFail("mod-top-if-elseif");
+                            return self.nofit(@src());
+                        }
+                    }
+                    if (is.else_body) |body| {
+                        if (!self.block_is_native_scalar(body, true)) {
+                            self.nativeDiagFail("mod-top-if-else");
+                            return self.nofit(@src());
+                        }
                     }
                 },
                 .repeat_loop, .gen_for, .match_stmt, .label_stmt, .goto_stmt, .global_decl => {
@@ -4772,23 +4813,18 @@ pub const CodeGen = struct {
 
     fn block_is_native_scalar(self: *CodeGen, block: ast.Block, allow_return: bool) bool {
         if (block.tail_expr) |expr| {
-            if (!allow_return) {
-                self.nativeDiagFail("block-tail-no-return");
-                return false;
-            }
-            // gap[033]: DEMAND (rule 3) makes an if-body's last call the block's
-            // TAIL EXPRESSION, so `print(".")` inside an `if` is checked here and
-            // rejected as a runtime global, while the identical call at the top of
-            // a function or in a `while` body lands on `.call_stmt` and is
-            // admitted. One construct, two answers, decided by how deep it sits.
+            // gap[104]: a tail expression in a non-answering block is still a
+            // statement. `dnir_lower.lowerBlockTailEffect` lowers it with
+            // discard/single consumption when the block is not returning, while
+            // `tryEmitTailDemandReturn` consumes or returns it when the block is
+            // the answer. The native precheck must therefore ask whether the
+            // same expression can be LOWERED, not whether this block may return.
             //
-            // Widening this to `call_stmt_is_native_scalar` (a strict superset —
-            // it delegates to the expression predicate for everything that is not
-            // a call) FIRST produced wrong binaries: exit 59, and 224 with an
-            // else, where C exits 0, because dnir_lower emitted `return print(…)`
-            // and returned whatever register the void call left. That is fixed at
-            // the source (isVoidTailCall lowers it as the effect it is), so the
-            // gate and the lowering now agree and this widening is sound.
+            // gap[033]: this remains `call_stmt_is_native_scalar`, not the raw
+            // expression predicate, because a void tail call such as `print` or
+            // `stdout:write` is an effect in tail position. Returning it once
+            // produced wrong exit codes; lowering already owns the effect/result
+            // split, so the gate and lowering stay paired here.
             if (!self.call_stmt_is_native_scalar(expr)) return false;
         }
         for (block.stmts) |*stmt| {

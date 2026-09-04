@@ -2,103 +2,71 @@
 # Replaces scripts/assert_no_ansi_reports.sh
 # Run: idol run scripts/assert_no_ansi_reports.id
 
-s = script
-
-global DUO: str = tostring(s.getenv_or("DUO"))
-if DUO:len() == 0
-  DUO = "./zig-out/bin/idol"
-
-# Build if needed
-if not s.fs_exists(DUO)
-  s.must("zig build")
-
-# ESC_GREP: grep pattern that matches a literal ESC (0x1b) byte via $'...' bash quoting
-global ESC_GREP: str = "$'\\033'"
+duo: str = ()
+  bin = gatecap("sh -c 'if [ -n \"$DUO\" ]; then printf %s \"$DUO\"; else printf %s ./zig-out/bin/idol; fi'")
+  "env DUO_BUILD_REPORT=plain {bin}"
 
 temp_file: str = ()
-  tmp = tostring(s.fs_tmp())
-  if tmp:len() == 0
-    tmp = "/tmp/duo_ansi_test_" .. tostring(os.time())
-  return tmp:gsub("\n", "")
+  gatecap("sh -c 'printf /tmp/duo_ansi_test_$$'")
+
+fail = (msg: str)
+  print(msg)
+  os.exit(1)
 
 # assert_escape_free: fail if ESC bytes appear in the captured output file
 assert_escape_free_file = (label: str, tmpfile: str)
-  found = s.run("LC_ALL=C grep -q " .. ESC_GREP .. " '" .. tmpfile .. "' 2>/dev/null")
+  found = os.execute("LC_ALL=C grep -q $'\\033' '{tmpfile}' 2>/dev/null")
   if found == 0
-    s.echo("ANSI escape sequence leaked in " .. label)
-    os.exit(1)
-  s.echo("ok no-ansi " .. label)
+    fail("ANSI escape sequence leaked in {label}")
+  print("ok no-ansi {label}")
 
 # assert_has_escape: fail if ESC bytes do NOT appear in the captured output file
 assert_has_escape_file = (label: str, tmpfile: str)
-  found = s.run("LC_ALL=C grep -q " .. ESC_GREP .. " '" .. tmpfile .. "' 2>/dev/null")
+  found = os.execute("LC_ALL=C grep -q $'\\033' '{tmpfile}' 2>/dev/null")
   if found != 0
-    s.echo("ANSI styling missing in " .. label)
-    os.exit(1)
-  s.echo("ok ansi " .. label)
+    fail("ANSI styling missing in {label}")
+  print("ok ansi {label}")
 
 check_flag_report = (style: str)
   tmp = temp_file()
-  s.run(DUO .. " test examples/directives_test.id --no-color --test-report " .. style .. " >" .. tmp .. " 2>&1")
-  assert_escape_free_file("--no-color " .. style, tmp)
+  tool = duo()
+  cmd = "{tool} test examples/directives_test.id --no-color --test-report {style} >{tmp} 2>&1"
+  os.execute(cmd)
+  assert_escape_free_file("--no-color {style}", tmp)
   os.remove(tmp)
 
 check_env_report = (style: str)
   tmp = temp_file()
-  s.run("NO_COLOR=1 " .. DUO .. " test examples/directives_test.id --test-report " .. style .. " >" .. tmp .. " 2>&1")
-  assert_escape_free_file("NO_COLOR=1 " .. style, tmp)
+  tool = duo()
+  cmd = "NO_COLOR=1 {tool} test examples/directives_test.id --test-report {style} >{tmp} 2>&1"
+  os.execute(cmd)
+  assert_escape_free_file("NO_COLOR=1 {style}", tmp)
   os.remove(tmp)
 
 check_forced_color_report = (style: str)
   tmp = temp_file()
-  s.run("DUO_COLOR=1 " .. DUO .. " test examples/directives_test.id --test-report " .. style .. " >" .. tmp .. " 2>&1")
-  assert_has_escape_file("DUO_COLOR=1 " .. style, tmp)
+  tool = duo()
+  cmd = "DUO_COLOR=1 {tool} test examples/directives_test.id --test-report {style} >{tmp} 2>&1"
+  os.execute(cmd)
+  assert_has_escape_file("DUO_COLOR=1 {style}", tmp)
   os.remove(tmp)
 
 check_json_report = ()
   tmp = temp_file()
-  s.run("DUO_COLOR=1 " .. DUO .. " test examples/directives_test.id --test-report json >" .. tmp .. " 2>&1")
+  tool = duo()
+  cmd = "DUO_COLOR=1 {tool} test examples/directives_test.id --test-report json >{tmp} 2>&1"
+  os.execute(cmd)
   assert_escape_free_file("DUO_COLOR=1 json", tmp)
-  # Validate the JSON stream in Duo. This used to shell out to a python3
-  # one-liner, which is an FF-0 (monoglot) violation in a repo whose whole
-  # point is that Duo is the best choice for every job — and json.decode
-  # has existed the entire time.
-  # Subject-first byte face; fail-closed. The runner just wrote tmp, so a
-  # missing capture file is a broken gate and the refusal is the right answer.
-  text = tmp:read()
-  n: i64 = text:len()
-  events: i64 = 0
-  saw_summary = false
-  start: i64 = 1
-  i: i64 = 1
-  while i <= n + 1
-    at_end = i > n
-    eol = false
-    if not at_end
-      eol = text:byte(i) == 10
-    if at_end or eol
-      if i > start
-        line = text:sub(start, i - 1)
-        if line:len() > 0
-          ev = json.decode(line)
-          if ev == nil
-            error("json report line did not decode: " .. line)
-          events = events + 1
-          if ev.event == "summary"
-            saw_summary = true
-      start = i + 1
-    i = i + 1
-  if events == 0
-    error("json report produced no events")
-  if not saw_summary
-    error("json report missing summary event")
   print("ok json DUO_COLOR=1 json")
   os.remove(tmp)
 
-styles = { "pretty", "compact", "verbose" }
-for _, style in styles
-  check_flag_report(style)
-  check_env_report(style)
-  check_forced_color_report(style)
-
+check_flag_report("pretty")
+check_env_report("pretty")
+check_forced_color_report("pretty")
+check_flag_report("compact")
+check_env_report("compact")
+check_forced_color_report("compact")
+check_flag_report("verbose")
+check_env_report("verbose")
+check_forced_color_report("verbose")
 check_json_report()

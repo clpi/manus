@@ -4479,6 +4479,61 @@ fn internInstrStrings(alloc: std.mem.Allocator, instrs: []dnir.Instr) Error!void
 // defects on this surface in a day — and the two would only have to disagree
 // once for a body to be folded under one rule and lowered under the other.
 
+/// The pack a relation's own returns declare, when no tuple annotation does.
+///
+/// SOURCE-INFER-ONE: the arity is uniquely recoverable from the body, and a
+/// relation whose every `return a, b` agrees on two members answers a pack of
+/// two regardless of whether the declaration spells it. The old path read only
+/// the annotation (`resultPackTypes`), so `two = (x: i64)` with body
+/// `return x * 2, x * 3` lowered ZERO declared members and then refused its
+/// own return at `result-pack-arity` — a fact the body states being re-asked
+/// of a declaration that never carried it.
+///
+/// PURE AST, deliberately. The scan names the ARITY and nothing else; each
+/// member's physical class is decided at the return site itself, by the same
+/// predicates (`exprIsF64` / `exprIsPointer`) that type a scalar return, so
+/// this pass can never publish a member class the body then disagrees with.
+/// A member that is f64 refuses at that site (`result-pack-abi`), not here.
+///
+/// Every multi-value return must agree on the count. A single-value return is
+/// not pack evidence either way and does not veto: a relation may answer its
+/// pack conditionally (`if p return a, b ; 0`). A disagreement, or no
+/// multi-value return at all, leaves the declared pack exactly as given.
+fn scanReturnPackArities(block: *const ast.Block, arity: *?usize) bool {
+    var seen = false;
+    for (block.stmts) |*stmt| {
+        switch (stmt.*) {
+            .ret => |r| {
+                if (r.vals.len < 2) continue;
+                if (arity.* == null) {
+                    arity.* = r.vals.len;
+                    seen = true;
+                } else if (arity.* != r.vals.len) return false;
+            },
+            .while_loop => |*ws| {
+                if (!scanReturnPackArities(&ws.body, arity)) return false;
+            },
+            .num_for => |*nf| {
+                if (!scanReturnPackArities(&nf.body, arity)) return false;
+            },
+            .if_stmt => |*branch| {
+                if (!scanReturnPackArities(&branch.then, arity)) return false;
+                for (branch.elseifs) |*elseif| {
+                    if (!scanReturnPackArities(&elseif.body, arity)) return false;
+                }
+                if (branch.else_body) |*else_block| {
+                    if (!scanReturnPackArities(else_block, arity)) return false;
+                }
+            },
+            .do_block => |*db| {
+                if (!scanReturnPackArities(&db.body, arity)) return false;
+            },
+            else => {},
+        }
+    }
+    return seen;
+}
+
 fn lowerFunction(
     alloc: std.mem.Allocator,
     fd: *const ast.FuncDecl,
@@ -4496,8 +4551,22 @@ fn lowerFunction(
     entity_linkage: *const std.AutoHashMapUnmanaged(semantic_graph.id, []const u8),
     relation_edges: *const std.StringHashMapUnmanaged([]const u8),
 ) Error!dnir.Function {
-    const ret_pack = try resultPackTypes(alloc, fd.func.ret_type);
+    var ret_pack = try resultPackTypes(alloc, fd.func.ret_type);
     errdefer if (ret_pack.len > 0) alloc.free(ret_pack);
+    if (ret_pack.len == 0 and fd.func.ret_type != .tuple) {
+        // The body's own returns state the pack the annotation omitted
+        // (`scanReturnPackArities`). Members default to the GP register class;
+        // an f64 or record member refuses at its own return site, exactly as
+        // a declared pack's would. A declared empty tuple never reaches here.
+        var arity: ?usize = null;
+        if (scanReturnPackArities(&fd.func.body, &arity)) {
+            if (arity.? > max_reg_record_fields) return error.UnsupportedConstruct;
+            const inferred = try alloc.alloc(RT, arity.?);
+            errdefer alloc.free(inferred);
+            @memset(inferred, .i64);
+            ret_pack = inferred;
+        }
+    }
     var ctx: LowerCtx = .{
         .alloc = alloc,
         .diagnostic = diagnostic,
@@ -5673,6 +5742,24 @@ fn functionResultIs(
     return std.meta.activeTag(descriptor) == expected;
 }
 
+/// The unchecked call path (reached only when `require_graph_facts` is false
+/// — a waivered module) mangles a bare callee name the same way the
+/// definition side does in `funcExportName`, so a local `capture` call and
+/// the emitted `idol_gate_architecture__capture` definition agree.
+/// A name that resolves to a graph-known function comes back mangled; a
+/// name the graph does not know is preserved verbatim so foreign/library
+/// symbol paths keep working.
+fn calleeForCall(ctx: *LowerCtx, name: []const u8) ![]const u8 {
+    const start = ctx.function orelse return try ctx.alloc.dupe(u8, name);
+    if (ctx.graph.resolveInHome(start, name, .func)) |entity| {
+        if (ctx.entity_linkage.get(entity)) |existing| return try ctx.alloc.dupe(u8, existing);
+        if (ctx.graph.callableLinkage(entity)) |linkage| {
+            if (linkage.exposure == .c_import) return try ctx.alloc.dupe(u8, linkage.symbol);
+        }
+    }
+    return try ctx.alloc.dupe(u8, name);
+}
+
 fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!void {
     switch (stmt.*) {
         .local_decl => |ld| {
@@ -5978,6 +6065,15 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
                     {
                         return bailWith(ctx.diagnostic, @src(), "result-pack-abi");
                     }
+                    // The DECLARED class and the VALUE's own class must agree.
+                    // A declared pack always said so; a pack inferred from the
+                    // returns (`scanReturnPackArities`) names the GP class for
+                    // every member, so an f64 member refuses HERE rather than
+                    // riding an integer register to the caller — the exact
+                    // refusal the declared path gives the same body.
+                    if (exprIsF64(ctx, value)) {
+                        return bailWith(ctx.diagnostic, @src(), "result-pack-abi");
+                    }
                     vals[i] = try lowerExpr(ctx, value);
                 }
                 try ctx.emit(.{ .op = .ret_pack, .vals = vals });
@@ -6007,6 +6103,16 @@ fn lowerStmt(ctx: *LowerCtx, stmt: *const ast.Stmt, allow_return: bool) Error!vo
         },
         .call_stmt => |cs| {
             _ = try lowerExprCons(ctx, cs.expr, .discard);
+        },
+        .do_block => |db| {
+            // A parser-produced block wrapper (simultaneous assignment, table
+            // destructuring). It is not a scope: the parser already resolved
+            // names into the enclosing function's bindings, and re-entering
+            // scope machinery here would see staged place/value temporaries as
+            // fresh declarations. Statements lower in sequence; the tail
+            // expression, if any, is the enclosing statement's value.
+            for (db.body.stmts) |*inner| try lowerStmt(ctx, inner, false);
+            if (db.body.tail_expr) |te| _ = try lowerExprCons(ctx, te, .discard);
         },
         .brk => {
             if (ctx.loop_breaks.items.len == 0) return bail(ctx.diagnostic, @src());
@@ -7889,17 +7995,43 @@ fn exprIsBoolish(ctx: *LowerCtx, expr: *const ast.Expr) bool {
 /// `#s`, `s[i]`, an i64 local and an i64-returning call all qualify; an f64, a
 /// bool, a record, a table base and anything unproven do not, and each of those
 /// is a bail rather than a guess.
-fn concatOperandOk(ctx: *LowerCtx, expr: *const ast.Expr) bool {
-    if (exprIsStr(ctx, expr)) return true;
-    if (exprIsBoolish(ctx, expr)) return false;
+///
+/// The classification is one descent per expression. The pre-fix shape asked
+/// `exprIsStr` twice per concat level — once inside this predicate and once in
+/// the `.concat` arm's at-least-one-side-str test — and each of those descents
+/// asked again, so a left-nested chain of N concats cost 2^N predicate calls
+/// and `gate/architecture.id` (which builds 20+ hole chains) never finished
+/// lowering. The class carries both answers out of one walk.
+const ConcatClass = enum { str, integral, other };
+
+fn concatOperandClass(ctx: *LowerCtx, expr: *const ast.Expr) ConcatClass {
+    const class = concatOperandClassInner(ctx, expr);
+    if (@import("builtin").mode == .debug and class == .other) {
+        switch (expr.*) {
+            .quoted => |qv| std.debug.print("concatOperand other: quoted:{s} textConst={}\n", .{ qv.val[0..@min(qv.val.len, 40)], graphTextConst(ctx.graph, expr) }),
+            .name => |n| std.debug.print("concatOperand other: name:{s}\n", .{n.ident}),
+            else => std.debug.print("concatOperand other: kind={s}\n", .{@tagName(expr.*)}),
+        }
+    }
+    return class;
+}
+
+fn concatOperandClassInner(ctx: *LowerCtx, expr: *const ast.Expr) ConcatClass {
+    if (exprIsStr(ctx, expr)) return .str;
+    if (exprIsBoolish(ctx, expr)) return .other;
     // A BYTE SEQUENCE IS THE THIRD ANSWER, and it is stated here rather than
     // left to fall out of the two above (GAP-145 `law.text.byte`, GAP-207).
     // `dnir.Value` carries `void/i64/f64/str/local/temp/record` and has no
     // member for element descriptor `byte`, so the lawful shape is a REFUSAL
     // this pass can name, not a render. Without this line `exprIsIntegral`
     // admitted the `const char*` and `planConcat` printed it through `%lld`.
-    if (exprIsByteSequence(ctx, expr)) return false;
-    return exprIsIntegral(ctx, expr);
+    if (exprIsByteSequence(ctx, expr)) return .other;
+    if (exprIsIntegral(ctx, expr)) return .integral;
+    return .other;
+}
+
+fn concatOperandOk(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    return concatOperandClass(ctx, expr) != .other;
 }
 
 fn sameIndex(a: *const ast.Expr, b: *const ast.Expr) bool {
@@ -7949,8 +8081,17 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         // text, which it is not — `c` is a bool. The reachable arms are X and
         // Y, which is exactly the pair `codegen.expr_type` inspects.
         .binop => |bb| switch (bb.op) {
-            .concat => concatOperandOk(ctx, bb.lhs) and concatOperandOk(ctx, bb.rhs) and
-                (exprIsStr(ctx, bb.lhs) or exprIsStr(ctx, bb.rhs)),
+            .concat => blk: {
+                // ONE descent per side. `concatOperandClass` already answers
+                // both questions — operand renderable, and is it text — so the
+                // old shape's second `exprIsStr` per side re-descended the same
+                // subtree and doubled the work every level down a chain.
+                const l = concatOperandClass(ctx, bb.lhs);
+                if (l == .other) break :blk false;
+                const r = concatOperandClass(ctx, bb.rhs);
+                if (r == .other) break :blk false;
+                break :blk l == .str or r == .str;
+            },
             .@"or" => if (bb.lhs.* == .binop and bb.lhs.binop.op == .@"and")
                 exprIsStr(ctx, bb.lhs.binop.rhs) and exprIsStr(ctx, bb.rhs)
             else
@@ -12616,10 +12757,6 @@ fn lowerIfExpr(ctx: *LowerCtx, ie: *const ast.IfExpr) Error!dnir.Value {
     return .{ .local = slot };
 }
 
-/// The variadic tail the backend can stage. Eight is `pending_varargs`' width,
-/// not a guess.
-const max_concat_holes = 8;
-
 /// A `..` chain read as a printf FORMAT plus the arguments it consumes.
 ///
 /// Both consumers of a chain — `print`, and a chain in value position — need
@@ -12630,10 +12767,11 @@ const ConcatPlan = struct {
     /// The literal parts with `%` doubled and each hole replaced by its
     /// conversion. Owned by `ctx.alloc`.
     fmt: []const u8,
-    /// The same text with NO conversions, valid only when `count == 0`.
+    /// The same text with NO conversions, valid only when `holes.len == 0`.
     literal: []const u8,
-    holes: [max_concat_holes]*const ast.Expr,
-    count: usize,
+    /// Expressions whose values are staged in the variadic tail.
+    /// Owned by `ctx.alloc`.
+    holes: []const *const ast.Expr,
 };
 
 /// Read a flattened `..` chain as a format string, or answer null when a part
@@ -12644,7 +12782,8 @@ fn planConcat(ctx: *LowerCtx, parts: []const *const ast.Expr, newline: bool) Err
     defer fmt.deinit(ctx.alloc);
     var literal: std.ArrayListUnmanaged(u8) = .empty;
     defer literal.deinit(ctx.alloc);
-    var plan: ConcatPlan = .{ .fmt = "", .literal = "", .holes = undefined, .count = 0 };
+    var holes: std.ArrayListUnmanaged(*const ast.Expr) = .empty;
+    errdefer holes.deinit(ctx.alloc);
 
     for (parts) |p| {
         if (p.* == .quoted) {
@@ -12673,7 +12812,6 @@ fn planConcat(ctx: *LowerCtx, parts: []const *const ast.Expr, newline: bool) Err
             }
             continue;
         }
-        if (plan.count == max_concat_holes) return null;
         if (exprIsStr(ctx, p)) {
             try fmt.appendSlice(ctx.alloc, "%s");
         } else if (concatOperandOk(ctx, p)) {
@@ -12681,16 +12819,17 @@ fn planConcat(ctx: *LowerCtx, parts: []const *const ast.Expr, newline: bool) Err
             // shapes `%lld` renders into a plausible wrong answer.
             try fmt.appendSlice(ctx.alloc, "%lld");
         } else return null;
-        plan.holes[plan.count] = p;
-        plan.count += 1;
+        try holes.append(ctx.alloc, p);
     }
     if (newline) {
         try fmt.append(ctx.alloc, '\n');
         try literal.append(ctx.alloc, '\n');
     }
-    plan.fmt = try ctx.alloc.dupe(u8, fmt.items);
-    plan.literal = try ctx.alloc.dupe(u8, literal.items);
-    return plan;
+    return .{
+        .fmt = try ctx.alloc.dupe(u8, fmt.items),
+        .literal = try ctx.alloc.dupe(u8, literal.items),
+        .holes = try holes.toOwnedSlice(ctx.alloc),
+    };
 }
 
 /// Stage a plan's holes in the variadic tail. Emitted immediately before the
@@ -12752,33 +12891,178 @@ fn lowerConcatChain(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) 
     const plan = (try planConcat(ctx, parts.items, false)) orelse return bailWith(ctx.diagnostic, @src(), "concat");
     // Every part was a literal, so the chain IS its own answer — determined at
     // compile time, and it must not reach the allocator at all.
-    if (plan.count == 0) return .{ .str = plan.literal };
-
-    var vals: [max_concat_holes]dnir.Value = undefined;
-    for (plan.holes[0..plan.count], 0..) |h, i| vals[i] = try lowerExpr(ctx, h);
+    if (plan.holes.len == 0) return .{ .str = plan.literal };
 
     try ensureExtern(ctx, "mem", "alloc", "malloc");
+    try ensureExtern(ctx, "mem", "grow", "realloc");
     try ensureExtern(ctx, "string", "format", "snprintf");
 
+    // THE VARIADIC TAIL IS EIGHT SLOTS ON THIS ABI, and a register file is not
+    // a list. One chain wider than that — `gate/architecture.id` builds
+    // 76-hole census lines — used to refuse at the backend's `pending_varargs`
+    // bound, and the first chunked answer refused again with every hole
+    // lowered UP FRONT: 76 temps live at once is more names than the machine
+    // has registers, and the holes' values are not needed simultaneously —
+    // only EIGHT at a time, one chunk's worth, ever are.
+    //
+    // So the chain is rendered as a running buffer grown per chunk: lower a
+    // chunk's holes, measure them, grow the buffer to fit, fill at the write
+    // offset. Across chunks exactly TWO values stay live — the buffer and the
+    // byte count — and an eight-hole chain compiles to exactly the
+    // instructions it did before via `lowerConcatSingle`.
+    const vararg_slots = 8;
+    if (plan.holes.len <= vararg_slots) {
+        const vals = try ctx.alloc.alloc(dnir.Value, plan.holes.len);
+        defer ctx.alloc.free(vals);
+        for (plan.holes, 0..) |h, i| vals[i] = try lowerExpr(ctx, h);
+        return try lowerConcatSingle(ctx, plan.fmt, vals);
+    }
+
+    // Split the FORMAT by chunk boundaries. A chunk's format is the literal
+    // run between its first and last hole plus the hole conversions, so the
+    // chunks concatenate to the whole format with no bytes dropped or doubled.
+    var chunks: std.ArrayListUnmanaged(ChunkPlan) = .empty;
+    defer chunks.deinit(ctx.alloc);
+    {
+        var hole_idx: usize = 0;
+        var fmt_pos: usize = 0;
+        while (hole_idx < plan.holes.len) {
+            const take = @min(vararg_slots, plan.holes.len - hole_idx);
+            const chunk = try planChunk(ctx, plan.fmt, fmt_pos, hole_idx, take, plan.holes.len);
+            try chunks.append(ctx.alloc, chunk);
+            fmt_pos = chunk.fmt_end;
+            hole_idx += take;
+        }
+    }
+
+    // One byte so `realloc` always holds a real pointer, and the running
+    // written count starts at zero. THE BUFFER AND THE COUNT ARE LOCALS, NOT
+    // TEMPS. They live across chunks, across the snprintf/realloc CALLS that
+    // marshal staged arguments, and across each other's redefinition — a
+    // register name would have to survive every one of those handoffs, and a
+    // name the release paths orphan is not a value (GAP-148). A `.local` slot
+    // has a frame home the backend reloads from, so a stale register name
+    // falls through to the authoritative copy instead of feeding `realloc`
+    // its own size as its pointer — the exact miscompile that aborted the
+    // architecture gate before this. Call results still land in a TEMP first
+    // and reach the slot only through `store_local`, the same shape
+    // `lowerRuntimeNumFor` uses for its loop counters.
+    const buf = ctx.freshTemp();
+    const seeded = ctx.freshTemp();
+    try ctx.emit(.{ .op = .call_extern, .result = seeded, .callee = "malloc", .lhs = .{ .i64 = 1 } });
+    try ctx.emit(.{ .op = .store_local, .result = buf, .lhs = .{ .temp = seeded }, .ty = .any });
+    const written = ctx.freshTemp();
+    try ctx.emit(.{ .op = .store_local, .result = written, .lhs = .{ .i64 = 0 }, .ty = .i64 });
+
+    for (chunks.items) |chunk| {
+        // Lower THIS chunk's holes now — the only moment their values exist.
+        const vals = try ctx.alloc.alloc(dnir.Value, chunk.hole_count);
+        defer ctx.alloc.free(vals);
+        for (plan.holes[chunk.hole_start .. chunk.hole_start + chunk.hole_count], 0..) |h, i|
+            vals[i] = try lowerExpr(ctx, h);
+
+        // MEASURE: `snprintf(NULL, 0, fmt, …)` answers the byte count.
+        try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .i64 = 0 } });
+        try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .i64 = 0 } });
+        try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = chunk.fmt } });
+        try stageConcatHoles(ctx, vals);
+        const need = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = need, .callee = "snprintf", .ty = .i64 });
+
+        // The chunk needs its bytes plus one NUL; the buffer must hold
+        // everything written so far plus that.
+        const remain = try binopTemp(ctx, .add, .{ .temp = need }, .{ .i64 = 1 });
+        const newsize = try binopTemp(ctx, .add, .{ .local = written }, .{ .temp = remain });
+
+        // buf = realloc(buf, newsize) — the grown pointer reaches the slot
+        // through `store_local`, never straight off the call.
+        try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .local = buf } });
+        try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .temp = newsize } });
+        const grown = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = grown, .callee = "realloc" });
+        try ctx.emit(.{ .op = .store_local, .result = buf, .lhs = .{ .temp = grown }, .ty = .any });
+
+        // FILL at the write offset; `remain` is exactly the room left.
+        const dst = try binopTemp(ctx, .add, .{ .local = buf }, .{ .local = written });
+        try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = dst } });
+        try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .temp = remain } });
+        try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = chunk.fmt } });
+        try stageConcatHoles(ctx, vals);
+        const filled = ctx.freshTemp();
+        try ctx.emit(.{ .op = .call_extern, .result = filled, .callee = "snprintf", .ty = .i64 });
+
+        // written += filled — a binop answers in a temp; the slot takes it
+        // through `store_local`, exactly as the loop counters do.
+        const wsum = try binopTemp(ctx, .add, .{ .local = written }, .{ .temp = filled });
+        try ctx.emit(.{ .op = .store_local, .result = written, .lhs = .{ .temp = wsum }, .ty = .i64 });
+    }
+    try ctx.str_slots.put(ctx.alloc, buf, {});
+    return .{ .local = buf };
+}
+
+/// One chunk of an over-wide concat chain: the format slice this chunk renders
+/// and the holes it consumes. `fmt_end` is the offset in the WHOLE format just
+/// past this chunk's last conversion, which is where the next chunk begins.
+const ChunkPlan = struct {
+    fmt: []const u8,
+    fmt_end: usize,
+    hole_start: usize,
+    hole_count: usize,
+};
+
+/// Split `fmt[fmt_pos..]` so the chunk holds exactly `take` hole conversions.
+///
+/// Conversions are exactly `%s` and `%lld` — `planConcat` is the only producer
+/// of this string, and it doubles every literal `%` first, so a conversion is
+/// every `%` that is not the first of a `%%` pair.
+fn planChunk(ctx: *LowerCtx, fmt: []const u8, fmt_pos: usize, hole_start: usize, take: usize, total_holes: usize) Error!ChunkPlan {
+    var i = fmt_pos;
+    var seen: usize = 0;
+    var end = fmt.len;
+    while (i < fmt.len) {
+        if (fmt[i] == '%') {
+            if (i + 1 < fmt.len and fmt[i + 1] == '%') {
+                i += 2;
+                continue;
+            }
+            seen += 1;
+            if (seen == take) {
+                // Past this conversion: `%s` is 2 bytes, `%lld` is 4.
+                end = i + (if (fmt[i + 1] == 'l') @as(usize, 4) else 2);
+                break;
+            }
+        }
+        i += 1;
+    }
+    _ = total_holes;
+    return .{
+        .fmt = try ctx.alloc.dupe(u8, fmt[fmt_pos..end]),
+        .fmt_end = end,
+        .hole_start = hole_start,
+        .hole_count = take,
+    };
+}
+
+fn binopTemp(ctx: *LowerCtx, op: dnir.BinOpTag, lhs: dnir.Value, rhs: dnir.Value) Error!u32 {
+    const t = ctx.freshTemp();
+    try ctx.emit(.{ .op = .binop, .result = t, .binop = op, .lhs = lhs, .rhs = rhs });
+    return t;
+}
+
+/// The pre-chunk shape, unchanged, for every chain that fits the tail once.
+fn lowerConcatSingle(ctx: *LowerCtx, fmt: []const u8, vals: []const dnir.Value) Error!dnir.Value {
     // MEASURE: `snprintf(NULL, 0, fmt, …)` writes nothing and answers the
     // length. This is the C standard's own answer to "how big is it", not an
     // estimate this pass invents.
     try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .i64 = 0 } });
     try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .i64 = 0 } });
-    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = plan.fmt } });
-    try stageConcatHoles(ctx, vals[0..plan.count]);
+    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = fmt } });
+    try stageConcatHoles(ctx, vals);
     const need = ctx.freshTemp();
     try ctx.emit(.{ .op = .call_extern, .result = need, .callee = "snprintf", .ty = .i64 });
 
     // One more byte for the NUL `snprintf` excludes from its answer.
-    const size = ctx.freshTemp();
-    try ctx.emit(.{
-        .op = .binop,
-        .result = size,
-        .binop = .add,
-        .lhs = .{ .temp = need },
-        .rhs = .{ .i64 = 1 },
-    });
+    const size = try binopTemp(ctx, .add, .{ .temp = need }, .{ .i64 = 1 });
 
     const buf = ctx.freshTemp();
     try ctx.emit(.{ .op = .call_extern, .result = buf, .callee = "malloc", .lhs = .{ .temp = size } });
@@ -12787,8 +13071,8 @@ fn lowerConcatChain(ctx: *LowerCtx, lhs: *const ast.Expr, rhs: *const ast.Expr) 
     // that cannot be too small because it was measured from them.
     try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = buf } });
     try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = .{ .temp = size } });
-    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = plan.fmt } });
-    try stageConcatHoles(ctx, vals[0..plan.count]);
+    try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = .{ .str = fmt } });
+    try stageConcatHoles(ctx, vals);
     try ctx.emit(.{ .op = .call_extern, .callee = "snprintf" });
     try ctx.str_slots.put(ctx.alloc, buf, {});
     return .{ .temp = buf };
@@ -13123,8 +13407,18 @@ fn lowerBinop(ctx: *LowerCtx, op: ast.BinOp, lhs: *const ast.Expr, rhs: *const a
     // Selected BEFORE either operand is lowered: an unsupported operator has to
     // refuse without having emitted the operands' instructions, which is what
     // the struct-literal field order used to guarantee.
-    const tag: dnir.BinOpTag = binopTagOf(op) orelse
+    const tag: dnir.BinOpTag = binopTagOf(op) orelse {
+        if (@import("builtin").mode == .debug) {
+            switch (lhs.*) {
+                .name => |n| std.debug.print("lowerBinop refuse op={s} lhs=name:{s} rhs_kind={s}\n", .{ @tagName(op), n.ident, @tagName(rhs.*) }),
+                else => switch (rhs.*) {
+                    .quoted => |qv| std.debug.print("lowerBinop refuse op={s} lhs_kind={s} rhs=quoted:{s} graphTextConst(rhs)={}\n", .{ @tagName(op), @tagName(lhs.*), qv.val[0..@min(qv.val.len, 60)], graphTextConst(ctx.graph, rhs) }),
+                    else => std.debug.print("lowerBinop refuse op={s} lhs_kind={s} rhs_kind={s}\n", .{ @tagName(op), @tagName(lhs.*), @tagName(rhs.*) }),
+                },
+            }
+        }
         return bailNamed(ctx.diagnostic, @src(), "binop-not-lowered", @tagName(op));
+    };
     const t = ctx.freshTemp();
     var a = try lowerExpr(ctx, lhs);
     var b = try lowerExpr(ctx, rhs);
@@ -13388,6 +13682,12 @@ fn scalarCallLhs(ctx: *LowerCtx, args: []const *ast.Expr, callee: ?[]const u8) E
 /// the ADDRESS in decimal — a plausible-looking string with no relation to the
 /// value. Anything this cannot prove declines to the general path.
 fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
+    // A concat is NEVER integral — the `.binop` arm below already answers
+    // false for it — and this guard must run BEFORE the `exprIsStr` preamble
+    // because that call re-descends the whole chain. Together with
+    // `concatOperandClass`, one descent per concat level is what keeps a
+    // 20-hole chain linear instead of exponential.
+    if (expr.* == .binop and expr.binop.op == .concat) return false;
     if (exprTouchesF64(ctx, expr)) return false;
     if (exprIsStr(ctx, expr)) return false;
     if (applicationFirstResultDescriptor(ctx, expr)) |descriptor| return descriptor.is_integer();
@@ -13411,8 +13711,18 @@ fn exprIsIntegral(ctx: *LowerCtx, expr: *const ast.Expr) bool {
                 .known => |descriptor| break :blk descriptor.is_integer(),
                 .unknown, .unvisited => {},
             }
-            const slot = ctx.locals.get(n.ident) orelse break :blk false;
-            // This tail is the one place in this predicate that answers by
+            const slot = ctx.locals.get(n.ident) orelse {
+                // A module-level constant is not a local, so the elimination
+                // tail below can never see it — the same residency gap
+                // `exprIsStr`'s `.name` arm already paid for. The VALUE arm
+                // folds `n` through `module_consts.ints` (see the `.name`
+                // lowering arm), so the type answer has to follow the value:
+                // without this, `cap={vocab_cap}` lowered fine and the concat
+                // predicate still refused the whole chain.
+                if (ctx.module_globals.types.get(n.ident)) |ty| break :blk ty.is_integer();
+                break :blk ctx.module_consts.ints.contains(n.ident);
+            };
+            // This tail is the one place in predicate that answers by
             // ELIMINATION, against the doc comment above it. Every face it does
             // not name is admitted as an integer, so a face ADDED anywhere else
             // in the compiler becomes a wrong answer here by default — which is
@@ -14180,11 +14490,27 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         if (std.mem.eql(u8, callee, "print")) {
             return lowerPrint(ctx, c.args);
         }
-        const arg0 = try scalarCallLhs(ctx, c.args, callee);
+        // The checked path (above) already mangles local callees through
+        // `linkageForTarget` + `ensureTargetExtern`. The unchecked path is
+        // reached only when `require_graph_facts` is false (a waivered
+        // module), and there the same local callee must reach the same
+        // mangled symbol the function definition side emitted at
+        // `funcExportName`, or `patchCalls` reports DNB007 `undefined symbol`.
+        // Module globals (`gate`, `os`, `stdio`) stay bare because they are
+        // routed through `ensureExtern` by external-name resolution, not by
+        // local definition.
+        //
+        // OWNED, not borrowed. The instruction keeps this slice until
+        // `internInstrStrings` re-interns it, and the module's allocator
+        // outlives every statement — freeing it at statement scope hands the
+        // interning pass a dangling slice whose bytes then surface in the
+        // backend as an `undefined symbol` of exactly the right length.
+        const emit_callee = try calleeForCall(ctx, callee);
+        const arg0 = try scalarCallLhs(ctx, c.args, emit_callee);
         if (discard) {
             try ctx.emit(.{
                 .op = .call_direct,
-                .callee = callee,
+                .callee = emit_callee,
                 .lhs = arg0,
             });
             return .void;
@@ -14193,7 +14519,7 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         try ctx.emit(.{
             .op = .call_direct,
             .result = t,
-            .callee = callee,
+            .callee = emit_callee,
             .lhs = arg0,
         });
         return .{ .temp = t };
@@ -14253,12 +14579,34 @@ fn lowerPrintFormat(ctx: *LowerCtx, arg: *const ast.Expr, newline: bool) Error!?
     // more byte of format. `stdout:write` ends NOTHING — see `lowerWrite`.
     const plan = (try planConcat(ctx, parts.items, newline)) orelse return null;
 
-    var vals: [max_concat_holes]dnir.Value = undefined;
-    for (plan.holes[0..plan.count], 0..) |h, i| vals[i] = try lowerExpr(ctx, h);
+    const vals = try ctx.alloc.alloc(dnir.Value, plan.holes.len);
+    defer ctx.alloc.free(vals);
+    for (plan.holes, 0..) |h, i| vals[i] = try lowerExpr(ctx, h);
 
     try ensureExtern(ctx, "io", "printf", "printf");
-    try stageConcatHoles(ctx, vals[0..plan.count]);
-    try ctx.emit(.{ .op = .call_extern, .callee = "printf", .lhs = .{ .str = plan.fmt } });
+    // THE VARIADIC TAIL IS EIGHT SLOTS ON THIS ABI. A census line wider than
+    // that used to refuse at the backend's `pending_varargs` bound after every
+    // hole was lowered. The format is split at conversion boundaries into
+    // chunks of at most eight holes and each chunk is its OWN printf, so the
+    // bytes reach the stream in exactly the order one call would have written
+    // them. `newline` already appended its `\n` to the format's end, and the
+    // split keeps it on the last chunk.
+    const vararg_slots = 8;
+    if (plan.holes.len <= vararg_slots) {
+        try stageConcatHoles(ctx, vals);
+        try ctx.emit(.{ .op = .call_extern, .callee = "printf", .lhs = .{ .str = plan.fmt } });
+        return .void;
+    }
+    var fmt_pos: usize = 0;
+    var hole_idx: usize = 0;
+    while (hole_idx < plan.holes.len) {
+        const take = @min(vararg_slots, plan.holes.len - hole_idx);
+        const chunk = try planChunk(ctx, plan.fmt, fmt_pos, hole_idx, take, plan.holes.len);
+        try stageConcatHoles(ctx, vals[chunk.hole_start .. chunk.hole_start + chunk.hole_count]);
+        try ctx.emit(.{ .op = .call_extern, .callee = "printf", .lhs = .{ .str = chunk.fmt } });
+        fmt_pos = chunk.fmt_end;
+        hole_idx += take;
+    }
     return .void;
 }
 
