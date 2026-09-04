@@ -106,6 +106,36 @@ t_be8f98a1's continuation; t_db31f084's agreement.id scope ends here.
   backend (exit 1 from the test's own os.exit(1), not from a backend
   refusal). Previously: DNB001 at `lowerIndexAssignTarget`.
 
+## Follow-up in this run: `exprIsStr` roster return-class fix
+
+The run's own `.method_call` arm in `exprIsStr` admitted the full
+`native_bootstrap.zig` `string_methods` roster as str-returning. The roster
+conflates two return classes: `sub`/`rep`/`at`/`char`/`match` answer a str
+while `len`/`byte`/`find` answer an i64. The misclassification made
+`print(s:len())` type `print_value` as `.str`, lowering to `puts` on the raw
+integer — measured segfault `KERN_INVALID_ADDRESS at 0x3` inside
+`_platform_strlen` (`n = s:len(); print(n)` → exit 139, both the bound and
+inline spellings; the same class the adjacent `has` arm already fixed by
+answering `false`).
+
+Fix (`src/dnir_lower.zig:8178`): the arm now enumerates only the
+str-result methods (`sub`, `match`, `char`, `at`, `rep`); the integral
+members (`len`, `byte`, `find`) fall through and take the `%lld` path via
+`exprIsIntegral`, which already claims `len`/`byte` on str subjects.
+
+Verified after the fix:
+- `n = "abc":len(); print(n)` → prints `3`, exit 3 (was: SIGSEGV 139).
+- `s = "abc"; print(s:byte(1)); print(s:len())` → `97`, `3`, exit 0.
+- `s:sub(1,2)` / `s:rep(3)` still classify as str — concat and print of
+  their results unchanged (`ab!`, `abcabcabc`, exit 0).
+- Acceptance unchanged: swap exit 0, agreement 4/6 (long rows still
+  fenced, above).
+- `scripts/run_compile_fail_tests.id` exit 0; `assert_no_ansi_reports.id`
+  exit 0; `scripts/proof/gatecap.id` exit 0.
+- `scripts/proof/core.id` DNB001 `len__path` UnknownSymbol reproduces
+  byte-identically with the fix stashed — pre-existing waived-graph-facts
+  linker debt, NOT caused by this change (GAP-155 scope).
+
 ## Successor fences (out of this run's scope)
 
 - `gate/architecture.id` still fails with DNB003 register pressure at

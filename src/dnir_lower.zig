@@ -8178,11 +8178,21 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         .method_call => |mc| blk: {
             // THE NEW STRING-METHODS ROSTER. Each entry here must match the
             // `string_methods` list in `native_bootstrap.zig` so a method
-            // admitted at the call site also admits the type answer here.
-            const string_methods = [_][]const u8{
-                "sub", "match", "byte", "len", "find", "char", "at", "rep",
-            };
-            for (string_methods) |m| {
+            // admitted at the call site also admits the type answer here —
+            // BUT ONLY FOR THE METHODS THAT RETURN TEXT. The roster conflates
+            // two return classes: `sub`/`rep`/`at`/`char`/`match` answer a str
+            // while `len`/`byte`/`find` answer an i64. Answering `true` for an
+            // integral method made `print(s:len())` type `print_value` as
+            // `.str`, which calls `puts` on the raw integer — measured
+            // segfault, `KERN_INVALID_ADDRESS at 0x3` inside
+            // `_platform_strlen` (`n = s:len(); print(n)` → exit 139). The
+            // `has` arm below documents this same failure mode, already fixed
+            // there by answering `false`; the integral members take the same
+            // `%lld` path through `exprIsIntegral`, which already claims
+            // `len`/`byte` on str subjects. The subject still must be text:
+            // `:len` on a table is a different relation owned elsewhere.
+            const str_result_methods = [_][]const u8{ "sub", "match", "char", "at", "rep" };
+            for (str_result_methods) |m| {
                 if (std.mem.eql(u8, mc.method, m) and exprIsStr(ctx, mc.obj))
                     break :blk true;
             }
