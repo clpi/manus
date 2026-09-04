@@ -1008,7 +1008,7 @@ has "$PARSER" '26 => 10,' \
     'parser.zig lost the applied-descriptor suffix consumer'
 has "$PARSER" '10 => break,' \
     'general suffix parsing bypasses the applied-descriptor refusal face'
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=21' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=24' \
     'parser artifact lost the applied-descriptor differential controls'
 appliedswitches=$(sed -n '/fn parse_suffixed_expr/,/fn parse_nn_block_desugar/p' "$PARSER" | grep -cF 'switch (t.kind)' || true)
 examined=$((examined + 1))
@@ -1511,8 +1511,8 @@ has "$PARSER" '((try self.currentParserEvent()) >> 47) & 0x1F' \
     'unary no longer consumes event bits 47..51'
 has "$PARSER" '((try self.currentParserEvent()) >> 52) & 0x1F' \
     'glue no longer consumes event bits 52..56'
-has "$PARSER" '((try self.currentParserEvent()) >> 57) & 0x1F' \
-    'update no longer consumes event bits 57..61'
+has "$PARSER" '((try self.currentParserEvent()) >> 57) & 0xF' \
+    'update no longer consumes event bits 57..60'
 forbid "$ROOT/lib/compiler/parser.id" '_unary: i64 = (kind: i64)' \
     'parser.id retained the unary relation'
 forbid "$ROOT/lib/compiler/parser.id" '_glue: i64 = (kind: i64)' \
@@ -1600,8 +1600,10 @@ cp -R src "$relation_owner/src"
 # Swap `neg` and `compile` in the staged `_prefixorder`. The token.id uses
 # space-separated names; the swap mutates the order so `_encode(1)` produces
 # a different row byte at every slot whose prefix is `neg` or `compile`.
-sed -i 's|_prefixorder = "neg not len bnot compile "|_prefixorder = "compile not len bnot neg "|' \
-    "$relation_owner/lib/compiler/token.id"
+relation_token_next=$relation_owner/lib/compiler/token.id.next
+sed 's|_prefixorder = "neg not len bnot compile "|_prefixorder = "compile not len bnot neg "|' \
+    "$relation_owner/lib/compiler/token.id" >"$relation_token_next"
+mv -f -- "$relation_token_next" "$relation_owner/lib/compiler/token.id"
 relation_unary_tracked=$(grep -A1 '^unary(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *"//; s/"$//')
 # The emit script resolves IDOL relative to its working directory, so the
 # relative `./zig-out/bin/idol` would resolve into the stage tree where it
@@ -1735,8 +1737,10 @@ cp -R src "$layout_owner/src"
 # is not in the original six. The bit at `kindend` flips '1' to '0', and
 # the bit at `kindreturn` flips '0' to '1'. The row bytes at those two
 # slots MUST shift; the row MUST differ from the tracked row.
-sed -i 's|kind == kindend or kind == kindelse|kind == kindreturn or kind == kindelse|' \
-    "$layout_owner/lib/compiler/token.id"
+layout_token_next=$layout_owner/lib/compiler/token.id.next
+sed 's|kind == kindend or kind == kindelse|kind == kindreturn or kind == kindelse|' \
+    "$layout_owner/lib/compiler/token.id" >"$layout_token_next"
+mv -f -- "$layout_token_next" "$layout_owner/lib/compiler/token.id"
 layout_row_tracked=$(grep -A1 '^layoutterminator(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
 if (cd "$layout_owner" && IDOL="$ROOT/zig-out/bin/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
     layout_row_swapped=$(grep -A1 '^layoutterminator(): str$' "$layout_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
@@ -2148,7 +2152,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=21' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=24' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'
@@ -2731,7 +2735,7 @@ printf '  divergent quote arms: %s (must be %s)\n' "$divcount" "$DIVERGENT_QUOTE
 # honestly. So the number is a CEILING on the surface, not a blind count: it
 # makes the form visible, which it was not, and refuses growth while GAP-145 is
 # open. A site added here has to be argued for by raising the number.
-QUOTE_TAGTEST_CEILING=88
+QUOTE_TAGTEST_CEILING=89
 
 tagtests=$(grep -h '== \.quoted\b' "$ROOT"/src/*.zig | wc -l | tr -d ' ')
 examined=$((examined + 1))

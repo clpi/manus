@@ -344,6 +344,7 @@ static int64_t expected_event(int64_t kind, bool idol) {
         kind == first_kind("(") || kind == first_kind("<");
     const int64_t layout_type = primitive || kind == first_kind("*") ||
         kind == first_kind("?") || kind == first_kind("[") || kind == first_kind("{");
+    const int64_t callface = kind == first_kind("(");
     return expected_statement(kind) |
         (expected_admission(kind, idol) << 5) |
         (member << 9) | (boundary << 10) | (branch << 11) |
@@ -351,8 +352,7 @@ static int64_t expected_event(int64_t kind, bool idol) {
         (empty << 16) | (primitive << 17) | (literal << 18) |
         (quoted << 19) | (prefix << 20) | (demand << 21) | (lead << 22) |
         (infix << 23) | (unary << 47) | (glue << 52) | (update << 57) |
-        (primary << 61) |
-        (layout_type << 62);
+        (primary << 61) | (layout_type << 62) | (callface << 63);
 }
 
 static int verify_event(void) {
@@ -378,41 +378,38 @@ static int verify_event(void) {
             const int64_t delimiter = decision >> 13;
             if (decision < 0 || delimiter > 114) failed += 1;
             if (((decision >> 5) & 1) != (kind == first_kind("x"))) failed += 1;
-            if (kind == first_kind("|")) {
-                if (delimiter != 1) failed += 1;
-            } else if (kind == first_kind("42")) {
-                if (delimiter != 2) failed += 1;
-            } else if (kind == first_kind("3.5")) {
-                if (delimiter != 3) failed += 1;
-            } else if (kind == first_kind_at("'compat'", "probe.duo")) {
-                if (delimiter != 5) failed += 1;
-            } else if (kind == first_kind("\"text\"")) {
-                if (delimiter != 6) failed += 1;
-            } else if (kind == first_kind("'bytes'")) {
-                if (delimiter != 7) failed += 1;
-            } else if (kind == first_kind_at("[[compat]]", "probe.duo")) {
-                if (delimiter != 8) failed += 1;
-            } else if (kind == first_kind("true")) {
-                if (delimiter != 9) failed += 1;
-            } else if (kind == first_kind("false")) {
-                if (delimiter != 10) failed += 1;
-            } else if (kind == first_kind("...")) {
-                if (delimiter != 11) failed += 1;
-            } else if (kind == first_kind("function") || kind == first_kind("fun")) {
-                if (delimiter != 12) failed += 1;
-            } else if (kind == first_kind("if")) {
-                if (delimiter != 13) failed += 1;
-            } else if (kind == first_kind("await")) {
-                if (delimiter != 27) failed += 1;
-            } else if (kind == first_kind("comptime")) {
-                if (delimiter != 28) failed += 1;
-            } else if (kind == first_kind("not")) {
-                if (delimiter != 29) failed += 1;
-            } else if (kind == first_kind("by")) {
-                if (delimiter != 30) failed += 1;
-            } else if (kind == first_kind("then") || kind == first_kind("do") || kind == first_kind("=>")) {
-                if (delimiter != 31) failed += 1;
-            } else if (kind != first_kind("(") && delimiter != 0) failed += 1;
+            int64_t expected_delimiter = 0;
+            if (kind == first_kind("|")) expected_delimiter = 1;
+            else if (kind == first_kind("42")) expected_delimiter = 2;
+            else if (kind == first_kind("3.5")) expected_delimiter = 3;
+            else if (kind == first_kind("nil")) expected_delimiter = 4;
+            else if (kind == 107) expected_delimiter = 5;
+            else if (kind == first_kind("\"text\"")) expected_delimiter = 6;
+            else if (kind == first_kind("'bytes'")) expected_delimiter = 7;
+            else if (kind == first_kind_at("[[compat]]", "probe.duo")) expected_delimiter = 8;
+            else if (kind == first_kind("true")) expected_delimiter = 9;
+            else if (kind == first_kind("false")) expected_delimiter = 10;
+            else if (kind == first_kind("...")) expected_delimiter = 11;
+            else if (kind == first_kind("function") || kind == first_kind("fun")) expected_delimiter = 12;
+            else if (kind == first_kind("if")) expected_delimiter = 13;
+            else if (kind == first_kind("match")) expected_delimiter = 14;
+            else if (kind == first_kind(".")) expected_delimiter = 15;
+            else if (kind == first_kind(":")) expected_delimiter = 16;
+            else if (kind == first_kind("@")) expected_delimiter = 17;
+            else if (kind == 84) expected_delimiter = 18;
+            else if (kind == first_kind("[")) expected_delimiter = 19;
+            else if (kind == first_kind("else")) expected_delimiter = 20;
+            else if (kind == first_kind("-")) expected_delimiter = 21;
+            else if (kind == first_kind("..")) expected_delimiter = 22;
+            else if (kind == first_kind("?")) expected_delimiter = 24;
+            else if (kind == first_kind("!")) expected_delimiter = 25;
+            else if (kind == first_kind("await")) expected_delimiter = 27;
+            else if (kind == first_kind("comptime")) expected_delimiter = 28;
+            else if (kind == first_kind("not")) expected_delimiter = 29;
+            else if (kind == first_kind("by")) expected_delimiter = 30;
+            else if (kind == first_kind("then") || kind == first_kind("do") || kind == first_kind("=>")) expected_delimiter = 31;
+            else if (kind == first_kind("(")) expected_delimiter = 60;
+            if (delimiter != expected_delimiter) failed += 1;
         }
     }
     return failed;
