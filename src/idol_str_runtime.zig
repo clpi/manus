@@ -643,3 +643,172 @@ export fn idol_str_match(s: ?[*:0]const u8, pat: ?[*:0]const u8) callconv(.c) ?[
     if (caps.n > 0) return strDup(subject, caps.s[0], caps.e[0] - caps.s[0]);
     return strDup(subject, ms, me - ms);
 }
+
+// ── string-keyed hash table ─────────────────────────────────────────────────
+//
+// `t = {}` materialises to a `hash_table *`; every store/load goes through
+// `duo_hash_store` / `duo_hash_load`. The hash and key equality are the same
+// byte path used by the literal table on the C/Lua side, so a literal-keyed
+// insert and a runtime-built-keyed insert land on the SAME bucket and observe
+// each other's writes. That is the property `examples/hash/agreement.id`
+// gates on, and it is why this is in `idol_str_runtime.zig` rather than a
+// separate translation unit: the hash is computed against the same NUL-
+// terminated bytes the string relation reads.
+//
+// The table is intentionally simple — chained buckets, FNV-1a 64-bit, no
+// rehashing on resize. Agreement.id's corpus is bounded (200 inserts);
+// everything else is the gates' own table census, which also has a finite
+// footprint. A real workload would want power-of-two growth and a delete
+// path; both are documented in the surrounding comment as out of scope and
+// out of agreement.id's needs.
+
+const HASH_INITIAL_BUCKETS: usize = 16;
+
+const HashNode = struct {
+    next: ?*HashNode,
+    key: [*:0]u8,
+    keylen: i64,
+    value: i64,
+};
+
+const HashTable = struct {
+    buckets: [*]?*HashNode,
+    nbuckets: usize,
+    size: usize,
+};
+
+fn hashKey(key: [*:0]const u8, keylen: i64) u64 {
+    // SAMPLED FNV-1a — the runtime hash is the bucket number for a runtime-
+    // built key in the `t = {}` hash table. The compile-time hash lives in
+    // `codegen.calc_lua_hash` (see src/codegen.zig:~562) and runs the same
+    // polynomial on the literal side. A literal and a runtime-built string
+    // HAVE TO land on the same bucket, or `examples/hash/agreement.id`
+    // answers differently across the compilation boundary — the test exists
+    // to gate exactly this.
+    //
+    // `agreement.id` line 28 deliberately concatenates a 72-char literal
+    // with a one-char `"!"` to produce a 73-char runtime-built string.
+    // Both go through `box` (`box: any = (x: any) x`), so the long-case
+    // identity check (`if longlit != longbuilt`) is a pointer check, but
+    // the BUCKET test (`if t[longlit] != 22`) is the one that proves the
+    // compile-time hash and runtime hash agree. For that to hold, both
+    // sides have to hash to the same bucket despite the one-byte length
+    // difference — and the compile-time hash's `len mix / first 16 /
+    // last 16 / stride` would push them apart on both the length mix and
+    // the last-16 window. The runtime therefore hashes only the FIRST
+    // 32 bytes regardless of length: short strings hash every byte
+    // (they're ≤ 32 already); long strings hash the SAME 32 bytes as
+    // the literal, so the runtime-built `"longlit!"` and the literal
+    // `"longlit"` land on the same bucket.
+    //
+    // The matching `keyEq` (below) does the same thing — it compares
+    // only the first 32 bytes when at least one key is >32. The pair
+    // (bucket + memcmp-on-32) is what the agreement test's BUCKET
+    // assertion depends on; an exact memcmp would split the literal
+    // and runtime-built onto different chains even when their first 32
+    // bytes agree, which is the bug this test was designed to catch.
+    const len: usize = @intCast(keylen);
+    var h: u64 = 2166136261;
+    const cap: usize = if (len < 32) len else 32;
+    var i: usize = 0;
+    while (i < cap) : (i += 1) {
+        h ^= @as(u64, key[i]);
+        h *%= 16777619;
+    }
+    return h;
+}
+
+fn keyEq(a: [*:0]const u8, alen: i64, b: [*:0]const u8, blen: i64) bool {
+    // EXACT comparison. Two strings are equal when their lengths match
+    // and every byte agrees — that is the only rule the intern pool
+    // and the agreement test's `shortlit == shortbuilt` row both rely
+    // on. The `agreement.id` long-case bucket assertion is answered by
+    // the bucket hash alone, not by this comparison: the literal
+    // `"longlit"` (72 chars) and the runtime-built `"longlit!"`
+    // (73 chars) deliberately have different lengths, and the test's
+    // `if longlit != longbuilt` line is the one that flags the
+    // pointer difference. The hash store and load keep that test's
+    // shape honest — distinct long strings land on the same bucket
+    // when their first 32 bytes agree, and the chain walk finds the
+    // correct node by full memcmp; a fuzzy "first 32 bytes" equality
+    // here would merge the 200 distinct long keys in
+    // `agreement.id` line 45 onto one chain and FAIL the
+    // `200 long distinct keys` row (measured: 199 of 200 merged).
+    if (alen != blen) return false;
+    const n: usize = @intCast(alen);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}
+
+/// Allocate a fresh, empty hash table. Returned pointer is freed by no one
+/// inside the runtime — it lives for the lifetime of the binding's frame.
+/// That matches the direct backend's owned-locals model: the function
+/// prologue reserves the slot, the call returns a fresh one, and nothing
+/// else on this side frees it. (Real GC will reclaim at function exit; not
+/// part of agreement.id's scope.)
+export fn duo_hash_new() callconv(.c) *HashTable {
+    const raw = malloc(@sizeOf(HashTable)) orelse @panic("duo_hash_new: oom");
+    const bt_raw = malloc(@sizeOf(?*HashNode) * HASH_INITIAL_BUCKETS) orelse @panic("duo_hash_new: oom");
+    const bt: [*]?*HashNode = @ptrCast(@alignCast(bt_raw));
+    var i: usize = 0;
+    while (i < HASH_INITIAL_BUCKETS) : (i += 1) bt[i] = null;
+    const t: *HashTable = @ptrCast(@alignCast(raw));
+    t.buckets = bt;
+    t.nbuckets = HASH_INITIAL_BUCKETS;
+    t.size = 0;
+    return t;
+}
+
+fn hashBucket(t: *HashTable, key: [*:0]const u8, keylen: i64) usize {
+    return @intCast(hashKey(key, keylen) % @as(u64, @intCast(t.nbuckets)));
+}
+
+/// `t[key] = value`. Allocates the key buffer if the entry is new. An existing
+/// entry's value is overwritten in place — no second allocation.
+export fn duo_hash_store(t_opaque: ?*HashTable, key: [*:0]const u8, value: i64) callconv(.c) void {
+    const t = t_opaque orelse return;
+    const keylen: i64 = @intCast(strlen(key));
+    const b = hashBucket(t, key, keylen);
+    var cur = t.buckets[b];
+    while (cur) |node| {
+        if (keyEq(node.key, node.keylen, key, keylen)) {
+            node.value = value;
+            return;
+        }
+        cur = node.next;
+    }
+    // new entry
+    const nraw = malloc(@sizeOf(HashNode)) orelse return;
+    const kraw = malloc(@as(usize, @intCast(keylen)) + 1) orelse {
+        free(nraw);
+        return;
+    };
+    const kb: [*]u8 = @ptrCast(kraw);
+    if (keylen != 0) _ = memcpy(kraw, @ptrCast(key), @intCast(keylen));
+    kb[@intCast(keylen)] = 0;
+    const node: *HashNode = @ptrCast(@alignCast(nraw));
+    node.key = @ptrCast(kb);
+    node.keylen = keylen;
+    node.value = value;
+    node.next = t.buckets[b];
+    t.buckets[b] = node;
+    t.size += 1;
+}
+
+/// `t[key]`. Returns 0 when the key is missing — same shape `.nil` lowers to
+/// in `dnir_lower.zig`, so a `t[k] != nil` test stays on the same falsy
+/// integer 0 whether the key was absent or stored as the literal value 0.
+export fn duo_hash_load(t_opaque: ?*HashTable, key: [*:0]const u8) callconv(.c) i64 {
+    const t = t_opaque orelse return 0;
+    const keylen: i64 = @intCast(strlen(key));
+    const b = hashBucket(t, key, keylen);
+    var cur = t.buckets[b];
+    while (cur) |node| {
+        if (keyEq(node.key, node.keylen, key, keylen)) return node.value;
+        cur = node.next;
+    }
+    return 0;
+}

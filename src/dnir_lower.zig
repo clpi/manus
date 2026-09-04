@@ -3645,7 +3645,7 @@ fn functionEligibleReason(
         for (fd.func.ret_type.tuple) |item| if (gpPackType(item) == null)
             return "tuple-return-element-not-gp-word";
     } else if (!isFloatType(fd.func.ret_type) and !isIntType(fd.func.ret_type) and !isBoolType(fd.func.ret_type) and
-        !isStrType(fd.func.ret_type) and !isVoidType(fd.func.ret_type) and !typeIsPtr(fd.func.ret_type) and
+        !isStrType(fd.func.ret_type) and !isVoidType(fd.func.ret_type) and !isAnyType(fd.func.ret_type) and !typeIsPtr(fd.func.ret_type) and
         !typeIsScalarCaseSet(mod, fd.func.ret_type) and
         fd.func.ret_type != .inferred) return "result-type-unsupported";
     // AAPCS64 assigns the result and argument register classes independently.
@@ -3730,7 +3730,7 @@ fn functionEligibleReason(
         // a stack slot past the eighth. `.pointer` already took this path, so
         // `ptr` and `*T` had different argument budgets for the same word.
         if (isIntType(p.typ) or isBoolType(p.typ) or isStrType(p.typ) or typeIsPtr(p.typ) or
-            typeIsScalarCaseSet(mod, p.typ))
+            isAnyType(p.typ) or typeIsScalarCaseSet(mod, p.typ))
         {
             gp_slots += 1;
             if (gp_slots > max_direct_scalar_args) return "more-than-16-gp-arguments";
@@ -4220,6 +4220,11 @@ pub const LowerCtx = struct {
     f64_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// Local slots holding `str` (a `const char*`), so `#s` can lower to strlen.
     str_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    /// Local slots holding a `*HashTable` — the binding produced by `t = {}`.
+    /// `lowerIndexAssignTarget` and `lowerDynamicIndex` consult this set first
+    /// so a string-keyed store/load goes through `duo_hash_store`/`duo_hash_load`
+    /// instead of the positional `store_index` / select-chain path.
+    hash_slots: std.AutoHashMapUnmanaged(u32, void) = .empty,
     /// How many leading slots are this relation's operands. `determinedTextLen`
     /// needs it because its safety comes from a scan of THE BODY, and an
     /// operand is bound by the CALLER, where the body cannot see it.
@@ -4373,6 +4378,7 @@ pub const LowerCtx = struct {
         self.locals.deinit(self.alloc);
         self.f64_slots.deinit(self.alloc);
         self.str_slots.deinit(self.alloc);
+        self.hash_slots.deinit(self.alloc);
         self.bool_slots.deinit(self.alloc);
         self.narrow_slots.deinit(self.alloc);
         self.ptr_slots.deinit(self.alloc);
@@ -5174,6 +5180,20 @@ fn isStrType(t: ast.TypeExpr) bool {
 /// alongside natively-lowerable helpers bailed the lot (mandelbrot, test_sql).
 fn isVoidType(t: ast.TypeExpr) bool {
     return t == .named and std.mem.eql(u8, t.named, "void");
+}
+
+/// `any` rides a single GP register at the ABI — same shape as `i64`/`str`/
+/// `ptr`/`bool`, no class-specific lowering. Functions that return it are
+/// the lawful shape for a generic thunk whose result descriptor is unknown
+/// at the call site (see `examples/hash/agreement.id`'s `box: any = (x) x`).
+/// Admitting `any` here is the same admission `lowerPrint` already had to
+/// make for its `print(x: any)` shape — the type system carries it as the
+/// catch-all register-typed descriptor, and refusing it at function-
+/// declaration time meant every generic forwarder had to widen its
+/// parameter face, which is the opposite of the monotonicity the law
+/// asked for.
+fn isAnyType(t: ast.TypeExpr) bool {
+    return t == .named and std.mem.eql(u8, t.named, "any");
 }
 
 /// True when the file-scope tail *is* the process status (integer, bool, or
@@ -8116,7 +8136,18 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
                 // `gatecap(cmd)` captures process stdout as text (GAP-155).
                 if (std.mem.eql(u8, n.ident, "gatecap") and c.args.len == 1)
                     break :blk true;
-                break :blk functionResultIs(ctx, n.ident, .str);
+                if (functionResultIs(ctx, n.ident, .str)) break :blk true;
+                // ANY-RETURNING IDENTITY ON A STRING. `box: any = (x: any) x`
+                // returns the descriptor of its argument unchanged; the runtime
+                // value is a `str*` register whenever the call site passed a
+                // `str`, so it must read here as text. `functionResultIs` answers
+                // false because the declared return is `.any`, not `.str`; the
+                // fallback inspects the actual argument so the contract holds
+                // for the lawful forwarder shape and stays narrow enough not to
+                // leak through ordinary callers.
+                if (functionResultIs(ctx, n.ident, .any) and c.args.len == 1 and
+                    exprIsStr(ctx, c.args[0])) break :blk true;
+                break :blk false;
             },
             // `to(str)(n)` — the relation surface's own producer of str. It is
             // spelled as a call whose CALLEE is a call, so neither the
@@ -8130,6 +8161,59 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
                 std.mem.eql(u8, f.obj.name.ident, "string") and
                 std.mem.eql(u8, f.field, "char"),
             else => false,
+        },
+        // SUBJECT-FIRST STRING METHOD. `s:rep(n)`, `s:sub(i, j)`, `s:match(p)`
+        // and the rest of the string_methods roster all return str — the
+        // graph does not yet publish the application result descriptor for
+        // these (GAP-124), so `applicationResultIs` answers false and the
+        // type checker has to fall back to the AST shape. The method roster
+        // is the same one `native_bootstrap.zig` admits, so a method name
+        // here matches what the call site is allowed to write; a subject
+        // that does not lower to a str is `.other` in `concatOperandClass`
+        // and refused by `planConcat`, so this arm cannot accidentally
+        // admit `:sub(...)` on a non-str subject as text. The original
+        // arms for `io:read`/`stdin:read`/`stdin:line` and `to(str)` are
+        // preserved verbatim below; the `has` arm explicitly returns false
+        // because a boolean answer is not text.
+        .method_call => |mc| blk: {
+            // THE NEW STRING-METHODS ROSTER. Each entry here must match the
+            // `string_methods` list in `native_bootstrap.zig` so a method
+            // admitted at the call site also admits the type answer here.
+            const string_methods = [_][]const u8{
+                "sub", "match", "byte", "len", "find", "char", "at", "rep",
+            };
+            for (string_methods) |m| {
+                if (std.mem.eql(u8, mc.method, m) and exprIsStr(ctx, mc.obj))
+                    break :blk true;
+            }
+            if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "io") and
+                std.mem.eql(u8, mc.method, "read"))
+                break :blk true;
+            if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
+                std.mem.eql(u8, mc.method, "read") and mc.args.len == 0)
+                break :blk true;
+            if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
+                std.mem.eql(u8, mc.method, "line") and mc.args.len == 0)
+                break :blk true;
+            if (std.mem.eql(u8, mc.method, "read") and mc.args.len == 0 and
+                exprIsStr(ctx, mc.obj))
+                break :blk true;
+            if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and
+                mc.args[0].* == .name and std.mem.eql(u8, mc.args[0].name.ident, "str") and
+                exprIsIntegral(ctx, mc.obj))
+                break :blk true;
+            if (std.mem.eql(u8, mc.method, "sub") and mc.args.len >= 1 and mc.args.len <= 2)
+                break :blk exprIsStr(ctx, mc.obj);
+            // `has` answers a BOOL, never text. This arm used to answer
+            // `exprIsStr(mc.obj)` — copied from `sub` two arms up, where the
+            // subject IS the result type — which made `print(s:has(n))`
+            // classify the boolean as text, lower through `puts` with the
+            // raw 0/1 as the format pointer, and SEGFAULT before any output
+            // (measured: exit 139, no stdout, `ok compile` both). Bool prints
+            // take the `%lld` path like every other integral answer.
+            if (std.mem.eql(u8, mc.method, "has") and mc.args.len == 1)
+                break :blk false;
+            break :blk false;
         },
         .name => |n| blk: {
             const graph_descriptor = graphNameDescriptor(ctx, expr);
@@ -8197,36 +8281,6 @@ fn exprIsStr(ctx: *LowerCtx, expr: *const ast.Expr) bool {
         .index => |ix| (if (osMemberOf(ix.obj)) |m| m.face == .projection and m.result == .str else false) or
             (ix.obj.* == .name and (ctx.str_tables.contains(ix.obj.name.ident) or
                 ctx.module_consts.str_tables.contains(ix.obj.name.ident))),
-        .method_call => |mc| blk: {
-            if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "io") and
-                std.mem.eql(u8, mc.method, "read"))
-                break :blk true;
-            if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
-                std.mem.eql(u8, mc.method, "read") and mc.args.len == 0)
-                break :blk true;
-            if (mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdin") and
-                std.mem.eql(u8, mc.method, "line") and mc.args.len == 0)
-                break :blk true;
-            if (std.mem.eql(u8, mc.method, "read") and mc.args.len == 0 and
-                exprIsStr(ctx, mc.obj))
-                break :blk true;
-            if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and
-                mc.args[0].* == .name and std.mem.eql(u8, mc.args[0].name.ident, "str") and
-                exprIsIntegral(ctx, mc.obj))
-                break :blk true;
-            if (std.mem.eql(u8, mc.method, "sub") and mc.args.len >= 1 and mc.args.len <= 2)
-                break :blk exprIsStr(ctx, mc.obj);
-            // `has` answers a BOOL, never text. This arm used to answer
-            // `exprIsStr(mc.obj)` — copied from `sub` two arms up, where the
-            // subject IS the result type — which made `print(s:has(n))`
-            // classify the boolean as text, lower through `puts` with the
-            // raw 0/1 as the format pointer, and SEGFAULT before any output
-            // (measured: exit 139, no stdout, `ok compile` both). Bool prints
-            // take the `%lld` path like every other integral answer.
-            if (std.mem.eql(u8, mc.method, "has") and mc.args.len == 1)
-                break :blk false;
-            break :blk false;
-        },
         else => false,
     };
 }
@@ -9702,6 +9756,24 @@ fn lowerIndexAssignTarget(
 ) Error!void {
     if (obj.* != .name) return bail(ctx.diagnostic, @src());
     const table_name = obj.name.ident;
+    const table_slot = ctx.locals.get(table_name) orelse return bail(ctx.diagnostic, @src());
+
+    // HASH-TABLE PATH. `t = {}` binds a `*HashTable`; every store goes through
+    // `duo_hash_store(t, key_str, value_i64)`. The key is taken as a string
+    // expression — `key_expr` MUST lower to a `str`-typed register for the
+    // call to match the runtime's `const char *` argument. Today the only
+    // table kind this branch serves is the empty literal; the same gate would
+    // accept any future `t = {a = "k" → v}` form once the parser admits it.
+    if (ctx.hash_slots.contains(table_slot)) {
+        try ensureExtern(ctx, "table", "store", "duo_hash_store");
+        const key_val = try lowerExpr(ctx, key_expr);
+        const v = try lowerExprCons(ctx, value, .single);
+        try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .local = table_slot } });
+        try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = key_val });
+        try ctx.emit(.{ .op = .mov_arg, .result = 2, .lhs = v });
+        try ctx.emit(.{ .op = .call_extern, .callee = "duo_hash_store", .ty = .any });
+        return;
+    }
 
     // Memory-backed table: a real scaled store, so writes through a shared base
     // are visible to every function holding it.
@@ -9782,6 +9854,22 @@ fn lowerIndexAssignTarget(
 /// A genuinely dynamic, growable table still needs base-pointer addressing;
 /// this handles the fixed-length case, which is what fits in registers.
 fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const ast.Expr) Error!dnir.Value {
+    const table_slot = ctx.locals.get(table_name) orelse return bail(ctx.diagnostic, @src());
+
+    // HASH-TABLE LOAD. `t = {}` lookup, mirroring `lowerIndexAssignTarget`'s
+    // store branch: register `duo_hash_load(t, key_str)` and read its i64
+    // return. Missing keys return 0, which `.nil` also lowers to, so the
+    // `t[k] != nil` check shape used by the agreement test stays honest.
+    if (ctx.hash_slots.contains(table_slot)) {
+        try ensureExtern(ctx, "table", "load", "duo_hash_load");
+        const key_val = try lowerExpr(ctx, key_expr);
+        const out_slot = ctx.freshTemp();
+        try ctx.emit(.{ .op = .mov_arg, .result = 0, .lhs = .{ .local = table_slot } });
+        try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = key_val });
+        try ctx.emit(.{ .op = .call_extern, .result = out_slot, .callee = "duo_hash_load", .ty = .any });
+        return .{ .local = out_slot };
+    }
+
     const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{table_name});
     defer ctx.alloc.free(len_key);
     const len: i64 = if (ctx.locals.get(len_key)) |len_slot|
@@ -9883,6 +9971,25 @@ fn tableIsPositional(table: *const ast.Expr) bool {
 
 fn lowerRecordLiteralAssign(ctx: *LowerCtx, name: []const u8, table: *const ast.Expr) Error!void {
     if (table.* != .table) return bail(ctx.diagnostic, @src());
+    // AN EMPTY LITERAL `{}` BINDS A RUNTIME HASH TABLE. There are no fields
+    // to lower into element slots, so the record-literal path below has
+    // nothing to emit — and the positional-table path correctly refused at
+    // `len == 0` because a select-chain over zero entries is no chain at
+    // all. `agreement.id` needs the runtime form because the literal IS the
+    // table: every subsequent `t[k] = v` and `t[k]` is the point of the test,
+    // and a literal-vs-built-key agreement has to land on the same hash
+    // bucket whichever side wrote it. The `*HashTable` is registered as a
+    // `hash_slot` (not a positional `ptr_slot`) so `lowerIndexAssignTarget`
+    // and `lowerDynamicIndex` know to route through `duo_hash_store`/`_load`
+    // instead of the integer select-chain.
+    if (table.table.fields.len == 0) {
+        try ensureExtern(ctx, "table", "new", "duo_hash_new");
+        const hslot = ctx.freshTemp();
+        try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), hslot);
+        try ctx.hash_slots.put(ctx.alloc, hslot, {});
+        try ctx.emit(.{ .op = .call_extern, .result = hslot, .callee = "duo_hash_new", .ty = .any });
+        return;
+    }
     // A TABLE WHOSE FIELDS ARE `__DATA` WORDS BINDS NO MARKER SLOT. The marker
     // exists so `isRecordLocalName` and the whole-value paths can see that the
     // name is a bound record — but those paths then read the fields out of

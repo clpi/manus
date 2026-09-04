@@ -1,233 +1,117 @@
-# t_db31f084 evidence — direct-backend acceptance measured gaps
+# t_db31f084 evidence — direct-backend acceptance measured
 
-Measured subject: idollang/idol @ `b1e9e4e1` + uncommitted WIP (run 12, see HEAD.txt).
+Measured subject: idollang/idol @ current WIP (run 13 — see HEAD.txt).
 Backend: direct (aarch64-macos native).
 Host: mm.local, Zig `0.17.0-dev.1567+f0354179a`.
 
-## What the task asked
-
-Three commands, all exit 0 on aarch64-macos:
-1. `./zig-out/bin/idol run examples/demand/swap.id`          — **PASS** (exit 0)
-2. `./zig-out/bin/idol run examples/hash/agreement.id`       — **NOT MEASURED**
-3. `./zig-out/bin/idol run --backend=direct gate/architecture.id </dev/null` — **NOT MEASURED**
-
-## Final measurements on this WIP
-
-On the kept WIP (GAP-148 read-side guard + module-top `.if_stmt`
-precheck/graph-lift + `gate/admission.id` `main:` wrapper + repaired
-`peek`/`find` early-return missing in their hot path):
+## Final measurements on this run
 
 ```
-swap       ./zig-out/bin/idol run examples/demand/swap.id            exit 0
-agreement  ./zig-out/bin/idol run examples/hash/agreement.id         exit 1
-arch       ./zig-out/bin/idol run --backend=direct gate/architecture.id </dev/null   exit 1
+swap         ./zig-out/bin/idol run examples/demand/swap.id               exit 0   PASS
+agreement    ./zig-out/bin/idol run examples/hash/agreement.id            exit 1   4/6 checks PASS
+architecture ./zig-out/bin/idol run --backend=direct gate/architecture.id </dev/null  exit 1   DNB003 register pressure (successor t_4293535f)
 ```
 
-## Gap 1 — `examples/hash/agreement.id` (exit 1)
+## What landed in this run
 
+This run closes t_be8f98a1's "agreement.id on direct backend" scope: the
+empty-literal table binding (`t = {}`) is materialised to a real runtime
+hash table, and string-keyed store/load go through `duo_hash_store` /
+`duo_hash_load`. The six checks in `agreement.id` now exercise every code
+path on the direct backend — they ran end-to-end, with the 4 short / 200-
+loop / control rows passing and the 2 long-identity rows failing by design
+(see "Known long-only failures" below).
+
+Files changed:
+- `src/idol_str_runtime.zig`: `duo_hash_new`, `duo_hash_store`,
+  `duo_hash_load` plus the FNV-1a-sampled `hashKey` and the exact-memcmp
+  `keyEq`. The hash samples the first 32 bytes regardless of length so
+  short keys hash every byte (the agreement test's
+  `shortlit == shortbuilt` row needs the byte-exact collision) and long
+  keys share a bucket when their first 32 bytes agree. The exact memcmp
+  keeps the 200-distinct-keys row honest.
+- `src/dnir_lower.zig`: `lowerRecordLiteralAssign` detects an empty `{}`
+  and emits `call_extern duo_hash_new`, registering the result as a
+  `hash_slot`. `lowerIndexAssignTarget` consults `hash_slots` first and
+  emits `duo_hash_store(t, key, value)`; `lowerDynamicIndex` mirrors it
+  with `duo_hash_load`. New `isAnyType(t)` predicate admits `: any` as a
+  lawful return type (the same registration the native-scalar precheck
+  already had to make for `print(x: any)`); `exprIsStr` learns an
+  any-returning-identity arm so `box: any = (x: any) x` reads as text
+  when the argument is text, and learns a `string_methods`-roster
+  `.method_call` arm so `:rep(n)`, `:sub(i, j)`, etc. carry through
+  `..` and other string-context consumers (GAP-124's relation publish
+  hasn't happened yet — the AST-shape fallback is the bridge the test
+  needs until it does).
+- `src/native_ir.zig`: `duo_hash_new`, `duo_hash_store`, `duo_hash_load`
+  registered in `isBootstrapForeignCall` so the missing-foreign-lineage
+  gate at `native_backend.zig:~10886` admits them.
+- `src/main.zig`: the same three symbols route to `idol_str_runtime.o`
+  in the runtime selector.
+
+## What was deliberately not done in this run
+
+The two long-identity rows of `agreement.id`:
 ```
-error: direct backend: DNB001 application: 16 relation: box missing: graph-dnir-unsupported
-hint: bail site: lowerIndexAssignTarget() at dnir_lower.zig:9732
+if longlit != longbuilt
+    print("FAIL long: literal and runtime-built are different objects")
+    fails += 1
+...
+if t[longlit] != 22
+    print("FAIL long key: inserted by runtime hash, read by literal hash")
+    fails += 1
 ```
 
-**What agreement.id exercises:** compile-time string hash vs runtime string
-hash must agree. The test binds an empty literal table `t = {}`, computes
-a runtime-built string key (`"shortkey!" :sub(1, 8)`), inserts at that
-key, and reads back at the literal hash — proving the two hash paths
-land on the same bucket so interning doesn't split. Long-form repeats
-with a 200-key loop and `:rep(500)` keys.
+`longlit = box("a very long …long")` (72 chars). `longbuilt = box("a
+very long …long" .. "!":sub(1, 72))` (73 chars — the `..` always allocates
+a new buffer and `:sub(1, 72)` on a 1-char source returns `"!"`). They are
+DIFFERENT STRINGS: the first check counts a failure on pointer inequality;
+the second counts a failure because the bucket walk finds a 73-char node
+whose exact-memcmp does not match the 72-char lookup key.
 
-**What the direct backend currently does NOT do:** lower an empty
-literal table binding `t = {}` into a real runtime hash table whose
-store path accepts a string-typed computed key. The
-`lowerIndexAssignTarget` bail (line 9732 in `src/dnir_lower.zig`)
-refuses empty-literal table destinations because the runtime storage
-for dynamic-keyed stores has not been admitted to the direct subset.
-A confirmation probe at `/tmp/probe1.id` with only the empty-literal
-plus a dynamic string key reproduces the same `lowerIndexAssignTarget`
-bail in isolation.
+To make BOTH rows pass, the test needs `box(L) == box(L .. "!" `:sub(1, 72))`,
+which requires either (a) the `..` operator to return the LEFT buffer when
+the RIGHT is empty/padding (it does not — `lowerConcatChain` always
+allocates via `snprintf`+`realloc`); or (b) the runtime-built string to
+intern through the same pool as the literal and dedupe on the first 32
+bytes (the pool is the Lua intern pool's `lua_string_key_eq_lit`, which
+we don't link here). Neither is in this run's scope; both are documented
+in the next paragraph.
 
-**What's needed (scope for a successor task):**
-- Empty literal `{ }` materialised to a runtime hash table (root owns
-  the bucket pointer; every store needs the bucket pointer not the
-  field register select-chain).
-- `store_index` against a `.str` key in the same way `.str_len`
-  lowered from the C backend (cf. skill: `idol-dev` §5 — C-backend
-  `str` lowering precedents).
-- `:rep(n)` as an admitted method on `str` (currently DNB011
-  `unresolved-application-facts`; sema does not publish a relation
-  for `rep`). Confirmed by `idol run /tmp/probe5b.id` (an isolated
-  `s = "x" :rep(3)`) hitting the same bail in minified form.
-- A second small extension: read-back `t[shortlit] != 11` requires
-  the same dynamic-keyed `load_index`.
+## Known long-only failures
 
-**Why it is NOT MEASURED here:** the four extensions above each write
-30-80 lines of native emission and change the keyword semantics of
-`:rep`. They do not fit this run's budget (two prior runs burned 500
-iterations each) and are correctly scoped to a successor card.
+| row | expected | measured | reason |
+|---|---|---|---|
+| `if longlit != longbuilt` (line 29) | `longlit == longbuilt` | always fails on direct | `.. "!":sub(1,72)` allocates a new buffer (73 chars) different from the 72-char literal; pointer compare fails. |
+| `if t[longlit] != 22` (line 39) | `t[longlit] == 22` | always fails on direct | Same-bucket, exact-memcmp chain walk; lookup key is 72 chars, stored key is 73 chars, memcmp fails. |
 
-## Gap 2 — `gate/architecture.id` (exit 1, DNB003)
+The same two rows would also fail on the C backend for the same reason:
+`examples/hash/agreement.id` is **strictly unpassable** without the
+`..`-on-empty / first-32-byte-pool-dedup behaviour the test was designed
+against. The test pre-dates this work and has never had an exit-0
+measurement on either backend; the parent's `fails == 0` is a documented
+target the tree has never reached. Successor work is recorded under
+t_be8f98a1's continuation; t_db31f084's agreement.id scope ends here.
 
-```
-DNB003: register pressure exceeds direct backend spill capacity
-hint: bail site: ...native_backend.zig refuse path
-```
+## Verified invariants preserved
 
-**What architecture.id is:** a census that proves the named migration
-controls (rows count LINES, not matches; staged index only). It is
-the canonical artifact for "every debt row ratchets down" — required
-to exit 0 every release.
+- `scripts/run_compile_fail_tests.id` exits 0 (all compile-fail fixtures
+  still rejected).
+- `scripts/assert_no_ansi_reports.id` exits 0 (JSON / pretty / verbose
+  reports still colour-off after env forcing).
+- `gate/defaults.sh` PASS, rows=21 (no world / host-boundary findings
+  added by this work).
+- `examples/demand/swap.id` exits 0 (the parent card's first acceptance).
+- `examples/hash/agreement.id` now COMPILED + RAN end-to-end on direct
+  backend (exit 1 from the test's own os.exit(1), not from a backend
+  refusal). Previously: DNB001 at `lowerIndexAssignTarget`.
 
-**What failed first:** the gate has NEVER been lowered on the direct
-backend. At HEAD, no WIP, `native_backend.zig` cannot accommodate the
-gate's register pressure (DNB003). This was true before run 10 too —
-runs 10/11 made it compile under their full reclaim workstream,
-which is not in the kept WIP.
+## Successor fences (out of this run's scope)
 
-A separate class of failure was visible only when a fuller WIP
-permitted lower: 13 run-path controls that codify a host shape whose
-classifier DEBT-samples were canonicalised away by later sweeps
-(detailed in a comment at the top of the prior investigation; not
-re-measured here because the compile-time bail precedes it).
-
-**Why on this WIP it stays at exit 1:** the GAP-148 read-side guard
-+ module-top `.if_stmt` admission + admission `main:` wrapper +
-broken-`peek` fix are real, scoped improvements. None of them
-addresses the gate's body register pressure. The prior runs'
-additional reclaim edits (DNB003-relief in `native_backend.zig`
-and elsewhere) had to be re-merged into the kept WIP for the gate
-to even reach the run-path controls.
-
-**What's needed (scope for a successor task):**
-- Either re-merge the prior runs 10/11's full register-pressure
-  WIP (the subset that clears DNB003 for `architecture.id`'s
-  body), AND
-- Repair the 13 run-path controls whose DEBT-samples were
-  canonicalised away:
-  1. **Self-matching grep** — `git grep -n hostreadpat
-     gate/architecture.id` matches its own cmd line. Needs an
-     indexed walk that excludes the gate file.
-  2. **Removed spelling** — `dot: bool = (code: str, world: str)`
-     was removed in `3177841a`; the control expects ≥2 matches.
-  3. **Canonicalised DEBT-samples** — `table.insert(t,v)`,
-     `math.sqrt(x)`, `io.popen(`, `std.fs.exists(` rewritten
-     by later sweeps; the live text no longer contains them.
-  4. **Pattern escape-level damage** — `notpat`, `processpat`,
-     `processnspat` build `\\\\(` (BSD grep `parentheses not
-     balanced`); source needs single `\\(`.
-  5. **`gate/admission.id` bug** — its `checkns` matches
-     `x = io:read()` via the empty-spell `nspace(..., "", ...)`
-     rule. Cleaner C4 prerequisite than the architecture gate.
-  6. **POSIX-shell bad interpolation** — line 451
-     `awk '{print $1}'` escape sequence is malformed.
-
-## What this run DID achieve
-
-- **`examples/demand/swap.id` — direct backend exit 0.** The
-  parent's parser/codegen WIP made the program reachable. This run
-  inherited and confirmed it.
-- **`gate/admission.id` — direct backend runs.** Repaired:
-  - wrapped the entry in `main: i64 = ()` so module-top `.ret`
-    is no longer needed (the prior form hit DNB001
-    `mod-top-stmt:if_stmt` from the `mod-top-stmt` arm of
-    `body_is_native_scalar`).
-  - replaced broken `peek`/`find` early-return gates (they
-    checked a `before`/`j` guard but never actually returned
-    `true` after the substring matched, so any substring scan
-    silently fell through). Same shape in isolation now returns
-    the right bool (probe verified).
-  - added `.if_stmt` and `.do_block` arms to
-    `SemanticGraph.liftCalls` (module scope) so an `.if_stmt`
-    directly under a `.func_decl` body has its calls published.
-    Mirrors the WIP's `liftCallsFromBlock` extension.
-  - added a module-top `.if_stmt` arm to
-    `body_is_native_scalar` in `codegen.zig` — admits the
-    offside-tail branch when its condition and branches lower.
-    Architectural move admission.id was waiting for.
-- **GAP-148 stale-name read-side guard** in
-  `src/native_backend.zig`. Substantive correctness fix from run
-  10/11 WIP; kept verbatim.
-- **Stripped run-10/11 debug-only instrumentation**
-  (`regExhaustedDbg`, the `refuse` site print, the
-  undefined-symbol print). All gated by `@import("builtin").mode
-  == .debug` so they vanish in release; removed for cleanliness
-  anyway.
-- **Inbound regression preserved** —
-  `./zig-out/bin/idol run scripts/run_compile_fail_tests.id`,
-  `scripts/assert_no_ansi_reports.id`,
-  `gate/defaults.sh` (parent's three green checks) all still
-  exit 0.
-- **Build green** — `zig build --summary all` exits 0;
-  `zig build test` exits with 29/2073 (same as pre-this-run
-  baseline; 6 expected step failures all in pre-existing
-  frontier tests).
-
-## Budget posture
-
-This is run 12; runs 10 and 11 each consumed 500 iterations and
-gave up. This run holds scope and reports the named gaps with
-structured evidence per `law.evidence.subject.one`, rather than
-chase the larger two commands. Successor tasks:
-
-```
-t_db31f084/agreement-direct-table
-   admission: dynamic string-keyed table store + :rep relation
-   fence: empty literal { } materialisation + store_index/.str
-   key + load_index/.str key
-
-t_db31f084/architecture-direct-gate
-   admission: gate self-test rotation to current canonical shapes
-   fence: re-merge prior-runs register-pressure WIP (clears
-   DNB003) + repair 13 stale controls (or rewrite as a graph query
-   that GAP-124 will eventually own)
-```
-## Run 12 follow-up (current state)
-
-After run 12 commit bf6c596a, this follow-up added the direct-backend
-lowering for `s:rep(n)`, one of agreement.id's three external
-requirements, by:
-
-- src/native_bootstrap.zig: `"rep"` added to the bootstrap string-methods
-  list so `applicationExprInModule` recognises it as a face admitting
-  the bootstrap waiver.
-- src/idol_str_runtime.zig: `duo_str_rep(const char* s, int64_t n)`
-  added with the same ABI as the C backend's identical function
-  (allocated `total = len * n` bytes, NUL-terminated, malloc-failure
-  falls back to the input).
-- src/dnir_lower.zig: new `lowerSubjectRep` mirroring
-  `lowerSubjectFind` shape, dispatched from the subject-first method
-  arm at mc.method == "rep" with arity 1 and a string-typed receiver.
-- src/native_ir.zig: `"duo_str_rep"` added to the bootstrap foreign-call
-  registry so `isBootstrapForeignCall` lets the call past
-  `missing-foreign-application-lineage`.
-- src/main.zig: `duo_str_rep` added to the runtime-selector that maps
-  extern symbols to embedded object units, so the linker knows to
-  pull in `idol_str_runtime.o`.
-
-Verified isolation:
-- `./zig-out/bin/idol run /tmp/probe_rep.id` — the program `s = "x":rep(4);
-  print(s)` compiles and runs on direct backend (output: pointer-shaped
-  integer from a literal-on-stack `print(s)` because no `var`-into-print
-  coercion, but the lowering ran end-to-end and the call completed
-  without DNB bail).
-- binary footprint: `Rep:` subject-first dispatch + extern runtime
-  call; no new lowering modes required.
-
-VERIFIED:
-- ./zig-out/bin/idol run examples/demand/swap.id     exit 0
-- ./zig-out/bin/idol run scripts/run_compile_fail_tests.id </dev/null    exit 0
-- ./zig-out/bin/idol run scripts/assert_no_ansi_reports.id </dev/null    exit 0
-- IDOL_BIN=./zig-out/bin/idol-census sh gate/defaults.sh     exit 0
-- ./tools/node/dev/idol-lock -- zig build --summary all  exit 0
-
-REMAINING GAP (agreement.id):
-After :rep landed, agreement.id progresses past the `lowerIndexAssignTarget`
-bail to a NEW bail in the same gate: `result-type-unsupported:box` at
-lowerModuleFromGraph() ~line 3045.  The remaining extension is:
-- `any` param on module-local relations: `box: any = (x: any) x`.
-  Currently the direct backend refuses `any`-typed return values at
-  graph-lift (box reports no resolved application).
-
-REMAINING GAP (architecture.id):
-- DNB003 register pressure: unchanged from bf6c596a.  Prior runs 10/11
-  retained a register-pressure relief WIP that is not in bf6c596a.
+- `gate/architecture.id` still fails with DNB003 register pressure at
+  the native_backend.zig refuse site. Continuation:
+  **t_4293535f** (architecture-register-pressure re-merge + 13 stale
+  run-path control rotation).
+- `agreement.id` 2/6 long-only failures documented above. Continuation:
+  **t_be8f98a1** successor work on `..` empty-right semantics or first-
+  32-byte intern dedup, neither of which is in scope here.

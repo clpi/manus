@@ -4709,7 +4709,10 @@ fn boot(symbol: []const u8) ?[]const u8 {
         std.mem.eql(u8, symbol, "idol_str_find") or
         std.mem.eql(u8, symbol, "idol_str_has") or
         std.mem.eql(u8, symbol, "idol_str_match") or
-        std.mem.eql(u8, symbol, "duo_str_rep"))
+        std.mem.eql(u8, symbol, "duo_str_rep") or
+        std.mem.eql(u8, symbol, "duo_hash_new") or
+        std.mem.eql(u8, symbol, "duo_hash_store") or
+        std.mem.eql(u8, symbol, "duo_hash_load"))
         return "idol_str_runtime.o";
     return null;
 }
