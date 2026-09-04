@@ -53,7 +53,7 @@ _assemble: str = (mnemonic: str)
   if os.execute(cc .. " -c -o " .. _objpath .. " " .. _asmpath .. " 2>/dev/null") != 0
     os.remove(_asmpath)
     return ""
-  out = process:capture("xcrun otool -t " .. _objpath .. " 2>/dev/null | tail -1 | awk '{print $2}'")
+  out = os.capture("xcrun otool -t " .. _objpath .. " 2>/dev/null | tail -1 | awk '{print $2}'")
   os.remove(_asmpath)
   os.remove(_objpath)
   n: i64 = out:len()

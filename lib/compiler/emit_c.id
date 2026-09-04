@@ -126,7 +126,7 @@ eval: i64 = (expr: str)
         os.remove(src)
         return 0 - 1
     end
-    out = process.capture(exe)
+    out = os.capture(exe)
     os.remove(src)
     os.remove(exe)
     to(i64)(out)

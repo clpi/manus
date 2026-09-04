@@ -14450,13 +14450,6 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
                     try ctx.emit(.{ .op = .store_index, .ty = ty, .lhs = ptr, .rhs = .{ .i64 = 1 }, .third = val });
                     return .void;
                 }
-                if (std.mem.eql(u8, f.field, "zero") and c.args.len == 2) {
-                    const base = try lowerExpr(ctx, c.args[0]);
-                    const idx = try lowerScaledElementIndex(ctx, c.args[1]);
-                    const val = try lowerExpr(ctx, c.args[2]);
-                    try ctx.emit(.{ .op = .store_index, .ty = .i64, .lhs = base, .rhs = idx, .third = val });
-                    return .void;
-                }
                 // `mem.ptr_from_addr(T, a)` is `mem.addr` read backwards, and
                 // at this width it is the same no-op: the address IS the
                 // pointer. `T` is a DESCRIPTOR, not a value, so it is never

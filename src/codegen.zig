@@ -6772,65 +6772,118 @@ pub const CodeGen = struct {
     fn native_scalar_needs_int_floor_helpers(self: *CodeGen, mod: *const ast.Module) bool {
         if (!self.moduleKnowledgeAtLeast(.native)) return true;
         if (mod.body.tail_expr) |expr| {
-            if (self.expr_needs_int_floor_helpers(expr)) return true;
+            if (self.expr_needs_int_floor_helpers(expr, true)) return true;
         }
         for (mod.body.stmts) |*stmt| {
-            if (self.stmt_needs_int_floor_helpers(stmt)) return true;
+            if (self.stmt_needs_int_floor_helpers(stmt, true)) return true;
+        }
+        // The top-level walker never reaches into embedded modules whose bodies
+        // use `//` or `%` on integer operands. Walk the sema application table
+        // for every reached home, resolve each to its source path, and re-parse
+        // the module to find floor relations inside its own function bodies.
+        // Cost is one parse per reached home and runs only at codegen time.
+        //
+        // STRICT-TYPES IS OFF in the embedded walker. The walker has no sema
+        // context (it re-parses a fresh ast.Module from disk), so expr_type()
+        // returns .any for every name reference and the integer check at
+        // expr_needs_int_floor_helpers would say "no" to every site. The
+        // operator spelling is the only thing the walker has, and `//` / `%`
+        // are integer-floor relations in both admitted source laws. The
+        // top-level walk keeps strict-types=true because it has the sema
+        // context to distinguish integer operands from string/float ones.
+        if (self.checked_sema) |checked| {
+            var seen = std.StringHashMap(void).init(self.alloc);
+            defer seen.deinit();
+            var applied = checked.appliedHomes();
+            while (applied.next()) |home| {
+                if (seen.contains(home)) continue;
+                seen.put(home, {}) catch continue;
+                const fh = checked.resolvedHome(home) orelse continue;
+                const submod = self.readModuleForEmbeddedFloorWalk(fh.path) orelse continue;
+                if (submod.body.tail_expr) |sexpr| {
+                    if (self.expr_needs_int_floor_helpers(sexpr, false)) return true;
+                }
+                for (submod.body.stmts) |*sub_stmt| {
+                    if (self.stmt_needs_int_floor_helpers(sub_stmt, false)) return true;
+                }
+            }
         }
         return false;
     }
 
-    fn block_needs_int_floor_helpers(self: *CodeGen, block: ast.Block) bool {
+    /// Read + parse an embedded module file for the floor-helper walker.
+    /// The result is a snapshot — the real codegen owns its own parse.
+    fn readModuleForEmbeddedFloorWalk(self: *CodeGen, path: []const u8) ?ast.Module {
+        const Lexer = @import("lexer.zig").Lexer;
+        const Parser = @import("parser.zig").Parser;
+        const lexer_dispatch = @import("lexer_dispatch.zig");
+        const allocator = self.alloc;
+        const source = Io.Dir.readFileAlloc(Io.Dir.cwd(), self.io, path, allocator, .unlimited) catch return null;
+        defer allocator.free(source);
+        var lex = Lexer.initFacts(source, path, lexer_bridge.sourceFacts(path));
+        var parser = Parser.init(&lex, allocator);
+        parser.pack_tokens = lexer_dispatch.route(allocator, &lex, source, path) catch return null;
+        parser.pack_index = 0;
+        parser.idol_mode = lex.family == lexer_bridge.family_canon;
+        const result = parser.parse_module() catch |e| {
+            std.debug.print("[floor-walk] parse_module failed for {s}: {s}\n", .{ path, @errorName(e) });
+            return null;
+        };
+        std.debug.print("[floor-walk] parsed {s} stmts={d}\n", .{ path, result.body.stmts.len });
+        return result;
+    }
+
+    fn block_needs_int_floor_helpers(self: *CodeGen, block: ast.Block, strict_types: bool) bool {
         if (block.tail_expr) |expr| {
-            if (self.expr_needs_int_floor_helpers(expr)) return true;
+            if (self.expr_needs_int_floor_helpers(expr, strict_types)) return true;
         }
         for (block.stmts) |*stmt| {
-            if (self.stmt_needs_int_floor_helpers(stmt)) return true;
+            if (self.stmt_needs_int_floor_helpers(stmt, strict_types)) return true;
         }
         return false;
     }
 
-    fn stmt_needs_int_floor_helpers(self: *CodeGen, stmt: *const ast.Stmt) bool {
+    fn stmt_needs_int_floor_helpers(self: *CodeGen, stmt: *const ast.Stmt, strict_types: bool) bool {
         return switch (stmt.*) {
             .local_decl => |ld| blk: {
                 for (ld.inits) |expr| {
-                    if (self.expr_needs_int_floor_helpers(expr)) break :blk true;
+                    if (self.expr_needs_int_floor_helpers(expr, strict_types)) break :blk true;
                 }
                 break :blk false;
             },
-            .const_decl => |cd| self.expr_needs_int_floor_helpers(cd.val),
+            .const_decl => |cd| self.expr_needs_int_floor_helpers(cd.val, strict_types),
             .assign => |as| blk: {
                 for (as.targets) |expr| {
-                    if (self.expr_needs_int_floor_helpers(expr)) break :blk true;
+                    if (self.expr_needs_int_floor_helpers(expr, strict_types)) break :blk true;
                 }
                 for (as.values) |expr| {
-                    if (self.expr_needs_int_floor_helpers(expr)) break :blk true;
+                    if (self.expr_needs_int_floor_helpers(expr, strict_types)) break :blk true;
                 }
                 break :blk false;
             },
-            .call_stmt => |cs| self.expr_needs_int_floor_helpers(cs.expr),
-            .expr_stmt => |es| self.expr_needs_int_floor_helpers(es.expr),
-            .do_block => |db| self.block_needs_int_floor_helpers(db.body),
-            .while_loop => |wl| self.expr_needs_int_floor_helpers(wl.cond) or self.block_needs_int_floor_helpers(wl.body),
-            .repeat_loop => |rl| self.expr_needs_int_floor_helpers(rl.cond) or self.block_needs_int_floor_helpers(rl.body),
+            .call_stmt => |cs| self.expr_needs_int_floor_helpers(cs.expr, strict_types),
+            .expr_stmt => |es| self.expr_needs_int_floor_helpers(es.expr, strict_types),
+            .do_block => |db| self.block_needs_int_floor_helpers(db.body, strict_types),
+            .while_loop => |wl| self.expr_needs_int_floor_helpers(wl.cond, strict_types) or self.block_needs_int_floor_helpers(wl.body, strict_types),
+            .repeat_loop => |rl| self.expr_needs_int_floor_helpers(rl.cond, strict_types) or self.block_needs_int_floor_helpers(rl.body, strict_types),
             .if_stmt => |is| blk: {
-                if (self.expr_needs_int_floor_helpers(is.cond) or self.block_needs_int_floor_helpers(is.then)) break :blk true;
+                if (self.expr_needs_int_floor_helpers(is.cond, strict_types) or self.block_needs_int_floor_helpers(is.then, strict_types)) break :blk true;
                 for (is.elseifs) |elseif| {
-                    if (self.expr_needs_int_floor_helpers(elseif.cond) or self.block_needs_int_floor_helpers(elseif.body)) break :blk true;
+                    if (self.expr_needs_int_floor_helpers(elseif.cond, strict_types) or self.block_needs_int_floor_helpers(elseif.body, strict_types)) break :blk true;
                 }
                 if (is.else_body) |body| {
-                    if (self.block_needs_int_floor_helpers(body)) break :blk true;
+                    if (self.block_needs_int_floor_helpers(body, strict_types)) break :blk true;
                 }
                 break :blk false;
             },
-            .num_for => |nf| self.expr_needs_int_floor_helpers(nf.start) or
-                self.expr_needs_int_floor_helpers(nf.stop) or
-                (nf.step != null and self.expr_needs_int_floor_helpers(nf.step.?)) or
-                self.block_needs_int_floor_helpers(nf.body),
-            .func_decl => |fd| self.block_needs_int_floor_helpers(fd.func.body),
+            .num_for => |nf| self.expr_needs_int_floor_helpers(nf.start, strict_types) or
+                self.expr_needs_int_floor_helpers(nf.stop, strict_types) or
+                (nf.step != null and self.expr_needs_int_floor_helpers(nf.step.?, strict_types)) or
+                self.block_needs_int_floor_helpers(nf.body, strict_types),
+            .func_decl => |fd| self.block_needs_int_floor_helpers(fd.func.body, strict_types),
             .ret => |r| blk: {
                 for (r.vals) |expr| {
-                    if (self.expr_needs_int_floor_helpers(expr)) break :blk true;
+                    if (self.expr_needs_int_floor_helpers(expr, strict_types)) break :blk true;
                 }
                 break :blk false;
             },
@@ -6838,37 +6891,46 @@ pub const CodeGen = struct {
         };
     }
 
-    fn expr_needs_int_floor_helpers(self: *CodeGen, expr: *const ast.Expr) bool {
+    fn expr_needs_int_floor_helpers(self: *CodeGen, expr: *const ast.Expr, strict_types: bool) bool {
         return switch (expr.*) {
             .binop => |b| blk: {
-                if (self.expr_needs_int_floor_helpers(b.lhs) or self.expr_needs_int_floor_helpers(b.rhs)) break :blk true;
+                if (self.expr_needs_int_floor_helpers(b.lhs, strict_types) or self.expr_needs_int_floor_helpers(b.rhs, strict_types)) break :blk true;
                 if (b.op != .idiv and b.op != .mod) break :blk false;
+                // `//` and `%` are INTEGER-FLOOR relations in both admitted source
+                // laws. The operator spelling alone decides that; the type system
+                // rejects non-integer operands elsewhere. The strict-types branch
+                // kept here to filter out `//` on strings/floats, but the check
+                // falls through to .any too often for inferred locals (lo, hi, m
+                // in classify.id / rewrite.id are not declared i64, so expr_type
+                // returns .any and the integer guard wrongly says "no"). Trusting
+                // the operator spelling is the same answer the codegen emitter
+                // gives — it lowers `//` and `%` to lua_idiv_i64/lua_imod_i64
+                // whenever the operator fires, regardless of the source's
+                // declared operand types.
+                if (!strict_types) break :blk true;
                 const lt = self.expr_type(b.lhs);
                 const rt = self.expr_type(b.rhs);
+                if (lt == .any or rt == .any) break :blk true;
                 if (!lt.is_integer() or !rt.is_integer()) break :blk false;
-                // Integer // and % are flooring relations in both admitted
-                // source laws. Literal spelling cannot change that relation;
-                // a range fact could later prove the direct C operations
-                // equivalent, but none is available on this edge today.
                 break :blk true;
             },
-            .unop => |un| self.expr_needs_int_floor_helpers(un.operand),
+            .unop => |un| self.expr_needs_int_floor_helpers(un.operand, strict_types),
             .call => |call| blk: {
-                if (self.expr_needs_int_floor_helpers(call.func)) break :blk true;
+                if (self.expr_needs_int_floor_helpers(call.func, strict_types)) break :blk true;
                 for (call.args) |arg| {
-                    if (self.expr_needs_int_floor_helpers(arg)) break :blk true;
+                    if (self.expr_needs_int_floor_helpers(arg, strict_types)) break :blk true;
                 }
                 break :blk false;
             },
             .method_call => |call| blk: {
-                if (self.expr_needs_int_floor_helpers(call.obj)) break :blk true;
+                if (self.expr_needs_int_floor_helpers(call.obj, strict_types)) break :blk true;
                 for (call.args) |arg| {
-                    if (self.expr_needs_int_floor_helpers(arg)) break :blk true;
+                    if (self.expr_needs_int_floor_helpers(arg, strict_types)) break :blk true;
                 }
                 break :blk false;
             },
-            .index => |idx| self.expr_needs_int_floor_helpers(idx.obj) or self.expr_needs_int_floor_helpers(idx.key),
-            .field => |field| self.expr_needs_int_floor_helpers(field.obj),
+            .index => |idx| self.expr_needs_int_floor_helpers(idx.obj, strict_types) or self.expr_needs_int_floor_helpers(idx.key, strict_types),
+            .field => |field| self.expr_needs_int_floor_helpers(field.obj, strict_types),
             else => false,
         };
     }
@@ -10019,7 +10081,12 @@ pub const CodeGen = struct {
         }
         const ret_raw = self.resolve_type(contract_ret(fb));
         const ret: RT = if (ret_raw == .any and self.skip_lua_thunk_emit()) .void else ret_raw;
-        self.typ(ret);
+        // `int main(void)` is REQUIRED by the C standard; a prototype with
+        // `int64_t main(void)` is a hard error under `-std=c11 -fsyntax-only`.
+        if (fd.path.len == 1 and std.mem.eql(u8, fd.path[0], "main"))
+            self.p("int", .{})
+        else
+            self.typ(ret);
         self.p(" {s}(", .{cname});
         const saved_body = self.current_func_body;
         const saved_name = self.current_func_name;
@@ -11055,7 +11122,14 @@ pub const CodeGen = struct {
             self.p("#pragma GCC optimize(\"no-fast-math\")\n", .{});
         }
         try self.emit_func_storage_and_attrs(fd);
-        self.typ(ret);
+        // `int main(void)` is REQUIRED by the C standard; `int64_t main(void)`
+        // is a hard error under `-std=c11 -fsyntax-only`. The Idol-level
+        // declaration may still return `i64`, but the C ABI symbol must return
+        // `int` whenever the function is named `main` at file scope.
+        if (fd.path.len == 1 and std.mem.eql(u8, fd.path[0], "main"))
+            self.p("int", .{})
+        else
+            self.typ(ret);
         var name_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &name_buf);
         self.p(" {s}", .{cname});

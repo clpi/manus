@@ -46,6 +46,16 @@
 # represent"; emit_c.id refuses with "a reference to a module it cannot find"
 # (`std.script`). None of them is an unrealized application.
 #
+# THE THREE MOVED CLEAN THIS REVISION, and the ratchet had to be told:
+# parser.id had its 17 C errors repaired (`comptime.resolve_type` and
+# `value_resolve` now produce decl-aware integer types instead of `lua_Value`
+# boxes, so `int64_t` flows through the projection chain), symbol.id and
+# token.id were the canonical "binding whose value it cannot represent"
+# cases and the new type-coercion lattice lands them in CLEAN. These
+# measurements belong in the pin file rather than the average, the same
+# repair `0bc03d26` made for monolith/rewrite/classify in the opposite
+# direction.
+#
 # Measured with `./zig-out/bin/idol` built from this tree and the system `cc`.
 # Build mode is not the sensitive axis: a ReleaseFast build of the same revision
 # reproduces every row. REVISION is — a stale compiler disagrees, and the gate
@@ -62,13 +72,13 @@ REFUSED	-	lib/compiler/emit_c.id
 0	CLEAN	lib/compiler/lexer.id
 0	CLEAN	lib/compiler/macho.id
 0	CLEAN	lib/compiler/monolith.id
-0	DIRTY	lib/compiler/parser.id
+0	CLEAN	lib/compiler/parser.id
 0	CLEAN	lib/compiler/profile.id
 0	CLEAN	lib/compiler/reader.id
 0	CLEAN	lib/compiler/record.id
 0	CLEAN	lib/compiler/rewrite.id
-REFUSED	-	lib/compiler/symbol.id
-REFUSED	-	lib/compiler/token.id
+0	CLEAN	lib/compiler/symbol.id
+0	CLEAN	lib/compiler/token.id
 0	CLEAN	lib/compiler/token_view.id
 0	CLEAN	lib/token/classify.id
 0	CLEAN	lib/token/grammarrole.id
