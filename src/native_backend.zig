@@ -1345,7 +1345,11 @@ const Arm64Compiler = struct {
         /// register is owned by the slot map and outlives the call.
         scratch: bool = false,
         /// `reg` HOLDS THIS ARGUMENT NOW — the tail's counterpart of
-        /// `pending_arg_regs`, and the fact `reclaimSpilledReg` reads.
+        /// `pending_arg_regs`, and the fact both paths that take a register
+        /// away from the map naming it read: `reclaimSpilledReg`, which would
+        /// hand it back as scratch, and `ensureRegLiveRemap`, which would
+        /// relocate the value out of it and leave `reg` below naming the
+        /// register the move vacated.
         ///
         /// `operand == null` alone cannot say it. A slot inside
         /// `pending_vararg_count` that no `mov_arg` ever wrote is `.{}`, whose
@@ -6758,7 +6762,54 @@ const Arm64Compiler = struct {
         // `register`/`frame` assignment before emission, per this gap's record,
         // under which a parameter's location is a fact the assignment carries
         // rather than one two maps restate and one of them cannot be reached.
-        if (self.gp_home_regs[reg] or self.evalPinNames(reg)) {
+        // A STAGED VARIADIC TAIL REGISTER IS NOT THE RELOCATION'S TO MOVE
+        // (GAP-148).
+        //
+        // `pending_varargs[i].reg` is the FOURTH map that names a register, and
+        // it names one for the same reason `pending_arg_regs` names x_k: the
+        // register holds an argument for the `bl` being marshaled.
+        // `reclaimSpilledReg` was taught that reservation in the section above;
+        // this function is the other path that takes a register away from the
+        // map naming it, and it had never been asked.
+        //
+        // The window is `materializePendingVarargs`'s own loop and nothing
+        // else. Slot i is `staged` while slot j's operand is evaluated; that
+        // evaluation allocates, the cascade spills slot i's register — the
+        // spill passes read `used_regs`, which is all a staged tail register
+        // has — and if slot j's operand is a value that LIVES in that register,
+        // `evalDnirValue` arrives here for it. The relocation then rewrites
+        // `temps`, which names it, and leaves `pending_varargs[i].reg`, which
+        // names it too and which nothing below can reach. `emitPushVarargs`
+        // reads that field and stores the vacated register into the callee's
+        // memory-argument slot — and the register IS vacated, because
+        // `spillReg` cleared `used_regs` and the removal below drops the entry
+        // both free scans were skipping, so the pool hands it out. A wrong
+        // variadic argument with no diagnostic, which is where every
+        // `printf`/`snprintf` in this compiler passes its tail.
+        //
+        // Reloading into `reg` is available here for exactly the reasons the
+        // two branches above state, and this one adds nothing to them: a
+        // register in `spilled_regs` holds nothing, because both free scans in
+        // `allocRegExcluding` skip that map, all three of its spill passes
+        // require `used_regs`, and the reclaim at its bottom now skips a staged
+        // tail. So the destination is free, no owner is abandoned, and
+        // `ensureRegLive` is that reload. Nothing below applies: `temps` names
+        // `reg` and still should, `pending_varargs[i].reg` names it and still
+        // should, and `gp_reg_owner[reg]` is what `spillReg` preserved across
+        // the store.
+        //
+        // It costs the pool nothing at all, which is weaker than the trade the
+        // two branches above make: a relocation is net zero in registers — it
+        // frees `reg` and claims `fresh` — so reloading into `reg` gives up no
+        // register the move would have produced. Rewriting the fourth map
+        // instead would work and was not taken: it adds `pending_varargs` to
+        // the set every mover must keep in step, for a move that buys nothing.
+        // Bounded to gate transport with the rest of this gap. Not the closure
+        // — closure is authoritative `register`/`frame` assignment before
+        // emission, per this gap's record, under which a tail argument's
+        // location is a fact the assignment carries rather than one a fourth
+        // map restates and a mover has to remember.
+        if (self.gp_home_regs[reg] or self.evalPinNames(reg) or self.stagedTailReg(reg)) {
             try self.ensureRegLive(reg);
             return reg;
         }
@@ -18804,6 +18855,149 @@ test "the spilled-register reclaim passes over a staged variadic tail register" 
 
     // A reclaim emits nothing; it moves records only.
     try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+}
+
+// GAP-148. THE RELOCATION MOVED A VALUE OUT OF A REGISTER THE VARIADIC TAIL
+// HAD ALREADY BEEN GIVEN.
+//
+// `pending_varargs[i].reg` is the fourth map that names a register, beside
+// `pinned`, `temps` and `imm_hoist`, and it names one for the same reason
+// `pending_arg_regs` names x_k: between `materializePendingVarargs` and
+// `emitPushVarargs` the register holds an argument for the `bl` being built.
+// The section above taught `reclaimSpilledReg` that reservation.
+// `ensureRegLiveRemap` is the OTHER path that takes a register away from the
+// map naming it, and it had never been asked.
+//
+// The window is the materialization's own loop. Slot i is staged while slot j's
+// operand is evaluated; that evaluation allocates, the cascade spills slot i's
+// register — the spill passes read `used_regs`, which is all a staged tail
+// register has — and if slot j's operand is a value that LIVES in that
+// register, `evalDnirValue` arrives here for it. The relocation rewrites
+// `temps`, which names it, and leaves `pending_varargs[i].reg`, which names it
+// too and which nothing in that function reaches. `emitPushVarargs` then reads
+// that field and stores the vacated register into the callee's memory-argument
+// slot — vacated because `spillReg` cleared `used_regs` and the remap drops the
+// entry both free scans were skipping, so the pool hands it out. A wrong
+// variadic argument with no diagnostic.
+//
+// The repair costs the pool nothing, which is weaker than the trade the home
+// and pin branches make: a relocation is net zero in registers, so reloading
+// into the register the staging names gives up no register the move would have
+// produced.
+//
+// Built directly, like every test this gap has recorded: this is a state the
+// allocator passes through between a stale spill and the next read of a staged
+// tail operand, not one a fixture names.
+test "a spilled variadic tail register reloads into the register its staging names" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport: `allocRegExcluding` refuses above
+    // its three spill passes otherwise, so `spilled_regs` is empty everywhere
+    // else and this function returns above the branch under test.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // Tail slot 0 materialized a `.temp` into x21 — `owned`, so the slot is not
+    // `scratch` and `temps` names the same register the staging does. Then the
+    // allocation for a later slot spilled it: value in the frame, entry in the
+    // map, claim gone, owner preserved across the store.
+    const staged: u5 = 21;
+    const staged_off: u16 = 8;
+    const staged_temp: u32 = 5;
+    compiler.pending_varargs[0] = .{ .reg = staged, .staged = true };
+    compiler.pending_vararg_count = 1;
+    try compiler.spilled_regs.put(alloc, staged, staged_off);
+    compiler.gp_reg_owner[staged] = staged_temp;
+    compiler.used_regs[staged] = false;
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    try temps.put(alloc, staged_temp, staged);
+
+    const before = compiler.code.items.len;
+    const live = try compiler.ensureRegLiveRemap(&temps, staged);
+
+    // THE READ ANSWERS THE REGISTER THE STAGING NAMES. This is the whole fact:
+    // a fresh register here and `pending_varargs[0].reg` is stale for the
+    // `emitPushVarargs` that reads it a few instructions later.
+    try std.testing.expectEqual(staged, live);
+    try std.testing.expectEqual(staged, compiler.pending_varargs[0].reg);
+    try std.testing.expectEqual(@as(?u5, live), temps.get(staged_temp));
+
+    // One `ldr` out of this value's own slot, into that same register.
+    const reload_off: u16 = compiler.stack_frame_bytes - staged_off - 8;
+    const want: u32 = 0xf94003e0 | ((@as(u32, reload_off) / 8) << 10) | @as(u32, live);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        want,
+        std.mem.readInt(u32, compiler.code.items[before..][0..4], .little),
+    );
+
+    // The register comes back exactly as it went in: claimed again by the
+    // reload, entry gone, its slot back in the pool once, and the owner
+    // `spillReg` preserved across the store still at its index — the sweep
+    // releases this claim on the same record it would have had no spill
+    // happened at all.
+    try std.testing.expect(compiler.used_regs[staged]);
+    try std.testing.expect(!compiler.spilled_regs.contains(staged));
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(staged_off, compiler.free_spill_slots.items[0]);
+    try std.testing.expectEqual(@as(?u32, staged_temp), compiler.gp_reg_owner[staged]);
+
+    // NOTHING ELSE WAS TAKEN. A relocation is net zero in registers, so
+    // reloading into the staged register gives the pool up nothing: x9 is where
+    // the relocation would have gone and it is still free.
+    try std.testing.expect(!compiler.used_regs[9]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[9]);
+
+    // A HOLE IS NOT A RESERVATION. A slot inside `pending_vararg_count` that no
+    // `mov_arg` wrote is `.{}` — operand null, `staged` clear, `reg` 0 — so
+    // reading the cleared operand as "materialized" would pin x0 for nothing.
+    // A spilled x0 beside a hole is still the relocation's.
+    compiler.pending_varargs[1] = .{};
+    compiler.pending_vararg_count = 2;
+    const hole_temp: u32 = 13;
+    const hole_off: u16 = 40;
+    try compiler.spilled_regs.put(alloc, 0, hole_off);
+    compiler.gp_reg_owner[0] = hole_temp;
+    compiler.used_regs[0] = false;
+    try temps.put(alloc, hole_temp, 0);
+
+    const moved = try compiler.ensureRegLiveRemap(&temps, 0);
+    try std.testing.expect(moved != 0);
+    try std.testing.expectEqual(@as(?u5, moved), temps.get(hole_temp));
+    try std.testing.expectEqual(@as(?u32, hole_temp), compiler.gp_reg_owner[moved]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[0]);
+    try std.testing.expect(!compiler.spilled_regs.contains(0));
+
+    // THE SKIP IS THE STAGING FACT AND NOTHING ELSE. `emitPopVarargs` clears
+    // the tail, and after it the identical entry in the identical state is the
+    // ordinary temp the relocation has always moved — so this is one term, not
+    // a value the remap can no longer relocate.
+    compiler.pending_varargs[0] = .{};
+    compiler.pending_vararg_count = 0;
+    try compiler.spilled_regs.put(alloc, staged, staged_off);
+    compiler.used_regs[staged] = false;
+
+    const relocated = try compiler.ensureRegLiveRemap(&temps, staged);
+    try std.testing.expect(relocated != staged);
+    try std.testing.expectEqual(@as(?u5, relocated), temps.get(staged_temp));
+    try std.testing.expectEqual(@as(?u32, staged_temp), compiler.gp_reg_owner[relocated]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[staged]);
 }
 
 // GAP-148. THE HOIST UNWIND GAVE BACK A REGISTER THE POOL COULD NOT TAKE.
