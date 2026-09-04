@@ -3491,6 +3491,7 @@ fn helperStrlen(e: *Emitter, b: *Buf) Error!void {
 ///
 /// Signature: (i64 dst_ptr) -> i64 byte_count
 fn helperFdRead(_: *Emitter, b: *Buf) Error!void {
+    try b.u32v(0);
     // params: 0 = dst (malloc'd pointer to receive the bytes)
     // iov.ptr = addr_inbuf
     try b.i32c(@intCast(addr_iovec));
@@ -3673,6 +3674,7 @@ fn helperPrintI64(e: *Emitter, b: *Buf) Error!void {
 /// `(f64 v, i64 nl)` — prints `v` via `snprintf(scratch, "%g")` then `write_cstr`.
 /// If `nl` is zero, appends a newline via `puts_cstr`.
 fn helperPrintF64(e: *Emitter, b: *Buf) Error!void {
+    try b.u32v(0);
     // params: 0 = v (f64), 1 = nl (i64)
     // Scratch buffer is the `numbuf` region, already used by `print_i64`; since
     // helpers run serially (one function body at a time) there is no conflict.
@@ -3683,8 +3685,10 @@ fn helperPrintF64(e: *Emitter, b: *Buf) Error!void {
     try b.i64c(scratch);
     try b.i64c(cap);
     try b.i64c(@intCast(try e.strings.intern("%g")));
-    try b.get(0); // f64 v — stays as f64 on the value stack
+    try b.get(0); // f64 v
+    try b.op(op_i64_reinterpret_f64); // snprintf's va slot is i64; pass the bits
     try b.call(helperIndex(.snprintf));
+    try b.op(op_drop); // snprintf returns i64 (chars written); the helper does not
 
     // write_cstr(scratch)
     try b.i64c(scratch);
@@ -3692,7 +3696,6 @@ fn helperPrintF64(e: *Emitter, b: *Buf) Error!void {
 
     // newline if nl == 0
     try b.get(1);
-    try b.i64c(0);
     try b.op(op_i64_eqz);
     try b.byte(op_if);
     try b.byte(bt_void);
@@ -3704,9 +3707,14 @@ fn helperPrintF64(e: *Emitter, b: *Buf) Error!void {
 /// `(f32 v, i64 nl)` — promotes `v` to f64, then the same snprintf path as `print_f64`.
 /// If `nl` is zero, appends a newline via `puts_cstr`.
 fn helperPrintF32(e: *Emitter, b: *Buf) Error!void {
+    try b.u32v(1); // 1 local group: v_promoted (f64) at local 2
+    try b.u32v(1);
+    try b.byte(vt_f64);
     // params: 0 = v (f32), 1 = nl (i64)
-    // Promote f32 → f64, then reuse the f64 print path.
+    // Promote f32 → f64 into local 2, then reuse the f64 print path.
+    try b.get(0); // push the f32 param onto the stack
     try b.op(op_f64_promote_f32);
+    try b.set(2);
     const scratch: i64 = @intCast(addr_numbuf);
     const cap: i64 = @intCast(numbuf_len);
 
@@ -3714,7 +3722,10 @@ fn helperPrintF32(e: *Emitter, b: *Buf) Error!void {
     try b.i64c(scratch);
     try b.i64c(cap);
     try b.i64c(@intCast(try e.strings.intern("%g")));
+    try b.get(2); // f64 v
+    try b.op(op_i64_reinterpret_f64); // snprintf's va slot is i64; pass the bits
     try b.call(helperIndex(.snprintf));
+    try b.op(op_drop); // snprintf returns i64; helper does not observe it
 
     // write_cstr(scratch)
     try b.i64c(scratch);
@@ -3722,7 +3733,6 @@ fn helperPrintF32(e: *Emitter, b: *Buf) Error!void {
 
     // newline if nl == 0
     try b.get(1);
-    try b.i64c(0);
     try b.op(op_i64_eqz);
     try b.byte(op_if);
     try b.byte(bt_void);
