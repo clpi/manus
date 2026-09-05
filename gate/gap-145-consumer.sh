@@ -3096,6 +3096,28 @@ fi
 
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
+# Catch-binding admission consumes the exact ordinary-name face already carried
+# by the immutable event pack. The host retains binding spelling and catch-body
+# materialization, but no longer re-reads `.name` after `catch`.
+catch_binding_kinds=$(sed -n '/fn parse_try(self:/,/fn parse_defer/p' "$PARSER" | \
+    grep -cE 'nxt\.kind == \.name' || true)
+if [ "$catch_binding_kinds" -ne 0 ]; then
+    bad "catch binding retained host name recognition: count=$catch_binding_kinds"
+fi
+has "$PARSER" 'if (try self.currentParserName()) {' \
+    'catch binding bypasses the settled ordinary-name face'
+
+catch_binding_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate catch-binding scratch' >&2; exit 2; }
+printf '%s\n' 'if (nxt.kind == .name) {' >"$catch_binding_probe/old.zig"
+printf '%s\n' 'if (try self.currentParserName()) {' >"$catch_binding_probe/new.zig"
+catch_binding_old=$(grep -cE 'nxt\.kind == \.name' "$catch_binding_probe/old.zig")
+catch_binding_new=$(grep -cF 'currentParserName()' "$catch_binding_probe/new.zig")
+rm -rf -- "$catch_binding_probe"
+examined=$((examined + 1))
+if [ "$catch_binding_old" -ne 1 ] || [ "$catch_binding_new" -ne 1 ]; then
+    bad "the catch-binding detector is broken: old=$catch_binding_old new=$catch_binding_new"
+fi
+
 # The ordinary-pack computed-key entry consumes the exact bracket identity
 # already projected as face 19. Zig retains only key/value materialization and
 # no longer replays `.lbracket` at that entry seam.

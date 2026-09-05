@@ -4380,8 +4380,7 @@ pub const Parser = struct {
 
             var binding: ?[]const u8 = null;
 
-            const nxt = try self.pk();
-            if (nxt.kind == .name) {
+            if (try self.currentParserName()) {
                 // The name after `catch` is always the binding. There is no
                 // typed catch form.
                 binding = (try self.adv()).text;
