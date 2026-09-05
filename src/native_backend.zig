@@ -2366,7 +2366,7 @@ const Arm64Compiler = struct {
                 var sink: Sink = .{ .map = &self.value_free_at, .alloc = self.alloc, .at = idx };
                 forEachOperandId(ins, &sink, Sink.note);
                 if (sink.failed) return error.OutOfMemory;
-                if (ins.result) |r| {
+                if (dnir.definition(ins)) |r| {
                     if (!def_at.contains(r)) try def_at.put(self.alloc, r, idx);
                 }
                 for (ins.pack_results) |result| {
@@ -17526,6 +17526,43 @@ test "CFG liveness carries a parameter through a loop at function entry" {
     try defined.put(alloc, 8, 0);
     Arm64Compiler.widenValueLastUses(&last, &defined, &back);
     try std.testing.expectEqual(@as(?u32, 2), last.get(8));
+}
+
+test "CFG liveness does not read ABI staging slots as value definitions" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // `result` on both staging instructions is an ABI register slot, not the
+    // definition of the parameter with the same numeric id. Both parameters
+    // enter before the entry-header loop and are read again on every trip.
+    const instructions = [_]dnir.Instr{
+        .{ .op = .mov_arg, .result = 0, .lhs = .{ .temp = 0 }, .ty = .i64 },
+        .{ .op = .fp_mov_arg, .result = 1, .lhs = .{ .temp = 1 }, .ty = .f64 },
+        .{ .op = .br, .lhs = .{ .temp = 2 }, .branch_target = 0, .branch_condition = .when_true },
+    };
+    const blocks = [_]dnir.Block{.{ .instrs = &instructions }};
+    const function = dnir.Function{
+        .name = "stage",
+        .ret = .void,
+        .blocks = &blocks,
+    };
+
+    try compiler.computeValueLastUse(function);
+    try std.testing.expectEqual(@as(?u32, 2), compiler.value_free_at.get(0));
+    try std.testing.expectEqual(@as(?u32, 2), compiler.value_free_at.get(1));
 }
 
 test "a carried local in a calling function keeps its register across the back edge" {
