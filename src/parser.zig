@@ -1682,7 +1682,7 @@ pub const Parser = struct {
         const saved = self.saveState();
         _ = try self.adv();
         var is_caseset = false;
-        if ((try self.pk()).kind == .name) {
+        if (try self.currentParserName()) {
             _ = try self.adv();
             const after = (try self.pk()).kind;
             is_caseset = after == .comma or after == .lparen;

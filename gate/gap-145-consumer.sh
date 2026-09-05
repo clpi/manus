@@ -3288,6 +3288,28 @@ if [ "$enum_payload_old" -ne 1 ] || [ "$enum_payload_new" -ne 1 ]; then
     bad "the enum-payload detector is broken: old=$enum_payload_old new=$enum_payload_new"
 fi
 
+# Inline case-set admission consumes the ordinary-name face already projected
+# after the opening brace. Zig retains the following comma/parenthesis choice,
+# spelling, declaration, home registration, and materialization.
+inline_caseset_kinds=$(sed -n '/fn parse_inline_caseset/,/fn parse_field_type/p' "$PARSER" | \
+    grep -cF '(try self.pk()).kind == .name' || true)
+if [ "$inline_caseset_kinds" -ne 0 ]; then
+    bad "inline case-set admission retained host name recognition: count=$inline_caseset_kinds"
+fi
+has "$PARSER" 'if (try self.currentParserName()) {' \
+    'inline case-set admission bypasses the settled ordinary-name face'
+
+inline_caseset_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate inline-case-set scratch' >&2; exit 2; }
+printf '%s\n' 'if ((try self.pk()).kind == .name) {' >"$inline_caseset_probe/old.zig"
+printf '%s\n' 'if (try self.currentParserName()) {' >"$inline_caseset_probe/new.zig"
+inline_caseset_old=$(grep -cF '(try self.pk()).kind == .name' "$inline_caseset_probe/old.zig")
+inline_caseset_new=$(grep -cF 'try self.currentParserName()' "$inline_caseset_probe/new.zig")
+rm -rf -- "$inline_caseset_probe"
+examined=$((examined + 1))
+if [ "$inline_caseset_old" -ne 1 ] || [ "$inline_caseset_new" -ne 1 ]; then
+    bad "the inline-case-set detector is broken: old=$inline_caseset_old new=$inline_caseset_new"
+fi
+
 # Concept-body member admission consumes the ordinary-name face already
 # projected at the current coordinate. Zig retains spelling, method-versus-field
 # selection, descriptor parsing, and member materialization.
