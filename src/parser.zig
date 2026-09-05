@@ -4006,7 +4006,7 @@ pub const Parser = struct {
             self.restoreState(pack_saved);
         }
         // `if name = expr` binding condition
-        if ((try self.pk()).kind == .name) {
+        if (try self.currentParserName()) {
             const saved = self.saveState();
             const nm = try self.adv();
             if ((try self.pk()).kind == .assign) {
