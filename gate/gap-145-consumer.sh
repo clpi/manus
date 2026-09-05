@@ -3288,6 +3288,28 @@ if [ "$enum_payload_old" -ne 1 ] || [ "$enum_payload_new" -ne 1 ]; then
     bad "the enum-payload detector is broken: old=$enum_payload_old new=$enum_payload_new"
 fi
 
+# Concept-body member admission consumes the ordinary-name face already
+# projected at the current coordinate. Zig retains spelling, method-versus-field
+# selection, descriptor parsing, and member materialization.
+concept_member_kinds=$(sed -n '/fn parse_concept_def_with_attrs/,/fn parse_alias_def_with_attrs/p' "$PARSER" | \
+    grep -cF '(try self.pk()).kind == .name' || true)
+if [ "$concept_member_kinds" -ne 0 ]; then
+    bad "concept member admission retained host name recognition: count=$concept_member_kinds"
+fi
+has "$PARSER" '} else if (try self.currentParserName()) {' \
+    'concept member admission bypasses the settled ordinary-name face'
+
+concept_member_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate concept-member scratch' >&2; exit 2; }
+printf '%s\n' '} else if ((try self.pk()).kind == .name) {' >"$concept_member_probe/old.zig"
+printf '%s\n' '} else if (try self.currentParserName()) {' >"$concept_member_probe/new.zig"
+concept_member_old=$(grep -cF '(try self.pk()).kind == .name' "$concept_member_probe/old.zig")
+concept_member_new=$(grep -cF 'try self.currentParserName()' "$concept_member_probe/new.zig")
+rm -rf -- "$concept_member_probe"
+examined=$((examined + 1))
+if [ "$concept_member_old" -ne 1 ] || [ "$concept_member_new" -ne 1 ]; then
+    bad "the concept-member detector is broken: old=$concept_member_old new=$concept_member_new"
+fi
+
 # Expression-statement entry consumes the existing exact brace face before it
 # distinguishes a table value from a destructuring target. Zig retains only
 # the contextual choice and materialization; it no longer replays `.lbrace`.

@@ -2983,7 +2983,7 @@ pub const Parser = struct {
                 _ = try self.adv(); // consume `fun` or `function`
                 const method_name = try self.expect(.name);
                 try methods.append(self.alloc, try self.parse_concept_method_sig(method_name.text));
-            } else if ((try self.pk()).kind == .name) {
+            } else if (try self.currentParserName()) {
                 // Canonical bare member. `name(` / `name[` is a required method
                 // signature (GR-001 bare function); `name:` is a required field.
                 const member_name = try self.adv();
