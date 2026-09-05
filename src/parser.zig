@@ -7040,8 +7040,7 @@ pub const Parser = struct {
     }
 
     fn starts_paren_pack(self: *Parser) ParseError!bool {
-        const first = try self.pk();
-        if (first.kind != .name and !try self.currentParserPrimitive()) return false;
+        if (try self.currentParserPackName() == 0) return false;
         const saved = self.saveState();
         const saved_line = self.prev_line;
         const saved_end = self.prev_end_col;
@@ -7058,8 +7057,9 @@ pub const Parser = struct {
         var fields: std.ArrayList(ast.TableField) = .empty;
         while (true) {
             if ((try self.pk()).kind == .rparen) break;
+            const name = try self.currentParserPackName();
             const key_tok = try self.adv();
-            const key_text = if (key_tok.kind == .name) key_tok.text else key_tok.kind.spelling();
+            const key_text = if (name == 1) key_tok.text else key_tok.kind.spelling();
             _ = try self.expect(.assign);
             const val = try self.parse_expr();
             try fields.append(self.alloc, .{ .named = .{ .key = key_text, .val = val } });
@@ -11448,6 +11448,18 @@ test "parse: computed pack key consumes the producer face" {
     try testing.expect(fields[0] == .indexed);
     try testing.expectEqualStrings("key", fields[0].indexed.key.name.ident);
     try testing.expectEqualStrings("value", fields[0].indexed.val.name.ident);
+}
+
+test "parse: parenthesized pack keys consume the producer face" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource("t = (name = value, i64 = width)", &arena);
+    const fields = mod.body.stmts[0].assign.values[0].table.fields;
+    try testing.expectEqual(@as(usize, 2), fields.len);
+    try testing.expectEqualStrings("name", fields[0].named.key);
+    try testing.expectEqualStrings("value", fields[0].named.val.name.ident);
+    try testing.expectEqualStrings("i64", fields[1].named.key);
+    try testing.expectEqualStrings("width", fields[1].named.val.name.ident);
 }
 
 test "parse: table literal statement not destructure pattern" {

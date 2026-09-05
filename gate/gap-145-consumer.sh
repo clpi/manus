@@ -3219,6 +3219,31 @@ fi
 
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
+# Parenthesized labeled packs consume the same settled name/primitive entry
+# answer as ordinary and offside packs. The host retains closing-delimiter,
+# assignment, spelling, and field materialization work, but no longer re-reads
+# `.name` to admit the pack or choose the key spelling.
+paren_pack_kinds=$(sed -n '/fn starts_paren_pack/,/fn finish_positional_pack/p' "$PARSER" | \
+    grep -cE '(first|key_tok)\.kind (==|!=) \.name' || true)
+if [ "$paren_pack_kinds" -ne 0 ]; then
+    bad "parenthesized pack retained host name recognition: count=$paren_pack_kinds"
+fi
+has "$PARSER" 'if (try self.currentParserPackName() == 0) return false;' \
+    'parenthesized pack admission bypasses the settled entry face'
+has "$PARSER" 'const name = try self.currentParserPackName();' \
+    'parenthesized pack key spelling bypasses the settled entry face'
+
+paren_pack_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate parenthesized-pack scratch' >&2; exit 2; }
+printf '%s\n' 'if (first.kind != .name and !primitive) return false;' 'const key_text = if (key_tok.kind == .name) key_tok.text else key_tok.kind.spelling();' >"$paren_pack_probe/old.zig"
+printf '%s\n' 'if (try self.currentParserPackName() == 0) return false;' 'const name = try self.currentParserPackName();' >"$paren_pack_probe/new.zig"
+paren_pack_old=$(grep -cE '(first|key_tok)\.kind (==|!=) \.name' "$paren_pack_probe/old.zig")
+paren_pack_new=$(grep -cF 'currentParserPackName()' "$paren_pack_probe/new.zig")
+rm -rf -- "$paren_pack_probe"
+examined=$((examined + 1))
+if [ "$paren_pack_old" -ne 2 ] || [ "$paren_pack_new" -ne 2 ]; then
+    bad "the parenthesized-pack detector is broken: old=$paren_pack_old new=$paren_pack_new"
+fi
+
 # Expression-statement entry consumes the existing exact brace face before it
 # distinguishes a table value from a destructuring target. Zig retains only
 # the contextual choice and materialization; it no longer replays `.lbrace`.
