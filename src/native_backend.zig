@@ -2308,6 +2308,33 @@ const Arm64Compiler = struct {
         return !self.loose_read_values.contains(t);
     }
 
+    fn widenValueLastUses(
+        value_free_at: *std.AutoHashMapUnmanaged(u32, u32),
+        def_at: *const std.AutoHashMapUnmanaged(u32, u32),
+        back: []const [2]u32,
+    ) void {
+        // This is a finite monotone dataflow problem: every update moves an end
+        // to one of the function's back-edge tails. Iterate to the actual
+        // fixpoint. A fixed round limit made CFG shape select a different,
+        // all-function fallback even though convergence was still progressing.
+        var changed = true;
+        while (changed) {
+            changed = false;
+            var it = value_free_at.iterator();
+            while (it.next()) |e| {
+                const def = def_at.get(e.key_ptr.*) orelse 0;
+                for (back) |edge| {
+                    const head = edge[0];
+                    const tail = edge[1];
+                    if (def < head and e.value_ptr.* >= head and e.value_ptr.* < tail) {
+                        e.value_ptr.* = tail;
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
     /// Last instruction index that reads each id, widened so that no live range
     /// ends inside a loop it did not start in. See the `value free at` field.
     fn computeValueLastUse(self: *Arm64Compiler, f: dnir.Function) Error!void {
@@ -2441,30 +2468,7 @@ const Arm64Compiler = struct {
         // the body has already reused. Nested loops make one pass insufficient:
         // widening to an inner back edge can drag a range into an outer one, so
         // iterate to a fixpoint (bounded — every step only moves ends forward).
-        var changed = true;
-        var rounds: u32 = 0;
-        while (changed and rounds < 16) : (rounds += 1) {
-            changed = false;
-            var it = self.value_free_at.iterator();
-            while (it.next()) |e| {
-                const def = def_at.get(e.key_ptr.*) orelse 0;
-                for (back.items) |edge| {
-                    const head = edge[0];
-                    const tail = edge[1];
-                    if (def < head and e.value_ptr.* >= head and e.value_ptr.* < tail) {
-                        e.value_ptr.* = tail;
-                        changed = true;
-                    }
-                }
-            }
-        }
-        // A fixpoint that did not settle means the widening is not conservative
-        // enough to trust. Pin every range to the end of the function rather
-        // than free anything on a guess.
-        if (changed) {
-            var it = self.value_free_at.valueIterator();
-            while (it.next()) |v| v.* = std.math.maxInt(u32);
-        }
+        widenValueLastUses(&self.value_free_at, &def_at, back.items);
 
         // Keep a checked f64 result in d0 only when the next instruction
         // immediately consumes it as an ABI argument or function result.
@@ -17471,6 +17475,29 @@ fn countStackLocals(cost: []const CostEntry, needle: []const u8) usize {
         if (needle.len == 0 or std.mem.indexOf(u8, entry.reason, needle) != null) n += 1;
     }
     return n;
+}
+
+test "CFG liveness reaches its fixpoint beyond sixteen widening steps" {
+    const alloc = std.testing.allocator;
+    var last: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer last.deinit(alloc);
+    var defined: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer defined.deinit(alloc);
+
+    try last.put(alloc, 7, 1);
+    try defined.put(alloc, 7, 0);
+
+    // Reverse order forces exactly one newly reachable back edge per pass.
+    // The retired sixteen-round ceiling pinned this value to maxInt instead of
+    // deriving the last CFG tail that actually contains it.
+    var back: [17][2]u32 = undefined;
+    for (0..back.len) |i| {
+        const head: u32 = @intCast(back.len - i);
+        back[i] = .{ head, head + 1 };
+    }
+
+    Arm64Compiler.widenValueLastUses(&last, &defined, &back);
+    try std.testing.expectEqual(@as(?u32, 18), last.get(7));
 }
 
 test "a carried local in a calling function keeps its register across the back edge" {
