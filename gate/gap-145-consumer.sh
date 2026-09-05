@@ -3191,6 +3191,32 @@ if [ "$offsideold" -ne 3 ] || [ "$offsidenew" -ne 3 ]; then
     bad "the offside-pack detector is broken: old=$offsideold new=$offsidenew"
 fi
 
+# Offside record recognition consumes the same exact name and colon faces as
+# the rest of parser recognition. Layout still decides whether the record is
+# offside; field spelling and descriptor materialization remain unchanged.
+offside_record_kinds=$(sed -n '/fn starts_offside_record/,/fn starts_offside_pack/p' "$PARSER" | \
+    grep -cE '(first|tok)\.kind != \.name|\(try self\.pk\(\)\)\.kind == \.colon' || true)
+if [ "$offside_record_kinds" -ne 0 ]; then
+    bad "offside record retained host identity recognition: count=$offside_record_kinds"
+fi
+has "$PARSER" 'if (!try self.currentParserName()) return false;' \
+    'offside record probe bypasses the settled name face'
+has "$PARSER" 'return try self.currentParserMethod();' \
+    'offside record probe bypasses the settled colon face'
+has "$PARSER" 'if (!try self.currentParserName()) break;' \
+    'offside record field loop bypasses the settled name face'
+
+offside_record_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate offside-record scratch' >&2; exit 2; }
+printf '%s\n' 'if (first.kind != .name) return false;' 'return (try self.pk()).kind == .colon;' 'if (tok.kind != .name) break;' >"$offside_record_probe/old.zig"
+printf '%s\n' 'if (!try self.currentParserName()) return false;' 'return try self.currentParserMethod();' 'if (!try self.currentParserName()) break;' >"$offside_record_probe/new.zig"
+offside_record_old=$(grep -cE '(first|tok)\.kind != \.name|\(try self\.pk\(\)\)\.kind == \.colon' "$offside_record_probe/old.zig")
+offside_record_new=$(grep -cE 'currentParser(Name|Method)' "$offside_record_probe/new.zig")
+rm -rf -- "$offside_record_probe"
+examined=$((examined + 1))
+if [ "$offside_record_old" -ne 3 ] || [ "$offside_record_new" -ne 3 ]; then
+    bad "the offside-record detector is broken: old=$offside_record_old new=$offside_record_new"
+fi
+
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
 # Expression-statement entry consumes the existing exact brace face before it

@@ -7084,7 +7084,7 @@ pub const Parser = struct {
     fn starts_offside_record(self: *Parser, colon: Token) ParseError!bool {
         const first = try self.pk();
         if (first.loc.line == colon.loc.line) return false;
-        if (first.kind != .name) return false;
+        if (!try self.currentParserName()) return false;
         const saved = self.saveState();
         const saved_line = self.prev_line;
         const saved_end = self.prev_end_col;
@@ -7094,7 +7094,7 @@ pub const Parser = struct {
             self.prev_end_col = saved_end;
         }
         _ = try self.adv();
-        return (try self.pk()).kind == .colon;
+        return try self.currentParserMethod();
     }
 
     /// The same record type the delimited literal builds, read from an offside
@@ -7104,7 +7104,7 @@ pub const Parser = struct {
         var col: u32 = 0;
         while (true) {
             const tok = try self.pk();
-            if (tok.kind != .name) break;
+            if (!try self.currentParserName()) break;
             if (fields.items.len == 0) {
                 if (tok.loc.line == open.line) break;
                 col = tok.loc.col;
@@ -11541,6 +11541,24 @@ test "parse: keywordless record descriptor Point: { x: f64, y: f64 }" {
     , &arena);
     const ad = mod.body.stmts[0].alias_def;
     try testing.expectEqualStrings("Point", ad.name);
+    try testing.expect(ad.target != null);
+    try testing.expect(ad.target.? == .record);
+    try testing.expectEqual(@as(usize, 2), ad.target.?.record.fields.len);
+    try testing.expectEqualStrings("x", ad.target.?.record.fields[0].name);
+    try testing.expectEqualStrings("f64", ad.target.?.record.fields[0].typ.named);
+    try testing.expectEqualStrings("y", ad.target.?.record.fields[1].name);
+}
+
+test "parse: offside record descriptor consumes settled name and colon faces" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\point:
+        \\    x: f64
+        \\    y: f64
+    , &arena);
+    const ad = mod.body.stmts[0].alias_def;
+    try testing.expectEqualStrings("point", ad.name);
     try testing.expect(ad.target != null);
     try testing.expect(ad.target.? == .record);
     try testing.expectEqual(@as(usize, 2), ad.target.?.record.fields.len);
