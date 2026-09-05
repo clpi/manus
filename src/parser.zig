@@ -3318,7 +3318,7 @@ pub const Parser = struct {
         const saved = self.saveState();
         _ = try self.adv();
         const key = try self.pk();
-        const level: []const u8 = if (key.kind == .name)
+        const level: []const u8 = if (try self.currentParserName())
             key.text
         else if (try self.currentParserPrimitive())
             key.kind.spelling()

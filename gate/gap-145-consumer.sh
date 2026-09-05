@@ -3396,6 +3396,31 @@ if [ "$colonold" -ne 1 ] || [ "$colonnew" -ne 1 ]; then
     bad "the typed-colon detector is broken: old=$colonold new=$colonnew"
 fi
 
+# Relation-level edge parsing consumes the ordinary-name face already projected
+# by the immutable whole-pack event. Primitive levels keep their distinct face.
+level_edge_kinds=$(sed -n '/fn parse_level_edge/,/fn parse_func_decl_after_first/p' "$PARSER" | \
+    grep -cF 'key.kind == .name' || true)
+if [ "$level_edge_kinds" -ne 0 ]; then
+    bad "relation-level edge retained host name recognition: count=$level_edge_kinds"
+fi
+level_edge_faces=$(sed -n '/fn parse_level_edge/,/fn parse_func_decl_after_first/p' "$PARSER" | \
+    grep -cF 'try self.currentParserName()' || true)
+examined=$((examined + 1))
+if [ "$level_edge_faces" -ne 1 ]; then
+    bad "relation-level edge does not consume exactly one settled ordinary-name face: count=$level_edge_faces"
+fi
+
+level_edge_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate relation-level-edge scratch' >&2; exit 2; }
+printf '%s\n' 'const level = if (key.kind == .name)' >"$level_edge_probe/old.zig"
+printf '%s\n' 'const level = if (try self.currentParserName())' >"$level_edge_probe/new.zig"
+level_edge_old=$(grep -cF 'key.kind == .name' "$level_edge_probe/old.zig")
+level_edge_new=$(grep -cF 'try self.currentParserName()' "$level_edge_probe/new.zig")
+rm -rf -- "$level_edge_probe"
+examined=$((examined + 1))
+if [ "$level_edge_old" -ne 1 ] || [ "$level_edge_new" -ne 1 ]; then
+    bad "the relation-level-edge detector is broken: old=$level_edge_old new=$level_edge_new"
+fi
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then
