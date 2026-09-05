@@ -293,6 +293,53 @@ pub const OracleFrontierDimension = struct {
     }
 };
 
+/// One revision-bound measurement against every discovered oracle point.
+/// Each dimension owns its comparator envelope because different systems can
+/// establish the frontier for runtime, memory, artifact size, or another cost.
+pub const OracleFrontierCase = struct {
+    subject_revision: []const u8,
+    evidence_revision: []const u8,
+    equivalence: []const u8,
+    raw_evidence: []const u8,
+    dimensions: []const OracleFrontierDimension,
+    context: ?FrontierContext = null,
+
+    pub fn status(self: OracleFrontierCase) FrontierError!FrontierStatus {
+        if (self.subject_revision.len == 0) return error.MissingSubjectRevision;
+        if (self.evidence_revision.len == 0) return error.MissingEvidenceRevision;
+        if (self.equivalence.len == 0) return error.MissingEquivalence;
+        if (self.raw_evidence.len == 0) return error.MissingRawEvidence;
+        if (self.dimensions.len == 0) return error.MissingDimensions;
+        const context = self.context orelse return error.MissingContext;
+        try context.validate();
+
+        var all_bound = true;
+        var saw_win = false;
+        var saw_unknown = false;
+        for (self.dimensions, 0..) |dimension, index| {
+            for (self.dimensions[index + 1 ..]) |other| {
+                if (std.mem.eql(u8, dimension.id, other.id)) return error.DuplicateDimension;
+            }
+            switch (try dimension.status()) {
+                .open => return .open,
+                .unknownbound => {
+                    all_bound = false;
+                    saw_unknown = true;
+                },
+                .win => {
+                    all_bound = false;
+                    saw_win = true;
+                },
+                .bound => {},
+            }
+        }
+        if (all_bound) return .bound;
+        if (saw_unknown) return .unknownbound;
+        if (saw_win) return .win;
+        return .unknownbound;
+    }
+};
+
 pub const FrontierCase = struct {
     subject_revision: []const u8,
     evidence_revision: []const u8,
@@ -1080,4 +1127,77 @@ test "oracle frontier requires attributed unique comparators" {
 
     try std.testing.expectError(error.MissingOracle, empty.status());
     try std.testing.expectError(error.DuplicateOracle, repeated.status());
+}
+
+test "oracle frontier case binds the complete comparison to its measured subject" {
+    const runtime_oracles = [_]OraclePoint{
+        .{
+            .oracle = .{
+                .name = "compiler-a",
+                .revision = "revision-a",
+                .configuration = "release",
+                .evidence = "evidence/a-runtime.json",
+            },
+            .interval = Interval.exact(10),
+        },
+        .{
+            .oracle = .{
+                .name = "compiler-b",
+                .revision = "revision-b",
+                .configuration = "tuned",
+                .evidence = "evidence/b-runtime.json",
+            },
+            .interval = Interval.exact(7),
+        },
+    };
+    const dimensions = [_]OracleFrontierDimension{.{
+        .id = "runtime",
+        .unit = "ns",
+        .direction = .minimize,
+        .candidate = Interval.exact(8),
+        .oracles = &runtime_oracles,
+        .improvable = true,
+        .cause = .wrong_algorithm,
+    }};
+    const measurement = OracleFrontierCase{
+        .subject_revision = "candidate-revision",
+        .evidence_revision = "evidence-revision",
+        .equivalence = "evidence/equivalence.json",
+        .raw_evidence = "evidence/runtime.json",
+        .dimensions = &dimensions,
+        .context = .{
+            .world = "linux-aarch64",
+            .target = "aarch64-native",
+            .workload = "compiler-build",
+            .observations = &.{ "answer", "runtime" },
+        },
+    };
+
+    try std.testing.expectEqual(FrontierStatus.open, try measurement.status());
+}
+
+test "oracle frontier case refuses an unbound measurement envelope" {
+    const dimensions = [_]OracleFrontierDimension{.{
+        .id = "runtime",
+        .unit = "ns",
+        .direction = .minimize,
+        .candidate = Interval.exact(8),
+        .oracles = &.{},
+        .improvable = true,
+    }};
+    const measurement = OracleFrontierCase{
+        .subject_revision = "candidate-revision",
+        .evidence_revision = "evidence-revision",
+        .equivalence = "evidence/equivalence.json",
+        .raw_evidence = "evidence/runtime.json",
+        .dimensions = &dimensions,
+        .context = .{
+            .world = "linux-aarch64",
+            .target = "aarch64-native",
+            .workload = "compiler-build",
+            .observations = &.{ "answer", "runtime" },
+        },
+    };
+
+    try std.testing.expectError(error.MissingOracle, measurement.status());
 }
