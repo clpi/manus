@@ -2486,18 +2486,20 @@ fn emitPrint(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
 
 test "wasm backend prints f64 via snprintf" {
     const source =
-        \\x: f64 = 3.14159
         \\main: i64 = ()
-        \\print(x)
+        \\    x: f64 = 3.14159
+        \\    print(x)
+        \\    0
     ;
     try std.testing.expectEqual(@as(u8, 0), try runTestSourceWasm(source));
 }
 
 test "wasm backend prints f32 via snprintf" {
     const source =
-        \\x: f32 = 2.71828
         \\main: i64 = ()
-        \\print(x)
+        \\    x: f32 = 2.71828
+        \\    print(x)
+        \\    0
     ;
     try std.testing.expectEqual(@as(u8, 0), try runTestSourceWasm(source));
 }
