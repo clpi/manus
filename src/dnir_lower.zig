@@ -14157,6 +14157,24 @@ fn lowerCall(ctx: *LowerCtx, expr: *const ast.Expr, consumption: types.ReturnCon
         try ctx.emit(.{ .op = .call_extern, .result = t, .callee = "idol_process_capture", .lhs = arg, .ty = .str });
         return .{ .temp = t };
     }
+    // `tostring(n)` — the runtime/global-call spelling. Canonical Idol has no
+    // such binding; it is a seeded global in `seedGlobalNames` so `scope.lookup`
+    // finds it, but it has no application fact, so `ctx.occurrences.get` returns
+    // null and the graph-facts guard below refuses it as `missing-application-id`.
+    // Recognizing it here bypasses the graph path for this one builtin and
+    // delegates to `emitIntToStr`, which is shared with `to(str)(n)` — the
+    // canonical Idol spelling this is an alias for.
+    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "tostring") and
+        c.args.len == 1)
+    {
+        if (exprIsIntegral(ctx, c.args[0])) {
+            const n = try lowerExpr(ctx, c.args[0]);
+            return .{ .temp = try emitIntToStr(ctx, n) };
+        }
+        // Non-integral operand: fall through to lowerToStr which handles the
+        // null return (not a to(str) call, returns null), and the graph-facts
+        // guard will refuse with "missing-application-id" for the same reason.
+    }
     if (try lowerToStr(ctx, c)) |v| return v;
     if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "to") and c.args.len == 2) {
         return lowerSubjectTo(ctx, c.args[0], c.args[1], consumption);
