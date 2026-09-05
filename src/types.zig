@@ -3405,6 +3405,83 @@ test "types: the realization face of the scalar roster is derived from the same 
     }
 }
 
+test "types: the C0 numeric source-face roster equals the union scalar identities" {
+    // `docs/spec/constitution.md` §5 `law.number.projection` names exactly the
+    // COMPACT CANONICAL SOURCE FACES a numeric fact may be stated as:
+    //
+    //     "i8 i16 i32 i64 u8 u16 u32 u64 f32 and f64 remain compact canonical
+    //      source faces"
+    //
+    // That prose is a ROSTER, and a roster beside the one owner drifts: a
+    // scalar identity added to or removed from the `ResolvedType` union changes
+    // which source faces the compiler actually mints, and nothing made C0's
+    // list agree with the union except a hand edit. `GAP-149`'s frontier
+    // recorded C0 as unreconciled for exactly this reason. This control turns
+    // the C0 sentence into a fact that RUNS: the source faces C0 lists must be
+    // precisely the single-lane numeric scalar identities the union owns,
+    // derived from `numericFacts` — not from a second hand list here.
+    //
+    // A source face in this ruling is a SINGLE-LANE numeric identity: the
+    // vectors (`v4f64`, `v4i64`, `v8f32`, `v8i32`) are numeric fact owners but
+    // span several lanes, and C0 places "physical lane register immediate
+    // memory vector and target width" in realization, not in the source-face
+    // roster — so they are declined here BY THE `lanes != 1` FACT rather than by
+    // absence. `bool`, `str`, `void`, `any` and every composed identity carry
+    // no numeric facts and are declined by that null. A nominal descriptor
+    // delegates its numeric facts to its representation on purpose, so it is
+    // excluded here as an identity (`nominalReprOf != null`, folded into
+    // `scalarRepr`) exactly as it is at every other roster face.
+    const c0_number_source_faces = [_][]const u8{
+        "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64",
+    };
+
+    // Iterated over the union's OWN tags rather than a list, so a scalar
+    // identity added to the union that answers `{ single lane, numeric }` is a
+    // C0 source face automatically, and one that does not cannot silently claim
+    // to be one. `buf` is unused for a payload-free identity's `duo_name`, which
+    // returns its bare source word.
+    const info = @typeInfo(ResolvedType).@"union";
+    var buf: [32]u8 = undefined;
+    var derived_count: usize = 0;
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type != void) continue;
+        const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+        const is_source_face = if (identity.numericFacts()) |facts|
+            facts.lanes == 1 and nominalReprOf(identity) == null
+        else
+            false;
+
+        // Is this identity's source word one C0 lists?
+        var in_c0 = false;
+        for (c0_number_source_faces) |face| {
+            if (std.mem.eql(u8, face, field_name)) in_c0 = true;
+        }
+        try testing.expectEqual(is_source_face, in_c0);
+
+        if (is_source_face) {
+            // The source word C0 states IS the one the owner renders.
+            try testing.expectEqualStrings(field_name, identity.duo_name(&buf));
+            derived_count += 1;
+        }
+    }
+
+    // Every face C0 lists was reached over the union — none is a spelling C0
+    // states that the union does not mint.
+    try testing.expectEqual(c0_number_source_faces.len, derived_count);
+
+    // The vectors are numeric owners C0 assigns to realization, not to the
+    // source-face roster: declined by the lane fact, not by absence.
+    try testing.expect((ResolvedType{ .v4f64 = {} }).numericFacts() != null);
+    try testing.expect((ResolvedType{ .v4f64 = {} }).numericFacts().?.lanes != 1);
+    try testing.expect((ResolvedType{ .v8i32 = {} }).numericFacts().?.lanes != 1);
+
+    // A nominal descriptor over a scalar delegates its physics but is not a
+    // numeric SOURCE FACE: its own name is the source spelling, not `i32`.
+    try declareNominal(std.heap.page_allocator, "cadence", .i32);
+    try testing.expect(nominalNamed("cadence").?.numericFacts() != null);
+    try testing.expect(nominalReprOf(nominalNamed("cadence").?) != null);
+}
+
 // The retired C-spelling roster, verbatim, as the oracle. It stood in
 // `codegen.type_from_c_name` and decided, at the foreign ingress seam, which
 // `ResolvedType` identity a C type spelling realizes. It was the SEVENTH
