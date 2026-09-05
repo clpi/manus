@@ -1749,7 +1749,7 @@ pub const Parser = struct {
             const saved = self.saveState();
             _ = try self.adv();
             const name_tok = try self.pk();
-            if (name_tok.kind != .name) {
+            if (!try self.currentParserName()) {
                 self.restoreState(saved);
                 break;
             }

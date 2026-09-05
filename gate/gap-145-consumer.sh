@@ -3310,6 +3310,28 @@ if [ "$inline_caseset_old" -ne 1 ] || [ "$inline_caseset_new" -ne 1 ]; then
     bad "the inline-case-set detector is broken: old=$inline_caseset_old new=$inline_caseset_new"
 fi
 
+# Record-layout refinement admission consumes the ordinary-name face already
+# projected after `&`. Zig retains spelling, argument parsing, fact selection,
+# and layout materialization; it must not rediscover name identity.
+layout_refinement_kinds=$(sed -n '/fn parse_layout_refinements/,/fn parse_record_type/p' "$PARSER" | \
+    grep -cF 'name_tok.kind != .name' || true)
+if [ "$layout_refinement_kinds" -ne 0 ]; then
+    bad "layout refinement retained host name recognition: count=$layout_refinement_kinds"
+fi
+has "$PARSER" 'if (!try self.currentParserName()) {' \
+    'layout refinement admission bypasses the settled ordinary-name face'
+
+layout_refinement_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate layout-refinement scratch' >&2; exit 2; }
+printf '%s\n' 'if (name_tok.kind != .name) {' >"$layout_refinement_probe/old.zig"
+printf '%s\n' 'if (!try self.currentParserName()) {' >"$layout_refinement_probe/new.zig"
+layout_refinement_old=$(grep -cF 'name_tok.kind != .name' "$layout_refinement_probe/old.zig")
+layout_refinement_new=$(grep -cF 'try self.currentParserName()' "$layout_refinement_probe/new.zig")
+rm -rf -- "$layout_refinement_probe"
+examined=$((examined + 1))
+if [ "$layout_refinement_old" -ne 1 ] || [ "$layout_refinement_new" -ne 1 ]; then
+    bad "the layout-refinement detector is broken: old=$layout_refinement_old new=$layout_refinement_new"
+fi
+
 # Concept-body member admission consumes the ordinary-name face already
 # projected at the current coordinate. Zig retains spelling, method-versus-field
 # selection, descriptor parsing, and member materialization.
