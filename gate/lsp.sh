@@ -1,5 +1,5 @@
 #!/bin/sh
-# gate/lsp.sh — LSP hover-contract hold for the produced concept verdict (GAP-120).
+# gate/lsp.sh — LSP concept-contract hold for the produced verdict (GAP-120).
 #
 # `tools/concept/hover.sh` is the LSP face of the produced concept finding:
 # one JSON-RPC `textDocument/hover` request object on stdin, one response
@@ -21,6 +21,13 @@
 # the definition is position-independent, and the fail-closed errors refuse.
 # Verdict-correctness and the node-face agreement stay owned by
 # `gate/concept.sh` and `gate/node.sh` respectively.
+#
+# `tools/concept/symbol.sh` is the LSP DOCUMENT SYMBOL face of the same
+# finding: the produced module-node home returned as one document symbol at
+# the file boundary. What is measured there, and nowhere else, is the
+# outline boundary: exactly one symbol crosses, the symbol is named by the
+# produced home, and the fail-closed errors refuse. Verdict-correctness and
+# node-face agreement stay owned by `gate/concept.sh` and `gate/node.sh`.
 #
 # THE ROSTER CARRIES EVERY PRODUCED DIRECTION, so a one-sided gate cannot
 # call itself an enforcement:
@@ -59,6 +66,7 @@ cd "$root" || { printf 'lsp: cannot enter root\n' >&2; exit 3; }
 IDOL=${IDOL:-"$root/zig-out/bin/idol"}
 hover=$here/../tools/concept/hover.sh
 definition=$here/../tools/concept/definition.sh
+symbol=${SYMBOL:-$here/../tools/concept/symbol.sh}
 self=$here/$(basename -- "$0")
 
 if [ ! -x "$IDOL" ]; then
@@ -71,6 +79,10 @@ if [ ! -x "$hover" ]; then
 fi
 if [ ! -x "$definition" ]; then
     printf 'lsp: NOT MEASURED — %s is not executable (the definition projection was required)\n' "$definition" >&2
+    exit 3
+fi
+if [ ! -x "$symbol" ]; then
+    printf 'lsp: NOT MEASURED — %s is not executable (the document-symbol projection was required)\n' "$symbol" >&2
     exit 3
 fi
 
@@ -337,6 +349,123 @@ req=$(jq -n -c --arg u "file://$work/broken.id" \
 printf 'oops {{{\n' >"$work/broken.id" || exit 3
 demand_def_error def-unparseable-subject "$req" -32000
 
+# ── document-symbol face ─────────────────────────────────────────────────
+# tools/concept/symbol.sh answers textDocument/documentSymbol with exactly
+# one DocumentSymbol named by the produced concept home, at the produced
+# module-node file-boundary line. Verdict-correctness stays owned by
+# gate/concept.sh; node-face agreement stays owned by gate/node.sh; what is
+# measured here, and nowhere else, is the outline boundary.
+# demand_symbol <id-json> <uri> <home-needle>: the produced home must cross
+# as exactly one document symbol.
+demand_symbol() {
+    resp=$work/respSymbol.json
+    req=$(jq -n -c --arg u "$2" --argjson id "$1" \
+        '{jsonrpc:"2.0",id:$id,method:"textDocument/documentSymbol",params:{textDocument:{uri:$u}}}') || {
+        printf 'lsp: FAIL — document-symbol request could not be framed for id %s\n' "$1" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    printf '%s\n' "$req" | IDOL="$IDOL" sh "$symbol" >"$resp" 2>"$resp.diag" || {
+        printf 'lsp: FAIL — document-symbol exited nonzero on id %s\n' "$1" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    examined=$((examined + 1))
+    [ "$(wc -l <"$resp" | tr -d ' ')" = "1" ] || {
+        printf 'lsp: FAIL — document-symbol id %s answered %s lines, one line was demanded\n' "$1" "$(wc -l <"$resp")" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    jq -e --argjson id "$1" '.id == $id and (has("error") | not)' <"$resp" >/dev/null 2>&1 || {
+        printf 'lsp: FAIL — document-symbol id %s lost its id or carried an error where a symbol was demanded\n' "$1" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    jq -e '.result | type == "array" and length == 1' <"$resp" >/dev/null 2>&1 || {
+        printf 'lsp: FAIL — document-symbol id %s did not answer exactly one symbol\n' "$1" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    jq -e '.result[0].kind == 2 and .result[0].range.start.line == 0 and .result[0].selectionRange.start.line == 0' \
+        <"$resp" >/dev/null 2>&1 || {
+        printf 'lsp: FAIL — document-symbol id %s is not the module symbol at the produced file boundary\n' "$1" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    jq -r '.result[0].name // ""' <"$resp" 2>/dev/null | grep -Fq "$3" || {
+        printf 'lsp: FAIL — document-symbol id %s name misses %s\n' "$1" "$3" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    jq -r '.result[0].concept // ""' <"$resp" 2>/dev/null | grep -Fq "$3" || {
+        printf 'lsp: FAIL — document-symbol id %s concept field misses %s\n' "$1" "$3" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+}
+
+# The produced home of each subject crosses as its document symbol. The
+# spaced bucket keeps its space in the produced home, so uri decoding and argv
+# passing stay load-bearing on this face too.
+demand_symbol 29 "$bucket_uri" "my bucket"
+demand_symbol 30 "$cohort_uri" "cohort"
+demand_symbol 31 "$unwitnessed_uri" "unwitnessed"
+
+# The id is opaque on this face too: a present null id remains a request.
+demand_symbol null "$cohort_uri" "cohort"
+
+# demand_symbol_error <label> <request-json> <code>: a symbol failure must
+# refuse with the demanded code and never a symbol-shaped result.
+demand_symbol_error() {
+    resp=$work/respSymbolErr.json
+    printf '%s\n' "$2" | IDOL="$IDOL" sh "$symbol" >"$resp" 2>"$resp.diag" || {
+        printf 'lsp: FAIL — document-symbol %s exited nonzero\n' "$1" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    examined=$((examined + 1))
+    jq -e --argjson code "$3" 'has("error") and .error.code == $code and (.error.message | type == "string")' \
+        <"$resp" >/dev/null 2>&1 || {
+        printf 'lsp: FAIL — document-symbol %s refused with the wrong shape (demanded error %s)\n' "$1" "$3" >&2
+        cat "$resp" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+    jq -e '(has("result") | not)' <"$resp" >/dev/null 2>&1 || {
+        printf 'lsp: FAIL — document-symbol %s carried a result beside its error; a refusal is never symbol-shaped\n' "$1" >&2
+        failed=$((failed + 1))
+        return 1
+    }
+}
+
+req=$(jq -n -c --arg u "$cohort_uri" \
+    '{jsonrpc:"2.0",id:32,method:"textDocument/definition",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
+demand_symbol_error symbol-wrong-method "$req" -32601
+
+req=$(jq -n -c \
+    '{jsonrpc:"2.0",id:33,method:"textDocument/documentSymbol",params:{}}') || exit 3
+demand_symbol_error symbol-missing-uri "$req" -32602
+
+req=$(jq -n -c \
+    '{jsonrpc:"2.0",id:34,method:"textDocument/documentSymbol",params:{textDocument:{uri:"untitled:Tab-1"}}}') || exit 3
+demand_symbol_error symbol-non-file-scheme "$req" -32602
+
+req=$(jq -n -c --arg u "file://$work/absent.id" \
+    '{jsonrpc:"2.0",id:35,method:"textDocument/documentSymbol",params:{textDocument:{uri:$u}}}') || exit 3
+demand_symbol_error symbol-unreadable-subject "$req" -32000
+
+req=$(jq -n -c --arg u "file://$work/broken.id" \
+    '{jsonrpc:"2.0",id:36,method:"textDocument/documentSymbol",params:{textDocument:{uri:$u}}}') || exit 3
+demand_symbol_error symbol-unparseable-subject "$req" -32000
+
+demand_symbol_error symbol-malformed '{oops' -32700
+demand_symbol_error symbol-adjacent '{"jsonrpc":"2.0","id":37,"method":"ping","params":{}} {"jsonrpc":"2.0","id":38,"method":"ping","params":{}}' -32700
+
 # ── notification-zero ────────────────────────────────────────────────────
 # NOTIFICATION-ZERO: an object WITHOUT an id member is a notification, and
 # the server must never reply to one — no result, no error, even for a bad
@@ -347,7 +476,7 @@ demand_def_error def-unparseable-subject "$req" -32000
 # answers zero bytes.
 demand_silence() {
     resp=$work/respSilent.json
-    printf '%s\n' "$3" | sh "$1" >"$resp" 2>"$resp.diag" || {
+    printf '%s\n' "$3" | IDOL="$IDOL" sh "$1" >"$resp" 2>"$resp.diag" || {
         printf 'lsp: FAIL — %s exited nonzero on a notification\n' "$2" >&2
         failed=$((failed + 1))
         return 1
@@ -374,6 +503,12 @@ demand_silence "$hover" notification-silent "$req"
 req=$(jq -n -c --arg u "$cohort_uri" \
     '{jsonrpc:"2.0",method:"textDocument/definition",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
 demand_silence "$definition" def-notification-silent "$req"
+
+# document-symbol notification-zero: the outline face obeys the same base
+# protocol duty before method or uri validation can answer.
+req=$(jq -n -c --arg u "$cohort_uri" \
+    '{jsonrpc:"2.0",method:"textDocument/documentSymbol",params:{textDocument:{uri:$u}}}') || exit 3
+demand_silence "$symbol" symbol-notification-silent "$req"
 
 req=$(jq -n -c --arg u "$cohort_uri" \
     '{jsonrpc:"2.0",id:null,method:"textDocument/hover",params:{textDocument:{uri:$u},position:{line:0,character:0}}}') || exit 3
