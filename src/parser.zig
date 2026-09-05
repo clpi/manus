@@ -2892,8 +2892,7 @@ pub const Parser = struct {
     /// Parse a single enum payload field: `name: Type` or just `Type` (positional).
     fn parseEnumPayloadField(self: *Parser) ParseError!ast.EnumVariant.PayloadField {
         // Try to parse `name: Type` — peek ahead for colon after name
-        const tok = try self.pk();
-        if (tok.kind == .name) {
+        if (try self.currentParserName()) {
             // Speculatively consume the name and check for colon
             const name_tok = try self.adv();
             if (try self.eat(.colon) != null) {

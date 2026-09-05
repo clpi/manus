@@ -3266,6 +3266,28 @@ if [ "$paren_pack_old" -ne 2 ] || [ "$paren_pack_new" -ne 2 ]; then
     bad "the parenthesized-pack detector is broken: old=$paren_pack_old new=$paren_pack_new"
 fi
 
+# Enum payload fields consume the ordinary-name face already projected at the
+# current coordinate. Zig retains spelling, colon observation, descriptor
+# parsing, and payload materialization; it must not rediscover name identity.
+enum_payload_kinds=$(sed -n '/fn parseEnumPayloadField/,/fn parse_concept_method_sig/p' "$PARSER" | \
+    grep -cF 'tok.kind == .name' || true)
+if [ "$enum_payload_kinds" -ne 0 ]; then
+    bad "enum payload field retained host name recognition: count=$enum_payload_kinds"
+fi
+has "$PARSER" 'if (try self.currentParserName()) {' \
+    'enum payload field bypasses the settled ordinary-name face'
+
+enum_payload_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate enum-payload scratch' >&2; exit 2; }
+printf '%s\n' 'if (tok.kind == .name) {' >"$enum_payload_probe/old.zig"
+printf '%s\n' 'if (try self.currentParserName()) {' >"$enum_payload_probe/new.zig"
+enum_payload_old=$(grep -cF 'tok.kind == .name' "$enum_payload_probe/old.zig")
+enum_payload_new=$(grep -cF 'try self.currentParserName()' "$enum_payload_probe/new.zig")
+rm -rf -- "$enum_payload_probe"
+examined=$((examined + 1))
+if [ "$enum_payload_old" -ne 1 ] || [ "$enum_payload_new" -ne 1 ]; then
+    bad "the enum-payload detector is broken: old=$enum_payload_old new=$enum_payload_new"
+fi
+
 # Expression-statement entry consumes the existing exact brace face before it
 # distinguishes a table value from a destructuring target. Zig retains only
 # the contextual choice and materialization; it no longer replays `.lbrace`.
