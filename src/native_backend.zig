@@ -2322,11 +2322,15 @@ const Arm64Compiler = struct {
             changed = false;
             var it = value_free_at.iterator();
             while (it.next()) |e| {
-                const def = def_at.get(e.key_ptr.*) orelse 0;
+                const definition = def_at.get(e.key_ptr.*);
                 for (back) |edge| {
                     const head = edge[0];
                     const tail = edge[1];
-                    if (def < head and e.value_ptr.* >= head and e.value_ptr.* < tail) {
+                    const begins_before = if (definition) |def|
+                        def < head
+                    else
+                        true;
+                    if (begins_before and e.value_ptr.* >= head and e.value_ptr.* < tail) {
                         e.value_ptr.* = tail;
                         changed = true;
                     }
@@ -17498,6 +17502,30 @@ test "CFG liveness reaches its fixpoint beyond sixteen widening steps" {
 
     Arm64Compiler.widenValueLastUses(&last, &defined, &back);
     try std.testing.expectEqual(@as(?u32, 18), last.get(7));
+}
+
+test "CFG liveness carries a parameter through a loop at function entry" {
+    const alloc = std.testing.allocator;
+    var last: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer last.deinit(alloc);
+    var defined: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer defined.deinit(alloc);
+
+    // Parameters have no defining instruction. Treating that absence as an
+    // instruction-zero definition makes a loop whose header is zero exclude
+    // them from widening, even though they entered the function before it.
+    try last.put(alloc, 7, 2);
+    const back = [_][2]u32{.{ 0, 4 }};
+
+    Arm64Compiler.widenValueLastUses(&last, &defined, &back);
+    try std.testing.expectEqual(@as(?u32, 4), last.get(7));
+
+    // A value genuinely defined at the header is new on every iteration and
+    // must remain distinct from the carried-in parameter case above.
+    try last.put(alloc, 8, 2);
+    try defined.put(alloc, 8, 0);
+    Arm64Compiler.widenValueLastUses(&last, &defined, &back);
+    try std.testing.expectEqual(@as(?u32, 2), last.get(8));
 }
 
 test "a carried local in a calling function keeps its register across the back edge" {
