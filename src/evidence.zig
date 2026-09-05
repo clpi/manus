@@ -162,6 +162,9 @@ pub const FrontierError = error{
     MissingEquivalence,
     MissingRawEvidence,
     MissingDimensions,
+    MissingRequiredDimensions,
+    MissingRequiredDimension,
+    UnexpectedDimension,
     MissingCause,
     UnexpectedCause,
     MissingDimensionId,
@@ -301,6 +304,7 @@ pub const OracleFrontierCase = struct {
     evidence_revision: []const u8,
     equivalence: []const u8,
     raw_evidence: []const u8,
+    required_dimensions: []const []const u8,
     dimensions: []const OracleFrontierDimension,
     context: ?FrontierContext = null,
 
@@ -309,14 +313,28 @@ pub const OracleFrontierCase = struct {
         if (self.evidence_revision.len == 0) return error.MissingEvidenceRevision;
         if (self.equivalence.len == 0) return error.MissingEquivalence;
         if (self.raw_evidence.len == 0) return error.MissingRawEvidence;
+        if (self.required_dimensions.len == 0) return error.MissingRequiredDimensions;
         if (self.dimensions.len == 0) return error.MissingDimensions;
         const context = self.context orelse return error.MissingContext;
         try context.validate();
+
+        for (self.required_dimensions, 0..) |required, index| {
+            if (required.len == 0) return error.MissingDimensionId;
+            for (self.required_dimensions[index + 1 ..]) |other| {
+                if (std.mem.eql(u8, required, other)) return error.DuplicateDimension;
+            }
+            for (self.dimensions) |dimension| {
+                if (std.mem.eql(u8, required, dimension.id)) break;
+            } else return error.MissingRequiredDimension;
+        }
 
         var all_bound = true;
         var saw_win = false;
         var saw_unknown = false;
         for (self.dimensions, 0..) |dimension, index| {
+            for (self.required_dimensions) |required| {
+                if (std.mem.eql(u8, required, dimension.id)) break;
+            } else return error.UnexpectedDimension;
             for (self.dimensions[index + 1 ..]) |other| {
                 if (std.mem.eql(u8, dimension.id, other.id)) return error.DuplicateDimension;
             }
@@ -1164,6 +1182,7 @@ test "oracle frontier case binds the complete comparison to its measured subject
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
         .raw_evidence = "evidence/runtime.json",
+        .required_dimensions = &.{"runtime"},
         .dimensions = &dimensions,
         .context = .{
             .world = "linux-aarch64",
@@ -1190,6 +1209,7 @@ test "oracle frontier case refuses an unbound measurement envelope" {
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
         .raw_evidence = "evidence/runtime.json",
+        .required_dimensions = &.{"runtime"},
         .dimensions = &dimensions,
         .context = .{
             .world = "linux-aarch64",
@@ -1200,4 +1220,86 @@ test "oracle frontier case refuses an unbound measurement envelope" {
     };
 
     try std.testing.expectError(error.MissingOracle, measurement.status());
+}
+
+test "oracle frontier case refuses an incomplete dimension envelope" {
+    const oracle = OraclePoint{
+        .oracle = .{
+            .name = "compiler",
+            .revision = "revision",
+            .configuration = "tuned",
+            .evidence = "evidence/compiler.json",
+        },
+        .interval = Interval.exact(10),
+    };
+    const dimensions = [_]OracleFrontierDimension{.{
+        .id = "runtime",
+        .unit = "ns",
+        .direction = .minimize,
+        .candidate = Interval.exact(8),
+        .oracles = &.{oracle},
+        .improvable = true,
+    }};
+    const measurement = OracleFrontierCase{
+        .subject_revision = "candidate-revision",
+        .evidence_revision = "evidence-revision",
+        .equivalence = "evidence/equivalence.json",
+        .raw_evidence = "evidence/runtime.json",
+        .required_dimensions = &.{ "runtime", "memory" },
+        .dimensions = &dimensions,
+        .context = .{
+            .world = "linux-aarch64",
+            .target = "aarch64-native",
+            .workload = "compiler-build",
+            .observations = &.{ "answer", "runtime", "memory" },
+        },
+    };
+
+    try std.testing.expectError(error.MissingRequiredDimension, measurement.status());
+}
+
+test "oracle frontier case refuses a dimension outside its envelope" {
+    const oracle = OraclePoint{
+        .oracle = .{
+            .name = "compiler",
+            .revision = "revision",
+            .configuration = "tuned",
+            .evidence = "evidence/compiler.json",
+        },
+        .interval = Interval.exact(10),
+    };
+    const dimensions = [_]OracleFrontierDimension{
+        .{
+            .id = "runtime",
+            .unit = "ns",
+            .direction = .minimize,
+            .candidate = Interval.exact(8),
+            .oracles = &.{oracle},
+            .improvable = true,
+        },
+        .{
+            .id = "memory",
+            .unit = "bytes",
+            .direction = .minimize,
+            .candidate = Interval.exact(8),
+            .oracles = &.{oracle},
+            .improvable = true,
+        },
+    };
+    const measurement = OracleFrontierCase{
+        .subject_revision = "candidate-revision",
+        .evidence_revision = "evidence-revision",
+        .equivalence = "evidence/equivalence.json",
+        .raw_evidence = "evidence/runtime.json",
+        .required_dimensions = &.{"memory"},
+        .dimensions = &dimensions,
+        .context = .{
+            .world = "linux-aarch64",
+            .target = "aarch64-native",
+            .workload = "compiler-build",
+            .observations = &.{ "answer", "runtime" },
+        },
+    };
+
+    try std.testing.expectError(error.UnexpectedDimension, measurement.status());
 }
