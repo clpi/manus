@@ -7259,11 +7259,24 @@ const Arm64Compiler = struct {
     /// assignment before emission, per this gap's record, under which a
     /// parameter's location is carried by the assignment rather than by a map
     /// one path reads and another passes over.
+    ///
+    /// AN OWNED FRAME VALUE IS NOT RECLAIMABLE (GAP-148).
+    ///
+    /// `gp_reg_owner[reg]` names the DNIR value whose only current location is
+    /// the frame slot in `spilled_regs`. Removing that entry does not relocate
+    /// the value: it deletes its last readable location. The reclaim may still
+    /// retire an ownerless stale entry left by register staging, but an owned
+    /// entry remains a value location and pressure refuses when those are the
+    /// only entries available.
     fn reclaimSpilledReg(self: *Arm64Compiler, exclude: ?u5) Error!u5 {
         var it = self.spilled_regs.iterator();
         while (it.next()) |entry| {
             const reg = entry.key_ptr.*;
             if (exclude != null and reg == exclude.?) continue;
+            // An owner means this entry is the only remaining location of a
+            // live DNIR value. Dropping it would make the value permanently
+            // unreadable; only ownerless stale entries are reclaimable.
+            if (self.gp_reg_owner[reg] != null) continue;
             if (self.gp_home_regs[reg]) continue;
             if (self.evalPinNames(reg)) continue;
             if (reg < 8 and
@@ -17839,18 +17852,12 @@ test "a gate-transport reclaim reloads the value it hands a register for" {
     try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
 }
 
-// GAP-148. WHAT A RECLAIM MUST LEAVE BEHIND.
-//
-// The reclaim's known hazard is the owner it abandons. This measures the three
-// facts that owner held and the reclaim did not clear: the register's owner
-// record, its frame slot, and its `spilled_regs` entry. The entry was dropped;
-// the other two were not, and each is a defect in the OTHER direction — a live
-// register freed under its new value, and a dead slot reserved forever.
+// GAP-148. A RECLAIM MAY TAKE DEAD STORAGE, NEVER A VALUE LOCATION.
 //
 // Built directly rather than through a source program for the same reason as
 // the reload test above: the reclaim needs an exhausted pool and an exhausted
 // spill area at one instant, which a fixture reaches only incidentally.
-test "a gate-transport reclaim leaves nothing of the owner it abandons" {
+test "a gate-transport reclaim refuses an owned value and takes stale storage" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -17875,29 +17882,22 @@ test "a gate-transport reclaim leaves nothing of the owner it abandons" {
     // will read it back.
     const spilled: u5 = 10;
     const off: u16 = 8;
-    const abandoned: u32 = 3;
+    const owner: u32 = 3;
     try compiler.spilled_regs.put(alloc, spilled, off);
     compiler.used_regs = @splat(true);
     compiler.used_regs[spilled] = false;
-    compiler.gp_reg_owner[spilled] = abandoned;
+    compiler.gp_reg_owner[spilled] = owner;
 
+    try std.testing.expectError(error.RegisterExhausted, compiler.reclaimSpilledReg(null));
+    try std.testing.expectEqual(@as(?u16, off), compiler.spilled_regs.get(spilled));
+    try std.testing.expectEqual(@as(?u32, owner), compiler.gp_reg_owner[spilled]);
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+
+    compiler.gp_reg_owner[spilled] = null;
     const reg = try compiler.reclaimSpilledReg(null);
     try std.testing.expectEqual(spilled, reg);
     try std.testing.expect(compiler.used_regs[reg]);
     try std.testing.expect(!compiler.spilled_regs.contains(reg));
-
-    // THE ABANDONED OWNER NO LONGER NAMES THE REGISTER. `abandoned` is absent
-    // from `value_free_at`, which the sweep reads as dead at every index — the
-    // ordinary state of an owner whose reads are behind emission. With the stale
-    // owner still recorded, this sweep clears `used_regs` for a register the
-    // reclaim just handed to a live value, and the pool hands it out again.
-    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[reg]);
-    compiler.sweepGpLive(1);
-    try std.testing.expect(compiler.used_regs[reg]);
-
-    // THE SLOT IS BACK IN THE POOL. Nothing can read it — `ensureRegLive` is its
-    // only reader and the entry above is gone — so a `spillReg` that steps over
-    // it toward `gate_spill_end` refuses a spill the frame has room for.
     try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
     try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
 }
@@ -18251,12 +18251,22 @@ test "a gate-transport reclaim refuses the register the allocation excluded" {
     const held: u5 = it.next().?.key_ptr.*;
     const held_off = compiler.spilled_regs.get(held).?;
     const held_owner = compiler.gp_reg_owner[held].?;
+    var stale: u5 = 0;
+    var stale_it = compiler.spilled_regs.keyIterator();
+    while (stale_it.next()) |candidate| {
+        if (candidate.* != held) {
+            stale = candidate.*;
+            break;
+        }
+    }
+    compiler.gp_reg_owner[stale] = null;
 
     const got = try compiler.allocRegExcluding(held);
 
     // THE PROMISE. Whatever came back, it is not the register the caller named
     // as still holding a value, and it is a register the caller may write.
     try std.testing.expect(got != held);
+    try std.testing.expectEqual(stale, got);
     try std.testing.expect(compiler.used_regs[got]);
     try std.testing.expect(!compiler.spilled_regs.contains(got));
     try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[got]);
@@ -18682,23 +18692,17 @@ test "the spilled-register reclaim passes over a home and takes a temp" {
     try std.testing.expect(!compiler.used_regs[home]);
     try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
 
-    // Now a spilled TEMP beside it. The reclaim's hazard against a temp is this
-    // gap's and is unchanged; the fact under test is WHICH entry it reaches, and
-    // it must be this one no matter which the map's iteration order offers
-    // first.
+    // Now an ownerless stale spill beside it. It is dead storage rather than a
+    // value location, so it is the entry the reclaim may reach.
     const temp: u5 = 21;
     const temp_off: u16 = 24;
-    const owner: u32 = 11;
     try compiler.spilled_regs.put(alloc, temp, temp_off);
-    compiler.gp_reg_owner[temp] = owner;
     compiler.used_regs[temp] = false;
 
     const got = try compiler.reclaimSpilledReg(null);
     try std.testing.expectEqual(temp, got);
 
-    // The temp was taken the way the reclaim takes one: entry dropped, owner
-    // cleared so the sweep cannot free a register a live value now holds, slot
-    // returned, register claimed.
+    // The stale entry is dropped, its slot returned, and its register claimed.
     try std.testing.expect(!compiler.spilled_regs.contains(temp));
     try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[temp]);
     try std.testing.expect(compiler.used_regs[temp]);
@@ -18763,9 +18767,7 @@ test "the spilled-register reclaim passes over a staged argument register" {
     // The state the cascade leaves for a spilled x2, from before the staging.
     const staged: u5 = 2;
     const staged_off: u16 = 8;
-    const stale_owner: u32 = 5;
     try compiler.spilled_regs.put(alloc, staged, staged_off);
-    compiler.gp_reg_owner[staged] = stale_owner;
     compiler.used_regs[staged] = false;
 
     // And the marshaling's statement, which `mov_arg` makes right after writing
@@ -18783,18 +18785,15 @@ test "the spilled-register reclaim passes over a staged argument register" {
     // NOT in the free pool, since a released slot is a second value stored over
     // this one.
     try std.testing.expectEqual(@as(?u16, staged_off), compiler.spilled_regs.get(staged));
-    try std.testing.expectEqual(@as(?u32, stale_owner), compiler.gp_reg_owner[staged]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[staged]);
     try std.testing.expect(!compiler.used_regs[staged]);
     try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
 
-    // A spilled TEMP beside it. The reclaim's hazard against a temp is this
-    // gap's and is unchanged; the fact under test is WHICH entry it reaches,
-    // and it must be this one whichever the map's iteration order offers first.
+    // An ownerless stale spill beside it remains reclaimable whichever entry
+    // the map's iteration order offers first.
     const temp: u5 = 21;
     const temp_off: u16 = 24;
-    const owner: u32 = 11;
     try compiler.spilled_regs.put(alloc, temp, temp_off);
-    compiler.gp_reg_owner[temp] = owner;
     compiler.used_regs[temp] = false;
 
     try std.testing.expectEqual(temp, try compiler.reclaimSpilledReg(null));
@@ -18808,7 +18807,7 @@ test "the spilled-register reclaim passes over a staged argument register" {
 
     // THE SKIP IS THE STAGING FACT AND NOTHING ELSE. `emitBl` clears
     // `pending_arg_regs`, and after it the same entry in the same state is the
-    // ordinary temp the reclaim has always taken — so this is one term, not a
+    // ownerless stale entry the reclaim may take — so this is one term, not a
     // register the reclaim can no longer reach.
     compiler.pending_arg_regs = 0;
     try std.testing.expectEqual(staged, try compiler.reclaimSpilledReg(null));
@@ -18874,11 +18873,9 @@ test "the spilled-register reclaim passes over a staged variadic tail register" 
     // spilled it — the claim dropped, the value in the frame, the entry here.
     const staged: u5 = 21;
     const staged_off: u16 = 8;
-    const staged_owner: u32 = 5;
     compiler.pending_varargs[0] = .{ .reg = staged, .staged = true, .scratch = true };
     compiler.pending_vararg_count = 1;
     try compiler.spilled_regs.put(alloc, staged, staged_off);
-    compiler.gp_reg_owner[staged] = staged_owner;
     compiler.used_regs[staged] = false;
 
     // A STAGED TAIL REGISTER ALONE IS NOT A CANDIDATE. The map is non-empty and
@@ -18890,16 +18887,14 @@ test "the spilled-register reclaim passes over a staged variadic tail register" 
     // untouched — dropping the entry is what hands the register out, and
     // releasing the slot is what stores a second value over this one.
     try std.testing.expectEqual(@as(?u16, staged_off), compiler.spilled_regs.get(staged));
-    try std.testing.expectEqual(@as(?u32, staged_owner), compiler.gp_reg_owner[staged]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[staged]);
     try std.testing.expect(!compiler.used_regs[staged]);
     try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
 
-    // A spilled TEMP beside it. The reclaim's hazard against a temp is this
-    // gap's and is unchanged; the fact under test is WHICH entry it reaches,
-    // and it must be this one whichever the map's iteration order offers first.
+    // An ownerless stale spill beside it remains reclaimable whichever entry
+    // the map's iteration order offers first.
     const temp: u5 = 22;
     try compiler.spilled_regs.put(alloc, temp, 24);
-    compiler.gp_reg_owner[temp] = 11;
     compiler.used_regs[temp] = false;
 
     try std.testing.expectEqual(temp, try compiler.reclaimSpilledReg(null));
@@ -18914,18 +18909,17 @@ test "the spilled-register reclaim passes over a staged variadic tail register" 
     // A HOLE IS NOT A RESERVATION. A slot inside `pending_vararg_count` that no
     // `mov_arg` wrote is `.{}` — operand null, `reg` 0 — so reading the cleared
     // operand as "materialized" would reserve x0 for nothing. `staged` is the
-    // fact, and an ordinary spilled x0 beside a hole is still the reclaim's.
+    // fact, and an ownerless stale x0 beside a hole is still reclaimable.
     compiler.pending_varargs[1] = .{};
     compiler.pending_vararg_count = 2;
     try compiler.spilled_regs.put(alloc, 0, 40);
-    compiler.gp_reg_owner[0] = 13;
     compiler.used_regs[0] = false;
     try std.testing.expectEqual(@as(u5, 0), try compiler.reclaimSpilledReg(null));
     try std.testing.expect(!compiler.spilled_regs.contains(0));
 
     // THE SKIP IS THE STAGING FACT AND NOTHING ELSE. `emitPopVarargs` clears
-    // the tail, and after it the same entry in the same state is the ordinary
-    // temp the reclaim has always taken — so this is one term, not a register
+    // the tail, and after it the same entry in the same state is ownerless stale
+    // storage the reclaim may take — so this is one term, not a register
     // the reclaim can no longer reach.
     compiler.pending_varargs[0] = .{};
     compiler.pending_vararg_count = 0;
@@ -19173,23 +19167,17 @@ test "the spilled-register reclaim passes over a pinned parameter and takes a te
     try std.testing.expect(!compiler.used_regs[arg_reg]);
     try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
 
-    // Now a spilled TEMP beside it. The reclaim's hazard against a temp is this
-    // gap's and is unchanged; the fact under test is WHICH entry it reaches, and
-    // it must be this one no matter which the map's iteration order offers
-    // first.
+    // Now an ownerless stale spill beside it. It is dead storage rather than a
+    // value location, so it is the entry the reclaim may reach.
     const temp: u5 = 21;
     const temp_off: u16 = 24;
-    const owner: u32 = 11;
     try compiler.spilled_regs.put(alloc, temp, temp_off);
-    compiler.gp_reg_owner[temp] = owner;
     compiler.used_regs[temp] = false;
 
     const got = try compiler.reclaimSpilledReg(null);
     try std.testing.expectEqual(temp, got);
 
-    // The temp was taken the way the reclaim takes one: entry dropped, owner
-    // cleared so the sweep cannot free a register a live value now holds, slot
-    // returned, register claimed.
+    // The stale entry is dropped, its slot returned, and its register claimed.
     try std.testing.expect(!compiler.spilled_regs.contains(temp));
     try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[temp]);
     try std.testing.expect(compiler.used_regs[temp]);
@@ -19204,12 +19192,11 @@ test "the spilled-register reclaim passes over a pinned parameter and takes a te
 
     // A PIN THAT NAMES ANOTHER REGISTER IS NOT THIS ONE. `regIsPinned` walks the
     // map's values, so the question is the register and not the presence of a
-    // pin map: an unpinned spilled temp beside a pinned one is still the
-    // reclaim's, and it is reached before the entry the skip protects.
+    // pin map: an unpinned ownerless stale spill beside a pinned one is still
+    // reclaimable, and it is reached before the entry the skip protects.
     const other: u5 = 22;
     const other_off: u16 = 32;
     try compiler.spilled_regs.put(alloc, other, other_off);
-    compiler.gp_reg_owner[other] = owner + 1;
     compiler.used_regs[other] = false;
 
     try std.testing.expectEqual(other, try compiler.reclaimSpilledReg(null));
@@ -19217,7 +19204,7 @@ test "the spilled-register reclaim passes over a pinned parameter and takes a te
 
     // AND WITH NO PIN MAP THERE IS NO PIN — which `eval_pinned` is outside a
     // function body. The identical entry in the identical state is then the
-    // ordinary register the reclaim has always taken, so the skip is one term
+    // ownerless stale register the reclaim may take, so the skip is one term
     // and not an entry the reclaim can no longer reach.
     compiler.eval_pinned = null;
     try std.testing.expectEqual(arg_reg, try compiler.reclaimSpilledReg(null));
