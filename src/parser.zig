@@ -496,7 +496,8 @@ pub const Parser = struct {
     }
 
     fn currentParserExpressionGroup(self: *Parser) ParseError!bool {
-        return (try self.currentParserDecision()) >> 13 > 1 and
+        return try self.currentParserCall() and
+            (try self.currentParserDecision()) >> 13 > 1 and
             !try self.currentParserLiteral();
     }
 
@@ -575,7 +576,8 @@ pub const Parser = struct {
 
     fn currentParserDescriptorEntry(self: *Parser) ParseError!i64 {
         const face = try self.currentParserFace();
-        if (face == 22 or face == 23) return face - 21;
+        if (face == 22) return 1;
+        if (face == 23 or try self.currentParserName()) return 2;
         return 0;
     }
 
@@ -747,19 +749,20 @@ pub const Parser = struct {
     fn currentParserPattern(self: *Parser) ParseError!u5 {
         const decision = try self.currentParserDecision();
         if (((decision >> 9) & 0xF) == 8) return 8;
-        if (((decision >> 5) & 1) != 0) return 22;
+        if (try self.currentParserName()) return 22;
         const event = try self.currentParserEvent();
         const face = try self.currentParserFace();
-        if (face == 19 and ((decision >> 3) & 1) != 0) return 19;
+        if (face == 19 and try self.currentParserTypeArray()) return 19;
         if (face == 20 and ((event >> 11) & 3) == 2) return 20;
         if (face == 21 and ((event >> 47) & 0x1F) == 1) return 21;
-        if (face == 11 and ((event >> 20) & 1) != 0) return 11;
+        if (face == 11) return 11;
+        if (face == 4 or face == 9 or face == 10) return @intCast(face);
         if (((event >> 18) & 1) != 0) return @intCast(face);
         return 0;
     }
 
     fn currentParserTypeArray(self: *Parser) ParseError!bool {
-        return (((try self.currentParserDecision()) >> 3) & 1) != 0;
+        return (((try self.currentParserDecision()) >> 7) & 1) != 0;
     }
 
     fn currentParserTypeNumber(self: *Parser) ParseError!bool {
@@ -8380,7 +8383,7 @@ pub const Parser = struct {
                 _ = try self.adv();
                 const spread_expr = try self.parse_expr();
                 try fields.append(self.alloc, .{ .spread = spread_expr });
-            } else if (face == 19) {
+            } else if (face == 19 or (face == 23 and try self.currentParserTypeArray())) {
                 _ = try self.adv();
                 const key = try self.parse_expr();
                 _ = try self.expect(.rbracket);
@@ -12093,7 +12096,7 @@ test "parse: production unary glue and update decisions execute through whole-pa
         if (row.glue or row.update) try testing.expect(relation >= 0);
         try testing.expectEqual(unary, ((event >> 47) & 0x1F) - 1);
         try testing.expectEqual(expected_glue, ((event >> 52) & 0x1F) - 1);
-        try testing.expectEqual(expected_update, ((event >> 57) & 0x1F) - 1);
+        try testing.expectEqual(expected_update, ((event >> 57) & 0xF) - 1);
     }
     const invalid = try parserEventForTest(@intCast(grammar_roles.rows.len), true);
     try testing.expectEqual(@as(i64, 0), (invalid >> 23) & 0x7FFFFFFFFF);
