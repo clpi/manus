@@ -56,6 +56,7 @@ require_file "$AUTHORITY_PROJECTION" authority-compiler-projection
 require_file "$RESEARCH_MANIFEST" pass2-manifest
 require_file "$RESEARCH_ARCHIVE" pass2-archive
 
+research_manifest_valid=false
 if ! command -v python3 >/dev/null 2>&1; then
     bad 'python3 is required for duplicate-safe authority manifest validation'
 elif ! python3 - "$AUTHORITY_JSON" "$RESEARCH_MANIFEST" "$AUTHORITY_PROJECTION" <<'PY'
@@ -166,6 +167,9 @@ try:
     need(research.get("archive_bytes") == 88492, "research archive byte count")
     integrity = research.get("archive_integrity", {})
     need(integrity.get("status") in {"complete", "corrupt"}, "research archive integrity status")
+    if integrity["status"] == "complete":
+        need(integrity.get("observed_sha256") == research["archive_sha256"], "complete archive observed digest")
+        need(integrity.get("observed_bytes") == research["archive_bytes"], "complete archive observed bytes")
     if integrity["status"] == "corrupt":
         need(integrity.get("observed_sha256") == "0ac4b3a198a45f51ec6e3f3387977ecf9e964663ce6652dca499da4e99e9f139", "corrupt archive observed digest")
         need(integrity.get("observed_bytes") == 15008, "corrupt archive observed bytes")
@@ -206,13 +210,18 @@ try:
     need(projected_research.get("path") == "research/archive/pass-2", "authority research path")
     need(projected_research.get("archive_sha256") == research["archive_sha256"], "authority research digest")
     need(projected_research.get("files") == len(files), "authority research file count")
-    need(projected_research.get("archive_integrity") == "corrupt; recovery requires the 25 original inputs", "authority research integrity")
+    integrity_label = ("complete; exact archive and all original inputs verified"
+                       if integrity["status"] == "complete"
+                       else "corrupt; recovery requires the 25 original inputs")
+    need(projected_research.get("archive_integrity") == integrity_label, "authority research integrity")
 except Exception as exc:
     print(f"authority manifest validation: {exc}", file=sys.stderr)
     raise SystemExit(1)
 PY
 then
     bad 'authority or research manifest is malformed, duplicated, incomplete, or inconsistent'
+else
+    research_manifest_valid=true
 fi
 
 GAP134="$ROOT/gaps/GAP-134.md"
@@ -369,16 +378,38 @@ if [ -e "$ROOT/.agents/SESSION_STATE.md" ]; then
     bad '.agents/SESSION_STATE.md is ephemeral state masquerading as durable authority'
 fi
 
-if [ -r "$RESEARCH_ARCHIVE" ]; then
-    archive_observation=$(python3 - "$RESEARCH_MANIFEST" "$RESEARCH_ARCHIVE" <<'PY'
+if [ -r "$RESEARCH_ARCHIVE" ] && [ "$research_manifest_valid" = true ]; then
+    archive_observation=$(python3 - "$RESEARCH_MANIFEST" "$RESEARCH_ARCHIVE" "$ROOT/tools/node/dev/rebuild-pass2-archive.sh" <<'PY'
 import hashlib
 import gzip
 import json
+import os
+from pathlib import Path
+import subprocess
 import sys
 import tarfile
+import tempfile
 import zlib
 
 manifest = json.load(open(sys.argv[1]))
+
+def source_name(value):
+    return (isinstance(value, str) and value not in {"", ".", ".."}
+            and "/" not in value and "\\" not in value and "\x00" not in value)
+
+if not source_name("2.19-Semantic Reconciliation (all).txt"):
+    raise SystemExit("archive source-name positive control failed")
+for damaged in ("", ".", "..", "/outside", "../outside", "nested/outside",
+                "nested\\outside", "\x00", None, 7):
+    if source_name(damaged):
+        raise SystemExit("archive source-name damage control failed")
+# Recheck at the use boundary: a prior validator or a changed manifest must
+# never make the temporary recovery fixture write a path chosen by an input.
+if manifest.get("archive") != "pass-2-source.tar.gz":
+    raise SystemExit("unsafe archive filename")
+names = [row["name"] for row in manifest["files"]]
+if not all(source_name(name) for name in names) or len(names) != len(set(names)):
+    raise SystemExit("unsafe or duplicate archive source filename")
 
 def classify(status, size, digest, gzip_complete, expected_size, expected_digest,
              observed_size=None, observed_digest=None):
@@ -408,6 +439,9 @@ for damaged in (
     ("corrupt", 3, "c", False, 8, "a", 3, "b"),
     ("corrupt", 3, "b", True, 8, "a", 3, "b"),
     ("complete", 3, "b", False, 8, "a", None, None),
+    ("complete", 8, "a", False, 8, "a", None, None),
+    ("complete", 8, "b", True, 8, "a", None, None),
+    ("complete", 9, "a", True, 8, "a", None, None),
     ("unknown", 8, "a", True, 8, "a", None, None),
 ):
     try:
@@ -449,6 +483,7 @@ if state == "preserved-corrupt":
     raise SystemExit(2)
 
 expected = {row["name"]: row for row in manifest["files"]}
+contents = {}
 try:
     with tarfile.open(archive_path, "r:gz") as archive:
         members = archive.getmembers()
@@ -463,15 +498,99 @@ try:
             if member.size != row["bytes"]:
                 raise ValueError(f"archive member bytes: {member.name}")
             stream = archive.extractfile(member)
-            if stream is None or hashlib.sha256(stream.read()).hexdigest() != row["sha256"]:
+            data = stream.read() if stream is not None else None
+            if data is None or hashlib.sha256(data).hexdigest() != row["sha256"]:
                 raise ValueError(f"archive member digest: {member.name}")
+            contents[member.name] = data
         if seen != set(expected):
             raise ValueError("archive member roster")
 except (OSError, tarfile.TarError, ValueError) as exc:
     print(exc)
     raise SystemExit(1)
 
-print(f"complete archive {len(raw)} bytes sha256={digest}")
+# Exercise the actual recovery boundary with original members in an isolated
+# fixture. Refused input must never overwrite the last verified container.
+with tempfile.TemporaryDirectory(prefix="idol-authority-") as directory:
+    root = Path(directory)
+    helper = root / "tools/node/dev/rebuild-pass2-archive.sh"
+    helper.parent.mkdir(parents=True)
+    helper.write_bytes(Path(sys.argv[3]).read_bytes())
+    record = root / "research/archive/pass-2/manifest.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(json.dumps(manifest))
+    target = record.parent / "pass-2-source.tar.gz"
+    previous = b"prior archive must survive refused or check-only recovery"
+    target.write_bytes(previous)
+    source = root / "sources"
+    source.mkdir()
+    for name, data in contents.items():
+        path = source / name
+        path.write_bytes(data)
+        path.chmod(0o600)
+        os.utime(path, (123, 456))
+
+    def rebuild(success, *options):
+        before = target.read_bytes()
+        result = subprocess.run(["sh", str(helper), *options, str(source)],
+                                capture_output=True, text=True, timeout=15)
+        if (result.returncode == 0) != success:
+            raise ValueError(f"recovery outcome control: {result.stderr.strip()}")
+        if (not success or "--check" in options) and target.read_bytes() != before:
+            raise ValueError("refused/check-only recovery replaced the prior archive")
+
+    rebuild(True, "--check")
+    rebuild(True)
+    if target.read_bytes() != raw:
+        raise ValueError("recovery failed exact container reproducibility")
+    name = next(iter(contents))
+    path = source / name
+    path.unlink()
+    rebuild(False)
+    path.write_bytes(contents[name] + b"damage")
+    rebuild(False)
+    path.write_bytes(contents[name])
+    damaged = json.loads(json.dumps(manifest))
+    damaged["files"][0]["bytes"] += 1
+    record.write_text(json.dumps(damaged))
+    rebuild(False)
+    damaged = json.loads(json.dumps(manifest))
+    damaged["archive_sha256"] = "0" * 64
+    record.write_text(json.dumps(damaged))
+    rebuild(False)
+    record.write_text('{"files":[],' + json.dumps(manifest)[1:])
+    rebuild(False)
+    damaged = json.loads(json.dumps(manifest))
+    damaged["files"][0]["name"] = "../outside"
+    record.write_text(json.dumps(damaged))
+    rebuild(False)
+    if list(target.parent.glob(".pass2-*")):
+        raise ValueError("recovery left unpublished temporary output")
+
+    # A failed first manifest validator must not enter the later recovery
+    # fixture. This forged absolute archive name previously escaped that fixture.
+    forged = root / "forged"
+    escaped = root / "must-not-be-written"
+    actual_root = Path(sys.argv[3]).parents[3]
+    for name in ("docs/spec/AUTHORITY.json", "src/authority_projection.zig",
+                 "tools/node/dev/rebuild-pass2-archive.sh"):
+        copy = forged / name
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        copy.write_bytes((actual_root / name).read_bytes())
+    forged_record = forged / "research/archive/pass-2/manifest.json"
+    forged_record.parent.mkdir(parents=True)
+    damaged = json.loads(json.dumps(manifest))
+    damaged["archive"] = str(escaped)
+    forged_record.write_text(json.dumps(damaged))
+    (forged_record.parent / "pass-2-source.tar.gz").write_bytes(raw)
+    environment = dict(os.environ, AUTHORITY_ROOT=str(forged))
+    environment.pop("IDOL", None)
+    refused = subprocess.run(["sh", str(actual_root / "gate/authority.sh")],
+                             env=environment, capture_output=True, text=True, timeout=15)
+    if (refused.returncode == 0 or escaped.exists()
+            or "research archive path" not in refused.stderr):
+        raise ValueError("invalid manifest escaped the recovery fixture")
+
+print(f"complete archive {len(raw)} bytes sha256={digest}; recovery controls pass")
 PY
     )
     archive_rc=$?

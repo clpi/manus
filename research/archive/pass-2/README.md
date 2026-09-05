@@ -14,34 +14,29 @@ This directory preserves the complete 25-file Pass 2 research corpus supplied to
 
 `manifest.json` records every original filename, byte count, SHA-256 digest, and disposition. `pass-2-source.tar.gz` is deterministic and contains the original files with their original filenames and exact bytes.
 
-**Current status (2026-08-20):** the committed `pass-2-source.tar.gz` is **corrupt** (truncated gzip, 15,008 bytes; `gzip -t` fails). The blob has been corrupt since commit `e4d45bed`; the 25 source `.txt` files were never stored outside the archive in git history. `manifest.json` still records the expected archive digest `e66fe6cd…` (88,492 bytes).
+The archive is complete. Recovery from the original project inputs reproduced
+the exact container identity already pinned in manifest.json, including both
+names of the duplicate source. The former truncated blob remains in Git history;
+it is never accepted as a complete corpus.
 
-The intact bytes are not recoverable from this repository, and that is a
-measurement rather than an inference — do not repeat the search, run it:
+The authority gate checks the compressed identity, complete gzip stream, exact
+member roster and every member's bytes. Its complete/corrupt classifier retains
+positive and damaged-input controls. Archive acceptance is research integrity,
+not compiler, self-host or performance acceptance.
 
-```sh
-# every branch that carries the file, by blob size: all one corrupt size
-for b in $(git branch -r --format='%(refname:short)' | grep -v HEAD); do
-    git cat-file -s "$b:research/archive/pass-2/pass-2-source.tar.gz" 2>/dev/null
-done | sort -u
-# any blob of the complete size anywhere in the object database: none
-git cat-file --batch-all-objects --batch-check | awk '$2=="blob" && $3==88492'
-```
+To verify reproducibility or restore the container from original files on disk:
 
-So `gate/authority.sh` is red on data that is gone, not on a regression, and
-it stays red until the 25 original inputs arrive from outside the repository.
-Its refusal is correct and must not be relaxed to admit the corrupt archive:
-the manifest already pins the corrupt identity exactly so that a DIFFERENT
-corruption cannot pass as this one.
+    ./tools/node/dev/rebuild-pass2-archive.sh --check /path/to/pass-2/sources
+    ./tools/node/dev/rebuild-pass2-archive.sh /path/to/pass-2/sources
+    sh gate/authority.sh
 
-To restore integrity when you have the original files on disk:
-
-```sh
-./tools/node/dev/rebuild-pass2-archive.sh /path/to/pass-2/sources
-sh gate/authority.sh
-```
-
-The rebuild script verifies every per-file SHA-256 from `manifest.json` before writing the tarball.
+The rebuild script verifies each source's name, byte count and SHA-256, then
+creates deterministic USTAR and gzip bytes with fixed metadata. It validates the
+complete container against the manifest before atomically replacing the archive.
+Missing or damaged input, duplicate manifest keys and a container mismatch leave
+the prior archive unchanged. The --check option performs the same verification
+without writing. The authority gate exercises successful rebuilding and those
+refusal paths in an isolated temporary fixture.
 
 ## Integration rule
 

@@ -18,10 +18,10 @@
   "archive_sha256": "e66fe6cd2470eb7ce73a82ed0f758b84044715c4a8102e55e95b61435e32ed78",
   "archive_bytes": 88492,
   "archive_integrity": {
-    "status": "corrupt",
-    "observed_sha256": "0ac4b3a198a45f51ec6e3f3387977ecf9e964663ce6652dca499da4e99e9f139",
-    "observed_bytes": 15008,
-    "recovery": "supply all 25 original files to tools/node/dev/rebuild-pass2-archive.sh; no complete corpus exists in Git ancestry"
+    "status": "complete",
+    "observed_sha256": "e66fe6cd2470eb7ce73a82ed0f758b84044715c4a8102e55e95b61435e32ed78",
+    "observed_bytes": 88492,
+    "recovery": "Original inputs reproduced the exact expected USTAR/gzip container; the formerly truncated blob remains in Git history."
   },
   "files": [
     {
