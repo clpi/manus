@@ -4353,6 +4353,27 @@ test "wasm backend preserves values from multi-statement conditional arms" {
             ,
             .want = 7,
         },
+        .{
+            .source =
+            \\f: i64 = (n: i64)
+            \\    if n < 0
+            \\        1
+            \\    else if n > 10
+            \\        2
+            \\    else if n > 0
+            \\        k = 1
+            \\        if k > 2
+            \\            1
+            \\        else
+            \\            m = 7
+            \\            m
+            \\    else
+            \\        0
+            \\main: i64 = ()
+            \\    f(1)
+            ,
+            .want = 7,
+        },
     };
 
     for (rows) |row| {
