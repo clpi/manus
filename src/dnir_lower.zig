@@ -18595,11 +18595,8 @@ test "dnir_lower: module positional integer tables require graph facts" {
 /// the shared `moduleConstTableKindGraph` verdict admits. This rig measures
 /// that contract at the exact map the fallback reads.
 ///
-/// Parser-independent by necessity: at this head no positional LITERAL
-/// parses (358ca074), so the skeletons bind positional NAMES (which parse)
-/// and the rig grafts literal elements onto the `strs` binding before sema.
-/// The grafted nodes are shape-identical to parsed literals, so the producer
-/// publishes the same facts for them.
+/// The source is parsed without a graft: the positional text elements must
+/// reach sema, graph lift, the shared verdict and collection as one chain.
 const Gap204ConstIndex = struct {
     mod: ast.Module,
     graph: semantic_graph.SemanticGraph,
@@ -18613,7 +18610,6 @@ fn gap204CollectConstIndex(alloc: std.mem.Allocator, src: []const u8) !Gap204Con
     var parser = @import("parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
-    // Graft literal elements onto the parsable `{ a, b }` skeleton.
     var table: ?*const Expr = null;
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .global_decl) continue;
@@ -18625,13 +18621,8 @@ fn gap204CollectConstIndex(alloc: std.mem.Allocator, src: []const u8) !Gap204Con
         if (fields.len != 2) continue;
         const first = if (fields[0] == .positional) fields[0].positional else continue;
         const second = if (fields[1] == .positional) fields[1].positional else continue;
-        if (first.* != .name or second.* != .name) continue;
-        const alpha = try alloc.create(Expr);
-        alpha.* = .{ .quoted = .{ .loc = first.loc(), .val = "alpha", .quote = .text } };
-        const beta = try alloc.create(Expr);
-        beta.* = .{ .quoted = .{ .loc = second.loc(), .val = "beta", .quote = .text } };
-        fields[0].positional = alpha;
-        fields[1].positional = beta;
+        if (first.* != .quoted or second.* != .quoted) continue;
+        if (first.quoted.quote != .text or second.quoted.quote != .text) continue;
         table = gd.inits[0];
     }
     const bound = table orelse return error.Gap204StrsTableMissing;
@@ -18693,9 +18684,7 @@ test "dnir_lower: GAP-204 constant-index read answers recorded text, refuses wri
     defer arena.deinit();
     const alloc = arena.allocator();
     const clean_src =
-        \\a = "alpha"
-        \\b = "beta"
-        \\global strs = { a, b }
+        \\global strs = { "alpha", "beta" }
         \\main: i64 = ()
         \\    0
     ;
@@ -18729,9 +18718,7 @@ test "dnir_lower: GAP-204 constant-index read answers recorded text, refuses wri
     // answering the original element.
     {
         const write_src =
-            \\a = "alpha"
-            \\b = "beta"
-            \\global strs = { a, b }
+            \\global strs = { "alpha", "beta" }
             \\strs[1] = "changed"
             \\main: i64 = ()
             \\    0
@@ -18750,12 +18737,8 @@ test "dnir_lower: GAP-204 constant-index read answers recorded text, refuses wri
     // refuses rather than answering either generation's element.
     {
         const rebound_src =
-            \\a = "alpha"
-            \\b = "beta"
-            \\c = "x"
-            \\d = "y"
-            \\global strs = { a, b }
-            \\strs = { c, d }
+            \\global strs = { "alpha", "beta" }
+            \\strs = { "x", "y" }
             \\main: i64 = ()
             \\    0
         ;
@@ -18775,9 +18758,7 @@ test "dnir_lower: GAP-204 out-of-range constant index refuses the admitted text 
     defer arena.deinit();
     const alloc = arena.allocator();
     const clean_src =
-        \\a = "alpha"
-        \\b = "beta"
-        \\global strs = { a, b }
+        \\global strs = { "alpha", "beta" }
         \\main: i64 = ()
         \\    0
     ;
@@ -19326,9 +19307,8 @@ test "dnir_lower: GAP-221 a module field base is unresolvable from a relation bo
 ///   - the range decision survives, because the chain's out-of-range answer is
 ///     the zero it initialized, marked as text.
 ///
-/// Parser-independent for the same reason the constant-index rig is: no
-/// positional literal parses at this head, so the skeleton binds positional
-/// NAMES and `gap204CollectConstIndex` grafts the literals before sema.
+/// `gap204CollectConstIndex` parses the positional text elements directly, so
+/// this also pins the complete source-to-runtime-index lowering chain.
 const Gap204DynRead = struct {
     /// The lowered read, or null when lowering refused it.
     value: ?dnir.Value,
@@ -19391,6 +19371,11 @@ fn gap204DynRead(alloc: std.mem.Allocator, src: []const u8, static_plan: bool) !
         .module_consts = &rig.consts,
     };
     defer ctx.deinit();
+    // `lowerModuleFromGraph` binds the table name before lowering a function
+    // that reads it. This focused consumer rig enters below that binder, so
+    // publish the same occupied slot; the module elements themselves remain
+    // the constants collected from the parsed source above.
+    try ctx.locals.put(alloc, try alloc.dupe(u8, "strs"), ctx.freshTemp());
     const expr_is_str = exprIsStr(&ctx, &read);
     const value: ?dnir.Value = lowerExprCons(&ctx, &read, .single) catch null;
 
@@ -19426,9 +19411,7 @@ test "dnir_lower: GAP-204 the runtime-index select chain selects recorded text a
     // extent.
     {
         const rig = try gap204DynRead(alloc,
-            \\a = "alpha"
-            \\b = "beta"
-            \\global strs = { a, b }
+            \\global strs = { "alpha", "beta" }
             \\i = 2
             \\main: i64 = ()
             \\    stdout:write(strs[i])
@@ -19446,9 +19429,7 @@ test "dnir_lower: GAP-204 the runtime-index select chain selects recorded text a
         // Determinism: an independent collection and an independent lowering
         // select the same elements in the same order, so no run answers stale.
         const again = try gap204DynRead(alloc,
-            \\a = "alpha"
-            \\b = "beta"
-            \\global strs = { a, b }
+            \\global strs = { "alpha", "beta" }
             \\i = 2
             \\main: i64 = ()
             \\    stdout:write(strs[i])
@@ -19475,9 +19456,7 @@ test "dnir_lower: GAP-204 the runtime-index select chain selects recorded text a
     // not import the enforcement selector to build the fact it consumes.
     {
         const rig = try gap204DynRead(alloc,
-            \\a = "alpha"
-            \\b = "beta"
-            \\global strs = { a, b }
+            \\global strs = { "alpha", "beta" }
             \\i = 2
             \\main: i64 = ()
             \\    0
@@ -19494,9 +19473,7 @@ test "dnir_lower: GAP-204 the runtime-index select chain selects recorded text a
     // the plan's absence happened to produce.
     {
         const rig = try gap204DynRead(alloc,
-            \\a = "alpha"
-            \\b = "beta"
-            \\global strs = { a, b }
+            \\global strs = { "alpha", "beta" }
             \\strs[1] = "changed"
             \\i = 2
             \\main: i64 = ()
@@ -19514,12 +19491,8 @@ test "dnir_lower: GAP-204 the runtime-index select chain selects recorded text a
     // either one.
     {
         const rig = try gap204DynRead(alloc,
-            \\a = "alpha"
-            \\b = "beta"
-            \\c = "x"
-            \\d = "y"
-            \\global strs = { a, b }
-            \\strs = { c, d }
+            \\global strs = { "alpha", "beta" }
+            \\strs = { "x", "y" }
             \\i = 2
             \\main: i64 = ()
             \\    stdout:write(strs[i])
