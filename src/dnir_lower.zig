@@ -9864,13 +9864,11 @@ fn lowerIndexAssignTarget(
 /// A genuinely dynamic, growable table still needs base-pointer addressing;
 /// this handles the fixed-length case, which is what fits in registers.
 fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const ast.Expr) Error!dnir.Value {
-    const table_slot = ctx.locals.get(table_name) orelse return bail(ctx.diagnostic, @src());
-
     // HASH-TABLE LOAD. `t = {}` lookup, mirroring `lowerIndexAssignTarget`'s
     // store branch: register `duo_hash_load(t, key_str)` and read its i64
     // return. Missing keys return 0, which `.nil` also lowers to, so the
     // `t[k] != nil` check shape used by the agreement test stays honest.
-    if (ctx.hash_slots.contains(table_slot)) {
+    if (ctx.locals.get(table_name)) |table_slot| if (ctx.hash_slots.contains(table_slot)) {
         try ensureExtern(ctx, "table", "load", "duo_hash_load");
         const key_val = try lowerExpr(ctx, key_expr);
         const out_slot = ctx.freshTemp();
@@ -9878,7 +9876,7 @@ fn lowerDynamicIndex(ctx: *LowerCtx, table_name: []const u8, key_expr: *const as
         try ctx.emit(.{ .op = .mov_arg, .result = 1, .lhs = key_val });
         try ctx.emit(.{ .op = .call_extern, .result = out_slot, .callee = "duo_hash_load", .ty = .any });
         return .{ .local = out_slot };
-    }
+    };
 
     const len_key = try std.fmt.allocPrint(ctx.alloc, "{s}.len", .{table_name});
     defer ctx.alloc.free(len_key);
@@ -19371,11 +19369,6 @@ fn gap204DynRead(alloc: std.mem.Allocator, src: []const u8, static_plan: bool) !
         .module_consts = &rig.consts,
     };
     defer ctx.deinit();
-    // `lowerModuleFromGraph` binds the table name before lowering a function
-    // that reads it. This focused consumer rig enters below that binder, so
-    // publish the same occupied slot; the module elements themselves remain
-    // the constants collected from the parsed source above.
-    try ctx.locals.put(alloc, try alloc.dupe(u8, "strs"), ctx.freshTemp());
     const expr_is_str = exprIsStr(&ctx, &read);
     const value: ?dnir.Value = lowerExprCons(&ctx, &read, .single) catch null;
 
@@ -19503,4 +19496,54 @@ test "dnir_lower: GAP-204 the runtime-index select chain selects recorded text a
         try std.testing.expectEqual(@as(?i64, null), rig.trap_len);
         try std.testing.expectEqual(@as(usize, 0), rig.selected.len);
     }
+}
+
+test "dnir_lower: GAP-204 module lowering carries a positional text read into the relation" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const source =
+        \\global strs = { "alpha", "beta", "gamma" }
+        \\i = 2
+        \\main: i64 = ()
+        \\    stdout:write(strs[i])
+        \\    0
+    ;
+    var lexer = @import("lexer.zig").Lexer.init(source, "gap204_module.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, module.file);
+
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+
+    var relation: ?*const dnir.Function = null;
+    for (lowered.functions) |*function| {
+        if (std.mem.eql(u8, function.name, "main")) relation = function;
+    }
+    const main = relation orelse return error.TestExpectedEqual;
+    var extent: ?i64 = null;
+    var selected: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (main.blocks) |block| {
+        for (block.instrs) |instruction| {
+            if (instruction.op == .hw_unary and
+                std.mem.eql(u8, instruction.field, index_bounds_tag))
+                extent = instruction.rhs.i64;
+            if (instruction.op == .store_local and instruction.lhs == .str)
+                try selected.append(alloc, instruction.lhs.str);
+        }
+    }
+    try std.testing.expectEqual(@as(?i64, 3), extent);
+    try std.testing.expectEqual(@as(usize, 3), selected.items.len);
+    try std.testing.expectEqualStrings("alpha", selected.items[0]);
+    try std.testing.expectEqualStrings("beta", selected.items[1]);
+    try std.testing.expectEqualStrings("gamma", selected.items[2]);
 }
