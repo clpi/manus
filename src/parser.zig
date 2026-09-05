@@ -3923,7 +3923,7 @@ pub const Parser = struct {
         var names: std.ArrayList(ast.LocalName) = .empty;
         errdefer names.deinit(self.alloc);
         while (true) {
-            if ((try self.pk()).kind != .name) return null;
+            if (!try self.currentParserName()) return null;
             const nm = try self.adv();
             try names.append(self.alloc, .{
                 .ident = nm.text,

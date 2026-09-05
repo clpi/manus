@@ -3096,6 +3096,28 @@ fi
 
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
+# Correlated if-pack binding admission consumes the ordinary-name face already
+# carried by the immutable event pack. Zig retains spelling, comma traversal,
+# assignment recognition, cursor restoration, and statement materialization.
+if_pack_binding_kinds=$(sed -n '/fn parse_if_pack_binding/,/fn parse_if(self:/p' "$PARSER" | \
+    grep -cF '(try self.pk()).kind != .name' || true)
+if [ "$if_pack_binding_kinds" -ne 0 ]; then
+    bad "if-pack binding retained host name recognition: count=$if_pack_binding_kinds"
+fi
+has "$PARSER" 'if (!try self.currentParserName()) return null;' \
+    'if-pack binding bypasses the settled ordinary-name face'
+
+if_pack_binding_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate if-pack-binding scratch' >&2; exit 2; }
+printf '%s\n' 'if ((try self.pk()).kind != .name) return null;' >"$if_pack_binding_probe/old.zig"
+printf '%s\n' 'if (!try self.currentParserName()) return null;' >"$if_pack_binding_probe/new.zig"
+if_pack_binding_old=$(grep -cF '(try self.pk()).kind != .name' "$if_pack_binding_probe/old.zig")
+if_pack_binding_new=$(grep -cF 'try self.currentParserName()' "$if_pack_binding_probe/new.zig")
+rm -rf -- "$if_pack_binding_probe"
+examined=$((examined + 1))
+if [ "$if_pack_binding_old" -ne 1 ] || [ "$if_pack_binding_new" -ne 1 ]; then
+    bad "the if-pack-binding detector is broken: old=$if_pack_binding_old new=$if_pack_binding_new"
+fi
+
 # Catch-binding admission consumes the exact ordinary-name face already carried
 # by the immutable event pack. The host retains binding spelling and catch-body
 # materialization, but no longer re-reads `.name` after `catch`.
