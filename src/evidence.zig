@@ -166,6 +166,7 @@ pub const FrontierError = error{
     MissingEvidenceRevision,
     MissingEquivalence,
     MissingRawEvidence,
+    MissingIntegration,
     MissingMeasurement,
     MissingCompilerB,
     MissingDimensions,
@@ -307,6 +308,7 @@ pub const OracleFrontierDimension = struct {
 /// Each dimension owns its comparator envelope because different systems can
 /// establish the frontier for runtime, memory, artifact size, or another cost.
 pub const OracleFrontierCase = struct {
+    integration: FrontierDeclaration,
     measurement: FrontierDeclaration,
     compiler_b: FrontierDeclaration,
     subject_revision: []const u8,
@@ -318,6 +320,7 @@ pub const OracleFrontierCase = struct {
     context: ?FrontierContext = null,
 
     pub fn status(self: OracleFrontierCase) FrontierError!FrontierStatus {
+        if (self.integration == .absent) return error.MissingIntegration;
         if (self.measurement == .absent) return error.MissingMeasurement;
         if (self.compiler_b == .absent) return error.MissingCompilerB;
         if (self.subject_revision.len == 0) return error.MissingSubjectRevision;
@@ -1189,6 +1192,7 @@ test "oracle frontier case binds the complete comparison to its measured subject
         .cause = .wrong_algorithm,
     }};
     const measurement = OracleFrontierCase{
+        .integration = .present,
         .measurement = .present,
         .compiler_b = .present,
         .subject_revision = "candidate-revision",
@@ -1218,6 +1222,7 @@ test "oracle frontier case refuses an unbound measurement envelope" {
         .improvable = true,
     }};
     const measurement = OracleFrontierCase{
+        .integration = .present,
         .measurement = .present,
         .compiler_b = .present,
         .subject_revision = "candidate-revision",
@@ -1239,6 +1244,7 @@ test "oracle frontier case refuses an unbound measurement envelope" {
 
 test "oracle frontier case refuses an absent measurement declaration" {
     const measurement = OracleFrontierCase{
+        .integration = .present,
         .measurement = .absent,
         .compiler_b = .present,
         .subject_revision = "candidate-revision",
@@ -1255,6 +1261,7 @@ test "oracle frontier case refuses an absent measurement declaration" {
 
 test "oracle frontier case refuses an absent compiler b declaration" {
     const measurement = OracleFrontierCase{
+        .integration = .present,
         .measurement = .present,
         .compiler_b = .absent,
         .subject_revision = "candidate-revision",
@@ -1267,6 +1274,23 @@ test "oracle frontier case refuses an absent compiler b declaration" {
     };
 
     try std.testing.expectError(error.MissingCompilerB, measurement.status());
+}
+
+test "oracle frontier case refuses an absent integration declaration" {
+    const measurement = OracleFrontierCase{
+        .integration = .absent,
+        .measurement = .present,
+        .compiler_b = .present,
+        .subject_revision = "candidate-revision",
+        .evidence_revision = "evidence-revision",
+        .equivalence = "evidence/equivalence.json",
+        .raw_evidence = "evidence/runtime.json",
+        .required_dimensions = &.{"runtime"},
+        .dimensions = &.{},
+        .context = null,
+    };
+
+    try std.testing.expectError(error.MissingIntegration, measurement.status());
 }
 
 test "oracle frontier case refuses an incomplete dimension envelope" {
@@ -1288,6 +1312,7 @@ test "oracle frontier case refuses an incomplete dimension envelope" {
         .improvable = true,
     }};
     const measurement = OracleFrontierCase{
+        .integration = .present,
         .measurement = .present,
         .compiler_b = .present,
         .subject_revision = "candidate-revision",
@@ -1336,6 +1361,7 @@ test "oracle frontier case refuses a dimension outside its envelope" {
         },
     };
     const measurement = OracleFrontierCase{
+        .integration = .present,
         .measurement = .present,
         .compiler_b = .present,
         .subject_revision = "candidate-revision",
