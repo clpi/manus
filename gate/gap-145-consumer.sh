@@ -3855,6 +3855,166 @@ do
     fi
 done
 
+# ── §6 GROUP-OPENING IDENTITY IS CONSUMED AS A CLASS ────────────────────────
+#
+# `lib/compiler/parser.id` settles `(` identity for every coordinate in the
+# pack: `callface = 1` exactly when `kind == token.kindlparen`, written to
+# event bit 63, and `currentParserCall()` is the reader. Twenty-eight parser
+# consumers across twenty-two functions still answered "is the token under the
+# cursor a `(`" for themselves, from the generated host TokenKind, at a
+# coordinate the producer had already settled and `pk()` had already selected.
+#
+# The class is every host read of `(` identity AT A CURSOR COORDINATE, in all
+# four spellings it takes in this file: `(try self.pk()).kind == .lparen`, the
+# negated form, a kind captured into a local by `pk()` and compared, and the
+# `check(.lparen)` / `eat(.lparen)` recognition helpers. Its count falls
+# 31 -> 0. `expect(.lparen)` is NOT in the class: it is a demand that reports
+# its own diagnostic, not a recognition read.
+paren_compare=$(grep -Eo '(==|!=) \.lparen' "$PARSER" | wc -l | tr -d ' ')
+paren_check=$(grep -Fo 'self.check(.lparen)' "$PARSER" | wc -l | tr -d ' ')
+paren_eat=$(grep -Fo 'self.eat(.lparen)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$paren_check" -ne 0 ] || [ "$paren_eat" -ne 0 ]; then
+    bad "the parser still recognizes '(' through a kind-parameterized helper: check=$paren_check eat=$paren_eat"
+fi
+examined=$((examined + 1))
+if [ "$paren_compare" -ne 2 ]; then
+    bad "the parser rebuilds '(' identity at a cursor coordinate: count=$paren_compare"
+fi
+
+# The two surviving comparisons are named, so the ceiling above cannot be met
+# by deleting them and cannot drift into a new cursor read.
+#
+# (a) `parse_attribute_args` tests an ALREADY-CONSUMED token — the depth scan
+#     reads `tok` after `adv()`, so it is not a cursor coordinate and not this
+#     class.
+consumed_paren=$(sed -n '/fn parse_attribute_args/,/fn srcOffsetOf/p' "$PARSER" | \
+    grep -cF 'if (tok.kind == .lparen) depth += 1;' || true)
+examined=$((examined + 1))
+if [ "$consumed_paren" -ne 1 ]; then
+    bad "the attribute-argument depth scan is not intact: count=$consumed_paren"
+fi
+consumed_after_advance=$(sed -n '/fn parse_attribute_args/,/fn srcOffsetOf/p' "$PARSER" | \
+    grep -A2 -F '_ = try self.adv();' | grep -cF 'if (tok.kind == .lparen) depth += 1;' || true)
+examined=$((examined + 1))
+if [ "$consumed_after_advance" -ne 1 ]; then
+    bad "the attribute-argument paren read is no longer after its advance: count=$consumed_after_advance"
+fi
+# (b) The sweep test is the equivalence oracle itself: it is required to
+#     compare the face against the identity, over every generated row.
+sweep_oracle=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF 'kind == .lparen' || true)
+examined=$((examined + 1))
+if [ "$sweep_oracle" -ne 1 ]; then
+    bad "the group-opening equivalence sweep lost its identity comparison: count=$sweep_oracle"
+fi
+sweep_bit=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF '>> 63) & 1' || true)
+examined=$((examined + 1))
+if [ "$sweep_bit" -ne 1 ]; then
+    bad "the group-opening equivalence sweep does not read event bit 63: count=$sweep_bit"
+fi
+sweep_nonvacuous=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF 'try testing.expect(seen);' || true)
+examined=$((examined + 1))
+if [ "$sweep_nonvacuous" -ne 1 ]; then
+    bad "the group-opening equivalence sweep could pass on a face that admits nothing: count=$sweep_nonvacuous"
+fi
+
+# Each transferred region must select a nonempty region of the parser AND
+# carry the settled face. A count of one cannot be luck if the region it is
+# counted in is required to exist.
+check_region() {
+    region_pattern=$1
+    region_expected=$2
+    region_label=$3
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "the $region_label region selector selected nothing: lines=$region_lines"
+        return
+    fi
+    region_faces=$(sed -n "${region_pattern}p" "$PARSER" | \
+        grep -cF 'self.currentParserCall()' || true)
+    examined=$((examined + 1))
+    if [ "$region_faces" -ne "$region_expected" ]; then
+        bad "$region_label does not consume the settled group-opening face: count=$region_faces want=$region_expected"
+    fi
+}
+
+check_region '/fn parse_descriptor_slot/,/fn parse_inline_caseset/' 2 'the descriptor relation slot'
+check_region '/fn parse_inline_caseset/,/fn parse_field_type/' 1 'inline case-set admission'
+check_region '/fn parse_field_type/,/fn parse_layout_refinements/' 1 'field-type level application'
+check_region '/fn parse_one_attribute/,/fn parse_attribute_args/' 1 'single-attribute argument entry'
+check_region '/fn parse_level_edge/,/fn relation_edge_of/' 2 'relation-level edge entry'
+check_region '/fn scan_func_header_signal/,/fn starts_parenthesized_func_expr/' 1 'the production header signal'
+check_region '/fn glued_lparen/,/fn parse_if_clauses/' 1 'glued-paren recognition'
+check_region '/fn parse_for_curried/,/fn parse_for(/' 1 'the curried-for yield pack'
+check_region '/fn at_glued_world_face/,/fn compileStageQualified/' 1 'the glued world face'
+check_region '/fn parse_method_reference/,/fn packCoversCaseSet/' 1 'method-reference arguments'
+check_region '/fn parse_nn_layer_expr/,/fn desugar_nn_build/' 1 'layer-expression entry'
+
+# Anti-green controls. Each transferred site composed the paren answer with a
+# sibling fact of its own; deleting that sibling would widen admission rather
+# than move it, so every one is required to survive.
+has "$PARSER" 'if (!opens_group and nxt != .assign) return false;' \
+    'the descriptor relation slot lost its unlevelled `=` arm'
+has "$PARSER" 'const decision = try self.currentParserDecision();' \
+    'the production header signal lost its lane-two decision read'
+has "$PARSER" 'if (nxt.loc.line != kw.loc.line) return false;' \
+    'glued-paren recognition lost its same-line test'
+has "$PARSER" 'or pack.loc.line != src_close.loc.line) {' \
+    'the curried-for yield pack lost its same-line test'
+has "$PARSER" 'if (opener.kind != .lbrace and !(try self.currentParserCall())) return null;' \
+    'the glued world face lost its brace arm'
+has "$PARSER" 'and nxt.kind != .lbrace) {' \
+    'the offside match pack lost its brace arm'
+has "$PARSER" 'or (try self.check(.lbracket))) {' \
+    'concept-body slot admission lost its bracket arm'
+has "$PARSER" 'is_caseset = after == .comma or (try self.currentParserCall());' \
+    'case-set admission lost its comma arm'
+examined=$((examined + 1))
+if [ "$(grep -cF '_ = try self.expect(.lparen);' "$PARSER")" -lt 5 ]; then
+    bad 'the `(` DEMAND face was deleted rather than left standing beside the settled recognition face'
+fi
+
+# Positive controls. Every detector above counts text that is absent from the
+# repaired tree, so each is shown a tree where it is present, and shown that
+# it does not fire on the canonical spelling.
+paren_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate group-opening scratch' >&2; exit 2; }
+cat >"$paren_probe/old.zig" <<'PROBE'
+while ((try self.pk()).kind == .lparen) {
+if ((try self.pk()).kind != .lparen) return false;
+if (nxt == .lparen) {
+is_caseset = after == .comma or after == .lparen;
+const opens = try self.check(.lparen);
+if (try self.eat(.lparen) != null) {
+PROBE
+cat >"$paren_probe/new.zig" <<'PROBE'
+while (try self.currentParserCall()) {
+if (!(try self.currentParserCall())) return false;
+if (opens_group) {
+is_caseset = after == .comma or (try self.currentParserCall());
+const opens = try self.currentParserCall();
+if (try self.currentParserCall()) {
+_ = try self.expect(.lparen);
+PROBE
+paren_old_compare=$(grep -Eo '(==|!=) \.lparen' "$paren_probe/old.zig" | wc -l | tr -d ' ')
+paren_old_check=$(grep -Fo 'self.check(.lparen)' "$paren_probe/old.zig" | wc -l | tr -d ' ')
+paren_old_eat=$(grep -Fo 'self.eat(.lparen)' "$paren_probe/old.zig" | wc -l | tr -d ' ')
+paren_new_compare=$(grep -Eo '(==|!=) \.lparen' "$paren_probe/new.zig" | wc -l | tr -d ' ')
+paren_new_helper=$(grep -Eo 'self\.(check|eat)\(\.lparen\)' "$paren_probe/new.zig" | wc -l | tr -d ' ')
+paren_new_faces=$(grep -cF 'self.currentParserCall()' "$paren_probe/new.zig")
+rm -rf -- "$paren_probe"
+examined=$((examined + 1))
+if [ "$paren_old_compare" -ne 4 ] || [ "$paren_old_check" -ne 1 ] || [ "$paren_old_eat" -ne 1 ]; then
+    bad "the group-opening detector does not see the retired spellings: compare=$paren_old_compare check=$paren_old_check eat=$paren_old_eat"
+fi
+examined=$((examined + 1))
+if [ "$paren_new_compare" -ne 0 ] || [ "$paren_new_helper" -ne 0 ] || [ "$paren_new_faces" -ne 5 ]; then
+    bad "the group-opening detector misreads the canonical spelling: compare=$paren_new_compare helper=$paren_new_helper faces=$paren_new_faces"
+fi
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then

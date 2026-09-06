@@ -1606,19 +1606,20 @@ pub const Parser = struct {
     /// follows the group, which is exactly what `parse_level_edge` tests.
     fn parse_descriptor_slot(self: *Parser, name: []const u8, loc: ast.Loc) ParseError!bool {
         const nxt = (try self.pk()).kind;
-        if (nxt != .lparen and nxt != .assign) return false;
+        const opens_group = try self.currentParserCall();
+        if (!opens_group and nxt != .assign) return false;
 
         var path: std.ArrayList([]const u8) = .empty;
         try path.append(self.alloc, name);
         var sym: []const u8 = name;
-        if (nxt == .lparen) {
+        if (opens_group) {
             sym = (try self.parse_level_edge(&path)) orelse return false;
         } else {
             // `name = (params) …` — an unlevelled slot. A `=` not followed by a
             // parameter list is not a slot; leave it for the field diagnostic.
             const saved = self.saveState();
             _ = try self.adv();
-            const opens = try self.check(.lparen);
+            const opens = try self.currentParserCall();
             self.restoreState(saved);
             if (!opens) return false;
         }
@@ -1685,7 +1686,7 @@ pub const Parser = struct {
         if (try self.currentParserName()) {
             _ = try self.adv();
             const after = (try self.pk()).kind;
-            is_caseset = after == .comma or after == .lparen;
+            is_caseset = after == .comma or (try self.currentParserCall());
         }
         self.restoreState(saved);
         if (!is_caseset) return null;
@@ -1713,7 +1714,7 @@ pub const Parser = struct {
 
     fn parse_field_type(self: *Parser) ParseError!ast.TypeExpr {
         var base = try self.parse_type();
-        while ((try self.pk()).kind == .lparen) {
+        while (try self.currentParserCall()) {
             _ = try self.adv();
             var params: std.ArrayList(ast.TypeExpr) = .empty;
             if (!(try self.check(.rparen))) {
@@ -1756,7 +1757,7 @@ pub const Parser = struct {
             _ = try self.adv();
             const name = name_tok.text;
             var args: ?[]const u8 = null;
-            if ((try self.pk()).kind == .lparen) {
+            if (try self.currentParserCall()) {
                 _ = try self.adv();
                 args = try self.parse_attribute_args();
                 _ = try self.expect(.rparen);
@@ -2462,7 +2463,7 @@ pub const Parser = struct {
             const is_known = is_directive or is_attaching or is_type_derive or is_test or
                 (is_c_export or is_known_attribute(qualified));
             if (!is_known) return false;
-            if ((try self.pk()).kind == .lparen) {
+            if (try self.currentParserCall()) {
                 const boundary = try self.currentParserAttributeBoundary() orelse return false;
                 while (self.producerStreamIndex() < boundary) _ = try self.adv();
             }
@@ -2734,7 +2735,7 @@ pub const Parser = struct {
         }
         const name = try std.mem.join(self.alloc, ".", parts.items);
         var args: ?[]const u8 = null;
-        if ((try self.pk()).kind == .lparen) {
+        if (try self.currentParserCall()) {
             _ = try self.adv(); // consume `(`
             args = try self.parse_attribute_args();
             _ = try self.expect(.rparen);
@@ -2858,7 +2859,8 @@ pub const Parser = struct {
 
             // Optional payload: (name: Type, name: Type, ...)
             var payload: ?[]ast.EnumVariant.PayloadField = null;
-            if (try self.eat(.lparen) != null) {
+            if (try self.currentParserCall()) {
+                _ = try self.adv();
                 var fields: std.ArrayList(ast.EnumVariant.PayloadField) = .empty;
                 if (!(try self.check(.rparen))) {
                     try fields.append(self.alloc, try self.parseEnumPayloadField());
@@ -2987,7 +2989,7 @@ pub const Parser = struct {
                 // Canonical bare member. `name(` / `name[` is a required method
                 // signature (GR-001 bare function); `name:` is a required field.
                 const member_name = try self.adv();
-                if ((try self.check(.lparen)) or (try self.check(.lbracket))) {
+                if ((try self.currentParserCall()) or (try self.check(.lbracket))) {
                     try methods.append(self.alloc, try self.parse_concept_method_sig(member_name.text));
                 } else {
                     _ = try self.expect(.colon);
@@ -3314,7 +3316,7 @@ pub const Parser = struct {
     /// still reports as it did.
     fn parse_level_edge(self: *Parser, path: *std.ArrayList([]const u8)) ParseError!?[]const u8 {
         if (path.items.len != 1) return null;
-        if (!(try self.check(.lparen))) return null;
+        if (!(try self.currentParserCall())) return null;
         const saved = self.saveState();
         _ = try self.adv();
         const key = try self.pk();
@@ -3337,7 +3339,7 @@ pub const Parser = struct {
             return null;
         }
         _ = try self.adv();
-        const opens_params = try self.check(.lparen);
+        const opens_params = try self.currentParserCall();
         self.restoreState(saved);
         if (!opens_params) return null;
         _ = try self.adv(); // '('
@@ -3436,7 +3438,7 @@ pub const Parser = struct {
     /// and precomputed in whole-pack lane-two bits 4/5. The host selects only
     /// the caller's admitted comma face; no token or layout fact is rebuilt.
     fn scan_func_header_signal(self: *Parser, allow_untyped_comma: bool) ParseError!bool {
-        if ((try self.pk()).kind != .lparen) return false;
+        if (!(try self.currentParserCall())) return false;
         const decision = try self.currentParserDecision();
         const shift: u6 = if (allow_untyped_comma) 5 else 4;
         return ((decision >> shift) & 1) != 0;
@@ -3480,7 +3482,7 @@ pub const Parser = struct {
     fn starts_binding_func_expr(self: *Parser) ParseError!bool {
         if (try self.starts_parenthesized_func_expr()) return true;
         if (!self.idol_mode) return false;
-        if ((try self.pk()).kind != .lparen) return false;
+        if (!(try self.currentParserCall())) return false;
         const saved = self.saveState();
         const saved_line = self.prev_line;
         const saved_end = self.prev_end_col;
@@ -3817,7 +3819,7 @@ pub const Parser = struct {
         const saved = self.saveState();
         defer self.restoreState(saved);
         const nxt = self.pk() catch return false;
-        if (nxt.kind != .lparen) return false;
+        if (!(self.currentParserCall() catch return false)) return false;
         if (nxt.loc.line != kw.loc.line) return false;
         return nxt.loc.col == kw.loc.col + @as(u32, @intCast(kw.text.len));
     }
@@ -4236,7 +4238,7 @@ pub const Parser = struct {
         // `for(xs) (x)` distinct from a body block that merely opens with a
         // parenthesized expression, without giving `(` any new meaning.
         const pack = try self.pk();
-        if (pack.kind != .lparen or pack.loc.line != src_close.loc.line) {
+        if (!(try self.currentParserCall()) or pack.loc.line != src_close.loc.line) {
             term.locErr(pack.loc, "write the yielded item pack here, as `for(source) (item)`", .{});
             term.locHint(pack.loc, "the canonical iteration face names what each step yields; `for item in source` is the familiar spelling of the same thing", .{});
             return ParseError.ExpectedToken;
@@ -4263,7 +4265,7 @@ pub const Parser = struct {
 
     fn parse_for(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
-        if ((try self.pk()).kind == .lparen) return self.parse_for_curried(l);
+        if (try self.currentParserCall()) return self.parse_for_curried(l);
         const first_name = try self.expect(.name);
         const nxt = try self.pk();
         if (nxt.kind == .assign or nxt.kind == .colon) {
@@ -4556,7 +4558,7 @@ pub const Parser = struct {
                     _ = try self.adv();
                     const method = try self.expect_name_like();
                     // Only allow parenthesized call args after method
-                    if ((try self.pk()).kind == .lparen) {
+                    if (try self.currentParserCall()) {
                         const callargs = try self.parse_call_args();
                         e = try self.new_expr(.{ .method_call = .{
                             .loc = tok.loc,
@@ -4737,7 +4739,7 @@ pub const Parser = struct {
                         const tag = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ first_name.text, variant_name.text });
                         // Check for payload: (pattern, pattern, ...)
                         var payload: ?[]ast.Pattern = null;
-                        if ((try self.pk()).kind == .lparen) {
+                        if (try self.currentParserCall()) {
                             _ = try self.adv(); // consume `(`
                             var patterns: std.ArrayList(ast.Pattern) = .empty;
                             if ((try self.pk()).kind != .rparen) {
@@ -4965,7 +4967,7 @@ pub const Parser = struct {
                     const field_loc = tok.loc;
                     const saved = self.saveState();
                     _ = try self.adv();
-                    if (try self.check(.lparen)) {
+                    if (try self.currentParserCall()) {
                         _ = try self.adv();
                         var payload: ?[]ast.EnumVariant.PayloadField = null;
                         if (!(try self.check(.rparen))) {
@@ -5203,7 +5205,7 @@ pub const Parser = struct {
                 if (try self.currentParserName()) {
                     _ = try self.adv();
                     const after = (try self.pk()).kind;
-                    is_caseset = after == .comma or after == .lparen;
+                    is_caseset = after == .comma or (try self.currentParserCall());
                 } else if ((try self.pk()).kind == .concat) {
                     // `Name: { ..Base, y: i64 }` — a descriptor SPREAD. Only
                     // `stmt_from_descriptor` reads `.spread` entries; the
@@ -6548,7 +6550,7 @@ pub const Parser = struct {
         defer self.restoreState(saved);
         _ = try self.adv();
         const opener = try self.pk();
-        if (opener.kind != .lbrace and opener.kind != .lparen) return null;
+        if (opener.kind != .lbrace and !(try self.currentParserCall())) return null;
         if (opener.loc.line != at_tok.loc.line) return null;
         if (opener.loc.col != at_tok.loc.col + @as(u32, @intCast(at_tok.text.len))) return null;
         return if (opener.kind == .lbrace) .interject else .qualify_expr;
@@ -6856,7 +6858,7 @@ pub const Parser = struct {
         const method_name = try self.expect_name_like();
 
         var args: []*ast.Expr = &.{};
-        if ((try self.pk()).kind == .lparen) {
+        if (try self.currentParserCall()) {
             _ = try self.adv();
             self.call_arg_depth += 1;
             defer self.call_arg_depth -= 1;
@@ -7343,7 +7345,7 @@ pub const Parser = struct {
         // stays IMPLEMENTATION-BLOCKED — distinguishing it from a condition that
         // is itself a call chain (`if (f)(x) then …`) needs the resolver, and
         // §42 says reject ambiguity rather than guess.
-        if ((try self.pk()).kind == .lparen) {
+        if (try self.currentParserCall()) {
             _ = try self.adv();
             const first = try self.parse_expr();
             if ((try self.pk()).kind == .comma) {
@@ -7374,11 +7376,11 @@ pub const Parser = struct {
             // without guessing, which is strictly better than rejecting: the
             // same rule already separates `else(cond)` from `else (value)` and
             // `>>=` from `>> =`.
-            if ((try self.pk()).kind == .lparen and self.glued_lparen(rp)) {
+            if ((try self.currentParserCall()) and self.glued_lparen(rp)) {
                 _ = try self.adv();
                 const second = try self.parse_expr();
                 const rp2 = try self.expect(.rparen);
-                if ((try self.pk()).kind == .lparen and self.glued_lparen(rp2)) {
+                if ((try self.currentParserCall()) and self.glued_lparen(rp2)) {
                     _ = try self.adv();
                     const third = try self.parse_expr();
                     _ = try self.expect(.rparen);
@@ -7523,7 +7525,7 @@ pub const Parser = struct {
             }
         }
         // Compatibility @(expr) route (no name, immediate paren).
-        if ((try self.pk()).kind == .lparen) {
+        if (try self.currentParserCall()) {
             _ = try self.adv(); // consume '('
             const operand = try self.parse_expr();
             _ = try self.expect(.rparen);
@@ -7581,7 +7583,7 @@ pub const Parser = struct {
         // NOT decided here. The parser owns recognition; sema owns resolution
         // against the exact launch worlds (`law.md` §4: never grant world
         // authority from syntax).
-        if (parts.items.len == 1 and (try self.pk()).kind != .lparen) {
+        if (parts.items.len == 1 and !(try self.currentParserCall())) {
             return self.new_expr(.{ .name = .{ .loc = l, .ident = first.text, .world = true } });
         }
 
@@ -8043,7 +8045,7 @@ pub const Parser = struct {
                     // is needed to say "a pack follows".
                     if (std.mem.eql(u8, method, "match")) {
                         const nxt = try self.pk();
-                        if (nxt.kind != .lparen and nxt.kind != .lbrace) {
+                        if (!(try self.currentParserCall()) and nxt.kind != .lbrace) {
                             const fields = try self.parse_offside_pack(tok.loc);
                             e = try self.desugarMatchFields(tok.loc, e, fields);
                             continue;
@@ -8182,8 +8184,7 @@ pub const Parser = struct {
         if (try self.currentParserName()) {
             const saved = self.saveState();
             _ = try self.adv();
-            const nxt = try self.pk();
-            if (nxt.kind != .lparen) {
+            if (!(try self.currentParserCall())) {
                 const func = try self.new_expr(.{ .name = .{ .loc = tok.loc, .ident = tok.text } });
                 return try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = func, .args = &.{} } });
             }
@@ -12059,6 +12060,18 @@ test "parse: primitive, literal, and quoted identities execute through whole-pac
         try testing.expectEqual(row.literal_kind, ((event >> 18) & 1) != 0);
         try testing.expectEqual(row.quoted, ((event >> 19) & 1) != 0);
     }
+}
+
+test "parse: the group-opening face admits exactly the `(` identity" {
+    var seen = false;
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        const expected = if (row.kind) |kind| kind == .lparen else false;
+        if (expected) seen = true;
+        try testing.expectEqual(expected, ((event >> 63) & 1) != 0);
+    }
+    // Without this the sweep would pass on a face that admits nothing at all.
+    try testing.expect(seen);
 }
 
 test "parse: production member identity executes through whole-pack event" {
