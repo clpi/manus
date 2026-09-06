@@ -2330,7 +2330,11 @@ const Arm64Compiler = struct {
                     const begins_before = if (definition) |def| blk: {
                         if (def < head) break :blk true;
                         for (reads) |read| {
-                            if (read[0] == e.key_ptr.* and read[1] >= head and read[1] < def) break :blk true;
+                            // Operands are read before an instruction publishes
+                            // its result. An update that reads and redefines the
+                            // same id at `def` therefore carries the entering
+                            // value just as surely as an earlier instruction.
+                            if (read[0] == e.key_ptr.* and read[1] >= head and read[1] <= def) break :blk true;
                         }
                         break :blk false;
                     }
@@ -17575,6 +17579,31 @@ test "CFG liveness carries a value read before its loop redefinition" {
     try defined.put(alloc, 8, 3);
     Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back);
     try std.testing.expectEqual(@as(?u32, 4), last.get(8));
+}
+
+test "CFG liveness carries a value read by its loop redefinition" {
+    const alloc = std.testing.allocator;
+    var last: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer last.deinit(alloc);
+    var defined: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer defined.deinit(alloc);
+    const back = [_][2]u32{.{ 2, 6 }};
+
+    // A same-place update reads the entering value before publishing its
+    // replacement. Instruction indexes alone coincide, but semantic order does
+    // not: the read must retain the realization through the back edge.
+    try last.put(alloc, 7, 4);
+    try defined.put(alloc, 7, 4);
+    const reads = [_][2]u32{ .{ 7, 4 }, .{ 8, 5 } };
+    Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back);
+    try std.testing.expectEqual(@as(?u32, 6), last.get(7));
+
+    // A later read consumes the value produced inside this iteration; it does
+    // not make the prior iteration's realization loop-carried.
+    try last.put(alloc, 8, 5);
+    try defined.put(alloc, 8, 3);
+    Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back);
+    try std.testing.expectEqual(@as(?u32, 5), last.get(8));
 }
 
 test "CFG liveness does not read ABI staging slots as value definitions" {
