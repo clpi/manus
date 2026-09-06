@@ -50,8 +50,11 @@
 //! `idol.world.cost.v1` row (exactly what `gate/lower/cost.sh` emits), the
 //! single producer of a measured fact from the measured world
 //! (`law.fact.producer.one`): it fails closed on a foreign schema, an unknown
-//! mechanism/triple/unit name, a missing cost field, or an empty subject
-//! revision (`law.evidence.subject.one`). `parseMeasurements` owns the facts
+//! mechanism/triple/unit name, a missing cost field, an unrepresentable cost
+//! magnitude, or an empty subject revision (`law.evidence.subject.one`). A
+//! negative float cost is the producer's documented noise floor and
+//! reconstructs as zero, so a genuine row always constructs its fact.
+//! `parseMeasurements` owns the facts
 //! from one complete newline-delimited evidence stream, and the graph-backed
 //! C99 arm hands that exact slice to both measured walk consumers. A malformed
 //! stream refuses rather than letting partial evidence decide. Next host
@@ -211,7 +214,9 @@ fn uniformMeasurement(triple: target_model.TargetTriple, candidates: []const Dyn
 /// subject revision is NON-EMPTY (`law.evidence.subject.one`: a measurement
 /// that cannot name what was measured is not a fact). Anything else returns
 /// null — a malformed or unowned row leaves the stated orders to decide,
-/// exactly as an absent measurement does. A `network_isolation` mechanism is
+/// exactly as an absent measurement does. A negative float cost is the
+/// producer's documented noise floor and reconstructs as zero (`u64Field`),
+/// while an unrepresentable magnitude is no fact. A `network_isolation` mechanism is
 /// read from the row's own spelling, never reconstructed from an ordinal
 /// (`law.magic.code.zero`).
 ///
@@ -301,11 +306,25 @@ fn stringField(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {
     };
 }
 
+/// A cost quantity from a row field. The producer emits computed costs as
+/// `%.4f` floats, so whole measured nanoseconds arrive as floats and truncate
+/// toward zero. A NEGATIVE float is the producer's documented timer noise
+/// around no measurable cost (`gate/lower/cost.sh` reports the software-check
+/// enforcement delta even when noise makes it negative): a cost is a physical
+/// quantity, so the noise floor reconstructs as zero — refusing a genuine row
+/// would make the producer's own output intermittently unconsumable, and a
+/// negative quantity must never settle a comparison. An unrepresentable
+/// magnitude is no fact: fail closed, never a trapping conversion.
 fn u64Field(obj: std.json.ObjectMap, key: []const u8) ?u64 {
     const v = obj.get(key) orelse return null;
     return switch (v) {
         .integer => |n| if (n < 0) null else @as(u64, @intCast(n)),
-        .float => |f| if (f < 0) null else @as(u64, @intFromFloat(f)),
+        .float => |f| if (f < 0)
+            0
+        else if (f >= @as(f64, @floatFromInt(std.math.maxInt(u64))))
+            null
+        else
+            @as(u64, @intFromFloat(f)),
         .number_string => |s| std.fmt.parseInt(u64, s, 10) catch null,
         else => null,
     };
@@ -1005,6 +1024,57 @@ test "lower: a malformed row is not a cost fact" {
         \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"x86_64-linux-gnu","unit":"nanoseconds","subject_revision":"c0adff3900000000000000000000000000000001"}
     ;
     try std.testing.expectEqual(@as(?MeasuredCost, null), parseMeasured(no_cost, &rev));
+}
+
+test "lower: a producer float cost parses by truncation" {
+    // The producer emits computed costs as `%.4f` floats — whole measured
+    // nanoseconds arrive as floats, never as the integers the earlier parse
+    // tests use. Truncation toward zero is the reconstruction.
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"aarch64-linux-gnu","unit":"nanoseconds","cost":{"access":2.8437,"crossing":0},"subject_revision":"5acc89730000000000000000000000000000000001","checked_access_ns":12.5,"plain_access_ns":9.6562,"accesses_per_rep":4194304,"reps":9}
+    ;
+    var rev: [64]u8 = undefined;
+    const fact = parseMeasured(text, &rev).?;
+    try std.testing.expectEqual(@as(u64, 2), fact.cost.access);
+    try std.testing.expectEqual(@as(u64, 0), fact.cost.crossing);
+}
+
+test "lower: a negative noise delta reconstructs as zero cost, not refusal" {
+    // `gate/lower/cost.sh` reports the enforcement delta even when timer
+    // noise makes it negative. A cost is a physical quantity: the noise floor
+    // reconstructs as zero, so a genuine producer row always constructs its
+    // fact instead of refusing the stream.
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"aarch64-linux-gnu","unit":"nanoseconds","cost":{"access":-0.0312,"crossing":0},"subject_revision":"5acc89730000000000000000000000000000000001","checked_access_ns":9.625,"plain_access_ns":9.6562,"accesses_per_rep":1024,"reps":2}
+    ;
+    var rev: [64]u8 = undefined;
+    const fact = parseMeasured(text, &rev).?;
+    try std.testing.expectEqual(@as(u64, 0), fact.cost.access);
+}
+
+test "lower: an unrepresentable float cost is not a cost fact" {
+    // Fail closed, never a trapping conversion: a magnitude no u64 holds
+    // constructs no fact.
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"process","triple":"aarch64-linux-gnu","unit":"nanoseconds","cost":{"access":0,"crossing":1e30},"subject_revision":"5acc89730000000000000000000000000000000001"}
+    ;
+    var rev: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(?MeasuredCost, null), parseMeasured(text, &rev));
+}
+
+test "lower: parseMeasurements keeps a noise-floor producer stream" {
+    // The regression pin: a complete producer stream whose software row went
+    // negative under noise is complete evidence, not a partial stream.
+    const alloc = std.testing.allocator;
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"aarch64-linux-gnu","unit":"nanoseconds","cost":{"access":-0.0312,"crossing":0},"subject_revision":"5acc89730000000000000000000000000000000001","checked_access_ns":9.625,"plain_access_ns":9.6562,"accesses_per_rep":1024,"reps":2}
+        \\{"schema":"idol.world.cost.v1","mechanism":"process","triple":"aarch64-linux-gnu","unit":"nanoseconds","cost":{"access":0,"crossing":1800.25},"subject_revision":"5acc89730000000000000000000000000000000001","roundtrips_per_rep":16,"reps":2}
+    ;
+    var parsed = (try parseMeasurements(alloc, text)).?;
+    defer parsed.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 2), parsed.facts.items.len);
+    try std.testing.expectEqual(@as(u64, 0), parsed.facts.items[0].cost.access);
+    try std.testing.expectEqual(@as(u64, 1800), parsed.facts.items[1].cost.crossing);
 }
 
 test "lower: a parsed row feeds the same selection the struct fact does" {
