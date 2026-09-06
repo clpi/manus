@@ -80,6 +80,42 @@
 #     list, a refusal prints every candidate it tried, and `selftest` carries
 #     the worktree layout as a control.
 #
+#   normalising THE SUBJECT SOURCE ROOT, which belongs to NEITHER arm. The
+#     per-arm rule above substitutes each arm's OWN tree root. But both arms
+#     are handed the SAME subject, out of one source tree, so the source root
+#     is a string both arms print and it was substituted on whichever arm
+#     happened to be rooted there and left alone on the other. That is the
+#     ordinary arrangement — a tree that builds its own compiler and supplies
+#     its own subjects — and under it EVERY diagnostic that quotes a subject
+#     path came out different and every such row was scored CHANGED.
+#
+#     `--null-control` cannot see this class. It copies BOTH arms under
+#     `$WORK/null.a` and `$WORK/null.b` while the source stays `$ROOT`, so
+#     neither arm is ever rooted at the source root and the collision it
+#     exists to detect cannot arise in it. The one instrument a reader has for
+#     deciding whether to believe a row is structurally blind here, which is
+#     why this is carried as a selftest control instead.
+#
+#     The source root therefore normalises to the SAME token as an arm root:
+#     the two play one role in a diagnostic — the tree a path was resolved out
+#     of — and when an arm IS the source tree they are one string, so no
+#     substitution could separate them and a SECOND token would only move the
+#     divergence onto the other arm. It has to be one token, and the same one
+#     on both arms, or the tokenisation depends on which arm is being
+#     normalised, which is the defect itself. Ordering is by path length,
+#     longest first, because one root can nest inside another — a mirror under
+#     the tree it mirrors — and substituting the shorter first leaves the
+#     longer unmatched on the arm that owns it.
+#
+#     WHAT ONE TOKEN COSTS, stated rather than controlled, because a control
+#     for it would have to assert the erasure is correct: a difference that
+#     consists ONLY of which tree a path was resolved out of — base opening
+#     `<base>/lib/x.id` where candidate opens `<source>/lib/x.id` — now reads
+#     identical. That is narrower than what it replaces (a false row on every
+#     subject-quoting diagnostic in the ordinary arrangement) and it is
+#     unobservable anyway on the arm where the two trees are one string, but
+#     it is a real erasure and not a free repair.
+#
 #   a scratch root per arm. `src/scratch.zig` honours TMPDIR for the build
 #     cache, intermediate objects, emitted C and logs, so giving each arm its
 #     own makes each arm actually compile rather than serving the other arm'''s
@@ -179,22 +215,51 @@ fi
   exit 2
 }
 
-# norm <arm-tree-root> <arm-working-directory> <arm-scratch-root>
+# rootrules <token>=<path> ...
 #
-# The three arm-owned strings are substituted FIRST and by exact text, because
-# they are the ones that legitimately differ between two arms of the same
-# comparison. Everything after them is a pattern rule that applies to both arms
-# identically. `sed` has no fixed-string mode, so each root is escaped for the
-# `#` delimiter; roots here are directory paths, and `#` and `\` in a path
-# would break the expression rather than silently mis-normalise, which is the
-# failure mode worth having.
+# One `s#<path>#<token>#g` per pair, LONGEST PATH FIRST, on stdout. Ordering is
+# the whole point: these roots are not guaranteed disjoint. A mirror can sit
+# under the tree it mirrors, and the subject source root can BE an arm root, so
+# substituting a shorter root first would eat the head of a longer one and
+# leave the tail behind on the arm that owns it while the other arm normalised
+# the same string whole. Length ordering makes the most specific root win
+# without either caller having to know which of them nests.
+#
+# `sed` has no fixed-string mode, so each path is escaped for the `#`
+# delimiter; roots here are directory paths, and `#` and `\` in a path would
+# break the expression rather than silently mis-normalise, which is the failure
+# mode worth having. An empty path contributes no rule — it would otherwise
+# match at every position.
+rootrules() {
+  for _rr_pair in "$@"; do
+    _rr_path=${_rr_pair#*=}
+    [ -n "$_rr_path" ] || continue
+    printf '%s\t%s\t%s\n' "${#_rr_path}" "${_rr_pair%%=*}" "$_rr_path"
+  done | sort -k1,1nr | while IFS="$(printf '\t')" read -r _rr_len _rr_tok _rr_path; do
+    printf 's#%s#%s#g\n' \
+      "$(printf '%s' "$_rr_path" | sed 's#[\\&#]#\\&#g')" "$_rr_tok"
+  done
+}
+
+# norm <arm-tree-root> <arm-working-directory> <arm-scratch-root> <source-root>
+#
+# The root strings are substituted FIRST and by exact text, because they are
+# the ones that legitimately differ between two arms of the same comparison.
+# Everything after them is a pattern rule that applies to both arms
+# identically.
+#
+# The SOURCE ROOT is not arm-owned — it is the one tree both arms read subjects
+# out of — and it takes the SAME token as the arm root because a path quoted in
+# a diagnostic names one role either way: the tree it was resolved out of. It
+# was absent here, so the arm that happened to be rooted at the source tree
+# normalised every quoted subject path and the other arm did not.
 norm() {
   _norm_root=$1
   _norm_cwd=$2
   _norm_scratch=$3
-  sed -E -e "s#$(printf '%s' "$_norm_cwd" | sed 's#[\\&#]#\\&#g')#CWD#g" \
-         -e "s#$(printf '%s' "$_norm_scratch" | sed 's#[\\&#]#\\&#g')#SCRATCH#g" \
-         -e "s#$(printf '%s' "$_norm_root" | sed 's#[\\&#]#\\&#g')#TREE#g" \
+  _norm_source=$4
+  sed -E -e "$(rootrules "CWD=$_norm_cwd" "SCRATCH=$_norm_scratch" \
+                         "TREE=$_norm_root" "TREE=$_norm_source")" \
          -e 's/\([0-9]+ ms/(MS/' \
          -e 's#/Volumes/.*/tmp-[A-Za-z0-9_-]+/#TREE/#g' \
          -e 's#duo_[A-Za-z0-9_]+_[0-9a-f]{6,}_[0-9]+#DUOTMP#g' \
@@ -202,24 +267,30 @@ norm() {
          -e 's#^  ok compile.*#COMPILED#'
 }
 
-# STDOUT gets the arm-owned substitutions and NOTHING ELSE. The pattern rules
-# in `norm` describe compiler diagnostics; a program's own output is the thing
-# being compared and must not be reshaped. But the three strings below name
-# THIS ARM'S PRIVATE DIRECTORIES, which exist only for this run, so a program
-# that prints one of them is printing the harness, not a difference.
+# STDOUT gets the root substitutions and NOTHING ELSE. The pattern rules in
+# `norm` describe compiler diagnostics; a program's own output is the thing
+# being compared and must not be reshaped. But the working directory and the
+# scratch root name THIS ARM'S PRIVATE DIRECTORIES, which exist only for this
+# run, so a program that prints one of them is printing the harness, not a
+# difference.
 #
 #   `examples/shc/cwd.id` is the whole reason. Its body is `stdout:write(os.cwd)`
 #   and each arm gets its own directory by design, so it was carried as a
 #   PERMANENT false row that every reader had to know about and subtract by
 #   hand. A row a reader must remember to ignore is a row that will one day be
 #   ignored when it is real.
+#
+#   The tree roots are here for the same reason and the source root with them:
+#   a program that prints where it was READ FROM prints one string on both arms
+#   and a program that prints where its COMPILER lives prints two, and only the
+#   second is a difference. Both are the harness either way.
 normout() {
   _no_root=$1
   _no_cwd=$2
   _no_scratch=$3
-  sed -e "s#$(printf '%s' "$_no_cwd" | sed 's#[\\&#]#\\&#g')#CWD#g" \
-      -e "s#$(printf '%s' "$_no_scratch" | sed 's#[\\&#]#\\&#g')#SCRATCH#g" \
-      -e "s#$(printf '%s' "$_no_root" | sed 's#[\\&#]#\\&#g')#TREE#g"
+  _no_source=$4
+  sed -e "$(rootrules "CWD=$_no_cwd" "SCRATCH=$_no_scratch" \
+                      "TREE=$_no_root" "TREE=$_no_source")"
 }
 
 # The tree an arm's compiler resolves its lib/ from. `detectCompilerLibRoot`
@@ -250,6 +321,7 @@ observe() {
   _obs_record=$5
   _obs_root=$6
   _obs_scratch=$7
+  _obs_source=$8
   _obs_event="$WORK/$_obs_tag.event"
   _obs_stdout_raw="$WORK/$_obs_tag.stdout.raw"
   _obs_stdout="$WORK/$_obs_tag.stdout"
@@ -269,8 +341,10 @@ observe() {
     return
   fi
   _obs_kind=$(sed -n '1p' "$_obs_event")
-  normout "$_obs_root" "$_obs_cwd" "$_obs_scratch" <"$_obs_stdout_raw" >"$_obs_stdout"
-  norm "$_obs_root" "$_obs_cwd" "$_obs_scratch" <"$_obs_stderr_raw" >"$_obs_stderr"
+  normout "$_obs_root" "$_obs_cwd" "$_obs_scratch" "$_obs_source" \
+    <"$_obs_stdout_raw" >"$_obs_stdout"
+  norm "$_obs_root" "$_obs_cwd" "$_obs_scratch" "$_obs_source" \
+    <"$_obs_stderr_raw" >"$_obs_stderr"
   printf '%s\t%s\t%s\t%s\n' "$_obs_kind" "$_obs_status" "$_obs_stdout" "$_obs_stderr" >"$_obs_record"
 }
 
@@ -338,9 +412,9 @@ compare_subjects() {
     _cmp_ar="$WORK/base.$_cmp_seen.record"
     _cmp_br="$WORK/candidate.$_cmp_seen.record"
     observe "base.$_cmp_seen" "$_cmp_a" "$_cmp_base" "$_cmp_subject" "$_cmp_ar" \
-      "$_cmp_aroot" "$_cmp_atmp"
+      "$_cmp_aroot" "$_cmp_atmp" "$_cmp_source"
     observe "candidate.$_cmp_seen" "$_cmp_b" "$_cmp_cand" "$_cmp_subject" "$_cmp_br" \
-      "$_cmp_broot" "$_cmp_btmp"
+      "$_cmp_broot" "$_cmp_btmp" "$_cmp_source"
     IFS="$(printf '\t')" read -r _cmp_ak _cmp_arc _cmp_ao _cmp_ae <"$_cmp_ar"
     IFS="$(printf '\t')" read -r _cmp_bk _cmp_brc _cmp_bo _cmp_be <"$_cmp_br"
 
@@ -542,6 +616,67 @@ pwd
     return 1
   }
 
+  # ---------------------------------------------------------------------
+  # AN ARM ROOTED AT THE SUBJECT SOURCE ROOT. The ordinary arrangement — a
+  # tree that builds its own compiler into `zig-out/` and supplies its own
+  # subjects, compared against a compiler that lives somewhere else. Both arms
+  # are handed the SAME subject path out of that one tree, so a diagnostic
+  # quoting it prints ONE string on both arms; before the source root was
+  # normalised, the in-tree arm substituted that string as its own root and
+  # the other arm left it absolute, and every such row scored CHANGED.
+  #
+  # `--null-control` cannot reach this shape. It copies BOTH arms under
+  # `$WORK/null.a` and `$WORK/null.b` while the source stays `$ROOT`, so
+  # neither arm is ever rooted at the source root and the collision cannot
+  # arise in it. The instrument a reader uses to decide whether to believe a
+  # row is blind here, so the control has to live in `selftest`.
+  #
+  # The fake quotes the subject it was handed AND its own lib root, because
+  # the two are the whole difficulty: on the in-tree arm they are the same
+  # string playing two roles, and both must land on the same token as the
+  # other arm's.
+  _self_quote='#!/bin/sh
+root=$(cd "$(dirname "$0")/../.." && pwd)
+printf "answer\n"
+printf "error: cannot open %s\n" "$2" >&2
+printf "note: lib root %s/lib/std.id\n" "$root" >&2
+exit 0
+'
+  mkdir -p "$_self/insitu/zig-out/bin" "$_self/away/zig-out/bin" || return 2
+  printf 'main: i64 = ()\n  0\n' >"$_self/insitu/control.id"
+  printf 'control.id\n' >"$_self/insitu.list"
+  printf '%s' "$_self_quote" >"$_self/insitu/zig-out/bin/idol"
+  printf '%s\n# away\n' "$_self_quote" >"$_self/away/zig-out/bin/idol"
+  chmod +x "$_self/insitu/zig-out/bin/idol" "$_self/away/zig-out/bin/idol"
+  compare_subjects "$_self/insitu/zig-out/bin/idol" \
+    "$_self/away/zig-out/bin/idol" \
+    "$_self/insitu.list" "$_self/insitu" >/dev/null 2>&1
+  _self_rc=$?
+  [ "$_self_rc" -eq 0 ] || {
+    echo "differential: selftest FAIL — the subject source root scored as a difference" >&2
+    return 1
+  }
+
+  # ...AND A MIRROR NESTED INSIDE THE SOURCE TREE. `<nest>/mirror` is a longer
+  # root than `<nest>`, and the roots are substituted longest first for exactly
+  # this: in the other order the source rule eats the head of the mirror arm's
+  # own lib path and leaves a `/mirror/` segment behind that the other arm's
+  # lib path does not have, and the row is red for the harness's reason again.
+  mkdir -p "$_self/nest/mirror/zig-out/bin" "$_self/faraway/zig-out/bin" || return 2
+  printf 'main: i64 = ()\n  0\n' >"$_self/nest/control.id"
+  printf 'control.id\n' >"$_self/nest.list"
+  printf '%s' "$_self_quote" >"$_self/nest/mirror/zig-out/bin/idol"
+  printf '%s\n# faraway\n' "$_self_quote" >"$_self/faraway/zig-out/bin/idol"
+  chmod +x "$_self/nest/mirror/zig-out/bin/idol" "$_self/faraway/zig-out/bin/idol"
+  compare_subjects "$_self/nest/mirror/zig-out/bin/idol" \
+    "$_self/faraway/zig-out/bin/idol" \
+    "$_self/nest.list" "$_self/nest" >/dev/null 2>&1
+  _self_rc=$?
+  [ "$_self_rc" -eq 0 ] || {
+    echo "differential: selftest FAIL — a mirror nested in the source tree scored as a difference" >&2
+    return 1
+  }
+
   # Different bytes, one identical observation. Each fake records its own
   # invocation count; a future second-run stderr probe makes this control red.
   _self_fake='#!/bin/sh
@@ -610,7 +745,7 @@ exit 7
   TMO=$_self_old_tmo
   [ "$_self_rc" -eq 2 ] || return 1
 
-  echo "differential: selftest PASS — sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, per-arm cwd, real row survives normalisation, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
+  echo "differential: selftest PASS — sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, per-arm cwd, real row survives normalisation, in-tree arm at the subject source root, mirror nested in the source tree, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
   return 0
 }
 
