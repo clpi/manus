@@ -1078,6 +1078,10 @@ run_body: i64 = (img: str, n: i64, target: i64, out: *u8)
   # while the cost is not paid by a module that never asks for entropy.
   # NOT a cryptographic source — see OPEN QUESTION 4 in src/wasm/wasi.id.
   rngseeded: i64 = 0
+  # Total bytes read from stdin — tracked so `fd_tell(0, ...)` can return
+  # the current file position. Each `fd_read` on stdin increments it; a
+  # non-stdin fd has no persistent position in this sandbox.
+  sdtot: i64 = 0
   # Allocated BEFORE the section walk because the walk is what fills it:
   # imported-function type indices, in import order.
   imtab = mem.alloc(256 * 8)
@@ -2113,6 +2117,7 @@ run_body: i64 = (img: str, n: i64, target: i64, out: *u8)
                       ck += 1
                     rtot += string.len(chunk)
                   rq += 1
+                sdtot += rtot
                 if rnp + 4 <= linsz
                   mem.write_byte(lin, rnp, rtot & 255)
                   mem.write_byte(lin, rnp + 1, (rtot >> 8) & 255)
@@ -2224,13 +2229,27 @@ run_body: i64 = (img: str, n: i64, target: i64, out: *u8)
               hrv = wabi.ERRNO_badf
               if wabi.fd_kind(mem.read_i64(st, (ab + 1) * 8) & M32) == 1
                 hrv = wabi.ERRNO_success
-            elseif hid == wabi.i_fd_seek or hid == wabi.i_fd_tell
+            elseif hid == wabi.i_fd_seek
               # Seeking a stream is `spipe`, which is what a guest's ftell on a
               # pipe must see. `success` told every buffered-IO guest that
               # stdout was a seekable file.
               hrv = wabi.ERRNO_badf
               if wabi.fd_kind(mem.read_i64(st, (ab + 1) * 8) & M32) == 1
                 hrv = wabi.ERRNO_spipe
+            elseif hid == wabi.i_fd_tell
+              # Returns the current file offset. Only stdin (fd 0) has a tracked
+              # position — the total bytes read from it. All other descriptors
+              # are streams with no persistent offset.
+              hrv = wabi.ERRNO_badf
+              tfd: i64 = mem.read_i64(st, (ab + 1) * 8) & M32
+              if tfd == 0
+                # stdin: write the tracked read-count as the current position
+                tpp: i64 = mem.read_i64(st, (ab + 2) * 8) & M32
+                tpi: i64 = 0
+                while tpi < 8 and tpp + tpi < linsz
+                  mem.write_byte(lin, tpp + tpi, (sdtot >> (tpi * 8)) & 255)
+                  tpi += 1
+                hrv = wabi.ERRNO_success
             elseif hid == wabi.i_fd_pwrite
               # MEASURED: spipe on fd 1 and 2 (a positional write to a stream
               # is refused for being unseekable), badf on fd 0 and on 999.
