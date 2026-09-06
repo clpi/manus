@@ -3230,6 +3230,53 @@ if [ "$qualified_path_old" -ne 2 ] || [ "$qualified_path_new" -ne 2 ]; then
     bad "the qualified-function-path detector is broken: old=$qualified_path_old new=$qualified_path_new"
 fi
 
+# Parenless (bash-style) call admission reads one coordinate twice: the literal
+# face comes from the producer, the name answer was rebuilt from the host kind.
+# Both now come from the same settled event.
+parenless_region=$(sed -n '/\/\/ Bash-style call: name arg1 arg2/,/\.form = \.parenless,/p' "$PARSER")
+examined=$((examined + 1))
+if [ -z "$parenless_region" ]; then
+    bad 'the parenless-call boundary is not selected: empty region'
+fi
+parenless_kinds=$(printf '%s\n' "$parenless_region" | grep -cF '.kind == .name' || true)
+examined=$((examined + 1))
+if [ "$parenless_kinds" -ne 0 ]; then
+    bad "parenless call admission retained host name recognition: count=$parenless_kinds"
+fi
+parenless_faces=$(printf '%s\n' "$parenless_region" | grep -cF 'try self.currentParserName()' || true)
+examined=$((examined + 1))
+if [ "$parenless_faces" -ne 2 ]; then
+    bad "parenless call admission does not consume both settled ordinary-name faces: count=$parenless_faces"
+fi
+parenless_literals=$(printf '%s\n' "$parenless_region" | grep -cF 'try self.currentParserLiteral()' || true)
+examined=$((examined + 1))
+if [ "$parenless_literals" -ne 2 ]; then
+    bad "parenless call admission lost the settled literal face: count=$parenless_literals"
+fi
+
+parenless_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate parenless-call scratch' >&2; exit 2; }
+printf '%s\n' '// Bash-style call: name arg1 arg2 ...' \
+    '(nxt.kind == .name or try self.currentParserLiteral());' \
+    '(peek.kind == .name or try self.currentParserLiteral());' \
+    '.form = .parenless,' >"$parenless_probe/old.zig"
+printf '%s\n' '// Bash-style call: name arg1 arg2 ...' \
+    '(try self.currentParserName() or try self.currentParserLiteral());' \
+    '(try self.currentParserName() or try self.currentParserLiteral());' \
+    '.form = .parenless,' >"$parenless_probe/new.zig"
+printf '%s\n' 'unrelated line' >"$parenless_probe/absent.zig"
+parenless_old_kinds=$(sed -n '/\/\/ Bash-style call: name arg1 arg2/,/\.form = \.parenless,/p' "$parenless_probe/old.zig" | grep -cF '.kind == .name')
+parenless_old_faces=$(sed -n '/\/\/ Bash-style call: name arg1 arg2/,/\.form = \.parenless,/p' "$parenless_probe/old.zig" | grep -cF 'try self.currentParserName()' || true)
+parenless_new_kinds=$(sed -n '/\/\/ Bash-style call: name arg1 arg2/,/\.form = \.parenless,/p' "$parenless_probe/new.zig" | grep -cF '.kind == .name' || true)
+parenless_new_faces=$(sed -n '/\/\/ Bash-style call: name arg1 arg2/,/\.form = \.parenless,/p' "$parenless_probe/new.zig" | grep -cF 'try self.currentParserName()')
+parenless_absent=$(sed -n '/\/\/ Bash-style call: name arg1 arg2/,/\.form = \.parenless,/p' "$parenless_probe/absent.zig")
+rm -rf -- "$parenless_probe"
+examined=$((examined + 1))
+if [ "$parenless_old_kinds" -ne 2 ] || [ "$parenless_old_faces" -ne 0 ] ||
+    [ "$parenless_new_kinds" -ne 0 ] || [ "$parenless_new_faces" -ne 2 ] ||
+    [ -n "$parenless_absent" ]; then
+    bad "the parenless-call detector is broken: old=$parenless_old_kinds/$parenless_old_faces new=$parenless_new_kinds/$parenless_new_faces absent=${#parenless_absent}"
+fi
+
 # The outer correlated if-pack probe consumes the ordinary-name face before
 # entering the already-transferred binding reader. Zig retains cursor snapshot,
 # fallback, correlated-pack recognition, and statement materialization.

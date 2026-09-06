@@ -5499,7 +5499,7 @@ pub const Parser = struct {
         // `end` standing between the two lines.
         if (first.* == .name) {
             const is_bash_arg = nxt.loc.line == first.loc().line and
-                (nxt.kind == .name or try self.currentParserLiteral());
+                (try self.currentParserName() or try self.currentParserLiteral());
             if (is_bash_arg) {
                 const name_info = first.name;
                 var args: std.ArrayList(*ast.Expr) = .empty;
@@ -5507,7 +5507,7 @@ pub const Parser = struct {
                 while (true) {
                     const peek = try self.pk();
                     const is_next = peek.loc.line == first.loc().line and
-                        (peek.kind == .name or try self.currentParserLiteral());
+                        (try self.currentParserName() or try self.currentParserLiteral());
                     if (!is_next) break;
                     if (peek.kind == .semi or peek.kind == .eof or
                         peek.kind == .kw_end or peek.kind == .kw_else or
@@ -12041,6 +12041,56 @@ test "parse: production member identity executes through whole-pack event" {
         const event = try parserEventForTest(@intCast(index), true);
         const expected = if (row.kind) |kind| kind == .name or row.keyword else false;
         try testing.expectEqual(expected, ((event >> 9) & 1) != 0);
+    }
+}
+
+test "parse: the ordinary-name face admits exactly the name identity" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        var facts = [3]i64{ 0, @intCast(index), 0 };
+        const decision = try parserDecisionForTest(facts[0..], 0, true);
+        const event = try parserEventForTest(@intCast(index), true);
+        const face = ((decision >> 5) & 1) != 0 and ((event >> 9) & 1) != 0;
+        const expected = if (row.kind) |kind| kind == .name else false;
+        try testing.expectEqual(expected, face);
+    }
+}
+
+test "parse: the ordinary-name face refuses a header paren that shares decision bit 5" {
+    const high_line: u64 = (1 << 28) - 1;
+    const high_column: u64 = (1 << 27) - 1;
+    var facts = [_]i64{
+        0,
+        @intCast(@as(u64, @backingInt(TK.name)) | (@as(u64, 1) << 8) | (@as(u64, 1) << 36)),
+        0,
+        @intCast(@as(u64, @backingInt(TK.lparen)) | (@as(u64, 1) << 8) | (@as(u64, 1) << 36)),
+        0,
+        @intCast(@as(u64, @backingInt(TK.name)) | (@as(u64, 1) << 8) | (@as(u64, 2) << 36)),
+        0,
+        @intCast(@as(u64, @backingInt(TK.rparen)) | (@as(u64, 1) << 8) | (@as(u64, 3) << 36)),
+        0,
+        @intCast(@as(u64, @backingInt(TK.name)) | (high_line << 8) | (high_column << 36)),
+        0,
+        @intCast(@as(u64, @backingInt(TK.eof)) | (high_line << 8) | (high_column << 36)),
+        0,
+    };
+    const count = (facts.len - 1) / 2;
+    const events = try testing.allocator.alloc(i64, count * 2);
+    defer testing.allocator.free(events);
+    try parserEventsForTest(facts[0..], events, true);
+
+    const face = struct {
+        fn at(all: []const i64, total: usize, index: usize) bool {
+            return ((all[total + index] >> 5) & 1) != 0 and ((all[index] >> 9) & 1) != 0;
+        }
+    }.at;
+
+    // Without this the conjunction below would pass vacuously: the `(` must be
+    // a coordinate that actually carries decision bit 5.
+    try testing.expect(((events[count + 1] >> 5) & 1) != 0);
+    try testing.expect(!face(events, count, 1));
+
+    for ([_]usize{ 0, 2, 4 }) |index| {
+        try testing.expect(face(events, count, index));
     }
 }
 
