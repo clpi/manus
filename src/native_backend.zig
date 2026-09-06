@@ -3072,6 +3072,38 @@ const Arm64Compiler = struct {
         return regIsPinned(temps, reg);
     }
 
+    /// Does this `temps` name still stand for `id`'s claim on `reg`?
+    ///
+    /// `temps` entries outlive the claims they stood for — `emitPopVarargs`
+    /// releases scratch the map still names and `sweepGpLive` frees by owner
+    /// record while leaving the name alone — so the name alone cannot say. A
+    /// VALID name carries its owner: the emission loop rebinds `gp_reg_owner[r]`
+    /// to the defining id after every value instruction, so ownerless or
+    /// otherwise-owned in the allocatable band is exactly a name whose claim is
+    /// gone. Homes and pins restate their claims in other maps and the ABI bank
+    /// is `preserveArgReg`'s to guard, so the test is that band only.
+    fn staleGpName(self: *const Arm64Compiler, reg: u5, id: u32) bool {
+        return reg >= 9 and reg < 29 and reg != platform_reserved_reg and
+            !self.gp_home_regs[reg] and self.gp_reg_owner[reg] != id;
+    }
+
+    /// The register a local's value is IN, out of the two maps that name one.
+    ///
+    /// The same two facts `evalDnirValue` reads for a `.local`, in the same
+    /// order: `pinned` first, then a `temps` name that is still that local's.
+    /// A stale name is not a location on either side of a store.
+    fn gpLocalHomeReg(
+        self: *const Arm64Compiler,
+        temps: *const std.AutoHashMapUnmanaged(u32, u5),
+        pinned: *const std.AutoHashMapUnmanaged(u32, u5),
+        slot: u32,
+    ) ?u5 {
+        if (pinned.get(slot)) |reg| return reg;
+        const named = temps.get(slot) orelse return null;
+        if (self.staleGpName(named, slot)) return null;
+        return named;
+    }
+
     fn compileDnirFunction(self: *Arm64Compiler, f: dnir.Function) Error!void {
         self.cur_func_name = f.name;
         self.fp_locals.clearRetainingCapacity();
@@ -4128,7 +4160,35 @@ const Arm64Compiler = struct {
                             _ = pinned.remove(slot);
                             _ = temps.remove(slot);
                             if (!Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
-                        } else if (pinned.get(slot) orelse temps.get(slot)) |local_reg| {
+                        } else if (self.gpLocalHomeReg(temps, pinned, slot)) |local_reg| {
+                            // A STALE NAME IS NOT A PLACE TO STORE INTO EITHER
+                            // (GAP-148).
+                            //
+                            // This arm read `temps` raw, and `evalDnirValue`
+                            // refuses that same name for the same local: in
+                            // x9..x28, neither a home nor its own id's owner is
+                            // a claim `sweepGpLive` or `emitPopVarargs` gave
+                            // back, and the pool has since handed the register
+                            // to somebody else. The read side falls through to
+                            // the frame home; this side moved the local's new
+                            // value INTO the stranger's register and homed it
+                            // there — and `markGpHome` sets the very flag that
+                            // stops `staleGpName` firing, so the STRANGER's own
+                            // name, refused a moment earlier, then answers with
+                            // the local's value. Two wrong answers, the second
+                            // one the read repair being undone.
+                            //
+                            // A local with no location falls through to the arms
+                            // below, which are already the answer for a local
+                            // that never had one. Under pressure that refuses
+                            // where reuse would have miscompiled.
+                            //
+                            // Not the closure — closure is authoritative
+                            // `register`/`frame` assignment before emission, per
+                            // GAP-148's record, under which a local's location
+                            // is one fact the assignment carries rather than two
+                            // maps a store and a read each interpret.
+                            //
                             // THE STORE IS THIS REGISTER'S RELOAD, SO THE ENTRY
                             // THAT WOULD RELOAD IT HAS TO GO.
                             //
@@ -5734,18 +5794,11 @@ const Arm64Compiler = struct {
                     // concat, where the buffer argument read the size temp
                     // through a name `emitPopVarargs` had already released.
                     //
-                    // A VALID name carries its owner: the emission loop rebinds
-                    // `gp_reg_owner[r]` to the defining id after every value
-                    // instruction, so a name whose register's owner is null or
-                    // names another id is exactly a name whose claim is gone.
-                    // Homes and pins restate their claims in other maps and the
-                    // ABI bank is `preserveArgReg`'s to guard, so the test is
-                    // the allocatable bank only. A stale name falls through to
-                    // the frame home — the one place a local's value is still
+                    // A VALID name carries its owner, which is what
+                    // `staleGpName` reads. A stale name falls through to the
+                    // frame home — the one place a local's value is still
                     // authoritative — instead of answering with a stranger.
-                    const stale = r >= 9 and r < 29 and r != platform_reserved_reg and
-                        !self.gp_home_regs[r] and self.gp_reg_owner[r] != slot;
-                    if (!stale) return try self.ensureRegLiveRemap(temps, r);
+                    if (!self.staleGpName(r, slot)) return try self.ensureRegLiveRemap(temps, r);
                 }
                 if (self.gp_stack_locals.get(slot)) |off| {
                     return try self.loadGpStackLocal(off);
@@ -22361,4 +22414,141 @@ test "the widening conversion reads the value's home, not a stale name" {
         compiler.evalDnirValueFp(&temps, .{ .local = slot }),
     );
     try std.testing.expectEqual(at_full, compiler.code.items.len);
+}
+
+// A STALE NAME IS NOT A PLACE TO STORE INTO (GAP-148).
+//
+// `evalDnirValue` refuses a `temps` name in x9..x28 that is neither a home nor
+// its own id's owner: that is a claim `sweepGpLive` or `emitPopVarargs` gave
+// back under a name nobody rewrote, and the pool has since handed the register
+// to somebody else. The read side falls through to the frame home for it. The
+// `store_local` arm read the same map raw, so it moved this local's new value
+// into the stranger's register and then `markGpHome` claimed that register as
+// this local's home for the rest of the function — which also sets the very
+// flag that stops the read side refusing, so the stranger's own name starts
+// answering with the local's value.
+//
+// Built directly rather than through a source program for the same reason as
+// every test this gap has recorded: the state is one the allocator passes
+// through between a release and a store, not one a fixture names.
+test "a store does not home a local in a register another value owns" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    // The value being stored, in ordinary scratch.
+    const src_temp: u32 = 7;
+    const src_reg: u5 = 9;
+    compiler.claimReg(src_reg);
+    try temps.put(alloc, src_temp, src_reg);
+
+    // The stale state: this local's name survives in `temps`, but the register
+    // is claimed and owned by a DIFFERENT id, so the claim the name stood for
+    // is gone and the register belongs to that id now.
+    const slot: u32 = 3;
+    const stranger_reg: u5 = 11;
+    const stranger_id: u32 = 41;
+    try temps.put(alloc, slot, stranger_reg);
+    compiler.claimReg(stranger_reg);
+    compiler.gp_reg_owner[stranger_reg] = stranger_id;
+
+    const before = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .store_local,
+        .result = slot,
+        .lhs = .{ .temp = src_temp },
+        .ty = .i64,
+    }, &branch_patches, null, 0);
+
+    // THE STORE GOES TO A HOME OF ITS OWN. A leaf's `allocHomeReg` falls
+    // through to the ordinary pool, whose first free register is x10 — x9 holds
+    // the value and x11 is the stranger's.
+    const home: u5 = 10;
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        0xaa0003e0 | (@as(u32, src_reg) << 16) | @as(u32, home),
+        std.mem.readInt(u32, compiler.code.items[before..][0..4], .little),
+    );
+    try std.testing.expect(compiler.gp_home_regs[home]);
+    try std.testing.expectEqual(@as(?u5, home), pinned.get(slot));
+    try std.testing.expectEqual(@as(?u5, home), temps.get(slot));
+
+    // AND THE STRANGER KEEPS EVERYTHING. Its value was not written over, its
+    // claim stands, and it did not become this local's home — the flag that
+    // would have made `staleGpName` serve its name to this local's readers.
+    try std.testing.expectEqual(@as(?u32, stranger_id), compiler.gp_reg_owner[stranger_reg]);
+    try std.testing.expect(compiler.used_regs[stranger_reg]);
+    try std.testing.expect(!compiler.gp_home_regs[stranger_reg]);
+
+    // WRONG ERROR: A LIVE NAME IS STILL THE PLACE, AND NO SECOND HOME IS TAKEN
+    // FOR IT. The term is the owner record and not the absence of a home flag:
+    // a name its own id owns is stored into where it stands, with one move and
+    // no allocation.
+    const own_slot: u32 = 4;
+    const own_reg: u5 = 12;
+    const src2_temp: u32 = 8;
+    const src2_reg: u5 = 14;
+    try temps.put(alloc, own_slot, own_reg);
+    compiler.claimReg(own_reg);
+    compiler.gp_reg_owner[own_reg] = own_slot;
+    compiler.claimReg(src2_reg);
+    try temps.put(alloc, src2_temp, src2_reg);
+
+    const at_own = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .store_local,
+        .result = own_slot,
+        .lhs = .{ .temp = src2_temp },
+        .ty = .i64,
+    }, &branch_patches, null, 0);
+    try std.testing.expectEqual(at_own + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        0xaa0003e0 | (@as(u32, src2_reg) << 16) | @as(u32, own_reg),
+        std.mem.readInt(u32, compiler.code.items[at_own..][0..4], .little),
+    );
+    try std.testing.expectEqual(@as(?u5, own_reg), temps.get(own_slot));
+    try std.testing.expectEqual(@as(?u5, own_reg), pinned.get(own_slot));
+    // x9 was released by the first store and is what `allocHomeReg` would have
+    // answered; it is still free, so this store took no register at all.
+    try std.testing.expect(!compiler.used_regs[src_reg]);
+
+    // FALSE ACCEPT: WITH NO REGISTER TO HOME IN, THE STORE REFUSES. Reaching a
+    // location of its own costs a register, and when the pool cannot pay the
+    // answer is the `RegisterExhausted` bail `allocRegExcluding` already gives
+    // outside gate transport — never the stranger's register as a fallback.
+    const starved_slot: u32 = 5;
+    try temps.put(alloc, starved_slot, stranger_reg);
+    var full: u5 = 0;
+    while (full < 29) : (full += 1) compiler.claimReg(full);
+    const at_full = compiler.code.items.len;
+    try std.testing.expectError(error.RegisterExhausted, compiler.compileDnirInstr(
+        &temps,
+        &pinned,
+        .{ .op = .store_local, .result = starved_slot, .lhs = .{ .temp = src2_temp }, .ty = .i64 },
+        &branch_patches,
+        null,
+        0,
+    ));
+    try std.testing.expectEqual(at_full, compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u32, stranger_id), compiler.gp_reg_owner[stranger_reg]);
+    try std.testing.expectEqual(@as(?u5, null), pinned.get(starved_slot));
 }
