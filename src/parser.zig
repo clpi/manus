@@ -2415,7 +2415,7 @@ pub const Parser = struct {
         // @cinclude is a standalone top-level statement, not attached to a decl.
         // Check for it first before the normal attribute detection.
         const saved = self.saveState();
-        if ((try self.pk()).kind == .at) {
+        if (try self.currentParserAnchor()) {
             _ = try self.adv(); // consume @
             if ((try self.currentParserName()) and std.mem.eql(u8, (try self.pk()).text, "cinclude")) {
                 self.restoreState(saved);
@@ -2423,7 +2423,7 @@ pub const Parser = struct {
             }
             self.restoreState(saved);
         }
-        while ((try self.pk()).kind == .at) {
+        while (try self.currentParserAnchor()) {
             _ = try self.adv();
             const attr_name = try self.expect(.name);
             var parts: std.ArrayList([]const u8) = .empty;
@@ -2550,7 +2550,7 @@ pub const Parser = struct {
     fn parse_attributed_decl(self: *Parser) ParseError!ast.Stmt {
         var attrs: std.ArrayList(ast.Attribute) = .empty;
         const directives = @import("directives.zig");
-        while ((try self.pk()).kind == .at) {
+        while (try self.currentParserAnchor()) {
             const attr = try self.parse_one_attribute();
 
             // Standalone @cinclude / @comp.c.import / @build.* / @debug.* module directives are
@@ -2661,7 +2661,7 @@ pub const Parser = struct {
 
     /// Standalone `@c.emit("...")` / `@c.include("h.h")` / `@c.import("h.h")` statement.
     fn try_parse_c_interface_stmt(self: *Parser) ParseError!?ast.Stmt {
-        if ((try self.pk()).kind != .at) return null;
+        if (!(try self.currentParserAnchor())) return null;
         const saved = self.saveState();
         const loc = (try self.pk()).loc;
         const attr = try self.parse_one_attribute();
@@ -5225,7 +5225,7 @@ pub const Parser = struct {
             }
             // RETIRED. `@{ … }` is exclusively world injection
             // (`law.injection.only`); a descriptor is an ordinary table.
-            if ((try self.pk()).kind == .at) {
+            if (try self.currentParserAnchor()) {
                 _ = try self.adv();
                 if ((try self.pk()).kind == .lbrace) {
                     term.locErr(first.loc(), "'@{{ … }}' is world injection, not descriptor construction", .{});
@@ -5557,7 +5557,7 @@ pub const Parser = struct {
         while (true) {
             const tok = try self.pk();
             const inf = (try self.infix_prec()) orelse break;
-            if (tok.kind == .at and tok.loc.line > e.loc().line) break;
+            if ((try self.currentParserAnchor()) and tok.loc.line > e.loc().line) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
             const rhs = if (try self.at_anchor_case(inf.op))
@@ -7863,7 +7863,7 @@ pub const Parser = struct {
                     // no producer left, a re-derivation from an identifier's
                     // spelling is dead weight that can only come back to life
                     // by accident.
-                    if ((try self.pk()).kind == .at) {
+                    if (try self.currentParserAnchor()) {
                         const at_tok = try self.adv();
                         const sem = self.expect_name_like() catch "name";
                         term.locErr(at_tok.loc, "'.@{s}' is not an anchor stance", .{sem});
@@ -7994,7 +7994,7 @@ pub const Parser = struct {
                         self.restoreState(saved);
                         break;
                     }
-                    if (after_colon.kind == .at) {
+                    if (try self.currentParserAnchor()) {
                         // name : @… — the RETIRED descriptor face. Not consumed
                         // here; the statement reader refuses it by name below.
                         self.restoreState(saved);
@@ -12069,6 +12069,24 @@ test "parse: the group-opening face admits exactly the `(` identity" {
         const expected = if (row.kind) |kind| kind == .lparen else false;
         if (expected) seen = true;
         try testing.expectEqual(expected, ((event >> 63) & 1) != 0);
+    }
+    // Without this the sweep would pass on a face that admits nothing at all.
+    try testing.expect(seen);
+}
+
+test "parse: the anchor face admits exactly the `@` identity" {
+    var seen = false;
+    for (grammar_roles.rows, 0..) |row, index| {
+        var facts = [3]i64{ 0, @intCast(index), 0 };
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        // Mirrors `currentParserAnchor` exactly, guard included: a `(` has no
+        // primary face at all, because its lane-two field carries the matching
+        // close COORDINATE, which ranges over every face value including 17.
+        const face: i64 = if (((events[0] >> 63) & 1) != 0) 0 else events[1] >> 13;
+        const expected = if (row.kind) |kind| kind == .at else false;
+        if (expected) seen = true;
+        try testing.expectEqual(expected, face == 17);
     }
     // Without this the sweep would pass on a face that admits nothing at all.
     try testing.expect(seen);

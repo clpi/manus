@@ -4015,6 +4015,148 @@ if [ "$paren_new_compare" -ne 0 ] || [ "$paren_new_helper" -ne 0 ] || [ "$paren_
     bad "the group-opening detector misreads the canonical spelling: compare=$paren_new_compare helper=$paren_new_helper faces=$paren_new_faces"
 fi
 
+# ── §7 ANCHOR IDENTITY IS CONSUMED AS A CLASS ───────────────────────────────
+#
+# `lib/compiler/parser.id` settles `@` identity for every coordinate in the
+# pack: lane-two face 17 at exactly `kind == token.kindat`, and
+# `currentParserAnchor()` is the reader. Eight parser consumers across six
+# functions still answered "is the token under the cursor an `@`" for
+# themselves, from the generated host TokenKind, at a coordinate the producer
+# had already settled and `pk()` had already selected.
+#
+# The class is every host read of `@` identity AT A CURSOR COORDINATE, in the
+# three spellings it takes in this file: `(try self.pk()).kind == .at`, the
+# negated form, and a token captured by `pk()` and then compared
+# (`tok.kind == .at`, `after_colon.kind == .at`). Its count falls 8 -> 0.
+# `expect(.at)` is NOT in the class: it is a demand that reports its own
+# diagnostic, not a recognition read.
+at_compare=$(grep -Eo '(==|!=) \.at\b' "$PARSER" | wc -l | tr -d ' ')
+at_check=$(grep -Fo 'self.check(.at)' "$PARSER" | wc -l | tr -d ' ')
+at_eat=$(grep -Fo 'self.eat(.at)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$at_check" -ne 0 ] || [ "$at_eat" -ne 0 ]; then
+    bad "the parser still recognizes '@' through a kind-parameterized helper: check=$at_check eat=$at_eat"
+fi
+examined=$((examined + 1))
+if [ "$at_compare" -ne 1 ]; then
+    bad "the parser rebuilds '@' identity at a cursor coordinate: count=$at_compare"
+fi
+
+# The one surviving comparison is named, so the ceiling above cannot be met by
+# deleting it and cannot drift into a new cursor read: it is the equivalence
+# sweep itself, which is REQUIRED to compare the face against the identity over
+# every generated row.
+at_sweep_oracle=$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF 'kind == .at' || true)
+examined=$((examined + 1))
+if [ "$at_sweep_oracle" -ne 1 ]; then
+    bad "the anchor equivalence sweep lost its identity comparison: count=$at_sweep_oracle"
+fi
+at_sweep_face=$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF 'face == 17' || true)
+examined=$((examined + 1))
+if [ "$at_sweep_face" -ne 1 ]; then
+    bad "the anchor equivalence sweep does not read the settled face: count=$at_sweep_face"
+fi
+# A `(` carries a matching-close COORDINATE in the same lane-two field, and a
+# coordinate ranges over every face value including 17. The reader guards on
+# event bit 63; a sweep that skipped the guard would not be measuring the
+# reader.
+at_sweep_guard=$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF '>> 63) & 1' || true)
+examined=$((examined + 1))
+if [ "$at_sweep_guard" -ne 1 ]; then
+    bad "the anchor equivalence sweep dropped the group-opening guard the reader carries: count=$at_sweep_guard"
+fi
+at_sweep_nonvacuous=$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF 'try testing.expect(seen);' || true)
+examined=$((examined + 1))
+if [ "$at_sweep_nonvacuous" -ne 1 ]; then
+    bad "the anchor equivalence sweep could pass on a face that admits nothing: count=$at_sweep_nonvacuous"
+fi
+
+# Each transferred region must select a nonempty region of the parser AND carry
+# the settled face at its exact count.
+check_anchor_region() {
+    region_pattern=$1
+    region_expected=$2
+    region_label=$3
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "the $region_label region selector selected nothing: lines=$region_lines"
+        return
+    fi
+    region_faces=$(sed -n "${region_pattern}p" "$PARSER" | \
+        grep -cF 'self.currentParserAnchor()' || true)
+    examined=$((examined + 1))
+    if [ "$region_faces" -ne "$region_expected" ]; then
+        bad "$region_label does not consume the settled anchor face: count=$region_faces want=$region_expected"
+    fi
+}
+
+check_anchor_region '/fn parse_at_starts_attribute_decl/,/fn is_known_attribute/' 2 'attribute-declaration lookahead'
+check_anchor_region '/fn parse_attributed_decl/,/fn strip_quotes/' 1 'the attribute accumulation loop'
+check_anchor_region '/fn try_parse_c_interface_stmt/,/fn parse_local_or_global_with_attrs/' 1 'the C-interface statement entry'
+check_anchor_region '/fn parse_expr_stmt/,/fn finish_prec/' 1 'the retired descriptor-sigil refusal'
+check_anchor_region '/fn finish_prec/,/fn parse_operand/' 1 'the infix anchor line crossing'
+check_anchor_region '/fn parse_suffixed_expr/,/fn parse_nn_block_desugar/' 2 'suffix anchor-stance recognition'
+
+# Anti-green controls. Each transferred site composed the anchor answer with a
+# sibling fact of its own; deleting that sibling would widen admission rather
+# than move it, so every one is required to survive.
+has "$PARSER" 'std.mem.eql(u8, (try self.pk()).text, "cinclude")' \
+    'the attribute-declaration lookahead lost its cinclude spelling test'
+has "$PARSER" 'and tok.loc.line > e.loc().line) break;' \
+    'the infix anchor read lost its line-crossing test'
+has "$PARSER" "is world injection, not descriptor construction" \
+    'the retired descriptor-sigil refusal lost its diagnostic'
+has "$PARSER" 'if (after_colon.kind == .star or after_colon.kind == .question) {' \
+    'the typed-binding colon boundary lost its pointer/optional arm'
+has "$PARSER" 'const at_tok = try self.adv();' \
+    'the suffix anchor-stance refusal lost its consumed-token location'
+examined=$((examined + 1))
+if [ "$(grep -cF '_ = try self.expect(.at);' "$PARSER")" -lt 2 ]; then
+    bad 'the `@` DEMAND face was deleted rather than left standing beside the settled recognition face'
+fi
+
+# Positive controls. Every detector above counts text that is absent from the
+# repaired tree, so each is shown a tree where it is present, and shown that it
+# does not fire on the canonical spelling.
+at_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate anchor scratch' >&2; exit 2; }
+cat >"$at_probe/old.zig" <<'PROBE'
+while ((try self.pk()).kind == .at) {
+if ((try self.pk()).kind != .at) return null;
+if (tok.kind == .at and tok.loc.line > e.loc().line) break;
+if (after_colon.kind == .at) {
+const opens = try self.check(.at);
+if (try self.eat(.at) != null) {
+PROBE
+cat >"$at_probe/new.zig" <<'PROBE'
+while (try self.currentParserAnchor()) {
+if (!(try self.currentParserAnchor())) return null;
+if ((try self.currentParserAnchor()) and tok.loc.line > e.loc().line) break;
+if (try self.currentParserAnchor()) {
+const opens = try self.currentParserAnchor();
+if (try self.currentParserAnchor()) {
+_ = try self.expect(.at);
+PROBE
+at_old_compare=$(grep -Eo '(==|!=) \.at\b' "$at_probe/old.zig" | wc -l | tr -d ' ')
+at_old_check=$(grep -Fo 'self.check(.at)' "$at_probe/old.zig" | wc -l | tr -d ' ')
+at_old_eat=$(grep -Fo 'self.eat(.at)' "$at_probe/old.zig" | wc -l | tr -d ' ')
+at_new_compare=$(grep -Eo '(==|!=) \.at\b' "$at_probe/new.zig" | wc -l | tr -d ' ')
+at_new_helper=$(grep -Eo 'self\.(check|eat)\(\.at\)' "$at_probe/new.zig" | wc -l | tr -d ' ')
+at_new_faces=$(grep -cF 'self.currentParserAnchor()' "$at_probe/new.zig")
+rm -rf -- "$at_probe"
+examined=$((examined + 1))
+if [ "$at_old_compare" -ne 4 ] || [ "$at_old_check" -ne 1 ] || [ "$at_old_eat" -ne 1 ]; then
+    bad "the anchor detector does not see the retired spellings: compare=$at_old_compare check=$at_old_check eat=$at_old_eat"
+fi
+examined=$((examined + 1))
+if [ "$at_new_compare" -ne 0 ] || [ "$at_new_helper" -ne 0 ] || [ "$at_new_faces" -ne 6 ]; then
+    bad "the anchor detector misreads the canonical spelling: compare=$at_new_compare helper=$at_new_helper faces=$at_new_faces"
+fi
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then
