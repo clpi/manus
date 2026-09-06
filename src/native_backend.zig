@@ -2310,6 +2310,7 @@ const Arm64Compiler = struct {
 
     fn widenValueLastUses(
         value_free_at: *std.AutoHashMapUnmanaged(u32, u32),
+        reads: []const [2]u32,
         def_at: *const std.AutoHashMapUnmanaged(u32, u32),
         back: []const [2]u32,
     ) void {
@@ -2326,8 +2327,13 @@ const Arm64Compiler = struct {
                 for (back) |edge| {
                     const head = edge[0];
                     const tail = edge[1];
-                    const begins_before = if (definition) |def|
-                        def < head
+                    const begins_before = if (definition) |def| blk: {
+                        if (def < head) break :blk true;
+                        for (reads) |read| {
+                            if (read[0] == e.key_ptr.* and read[1] >= head and read[1] < def) break :blk true;
+                        }
+                        break :blk false;
+                    }
                     else
                         true;
                     if (begins_before and e.value_ptr.* >= head and e.value_ptr.* < tail) {
@@ -2344,6 +2350,8 @@ const Arm64Compiler = struct {
     fn computeValueLastUse(self: *Arm64Compiler, f: dnir.Function) Error!void {
         self.value_free_at.clearRetainingCapacity();
         self.fp_abi_passthrough.clearRetainingCapacity();
+        var reads: std.ArrayList([2]u32) = .empty;
+        defer reads.deinit(self.alloc);
         var def_at: std.AutoHashMapUnmanaged(u32, u32) = .empty;
         defer def_at.deinit(self.alloc);
         var back: std.ArrayList([2]u32) = .empty;
@@ -2366,6 +2374,20 @@ const Arm64Compiler = struct {
                 var sink: Sink = .{ .map = &self.value_free_at, .alloc = self.alloc, .at = idx };
                 forEachOperandId(ins, &sink, Sink.note);
                 if (sink.failed) return error.OutOfMemory;
+                const ReadSink = struct {
+                    list: *std.ArrayList([2]u32),
+                    alloc: std.mem.Allocator,
+                    at: u32,
+                    failed: bool = false,
+                    fn note(s: *@This(), id: u32) void {
+                        s.list.append(s.alloc, .{ id, s.at }) catch {
+                            s.failed = true;
+                        };
+                    }
+                };
+                var read_sink: ReadSink = .{ .list = &reads, .alloc = self.alloc, .at = idx };
+                forEachOperandId(ins, &read_sink, ReadSink.note);
+                if (read_sink.failed) return error.OutOfMemory;
                 if (dnir.definition(ins)) |r| {
                     if (!def_at.contains(r)) try def_at.put(self.alloc, r, idx);
                 }
@@ -2472,7 +2494,7 @@ const Arm64Compiler = struct {
         // the body has already reused. Nested loops make one pass insufficient:
         // widening to an inner back edge can drag a range into an outer one, so
         // iterate to a fixpoint (bounded — every step only moves ends forward).
-        widenValueLastUses(&self.value_free_at, &def_at, back.items);
+        widenValueLastUses(&self.value_free_at, reads.items, &def_at, back.items);
 
         // Keep a checked f64 result in d0 only when the next instruction
         // immediately consumes it as an ABI argument or function result.
@@ -17500,7 +17522,8 @@ test "CFG liveness reaches its fixpoint beyond sixteen widening steps" {
         back[i] = .{ head, head + 1 };
     }
 
-    Arm64Compiler.widenValueLastUses(&last, &defined, &back);
+    const reads = [_][2]u32{.{ 7, 1 }};
+    Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back);
     try std.testing.expectEqual(@as(?u32, 18), last.get(7));
 }
 
@@ -17516,16 +17539,42 @@ test "CFG liveness carries a parameter through a loop at function entry" {
     // them from widening, even though they entered the function before it.
     try last.put(alloc, 7, 2);
     const back = [_][2]u32{.{ 0, 4 }};
+    const reads = [_][2]u32{.{ 7, 2 }, .{ 8, 2 }};
 
-    Arm64Compiler.widenValueLastUses(&last, &defined, &back);
+    Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back);
     try std.testing.expectEqual(@as(?u32, 4), last.get(7));
 
     // A value genuinely defined at the header is new on every iteration and
     // must remain distinct from the carried-in parameter case above.
     try last.put(alloc, 8, 2);
     try defined.put(alloc, 8, 0);
-    Arm64Compiler.widenValueLastUses(&last, &defined, &back);
+    Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back);
     try std.testing.expectEqual(@as(?u32, 2), last.get(8));
+}
+
+test "CFG liveness carries a value read before its loop redefinition" {
+    const alloc = std.testing.allocator;
+    var last: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer last.deinit(alloc);
+    var defined: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer defined.deinit(alloc);
+    const back = [_][2]u32{.{ 2, 6 }};
+
+    // The value entering at the back edge is read at the header before this
+    // iteration replaces it. Its first definition is inside the loop, but that
+    // definition does not dominate the header read.
+    try last.put(alloc, 7, 2);
+    try defined.put(alloc, 7, 4);
+    const reads = [_][2]u32{ .{ 7, 0 }, .{ 7, 2 }, .{ 8, 4 } };
+    Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back);
+    try std.testing.expectEqual(@as(?u32, 6), last.get(7));
+
+    // A definition before the first read dominates every iteration's read and
+    // therefore does not carry the previous iteration's realization.
+    try last.put(alloc, 8, 4);
+    try defined.put(alloc, 8, 3);
+    Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back);
+    try std.testing.expectEqual(@as(?u32, 4), last.get(8));
 }
 
 test "CFG liveness does not read ABI staging slots as value definitions" {
