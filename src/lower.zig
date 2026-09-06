@@ -1665,3 +1665,77 @@ test "lower: measured facts never manufacture a static witness" {
     try std.testing.expect(set.contains("hidden"));
     try std.testing.expect(!set.contains("seen"));
 }
+
+// ===========================================================================
+// The closure-acceptance shape, UNDER MEASUREMENT — one authority fact
+// selecting different enforcement on TWO targets, each decided by ITS OWN
+// measured cost. This is GAP-185's stated evidence ("one authority fact
+// selecting different enforcement on two targets with cost measured on each")
+// carried by measured facts rather than the stated orders: the two earlier
+// two-target tests use `costOf`'s estimates; the earlier measured tests use
+// one target. Here each target's admissible candidates are all measured on
+// THAT target, and the two winners differ because their measurements differ.
+// ===========================================================================
+
+test "lower: one authority selects different enforcement on two targets under measurement" {
+    // The same escaping authority under an adversary demands confinement and
+    // timing, so software_check (spatial+immutability only) is inadmissible on
+    // both targets. x86_64-linux admits mpk, process and network_isolation;
+    // aarch64-macos admits process and network_isolation (no PKU). The profile
+    // is crossing-dominated, so the domain-crossing cost decides.
+    const auth = exposedAuthority();
+    const attack = observation.ordinary_executable.with(.security_adversary);
+    const profile: Profile = .{ .accesses = 0, .crossings = 1000 };
+
+    const linux: target_model.TargetTriple = .{ .arch = .x86_64, .os = .linux, .abi = .gnu };
+    const macos: target_model.TargetTriple = .{ .arch = .aarch64, .os = .macos, .abi = .gnu };
+    const revision = "1122334455667788990011223344556677889900";
+
+    // Every admissible candidate on EACH target, measured on THAT target in
+    // one shared unit at one shared revision — the uniform comparison the rule
+    // requires. On linux mpk's crossing is the cheapest (10 ns); on macos,
+    // where mpk does not exist, process is the cheapest surviving boundary.
+    const measured = [_]MeasuredCost{
+        .{ .mechanism = .mpk, .triple = linux, .unit = .nanoseconds, .cost = .{ .access = 0, .crossing = 10 }, .subject_revision = revision },
+        .{ .mechanism = .process, .triple = linux, .unit = .nanoseconds, .cost = .{ .access = 0, .crossing = 50 }, .subject_revision = revision },
+        .{ .mechanism = .network_isolation, .triple = linux, .unit = .nanoseconds, .cost = .{ .access = 0, .crossing = 200 }, .subject_revision = revision },
+        .{ .mechanism = .process, .triple = macos, .unit = .nanoseconds, .cost = .{ .access = 0, .crossing = 50 }, .subject_revision = revision },
+        .{ .mechanism = .network_isolation, .triple = macos, .unit = .nanoseconds, .cost = .{ .access = 0, .crossing = 200 }, .subject_revision = revision },
+    };
+
+    // The authority did not change; only the target world did — and each
+    // winner was decided by that target's OWN measured facts, in nanoseconds.
+    const on_linux = selectMeasured(auth, attack, world.TargetWorld.of(linux), profile, &measured).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, on_linux.mechanism);
+    try std.testing.expectEqual(CostUnit.nanoseconds, on_linux.unit);
+    try std.testing.expectEqual(@as(u64, 10000), on_linux.cost.total(profile));
+
+    const on_macos = selectMeasured(auth, attack, world.TargetWorld.of(macos), profile, &measured).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.process, on_macos.mechanism);
+    try std.testing.expectEqual(CostUnit.nanoseconds, on_macos.unit);
+    try std.testing.expectEqual(@as(u64, 50000), on_macos.cost.total(profile));
+
+    try std.testing.expect(on_linux.mechanism != on_macos.mechanism);
+
+    // NEGATIVE CONTROL — cross-target leakage fails closed. A slice carrying
+    // ONLY the linux measurements cannot decide the macos selection: macos'
+    // admissible set (process, network_isolation) has no measurement ON macos,
+    // so `uniformMeasurement` returns null and the stated orders decide. The
+    // winner is still process (stated 2048 < network 65536), but the unit is
+    // the STATED scale — proving the linux nanoseconds did not leak across the
+    // triple boundary (`measurementOf` filters by triple).
+    const linux_only = measured[0..3];
+    const leaked = selectMeasured(auth, attack, world.TargetWorld.of(macos), profile, linux_only).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.process, leaked.mechanism);
+    try std.testing.expectEqual(CostUnit.cycle_order, leaked.unit);
+
+    // NEGATIVE CONTROL — a partial measurement fails closed. Drop network's
+    // linux row: linux's admissible set is no longer fully measured, so the
+    // comparison is not uniform and the stated orders decide (mpk, 32 < process
+    // 2048 < network 65536) — under the STATED scale, never a measured winner
+    // synthesized from an incomplete comparison.
+    const linux_partial = [_]MeasuredCost{ measured[0], measured[1] };
+    const partial = selectMeasured(auth, attack, world.TargetWorld.of(linux), profile, &linux_partial).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.mpk, partial.mechanism);
+    try std.testing.expectEqual(CostUnit.cycle_order, partial.unit);
+}
