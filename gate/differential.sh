@@ -224,6 +224,15 @@
 #     rules in ERE like `norm` already did. One escaped rule cannot serve two
 #     dialects — `\+` is a literal plus in ERE and a quantifier in GNU BRE —
 #     so the two channels were normalising the same root differently.
+#
+#   HASHING THE ARMS RATHER THAN ASSUMING THE HASH. Every guard that identifies
+#     an arm compares two hashes, and `shasum | awk` reported the PIPE's status
+#     — awk's, and awk succeeds on empty input. An absent, refusing or
+#     differently-shaped hasher was therefore not an error, and two empty
+#     hashes are EQUAL: `--null-control`'s same-bytes precondition was met
+#     without either arm being read. The tool is now searched for
+#     (`shasum -a 256`, `sha256sum` — a host commonly has one, not both), its
+#     own status is read, and its answer must be 64 hex characters.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -494,8 +503,73 @@ armrootreal() {
   armroot "$_arr_exe"
 }
 
+# digesttool — the command that answers a file's SHA-256, as a WORD LIST, or
+# nothing and a non-zero status. `shasum -a 256` and `sha256sum` print the same
+# two fields in the same order, and a host commonly has only one of them:
+# `shasum` ships with perl, `sha256sum` with coreutils. Spelling one of them
+# made the oracle unrunnable on a host with the other, and unrunnable in the
+# quiet direction — see `hash256`.
+#
+# An explicit `DIFFERENTIAL_DIGEST` wins and stays loud, like the limiter
+# above: a named command that does not answer SHA-256 is a caller error, not
+# permission to search for one that does (law.fallback.zero).
+digesttool() {
+  if [ -n "${DIFFERENTIAL_DIGEST:-}" ]; then
+    printf '%s' "$DIFFERENTIAL_DIGEST"
+  elif command -v shasum >/dev/null 2>&1; then
+    printf 'shasum -a 256'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    printf 'sha256sum'
+  else
+    return 1
+  fi
+}
+
+# hash256 <path> — the file's SHA-256, or NOTHING and a non-zero status.
+#
+# This was `shasum -a 256 "$1" | awk '{print $1}'`, which reports the PIPE's
+# status — awk's — and awk succeeds on empty input. A hasher that was absent,
+# that refused the file, or that answered in some other shape therefore
+# produced an EMPTY hash with a SUCCESSFUL status, and every guard that
+# identifies an arm is a string comparison of two of these:
+#
+#   the same-binary refusal    "" != ""  is false, so the run refuses with
+#                              "both arms are the same binary ()" — red, but
+#                              naming the caller's build for the harness's
+#                              defect.
+#   `--null-control`           the SAME guard INVERTED. "" = "" is true, so the
+#                              mode's one precondition — the two arms are the
+#                              same bytes — is met without either arm being
+#                              read, and it then prints "zero rows for
+#                              identical machine code". Optimistic, and it is
+#                              the instrument a reader uses to decide whether
+#                              to believe a row.
+#   moved-during-measurement   "" = "" again, on both arms.
+#
+# Measured on this tree at c62371b5 with a `shasum` on PATH that exits 127:
+# `--selftest` failed at "per-arm working directory scored as a difference",
+# three controls past the null row that had already passed green with no hash
+# on either arm.
+#
+# The status is read from the tool itself rather than from a pipe, and the
+# answer must be 64 lowercase hex — a shape check, because a tool that answers
+# something else in the same two fields would otherwise be accepted as a
+# digest.
 hash256() {
-  shasum -a 256 "$1" | awk '{print $1}'
+  _h_line=$($DIGEST "$1" 2>/dev/null) || return 1
+  _h_val=${_h_line%% *}
+  [ "${#_h_val}" -eq 64 ] || return 1
+  case "$_h_val" in
+    *[!0-9a-f]*) return 1 ;;
+  esac
+  printf '%s' "$_h_val"
+}
+
+DIGEST=$(digesttool) || {
+  echo "differential: no SHA-256 digest tool — no arm can be identified, so nothing may be compared" >&2
+  echo "differential:   tried shasum -a 256, sha256sum" >&2
+  echo "differential:   set DIFFERENTIAL_DIGEST=<command> to name one" >&2
+  exit 2
 }
 
 # Print one tab-separated record:
@@ -688,6 +762,48 @@ selftest() {
   }
 
   # ---------------------------------------------------------------------
+  # THE DIGEST, SECOND, because every guard that identifies an arm is a string
+  # comparison of two hashes: the same-binary refusal, its INVERSION in
+  # `--null-control`, and the moved-during-measurement check. A hasher that
+  # answers nothing satisfies all three at once and satisfies them EQUAL, so
+  # the failure is silent and optimistic in the one place the reader goes to
+  # find out whether to believe a row.
+
+  # KNOWN ANSWER, so a resolved hasher cannot be some other digest in the same
+  # shape. This is the SHA-256 of no bytes.
+  : >"$WORK/digest.empty"
+  [ "$(hash256 "$WORK/digest.empty")" \
+    = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ] || {
+    echo "differential: selftest FAIL — the digest tool does not answer SHA-256" >&2
+    return 1
+  }
+
+  # A FILE THAT CANNOT BE DIGESTED IS AN ERROR, NOT AN EMPTY HASH.
+  if hash256 "$WORK/digest.absent" >/dev/null 2>&1; then
+    echo "differential: selftest FAIL — hashing an absent file succeeded" >&2
+    return 1
+  fi
+
+  # A HASHER THAT PRINTS NOTHING, AND ONE THAT PRINTS SOMETHING ELSE, ARE BOTH
+  # ERRORS. The first is what an absent or refusing tool reduces to once its
+  # status is discarded; the second is what a tool of a different digest, or a
+  # different output shape, answers.
+  _self_digest=$DIGEST
+  printf '#!/bin/sh\nexit 127\n' >"$WORK/digest.silent"
+  printf '#!/bin/sh\nprintf "not-a-digest  %%s\\n" "$1"\n' >"$WORK/digest.wrong"
+  chmod +x "$WORK/digest.silent" "$WORK/digest.wrong"
+  for _self_bad in "$WORK/digest.silent" "$WORK/digest.wrong"; do
+    DIGEST=$_self_bad
+    if hash256 "$WORK/digest.empty" >/dev/null 2>&1; then
+      DIGEST=$_self_digest
+      printf 'differential: selftest FAIL — %s was accepted as a digest\n' \
+        "$_self_bad" >&2
+      return 1
+    fi
+  done
+  DIGEST=$_self_digest
+
+  # ---------------------------------------------------------------------
   # THE SIBLING RESOLVER'S OWN CONTROLS. Everything below this block is a
   # control over the COMPARISON; these are controls over whether the harness
   # can be reached at all, and for as long as this file existed it could not
@@ -790,6 +906,25 @@ exit 0
   _self_rc=$?
   [ "$_self_rc" -eq 0 ] || {
     echo "differential: selftest FAIL — sibling mirror roots scored as a difference" >&2
+    return 1
+  }
+
+  # ...AND THE CONSEQUENCE OF AN UNIDENTIFIED ARM, AT THE GUARD THAT INVERTS.
+  # The two arms above are the same bytes, which is what `--null-control`
+  # REQUIRES, and the pair therefore compares green. Two empty hashes are also
+  # equal, so a hasher that answers nothing meets that requirement without
+  # identifying either arm, and the mode goes on to report "zero rows for
+  # identical machine code" about machine code it never read. Same fixtures,
+  # a hasher that cannot answer: the run must refuse instead of comparing.
+  _self_digest=$DIGEST
+  DIGEST="$WORK/digest.silent"
+  NULL_CONTROL=1 compare_subjects \
+    "$_self/mirror/a/zig-out/bin/idol" "$_self/mirror/b/zig-out/bin/idol" \
+    "$_self/list" "$_self/source" >/dev/null 2>&1
+  _self_rc=$?
+  DIGEST=$_self_digest
+  [ "$_self_rc" -eq 2 ] || {
+    echo "differential: selftest FAIL — a null control ran on arms it could not hash" >&2
     return 1
   }
 
@@ -1167,7 +1302,7 @@ exit 7
   TMO=$_self_old_tmo
   [ "$_self_rc" -eq 2 ] || return 1
 
-  echo "differential: selftest PASS — physical scratch root, sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, per-arm cwd in both spellings, real row survives normalisation, in-tree arm at the subject source root, mirror nested in the source tree, arm reached through a symlink and a real row surviving that, an arm whose binary is a symlink and a real row surviving that, regex metacharacters in an arm root on both channels and a real row surviving that on each, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
+  echo "differential: selftest PASS — physical scratch root, SHA-256 known answer and a digest tool that is absent, silent or answering something else, sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, a null control refusing arms it cannot hash, per-arm cwd in both spellings, real row survives normalisation, in-tree arm at the subject source root, mirror nested in the source tree, arm reached through a symlink and a real row surviving that, an arm whose binary is a symlink and a real row surviving that, regex metacharacters in an arm root on both channels and a real row surviving that on each, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
   return 0
 }
 
