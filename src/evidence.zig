@@ -72,6 +72,11 @@ pub const FrontierDeclaration = enum(u8) {
     present,
 };
 
+pub const FrontierAdmission = enum(u8) {
+    denied,
+    admitted,
+};
+
 pub const DebtCause = enum(u8) {
     missing_fact,
     missing_demand,
@@ -169,6 +174,7 @@ pub const FrontierError = error{
     MissingIntegration,
     MissingMeasurement,
     MissingCompilerB,
+    PerformanceAdmissionDenied,
     MissingDimensions,
     MissingRequiredDimensions,
     MissingRequiredDimension,
@@ -311,6 +317,7 @@ pub const OracleFrontierCase = struct {
     integration: FrontierDeclaration,
     measurement: FrontierDeclaration,
     compiler_b: FrontierDeclaration,
+    performance_admission: FrontierAdmission,
     subject_revision: []const u8,
     evidence_revision: []const u8,
     equivalence: []const u8,
@@ -323,6 +330,7 @@ pub const OracleFrontierCase = struct {
         if (self.integration == .absent) return error.MissingIntegration;
         if (self.measurement == .absent) return error.MissingMeasurement;
         if (self.compiler_b == .absent) return error.MissingCompilerB;
+        if (self.performance_admission == .denied) return error.PerformanceAdmissionDenied;
         if (self.subject_revision.len == 0) return error.MissingSubjectRevision;
         if (self.evidence_revision.len == 0) return error.MissingEvidenceRevision;
         if (self.equivalence.len == 0) return error.MissingEquivalence;
@@ -1195,6 +1203,7 @@ test "oracle frontier case binds the complete comparison to its measured subject
         .integration = .present,
         .measurement = .present,
         .compiler_b = .present,
+        .performance_admission = .admitted,
         .subject_revision = "candidate-revision",
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
@@ -1225,6 +1234,7 @@ test "oracle frontier case refuses an unbound measurement envelope" {
         .integration = .present,
         .measurement = .present,
         .compiler_b = .present,
+        .performance_admission = .admitted,
         .subject_revision = "candidate-revision",
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
@@ -1247,6 +1257,7 @@ test "oracle frontier case refuses an absent measurement declaration" {
         .integration = .present,
         .measurement = .absent,
         .compiler_b = .present,
+        .performance_admission = .admitted,
         .subject_revision = "candidate-revision",
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
@@ -1264,6 +1275,7 @@ test "oracle frontier case refuses an absent compiler b declaration" {
         .integration = .present,
         .measurement = .present,
         .compiler_b = .absent,
+        .performance_admission = .admitted,
         .subject_revision = "candidate-revision",
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
@@ -1281,6 +1293,7 @@ test "oracle frontier case refuses an absent integration declaration" {
         .integration = .absent,
         .measurement = .present,
         .compiler_b = .present,
+        .performance_admission = .admitted,
         .subject_revision = "candidate-revision",
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
@@ -1291,6 +1304,42 @@ test "oracle frontier case refuses an absent integration declaration" {
     };
 
     try std.testing.expectError(error.MissingIntegration, measurement.status());
+}
+
+test "oracle frontier case refuses denied performance admission" {
+    const measurement = OracleFrontierCase{
+        .integration = .present,
+        .measurement = .present,
+        .compiler_b = .present,
+        .performance_admission = .denied,
+        .subject_revision = "candidate-revision",
+        .evidence_revision = "evidence-revision",
+        .equivalence = "evidence/equivalence.json",
+        .raw_evidence = "evidence/runtime.json",
+        .required_dimensions = &.{"runtime"},
+        .dimensions = &.{},
+        .context = null,
+    };
+
+    try std.testing.expectError(error.PerformanceAdmissionDenied, measurement.status());
+}
+
+test "oracle frontier case refuses an absent required dimension declaration" {
+    const measurement = OracleFrontierCase{
+        .integration = .present,
+        .measurement = .present,
+        .compiler_b = .present,
+        .performance_admission = .admitted,
+        .subject_revision = "candidate-revision",
+        .evidence_revision = "evidence-revision",
+        .equivalence = "evidence/equivalence.json",
+        .raw_evidence = "evidence/runtime.json",
+        .required_dimensions = &.{},
+        .dimensions = &.{},
+        .context = null,
+    };
+
+    try std.testing.expectError(error.MissingRequiredDimensions, measurement.status());
 }
 
 test "oracle frontier case refuses an incomplete dimension envelope" {
@@ -1315,6 +1364,7 @@ test "oracle frontier case refuses an incomplete dimension envelope" {
         .integration = .present,
         .measurement = .present,
         .compiler_b = .present,
+        .performance_admission = .admitted,
         .subject_revision = "candidate-revision",
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
@@ -1364,6 +1414,7 @@ test "oracle frontier case refuses a dimension outside its envelope" {
         .integration = .present,
         .measurement = .present,
         .compiler_b = .present,
+        .performance_admission = .admitted,
         .subject_revision = "candidate-revision",
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
