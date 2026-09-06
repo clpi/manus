@@ -1,31 +1,46 @@
-# THE RULED SPELLING OF A LITERAL BRACE. THIS FILE IS AN EXECUTABLE RATCHET.
+# THE RULED SPELLING OF A LITERAL BRACE, MEASURED RATHER THAN CITED.
 #
-# `docs/text-law.md` rules that `\{` and `\}` are the literal-brace spelling in
-# the canonical text face. The `# expect:` line below states the RULED answer.
+# `\{` and `\}` are the literal-brace spelling in the canonical text face. This
+# file used to attribute that ruling to `docs/text-law.md` and to a census of
+# "128 sites across 17 files" that document was said to enumerate. THAT
+# DOCUMENT IS NOT IN THIS TREE (`gaps/GAP-109.md` records its loss), so neither
+# the ruling nor the count could be read from where the file pointed. What
+# survives the loss is `law.literal.text` — a hole holds literal AND expression
+# segments — plus what the compiler still does, which is what the rows below
+# are. The count is gone rather than restated: this file's numbers are its rows.
 #
-# The exact current compiler preserves the escaped opening brace through
-# interpolation: the first line prints `v={x}`, while the second still resolves
-# its unescaped `{x}` hole. The source oracle therefore describes the measured
-# answer. Any native ledger row that still calls this source `fail` is stale
-# evidence and must be reclassified only by the exact paired run.
+# THE RULING'S PAYOFF IS A DIAGNOSTIC, AND NO ROW HERE CAN HOLD IT. `d`'s
+# literal spelled without protection warns
 #
-# WHAT MUST NOT HAPPEN INSTEAD: the second line must keep interpolating. A
-# spelling that makes a literal brace possible by making the hole impossible has
-# not solved anything, so both readings appear in one literal here.
-# expect: v={x} both 7 and {x} pair={"k": 1}
+#   STR-1: `{b {x} c}` is not one whole expression, so it is emitted as
+#          literal text
+#   hint: ... if these braces are meant as text, write them `\{` and `\}`
+#
+# and answers `a{b {x} c}d` — nothing resolved. The file as committed is silent
+# on both routes. The rows measure what that silence bought.
+#
+# `a` is the escape alone: `v=7` without it. `b` is one literal holding BOTH
+# readings — the case no raw face can serve, and the control that ruling on
+# `\{` did not buy literal braces by disabling holes. `c` is a brace pair that
+# is not an expression at all.
+#
+# `d` and `e` had no program in this corpus and were carried only by unit tests
+# in `src/parser.zig`. `d`: a protected brace must be invisible to the DEPTH
+# counting in both directions, so `\{` may not deepen and `\}` may not close —
+# unprotected, the `{x}` above is cut at the wrong `}` and stops resolving.
+# `e`: protection is per DECODED BYTE, not per the two characters `\{`. `\x7B`
+# is the byte `{` and opened a hole before the ruling — `A[\x7Bx}]` answered
+# `A[7]`, and bare `A[{x}]` still does.
+# expect: v={x} | both 7 and {x} | pair={"k": 1} | a{b 7 c}d | A[{x}]
 # @corpus current
 
 x = 7
 
-# The escaped hole is literal text.
-print("v=\{x}")
+a = "v=\{x}"
+b = "both {x} and \{x}"
+c = "pair=\{\"k\": 1\}"
+d = "a\{b {x} c\}d"
+e = "A[\x7Bx}]"
 
-# One literal, both readings — the case no raw face can serve, because a raw
-# face has no holes. 128 sites across 17 files in the compiler corpus are this
-# shape; `docs/text-law.md` enumerates them.
-print("both {x} and \{x}")
-
-# A brace pair that is not an expression at all. This is the control: the
-# ruling must preserve its source text without disabling real holes.
-print("pair=\{\"k\": 1\}")
+print("{a} | {b} | {c} | {d} | {e}")
 0
