@@ -1473,7 +1473,18 @@ fn mainInner(init: std.process.Init) !void {
     if (std.mem.eql(u8, cmd, "compile")) {
         try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, global_bench_profile_cli, null, link_flags.items, entry_override, !no_cache);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override, true);
+        // `idol run <file.id>` defaults to wasm when no explicit --backend is
+        // given. The wasm backend converts `native → wasm32-wasi` explicitly, so
+        // it works on every host. The auto→direct path resolves `native` to the
+        // host triple, which may have no native-exe realization (e.g. aarch64-linux
+        // has no direct backend), and the error message then blames the target
+        // rather than the backend gap.
+        const effective_backend: []const u8 = if (global_backend_explicit) backend_mode else "wasm";
+        // When defaulting to wasm, also default the target to wasm32-wasi so the
+        // wasm backend receives a recognized target rather than the bare `native`
+        // placeholder that it cannot route through its orthogonal C99 path.
+        const effective_target: []const u8 = if (global_backend_explicit) target else "wasm32-wasi";
+        try do_compile(alloc, io, file, out, cc, opt_level, effective_target, effective_backend, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override, true);
     } else if (std.mem.eql(u8, cmd, "check")) {
         try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{}, entry_override, true);
     } else if (std.mem.eql(u8, cmd, "fmt")) {
