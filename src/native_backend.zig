@@ -1230,6 +1230,11 @@ const Arm64Compiler = struct {
     /// Active `pinned` map while lowering one function; `evalDnirValue` consults
     /// it before `temps` so gatecap cannot serve stale register homes.
     eval_pinned: ?*const std.AutoHashMapUnmanaged(u32, u5) = null,
+    /// Active `temps` map while lowering one function. A call or pack result
+    /// the ABI left in x0..x7 is recorded HERE AND NOWHERE ELSE: every write to
+    /// `gp_reg_owner` skips `r < 9`, so `temps` is that value's only location
+    /// record and the only fact that answers whether a frame slot is still read.
+    eval_temps: ?*const std.AutoHashMapUnmanaged(u32, u5) = null,
     cur_func_has_call: bool = false,
     /// Last instruction that reads each DNIR value/slot id. The map is shared
     /// by both register files; physical file selection is a separate fact.
@@ -3058,6 +3063,15 @@ const Arm64Compiler = struct {
         return regIsPinned(pinned, reg);
     }
 
+    /// The same walk over the map `evalDnirValue` reads SECOND. `temps` names a
+    /// register for a value with no `gp_reg_owner` whenever the ABI placed that
+    /// value in x0..x7. Null outside a function body, where there is no
+    /// evaluation whose reads a frame slot could still serve.
+    fn evalTempNames(self: *const Arm64Compiler, reg: u5) bool {
+        const temps = self.eval_temps orelse return false;
+        return regIsPinned(temps, reg);
+    }
+
     fn compileDnirFunction(self: *Arm64Compiler, f: dnir.Function) Error!void {
         self.cur_func_name = f.name;
         self.fp_locals.clearRetainingCapacity();
@@ -3096,6 +3110,7 @@ const Arm64Compiler = struct {
         self.gate_spill_cursor = 0;
         self.gate_param_slots = 0;
         self.eval_pinned = null;
+        self.eval_temps = null;
         self.cur_func_has_call = false;
         self.extern_preserve_x0 = false;
         self.extern_preserve_x0_temp = null;
@@ -3124,6 +3139,7 @@ const Arm64Compiler = struct {
         const scalar_body_has_call = if (!f.is_float_kernel) dnirFunctionHasCall(f) else false;
         self.cur_func_has_call = scalar_body_has_call or dnirFunctionHasCall(f);
         self.eval_pinned = &pinned;
+        self.eval_temps = &temps;
         // §12 `error.depth`. The initializer runs ONCE, at the top of the
         // process entry and before anything has been pushed, so the `sp` it
         // reads is the deepest this process will ever stand on. The check goes
@@ -3852,6 +3868,7 @@ const Arm64Compiler = struct {
         // of emitting it, so the honest DNB001 path reports the gap.
         if (!tail_terminates) return self.refuseWith(@src(), self.cur_func_name orelse "?");
         self.eval_pinned = null;
+        self.eval_temps = null;
         self.cur_func_has_call = false;
     }
 
@@ -7331,6 +7348,15 @@ const Arm64Compiler = struct {
     /// retire an ownerless stale entry left by register staging, but an owned
     /// entry remains a value location and pressure refuses when those are the
     /// only entries available.
+    /// A NAMED TEMP IS THE SIXTH RESERVATION, AND `gp_reg_owner` NEVER CARRIES
+    /// IT (GAP-148).
+    ///
+    /// Every write to `gp_reg_owner` skips `r < 9`, so a call or pack result the
+    /// ABI left in x0..x7 is ownerless for its whole life while `temps` names
+    /// its register -- and `temps` is what `evalDnirValue` reads for that value.
+    /// Ownerless is what this function reads as dead storage, so it dropped the
+    /// entry and released the slot while the only reader still pointed at the
+    /// register it handed back as scratch.
     fn reclaimSpilledReg(self: *Arm64Compiler, exclude: ?u5) Error!u5 {
         var it = self.spilled_regs.iterator();
         while (it.next()) |entry| {
@@ -7342,6 +7368,7 @@ const Arm64Compiler = struct {
             if (self.gp_reg_owner[reg] != null) continue;
             if (self.gp_home_regs[reg]) continue;
             if (self.evalPinNames(reg)) continue;
+            if (self.evalTempNames(reg)) continue;
             if (reg < 8 and
                 self.pending_arg_regs & (@as(u8, 1) << @as(u3, @intCast(reg))) != 0) continue;
             if (self.stagedTailReg(reg)) continue;
@@ -19736,6 +19763,106 @@ test "the spilled-register reclaim passes over a pinned parameter and takes a te
     try std.testing.expect(compiler.used_regs[arg_reg]);
     try std.testing.expectEqual(@as(usize, 3), compiler.free_spill_slots.items.len);
     try std.testing.expectEqual(off, compiler.free_spill_slots.items[2]);
+
+    // A reclaim emits nothing; it moves records only.
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+}
+
+// GAP-148. AN ABI-BANK RESULT IS A VALUE LOCATION AND `gp_reg_owner` NEVER SAYS SO.
+//
+// The reclaim reads "ownerless" as "dead storage". Every write to
+// `gp_reg_owner` skips `r < 9`, so a call or pack result the ABI left in
+// x0..x7 is ownerless for its whole life while `temps` names its register --
+// and `temps` is the map `evalDnirValue` reads for it. The third spill pass
+// walks x7..x0 and takes it; the reclaim then dropped the entry and released
+// the slot, so the value's last location was deleted and the next read
+// answered the register the caller had just been handed as scratch.
+test "the spilled-register reclaim passes over a register the temp map names" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // What the pack-result arm of a call leaves behind: the ABI register
+    // claimed and `temps` naming it, and NOTHING else -- no owner, because the
+    // `gp_reg_owner` writes skip x0..x7; no home; no pin; no staging, the call
+    // it came from having already returned.
+    const result_reg: u5 = 0;
+    const result: u32 = 7;
+    compiler.claimReg(result_reg);
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    try temps.put(alloc, result, result_reg);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    compiler.eval_pinned = &pinned;
+    compiler.eval_temps = &temps;
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[result_reg]);
+    try std.testing.expect(!compiler.gp_home_regs[result_reg]);
+    try std.testing.expect(!compiler.evalPinNames(result_reg));
+    try std.testing.expectEqual(@as(u8, 0), compiler.pending_arg_regs);
+
+    // And what the third spill pass leaves behind: the value in a frame slot,
+    // the entry reserving the register to it, `used_regs` clear.
+    const off: u16 = 8;
+    try compiler.spilled_regs.put(alloc, result_reg, off);
+    compiler.used_regs[result_reg] = false;
+
+    // A NAMED RESULT ALONE IS NOT A CANDIDATE. Every entry in the map is one, so
+    // the answer is the refusal.
+    try std.testing.expectError(error.RegisterExhausted, compiler.reclaimSpilledReg(null));
+
+    // The entry that reloads it is still there, `temps` still names the
+    // register, and the slot is NOT in the free pool -- a released slot is a
+    // second value stored over this one.
+    try std.testing.expectEqual(@as(?u16, off), compiler.spilled_regs.get(result_reg));
+    try std.testing.expectEqual(@as(?u5, result_reg), temps.get(result));
+    try std.testing.expect(!compiler.used_regs[result_reg]);
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+
+    // A TEMP THAT NAMES ANOTHER REGISTER IS NOT THIS ONE. The skip is one term
+    // and not a blanket refusal: an ownerless stale entry no map names is still
+    // the dead storage this function may retire.
+    const stale: u5 = 21;
+    const stale_off: u16 = 24;
+    try compiler.spilled_regs.put(alloc, stale, stale_off);
+    compiler.used_regs[stale] = false;
+
+    try std.testing.expectEqual(stale, try compiler.reclaimSpilledReg(null));
+    try std.testing.expect(!compiler.spilled_regs.contains(stale));
+    try std.testing.expect(compiler.used_regs[stale]);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(stale_off, compiler.free_spill_slots.items[0]);
+
+    // The result is still whole beside it.
+    try std.testing.expectEqual(@as(?u16, off), compiler.spilled_regs.get(result_reg));
+    try std.testing.expect(!compiler.used_regs[result_reg]);
+
+    // AND WITH NO TEMP MAP THERE IS NO READER -- which `eval_temps` is outside a
+    // function body. The identical entry in the identical state is then the
+    // ownerless stale register the reclaim may take, so the refusal above is
+    // this skip and not one of the five beside it.
+    compiler.eval_temps = null;
+    try std.testing.expectEqual(result_reg, try compiler.reclaimSpilledReg(null));
+    try std.testing.expect(!compiler.spilled_regs.contains(result_reg));
+    try std.testing.expect(compiler.used_regs[result_reg]);
+    try std.testing.expectEqual(@as(usize, 2), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[1]);
 
     // A reclaim emits nothing; it moves records only.
     try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
