@@ -710,6 +710,17 @@ while IFS= read -r line || [ -n "$line" ]; do
             continue
             ;;
     esac
+    # A SHAPE NAMED TWICE IS COUNTED TWICE. A second row naming a real
+    # subject measures no new reach and still counts among the subjects
+    # examined — the same inflation a control row buys, one file over.
+    case " $named " in
+        *" $shape "*)
+            printf 'crosspartition: FAIL — roster names %s twice; the second row measures nothing the first did not and still counts among the subjects examined.\n' \
+                "$shape" >&2
+            ratchet=$((ratchet + 1))
+            continue
+            ;;
+    esac
     materialize "$shape" "$work/subject.$shape"
     case $? in
         0) ;;
