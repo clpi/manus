@@ -5053,7 +5053,7 @@ pub const Parser = struct {
             try path.append(self.alloc, first.name.ident);
             while (true) {
                 if (try self.eat(.dot) != null) {
-                    if ((try self.pk()).kind != .name) {
+                    if (!try self.currentParserName()) {
                         self.restoreState(saved);
                         return null;
                     }
@@ -5071,7 +5071,7 @@ pub const Parser = struct {
                         self.restoreState(saved);
                         return null;
                     }
-                    if ((try self.pk()).kind != .name) {
+                    if (!try self.currentParserName()) {
                         self.restoreState(saved);
                         return null;
                     }

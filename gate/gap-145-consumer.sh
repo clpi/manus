@@ -3096,6 +3096,32 @@ fi
 
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
+# Qualified function paths consume the ordinary-name face already projected
+# after both dot and colon edges. Zig retains spelling, line/glue checks,
+# cursor restoration, method selection, and declaration materialization.
+qualified_path_kinds=$(sed -n '/fn try_parse_qualified_func_assign/,/fn parse_label/p' "$PARSER" | \
+    grep -cF '(try self.pk()).kind != .name' || true)
+if [ "$qualified_path_kinds" -ne 0 ]; then
+    bad "qualified function path retained host name recognition: count=$qualified_path_kinds"
+fi
+qualified_path_faces=$(sed -n '/fn try_parse_qualified_func_assign/,/fn parse_label/p' "$PARSER" | \
+    grep -cF 'try self.currentParserName()' || true)
+examined=$((examined + 1))
+if [ "$qualified_path_faces" -ne 2 ]; then
+    bad "qualified function path does not consume both settled ordinary-name faces: count=$qualified_path_faces"
+fi
+
+qualified_path_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate qualified-path scratch' >&2; exit 2; }
+printf '%s\n' 'if ((try self.pk()).kind != .name) {' 'if ((try self.pk()).kind != .name) {' >"$qualified_path_probe/old.zig"
+printf '%s\n' 'if (!try self.currentParserName()) {' 'if (!try self.currentParserName()) {' >"$qualified_path_probe/new.zig"
+qualified_path_old=$(grep -cF '(try self.pk()).kind != .name' "$qualified_path_probe/old.zig")
+qualified_path_new=$(grep -cF 'try self.currentParserName()' "$qualified_path_probe/new.zig")
+rm -rf -- "$qualified_path_probe"
+examined=$((examined + 1))
+if [ "$qualified_path_old" -ne 2 ] || [ "$qualified_path_new" -ne 2 ]; then
+    bad "the qualified-function-path detector is broken: old=$qualified_path_old new=$qualified_path_new"
+fi
+
 # The outer correlated if-pack probe consumes the ordinary-name face before
 # entering the already-transferred binding reader. Zig retains cursor snapshot,
 # fallback, correlated-pack recognition, and statement materialization.
