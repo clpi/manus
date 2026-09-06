@@ -1,10 +1,15 @@
-# CONTROL: §12 TAIL, measured by ANSWERS and by DEPTH at once.
-#
-# `tailcall.id` next door measures the guarantee's headline: ten million frames
-# of ONE textbook self-call. This file measures the shapes where a tail call is
-# easy to get WRONG rather than easy to get slow, and every one of them is
-# chosen so that a wrong frame reuse produces a DIFFERENT NUMBER, not the same
-# number faster.
+# TAIL SHAPES, by ANSWERS and by DEPTH at once — AND THE DEPTH HALF NAMES ITS
+# REALIZATION NOW. `# expect: 0` holds under `--backend=wasm` with
+# `IDOL_WASM_TAILCALL=1`, and NOWHERE ELSE this tree can run: the default wasm
+# emission leaves `wasm_tailcall` severed and the million-deep rows trap —
+# `wasm trap: call stack exhausted`, exit 134 — while the C99 realizer never
+# reaches them at all, refusing `_arm`'s `%` at `binop-not-in-c99-slice`. It
+# used to open "CONTROL: §12 TAIL", which opens nowhere, and hand the headline
+# to `tailcall.id` next door; that file now carries the retraction and the
+# three measured outcomes instead. This file measures the shapes where a tail
+# call is easy to get WRONG rather than easy to get slow, and every one of them
+# is chosen so that a wrong frame reuse produces a DIFFERENT NUMBER, not the
+# same number faster.
 #
 #   1  `_selftail`  the plain shape, a million deep.
 #   2  `_order`     the new arguments are computed FROM the frame that is about

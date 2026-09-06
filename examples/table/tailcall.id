@@ -1,18 +1,65 @@
-# CONTROL: §12 TAIL guarantees proper tail calls. Ten million tail frames
-# complete with the right answer and no signal. The NON-tail half of the row
-# is measured separately, in `depth.id`, because it does not survive.
-# expect: 10000000
+# TAIL POSITION, MEASURED BY THE ANSWER. The DEPTH half is not one fact, and
+# this file no longer spends its oracle line pretending that it is.
+#
+# The header read "CONTROL: §12 TAIL guarantees proper tail calls. Ten million
+# tail frames complete with the right answer and no signal", pinned
+# `# expect: 10000000`, and sent its other half to `depth.id`. NEITHER OPENS:
+# `docs/spec/law.md` carries no tail row, the constitution's §12 is
+# CANONICALIZATION, and `depth.id` is not in this tree — the defect
+# `docs/spec/cost.md` already convicted in `§12 B-4`, leaving the standing
+# instruction to cite a document that opens or state the measurement without a
+# citation. One number could not be that claim's oracle in any case, because
+# the claim has THREE answers at once, and the ten-million depth measures:
+#
+#   direct  DNB004, "no native machine realization for target 'native-exe' on
+#           this host". `native_backend.emitTailCallDirect` realizes the call
+#           as a JUMP and `cost.md` § TAIL reports 10000000 at idol f2c7e67c,
+#           with `IDOL_NO_TAILCALL=1` exiting 139. Not reachable from here.
+#   wasm    `wasm trap: call stack exhausted`, exit 134 — `wasm_backend.zig`
+#           leaves `wasm_tailcall` SEVERED. `IDOL_WASM_TAILCALL=1` answers
+#           `5 3 13 10000000 5003 3005`, exit 0, through this same file, which
+#           is the control that 134 is the ABSENT TRANSFORM and not a broken
+#           program.
+#   C99     SIGSEGV, exit 139, EMPTY stdout — the signal the old header said
+#           does not happen. `c_backend.zig` holds no tail transform at all: it
+#           emits `s5 = idol_tailcall__tail(a0, a1); return s5;` and the HOST
+#           `cc` decides — `-O0` and `-O1` die, `-O2` and `-O3` answer.
+#
+# Armed in one backend, severed in the second and absent from the third is
+# three facts, and the harness that holds them has to name its realization — a
+# `# expect:` line has nowhere to say which one it means.
+#
+# NO ROW BELOW NEEDS THE FRAME GIVEN BACK, so none of them splits that way, and
+# the C99 and wasm realizations answer them identically. `a` is the base
+# reached with no frame at all, so a body that dropped `acc` reads 0. `b` and
+# `c` are ONE depth from two seeds: a folded constant cannot serve both. `d` is
+# three thousand real frames, an order INSIDE the measured unoptimized frontier
+# — 30,000 answers, 40,000 is 139 under an 8 MiB stack — because a row above it
+# produces a signal instead of an answer, which is the whole defect above. `e`
+# and `f` are what frame reuse gets WRONG rather than slow: the new arguments
+# are computed FROM the frame about to be given back, so both must be read
+# before either parameter is written. Written in place `swap` answers 5005
+# twice, with the exchange dropped 3005 twice; only 5003 AND 3005 together are
+# the argument order holding across seven exchanges and eight. The trailing `0`
+# is the module result `print`, being void-shaped, would otherwise walk to `f`.
+# expect: 5 3 13 3000 5003 3005
 # @corpus current
 tail: i64 = (n: i64, acc: i64)
   if n <= 0
     acc
   tail(n - 1, acc + 1)
 
-a = tail(10000000, 0)
-print("{a}")
-# The explicit `0` tail, for the reason bytes.id and invalid.id carry theirs:
-# `print` is void-shaped, so `blockTailResult` walks back to the last
-# value-carrying binding and the MODULE's result became `a`. 10000000 & 0xFF
-# is 128, so this file printed exactly what its oracle demanded and still
-# contradicted it on the exit status. Same defect nul.id carried.
+swap: i64 = (n: i64, a: i64, b: i64)
+  if n <= 0
+    a * 1000 + b
+  swap(n - 1, b, a)
+
+a = tail(0, 5)
+b = tail(3, 0)
+c = tail(3, 10)
+d = tail(3000, 0)
+e = swap(7, 3, 5)
+f = swap(8, 3, 5)
+
+print("{a} {b} {c} {d} {e} {f}")
 0
