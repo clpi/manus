@@ -618,7 +618,10 @@ pub const Evidence = struct {
     /// distinguishable from an equal-valued copy.
     identity_captured: bool = false,
     /// An enumeration of the place reaches an effect: its order is visible.
-    order_reaches_effect: bool = false,
+    /// Three-valued for N2's reason: a loop containing an applied relation the
+    /// walk cannot classify has not been shown to reach an effect and has not
+    /// been shown not to, and the two answers open different freedoms.
+    order_reaches_effect: Tri = .no,
     /// The COLLECTION'S OWN SEMANTICS fix an enumeration order — a declared
     /// ordered map, not a sorted literal. `place.Facts.ordered` is NOT this: it
     /// says the values happen to ascend, which is a legality fact for binary
@@ -765,8 +768,10 @@ pub fn classify(c: Class, w: World, ev: Evidence, ob: Obligations, s: Subject) F
             // the order in which an UNORDERED collection is walked, and it is
             // visible exactly when the walk reaches an effect or when the place
             // goes somewhere this analysis cannot follow.
-            if (ev.order_reaches_effect)
+            if (ev.order_reaches_effect == .yes)
                 break :blk yes(c, &.{ .program, .foreign }, .order_reaches_effect, .observation_walk, .proof, s);
+            if (ev.order_reaches_effect == .unknown)
+                break :blk unknown(c, .order_reaches_effect, .observation_walk, s);
             if (ev.escapes == .yes)
                 break :blk yes(c, &.{ .program, .foreign }, .escape_unproven, .place_facts, .proof, s);
             if (ev.escapes == .unknown)
@@ -856,9 +861,9 @@ pub fn classify(c: Class, w: World, ev: Evidence, ob: Obligations, s: Subject) F
             // under either.
             if (ev.order_declared == .yes or ev.positional_read == .yes)
                 break :blk yes(c, &.{.program}, .value_demanded, .place_facts, .law, s);
-            if (ev.order_reaches_effect)
+            if (ev.order_reaches_effect == .yes)
                 break :blk yes(c, &.{ .program, .foreign }, .order_reaches_effect, .observation_walk, .proof, s);
-            if (ev.order_declared == .unknown or ev.positional_read == .unknown or ev.escapes != .no)
+            if (ev.order_reaches_effect == .unknown or ev.order_declared == .unknown or ev.positional_read == .unknown or ev.escapes != .no)
                 break :blk unknown(c, .presumed_observable, .default_conservative, s);
             break :blk free(c, .no_observer_can_distinguish, .place_facts, s);
         },
@@ -1149,6 +1154,9 @@ pub fn admit(r: *const Report, facts: eqspace.FactSet) Admission {
 /// the lowering can emit) rather than guessed, and deliberately OVER-broad: a
 /// name wrongly on this list costs a freedom, a name wrongly off it costs
 /// correctness.
+///
+/// IT IS A POSITIVE RECOGNIZER ONLY. `false` means "not recognized", never
+/// "proved pure"; `markEffectUnknown` is where that difference is enforced.
 fn isEffectName(n: []const u8) bool {
     const effects = [_][]const u8{
         "print",   "puts",  "printf", "write", "io",     "stdout", "stderr",
@@ -1214,18 +1222,51 @@ const WalkCtx = struct {
     /// Names read at the current loop nest, so that "this place is enumerated
     /// AND an effect happens in the same loop" is decidable.
     loop_reads: *std.ArrayListUnmanaged([]const u8),
-    loop_effect: bool = false,
+    loop_effect: Tri = .no,
     /// Monotone: any observable effect ANYWHERE in the region. Separate from
     /// `loop_effect`, which is scoped to one loop nest and is restored on exit.
-    any_effect: bool = false,
+    any_effect: Tri = .no,
 };
+
+/// `yes` dominates `unknown` dominates `no`, so a second visit can raise the
+/// reading and can never lower it.
+fn raise(current: Tri, found: Tri) Tri {
+    if (current == .yes or found == .yes) return .yes;
+    if (current == .unknown or found == .unknown) return .unknown;
+    return .no;
+}
 
 /// One effect, recorded at two scopes. The loop scope decides whether an
 /// ENUMERATION's order is visible; the region scope decides whether recomputing
 /// is.
 fn markEffect(ctx: *WalkCtx) void {
-    ctx.loop_effect = true;
-    ctx.any_effect = true;
+    ctx.loop_effect = .yes;
+    ctx.any_effect = .yes;
+}
+
+/// AN APPLIED RELATION THE WALK CANNOT CLASSIFY, and the reason this function
+/// exists rather than being left implicit.
+///
+/// `isEffectName` is a SPELLING LIST. A spelling list can honestly say "this
+/// face is an effect"; it can never say "this face is not one", because the
+/// question it answers is whether the name is on it, not whether the relation
+/// observes anything. Read as a permission it was FAIL-OPEN, and measurably so
+/// on the vocabulary this project's own `CLAUDE.md` teaches as canonical:
+/// `stdin:read()`, `args(1)`, `env("HOME")` are none of them on the list, so a
+/// program reading its input walked to `any_effect = false`, `has_effect` was
+/// published `.no`, and `effect_order` read a PROVEN non-observation — issued
+/// by `free(..., .observation_walk, ...)` with `authority = .proof` — for a
+/// region that consumes input. `memoization` was `permitted` there, and
+/// memoizing a region that reads input skips the read.
+///
+/// So the list keeps its one honest job and loses the other: a name ON it marks
+/// `.yes`, and every applied relation NOT recognized marks `.unknown`. `.no`
+/// now means "this region applied no relation at all", which is a fact the walk
+/// really does establish. N2's rule, applied to the effect fact: a shape the
+/// walk does not see through raises the region rather than passing it.
+fn markEffectUnknown(ctx: *WalkCtx) void {
+    ctx.loop_effect = raise(ctx.loop_effect, .unknown);
+    ctx.any_effect = raise(ctx.any_effect, .unknown);
 }
 
 fn evOf(ctx: *WalkCtx, name: []const u8) ?*Evidence {
@@ -1303,7 +1344,7 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
     // than during it: a print on the last line makes recompute-vs-memoize
     // observable for a place bound on the first.
     for (prog.ev.items) |*e| {
-        if (e.complete) e.has_effect = if (ctx.any_effect) .yes else .no;
+        if (e.complete) e.has_effect = ctx.any_effect;
     }
 
     // The walk PRODUCES world facts. A clock read is discovered here and then
@@ -1389,19 +1430,19 @@ fn walkLoop(ctx: *WalkCtx, b: *const ast.Block) anyerror!void {
     const saved_len = ctx.loop_reads.items.len;
     const saved_effect = ctx.loop_effect;
     ctx.loop_depth +|= 1;
-    ctx.loop_effect = false;
+    ctx.loop_effect = .no;
 
     try walkBlock(ctx, b);
 
-    if (ctx.loop_effect) {
+    if (ctx.loop_effect != .no) {
         for (ctx.loop_reads.items[saved_len..]) |n| {
-            if (evOf(ctx, n)) |e| e.order_reaches_effect = true;
+            if (evOf(ctx, n)) |e| e.order_reaches_effect = raise(e.order_reaches_effect, ctx.loop_effect);
         }
     }
     ctx.loop_reads.shrinkRetainingCapacity(saved_len);
     ctx.loop_depth -= 1;
     // An effect inside a nested loop is an effect in the enclosing one too.
-    ctx.loop_effect = saved_effect or ctx.loop_effect;
+    ctx.loop_effect = raise(saved_effect, ctx.loop_effect);
 }
 
 fn noteLoopRead(ctx: *WalkCtx, n: []const u8) !void {
@@ -1448,13 +1489,16 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
             var arg_pos = pos;
             if (c.func.* == .name) {
                 const fname = c.func.name.ident;
+                var recognized = false;
                 if (isEffectName(fname)) {
                     markEffect(ctx);
                     arg_pos = .effect_arg;
+                    recognized = true;
                 }
                 if (isClockName(fname)) {
                     ctx.prog.world = ctx.prog.world.with(.clock_read);
                     markEffect(ctx);
+                    recognized = true;
                 }
                 // `s(i)` — an ELEMENT read of a place, not a call. It reads a
                 // value, not the place, so it captures no identity.
@@ -1463,7 +1507,11 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
                     for (c.args) |a| try walkExpr(ctx, a, .read);
                     return;
                 }
+                if (!recognized) markEffectUnknown(ctx);
             } else {
+                // A COMPUTED CALLEE names no relation at all, so there is
+                // nothing to recognize and nothing to prove pure.
+                markEffectUnknown(ctx);
                 try walkExpr(ctx, c.func, .read);
             }
             for (c.args) |a| try walkExpr(ctx, a, arg_pos);
@@ -1479,8 +1527,22 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
                 return;
             }
             if (isEffectName(m.method) or isClockName(m.method)) {
+                // THE SAME FACT THE `()` FACE PRODUCES. `clock()` published
+                // `WorldFact.clock_read` and `t:now()` did not, so duration was
+                // observable through one spelling of one relation and free
+                // through the other — and `permits(.schedule)` read
+                // `permitted` for a program that reads a clock subject-first.
+                // A world fact is a property of the relation, never of the face
+                // it was written with.
+                if (isClockName(m.method)) ctx.prog.world = ctx.prog.world.with(.clock_read);
                 markEffect(ctx);
                 arg_pos = .effect_arg;
+            } else {
+                // `stdin:read()`, `path:open()`, `s:len()` — the SUBJECT-FIRST
+                // face this project teaches as canonical. The receiver is not a
+                // world name on the list and the relation is not on it either,
+                // so the walk has recognized nothing here and says so.
+                markEffectUnknown(ctx);
             }
             try walkExpr(ctx, m.obj, arg_pos);
             for (m.args) |a| try walkExpr(ctx, a, arg_pos);
@@ -1564,7 +1626,7 @@ const runtime_base = [_]eqspace.Fact{
 const clean = Evidence{
     .complete = true,
     .identity_captured = false,
-    .order_reaches_effect = false,
+    .order_reaches_effect = .no,
     // A place used purely as a SET — the identity `eqspace` models. A real
     // program on this surface reads positionally and gets `.yes` here, which is
     // why the `order` freedom is CLOSED for `rt.id` in `gate/observation.sh`
@@ -1618,7 +1680,7 @@ test "observation: POSITIVE CONTROL — capturing allocation identity blocks exi
 test "observation: POSITIVE CONTROL — fixing iteration order blocks the order freedom" {
     const fixed = blk: {
         var e = clean;
-        e.order_reaches_effect = true;
+        e.order_reaches_effect = .yes;
         break :blk e;
     };
     const r_block = classifyAll(ordinary_executable, fixed, no_obligations, .{ .place = 0 });
@@ -1638,7 +1700,7 @@ test "observation: POSITIVE CONTROL — the block reaches eqspace and deletes fa
     const facts = eqFacts(&runtime_base);
     const fixed = blk: {
         var e = clean;
-        e.order_reaches_effect = true;
+        e.order_reaches_effect = .yes;
         break :blk e;
     };
     const r_block = classifyAll(ordinary_executable, fixed, no_obligations, .{ .place = 0 });
@@ -1699,7 +1761,7 @@ test "observation: POSITIVE CONTROL — a real program that prints its elements 
     defer prog.deinit();
 
     const ev = prog.byName("s").?;
-    try testing.expect(ev.order_reaches_effect);
+    try testing.expectEqual(Tri.yes, ev.order_reaches_effect);
     const r = prog.report("s", no_obligations).?;
     try testing.expectEqual(Tri.yes, r.get(.iteration_order).observed);
     try testing.expectEqual(Permit.blocked_observed, permits(&r, .order).permit);
@@ -1785,7 +1847,7 @@ test "observation: NEGATIVE CONTROL — the same loop with no effect fixes no or
     defer prog.deinit();
 
     const ev = prog.byName("s").?;
-    try testing.expect(!ev.order_reaches_effect);
+    try testing.expectEqual(Tri.no, ev.order_reaches_effect);
     try testing.expect(!ev.identity_captured);
 }
 
@@ -2053,7 +2115,7 @@ test "observation: the observation gate deletes families eqspace's FACTS alone w
     const captured = blk: {
         var e = clean;
         e.identity_captured = true;
-        e.order_reaches_effect = true;
+        e.order_reaches_effect = .yes;
         break :blk e;
     };
     const r_block = classifyAll(ordinary_executable, captured, no_obligations, .{ .place = 0 });
@@ -2198,6 +2260,136 @@ test "observation: handing a place to an effect captures its identity" {
     try testing.expect(ev.temporary_materialized);
     const r = prog.report("s", no_obligations).?;
     try testing.expect(!permits(&r, .zero_copy).ok());
+}
+
+// ---------------------------------------------------------------------------
+// The effect fact, and the fail-open that used to issue it as a PROOF
+// ---------------------------------------------------------------------------
+
+test "observation: DIAGNOSTIC — a region that reads input proves no effect-freedom" {
+    // The wrong answer this closes. `stdin:read()` is the canonical input face
+    // (`CLAUDE.md` WORLD-ONE: prefer `stdin:read()` over `io.*`) and it is on
+    // no spelling list, so the walk found no effect, `has_effect` published
+    // `.no`, and `effect_order` read `free(..., .observation_walk)` with
+    // `authority = .proof`. `permits(.memoization)` was `.permitted` for a
+    // region that consumes input, and memoizing that region skips the read.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    x = stdin:read()
+        \\    s(1) + x & 255
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    const ev = prog.byName("s").?;
+    // The unknown is the EFFECT fact, not a refused region. Without this the
+    // test would also pass if the walk simply stopped seeing the program.
+    try testing.expect(ev.complete);
+    try testing.expectEqual(Tri.unknown, ev.has_effect);
+
+    const r = prog.report("s", no_obligations).?;
+    try testing.expectEqual(Tri.unknown, r.get(.effect_order).observed);
+    try testing.expectEqual(Tri.unknown, r.get(.recompute_vs_memoize).observed);
+    try testing.expectEqual(Permit.blocked_unknown, permits(&r, .memoization).permit);
+}
+
+test "observation: CONTROL — a region that applies no relation still PROVES effect-freedom" {
+    // The straw-man half. A refusal that fires on every program is not a
+    // classification, so the fix has to leave the provable case provable —
+    // `.no` still means "this region applied no relation at all", and it is
+    // still issued with `authority = .proof`.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    s(1) & 255
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    const ev = prog.byName("s").?;
+    try testing.expectEqual(Tri.no, ev.has_effect);
+
+    const r = prog.report("s", no_obligations).?;
+    const eo = r.get(.effect_order);
+    try testing.expectEqual(Tri.no, eo.observed);
+    try testing.expectEqual(Authority.proof, eo.prov.authority);
+}
+
+test "observation: CONTROL — a recognized effect still proves `.yes`, not `unknown`" {
+    // The other straw man. Raising an unrecognized face to `unknown` must not
+    // cost the walk the answers it really had: `print` is recognized, so the
+    // effect is OBSERVED, and a reader is never told `unknown` where a proof
+    // exists.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    print(s(1))
+        \\    0
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    const r = prog.report("s", no_obligations).?;
+    try testing.expectEqual(Tri.yes, r.get(.effect_order).observed);
+    try testing.expectEqual(Tri.yes, r.get(.recompute_vs_memoize).observed);
+}
+
+test "observation: an unclassified relation in a loop leaves ENUMERATION order unknown" {
+    // The same fail-open in the order dimension, and it is a separate
+    // consumer: `walkLoop` published `order_reaches_effect = false` for a loop
+    // whose body applies a relation it cannot see through, so `iteration_order`
+    // could read free while the loop was writing its enumeration out.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (10, 20, 30)
+        \\    h = 0
+        \\    i = 0
+        \\    while i < 3
+        \\        h += s(i + 1)
+        \\        sink:take(h)
+        \\        i += 1
+        \\    h & 255
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    const ev = prog.byName("s").?;
+    try testing.expect(ev.complete);
+    try testing.expectEqual(Tri.unknown, ev.order_reaches_effect);
+    const r = prog.report("s", no_obligations).?;
+    try testing.expectEqual(Tri.unknown, r.get(.iteration_order).observed);
+    try testing.expectEqual(Permit.blocked_unknown, permits(&r, .order).permit);
+}
+
+test "observation: a clock is a clock in either face, so the SCHEDULE freedom shuts in both" {
+    // `clock()` and `t:now()` are one relation written two ways, and the walk
+    // produced `WorldFact.clock_read` for only one of them. `permits(.schedule)`
+    // therefore read `permitted` for a program whose duration is observable.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    t = wall:now()
+        \\    s(1) + t & 255
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    try testing.expect(prog.world.has(.clock_read));
+    const r = prog.report("s", no_obligations).?;
+    try testing.expectEqual(Tri.yes, r.get(.instruction_schedule).observed);
+    try testing.expectEqual(Reason.duration_observed, r.get(.instruction_schedule).reason);
+    try testing.expectEqual(Permit.blocked_observed, permits(&r, .schedule).permit);
 }
 
 test "observation: §19 control — removing the ALIAS proof closes zero-copy and layout" {
