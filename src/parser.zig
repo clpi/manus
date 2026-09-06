@@ -4731,8 +4731,7 @@ pub const Parser = struct {
                 const first_name = try self.adv();
                 if ((try self.pk()).kind == .dot) {
                     _ = try self.adv(); // consume `.`
-                    const after_dot = try self.pk();
-                    if (after_dot.kind == .name) {
+                    if (try self.currentParserName()) {
                         const variant_name = try self.adv();
                         // Build tag as "EnumName.VariantName"
                         const tag = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ first_name.text, variant_name.text });

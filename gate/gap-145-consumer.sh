@@ -3492,6 +3492,33 @@ if [ "$while_binding_old" -ne 2 ] || [ "$while_binding_new" -ne 2 ]; then
     bad "the while-consumption binding detector is broken: old=$while_binding_old new=$while_binding_new"
 fi
 
+# Variant-pattern recognition consumes the ordinary-name face already projected
+# at the coordinate after `Name.`. Zig retains wildcard selection, tag spelling,
+# payload recognition, cursor restoration, and pattern materialization; it must
+# not rediscover the member identity from the host token kind.
+variant_pattern_kinds=$(sed -n '/Check for variant pattern:/,/Not a variant, restore/p' "$PARSER" | \
+    grep -cF 'after_dot.kind == .name' || true)
+if [ "$variant_pattern_kinds" -ne 0 ]; then
+    bad "variant pattern retained host member-name recognition: count=$variant_pattern_kinds"
+fi
+variant_pattern_faces=$(sed -n '/Check for variant pattern:/,/Not a variant, restore/p' "$PARSER" | \
+    grep -cF 'try self.currentParserName()' || true)
+examined=$((examined + 1))
+if [ "$variant_pattern_faces" -ne 1 ]; then
+    bad "variant pattern does not consume the settled ordinary-name face: count=$variant_pattern_faces"
+fi
+
+variant_pattern_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate variant-pattern scratch' >&2; exit 2; }
+printf '%s\n' 'if (after_dot.kind == .name) {' >"$variant_pattern_probe/old.zig"
+printf '%s\n' 'if (try self.currentParserName()) {' >"$variant_pattern_probe/new.zig"
+variant_pattern_old=$(grep -cF 'after_dot.kind == .name' "$variant_pattern_probe/old.zig")
+variant_pattern_new=$(grep -cF 'try self.currentParserName()' "$variant_pattern_probe/new.zig")
+rm -rf -- "$variant_pattern_probe"
+examined=$((examined + 1))
+if [ "$variant_pattern_old" -ne 1 ] || [ "$variant_pattern_new" -ne 1 ]; then
+    bad "the variant-pattern detector is broken: old=$variant_pattern_old new=$variant_pattern_new"
+fi
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then
