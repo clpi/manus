@@ -1270,6 +1270,45 @@ pub const ResolvedType = union(enum) {
         };
     }
 
+    /// The SINGLE-LANE scalar descriptor one lane of this vector holds — what a
+    /// consumer reads when it indexes a vector or reduces it to one element.
+    ///
+    /// DERIVED, NOT TABULATED. A vector's lane element is a FACT about its
+    /// numeric owner, not a spelling: `numericFacts` already carries the vector's
+    /// `domain`, `width` and `signed`, and the lane scalar is the ONE union
+    /// identity whose own facts read those same three with `lanes == 1`. `sema`
+    /// stated the map as raw tags — `.v4f64 => .f64, .v4i64 => .i64,
+    /// .v8f32 => .f32, .v8i32 => .i32` — a second statement of the
+    /// vector↔element correspondence beside the one owner, agreeing with the
+    /// facts only until someone edits one. It is now this query, found over the
+    /// union's OWN TAGS by `{ lanes == 1, width == W, signed == S, domain == D }`,
+    /// so a vector identity added to the union gains its lane element here rather
+    /// than staying unknown to a hand-list and falling through to `any`.
+    ///
+    /// Null for every non-vector identity: a single-lane scalar is its own lane
+    /// (`lanes == 1` is not `> 1`), and a non-numeric descriptor has no lanes to
+    /// project. A NOMINAL DESCRIPTOR is not a vector source face — a nominal is
+    /// never `v*` — so it answers null by the `lanes > 1` gate rather than by a
+    /// roster entry.
+    pub fn laneScalar(self: ResolvedType) ?ResolvedType {
+        const vfacts = self.numericFacts() orelse return null;
+        if (vfacts.lanes <= 1) return null;
+        const info = @typeInfo(ResolvedType).@"union";
+        inline for (info.field_names, info.field_types) |field_name, field_type| {
+            if (field_type == void) {
+                const candidate = @as(ResolvedType, @field(ResolvedType, field_name));
+                if (candidate.numericFacts()) |facts| {
+                    if (facts.lanes == 1 and facts.width == vfacts.width and
+                        facts.signed == vfacts.signed and facts.domain == vfacts.domain)
+                    {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        return null; // a vector whose lane width the union carries no scalar for
+    }
+
     /// Integer lane mask for vector comparisons (e.g. v4f64 cmp → v4i64).
     pub fn vector_mask(self: ResolvedType) ?ResolvedType {
         return switch (self) {
@@ -2022,6 +2061,44 @@ test "ResolvedType.is_vector" {
     try testing.expect(r(.v8i32).is_vector());
     try testing.expect(!r(.f64).is_vector());
     try testing.expect(!r(.i32).is_vector());
+}
+
+test "types: the vector lane-element face is derived from the same facts" {
+    // The derived `laneScalar` is pinned equal to the retired `sema` index
+    // roster (`.v4f64 => .f64, .v4i64 => .i64, .v8f32 => .f32, .v8i32 => .i32`)
+    // on every payload-free union tag — the four vectors it mapped AND the
+    // scalar, boolean, string, void, dynamic and non-representational
+    // identities it declined — iterated over the union's OWN TAGS rather than a
+    // list, so a vector identity added to the union cannot be one the lane face
+    // silently does not know and folds to `any`.
+    const retired = struct {
+        fn map(t: ResolvedType) ?ResolvedType {
+            return switch (t) {
+                .v4f64 => .f64,
+                .v4i64 => .i64,
+                .v8f32 => .f32,
+                .v8i32 => .i32,
+                else => null,
+            };
+        }
+    }.map;
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type == void) {
+            const t = @as(ResolvedType, @field(ResolvedType, field_name));
+            const derived = t.laneScalar();
+            const want = retired(t);
+            if (want) |w| {
+                try testing.expect(derived != null);
+                try testing.expect(derived.?.eql(w));
+            } else {
+                try testing.expect(derived == null);
+            }
+        }
+    }
+    // A single-lane scalar is its own lane, not a vector to project.
+    try testing.expect(r(.f64).laneScalar() == null);
+    try testing.expect(r(.i32).laneScalar() == null);
 }
 
 test "ResolvedType.vector_mask" {

@@ -4744,13 +4744,7 @@ pub const Sema = struct {
                 const ot = try self.check_expr(idx.obj);
                 _ = try self.check_expr(idx.key);
                 if (ot.is_vector()) {
-                    return switch (ot) {
-                        .v4f64 => .f64,
-                        .v4i64 => .i64,
-                        .v8f32 => .f32,
-                        .v8i32 => .i32,
-                        else => .any,
-                    };
+                    return ot.laneScalar() orelse .any;
                 }
                 // A bare `ptr` (`void*`) has no pointee type to report, but the
                 // one thing it is ever indexed as in Duo is a memory-backed
