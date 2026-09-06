@@ -189,6 +189,41 @@
 #     keeps both of its spellings: argv[0] is handed to the arm AS SPELLED, so
 #     the spelled root is a string the arm can print, while the resolved root
 #     is the one it actually resolves its lib/ out of. One arm, one role.
+#
+#   SUBSTITUTING ROOT TEXT, NOT A ROOT-SHAPED PATTERN. Every root above is
+#     correct and every one of them was then handed to `sed` as the LEFT SIDE
+#     OF A REGEX with only `#` and `\` escaped. A directory name may hold any
+#     of `. [ ] { } ( ) * + ? ^ $ |`, and each one made the rule mean something
+#     other than the root it was built from. Three directions, the first two
+#     reproduced against this harness on this host by putting one character in
+#     `$TMPDIR` and running the controls that already existed:
+#
+#       `+`  quantifier. The rule does not match its own root, so nothing is
+#            normalised and the class every root above exists to kill comes
+#            back whole. `TMPDIR=/tmp/d+1 gate/differential.sh --selftest`
+#            failed at the sibling-mirror control.
+#       `(`  unbalanced group. `sed` REFUSES THE EXPRESSION, writes nothing,
+#            and its status is not read — so both arms get an empty normalised
+#            stderr and every stderr difference on the run compares identical.
+#            `TMPDIR='/tmp/p(1' gate/differential.sh --selftest` failed at the
+#            control for a real row surviving normalisation, which is the only
+#            reason that erasure was visible at all.
+#       `.`  any character. The rule matches MORE than its root: built from
+#            `.../a.c` it erases `.../aXc` out of a diagnostic. No control
+#            could catch this one, because it needs a near-miss string no
+#            fixture emits — it is a property of the rule, shown by the rule.
+#            Silent, and in the optimistic direction.
+#
+#     This is not exotic either. macOS spells `$TMPDIR` as
+#     `/var/folders/<2>/<base64ish>/T/`, and that middle component is base64:
+#     `+` is in its alphabet. The harness's own `mktemp -d` scratch — which is
+#     where the per-arm working directories and scratch roots come from — is
+#     one draw away from it on the platform this whole provenance comes from.
+#
+#     The escape set is now every ERE metacharacter, and `normout` reads the
+#     rules in ERE like `norm` already did. One escaped rule cannot serve two
+#     dialects — `\+` is a literal plus in ERE and a quantifier in GNU BRE —
+#     so the two channels were normalising the same root differently.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -325,11 +360,21 @@ fi
 # the same string whole. Length ordering makes the most specific root win
 # without either caller having to know which of them nests.
 #
-# `sed` has no fixed-string mode, so each path is escaped for the `#`
-# delimiter; roots here are directory paths, and `#` and `\` in a path would
-# break the expression rather than silently mis-normalise, which is the failure
-# mode worth having. An empty path contributes no rule — it would otherwise
-# match at every position.
+# `sed` has no fixed-string mode, so a path is not text here: it is the LEFT
+# SIDE OF A REGEX, and every regex metacharacter a directory name is allowed to
+# contain has to be escaped or the rule stops naming the root it was built
+# from. Escaping only the `#` delimiter and `\` — which is what this did — left
+# `. [ ] { } ( ) * + ? ^ $ |` live. An empty path contributes no rule; it would
+# otherwise match at every position.
+#
+# THE ESCAPING IS ERE, AND SO IS EVERY CONSUMER. `\+` is a literal plus in ERE
+# and a QUANTIFIER in GNU BRE, so one escaped rule cannot serve both dialects
+# and the dialect stops being a detail of whichever `sed` invocation happens to
+# read the rule. `norm` was already `sed -E`; `normout` was not, and the same
+# root therefore normalised on one channel and not the other.
+#
+# A root holding a newline is still not representable — the rule transport
+# below is line-oriented — and no directory this harness has met has one.
 #
 # EACH ROOT CONTRIBUTES BOTH OF ITS SPELLINGS, under one token. A root is
 # learned here by `cd <path> && pwd`, which keeps whatever symlinks the caller
@@ -350,7 +395,7 @@ rootrules() {
   done | sort -k1,1nr | awk '!seen[$0]++' \
   | while IFS="$(printf '\t')" read -r _rr_len _rr_tok _rr_path; do
     printf 's#%s#%s#g\n' \
-      "$(printf '%s' "$_rr_path" | sed 's#[\\&#]#\\&#g')" "$_rr_tok"
+      "$(printf '%s' "$_rr_path" | sed 's,[][\.*+?(){}|^$#],\\&,g')" "$_rr_tok"
   done
 }
 
@@ -400,13 +445,19 @@ norm() {
 #   a program that prints where it was READ FROM prints one string on both arms
 #   and a program that prints where its COMPILER lives prints two, and only the
 #   second is a difference. Both are the harness either way.
+#
+# `-E`, the SAME DIALECT `norm` reads the same rules in. `rootrules` escapes a
+# root for ERE, where `\+` is a literal plus; GNU BRE reads `\+` as a
+# quantifier, so this ran the same rule as a different regex and a root holding
+# a metacharacter normalised on stderr and survived on stdout — one channel
+# repaired, one channel red, from one rule.
 normout() {
   _no_root=$1
   _no_realroot=$2
   _no_cwd=$3
   _no_scratch=$4
   _no_source=$5
-  sed -e "$(rootrules "CWD=$_no_cwd" "SCRATCH=$_no_scratch" \
+  sed -E -e "$(rootrules "CWD=$_no_cwd" "SCRATCH=$_no_scratch" \
                       "TREE=$_no_root" "TREE=$_no_realroot" \
                       "TREE=$_no_source")"
 }
@@ -972,6 +1023,82 @@ exit 0
     return 1
   }
 
+  # ---------------------------------------------------------------------
+  # ROOTS THAT ARE REGEX METACHARACTERS. Every root above is derived
+  # correctly and then handed to `sed` as the LEFT SIDE OF A REGEX. A
+  # directory name may hold any of `. [ ] { } ( ) * + ? ^ $ |`, and each one
+  # makes the rule mean something other than the root it was built from —
+  # `+` a quantifier that never matches its own root, `.` any character so the
+  # rule erases MORE than the root, `(` unbalanced so `sed` refuses the whole
+  # expression, writes nothing, and both arms compare an empty stderr equal.
+  #
+  # This is the harness's own scratch on macOS, where `$TMPDIR` is
+  # `/var/folders/<2>/<base64ish>/T/` and `+` is in base64's alphabet. It is
+  # also any checkout a developer parked under such a name.
+  #
+  # BOTH CHANNELS. The fake quotes its root on stdout AND stderr, because the
+  # two are normalised by different functions reading the SAME rules, and an
+  # ERE-escaped rule is a different regex in BRE — `\+` is a literal plus in
+  # one and a quantifier in the other. A control on stderr alone passes for a
+  # `normout` that is silently reading the rules in the other dialect.
+  _self_meta='#!/bin/sh
+root=$(cd "$(dirname "$0")/../.." && pwd)
+printf "answer from %s/lib\n" "$root"
+printf "error: cannot open %s/lib/std.id\n" "$root" >&2
+exit 0
+'
+  _self_ma="$_self/meta/a+b.c(d[e\$f"
+  _self_mb="$_self/meta/g*h?i|j{k}^l"
+  mkdir -p "$_self_ma/zig-out/bin" "$_self_mb/zig-out/bin" || return 2
+  printf '%s' "$_self_meta" >"$_self_ma/zig-out/bin/idol"
+  printf '%s' "$_self_meta" >"$_self_mb/zig-out/bin/idol"
+  chmod +x "$_self_ma/zig-out/bin/idol" "$_self_mb/zig-out/bin/idol"
+  NULL_CONTROL=1 compare_subjects \
+    "$_self_ma/zig-out/bin/idol" "$_self_mb/zig-out/bin/idol" \
+    "$_self/list" "$_self/source" >/dev/null 2>&1
+  _self_rc=$?
+  [ "$_self_rc" -eq 0 ] || {
+    echo "differential: selftest FAIL — a metacharacter in an arm root scored as a difference" >&2
+    return 1
+  }
+
+  # ...AND ESCAPING MUST NOT EAT A REAL ROW, ON EITHER CHANNEL. Escaping is one
+  # more chance to erase a difference, and the `(` shape erases EVERY row on
+  # the channel by making `sed` refuse the expression outright, write nothing,
+  # and hand both arms an empty file to compare — silent, and in the optimistic
+  # direction. Same metacharacter roots, different text.
+  #
+  # ONE FIXTURE PER CHANNEL, because a row erased on both arms of one channel
+  # is invisible to a control whose difference lives on the other. The null row
+  # above cannot see this class at all for the same reason: equal erasure reads
+  # as equality. The stdout fixture is what convicts a `normout` reading the
+  # rules in the wrong dialect, which the null row and the stderr fixture both
+  # score green.
+  _self_mc="$_self/meta/m+n.o(p[q\$r"
+  _self_md="$_self/meta/s+t.u(v[w\$x"
+  mkdir -p "$_self_mc/zig-out/bin" "$_self_md/zig-out/bin" || return 2
+  printf '%s' "$_self_meta" | sed 's#cannot open#REFUSED, cannot open#' \
+    >"$_self_mc/zig-out/bin/idol"
+  printf '%s' "$_self_meta" | sed 's#answer from#ANSWER, from#' \
+    >"$_self_md/zig-out/bin/idol"
+  chmod +x "$_self_mc/zig-out/bin/idol" "$_self_md/zig-out/bin/idol"
+  compare_subjects "$_self_ma/zig-out/bin/idol" \
+    "$_self_mc/zig-out/bin/idol" \
+    "$_self/list" "$_self/source" >/dev/null 2>&1
+  _self_rc=$?
+  [ "$_self_rc" -eq 1 ] || {
+    echo "differential: selftest FAIL — the metacharacter escaping erased a real stderr row" >&2
+    return 1
+  }
+  compare_subjects "$_self_ma/zig-out/bin/idol" \
+    "$_self_md/zig-out/bin/idol" \
+    "$_self/list" "$_self/source" >/dev/null 2>&1
+  _self_rc=$?
+  [ "$_self_rc" -eq 1 ] || {
+    echo "differential: selftest FAIL — the metacharacter escaping erased a real stdout row" >&2
+    return 1
+  }
+
   # Different bytes, one identical observation. Each fake records its own
   # invocation count; a future second-run stderr probe makes this control red.
   _self_fake='#!/bin/sh
@@ -1040,7 +1167,7 @@ exit 7
   TMO=$_self_old_tmo
   [ "$_self_rc" -eq 2 ] || return 1
 
-  echo "differential: selftest PASS — physical scratch root, sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, per-arm cwd in both spellings, real row survives normalisation, in-tree arm at the subject source root, mirror nested in the source tree, arm reached through a symlink and a real row surviving that, an arm whose binary is a symlink and a real row surviving that, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
+  echo "differential: selftest PASS — physical scratch root, sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, per-arm cwd in both spellings, real row survives normalisation, in-tree arm at the subject source root, mirror nested in the source tree, arm reached through a symlink and a real row surviving that, an arm whose binary is a symlink and a real row surviving that, regex metacharacters in an arm root on both channels and a real row surviving that on each, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
   return 0
 }
 
