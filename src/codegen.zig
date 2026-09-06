@@ -26276,6 +26276,64 @@ pub const CodeGen = struct {
         return null;
     }
 
+    /// THE CANONICAL SPELLING OF THE FACT THE TWO ABOVE READ OFF THE
+    /// COMPATIBILITY ONE. `base = 40` at module top level is a Lua assign;
+    /// `global base = 40` and file-scope `local base = 40` are DECLARATIONS,
+    /// and only the assign ever reached the embedded module's storage
+    /// initializer. The declaration carried the identical literal in a
+    /// different statement kind, so the fold below skipped it and the storage
+    /// was emitted as a bare `static int64_t duo_g_<mod>_base;` — a `__bss`
+    /// zero that the consumer read as if it were the value.
+    ///
+    /// This is GAP-121's defect class measured in the current tree, and it is a
+    /// SILENT WRONG ANSWER, not a link error: a two-file program whose module
+    /// spells `base = 40` and calls `gh:pick(2)` exits 42, and the same program
+    /// whose module spells `global base = 40` exits 2. The canonical face lost
+    /// to the compatibility face on the same semantic fact, which is the exact
+    /// inversion `docs/spec/source.md` forbids — a source spelling selected the
+    /// realization after resolution had already agreed on the value.
+    ///
+    /// `module_top_level_assigns` above ALREADY treats `.assign`,
+    /// `.global_decl` and `.local_decl` as one module-scope fact; it was widened
+    /// for the storage-liveness question and the initializer question was left
+    /// behind. Reading the same three faces here is what makes the two answer
+    /// together instead of drifting again.
+    ///
+    /// DELIBERATELY NOT FOLDED INTO `embedded_module_scalar_const_assign`. That
+    /// predicate is read by three other callers as "this name folds to an int
+    /// constant I may substitute for the storage" — the module return table
+    /// wraps it in `lua_val_from_int`, the statement loop uses it to SKIP
+    /// re-emitting the assign, and the declaration loop uses it to drop storage
+    /// entirely. A declaration is not droppable on those terms, so it answers
+    /// only the initializer question and leaves the other three unchanged.
+    fn embedded_module_decl_const_init(mod: *const ast.Module, name: []const u8) ?*const ast.Expr {
+        for (mod.body.stmts) |*stmt| {
+            const names = switch (stmt.*) {
+                .global_decl => |*gd| gd.names,
+                .local_decl => |*ld| ld.names,
+                else => continue,
+            };
+            const inits = switch (stmt.*) {
+                .global_decl => |*gd| gd.inits,
+                .local_decl => |*ld| ld.inits,
+                else => continue,
+            };
+            if (names.len != 1 or inits.len != 1) continue;
+            if (!std.mem.eql(u8, names[0].ident, name)) continue;
+            const val = inits[0];
+            // The same literal set the two predicates above admit, in one
+            // place: whatever folds into a C declaration from an assign folds
+            // from a declaration, and nothing else does. A call, a name, or a
+            // table has no load-time image and must not be guessed at here —
+            // it is the non-constant class this gap still owns.
+            return switch (val.*) {
+                .int_lit, .float_lit, .true_lit, .false_lit, .quoted => val,
+                else => null,
+            };
+        }
+        return null;
+    }
+
     fn emit_embedded_module_file_scope_constants(self: *CodeGen, mod: *const ast.Module) E!void {
         if (self.current_module_cname.len == 0) return;
         if (!self.native_scalar_mode and !self.mixed_scalar_mode) return;
@@ -27612,6 +27670,15 @@ pub const CodeGen = struct {
                     embedded_module_str_const_assign(&submod, entry.key_ptr.*)
                 else
                     null;
+                // GAP-121, the canonical face of the two above. Consulted only
+                // when neither answered, so a module that spells the assign
+                // keeps byte-for-byte the C it already emitted and only the
+                // declaration face — which previously emitted no initializer at
+                // all — changes.
+                const decl_const_init: ?*const ast.Expr = if (scalar_const_init == null and str_const_init == null)
+                    embedded_module_decl_const_init(&submod, entry.key_ptr.*)
+                else
+                    null;
                 // A native-direct req binding normally needs no variable (uses
                 // resolve to C symbols), but a `global x = req "..."` that the
                 // body reads through an `.any`-typed field access still emits
@@ -27649,12 +27716,45 @@ pub const CodeGen = struct {
                     // declaration. `embedded_module_scalar_const_assign` only ever
                     // returns int/float/true/false literals, so this cannot reorder
                     // or duplicate a side effect.
-                    if (scalar_const_init orelse str_const_init) |ce| {
+                    if (scalar_const_init orelse str_const_init orelse decl_const_init) |ce| {
                         self.p(" = ", .{});
                         self.emit_expr(ce) catch |e| {
                             term.err("emit_embedded_module: const init emit failed for {s}: {}", .{ entry.key_ptr.*, e });
                             return false;
                         };
+                    } else if (self.skip_lua_thunk_emit() and
+                        module_top_level_assigns(&submod, entry.key_ptr.*))
+                    {
+                        // GAP-121, FAIL CLOSED. The module gives this global a
+                        // value that is NOT a load-time constant — `global base:
+                        // i64 = seed()` — so nothing above could fold it into the
+                        // declaration, and `skip_lua_thunk_emit()` says no
+                        // `duo_mod_*` thunk will be emitted to run the module body
+                        // that would have assigned it. The word therefore reaches
+                        // the consumer as a `__bss` zero WITH NO DIAGNOSTIC: a
+                        // two-file program whose module computes `base` and whose
+                        // `main` calls `gh:pick(2)` exited 2 where 42 is the only
+                        // answer its source has.
+                        //
+                        // That is `law.fallback.zero` read exactly: the initializer
+                        // was DEMANDED and no realization was produced for it, so
+                        // the honest outcome is a refusal naming the global, not a
+                        // zero the caller cannot tell from a computed one. Closing
+                        // it for real needs the module initialization demand this
+                        // gap is named for — a graph-owned dependency edge from the
+                        // static consumer to its module's initialization — which
+                        // this bootstrap C bridge does not own and must not
+                        // simulate by hoisting the call into some other module's
+                        // prologue.
+                        //
+                        // MEASURED BLAST RADIUS AT `1bfbca1f`: zero. Every
+                        // `duo_g_*` the examples/ + lib/compiler/ corpus emits is
+                        // either assigned somewhere in the same translation unit or
+                        // is an `.any` module-alias binding, which never reaches
+                        // this branch.
+                        term.err("module initialization is not realized: '{s}' in {s} is given a value the C bridge cannot place at load time, and no module initializer runs before its consumers", .{ entry.key_ptr.*, path });
+                        term.hint("GAP-121: a static consumer has no dependency edge to its module's initialization; spell the initializer as a literal or keep the relation in the consuming module until the initialization demand lands", .{});
+                        return false;
                     }
                     self.p(";\n", .{});
                 }
