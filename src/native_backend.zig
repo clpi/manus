@@ -2733,6 +2733,14 @@ const Arm64Compiler = struct {
         }
     }
 
+    /// The value band is the only part of the FP file a call preserves:
+    /// `emitSaveCallerRegs` walks it from `fp_value_reg_base`, and d0..d7 are
+    /// preserved by nothing. A register outside it cannot hold a value across
+    /// an instruction that calls, so it cannot be a home.
+    fn fpValueReg(reg: u5) bool {
+        return reg >= fp_value_reg_base and reg < fp_value_reg_base + fp_value_reg_count;
+    }
+
     /// This register is a local's home for the rest of the function.
     fn markFpHome(self: *Arm64Compiler, reg: u5) void {
         self.fp_home_regs[reg] = true;
@@ -4137,18 +4145,27 @@ const Arm64Compiler = struct {
                         // two cases, and it is already the term `sweepFpLive`
                         // and `releaseFpReg` retire a register by.
                         //
+                        // A register OUTSIDE the value band cannot be a home
+                        // either: both call arms park an f64 result in d0 —
+                        // unconditionally when `ins.application` is absent, which
+                        // is every bootstrap `sqrt`/`floor`/`fabs` — and nothing
+                        // preserves d0 across the next `bl`. `fpValueReg` is the
+                        // one test, asked here and by the claim below, so the
+                        // register a store homes in is the register `markFpHome`
+                        // is allowed to flag.
+                        //
                         // Not the closure — closure is authoritative
                         // `register`/`frame` assignment before emission, per
                         // GAP-148's record, under which a local's home is one
                         // fact the assignment carries rather than one the store
                         // reads off whichever register its operand came in.
                         const home = pinned.get(slot) orelse temps.get(slot) orelse
-                            if (self.fp_home_regs[d]) try self.allocFpReg() else d;
+                            if (self.fp_home_regs[d] or !fpValueReg(d)) try self.allocFpReg() else d;
                         // Claim the home BEFORE releasing the value register:
                         // on a local's first store they are the same register,
                         // and a release that ran first would hand the local's
                         // home to the next allocation.
-                        if (home >= fp_value_reg_base and home < fp_value_reg_base + fp_value_reg_count) {
+                        if (fpValueReg(home)) {
                             self.fp_reg_owner[home] = null;
                             self.markFpHome(home);
                         }
@@ -22703,4 +22720,118 @@ test "a first store does not home a local in another local's home" {
     try std.testing.expectEqual(@as(?u5, null), pinned.get(starved));
     try std.testing.expectEqual(@as(?u5, a_home), temps.get(a));
     try std.testing.expect(compiler.fp_home_regs[a_home]);
+}
+
+// A LOCAL'S HOME IS A REGISTER THE FUNCTION PRESERVES (GAP-148).
+//
+// `emitSaveCallerRegs` walks the FP file from `fp_value_reg_base`, so d0..d7
+// are preserved by nothing. A call result is parked in d0 by both call arms —
+// unconditionally when `ins.application` is absent — and `orelse d` then homed
+// the local THERE: no move, no home flag, and the next `bl` overwrote it.
+//
+// Built directly rather than through a source program for the same reason as
+// every test this gap has recorded: the state is one the allocator passes
+// through, not one a fixture names.
+test "a first store does not home a local in an ABI register no call preserves" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    // A call result exactly as the two call arms leave one: FP-classed, named
+    // at d0, that register claimed, and no home flag anywhere.
+    const parked: u32 = 3;
+    try compiler.markFpTemp(parked);
+    try temps.put(alloc, parked, 0);
+    compiler.used_fp_regs[0] = true;
+
+    const b: u32 = 4;
+    const before = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .store_local,
+        .result = b,
+        .lhs = .{ .temp = parked },
+        .ty = .f64,
+    }, &branch_patches, null, 0);
+
+    // `b` GETS A VALUE-BAND HOME AND THE RESULT IS MOVED INTO IT.
+    const b_home: u5 = Arm64Compiler.fp_value_reg_base;
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        0x1e604000 | @as(u32, b_home),
+        std.mem.readInt(u32, compiler.code.items[before..][0..4], .little),
+    );
+    try std.testing.expectEqual(@as(?u5, b_home), temps.get(b));
+    try std.testing.expectEqual(@as(?u5, b_home), pinned.get(b));
+    try std.testing.expect(compiler.fp_home_regs[b_home]);
+    try std.testing.expect(compiler.fp_temps.contains(b));
+
+    // d0 IS NOT A HOME. `markFpHome` has no band guard, so a flag set here
+    // would make d0 answer as stable storage for the rest of the function.
+    try std.testing.expect(!compiler.fp_home_regs[0]);
+
+    // WRONG ERROR: A TEMP ALREADY IN THE VALUE BAND IS STILL ADOPTED, WITH NO
+    // MOVE AND NO SECOND REGISTER. The term is the band, not "a store always
+    // takes a home of its own": a temp dying into a local is the case this arm
+    // is written for and `x2 = x * y` must keep paying nothing for it.
+    const t: u32 = 7;
+    const t_reg: u5 = Arm64Compiler.fp_value_reg_base + 1;
+    const c: u32 = 5;
+    try compiler.markFpTemp(t);
+    try temps.put(alloc, t, t_reg);
+    compiler.used_fp_regs[t_reg] = true;
+    compiler.fp_reg_owner[t_reg] = t;
+
+    const at_temp = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .store_local,
+        .result = c,
+        .lhs = .{ .temp = t },
+        .ty = .f64,
+    }, &branch_patches, null, 0);
+    try std.testing.expectEqual(at_temp, compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u5, t_reg), temps.get(c));
+    try std.testing.expect(compiler.fp_home_regs[t_reg]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.fp_reg_owner[t_reg]);
+
+    // FALSE ACCEPT: WITH NO REGISTER TO HOME IN, THE STORE REFUSES. A home of
+    // its own costs a register, and when the value band cannot pay the answer
+    // is the `RegisterExhausted` bail `allocFpReg` already gives — never the
+    // unpreserved ABI register as a fallback.
+    const starved: u32 = 6;
+    var full: u5 = Arm64Compiler.fp_value_reg_base;
+    while (full < Arm64Compiler.fp_value_reg_base + Arm64Compiler.fp_value_reg_count) : (full += 1) {
+        compiler.used_fp_regs[full] = true;
+    }
+    const at_full = compiler.code.items.len;
+    try std.testing.expectError(error.RegisterExhausted, compiler.compileDnirInstr(
+        &temps,
+        &pinned,
+        .{ .op = .store_local, .result = starved, .lhs = .{ .temp = parked }, .ty = .f64 },
+        &branch_patches,
+        null,
+        0,
+    ));
+    try std.testing.expectEqual(at_full, compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u5, null), temps.get(starved));
+    try std.testing.expectEqual(@as(?u5, null), pinned.get(starved));
+    try std.testing.expect(!compiler.fp_home_regs[0]);
 }
