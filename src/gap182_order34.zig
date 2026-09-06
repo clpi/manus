@@ -172,6 +172,24 @@ test "gap182: bridge rejects a graph tuple with an unnamed producer" {
     );
 }
 
+test "gap182: bridge rejects evidence graph tuples without measured revision" {
+    // The graph enforcement walk refuses evidence facts with incomplete
+    // provenance; the effect bridge must fail closed too, so a caller cannot
+    // bypass the graph walk by constructing a Guarded candidate directly from
+    // an experiment tuple and then affirming it with a runtime fact.
+    const tuple = semantic_graph.ExperimentFact{
+        .proposition = "guard:9",
+        .producer = "profile_counter",
+        .cost = 1,
+        .conditional_theorem = "cand:x",
+        .subject_revision = "",
+    };
+    try std.testing.expectError(
+        error.EvidenceRevisionMissing,
+        effect.fromExperimentFact(&tuple, &.{}),
+    );
+}
+
 test "gap182: order 5 provenance evidence cannot become an applied outcome" {
     // The production conversion seam, end to end: an entry whose evidence is
     // an observation or estimate is recorded as a `profile_insufficient`

@@ -121,7 +121,7 @@ world projection, and its remaining bulk is `std.script.*` whose canonical
 targets are vocabulary-blocked.
 
 **6 Realization One** — `GAP-121`, `GAP-126`, `GAP-130`, `GAP-144`, `GAP-148`,
-`GAP-151`, `GAP-174`, `GAP-204`, `GAP-205`, `GAP-207`.
+`GAP-151`, `GAP-174`, `GAP-204` (not P0), `GAP-205`, `GAP-207`.
 `GAP-148` reproduces exactly (`spilled_regs` still keyed by a physical register).
 `GAP-174` — one law with two realizations and only one migrated — was
 reclassified CLOSED in this pass on `9e59d168`, which preserves the

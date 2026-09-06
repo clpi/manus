@@ -909,13 +909,14 @@ pub fn deoptBoundary(
 ///   its stated assumptions; an experiment emitted with no assumption
 ///   identities carries an empty set, exactly as `fromAssumption` does).
 /// - Provenance: the tuple's measured subject revision carries over verbatim;
-///   evidence-strength producers with no revision name construct a face whose
-///   `provenanceComplete` is false — never promoted (`law.evidence.subject.one`).
+///   evidence-strength producers with no revision name construct NO candidate —
+///   provenance is enforced at the bridge before selection can promote an
+///   incomplete fact (`law.evidence.subject.one`).
 /// - Invalidation (order 4) is NOT stored here: it is a runtime `GuardInvalidation`
 ///   fact applied by `selectUnderInvalidation`; the candidate face holds only
 ///   the experiment + stated assumptions, so a guard false on its proposition
 ///   ceases admissible and deopt selects another — one walk, one authority.
-pub const fromExperimentFactErrors = error{ ProducerUnnamed };
+pub const fromExperimentFactErrors = error{ ProducerUnnamed, EvidenceRevisionMissing };
 
 pub fn fromExperimentFact(
     fact: *const semantic_graph.ExperimentFact,
@@ -923,6 +924,8 @@ pub fn fromExperimentFact(
 ) fromExperimentFactErrors!Guarded {
     const producer = EvidenceProducer.fromName(fact.producer) orelse
         return error.ProducerUnnamed;
+    if (producer.isEvidence() and fact.subject_revision.len == 0)
+        return error.EvidenceRevisionMissing;
     return .{
         .experiment = .{
             .proposition = fact.proposition,
@@ -1634,7 +1637,7 @@ test "effect: guard invalidation is a named fact with construction-forced proven
     // When both evidence-level candidates are refuted, only the sound
     // theorem survives — a named fact never promotes or demotes anything
     // else, and no answer remains a null exactly as `select` answers null.
-    const both = [_]Guarded{ .{ .experiment = guarded_exp } };
+    const both = [_]Guarded{.{ .experiment = guarded_exp }};
     try std.testing.expect(selectUnderInvalidation(&both, &fact, &holdsAll) == null);
 
     // Composes with the existing boundary verbatim: the fact's proposition
@@ -1899,7 +1902,7 @@ test "effect: all seven epistemic categories wired through one boundary" {
     // the six producer-backed experiments above plus the axiom law consumed
     // through the same one boundary.
     inline for (@typeInfo(EvidenceProducer).@"enum".field_values) |v| {
-        const p: EvidenceProducer = @enumFromInt(v);
+        const p: EvidenceProducer = @fromBackingInt(@intCast(v));
         const want: EpistemicLevel = if (p == .constitutional_axiom) .axiom else p.level();
         try std.testing.expect(p.level() == want);
     }
