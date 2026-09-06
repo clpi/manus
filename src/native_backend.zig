@@ -7720,12 +7720,34 @@ const Arm64Compiler = struct {
     /// elsewhere and this is the `used_regs` clear alone. Not the closure —
     /// closure is authoritative `register`/`frame` assignment before emission,
     /// per that gap's record.
+    ///
+    /// GIVING BACK A CLAIM IS NOT RETIRING STORAGE, AND BELOW x9 NO OWNER
+    /// RECORD SAYS WHICH IT IS (GAP-148).
+    ///
+    /// Every write to `gp_reg_owner` skips `r < 9`, so the ownerless test above
+    /// reads a call or pack result the ABI left in x0..x7 as scratch while
+    /// `temps` names its register — and the third spill pass walks x7..x0, so
+    /// that register reaches `spilled_regs`. Dropping the entry there deleted
+    /// the value's last location and handed its slot to the next spill; the
+    /// next read found no entry, got the register back unchanged, and answered
+    /// with whatever had landed in it. The claim is still given back, because
+    /// the caller is done with the register either way; only the storage stays,
+    /// and `allocRegExcluding` skips a register `spilled_regs` contains, so
+    /// pressure refuses instead of handing out a second owner.
+    ///
+    /// The term is the BAND and not the map. At x9 and above the owner record
+    /// is rebound after every value instruction, so ownerless there means the
+    /// claim is genuinely gone — `evalDnirValue` says so itself, refusing a
+    /// `temps` name in that band whose owner does not match and falling through
+    /// to the frame home. Skipping on the name there would leak the slot of
+    /// ordinary released scratch, which is the leak the paragraph above repairs.
     fn releaseReg(self: *Arm64Compiler, reg: u5) void {
         if (reg >= 29) return;
         if (reg == platform_reserved_reg) return;
         if (reg >= 9 and reg < 29 and self.gp_home_regs[reg]) return;
         if (self.gp_reg_owner[reg] != null) return;
         self.used_regs[reg] = false;
+        if (reg < 9 and self.evalTempNames(reg)) return;
         if (self.spilled_regs.fetchRemove(reg)) |entry| {
             self.free_spill_slots.append(self.alloc, entry.value) catch {};
         }
@@ -19865,6 +19887,116 @@ test "the spilled-register reclaim passes over a register the temp map names" {
     try std.testing.expectEqual(off, compiler.free_spill_slots.items[1]);
 
     // A reclaim emits nothing; it moves records only.
+    try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
+}
+
+// GAP-148. A RELEASE GIVES BACK A CLAIM; IT DOES NOT RETIRE A VALUE'S LAST
+// LOCATION.
+//
+// `releaseReg` reads the same register-keyed test the reclaim read --
+// `gp_reg_owner[reg] == null` -- and every write to `gp_reg_owner` skips
+// `r < 9`. So a call or pack result the ABI left in x0..x7 is ownerless for
+// its whole life while `temps` names its register, the third spill pass walks
+// x7..x0 and puts that register in `spilled_regs`, and the emitter then
+// releases the operand register it is done with. The entry that reloads the
+// value went with it, and the slot went into the free pool for the next spill
+// to store over.
+test "a release keeps the spill entry of a register the temp map names" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 64;
+
+    // The state an operand read leaves: `temps` names the ABI register for the
+    // value, and nothing else does -- no owner, the `gp_reg_owner` writes
+    // skipping x0..x7; no home; no pin.
+    const result_reg: u5 = 0;
+    const result: u32 = 7;
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    try temps.put(alloc, result, result_reg);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    compiler.eval_pinned = &pinned;
+    compiler.eval_temps = &temps;
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[result_reg]);
+    try std.testing.expect(!compiler.evalPinNames(result_reg));
+
+    // Then the third spill pass takes it while the other operand is evaluated.
+    const off: u16 = 8;
+    try compiler.spilled_regs.put(alloc, result_reg, off);
+    compiler.used_regs[result_reg] = false;
+
+    compiler.releaseReg(result_reg);
+
+    // THE CLAIM IS GIVEN BACK AND THE STORAGE IS KEPT. The entry is the only
+    // thing `ensureRegLive`/`ensureRegLiveRemap` key on, and the slot is not in
+    // the free pool, where the next spill would store a second value over this
+    // one.
+    try std.testing.expect(!compiler.used_regs[result_reg]);
+    try std.testing.expectEqual(@as(?u16, off), compiler.spilled_regs.get(result_reg));
+    try std.testing.expectEqual(@as(?u5, result_reg), temps.get(result));
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+
+    // UNNAMED SCRATCH IS STILL THE DEAD STORAGE THIS FUNCTION RETIRES, on the
+    // removal that took the entry, and releasing it twice still puts one
+    // offset in the pool once.
+    const scratch: u5 = 21;
+    const scratch_off: u16 = 24;
+    try compiler.spilled_regs.put(alloc, scratch, scratch_off);
+    compiler.used_regs[scratch] = true;
+
+    compiler.releaseReg(scratch);
+    try std.testing.expect(!compiler.used_regs[scratch]);
+    try std.testing.expect(!compiler.spilled_regs.contains(scratch));
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(scratch_off, compiler.free_spill_slots.items[0]);
+
+    compiler.releaseReg(scratch);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+
+    // AND THE TERM IS THE BAND, NOT THE MAP. At x9 and above the owner record
+    // is rebound after every value instruction, so ownerless there is scratch
+    // whatever `temps` still says -- and `evalDnirValue` refuses that name
+    // itself. A named register in that band is released exactly as before.
+    const banded: u5 = 22;
+    const banded_off: u16 = 32;
+    try temps.put(alloc, result + 1, banded);
+    try compiler.spilled_regs.put(alloc, banded, banded_off);
+    compiler.used_regs[banded] = true;
+    try std.testing.expect(compiler.evalTempNames(banded));
+
+    compiler.releaseReg(banded);
+    try std.testing.expect(!compiler.spilled_regs.contains(banded));
+    try std.testing.expectEqual(@as(usize, 2), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(banded_off, compiler.free_spill_slots.items[1]);
+
+    // AND WITH NO TEMP MAP THERE IS NO READER, which `eval_temps` is outside a
+    // function body. The identical entry in the identical state is then
+    // ordinary dead scratch again, so the retention above is this term and not
+    // one of the guards beside it.
+    compiler.eval_temps = null;
+    compiler.releaseReg(result_reg);
+    try std.testing.expect(!compiler.spilled_regs.contains(result_reg));
+    try std.testing.expectEqual(@as(usize, 3), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[2]);
+
+    // A release emits nothing; it moves records only.
     try std.testing.expectEqual(@as(usize, 0), compiler.code.items.len);
 }
 
