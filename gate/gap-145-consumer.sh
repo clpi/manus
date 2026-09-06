@@ -2711,6 +2711,82 @@ if [ "$divcount" -ne "$DIVERGENT_QUOTE_ARMS" ]; then
 fi
 printf '  divergent quote arms: %s (must be %s)\n' "$divcount" "$DIVERGENT_QUOTE_ARMS"
 
+# ── 3e. A LOAD-TIME IMAGE MUST ASK THE FACE ─────────────────────────────────
+#
+# The two embedded-module const-init folds in src/codegen.zig decide whether a
+# module-scope binding's value can be placed as the C declaration's load-time
+# image. Whatever they return is handed straight to `emit_expr`, and that
+# emitter has NO byte-sequence realization: its byte face emits
+# `lua_val_nil()`. So a face-blind `.quoted` admission here does not emit a
+# text literal by accident — it places a `lua_Value` expression as the
+# initializer of an `int64_t`/`const char*` static, which is the same silent
+# wrong answer these folds were opened to close, one face over.
+#
+# Both folds must observe the producer quote, and no line in either may reach
+# the node through `.quoted` without either observing the face or refusing.
+# `!= .quoted` refuses and is admitted; `== .quoted` admits and is not.
+for fold in embedded_module_str_const_assign embedded_module_decl_const_init; do
+    foldbody=$(sed -n "/fn $fold(/,/^    }\$/p" "$CODEGEN")
+    examined=$((examined + 1))
+    if [ -z "$foldbody" ]; then
+        bad "the load-time image fold $fold is not in $CODEGEN — a reader that examines zero subjects reports agreement"
+        continue
+    fi
+    foldfaces=$(printf '%s\n' "$foldbody" | grep -cF 'quotedLiteralIsByteSequence' || true)
+    examined=$((examined + 1))
+    if [ "$foldfaces" -lt 1 ]; then
+        bad "$fold admits a load-time image without observing the producer quote: faces=$foldfaces"
+    fi
+    foldblind=$(printf '%s\n' "$foldbody" | grep -F '.quoted' \
+        | grep -vF 'quotedLiteralIsByteSequence' \
+        | grep -vE '!= \.quoted\) return null;' | grep -c . || true)
+    examined=$((examined + 1))
+    if [ "$foldblind" -ne 0 ]; then
+        bad "$fold reaches a quoted literal face-blind on $foldblind line(s) — observe the producer quote or refuse"
+    fi
+done
+
+# POSITIVE CONTROL ON BOTH DETECTORS (law.gate.protocol). The planted defects
+# are the two retired shapes verbatim — the admitting tag test and the
+# face-blind switch arm — beside the shapes that replaced them. Run against the
+# prior tree this section refuses; a detector that cannot see the retired
+# shapes reports a zero it was never given.
+facectl=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate load-time-image scratch' >&2; exit 2; }
+{
+    printf '%s\n' '    fn embedded_module_faceprobe(mod: *const ast.Module) ?*const ast.Expr {'
+    printf '%s\n' '            return if (as.values[0].* == .quoted) as.values[0] else null;'
+    printf '%s\n' '                .int_lit, .float_lit, .true_lit, .false_lit, .quoted => val,'
+    printf '%s\n' '    }'
+} >"$facectl/old.zig"
+{
+    printf '%s\n' '    fn embedded_module_faceprobe(mod: *const ast.Module) ?*const ast.Expr {'
+    printf '%s\n' '            if (as.values[0].* != .quoted) return null;'
+    printf '%s\n' '            return if (ast.quotedLiteralIsByteSequence(as.values[0].quoted.quote)) null else as.values[0];'
+    printf '%s\n' '                .quoted => |lit| if (ast.quotedLiteralIsByteSequence(lit.quote)) null else val,'
+    printf '%s\n' '    }'
+} >"$facectl/new.zig"
+ctl_old_faces=$(sed -n '/fn embedded_module_faceprobe(/,/^    }$/p' "$facectl/old.zig" \
+    | grep -cF 'quotedLiteralIsByteSequence' || true)
+ctl_old_blind=$(sed -n '/fn embedded_module_faceprobe(/,/^    }$/p' "$facectl/old.zig" \
+    | grep -F '.quoted' | grep -vF 'quotedLiteralIsByteSequence' \
+    | grep -vE '!= \.quoted\) return null;' | grep -c . || true)
+ctl_new_faces=$(sed -n '/fn embedded_module_faceprobe(/,/^    }$/p' "$facectl/new.zig" \
+    | grep -cF 'quotedLiteralIsByteSequence' || true)
+ctl_new_blind=$(sed -n '/fn embedded_module_faceprobe(/,/^    }$/p' "$facectl/new.zig" \
+    | grep -F '.quoted' | grep -vF 'quotedLiteralIsByteSequence' \
+    | grep -vE '!= \.quoted\) return null;' | grep -c . || true)
+rm -rf -- "$facectl"
+examined=$((examined + 1))
+if [ "$ctl_old_faces" -ne 0 ] || [ "$ctl_old_blind" -ne 2 ]; then
+    bad "the load-time-image detector cannot see the retired shapes: faces=$ctl_old_faces blind=$ctl_old_blind (want 0 and 2)"
+fi
+examined=$((examined + 1))
+if [ "$ctl_new_faces" -ne 2 ] || [ "$ctl_new_blind" -ne 0 ]; then
+    bad "the load-time-image detector refuses the canonical shapes: faces=$ctl_new_faces blind=$ctl_new_blind (want 2 and 0)"
+fi
+printf '  load-time image folds: 2, each observing the producer quote, 0 face-blind reaches; controls old=%s/%s new=%s/%s\n' \
+    "$ctl_old_faces" "$ctl_old_blind" "$ctl_new_faces" "$ctl_new_blind"
+
 # ── 3c. THE FORM THE ARM CENSUS CANNOT SEE ──────────────────────────────────
 #
 # Section 3b greps for a SWITCH ARM, `.quoted =>`. A consumer can reach the
@@ -2735,7 +2811,11 @@ printf '  divergent quote arms: %s (must be %s)\n' "$divcount" "$DIVERGENT_QUOTE
 # honestly. So the number is a CEILING on the surface, not a blind count: it
 # makes the form visible, which it was not, and refuses growth while GAP-145 is
 # open. A site added here has to be argued for by raising the number.
-QUOTE_TAGTEST_CEILING=89
+# 2026-09-06: 89 → 88. `embedded_module_str_const_assign` stopped admitting a
+# load-time image on `== .quoted` and now refuses on `!= .quoted` before asking
+# `ast.quotedLiteralIsByteSequence` — §3e. The site that left is an ADMISSION
+# that carried no face; the refusal that replaced it carries no text/byte claim.
+QUOTE_TAGTEST_CEILING=88
 
 tagtests=$(grep -h '== \.quoted\b' "$ROOT"/src/*.zig | wc -l | tr -d ' ')
 examined=$((examined + 1))
@@ -3095,6 +3175,34 @@ if [ "$separatorold" -ne 1 ] || [ "$separatornew" -ne 1 ]; then
 fi
 
 # ── 4. the identity-count parity probe must be able to run ──────────────────
+
+# Statement-level descriptor case-set admission consumes the ordinary-name face
+# already projected after the opening brace, the same face the inline case-set
+# reader consumes. Zig retains the following comma/parenthesis choice, the
+# spread arm, cursor restoration, and descriptor materialization.
+stmt_caseset_kinds=$(sed -n '/caseset: {/,/break :caseset;/p' "$PARSER" | \
+    grep -cF '(try self.pk()).kind == .name' || true)
+examined=$((examined + 1))
+if [ "$stmt_caseset_kinds" -ne 0 ]; then
+    bad "statement case-set admission retained host name recognition: count=$stmt_caseset_kinds"
+fi
+stmt_caseset_faces=$(sed -n '/caseset: {/,/break :caseset;/p' "$PARSER" | \
+    grep -cF 'try self.currentParserName()' || true)
+examined=$((examined + 1))
+if [ "$stmt_caseset_faces" -ne 1 ]; then
+    bad "statement case-set admission does not consume the settled ordinary-name face: count=$stmt_caseset_faces"
+fi
+
+stmt_caseset_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate statement-case-set scratch' >&2; exit 2; }
+printf '%s\n' 'if ((try self.pk()).kind == .lbrace) caseset: {' 'if ((try self.pk()).kind == .name) {' 'if (!is_caseset) break :caseset;' >"$stmt_caseset_probe/old.zig"
+printf '%s\n' 'if ((try self.pk()).kind == .lbrace) caseset: {' 'if (try self.currentParserName()) {' 'if (!is_caseset) break :caseset;' >"$stmt_caseset_probe/new.zig"
+stmt_caseset_old=$(sed -n '/caseset: {/,/break :caseset;/p' "$stmt_caseset_probe/old.zig" | grep -cF '(try self.pk()).kind == .name')
+stmt_caseset_new=$(sed -n '/caseset: {/,/break :caseset;/p' "$stmt_caseset_probe/new.zig" | grep -cF 'try self.currentParserName()')
+rm -rf -- "$stmt_caseset_probe"
+examined=$((examined + 1))
+if [ "$stmt_caseset_old" -ne 1 ] || [ "$stmt_caseset_new" -ne 1 ]; then
+    bad "the statement-case-set detector is broken: old=$stmt_caseset_old new=$stmt_caseset_new"
+fi
 
 # Qualified function paths consume the ordinary-name face already projected
 # after both dot and colon edges. Zig retains spelling, line/glue checks,

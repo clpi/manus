@@ -26271,7 +26271,17 @@ pub const CodeGen = struct {
             };
             if (as.targets.len != 1 or as.values.len != 1 or as.targets[0].* != .name) continue;
             if (!std.mem.eql(u8, as.targets[0].name.ident, name)) continue;
-            return if (as.values[0].* == .quoted) as.values[0] else null;
+            // Same face law as `embedded_module_decl_const_init` below: a tag
+            // test reaches the node, the producer quote decides whether the
+            // declaration emitter can realize it. `emit_expr` emits
+            // `lua_val_nil()` for the byte face, so admitting it here writes an
+            // unrealizable load-time image; refusing sends the byte face to the
+            // fail-closed refusal that names the global.
+            if (as.values[0].* != .quoted) return null;
+            return if (ast.quotedLiteralIsByteSequence(as.values[0].quoted.quote))
+                null
+            else
+                as.values[0];
         }
         return null;
     }
@@ -26327,7 +26337,18 @@ pub const CodeGen = struct {
             // table has no load-time image and must not be guessed at here —
             // it is the non-constant class this gap still owns.
             return switch (val.*) {
-                .int_lit, .float_lit, .true_lit, .false_lit, .quoted => val,
+                .int_lit, .float_lit, .true_lit, .false_lit => val,
+                // THE PRODUCER QUOTE OWNS THE FACE, NOT THE NODE KIND. This
+                // returns the initializer the declaration emitter hands to
+                // `emit_expr`, and that emitter has no byte-sequence
+                // realization: its byte face emits `lua_val_nil()`. Admitting
+                // both faces here therefore placed a `lua_Value` expression as
+                // the load-time image of an `int64_t`/`const char*` static —
+                // the same silent wrong answer this predicate exists to close,
+                // one face over. The text face folds; the byte face refuses
+                // here so the caller reaches the fail-closed GAP-121
+                // refusal that names the global instead.
+                .quoted => |lit| if (ast.quotedLiteralIsByteSequence(lit.quote)) null else val,
                 else => null,
             };
         }
