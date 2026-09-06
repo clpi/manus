@@ -4069,7 +4069,7 @@ pub const Parser = struct {
     /// the conjunction, so re-cutting it is a semantic change to live code,
     /// not a new surface. Filed separately.
     fn parse_while_consumption(self: *Parser, l: ast.Loc) ParseError!?ast.Stmt {
-        if ((try self.pk()).kind != .name) return null;
+        if (!try self.currentParserName()) return null;
         const saved = self.saveState();
         const first = try self.adv();
         if ((try self.pk()).kind != .assign) {
@@ -4087,7 +4087,7 @@ pub const Parser = struct {
         });
         while (try self.eat(.kw_and) != null) {
             const nxt = try self.pk();
-            if (nxt.kind == .name) {
+            if (try self.currentParserName()) {
                 const link_saved = self.saveState();
                 const nm = try self.adv();
                 if ((try self.pk()).kind == .assign) {

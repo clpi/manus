@@ -3465,6 +3465,33 @@ if [ "$level_edge_old" -ne 1 ] || [ "$level_edge_new" -ne 1 ]; then
     bad "the relation-level-edge detector is broken: old=$level_edge_old new=$level_edge_new"
 fi
 
+# While consumption-chain recognition consumes the ordinary-name face already
+# projected at each candidate binding coordinate. Zig retains spelling,
+# assignment recognition, cursor restoration, guard parsing, and statement
+# materialization; it must not rediscover name identity at either binding.
+while_binding_kinds=$(sed -n '/fn parse_while_consumption/,/fn parse_while(/p' "$PARSER" | \
+    grep -cE '\(try self\.pk\(\)\)\.kind != \.name|nxt\.kind == \.name' || true)
+if [ "$while_binding_kinds" -ne 0 ]; then
+    bad "while consumption binding retained host name recognition: count=$while_binding_kinds"
+fi
+while_binding_faces=$(sed -n '/fn parse_while_consumption/,/fn parse_while(/p' "$PARSER" | \
+    grep -cF 'try self.currentParserName()' || true)
+examined=$((examined + 1))
+if [ "$while_binding_faces" -ne 2 ]; then
+    bad "while consumption binding does not consume both settled ordinary-name faces: count=$while_binding_faces"
+fi
+
+while_binding_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate while-binding scratch' >&2; exit 2; }
+printf '%s\n' 'if ((try self.pk()).kind != .name) return null;' 'if (nxt.kind == .name) {' >"$while_binding_probe/old.zig"
+printf '%s\n' 'if (!try self.currentParserName()) return null;' 'if (try self.currentParserName()) {' >"$while_binding_probe/new.zig"
+while_binding_old=$(grep -cE '\(try self\.pk\(\)\)\.kind != \.name|nxt\.kind == \.name' "$while_binding_probe/old.zig")
+while_binding_new=$(grep -cF 'try self.currentParserName()' "$while_binding_probe/new.zig")
+rm -rf -- "$while_binding_probe"
+examined=$((examined + 1))
+if [ "$while_binding_old" -ne 2 ] || [ "$while_binding_new" -ne 2 ]; then
+    bad "the while-consumption binding detector is broken: old=$while_binding_old new=$while_binding_new"
+fi
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then
