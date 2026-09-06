@@ -4290,10 +4290,14 @@ const Arm64Compiler = struct {
                     // comparison half of this; the arithmetic half survived it.
                     if (!any_fp) {
                         const ilhs = try self.evalDnirValue(temps, ins.lhs);
+                        const ilhs_held = self.holdReg(ilhs, pinned);
                         const irhs = try self.evalDnirValue(temps, ins.rhs);
+                        const irhs_held = self.holdReg(irhs, pinned);
                         const idst = preferred_result orelse try self.allocReg();
                         if (preferred_result != null) self.claimReg(idst);
                         try self.emitCompareOrBinop(idst, ilhs, irhs, ins.binop, ins.ty, ins.divisor);
+                        if (ilhs_held) self.gp_reg_owner[ilhs] = null;
+                        if (irhs_held) self.gp_reg_owner[irhs] = null;
                         if (ilhs != idst and !Arm64Compiler.regIsPinned(pinned, ilhs)) self.releaseReg(ilhs);
                         if (irhs != idst and !Arm64Compiler.regIsPinned(pinned, irhs)) self.releaseReg(irhs);
                         if (ins.result) |t| try temps.put(self.alloc, t, idst);
@@ -4324,17 +4328,29 @@ const Arm64Compiler = struct {
                     // `x * 1`, `x + 0` and `x % 1` each cost a `mov` and an
                     // arithmetic instruction, and why `x % 1` reached `sdiv`.
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
+                    const lhs_held = self.holdReg(lhs, pinned);
                     const dst = preferred_result orelse try self.allocReg();
                     if (preferred_result != null) self.claimReg(dst);
                     try self.emitBinopConst(dst, lhs, k, ins.binop, ins.ty);
+                    if (lhs_held) self.gp_reg_owner[lhs] = null;
                     if (lhs != dst and !Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
                 } else {
+                    // AN OPERAND IS HELD IN A LOCAL VARIABLE UNTIL THE
+                    // INSTRUCTION IS EMITTED, AND NO MAP NAMES IT (GAP-148).
+                    // `holdReg` states the full rule; the window closes on the
+                    // line below the emit, before the releases, because
+                    // `releaseReg` returns above an owner and would leak the
+                    // register the drop hands back.
                     const lhs = try self.evalDnirValue(temps, ins.lhs);
+                    const lhs_held = self.holdReg(lhs, pinned);
                     const rhs = try self.evalDnirValue(temps, ins.rhs);
+                    const rhs_held = self.holdReg(rhs, pinned);
                     const dst = preferred_result orelse try self.allocReg();
                     if (preferred_result != null) self.claimReg(dst);
                     try self.emitCompareOrBinop(dst, lhs, rhs, ins.binop, ins.ty, ins.divisor);
+                    if (lhs_held) self.gp_reg_owner[lhs] = null;
+                    if (rhs_held) self.gp_reg_owner[rhs] = null;
                     if (lhs != dst and !Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
                     if (rhs != dst and !Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
                     if (ins.result) |t| try temps.put(self.alloc, t, dst);
@@ -9606,10 +9622,10 @@ const Arm64Compiler = struct {
         // register back for `emitMovImm` to write the condition's immediate
         // into. `ensureRegLive(old)` at step (4) then finds no entry to reload
         // and the `csel` selects the condition's operand as the binding's own
-        // previous value. `holdIfConvReg` states the full rule; a
+        // previous value. `holdReg` states the full rule; a
         // register-homed or pinned binding answers with its home and is left
         // alone.
-        const old_held = self.holdIfConvReg(old, pinned);
+        const old_held = self.holdReg(old, pinned);
 
         // (2) The arm's operation, now unconditional. An accumulator update
         //     (`a = a + k`) READS the same binding the select falls back to, so
@@ -9641,7 +9657,7 @@ const Arm64Compiler = struct {
         // register writes that register before anything reads it — `emitMovImm`
         // for an immediate, an `ldr` for a frame local, `adrp`/`add` for a
         // string — and the spellings that allocate nothing (a home, a pin, a
-        // hoisted immediate, a live temp) reach `holdIfConvReg` already owned or
+        // hoisted immediate, a live temp) reach `holdReg` already owned or
         // out of band and mint no record at all.
         //
         // THE WINDOW IS THE RIGHT OPERAND'S EVALUATION AND STOPS THERE. The
@@ -9653,7 +9669,7 @@ const Arm64Compiler = struct {
         // the left operand as the destination is a register this emitter has
         // always been allowed to take, and holding it past this line would
         // refuse it.
-        const a_held = self.holdIfConvReg(a, pinned);
+        const a_held = self.holdReg(a, pinned);
         const b = if (rhs_is_dest) old else try self.evalDnirValue(temps, plan.op.rhs);
         if (a_held) self.gp_reg_owner[a] = null;
         const dst = try self.allocRegExcluding(old);
@@ -9724,7 +9740,7 @@ const Arm64Compiler = struct {
             // gone by the time they run. A `clhs` that is `old` or `dst` — the
             // two registers a fused compare most often reads — arrives ALREADY
             // OWNED and mints nothing.
-            const clhs_held = self.holdIfConvReg(clhs, pinned);
+            const clhs_held = self.holdReg(clhs, pinned);
             const crhs = try self.evalDnirValue(temps, c.rhs);
             if (clhs_held) self.gp_reg_owner[clhs] = null;
             try self.emitCmpReg(clhs, crhs);
@@ -10275,8 +10291,8 @@ const Arm64Compiler = struct {
     /// Emit one arm's ALU chain unconditionally, answering with the register
     /// holding the value the arm would have stored.
     ///
-    /// A VALUE AN IF-CONVERSION HOLDS IN A LOCAL VARIABLE IS HELD IN NO MAP AT
-    /// ALL, AND THAT IS THE ENTRY THE RECLAIM BIDS FOR (GAP-148).
+    /// A VALUE AN EMITTER HOLDS IN A LOCAL VARIABLE IS HELD IN NO MAP AT ALL,
+    /// AND THAT IS THE ENTRY THE RECLAIM BIDS FOR (GAP-148).
     ///
     /// The record `emitIfConverted` makes for `dst` states the rule: an entry in
     /// `spilled_regs` whose `gp_reg_owner` is null is, to `reclaimSpilledReg`, a
@@ -10301,6 +10317,13 @@ const Arm64Compiler = struct {
     ///     The right operand's evaluation excludes nothing, so the register the
     ///     reclaim hands it is the left operand's own, and the instruction that
     ///     follows reads its right operand twice.
+    ///   - THE ORDINARY INTEGER BINOP'S OPERANDS, in `compileDnirInstr`. The
+    ///     same two-operand sequence outside any if-conversion, plus the
+    ///     destination's `allocReg` after it and, for `idiv`/`mod`,
+    ///     `emitFlooredDivRem`'s three `allocRegExcluding(dst)` — none of which
+    ///     excludes an operand. `ensureRegLive` inside every register-form
+    ///     emitter reloads a merely SPILLED operand and cannot reload a
+    ///     reclaimed one: the reclaim removed the entry it keys on.
     ///
     /// In each case an allocation that fails under gate transport runs the whole
     /// cascade — every free scan skips `spilled_regs`, so a spill frees nothing
@@ -10330,7 +10353,7 @@ const Arm64Compiler = struct {
     /// before emission, per this gap's record, under which a held value's
     /// location is a fact the assignment carries rather than a claim an emitter
     /// keeps in a local variable across an allocator that may bid for it.
-    fn holdIfConvReg(
+    fn holdReg(
         self: *Arm64Compiler,
         reg: u5,
         pinned: *const std.AutoHashMapUnmanaged(u32, u5),
@@ -10412,14 +10435,14 @@ const Arm64Compiler = struct {
         // OPS leaves an owner behind (`emitIfConvArm` records the last op's
         // result), so the reclaim already passes over it. An arm with NO ops
         // answers `evalDnirValue(store.lhs)`, and an immediate or a frame local
-        // is a fresh register no map yet names. `holdIfConvReg` is that missing
+        // is a fresh register no map yet names. `holdReg` is that missing
         // record and refuses to mint one for anything already owned, so the
         // op-carrying arm is untouched.
-        const rt_held = self.holdIfConvReg(rt, pinned);
+        const rt_held = self.holdReg(rt, pinned);
         const re = try self.emitIfConvArm(temps, pinned, plan.else_ops, plan.else_store, branch_patches, &else_owned, at);
         // The else arm's answer is held for the same reason across what remains:
         // the destination's allocation and the condition's.
-        const re_held = self.holdIfConvReg(re, pinned);
+        const re_held = self.holdReg(re, pinned);
 
         // The destination. Reusing the then-arm's own scratch is free — `csel`
         // writes its destination and `xd == xn` is legal — but only when that
@@ -10468,7 +10491,7 @@ const Arm64Compiler = struct {
             // all held or owned by the time the condition runs, so `clhs` is
             // once again the only register the reclaim can still take, and
             // taking it makes the `cmp` read its right operand twice.
-            const clhs_held = self.holdIfConvReg(clhs, pinned);
+            const clhs_held = self.holdReg(clhs, pinned);
             const crhs = try self.evalDnirValue(temps, c.rhs);
             if (clhs_held) self.gp_reg_owner[clhs] = null;
             try self.emitCmpReg(clhs, crhs);
@@ -21578,4 +21601,237 @@ test "the two-sided condition's left operand is not reclaimable while its right 
         try std.testing.expect(word != crhs_word);
     }
     try std.testing.expect(saw_clhs);
+}
+
+// AN ORDINARY BINOP'S OPERANDS ARE HELD IN LOCAL VARIABLES, AND NO MAP NAMES
+// THEM (GAP-148).
+//
+// The three integer binop arms of `compileDnirInstr` evaluate an operand and
+// then keep its register in a Zig local across the next operand's evaluation,
+// across the destination's `allocReg`, and — for `idiv`/`mod` — across
+// `emitFlooredDivRem`'s three `allocRegExcluding(dst)`. None of those excludes
+// an operand. `evalDnirValue`'s constant, string and stack-local arms answer
+// with a register `allocReg` recorded only in `used_regs`, so its
+// `gp_reg_owner` is null, which is precisely the entry `reclaimSpilledReg`
+// retires. `ensureRegLive` inside every register-form emitter reloads a merely
+// SPILLED operand and cannot reload a reclaimed one: the reclaim removed the
+// entry it keys on.
+//
+// Each test builds an `Arm64Compiler` directly, for the reason every reclaim
+// test in this file states: the state under test needs an exhausted register
+// pool at the exact instant a binop reaches its second allocation. The bank
+// below leaves exactly ONE allocatable register free, so the cascade has a
+// known victim list and the reclaim exactly one candidate — otherwise the
+// victim is hash order's to choose and the differential is not this change's.
+fn gap148BinopBank(compiler: *Arm64Compiler, free: u5) void {
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 336;
+    compiler.gate_spill_base = 0;
+    compiler.gate_spill_end = 256;
+    compiler.gate_spill_cursor = 0;
+    var busy: u5 = 9;
+    while (busy <= 28) : (busy += 1) {
+        if (busy == free) continue;
+        if (busy == Arm64Compiler.platform_reserved_reg) continue;
+        compiler.gp_home_regs[busy] = true;
+        compiler.used_regs[busy] = true;
+        compiler.gp_call_home_regs |= @as(u32, 1) << busy;
+    }
+    compiler.pending_arg_regs = 0xff;
+}
+
+fn gap148MovzWord(reg: u5, imm: u32) u32 {
+    return 0xd2800000 | (imm << 5) | @as(u32, reg);
+}
+
+test "the binop's left operand is not reclaimable while its right operand allocates" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    const lhs_reg: u5 = 16;
+    gap148BinopBank(&compiler, lhs_reg);
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    // A COMPARISON, so `constBinopRealization` refuses on its first line and
+    // the general two-operand arm is the one reached.
+    const ins = dnir.Instr{
+        .op = .binop,
+        .binop = .lt,
+        .ty = .i64,
+        .lhs = .{ .i64 = 5 },
+        .rhs = .{ .i64 = 7 },
+        .result = 40,
+    };
+
+    try std.testing.expectError(
+        error.RegisterExhausted,
+        compiler.compileDnirInstr(&temps, &pinned, ins, &branch_patches, null, 0),
+    );
+
+    // The left operand is still where the spill put it: the entry stands, its
+    // slot is not back in the free pool, and the record that made it
+    // unreclaimable is present.
+    try std.testing.expect(compiler.spilled_regs.get(lhs_reg) != null);
+    try std.testing.expect(compiler.gp_reg_owner[lhs_reg] != null);
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+    try std.testing.expect(!compiler.used_regs[lhs_reg]);
+
+    // AND IT WAS COMPUTED INTO x16 BEFORE ANY OF IT — the left operand's own
+    // `movz x16, #5` is present and the right operand's `movz x16, #7`, which
+    // is what the reclaim's register would have carried, is not.
+    var saw_lhs = false;
+    var i: usize = 0;
+    while (i + 4 <= compiler.code.items.len) : (i += 4) {
+        const word = std.mem.readInt(u32, compiler.code.items[i..][0..4], .little);
+        if (word == gap148MovzWord(lhs_reg, 5)) saw_lhs = true;
+        try std.testing.expect(word != gap148MovzWord(lhs_reg, 7));
+    }
+    try std.testing.expect(saw_lhs);
+}
+
+// THE SAME OPERAND, IN THE INTEGER ARM OF A FLOAT KERNEL (GAP-148).
+//
+// `cur_func_float` selects a second copy of the two-operand sequence, reached
+// whenever both operands of an instruction inside a float-returning function
+// are integers. It holds `ilhs` across `irhs`'s evaluation on the same two
+// consecutive lines.
+test "the float kernel's integer binop left operand is not reclaimable either" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    const lhs_reg: u5 = 16;
+    gap148BinopBank(&compiler, lhs_reg);
+    compiler.cur_func_float = true;
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    const ins = dnir.Instr{
+        .op = .binop,
+        .binop = .add,
+        .ty = .i64,
+        .lhs = .{ .i64 = 5 },
+        // NOT `constBinopRealization`-admissible: 4096 is above the `add #imm12`
+        // range, so this arm evaluates a second operand.
+        .rhs = .{ .i64 = 4096 },
+        .result = 41,
+    };
+
+    try std.testing.expectError(
+        error.RegisterExhausted,
+        compiler.compileDnirInstr(&temps, &pinned, ins, &branch_patches, null, 0),
+    );
+
+    try std.testing.expect(compiler.spilled_regs.get(lhs_reg) != null);
+    try std.testing.expect(compiler.gp_reg_owner[lhs_reg] != null);
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+
+    var saw_lhs = false;
+    var i: usize = 0;
+    while (i + 4 <= compiler.code.items.len) : (i += 4) {
+        const word = std.mem.readInt(u32, compiler.code.items[i..][0..4], .little);
+        if (word == gap148MovzWord(lhs_reg, 5)) saw_lhs = true;
+    }
+    try std.testing.expect(saw_lhs);
+}
+
+// AND THE DESTINATION'S OWN ALLOCATION IS THE SAME BID (GAP-148).
+//
+// The literal-operand arm evaluates ONE operand and then allocates a
+// destination, so the window that reclaims the operand is the destination's
+// `allocReg` rather than a second operand's. `emitBinopConst` would then emit
+// `add x16, x16, #3` over a value the reclaim had already abandoned in the
+// frame.
+test "the binop's left operand is not reclaimable while the destination allocates" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    const lhs_reg: u5 = 16;
+    gap148BinopBank(&compiler, lhs_reg);
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    const ins = dnir.Instr{
+        .op = .binop,
+        .binop = .add,
+        .ty = .i64,
+        .lhs = .{ .i64 = 5 },
+        .rhs = .{ .i64 = 3 },
+        .result = 42,
+    };
+
+    try std.testing.expectError(
+        error.RegisterExhausted,
+        compiler.compileDnirInstr(&temps, &pinned, ins, &branch_patches, null, 0),
+    );
+
+    try std.testing.expect(compiler.spilled_regs.get(lhs_reg) != null);
+    try std.testing.expect(compiler.gp_reg_owner[lhs_reg] != null);
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+
+    // `add x16, x16, #3` is the instruction the reclaimed destination would
+    // have produced, and it is not here.
+    const add_word: u32 = 0x91000000 | (@as(u32, 3) << 10) | (@as(u32, lhs_reg) << 5) | @as(u32, lhs_reg);
+    var saw_lhs = false;
+    var i: usize = 0;
+    while (i + 4 <= compiler.code.items.len) : (i += 4) {
+        const word = std.mem.readInt(u32, compiler.code.items[i..][0..4], .little);
+        if (word == gap148MovzWord(lhs_reg, 5)) saw_lhs = true;
+        try std.testing.expect(word != add_word);
+    }
+    try std.testing.expect(saw_lhs);
 }
