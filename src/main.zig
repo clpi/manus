@@ -847,6 +847,7 @@ const usage =
     \\                    c-dynamic/c-specialized retired with the AST/Lua bridge and never route through the source realizer
     \\  --observer <debugger|profiler|reflection|mcp>  demand an inspection observer
     \\                    (HPLS §11; repeatable). Costs realization freedoms — see gate/recon.sh
+    \\  --authority-cost <file>  consume newline-delimited idol.world.cost.v1 evidence (C99 source only)
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
     \\  --no-cache        compile without reading or writing the physical build cache
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
@@ -1006,6 +1007,7 @@ fn mainInner(init: std.process.Init) !void {
     var forwarded_args: std.ArrayList([]const u8) = .empty;
     var link_flags: std.ArrayList([]const u8) = .empty;
     var entry_override: ?[]const u8 = null;
+    var authority_cost_path: ?[]const u8 = null;
     var i: usize = start;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -1101,6 +1103,26 @@ fn mainInner(init: std.process.Init) !void {
             entry_override = args[i];
         } else if (std.mem.startsWith(u8, arg, "--entry=")) {
             entry_override = arg["--entry=".len..];
+        } else if (std.mem.eql(u8, arg, "--authority-cost") and i + 1 < args.len) {
+            if (authority_cost_path != null) {
+                term.err("--authority-cost specified more than once", .{});
+                std.process.exit(2);
+            }
+            i += 1;
+            authority_cost_path = args[i];
+        } else if (std.mem.startsWith(u8, arg, "--authority-cost=")) {
+            if (authority_cost_path != null) {
+                term.err("--authority-cost specified more than once", .{});
+                std.process.exit(2);
+            }
+            authority_cost_path = arg["--authority-cost=".len..];
+            if (authority_cost_path.?.len == 0) {
+                term.err("--authority-cost requires a file", .{});
+                std.process.exit(2);
+            }
+        } else if (std.mem.eql(u8, arg, "--authority-cost")) {
+            term.err("--authority-cost requires a file", .{});
+            std.process.exit(2);
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
             verbose = true;
             verbose_count +%= 1;
@@ -1471,7 +1493,7 @@ fn mainInner(init: std.process.Init) !void {
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, global_bench_profile_cli, null, link_flags.items, entry_override, !no_cache);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, global_bench_profile_cli, null, link_flags.items, entry_override, authority_cost_path, !no_cache);
     } else if (std.mem.eql(u8, cmd, "run")) {
         // `idol run <file.id>` defaults to wasm when no explicit --backend is
         // given. The wasm backend converts `native → wasm32-wasi` explicitly, so
@@ -1484,9 +1506,9 @@ fn mainInner(init: std.process.Init) !void {
         // wasm backend receives a recognized target rather than the bare `native`
         // placeholder that it cannot route through its orthogonal C99 path.
         const effective_target: []const u8 = if (global_backend_explicit) target else "wasm32-wasi";
-        try do_compile(alloc, io, file, out, cc, opt_level, effective_target, effective_backend, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override, true);
+        try do_compile(alloc, io, file, out, cc, opt_level, effective_target, effective_backend, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override, null, true);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{}, entry_override, true);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{}, entry_override, null, true);
     } else if (std.mem.eql(u8, cmd, "fmt")) {
         try do_fmt(alloc, io, file);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
@@ -1906,7 +1928,7 @@ fn do_project_check(alloc: std.mem.Allocator, io: Io, t: build_framework.Target)
             std.fs.path.stem(src), scratch.salt(), std.c.getpid(),
         });
         defer alloc.free(dummy);
-        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, false, false, false, false, false, false, false, null, t.link, null, true);
+        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, false, false, false, false, false, false, false, null, t.link, null, null, true);
         term.ok("'{s}' ok", .{src});
         return;
     }
@@ -2041,7 +2063,7 @@ fn run_test_sources(
                 std.fs.path.stem(file), idx, scratch.salt(), std.c.getpid(),
             });
         defer if (!(output_file != null and sources.len == 1)) alloc.free(out);
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null, true);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null, null, true);
         const code = try run_pretty_test_runner(alloc, io, out, bench_only);
         if (code != 0) failures += 1;
     }
@@ -2717,7 +2739,7 @@ fn run_shell_line(
     defer term.build_report = prev_report;
 
     const compile_started = Io.Timestamp.now(io, .awake);
-    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", backend_mode, false, false, verbose, false, false, false, false, false, false, null, &.{}, null, true);
+    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", backend_mode, false, false, verbose, false, false, false, false, false, false, null, &.{}, null, null, true);
     const compile_elapsed: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
 
     try run_shell_binary(io, out_path);
@@ -2934,6 +2956,7 @@ fn do_project_build_one(
         t.bench_mode(),
         null,
         merged_link,
+        null,
         null,
         true,
     );
@@ -6223,6 +6246,7 @@ fn do_compile(
     test_filter: ?[]const u8,
     link_flags: []const []const u8,
     entry_override: ?[]const u8,
+    authority_cost_path: ?[]const u8,
     allow_build_cache: bool,
 ) !void {
     const compile_started = Io.Timestamp.now(io, .awake);
@@ -6246,7 +6270,7 @@ fn do_compile(
     // identities enter the key, reusing an artifact compiled without them
     // would be a wrong result.
     const cacheable = allow_build_cache and !check_only and !test_mode and !bench_mode and !pgo and
-        !lib_mode and !load_chunk and !shared_mem and link_flags.len == 0 and entry_override == null and
+        !lib_mode and !load_chunk and !shared_mem and link_flags.len == 0 and entry_override == null and authority_cost_path == null and
         std.mem.eql(u8, cc, "clang") and std.mem.indexOf(u8, target, "wasm") == null and
         outputHoldsAnArtifact(io, out_path);
     const cache_path: ?[]u8 = if (cacheable)
@@ -6321,6 +6345,10 @@ fn do_compile(
         term.err("unknown --backend '{s}' (expected auto, direct, native, c, or wasm)", .{backend_mode});
         std.process.exit(1);
     };
+    if (authority_cost_path != null and selected_backend != .c) {
+        term.err("--authority-cost is consumed only by --backend=c --emit=c", .{});
+        std.process.exit(2);
+    }
 
     // Orthogonal C99 source realization. The branch is selected only by the
     // explicit backend, lowers through the same checked graph-to-DNIR seam as
@@ -6342,13 +6370,15 @@ fn do_compile(
 
         // GAP-185's BACKEND CONSUMER: enforcement selection runs here, during
         // realization, over the census the graph carries — one `selectPlace`
-        // per census place through `lower.selectModule`, never a second census
+        // per census place through `lower.selectModuleMeasured`, never a second census
         // and never a host projection (`law.fact.producer.one`). Portable C99
         // source admits the software check and nothing else, which is exactly
         // the mechanism this arm realizes (the test+trap `dnir_lower` already
         // lowers); a place with no admissible enforcement fails the realization
         // closed, named, rather than having its demand silently weakened.
-        // `crossings` is 0 because this arm realizes one authority domain and
+        // Revision-bound cost evidence crosses through `lower.parseMeasurements`,
+        // the existing unique row-to-fact producer, and the exact fact slice
+        // reaches both consumers. `crossings` is 0 because this arm realizes one authority domain and
         // the census carries no composition facts — and under a world admitting
         // exactly one dynamic mechanism the number cannot change any selection.
         try graph.liftPlaces(&ps.mod);
@@ -6357,7 +6387,27 @@ fn do_compile(
             std.process.exit(1);
         };
         const portable_world = world.TargetWorld.of(.{ .arch = .unknown, .os = .unknown, .abi = .unknown });
-        switch (lower.selectModule(census, observation.ordinary_executable, portable_world, 0)) {
+        var measured: lower.ParsedMeasurements = if (authority_cost_path) |path| blk: {
+            const rows = Io.Dir.readFileAlloc(Io.Dir.cwd(), io, path, alloc, .unlimited) catch |err| {
+                term.err("C99 realizer: cannot read authority-cost evidence '{s}' ({s})", .{ path, @errorName(err) });
+                std.process.exit(1);
+            };
+            defer alloc.free(rows);
+            const parsed = (try lower.parseMeasurements(alloc, rows)) orelse {
+                term.err("C99 realizer: authority-cost evidence contains an invalid row", .{});
+                std.process.exit(1);
+            };
+            if (parsed.facts.items.len == 0) {
+                var empty = parsed;
+                empty.deinit(alloc);
+                term.err("C99 realizer: authority-cost evidence contains no facts", .{});
+                std.process.exit(1);
+            }
+            break :blk parsed;
+        } else .{};
+        defer measured.deinit(alloc);
+
+        switch (lower.selectModuleMeasured(census, observation.ordinary_executable, portable_world, 0, measured.facts.items)) {
             .realized => {},
             .refused => |r| {
                 term.err("C99 realizer: no admissible enforcement for place '{s}' ({s})", .{ r.place, r.refusal.name() });
@@ -6366,7 +6416,7 @@ fn do_compile(
         }
         // GAP-185: populate the per-place plans so `dnir_lower` can elide
         // enforcement for places whose authority is statically fixed.
-        graph.static_places = lower.collectStaticPlaces(alloc, census, observation.ordinary_executable, portable_world, 0);
+        graph.static_places = lower.collectStaticPlacesMeasured(alloc, census, observation.ordinary_executable, portable_world, 0, measured.facts.items);
 
         var lowering: dnir_lower.Diagnostic = .{};
         const lowered = dnir_lower.lowerModuleWithGraphObserved(alloc, &ps.mod, &graph, &lowering) catch |err| {

@@ -45,18 +45,17 @@
 //! host. Measured facts now REACH the realization walk — `selectPlace`,
 //! `selectModule` and `collectStaticPlaces` delegate to their `*Measured`
 //! variants, which thread a measured slice through `selectMeasured`; the
-//! existing names remain the empty-measurement face so the graph-backed C99
-//! arm's current wiring is unchanged. The PROVENANCE seam LANDED —
+//! existing names remain the empty-measurement face. The PROVENANCE seam LANDED —
 //! `parseMeasured` reconstructs one `MeasuredCost` fact from one
 //! `idol.world.cost.v1` row (exactly what `gate/lower/cost.sh` emits), the
 //! single producer of a measured fact from the measured world
 //! (`law.fact.producer.one`): it fails closed on a foreign schema, an unknown
 //! mechanism/triple/unit name, a missing cost field, or an empty subject
-//! revision (`law.evidence.subject.one`), so a malformed or unowned row leaves
-//! the stated orders to decide exactly as an absent measurement does. Next
-//! host boundary — the graph-backed C99 arm loads a measured row and calls the
-//! measured walk; measured costs for the boundary mechanisms (the process and
-//! network crossings, MPK on x86_64).
+//! revision (`law.evidence.subject.one`). `parseMeasurements` owns the facts
+//! from one complete newline-delimited evidence stream, and the graph-backed
+//! C99 arm hands that exact slice to both measured walk consumers. A malformed
+//! stream refuses rather than letting partial evidence decide. Next host
+//! boundary — measured costs for hardware mechanisms such as MPK on x86_64.
 
 const std = @import("std");
 const observation = @import("observation.zig");
@@ -254,6 +253,44 @@ pub fn parseMeasured(text: []const u8, revision: []u8) ?MeasuredCost {
         .cost = .{ .access = access, .crossing = crossing },
         .subject_revision = revision[0..rev.len],
     };
+}
+
+/// An owned set of measured cost facts reconstructed from the newline-delimited
+/// evidence emitted by `gate/lower/cost.sh`. Each revision remains separately
+/// owned because it is part of the measured subject identity, not row transport.
+pub const ParsedMeasurements = struct {
+    facts: std.ArrayListUnmanaged(MeasuredCost) = .empty,
+
+    pub fn deinit(self: *ParsedMeasurements, alloc: std.mem.Allocator) void {
+        for (self.facts.items) |fact| alloc.free(fact.subject_revision);
+        self.facts.deinit(alloc);
+        self.* = .{};
+    }
+};
+
+/// Parse the complete cost-evidence stream through `parseMeasured`, the single
+/// row-to-fact producer. Blank lines carry no fact; any nonblank invalid row
+/// refuses the stream so a partially transported measurement cannot decide a
+/// realization comparison.
+pub fn parseMeasurements(alloc: std.mem.Allocator, text: []const u8) !?ParsedMeasurements {
+    var parsed: ParsedMeasurements = .{};
+    errdefer parsed.deinit(alloc);
+
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0) continue;
+
+        var revision: [128]u8 = undefined;
+        var fact = parseMeasured(line, &revision) orelse {
+            parsed.deinit(alloc);
+            return null;
+        };
+        fact.subject_revision = try alloc.dupe(u8, fact.subject_revision);
+        errdefer alloc.free(fact.subject_revision);
+        try parsed.facts.append(alloc, fact);
+    }
+    return parsed;
 }
 
 fn stringField(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {
@@ -996,6 +1033,30 @@ test "lower: a parsed row feeds the same selection the struct fact does" {
     try std.testing.expectEqual(Mechanism.software_check, plan.mechanism);
     try std.testing.expectEqual(CostUnit.nanoseconds, plan.unit);
     try std.testing.expectEqual(@as(u64, 1000), plan.cost.total(profile));
+}
+
+test "lower: parseMeasurements owns every complete producer row" {
+    const alloc = std.testing.allocator;
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":3,"crossing":0},"subject_revision":"c0adff39aabbccddeeff00112233445566778899"}
+        \\{"schema":"idol.world.cost.v1","mechanism":"process","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":0,"crossing":1800},"subject_revision":"c0adff39aabbccddeeff00112233445566778899"}
+    ;
+    var parsed = (try parseMeasurements(alloc, text)).?;
+    defer parsed.deinit(alloc);
+
+    try std.testing.expectEqual(@as(usize, 2), parsed.facts.items.len);
+    try std.testing.expectEqual(Mechanism.software_check, parsed.facts.items[0].mechanism);
+    try std.testing.expectEqual(Mechanism.process, parsed.facts.items[1].mechanism);
+    try std.testing.expectEqualStrings(parsed.facts.items[0].subject_revision, parsed.facts.items[1].subject_revision);
+}
+
+test "lower: parseMeasurements refuses a partial evidence stream" {
+    const alloc = std.testing.allocator;
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":3,"crossing":0},"subject_revision":"c0adff39aabbccddeeff00112233445566778899"}
+        \\{"schema":"idol.world.cost.v1","mechanism":"unknown","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":0,"crossing":1},"subject_revision":"c0adff39aabbccddeeff00112233445566778899"}
+    ;
+    try std.testing.expect((try parseMeasurements(alloc, text)) == null);
 }
 
 test "lower: cheri is selected on a capability world, with derived construction" {
