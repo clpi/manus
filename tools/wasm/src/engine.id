@@ -2118,7 +2118,7 @@ run_body: i64 = (img: str, n: i64, target: i64, out: *u8)
                     while ck <= string.len(chunk) and rbp + ck - 1 < linsz
                       mem.write_byte(lin, rbp + ck - 1, string.byte(chunk, ck))
                       ck += 1
-                    rtot += string.len(chunk)
+                    rtot += ck - 1
                   rq += 1
                 sdtot += rtot
                 if rnp + 4 <= linsz
