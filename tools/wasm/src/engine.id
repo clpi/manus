@@ -2241,8 +2241,8 @@ run_body: i64 = (img: str, n: i64, target: i64, out: *u8)
                 hrv = wabi.ERRNO_spipe
             elseif hid == wabi.i_fd_tell
               # Returns the current file offset. Only stdin (fd 0) has a tracked
-              # position — the total bytes read from it. All other descriptors
-              # are streams with no persistent offset.
+              # position — the total bytes read from it. stdout/stderr answer
+              # spipe (same shape as fd_seek); absent descriptors answer badf.
               hrv = wabi.ERRNO_badf
               tfd: i64 = mem.read_i64(st, (ab + 1) * 8) & M32
               if tfd == 0
@@ -2253,6 +2253,8 @@ run_body: i64 = (img: str, n: i64, target: i64, out: *u8)
                   mem.write_byte(lin, tpp + tpi, (sdtot >> (tpi * 8)) & 255)
                   tpi += 1
                 hrv = wabi.ERRNO_success
+              elseif wabi.fd_kind(tfd) == 1
+                hrv = wabi.ERRNO_spipe
             elseif hid == wabi.i_fd_pwrite
               # MEASURED: spipe on fd 1 and 2 (a positional write to a stream
               # is refused for being unseekable), badf on fd 0 and on 999.
