@@ -5797,18 +5797,23 @@ const Arm64Compiler = struct {
         // added: it truncates, mandelbrot writes no conversion at all, and a
         // backend that truncates unasked still renders an image — the wrong
         // one, past a passing fixture. See gap[101].
+        // WHICH GENERAL REGISTER HOLDS THIS VALUE HAS ONE PRODUCER, AND THIS
+        // ARM ASKED THE MAP (GAP-148).
+        //
+        // `temps` is a NAME, and `evalDnirValue` is the function that turns a
+        // name into a location: it consults `eval_pinned` above the map, it
+        // refuses a name in x9..x28 whose `gp_reg_owner` does not match — the
+        // claim released under a name nobody rewrote — and it falls through to
+        // the frame home, which is the one place a local's value stays
+        // authoritative. This arm read the map raw and converted whatever the
+        // named register happened to hold. `crossFile` is true only for
+        // `.local`/`.temp`, so the value arms it used to spell are the arms
+        // `evalDnirValue` already answers, including the frame home it refused.
         if (self.crossFile(v, true)) {
-            switch (v) {
-                .local, .temp => |id| {
-                    if (temps.get(id)) |gp| {
-                        const d = try self.allocFpReg();
-                        try self.emitScvtfFromGpr(d, gp);
-                        return d;
-                    }
-                    return self.refuse(@src());
-                },
-                else => return self.refuse(@src()),
-            }
+            const gp = try self.evalDnirValue(temps, v);
+            const d = try self.allocFpReg();
+            try self.emitScvtfFromGpr(d, gp);
+            return d;
         }
         return switch (v) {
             .void => try self.allocFpReg(),
@@ -22256,4 +22261,104 @@ test "a general register read into the float file is reloaded first" {
     );
     try std.testing.expectEqual(@as(?u16, dst_off), compiler.spilled_regs.get(dst_gp));
     try std.testing.expectEqual(@as(usize, 2), compiler.free_spill_slots.items.len);
+}
+
+// THE WIDENING READ THE NAME AND NOT THE VALUE (GAP-148).
+//
+// `evalDnirValueFp`'s `crossFile` arm converts an INTEGER-classed value sitting
+// in a float position, and to do that it needs a general register. It read one
+// out of `temps` directly. `temps` is a name, and this backend already says so
+// in the function that turns a name into a location: `evalDnirValue` consults
+// `eval_pinned` above the map, refuses a name in x9..x28 whose `gp_reg_owner`
+// does not match, and falls through to the frame home — the one place a local's
+// value stays authoritative. A released register keeps its name (`emitPopVarargs`
+// releases scratch the map still names; `sweepGpLive` frees by owner record and
+// leaves the name alone), so the arm converted whatever the pool had since put
+// there, and `scvtf` reads like the conversion it was written to be.
+//
+// Built directly rather than through a source program for the same reason as
+// every test this gap has recorded: the state is one the allocator passes
+// through between a release and a read, not one a fixture names.
+test "the widening conversion reads the value's home, not a stale name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // `fp_temps` does not hold the slot, so the value is integer-classed and a
+    // float position makes `crossFile` true: this is the widening arm.
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    const slot: u32 = 3;
+    const stale: u5 = 11;
+    const off: u16 = 16;
+    try temps.put(alloc, slot, stale);
+    try compiler.gp_stack_locals.put(alloc, slot, off);
+
+    // The stale state: the register is claimed and owned by a DIFFERENT id, so
+    // the name this local holds stands for a claim that is gone.
+    compiler.used_regs[stale] = true;
+    compiler.gp_reg_owner[stale] = 7;
+
+    const d = try compiler.evalDnirValueFp(&temps, .{ .local = slot });
+    try std.testing.expectEqual(@as(u5, Arm64Compiler.fp_value_reg_base), d);
+
+    // Two instructions: the load from the frame home, then the conversion out
+    // of the register that load filled. The stale register is not the source.
+    try std.testing.expectEqual(@as(usize, 8), compiler.code.items.len);
+    const fresh: u5 = 9;
+    const ldr_word: u32 = 0xf94003e0 | ((@as(u32, off) / 8) << 10) | @as(u32, fresh);
+    try std.testing.expectEqual(
+        ldr_word,
+        std.mem.readInt(u32, compiler.code.items[0..4], .little),
+    );
+    const scvtf_word: u32 = 0x9e620000 | (@as(u32, fresh) << 5) | @as(u32, d);
+    try std.testing.expectEqual(
+        scvtf_word,
+        std.mem.readInt(u32, compiler.code.items[4..8], .little),
+    );
+
+    // WRONG ERROR: A LIVE NAME IS STILL THE ANSWER, AND NO STORAGE IS INVENTED
+    // FOR IT. The term is the owner record, not the presence of a frame home:
+    // an owned name converts out of its own register with the conversion alone,
+    // and the home is not read.
+    const live_slot: u32 = 4;
+    const live_reg: u5 = 12;
+    try temps.put(alloc, live_slot, live_reg);
+    try compiler.gp_stack_locals.put(alloc, live_slot, 24);
+    compiler.used_regs[live_reg] = true;
+    compiler.gp_reg_owner[live_reg] = live_slot;
+
+    const at_live = compiler.code.items.len;
+    const live_d = try compiler.evalDnirValueFp(&temps, .{ .local = live_slot });
+    try std.testing.expectEqual(at_live + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        0x9e620000 | (@as(u32, live_reg) << 5) | @as(u32, live_d),
+        std.mem.readInt(u32, compiler.code.items[at_live..][0..4], .little),
+    );
+    try std.testing.expectEqual(@as(?u5, live_reg), temps.get(live_slot));
+
+    // FALSE ACCEPT: WITH NO REGISTER TO LOAD INTO, THE WIDENING REFUSES. The
+    // frame home is where the value is, so reaching it costs a register; when
+    // the pool cannot pay, the answer is the same `RegisterExhausted` bail
+    // `allocRegExcluding` gives outside gate transport, never the stale
+    // register as a fallback.
+    var full: u5 = 0;
+    while (full < 29) : (full += 1) compiler.used_regs[full] = true;
+    const at_full = compiler.code.items.len;
+    try std.testing.expectError(
+        error.RegisterExhausted,
+        compiler.evalDnirValueFp(&temps, .{ .local = slot }),
+    );
+    try std.testing.expectEqual(at_full, compiler.code.items.len);
 }
