@@ -46,9 +46,17 @@
 //! `selectModule` and `collectStaticPlaces` delegate to their `*Measured`
 //! variants, which thread a measured slice through `selectMeasured`; the
 //! existing names remain the empty-measurement face so the graph-backed C99
-//! arm's current wiring is unchanged. Next host boundary — measured costs for
-//! the boundary mechanisms (the process and network crossings, MPK on
-//! x86_64).
+//! arm's current wiring is unchanged. The PROVENANCE seam LANDED —
+//! `parseMeasured` reconstructs one `MeasuredCost` fact from one
+//! `idol.world.cost.v1` row (exactly what `gate/lower/cost.sh` emits), the
+//! single producer of a measured fact from the measured world
+//! (`law.fact.producer.one`): it fails closed on a foreign schema, an unknown
+//! mechanism/triple/unit name, a missing cost field, or an empty subject
+//! revision (`law.evidence.subject.one`), so a malformed or unowned row leaves
+//! the stated orders to decide exactly as an absent measurement does. Next
+//! host boundary — the graph-backed C99 arm loads a measured row and calls the
+//! measured walk; measured costs for the boundary mechanisms (the process and
+//! network crossings, MPK on x86_64).
 
 const std = @import("std");
 const observation = @import("observation.zig");
@@ -187,6 +195,112 @@ fn uniformMeasurement(triple: target_model.TargetTriple, candidates: []const Dyn
         }
     }
     return unit;
+}
+
+/// The provenance seam: one `idol.world.cost.v1` row — exactly what
+/// `gate/lower/cost.sh` emits on stdout — parsed into the `MeasuredCost`
+/// fact `selectMeasured` consumes. This is the ONLY producer of a measured
+/// fact from the measured world (`law.fact.producer.one`): the runner
+/// measures, the row carries the measurement across the seam, and this
+/// parser reconstructs the typed fact — no host projection reads the numbers
+/// a second time.
+///
+/// It FAILS CLOSED. A row constructs a fact only when every field the fact
+/// names is present and identifies a known value: the schema is
+/// `idol.world.cost.v1`, the mechanism/arch/os/abi/unit each parse to a
+/// known identity, the cost carries both `access` and `crossing`, and the
+/// subject revision is NON-EMPTY (`law.evidence.subject.one`: a measurement
+/// that cannot name what was measured is not a fact). Anything else returns
+/// null — a malformed or unowned row leaves the stated orders to decide,
+/// exactly as an absent measurement does. A `network_isolation` mechanism is
+/// read from the row's own spelling, never reconstructed from an ordinal
+/// (`law.magic.code.zero`).
+///
+/// The measured subject revision is COPIED into `revision` so the fact does
+/// not borrow the transient row buffer; the caller owns `revision` for the
+/// fact's lifetime. A revision that does not fit the buffer is no fact.
+pub fn parseMeasured(text: []const u8, revision: []u8) ?MeasuredCost {
+    var parsed = std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, text, .{}) catch return null;
+    defer parsed.deinit();
+    if (parsed.value != .object) return null;
+    const obj = parsed.value.object;
+
+    const schema = stringField(obj, "schema") orelse return null;
+    if (!std.mem.eql(u8, schema, "idol.world.cost.v1")) return null;
+
+    const mechanism = mechanismByName(stringField(obj, "mechanism") orelse return null) orelse return null;
+
+    const triple_text = stringField(obj, "triple") orelse return null;
+    const triple = parseTriple(triple_text) orelse return null;
+
+    const unit = unitByName(stringField(obj, "unit") orelse return null) orelse return null;
+
+    const cost_value = obj.get("cost") orelse return null;
+    if (cost_value != .object) return null;
+    const cost_obj = cost_value.object;
+    const access = u64Field(cost_obj, "access") orelse return null;
+    const crossing = u64Field(cost_obj, "crossing") orelse return null;
+
+    // `law.evidence.subject.one`: no subject, no fact.
+    const rev = stringField(obj, "subject_revision") orelse return null;
+    if (rev.len == 0) return null;
+    if (rev.len > revision.len) return null;
+    @memcpy(revision[0..rev.len], rev);
+
+    return .{
+        .mechanism = mechanism,
+        .triple = triple,
+        .unit = unit,
+        .cost = .{ .access = access, .crossing = crossing },
+        .subject_revision = revision[0..rev.len],
+    };
+}
+
+fn stringField(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {
+    const v = obj.get(key) orelse return null;
+    return switch (v) {
+        .string => |s| s,
+        else => null,
+    };
+}
+
+fn u64Field(obj: std.json.ObjectMap, key: []const u8) ?u64 {
+    const v = obj.get(key) orelse return null;
+    return switch (v) {
+        .integer => |n| if (n < 0) null else @as(u64, @intCast(n)),
+        .float => |f| if (f < 0) null else @as(u64, @intFromFloat(f)),
+        .number_string => |s| std.fmt.parseInt(u64, s, 10) catch null,
+        else => null,
+    };
+}
+
+/// The mechanism identity from its own name — the same spelling `Mechanism.name`
+/// emits, read back. Never an ordinal (`law.magic.code.zero`).
+fn mechanismByName(text: []const u8) ?Mechanism {
+    for (std.meta.tags(Mechanism)) |m| {
+        if (std.mem.eql(u8, m.name(), text)) return m;
+    }
+    return null;
+}
+
+fn unitByName(text: []const u8) ?CostUnit {
+    for (std.meta.tags(CostUnit)) |u| {
+        if (std.mem.eql(u8, u.name(), text)) return u;
+    }
+    return null;
+}
+
+/// The target triple from `arch-os-abi` (the runner's own `formatTriple`
+/// spelling). Two components mean an unknown abi; the fact then names a triple
+/// with no abi, which `formatTriple` and `TargetWorld` already model.
+fn parseTriple(text: []const u8) ?target_model.TargetTriple {
+    var it = std.mem.splitScalar(u8, text, '-');
+    const arch = target_model.Arch.parse(it.next() orelse return null) orelse return null;
+    const os = target_model.Os.parse(it.next() orelse return null) orelse return null;
+    const abi_text = it.next() orelse return .{ .arch = arch, .os = os, .abi = .unknown };
+    const abi = target_model.Abi.parse(abi_text) orelse return null;
+    if (it.next() != null) return null;
+    return .{ .arch = arch, .os = os, .abi = abi };
 }
 
 // ===========================================================================
@@ -775,6 +889,113 @@ test "lower: duplicate measurements construct no cost fact" {
     const plan = selectMeasured(auth, observation.ordinary_executable, target, profile, &duplicate).plan.dynamic;
     try std.testing.expectEqual(Mechanism.mpk, plan.mechanism);
     try std.testing.expectEqual(CostUnit.cycle_order, plan.unit);
+}
+
+test "lower: a cost row parses into the measured fact it names" {
+    // The exact shape `gate/lower/cost.sh` emits for the software check on
+    // this host: schema, mechanism, triple, unit, cost and subject revision.
+    // The parser reconstructs the typed fact — the one producer of a measured
+    // fact from the measured world — with no field guessed and no host reread.
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":3,"crossing":0},"subject_revision":"c0adff39aabbccddeeff00112233445566778899","checked_access_ns":5.0,"plain_access_ns":2.0,"accesses_per_rep":4194304,"reps":9}
+    ;
+    var rev: [64]u8 = undefined;
+    const fact = parseMeasured(text, &rev).?;
+    try std.testing.expectEqual(Mechanism.software_check, fact.mechanism);
+    try std.testing.expectEqual(target_model.Arch.x86_64, fact.triple.arch);
+    try std.testing.expectEqual(target_model.Os.linux, fact.triple.os);
+    try std.testing.expectEqual(target_model.Abi.gnu, fact.triple.abi);
+    try std.testing.expectEqual(CostUnit.nanoseconds, fact.unit);
+    try std.testing.expectEqual(@as(u64, 3), fact.cost.access);
+    try std.testing.expectEqual(@as(u64, 0), fact.cost.crossing);
+    try std.testing.expectEqualStrings("c0adff39aabbccddeeff00112233445566778899", fact.subject_revision);
+}
+
+test "lower: a boundary crossing row parses its crossing cost" {
+    // The process row carries its measurement in `cost.crossing`, `access`
+    // zero — the same schema, a different mechanism and cost face.
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"process","triple":"aarch64-macos-gnu","unit":"nanoseconds","cost":{"access":0,"crossing":1800},"subject_revision":"deadbeef00000000000000000000000000000001"}
+    ;
+    var rev: [64]u8 = undefined;
+    const fact = parseMeasured(text, &rev).?;
+    try std.testing.expectEqual(Mechanism.process, fact.mechanism);
+    try std.testing.expectEqual(@as(u64, 0), fact.cost.access);
+    try std.testing.expectEqual(@as(u64, 1800), fact.cost.crossing);
+}
+
+test "lower: a row with no subject revision constructs no fact" {
+    // `law.evidence.subject.one` at the seam: a measurement that names no
+    // subject is not a fact, so the parser refuses it exactly as an empty
+    // `subject_revision` field on a struct fact does.
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":3,"crossing":0},"subject_revision":""}
+    ;
+    var rev: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(?MeasuredCost, null), parseMeasured(text, &rev));
+}
+
+test "lower: a foreign schema is not a cost fact" {
+    // The seam admits exactly `idol.world.cost.v1`. A row carrying every
+    // cost field under a different schema is a fact about something else and
+    // constructs no measured cost here (`law.fact.producer.one`).
+    const text =
+        \\{"schema":"idol.world.enforcement.v1","mechanism":"software_check","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":3,"crossing":0},"subject_revision":"c0adff3900000000000000000000000000000001"}
+    ;
+    var rev: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(?MeasuredCost, null), parseMeasured(text, &rev));
+}
+
+test "lower: an unknown mechanism name is not a cost fact" {
+    // The mechanism crosses the seam as its stable identity spelling, read
+    // back by name (`law.magic.code.zero`). A name no mechanism owns is not a
+    // fact, never a defaulted or ordinal-reconstructed one.
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"quantum_moat","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":1,"crossing":0},"subject_revision":"c0adff3900000000000000000000000000000001"}
+    ;
+    var rev: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(?MeasuredCost, null), parseMeasured(text, &rev));
+}
+
+test "lower: a malformed row is not a cost fact" {
+    // Truncated JSON, a missing cost field, and a non-object body all fail
+    // closed — a row that is not a complete, well-formed cost fact leaves the
+    // stated orders to decide, exactly as an absent measurement does.
+    var rev: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(?MeasuredCost, null), parseMeasured("{not json", &rev));
+    try std.testing.expectEqual(@as(?MeasuredCost, null), parseMeasured("\"a string\"", &rev));
+    const no_cost =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"x86_64-linux-gnu","unit":"nanoseconds","subject_revision":"c0adff3900000000000000000000000000000001"}
+    ;
+    try std.testing.expectEqual(@as(?MeasuredCost, null), parseMeasured(no_cost, &rev));
+}
+
+test "lower: a parsed row feeds the same selection the struct fact does" {
+    // The seam is transparent to the decision: rows parsed from the producer
+    // select exactly what the equivalent struct facts select. Four rows in
+    // one unit at one revision on the target are a uniform measurement, and
+    // the software check wins under this profile just as `measuredSet` does.
+    const rows = [_][]const u8{
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":1,"crossing":0},"subject_revision":"9f62a9dcf0000000000000000000000000000001"}
+        ,
+        \\{"schema":"idol.world.cost.v1","mechanism":"mpk","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":0,"crossing":900},"subject_revision":"9f62a9dcf0000000000000000000000000000001"}
+        ,
+        \\{"schema":"idol.world.cost.v1","mechanism":"process","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":0,"crossing":3000},"subject_revision":"9f62a9dcf0000000000000000000000000000001"}
+        ,
+        \\{"schema":"idol.world.cost.v1","mechanism":"network_isolation","triple":"x86_64-linux-gnu","unit":"nanoseconds","cost":{"access":0,"crossing":100000},"subject_revision":"9f62a9dcf0000000000000000000000000000001"}
+        ,
+    };
+    var revs: [4][64]u8 = undefined;
+    var facts: [4]MeasuredCost = undefined;
+    for (rows, 0..) |text, i| facts[i] = parseMeasured(text, &revs[i]).?;
+
+    const auth = exposedAuthority();
+    const target = world.TargetWorld.of(measured_triple);
+    const profile: Profile = .{ .accesses = 1000, .crossings = 10 };
+    const plan = selectMeasured(auth, observation.ordinary_executable, target, profile, &facts).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.software_check, plan.mechanism);
+    try std.testing.expectEqual(CostUnit.nanoseconds, plan.unit);
+    try std.testing.expectEqual(@as(u64, 1000), plan.cost.total(profile));
 }
 
 test "lower: cheri is selected on a capability world, with derived construction" {
