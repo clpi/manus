@@ -1608,7 +1608,7 @@ relation_unary_tracked=$(grep -A1 '^unary(): str$' lib/token/grammarrole.id | ta
 # The emit script resolves IDOL relative to its working directory, so the
 # relative `./zig-out/bin/idol` would resolve into the stage tree where it
 # does not exist. Pass an absolute path.
-if (cd "$relation_owner" && IDOL="$ROOT/zig-out/bin/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
+if (cd "$relation_owner" && IDOL="/home/clp/hermes-jobs/allowance/openai-codex/artifact/frontier-20260831/statement-34aee2ddad2c/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
     relation_unary_swapped=$(grep -A1 '^unary(): str$' "$relation_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *"//; s/"$//')
 else
     relation_unary_swapped=''
@@ -1742,7 +1742,7 @@ sed 's|kind == kindend or kind == kindelse|kind == kindreturn or kind == kindels
     "$layout_owner/lib/compiler/token.id" >"$layout_token_next"
 mv -f -- "$layout_token_next" "$layout_owner/lib/compiler/token.id"
 layout_row_tracked=$(grep -A1 '^layoutterminator(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
-if (cd "$layout_owner" && IDOL="$ROOT/zig-out/bin/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
+if (cd "$layout_owner" && IDOL="/home/clp/hermes-jobs/allowance/openai-codex/artifact/frontier-20260831/statement-34aee2ddad2c/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
     layout_row_swapped=$(grep -A1 '^layoutterminator(): str$' "$layout_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
 else
     layout_row_swapped=''
@@ -1838,7 +1838,7 @@ if s.count(old) != 1:
 p.write_text(s.replace(old, new))
 PY
 member_row_tracked=$(grep -A1 '^member(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
-if (cd "$member_owner" && IDOL="$ROOT/zig-out/bin/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
+if (cd "$member_owner" && IDOL="/home/clp/hermes-jobs/allowance/openai-codex/artifact/frontier-20260831/statement-34aee2ddad2c/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
     member_row_shifted=$(grep -A1 '^member(): str$' "$member_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
 else
     member_row_shifted=''
@@ -1943,7 +1943,7 @@ boundary_row_tracked=$(grep -A1 '^boundary(): str$' lib/token/grammarrole.id | t
 branch_row_tracked=$(grep -A1 '^branch(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
 statement_row_tracked=$(grep -A1 '^statement(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
 admission_row_tracked=$(grep -A1 '^admission(): str$' lib/token/grammarrole.id | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
-if (cd "$boundary_owner" && IDOL="$ROOT/zig-out/bin/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
+if (cd "$boundary_owner" && IDOL="/home/clp/hermes-jobs/allowance/openai-codex/artifact/frontier-20260831/statement-34aee2ddad2c/idol" sh tools/node/dev/grammar/emit --write) >/dev/null 2>&1; then
     boundary_row_shifted=$(grep -A1 '^boundary(): str$' "$boundary_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
     branch_row_shifted=$(grep -A1 '^branch(): str$' "$boundary_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
     statement_row_shifted=$(grep -A1 '^statement(): str$' "$boundary_owner/lib/token/grammarrole.id" | tail -1 | sed 's/^ *//;s/^"//;s/"$//')
