@@ -756,6 +756,14 @@ fn emitInstruction(e: *Emitter, instruction: dnir.Instr, count: usize) Error!voi
         .print_value => {
             const ty = instruction.ty;
             const nonl = std.mem.eql(u8, instruction.field, "nonl");
+            // GAP-207's residual face reaches this realization too: the dnir
+            // producer already carries the graph-derived byte-sequence fact
+            // (`lowerPrint` -> `.byte_sequence`), the Wasm consumer refuses it
+            // by name, and this consumer rendered the pointer-shaped slot as a
+            // decimal through `%lld` at exit 0. A byte sequence is not text
+            // and it is not an integer; without an extent carrier this slice
+            // must refuse by the SAME name as Wasm, never guess.
+            if (instruction.byte_sequence) return e.refuse("print-byte-sequence");
             if (ty == .str) {
                 if (nonl) {
                     try emitPrintValue(e, "\"%s\"", instruction.lhs);
@@ -1166,6 +1174,29 @@ test "C backend refuses f64 print without a float ABI witness" {
         &diagnostic,
     ));
     try std.testing.expectEqualStrings("print-value-f64-not-in-c99-slice", diagnostic.note().?);
+}
+
+test "C backend refuses byte-sequence print without an extent carrier" {
+    // The Wasm consumer refuses this same instruction by the same name
+    // (wasm_backend, GAP-207); this slice rendered the pointer-shaped slot
+    // through `%lld` instead — the pointer-print class at exit 0, no
+    // diagnostic, reached on the C realization alone.
+    const instructions = [_]dnir.Instr{
+        .{ .op = .print_value, .ty = .i64, .lhs = .{ .str = "abc" }, .byte_sequence = true },
+        .{ .op = .ret, .lhs = .{ .i64 = 0 } },
+    };
+    const functions = [_]dnir.Function{
+        .{ .name = "entry", .ret = .i64, .blocks = &.{.{ .instrs = &instructions }} },
+    };
+    var diagnostic: Diagnostic = .{};
+    try std.testing.expectError(error.UnsupportedProgram, emitSource(
+        std.testing.allocator,
+        .{ .functions = &functions },
+        "",
+        "entry",
+        &diagnostic,
+    ));
+    try std.testing.expectEqualStrings("print-byte-sequence", diagnostic.note().?);
 }
 
 test "C backend refuses an f64 extern result the integer slot cannot carry" {

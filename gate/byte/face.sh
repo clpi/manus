@@ -92,7 +92,17 @@ fi
 # realization and only that one.
 wasm_available=1
 
-if [ "$direct_available" -eq 0 ] && [ "$wasm_available" -eq 0 ]; then
+# The C column needs the compiler (already established) AND a C toolchain to
+# link the artifact against the shim that carries its ABI. `cc` is not a
+# guaranteed fact of a host, so the probe is the toolchain itself; without it
+# the C verdict could not be executed and the column would be silent exactly
+# where this host's only executable realization lives.
+c_available=0
+if command -v cc >/dev/null 2>&1 && [ -f "$root/tools/node/dev/grammar/idol_c_runtime_shim.c" ]; then
+    c_available=1
+fi
+
+if [ "$direct_available" -eq 0 ] && [ "$wasm_available" -eq 0 ] && [ "$c_available" -eq 0 ]; then
     printf 'byte face: no realization to measure — nothing was measured\n' >&2
     exit 2
 fi
@@ -209,6 +219,52 @@ wasm_verdict() {
             ;;
         *)
             printf 'unknown wasm expectation kind [%s]\n' "$wk"
+            ;;
+    esac
+}
+
+# ── THE C COMPARATOR ────────────────────────────────────────────────────────
+#
+# The wasm column measures the wasm backend's compile-time verdict. The C
+# route is the THIRD realization and the only one that EXECUTES on hosts with
+# no direct-native machine; it compiled every byte-face print and rendered the
+# pointer-shaped slot through `%lld` at exit 0 — measured at c0adff39 on this
+# host: `s = 'abc' ; print(s)` printed `93827861911360`. Its compile-time
+# verdict is read the same way wasm's is: an exit 0 on a refuse subject IS the
+# pointer-print shape, and a refusal must be named.
+#
+#   c_verdict EXPECTKIND ACTUALSTATUS ACTUALOUT ACTUALERR
+#     -> prints 'agree' or a reason, exit status unused
+c_verdict() {
+    ck=$1
+    cstatus=$2
+    cout=$3
+    cerr=$4
+    case "$ck" in
+        refuse)
+            if [ "$cstatus" -eq 0 ]; then
+                printf 'c: expected a named refusal, got compile exit 0 (the pointer-print shape)\n'
+                return 0
+            fi
+            if [ -s "$cout" ]; then
+                printf 'c: refused at exit %s but wrote to stdout first\n' "$cstatus"
+                return 0
+            fi
+            if ! grep -q 'error:' "$cerr"; then
+                printf 'c: exited %s with no diagnostic — a crash is not a refusal\n' "$cstatus"
+                return 0
+            fi
+            printf 'agree\n'
+            ;;
+        answer)
+            if [ "$cstatus" -ne 0 ]; then
+                printf 'c: expected the byte face to compile, got exit %s\n' "$cstatus"
+                return 0
+            fi
+            printf 'agree\n'
+            ;;
+        *)
+            printf 'unknown c expectation kind [%s]\n' "$ck"
             ;;
     esac
 }
@@ -332,6 +388,52 @@ if [ "$wasm_control_subjects" -eq 0 ] || [ "$wasm_control_convictions" -ne "$was
     exit 2
 fi
 
+# ── 1c. the c comparator is controlled on the measured defect ───────────────
+#
+# The C route's defect is MEASURED at this host, not recorded from another
+# backend: it compiled `s = 'abc' ; print(s)` at exit 0 and the linked binary
+# printed a pointer as a decimal. The control plants exactly that transcript
+# and refuses the comparator if it calls it agreement; a clean named refusal
+# must NOT be convicted, and a byte egress that must still compile must not
+# be either. If it cannot tell those apart, the c column below is worthless.
+c_control_convictions=0
+c_control_subjects=0
+cconvict() {
+    c_control_subjects=$((c_control_subjects + 1))
+    : > "$scratch/ccout"
+    printf '%s' "$3" > "$scratch/ccerr"
+    ccv=$(c_verdict "$1" "$2" "$scratch/ccout" "$scratch/ccerr")
+    if [ "$ccv" = 'agree' ]; then
+        printf 'byte face: C CONTROL NOT CONVICTED — comparator called [%s] an agreement with exit %s\n' "$1" "$2" >&2
+    else
+        c_control_convictions=$((c_control_convictions + 1))
+    fi
+}
+# The measured C defect: compile exit 0 on a byte-face print, no diagnostic,
+# pointer rendered as a decimal by the linked binary.
+cconvict refuse 0 ''
+# A clean named refusal must NOT be convicted.
+: > "$scratch/ccout"
+printf 'error: c99-slice: print-byte-sequence (UnsupportedProgram)\n' > "$scratch/ccerr"
+if [ "$(c_verdict refuse 1 "$scratch/ccout" "$scratch/ccerr")" != 'agree' ]; then
+    printf 'byte face: C CONTROL BROKEN — comparator refuses a clean named refusal\n' >&2
+    exit 2
+fi
+c_control_subjects=$((c_control_subjects + 1))
+c_control_convictions=$((c_control_convictions + 1))
+# A byte-face egress that must still COMPILE (answer) must not be convicted.
+if [ "$(c_verdict answer 0 "$scratch/ccout" "$scratch/ccerr")" != 'agree' ]; then
+    printf 'byte face: C CONTROL BROKEN — comparator refuses a clean compile\n' >&2
+    exit 2
+fi
+c_control_subjects=$((c_control_subjects + 1))
+c_control_convictions=$((c_control_convictions + 1))
+if [ "$c_control_subjects" -eq 0 ] || [ "$c_control_convictions" -ne "$c_control_subjects" ]; then
+    printf 'byte face: c comparator control failed (%s/%s convicted) — measuring nothing\n' \
+        "$c_control_convictions" "$c_control_subjects" >&2
+    exit 2
+fi
+
 # ── 2. the subjects ────────────────────────────────────────────────────────
 #
 # `run_subject NAME EXPECTKIND EXPECTTEXT` reads the program on stdin.
@@ -380,6 +482,37 @@ run_subject() {
         wv=$(wasm_verdict "$skind" "$wstatus" "$scratch/wout" "$scratch/werr")
         if [ "$wv" != 'agree' ]; then
             fail "$sname (wasm): $wv"
+        fi
+    fi
+    # The C column: the THIRD realization, and the one that EXECUTES on hosts
+    # with no direct-native machine (this gate's own host is one). It compiled
+    # every byte-face print and rendered the pointer-shaped slot through %lld
+    # at exit 0 — the pointer-print class GAP-207 convicted on direct and
+    # wasm, surviving here. Like wasm, its verdict is the COMPILE-TIME
+    # byte-face decision; unlike wasm it produces a linkable artifact, so the
+    # comparator also links and EXECUTES a compile that must answer, byte for
+    # byte, against the shim that carries its ABI (measured, not assumed:
+    # stdout:write of a byte payload answers `{"a":1}` on this route).
+    if [ "$c_available" -eq 1 ]; then
+        ( cd "$scratch" && "$IDOL" compile --backend=c --emit=c --target=c-source --entry main \
+            -o "$scratch/subject.c" "$sfile" ) > "$scratch/cout" 2> "$scratch/cerr"
+        cstatus=$?
+        cv=$(c_verdict "$skind" "$cstatus" "$scratch/cout" "$scratch/cerr")
+        if [ "$cv" != 'agree' ]; then
+            fail "$sname (c): $cv"
+        elif [ "$skind" = answer ]; then
+            if ! cc -O2 "$scratch/subject.c" "$root/tools/node/dev/grammar/idol_c_runtime_shim.c" \
+                -o "$scratch/subject.bin" > "$scratch/clang.out" 2> "$scratch/clang.err"; then
+                fail "$sname (c): expected the answer, but the C source did not link: $(tail -1 "$scratch/clang.err")"
+            elif ! ( cd "$scratch" && ./subject.bin ) > "$scratch/crun.out" 2> /dev/null; then
+                fail "$sname (c): expected the answer, but the binary exited non-zero"
+            else
+                want_file "$scratch/cwant" "$stext" "$send"
+                crv=$(verdict_of answer "$scratch/cwant" "$scratch/crun.out" 0)
+                if [ "$crv" != 'agree' ]; then
+                    fail "$sname (c): $crv"
+                fi
+            fi
         fi
     fi
 }
@@ -523,21 +656,26 @@ if [ "$subjects" -eq 0 ]; then
     exit 1
 fi
 if [ "$violations" -ne 0 ]; then
-    printf 'byte face: FAIL %s of %s subject(s); comparator convicted %s/%s recorded defects; wasm comparator convicted %s/%s\n' \
+    printf 'byte face: FAIL %s of %s subject(s); comparator convicted %s/%s recorded defects; wasm comparator convicted %s/%s; c comparator convicted %s/%s\n' \
         "$violations" "$subjects" "$control_convictions" "$control_subjects" \
-        "$wasm_control_convictions" "$wasm_control_subjects" >&2
+        "$wasm_control_convictions" "$wasm_control_subjects" \
+        "$c_control_convictions" "$c_control_subjects" >&2
     exit 1
 fi
-if [ "$direct_available" -eq 1 ] && [ "$wasm_available" -eq 1 ]; then
-    printf 'byte face: PASS %s subject(s) on direct and wasm; comparator convicted %s/%s recorded defects; wasm comparator convicted %s/%s\n' \
-        "$subjects" "$control_convictions" "$control_subjects" \
-        "$wasm_control_convictions" "$wasm_control_subjects"
-elif [ "$wasm_available" -eq 1 ]; then
-    printf 'byte face: PASS %s subject(s) on wasm (direct column not measured on this host); comparator convicted %s/%s recorded defects; wasm comparator convicted %s/%s\n' \
-        "$subjects" "$control_convictions" "$control_subjects" \
-        "$wasm_control_convictions" "$wasm_control_subjects"
-else
-    printf 'byte face: PASS %s subject(s) on direct; comparator convicted %s/%s recorded defects\n' \
-        "$subjects" "$control_convictions" "$control_subjects"
+# The columns actually measured are NAMED. A PASS that says nothing about a
+# realization it did not measure is the silence GAP-207 records; the verdict
+# line must distinguish a full agreement from a host that could only ask wasm
+# or c.
+column_list=
+if [ "$direct_available" -eq 1 ]; then column_list="direct"; fi
+if [ "$wasm_available" -eq 1 ]; then
+    column_list=${column_list:+"$column_list and "}wasm
 fi
+if [ "$c_available" -eq 1 ]; then
+    column_list=${column_list:+"$column_list and "}c
+fi
+printf 'byte face: PASS %s subject(s) on %s; comparator convicted %s/%s recorded defects; wasm comparator convicted %s/%s; c comparator convicted %s/%s\n' \
+    "$subjects" "$column_list" "$control_convictions" "$control_subjects" \
+    "$wasm_control_convictions" "$wasm_control_subjects" \
+    "$c_control_convictions" "$c_control_subjects"
 exit 0
