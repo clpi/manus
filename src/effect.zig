@@ -255,13 +255,20 @@ pub fn select(
 
 /// Convenience for the single-invalidation boundary: when no candidate
 /// remains admissible, deopt falls back to the invalidation's recorded
-/// fallback candidate — explicit, never a sentinel value in-band.
+/// fallback candidate — explicit, never a sentinel value in-band. The
+/// measured subject revision is enforced here too, so this helper cannot
+/// bypass the `guardFalse` construction seam and select a fallback for an
+/// unprovenanceable invalidation fact.
 pub fn deoptOrFallback(
     invalidation: Invalidation,
     candidates: []const Guarded,
     assumption_holds: *const fn (proposition: []const u8) bool,
-) []const u8 {
-    return select(candidates, invalidation.experiment_proposition, assumption_holds) orelse invalidation.fallback_candidate;
+) ?[]const u8 {
+    const fact = guardFalse(
+        invalidation.experiment_proposition,
+        invalidation.subject_revision,
+    ) orelse return null;
+    return selectUnderInvalidation(candidates, &fact, assumption_holds) orelse invalidation.fallback_candidate;
 }
 
 /// Still-missing face: guard invalidation as a NAMED fact, not a decision
@@ -845,13 +852,15 @@ pub const DeoptBoundary = struct {
     /// `law.evidence.subject.one` — the observation was taken on exactly
     /// that revision, never "at HEAD". Sound candidates are untouched by any
     /// invalidation inside `select`; evidence-level candidates whose
-    /// proposition is the false one cease to be admissible.
+    /// proposition is the false one cease to be admissible. A missing
+    /// measured subject revision constructs no invalidation fact and selects
+    /// no fallback.
     pub fn invalidate(
         self: *const DeoptBoundary,
         false_proposition: []const u8,
         subject: []const u8,
         assumption_holds: *const fn (proposition: []const u8) bool,
-    ) []const u8 {
+    ) ?[]const u8 {
         return deoptOrFallback(.{
             .experiment_proposition = false_proposition,
             .fallback_candidate = self.fallback,
@@ -1191,9 +1200,15 @@ test "effect: invalidation makes candidate inadmissible and deopt selects anothe
     const invalidation = Invalidation{
         .experiment_proposition = "shape:7",
         .fallback_candidate = "cand:generic",
+        .subject_revision = "rev:deopt",
     };
     const one = [_]Guarded{first};
-    try std.testing.expectEqualStrings("cand:generic", deoptOrFallback(invalidation, &one, &holdsAll));
+    try std.testing.expectEqualStrings("cand:generic", deoptOrFallback(invalidation, &one, &holdsAll).?);
+    const unmeasured = Invalidation{
+        .experiment_proposition = "shape:7",
+        .fallback_candidate = "cand:generic",
+    };
+    try std.testing.expect(deoptOrFallback(unmeasured, &one, &holdsAll) == null);
 }
 
 test "effect: semantic share selects among admissible, never promotes" {
@@ -1243,6 +1258,7 @@ test "effect: semantic share selects among admissible, never promotes" {
     const invalidated = Invalidation{
         .experiment_proposition = "shape:never",
         .fallback_candidate = "cand:generic",
+        .subject_revision = "rev:share",
     };
     const all_false = struct {
         fn f(proposition: []const u8) bool {
@@ -1253,7 +1269,7 @@ test "effect: semantic share selects among admissible, never promotes" {
     try std.testing.expect(selectPreferred(&candidates, &skew, "shape:never", &all_false) == null);
     try std.testing.expectEqualStrings(
         "cand:generic",
-        deoptOrFallback(invalidated, &candidates, &all_false),
+        deoptOrFallback(invalidated, &candidates, &all_false).?,
     );
     // Shares are subject facts, not compiler confidence: they never touch
     // the candidate's own admissibility — admissible(true) is unchanged by
@@ -1575,10 +1591,11 @@ test "effect: runtime facts refine the candidate set" {
     const invalidation = Invalidation{
         .experiment_proposition = "shape:never",
         .fallback_candidate = "cand:generic",
+        .subject_revision = "rev:refine",
     };
     try std.testing.expectEqualStrings(
         "cand:generic",
-        deoptOrFallback(invalidation, &none, &holdsNone),
+        deoptOrFallback(invalidation, &none, &holdsNone).?,
     );
 }
 
@@ -1650,7 +1667,7 @@ test "effect: guard invalidation is a named fact with construction-forced proven
     };
     try std.testing.expectEqualStrings(
         "cand:generic",
-        deoptOrFallback(invalidation, &both, &holdsAll),
+        deoptOrFallback(invalidation, &both, &holdsAll).?,
     );
 }
 
@@ -1771,13 +1788,14 @@ test "effect: graph-emitted guards drive a measured deopt boundary" {
     // assumption's fallback edge — never a sentinel.
     try std.testing.expectEqualStrings(
         "general table realization",
-        boundary.invalidate(shape_id, "rev:boundary", &holdsAll),
+        boundary.invalidate(shape_id, "rev:boundary", &holdsAll).?,
     );
+    try std.testing.expect(boundary.invalidate(shape_id, "", &holdsAll) == null);
     // An unrelated false proposition invalidates nothing; the guarded
     // candidate still holds under its assumptions.
     try std.testing.expectEqualStrings(
         "cand:sealed-point",
-        boundary.invalidate("shape:elsewhere", "rev:boundary", &holdsAll),
+        boundary.invalidate("shape:elsewhere", "rev:boundary", &holdsAll).?,
     );
     // An assumption judged false by the world makes the candidate
     // inadmissible even without an invalidation record.
@@ -1789,7 +1807,7 @@ test "effect: graph-emitted guards drive a measured deopt boundary" {
     }.f;
     try std.testing.expectEqualStrings(
         "general table realization",
-        boundary.invalidate("shape:elsewhere", "rev:boundary", &none_hold),
+        boundary.invalidate("shape:elsewhere", "rev:boundary", &none_hold).?,
     );
     // Guards that record no fallback contribute no boundary candidate.
     const no_fallback = assumption_guard.Assumption{
