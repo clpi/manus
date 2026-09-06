@@ -2087,7 +2087,10 @@ run_body: i64 = (img: str, n: i64, target: i64, out: *u8)
                     else
                       io.stderr:write(string.char(mem.read_byte(lin, bp + k3)))
                     k3 += 1
-                  tot += bl
+                  # `nwritten` reports what was EMITTED, not what was declared:
+                  # the loop above stops at the end of linear memory, so `k3`
+                  # is the emitted count and `bl` over-reports a truncated iovec.
+                  tot += k3
                   q3 += 1
                 if npw + 4 <= linsz
                   mem.write_byte(lin, npw, tot & 255)
