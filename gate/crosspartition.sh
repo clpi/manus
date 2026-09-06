@@ -175,6 +175,40 @@
 # symbol this file names; a shape needing another would name it in the same place,
 # which is this requirement one symbol further on rather than an exception to it.
 #
+# ═══ AND THE PREMISE UNDER BOTH: THE ENTRY NEEDS NOTHING ═══════════════════
+#
+# The two derivations above read the partitions an arm wrote BEYOND the entry,
+# and they skipped the entry itself — `case ${src##*/} in main.id) continue`.
+# Both are claims about a need that came from the REACH, and an entry's own needs
+# go on the same link line, so both rest on a premise about the entry that was
+# written only as prose inside the arms: "its entry only does arithmetic and needs
+# no runtime of its own."
+#
+# NOTHING ASSERTED IT, and it fails silently in both directions:
+#
+#   * `text`'s entry converting text satisfies its PRESENCE pin out of the
+#     entry's own need. The reached partition's need could stop reaching the link
+#     line entirely and the row would not notice — which is the whole of GAP-232
+#     acceptance 2. It is `_main__main` satisfying a reach pin, one column-half
+#     over: the entry answering for what only the reach should.
+#   * an arithmetic entry converting text derives ABSENCE and is WRONG to. A
+#     correct compiler must carry the unit for that entry, so the row convicts
+#     the producer it exists to measure.
+#
+# MEASURED, on aarch64-linux, by planting into a copy of this file and reading
+# the exit status against an undamaged copy's 3:
+#
+#   * `text`'s entry given `"0":to(i64) +`                            was exit 3
+#   * `duo`'s entry given `"0":to(i64) +`                             was exit 3
+#
+# THE FIRST IS NOT MERELY UNOBSERVED HERE, and that is an ARGUMENT FROM THE
+# SOURCES rather than a macOS run — no such run is claimed. `"0":to(i64) +` adds
+# zero, so `text`'s answer is still 43; `duo_str_to_i64` is still DEFINED, so its
+# presence pin still holds; and the other three rows are untouched, so their
+# absence pins still hold. Every check this file makes would pass, and the one row
+# acceptance 2 rests on would have stopped resting on the reach. The entry is now
+# READ rather than skipped, and no subject's entry may convert text.
+#
 # AND THAT RATCHET NEEDS NO COMPILER, SO IT RUNS BEFORE THE HOST IS CLASSIFIED.
 # Every measurement below the classification needs macOS/aarch64 — the direct
 # backend refuses every other host by name — and the ratchet used to sit below it
@@ -671,12 +705,21 @@ while IFS= read -r line || [ -n "$line" ]; do
     # relations a partition DECLARES are what a link line can define for it, and
     # the arm that wrote the declaration is the only producer of that fact. See
     # the check below the direction block.
+    #
+    # AND THE ENTRY IS READ RATHER THAN SKIPPED, because the whole column rests
+    # on the entry needing NOTHING. See the check below the reach check.
     reachedsrc=0
     converts=0
+    entryconverts=0
     reachedrelation=''
     for src in "$work/subject.$shape"/*.id; do
         [ -f "$src" ] || continue
-        case ${src##*/} in main.id) continue ;; esac
+        case ${src##*/} in
+            main.id)
+                if grep -q '"' "$src"; then entryconverts=1; fi
+                continue
+                ;;
+        esac
         reachedsrc=$((reachedsrc + 1))
         if grep -q '"' "$src"; then converts=1; fi
         # `_<stem>__<relation>`, the path-independent tail `run_subject` matches.
@@ -691,6 +734,35 @@ while IFS= read -r line || [ -n "$line" ]; do
     if [ "$reachedsrc" -eq 0 ]; then
         printf 'crosspartition: FAIL — subject %s materializes no partition beyond its entry, so it measures no reach and no pin direction can be derived for it.\n' \
             "$shape" >&2
+        ratchet=$((ratchet + 1))
+        continue
+    fi
+    # ── and the ENTRY must need the string runtime of its own accord NOT AT ALL ─
+    # Every direction the block below derives is a claim about a need that came
+    # from the REACH. The entry's own needs go on the link line too, and no arm's
+    # entry converts text today — which is a fact written in the arms as prose
+    # ("the entry only adds") and asserted nowhere. Both directions collapse if it
+    # stops being true, and they collapse silently:
+    #
+    #   * a PRESENCE row whose entry converts text has its pin satisfied by that
+    #     entry's own need. `text` would answer, define `duo_str_to_i64`, and be
+    #     green on macOS while asserting nothing about a reached partition's need
+    #     reaching the link line — which is the entirety of GAP-232 acceptance 2.
+    #     It is the same damage as a reach pin naming `_main__main`, one
+    #     column-half over: the ENTRY satisfying what only the reach should.
+    #   * an ABSENCE row whose entry converts text derives a direction that is
+    #     WRONG. A correct compiler must put the symbol on that link line, so the
+    #     row would convict the thing it exists to measure.
+    #
+    # MEASURED, on aarch64-linux, by planting into a copy and reading the exit
+    # status against an undamaged copy's 3: `text`'s entry given `"0":to(i64) +`
+    # was exit 3, and so was `duo`'s. That the first would also pass on macOS is
+    # derived from the sources — zero added leaves the answer at 43 and every pin
+    # still holds — and not from a run; see the header section.
+    if [ "$entryconverts" -eq 1 ]; then
+        printf 'crosspartition: FAIL — subject %s has an ENTRY that converts a text literal, so the entry needs %s on its own.\n' \
+            "$shape" "$str_unit_symbol" >&2
+        printf 'crosspartition:   every pin direction here is derived from what the REACH needs; an entry that needs the same unit satisfies a presence pin without any reached need, and makes an absence pin refuse a correct link line.\n' >&2
         ratchet=$((ratchet + 1))
         continue
     fi

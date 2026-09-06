@@ -36,6 +36,12 @@
 # wrote is refused rather than silently satisfied. Editing a pin means editing the
 # arm.
 #
+# AND THE DERIVATION RESTS ON THE ENTRY NEEDING NOTHING, which is now checked
+# too. Every direction above is a claim about what the REACH needs; an arm whose
+# ENTRY converts text puts `duo_str_to_i64` on the link line by itself, which
+# satisfies the presence row without any reached need and makes the absence rows
+# refuse a correct link line. No subject's entry may convert text.
+#
 # shape  answer  pins
 duo      42      _helper__twice,!duo_str_to_i64
 trio     44      _deeper__plus,!duo_str_to_i64
