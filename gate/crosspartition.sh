@@ -91,6 +91,14 @@
 # and no arm left marked #shape:subject. No conviction names DNB004 or NOT
 # MEASURED, so `gate/all.sh` files each as law and not as a host limit.
 #
+# THE ROLL'S OWN ALPHABET WAS THE SAME HIDING ONE LAYER DOWN. The readers match
+# `^[a-z][a-z]*`, so an arm named outside it (`quad2`, `Duo`) is served by
+# `materialize` and read by neither roll: with no roster row it exits 3 here
+# and is green and unmeasured on macOS — measured, same plant-into-a-copy
+# recipe, against a lowercase `quad` that convicts. Any served label outside
+# one lowercase word is now itself a failure, so the arms are the enumeration
+# with no silent qualifier left; only the `*)` catch-all is not a shape.
+#
 # AND A ROLL THAT COMES BACK EMPTY IS A FAILURE, never a clean run. A reverse
 # check over zero shapes passes vacuously, which is GAP-201's rule one layer up
 # from the roster: this file reading no arms out of itself would report agreement
@@ -502,6 +510,21 @@ shape_roll() {
         inside && $0 ~ ("^ *[a-z][a-z]*\\) *#shape:" want "$") { sub(/\).*/, ""); sub(/^ */, ""); print }
     ' "$self"
 }
+# Labels `shape_arms` cannot read are not "not shapes" — `materialize` serves
+# them, so with no roster row they are green and unmeasured on macOS. The `*)`
+# catch-all is the one label that is not a shape; anything else outside one
+# lowercase word is refused rather than unread.
+shape_stray() {
+    awk '
+        /^materialize\(\) \{$/ { inside = 1; next }
+        inside && /^\}$/       { inside = 0 }
+        inside && $0 ~ /^ *[^ ]+\)/ {
+            label = $0; sub(/\).*/, "", label); sub(/^ */, "", label)
+            if (label == "*") next
+            if (label !~ /^[a-z][a-z]*$/) print label
+        }
+    ' "$self"
+}
 
 # ── quoting a compiler log into a CONVICTION ───────────────────────────────
 # `gate/all.sh` reads a failing gate's log and counts it HOST-BOUND rather than
@@ -635,6 +658,15 @@ named=''
 arms=$(shape_arms | tr '\n' ' ')
 subjectroll=$(shape_roll subject | tr '\n' ' ')
 controlroll=$(shape_roll control | tr '\n' ' ')
+# No silent qualifier on the enumeration: every label `materialize` serves is
+# either a lawful shape in one roll or a failure here. A roster row naming a
+# stray label cannot launder it — the label itself is refused first.
+stray=$(shape_stray | tr '\n' ' ')
+if [ -n "$stray" ]; then
+    printf 'crosspartition: FAIL — materialize serves case label(s) no shape roll reads:%s; a served shape outside one lowercase word would go unmeasured.\n' \
+        "$stray" >&2
+    exit 1
+fi
 if [ -z "$arms" ]; then
     printf 'crosspartition: FAIL — read no shape arms out of %s; the roster coverage check would have passed over nothing.\n' \
         "$self" >&2
