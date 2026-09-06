@@ -1,31 +1,61 @@
-# TEXT: `s(i)` on a `str` is the BYTE at `i`, zero-based.
+# INDEX BASE: a `str` is ZERO-based and a table is ONE-based, and BOTH halves
+# are measured here. One of them used to be cited instead.
 #
-# A table is 1-based — `docs/state.md` records `xs(0)` on a table as REFUSED —
-# and a `str` is 0-based, so the two indexings are different relations and the
-# emit may not borrow one base for the other. `examples/table/str/bytes.id`,
-# `str/end.id` and `str/invalid.id` each state one row of this; this file is
-# the same rule reached through a FUNCTION PARAMETER and through a receiver
-# that is a literal, which those three do not cover.
+# `s[i]` is the byte at `i` counting from 0; `xs[i]` is the element at `i`
+# counting from 1. They are different relations over ONE physical origin — the
+# emitted load addresses `base + (idx - 1)` for both, and the str lowering adds
+# 1 before it gets there. A base borrowed from either side moves a row on the
+# other, so the two halves have to sit in one file to convict.
 #
-# Before the lowering existed the whole binding was discarded — `void* a = NULL`
-# — and the NULL reached `strlen`, so all three of those fixtures exited 139.
-# Where the name was also a module binding the same expression emitted a C
-# CALL of a `const char*` instead. One missing relation, two shapes of wreckage.
+# THE STR HALF WAS ALL THIS FILE HELD. The other was the sentence
+# "`docs/state.md` records `xs(0)` on a table as REFUSED", and that document is
+# not in this tree — so the half that makes "different relations" mean anything
+# could not be read from where it pointed. `p` and `r` are that half now, and
+# the refusal it named is measured rather than quoted: `xs[0]` and `xs[4]` are
+# both refused at COMPILE time,
 #
-# Computed by hand: 'a' is 97, 'b' is 98, index 2 of a two-byte string is the
-# NUL terminator and reads 0, 'z' is 122, and "é" is the two bytes C3 A9.
-# expect: 97 98 0 122 195
+#   error: graph-to-DNIR refused (UnsupportedConstruct)
+#   hint: refused at: aggregate-index-bounds
+#
+# while `c` — one past a two-byte str — is not checked at all and reads the
+# terminator on both realizations. The bounds fact is the asymmetry; the base
+# is the ruling.
+#
+# IT ALSO DECLARED FIVE ANSWERS IT COULD NOT PRODUCE. Every row was written in
+# the parenthesized face, `t(0)` and `s(s:len() - 1)`, and that face does not
+# lower — for a str or for a table, on `--backend=c` or `--backend=wasm`:
+#
+#   error: graph-to-DNIR refused (GraphFactsInvalid)
+#   hint: refused at: missing-application-id
+#   hint: in relation: s
+#
+# so `# expect: 97 98 0 122 195` was never once compared against a run.
+# `examples/table/str/end.id` is red for the same reason and is not this file's
+# to move. The tail `0` is new for the same class of reason: the last binding
+# would otherwise be the module's result and the exit status would be 195.
+#
+# `d` and `e` keep what the siblings do not reach — the base holds through a
+# FUNCTION PARAMETER, and through a multi-byte literal argument whose first
+# byte is 195 and not a character.
+# expect: 97 98 0 122 195 | 10 30
 # @corpus current
-tail: i64 = (s: str)
-  s(s:len() - 1)
 
 lead: i64 = (s: str)
   s[0]
 
+tail: i64 = (s: str)
+  s[s:len() - 1]
+
 t = "ab"
-a = t(0)
-b = t(1)
-c = t(2)
+a = t[0]
+b = t[1]
+c = t[2]
 d = tail("xyz")
 e = lead("é")
-print("{a} {b} {c} {d} {e}")
+
+xs = {10, 20, 30}
+p = xs[1]
+r = xs[3]
+
+print("{a} {b} {c} {d} {e} | {p} {r}")
+0
