@@ -153,6 +153,42 @@
 #     logical spelling — so the whole oracle refused at its mandatory
 #     controls, which is the loud direction but still an oracle that does not
 #     run.
+#
+#   ...AND RESOLVING THE ARM BINARY ITSELF, NOT ONLY THE PATH TO IT. The rule
+#     above learns a root by `cd <path> && pwd -P`, and `cd` resolves
+#     DIRECTORIES: it walks to the leaf and stops there. The arm does not stop
+#     there. `detectCompilerLibRoot` calls `realPathFileAbsoluteAlloc` on
+#     argv[0] — the FILE — before it takes its three dirnames, so an arm whose
+#     BINARY is a symlink derives its lib root from the tree the symlink points
+#     INTO while the harness substitutes the tree the symlink LIVES IN. This is
+#     not a second SPELLING of the arm's root, which is why the rule above
+#     cannot reach it: it is a DIFFERENT DIRECTORY, and no respelling of the
+#     wrong directory becomes the right one.
+#
+#     This is how a reference compiler is ordinarily kept. An `idol` on PATH is
+#     a symlink into the tree that built it, so
+#     `differential.sh "$(command -v idol)" zig-out/bin/idol` — the installed
+#     compiler against a fresh build — is the first comparison anyone runs, and
+#     it is the shape that fails.
+#
+#     `--null-control` is blind twice over. It `cp`s each arm, and `cp` FOLLOWS
+#     the symlink and lands a real file under a root the mode built itself; and
+#     it refuses a binary whose `<tree>/lib/std.id` is absent, which is exactly
+#     what a symlink placed beside no stdlib looks like. The reader's
+#     instrument is structurally blind for the third time, so the controls live
+#     in `selftest`.
+#
+#     Measured on this tree at d4ea54f2, one subject, two fakes that resolve
+#     argv[0] the way an arm does:
+#
+#       real vs away  -> 0   changed 0, identical 1
+#       link vs away  -> 1   changed 1  — the SAME two binaries, one of them
+#                            reached through a symlink to itself
+#
+#     BOTH roots are kept, under ONE token, for the reason every root above
+#     keeps both of its spellings: argv[0] is handed to the arm AS SPELLED, so
+#     the spelled root is a string the arm can print, while the resolved root
+#     is the one it actually resolves its lib/ out of. One arm, one role.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -169,6 +205,24 @@ TMO="${DIFFERENTIAL_TIMEOUT:-90}"
 # accident, and `rootrules` drops it.
 physical() {
   (cd "$1" 2>/dev/null && pwd -P)
+}
+
+# physicalfile <path> — the same path with every symlink resolved INCLUDING a
+# symlinked leaf, or NOTHING when it does not resolve.
+#
+# `physical` above answers by `cd`, so it resolves the directories on the way
+# and then stops at the leaf; it can never resolve the FILE. The arms do not
+# stop there — `detectCompilerLibRoot` (src/main.zig) calls
+# `realPathFileAbsoluteAlloc` on argv[0] before it derives anything — so a root
+# taken from the spelled binary and a root taken from the arm's own view of it
+# are two different directories whenever the binary is a symlink.
+#
+# `perl` is already a hard dependency of this harness: the shared outcome
+# limiter IS a perl script, and no observation happens without it.
+# `Cwd::realpath` is the same resolution the arm performs, and unlike
+# `readlink -f` it exists on every host this file has run on.
+physicalfile() {
+  perl -MCwd -e 'my $p = Cwd::realpath($ARGV[0]); print $p if defined $p' "$1" 2>/dev/null
 }
 
 # maincheckout <tree-root>
@@ -300,7 +354,8 @@ rootrules() {
   done
 }
 
-# norm <arm-tree-root> <arm-working-directory> <arm-scratch-root> <source-root>
+# norm <arm-tree-root> <arm-resolved-tree-root> <arm-working-directory>
+#      <arm-scratch-root> <source-root>
 #
 # The root strings are substituted FIRST and by exact text, because they are
 # the ones that legitimately differ between two arms of the same comparison.
@@ -314,11 +369,13 @@ rootrules() {
 # normalised every quoted subject path and the other arm did not.
 norm() {
   _norm_root=$1
-  _norm_cwd=$2
-  _norm_scratch=$3
-  _norm_source=$4
+  _norm_realroot=$2
+  _norm_cwd=$3
+  _norm_scratch=$4
+  _norm_source=$5
   sed -E -e "$(rootrules "CWD=$_norm_cwd" "SCRATCH=$_norm_scratch" \
-                         "TREE=$_norm_root" "TREE=$_norm_source")" \
+                         "TREE=$_norm_root" "TREE=$_norm_realroot" \
+                         "TREE=$_norm_source")" \
          -e 's/\([0-9]+ ms/(MS/' \
          -e 's#/Volumes/.*/tmp-[A-Za-z0-9_-]+/#TREE/#g' \
          -e 's#duo_[A-Za-z0-9_]+_[0-9a-f]{6,}_[0-9]+#DUOTMP#g' \
@@ -345,16 +402,22 @@ norm() {
 #   second is a difference. Both are the harness either way.
 normout() {
   _no_root=$1
-  _no_cwd=$2
-  _no_scratch=$3
-  _no_source=$4
+  _no_realroot=$2
+  _no_cwd=$3
+  _no_scratch=$4
+  _no_source=$5
   sed -e "$(rootrules "CWD=$_no_cwd" "SCRATCH=$_no_scratch" \
-                      "TREE=$_no_root" "TREE=$_no_source")"
+                      "TREE=$_no_root" "TREE=$_no_realroot" \
+                      "TREE=$_no_source")"
 }
 
 # The tree an arm's compiler resolves its lib/ from. `detectCompilerLibRoot`
 # (src/main.zig) walks bin/ -> zig-out/ -> repo, so that is what a diagnostic
 # from this arm will quote. A binary somewhere else owns only its directory.
+#
+# This answers for the binary AS SPELLED. That is the argv[0] the arm is handed
+# and therefore a string it can print, but it is NOT the tree the arm resolves
+# its lib/ from when the binary is a symlink — see `armrootreal`.
 armroot() {
   _ar_bin=$1
   _ar_dir=$(cd "$(dirname "$_ar_bin")" && pwd)
@@ -362,6 +425,22 @@ armroot() {
     */zig-out/bin) (cd "$_ar_dir/../.." && pwd) ;;
     *) printf '%s' "$_ar_dir" ;;
   esac
+}
+
+# armrootreal <arm-binary> — the same root derived the way the ARM derives it:
+# from the binary with its symlinks resolved, leaf included.
+#
+# When the binary is not a symlink this equals `armroot` (or its physical
+# spelling, which `rootrules` derives anyway) and the duplicate rule is
+# collapsed there. When it IS a symlink the two are different directories and
+# only this one appears in the arm's diagnostics.
+#
+# Answers NOTHING when the path does not resolve, so a rule is contributed only
+# for a root that exists — the same discipline `physical` keeps.
+armrootreal() {
+  _arr_exe=$(physicalfile "$1")
+  [ -n "$_arr_exe" ] || return 0
+  armroot "$_arr_exe"
 }
 
 hash256() {
@@ -379,8 +458,9 @@ observe() {
   _obs_subject=$4
   _obs_record=$5
   _obs_root=$6
-  _obs_scratch=$7
-  _obs_source=$8
+  _obs_realroot=$7
+  _obs_scratch=$8
+  _obs_source=$9
   _obs_event="$WORK/$_obs_tag.event"
   _obs_stdout_raw="$WORK/$_obs_tag.stdout.raw"
   _obs_stdout="$WORK/$_obs_tag.stdout"
@@ -400,9 +480,9 @@ observe() {
     return
   fi
   _obs_kind=$(sed -n '1p' "$_obs_event")
-  normout "$_obs_root" "$_obs_cwd" "$_obs_scratch" "$_obs_source" \
+  normout "$_obs_root" "$_obs_realroot" "$_obs_cwd" "$_obs_scratch" "$_obs_source" \
     <"$_obs_stdout_raw" >"$_obs_stdout"
-  norm "$_obs_root" "$_obs_cwd" "$_obs_scratch" "$_obs_source" \
+  norm "$_obs_root" "$_obs_realroot" "$_obs_cwd" "$_obs_scratch" "$_obs_source" \
     <"$_obs_stderr_raw" >"$_obs_stderr"
   printf '%s\t%s\t%s\t%s\n' "$_obs_kind" "$_obs_status" "$_obs_stdout" "$_obs_stderr" >"$_obs_record"
 }
@@ -448,11 +528,22 @@ compare_subjects() {
   # arm's observation.
   _cmp_aroot=$(armroot "$_cmp_base")
   _cmp_broot=$(armroot "$_cmp_cand")
+  # ...and the root each arm will actually quote, which is derived from the
+  # binary with its symlinks resolved rather than from the path it was spelled
+  # by. Reported separately when the two differ, because a reader deciding
+  # whether to believe a row needs to see that an arm is a symlink into some
+  # other tree — the harness cannot tell them apart from the caller's spelling.
+  _cmp_areal=$(armrootreal "$_cmp_base")
+  _cmp_breal=$(armrootreal "$_cmp_cand")
   _cmp_atmp="$WORK/base.scratch"
   _cmp_btmp="$WORK/candidate.scratch"
   mkdir -p "$_cmp_atmp" "$_cmp_btmp" || return 2
   printf 'differential: base tree %s\n' "$_cmp_aroot"
+  [ "$_cmp_areal" = "$_cmp_aroot" ] || \
+    printf 'differential: base tree resolves to %s\n' "$_cmp_areal"
   printf 'differential: candidate tree %s\n' "$_cmp_broot"
+  [ "$_cmp_breal" = "$_cmp_broot" ] || \
+    printf 'differential: candidate tree resolves to %s\n' "$_cmp_breal"
 
   _cmp_changed=0
   _cmp_identical=0
@@ -471,9 +562,9 @@ compare_subjects() {
     _cmp_ar="$WORK/base.$_cmp_seen.record"
     _cmp_br="$WORK/candidate.$_cmp_seen.record"
     observe "base.$_cmp_seen" "$_cmp_a" "$_cmp_base" "$_cmp_subject" "$_cmp_ar" \
-      "$_cmp_aroot" "$_cmp_atmp" "$_cmp_source"
+      "$_cmp_aroot" "$_cmp_areal" "$_cmp_atmp" "$_cmp_source"
     observe "candidate.$_cmp_seen" "$_cmp_b" "$_cmp_cand" "$_cmp_subject" "$_cmp_br" \
-      "$_cmp_broot" "$_cmp_btmp" "$_cmp_source"
+      "$_cmp_broot" "$_cmp_breal" "$_cmp_btmp" "$_cmp_source"
     IFS="$(printf '\t')" read -r _cmp_ak _cmp_arc _cmp_ao _cmp_ae <"$_cmp_ar"
     IFS="$(printf '\t')" read -r _cmp_bk _cmp_brc _cmp_bo _cmp_be <"$_cmp_br"
 
@@ -809,6 +900,78 @@ exit 0
     return 1
   }
 
+  # ---------------------------------------------------------------------
+  # AN ARM WHOSE BINARY IS ITSELF A SYMLINK. The control above puts a symlink
+  # on the PATH TO an arm, and `physical` resolves it because `cd` resolves
+  # directories. `cd` walks to the leaf and stops: it can never resolve the
+  # FILE. The arm does not stop there — `detectCompilerLibRoot` realpaths
+  # argv[0] itself — so an arm whose binary is a symlink into another tree
+  # quotes THAT tree, and the harness substitutes the tree the symlink lives
+  # in. Not a second spelling of one directory this time: two directories, so
+  # the rule that fixed the last class cannot reach this one.
+  #
+  # It is the ordinary way a reference compiler is kept. An installed `idol` on
+  # PATH is a symlink into the tree that built it, and comparing it against a
+  # fresh build is the first differential anyone runs.
+  #
+  # `--null-control` is blind twice: `cp` FOLLOWS the symlink and lands a real
+  # file under a root the mode built itself, and the mode refuses a binary with
+  # no `<tree>/lib/std.id` beside it, which is what a symlink alone looks like.
+  #
+  # The fake resolves argv[0] as a FILE, which is what the realpath in
+  # `detectCompilerLibRoot` amounts to; `readlink` in a loop, not `readlink -f`,
+  # because -f is absent on the platform this file's provenance comes from.
+  _self_exelink='#!/bin/sh
+exe=$0
+while [ -L "$exe" ]; do exe=$(readlink "$exe"); done
+root=$(cd "$(dirname "$exe")/../.." && pwd -P)
+printf "answer\n"
+printf "error: cannot open %s/lib/std.id\n" "$root" >&2
+exit 0
+'
+  mkdir -p "$_self/exe/real/zig-out/bin" "$_self/exe/link/zig-out/bin" \
+           "$_self/exe/away/zig-out/bin" || return 2
+  printf '%s' "$_self_exelink" >"$_self/exe/real/zig-out/bin/idol"
+  printf '%s\n# away\n' "$_self_exelink" >"$_self/exe/away/zig-out/bin/idol"
+  chmod +x "$_self/exe/real/zig-out/bin/idol" "$_self/exe/away/zig-out/bin/idol"
+  ln -s "$_self/exe/real/zig-out/bin/idol" "$_self/exe/link/zig-out/bin/idol" || return 2
+  # THE PAIR WITHOUT THE SYMLINK FIRST. Otherwise "identical" below could be
+  # bought by the fake being blind to its own root rather than by the harness
+  # having resolved it, and the control would pass for a reason it does not
+  # name. These are the same two binaries reached two ways.
+  compare_subjects "$_self/exe/real/zig-out/bin/idol" \
+    "$_self/exe/away/zig-out/bin/idol" \
+    "$_self/list" "$_self/source" >/dev/null 2>&1
+  _self_rc=$?
+  [ "$_self_rc" -eq 0 ] || {
+    echo "differential: selftest FAIL — two plain sibling arms scored as a difference" >&2
+    return 1
+  }
+  compare_subjects "$_self/exe/link/zig-out/bin/idol" \
+    "$_self/exe/away/zig-out/bin/idol" \
+    "$_self/list" "$_self/source" >/dev/null 2>&1
+  _self_rc=$?
+  [ "$_self_rc" -eq 0 ] || {
+    echo "differential: selftest FAIL — an arm whose binary is a symlink scored as a difference" >&2
+    return 1
+  }
+
+  # ...AND THE RESOLVED ROOT MUST NOT EAT A REAL ROW EITHER. A third rule per
+  # arm is a third chance to erase a difference, and the erasure would be
+  # silent and optimistic. Same symlinked arm, different diagnostic text.
+  mkdir -p "$_self/exe/other/zig-out/bin" || return 2
+  printf '%s' "$_self_exelink" | sed 's#cannot open#REFUSED, cannot open#' \
+    >"$_self/exe/other/zig-out/bin/idol"
+  chmod +x "$_self/exe/other/zig-out/bin/idol"
+  compare_subjects "$_self/exe/link/zig-out/bin/idol" \
+    "$_self/exe/other/zig-out/bin/idol" \
+    "$_self/list" "$_self/source" >/dev/null 2>&1
+  _self_rc=$?
+  [ "$_self_rc" -eq 1 ] || {
+    echo "differential: selftest FAIL — the resolved-binary rule erased a real row" >&2
+    return 1
+  }
+
   # Different bytes, one identical observation. Each fake records its own
   # invocation count; a future second-run stderr probe makes this control red.
   _self_fake='#!/bin/sh
@@ -877,7 +1040,7 @@ exit 7
   TMO=$_self_old_tmo
   [ "$_self_rc" -eq 2 ] || return 1
 
-  echo "differential: selftest PASS — physical scratch root, sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, per-arm cwd in both spellings, real row survives normalisation, in-tree arm at the subject source root, mirror nested in the source tree, arm reached through a symlink and a real row surviving that, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
+  echo "differential: selftest PASS — physical scratch root, sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, per-arm cwd in both spellings, real row survives normalisation, in-tree arm at the subject source root, mirror nested in the source tree, arm reached through a symlink and a real row surviving that, an arm whose binary is a symlink and a real row surviving that, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
   return 0
 }
 
