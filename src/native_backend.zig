@@ -9606,6 +9606,50 @@ const Arm64Compiler = struct {
         const b = if (rhs_is_dest) old else try self.evalDnirValue(temps, plan.op.rhs);
         const dst = try self.allocRegExcluding(old);
         try self.emitCompareOrBinop(dst, a, b, plan.op.binop, plan.op.ty, plan.op.divisor);
+        // THE OWNER IS RECORDED WHEN THE REGISTER TAKES THE VALUE, NOT AFTER THE
+        // SELECT (GAP-148).
+        //
+        // The line below used to sit at step (5), past the `csel`, and between
+        // the two the arm's answer sat in `dst` under a NULL owner. That is the
+        // one state `reclaimSpilledReg` bids for. Its skip list is `exclude`, a
+        // home, a pin, a staged argument, a staged tail — and an OWNED entry,
+        // which is the rule that says a spilled register's frame slot is the
+        // only remaining location of a live value and may not be retired. An
+        // unowned entry is, by that same rule, a stale name left by staging and
+        // free to take.
+        //
+        // `dst` between here and the select is neither: it is a live value with
+        // no owner record yet. The condition at step (3) allocates — an
+        // immediate operand is `allocReg` — and under gate transport an
+        // allocation that fails runs the whole cascade: every free scan skips
+        // `spilled_regs`, so a spill frees nothing and the passes walk x28..x9
+        // and x7..x0 spilling everything, `dst` among them, and arrive at the
+        // reclaim. The reclaim then finds `dst` unowned, drops the entry,
+        // claims it and hands it back as the condition's own scratch register —
+        // and `evalDnirValue`'s `emitMovImm` writes the condition operand over
+        // the arm's computed value. The `csel` then selects between the
+        // condition's immediate and the binding's old value. A wrong answer
+        // with no diagnostic, on the register the transform exists to produce.
+        //
+        // Recording the owner here is the whole repair and it changes nothing
+        // else. The record's other readers cannot observe the move: `sweepGpLive`
+        // does not run inside a collapsed window — the driver sweeps once per
+        // CONSUMED index, after this emitter returns — `releaseReg` is called
+        // below only for registers the guards already prove are not `dst`, and
+        // `ensureRegLiveRemap` reads the record only for a register
+        // `spilled_regs` names. Outside gate transport `spilled_regs` is empty,
+        // `reclaimSpilledReg` is unreachable, and the record is the same record
+        // at a different line.
+        //
+        // With `dst` owned the cascade refuses instead, which is the bail this
+        // allocator already answers with when the pool is genuinely empty. Not
+        // the closure — closure is authoritative `register`/`frame` assignment
+        // before emission, per this gap's record, under which the select's
+        // destination is a location the assignment carries rather than a claim
+        // an emitter holds across an allocator that may bid for it.
+        if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
+            self.gp_reg_owner[dst] = t;
+        }
         if (a != old and !Arm64Compiler.regIsPinned(pinned, a)) self.releaseReg(a);
         if (b != old and !Arm64Compiler.regIsPinned(pinned, b)) self.releaseReg(b);
 
@@ -9629,6 +9673,36 @@ const Arm64Compiler = struct {
         if (plan.br.branch_condition == .when_true) arm_cond = invertCondition(arm_cond);
 
         // (4) The select, in place of the branch.
+        //
+        // THE SELECT'S REGISTERS ARE ONLY WHERE ITS VALUES ARE WHILE
+        // `spilled_regs` DOES NOT NAME THEM (GAP-148).
+        //
+        // `old` was established at step (1) and `dst` at step (2), and every
+        // allocation since — the operand at step (2), the condition at step (3)
+        // — could have spilled either. A spill does not move the bytes out of
+        // the register, so the `csel` below still reads what it means to read;
+        // what it leaves behind is the wrong part. `dst` is published to
+        // `temps` at step (5) and the store immediately reads it back through
+        // `ensureRegLiveRemap`, which finds the entry, loads the FRAME copy —
+        // the register's pre-select content — and remaps the id onto that. The
+        // store then writes the value the select was emitted to replace. Same
+        // shape for `old` when the binding is read again later.
+        //
+        // `ensureRegLive` is the whole repair and it is the reload this file
+        // already answers every other spelling of this question with: the `ldr`
+        // back into the register every map names, the entry removed, the slot
+        // released once on that removal, and the `claimReg` the loaded value is
+        // owed — after which no map says the value is anywhere but here. An
+        // `ldr` is also the ONE instruction this emitter's own order permits
+        // between the compare and the select: it does not touch NZCV, which is
+        // what the note at step (3) is stating.
+        //
+        // A no-op on every unspilled select, which is every select outside gate
+        // transport, because `allocRegExcluding` refuses above its spill passes
+        // otherwise. Not the closure — closure is authoritative
+        // `register`/`frame` assignment before emission, per this gap's record.
+        try self.ensureRegLive(old);
+        try self.ensureRegLive(dst);
         try self.emitCselReg(dst, dst, old, arm_cond);
         if (old != dst and !Arm64Compiler.regIsPinned(pinned, old)) self.releaseReg(old);
 
@@ -9636,9 +9710,6 @@ const Arm64Compiler = struct {
         //     register-homed local and a frame-homed one stay exactly as they
         //     were — this fold changes WHAT is stored, never WHERE.
         try temps.put(self.alloc, t, dst);
-        if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
-            self.gp_reg_owner[dst] = t;
-        }
         try self.compileDnirInstr(temps, pinned, plan.store, branch_patches, null, at);
     }
 
@@ -10200,6 +10271,32 @@ const Arm64Compiler = struct {
         else
             try self.allocRegExcluding(rt);
 
+        // THE OWNER IS RECORDED WHEN THE REGISTER IS CHOSEN, NOT AFTER THE
+        // SELECT (GAP-148) — the sibling of the record `emitIfConverted` makes
+        // at its step (2), for the same reader and the same reason.
+        //
+        // The carrier id is minted here rather than below because the record
+        // needs it here: between this line and the `csel` the condition
+        // allocates, and under gate transport an allocation that fails spills
+        // every register and ends at `reclaimSpilledReg`, whose skip list
+        // treats an entry with a NULL owner as a stale name free to take. `dst`
+        // under a null owner is exactly that entry, and when `dst == rt` the
+        // register the reclaim would hand back as scratch is the then-arm's own
+        // answer, which the condition's `emitMovImm` then writes over.
+        //
+        // Nothing observes the move. `sweepGpLive` does not run inside a
+        // collapsed window, the releases below are guarded against `dst` by
+        // name, and the carrier still carries no `value_free_at` entry — so the
+        // driver's next sweep retires `dst` immediately after the store, which
+        // is the live range the note at the store already states. Outside gate
+        // transport `spilled_regs` is empty and this is the same record at a
+        // different line.
+        const carrier = self.synth_value_next;
+        self.synth_value_next += 1;
+        if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
+            self.gp_reg_owner[dst] = carrier;
+        }
+
         // The condition. Nothing below this line may write the flags.
         var then_cond: Condition = undefined;
         if (plan.cmp) |c| {
@@ -10219,6 +10316,17 @@ const Arm64Compiler = struct {
         // true; `when_true -> else` is its mirror.
         if (plan.br.branch_condition == .when_true) then_cond = invertCondition(then_cond);
 
+        // THE SELECT'S REGISTERS ARE ONLY WHERE ITS VALUES ARE WHILE
+        // `spilled_regs` DOES NOT NAME THEM (GAP-148) — `emitIfConverted`'s
+        // step (4) states this in full; here there are three of them because
+        // both arms are computed before the condition, and each of the three is
+        // established by a step a later step can spill. `ensureRegLive` is the
+        // reload into the register every map already names, and an `ldr` is the
+        // one instruction this emitter's order permits between the compare and
+        // the select. A no-op on every unspilled select.
+        try self.ensureRegLive(rt);
+        try self.ensureRegLive(re);
+        try self.ensureRegLive(dst);
         try self.emitCselReg(dst, rt, re, then_cond);
 
         // Release whatever the select consumed and this window owns.
@@ -10235,15 +10343,13 @@ const Arm64Compiler = struct {
         // temp of its own to borrow and the local's id is not one; a fresh id
         // past every id this function uses belongs to nobody. It carries no
         // `value_free_at` entry, so the driver's next sweep retires `dst`
-        // immediately after the store — which is exactly its live range.
+        // immediately after the store — which is exactly its live range. It is
+        // minted above the condition rather than here, because the ownership
+        // record it carries is what keeps the reclaim off `dst` while the
+        // condition allocates.
         var store = plan.then_store;
-        const carrier = self.synth_value_next;
-        self.synth_value_next += 1;
         store.lhs = .{ .temp = carrier };
         try temps.put(self.alloc, carrier, dst);
-        if (dst >= 9 and dst < 29 and dst != platform_reserved_reg and !self.gp_home_regs[dst]) {
-            self.gp_reg_owner[dst] = carrier;
-        }
         try self.compileDnirInstr(temps, pinned, store, branch_patches, null, at);
         self.ifconv_admitted += 1;
     }
@@ -20446,4 +20552,158 @@ test "a pack result refuses the ABI register the spill map still names" {
     try std.testing.expect(!compiler.spilled_regs.contains(spilled));
     try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
     try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
+}
+
+// AN IF-CONVERTED ARM'S ANSWER IS A LIVE VALUE, AND THE RECLAIM MAY NOT BID FOR
+// IT (GAP-148).
+//
+// `emitIfConverted` computes the arm unconditionally into `dst`, then evaluates
+// the condition, then selects. The ownership record that says `dst` holds a live
+// value used to be written AFTER the select, so across the whole condition the
+// arm's answer sat in a register `gp_reg_owner` called empty.
+//
+// That is the one entry `reclaimSpilledReg` bids for. Its skip list is
+// `exclude`, a home, a pin, a staged argument, a staged tail — and an OWNED
+// entry, which is the rule that a spilled register's frame slot is the only
+// remaining location of a live value and may not be retired. An UNOWNED entry is
+// by that same rule a stale name left by register staging, and free to take.
+//
+// The condition allocates: an immediate operand is `allocReg`. Under gate
+// transport an allocation that fails runs the entire cascade — every free scan
+// skips `spilled_regs`, so a spill frees nothing and the passes walk x28..x9 and
+// x7..x0 spilling everything, `dst` among them — and ends at the reclaim, which
+// finds `dst` unowned, drops the entry, releases the slot, claims the register
+// and hands it back as the condition's own scratch. `evalDnirValue`'s
+// `emitMovImm` then writes the condition's immediate over the arm's computed
+// value, and the `csel` selects between that immediate and the binding's old
+// value. A wrong answer with no diagnostic, on the register the transform exists
+// to produce.
+//
+// Built directly rather than through a source program for the same reason as the
+// reclaim, reload, remap, release, home, unwind, hoist, store, band, call-result
+// and pack tests above: this needs an exhausted register pool at the exact
+// instant a folded `if` evaluates its condition, which is a state the allocator
+// passes through and not one a fixture names.
+test "an if-converted arm's answer is not reclaimable while the condition allocates" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // Spills exist only under gate transport: `allocRegExcluding` refuses above
+    // its spill passes otherwise, so `spilled_regs` stays empty everywhere else
+    // and this whole path is unreachable.
+    compiler.gate_transport = true;
+    compiler.stack_frame_bytes = 336;
+    compiler.gate_spill_base = 0;
+    compiler.gate_spill_end = 256;
+    compiler.gate_spill_cursor = 0;
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    // THE POOL, arranged so the cascade has exactly one victim and the reclaim
+    // exactly one candidate — otherwise the victim is hash order's to choose and
+    // the differential is not the change's.
+    //
+    // x9 and x10 are the two bindings' homes, and x12..x28 stand for a body that
+    // already used the bank. All of them are `gp_call_home_regs` as well, so both
+    // spill passes pass over them: the first skips every home, the second skips
+    // that mask. x0..x7 are staged arguments, which both the free scan and the
+    // third spill pass skip. x11 is the only register left, and it is the one
+    // `allocRegExcluding` hands the arm.
+    const binding: u32 = 1;
+    const other: u32 = 2;
+    const home_lhs: u5 = 9;
+    const home_rhs: u5 = 10;
+    for ([_]u5{ home_lhs, home_rhs }) |r| {
+        compiler.gp_home_regs[r] = true;
+        compiler.used_regs[r] = true;
+        compiler.gp_call_home_regs |= @as(u32, 1) << r;
+    }
+    var busy: u5 = 12;
+    while (busy <= 28) : (busy += 1) {
+        compiler.gp_home_regs[busy] = true;
+        compiler.used_regs[busy] = true;
+        compiler.gp_call_home_regs |= @as(u32, 1) << busy;
+    }
+    compiler.pending_arg_regs = 0xff;
+    try temps.put(alloc, binding, home_lhs);
+    try temps.put(alloc, other, home_rhs);
+
+    // `binding = binding + other` under a condition that is an immediate — the
+    // immediate is what makes the condition allocate.
+    const arm_temp: u32 = 50;
+    const plan = Arm64Compiler.IfConvPlan{
+        .cmp = null,
+        .br = .{
+            .op = .br,
+            .branch_condition = .when_false,
+            .branch_target = 4,
+            .lhs = .{ .i64 = 7 },
+            .ty = .i64,
+        },
+        .op = .{
+            .op = .binop,
+            .binop = .add,
+            .ty = .i64,
+            .lhs = .{ .local = binding },
+            .rhs = .{ .local = other },
+            .result = arm_temp,
+        },
+        .store = .{
+            .op = .store_local,
+            .ty = .i64,
+            .lhs = .{ .temp = arm_temp },
+            .result = binding,
+        },
+        .extra = 3,
+    };
+
+    // THE POOL IS GENUINELY EMPTY AT THE CONDITION, so the answer is a refusal —
+    // the bail this allocator already answers with — and not a register taken
+    // from the value the fold just computed.
+    try std.testing.expectError(
+        error.RegisterExhausted,
+        compiler.emitIfConverted(&temps, &pinned, plan, &branch_patches, 0),
+    );
+
+    // AND THE ARM'S VALUE IS STILL WHERE THE SPILL PUT IT. The entry stands, its
+    // slot is not in the free pool, and the owner record that made it
+    // unreclaimable names the arm's temp. Without that record the reclaim
+    // retires all three and returns x11 as the condition's scratch.
+    const arm_reg: u5 = 11;
+    try std.testing.expectEqual(@as(?u16, 0), compiler.spilled_regs.get(arm_reg));
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(@as(?u32, arm_temp), compiler.gp_reg_owner[arm_reg]);
+    try std.testing.expect(!compiler.used_regs[arm_reg]);
+
+    // AND THE ARM WAS COMPUTED INTO x11 BEFORE ANY OF IT — the `add` is present
+    // and the condition's `movz x11, #7`, which is what the reclaim's register
+    // would have carried, is not.
+    const add_word: u32 = 0x8b000000 | (@as(u32, home_rhs) << 16) | (@as(u32, home_lhs) << 5) | arm_reg;
+    const movz_word: u32 = 0xd2800000 | (@as(u32, 7) << 5) | arm_reg;
+    var saw_add = false;
+    var i: usize = 0;
+    while (i + 4 <= compiler.code.items.len) : (i += 4) {
+        const word = std.mem.readInt(u32, compiler.code.items[i..][0..4], .little);
+        if (word == add_word) saw_add = true;
+        try std.testing.expect(word != movz_word);
+    }
+    try std.testing.expect(saw_add);
 }
