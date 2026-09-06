@@ -260,11 +260,9 @@ pub const OracleFrontierDimension = struct {
     pub fn status(self: OracleFrontierDimension) FrontierError!FrontierStatus {
         if (self.oracles.len == 0) return error.MissingOracle;
 
-        var all_bound = true;
-        var saw_win = false;
-        var saw_unknown = false;
         for (self.oracles, 0..) |point, index| {
             try point.oracle.validate();
+            if (!point.interval.valid()) return error.InvalidInterval;
             for (self.oracles[index + 1 ..]) |other| {
                 if (std.mem.eql(u8, point.oracle.name, other.oracle.name) and
                     std.mem.eql(u8, point.oracle.revision, other.oracle.revision) and
@@ -273,7 +271,12 @@ pub const OracleFrontierDimension = struct {
                     return error.DuplicateOracle;
                 }
             }
+        }
 
+        var all_bound = true;
+        var saw_win = false;
+        var saw_unknown = false;
+        for (self.oracles) |point| {
             const worse = switch (self.direction) {
                 .minimize => self.candidate.low > point.interval.high,
                 .maximize => self.candidate.high < point.interval.low,
@@ -1167,6 +1170,30 @@ test "oracle frontier requires attributed unique comparators" {
 
     try std.testing.expectError(error.MissingOracle, empty.status());
     try std.testing.expectError(error.DuplicateOracle, repeated.status());
+}
+
+test "oracle frontier validates uniqueness before reporting an open loss" {
+    const oracle = Oracle{
+        .name = "compiler",
+        .revision = "revision",
+        .configuration = "tuned",
+        .evidence = "evidence/compiler.json",
+    };
+    const duplicate = [_]OraclePoint{
+        .{ .oracle = oracle, .interval = Interval.exact(7) },
+        .{ .oracle = oracle, .interval = Interval.exact(9) },
+    };
+    const dimension = OracleFrontierDimension{
+        .id = "runtime",
+        .unit = "ns",
+        .direction = .minimize,
+        .candidate = Interval.exact(8),
+        .oracles = &duplicate,
+        .improvable = true,
+        .cause = .wrong_algorithm,
+    };
+
+    try std.testing.expectError(error.DuplicateOracle, dimension.status());
 }
 
 test "oracle frontier case binds the complete comparison to its measured subject" {
