@@ -1,17 +1,20 @@
-# SH-07 — the semantic graph, seed.
+# Name-reference census, seed. NOT the semantic graph; SH-07 blocked, see gaps/GAP-125.md.
 #
-# One edge is a relationship between declared things. The
-# smallest honest instance of that, computable today, is the module's own
-# reference graph: NODES are top-level bindings, EDGES are references from one
-# to another.
+# Nodes are top-level binding names token-scanned from column 1; edges are
+# same-spelled name references. That is a spelling census, not semantic
+# authority: it carries no applications, no canonical relation identity,
+# no subject roles, no required or reachable world edges, no demand, no
+# effects, and no provenance.
 #
 # TODAY/DELTA. This bootstrap reference scan still treats `_`-prefixed names as
 # private and a file's top-level names as a surface. Those are source-name
 # approximations, not language law. Home/reachability facts must replace this
 # query before it becomes semantic authority.
 #
-# So this is not a graph for its own sake: it is the first query the graph can
-# answer that no other pass can.
+# SH-07 stays blocked until parsed structured applications normalize into
+# graph facts that support home-rename-invariant WORLDGATE and SUBJECTGATE.
+# The one query this census answers that no other pass can is dead-private
+# in-degree: a `_`-prefixed top-level name never referenced in its file.
 #
 # Limits, stated: nodes are top-level only, and a reference is a NAME token not
 # in member position. Nested scopes, shadowing and indirect reference through a
