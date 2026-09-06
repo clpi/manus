@@ -4383,21 +4383,17 @@ pub const SemanticGraph = struct {
         }
     };
 
-    /// The local or parameter entity a name denotes inside one relation, for a
-    /// consumer that has a source name and needs the exact subject a range is
-    /// keyed to. Several entities can share the name; they carry the same
-    /// width by construction, so the first is an exact answer to "which
-    /// subject" and not a choice between different facts.
+    /// The binding entity a name denotes inside one relation.
+    ///
+    /// This is the consumer face of the source-resolution boundary. A relation
+    /// that owns a same-spelled parameter or local gets that binding; otherwise
+    /// resolution walks outward to the module binding when one exists. GAP-221's
+    /// module field-storage guard depends on exactly that distinction: a shadow
+    /// declines module storage, while absence of a shadow reaches the module's
+    /// field word.
     pub fn bindingNamedIn(self: *const SemanticGraph, relation: id, name: []const u8) ?id {
-        for (self.nodes.items, 0..) |node, i| {
-            if (node.kind != .local and node.kind != .param) continue;
-            const held = node.name orelse continue;
-            if (!std.mem.eql(u8, held, name)) continue;
-            const entity = std.math.cast(id, i) orelse return null;
-            if (self.enclosingCallable(node.scope orelse continue) != relation) continue;
-            return entity;
-        }
-        return null;
+        if (!self.callable(relation)) return null;
+        return self.resolveBindingInScope(relation, name);
     }
 
     pub fn liftBodies(self: *SemanticGraph, mod: *const ast.Module) !void {
@@ -12376,6 +12372,43 @@ test "semantic_graph: same-named params in different functions get distinct ids"
     try std.testing.expectEqual(@as(usize, 2), count);
     try std.testing.expect(identities[0] != identities[1]);
     try std.testing.expect(g.get(identities[0]).?.scope.? != g.get(identities[1]).?.scope.?);
+}
+
+test "semantic_graph: GAP-221 bindingNamedIn reaches module field base unless relation shadows it" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\cell: { x: i64 }
+        \\bank = { x = 1 }
+        \\poke: i64 = ()
+        \\    bank.x
+        \\bump: i64 = ()
+        \\    bank: cell = { x = 5 }
+        \\    bank.x
+    ;
+    var lex = Lexer.init(src, "gap221.id");
+    var parser = Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const module = try parser.parse_module();
+
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    const home = try g.liftModuleFull(&module, "gap221.id");
+    const poke = g.resolveInHome(home, "poke", .func) orelse return error.TestExpectedEqual;
+    const bump = g.resolveInHome(home, "bump", .func) orelse return error.TestExpectedEqual;
+    const module_bank = g.resolveBindingInScope(home, "bank") orelse return error.TestExpectedEqual;
+
+    const reached = g.bindingNamedIn(poke, "bank") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(module_bank, reached);
+    try std.testing.expectEqual(home, g.get(reached).?.scope.?);
+
+    const shadow = g.bindingNamedIn(bump, "bank") orelse return error.TestExpectedEqual;
+    try std.testing.expect(shadow != module_bank);
+    try std.testing.expectEqual(NodeKind.local, g.get(shadow).?.kind);
+    try std.testing.expectEqual(bump, g.get(shadow).?.scope.?);
 }
 
 test "semantic_graph: four calls to one callee in one body are four identities" {
