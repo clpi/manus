@@ -1,15 +1,46 @@
-# NUMERICS: division and modulo signs. `/` on two integers truncates toward
-# zero; `%` is FLOORED, taking the DIVISOR's sign — Lua's law, and Idol's since
-# 2026-08-15 (`docs/rulings.md` § "Modulo and floor division").
+# THE FLOORED SIGN LAW, FOLDED — the same four cells as `examples/table/divsign.id`
+# reached through the other implementation, plus the `/` row that is still open.
 #
-# This header used to cite `§12 B-4` for a truncating `%` and to note that it
-# "diverges from Lua, which floors". **§12 B-4 does not exist in either tree**,
-# and the divergence had no warrant in any document that does.
-# expect: -3 -3 1 -1
+# Every operand here is a LITERAL, so `src/comptime.zig`'s `evalNumeric` answers
+# and the backend never sees a division. The sibling's operands are parameters
+# and the backend answers there. The four leading columns are common to both
+# files ON PURPOSE: fold-and-realize agreement is then a measured fact, and it
+# is worth measuring because `evalNumeric` held BOTH laws at once — its
+# `native_fold` branch answered `@divTrunc`/`@rem` and its ordinary branch
+# `@divFloor`/`@mod`, twelve lines apart, so which law a program got depended on
+# whether a fold happened to be running under the native switch. `gate/divisor.sh`
+# §4 asks the same question from the compiler side and is the stronger form of
+# it; it exits 2 before reaching §4 on a host with no direct-native realization,
+# which is every host these two fixtures currently run on.
+#
+# THE CITATION IS RETRACTED. This header settled `%` from `docs/rulings.md`
+# § "Modulo and floor division", and that document has never been added on any
+# branch — `git log --all --diff-filter=A -- docs/rulings.md` is empty. Before
+# that it cited `§12 B-4`, which exists in no document either. The law's only
+# home in this tree is now the measurement; `examples/table/divsign.id` carries
+# the full statement and the conviction table.
+#
+# THE LAST TWO COLUMNS ARE THE OPEN ROW. `/` on two integers truncates toward
+# zero HERE, and `-3 -3` against the `-4 -4` two columns left of it is the
+# entire distance between the two laws — one line, same operands. It is not
+# settled: Lua's `/` is float division, `sema` types `i64 / i64` as `f64`
+# (`GAP-065`), and a relation declared `: i64` cannot spell it at all, which is
+# why the sibling cannot carry this row. Half a numeric law is worse than none,
+# so it is stated as open rather than settled by momentum.
+#
+# A zero divisor spelled as a literal is refused here by `sema` before any of
+# this — "division by zero: the divisor of '//' is the literal 0" — so the
+# runtime guard law §62 requires is measured through the sibling's parameters,
+# not here.
+#
+# Measured by `gate/divsign.sh`.
+# expect: -4 -4 1 -1 -3 -3
 # @corpus current
-a = -7 / 2
-b = 7 / -2
+a = -7 // 2
+b = 7 // -2
 c = -7 % 2
 d = 7 % -2
-print("{a} {b} {c} {d}")
+e = -7 / 2
+f = 7 / -2
+print("{a} {b} {c} {d} {e} {f}")
 0

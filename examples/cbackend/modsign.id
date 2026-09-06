@@ -1,32 +1,40 @@
 # NUMERICS: `%` on two integers is FLOORED — the remainder takes the DIVISOR's
-# sign — and it does so whatever shape the divisor arrives in.
+# sign — and it does so whatever shape the divisor arrives in. THE DIVISOR'S
+# SHAPE IS THIS FILE'S HALF: every row below is the same arithmetic reached
+# through a different divisor shape — positive literal, negative literal, and a
+# value the emitter cannot read — so a rule that holds for one shape and not
+# another cannot pass here. The sign matrix itself is measured by
+# `examples/table/divsign.id` (realized) and `examples/table/div/sign.id`
+# (folded), which also carry `//`, the operator the same ruling settled.
 #
-# THE RULING CHANGED AND THIS FILE CHANGED WITH IT, 2026-08-15. This header used
-# to read "`%` … TRUNCATES … §12 B-4 says `i64/i64` truncates … `%` matches",
-# and it pinned `-1 1 -1 1 -1 1`. **`§12 B-4` does not exist.** It is quoted
-# verbatim by six files in this corpus and by `docs/spec/cost.md:356`, and the
-# document it names is in neither tree — the same class of defect as the four
-# phantom law ids in `docs/law-audit.md` §1.7. One of its four clauses is also
-# checkably FALSE about this language: it says "no `//`", and `//` is lexed
-# (`lexer.zig:1018`), parsed (`parser.zig:5388`), given a precedence row and a
-# formatter spelling.
+# THIS HEADER'S CITATION IS RETRACTED, and it is the SECOND one this file has
+# lost. It cited `§12 B-4` for a TRUNCATING `%` and pinned `-1 1 -1 1 -1 1`;
+# `§12 B-4` exists in no document. It then cited `docs/rulings.md`
+# § "Modulo and floor division" for the floored law, and
+# `git log --all --diff-filter=A -- docs/rulings.md` IS EMPTY — that document
+# has never been added on any branch of this repository. Nothing that opens
+# carries the law today, and the compiler's own `law §62` opens on EVIDENCE MUST
+# BE PRIVATE TO THE RUN. `examples/table/divsign.id` states the measurement and
+# names what is still pointing at what.
 #
-# `docs/rulings.md` § "Modulo and floor division" settles it from `law.md`,
-# which IS in the tree and IS supreme: its first line makes "ordinary Lua
-# meaning" the entry of the specialization chain, and Lua's `%` is floored.
-# An `i64` descriptor cannot be the excuse — Lua's `%` already answers an
-# INTEGER for two integers, so the descriptor changes nothing about it.
+# THE `cbackend` HOME IS NOT REACH, and this file is the proof. Measured at this
+# tip, every row here refuses on the backend the directory names:
 #
-# THE POINT OF THIS FILE IS STILL THE DIVISOR'S SHAPE, and that is why it
-# survived the ruling instead of being replaced. Every row below is the same
-# arithmetic reached through a different divisor shape — positive literal,
-# negative literal, and a value the emitter cannot read — so a rule that holds
-# for one shape and not another cannot pass. Under the repair those shapes take
-# three different machine paths (`and #imm`, the constant-divisor correction,
-# and `emitFlooredDivRem`), which makes this file MORE load-bearing than before.
+#   idol compile --backend=c --emit=c examples/cbackend/modsign.id
+#   error: C99 realizer: no realization (UnsupportedProgram)
+#   hint: refused at: binop-not-in-c99-slice
+#   hint: in relation: main
+#
+# `emitBinop` admits `+ - *` and the six comparisons and nothing else, so `%`,
+# `//` and `/` are all outside the slice — `+`, `-` and `*` emit C through the
+# same command, which is the control that the refusal is the slice boundary and
+# not a broken file. The direct backend answers DNB004 on this host. The `%`
+# columns below are therefore measured on `--backend=wasm` under wasmtime, and
+# that is the ONLY realization in this tree that answers them.
 #
 # Computed by hand from Lua 5.4 §3.4.1, `a % b == a - floor(a/b)*b`:
 #   -7 % 2 = -7 - (-4 * 2) = 1.   7 % -2 = 7 - (-4 * -2) = -1.
+# Measured by `gate/divsign.sh`.
 # expect: 1 -1 1 -1 1 -1
 # @corpus current
 two = 2
