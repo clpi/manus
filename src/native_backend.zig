@@ -7653,12 +7653,37 @@ const Arm64Compiler = struct {
         try self.emitFmt(0xfd4003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, dreg), "ldr d{d}, [sp, #{d}]", .{ dreg, offset });
     }
 
+    /// A GENERAL REGISTER READ INTO THE FLOAT FILE IS STILL A GENERAL REGISTER
+    /// READ (GAP-148).
+    ///
+    /// `xreg` is a SOURCE, and every other emitter in this file that reads one
+    /// asks `ensureRegLive` first, because `spilled_regs` naming a register is
+    /// this backend's statement that the register is not where the value is.
+    /// The two GP->FP transfers were the ones never asked, and the widening
+    /// caller reaches this from `temps` directly rather than through
+    /// `evalDnirValue`, so no reload happens above it either: under pressure
+    /// the cascade spills the integer, `spillReg` clears `used_regs` and takes
+    /// it out of `emitSaveCallerRegs`'s save set, the next `bl` clobbers it,
+    /// and this converts the call's leavings into a float. No diagnostic.
+    ///
+    /// The destination side is deliberately not symmetric: `emitFmovToGpr` and
+    /// `emitFcvtzsFromFp` WRITE their `xreg`, and `spilled_regs` is keyed by GP
+    /// index, so reloading against an FP operand would `ldr` a GP slot at an
+    /// index from the wrong register file.
+    ///
+    /// Bounded to gate transport with the rest of GAP-148: `allocRegExcluding`
+    /// refuses above its spill passes otherwise, so `spilled_regs` is empty
+    /// elsewhere and this is a no-op. Not the closure -- closure is
+    /// authoritative `register`/`frame` assignment before emission, per that
+    /// gap's record, under which the location of a value crossing register
+    /// files is carried by the assignment rather than reasked at each emitter.
     fn emitScvtfFromGpr(self: *Arm64Compiler, dreg: u5, xreg: u5) Error!void {
         // SCVTF from a **64-bit** GPR is 0x9e620000. This read 0x1e620000, which
         // is the 32-bit source form, while both callers hand it an x register:
         // anything at or above 2^32 would have converted from its low half. The
         // asm text said `scvtf d, x` either way, so only a byte-level oracle
         // could tell the two apart -- `zig build isa-fidelity` is that oracle.
+        try self.ensureRegLive(xreg);
         try self.emitFmt(0x9e620000 | (@as(u32, xreg) << 5) | @as(u32, dreg), "scvtf d{d}, x{d}", .{ dreg, xreg });
     }
 
@@ -10930,10 +10955,16 @@ const Arm64Compiler = struct {
         try self.emitFmt(0x1e604000 | (@as(u32, src) << 5) | @as(u32, dst), "fmov d{d}, d{d}", .{ dst, src });
     }
 
+    /// The other GP->FP transfer, and the same source read — see
+    /// `emitScvtfFromGpr` for why `spilled_regs` decides it. Its table-read
+    /// caller allocates the FP destination AFTER loading the bits, and that
+    /// allocation is one the cascade can answer by spilling the very register
+    /// this then reads.
     fn emitFmovFromGpr(self: *Arm64Compiler, dreg: u5, xreg: u5) Error!void {
         // FMOV <Dd>,<Xn> — general-register to FP (64-bit). Ground-truth base
         // 0x9E670000 (fmov d0,x1 => 0x9E670020). Used to materialize an f64
         // literal: load its bit pattern into an x-reg, then transfer to d.
+        try self.ensureRegLive(xreg);
         try self.emitFmt(0x9e670000 | (@as(u32, xreg) << 5) | @as(u32, dreg), "fmov d{d}, x{d}", .{ dreg, xreg });
     }
 
@@ -22093,4 +22124,136 @@ test "the binop's left operand is not reclaimable while the destination allocate
         try std.testing.expect(word != add_word);
     }
     try std.testing.expect(saw_lhs);
+}
+
+// THE GP->FP TRANSFER READ THE REGISTER, NOT THE VALUE (GAP-148).
+//
+// `spilled_regs` naming a register is this backend's statement that the value
+// is in the frame and the register is not the answer, and every emitter that
+// reads a general register as a SOURCE honours it by calling `ensureRegLive`
+// first -- `emitAddImmSized`, `emitCmpReg`, `emitBitReg`, `emitStrIdx`,
+// `emitVecLdrQPost16`, `emitMovReg`, `emitNarrowFit`, all of them. The two
+// instructions that read a general register into the FLOAT file never asked.
+//
+// The widening caller compounds it from above: `evalDnirValueFp`'s `crossFile`
+// arm reads `temps.get(id)` DIRECTLY rather than through `evalDnirValue`, so
+// `ensureRegLiveRemap` does not run for it either and this emitter is the only
+// place left where the question could be asked at all.
+//
+// The clobber does not need the pool to hand the register out. `spillReg`
+// clears `used_regs`, and `used_regs` is the entire save set
+// `emitSaveCallerRegs` builds, so the spill takes the integer out of the set
+// while `temps` still names its register, the next `bl` clobbers x0..x17, and
+// the conversion turns the call's leavings into a float. No diagnostic, and the
+// asm reads exactly like the conversion it was written to be.
+//
+// Built directly rather than through a source program for the same reason as
+// every test this gap has recorded: the state is one the allocator passes
+// through between a spill and a read, not one a fixture names.
+test "a general register read into the float file is reloaded first" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // The state `spillReg` leaves behind: the value is at `off`, the claim is
+    // gone, and `gp_reg_owner` is preserved across the store so the sweep can
+    // release it at the index it always would have.
+    compiler.stack_frame_bytes = 32;
+    const xreg: u5 = 11;
+    const off: u16 = 8;
+    const owner: u32 = 7;
+    try compiler.spilled_regs.put(alloc, xreg, off);
+    compiler.used_regs[xreg] = false;
+    compiler.gp_reg_owner[xreg] = owner;
+
+    const dreg: u5 = 3;
+    try compiler.emitScvtfFromGpr(dreg, xreg);
+
+    // The reload is there, and it is the `ldr` into the register every map
+    // already names -- the same reload the home branch of `ensureRegLiveRemap`
+    // performs, at the offset `spillReg` stored to.
+    try std.testing.expectEqual(@as(usize, 8), compiler.code.items.len);
+    const reload_off: u16 = 32 - off - 8;
+    const ldr_word: u32 = 0xf94003e0 | ((@as(u32, reload_off) / 8) << 10) | @as(u32, xreg);
+    try std.testing.expectEqual(
+        ldr_word,
+        std.mem.readInt(u32, compiler.code.items[0..4], .little),
+    );
+    const scvtf_word: u32 = 0x9e620000 | (@as(u32, xreg) << 5) | @as(u32, dreg);
+    try std.testing.expectEqual(
+        scvtf_word,
+        std.mem.readInt(u32, compiler.code.items[4..8], .little),
+    );
+
+    // And the rest of the reload: the entry is retired by the removal that took
+    // it, the slot is released exactly once, the claim the loaded value is owed
+    // is paid, and the owner record is untouched.
+    try std.testing.expect(!compiler.spilled_regs.contains(xreg));
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expectEqual(off, compiler.free_spill_slots.items[0]);
+    try std.testing.expect(compiler.used_regs[xreg]);
+    try std.testing.expectEqual(@as(?u32, owner), compiler.gp_reg_owner[xreg]);
+
+    // FALSE ACCEPT: AN UNSPILLED SOURCE IS NOT RELOADED. The term is
+    // `spilled_regs` and not a blanket `ldr` before every transfer, so a source
+    // the map does not name emits the conversion alone and the pool is
+    // untouched.
+    const plain: u5 = 12;
+    const before = compiler.code.items.len;
+    try compiler.emitScvtfFromGpr(dreg, plain);
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(@as(usize, 1), compiler.free_spill_slots.items.len);
+    try std.testing.expect(!compiler.used_regs[plain]);
+
+    // The second transfer carries the same term.
+    const other: u5 = 13;
+    const other_off: u16 = 16;
+    try compiler.spilled_regs.put(alloc, other, other_off);
+    compiler.used_regs[other] = false;
+    const at_fmov = compiler.code.items.len;
+    try compiler.emitFmovFromGpr(dreg, other);
+    try std.testing.expectEqual(at_fmov + 8, compiler.code.items.len);
+    const other_reload: u16 = 32 - other_off - 8;
+    const other_ldr: u32 = 0xf94003e0 | ((@as(u32, other_reload) / 8) << 10) | @as(u32, other);
+    try std.testing.expectEqual(
+        other_ldr,
+        std.mem.readInt(u32, compiler.code.items[at_fmov..][0..4], .little),
+    );
+    const fmov_word: u32 = 0x9e670000 | (@as(u32, other) << 5) | @as(u32, dreg);
+    try std.testing.expectEqual(
+        fmov_word,
+        std.mem.readInt(u32, compiler.code.items[at_fmov + 4 ..][0..4], .little),
+    );
+    try std.testing.expect(!compiler.spilled_regs.contains(other));
+
+    // WRONG ERROR: THE DESTINATION SIDE IS NOT THE SOURCE SIDE. `emitFmovToGpr`
+    // WRITES its `xreg`, and `spilled_regs` is keyed by GP index, so a reload
+    // there would `ldr` a GP slot at an index taken from the FP operand. An
+    // entry naming the destination survives untouched and nothing is emitted
+    // but the transfer.
+    const dst_gp: u5 = 14;
+    const dst_off: u16 = 24;
+    try compiler.spilled_regs.put(alloc, dst_gp, dst_off);
+    const at_to_gpr = compiler.code.items.len;
+    try compiler.emitFmovToGpr(dst_gp, dreg);
+    try std.testing.expectEqual(at_to_gpr + 4, compiler.code.items.len);
+    const to_gpr_word: u32 = 0x9e660000 | (@as(u32, dreg) << 5) | @as(u32, dst_gp);
+    try std.testing.expectEqual(
+        to_gpr_word,
+        std.mem.readInt(u32, compiler.code.items[at_to_gpr..][0..4], .little),
+    );
+    try std.testing.expectEqual(@as(?u16, dst_off), compiler.spilled_regs.get(dst_gp));
+    try std.testing.expectEqual(@as(usize, 2), compiler.free_spill_slots.items.len);
 }
