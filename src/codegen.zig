@@ -4234,11 +4234,8 @@ pub const CodeGen = struct {
                         // have fallen and a program is measured to be waiting
                         // on this line alone.
                         if (!self.type_expr_is_native_scalar(param.typ)) {
-                            const measured_rt = self.resolve_type(param.typ);
-                            if (measured_rt != .any) {
-                                self.nativeDiagFailFmt("param-type:{s}", .{typeLabel(param.typ)});
-                                return self.nofit(@src());
-                            }
+                            self.nativeDiagFailFmt("param-type:{s}", .{typeLabel(param.typ)});
+                            return self.nofit(@src());
                         }
                     }
                     self.precheck_collect_types(&fd.func);
