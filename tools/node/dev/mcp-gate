@@ -260,9 +260,9 @@ else
     report ok "damage control: duplicate tool rejected" ""
   fi
 
-  sed 's/stdout:write(resp \.\. "\\n")/stdout:write(resp)/' "$repo/$entry" >"$work/no-newline.id"
-  old_writes="$(grep -c 'stdout:write(resp \.\. "\\n")' "$work/no-newline.id" || true)"
-  new_writes="$(grep -c 'stdout:write(resp)$' "$work/no-newline.id" || true)"
+  sed 's|stdout:write("{resp}\\n")|stdout:write("{resp}")|' "$repo/$entry" >"$work/no-newline.id"
+  old_writes="$(grep -c 'stdout:write("{resp}\\n")' "$work/no-newline.id" || true)"
+  new_writes="$(grep -c 'stdout:write("{resp}")' "$work/no-newline.id" || true)"
   if [ "$old_writes" -ne 0 ] || [ "$new_writes" -ne 1 ]; then
     report fail "damage control: newline removal landed" "production response write was not damaged exactly once"
   elif ! (cd "$repo" && "$idol" compile --no-cache "$work/no-newline.id" --backend=direct --emit exe -o "$work/no-newline-server" >"$work/no-newline-compile.out" 2>"$work/no-newline-compile.err") ||
