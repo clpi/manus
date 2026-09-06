@@ -4734,6 +4734,8 @@ fn boot(symbol: []const u8) ?[]const u8 {
         std.mem.eql(u8, symbol, "idol_io_open") or
         std.mem.eql(u8, symbol, "idol_io_write_handle") or
         std.mem.eql(u8, symbol, "idol_io_close_handle") or
+        std.mem.eql(u8, symbol, "idol_io_stdout_handle") or
+        std.mem.eql(u8, symbol, "idol_io_stderr_handle") or
         std.mem.eql(u8, symbol, "idol_process_capture"))
         return "idol_io_runtime.o";
     if (std.mem.eql(u8, symbol, "duo_str_sub") or

@@ -12717,6 +12717,11 @@ fn lowerSubjectCall(
         }
         if (subject_home.streamRelation(mc.method)) {
             const is_stdout = mc.obj.* == .name and std.mem.eql(u8, mc.obj.name.ident, "stdout");
+            if (stdioProjectedStream(ctx, mc.obj) != null and
+                !(std.mem.eql(u8, mc.method, "write") and mc.args.len == 1))
+            {
+                return bail(ctx.diagnostic, @src());
+            }
             if (std.mem.eql(u8, mc.method, "write") and mc.args.len == 1 and !is_stdout) {
                 return lowerStreamWrite(ctx, mc.obj, mc.args[0]);
             }
@@ -14955,6 +14960,20 @@ fn ensureExtern(ctx: *LowerCtx, alias: []const u8, field: []const u8, sym: []con
     };
 }
 
+fn stdioProjectedStream(ctx: *const LowerCtx, expr: *const ast.Expr) ?[]const u8 {
+    if (expr.* != .field) return null;
+    const fld = expr.field;
+    if (fld.obj.* != .name or !std.mem.eql(u8, fld.obj.name.ident, "io")) return null;
+    if (!std.mem.eql(u8, fld.field, "stdout") and !std.mem.eql(u8, fld.field, "stderr")) return null;
+    if (ctx.locals.get("io") != null) return null;
+    var key_buf: [16]u8 = undefined;
+    const key = std.fmt.bufPrint(&key_buf, "io.{s}", .{fld.field}) catch return null;
+    if (ctx.module_consts.ints.get(key) != null) return null;
+    if (ctx.module_consts.strs.get(key) != null) return null;
+    if (moduleFieldWord(ctx, "io", key) != null) return null;
+    return fld.field;
+}
+
 fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
     if (expr.* != .field) return bail(ctx.diagnostic, @src());
     if (ctx.require_graph_facts) {
@@ -15014,6 +15033,13 @@ fn lowerField(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
             return .{ .temp = t };
         }
         if (try loadFieldFromOpaquePath(ctx, key)) |v| return v;
+        if (stdioProjectedStream(ctx, expr)) |stream| {
+            const sym = if (std.mem.eql(u8, stream, "stderr")) "idol_io_stderr_handle" else "idol_io_stdout_handle";
+            try ensureExtern(ctx, "io", stream, sym);
+            const t = ctx.freshTemp();
+            try ctx.emit(.{ .op = .call_extern, .result = t, .callee = sym, .ty = .i64 });
+            return .{ .temp = t };
+        }
     }
     if (fld.obj.* == .call or fld.obj.* == .method_call) {
         if (try lowerCallRecordFieldProjection(ctx, fld.obj, fld.field)) |v| return v;
@@ -15608,6 +15634,156 @@ test "dnir_lower: a local named io is the local, not the world descriptor" {
         }
     }
     try std.testing.expect(saw_ret);
+}
+
+test "dnir_lower: io.stderr write projects the host stream" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    io.stderr:write("hi")
+        \\    return 0
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "io_stderr.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const mod = try parser.parse_module();
+    const m = try lowerModule(alloc, &mod);
+    var saw_stderr = false;
+    var saw_write = false;
+    for (m.functions) |f| {
+        if (!std.mem.eql(u8, f.name, "main")) continue;
+        for (f.blocks[0].instrs) |ins| {
+            if (ins.op == .call_extern and std.mem.eql(u8, ins.callee, "idol_io_stderr_handle")) saw_stderr = true;
+            if (ins.op == .call_extern and std.mem.eql(u8, ins.callee, "idol_io_write_handle")) saw_write = true;
+            if (ins.op == .load_field and std.mem.eql(u8, ins.req_alias, "io"))
+                return error.TestUnexpectedResult;
+        }
+    }
+    try std.testing.expect(saw_stderr);
+    try std.testing.expect(saw_write);
+}
+
+test "dnir_lower: io.stdout write projects the host stream" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    io.stdout:write("hi")
+        \\    return 0
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "io_stdout.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const mod = try parser.parse_module();
+    const m = try lowerModule(alloc, &mod);
+    var saw_stdout = false;
+    var saw_write = false;
+    for (m.functions) |f| {
+        if (!std.mem.eql(u8, f.name, "main")) continue;
+        for (f.blocks[0].instrs) |ins| {
+            if (ins.op == .call_extern and std.mem.eql(u8, ins.callee, "idol_io_stdout_handle")) saw_stdout = true;
+            if (ins.op == .call_extern and std.mem.eql(u8, ins.callee, "idol_io_write_handle")) saw_write = true;
+            if (ins.op == .load_field and std.mem.eql(u8, ins.req_alias, "io"))
+                return error.TestUnexpectedResult;
+        }
+    }
+    try std.testing.expect(saw_stdout);
+    try std.testing.expect(saw_write);
+}
+
+test "dnir_lower: io.stderr close stays refused" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    io.stderr:close()
+        \\    return 0
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "io_stderr_close.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const mod = try parser.parse_module();
+    try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
+}
+
+test "dnir_lower: io.stderr read stays refused" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    s = io.stderr:read()
+        \\    return 0
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "io_stderr_read.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const mod = try parser.parse_module();
+    try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
+}
+
+test "dnir_lower: io.bogus write is not a projected stream" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    io.bogus:write("x")
+        \\    return 0
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "io_bogus.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const mod = try parser.parse_module();
+    const m = try lowerModule(alloc, &mod);
+    var saw_slot = false;
+    for (m.functions) |f| {
+        if (!std.mem.eql(u8, f.name, "main")) continue;
+        for (f.blocks[0].instrs) |ins| {
+            if (ins.op == .call_extern and std.mem.startsWith(u8, ins.callee, "idol_io_stderr"))
+                return error.TestUnexpectedResult;
+            if (ins.op == .call_extern and std.mem.startsWith(u8, ins.callee, "idol_io_stdout"))
+                return error.TestUnexpectedResult;
+            if (ins.op == .load_field and std.mem.eql(u8, ins.req_alias, "io")) saw_slot = true;
+        }
+    }
+    try std.testing.expect(saw_slot);
+}
+
+test "dnir_lower: a bound io keeps io.stderr write off the world" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\main(): i64
+        \\    io = 5
+        \\    io.stderr:write("x")
+        \\    return io
+        \\end
+    ;
+    var lex = @import("lexer.zig").Lexer.init(src, "io_shadow_stderr.id");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.idol_mode = true;
+    const mod = try parser.parse_module();
+    const m = try lowerModule(alloc, &mod);
+    for (m.functions) |f| {
+        if (!std.mem.eql(u8, f.name, "main")) continue;
+        for (f.blocks[0].instrs) |ins| {
+            if (ins.op == .call_extern and std.mem.startsWith(u8, ins.callee, "idol_io_stderr"))
+                return error.TestUnexpectedResult;
+            if (ins.op == .call_extern and std.mem.startsWith(u8, ins.callee, "idol_io_stdout"))
+                return error.TestUnexpectedResult;
+        }
+    }
 }
 
 test "dnir_lower: to(str) declines a non-integer argument rather than mis-lowering" {

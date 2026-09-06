@@ -145,6 +145,7 @@ extern "c" fn _NSGetArgc() *c_int;
 extern "c" fn _NSGetArgv() *[*][*:0]u8;
 extern "c" fn __error() *c_int;
 extern "c" var __stdoutp: *anyopaque; // Darwin's `stdout`
+extern "c" var __stderrp: *anyopaque; // Darwin's `stderr`
 
 const Handler = *const fn (c_int) callconv(.c) void;
 extern "c" fn signal(sig: c_int, handler: ?Handler) ?Handler;
@@ -368,6 +369,14 @@ export fn idol_io_write_handle(handle: i64, text: ?[*:0]const u8) callconv(.c) i
     const f: *anyopaque = @ptrFromInt(@as(usize, @intCast(handle)));
     const s = text orelse return 1;
     return if (fputs(s, f) == -1) 1 else 0;
+}
+
+export fn idol_io_stdout_handle() callconv(.c) i64 {
+    return @intCast(@intFromPtr(__stdoutp));
+}
+
+export fn idol_io_stderr_handle() callconv(.c) i64 {
+    return @intCast(@intFromPtr(__stderrp));
 }
 
 export fn idol_io_close_handle(handle: i64) callconv(.c) i64 {

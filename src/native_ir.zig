@@ -561,6 +561,8 @@ pub fn isBootstrapForeignCall(callee: []const u8) bool {
         "idol_io_open",
         "idol_io_write_handle",
         "idol_io_close_handle",
+        "idol_io_stdout_handle",
+        "idol_io_stderr_handle",
         "idol_os_arg",
         "idol_os_cwd",
         "idol_os_execute",
