@@ -67,6 +67,11 @@ pub const FrontierStatus = enum(u8) {
     }
 };
 
+pub const FrontierDeclaration = enum(u8) {
+    absent,
+    present,
+};
+
 pub const DebtCause = enum(u8) {
     missing_fact,
     missing_demand,
@@ -161,6 +166,8 @@ pub const FrontierError = error{
     MissingEvidenceRevision,
     MissingEquivalence,
     MissingRawEvidence,
+    MissingMeasurement,
+    MissingCompilerB,
     MissingDimensions,
     MissingRequiredDimensions,
     MissingRequiredDimension,
@@ -300,6 +307,8 @@ pub const OracleFrontierDimension = struct {
 /// Each dimension owns its comparator envelope because different systems can
 /// establish the frontier for runtime, memory, artifact size, or another cost.
 pub const OracleFrontierCase = struct {
+    measurement: FrontierDeclaration,
+    compiler_b: FrontierDeclaration,
     subject_revision: []const u8,
     evidence_revision: []const u8,
     equivalence: []const u8,
@@ -309,6 +318,8 @@ pub const OracleFrontierCase = struct {
     context: ?FrontierContext = null,
 
     pub fn status(self: OracleFrontierCase) FrontierError!FrontierStatus {
+        if (self.measurement == .absent) return error.MissingMeasurement;
+        if (self.compiler_b == .absent) return error.MissingCompilerB;
         if (self.subject_revision.len == 0) return error.MissingSubjectRevision;
         if (self.evidence_revision.len == 0) return error.MissingEvidenceRevision;
         if (self.equivalence.len == 0) return error.MissingEquivalence;
@@ -1178,6 +1189,8 @@ test "oracle frontier case binds the complete comparison to its measured subject
         .cause = .wrong_algorithm,
     }};
     const measurement = OracleFrontierCase{
+        .measurement = .present,
+        .compiler_b = .present,
         .subject_revision = "candidate-revision",
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
@@ -1205,6 +1218,8 @@ test "oracle frontier case refuses an unbound measurement envelope" {
         .improvable = true,
     }};
     const measurement = OracleFrontierCase{
+        .measurement = .present,
+        .compiler_b = .present,
         .subject_revision = "candidate-revision",
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
@@ -1220,6 +1235,38 @@ test "oracle frontier case refuses an unbound measurement envelope" {
     };
 
     try std.testing.expectError(error.MissingOracle, measurement.status());
+}
+
+test "oracle frontier case refuses an absent measurement declaration" {
+    const measurement = OracleFrontierCase{
+        .measurement = .absent,
+        .compiler_b = .present,
+        .subject_revision = "candidate-revision",
+        .evidence_revision = "evidence-revision",
+        .equivalence = "evidence/equivalence.json",
+        .raw_evidence = "evidence/runtime.json",
+        .required_dimensions = &.{"runtime"},
+        .dimensions = &.{},
+        .context = null,
+    };
+
+    try std.testing.expectError(error.MissingMeasurement, measurement.status());
+}
+
+test "oracle frontier case refuses an absent compiler b declaration" {
+    const measurement = OracleFrontierCase{
+        .measurement = .present,
+        .compiler_b = .absent,
+        .subject_revision = "candidate-revision",
+        .evidence_revision = "evidence-revision",
+        .equivalence = "evidence/equivalence.json",
+        .raw_evidence = "evidence/runtime.json",
+        .required_dimensions = &.{"runtime"},
+        .dimensions = &.{},
+        .context = null,
+    };
+
+    try std.testing.expectError(error.MissingCompilerB, measurement.status());
 }
 
 test "oracle frontier case refuses an incomplete dimension envelope" {
@@ -1241,6 +1288,8 @@ test "oracle frontier case refuses an incomplete dimension envelope" {
         .improvable = true,
     }};
     const measurement = OracleFrontierCase{
+        .measurement = .present,
+        .compiler_b = .present,
         .subject_revision = "candidate-revision",
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
@@ -1287,6 +1336,8 @@ test "oracle frontier case refuses a dimension outside its envelope" {
         },
     };
     const measurement = OracleFrontierCase{
+        .measurement = .present,
+        .compiler_b = .present,
         .subject_revision = "candidate-revision",
         .evidence_revision = "evidence-revision",
         .equivalence = "evidence/equivalence.json",
