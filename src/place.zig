@@ -211,6 +211,8 @@ pub const Place = struct {
 
 pub const Refusal = enum {
     none,
+    /// Retired: every region passes the same chain, so nothing earns this.
+    /// Kept so exhaustive switches fail closed.
     not_module,
     shape,
     no_value,
@@ -222,13 +224,13 @@ pub const Refusal = enum {
     runtime_index,
 };
 
-/// A module aggregate may be physically absent only when every access is
+/// An aggregate may be physically absent only when every access is
 /// statically determined and no mutation, alias or escape makes a location
-/// observable. This is a realization fact, not a claim that every binding is a
-/// place. Scalar values and homes never enter this function because no Place is
+/// observable. Region selects the refused residency, never the verdict: a
+/// frame-local aggregate no observer distinguishes needs no frame slot.
+/// Scalar values and homes never enter this function because no Place is
 /// produced for them.
 pub fn residencyRefusal(p: *const Place) Refusal {
-    if (p.region != .module) return .not_module;
     if (p.shape != .collection and p.shape != .record) return .shape;
     if (p.init == null) return .no_value;
     if (p.facts.mutation != .no or p.facts.immutability != .yes) return .mutated;
@@ -1488,6 +1490,57 @@ test "place: a module collection written by a relation requires storage" {
     const p = census.byName("t").?;
     try testing.expectEqual(Tri.yes, p.facts.mutation);
     try testing.expectEqual(Refusal.mutated, residencyRefusal(p));
+}
+
+test "place: a function-local aggregate earns absent on the same proof" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var pure = try censusOf(&arena,
+        \\main: i64 = ()
+        \\    s = (10, 20, 30)
+        \\    s[1] + s[2] + s[3]
+        \\
+    );
+    defer pure.deinit();
+    const p = pure.byName("s").?;
+    try testing.expectEqual(Region.function, p.region);
+    try testing.expectEqual(Refusal.none, residencyRefusal(p));
+    try testing.expectEqual(Residency.absent, ruledResidency(p));
+
+    var mutated = try censusOf(&arena,
+        \\main: i64 = ()
+        \\    s = (10, 20, 30)
+        \\    s[1] = 9
+        \\    s[1] + s[2]
+        \\
+    );
+    defer mutated.deinit();
+    const m = mutated.byName("s").?;
+    try testing.expectEqual(Refusal.mutated, residencyRefusal(m));
+    try testing.expectEqual(Residency.frame, ruledResidency(m));
+
+    var escaped = try censusOf(&arena,
+        \\main: i64 = ()
+        \\    s = (10, 20, 30)
+        \\    sink(s)
+        \\    s[1]
+        \\
+    );
+    defer escaped.deinit();
+    const e = escaped.byName("s").?;
+    try testing.expectEqual(Refusal.escaped, residencyRefusal(e));
+    try testing.expectEqual(Residency.frame, ruledResidency(e));
+
+    var dyn = try censusOf(&arena,
+        \\main: i64 = (i: i64)
+        \\    s = (10, 20, 30)
+        \\    s[i] + s[1]
+        \\
+    );
+    defer dyn.deinit();
+    const d = dyn.byName("s").?;
+    try testing.expectEqual(Refusal.indeterminate, residencyRefusal(d));
+    try testing.expectEqual(Residency.frame, ruledResidency(d));
 }
 
 test "place: every unmodelled shape lowers facts to unknown" {
