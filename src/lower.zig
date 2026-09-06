@@ -52,8 +52,9 @@
 //! (`law.fact.producer.one`): it fails closed on a foreign schema, an unknown
 //! mechanism/triple/unit name, a missing cost field, an unrepresentable cost
 //! magnitude, or an empty subject revision (`law.evidence.subject.one`). A
-//! negative float cost is the producer's documented noise floor and
-//! reconstructs as zero, so a genuine row always constructs its fact.
+//! negative cost is the producer's documented noise floor and
+//! reconstructs as zero regardless of JSON representation, so a genuine row
+//! always constructs its fact.
 //! `parseMeasurements` owns the facts
 //! from one complete newline-delimited evidence stream, and the graph-backed
 //! C99 arm hands that exact slice to both measured walk consumers. A malformed
@@ -214,9 +215,10 @@ fn uniformMeasurement(triple: target_model.TargetTriple, candidates: []const Dyn
 /// subject revision is NON-EMPTY (`law.evidence.subject.one`: a measurement
 /// that cannot name what was measured is not a fact). Anything else returns
 /// null — a malformed or unowned row leaves the stated orders to decide,
-/// exactly as an absent measurement does. A negative float cost is the
-/// producer's documented noise floor and reconstructs as zero (`u64Field`),
-/// while an unrepresentable magnitude is no fact. A `network_isolation` mechanism is
+/// exactly as an absent measurement does. A negative cost is the
+/// producer's documented noise floor and reconstructs as zero regardless
+/// of JSON representation (`u64Field`), while an unrepresentable
+/// magnitude is no fact. A `network_isolation` mechanism is
 /// read from the row's own spelling, never reconstructed from an ordinal
 /// (`law.magic.code.zero`).
 ///
@@ -308,17 +310,21 @@ fn stringField(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {
 
 /// A cost quantity from a row field. The producer emits computed costs as
 /// `%.4f` floats, so whole measured nanoseconds arrive as floats and truncate
-/// toward zero. A NEGATIVE float is the producer's documented timer noise
+/// toward zero. A NEGATIVE quantity is the producer's documented timer noise
 /// around no measurable cost (`gate/lower/cost.sh` reports the software-check
 /// enforcement delta even when noise makes it negative): a cost is a physical
-/// quantity, so the noise floor reconstructs as zero — refusing a genuine row
-/// would make the producer's own output intermittently unconsumable, and a
-/// negative quantity must never settle a comparison. An unrepresentable
-/// magnitude is no fact: fail closed, never a trapping conversion.
+/// quantity, so the noise floor reconstructs as zero regardless of JSON
+/// representation — refusing a genuine row would make the producer's own
+/// output intermittently unconsumable, and a negative quantity must never
+/// settle a comparison. An unrepresentable magnitude is no fact: fail closed,
+/// never a trapping conversion.
 fn u64Field(obj: std.json.ObjectMap, key: []const u8) ?u64 {
     const v = obj.get(key) orelse return null;
     return switch (v) {
-        .integer => |n| if (n < 0) null else @as(u64, @intCast(n)),
+        .integer => |n| if (n < 0)
+            0
+        else
+            @as(u64, @intCast(n)),
         .float => |f| if (f < 0)
             0
         else if (f >= @as(f64, @floatFromInt(std.math.maxInt(u64))))
@@ -1046,6 +1052,21 @@ test "lower: a negative noise delta reconstructs as zero cost, not refusal" {
     // fact instead of refusing the stream.
     const text =
         \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"aarch64-linux-gnu","unit":"nanoseconds","cost":{"access":-0.0312,"crossing":0},"subject_revision":"5acc89730000000000000000000000000000000001","checked_access_ns":9.625,"plain_access_ns":9.6562,"accesses_per_rep":1024,"reps":2}
+    ;
+    var rev: [64]u8 = undefined;
+    const fact = parseMeasured(text, &rev).?;
+    try std.testing.expectEqual(@as(u64, 0), fact.cost.access);
+}
+
+test "lower: a negative integer cost reconstructs as zero, same as float" {
+    // The noise-floor rule is representation-independent: a negative quantity
+    // reconstructs as zero regardless of whether the JSON value is a float or
+    // an integer. The `.integer` arm must match the `.float` arm — refusing
+    // the row on a negative integer while accepting a negative float would
+    // make the producer's output intermittently unconsumable on the integer
+    // path.
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"aarch64-linux-gnu","unit":"nanoseconds","cost":{"access":-3,"crossing":0},"subject_revision":"5acc89730000000000000000000000000000000001","checked_access_ns":9.625,"plain_access_ns":9.6562,"accesses_per_rep":1024,"reps":2}
     ;
     var rev: [64]u8 = undefined;
     const fact = parseMeasured(text, &rev).?;
