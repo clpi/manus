@@ -163,4 +163,3 @@ DRIVER   repair_candidate.zig
 DRIVER   git_preservation.zig
 DRIVER   benchmark_evidence.zig
 DRIVER   evidence_record.zig
-TOKEN    token_semantic.zig
