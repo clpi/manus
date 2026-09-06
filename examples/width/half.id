@@ -1,26 +1,23 @@
 # @corpus current
 # DECLARED INTEGER WIDTH, at and around every boundary of u16.
 #
-# THE DEFECT THIS FIXTURE EXISTS FOR. The DIRECT backend — which
-# `--backend=auto`, i.e. plain `idol run`, selects — performed no truncation
-# for ANY sub-64-bit integer type. Every value stayed 64 bits wide from the
-# literal to the exit status, so `h: u32 = 4294967295` then `h = h + 5`
-# answered 4294967300 where `--backend=c`, which emits a real `uint32_t` and a
-# real `((uint32_t)(...))` cast on every store, answered 4. Two backends, one
-# source, two answers, `ok compile` and exit 0 both times.
+# THE DEFECT THIS FIXTURE EXISTS FOR. The direct backend performed no
+# truncation for ANY sub-64-bit integer type — every value stayed 64 bits wide
+# from the literal to the exit status, so `h: u32 = 4294967295` then
+# `h = h + 5` answered 4294967300 where a real `uint32_t` answers 4, both
+# under `ok compile` and exit 0.
 #
-# EVERY NUMBER ON THE `# expect:` LINE WAS COMPUTED BY HAND — in Python, from
-# the width and the signedness — and never read back from either backend. Two
-# backends can agree and both be wrong; this tree has hit that twice, so a
-# differential alone is not a proof.
+# EVERY NUMBER ON THE `# expect:` LINE IS COMPUTED FROM THE WIDTH AND THE
+# SIGNEDNESS, never read back from a backend — two backends can agree and both
+# be wrong. `gate/width.sh` compares it to a run and names the realization it
+# measured; `--backend=c` refuses this file at `binop-not-in-c99-slice`.
 #
 # THE SEEDS ARE 2^n-1, 2^n, 2^n+1 AND THEIR NEGATIVE MIRRORS, passed as an
-# ARGUMENT rather than written as a literal beside the operation, so nothing
-# here can be folded into the answer it is checking.
+# ARGUMENT, so nothing here can be folded into the answer it is checking.
 #
-# Unsigned: the store TRUNCATES. A sign-extend here would turn 0xFFFFFFFF into -1
-# and every comparison after it would answer the other way.
-# expect: 1 2 32768 32769 32770 65535 0 1 0 32769 32768 65535 0 32766 32767 32768 65533 65534 65535 65534 32767 32766 0 3 32765 32768 32771 65530 65533 0 65533 32768 32765 0 2 65534 0 2 65532 65534 0 65534 0 65534 0 1 255 0 1 254 255 0 255 0 255 1 1 32767 32769 32769 65535 65535 1 65535 32769 32767 1 0 32766 32769 32768 65535 65534 1 65534 32769 32766
+# Unsigned: the store TRUNCATES and `>>` fills with ZERO. A sign-extend turns
+# 255 into -1, and `>>` then answers -1 where 127 is the law.
+# expect: 1 2 32768 32769 32770 65535 0 1 0 32769 32768 65535 0 32766 32767 32768 65533 65534 65535 65534 32767 32766 0 3 32765 32768 32771 65530 65533 0 65533 32768 32765 0 2 65534 0 2 65532 65534 0 65534 0 65534 0 1 255 0 1 254 255 0 255 0 255 1 1 32767 32769 32769 65535 65535 1 65535 32769 32767 1 0 32766 32769 32768 65535 65534 1 65534 32769 32766 0 0 16383 16384 16384 32767 32767 0 32767 16384 16383
 
 rise: i64 = (p: i64)
   h: u16 = p
@@ -55,6 +52,11 @@ merge: i64 = (p: i64)
 flip: i64 = (p: i64)
   h: u16 = p
   h = h ~ 1
+  h
+
+drop: i64 = (p: i64)
+  h: u16 = p
+  h = h >> 1
   h
 
 main: i64 = ()
@@ -135,4 +137,15 @@ main: i64 = ()
   print(flip(-1))
   print(flip(-32768))
   print(flip(-32769))
+  print(drop(0))
+  print(drop(1))
+  print(drop(32767))
+  print(drop(32768))
+  print(drop(32769))
+  print(drop(65534))
+  print(drop(65535))
+  print(drop(65536))
+  print(drop(-1))
+  print(drop(-32768))
+  print(drop(-32769))
   0

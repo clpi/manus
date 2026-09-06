@@ -1,26 +1,23 @@
 # @corpus current
 # DECLARED INTEGER WIDTH, at and around every boundary of i32.
 #
-# THE DEFECT THIS FIXTURE EXISTS FOR. The DIRECT backend — which
-# `--backend=auto`, i.e. plain `idol run`, selects — performed no truncation
-# for ANY sub-64-bit integer type. Every value stayed 64 bits wide from the
-# literal to the exit status, so `h: u32 = 4294967295` then `h = h + 5`
-# answered 4294967300 where `--backend=c`, which emits a real `uint32_t` and a
-# real `((uint32_t)(...))` cast on every store, answered 4. Two backends, one
-# source, two answers, `ok compile` and exit 0 both times.
+# THE DEFECT THIS FIXTURE EXISTS FOR. The direct backend performed no
+# truncation for ANY sub-64-bit integer type — every value stayed 64 bits wide
+# from the literal to the exit status, so `h: u32 = 4294967295` then
+# `h = h + 5` answered 4294967300 where a real `uint32_t` answers 4, both
+# under `ok compile` and exit 0.
 #
-# EVERY NUMBER ON THE `# expect:` LINE WAS COMPUTED BY HAND — in Python, from
-# the width and the signedness — and never read back from either backend. Two
-# backends can agree and both be wrong; this tree has hit that twice, so a
-# differential alone is not a proof.
+# EVERY NUMBER ON THE `# expect:` LINE IS COMPUTED FROM THE WIDTH AND THE
+# SIGNEDNESS, never read back from a backend — two backends can agree and both
+# be wrong. `gate/width.sh` compares it to a run and names the realization it
+# measured; `--backend=c` refuses this file at `binop-not-in-c99-slice`.
 #
 # THE SEEDS ARE 2^n-1, 2^n, 2^n+1 AND THEIR NEGATIVE MIRRORS, passed as an
-# ARGUMENT rather than written as a literal beside the operation, so nothing
-# here can be folded into the answer it is checking.
+# ARGUMENT, so nothing here can be folded into the answer it is checking.
 #
-# Signed: the store truncates and then SIGN-EXTENDS. A zero-extend here would turn
-# -1 into 255 and every comparison after it would answer the other way.
-# expect: 1 2 0 2147483647 -2147483648 -2147483647 -2147483646 -2147483647 -2147483648 0 1 -1 0 -2 2147483645 2147483646 2147483647 -2147483648 2147483647 2147483646 -2 -1 0 3 -3 2147483642 2147483645 -2147483648 -2147483645 -2147483648 2147483645 -3 0 0 2 -2 -4 -2 0 2 0 -2 -2 0 0 1 255 254 255 0 1 0 255 255 0 1 1 -1 2147483647 2147483647 -2147483647 -2147483647 -2147483647 2147483647 -1 1 1 0 -2 2147483647 2147483646 -2147483647 -2147483648 -2147483647 2147483646 -2 1
+# Signed: the store truncates and SIGN-EXTENDS, and `>>` refills the sign. A
+# zero-extend turns -1 into 255; a logical `>>` turns it into 127.
+# expect: 1 2 0 2147483647 -2147483648 -2147483647 -2147483646 -2147483647 -2147483648 0 1 -1 0 -2 2147483645 2147483646 2147483647 -2147483648 2147483647 2147483646 -2 -1 0 3 -3 2147483642 2147483645 -2147483648 -2147483645 -2147483648 2147483645 -3 0 0 2 -2 -4 -2 0 2 0 -2 -2 0 0 1 255 254 255 0 1 0 255 255 0 1 1 -1 2147483647 2147483647 -2147483647 -2147483647 -2147483647 2147483647 -1 1 1 0 -2 2147483647 2147483646 -2147483647 -2147483648 -2147483647 2147483646 -2 1 0 0 -1 1073741823 1073741823 -1073741824 -1073741824 -1073741824 1073741823 -1 0
 
 rise: i64 = (p: i64)
   h: i32 = p
@@ -55,6 +52,11 @@ merge: i64 = (p: i64)
 flip: i64 = (p: i64)
   h: i32 = p
   h = h ~ 1
+  h
+
+drop: i64 = (p: i64)
+  h: i32 = p
+  h = h >> 1
   h
 
 main: i64 = ()
@@ -135,4 +137,15 @@ main: i64 = ()
   print(flip(-2147483649))
   print(flip(4294967295))
   print(flip(4294967296))
+  print(drop(0))
+  print(drop(1))
+  print(drop(-1))
+  print(drop(2147483646))
+  print(drop(2147483647))
+  print(drop(2147483648))
+  print(drop(-2147483647))
+  print(drop(-2147483648))
+  print(drop(-2147483649))
+  print(drop(4294967295))
+  print(drop(4294967296))
   0

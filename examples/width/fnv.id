@@ -4,14 +4,16 @@
 # `tools/wasm/bench/hash.id` runs exactly this step 200 million times and its
 # own header records "Verified against it: both produce 1899277430 under
 # wasmtime." Recomputed independently in Python, the true value IS 1899277430,
-# low byte 118. `--backend=c` exited 118. `--backend=direct` — the DEFAULT —
-# exited 79, because it performed no `u32` truncation at all and the hash ran
-# at 64 bits. Neither `idol check` nor any gate said anything.
+# low byte 118. `--backend=direct` — the DEFAULT — exited 79, because it
+# performed no `u32` truncation at all and the hash ran at 64 bits. Neither
+# `idol check` nor any gate said anything.
 #
 # THIS FIXTURE IS THE SAME ARITHMETIC AT TEN LENGTHS, short enough to run in a
 # corpus sweep, and every value below was computed in PYTHON from the u32
-# definition — not read back from either backend. A backend differential cannot
+# definition — not read back from a backend. A backend differential cannot
 # convict two backends that are wrong together; a recorded external answer can.
+# `gate/width.sh` compares it to a run and names the realization it measured;
+# `--backend=c` refuses this file at `binop-not-in-c99-slice`.
 #
 #   h = 2166136261
 #   repeat n times:  h ^= i ;  h = (h * 16777619) mod 2^32
