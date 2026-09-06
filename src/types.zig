@@ -651,6 +651,49 @@ pub fn mangleFragment(repr: ResolvedType) ?[]const u8 {
     return null;
 }
 
+/// The DESCRIPTOR NAME a value carries for CONVERSION-TRIE lookup — the word
+/// `d:to(inch)` uses to reach the `to(inch)` relation edge declared over the
+/// value's own descriptor, or null when the value carries no descriptor a trie
+/// edge can be keyed on.
+///
+/// DERIVED, NOT TABULATED. This is the CONVERSION-TRIE FACE of the scalar
+/// roster. The roster it replaced (`codegen.inferred_descriptor`'s explicit
+/// arms) was an ELEVENTH statement of the scalar identity↔source-spelling
+/// correspondence that `duo_name` already owns: a value's descriptor word for
+/// trie lookup is the source spelling it was declared with, and for a scalar
+/// that spelling is exactly `duo_name` — a second hand-kept list of the same
+/// ten numeric scalars plus `bool`/`str`, agreeing with `duo_name` only until
+/// someone edited one of them. A roster could not compose: a scalar identity
+/// added to the union gained a `duo_name` word but stayed unknown to the
+/// hand-list, took its `else` arm, and carried NO descriptor into the trie — a
+/// `d:to(inch)` over the new scalar silently found no conversion edge and fell
+/// back to boxing the value through `any`, the wrong answer in the safe-looking
+/// direction.
+///
+/// The set is `scalarRepr` — one value in one cell — PLUS a NOMINAL DESCRIPTOR,
+/// which answers with ITS OWN DECLARED NAME rather than its representation's
+/// spelling: `law.nominal` (§46) makes `feet` a distinct semantic identity, and
+/// the trie edge `feet:to(inch)` is keyed on `feet`, not on the `f64` it
+/// realizes as — this is the one arm that lets `d:to(inch)` reach the trie when
+/// `d: feet = 3.0`. The nominal is NOT `scalarRepr` (`nominalReprOf != null`
+/// withholds it), so it is named first and by its own `.@"struct".name`, the
+/// same delegation `reflectName` makes for a struct. Every other identity is
+/// declined by the `scalarRepr` fact rather than by absence and routes to the
+/// caller's null: an ORDINARY (non-nominal) struct carries no numeric facts and
+/// is not a nominal descriptor, the vectors span several cells (`lanes != 1`),
+/// `void`/`any`/`nil`/`never` are not values with a scalar descriptor word, and
+/// a pointer/array/option/result/func/enum/channel/table/generic/instantiated/
+/// tensor is a composition whose `duo_name` builds a compound the trie roster
+/// folded to null.
+pub fn trieDescriptorName(repr: ResolvedType) ?[]const u8 {
+    if (nominalReprOf(repr) != null) return repr.@"struct".name;
+    if (scalarRepr(repr)) {
+        var buf: [1]u8 = undefined;
+        return repr.duo_name(&buf);
+    }
+    return null;
+}
+
 /// The physical cell a scalar descriptor MATERIALIZES IN when it is a field of
 /// a natively-lowered record, table row, or parameter — one of the three the
 /// native IR carries (`native_ir.FieldKind = { i64, str, f64 }`). This owner
@@ -3965,6 +4008,91 @@ test "types: the mangling face of the scalar roster is derived from the same fac
     try testing.expect(mangleFragment(.void) == null);
     try testing.expect(mangleFragment(.nil) == null);
     try testing.expect(mangleFragment(.never) == null);
+}
+
+/// The retired `codegen.inferred_descriptor` scalar roster, verbatim, as the
+/// equivalence control's oracle: the explicit arms that mapped a value's static
+/// type to the descriptor word its conversion-trie lookup keys on, and null for
+/// every identity that fell to `else`. The `.@"struct"` arm reproduces the
+/// retired nominal test exactly — a nominal descriptor answers with its own
+/// name, an ordinary record answers null.
+fn retiredTrieDescriptorName(repr: ResolvedType) ?[]const u8 {
+    return switch (repr) {
+        .@"struct" => |s| if (nominalRepr(s.name) != null) s.name else null,
+        .i8 => "i8",
+        .i16 => "i16",
+        .i32 => "i32",
+        .i64 => "i64",
+        .u8 => "u8",
+        .u16 => "u16",
+        .u32 => "u32",
+        .u64 => "u64",
+        .f32 => "f32",
+        .f64 => "f64",
+        .bool => "bool",
+        .str => "str",
+        else => null,
+    };
+}
+
+test "types: the conversion-trie descriptor face is derived from the same facts" {
+    // PINNED EQUAL TO THE RETIRED ROSTER on every payload-free identity it
+    // mapped to a word AND every identity it folded into `else`, so no value's
+    // conversion-trie lookup can gain or lose the descriptor word it keys on.
+    // `trieDescriptorName(x)` is the retired explicit arm for every payload-free
+    // `x` and null exactly where the retired switch fell through to `else` —
+    // the exact substitution `codegen.inferred_descriptor` will make.
+    const info = @typeInfo(ResolvedType).@"union";
+    inline for (info.field_names, info.field_types) |field_name, field_type| {
+        if (field_type != void) continue;
+        const identity = @as(ResolvedType, @field(ResolvedType, field_name));
+        const derived = trieDescriptorName(identity);
+        const retired = retiredTrieDescriptorName(identity);
+        if (retired) |word| {
+            try testing.expect(derived != null);
+            try testing.expect(std.mem.eql(u8, derived.?, word));
+        } else {
+            try testing.expect(derived == null);
+        }
+    }
+
+    // The word is `duo_name` over the scalar set, not an eleventh statement of
+    // it: every scalar carries its own source spelling into the trie.
+    try testing.expect(std.mem.eql(u8, trieDescriptorName(.i8).?, "i8"));
+    try testing.expect(std.mem.eql(u8, trieDescriptorName(.u64).?, "u64"));
+    try testing.expect(std.mem.eql(u8, trieDescriptorName(.f32).?, "f32"));
+    try testing.expect(std.mem.eql(u8, trieDescriptorName(.f64).?, "f64"));
+    try testing.expect(std.mem.eql(u8, trieDescriptorName(.bool).?, "bool"));
+    try testing.expect(std.mem.eql(u8, trieDescriptorName(.str).?, "str"));
+
+    // DECLINED BY A FACT, NOT BY ABSENCE. The vectors are numeric fact owners
+    // that are not one cell (`scalarRepr` is false because `lanes != 1`), and
+    // `void`/`any`/`nil`/`never` carry no scalar descriptor word; each answers
+    // null and the caller keeps its null exactly as the retired `else` did.
+    try testing.expect(trieDescriptorName(.v4f64) == null);
+    try testing.expect(trieDescriptorName(.v8i32) == null);
+    try testing.expect(trieDescriptorName(.void) == null);
+    try testing.expect(trieDescriptorName(.any) == null);
+    try testing.expect(trieDescriptorName(.nil) == null);
+    try testing.expect(trieDescriptorName(.never) == null);
+
+    // A NOMINAL DESCRIPTOR carries its OWN declared name into the trie, not its
+    // representation's spelling — the arm that lets `d:to(inch)` reach the
+    // `feet:to(inch)` edge when `d: feet = 3.0`. It is named first because it is
+    // NOT `scalarRepr` (`nominalReprOf != null` withholds it), and by
+    // `.@"struct".name`, the same delegation `reflectName` makes for a struct.
+    try declareNominal(std.heap.page_allocator, "furlong", .f64);
+    const furlong = nominalNamed("furlong").?;
+    try testing.expect(std.mem.eql(u8, trieDescriptorName(furlong).?, "furlong"));
+    // Its representation is withheld here: the nominal answers its own name, not
+    // the `f64` it realizes as, and does not gain the scalar spelling.
+    try testing.expect(!std.mem.eql(u8, trieDescriptorName(furlong).?, "f64"));
+
+    // An ORDINARY (non-nominal) record struct is declined — it is not a nominal
+    // descriptor and carries no scalar facts, so it answers null exactly as the
+    // retired `.@"struct"` arm did when `nominalRepr` was null.
+    const ordinary = ResolvedType{ .@"struct" = .{ .name = "PlainRecord" } };
+    try testing.expect(trieDescriptorName(ordinary) == null);
 }
 
 /// The retired per-tag widening lattice, verbatim, as the negative control's
