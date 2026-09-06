@@ -4000,7 +4000,7 @@ pub const Parser = struct {
         //
         // Position 1 is the tested position per §1.1's success predicate — the
         // value-first return-pack idiom, chosen on merit.
-        if ((try self.pk()).kind == .name) {
+        if (try self.currentParserName()) {
             const pack_saved = self.saveState();
             if (try self.parse_if_pack_binding(l)) |stmt| return stmt;
             self.restoreState(pack_saved);

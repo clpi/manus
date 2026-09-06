@@ -3096,6 +3096,26 @@ fi
 
 # ── 4. the identity-count parity probe must be able to run ──────────────────
 
+# The outer correlated if-pack probe consumes the ordinary-name face before
+# entering the already-transferred binding reader. Zig retains cursor snapshot,
+# fallback, correlated-pack recognition, and statement materialization.
+if_pack_probe_kinds=$(sed -n '/fn parse_if(self:/,/\/\/ `if name = expr` binding condition/p' "$PARSER" | \
+    grep -cF '(try self.pk()).kind == .name' || true)
+if [ "$if_pack_probe_kinds" -ne 0 ]; then
+    bad "if-pack outer probe retained host name recognition: count=$if_pack_probe_kinds"
+fi
+
+if_pack_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate if-pack-probe scratch' >&2; exit 2; }
+printf '%s\n' 'if ((try self.pk()).kind == .name) {' >"$if_pack_probe/old.zig"
+printf '%s\n' 'if (try self.currentParserName()) {' >"$if_pack_probe/new.zig"
+if_pack_probe_old=$(grep -cF '(try self.pk()).kind == .name' "$if_pack_probe/old.zig")
+if_pack_probe_new=$(grep -cF 'try self.currentParserName()' "$if_pack_probe/new.zig")
+rm -rf -- "$if_pack_probe"
+examined=$((examined + 1))
+if [ "$if_pack_probe_old" -ne 1 ] || [ "$if_pack_probe_new" -ne 1 ]; then
+    bad "the if-pack outer-probe detector is broken: old=$if_pack_probe_old new=$if_pack_probe_new"
+fi
+
 # Single-name if-binding admission consumes the ordinary-name face already
 # carried by the immutable event pack. This is deliberately scoped after the
 # correlated-pack probe: that already-landed consumer is not remeasured here.
