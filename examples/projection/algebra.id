@@ -6,14 +6,61 @@
 # Invocation ladder (shortest unique form): value:to(str) → value
 # when graph proves each step (INFER-ONE). value:to() is not a canonical rung.
 #
-# expect: 17
+# THE FILE NAMED FOR THE PROJECTION ALGEBRA STOPPED CARRYING IT. Commit
+# 98ceb52c — an argument-projection migration whose message never mentions
+# projection heads — rewrote `to(str) = (value)` into `to__str = (value)` and
+# `read(i64) = (lx, b)` into `read__i64 = (lx, b)`. THE ORACLE LINE DID NOT
+# MOVE, and it could not have: `17` is answered by the BUILT-IN conversion and
+# never reached either declaration. Measured — a user `to(str)` whose body
+# answers `value + 900` still prints 17 — so this file's number is IDENTICAL
+# whether the levelled declaration is present, mangled, or deleted outright.
+# `idol fmt` performs the same rewrite today, which is why the mangled spelling
+# is its FIXPOINT: the formatter's normal form is the loss.
+#
+# THE `to` ROW IS KEPT because the conversion ladder is this file's first law,
+# but it proves nothing about the projection HEAD and never did. The `lift` and
+# `cast` rows are what reach a declaration. `lift` is levelled; `cast` is the
+# same two edges in the mangled spelling 98ceb52c and `idol fmt` rewrite them
+# into, and the oracle requires the two families to AGREE cell for cell over
+# identical operands. They are ONE identity and not two: declared at the same
+# key they collide as `lift__str` — "ambiguous call to overloaded function" —
+# which gate/projection.sh runs rather than asserts. `cast` is the retired form
+# kept as a witness; it is not a second face to migrate onto.
+#
+# TWO EDGES MUST DISAGREE, so a single-edge implementation that kept the last
+# declaration prints one number twice. `str` and `i64` are concrete descriptors
+# in the projection head — the point `read(i64)` carried before it was mangled,
+# and never an adjective protocol.
+#
+# THE PARAMETER IS TYPED AND THE INVOCATION IS OPERATION-FIRST, and neither is
+# a preference. The header's own untyped `to(str) = (value)` refuses at
+# `parameter-type-unsupported:to__str` — the compiler spelling the MANGLED name
+# for the levelled face, which is the identity restated by the realizer. The
+# canonical subject-first call `n:lift(str)` refuses at
+# `missing-application-id`, so `lift(str)(n)` — the form CLAUDE.md calls
+# migratable debt — is the only spelling of this edge that runs. The retired
+# `to__str = (value)` and `read__i64 = (lx, b)` bodies are gone from here
+# because they refuse and the number never reached them; gate/projection.sh
+# runs all three as probes. They are owed, not worked around.
+# expect: 17 917 107 917 107
 
-to__str = (value)
-  value:to(str)
+lift(str) = (value: i64): i64
+  value + 900
 
-# Declaration projection uses a concrete descriptor — not an adjective protocol.
-read__i64 = (lx, b)
-  lx:read(i64)(b)
+lift(i64) = (value: i64): i64
+  value + 90
+
+cast__str: i64 = (value: i64)
+  value + 900
+
+cast__i64: i64 = (value: i64)
+  value + 90
 
 n: i64 = 17
+a = lift(str)(n)
+b = lift(i64)(n)
+c = cast__str(n)
+d = cast__i64(n)
 print(n:to(str))
+print("{a} {b} {c} {d}")
+0

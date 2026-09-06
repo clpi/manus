@@ -1,8 +1,9 @@
 # @corpus current
 # AN INJECTED WORLD ADDS REACH AND NEVER TAKES A NAME — the WRITE face.
 #
-# The read-side corollary is already gated (`gate/shadow.id`, `gate/access.id`)
-# and was violated twice in the wild: a user relation `arg(v) = v * 7` silently
+# The read-side corollary was said to be gated by `gate/shadow.id` and
+# `gate/access.id`; NEITHER FILE IS IN THIS TREE either. It was violated twice
+# in the wild: a user relation `arg(v) = v * 7` silently
 # returned 0 instead of 42, and `lib/build.id` defines its own `env` so the bare
 # spelling silently read the local function. The write face has the SAME hazard
 # and it is sharper, because `a[i]` canonicalizes to `a(i)`: `env(k) = v` is
@@ -11,9 +12,10 @@
 # also escapes the process.
 #
 # `localwins` is the whole point: the store must land in the LOCAL TABLE, and
-# nothing about it may reach the environment. `gate/place.sh` checks the second
-# half by disassembling this file's binary and requiring NO `_setenv` import in
-# the shadowed shape.
+# nothing about it may reach the environment. `gate/place.sh` was said to check
+# the second half by disassembling this file's binary and requiring NO `_setenv`
+# import in the shadowed shape; there is no such file, and this fixture has no
+# binary to disassemble — it refuses at `missing-application-id`.
 #
 # `worldreaches` is the POSITIVE CONTROL, without which this file also passes on
 # a compiler that deleted the projection entirely — the most likely way to
@@ -26,9 +28,14 @@
 # this fixture was being measured, `gate/place.sh` alternated between the broken
 # and the fixed verdict across consecutive runs of the same script against the
 # same binary — the "fixed" readings were cache hits on artifacts built by a
-# patched compiler. `gate/place.sh` now gives every probe a per-run nonce for
-# exactly this reason; a corpus fixture cannot, so its ledger row in
-# `gate/expect.sh` is measured with the cache in whatever state it is in.
+# patched compiler.
+#
+# THE READER NAMED HERE DOES NOT EXIST. `gate/place.sh` was said to give every
+# probe a per-run nonce for exactly this reason, and this fixture's ledger row
+# was said to live in `gate/expect.sh`. NEITHER FILE IS IN THIS TREE and
+# neither ever read this corpus, so nothing has ever compared the oracle line
+# below. `gate/projection.sh` is the reader, and it pins this fixture at the
+# exact id it refuses at rather than claiming a comparison it cannot make.
 # expect-exit: 3
 
 localwins: i64 = ()

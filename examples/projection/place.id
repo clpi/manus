@@ -21,7 +21,11 @@
 # `env:remove(k)`, a different edge — see `examples/projection/remove.id`.
 #
 # An exit-status fixture: it prints nothing, so the agreement count IS the
-# answer. Both backends must produce it.
+# answer. It said "Both backends must produce it"; MEASURED, NEITHER DOES.
+# `--backend=wasm` refuses at `call_extern/extern:setenv`, and `--backend=c`
+# emits C that does not compile: `setenv((int64_t)a0, (int64_t)a1,
+# (int64_t)a2)` against no `<stdlib.h>`, so the exit status below has never
+# been compared. `gate/projection.sh` pins both and fails the day either lands.
 #
 #
 # CACHE NOTE, and it is not incidental. The compiler keys a build cache
@@ -30,9 +34,14 @@
 # this fixture was being measured, `gate/place.sh` alternated between the broken
 # and the fixed verdict across consecutive runs of the same script against the
 # same binary — the "fixed" readings were cache hits on artifacts built by a
-# patched compiler. `gate/place.sh` now gives every probe a per-run nonce for
-# exactly this reason; a corpus fixture cannot, so its ledger row in
-# `gate/expect.sh` is measured with the cache in whatever state it is in.
+# patched compiler.
+#
+# THE READER NAMED HERE DOES NOT EXIST. `gate/place.sh` was said to give every
+# probe a per-run nonce for exactly this reason, and this fixture's ledger row
+# was said to live in `gate/expect.sh`. NEITHER FILE IS IN THIS TREE and
+# neither ever read this corpus, so nothing has ever compared the oracle line
+# below. `gate/projection.sh` is the reader, and it pins this fixture at the
+# exact id it refuses at rather than claiming a comparison it cannot make.
 # expect-exit: 5
 
 main: i64 = ()
