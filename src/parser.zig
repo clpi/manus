@@ -2416,7 +2416,7 @@ pub const Parser = struct {
         const saved = self.saveState();
         if ((try self.pk()).kind == .at) {
             _ = try self.adv(); // consume @
-            if ((try self.pk()).kind == .name and std.mem.eql(u8, (try self.pk()).text, "cinclude")) {
+            if ((try self.currentParserName()) and std.mem.eql(u8, (try self.pk()).text, "cinclude")) {
                 self.restoreState(saved);
                 return true;
             }
@@ -5364,7 +5364,7 @@ pub const Parser = struct {
             // Check for `Name = struct ... end` — C-layout type definition
             if (first.* == .name and compound == null) {
                 const next_tok = try self.pk();
-                if (next_tok.kind == .name and std.mem.eql(u8, next_tok.text, "struct")) {
+                if ((try self.currentParserName()) and std.mem.eql(u8, next_tok.text, "struct")) {
                     _ = try self.adv(); // consume "struct"
                     return try self.parse_struct_body(first.name.ident, &.{});
                 }
@@ -8022,7 +8022,7 @@ pub const Parser = struct {
                         self.restoreState(saved);
                         break;
                     }
-                    if (after_colon.kind == .name) {
+                    if (try self.currentParserName()) {
                         // Could be name : UserType = ... or obj : method ( args )
                         _ = try self.advRaw(); // consume the name
                         const after_name = try self.pk();
@@ -8179,7 +8179,7 @@ pub const Parser = struct {
 
     fn parse_nn_layer_expr(self: *Parser) ParseError!*ast.Expr {
         const tok = try self.pk();
-        if (tok.kind == .name) {
+        if (try self.currentParserName()) {
             const saved = self.saveState();
             _ = try self.adv();
             const nxt = try self.pk();
@@ -10977,6 +10977,31 @@ test "parse: nn block desugars to build call" {
     try testing.expect(call.func.* == .field);
     try testing.expectEqualStrings("build", call.func.field.field);
     try testing.expectEqual(@as(usize, 3), call.args.len);
+}
+
+test "parse: C-layout struct recognition consumes the settled ordinary-name face" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\point = struct
+        \\  x: f64
+        \\  y: f64
+        \\end
+    , &arena);
+    const def = mod.body.stmts[0].alias_def;
+    try testing.expectEqualStrings("point", def.name);
+    const fields = def.target.?.record.fields;
+    try testing.expectEqual(@as(usize, 2), fields.len);
+    try testing.expectEqualStrings("x", fields[0].name);
+    try testing.expectEqualStrings("y", fields[1].name);
+
+    // The face admits the identity; the spelling test still discriminates. A
+    // name that is not `struct` must remain an ordinary assignment, or the
+    // transfer would have widened admission rather than moved it.
+    const ordinary = try parseSource(
+        \\point = shape
+    , &arena);
+    try testing.expect(ordinary.body.stmts[0] == .assign);
 }
 
 test "parse: infix @ is matmul binop" {

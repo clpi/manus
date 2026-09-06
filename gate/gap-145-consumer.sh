@@ -3720,6 +3720,141 @@ if [ "$variant_pattern_old" -ne 1 ] || [ "$variant_pattern_new" -ne 1 ]; then
     bad "the variant-pattern detector is broken: old=$variant_pattern_old new=$variant_pattern_new"
 fi
 
+
+# ── 5. no cursor coordinate answers "is this an ordinary name" twice ─────────
+#
+# Four consumers still rebuilt ordinary-name identity from the host token kind
+# at a coordinate the producer had already settled and `pk()` had already
+# selected. Each now reads the settled face. Each retains its own spelling
+# test, lookahead, cursor restoration, and materialization.
+#
+# This is a CLASS ceiling, not four specimens: `.kind == .name` is how a host
+# read of ordinary-name identity at the cursor spells itself, and the count
+# must be zero. The one surviving `.kind != .name` validates the physical
+# class of an ALREADY-CONSUMED token inside the alias boundary, which is not a
+# cursor coordinate; it is pinned here so it cannot drift or multiply.
+
+cursor_name_kinds=$(grep -cF '.kind == .name' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$cursor_name_kinds" -ne 0 ]; then
+    bad "the parser rebuilds ordinary-name identity at a cursor coordinate: count=$cursor_name_kinds"
+fi
+
+alias_class_reads=$(sed -n '/fn parse_alias_def_with_attrs/,/const l = (try self.pk()).loc;/p' "$PARSER" | \
+    grep -cF 'first.kind != .name' || true)
+examined=$((examined + 1))
+if [ "$alias_class_reads" -ne 1 ]; then
+    bad "the alias physical-class check is not intact: count=$alias_class_reads"
+fi
+
+file_class_reads=$(grep -cF '.kind != .name' "$PARSER" || true)
+examined=$((examined + 1))
+if [ "$file_class_reads" -ne 1 ]; then
+    bad "host name-kind reads in the parser are not exactly the one alias class check: count=$file_class_reads"
+fi
+
+# @cinclude admission: the face admits the identity, `std.mem.eql` keeps the
+# spelling. The spelling test must survive — greening by deleting it would
+# admit every name after `@`.
+cinclude_faces=$(sed -n '/@cinclude is a standalone top-level statement/,/return true;/p' "$PARSER" | \
+    grep -cF 'try self.currentParserName()' || true)
+examined=$((examined + 1))
+if [ "$cinclude_faces" -ne 1 ]; then
+    bad "@cinclude admission does not consume the settled ordinary-name face: count=$cinclude_faces"
+fi
+cinclude_spelling=$(sed -n '/@cinclude is a standalone top-level statement/,/return true;/p' "$PARSER" | \
+    grep -cF 'std.mem.eql(u8, (try self.pk()).text, "cinclude")' || true)
+examined=$((examined + 1))
+if [ "$cinclude_spelling" -ne 1 ]; then
+    bad "@cinclude admission lost its spelling test: count=$cinclude_spelling"
+fi
+
+# `Name = struct … end` C-layout recognition: same split, same control.
+struct_faces=$(sed -n '/Check for `Name = struct/,/parse_struct_body(first.name.ident/p' "$PARSER" | \
+    grep -cF 'try self.currentParserName()' || true)
+examined=$((examined + 1))
+if [ "$struct_faces" -ne 1 ]; then
+    bad "C-layout struct recognition does not consume the settled ordinary-name face: count=$struct_faces"
+fi
+struct_spelling=$(sed -n '/Check for `Name = struct/,/parse_struct_body(first.name.ident/p' "$PARSER" | \
+    grep -cF 'std.mem.eql(u8, next_tok.text, "struct")' || true)
+examined=$((examined + 1))
+if [ "$struct_spelling" -ne 1 ]; then
+    bad "C-layout struct recognition lost its spelling test: count=$struct_spelling"
+fi
+
+# The typed-binding / method-call boundary after `:`. Its sibling probe already
+# read the settled primitive face at this same coordinate; the name arm was the
+# one that still asked the host. Both faces are required, so greening by
+# deleting either arm refuses.
+colon_faces=$(sed -n '/Peek ahead to distinguish type annotation from method call/,/Not a typed binding/p' "$PARSER" | \
+    grep -cF 'try self.currentParserName()' || true)
+examined=$((examined + 1))
+if [ "$colon_faces" -ne 1 ]; then
+    bad "the colon typed-binding boundary does not consume the settled ordinary-name face: count=$colon_faces"
+fi
+colon_primitive=$(sed -n '/Peek ahead to distinguish type annotation from method call/,/Not a typed binding/p' "$PARSER" | \
+    grep -cF 'try self.currentParserPrimitive()' || true)
+examined=$((examined + 1))
+if [ "$colon_primitive" -ne 1 ]; then
+    bad "the colon typed-binding boundary lost the settled primitive face: count=$colon_primitive"
+fi
+
+nn_layer_faces=$(sed -n '/fn parse_nn_layer_expr/,/fn desugar_nn_build/p' "$PARSER" | \
+    grep -cF 'try self.currentParserName()' || true)
+examined=$((examined + 1))
+if [ "$nn_layer_faces" -ne 1 ]; then
+    bad "layer-expression entry does not consume the settled ordinary-name face: count=$nn_layer_faces"
+fi
+
+# Positive controls. Every detector above is a count over text that is absent
+# from the repaired tree, so each must be shown a tree where it is present.
+cursor_name_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate cursor-name scratch' >&2; exit 2; }
+cat >"$cursor_name_probe/old.zig" <<'PROBE'
+if ((try self.pk()).kind == .name and std.mem.eql(u8, (try self.pk()).text, "cinclude")) {
+if (next_tok.kind == .name and std.mem.eql(u8, next_tok.text, "struct")) {
+if (after_colon.kind == .name) {
+if (tok.kind == .name) {
+PROBE
+cat >"$cursor_name_probe/new.zig" <<'PROBE'
+if ((try self.currentParserName()) and std.mem.eql(u8, (try self.pk()).text, "cinclude")) {
+if ((try self.currentParserName()) and std.mem.eql(u8, next_tok.text, "struct")) {
+if (try self.currentParserName()) {
+if (try self.currentParserName()) {
+PROBE
+cursor_name_old=$(grep -cF '.kind == .name' "$cursor_name_probe/old.zig")
+cursor_name_new=$(grep -cF 'try self.currentParserName()' "$cursor_name_probe/new.zig")
+cursor_name_cross=$(grep -cF '.kind == .name' "$cursor_name_probe/new.zig" || true)
+rm -rf -- "$cursor_name_probe"
+examined=$((examined + 1))
+if [ "$cursor_name_old" -ne 4 ] || [ "$cursor_name_new" -ne 4 ] || [ "$cursor_name_cross" -ne 0 ]; then
+    bad "the cursor-name detector is broken: old=$cursor_name_old new=$cursor_name_new cross=$cursor_name_cross"
+fi
+
+alias_class_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate alias-class scratch' >&2; exit 2; }
+printf '%s\n' 'if (first.kind != .kw_alias and first.kind != .name) {' >"$alias_class_probe/old.zig"
+alias_class_seen=$(grep -cF 'first.kind != .name' "$alias_class_probe/old.zig")
+rm -rf -- "$alias_class_probe"
+examined=$((examined + 1))
+if [ "$alias_class_seen" -ne 1 ]; then
+    bad "the alias physical-class detector is broken: count=$alias_class_seen"
+fi
+
+# The four region selectors must each select a nonempty region of the parser,
+# or a face count of 1 would be luck rather than measurement.
+for region_pattern in \
+    '/@cinclude is a standalone top-level statement/,/return true;/' \
+    '/Check for `Name = struct/,/parse_struct_body(first.name.ident/' \
+    '/Peek ahead to distinguish type annotation from method call/,/Not a typed binding/' \
+    '/fn parse_nn_layer_expr/,/fn desugar_nn_build/'
+do
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "a cursor-name region selector selected nothing: pattern=$region_pattern lines=$region_lines"
+    fi
+done
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then
