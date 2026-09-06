@@ -2339,10 +2339,11 @@ const Arm64Compiler = struct {
                         }
                         for (forward) |jump| {
                             // A forward control edge that crosses the first
-                            // definition lets the entering value reach a later
-                            // read without that definition. Textual order alone
-                            // therefore does not establish dominance.
-                            if (jump[0] >= head and jump[0] < def and jump[1] > def and jump[1] <= e.value_ptr.*) break :blk true;
+                            // definition lets the entering value reach the loop
+                            // tail without that definition. The next iteration
+                            // can then read the entering value even when the
+                            // jump lands after its last textual read.
+                            if (jump[0] >= head and jump[0] < def and jump[1] > def and jump[1] <= tail) break :blk true;
                         }
                         break :blk false;
                     }
@@ -17634,6 +17635,14 @@ test "CFG liveness carries a value when control skips its loop definition" {
     try defined.put(alloc, 7, 4);
     const bypass = [_][2]u32{.{ 2, 6 }};
     Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back, &bypass);
+    try std.testing.expectEqual(@as(?u32, 8), last.get(7));
+
+    // Landing after the last textual read still carries the entering value to
+    // the back edge. The header reads it on the next iteration before the
+    // skipped definition can replace it.
+    try last.put(alloc, 7, 6);
+    const late = [_][2]u32{.{ 2, 7 }};
+    Arm64Compiler.widenValueLastUses(&last, &reads, &defined, &back, &late);
     try std.testing.expectEqual(@as(?u32, 8), last.get(7));
 
     // Edges wholly before or after the definition do not bypass it.
