@@ -668,6 +668,14 @@ _layout_verdict: i64 = (offside: bool, open_col: i64, body_col: i64, terminator:
 # producer identities (`kw_then`, `kw_do`, `fat_arrow`) to make that one
 # selection. The face is keyed by producer identity, so the consumer reads the
 # settled face and never reconstructs token kind at the pattern/body seam.
+# Thirty-two selects the offside-record boundary: a name on a different line
+# from a preceding `:` whose next token is another `:` (the record field
+# separator). The host previously replayed four producer identities
+# (`kindcolon` + `kindname` + `kindcolon` + line delta) inside the
+# `starts_offside_record` Zig function to make that one selection. The
+# discrimination now lands at the post-colon name coordinate; the consumer
+# reads the settled delimiter-32 face and never reconstructs token kind at
+# the colon/record-field seam.
 # Lane-two
 # bit 5 carries the exact name face at its mutually exclusive coordinate; at
 # `(` it remains the comma-header face.
@@ -987,6 +995,22 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
                     probe += 1
                 if nameline == line and depth == 0 and probe < count and (fact[probe * 2 + 1] & 255) == token.kindassign
                     delimiter = 26
+        # Offside-record boundary: the colon whose NEXT token is a name on a
+        # DIFFERENT line, with another colon immediately after the name (the
+        # record field separator). Encode the fact at the name's index so
+        # the parser reads it after consuming the leading colon. This was
+        # the host `starts_offside_record` Zig function — the producer now
+        # settles the entire discrimination over the immutable fact pack.
+        # Delimiter 32 is the offside-record boundary face; it lands only at
+        # the post-colon name coordinate and reads as `>> 13 == 32`.
+        if kind == token.kindname and index >= 1 and index + 1 < count
+            prev = fact[(index - 1) * 2 + 1]
+            if (prev & 255) == token.kindcolon
+                pline = (prev >> 8) & 268435455
+                if line != pline
+                    nxt = fact[(index + 1) * 2 + 1]
+                    if (nxt & 255) == token.kindcolon
+                        delimiter = 32
         offside: i64 = 0
         if idol
             offside = opener

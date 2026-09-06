@@ -3758,6 +3758,30 @@ examined=$((examined + 1))
 if [ "$colonold" -ne 1 ] || [ "$colonnew" -ne 1 ]; then
     bad "the typed-colon detector is broken: old=$colonold new=$colonnew"
 fi
+# Offside-record boundary consumes the producer-settled delimiter-32 face at
+# the post-colon name coordinate. Zig retains only the colon_tok location
+# for the eventual `parse_offside_record` call; the recognition itself is a
+# whole-pack event fact, not a host token-kind switch.
+has "$ROOT/lib/compiler/parser.id" 'delimiter = 32' \
+    'parser.id lost the offside-record boundary face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 32;' \
+    'tracked projection lost the offside-record boundary face'
+has "$PARSER" 'fn currentParserOffsideRecord(self: *Parser) ParseError!bool {' \
+    'parser no longer consumes the settled offside-record boundary fact'
+has "$PARSER" 'if (try self.currentParserOffsideRecord()) {' \
+    'typed-binding / descriptor-home entry bypasses the settled boundary face'
+forbid "$PARSER" 'fn starts_offside_record(' \
+    'parser.zig retained the host offside-record boundary recognizer'
+offsiderecordprobe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate offside-record scratch' >&2; exit 2; }
+printf '%s\n' 'if (try self.starts_offside_record(colon_tok)) {' >"$offsiderecordprobe/old.zig"
+printf '%s\n' 'if (try self.currentParserOffsideRecord()) {' >"$offsiderecordprobe/new.zig"
+offsiderecordold=$(grep -cF 'try self.starts_offside_record(' "$offsiderecordprobe/old.zig")
+offsiderecordnew=$(grep -cF 'try self.currentParserOffsideRecord()' "$offsiderecordprobe/new.zig")
+rm -rf -- "$offsiderecordprobe"
+examined=$((examined + 1))
+if [ "$offsiderecordold" -ne 1 ] || [ "$offsiderecordnew" -ne 1 ]; then
+    bad "the offside-record boundary detector is broken: old=$offsiderecordold new=$offsiderecordnew"
+fi
 
 # Relation-level edge parsing consumes the ordinary-name face already projected
 # by the immutable whole-pack event. Primitive levels keep their distinct face.

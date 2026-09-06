@@ -3290,6 +3290,18 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                 }
             }
         }
+        if ((((kind == INT64_C(0)) && (index >= 1)) && ((index + 1) < count))) {
+            int64_t prev = fact[(((index - 1) * 2) + 1)];
+            if ((((int64_t)((prev) & (255))) == INT64_C(78))) {
+                int64_t pline = ((int64_t)((((int64_t)(((uint64_t)(prev)) >> ((uint64_t)(8) & 63u)))) & (268435455)));
+                if ((line != pline)) {
+                    int64_t nxt = fact[(((index + 1) * 2) + 1)];
+                    if ((((int64_t)((nxt) & (255))) == INT64_C(78))) {
+                                                delimiter = 32;
+                    }
+                }
+            }
+        }
         int64_t offside = 0;
         if (idol) {
                         offside = opener;

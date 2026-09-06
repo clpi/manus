@@ -778,6 +778,18 @@ pub const Parser = struct {
         return (((try self.currentParserDecision()) >> 8) & 1) != 0;
     }
 
+    /// Whether the colon just consumed by the parser opened an OFFSIDE RECORD
+    /// rather than an inline type annotation. The producer settles the entire
+    /// discrimination at the post-colon name coordinate and emits delimiter 32;
+    /// this reader merely unpacks the fact. The original host
+    /// `starts_offside_record` Zig function replayed four producer identities
+    /// (`kindcolon` + `kindname` + `kindcolon` + line delta) inside save/restore
+    /// state to make the same one selection — the whole-pack event now carries
+    /// the answer.
+    fn currentParserOffsideRecord(self: *Parser) ParseError!bool {
+        return ((try self.currentParserDecision()) >> 13) == 32;
+    }
+
     fn currentParserTryDispatch(self: *Parser) ParseError!u2 {
         const event = try self.currentParserEvent();
         return @intCast(((event >> 15) & 1) | (((event >> 13) & 1) << 1));
@@ -5230,7 +5242,7 @@ pub const Parser = struct {
             // `point:` over an indented field region — a descriptor home with
             // no delimiters. Checked before the `{`/`@` faces because it is a
             // different shape entirely, not a variant of them.
-            if (try self.starts_offside_record(colon_tok)) {
+            if (try self.currentParserOffsideRecord()) {
                 const rec_typ = try self.parse_offside_record(colon_tok.loc);
                 try self.noteRecordDescriptor(first.name.ident, rec_typ);
                 return ast.Stmt{ .alias_def = .{
@@ -7138,22 +7150,6 @@ pub const Parser = struct {
         }
         _ = try self.expect(.rparen);
         return self.new_expr(.{ .table = .{ .loc = l, .fields = try fields.toOwnedSlice(self.alloc) } });
-    }
-
-    fn starts_offside_record(self: *Parser, colon: Token) ParseError!bool {
-        const first = try self.pk();
-        if (first.loc.line == colon.loc.line) return false;
-        if (!try self.currentParserName()) return false;
-        const saved = self.saveState();
-        const saved_line = self.prev_line;
-        const saved_end = self.prev_end_col;
-        defer {
-            self.restoreState(saved);
-            self.prev_line = saved_line;
-            self.prev_end_col = saved_end;
-        }
-        _ = try self.adv();
-        return try self.currentParserMethod();
     }
 
     /// The same record type the delimited literal builds, read from an offside
