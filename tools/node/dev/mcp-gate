@@ -58,7 +58,7 @@ validate_native_response() {
   [ "$lines" -eq 5 ] || return 1
   [ "$(wc -l <"$response" | tr -d ' ')" -eq 5 ] || return 1
   jq -e '.jsonrpc == "2.0" and (has("error") | not) and .result.protocolVersion == "2024-11-05" and .result.serverInfo.name == "idol"' "$ids/1.json" >/dev/null 2>&1 &&
-    jq -e '(has("error") | not) and (.result.tools | type) == "array" and (.result.tools | length) == 3 and ([.result.tools[].name] | sort) == ["head", "orient", "status"] and ([.result.tools[].name] | unique | length) == 3 and all(.result.tools[]; .inputSchema.type == "object")' "$ids/2.json" >/dev/null 2>&1 &&
+    jq -e '(has("error") | not) and (.result.tools | type) == "array" and (.result.tools | length) == 4 and ([.result.tools[].name] | sort) == ["concept", "head", "orient", "status"] and ([.result.tools[].name] | unique | length) == 4 and all(.result.tools[]; .inputSchema.type == "object")' "$ids/2.json" >/dev/null 2>&1 &&
     jq -e --arg head "$expected_head" '(has("error") | not) and .result.content[0].type == "text" and ((.result.content[0].text | sub("\\n$"; "")) == $head)' "$ids/3.json" >/dev/null 2>&1 &&
     jq -e '(has("error") | not) and (.result.content[0].text | startswith("## "))' "$ids/4.json" >/dev/null 2>&1 &&
     jq -e '(has("error") | not) and (.result.content[0].text | startswith("project: Idol\n"))' "$ids/5.json" >/dev/null 2>&1
@@ -177,7 +177,7 @@ else
 
     printf '%s\n' '{"jsonrpc":"2.0","id":92,"method":"tools/list","params":{}}' >&9
     if wait_for_path "$work/native-stream.2.ready" &&
-      jq -e '.jsonrpc == "2.0" and .id == 92 and (.result.tools | length) == 3 and ([.result.tools[].name] | sort) == ["head", "orient", "status"]' "$work/native-stream.2.json" >/dev/null 2>&1; then
+      jq -e '.jsonrpc == "2.0" and .id == 92 and (.result.tools | length) == 4 and ([.result.tools[].name] | sort) == ["concept", "head", "orient", "status"]' "$work/native-stream.2.json" >/dev/null 2>&1; then
       report ok "persistent native stream serves a second response before EOF" ""
     else
       report fail "persistent native stream serves a second response before EOF" "missing, unparseable, or wrong response"
