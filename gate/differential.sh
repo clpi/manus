@@ -70,6 +70,16 @@
 #     lawful result, and a caller who sees rows from a real comparison can run
 #     this to find out whether to believe them.
 #
+#   searching for the sibling gate home. The shared outcome limiter was named
+#     as `$ROOT/../idol-native/gate/run_limited.pl`, which is correct in a
+#     clone and is `<main>/.worktrees/idol-native/...` in a git worktree —
+#     a directory no host has. Every worktree run therefore refused at load,
+#     before a single control, and `gate/all.sh` scored that refusal as "its
+#     subject is in a tree that is not here" rather than as a law that went
+#     unmeasured. The sibling is now SEARCHED FOR over an ordered candidate
+#     list, a refusal prints every candidate it tried, and `selftest` carries
+#     the worktree layout as a control.
+#
 #   a scratch root per arm. `src/scratch.zig` honours TMPDIR for the build
 #     cache, intermediate objects, emitted C and logs, so giving each arm its
 #     own makes each arm actually compile rather than serving the other arm'''s
@@ -77,12 +87,95 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-NATIVE="${IDOL_NATIVE:-$ROOT/../idol-native}"
-LIMITER="${DIFFERENTIAL_LIMITER:-$NATIVE/gate/run_limited.pl}"
 TMO="${DIFFERENTIAL_TIMEOUT:-90}"
 
-[ -f "$LIMITER" ] || {
-  echo "differential: shared outcome limiter absent at $LIMITER" >&2
+# maincheckout <tree-root>
+#
+# The root that a SIBLING checkout is a sibling of. In an ordinary clone that
+# is the tree itself, so this answers nothing and costs one `git rev-parse`.
+# In a git WORKTREE it is a different directory: the worktree lives at
+# <main>/.worktrees/<name>, so <tree>/.. is `.worktrees` and a sibling named
+# from there has never existed on any host. `--git-common-dir` names the one
+# .git that every worktree shares, and its parent is the main checkout.
+#
+# Answers nothing, not an error, when the tree is not a git checkout at all —
+# a plain mirror copy is exactly that, and `subjectlist` below already exists
+# because this harness is expected to run in one.
+maincheckout() {
+  _mc_root=$1
+  command -v git >/dev/null 2>&1 || return 0
+  _mc_common=$(cd "$_mc_root" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null) || return 0
+  [ -n "$_mc_common" ] || return 0
+  # The SAME git answers this RELATIVE from a main checkout (".git") and
+  # ABSOLUTE from a worktree. Resolve against the tree rather than the cwd.
+  case "$_mc_common" in
+    /*) : ;;
+    *) _mc_common="$_mc_root/$_mc_common" ;;
+  esac
+  (cd "$_mc_common/.." 2>/dev/null && pwd)
+}
+
+# nativecandidates <tree-root> — every sibling gate home worth trying, in
+# order, one per line. `cd ..` normalises each, so the main-checkout case
+# yields the same string twice and `awk` collapses it: the list a refusal
+# prints is the list that was actually tried.
+nativecandidates() {
+  _ncs_root=$1
+  for _ncs_base in "$_ncs_root" "$(maincheckout "$_ncs_root")"; do
+    [ -n "$_ncs_base" ] || continue
+    _ncs_up=$(cd "$_ncs_base/.." 2>/dev/null && pwd) || continue
+    printf '%s/idol-native\n' "$_ncs_up"
+  done | awk '!seen[$0]++'
+}
+
+# nativelimiter <tree-root> — the first candidate that actually holds the
+# shared outcome limiter, or nothing. Existence is the selector, not the
+# ordering: a candidate that is merely a directory decides nothing.
+nativelimiter() {
+  nativecandidates "$1" | while IFS= read -r _nl_cand; do
+    if [ -f "$_nl_cand/gate/run_limited.pl" ]; then
+      printf '%s/gate/run_limited.pl' "$_nl_cand"
+      break
+    fi
+  done
+}
+
+# WHY THE SIBLING IS SEARCHED FOR RATHER THAN SPELLED. This read
+# `${IDOL_NATIVE:-$ROOT/../idol-native}` and refused at load with that one
+# path in the message. From a git worktree that path is
+# <main>/.worktrees/idol-native — a directory no host has ever had — so the
+# oracle refused before running a single control in EVERY worktree, while the
+# sibling sat one level further up. The refusal was then read as a fact about
+# the checkout: `gate/all.sh` classifies a gate whose log names an absent
+# `$native` as "its subject is in a tree that is not here", so the oracle
+# scored as absent-by-checkout instead of as unmeasured, and a census line
+# that should have said the differential never ran said nothing at all. The
+# controls in `selftest` pass on this host; they had simply never been reached
+# from the worktrees that do the work.
+if [ -n "${DIFFERENTIAL_LIMITER:-}" ]; then
+  LIMITER=$DIFFERENTIAL_LIMITER
+elif [ -n "${IDOL_NATIVE:-}" ]; then
+  # EXPLICIT WINS AND STAYS LOUD. A supplied root that does not hold the
+  # limiter is a caller error, not permission to search elsewhere
+  # (law.fallback.zero) — searching would observe a tree the caller did not
+  # name and report the result under the name they did.
+  LIMITER="$IDOL_NATIVE/gate/run_limited.pl"
+else
+  LIMITER=$(nativelimiter "$ROOT")
+fi
+
+[ -n "$LIMITER" ] && [ -f "$LIMITER" ] || {
+  echo "differential: shared outcome limiter absent — no control ran, nothing was compared" >&2
+  if [ -n "${DIFFERENTIAL_LIMITER:-}" ]; then
+    printf 'differential:   DIFFERENTIAL_LIMITER=%s names no file\n' "$DIFFERENTIAL_LIMITER" >&2
+  elif [ -n "${IDOL_NATIVE:-}" ]; then
+    printf 'differential:   IDOL_NATIVE=%s holds no gate/run_limited.pl\n' "$IDOL_NATIVE" >&2
+  else
+    nativecandidates "$ROOT" | while IFS= read -r _cand; do
+      printf 'differential:   tried %s/gate/run_limited.pl\n' "$_cand" >&2
+    done
+    echo "differential:   set IDOL_NATIVE=<sibling checkout> to name it directly" >&2
+  fi
   exit 2
 }
 
@@ -306,6 +399,79 @@ compare_subjects() {
 
 selftest() {
   _self="$WORK/selftest"
+
+  # ---------------------------------------------------------------------
+  # THE SIBLING RESOLVER'S OWN CONTROLS. Everything below this block is a
+  # control over the COMPARISON; these are controls over whether the harness
+  # can be reached at all, and for as long as this file existed it could not
+  # be reached from a git worktree. A resolver with no control answers
+  # whatever the first host it ran on happened to be laid out as, and the
+  # failure is silent in the optimistic direction: the oracle declines, and
+  # the declining reads as a checkout fact rather than as an unmeasured law.
+
+  # A DECOY, above every fixture below and belonging to none of them. Two of
+  # the controls here answer "nothing found", and "nothing found" is a claim
+  # about a search, not about an empty disk — with no decoy present they hold
+  # for a resolver that walks the whole way to `/`, which is the one shape
+  # that would silently compare against some unrelated checkout.
+  mkdir -p "$WORK/idol-native/gate" || return 2
+  : >"$WORK/idol-native/gate/run_limited.pl"
+
+  # A PLAIN SIBLING. A clone, or a mirror copy with no git at all, which is
+  # the layout the rest of this harness is written to survive.
+  _self_res="$WORK/resolve"
+  mkdir -p "$_self_res/idol-native/gate" "$_self_res/idol" || return 2
+  : >"$_self_res/idol-native/gate/run_limited.pl"
+  [ "$(nativelimiter "$_self_res/idol")" \
+    = "$_self_res/idol-native/gate/run_limited.pl" ] || {
+    echo "differential: selftest FAIL — plain sibling checkout not resolved" >&2
+    return 1
+  }
+
+  # NO SIBLING ANYWHERE must answer nothing, so the caller prints the
+  # candidates it tried instead of one path it invented. Its own directory:
+  # a tree placed beside the fixture above would resolve THAT sibling and the
+  # control would pass for the wrong reason.
+  mkdir -p "$WORK/lonely/idol" || return 2
+  [ -z "$(nativelimiter "$WORK/lonely/idol")" ] || {
+    echo "differential: selftest FAIL — resolver invented a sibling that is not there" >&2
+    return 1
+  }
+
+  # THE DEFECT ITSELF. A worktree at <main>/.worktrees/<name>, whose own
+  # `..` is `.worktrees`, and whose sibling is one level further up.
+  if command -v git >/dev/null 2>&1; then
+    _self_wt="$WORK/worktree"
+    mkdir -p "$_self_wt/idol-native/gate" "$_self_wt/idol" || return 2
+    : >"$_self_wt/idol-native/gate/run_limited.pl"
+    (
+      cd "$_self_wt/idol" &&
+        git init -q . &&
+        git -c user.email=selftest@differential -c user.name=selftest \
+          commit -q --allow-empty -m control &&
+        git worktree add -q -b differential-selftest .worktrees/w
+    ) >/dev/null 2>&1 || {
+      echo "differential: selftest FAIL — could not build the worktree control" >&2
+      return 1
+    }
+    [ "$(nativelimiter "$_self_wt/idol/.worktrees/w")" \
+      = "$_self_wt/idol-native/gate/run_limited.pl" ] || {
+      echo "differential: selftest FAIL — sibling unresolved from a git worktree" >&2
+      return 1
+    }
+    # ...AND THE SEARCH MUST NOT REACH PAST A TREE THAT HAS NO SIBLING. The
+    # main checkout is a candidate because a worktree is not its own root, not
+    # because any ancestor will do; a resolver that walked upward would find
+    # some unrelated `idol-native` on a developer's disk and compare against it.
+    rm -rf "$_self_wt/idol-native" || return 2
+    [ -z "$(nativelimiter "$_self_wt/idol/.worktrees/w")" ] || {
+      echo "differential: selftest FAIL — resolver reached past the main checkout" >&2
+      return 1
+    }
+  else
+    echo "differential: selftest NOTE — git absent, worktree resolution UNCONTROLLED" >&2
+  fi
+
   mkdir -p "$_self/source" || return 2
   printf 'main: i64 = ()\n  0\n' >"$_self/source/control.id"
   printf 'control.id\n' >"$_self/list"
@@ -444,7 +610,7 @@ exit 7
   TMO=$_self_old_tmo
   [ "$_self_rc" -eq 2 ] || return 1
 
-  echo "differential: selftest PASS — sibling-mirror null row, per-arm cwd, real row survives normalisation, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
+  echo "differential: selftest PASS — sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, per-arm cwd, real row survives normalisation, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
   return 0
 }
 
