@@ -4116,7 +4116,34 @@ const Arm64Compiler = struct {
                         // local's original home read a register the store never
                         // wrote — `r = math.sqrt(x)` put the result in d1 and
                         // the comparison read d9.
-                        const home = pinned.get(slot) orelse temps.get(slot) orelse d;
+                        // A LOCAL'S FIRST HOME IS NOT ANOTHER LOCAL'S HOME
+                        // (GAP-148).
+                        //
+                        // `orelse d` adopts whatever register the value arrived
+                        // in. For a temp that is right and free — the temp dies
+                        // into the local and `x2 = x * y` pays no move — but
+                        // `evalDnirValueFp`'s `.local` arm answers with another
+                        // local's HOME, and `b: f64 = a` then homed `b` in `a`'s
+                        // register with nothing emitted at all. Two locals, one
+                        // register, for the rest of the function: the next store
+                        // to either one writes both, and every later read of the
+                        // other answers with it. `markFpHome` also flags a
+                        // register d0..d7 wide, so a leaf's f64 parameter is
+                        // reachable here too.
+                        //
+                        // The integer path below never had this: its fresh-home
+                        // arms take `allocHomeReg` and MOVE, and adopt `val_reg`
+                        // never. `fp_home_regs` is the record that separates the
+                        // two cases, and it is already the term `sweepFpLive`
+                        // and `releaseFpReg` retire a register by.
+                        //
+                        // Not the closure — closure is authoritative
+                        // `register`/`frame` assignment before emission, per
+                        // GAP-148's record, under which a local's home is one
+                        // fact the assignment carries rather than one the store
+                        // reads off whichever register its operand came in.
+                        const home = pinned.get(slot) orelse temps.get(slot) orelse
+                            if (self.fp_home_regs[d]) try self.allocFpReg() else d;
                         // Claim the home BEFORE releasing the value register:
                         // on a local's first store they are the same register,
                         // and a release that ran first would hand the local's
@@ -22551,4 +22578,129 @@ test "a store does not home a local in a register another value owns" {
     try std.testing.expectEqual(at_full, compiler.code.items.len);
     try std.testing.expectEqual(@as(?u32, stranger_id), compiler.gp_reg_owner[stranger_reg]);
     try std.testing.expectEqual(@as(?u5, null), pinned.get(starved_slot));
+}
+
+// A LOCAL'S FIRST HOME IS NOT ANOTHER LOCAL'S HOME (GAP-148).
+//
+// The f64 `store_local` arm took `pinned.get(slot) orelse temps.get(slot)
+// orelse d`, and `d` is whatever register `evalDnirValueFp` answered with. For
+// a temp that is right: the temp dies into the local and the store pays no
+// move. For a `.local` it is another local's HOME, and the integer path next
+// to it adopts `val_reg` never — its fresh-home arms take `allocHomeReg` and
+// move. So `b: f64 = a` homed `b` in `a`'s register and emitted nothing, and
+// the two locals were one register for the rest of the function: the next
+// store to either wrote both.
+//
+// Built directly rather than through a source program for the same reason as
+// every test this gap has recorded: the state is one the allocator passes
+// through, not one a fixture names.
+test "a first store does not home a local in another local's home" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    // `a`, exactly as a parameter or an earlier store leaves it: FP-classed,
+    // named in both maps, and flagged as a home.
+    const a: u32 = 3;
+    const a_home: u5 = Arm64Compiler.fp_value_reg_base;
+    try compiler.markFpTemp(a);
+    try temps.put(alloc, a, a_home);
+    try pinned.put(alloc, a, a_home);
+    compiler.markFpHome(a_home);
+
+    // `b: f64 = a` — `b` has no location yet, so this is the `orelse` arm.
+    const b: u32 = 4;
+    const before = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .store_local,
+        .result = b,
+        .lhs = .{ .local = a },
+        .ty = .f64,
+    }, &branch_patches, null, 0);
+
+    // `b` GETS A HOME OF ITS OWN AND THE VALUE IS MOVED INTO IT. d17 is the
+    // first free register in the value band; d16 is `a`'s.
+    const b_home: u5 = Arm64Compiler.fp_value_reg_base + 1;
+    try std.testing.expectEqual(before + 4, compiler.code.items.len);
+    try std.testing.expectEqual(
+        0x1e604000 | (@as(u32, a_home) << 5) | @as(u32, b_home),
+        std.mem.readInt(u32, compiler.code.items[before..][0..4], .little),
+    );
+    try std.testing.expectEqual(@as(?u5, b_home), temps.get(b));
+    try std.testing.expectEqual(@as(?u5, b_home), pinned.get(b));
+    try std.testing.expect(compiler.fp_home_regs[b_home]);
+    try std.testing.expect(compiler.fp_temps.contains(b));
+
+    // AND `a` KEEPS ITS OWN. Its name, its pin and its home flag all stand, so
+    // a later store to `b` cannot reach it.
+    try std.testing.expectEqual(@as(?u5, a_home), temps.get(a));
+    try std.testing.expectEqual(@as(?u5, a_home), pinned.get(a));
+    try std.testing.expect(compiler.fp_home_regs[a_home]);
+
+    // WRONG ERROR: A TEMP'S REGISTER IS STILL ADOPTED, WITH NO MOVE AND NO
+    // SECOND REGISTER. The term is `fp_home_regs`, not "the source belongs to
+    // somebody": a temp dying into a local is the case this arm is written for
+    // and `x2 = x * y` must keep paying nothing for it.
+    const t: u32 = 7;
+    const t_reg: u5 = Arm64Compiler.fp_value_reg_base + 2;
+    const c: u32 = 5;
+    try compiler.markFpTemp(t);
+    try temps.put(alloc, t, t_reg);
+    compiler.used_fp_regs[t_reg] = true;
+    compiler.fp_reg_owner[t_reg] = t;
+
+    const at_temp = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .store_local,
+        .result = c,
+        .lhs = .{ .temp = t },
+        .ty = .f64,
+    }, &branch_patches, null, 0);
+    try std.testing.expectEqual(at_temp, compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u5, t_reg), temps.get(c));
+    try std.testing.expect(compiler.fp_home_regs[t_reg]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.fp_reg_owner[t_reg]);
+
+    // FALSE ACCEPT: WITH NO REGISTER TO HOME IN, THE STORE REFUSES. Taking a
+    // home of its own costs a register, and when the value band cannot pay the
+    // answer is the `RegisterExhausted` bail `allocFpReg` already gives — never
+    // the source local's home as a fallback.
+    const starved: u32 = 6;
+    var full: u5 = Arm64Compiler.fp_value_reg_base;
+    while (full < Arm64Compiler.fp_value_reg_base + Arm64Compiler.fp_value_reg_count) : (full += 1) {
+        compiler.used_fp_regs[full] = true;
+    }
+    const at_full = compiler.code.items.len;
+    try std.testing.expectError(error.RegisterExhausted, compiler.compileDnirInstr(
+        &temps,
+        &pinned,
+        .{ .op = .store_local, .result = starved, .lhs = .{ .local = a }, .ty = .f64 },
+        &branch_patches,
+        null,
+        0,
+    ));
+    try std.testing.expectEqual(at_full, compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u5, null), temps.get(starved));
+    try std.testing.expectEqual(@as(?u5, null), pinned.get(starved));
+    try std.testing.expectEqual(@as(?u5, a_home), temps.get(a));
+    try std.testing.expect(compiler.fp_home_regs[a_home]);
 }
