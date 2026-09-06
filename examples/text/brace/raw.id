@@ -1,50 +1,45 @@
 # A LITERAL BRACE, IN THE FACE THAT ALREADY HAS ONE.
 #
 # `law.literal.bytes` binds "single quotes are the one canonical byte sequence
-# literal face". Measured, that face does NOT interpolate: a `{` inside it is a
-# byte, not a hole opener, and no STR-1 diagnostic is raised. This file is the
-# oracle for that fact, because it is the only spelling of a literal brace that
-# `docs/text-law.md` finds already admitted, and the migration out of the 419
-# hole-free brace sites rests on it staying true.
+# literal face". That face does not interpolate, so a `{` inside it is a byte
+# and not a hole opener. This file is the oracle for that fact.
 #
-# WHAT WOULD BREAK THIS FILE. Teaching the byte face to interpolate — the
-# obvious "make the two literal faces consistent" change — turns every line
-# below into a different answer. That is the change this oracle exists to catch.
+# THE CONTROL IS `hole`. `j` is live and holds 7, so a byte face that ever
+# learned to interpolate would measure 1 here instead of 3 and this file would
+# go red. Without it, "does not interpolate" is asserted and not measured.
 #
-# THE FACE'S TWO MEASURED LIMITS are recorded here rather than in prose, because
-# a limit nobody can run is a limit that gets forgotten:
+# THE FACE'S MEASURED LIMITS, as running numbers rather than claims:
 #
-#   * it does not decode escapes — `'a\nb'` is FOUR bytes, not three, so no
+#   * it does not decode escapes — `esc` is FOUR bytes, not three, so no
 #     literal needing both `\n` and `{` can move here;
-#   * it cannot spell its own delimiter — `'\''` prints a BACKSLASH and a quote.
+#   * it cannot spell its own delimiter — `q` is a BACKSLASH and a quote, 2;
+#   * it does not satisfy a `str` demand. `json: str = '...'` is refused at the
+#     front end, "declared as 'str', but initializer has type '[]u8'", which is
+#     `law.literal.bytes` holding text and byte apart as distinct descriptors.
+#     A migration onto this face therefore moves the descriptor too; it is not
+#     a spelling change. `gaps/GAP-216.md` records the day that stopped
+#     coercing.
 #
-# Together those are why `docs/text-law.md` rules that this face closes 419 of
-# the 547 sites and cannot close the remaining 128.
-#
-# WHAT THIS FILE DELIBERATELY DOES NOT COVER: `[[ ... ]]`. It is also raw
-# (measured), but `law.literal.text` binds "lua long brackets are not canonical
-# text faces" and C0 §42 files it under `audit`, so pinning it here would make a
-# retirement candidate load-bearing. Its measurement lives in `docs/text-law.md`
-# with the command that produced it.
-# expect: {"k": 1, "n": {"d": 2}} awk {print $1} lone { brace 23 4 prefix-{
+# `print` over a byte value has no realization, so every fact here is read
+# through `:len()`, which does.
+# expect: 23 4 2 3 12 14
 # @corpus current
 
-json: str = '{"k": 1, "n": {"d": 2}}'
-prog: str = 'awk {print $1}'
-lone: str = 'lone { brace'
-
-print(json)
-print(prog)
-print(lone)
-
-# The byte face is descriptor-compatible with `str`: it answers `:len()` and it
-# concatenates with a text literal. Without this the face would be a dead end
-# rather than a migration target.
-print("{json:len()}")
-
-# The escape limit, as a running number rather than a claim. The text face
-# answers 3 for the same four source characters.
+json = '{"k": 1, "n": {"d": 2}}'
 esc = 'a\nb'
-print("{esc:len()}")
+q = '\''
 
-print("prefix-" .. '{')
+j = 7
+hole = '{j}'
+
+lone = 'lone { brace'
+prog = 'awk {print $1}'
+
+a = json:len()
+b = esc:len()
+c = q:len()
+d = hole:len()
+e = lone:len()
+f = prog:len()
+
+print("{a} {b} {c} {d} {e} {f}")
