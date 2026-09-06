@@ -120,10 +120,56 @@
 #     cache, intermediate objects, emitted C and logs, so giving each arm its
 #     own makes each arm actually compile rather than serving the other arm'''s
 #     artifact out of a shared `/tmp/idol-cache-*`.
+#
+#   SUBSTITUTING EACH ROOT IN BOTH SPELLINGS. Every root above was learned by
+#     `cd <path> && pwd`, which is the spelling the harness was CALLED by:
+#     `cd` keeps the symlinks it was handed. The arms do not report that
+#     spelling. `detectCompilerLibRoot` (src/main.zig) calls
+#     `realPathFileAbsoluteAlloc` on argv[0], `realPathOwned` canonicalises
+#     every source spelling it resolves, and `getcwd` — what a compiled
+#     program'''s `os.cwd` reduces to — answers with symlinks resolved. So an
+#     arm reached through a symlinked path quotes a root string the harness
+#     never substitutes, and the row is red for the harness'''s reason again.
+#
+#     This is not an exotic layout. It is macOS: `$TMPDIR` is
+#     `/var/folders/...` and `/var` is a symlink to `private/var`, so the
+#     harness'''s own `mktemp -d` scratch — the per-arm working directories and
+#     the per-arm scratch roots both live in it — is symlink-spelled on the
+#     platform whose paths appear throughout this provenance. It also reaches
+#     any checkout under a symlinked home, mount or `/tmp`.
+#
+#     Both spellings therefore take the SAME token, for the reason the source
+#     root takes an arm root'''s token: they are one directory, so they name one
+#     role, and a second token would only move the divergence onto the arm that
+#     spells it the other way. Length ordering already covers them — a physical
+#     spelling can nest inside a logical one and the reverse.
+#
+#     `$WORK` is additionally resolved to its physical spelling at creation
+#     rather than left to the substitution, because the harness owns it: the
+#     roots it hands the arms are then the roots the arms report, and the
+#     selftest fixtures built inside it are spelled the way `git` answers
+#     about them. Under a symlinked TMPDIR the worktree control FAILED — git
+#     resolves `--git-common-dir` physically while the fixture compared the
+#     logical spelling — so the whole oracle refused at its mandatory
+#     controls, which is the loud direction but still an oracle that does not
+#     run.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMO="${DIFFERENTIAL_TIMEOUT:-90}"
+
+# physical <directory> — the same directory with every symlink resolved, or
+# NOTHING when it does not exist.
+#
+# `cd <path> && pwd` answers the spelling it was HANDED; `pwd -P` answers the
+# spelling the kernel gives a child that asks. Every root this harness learns
+# is of the first kind and every root an arm reports is of the second, so the
+# two have to be reconciled somewhere. Answering nothing for an absent path is
+# deliberate: a rule for a directory that is not there could only match by
+# accident, and `rootrules` drops it.
+physical() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
 
 # maincheckout <tree-root>
 #
@@ -230,12 +276,25 @@ fi
 # break the expression rather than silently mis-normalise, which is the failure
 # mode worth having. An empty path contributes no rule — it would otherwise
 # match at every position.
+#
+# EACH ROOT CONTRIBUTES BOTH OF ITS SPELLINGS, under one token. A root is
+# learned here by `cd <path> && pwd`, which keeps whatever symlinks the caller
+# spelled, while the arms report roots that have been through `realpath` or
+# `getcwd` and carry none. The two strings are one directory playing one role,
+# so a second token would only move the divergence onto the arm that spells it
+# the other way. They join the same length ordering, because either can nest
+# inside the other.
 rootrules() {
   for _rr_pair in "$@"; do
+    _rr_tok=${_rr_pair%%=*}
     _rr_path=${_rr_pair#*=}
     [ -n "$_rr_path" ] || continue
-    printf '%s\t%s\t%s\n' "${#_rr_path}" "${_rr_pair%%=*}" "$_rr_path"
-  done | sort -k1,1nr | while IFS="$(printf '\t')" read -r _rr_len _rr_tok _rr_path; do
+    for _rr_one in "$_rr_path" "$(physical "$_rr_path")"; do
+      [ -n "$_rr_one" ] || continue
+      printf '%s\t%s\t%s\n' "${#_rr_one}" "$_rr_tok" "$_rr_one"
+    done
+  done | sort -k1,1nr | awk '!seen[$0]++' \
+  | while IFS="$(printf '\t')" read -r _rr_len _rr_tok _rr_path; do
     printf 's#%s#%s#g\n' \
       "$(printf '%s' "$_rr_path" | sed 's#[\\&#]#\\&#g')" "$_rr_tok"
   done
@@ -474,6 +533,18 @@ compare_subjects() {
 selftest() {
   _self="$WORK/selftest"
 
+  # THE HARNESS'S OWN SCRATCH, FIRST, because every fixture below is built
+  # inside it and every arm below is handed directories derived from it. If
+  # `$WORK` is spelled through a symlink then the working directory and scratch
+  # root given to each arm are strings no arm reports back, `git` answers about
+  # the fixtures in the other spelling, and the controls that follow measure
+  # the wrong thing — the worktree control fails outright and the cwd control
+  # passes only because `/bin/sh`'s `pwd` is as logical as the harness is.
+  [ -n "$WORK" ] && [ "$WORK" = "$(physical "$WORK")" ] || {
+    echo "differential: selftest FAIL — the harness scratch root is not its physical spelling" >&2
+    return 1
+  }
+
   # ---------------------------------------------------------------------
   # THE SIBLING RESOLVER'S OWN CONTROLS. Everything below this block is a
   # control over the COMPARISON; these are controls over whether the harness
@@ -583,9 +654,17 @@ exit 0
   # THE `examples/shc/cwd.id` SHAPE: a program whose entire output is its own
   # working directory. Each arm has its own by construction, so this is a
   # harness fact and must not be a row.
+  #
+  # BOTH SPELLINGS. `pwd` alone is what the shell was handed and would agree
+  # with the harness even when the harness is wrong; `pwd -P` is `getcwd`, which
+  # is what `os.cwd` in a compiled program actually reduces to. Only the second
+  # can convict a working directory whose spelling reaches the arm through a
+  # symlink, and it convicts nothing unless `$TMPDIR` has one — which is why the
+  # scratch-root control above is unconditional.
   mkdir -p "$_self/cwd/a/zig-out/bin" "$_self/cwd/b/zig-out/bin" || return 2
   _self_cwd='#!/bin/sh
 pwd
+pwd -P
 '
   printf '%s' "$_self_cwd" >"$_self/cwd/a/zig-out/bin/idol"
   printf '%s\n# b\n' "$_self_cwd" >"$_self/cwd/b/zig-out/bin/idol"
@@ -677,6 +756,59 @@ exit 0
     return 1
   }
 
+  # ---------------------------------------------------------------------
+  # AN ARM REACHED THROUGH A SYMLINK. `armroot` learns a root by `cd && pwd`,
+  # which keeps the spelling it was handed; `detectCompilerLibRoot` resolves
+  # argv[0] with `realpath` before it derives the lib root, so the arm quotes
+  # the spelling with the symlink GONE. The harness then substitutes a string
+  # that never appears and leaves the one that does, so every diagnostic
+  # quoting the compiler's own tree came out different on that arm alone —
+  # the same false-row class as the two-mirror and source-root defects, and
+  # measured as one CHANGED row on the fixture below before this control.
+  #
+  # `--null-control` cannot see it either: it copies both arms into `$WORK`
+  # and reaches them by the path it just built, so no symlink is ever between
+  # a caller and an arm in it.
+  #
+  # The fake resolves its own root physically, which is what the realpath in
+  # `detectCompilerLibRoot` amounts to for a shell.
+  _self_deref='#!/bin/sh
+root=$(cd "$(dirname "$0")/../.." && pwd -P)
+printf "answer\n"
+printf "error: cannot open %s/lib/std.id\n" "$root" >&2
+exit 0
+'
+  mkdir -p "$_self/sym/real/zig-out/bin" "$_self/sym/away/zig-out/bin" || return 2
+  ln -s "$_self/sym/real" "$_self/sym/link" || return 2
+  printf '%s' "$_self_deref" >"$_self/sym/real/zig-out/bin/idol"
+  printf '%s\n# away\n' "$_self_deref" >"$_self/sym/away/zig-out/bin/idol"
+  chmod +x "$_self/sym/real/zig-out/bin/idol" "$_self/sym/away/zig-out/bin/idol"
+  compare_subjects "$_self/sym/link/zig-out/bin/idol" \
+    "$_self/sym/away/zig-out/bin/idol" \
+    "$_self/list" "$_self/source" >/dev/null 2>&1
+  _self_rc=$?
+  [ "$_self_rc" -eq 0 ] || {
+    echo "differential: selftest FAIL — an arm reached through a symlink scored as a difference" >&2
+    return 1
+  }
+
+  # ...AND THE SECOND SPELLING MUST NOT EAT A REAL ROW EITHER. Two rules per
+  # root instead of one is two more chances to erase a difference, and the
+  # erasure would be silent and optimistic. Same symlinked arm, different
+  # diagnostic text.
+  mkdir -p "$_self/sym/other/zig-out/bin" || return 2
+  printf '%s' "$_self_deref" | sed 's#cannot open#REFUSED, cannot open#' \
+    >"$_self/sym/other/zig-out/bin/idol"
+  chmod +x "$_self/sym/other/zig-out/bin/idol"
+  compare_subjects "$_self/sym/link/zig-out/bin/idol" \
+    "$_self/sym/other/zig-out/bin/idol" \
+    "$_self/list" "$_self/source" >/dev/null 2>&1
+  _self_rc=$?
+  [ "$_self_rc" -eq 1 ] || {
+    echo "differential: selftest FAIL — the physical-spelling rule erased a real row" >&2
+    return 1
+  }
+
   # Different bytes, one identical observation. Each fake records its own
   # invocation count; a future second-run stderr probe makes this control red.
   _self_fake='#!/bin/sh
@@ -745,7 +877,7 @@ exit 7
   TMO=$_self_old_tmo
   [ "$_self_rc" -eq 2 ] || return 1
 
-  echo "differential: selftest PASS — sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, per-arm cwd, real row survives normalisation, in-tree arm at the subject source root, mirror nested in the source tree, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
+  echo "differential: selftest PASS — physical scratch root, sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, per-arm cwd in both spellings, real row survives normalisation, in-tree arm at the subject source root, mirror nested in the source tree, arm reached through a symlink and a real row surviving that, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
   return 0
 }
 
@@ -794,6 +926,14 @@ null_control() {
 }
 
 WORK=$(mktemp -d) || exit 2
+# PHYSICALLY SPELLED, before anything is built inside it. `mktemp -d` answers
+# with `$TMPDIR` as spelled, and on macOS that is `/var/folders/...` with `/var`
+# a symlink — so the per-arm working directories and scratch roots handed to the
+# arms would be strings the arms never report back, and the selftest fixtures
+# would be spelled one way here and another way by `git`. Owning the spelling is
+# cheaper than substituting it twice everywhere it is later derived from.
+WORKREAL=$(cd "$WORK" && pwd -P) || { rm -rf "$WORK"; exit 2; }
+WORK=$WORKREAL
 trap 'rm -rf "$WORK"' EXIT
 
 if [ "${1:-}" = "--selftest" ]; then
