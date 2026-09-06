@@ -20,6 +20,14 @@
 # measured facts decide ONLY a uniform comparison, so rows join a selection only
 # when every candidate on the target was measured in the same unit.
 #
+# THE UNIT IS PICOSECONDS because that is what resolves what is measured here.
+# The per-access enforcement delta is a compare and a branch — a fraction of a
+# nanosecond — so stating it in nanoseconds truncates a live, control-verified
+# cost to zero and makes the software check indistinguishable from no
+# enforcement at all in exactly the access-heavy comparison the digits decide.
+# The boundary crossings are microseconds and lose nothing to the finer unit,
+# and one shared unit is what `uniformMeasurement` requires of the set.
+#
 # THE CONTROLS. The software measurement is meaningless if the host compiler
 # folded the check away — then nothing is being measured. `probe selftest` runs
 # the checked loop with the extent fact set BELOW the index range: a live check
@@ -387,6 +395,7 @@ out=$("$work/probe" run "$K" "$N") || {
 checked_ns=${out%% *}
 plain_ns=${out##* }
 delta_ns=$(awk -v c="$checked_ns" -v p="$plain_ns" 'BEGIN { printf "%.4f", c - p }')
+delta_ps=$(awk -v d="$delta_ns" 'BEGIN { printf "%.4f", d * 1000 }')
 
 process_ns=$("$work/probe" process "$B" "$N") || {
     printf 'lower/cost: CANNOT MEASURE — process boundary probe run failed\n' >&2
@@ -396,6 +405,8 @@ network_ns=$("$work/probe" network "$B" "$N") || {
     printf 'lower/cost: CANNOT MEASURE — network boundary probe run failed\n' >&2
     exit 2
 }
+process_ps=$(awk -v n="$process_ns" 'BEGIN { printf "%.4f", n * 1000 }')
+network_ps=$(awk -v n="$network_ns" 'BEGIN { printf "%.4f", n * 1000 }')
 
 machine=$(uname -m 2>/dev/null || echo unknown)
 case "$machine" in
@@ -418,12 +429,12 @@ triple="$arch-$os-$abi"
 
 revision=$(git rev-parse HEAD 2>/dev/null || echo unknown)
 
-printf '{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"%s","unit":"nanoseconds","cost":{"access":%s,"crossing":0},"subject_revision":"%s","checked_access_ns":%s,"plain_access_ns":%s,"accesses_per_rep":%s,"reps":%s}\n' \
-    "$triple" "$delta_ns" "$revision" "$checked_ns" "$plain_ns" "$K" "$N"
-printf '{"schema":"idol.world.cost.v1","mechanism":"process","triple":"%s","unit":"nanoseconds","cost":{"access":0,"crossing":%s},"subject_revision":"%s","roundtrips_per_rep":%s,"reps":%s}\n' \
-    "$triple" "$process_ns" "$revision" "$B" "$N"
-printf '{"schema":"idol.world.cost.v1","mechanism":"network_isolation","triple":"%s","unit":"nanoseconds","cost":{"access":0,"crossing":%s},"subject_revision":"%s","roundtrips_per_rep":%s,"reps":%s}\n' \
-    "$triple" "$network_ns" "$revision" "$B" "$N"
+printf '{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"%s","unit":"picoseconds","cost":{"access":%s,"crossing":0},"subject_revision":"%s","checked_access_ns":%s,"plain_access_ns":%s,"accesses_per_rep":%s,"reps":%s}\n' \
+    "$triple" "$delta_ps" "$revision" "$checked_ns" "$plain_ns" "$K" "$N"
+printf '{"schema":"idol.world.cost.v1","mechanism":"process","triple":"%s","unit":"picoseconds","cost":{"access":0,"crossing":%s},"subject_revision":"%s","roundtrips_per_rep":%s,"reps":%s}\n' \
+    "$triple" "$process_ps" "$revision" "$B" "$N"
+printf '{"schema":"idol.world.cost.v1","mechanism":"network_isolation","triple":"%s","unit":"picoseconds","cost":{"access":0,"crossing":%s},"subject_revision":"%s","roundtrips_per_rep":%s,"reps":%s}\n' \
+    "$triple" "$network_ps" "$revision" "$B" "$N"
 
 printf 'lower/cost: software_check on %s at %s — checked %s ns/access, plain %s ns/access, enforcement %s ns/access (min-of-%s)\n' \
     "$triple" "$revision" "$checked_ns" "$plain_ns" "$delta_ns" "$N" >&2

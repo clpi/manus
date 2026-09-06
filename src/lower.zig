@@ -54,7 +54,11 @@
 //! magnitude, or an empty subject revision (`law.evidence.subject.one`). A
 //! negative cost is the producer's documented noise floor and
 //! reconstructs as zero regardless of JSON representation, so a genuine row
-//! always constructs its fact.
+//! always constructs its fact — but a POSITIVE cost smaller than one unit is
+//! the opposite fact and is no fact at all: something was measured and the
+//! unit cannot state it, so the producer states it in a unit that resolves
+//! it. A per-access enforcement cost is sub-nanosecond, which is why the
+//! runner's unit is `picoseconds`.
 //! `parseMeasurements` owns the facts
 //! from one complete newline-delimited evidence stream, and the graph-backed
 //! C99 arm hands that exact slice to both measured walk consumers. A malformed
@@ -127,16 +131,27 @@ pub fn costOf(m: Mechanism) Cost {
 /// speaks in cycle-scale ORDERS; a measurement names its own unit, and two
 /// costs are comparable only within one unit — a measured nanosecond never
 /// settles a comparison against a stated cycle estimate.
+///
+/// A unit must RESOLVE the quantity measured in it. A per-access enforcement
+/// cost is sub-nanosecond on current hardware — `gate/lower/cost.sh` measures
+/// the software check at fractions of a nanosecond per access — so
+/// `nanoseconds` cannot carry that axis and `picoseconds` is the unit the
+/// producer states both axes in. A quantity the unit cannot represent is no
+/// fact (`u64Field`), never a zero.
 pub const CostUnit = enum {
     /// The stated relation's own scale: cycle-scale orders.
     cycle_order,
     /// Measured wall-clock nanoseconds per event on the named target.
     nanoseconds,
+    /// Measured wall-clock picoseconds per event on the named target — the
+    /// resolution a per-access enforcement cost actually needs.
+    picoseconds,
 
     pub fn name(self: CostUnit) []const u8 {
         return switch (self) {
             .cycle_order => "cycle_order",
             .nanoseconds => "nanoseconds",
+            .picoseconds => "picoseconds",
         };
     }
 };
@@ -217,8 +232,9 @@ fn uniformMeasurement(triple: target_model.TargetTriple, candidates: []const Dyn
 /// null — a malformed or unowned row leaves the stated orders to decide,
 /// exactly as an absent measurement does. A negative cost is the
 /// producer's documented noise floor and reconstructs as zero regardless
-/// of JSON representation (`u64Field`), while an unrepresentable
-/// magnitude is no fact. A `network_isolation` mechanism is
+/// of JSON representation (`u64Field`), while a magnitude the unit cannot
+/// represent — too large, or positive but smaller than one unit — is no
+/// fact. A `network_isolation` mechanism is
 /// read from the row's own spelling, never reconstructed from an ordinal
 /// (`law.magic.code.zero`).
 ///
@@ -309,15 +325,26 @@ fn stringField(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {
 }
 
 /// A cost quantity from a row field. The producer emits computed costs as
-/// `%.4f` floats, so whole measured nanoseconds arrive as floats and truncate
-/// toward zero. A NEGATIVE quantity is the producer's documented timer noise
-/// around no measurable cost (`gate/lower/cost.sh` reports the software-check
+/// `%.4f` floats, so a measured quantity arrives as a float and truncates
+/// toward zero.
+///
+/// A NEGATIVE quantity is the producer's documented timer noise around no
+/// measurable cost (`gate/lower/cost.sh` reports the software-check
 /// enforcement delta even when noise makes it negative): a cost is a physical
 /// quantity, so the noise floor reconstructs as zero regardless of JSON
 /// representation — refusing a genuine row would make the producer's own
 /// output intermittently unconsumable, and a negative quantity must never
-/// settle a comparison. An unrepresentable magnitude is no fact: fail closed,
-/// never a trapping conversion.
+/// settle a comparison.
+///
+/// A POSITIVE quantity smaller than one unit is the opposite fact and must
+/// not share the noise floor's answer. Something was measured; the unit
+/// cannot state it. Truncating it to zero asserts "no measurable cost" of a
+/// mechanism that measurably costs — and that assertion decides comparisons
+/// wrongly, because a per-access cost multiplied by a large access count is
+/// exactly where the erased digits live. It is no fact, symmetric with a
+/// magnitude too large to represent: both leave the stated orders to decide,
+/// and the producer answers by stating the quantity in a unit that resolves
+/// it (`CostUnit`).
 fn u64Field(obj: std.json.ObjectMap, key: []const u8) ?u64 {
     const v = obj.get(key) orelse return null;
     return switch (v) {
@@ -327,6 +354,8 @@ fn u64Field(obj: std.json.ObjectMap, key: []const u8) ?u64 {
             @as(u64, @intCast(n)),
         .float => |f| if (f < 0)
             0
+        else if (f > 0 and f < 1)
+            null
         else if (f >= @as(f64, @floatFromInt(std.math.maxInt(u64))))
             null
         else
@@ -1081,6 +1110,101 @@ test "lower: an unrepresentable float cost is not a cost fact" {
     ;
     var rev: [64]u8 = undefined;
     try std.testing.expectEqual(@as(?MeasuredCost, null), parseMeasured(text, &rev));
+}
+
+test "lower: a positive cost the unit cannot state is not a cost fact" {
+    // The host runner's OWN software_check row: a compare and a branch cost
+    // 0.3799 ns per access on this host, live-check control passed. Stated in
+    // nanoseconds the quantity is smaller than the unit, and truncating it
+    // toward zero would publish "this mechanism costs nothing per access" —
+    // a false fact about a measurement that succeeded. It is no fact.
+    //
+    // The negative arm must NOT move with it: a negative delta is the noise
+    // floor around no measurable cost and still reconstructs as zero. The two
+    // sub-unit cases are opposite facts and keep opposite answers.
+    const sub_unit =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"aarch64-linux-gnu","unit":"nanoseconds","cost":{"access":0.3799,"crossing":0},"subject_revision":"5e8604095679bc5b16eac67163c5360643b5c343","checked_access_ns":2.4053,"plain_access_ns":2.0254,"accesses_per_rep":1024,"reps":2}
+    ;
+    const noise =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"aarch64-linux-gnu","unit":"nanoseconds","cost":{"access":-0.0312,"crossing":0},"subject_revision":"5e8604095679bc5b16eac67163c5360643b5c343","checked_access_ns":2.0254,"plain_access_ns":2.0566,"accesses_per_rep":1024,"reps":2}
+    ;
+    var rev: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(?MeasuredCost, null), parseMeasured(sub_unit, &rev));
+    try std.testing.expectEqual(@as(u64, 0), parseMeasured(noise, &rev).?.cost.access);
+}
+
+test "lower: the same measurement in picoseconds is a fact" {
+    // The producer's answer to the rule above: state the quantity in a unit
+    // that resolves it. The identical measurement, 379.9 ps per enforced
+    // access, reconstructs — and the fact carries the unit it was measured
+    // in, so it can never be compared against a nanosecond row.
+    const text =
+        \\{"schema":"idol.world.cost.v1","mechanism":"software_check","triple":"aarch64-linux-gnu","unit":"picoseconds","cost":{"access":379.9000,"crossing":0},"subject_revision":"5e8604095679bc5b16eac67163c5360643b5c343","checked_access_ns":2.4053,"plain_access_ns":2.0254,"accesses_per_rep":1024,"reps":2}
+    ;
+    var rev: [64]u8 = undefined;
+    const fact = parseMeasured(text, &rev).?;
+    try std.testing.expectEqual(CostUnit.picoseconds, fact.unit);
+    try std.testing.expectEqual(@as(u64, 379), fact.cost.access);
+    try std.testing.expectEqual(@as(u64, 0), fact.cost.crossing);
+}
+
+test "lower: nanosecond quantization inverts an access-heavy selection" {
+    // WHY THE UNIT IS A CORRECTNESS FACT, not a presentation one. One host
+    // measurement (`gate/lower/cost.sh` on aarch64-linux-gnu: 0.3799 ns per
+    // enforced access, 3972.7812 ns per process crossing, 23056.0312 ns per
+    // loopback crossing), one authority, one target, one profile — stated in
+    // two units.
+    //
+    // In whole nanoseconds the per-access axis rounds away entirely, the
+    // software check reads as free, and it wins. In picoseconds the same
+    // measurement says twenty million enforced accesses cost 7.58 ms while
+    // one process crossing costs 3.97 us, and the process boundary wins by
+    // three orders of magnitude. The erased digits were the answer.
+    const host_triple: target_model.TargetTriple = .{ .arch = .aarch64, .os = .linux, .abi = .gnu };
+    const revision = "5e8604095679bc5b16eac67163c5360643b5c343";
+    const quantized = [_]MeasuredCost{
+        .{ .mechanism = .software_check, .triple = host_triple, .unit = .nanoseconds, .cost = .{ .access = 0, .crossing = 0 }, .subject_revision = revision },
+        .{ .mechanism = .process, .triple = host_triple, .unit = .nanoseconds, .cost = .{ .access = 0, .crossing = 3972 }, .subject_revision = revision },
+        .{ .mechanism = .network_isolation, .triple = host_triple, .unit = .nanoseconds, .cost = .{ .access = 0, .crossing = 23056 }, .subject_revision = revision },
+    };
+    const resolved = [_]MeasuredCost{
+        .{ .mechanism = .software_check, .triple = host_triple, .unit = .picoseconds, .cost = .{ .access = 379, .crossing = 0 }, .subject_revision = revision },
+        .{ .mechanism = .process, .triple = host_triple, .unit = .picoseconds, .cost = .{ .access = 0, .crossing = 3_972_781 }, .subject_revision = revision },
+        .{ .mechanism = .network_isolation, .triple = host_triple, .unit = .picoseconds, .cost = .{ .access = 0, .crossing = 23_056_031 }, .subject_revision = revision },
+    };
+
+    const auth = exposedAuthority();
+    const attack = observation.ordinary_executable;
+    const target = world.TargetWorld.of(host_triple);
+    const profile: Profile = .{ .accesses = 20_000_000, .crossings = 1 };
+
+    const under_ns = selectMeasured(auth, attack, target, profile, &quantized).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.software_check, under_ns.mechanism);
+    try std.testing.expectEqual(CostUnit.nanoseconds, under_ns.unit);
+
+    const under_ps = selectMeasured(auth, attack, target, profile, &resolved).plan.dynamic;
+    try std.testing.expectEqual(Mechanism.process, under_ps.mechanism);
+    try std.testing.expectEqual(CostUnit.picoseconds, under_ps.unit);
+}
+
+test "lower: a picosecond row and a nanosecond row are not one comparison" {
+    // The false-accept control for the finer unit: adding `picoseconds` must
+    // not let a 379 read against a 3972 as if the numbers shared a scale. A
+    // set measured in two units is not a uniform measurement, so the stated
+    // orders decide and the winning plan is stated, not measured.
+    const host_triple: target_model.TargetTriple = .{ .arch = .aarch64, .os = .linux, .abi = .gnu };
+    const revision = "5e8604095679bc5b16eac67163c5360643b5c343";
+    const mixed = [_]MeasuredCost{
+        .{ .mechanism = .software_check, .triple = host_triple, .unit = .picoseconds, .cost = .{ .access = 379, .crossing = 0 }, .subject_revision = revision },
+        .{ .mechanism = .process, .triple = host_triple, .unit = .nanoseconds, .cost = .{ .access = 0, .crossing = 3972 }, .subject_revision = revision },
+        .{ .mechanism = .network_isolation, .triple = host_triple, .unit = .nanoseconds, .cost = .{ .access = 0, .crossing = 23056 }, .subject_revision = revision },
+    };
+    const auth = exposedAuthority();
+    const target = world.TargetWorld.of(host_triple);
+    const profile: Profile = .{ .accesses = 20_000_000, .crossings = 1 };
+    const plan = selectMeasured(auth, observation.ordinary_executable, target, profile, &mixed).plan.dynamic;
+    try std.testing.expectEqual(CostUnit.cycle_order, plan.unit);
+    try std.testing.expectEqual(costOf(plan.mechanism), plan.cost);
 }
 
 test "lower: parseMeasurements keeps a noise-floor producer stream" {
