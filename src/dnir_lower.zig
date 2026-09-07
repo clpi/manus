@@ -2811,6 +2811,7 @@ fn lowerModuleFromGraph(
         if (slot.found_existing) return invalidGraphFacts(diagnostic, @src(), "function-provenance-collision");
         slot.value_ptr.* = entity;
     }
+    try verifyAnyParameterCarriers(graph, &declarations, diagnostic);
     var decl_it = declarations.iterator();
     while (decl_it.next()) |entry| {
         const fd = entry.key_ptr.*;
@@ -3730,7 +3731,8 @@ fn functionEligibleReason(
         // a stack slot past the eighth. `.pointer` already took this path, so
         // `ptr` and `*T` had different argument budgets for the same word.
         if (isIntType(p.typ) or isBoolType(p.typ) or isStrType(p.typ) or typeIsPtr(p.typ) or
-            isAnyType(p.typ) or typeIsScalarCaseSet(mod, p.typ))
+            isAnyType(p.typ) or (p.typ == .inferred and resolveType(p.typ) == .any) or
+            typeIsScalarCaseSet(mod, p.typ))
         {
             gp_slots += 1;
             if (gp_slots > max_direct_scalar_args) return "more-than-16-gp-arguments";
@@ -3756,6 +3758,49 @@ fn functionEligible(
     mod: *const ast.Module,
 ) bool {
     return functionEligibleReason(fd, recs, graph, mod) == null;
+}
+
+fn verifyAnyParameterCarriers(
+    graph: *const semantic_graph.SemanticGraph,
+    declarations: *const std.AutoHashMapUnmanaged(*const ast.FuncDecl, semantic_graph.id),
+    diagnostic: *Diagnostic,
+) Error!void {
+    for (graph.application_facts.items) |application| {
+        const target = graph.applicationTarget(application.application) orelse continue;
+        const node = graph.get(target) orelse continue;
+        if (node.kind != .func) continue;
+        const raw = node.ast_ref orelse continue;
+        const declaration: *const ast.FuncDecl = @ptrCast(@alignCast(raw));
+        if (declarations.get(declaration) != target) continue;
+        if (!shouldIncludeFuncDecl(declaration, graph)) continue;
+        var has_any = false;
+        for (declaration.func.params) |parameter| {
+            if (isAnyType(parameter.typ) or (parameter.typ == .inferred and resolveType(parameter.typ) == .any))
+                has_any = true;
+        }
+        if (!has_any) continue;
+        bindOccurrence(diagnostic, graph, application.application);
+        const subject = graph.applicationSubject(application.application);
+        const arguments = graph.applicationArguments(application.application) orelse
+            return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
+        const subject_count: usize = if (subject != null) 1 else 0;
+        if (subject_count + arguments.len != declaration.func.params.len)
+            return invalidGraphFacts(diagnostic, @src(), "application-parameter-pack");
+        for (declaration.func.params, 0..) |parameter, index| {
+            if (!isAnyType(parameter.typ) and parameter.typ != .inferred) continue;
+            const operand = if (index == 0 and subject != null) subject.? else arguments[index - subject_count];
+            const operand_node = graph.get(operand) orelse
+                return invalidGraphFacts(diagnostic, @src(), "application-parameter-value");
+            const descriptor = operand_node.descriptor orelse
+                return invalidGraphFacts(diagnostic, @src(), "application-parameter-descriptor");
+            if (descriptor == .any)
+                return invalidGraphFacts(diagnostic, @src(), "any-parameter-operand-unknown");
+            if (descriptor.is_float())
+                return invalidGraphFacts(diagnostic, @src(), "any-parameter-fp-operand");
+            if (descriptor != .pointer and !types.scalarRepr(descriptor))
+                return invalidGraphFacts(diagnostic, @src(), "any-parameter-operand-abi");
+        }
+    }
 }
 
 const GraphFieldFact = struct {
@@ -18458,6 +18503,164 @@ test "dnir_lower: a record parameter's fields ride the general-purpose argument 
             "record-parameter-overflows-16-gp-slots",
             reason,
         );
+    }
+}
+
+test "dnir_lower: inferred parameter crosses checked applications as the existing any carrier" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][]const u8{ "", ": any" }) |annotation| {
+        for ([_]i64{ 7, 13 }) |value| {
+            const source = try std.fmt.allocPrint(
+                alloc,
+                "identity = (value{s}) value\nmain = () identity({d})\n",
+                .{ annotation, value },
+            );
+            var graph = semantic_graph.SemanticGraph.init(alloc);
+            defer graph.deinit();
+            const module = try lowerTestSourceWithGraph(alloc, source, "parameter-carrier.id", &graph);
+            defer dnir.deinitModule(alloc, module);
+            const identity = for (module.functions) |function| {
+                if (std.mem.eql(u8, function.name, "idol_parameter_carrier__identity")) break function;
+            } else return error.TestUnexpectedResult;
+            try std.testing.expectEqual(@as(usize, 1), identity.params.len);
+            try std.testing.expect(identity.params[0].ty == .any);
+            var returns_parameter = false;
+            var returns_value = false;
+            var checked_applications: usize = 0;
+            for (identity.blocks) |block| for (block.instrs) |instruction| {
+                if (instruction.op == .ret and instruction.lhs == .local and instruction.lhs.local == 0)
+                    returns_parameter = true;
+            };
+            for (graph.application_facts.items) |fact| {
+                const relation = graph.applicationRelation(fact.application) orelse continue;
+                if (relation != identity.id) continue;
+                const subject = graph.applicationSubject(fact.application) orelse return error.TestUnexpectedResult;
+                try std.testing.expectEqual(@as(?i64, value), graph.exactI64(subject));
+                checked_applications += 1;
+            }
+            for (module.functions) |function| for (function.blocks) |block| for (block.instrs) |instruction| {
+                if (instruction.op == .ret and instruction.lhs == .i64 and instruction.lhs.i64 == value)
+                    returns_value = true;
+            };
+            try std.testing.expectEqual(@as(usize, 1), checked_applications);
+            try std.testing.expect(returns_parameter and returns_value);
+        }
+    }
+}
+
+test "dnir_lower: inferred parameter keeps the shared carrier slot limit and unsupported annotations refused" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][]const u8{ "", ": any" }) |annotation| {
+        for ([_]usize{ 16, 17 }) |count| {
+            var parameters: std.ArrayList(u8) = .empty;
+            defer parameters.deinit(alloc);
+            for (0..count) |index| {
+                const parameter = try std.fmt.allocPrint(alloc, "{s}p{d}{s}", .{ if (index == 0) "" else ", ", index, annotation });
+                try parameters.appendSlice(alloc, parameter);
+            }
+            const source = try std.fmt.allocPrint(alloc, "take = ({s}) p0\n", .{parameters.items});
+            var lexer = @import("lexer.zig").Lexer.init(source, "parameter-budget.id");
+            var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+            parser.idol_mode = true;
+            const module = try parser.parse_module();
+            var graph = semantic_graph.SemanticGraph.init(alloc);
+            defer graph.deinit();
+            _ = try graph.liftModuleWithCalls(&module, "parameter-budget.id");
+            const declaration = &module.body.stmts[0].func_decl;
+            const reason = functionEligibleReason(declaration, &.{}, &graph, &module);
+            if (count == 16) {
+                try std.testing.expect(reason == null);
+            } else {
+                try std.testing.expectEqualStrings("more-than-16-gp-arguments", reason orelse return error.TestUnexpectedResult);
+            }
+        }
+    }
+    for ([_][]const u8{ "?i64", "[i64]" }) |annotation| {
+        const source = try std.fmt.allocPrint(alloc, "take = (value: {s}) value\n", .{annotation});
+        var lexer = @import("lexer.zig").Lexer.init(source, "parameter-refusal.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        const module = try parser.parse_module();
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCalls(&module, "parameter-refusal.id");
+        const declaration = &module.body.stmts[0].func_decl;
+        const reason = functionEligibleReason(declaration, &.{}, &graph, &module) orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqualStrings("parameter-type-unsupported", reason);
+    }
+}
+
+test "dnir_lower: inferred parameter and explicit any refuse floating or unknown operand descriptors" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][]const u8{ "", ": any" }) |annotation| {
+        const source = try std.fmt.allocPrint(
+            alloc,
+            "identity = (value{s}) value\nmain = () identity(7)\n" ++
+                "floating: f64 = (value: f64) value\nother: f64 = () floating(7.5)\n",
+            .{annotation},
+        );
+        var lexer = @import("lexer.zig").Lexer.init(source, "parameter-descriptor.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = @import("sema.zig").Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "parameter-descriptor.id");
+        const target = graph.relationForDeclaration(&module.body.stmts[0].func_decl).?;
+        const application = for (graph.application_facts.items) |fact| {
+            if (graph.applicationTarget(fact.application) == target) break fact.application;
+        } else return error.TestUnexpectedResult;
+        const subject = graph.applicationSubject(application).?;
+        const lowered = try lowerModuleWithGraph(alloc, &module, &graph);
+        defer dnir.deinitModule(alloc, lowered);
+        var element: RT = .i64;
+        const unsupported = [_]?RT{
+            .f32,
+            .f64,
+            .any,
+            null,
+            .v8i32,
+            .{ .table_type = .{ .fields = &.{} } },
+            .{ .option = &element },
+            .{ .array = .{ .elem = &element, .size = 2 } },
+        };
+        for (unsupported) |descriptor| {
+            graph.nodes.items[subject].descriptor = descriptor;
+            var diagnostic: Diagnostic = .{};
+            try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+            const expected = if (descriptor == null)
+                "missing-application-id"
+            else if (descriptor.? == .any)
+                "any-parameter-operand-unknown"
+            else if (descriptor.?.is_float())
+                "any-parameter-fp-operand"
+            else
+                "any-parameter-operand-abi";
+            try std.testing.expectEqualStrings(expected, diagnostic.note().?);
+        }
+        var declarations: std.AutoHashMapUnmanaged(*const ast.FuncDecl, semantic_graph.id) = .empty;
+        defer declarations.deinit(alloc);
+        try declarations.put(alloc, &module.body.stmts[0].func_decl, target);
+        graph.nodes.items[subject].descriptor = .i64;
+        var diagnostic: Diagnostic = .{};
+        try verifyAnyParameterCarriers(&graph, &declarations, &diagnostic);
+        graph.nodes.items[subject].descriptor = .{ .pointer = &element };
+        try verifyAnyParameterCarriers(&graph, &declarations, &diagnostic);
+        graph.nodes.items[subject].descriptor = .f64;
+        const linkage = graph.callable_linkage_rows.get(target).?;
+        graph.callable_linkages.items[linkage].origin = .c;
+        graph.callable_linkages.items[linkage].exposure = .c_import;
+        try verifyAnyParameterCarriers(&graph, &declarations, &diagnostic);
     }
 }
 
