@@ -5854,6 +5854,18 @@ const Arm64Compiler = struct {
             },
             .temp => |t| {
                 const r = temps.get(t) orelse return self.undefinedAt(@src(), "temp", t);
+                // `staleGpName` reads an ABSENT owner as stale because the arm
+                // above answers that with the frame home. `planGpStackLocals`
+                // keys frame homes by `store_local` result and parameter slots,
+                // so a temp has no such fallback, and ownerless-but-claimed is
+                // ordinary scratch here — `releaseReg` returns above any owned
+                // register, so that is the only state a scratch temp can be in.
+                // A register ANOTHER id owns has no such reading: `sweepGpLive`
+                // frees by owner record without unnaming, so the map goes on
+                // pointing at a register the pool has since re-let.
+                if (self.gp_reg_owner[r] != null and self.staleGpName(r, t)) {
+                    return self.undefinedAt(@src(), "temp", t);
+                }
                 return try self.ensureRegLiveRemap(temps, r);
             },
             .record => return self.refuse(@src()),
@@ -22938,4 +22950,89 @@ test "a bootstrap f64 call result leaves d0 before the next call overwrites it" 
         0,
     ));
     try std.testing.expectEqual(@as(?u5, null), temps.get(starved));
+}
+
+// A STALE NAME IS NOT A VALUE — THE TEMP SIDE (GAP-148).
+test "a stale temp name is not a register" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+
+    // A name `sweepGpLive` left behind and `allocReg` has since re-let: the
+    // register carries `stranger`, and `temps` still calls it `stale_id`.
+    const stale_id: u32 = 4;
+    const stranger: u32 = 5;
+    const named: u5 = 9;
+    try temps.put(alloc, stale_id, named);
+    compiler.gp_reg_owner[named] = stranger;
+    compiler.used_regs[named] = true;
+
+    const before = compiler.code.items.len;
+    try std.testing.expectError(
+        error.UndefinedName,
+        compiler.evalDnirValue(&temps, .{ .temp = stale_id }),
+    );
+    try std.testing.expectEqualStrings(
+        "temp 4 has no register",
+        diagnostic.note_buffer[0..diagnostic.note_len],
+    );
+    try std.testing.expectEqual(before, compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u32, stranger), compiler.gp_reg_owner[named]);
+    try std.testing.expect(compiler.used_regs[named]);
+    try std.testing.expectEqual(@as(?u5, named), temps.get(stale_id));
+
+    // WRONG-ERROR CONTROL: the term is `gp_reg_owner` identity, not "a temp
+    // read refuses".
+    const own_id: u32 = 6;
+    const own_reg: u5 = 10;
+    try temps.put(alloc, own_id, own_reg);
+    compiler.gp_reg_owner[own_reg] = own_id;
+    compiler.used_regs[own_reg] = true;
+    try std.testing.expectEqual(
+        own_reg,
+        try compiler.evalDnirValue(&temps, .{ .temp = own_id }),
+    );
+
+    // FALSE-ACCEPT CONTROL: an ABSENT owner is ordinary scratch for a temp, not
+    // a stale name. `staleGpName` reads it as stale for the `.local` arm, which
+    // answers with the frame home a temp does not have; refusing it here would
+    // refuse every scratch value the emitters hold through `claimReg` alone.
+    const scratch_id: u32 = 9;
+    const scratch_reg: u5 = 12;
+    try temps.put(alloc, scratch_id, scratch_reg);
+    compiler.claimReg(scratch_reg);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[scratch_reg]);
+    try std.testing.expectEqual(
+        scratch_reg,
+        try compiler.evalDnirValue(&temps, .{ .temp = scratch_id }),
+    );
+
+    // FALSE-ACCEPT CONTROL: the BAND is the other half of the term, and the ABI
+    // bank carries owner records too — `spillReg` preserves `gp_reg_owner[0]`
+    // across a spill of x0. A foreign owner there is `preserveArgReg`'s to
+    // answer, not this read's, so the same two-id state that refuses in the
+    // band is served below x9.
+    const abi_id: u32 = 7;
+    const abi_reg: u5 = 0;
+    try temps.put(alloc, abi_id, abi_reg);
+    compiler.gp_reg_owner[abi_reg] = stranger;
+    try std.testing.expectEqual(
+        abi_reg,
+        try compiler.evalDnirValue(&temps, .{ .temp = abi_id }),
+    );
 }
