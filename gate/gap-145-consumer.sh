@@ -28,7 +28,7 @@ SEMA="$ROOT/src/sema.zig"
 CODEGEN="$ROOT/src/codegen.zig"
 AST="$ROOT/src/ast.zig"
 DNIR="$ROOT/src/dnir_lower.zig"
-PARSER="$ROOT/src/parser.zig"
+PARSER=${GAP145_PARSER:-"$ROOT/src/parser.zig"}
 DISPATCH="$ROOT/src/lexer_dispatch.zig"
 LEXER_BRIDGE="$ROOT/src/lexer_bridge.zig"
 TOKEN_VIEW="$ROOT/src/token_view.zig"
@@ -4320,7 +4320,7 @@ if [ "$(printf '%s\n' "$refinement" | grep -cF 'if (try self.infix_prec()) |infi
     bad 'layout refinement does not consume the producer relation'
 fi
 amp_sweep=$(sed -n '/layout refinement consumes the producer relation/,/^}/p' "$PARSER")
-for predicate in 'const triple = (event >> 23) & 0xFFFFFF;' 'kind == .amp' 'try testing.expectEqual(expected, band);' 'try testing.expect(seen);'; do
+for predicate in 'return error.LayoutRefinementRejectedBand;' 'return error.LayoutRefinementWrongBand;' 'return error.LayoutRefinementRejectedAdd;' 'return error.LayoutRefinementAcceptedAdd;' 'const triple = (event >> 23) & 0xFFFFFF;' 'kind == .amp' 'try testing.expectEqual(expected, band);' 'try testing.expect(seen);' 'try testing.expect(rejected);'; do
     examined=$((examined + 1))
     if [ "$(printf '%s\n' "$amp_sweep" | grep -cF "$predicate")" -ne 1 ]; then
         bad "layout refinement equivalence oracle lost predicate: $predicate"
@@ -4334,6 +4334,31 @@ if [ "$(grep -Eoc '(==|!=) \.amp\b' "$amp_probe/old.zig")" -ne 1 ] || [ "$(grep 
     bad 'layout refinement identity detector does not distinguish rebuilt identity from producer relation'
 fi
 rm -rf -- "$amp_probe"
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    amp_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate refinement perturbation scratch' >&2; exit 2; }
+    sed '0,/infix\.op == \.band/s//infix.op == .add/' "$PARSER" >"$amp_probe/accept.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$amp_probe/accept.result" 2>&1
+    amp_status=$?
+    examined=$((examined + 1))
+    if [ "$amp_status" -ne 1 ] || [ ! -s "$amp_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL layout refinement does not consume the producer relation' "$amp_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$amp_probe/accept.result"; then
+        bad "layout refinement false-accept control did not fail closed: status=$amp_status"
+    fi
+
+    sed '0,/try testing\.expect(seen);/s//try testing.expect(!seen);/' "$PARSER" >"$amp_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$amp_probe/wrong.result" 2>&1
+    amp_status=$?
+    examined=$((examined + 1))
+    if [ "$amp_status" -ne 1 ] || [ ! -s "$amp_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL layout refinement equivalence oracle lost predicate: try testing.expect(seen);' "$amp_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL layout refinement does not consume the producer relation' "$amp_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$amp_probe/wrong.result"; then
+        bad "layout refinement wrong-error control did not fail closed: status=$amp_status"
+    fi
+    rm -rf -- "$amp_probe"
+fi
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))

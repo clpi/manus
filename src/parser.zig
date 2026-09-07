@@ -12046,16 +12046,40 @@ test "parse: production unary glue and update decisions execute through whole-pa
 
 test "parse: layout refinement consumes the producer relation" {
     var seen = false;
+    var rejected = false;
     for (grammar_roles.rows, 0..) |row, index| {
         const event = try parserEventForTest(@intCast(index), true);
         const triple = (event >> 23) & 0xFFFFFF;
         const band = triple != 0 and
-            @as(ast.BinOp, @fromBackingInt(@as(u8, @intCast(triple & 0xff)))) == .band;
+            @as(ast.BinOp, @fromBackingInt(@intCast(triple & 0xff))) == .band;
         const expected = if (row.kind) |kind| kind == .amp else false;
-        if (expected) seen = true;
+        if (expected) {
+            seen = true;
+            var tokens = [_]Token{.{ .kind = .amp, .loc = .{ .file = "amp.id", .line = 1, .col = 1 }, .text = "&" }};
+            var events = [_]i64{ event, 0 };
+            var lexer = Lexer.init("", "amp.id");
+            var consumer = Parser.init(&lexer, testing.allocator);
+            consumer.pack_tokens = &tokens;
+            consumer.parser_events = &events;
+            const refinement = try consumer.infix_prec() orelse
+                return error.LayoutRefinementRejectedBand;
+            if (refinement.op != .band) return error.LayoutRefinementWrongBand;
+        } else if (row.kind != null and row.kind.? == .plus) {
+            rejected = true;
+            var tokens = [_]Token{.{ .kind = .plus, .loc = .{ .file = "add.id", .line = 1, .col = 1 }, .text = "+" }};
+            var events = [_]i64{ event, 0 };
+            var lexer = Lexer.init("", "add.id");
+            var consumer = Parser.init(&lexer, testing.allocator);
+            consumer.pack_tokens = &tokens;
+            consumer.parser_events = &events;
+            const refinement = try consumer.infix_prec() orelse
+                return error.LayoutRefinementRejectedAdd;
+            if (refinement.op == .band) return error.LayoutRefinementAcceptedAdd;
+        }
         try testing.expectEqual(expected, band);
     }
     try testing.expect(seen);
+    try testing.expect(rejected);
 }
 
 test "parse: relation ABI ordinal decode refuses values outside generated enums" {
