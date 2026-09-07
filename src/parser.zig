@@ -616,6 +616,24 @@ pub const Parser = struct {
         return (try self.currentParserFace()) == 16;
     }
 
+    /// The `:` identity, which the producer settles in TWO faces. `parser.id`
+    /// writes face 16 at every `:` and OVERRIDES it to face 26 at the one `:`
+    /// whose applied descriptor closes immediately before an `=`. Both are
+    /// assigned under `kind == token.kindcolon` and nothing else reaches
+    /// either, so their union is the identity and face 16 alone is not.
+    fn currentParserColon(self: *Parser) ParseError!bool {
+        const face = try self.currentParserFace();
+        return face == 16 or face == 26;
+    }
+
+    /// `eat(.colon)` with the settled face in place of the rebuilt identity:
+    /// the same recognition-then-`adv()` pair, in the same order.
+    fn eatParserColon(self: *Parser) ParseError!bool {
+        if (!try self.currentParserColon()) return false;
+        _ = try self.adv();
+        return true;
+    }
+
     fn currentParserAnchor(self: *Parser) ParseError!bool {
         return (try self.currentParserFace()) == 17;
     }
@@ -1988,7 +2006,7 @@ pub const Parser = struct {
             // The alternative `error` swallowed the sibling call as its
             // constraint, so the body began one statement late and the
             // failure surfaced as an offside error two lines further down.
-            if ((try self.pk()).loc.line == t.loc.line and try self.eat(.colon) != null) {
+            if ((try self.pk()).loc.line == t.loc.line and try self.eatParserColon()) {
                 return try self.parse_constrained_type_param(t.text);
             }
             return .{ .named = t.text };
@@ -2002,7 +2020,7 @@ pub const Parser = struct {
     }
 
     fn maybe_type_ann(self: *Parser) ParseError!ast.TypeExpr {
-        if (try self.eat(.colon) != null) return self.parse_type();
+        if (try self.eatParserColon()) return self.parse_type();
         return .inferred;
     }
 
@@ -2901,7 +2919,7 @@ pub const Parser = struct {
         if (try self.currentParserName()) {
             // Speculatively consume the name and check for colon
             const name_tok = try self.adv();
-            if (try self.eat(.colon) != null) {
+            if (try self.eatParserColon()) {
                 // Named field: name: Type
                 const typ = try self.parse_type();
                 return .{ .name = name_tok.text, .typ = typ };
@@ -2943,7 +2961,7 @@ pub const Parser = struct {
 
         // Optional return type: -> type or : type
         var ret_type: ast.TypeExpr = .inferred;
-        if (try self.eat(.arrow) != null or try self.eat(.colon) != null)
+        if (try self.eat(.arrow) != null or try self.eatParserColon())
             ret_type = try self.parse_type();
 
         return .{
@@ -3032,7 +3050,7 @@ pub const Parser = struct {
     /// Otherwise falls through to create a local_decl with attributes.
     fn parse_jai_type_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
         const nm = try self.expect(.name);
-        if ((try self.pk()).kind != .colon) {
+        if (!try self.currentParserColon()) {
             // Not a Jai-like def — error (attributes require a declaration)
             term.locErr(nm.loc, "expected declaration after attribute(s), got '{s}'", .{nm.text});
             return ParseError.UnexpectedToken;
@@ -3102,7 +3120,7 @@ pub const Parser = struct {
             const field_name = try self.expect(.name);
             // Optional colon + type (if omitted, infer as any)
             var field_type: ast.TypeExpr = .inferred;
-            if ((try self.pk()).kind == .colon) {
+            if (try self.currentParserColon()) {
                 _ = try self.adv();
                 field_type = try self.parse_type();
             }
@@ -3393,7 +3411,7 @@ pub const Parser = struct {
                 _ = try self.adv();
                 const part = try self.expect(.name);
                 try path.append(self.alloc, part.text);
-            } else if (try self.eat(.colon) != null) {
+            } else if (try self.eatParserColon()) {
                 const part = try self.expect(.name);
                 try path.append(self.alloc, part.text);
                 method = true;
@@ -3547,7 +3565,7 @@ pub const Parser = struct {
     /// Parse a generic type parameter: `T` or `T: Concept` or `T: A + B`.
     fn parse_type_param(self: *Parser) ParseError!ast.TypeExpr {
         const t = try self.expect(.name);
-        if (try self.eat(.colon) != null) {
+        if (try self.eatParserColon()) {
             return try self.parse_constrained_type_param(t.text);
         }
         return .{ .named = t.text };
@@ -3610,7 +3628,7 @@ pub const Parser = struct {
         // as the contract, so the body silently began one statement late and
         // surfaced as an offside error pointing at the NEXT line.
         const contract_here = (try self.pk()).loc.line == rparen_tok.loc.line;
-        if (contract_here and (try self.eat(.arrow) != null or try self.eat(.colon) != null)) {
+        if (contract_here and (try self.eat(.arrow) != null or try self.eatParserColon())) {
             self.union_alternative_seen = false;
             ret_type = try self.parse_type();
             ret_fallible = self.union_alternative_seen;
@@ -3772,7 +3790,7 @@ pub const Parser = struct {
         // Accept either `-> type` or `: type` for the return type.
         var ret_type: ast.TypeExpr = .inferred;
         var ret_fallible = false;
-        if (try self.eat(.arrow) != null or try self.eat(.colon) != null) {
+        if (try self.eat(.arrow) != null or try self.eatParserColon()) {
             self.union_alternative_seen = false;
             ret_type = try self.parse_type();
             ret_fallible = self.union_alternative_seen;
@@ -4273,7 +4291,7 @@ pub const Parser = struct {
         if (try self.currentParserCall()) return self.parse_for_curried(l);
         const first_name = try self.expect(.name);
         const nxt = try self.pk();
-        if (nxt.kind == .assign or nxt.kind == .colon) {
+        if (nxt.kind == .assign or try self.currentParserColon()) {
             const var_typ = try self.maybe_type_ann();
             _ = try self.expect(.assign);
             const start = try self.parse_expr();
@@ -4795,7 +4813,7 @@ pub const Parser = struct {
         var entries: std.ArrayList(ast.Pattern.TableDestrEntry) = .empty;
         while ((try self.pk()).kind != .rbrace) {
             const key_tok = try self.expect(.name);
-            if ((try self.pk()).kind == .colon) {
+            if (try self.currentParserColon()) {
                 _ = try self.adv();
                 const pat = try self.parse_pattern();
                 try entries.append(self.alloc, .{ .key = key_tok.text, .pat = pat });
@@ -4990,7 +5008,7 @@ pub const Parser = struct {
                                 .payload = payload,
                             },
                         });
-                    } else if (try self.check(.colon)) {
+                    } else if (try self.currentParserColon()) {
                         _ = try self.adv();
                         const typ = try self.parse_field_type();
                         if (try self.eat(.assign) != null) _ = try self.parse_expr(); // default, consumed
@@ -5055,8 +5073,7 @@ pub const Parser = struct {
         var loc = first.loc();
 
         if (first.* == .name) {
-            const nxt = try self.pk();
-            if (!(try self.currentParserField()) and nxt.kind != .colon) return null;
+            if (!(try self.currentParserField()) and !try self.currentParserColon()) return null;
             try path.append(self.alloc, first.name.ident);
             while (true) {
                 if (try self.currentParserField()) {
@@ -5067,7 +5084,7 @@ pub const Parser = struct {
                     }
                     const part = try self.expect(.name);
                     try path.append(self.alloc, part.text);
-                } else if ((try self.pk()).kind == .colon) {
+                } else if (try self.currentParserColon()) {
                     const colon = try self.pk();
                     // `a:b = (…)` is a single-line declaration. When the token
                     // after `:` is on a LATER line this is not that form at all
@@ -8377,7 +8394,7 @@ pub const Parser = struct {
                     _ = try self.adv();
                     const val = try self.parse_expr();
                     try fields.append(self.alloc, .{ .named = .{ .key = key_text, .val = val } });
-                } else if (try self.check(.colon)) {
+                } else if (try self.currentParserColon()) {
                     _ = try self.adv();
                     _ = try self.parse_type();
                     if (try self.check(.assign)) {
@@ -12192,6 +12209,96 @@ test "parse: the projection face admits exactly the `.` identity" {
     }
     // Without this the sweep would pass on a face that admits nothing at all.
     try testing.expect(seen);
+}
+
+test "parse: the colon face admits exactly the `:` identity" {
+    var seen = false;
+    var rejected = false;
+    var refused = false;
+    for (grammar_roles.rows, 0..) |row, index| {
+        const kind = row.kind orelse continue;
+        var facts = [3]i64{ 0, @intCast(index), 0 };
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        var tokens = [_]Token{.{
+            .kind = kind,
+            .loc = .{ .file = "colon.id", .line = 1, .col = 1 },
+            .text = row.spell,
+        }};
+        var lexer = Lexer.init("", "colon.id");
+        var consumer = Parser.init(&lexer, testing.allocator);
+        consumer.pack_tokens = &tokens;
+        consumer.parser_events = &events;
+        if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {
+            try testing.expectError(error.InvalidRecordCount, consumer.currentParserColon());
+            refused = true;
+            continue;
+        }
+        const expected = kind == .colon;
+        try testing.expectEqual(expected, try consumer.currentParserColon());
+        if (expected) seen = true else rejected = true;
+    }
+    // Without these the sweep would pass on a face that admits nothing, on one
+    // that admits everything, or on a pack whose trivia was never reached.
+    try testing.expect(seen);
+    try testing.expect(rejected);
+    try testing.expect(refused);
+}
+
+test "parse: the colon face admits exactly the `:` identity under the applied-descriptor override" {
+    var seen = false;
+    var rejected = false;
+    var override = false;
+    for (grammar_roles.rows, 0..) |row, index| {
+        const kind = row.kind orelse continue;
+        if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) continue;
+        // `: name ( ) =` is the one shape where `parser.id` REPLACES the
+        // ordinary colon face 16 with face 26. The sweep above cannot reach it:
+        // a one-token pack fails the producer's `index + 2 < count` guard.
+        var facts = [_]i64{
+            0,
+            @intCast(@as(u64, @intCast(index)) | (@as(u64, 1) << 8) | (@as(u64, 1) << 36)),
+            0,
+            @intCast(@as(u64, @backingInt(TK.name)) | (@as(u64, 1) << 8) | (@as(u64, 2) << 36)),
+            0,
+            @intCast(@as(u64, @backingInt(TK.lparen)) | (@as(u64, 1) << 8) | (@as(u64, 3) << 36)),
+            0,
+            @intCast(@as(u64, @backingInt(TK.rparen)) | (@as(u64, 1) << 8) | (@as(u64, 4) << 36)),
+            0,
+            @intCast(@as(u64, @backingInt(TK.assign)) | (@as(u64, 1) << 8) | (@as(u64, 5) << 36)),
+            0,
+        };
+        var events = [10]i64{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        // Mirrors `currentParserColon` exactly, guard included: a `(` has no
+        // primary face at all, because its lane-two field carries the matching
+        // close COORDINATE, which ranges over every face value.
+        const face: i64 = if (((events[0] >> 63) & 1) != 0) 0 else events[5] >> 13;
+        var tokens = [_]Token{
+            .{ .kind = kind, .loc = .{ .file = "colon.id", .line = 1, .col = 1 }, .text = row.spell },
+            .{ .kind = .name, .loc = .{ .file = "colon.id", .line = 1, .col = 2 }, .text = "f" },
+            .{ .kind = .lparen, .loc = .{ .file = "colon.id", .line = 1, .col = 3 }, .text = "(" },
+            .{ .kind = .rparen, .loc = .{ .file = "colon.id", .line = 1, .col = 4 }, .text = ")" },
+            .{ .kind = .assign, .loc = .{ .file = "colon.id", .line = 1, .col = 5 }, .text = "=" },
+        };
+        var lexer = Lexer.init("", "colon.id");
+        var consumer = Parser.init(&lexer, testing.allocator);
+        consumer.pack_tokens = &tokens;
+        consumer.parser_events = &events;
+        const expected = kind == .colon;
+        try testing.expectEqual(expected, try consumer.currentParserColon());
+        if (expected) {
+            // The override is load-bearing rather than decorative: face 16 is
+            // GONE at this coordinate, so a reader admitting only 16 would
+            // answer false where the producer settled a colon.
+            try testing.expectEqual(@as(i64, 26), face);
+            seen = true;
+            override = true;
+        } else rejected = true;
+    }
+    try testing.expect(seen);
+    try testing.expect(rejected);
+    try testing.expect(override);
 }
 
 test "parse: production member identity executes through whole-pack event" {

@@ -4257,7 +4257,7 @@ check_projection_region '/fn parse_macro_call_expr/,/fn parse_at_path_segment/' 
 # Anti-green controls. Each transferred site composed the projection answer
 # with a sibling fact of its own; deleting that sibling would widen admission
 # rather than move it, so every one is required to survive.
-has "$PARSER" 'and nxt.kind != .colon) return null;' \
+has "$PARSER" 'and !try self.currentParserColon()) return null;' \
     'the qualified assignment head lost its method-colon alternative'
 has "$PARSER" 'and self.glued_to_prev(try self.pk())) {' \
     'the chained projection walk lost its adjacency test'
@@ -4265,7 +4265,7 @@ has "$PARSER" 'if (op != .eq and op != .neq) return false;' \
     'the case-set element stance lost its equality gate'
 has "$PARSER" 'if (self.caseset_cases.count() == 0) return false;' \
     'the case-set element stance lost its declared-case gate'
-has "$PARSER" '} else if (try self.eat(.colon) != null) {' \
+has "$PARSER" '} else if (try self.eatParserColon()) {' \
     'the declared relation trie path lost its method-colon branch'
 examined=$((examined + 1))
 if [ "$(grep -cF 'const dot = try self.expect(.dot);' "$PARSER")" -lt 1 ]; then
@@ -4499,6 +4499,209 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
         bad "catch empty-evidence control did not fail closed: status=$catch_status"
     fi
     rm -rf -- "$catch_probe"
+fi
+
+# ── §9 DESCRIPTOR-COLON IDENTITY IS CONSUMED AS A CLASS ─────────────────────
+#
+# `lib/compiler/parser.id` settles `:` identity for every coordinate in the
+# pack, in TWO faces: it writes face 16 at exactly `kind == token.kindcolon`
+# and then OVERRIDES it to face 26 at the one `:` whose applied descriptor
+# closes immediately before an `=`. Both arms are guarded by that same
+# identity and nothing else reaches either, so their union is the identity and
+# face 16 alone is NOT — `currentParserMethod()`, which reads 16 by itself, is
+# a different question and stays where it is.
+#
+# Sixteen parser consumers across fifteen functions still answered "is the
+# token under the cursor a `:`" for themselves, from the generated host
+# TokenKind, at a coordinate the producer had already settled and `pk()` had
+# already selected. The class is every host read of `:` identity AT A CURSOR
+# COORDINATE, in the three spellings it takes in this file:
+# `(try self.pk()).kind == .colon` and its negation, a token captured by
+# `pk()` and then compared (`nxt.kind == .colon`), and `eat(.colon)`. Its
+# count falls 16 -> 0. `expect(.colon)` is NOT in the class: it is a demand
+# that reports its own diagnostic, not a recognition read that returns an
+# answer.
+colon_check=$(grep -Fo 'self.check(.colon)' "$PARSER" | wc -l | tr -d ' ')
+colon_eat=$(grep -Fo 'self.eat(.colon)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$colon_check" -ne 0 ] || [ "$colon_eat" -ne 0 ]; then
+    bad "the parser still recognizes ':' through a kind-parameterized helper: check=$colon_check eat=$colon_eat"
+fi
+colon_compare=$(grep -Eo '(==|!=) \.colon\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$colon_compare" -ne 2 ]; then
+    bad "the parser rebuilds ':' identity at a cursor coordinate: count=$colon_compare"
+fi
+
+# The two surviving comparisons are named, so the ceiling above can neither be
+# met by deleting them nor drift into a new cursor read: they are the two
+# equivalence sweeps, each REQUIRED to compare the face against the identity.
+has "$PARSER" 'fn currentParserColon(self: *Parser) ParseError!bool {' \
+    'Parser lost the colon face consumer'
+has "$PARSER" 'return face == 16 or face == 26;' \
+    'the colon consumer dropped an arm of the settled identity'
+has "$PARSER" 'fn eatParserColon(self: *Parser) ParseError!bool {' \
+    'Parser lost the consuming colon face reader'
+has "$PARSER" '        if (!try self.currentParserColon()) return false;' \
+    'the consuming colon reader does not recognize through the settled face'
+
+colon_sweep=$(sed -n '/the colon face admits exactly the `:` identity" {/,/^}/p' "$PARSER")
+for predicate in 'kind == .colon' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try consumer.currentParserColon()' 'if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {' 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserColon());' 'for (grammar_roles.rows, 0..) |row, index| {' 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$colon_sweep" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "colon equivalence oracle lost predicate: $predicate"
+    fi
+done
+
+# A one-token pack fails the producer's `index + 2 < count` guard, so the sweep
+# above can only reach face 16. The override arm is a SECOND sweep over the
+# five-token shape that mints face 26, and it must prove three separate things:
+# the reader still answers at that coordinate, the ordinary face is GONE there
+# (so the 26 arm is load-bearing rather than decorative), and no identity other
+# than `:` reaches either face even in the shape that mints the override.
+colon_override=$(sed -n '/under the applied-descriptor override/,/^}/p' "$PARSER")
+for predicate in 'kind == .colon' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try testing.expectEqual(expected, try consumer.currentParserColon());' 'try testing.expectEqual(@as(i64, 26), face);' 'for (grammar_roles.rows, 0..) |row, index| {' 'const face: i64 = if (((events[0] >> 63) & 1) != 0) 0 else events[5] >> 13;' 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(override);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$colon_override" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "colon override oracle lost predicate: $predicate"
+    fi
+done
+# The override sweep is only an override sweep if its pack still SPELLS the
+# shape the producer keys face 26 on.
+for predicate in '@backingInt(TK.name)' '@backingInt(TK.lparen)' '@backingInt(TK.rparen)' '@backingInt(TK.assign)'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$colon_override" | grep -cF "$predicate")" -lt 1 ]; then
+        bad "the colon override oracle no longer spells the applied-descriptor shape: $predicate"
+    fi
+done
+
+# Each transferred region must select a nonempty region of the parser AND carry
+# the settled face at its exact count.
+check_colon_region() {
+    region_pattern=$1
+    region_expected=$2
+    region_label=$3
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "the $region_label region selector selected nothing: lines=$region_lines"
+        return
+    fi
+    region_faces=$(sed -n "${region_pattern}p" "$PARSER" | \
+        grep -Eo 'self\.(currentParserColon|eatParserColon)\(\)' | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_faces" -ne "$region_expected" ]; then
+        bad "$region_label does not consume the settled colon face: count=$region_faces want=$region_expected"
+    fi
+}
+
+check_colon_region '/fn parse_type_primary/,/fn maybe_type_ann/' 1 'the constrained type-parameter head'
+check_colon_region '/fn maybe_type_ann/,/fn parse_module/' 1 'the optional descriptor annotation'
+check_colon_region '/fn parseEnumPayloadField/,/fn parse_concept_method_sig/' 1 'the enum payload field name'
+check_colon_region '/fn parse_concept_method_sig/,/fn parse_concept_def_with_attrs/' 1 'the concept method result descriptor'
+check_colon_region '/fn parse_jai_type_def_with_attrs/,/fn parse_struct_body/' 1 'the attributed declaration head'
+check_colon_region '/fn parse_struct_body/,/fn parse_alias_def_with_attrs/' 1 'the struct field descriptor'
+check_colon_region '/fn parse_func_decl_after_first/,/fn scan_func_header_signal/' 1 'the declared relation trie path'
+check_colon_region '/fn parse_type_param/,/fn parse_func_body/' 1 'the generic parameter constraint'
+check_colon_region '/fn parse_func_body/,/fn parse_func_signature/' 1 'the callable result contract'
+check_colon_region '/fn parse_func_signature/,/fn parse_param/' 1 'the signature result descriptor'
+check_colon_region '/^    fn parse_for(self/,/fn parse_do/' 1 'the numeric-for head'
+check_colon_region '/fn parse_table_destr_pattern/,/fn stmt_from_table_destructure/' 1 'the table destructuring key'
+check_colon_region '/fn parse_descriptor_table/,/fn parse_array_destr_pattern/' 1 'the descriptor-table field'
+check_colon_region '/fn try_parse_qualified_func_assign/,/fn parse_label/' 2 'the qualified assignment head'
+check_colon_region '/fn parse_pack_body/,/fn finish_list_comp/' 1 'the pack field descriptor'
+
+# Anti-green controls. Each transferred site composed the colon answer with a
+# sibling fact of its own; deleting that sibling would widen admission rather
+# than move it, so every one is required to survive.
+has "$PARSER" 'if ((try self.pk()).loc.line == t.loc.line and try self.eatParserColon()) {' \
+    'the constrained type-parameter head lost its same-line test'
+has "$PARSER" 'const contract_here = (try self.pk()).loc.line == rparen_tok.loc.line;' \
+    'the callable result contract lost its same-line test'
+has "$PARSER" 'if (nxt.kind == .assign or try self.currentParserColon()) {' \
+    'the numeric-for head lost its assignment alternative'
+has "$PARSER" 'if (!(try self.currentParserField()) and !try self.currentParserColon()) return null;' \
+    'the qualified assignment head lost its projection alternative'
+has "$PARSER" 'if ((try self.pk()).loc.line != colon.loc.line) {' \
+    'the qualified assignment head lost its offside descriptor-home test'
+colon_arrow=$(grep -cF 'try self.eat(.arrow) != null or try self.eatParserColon()' "$PARSER")
+examined=$((examined + 1))
+if [ "$colon_arrow" -ne 3 ]; then
+    bad "a result-descriptor site lost its \`->\` alternative: count=$colon_arrow want=3"
+fi
+colon_demand=$(grep -cF 'self.expect(.colon)' "$PARSER")
+examined=$((examined + 1))
+if [ "$colon_demand" -ne 3 ]; then
+    bad "the \`:\` DEMAND face was deleted rather than left standing beside the settled recognition face: count=$colon_demand want=3"
+fi
+
+# Positive controls. Every detector above counts text that is absent from the
+# repaired tree, so each is shown a tree where it is present, and shown that it
+# does not fire on the canonical spelling.
+colon_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate colon scratch' >&2; exit 2; }
+cat >"$colon_probe/old.zig" <<'PROBE'
+if ((try self.pk()).kind != .colon) {
+if (nxt.kind == .assign or nxt.kind == .colon) {
+if (!(try self.currentParserField()) and nxt.kind != .colon) return null;
+} else if (try self.check(.colon)) {
+if (try self.eat(.colon) != null) return self.parse_type();
+if (try self.eat(.arrow) != null or try self.eat(.colon) != null) {
+PROBE
+cat >"$colon_probe/new.zig" <<'PROBE'
+if (!try self.currentParserColon()) {
+if (nxt.kind == .assign or try self.currentParserColon()) {
+if (!(try self.currentParserField()) and !try self.currentParserColon()) return null;
+} else if (try self.currentParserColon()) {
+if (try self.eatParserColon()) return self.parse_type();
+if (try self.eat(.arrow) != null or try self.eatParserColon()) {
+_ = try self.expect(.colon);
+PROBE
+colon_old_compare=$(grep -Eo '(==|!=) \.colon\b' "$colon_probe/old.zig" | wc -l | tr -d ' ')
+colon_old_check=$(grep -Fo 'self.check(.colon)' "$colon_probe/old.zig" | wc -l | tr -d ' ')
+colon_old_eat=$(grep -Fo 'self.eat(.colon)' "$colon_probe/old.zig" | wc -l | tr -d ' ')
+colon_new_compare=$(grep -Eo '(==|!=) \.colon\b' "$colon_probe/new.zig" | wc -l | tr -d ' ')
+colon_new_helper=$(grep -Eo 'self\.(check|eat)\(\.colon\)' "$colon_probe/new.zig" | wc -l | tr -d ' ')
+colon_new_faces=$(grep -Eo 'self\.(currentParserColon|eatParserColon)\(\)' "$colon_probe/new.zig" | wc -l | tr -d ' ')
+rm -rf -- "$colon_probe"
+examined=$((examined + 1))
+if [ "$colon_old_compare" -ne 3 ] || [ "$colon_old_check" -ne 1 ] || [ "$colon_old_eat" -ne 2 ]; then
+    bad "the colon detector does not see the retired spellings: compare=$colon_old_compare check=$colon_old_check eat=$colon_old_eat"
+fi
+examined=$((examined + 1))
+if [ "$colon_new_compare" -ne 0 ] || [ "$colon_new_helper" -ne 0 ] || [ "$colon_new_faces" -ne 6 ]; then
+    bad "the colon detector misreads the canonical spelling: compare=$colon_new_compare helper=$colon_new_helper faces=$colon_new_faces"
+fi
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    colon_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate colon perturbation scratch' >&2; exit 2; }
+
+    # FALSE ACCEPT. Drop the override arm. Every site still compiles and the
+    # ceiling still reads 0, but the reader now answers false at exactly the
+    # `:` the producer moved to face 26.
+    sed '0,/return face == 16 or face == 26;/s//return face == 16;/' "$PARSER" >"$colon_probe/accept.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$colon_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$colon_probe/accept.result" 2>&1
+    colon_status=$?
+    examined=$((examined + 1))
+    if [ "$colon_status" -ne 1 ] || [ ! -s "$colon_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the colon consumer dropped an arm of the settled identity' "$colon_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$colon_probe/accept.result"; then
+        bad "colon false-accept control did not fail closed: status=$colon_status"
+    fi
+
+    # WRONG ERROR. Break the override oracle's non-vacuity and require the gate
+    # to name THAT and not the arm above.
+    sed '/under the applied-descriptor override/,/^}/ s/try testing\.expect(override);/try testing.expect(!override);/' "$PARSER" >"$colon_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$colon_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$colon_probe/wrong.result" 2>&1
+    colon_status=$?
+    examined=$((examined + 1))
+    if [ "$colon_status" -ne 1 ] || [ ! -s "$colon_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL colon override oracle lost predicate: try testing.expect(override);' "$colon_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the colon consumer dropped an arm of the settled identity' "$colon_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$colon_probe/wrong.result"; then
+        bad "colon wrong-error control did not fail closed: status=$colon_status"
+    fi
+
+    rm -rf -- "$colon_probe"
 fi
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
