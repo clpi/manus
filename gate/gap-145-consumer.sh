@@ -4157,6 +4157,158 @@ if [ "$at_new_compare" -ne 0 ] || [ "$at_new_helper" -ne 0 ] || [ "$at_new_faces
     bad "the anchor detector misreads the canonical spelling: compare=$at_new_compare helper=$at_new_helper faces=$at_new_faces"
 fi
 
+# ── §8 STATIC PROJECTION IDENTITY IS CONSUMED AS A CLASS ────────────────────
+#
+# `lib/compiler/parser.id` settles `.` identity for every coordinate in the
+# pack: lane-two face 15 at exactly `kind == token.kinddot`, and
+# `currentParserField()` is the reader. Ten parser consumers across seven
+# functions still answered "is the token under the cursor a `.`" for
+# themselves, from the generated host TokenKind, at a coordinate the producer
+# had already settled and `pk()` had already selected.
+#
+# The class is every host read of `.` identity AT A CURSOR COORDINATE, in the
+# three spellings it takes in this file: `(try self.pk()).kind == .dot`, a
+# token captured by `pk()` and then compared (`nxt.kind != .dot`), and
+# `eat(.dot)`. Its count falls 10 -> 0. `expect(.dot)` is NOT in the class: it
+# is a demand that reports its own diagnostic, not a recognition read.
+dot_compare=$(grep -Eo '(==|!=) \.dot\b' "$PARSER" | wc -l | tr -d ' ')
+dot_check=$(grep -Fo 'self.check(.dot)' "$PARSER" | wc -l | tr -d ' ')
+dot_eat=$(grep -Fo 'self.eat(.dot)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$dot_check" -ne 0 ] || [ "$dot_eat" -ne 0 ]; then
+    bad "the parser still recognizes '.' through a kind-parameterized helper: check=$dot_check eat=$dot_eat"
+fi
+examined=$((examined + 1))
+if [ "$dot_compare" -ne 1 ]; then
+    bad "the parser rebuilds '.' identity at a cursor coordinate: count=$dot_compare"
+fi
+
+# The one surviving comparison is named, so the ceiling above cannot be met by
+# deleting it and cannot drift into a new cursor read: it is the equivalence
+# sweep itself, which is REQUIRED to compare the face against the identity over
+# every generated row.
+dot_sweep_oracle=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF 'kind == .dot' || true)
+examined=$((examined + 1))
+if [ "$dot_sweep_oracle" -ne 1 ]; then
+    bad "the projection equivalence sweep lost its identity comparison: count=$dot_sweep_oracle"
+fi
+dot_sweep_face=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF 'face == 15' || true)
+examined=$((examined + 1))
+if [ "$dot_sweep_face" -ne 1 ]; then
+    bad "the projection equivalence sweep does not read the settled face: count=$dot_sweep_face"
+fi
+# A `(` carries a matching-close COORDINATE in the same lane-two field, and a
+# coordinate ranges over every face value including 15. The reader guards on
+# event bit 63; a sweep that skipped the guard would not be measuring the
+# reader.
+dot_sweep_guard=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF '>> 63) & 1' || true)
+examined=$((examined + 1))
+if [ "$dot_sweep_guard" -ne 1 ]; then
+    bad "the projection equivalence sweep dropped the group-opening guard the reader carries: count=$dot_sweep_guard"
+fi
+# The reader also refuses a prefix identity at that coordinate — the second
+# discriminator gate section above pins in `currentParserField` itself. A sweep
+# that mirrored only one of the two would not be measuring the reader either.
+dot_sweep_prefix=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF '>> 20) & 1' || true)
+examined=$((examined + 1))
+if [ "$dot_sweep_prefix" -ne 1 ]; then
+    bad "the projection equivalence sweep dropped the parenthesis-boundary discriminator the reader carries: count=$dot_sweep_prefix"
+fi
+dot_sweep_nonvacuous=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF 'try testing.expect(seen);' || true)
+examined=$((examined + 1))
+if [ "$dot_sweep_nonvacuous" -ne 1 ]; then
+    bad "the projection equivalence sweep could pass on a face that admits nothing: count=$dot_sweep_nonvacuous"
+fi
+
+# Each transferred region must select a nonempty region of the parser AND carry
+# the settled face at its exact count.
+check_projection_region() {
+    region_pattern=$1
+    region_expected=$2
+    region_label=$3
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "the $region_label region selector selected nothing: lines=$region_lines"
+        return
+    fi
+    region_faces=$(sed -n "${region_pattern}p" "$PARSER" | \
+        grep -cF 'self.currentParserField()' || true)
+    examined=$((examined + 1))
+    if [ "$region_faces" -ne "$region_expected" ]; then
+        bad "$region_label does not consume the settled projection face: count=$region_faces want=$region_expected"
+    fi
+}
+
+check_projection_region '/fn parse_at_starts_attribute_decl/,/fn is_known_attribute/' 1 'the attribute-path walk'
+check_projection_region '/fn parse_one_attribute/,/fn parse_attribute_args/' 1 'the single-attribute path walk'
+check_projection_region '/fn parse_func_decl_after_first/,/fn scan_func_header_signal/' 1 'the declared relation trie path'
+check_projection_region '/fn parse_pattern/,/fn parse_table_destr_pattern/' 1 'variant-pattern recognition'
+check_projection_region '/fn try_parse_qualified_func_assign/,/fn parse_label/' 2 'the qualified assignment head'
+check_projection_region '/fn at_anchor_case/,/fn at_glued_world_face/' 1 'the case-set element stance'
+check_projection_region '/fn parse_field_projection/,/fn parse_method_reference/' 2 'the chained projection walk'
+check_projection_region '/fn parse_macro_call_expr/,/fn parse_at_path_segment/' 1 'the sigil-path walk'
+
+# Anti-green controls. Each transferred site composed the projection answer
+# with a sibling fact of its own; deleting that sibling would widen admission
+# rather than move it, so every one is required to survive.
+has "$PARSER" 'and nxt.kind != .colon) return null;' \
+    'the qualified assignment head lost its method-colon alternative'
+has "$PARSER" 'and self.glued_to_prev(try self.pk())) {' \
+    'the chained projection walk lost its adjacency test'
+has "$PARSER" 'if (op != .eq and op != .neq) return false;' \
+    'the case-set element stance lost its equality gate'
+has "$PARSER" 'if (self.caseset_cases.count() == 0) return false;' \
+    'the case-set element stance lost its declared-case gate'
+has "$PARSER" '} else if (try self.eat(.colon) != null) {' \
+    'the declared relation trie path lost its method-colon branch'
+examined=$((examined + 1))
+if [ "$(grep -cF 'const dot = try self.expect(.dot);' "$PARSER")" -lt 1 ]; then
+    bad 'the `.` DEMAND face was deleted rather than left standing beside the settled recognition face'
+fi
+
+# Positive controls. Every detector above counts text that is absent from the
+# repaired tree, so each is shown a tree where it is present, and shown that it
+# does not fire on the canonical spelling.
+dot_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate projection scratch' >&2; exit 2; }
+cat >"$dot_probe/old.zig" <<'PROBE'
+while ((try self.pk()).kind == .dot) {
+if (nxt.kind != .dot and nxt.kind != .colon) return null;
+return (try self.pk()).kind == .dot;
+while ((try self.pk()).kind == .dot and self.glued_to_prev(try self.pk())) {
+const opens = try self.check(.dot);
+if (try self.eat(.dot) != null) {
+PROBE
+cat >"$dot_probe/new.zig" <<'PROBE'
+while (try self.currentParserField()) {
+if (!(try self.currentParserField()) and nxt.kind != .colon) return null;
+return try self.currentParserField();
+while ((try self.currentParserField()) and self.glued_to_prev(try self.pk())) {
+const opens = try self.currentParserField();
+if (try self.currentParserField()) {
+const dot = try self.expect(.dot);
+PROBE
+dot_old_compare=$(grep -Eo '(==|!=) \.dot\b' "$dot_probe/old.zig" | wc -l | tr -d ' ')
+dot_old_check=$(grep -Fo 'self.check(.dot)' "$dot_probe/old.zig" | wc -l | tr -d ' ')
+dot_old_eat=$(grep -Fo 'self.eat(.dot)' "$dot_probe/old.zig" | wc -l | tr -d ' ')
+dot_new_compare=$(grep -Eo '(==|!=) \.dot\b' "$dot_probe/new.zig" | wc -l | tr -d ' ')
+dot_new_helper=$(grep -Eo 'self\.(check|eat)\(\.dot\)' "$dot_probe/new.zig" | wc -l | tr -d ' ')
+dot_new_faces=$(grep -cF 'self.currentParserField()' "$dot_probe/new.zig")
+rm -rf -- "$dot_probe"
+examined=$((examined + 1))
+if [ "$dot_old_compare" -ne 4 ] || [ "$dot_old_check" -ne 1 ] || [ "$dot_old_eat" -ne 1 ]; then
+    bad "the projection detector does not see the retired spellings: compare=$dot_old_compare check=$dot_old_check eat=$dot_old_eat"
+fi
+examined=$((examined + 1))
+if [ "$dot_new_compare" -ne 0 ] || [ "$dot_new_helper" -ne 0 ] || [ "$dot_new_faces" -ne 6 ]; then
+    bad "the projection detector misreads the canonical spelling: compare=$dot_new_compare helper=$dot_new_helper faces=$dot_new_faces"
+fi
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then

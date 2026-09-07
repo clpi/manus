@@ -2432,7 +2432,7 @@ pub const Parser = struct {
             const is_build = std.mem.eql(u8, attr_name.text, "build") or std.mem.startsWith(u8, attr_name.text, "build.");
             const is_debug = std.mem.eql(u8, attr_name.text, "debug") or std.mem.startsWith(u8, attr_name.text, "debug.");
             const is_trace = std.mem.eql(u8, attr_name.text, "trace") or std.mem.startsWith(u8, attr_name.text, "trace.");
-            while ((try self.pk()).kind == .dot) {
+            while (try self.currentParserField()) {
                 _ = try self.adv();
                 const part = try self.parse_at_path_segment();
                 try parts.append(self.alloc, part.text);
@@ -2728,7 +2728,7 @@ pub const Parser = struct {
         const first = try self.parse_at_path_segment();
         var parts: std.ArrayList([]const u8) = .empty;
         try parts.append(self.alloc, first.text);
-        while ((try self.pk()).kind == .dot) {
+        while (try self.currentParserField()) {
             _ = try self.adv();
             const part = try self.parse_at_path_segment();
             try parts.append(self.alloc, part.text);
@@ -3385,7 +3385,8 @@ pub const Parser = struct {
         const first = try self.expect(.name);
         try path.append(self.alloc, first.text);
         while (true) {
-            if (try self.eat(.dot) != null) {
+            if (try self.currentParserField()) {
+                _ = try self.adv();
                 const part = try self.expect(.name);
                 try path.append(self.alloc, part.text);
             } else if (try self.eat(.colon) != null) {
@@ -4731,7 +4732,7 @@ pub const Parser = struct {
                 // A variant is recognized by Name.Name( pattern
                 const saved = self.lex.*;
                 const first_name = try self.adv();
-                if ((try self.pk()).kind == .dot) {
+                if (try self.currentParserField()) {
                     _ = try self.adv(); // consume `.`
                     if (try self.currentParserName()) {
                         const variant_name = try self.adv();
@@ -5051,10 +5052,11 @@ pub const Parser = struct {
 
         if (first.* == .name) {
             const nxt = try self.pk();
-            if (nxt.kind != .dot and nxt.kind != .colon) return null;
+            if (!(try self.currentParserField()) and nxt.kind != .colon) return null;
             try path.append(self.alloc, first.name.ident);
             while (true) {
-                if (try self.eat(.dot) != null) {
+                if (try self.currentParserField()) {
+                    _ = try self.adv();
                     if (!try self.currentParserName()) {
                         self.restoreState(saved);
                         return null;
@@ -6512,7 +6514,7 @@ pub const Parser = struct {
     fn at_anchor_case(self: *Parser, op: ast.BinOp) ParseError!bool {
         if (op != .eq and op != .neq) return false;
         if (self.caseset_cases.count() == 0) return false;
-        return (try self.pk()).kind == .dot;
+        return try self.currentParserField();
     }
 
     /// Is this `@` the postfix ANCHOR (§2, `X@rel`) rather than the matmul
@@ -6769,7 +6771,7 @@ pub const Parser = struct {
                 .obj = try self.new_expr(.{ .name = .{ .loc = dot_tok.loc, .ident = subject } }),
                 .field = first_field,
             } });
-            while ((try self.pk()).kind == .dot) {
+            while (try self.currentParserField()) {
                 const chain_dot = try self.adv();
                 const chain_field = try self.expect_name_like();
                 walk = try self.new_expr(.{ .field = .{
@@ -6798,7 +6800,7 @@ pub const Parser = struct {
         // §20's `if .pos < #.src .src[.pos] else nil` writes: without the
         // adjacency test this loop swallows the then-expression into the
         // condition and the `else` has nothing in front of it.
-        while ((try self.pk()).kind == .dot and self.glued_to_prev(try self.pk())) {
+        while ((try self.currentParserField()) and self.glued_to_prev(try self.pk())) {
             const chain_dot = try self.adv();
             const chain_field = try self.expect_name_like();
             accessor = try self.new_expr(.{
@@ -7561,7 +7563,7 @@ pub const Parser = struct {
         var parts: std.ArrayList([]const u8) = .empty;
         defer parts.deinit(self.alloc);
         try parts.append(self.alloc, first.text);
-        while ((try self.pk()).kind == .dot) {
+        while (try self.currentParserField()) {
             _ = try self.adv();
             const part = try self.parse_at_path_segment();
             try parts.append(self.alloc, part.text);
@@ -12087,6 +12089,26 @@ test "parse: the anchor face admits exactly the `@` identity" {
         const expected = if (row.kind) |kind| kind == .at else false;
         if (expected) seen = true;
         try testing.expectEqual(expected, face == 17);
+    }
+    // Without this the sweep would pass on a face that admits nothing at all.
+    try testing.expect(seen);
+}
+
+test "parse: the projection face admits exactly the `.` identity" {
+    var seen = false;
+    for (grammar_roles.rows, 0..) |row, index| {
+        var facts = [3]i64{ 0, @intCast(index), 0 };
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        // Mirrors `currentParserField` exactly, both discriminators included:
+        // a `(` has no primary face at all, because its lane-two field carries
+        // the matching close COORDINATE, which ranges over every face value
+        // including 15, and the reader also refuses a prefix identity there.
+        const face: i64 = if (((events[0] >> 63) & 1) != 0) 0 else events[1] >> 13;
+        const prefix = ((events[0] >> 20) & 1) != 0;
+        const expected = if (row.kind) |kind| kind == .dot else false;
+        if (expected) seen = true;
+        try testing.expectEqual(expected, face == 15 and !prefix);
     }
     // Without this the sweep would pass on a face that admits nothing at all.
     try testing.expect(seen);
