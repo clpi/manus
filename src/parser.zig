@@ -465,6 +465,21 @@ pub const Parser = struct {
         return true;
     }
 
+    fn currentParserBranch(self: *Parser) ParseError!u2 {
+        return @intCast(((try self.currentParserEvent()) >> 11) & 3);
+    }
+
+    fn eatParserElseif(self: *Parser) ParseError!bool {
+        if ((try self.currentParserBranch()) != 1) return false;
+        _ = try self.adv();
+        return true;
+    }
+
+    fn eatParserElse(self: *Parser) ParseError!?Token {
+        if ((try self.currentParserBranch()) != 2) return null;
+        return try self.adv();
+    }
+
     fn currentParserTypeName(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 5) & 1) != 0 and
             try self.currentParserMember();
@@ -5558,8 +5573,9 @@ pub const Parser = struct {
                         (try self.currentParserName() or try self.currentParserLiteral());
                     if (!is_next) break;
                     if (peek.kind == .semi or peek.kind == .eof or
-                        (try self.currentParserEnd()) or peek.kind == .kw_else or
-                        peek.kind == .kw_elseif or peek.kind == .kw_until) break;
+                        (try self.currentParserEnd()) or
+                        (try self.currentParserBranch()) != 0 or
+                        peek.kind == .kw_until) break;
                     try args.append(self.alloc, try self.parse_parenless_call_arg());
                 }
                 const func_expr = try self.alloc.create(ast.Expr);
@@ -7467,12 +7483,12 @@ pub const Parser = struct {
         const then_expr = try self.parse_expr();
 
         var else_expr: *ast.Expr = undefined;
-        if (try self.eat(.kw_elseif) != null) {
+        if (try self.eatParserElseif()) {
             const nested_l = (try self.pk()).loc;
             else_expr = try self.parse_if_expr_after_if(nested_l, consume_end);
             return self.new_expr(.{ .if_expr = try self.new_if_expr(l, cond, then_expr, else_expr) });
         }
-        if (try self.eat(.kw_else)) |else_kw| {
+        if (try self.eatParserElse()) |else_kw| {
             // `else(condition) arm` in VALUE position, so the aligned chain
             //
             //     r = if(a) 10
@@ -12259,6 +12275,47 @@ test "parse: the written-end bit admits exactly the `end` identity" {
     // Without these the sweep would pass on a bit that admits nothing, on one
     // that admits everything, or on a pack whose trivia was never reached.
     try testing.expect(seen);
+    try testing.expect(rejected);
+    try testing.expect(refused);
+}
+
+test "parse: the branch face admits exactly the `else` and `elseif` identities" {
+    var saw_else = false;
+    var saw_elseif = false;
+    var rejected = false;
+    var refused = false;
+    for (grammar_roles.rows, 0..) |row, index| {
+        const kind = row.kind orelse continue;
+        var facts = [3]i64{ 0, @intCast(index), 0 };
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        var tokens = [_]Token{.{
+            .kind = kind,
+            .loc = .{ .file = "branch.id", .line = 1, .col = 1 },
+            .text = row.spell,
+        }};
+        var lexer = Lexer.init("", "branch.id");
+        var consumer = Parser.init(&lexer, testing.allocator);
+        consumer.pack_tokens = &tokens;
+        consumer.parser_events = &events;
+        if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {
+            try testing.expectError(error.InvalidRecordCount, consumer.currentParserBranch());
+            refused = true;
+            continue;
+        }
+        const expected: u2 = if (kind == .kw_elseif) 1 else if (kind == .kw_else) 2 else 0;
+        try testing.expectEqual(expected, try consumer.currentParserBranch());
+        switch (expected) {
+            1 => saw_elseif = true,
+            2 => saw_else = true,
+            else => rejected = true,
+        }
+    }
+    // Without these the sweep would pass on a face that admits nothing, on one
+    // that collapses the two branch identities into one, on one that admits
+    // everything, or on a pack whose trivia was never reached.
+    try testing.expect(saw_else);
+    try testing.expect(saw_elseif);
     try testing.expect(rejected);
     try testing.expect(refused);
 }

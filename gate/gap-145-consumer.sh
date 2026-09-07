@@ -5039,6 +5039,211 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     rm -rf -- "$end_probe"
 fi
 
+# --- 12. `else` / `elseif` identity at a cursor coordinate -------------------
+#
+# Four consumers in two functions still answered "is the token under the cursor
+# an `else` or an `elseif`" from the generated host `TokenKind`, at a
+# coordinate the producer had already settled and `pk()` had already selected.
+# `token.id`'s `branch()` row admits exactly those two identities and nothing
+# else, and `parser.id` writes 1 for `elseif` and 2 for `else` into event bits
+# 11..12, so those two bits ARE the branch identity: no union like `:`, and no
+# `currentParserFace()` guard, because a `(` carries its matching-close
+# coordinate in the DECISION lane while bits 11..12 are on the event lane.
+#
+# The class is every host read of `else` / `elseif` identity AT A CURSOR
+# COORDINATE, in the three spellings it takes here: a token captured by `pk()`
+# and then compared, `eat(.kw_elseif)` tested against null, and `eat(.kw_else)`
+# whose consumed token the caller still needs. Its count falls 4 -> 0.
+branch_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_(else|elseif)\)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$branch_helper" -ne 0 ]; then
+    bad "the parser still recognizes a branch through a kind-parameterized helper: count=$branch_helper"
+fi
+branch_else=$(grep -Eo '(==|!=) \.kw_else\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$branch_else" -ne 1 ]; then
+    bad "the parser rebuilds 'else' identity at a cursor coordinate: count=$branch_else"
+fi
+branch_elseif=$(grep -Eo '(==|!=) \.kw_elseif\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$branch_elseif" -ne 1 ]; then
+    bad "the parser rebuilds 'elseif' identity at a cursor coordinate: count=$branch_elseif"
+fi
+
+# The single survivor of each is the equivalence sweep, which is REQUIRED to
+# compare the face against the identity. Unlike `end` this class leaves no
+# demand standing beside it: there is no `expect(.kw_else)` and no
+# `expect(.kw_elseif)` anywhere in the file, so the ceilings above are 1 and 1
+# rather than 1 and 2.
+forbid "$PARSER" 'self.expect(.kw_else)' \
+    'a branch identity became a demand instead of a settled recognition'
+forbid "$PARSER" 'self.expect(.kw_elseif)' \
+    'a branch identity became a demand instead of a settled recognition'
+
+has "$PARSER" 'return @intCast(((try self.currentParserEvent()) >> 11) & 3);' \
+    'the branch consumer no longer reads the settled branch face'
+has "$PARSER" 'fn eatParserElseif(self: *Parser) ParseError!bool {' \
+    'Parser lost the consuming elseif reader'
+has "$PARSER" 'fn eatParserElse(self: *Parser) ParseError!?Token {' \
+    'Parser lost the consuming else reader'
+
+# THE DISCRIMINATOR FOR THIS CLASS. `branch()` is one row over two identities,
+# so a transfer that read "some branch" at both sites would admit `else` where
+# `elseif` was demanded and build the wrong node. Each consuming reader must
+# select its own ordinal, not merely a nonzero face.
+has "$PARSER" '        if ((try self.currentParserBranch()) != 1) return false;' \
+    'the consuming elseif reader no longer separates elseif from else'
+has "$PARSER" '        if ((try self.currentParserBranch()) != 2) return null;' \
+    'the consuming else reader no longer separates else from elseif'
+
+branch_sweep=$(sed -n '/the branch face admits exactly the `else` and `elseif` identities" {/,/^}/p' "$PARSER")
+for predicate in 'const expected: u2 = if (kind == .kw_elseif) 1 else if (kind == .kw_else) 2 else 0;' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try consumer.currentParserBranch()' 'if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {' 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserBranch());' 'for (grammar_roles.rows, 0..) |row, index| {' 'try testing.expect(saw_else);' 'try testing.expect(saw_elseif);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$branch_sweep" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "branch equivalence oracle lost predicate: $predicate"
+    fi
+done
+
+check_branch_region() {
+    region_pattern=$1
+    region_expected=$2
+    region_label=$3
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "the $region_label region selector selected nothing: lines=$region_lines"
+        return
+    fi
+    region_bits=$(sed -n "${region_pattern}p" "$PARSER" | \
+        grep -Eo 'self\.(currentParserBranch|eatParserElseif|eatParserElse)\(\)' | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_bits" -ne "$region_expected" ]; then
+        bad "$region_label does not consume the settled branch face: count=$region_bits want=$region_expected"
+    fi
+}
+
+check_branch_region '/fn parse_expr_stmt/,/fn finish_prec/' 1 'the parenless call argument run'
+check_branch_region '/fn parse_if_expr_after_if_with_cond/,/fn new_if_expr/' 2 'the conditional alternative chain'
+
+branch_class=$(grep -Eo 'self\.(currentParserBranch|eatParserElseif|eatParserElse)\(\)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$branch_class" -ne 5 ]; then
+    bad "the branch class is not at its transferred count: count=$branch_class want=5"
+fi
+
+# Anti-green controls. The parenless-call site recognizes a branch and then
+# asks OTHER questions about the same coordinate — `semi`, `eof`, `end`,
+# `until` — and the `else` site asks a SECOND question about the token it
+# consumed: whether a `(` is glued to it. Those are different facts and stay
+# separate reads; dropping one would change admission rather than move it.
+branch_siblings=$(grep -cE '\(try self\.currentParserBranch\(\)\) != 0 or' "$PARSER")
+examined=$((examined + 1))
+if [ "$branch_siblings" -ne 1 ]; then
+    bad "the parenless branch read lost its disjunction: count=$branch_siblings want=1"
+fi
+has "$PARSER" '                        peek.kind == .kw_until) break;' \
+    'the parenless branch read lost the until alternative beside it'
+has "$PARSER" 'if (try self.eatParserElse()) |else_kw| {' \
+    'the else consumer stopped binding the token it consumed'
+has "$PARSER" '            if (self.glued_lparen(else_kw)) {' \
+    'the else consumer lost the adjacency question about the token it consumed'
+
+# Positive controls. Every detector above counts text absent from the repaired
+# tree, so each is shown a tree where it is present, and shown that it does not
+# fire on the canonical spelling.
+branch_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate branch scratch' >&2; exit 2; }
+cat >"$branch_probe/old.zig" <<'PROBE'
+if (peek.kind == .kw_else or peek.kind == .kw_elseif) break;
+if (try self.eat(.kw_elseif) != null) {
+if (try self.eat(.kw_else)) |else_kw| {
+PROBE
+cat >"$branch_probe/new.zig" <<'PROBE'
+if ((try self.currentParserBranch()) != 0 or peek.kind == .kw_until) break;
+if (try self.eatParserElseif()) {
+if (try self.eatParserElse()) |else_kw| {
+PROBE
+branch_old_else=$(grep -Eo '(==|!=) \.kw_else\b' "$branch_probe/old.zig" | wc -l | tr -d ' ')
+branch_old_elseif=$(grep -Eo '(==|!=) \.kw_elseif\b' "$branch_probe/old.zig" | wc -l | tr -d ' ')
+branch_old_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_(else|elseif)\)' "$branch_probe/old.zig" | wc -l | tr -d ' ')
+branch_new_else=$(grep -Eo '(==|!=) \.kw_else\b' "$branch_probe/new.zig" | wc -l | tr -d ' ')
+branch_new_elseif=$(grep -Eo '(==|!=) \.kw_elseif\b' "$branch_probe/new.zig" | wc -l | tr -d ' ')
+branch_new_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_(else|elseif)\)' "$branch_probe/new.zig" | wc -l | tr -d ' ')
+branch_new_bits=$(grep -Eo 'self\.(currentParserBranch|eatParserElseif|eatParserElse)\(\)' "$branch_probe/new.zig" | wc -l | tr -d ' ')
+branch_new_siblings=$(grep -cE '\(try self\.currentParserBranch\(\)\) != 0 or' "$branch_probe/new.zig")
+rm -rf -- "$branch_probe"
+examined=$((examined + 1))
+if [ "$branch_old_else" -ne 1 ] || [ "$branch_old_elseif" -ne 1 ] || [ "$branch_old_helper" -ne 2 ]; then
+    bad "the branch detector does not see the retired spellings: else=$branch_old_else elseif=$branch_old_elseif helper=$branch_old_helper"
+fi
+examined=$((examined + 1))
+if [ "$branch_new_else" -ne 0 ] || [ "$branch_new_elseif" -ne 0 ] ||
+    [ "$branch_new_helper" -ne 0 ] || [ "$branch_new_bits" -ne 3 ] ||
+    [ "$branch_new_siblings" -ne 1 ]; then
+    bad "the branch detector misreads the canonical spelling: else=$branch_new_else elseif=$branch_new_elseif helper=$branch_new_helper bits=$branch_new_bits siblings=$branch_new_siblings"
+fi
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    branch_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate branch perturbation scratch' >&2; exit 2; }
+
+    # FALSE ACCEPT. Stop reading the settled face and answer `else` for every
+    # coordinate. Every transferred site still compiles, every ceiling still
+    # reads 1, the class count still reads 5, and the oracle text is intact.
+    sed 's/return @intCast(((try self.currentParserEvent()) >> 11) & 3);/return 2;/' "$PARSER" >"$branch_probe/accept.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$branch_probe/accept.result" 2>&1
+    branch_status=$?
+    examined=$((examined + 1))
+    if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the branch consumer no longer reads the settled branch face' "$branch_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$branch_probe/accept.result"; then
+        bad "branch false-accept control did not fail closed: status=$branch_status"
+    fi
+
+    # COLLAPSE. Keep reading the settled face but stop separating the two
+    # identities it carries, so `elseif` is consumed as `else`. Every ceiling,
+    # every region count and the oracle are intact; only the discriminator
+    # above can catch it.
+    sed 's/if ((try self.currentParserBranch()) != 2) return null;/if ((try self.currentParserBranch()) == 0) return null;/' "$PARSER" >"$branch_probe/collapse.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/collapse.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$branch_probe/collapse.result" 2>&1
+    branch_status=$?
+    examined=$((examined + 1))
+    if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/collapse.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the consuming else reader no longer separates else from elseif' "$branch_probe/collapse.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the branch consumer no longer reads the settled branch face' "$branch_probe/collapse.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$branch_probe/collapse.result"; then
+        bad "branch collapse control did not fail closed: status=$branch_status"
+    fi
+
+    # WRONG ERROR. Break the sweep's non-vacuity and require the gate to name
+    # THAT and not either reader above.
+    sed '/the branch face admits exactly/,/^}/ s/try testing\.expect(rejected);/try testing.expect(!rejected);/' "$PARSER" >"$branch_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$branch_probe/wrong.result" 2>&1
+    branch_status=$?
+    examined=$((examined + 1))
+    if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL branch equivalence oracle lost predicate: try testing.expect(rejected);' "$branch_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the branch consumer no longer reads the settled branch face' "$branch_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the consuming else reader no longer separates else from elseif' "$branch_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$branch_probe/wrong.result"; then
+        bad "branch wrong-error control did not fail closed: status=$branch_status"
+    fi
+
+    # LEFTOVER. Restore one retired spelling at a transferred site. Both
+    # readers and the oracle are intact, so only the helper ceiling, the region
+    # count and the class count can catch it.
+    sed 's/if (try self.eatParserElseif()) {/if (try self.eat(.kw_elseif) != null) {/' "$PARSER" >"$branch_probe/left.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/left.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$branch_probe/left.result" 2>&1
+    branch_status=$?
+    examined=$((examined + 1))
+    if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/left.result" ] ||
+        ! grep -Fq "gap-145 consumer gate: FAIL the parser still recognizes a branch through a kind-parameterized helper: count=1" "$branch_probe/left.result" ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the branch class is not at its transferred count: count=4 want=5' "$branch_probe/left.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$branch_probe/left.result"; then
+        bad "branch leftover control did not fail closed: status=$branch_status"
+    fi
+
+    rm -rf -- "$branch_probe"
+fi
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then
