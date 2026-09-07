@@ -1194,6 +1194,10 @@ fn isClockName(n: []const u8) bool {
 /// handed).
 pub const Program = struct {
     census: place.Census,
+    /// FALSE when the census was produced elsewhere and outlives this program.
+    /// `law.fact.producer.one`: one census answers "which places exist", and a
+    /// second one derived here would be a rival producer of that fact.
+    owns_census: bool = true,
     ev: std.ArrayListUnmanaged(Evidence) = .empty,
     /// The world the caller supplied, UNION the facts the walk found — a clock
     /// read is discovered, not declared.
@@ -1204,7 +1208,7 @@ pub const Program = struct {
 
     pub fn deinit(self: *Program) void {
         self.ev.deinit(self.alloc);
-        self.census.deinit();
+        if (self.owns_census) self.census.deinit();
     }
 
     pub fn evidenceFor(self: *const Program, id: u32) ?Evidence {
@@ -1318,6 +1322,14 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
 
     var prog = Program{ .census = census, .world = w, .alloc = alloc };
     errdefer prog.ev.deinit(alloc);
+    try annotate(alloc, &prog, mod);
+    return prog;
+}
+
+/// The evidence walk over the census a `Program` already holds. Split out of
+/// `analyze` so a caller that ALREADY OWNS a census can be annotated without a
+/// second one being derived behind its back.
+fn annotate(alloc: std.mem.Allocator, prog: *Program, mod: *const ast.Module) !void {
     for (prog.census.places.items) |*p| {
         // Every collection read on this surface is `s(i)` or `s[i]`, so a read
         // access IS a positional read. When a set-shaped read face exists this
@@ -1347,7 +1359,7 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
 
     var reads: std.ArrayListUnmanaged([]const u8) = .empty;
     defer reads.deinit(alloc);
-    var ctx = WalkCtx{ .prog = &prog, .loop_reads = &reads };
+    var ctx = WalkCtx{ .prog = prog, .loop_reads = &reads };
 
     try walkBlock(&ctx, &mod.body);
 
@@ -1364,7 +1376,46 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
     // The walk PRODUCES world facts. A clock read is discovered here and then
     // makes `instruction_schedule` and `recompute_vs_memoize` observable — the
     // gap's "reading a clock is an effect" as a mechanism.
-    return prog;
+}
+
+/// **THE EXISTENCE RULING, PER PLACE, OVER A BORROWED CENSUS.** Indexed by
+/// `place.Place.id`, which `place.zig` assigns as the census position.
+///
+/// `permits(&report, .existence)` is the only question asked, because erasing a
+/// place is the only freedom the caller exercises. Its gate is
+/// `allocation_identity` — GAP-170's *allocation identity, address, and
+/// existence of a place* — so a demanded debugger, a security adversary, a
+/// foreign boundary, an unproven escape or an open world each block it.
+///
+/// A row this module cannot produce evidence for gets `.blocked_unknown`, never
+/// `.permitted`.
+pub fn existenceOverCensus(
+    alloc: std.mem.Allocator,
+    census: *const place.Census,
+    mod: *const ast.Module,
+    w: World,
+    ob: Obligations,
+) ![]Permit {
+    var prog = Program{
+        .census = census.*,
+        .owns_census = false,
+        .world = w,
+        .alloc = alloc,
+    };
+    defer prog.deinit();
+    try annotate(alloc, &prog, mod);
+
+    const out = try alloc.alloc(Permit, prog.census.places.items.len);
+    errdefer alloc.free(out);
+    for (out, 0..) |*slot, i| {
+        const ev = prog.evidenceFor(@intCast(i)) orelse {
+            slot.* = .blocked_unknown;
+            continue;
+        };
+        const r = classifyAll(prog.world, ev, ob, .{ .place = @intCast(i) });
+        slot.* = permits(&r, .existence).permit;
+    }
+    return out;
 }
 
 fn walkBlock(ctx: *WalkCtx, b: *const ast.Block) anyerror!void {
