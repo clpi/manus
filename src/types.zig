@@ -261,12 +261,19 @@ pub fn enumShapeFromAst(ed: *const ast.EnumDef, alloc: std.mem.Allocator) !Resol
 // — "string identities"). It is written down here at the moment the mechanism
 // becomes useful, because that is when the pressure to fossilize starts.
 var nominal_reprs: std.StringHashMapUnmanaged(ResolvedType) = .empty;
+var nominal_reprs_store: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
 /// Land `name --realized-as--> repr`. Re-declaration REPLACES, so a later
 /// module's descriptor wins over an earlier one of the same name, matching
 /// `Relation.declare`.
 pub fn declareNominal(alloc: std.mem.Allocator, name: []const u8, repr: ResolvedType) !void {
-    try nominal_reprs.put(alloc, name, repr);
+    _ = alloc;
+    const store = nominal_reprs_store.allocator();
+    if (nominal_reprs.getPtr(name)) |slot| {
+        slot.* = repr;
+        return;
+    }
+    try nominal_reprs.put(store, try store.dupe(u8, name), repr);
 }
 
 /// The representation of a nominal descriptor NAME, or null when the name is
@@ -4836,4 +4843,15 @@ test "inferCallShape: method call expression" {
     try testing.expectEqual(CalleeKind.method, shape.callee_kind);
     try testing.expectEqualStrings("method", shape.method_name.?);
     try testing.expectEqual(@as(u8, 3), shape.arg_count);
+}
+
+test "types: nominal store outlives a destroyed caller arena" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    const alloc = arena.allocator();
+    try declareNominal(alloc, "t69_farthing", .i32);
+    arena.deinit();
+    try testing.expectEqual(@as(?ResolvedType, .i32), nominalRepr("t69_farthing"));
+    try declareNominal(testing.allocator, "t69_farthing", .i64);
+    try testing.expectEqual(@as(?ResolvedType, .i64), nominalRepr("t69_farthing"));
+    try testing.expectEqual(@as(?ResolvedType, null), nominalRepr("t69_absent"));
 }
