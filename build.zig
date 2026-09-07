@@ -433,6 +433,17 @@ pub fn build(b: *std.Build) void {
         }),
     });
     linkProductionIdolFrontend(b, unit_tests.root_module);
+    const filter_tests = b.addTest(.{
+        .name = "unit-test-filter",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("unit_test_filter.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    const run_filter_tests = b.addRunArtifact(filter_tests);
+    run_filter_tests.addPassthruArgs();
+    unit_tests.step.dependOn(&run_filter_tests.step);
     const run_unit_tests = b.addRunArtifact(unit_tests);
     if (@hasDecl(std.Build.Step.Run, "addPassthruArgs")) {
         run_unit_tests.addPassthruArgs();

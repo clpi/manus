@@ -10,7 +10,7 @@ pub fn parseUnitTestFilter(raw: ?[]const u8) UnitTestFilter {
     const text = raw orelse return .default;
     if (text.len == 0) return .{ .malformed = "-Dtest-filter requires a non-empty value" };
     for (text) |c| {
-        if (c < 0x20 and c != '\t') {
+        if (std.ascii.isControl(c) and c != '\t') {
             return .{ .malformed = "-Dtest-filter contains a control character" };
         }
     }
@@ -42,4 +42,9 @@ test "parseUnitTestFilter: control byte is malformed" {
 test "parseUnitTestFilter: tab is allowed" {
     const r = parseUnitTestFilter("lower\t:");
     try std.testing.expect(r == .filter);
+}
+
+test "parseUnitTestFilter: delete byte is malformed" {
+    const r = parseUnitTestFilter("lower\x7f:");
+    try std.testing.expect(r == .malformed);
 }
