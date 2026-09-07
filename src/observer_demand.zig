@@ -901,6 +901,7 @@ test "observer_demand: §11 — an observer's mere existence costs freedoms" {
         .has_effect = .no,
         .order_declared = .no,
         .positional_read = .no,
+        .crosses_boundary = .no,
         .quotient = .modulus,
         .facts = .{ .alias = .no },
     };
@@ -1109,6 +1110,7 @@ test "observer_demand: §60 — the menu is facts-in, and `retain` is always on 
         .has_effect = .no,
         .order_declared = .no,
         .positional_read = .no,
+        .crosses_boundary = .no,
         .quotient = .modulus,
         .facts = .{ .alias = .no },
     };
@@ -1146,6 +1148,7 @@ test "observer_demand: §60 — a debugger demand takes policies off the menu" {
         .has_effect = .no,
         .order_declared = .no,
         .positional_read = .no,
+        .crosses_boundary = .no,
         .quotient = .modulus,
         .facts = .{ .alias = .no },
     };

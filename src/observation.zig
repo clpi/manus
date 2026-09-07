@@ -638,7 +638,7 @@ pub const Evidence = struct {
     /// The place is handed to something the walk cannot see through.
     escapes: Tri = .unknown,
     /// The place crosses an irreversible boundary (law §105).
-    crosses_boundary: bool = false,
+    crosses_boundary: Tri = .unknown,
     /// The place's element values reach an observer at all.
     quotient: Quotient = .full,
     /// An access can trap and the trap is not proven to stay inside.
@@ -744,13 +744,17 @@ pub fn classify(c: Class, w: World, ev: Evidence, ob: Obligations, s: Subject) F
                 break :blk yes(c, &.{ .foreign, .profiler }, .security_world, .world, .law, s);
             if (w.has(.debugger_demanded) or w.has(.reflection_demanded))
                 break :blk yes(c, &.{ .debugger, .reflection }, .inspection_demanded, .world, .law, s);
-            if (ev.crosses_boundary or w.has(.foreign_boundary))
+            if (ev.crosses_boundary == .yes or w.has(.foreign_boundary))
                 break :blk yes(c, &.{.foreign}, .boundary_in_extent, .world, .law, s);
+            if (ev.crosses_boundary == .unknown)
+                break :blk unknown(c, .boundary_in_extent, .observation_walk, s);
             break :blk free(c, .existence_undemanded, .observation_walk, s);
         },
         .physical_layout => blk: {
-            if (ev.crosses_boundary or w.has(.foreign_boundary))
+            if (ev.crosses_boundary == .yes or w.has(.foreign_boundary))
                 break :blk yes(c, &.{.foreign}, .boundary_in_extent, .world, .law, s);
+            if (ev.crosses_boundary == .unknown)
+                break :blk unknown(c, .boundary_in_extent, .observation_walk, s);
             if (ev.escapes != .no)
                 break :blk yes(c, &.{ .program, .foreign }, .escape_unproven, .place_facts, .proof, s);
             // An unproven alias means another name may see the bytes, so no
@@ -803,8 +807,10 @@ pub fn classify(c: Class, w: World, ev: Evidence, ob: Obligations, s: Subject) F
             break :blk free(c, .no_observer_can_distinguish, .observation_walk, s);
         },
         .representation_width => blk: {
-            if (ev.crosses_boundary or w.has(.foreign_boundary))
+            if (ev.crosses_boundary == .yes or w.has(.foreign_boundary))
                 break :blk yes(c, &.{.foreign}, .boundary_in_extent, .world, .law, s);
+            if (ev.crosses_boundary == .unknown)
+                break :blk unknown(c, .boundary_in_extent, .observation_walk, s);
             if (ev.quotient == .full and ev.escapes != .no)
                 break :blk yes(c, &.{.program}, .value_demanded, .place_facts, .proof, s);
             // MEASURED (docs/observation.md §3.3): E1 observes `n mod 2^8`, so
@@ -816,8 +822,10 @@ pub fn classify(c: Class, w: World, ev: Evidence, ob: Obligations, s: Subject) F
         .device_and_tier => blk: {
             if (w.has(.security_adversary))
                 break :blk yes(c, &.{.foreign}, .security_world, .world, .law, s);
-            if (ev.crosses_boundary)
+            if (ev.crosses_boundary == .yes)
                 break :blk yes(c, &.{.foreign}, .boundary_in_extent, .observation_walk, .law, s);
+            if (ev.crosses_boundary == .unknown)
+                break :blk unknown(c, .boundary_in_extent, .observation_walk, s);
             break :blk free(c, .no_observer_can_distinguish, .world, s);
         },
         .thread_placement => blk: {
@@ -893,9 +901,11 @@ pub fn classify(c: Class, w: World, ev: Evidence, ob: Obligations, s: Subject) F
         .foreign_representation => blk: {
             // BOUNDARY-ONE: foreign representation has FINITE EXTENT — exactly
             // the foreign application — and never infects the whole program.
-            if (!ev.crosses_boundary and !w.has(.foreign_boundary))
-                break :blk free(c, .no_observer_can_distinguish, .observation_walk, s);
-            break :blk yes(c, &.{.foreign}, .boundary_in_extent, .world, .law, s);
+            if (ev.crosses_boundary == .yes or w.has(.foreign_boundary))
+                break :blk yes(c, &.{.foreign}, .boundary_in_extent, .world, .law, s);
+            if (ev.crosses_boundary == .unknown)
+                break :blk unknown(c, .boundary_in_extent, .observation_walk, s);
+            break :blk free(c, .no_observer_can_distinguish, .observation_walk, s);
         },
         .concurrency_observation => blk: {
             if (!w.has(.genuine_sharing))
@@ -1226,6 +1236,8 @@ const WalkCtx = struct {
     /// Monotone: any observable effect ANYWHERE in the region. Separate from
     /// `loop_effect`, which is scoped to one loop nest and is restored on exit.
     any_effect: Tri = .no,
+    /// Monotone: any applied relation the walk cannot prove boundary-local.
+    any_boundary: Tri = .no,
 };
 
 /// `yes` dominates `unknown` dominates `no`, so a second visit can raise the
@@ -1267,6 +1279,10 @@ fn markEffect(ctx: *WalkCtx) void {
 fn markEffectUnknown(ctx: *WalkCtx) void {
     ctx.loop_effect = raise(ctx.loop_effect, .unknown);
     ctx.any_effect = raise(ctx.any_effect, .unknown);
+}
+
+fn markBoundaryUnknown(ctx: *WalkCtx) void {
+    ctx.any_boundary = raise(ctx.any_boundary, .unknown);
 }
 
 fn evOf(ctx: *WalkCtx, name: []const u8) ?*Evidence {
@@ -1314,6 +1330,7 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
             .complete = true,
             .facts = p.facts,
             .escapes = p.facts.escape,
+            .crosses_boundary = .no,
             .positional_read = if (any_read) .yes else .no,
             // This surface has no declared-ordered collection type: a table
             // literal fixes index-to-value and fixes no ENUMERATION order. A
@@ -1345,6 +1362,9 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
     // observable for a place bound on the first.
     for (prog.ev.items) |*e| {
         if (e.complete) e.has_effect = ctx.any_effect;
+    }
+    for (prog.ev.items) |*e| {
+        if (e.complete) e.crosses_boundary = raise(e.crosses_boundary, ctx.any_boundary);
     }
 
     // The walk PRODUCES world facts. A clock read is discovered here and then
@@ -1460,7 +1480,7 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
                 if (pos == .effect_arg or pos == .boundary_arg) {
                     ev.identity_captured = true;
                     ev.temporary_materialized = true;
-                    if (pos == .boundary_arg) ev.crosses_boundary = true;
+                    if (pos == .boundary_arg) ev.crosses_boundary = .yes;
                 }
                 try noteLoopRead(ctx, n.ident);
             }
@@ -1507,11 +1527,15 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
                     for (c.args) |a| try walkExpr(ctx, a, .read);
                     return;
                 }
-                if (!recognized) markEffectUnknown(ctx);
+                if (!recognized) {
+                    markEffectUnknown(ctx);
+                    markBoundaryUnknown(ctx);
+                }
             } else {
                 // A COMPUTED CALLEE names no relation at all, so there is
                 // nothing to recognize and nothing to prove pure.
                 markEffectUnknown(ctx);
+                markBoundaryUnknown(ctx);
                 try walkExpr(ctx, c.func, .read);
             }
             for (c.args) |a| try walkExpr(ctx, a, arg_pos);
@@ -1543,6 +1567,7 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
                 // world name on the list and the relation is not on it either,
                 // so the walk has recognized nothing here and says so.
                 markEffectUnknown(ctx);
+                markBoundaryUnknown(ctx);
             }
             try walkExpr(ctx, m.obj, arg_pos);
             for (m.args) |a| try walkExpr(ctx, a, arg_pos);
@@ -1634,7 +1659,7 @@ const clean = Evidence{
     .order_declared = .no,
     .positional_read = .no,
     .escapes = .no,
-    .crosses_boundary = false,
+    .crosses_boundary = .no,
     .quotient = .modulus,
     .may_trap = .no,
     .float_produced = false,
@@ -1914,7 +1939,7 @@ test "observation: a foreign boundary has FINITE EXTENT and does not infect the 
     // that does not cross it keeps both, in the same program.
     const at_boundary = blk: {
         var e = clean;
-        e.crosses_boundary = true;
+        e.crosses_boundary = .yes;
         break :blk e;
     };
     const r_b = classifyAll(ordinary_executable, at_boundary, no_obligations, .{ .place = 0 });
@@ -2339,6 +2364,50 @@ test "observation: CONTROL — a recognized effect still proves `.yes`, not `unk
     const r = prog.report("s", no_obligations).?;
     try testing.expectEqual(Tri.yes, r.get(.effect_order).observed);
     try testing.expectEqual(Tri.yes, r.get(.recompute_vs_memoize).observed);
+}
+
+test "observation: DIAGNOSTIC — an unclassified application proves no boundary-freedom" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    x = stdin:read()
+        \\    s(1) + x & 255
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    const ev = prog.byName("s").?;
+    try testing.expect(ev.complete);
+    try testing.expectEqual(Tri.unknown, ev.crosses_boundary);
+
+    const r = prog.report("s", no_obligations).?;
+    try testing.expectEqual(Tri.unknown, r.get(.foreign_representation).observed);
+    try testing.expectEqual(Permit.blocked_unknown, permits(&r, .layout).permit);
+    try testing.expectEqual(Permit.blocked_unknown, permits(&r, .width).permit);
+}
+
+test "observation: CONTROL — element reads alone still PROVE boundary-freedom" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    s[1] & 255
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    const ev = prog.byName("s").?;
+    try testing.expectEqual(Tri.no, ev.crosses_boundary);
+
+    const r = prog.report("s", no_obligations).?;
+    const fr = r.get(.foreign_representation);
+    try testing.expectEqual(Tri.no, fr.observed);
+    try testing.expectEqual(Authority.proof, fr.prov.authority);
+    try testing.expect(permits(&r, .layout).ok());
+    try testing.expect(permits(&r, .width).ok());
 }
 
 test "observation: an unclassified relation in a loop leaves ENUMERATION order unknown" {
