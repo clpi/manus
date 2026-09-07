@@ -3229,7 +3229,7 @@ pub fn lowerTestSourceWithGraph(
 }
 
 fn recordCarrierFits(actual: dnir.RecordDesc, required: dnir.RecordDesc) bool {
-    if (actual.fields.len != required.fields.len or
+    if (actual.fields.len < required.fields.len or
         actual.kinds.len != actual.fields.len or
         required.kinds.len != required.fields.len) return false;
     for (required.fields, required.kinds, 0..) |field, kind, required_index| {
@@ -5705,6 +5705,8 @@ fn lowerFieldAssignTarget(ctx: *LowerCtx, obj: *const ast.Expr, field_name: []co
     defer ctx.alloc.free(fk);
     const v = try lowerExprCons(ctx, value, .single);
     if (ctx.locals.get(fk)) |slot| {
+        if (ctx.require_graph_facts and !ctx.graph.gateTransportModule() and slot < ctx.param_slots)
+            return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-parameter-place-unproved");
         if (ctx.require_graph_facts) {
             const origin = ctx.graph.valueByAst(value) orelse
                 return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-write-value");
@@ -12017,7 +12019,8 @@ fn evaluateCheckedScalarOperands(
                 if (descriptor != .@"struct") break :blk null;
                 break :actual recordForDescriptor(ctx.records, descriptor, ctx.graph) orelse break :blk null;
             };
-            if (!recordCarrierFits(actual, record)) break :blk null;
+            if (!recordCarrierFits(actual, record))
+                return invalidGraphFacts(ctx.diagnostic, @src(), "record-parameter-carrier-mismatch");
             break :blk record;
         };
         // ONE SEMANTIC VALUE, A CONSUMER-DIRECTED REALIZATION. A record operand
@@ -20577,6 +20580,8 @@ test "dnir_lower: record writes require the exact value origin" {
 
 test "dnir_lower: record arguments follow the target field order" {
     const cases = [_]struct { source: []const u8, slots: []const dnir.Value }{
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    read(2, item, 5)\nos.exit(probe(7))\n", .slots = &.{ .{ .i64 = 2 }, .{ .local = 0 }, .{ .i64 = 5 } } },
+        .{ .source = "record: {code: i64}\nfull: {extra: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item: full = {code = code, extra = 91}\n    read(2, item, 5) + item.extra\nos.exit(probe(13))\n", .slots = &.{ .{ .i64 = 2 }, .{ .local = 0 }, .{ .i64 = 5 } } },
         .{ .source = "record: {other: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {code = code, other = 91}\n    read(2, item, 5)\nos.exit(probe(7))\n", .slots = &.{ .{ .i64 = 2 }, .{ .i64 = 91 }, .{ .local = 0 }, .{ .i64 = 5 } } },
         .{ .source = "record: {label: str, code: i64}\nread = (value: record): i64 #value.label + value.code\nprobe = (code: i64): i64\n    item = {code = code, label = \"ok\"}\n    read(item)\nos.exit(probe(7))\n", .slots = &.{ .{ .str = "ok" }, .{ .local = 0 } } },
         .{ .source = "record: {other: i64, code: i64}\nread = (a: record, b: record): i64 a.code * 3 + b.code\nprobe = (code: i64): i64\n    a = {code = code, other = 91}\n    b = {other = 83, code = 13}\n    read(a, b)\nos.exit(probe(7))\n", .slots = &.{ .{ .i64 = 91 }, .{ .local = 0 }, .{ .i64 = 83 }, .{ .i64 = 13 } } },
@@ -20693,4 +20698,91 @@ test "dnir_lower: scalar record initializers require exact value origin" {
     diagnostic.reset();
     try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
     try std.testing.expectEqualStrings("record-field-initializer-origin", diagnostic.note().?);
+}
+
+
+test "dnir_lower: projected record arguments retain exact member proof" {
+    const source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    read(2, item, 5)\nos.exit(probe(7))\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    var lexer = @import("lexer.zig").Lexer.init(source, "record-projection-proof.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-projection-proof.id");
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    const target = graph.findByNameOfKind("read", .func).?;
+    var application: ?semantic_graph.id = null;
+    for (graph.applications()) |fact| {
+        if (graph.applicationTarget(fact.application) != target) continue;
+        try std.testing.expect(application == null);
+        application = fact.application;
+    }
+    const operand = graph.applicationArguments(application.?).?[0];
+    const shape = graph.descriptorShape(operand, 0).?;
+    const members = try graph.membersOf(shape, alloc);
+    defer alloc.free(members);
+    try std.testing.expectEqual(@as(usize, 2), members.len);
+    var code: ?semantic_graph.id = null;
+    var extra: ?semantic_graph.id = null;
+    for (members) |member| {
+        if (std.mem.eql(u8, graph.get(member).?.name.?, "code")) code = member;
+        if (std.mem.eql(u8, graph.get(member).?.name.?, "extra")) extra = member;
+    }
+    const original_code = graph.nodes.items[code.?];
+    const original_extra = graph.nodes.items[extra.?];
+    for (0..4) |damage| {
+        switch (damage) {
+            0 => graph.nodes.items[code.?].name = "absent",
+            1 => graph.nodes.items[code.?].descriptor = .str,
+            2 => graph.nodes.items[code.?].descriptor = .i32,
+            3 => graph.nodes.items[extra.?].name = "code",
+            else => unreachable,
+        }
+        diagnostic.reset();
+        try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+        try std.testing.expectEqualStrings("record-parameter-carrier-mismatch", diagnostic.note().?);
+        graph.nodes.items[code.?] = original_code;
+        graph.nodes.items[extra.?] = original_extra;
+    }
+}
+
+
+test "dnir_lower: record parameter writes require shared residency" {
+    const sources = [_][]const u8{
+        "record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
+        "record: {code: i64}\nfull: {extra: i64, code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: full = {extra = 91, code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
+    };
+    for (sources) |source| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        var lexer = @import("lexer.zig").Lexer.init(source, "record-parameter-mutation.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = @import("sema.zig").Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        try std.testing.expectEqual(@as(u32, 0), checked.errors);
+        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-parameter-mutation.id");
+        var diagnostic: Diagnostic = .{};
+        try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+        try std.testing.expectEqualStrings("record-field-parameter-place-unproved", diagnostic.note().?);
+    }
 }
