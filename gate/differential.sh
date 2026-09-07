@@ -565,6 +565,25 @@ hash256() {
   printf '%s' "$_h_val"
 }
 
+eventvalid() {
+  _ev_kind=$1
+  _ev_status=$2
+  case $_ev_status in ''|*[!0-9]*) return 1 ;; esac
+  case $_ev_kind in
+    ok) return 0 ;;
+    timeout) [ "$_ev_status" -eq 124 ] ;;
+    pipe|fork|group|wait) [ "$_ev_status" -eq 125 ] ;;
+    exec) [ "$_ev_status" -eq 127 ] ;;
+    signal:*)
+      _ev_sig=${_ev_kind#signal:}
+      case $_ev_sig in ''|*[!0-9]*) return 1 ;; esac
+      [ "$_ev_sig" -gt 0 ] && [ "$_ev_sig" -lt 128 ] || return 1
+      [ "$_ev_status" -eq $((128 + _ev_sig)) ]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 DIGEST=$(digesttool) || {
   echo "differential: no SHA-256 digest tool — no arm can be identified, so nothing may be compared" >&2
   echo "differential:   tried shasum -a 256, sha256sum" >&2
@@ -605,6 +624,10 @@ observe() {
     return
   fi
   _obs_kind=$(sed -n '1p' "$_obs_event")
+  if ! eventvalid "$_obs_kind" "$_obs_status"; then
+    printf 'invalid\t%s\t%s\t%s\n' "$_obs_status" "$_obs_stdout_raw" "$_obs_stderr" >"$_obs_record"
+    return
+  fi
   normout "$_obs_root" "$_obs_realroot" "$_obs_cwd" "$_obs_scratch" "$_obs_source" \
     <"$_obs_stdout_raw" >"$_obs_stdout"
   norm "$_obs_root" "$_obs_realroot" "$_obs_cwd" "$_obs_scratch" "$_obs_source" \
@@ -1302,7 +1325,38 @@ exit 7
   TMO=$_self_old_tmo
   [ "$_self_rc" -eq 2 ] || return 1
 
-  echo "differential: selftest PASS — physical scratch root, SHA-256 known answer and a digest tool that is absent, silent or answering something else, sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, a null control refusing arms it cannot hash, per-arm cwd in both spellings, real row survives normalisation, in-tree arm at the subject source root, mirror nested in the source tree, arm reached through a symlink and a real row surviving that, an arm whose binary is a symlink and a real row surviving that, regex metacharacters in an arm root on both channels and a real row surviving that on each, one observation, comparator damage, zero-subject, exit154/signal26/partial-output and exit124/timeout controls"
+  cat >"$_self/limiter.signal.status" <<'PL'
+my ($limit, $event, @cmd) = @ARGV;
+open(my $fh, '>', $event) or exit 125;
+print {$fh} "signal:26\n";
+close($fh) or exit 125;
+exit 0;
+PL
+  cat >"$_self/limiter.signal.kind" <<'PL'
+my ($limit, $event, @cmd) = @ARGV;
+open(my $fh, '>', $event) or exit 125;
+print {$fh} "signal:notanumber\n";
+close($fh) or exit 125;
+exit 154;
+PL
+  _self_limiter=$LIMITER
+  for _self_bad_limiter in "$_self/limiter.signal.status" "$_self/limiter.signal.kind"; do
+    case $_self_bad_limiter in
+      *.status) _self_bad_event='signal event exited with the wrong status' ;;
+      *) _self_bad_event='signal event carried a non-numeric signal' ;;
+    esac
+    LIMITER=$_self_bad_limiter
+    compare_subjects "$_self/base" "$_self/candidate" \
+      "$_self/list" "$_self/source" >/dev/null 2>&1
+    _self_rc=$?
+    LIMITER=$_self_limiter
+    [ "$_self_rc" -eq 2 ] || {
+      printf 'differential: selftest FAIL — %s\n' "$_self_bad_event" >&2
+      return 1
+    }
+  done
+
+  echo "differential: selftest PASS — physical scratch root, SHA-256 known answer and a digest tool that is absent, silent or answering something else, sibling resolution from a plain checkout, from a git worktree, absent-sibling and no-walk-past-main, sibling-mirror null row, a null control refusing arms it cannot hash, per-arm cwd in both spellings, real row survives normalisation, in-tree arm at the subject source root, mirror nested in the source tree, arm reached through a symlink and a real row surviving that, an arm whose binary is a symlink and a real row surviving that, regex metacharacters in an arm root on both channels and a real row surviving that on each, one observation, comparator damage, zero-subject, exit154/signal26/partial-output, exit124/timeout and event/status controls"
   return 0
 }
 
