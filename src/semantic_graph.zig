@@ -5783,7 +5783,8 @@ pub const SemanticGraph = struct {
     /// Lift module fully including call sites (Phase 1 complete lift).
     pub fn liftModuleWithCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
         const mod_id = try self.liftModuleCalls(mod, file, null);
-        try self.liftLiteralFacts(file, mod_id, &mod.body, true);
+        var initialization_context = InitializationContext{ .scope = mod_id };
+        try self.liftLiteralFacts(file, mod_id, &mod.body, true, &initialization_context);
         return mod_id;
     }
 
@@ -5871,9 +5872,14 @@ pub const SemanticGraph = struct {
     }
 
     const InitializationContext = struct {
-        checked: *const sema.Sema,
+        checked: ?*const sema.Sema = null,
         scope: id,
         refused: bool = false,
+
+        fn descriptor(self: *const InitializationContext, expression: *const Expr) ?types.ResolvedType {
+            const checked = self.checked orelse return null;
+            return checked.exprDescriptor(expression);
+        }
     };
 
     fn refuseInitialization(self: *SemanticGraph, binding: id) !void {
@@ -5921,7 +5927,7 @@ pub const SemanticGraph = struct {
             try self.refuseInitialization(binding);
             return;
         }
-        const descriptor = context.checked.exprDescriptor(initializer) orelse return;
+        const descriptor = context.descriptor(initializer) orelse return;
         if (descriptor != .table_type) return;
         if (node.descriptor) |declared| if (!declared.eql(descriptor)) return;
         const site = switch (initializer.*) {
@@ -6009,7 +6015,7 @@ pub const SemanticGraph = struct {
                 .call_stmt => |*cs| try self.liftLiteralFactsInExpr(file, scope, cs.expr, context),
                 .expr_stmt => |*es| try self.liftLiteralFactsInExpr(file, scope, es.expr, context),
                 .ret => |*r| for (r.vals) |value| {
-                    if (context.checked.exprDescriptor(value)) |descriptor|
+                    if (context.descriptor(value)) |descriptor|
                         if (descriptor == .table_type or descriptor == .@"struct") {
                             context.refused = true;
                         };
@@ -6071,7 +6077,7 @@ pub const SemanticGraph = struct {
         // `stmts`. Omitting it here left every one-line relation's literals
         // unreached, which is most of them.
         if (block.tail_expr) |tail| {
-            if (context.checked.exprDescriptor(tail)) |descriptor|
+            if (context.descriptor(tail)) |descriptor|
                 if (descriptor == .table_type or descriptor == .@"struct") {
                     context.refused = true;
                 };
@@ -6090,7 +6096,7 @@ pub const SemanticGraph = struct {
             .call, .method_call => {
                 const occurrence = if (self.valueByAst(expr)) |value| self.get(value).?.scope else null;
                 if (occurrence == null or self.applicationEffect(occurrence.?) != .none) context.refused = true;
-                if (context.checked.exprDescriptor(expr)) |descriptor| switch (descriptor) {
+                if (context.descriptor(expr)) |descriptor| switch (descriptor) {
                     .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64, .bool, .str, .void => {},
                     else => context.refused = true,
                 } else context.refused = true;
@@ -6104,7 +6110,7 @@ pub const SemanticGraph = struct {
                     .spread => |entry| entry,
                     .semantic => |entry| entry.val,
                 };
-                if (context.checked.exprDescriptor(child)) |descriptor| {
+                if (context.descriptor(child)) |descriptor| {
                     if ((descriptor == .table_type or descriptor == .@"struct") and child.* != .table) context.refused = true;
                 }
             },
