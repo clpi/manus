@@ -3235,6 +3235,8 @@ __attribute__((visibility("default"))) int64_t event(int64_t fact[], int64_t cou
                         delimiter = 30;
         } else if ((((kind == INT64_C(25)) || (kind == INT64_C(7))) || (kind == INT64_C(98)))) {
                         delimiter = 31;
+        } else if ((kind == INT64_C(46))) {
+                        delimiter = 32;
         } else if ((kind == INT64_C(58))) {
                         depth = 1;
                         probe = (index + 1);

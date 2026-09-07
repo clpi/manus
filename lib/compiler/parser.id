@@ -947,6 +947,8 @@ event: i64 = (fact: []i64, count: i64, out: []i64, capacity: i64, idol: bool)
             delimiter = 30
         elseif kind == token.kindthen or kind == token.kinddo or kind == token.kindfatarrow
             delimiter = 31
+        elseif kind == token.kindcatch
+            delimiter = 32
         elseif kind == token.kindlparen
             depth = 1
             probe = index + 1

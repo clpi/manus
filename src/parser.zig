@@ -644,6 +644,10 @@ pub const Parser = struct {
         return (try self.currentParserFace()) == 31;
     }
 
+    fn currentParserCatch(self: *Parser) ParseError!bool {
+        return (try self.currentParserFace()) == 32;
+    }
+
     fn currentParserTableEntry(self: *Parser) ParseError!bool {
         const face = try self.currentParserFace();
         return face == 22 or face == 23;
@@ -4377,7 +4381,7 @@ pub const Parser = struct {
         var defers: std.ArrayList(ast.DeferStmt) = .empty;
 
         // Parse zero or more catch clauses
-        while ((try self.pk()).kind == .kw_catch) {
+        while (try self.currentParserCatch()) {
             const catch_loc = (try self.adv()).loc; // consume `catch`
 
             var binding: ?[]const u8 = null;
@@ -12077,6 +12081,31 @@ test "parse: layout refinement consumes the producer relation" {
             if (refinement.op == .band) return error.LayoutRefinementAcceptedAdd;
         }
         try testing.expectEqual(expected, band);
+    }
+    try testing.expect(seen);
+    try testing.expect(rejected);
+}
+
+test "parse: catch identity executes through whole-pack event" {
+    var seen = false;
+    var rejected = false;
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        const expected = if (row.kind) |kind| kind == .kw_catch else false;
+        if (expected or (row.kind != null and row.kind.? == .kw_end)) {
+            var tokens = [_]Token{.{
+                .kind = row.kind.?,
+                .loc = .{ .file = "catch.id", .line = 1, .col = 1 },
+                .text = row.spell,
+            }};
+            var events = [_]i64{ event, 0 };
+            var lexer = Lexer.init("", "catch.id");
+            var consumer = Parser.init(&lexer, testing.allocator);
+            consumer.pack_tokens = &tokens;
+            consumer.parser_events = &events;
+            try testing.expectEqual(expected, try consumer.currentParserCatch());
+            if (expected) seen = true else rejected = true;
+        }
     }
     try testing.expect(seen);
     try testing.expect(rejected);

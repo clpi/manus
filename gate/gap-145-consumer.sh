@@ -1008,7 +1008,7 @@ has "$PARSER" '26 => 10,' \
     'parser.zig lost the applied-descriptor suffix consumer'
 has "$PARSER" '10 => break,' \
     'general suffix parsing bypasses the applied-descriptor refusal face'
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=24' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=25' \
     'parser artifact lost the applied-descriptor differential controls'
 appliedswitches=$(sed -n '/fn parse_suffixed_expr/,/fn parse_nn_block_desugar/p' "$PARSER" | grep -cF 'switch (t.kind)' || true)
 examined=$((examined + 1))
@@ -2152,7 +2152,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=24' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=25' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'
@@ -4358,6 +4358,58 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
         bad "layout refinement wrong-error control did not fail closed: status=$amp_status"
     fi
     rm -rf -- "$amp_probe"
+fi
+
+catch_compare=$(grep -Eo '(==|!=) \.kw_catch\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$catch_compare" -ne 1 ]; then
+    bad "catch identity remains host-read or lost its producer oracle: count=$catch_compare"
+fi
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindcatch' \
+    'parser.id lost the exact catch producer row'
+has "$ROOT/lib/compiler/parser.id" 'delimiter = 32' \
+    'parser.id lost the exact catch face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 32;' \
+    'tracked projection lost the exact catch face'
+has "$ROOT/tools/node/dev/parser/artifact" 'failed += verify_delimiter("catch", 32);' \
+    'parser artifact lost the exact catch producer result'
+has "$PARSER" 'fn currentParserCatch(self: *Parser) ParseError!bool {' \
+    'Parser lost the catch face consumer'
+has "$PARSER" 'return (try self.currentParserFace()) == 32;' \
+    'Parser catch consumer selected the wrong producer face'
+has "$PARSER" 'while (try self.currentParserCatch()) {' \
+    'catch-clause parsing does not consume the producer face'
+catch_sweep=$(sed -n '/catch identity executes through whole-pack event/,/^}/p' "$PARSER")
+for predicate in 'kind == .kw_catch' 'kind.? == .kw_end' 'try consumer.currentParserCatch()' 'try testing.expect(seen);' 'try testing.expect(rejected);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$catch_sweep" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "catch equivalence oracle lost predicate: $predicate"
+    fi
+done
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    catch_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate catch perturbation scratch' >&2; exit 2; }
+    sed '0,/== 32/s//== 14/' "$PARSER" >"$catch_probe/accept.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/accept.result" 2>&1
+    catch_status=$?
+    examined=$((examined + 1))
+    if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL Parser catch consumer selected the wrong producer face' "$catch_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$catch_probe/accept.result"; then
+        bad "catch false-accept control did not fail closed: status=$catch_status"
+    fi
+
+    sed '/catch identity executes through whole-pack event/,/^}/ s/try testing\.expect(rejected);/try testing.expect(!rejected);/' "$PARSER" >"$catch_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/wrong.result" 2>&1
+    catch_status=$?
+    examined=$((examined + 1))
+    if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL catch equivalence oracle lost predicate: try testing.expect(rejected);' "$catch_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL Parser catch consumer selected the wrong producer face' "$catch_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$catch_probe/wrong.result"; then
+        bad "catch wrong-error control did not fail closed: status=$catch_status"
+    fi
+    rm -rf -- "$catch_probe"
 fi
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
