@@ -4309,6 +4309,32 @@ if [ "$dot_new_compare" -ne 0 ] || [ "$dot_new_helper" -ne 0 ] || [ "$dot_new_fa
     bad "the projection detector misreads the canonical spelling: compare=$dot_new_compare helper=$dot_new_helper faces=$dot_new_faces"
 fi
 
+amp_compare=$(grep -Eo '(==|!=) \.amp\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$amp_compare" -ne 1 ]; then
+    bad "layout refinement still rebuilds amp identity or lost its equivalence oracle: count=$amp_compare"
+fi
+refinement=$(sed -n '/fn parse_layout_refinements/,/fn parse_layout_refinement/p' "$PARSER")
+examined=$((examined + 1))
+if [ "$(printf '%s\n' "$refinement" | grep -cF 'if (try self.infix_prec()) |infix| infix.op == .band else false')" -ne 1 ]; then
+    bad 'layout refinement does not consume the producer relation'
+fi
+amp_sweep=$(sed -n '/layout refinement consumes the producer relation/,/^}/p' "$PARSER")
+for predicate in 'const triple = (event >> 23) & 0xFFFFFF;' 'kind == .amp' 'try testing.expectEqual(expected, band);' 'try testing.expect(seen);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$amp_sweep" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "layout refinement equivalence oracle lost predicate: $predicate"
+    fi
+done
+amp_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate refinement scratch' >&2; exit 2; }
+printf '%s\n' 'while ((try self.pk()).kind == .amp) {' >"$amp_probe/old.zig"
+printf '%s\n' 'while (if (try self.infix_prec()) |infix| infix.op == .band else false) {' >"$amp_probe/new.zig"
+examined=$((examined + 1))
+if [ "$(grep -Eoc '(==|!=) \.amp\b' "$amp_probe/old.zig")" -ne 1 ] || [ "$(grep -Eoc '(==|!=) \.amp\b' "$amp_probe/new.zig")" -ne 0 ]; then
+    bad 'layout refinement identity detector does not distinguish rebuilt identity from producer relation'
+fi
+rm -rf -- "$amp_probe"
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then

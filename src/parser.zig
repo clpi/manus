@@ -1746,7 +1746,7 @@ pub const Parser = struct {
     /// accepted and ignored.
     fn parse_layout_refinements(self: *Parser) ParseError!ast.TypeExpr.Layout {
         var layout: ast.TypeExpr.Layout = .{};
-        while ((try self.pk()).kind == .amp) {
+        while (if (try self.infix_prec()) |infix| infix.op == .band else false) {
             const saved = self.saveState();
             _ = try self.adv();
             const name_tok = try self.pk();
@@ -12042,6 +12042,20 @@ test "parse: production unary glue and update decisions execute through whole-pa
     }
     const invalid = try parserEventForTest(@intCast(grammar_roles.rows.len), true);
     try testing.expectEqual(@as(i64, 0), (invalid >> 23) & 0x7FFFFFFFFF);
+}
+
+test "parse: layout refinement consumes the producer relation" {
+    var seen = false;
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        const triple = (event >> 23) & 0xFFFFFF;
+        const band = triple != 0 and
+            @as(ast.BinOp, @fromBackingInt(@as(u8, @intCast(triple & 0xff)))) == .band;
+        const expected = if (row.kind) |kind| kind == .amp else false;
+        if (expected) seen = true;
+        try testing.expectEqual(expected, band);
+    }
+    try testing.expect(seen);
 }
 
 test "parse: relation ABI ordinal decode refuses values outside generated enums" {
