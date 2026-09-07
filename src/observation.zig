@@ -2537,6 +2537,31 @@ test "observation: §19 control — removing the ALIAS proof closes zero-copy an
     try testing.expect(admit(&r_with, facts).admittedCount() > admit(&r_without, facts).admittedCount());
 }
 
+test "observation: DIAGNOSTIC — a second relation refuses the region instead of lending its effects" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    s(1) & 255
+        \\helper: i64 = ()
+        \\    print(1)
+        \\    0
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    const ev = prog.byName("s").?;
+    try testing.expect(!ev.complete);
+
+    const r = prog.report("s", no_obligations).?;
+    try testing.expectEqual(Tri.unknown, r.get(.effect_order).observed);
+    try testing.expectEqual(Reason.evidence_incomplete, r.get(.effect_order).reason);
+    try testing.expectEqual(Permit.blocked_unknown, permits(&r, .memoization).permit);
+    const facts = eqFacts(&runtime_base);
+    try testing.expectEqual(@as(usize, 0), admit(&r, facts).admittedCount());
+}
+
 test "observation: DIAGNOSTIC — an effect in a sibling relation blocks effect-freedom" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
