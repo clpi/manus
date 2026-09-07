@@ -3904,6 +3904,12 @@ pub const SemanticGraph = struct {
         try self.publishSourceQuote(value, quote);
     }
 
+    const CheckedReads = struct {
+        sema: *const sema.Sema,
+        writes: std.AutoHashMapUnmanaged(id, types.ResolvedType) = .empty,
+        invalidated: std.AutoHashMapUnmanaged(id, void) = .empty,
+    };
+
     /// EVERY NAME A SCOPE BINDS, IN TWO SWEEPS, AND THE ORDER IS THE POINT.
     ///
     /// The single-sweep version walked into a `.func_decl` the moment it
@@ -3924,6 +3930,7 @@ pub const SemanticGraph = struct {
         file: []const u8,
         scope: id,
         block: *const ast.Block,
+        checked: ?*CheckedReads,
     ) !void {
         // THE SHADOW ROSTER, GROWN IN SOURCE ORDER AND TRUNCATED AT EVERY BLOCK
         // BOUNDARY. A bare-name assignment is a write to the module binding it
@@ -3949,8 +3956,8 @@ pub const SemanticGraph = struct {
         // lives, and it lives only for as long as this walk needs it.
         var declared: std.ArrayListUnmanaged([]const u8) = .empty;
         defer declared.deinit(self.alloc);
-        try self.liftBindingsAtScope(file, scope, block, &declared);
-        try self.liftBindingsInCallables(file, scope, block.stmts);
+        try self.liftBindingsAtScope(file, scope, block, &declared, checked);
+        try self.liftBindingsInCallables(file, scope, block.stmts, checked);
     }
 
     /// Enter a nested lexical block: everything it declares is visible inside
@@ -3961,10 +3968,11 @@ pub const SemanticGraph = struct {
         scope: id,
         block: *const ast.Block,
         declared: *std.ArrayListUnmanaged([]const u8),
+        checked: ?*CheckedReads,
     ) anyerror!void {
         const mark = declared.items.len;
         defer declared.shrinkRetainingCapacity(mark);
-        try self.liftBindingsAtScope(file, scope, block, declared);
+        try self.liftBindingsAtScope(file, scope, block, declared, checked);
     }
 
     fn noteName(
@@ -4055,6 +4063,63 @@ pub const SemanticGraph = struct {
         try self.publishBindingRead(relation, binding);
     }
 
+    fn constructorParameter(self: *const SemanticGraph, scope: id, declared: []const []const u8, expr: *const Expr) ?id {
+        if (expr.* != .name or expr.name.world) return null;
+        for (declared) |name| if (std.mem.eql(u8, name, expr.name.ident)) return null;
+        const binding = self.resolveBindingInScope(scope, expr.name.ident) orelse return null;
+        const node = self.get(binding) orelse return null;
+        if (node.kind != .param or node.scope != scope) return null;
+        for (self.nested.of(scope)) |other| {
+            if (other == binding) continue;
+            const candidate = self.get(other) orelse continue;
+            if (candidate.kind != .param) continue;
+            const name = candidate.name orelse continue;
+            if (std.mem.eql(u8, name, expr.name.ident)) return null;
+        }
+        return binding;
+    }
+
+    fn noteConstructorWrite(self: *SemanticGraph, scope: id, declared: []const []const u8, target: *const Expr, value: ?*const Expr, checked: *CheckedReads) !void {
+        const binding = self.constructorParameter(scope, declared, target) orelse return;
+        const descriptor = if (value) |expression| checked.sema.exprDescriptor(expression) orelse .any else types.ResolvedType.any;
+        const prior = try checked.writes.getOrPut(self.alloc, binding);
+        if (!prior.found_existing) {
+            prior.value_ptr.* = descriptor;
+        } else if (!prior.value_ptr.eql(descriptor)) {
+            prior.value_ptr.* = .any;
+        }
+    }
+
+    fn invalidateConstructorParameters(self: *SemanticGraph, scope: id, checked: *CheckedReads) !void {
+        try checked.invalidated.put(self.alloc, scope, {});
+    }
+
+    fn publishConstructorName(
+        self: *SemanticGraph,
+        scope: id,
+        declared: []const []const u8,
+        expr: *const Expr,
+        checked: *CheckedReads,
+    ) !void {
+        if (checked.invalidated.contains(scope) or self.valueByAst(expr) != null) return;
+        const binding = self.constructorParameter(scope, declared, expr) orelse return;
+        const descriptor = checked.sema.exprDescriptor(expr) orelse return;
+        if (types.scalarFieldCell(descriptor) == null) return;
+        if (checked.writes.get(binding)) |written| {
+            if (!descriptor.eql(written)) return;
+        }
+        const loc = expr.loc();
+        const value = try self.addChild(scope, .{
+            .kind = .value,
+            .span = .{ .file = self.get(scope).?.span.file, .start = loc.line, .end = loc.col },
+            .descriptor = descriptor,
+            .knowledge = semantic_algebra.knowledgeOfType(descriptor),
+            .stage = .sema,
+            .ast_ref = @ptrCast(@constCast(expr)),
+        });
+        try self.addEdge(.{ .from = value, .to = binding, .kind = .binding });
+    }
+
     /// EVERY BARE NAME AN EXPRESSION READS, against the roster as it stands.
     ///
     /// The walk mirrors `place.reachExpr` member for member so a new AST face
@@ -4070,64 +4135,73 @@ pub const SemanticGraph = struct {
         scope: id,
         declared: []const []const u8,
         expr: *const ast.Expr,
+        checked: ?*CheckedReads,
     ) anyerror!void {
         switch (expr.*) {
             // `@x` reads the CURRENT WORLD and never the lexical scope — the
             // `world` flag's whole meaning — so it is not a binding read.
             .name => |n| if (!n.world) try self.noteModuleRead(scope, declared, n.ident),
             .index => |ix| {
-                try self.noteExprReads(scope, declared, ix.obj);
-                try self.noteExprReads(scope, declared, ix.key);
+                try self.noteExprReads(scope, declared, ix.obj, checked);
+                try self.noteExprReads(scope, declared, ix.key, checked);
             },
-            .field => |f| try self.noteExprReads(scope, declared, f.obj),
+            .field => |f| try self.noteExprReads(scope, declared, f.obj, checked),
             // The callee position is walked too: a `.name` there that resolves
             // to a module-scope LOCAL is a call through a binding, which reads
             // it. One that names a relation resolves to no `.local`/`.param`
             // and `moduleBindingNamed` declines it.
             .call => |c| {
-                try self.noteExprReads(scope, declared, c.func);
-                for (c.args) |a| try self.noteExprReads(scope, declared, a);
+                try self.noteExprReads(scope, declared, c.func, checked);
+                for (c.args) |a| try self.noteExprReads(scope, declared, a, checked);
+                if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
             },
             .method_call => |m| {
-                try self.noteExprReads(scope, declared, m.obj);
-                for (m.args) |a| try self.noteExprReads(scope, declared, a);
+                try self.noteExprReads(scope, declared, m.obj, checked);
+                for (m.args) |a| try self.noteExprReads(scope, declared, a, checked);
+                if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
             },
             .binop => |b| {
-                try self.noteExprReads(scope, declared, b.lhs);
-                try self.noteExprReads(scope, declared, b.rhs);
+                try self.noteExprReads(scope, declared, b.lhs, checked);
+                try self.noteExprReads(scope, declared, b.rhs, checked);
             },
-            .unop => |u| try self.noteExprReads(scope, declared, u.operand),
-            .try_expr => |v| try self.noteExprReads(scope, declared, v.operand),
-            .unwrap_expr => |v| try self.noteExprReads(scope, declared, v.operand),
-            .await_expr => |v| try self.noteExprReads(scope, declared, v.operand),
+            .unop => |u| try self.noteExprReads(scope, declared, u.operand, checked),
+            .try_expr => |v| try self.noteExprReads(scope, declared, v.operand, checked),
+            .unwrap_expr => |v| try self.noteExprReads(scope, declared, v.operand, checked),
+            .await_expr => |v| {
+                try self.noteExprReads(scope, declared, v.operand, checked);
+                if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
+            },
             .contains_expr => |v| {
-                try self.noteExprReads(scope, declared, v.lhs);
-                try self.noteExprReads(scope, declared, v.rhs);
+                try self.noteExprReads(scope, declared, v.lhs, checked);
+                try self.noteExprReads(scope, declared, v.rhs, checked);
             },
             .range => |r| {
-                try self.noteExprReads(scope, declared, r.start);
-                try self.noteExprReads(scope, declared, r.end);
-                if (r.step) |st| try self.noteExprReads(scope, declared, st);
+                try self.noteExprReads(scope, declared, r.start, checked);
+                try self.noteExprReads(scope, declared, r.end, checked);
+                if (r.step) |st| try self.noteExprReads(scope, declared, st, checked);
             },
-            .sequence => |sq| for (sq.exprs) |v| try self.noteExprReads(scope, declared, v),
+            .sequence => |sq| for (sq.exprs) |v| try self.noteExprReads(scope, declared, v, checked),
             .if_expr => |i| {
-                try self.noteExprReads(scope, declared, i.cond);
-                try self.noteExprReads(scope, declared, i.then_expr);
-                try self.noteExprReads(scope, declared, i.else_expr);
+                try self.noteExprReads(scope, declared, i.cond, checked);
+                try self.noteExprReads(scope, declared, i.then_expr, checked);
+                try self.noteExprReads(scope, declared, i.else_expr, checked);
             },
             .table => |t| for (t.fields) |field| switch (field) {
                 .indexed => |v| {
-                    try self.noteExprReads(scope, declared, v.key);
-                    try self.noteExprReads(scope, declared, v.val);
+                    try self.noteExprReads(scope, declared, v.key, checked);
+                    try self.noteExprReads(scope, declared, v.val, checked);
                 },
-                .named => |v| try self.noteExprReads(scope, declared, v.val),
-                .positional => |v| try self.noteExprReads(scope, declared, v),
-                .spread => |v| try self.noteExprReads(scope, declared, v),
-                .semantic => |v| try self.noteExprReads(scope, declared, v.val),
+                .named => |v| {
+                    if (checked) |facts| try self.publishConstructorName(scope, declared, v.val, facts);
+                    try self.noteExprReads(scope, declared, v.val, checked);
+                },
+                .positional => |v| try self.noteExprReads(scope, declared, v, checked),
+                .spread => |v| try self.noteExprReads(scope, declared, v, checked),
+                .semantic => |v| try self.noteExprReads(scope, declared, v.val, checked),
             },
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .quoted, .vararg => {},
             // NOT MODELLED — bounded exactly as the write walk is.
-            .func_expr, .list_comp, .match_expr, .quote, .unquote, .macro_call, .semantic, .semantic_scope => {},
+            .func_expr, .list_comp, .match_expr, .quote, .unquote, .macro_call, .semantic, .semantic_scope => if (checked) |facts| try self.invalidateConstructorParameters(scope, facts),
         }
     }
 
@@ -4139,29 +4213,30 @@ pub const SemanticGraph = struct {
         file: []const u8,
         scope: id,
         stmts: []ast.Stmt,
+        checked: ?*CheckedReads,
     ) anyerror!void {
         for (stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl => |*fd| {
                     if (self.findFuncDecl(fd)) |nested_id| {
-                        try self.liftBindingsInStmts(file, nested_id, &fd.func.body);
+                        try self.liftBindingsInStmts(file, nested_id, &fd.func.body, checked);
                     }
                 },
-                .do_block => |*d| try self.liftBindingsInCallables(file, scope, d.body.stmts),
-                .while_loop => |*w| try self.liftBindingsInCallables(file, scope, w.body.stmts),
-                .repeat_loop => |*r| try self.liftBindingsInCallables(file, scope, r.body.stmts),
-                .num_for => |*nf| try self.liftBindingsInCallables(file, scope, nf.body.stmts),
-                .gen_for => |*g| try self.liftBindingsInCallables(file, scope, g.body.stmts),
+                .do_block => |*d| try self.liftBindingsInCallables(file, scope, d.body.stmts, checked),
+                .while_loop => |*w| try self.liftBindingsInCallables(file, scope, w.body.stmts, checked),
+                .repeat_loop => |*r| try self.liftBindingsInCallables(file, scope, r.body.stmts, checked),
+                .num_for => |*nf| try self.liftBindingsInCallables(file, scope, nf.body.stmts, checked),
+                .gen_for => |*g| try self.liftBindingsInCallables(file, scope, g.body.stmts, checked),
                 .if_stmt => |*i| {
-                    try self.liftBindingsInCallables(file, scope, i.then.stmts);
-                    for (i.elseifs) |*ei| try self.liftBindingsInCallables(file, scope, ei.body.stmts);
-                    if (i.else_body) |*eb| try self.liftBindingsInCallables(file, scope, eb.stmts);
+                    try self.liftBindingsInCallables(file, scope, i.then.stmts, checked);
+                    for (i.elseifs) |*ei| try self.liftBindingsInCallables(file, scope, ei.body.stmts, checked);
+                    if (i.else_body) |*eb| try self.liftBindingsInCallables(file, scope, eb.stmts, checked);
                 },
                 .try_stmt => |*t| {
-                    try self.liftBindingsInCallables(file, scope, t.body.stmts);
-                    for (t.catches) |*cc| try self.liftBindingsInCallables(file, scope, cc.body.stmts);
+                    try self.liftBindingsInCallables(file, scope, t.body.stmts, checked);
+                    for (t.catches) |*cc| try self.liftBindingsInCallables(file, scope, cc.body.stmts, checked);
                 },
-                .defer_stmt => |*d| try self.liftBindingsInCallables(file, scope, d.body.stmts),
+                .defer_stmt => |*d| try self.liftBindingsInCallables(file, scope, d.body.stmts, checked),
                 else => {},
             }
         }
@@ -4179,13 +4254,14 @@ pub const SemanticGraph = struct {
         scope: id,
         block: *const ast.Block,
         declared: *std.ArrayListUnmanaged([]const u8),
+        checked: ?*CheckedReads,
     ) anyerror!void {
         for (block.stmts) |*stmt| {
             switch (stmt.*) {
                 .local_decl => |*ld| {
                     // The declared name is not in scope in its own initializer,
                     // so the reads are walked before the roster grows.
-                    for (ld.inits) |initializer| try self.noteExprReads(scope, declared.items, initializer);
+                    for (ld.inits) |initializer| try self.noteExprReads(scope, declared.items, initializer, checked);
                     for (ld.names) |*lname| {
                         try self.liftTableShapeFromTypeExpr(
                             file,
@@ -4208,7 +4284,7 @@ pub const SemanticGraph = struct {
                     }
                 },
                 .const_decl => |*cd| {
-                    try self.noteExprReads(scope, declared.items, cd.val);
+                    try self.noteExprReads(scope, declared.items, cd.val, checked);
                     try noteName(self.alloc, declared, cd.ident);
                     try self.noteLocalBinding(
                         file,
@@ -4220,7 +4296,7 @@ pub const SemanticGraph = struct {
                     );
                 },
                 .global_decl => |*gd| {
-                    for (gd.inits) |initializer| try self.noteExprReads(scope, declared.items, initializer);
+                    for (gd.inits) |initializer| try self.noteExprReads(scope, declared.items, initializer, checked);
                     for (gd.names) |*lname| {
                         // `global x = …` INSIDE a relation writes the module's
                         // word — `place.zig` records the same reading in
@@ -4238,12 +4314,12 @@ pub const SemanticGraph = struct {
                     }
                 },
                 .assign => |*asg| {
-                    for (asg.values) |value| try self.noteExprReads(scope, declared.items, value);
-                    for (asg.targets) |target| {
+                    for (asg.values) |value| try self.noteExprReads(scope, declared.items, value, checked);
+                    for (asg.targets, 0..) |target, i| {
                         if (target.* != .name) {
                             // `t[k] = v` and `t.f = v` READ `t` (and `k`) to
                             // locate the place they write.
-                            try self.noteExprReads(scope, declared.items, target);
+                            try self.noteExprReads(scope, declared.items, target, checked);
                             continue;
                         }
                         // THE SHADOW ENTITY DIES HERE. A bare-name assignment
@@ -4252,24 +4328,27 @@ pub const SemanticGraph = struct {
                         // in this relation is what made the two indistinguishable
                         // (gaps/GAP-225.md).
                         if (try self.noteModuleWrite(scope, declared.items, target.name.ident)) continue;
+                        if (checked) |facts| try self.noteConstructorWrite(scope, declared.items, target, if (i < asg.values.len) asg.values[i] else null, facts);
                         try self.noteLocalBinding(file, scope, target.name.ident, target.loc(), null, null);
                     }
                 },
-                .call_stmt => |*c| try self.noteExprReads(scope, declared.items, c.expr),
-                .expr_stmt => |*e| try self.noteExprReads(scope, declared.items, e.expr),
-                .ret => |*r| for (r.vals) |v| try self.noteExprReads(scope, declared.items, v),
-                .do_block => |*d| try self.liftBindingsInBlock(file, scope, &d.body, declared),
+                .call_stmt => |*c| try self.noteExprReads(scope, declared.items, c.expr, checked),
+                .expr_stmt => |*e| try self.noteExprReads(scope, declared.items, e.expr, checked),
+                .ret => |*r| for (r.vals) |v| try self.noteExprReads(scope, declared.items, v, checked),
+                .do_block => |*d| try self.liftBindingsInBlock(file, scope, &d.body, declared, checked),
                 .while_loop => |*w| {
-                    try self.noteExprReads(scope, declared.items, w.cond);
-                    try self.liftBindingsInBlock(file, scope, &w.body, declared);
+                    if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
+                    try self.noteExprReads(scope, declared.items, w.cond, checked);
+                    try self.liftBindingsInBlock(file, scope, &w.body, declared, checked);
                 },
                 .repeat_loop => |*r| {
+                    if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
                     // The `until` condition can see the body's declarations, so
                     // the roster extent covers both.
                     const mark = declared.items.len;
                     defer declared.shrinkRetainingCapacity(mark);
-                    try self.liftBindingsAtScope(file, scope, &r.body, declared);
-                    try self.noteExprReads(scope, declared.items, r.cond);
+                    try self.liftBindingsAtScope(file, scope, &r.body, declared, checked);
+                    try self.noteExprReads(scope, declared.items, r.cond, checked);
                 },
                 .if_stmt => |*i| {
                     // `if v = expr` makes `v` visible across the condition and
@@ -4280,49 +4359,53 @@ pub const SemanticGraph = struct {
                     const mark = declared.items.len;
                     defer declared.shrinkRetainingCapacity(mark);
                     if (i.binding) |binding| {
-                        try self.noteExprReads(scope, declared.items, binding.expr);
+                        try self.noteExprReads(scope, declared.items, binding.expr, checked);
                         try noteName(self.alloc, declared, binding.name);
                     }
-                    try self.noteExprReads(scope, declared.items, i.cond);
-                    try self.liftBindingsInBlock(file, scope, &i.then, declared);
+                    try self.noteExprReads(scope, declared.items, i.cond, checked);
+                    try self.liftBindingsInBlock(file, scope, &i.then, declared, checked);
                     for (i.elseifs) |*ei| {
-                        try self.noteExprReads(scope, declared.items, ei.cond);
-                        try self.liftBindingsInBlock(file, scope, &ei.body, declared);
+                        try self.noteExprReads(scope, declared.items, ei.cond, checked);
+                        try self.liftBindingsInBlock(file, scope, &ei.body, declared, checked);
                     }
-                    if (i.else_body) |*eb| try self.liftBindingsInBlock(file, scope, eb, declared);
+                    if (i.else_body) |*eb| try self.liftBindingsInBlock(file, scope, eb, declared, checked);
                 },
                 .num_for => |*nf| {
+                    if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
                     const mark = declared.items.len;
                     defer declared.shrinkRetainingCapacity(mark);
                     // The bounds are read before the loop variable binds.
-                    try self.noteExprReads(scope, declared.items, nf.start);
-                    try self.noteExprReads(scope, declared.items, nf.stop);
-                    if (nf.step) |st| try self.noteExprReads(scope, declared.items, st);
+                    try self.noteExprReads(scope, declared.items, nf.start, checked);
+                    try self.noteExprReads(scope, declared.items, nf.stop, checked);
+                    if (nf.step) |st| try self.noteExprReads(scope, declared.items, st, checked);
                     try noteName(self.alloc, declared, nf.var_name);
                     try self.noteLocalBinding(file, scope, nf.var_name, nf.loc, null, null);
-                    try self.liftBindingsAtScope(file, scope, &nf.body, declared);
+                    try self.liftBindingsAtScope(file, scope, &nf.body, declared, checked);
                 },
                 .gen_for => |*g| {
+                    if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
                     const mark = declared.items.len;
                     defer declared.shrinkRetainingCapacity(mark);
-                    for (g.iters) |iter| try self.noteExprReads(scope, declared.items, iter);
+                    for (g.iters) |iter| try self.noteExprReads(scope, declared.items, iter, checked);
                     for (g.vars) |v| try noteName(self.alloc, declared, v);
                     for (g.vars) |v| try self.noteLocalBinding(file, scope, v, g.loc, null, null);
-                    try self.liftBindingsAtScope(file, scope, &g.body, declared);
+                    try self.liftBindingsAtScope(file, scope, &g.body, declared, checked);
                 },
                 // `.func_decl` IS SWEEP TWO'S. Descending here is exactly the
                 // order dependence `liftBindingsInStmts` split the walk to end.
                 .try_stmt => |*t| {
-                    try self.liftBindingsInBlock(file, scope, &t.body, declared);
-                    for (t.catches) |*cc| try self.liftBindingsInBlock(file, scope, &cc.body, declared);
+                    if (checked) |facts| try self.invalidateConstructorParameters(scope, facts);
+                    try self.liftBindingsInBlock(file, scope, &t.body, declared, checked);
+                    for (t.catches) |*cc| try self.liftBindingsInBlock(file, scope, &cc.body, declared, checked);
                 },
-                .defer_stmt => |*d| try self.liftBindingsInBlock(file, scope, &d.body, declared),
+                .defer_stmt => |*d| try self.liftBindingsInBlock(file, scope, &d.body, declared, checked),
+                .match_stmt => if (checked) |facts| try self.invalidateConstructorParameters(scope, facts),
                 else => {},
             }
         }
         // The block's RESULT is a read like any other, and `_at`'s whole
         // observation sits in exactly this position (gaps/GAP-229.md).
-        if (block.tail_expr) |tail| try self.noteExprReads(scope, declared.items, tail);
+        if (block.tail_expr) |tail| try self.noteExprReads(scope, declared.items, tail, checked);
     }
 
     /// §18's census, lifted ONCE. Idempotent: a second call is a no-op, so a
@@ -5026,6 +5109,10 @@ pub const SemanticGraph = struct {
 
     /// Lift module-level symbols, alias table shapes, and enum shapes.
     pub fn liftModuleFull(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
+        return self.liftModuleFullChecked(mod, file, null);
+    }
+
+    fn liftModuleFullChecked(self: *SemanticGraph, mod: *const ast.Module, file: []const u8, checked: ?*CheckedReads) !id {
         const mod_id = try self.liftModule(mod, file);
         try self.liftAliasShapes(mod, file, mod_id);
         try self.liftEnumShapes(mod, file, mod_id);
@@ -5035,7 +5122,7 @@ pub const SemanticGraph = struct {
         // Module bindings used to be absent while function locals were present,
         // so an application value could carry an exact descriptor yet lose the
         // binding it read solely because that binding lived one scope higher.
-        try self.liftBindingsInStmts(file, mod_id, &mod.body);
+        try self.liftBindingsInStmts(file, mod_id, &mod.body, checked);
         try self.liftPlaces(mod);
         try self.liftBodies(mod);
         // AFTER the bindings, because a range is keyed by binding entity and
@@ -5696,7 +5783,7 @@ pub const SemanticGraph = struct {
 
     /// Lift module fully including call sites (Phase 1 complete lift).
     pub fn liftModuleWithCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
-        const mod_id = try self.liftModuleCalls(mod, file);
+        const mod_id = try self.liftModuleCalls(mod, file, null);
         try self.liftLiteralFacts(file, mod_id, &mod.body, true);
         return mod_id;
     }
@@ -5707,8 +5794,8 @@ pub const SemanticGraph = struct {
     /// literal occurrence, and an occurrence an application names is better
     /// owned by the application's operand entity, which carries the resolved
     /// descriptor, the operand pack membership and the origin.
-    fn liftModuleCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !id {
-        const mod_id = try self.liftModuleFull(mod, file);
+    fn liftModuleCalls(self: *SemanticGraph, mod: *const ast.Module, file: []const u8, checked: ?*CheckedReads) !id {
+        const mod_id = try self.liftModuleFullChecked(mod, file, checked);
         try self.liftCalls(mod, file, mod_id);
         return mod_id;
     }
@@ -6903,7 +6990,10 @@ pub const SemanticGraph = struct {
                 self.home = h;
             } else |_| {}
         }
-        const module = try self.liftModuleCalls(mod, file);
+        var reads: CheckedReads = .{ .sema = checked };
+        defer reads.writes.deinit(self.alloc);
+        defer reads.invalidated.deinit(self.alloc);
+        const module = try self.liftModuleCalls(mod, file, &reads);
         self.callable_linkage_required = true;
 
         // Resolution owns boundary classification. Lift it onto the exact
@@ -13733,4 +13823,111 @@ test "semantic_graph: nested constructor fields have exact descriptor homes" {
         \\item = {context = {world = 7}, predecessor = 13}
         \\take(item)
     , &.{true});
+}
+
+fn constructorInitializerInBlock(block: *const ast.Block) anyerror!?*const Expr {
+    var initializer: ?*const Expr = null;
+    for (block.stmts) |*item| {
+        const nested: ?*const ast.Block = switch (item.*) {
+            .while_loop => |*loop| &loop.body,
+            .repeat_loop => |*loop| &loop.body,
+            .num_for => |*loop| &loop.body,
+            .gen_for => |*loop| &loop.body,
+            .do_block => |*body| &body.body,
+            else => null,
+        };
+        if (nested) |body| {
+            if (try constructorInitializerInBlock(body)) |value| {
+                try std.testing.expect(initializer == null);
+                initializer = value;
+            }
+        }
+        const values: []const *Expr = switch (item.*) {
+            .assign => |assignment| assignment.values,
+            .local_decl => |declaration| declaration.inits,
+            else => &.{},
+        };
+        for (values) |value| {
+            if (value.* != .table) continue;
+            for (value.table.fields) |field| {
+                if (field != .named or !std.mem.eql(u8, field.named.key, "code")) continue;
+                try std.testing.expect(initializer == null);
+                initializer = field.named.val;
+            }
+        }
+    }
+    return initializer;
+}
+
+fn expectConstructorParameterOrigin(source: []const u8, expected: bool) !void {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lexer = @import("lexer.zig").Lexer.init(source, "constructor-origin.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    if (checked.errors != 0) {
+        try std.testing.expect(!expected);
+        return;
+    }
+    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "constructor-origin.id");
+    var initializer: ?*const Expr = null;
+    for (module.body.stmts) |*statement| {
+        if (statement.* != .func_decl) continue;
+        const function = &statement.func_decl;
+        if (function.path.len != 1 or !std.mem.eql(u8, function.path[0], "probe")) continue;
+        initializer = try constructorInitializerInBlock(&function.func.body);
+    }
+    const expression = initializer orelse return error.TestExpectedEqual;
+    try std.testing.expect(expression.* == .name);
+    const value = graph.valueByAst(expression);
+    std.testing.expectEqual(expected, value != null) catch |err| {
+        std.debug.print("{s}\n", .{source});
+        return err;
+    };
+    if (value) |exact| {
+        try std.testing.expect(graph.get(exact).?.descriptor.? == .i64);
+        try std.testing.expect(graph.valueExpression(exact).? == expression);
+        const binding = switch (graph.valueOrigin(exact)) {
+            .one => |origin| origin,
+            .none, .unknown => return error.TestExpectedEqual,
+        };
+        const parameter = graph.get(binding).?;
+        try std.testing.expect(parameter.kind == .param);
+        try std.testing.expectEqualStrings("code", parameter.name.?);
+        try std.testing.expectEqual(graph.findFunc("probe").?, parameter.scope.?);
+    }
+}
+
+test "semantic_graph: constructor parameter initializers preserve exact origin" {
+    const prefix = "record: {other: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n";
+    const body = "    item = {code = code, other = 91}\n    read(2, item, 5)\n";
+    try expectConstructorParameterOrigin(prefix ++ body ++ "os.exit(probe(7))\n", true);
+    try expectConstructorParameterOrigin(prefix ++ body ++ "os.exit(probe(13))\n", true);
+    try expectConstructorParameterOrigin("code = \"changed\"\n" ++ prefix ++ body ++ "os.exit(probe(7))\n", true);
+    try expectConstructorParameterOrigin(prefix ++ "    code = 13\n" ++ body ++ "os.exit(probe(7))\n", true);
+    try expectConstructorParameterOrigin(prefix ++ "    if true\n        code = 13\n" ++ body ++ "os.exit(probe(7))\n", true);
+}
+
+test "semantic_graph: constructor parameter initializers refuse shadow identity" {
+    const prefix = "record: {other: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n";
+    const suffix = "    item = {code = code, other = 91}\n    read(2, item, 5)\nos.exit(probe(7))\n";
+    try expectConstructorParameterOrigin(prefix ++ "    code: str = \"changed\"\n" ++ suffix, false);
+    try expectConstructorParameterOrigin(prefix ++ "    code = \"changed\"\n" ++ suffix, false);
+    try expectConstructorParameterOrigin(prefix ++ "    code: i64 = 13\n" ++ suffix, false);
+    try expectConstructorParameterOrigin(prefix ++ "    if true\n        code = \"changed\"\n" ++ suffix, false);
+    try expectConstructorParameterOrigin(prefix ++ "    code = 1.5\n" ++ suffix, false);
+    try expectConstructorParameterOrigin(prefix ++ "    code = nil\n" ++ suffix, false);
+    try expectConstructorParameterOrigin("touch = (): i64 0\n" ++ prefix ++ "    touch()\n" ++ suffix, false);
+    try expectConstructorParameterOrigin(prefix ++ "    count = 0\n    while count < 2\n        item = {code = code, other = 91}\n        code = \"changed\"\n        count += 1\n    0\nos.exit(probe(7))\n", false);
+    try expectConstructorParameterOrigin("touch = (): i64 0\n" ++ prefix ++ "    ignored = {touch() for value in {1}}\n" ++ suffix, false);
+    try expectConstructorParameterOrigin("record: {other: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64, code: i64): i64\n    item = {code = code, other = 91}\n    read(2, item, 5)\nos.exit(probe(7, 13))\n", false);
 }

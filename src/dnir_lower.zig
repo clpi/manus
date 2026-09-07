@@ -10316,6 +10316,10 @@ fn lowerRecordLiteralFields(ctx: *LowerCtx, prefix: []const u8, table: *const as
                 if (!ctx.require_graph_facts or ctx.graph.gateTransportModule()) break :blk true;
                 const value = ctx.graph.valueByAst(nf.val) orelse
                     return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-initializer-value");
+                switch (ctx.graph.valueOrigin(value)) {
+                    .one => {},
+                    .none, .unknown => return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-initializer-origin"),
+                }
                 const node = ctx.graph.get(value) orelse
                     return invalidGraphFacts(ctx.diagnostic, @src(), "record-field-initializer-value");
                 const descriptor = node.descriptor orelse
@@ -20442,7 +20446,10 @@ test "dnir_lower: record carriers preserve declared and scalar calls" {
         const alloc = arena.allocator();
         var graph = semantic_graph.SemanticGraph.init(alloc);
         defer graph.deinit();
-        const lowered = try lowerTestSourceWithGraph(alloc, source, "record-carrier-positive.id", &graph);
+        const lowered = lowerTestSourceWithGraph(alloc, source, "record-carrier-positive.id", &graph) catch |err| {
+            std.debug.print("{s}\n", .{source});
+            return err;
+        };
         defer dnir.deinitModule(alloc, lowered);
         try std.testing.expectEqual(@as(usize, 1), graph.applications().len);
     }
@@ -20644,18 +20651,46 @@ test "dnir_lower: scalar record initializers require exact value origin" {
     var diagnostic: Diagnostic = .{};
     const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
     defer dnir.deinitModule(alloc, lowered);
-    var removed: usize = 0;
+    var initializer: ?semantic_graph.id = null;
     for (graph.nodes.items, 0..) |node, index| {
         if (node.kind != .value) continue;
         const value = graph.valueExpression(@intCast(index)) orelse continue;
-        if (value.* != .name or !std.mem.eql(u8, value.name.ident, "code")) continue;
+        if (value.* != .name or value.loc().line != 4) continue;
+        try std.testing.expect(initializer == null);
         try std.testing.expect(node.descriptor.? == .i64);
-        try std.testing.expectEqual(@as(semantic_graph.id, @intCast(index)), graph.valueByAst(value).?);
-        try std.testing.expect(graph.value_by_ast.remove(@intFromPtr(value)));
-        removed += 1;
+        initializer = @intCast(index);
     }
-    try std.testing.expectEqual(@as(usize, 1), removed);
+    const value = initializer orelse return error.TestExpectedEqual;
+    const expression = graph.valueExpression(value).?;
+    const binding = switch (graph.valueOrigin(value)) {
+        .one => |exact| exact,
+        .none, .unknown => return error.TestExpectedEqual,
+    };
+    try std.testing.expectEqual(value, graph.valueByAst(expression).?);
+    try std.testing.expect(graph.value_by_ast.remove(@intFromPtr(expression)));
     diagnostic.reset();
     try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
     try std.testing.expectEqualStrings("record-field-initializer-value", diagnostic.note().?);
+    try graph.value_by_ast.put(alloc, @intFromPtr(expression), value);
+    var origin: ?usize = null;
+    for (graph.edges.items, 0..) |edge, index| {
+        if (edge.from != value or edge.kind != .binding) continue;
+        try std.testing.expect(origin == null);
+        origin = index;
+    }
+    const edge_index = origin orelse return error.TestExpectedEqual;
+    graph.edges.items[edge_index].kind = .provenance;
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-field-initializer-origin", diagnostic.note().?);
+    graph.edges.items[edge_index].kind = .binding;
+    graph.edges.items[edge_index].to = graph.module_root.?;
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-field-initializer-origin", diagnostic.note().?);
+    graph.edges.items[edge_index].to = binding;
+    try graph.addEdge(.{ .from = value, .to = binding, .kind = .binding });
+    diagnostic.reset();
+    try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+    try std.testing.expectEqualStrings("record-field-initializer-origin", diagnostic.note().?);
 }
