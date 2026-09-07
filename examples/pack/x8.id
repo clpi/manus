@@ -1,10 +1,34 @@
 # @corpus current
-# therefore the canonical field separator and the comma is the optional one.
-# The golden `token` and `user` descriptors of §20 are written this way and
-# did not parse: the record-type reader stopped at the first missing comma.
-# expect: 8
-span: { start: i64, stop: i64 }
-s: span =
+# expect: 8 417 8 417 8 417
+span: {
+  start: i64
+  stop: i64
+  step: i64
+}
+
+pace: { step: i64, start: i64, stop: i64 }
+
+mix: {
+  start: i64,
+  stop: i64
+  step: i64
+}
+
+a: span =
   start = 3
   stop = 11
-print(s.stop - s.start)
+  step = 7
+b: pace =
+  start = 3
+  stop = 11
+  step = 7
+c: mix =
+  start = 3
+  stop = 11
+  step = 7
+print(a.stop - a.start)
+print(a.start * 100 + a.stop * 10 + a.step)
+print(b.stop - b.start)
+print(b.start * 100 + b.stop * 10 + b.step)
+print(c.stop - c.start)
+print(c.start * 100 + c.stop * 10 + c.step)
