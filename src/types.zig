@@ -4855,3 +4855,25 @@ test "types: nominal store outlives a destroyed caller arena" {
     try testing.expectEqual(@as(?ResolvedType, .i64), nominalRepr("t69_farthing"));
     try testing.expectEqual(@as(?ResolvedType, null), nominalRepr("t69_absent"));
 }
+
+test "types: nominal store retains the declared name after the caller buffer mutates" {
+    var name_buf: [16]u8 = .{ 'f', 'a', 'r', 't', 'h', 'i', 'n', 'g', 'x', 0, 0, 0, 0, 0, 0, 0 };
+    try declareNominal(testing.allocator, name_buf[0..9], .i32);
+    for (&name_buf) |*b| b.* = '#';
+    try testing.expectEqual(@as(?ResolvedType, .i32), nominalRepr("farthingx"));
+    try testing.expectEqual(@as(?ResolvedType, null), nominalRepr("########"));
+}
+
+test "types: nominal store same-name replacement keeps the original key alive across a destroyed second arena" {
+    var arena1 = std.heap.ArenaAllocator.init(testing.allocator);
+    var arena2 = std.heap.ArenaAllocator.init(testing.allocator);
+    var buf1: [12]u8 = .{ 'f', 'a', 'r', 't', 'h', 'i', 'n', 'g', 'y', 0, 0, 0 };
+    try declareNominal(arena1.allocator(), buf1[0..9], .i32);
+    var buf2: [12]u8 = .{ 'f', 'a', 'r', 't', 'h', 'i', 'n', 'g', 'y', 0, 0, 0 };
+    try declareNominal(arena2.allocator(), buf2[0..9], .i64);
+    for (&buf2) |*b| b.* = '?';
+    arena2.deinit();
+    for (&buf1) |*b| b.* = '!';
+    arena1.deinit();
+    try testing.expectEqual(@as(?ResolvedType, .i64), nominalRepr("farthingy"));
+}
