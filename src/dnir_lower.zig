@@ -20902,57 +20902,64 @@ test "dnir_lower: fresh record aliases refuse invalidated sharing" {
 }
 
 test "dnir_lower: fresh record aliases require exact initialization edges" {
-    const source = "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n    next = copy\n    read(next)\n";
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var lexer = @import("lexer.zig").Lexer.init(source, "record-alias-proof.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
-    parser.idol_mode = true;
-    var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
-    defer checked.deinit();
-    checked.idol_mode = true;
-    try checked.check_module(&module);
-    try std.testing.expectEqual(@as(u32, 0), checked.errors);
-    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
-    var graph = semantic_graph.SemanticGraph.init(alloc);
-    defer graph.deinit();
-    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-alias-proof.id");
-    var diagnostic: Diagnostic = .{};
-    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
-    defer dnir.deinitModule(alloc, lowered);
-    const relation = graph.findByNameOfKind("main", .func).?;
-    const item = graph.resolveBindingInScope(relation, "item").?;
-    const copy = graph.resolveBindingInScope(relation, "copy").?;
-    const next = graph.resolveBindingInScope(relation, "next").?;
-    const original = graph.bindingInitialization(item).known;
-    const alias = graph.bindingInitialization(copy).known;
-    var edge_index: ?usize = null;
-    for (graph.edges.items, 0..) |edge, index| {
-        if (edge.from == alias.value and edge.kind == .binding) edge_index = index;
-    }
-    const index = edge_index orelse return error.TestExpectedEqual;
-    const saved_edge = graph.edges.items[index];
-    const row = graph.binding_initialization_rows.get(copy).?;
-    const expression = graph.valueExpression(alias.value).?;
-    for (0..7) |damage| {
-        switch (damage) {
-            0 => graph.edges.items[index].kind = .provenance,
-            1 => graph.edges.items[index].to = copy,
-            2 => graph.binding_initializations.items[row].place = std.math.maxInt(u32),
-            3 => graph.binding_initializations.items[row].value = original.value,
-            4 => graph.nodes.items[alias.value].scope = item,
-            5 => graph.edges.items[index].to = next,
-            6 => try std.testing.expect(graph.value_by_ast.remove(@intFromPtr(expression))),
-            else => unreachable,
+    const sources = [_][]const u8{
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n    read(copy)\n",
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n    next = copy\n    read(next)\n",
+    };
+    for (sources) |source| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lexer = @import("lexer.zig").Lexer.init(source, "record-alias-proof.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = @import("sema.zig").Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        try std.testing.expectEqual(@as(u32, 0), checked.errors);
+        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-alias-proof.id");
+        var diagnostic: Diagnostic = .{};
+        const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+        defer dnir.deinitModule(alloc, lowered);
+        const relation = graph.findByNameOfKind("main", .func).?;
+        const item = graph.resolveBindingInScope(relation, "item").?;
+        const copy = graph.resolveBindingInScope(relation, "copy").?;
+        const next = graph.resolveBindingInScope(relation, "next");
+        const original = graph.bindingInitialization(item).known;
+        const alias = graph.bindingInitialization(copy).known;
+        var edge_index: ?usize = null;
+        for (graph.edges.items, 0..) |edge, index| {
+            if (edge.from == alias.value and edge.kind == .binding) edge_index = index;
         }
-        diagnostic.reset();
-        try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
-        graph.edges.items[index] = saved_edge;
-        graph.binding_initializations.items[row] = alias;
-        graph.nodes.items[alias.value].scope = copy;
-        if (damage == 6) try graph.value_by_ast.put(alloc, @intFromPtr(expression), alias.value);
+        const index = edge_index orelse return error.TestExpectedEqual;
+        const saved_edge = graph.edges.items[index];
+        const row = graph.binding_initialization_rows.get(copy).?;
+        const expression = graph.valueExpression(alias.value).?;
+        for (0..7) |damage| {
+            switch (damage) {
+                0 => graph.edges.items[index].kind = .provenance,
+                1 => graph.edges.items[index].to = copy,
+                2 => graph.binding_initializations.items[row].place = std.math.maxInt(u32),
+                3 => graph.binding_initializations.items[row].value = original.value,
+                4 => graph.nodes.items[alias.value].scope = item,
+                5 => if (next) |target| {
+                    graph.edges.items[index].to = target;
+                } else continue,
+                6 => try std.testing.expect(graph.value_by_ast.remove(@intFromPtr(expression))),
+                else => unreachable,
+            }
+            diagnostic.reset();
+            try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+            graph.edges.items[index] = saved_edge;
+            graph.binding_initializations.items[row] = alias;
+            graph.nodes.items[alias.value].scope = copy;
+            if (damage == 6) try graph.value_by_ast.put(alloc, @intFromPtr(expression), alias.value);
+        }
     }
 }
 

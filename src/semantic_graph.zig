@@ -2146,6 +2146,10 @@ pub const SemanticGraph = struct {
             const value_descriptor = value_node.descriptor orelse return .invalid;
             if (!binding_descriptor.eql(value_descriptor)) return .invalid;
         }
+        if (binding_node.scope != self.module_root) {
+            const expression = self.valueExpression(fact.value) orelse return .invalid;
+            if (self.valueByAst(expression) != fact.value) return .invalid;
+        }
         const storage = self.initializationPlace(binding, fact.place) orelse return .invalid;
         if (binding_node.scope != self.module_root and
             (value_node.descriptor == null or value_node.descriptor.? != .table_type or storage.shape != .record or storage.region != .function)) return .invalid;
