@@ -756,7 +756,23 @@ compile_and_run() {
 
 compile_and_run candidate "$candidate" || status=1
 compile_and_run tracked "$tracked" || status=1
-if [ -s "$work/candidate.cursor.result" ] && [ -s "$work/tracked.cursor.result" ]; then
+result() {
+    [ -s "$1" ]
+}
+empty="$work/empty.cursor.result"
+missing="$work/missing.cursor.result"
+: > "$empty"
+if result "$empty" || result "$missing"; then
+    printf '%s\n' 'parser artifact: FAIL — cursor/pack result predicate accepted empty or missing evidence' >&2
+    status=1
+fi
+if ! result "$work/candidate.cursor.result"; then
+    printf '%s\n' 'parser artifact: FAIL — generated cursor/pack result is absent or empty' >&2
+    status=1
+elif ! result "$work/tracked.cursor.result"; then
+    printf '%s\n' 'parser artifact: FAIL — tracked cursor/pack result is absent or empty' >&2
+    status=1
+else
     if cmp -s "$work/candidate.cursor.result" "$work/tracked.cursor.result"; then
         printf 'parser artifact: %s\n' "$(tr -d '\n' < "$work/candidate.cursor.result")"
     else
