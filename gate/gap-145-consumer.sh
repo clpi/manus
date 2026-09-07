@@ -28,7 +28,7 @@ SEMA="$ROOT/src/sema.zig"
 CODEGEN="$ROOT/src/codegen.zig"
 AST="$ROOT/src/ast.zig"
 DNIR="$ROOT/src/dnir_lower.zig"
-PARSER="$ROOT/src/parser.zig"
+PARSER=${GAP145_PARSER:-"$ROOT/src/parser.zig"}
 DISPATCH="$ROOT/src/lexer_dispatch.zig"
 LEXER_BRIDGE="$ROOT/src/lexer_bridge.zig"
 TOKEN_VIEW="$ROOT/src/token_view.zig"
@@ -1008,7 +1008,7 @@ has "$PARSER" '26 => 10,' \
     'parser.zig lost the applied-descriptor suffix consumer'
 has "$PARSER" '10 => break,' \
     'general suffix parsing bypasses the applied-descriptor refusal face'
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=24' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=25' \
     'parser artifact lost the applied-descriptor differential controls'
 appliedswitches=$(sed -n '/fn parse_suffixed_expr/,/fn parse_nn_block_desugar/p' "$PARSER" | grep -cF 'switch (t.kind)' || true)
 examined=$((examined + 1))
@@ -2152,7 +2152,7 @@ examined=$((examined + 1))
 if [ "$attribute_switch" -ne 0 ]; then
     bad 'parser.zig retained the host attribute-parenthesis delimiter switch'
 fi
-has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=24' \
+has "$ROOT/tools/node/dev/parser/artifact" 'delimiter-lane-cases=25' \
     'parser artifact lost the exact delimiter-boundary control count'
 forbid "$PARSER" '(decision >> 36)' \
     'statement dispatch returned to the per-token boundary payload'
@@ -4320,7 +4320,7 @@ if [ "$(printf '%s\n' "$refinement" | grep -cF 'if (try self.infix_prec()) |infi
     bad 'layout refinement does not consume the producer relation'
 fi
 amp_sweep=$(sed -n '/layout refinement consumes the producer relation/,/^}/p' "$PARSER")
-for predicate in 'const triple = (event >> 23) & 0xFFFFFF;' 'kind == .amp' 'try testing.expectEqual(expected, band);' 'try testing.expect(seen);'; do
+for predicate in 'return error.LayoutRefinementRejectedBand;' 'return error.LayoutRefinementWrongBand;' 'return error.LayoutRefinementRejectedAdd;' 'return error.LayoutRefinementAcceptedAdd;' 'const triple = (event >> 23) & 0xFFFFFF;' 'kind == .amp' 'try testing.expectEqual(expected, band);' 'try testing.expect(seen);' 'try testing.expect(rejected);'; do
     examined=$((examined + 1))
     if [ "$(printf '%s\n' "$amp_sweep" | grep -cF "$predicate")" -ne 1 ]; then
         bad "layout refinement equivalence oracle lost predicate: $predicate"
@@ -4334,6 +4334,172 @@ if [ "$(grep -Eoc '(==|!=) \.amp\b' "$amp_probe/old.zig")" -ne 1 ] || [ "$(grep 
     bad 'layout refinement identity detector does not distinguish rebuilt identity from producer relation'
 fi
 rm -rf -- "$amp_probe"
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    amp_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate refinement perturbation scratch' >&2; exit 2; }
+    sed '0,/infix\.op == \.band/s//infix.op == .add/' "$PARSER" >"$amp_probe/accept.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$amp_probe/accept.result" 2>&1
+    amp_status=$?
+    examined=$((examined + 1))
+    if [ "$amp_status" -ne 1 ] || [ ! -s "$amp_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL layout refinement does not consume the producer relation' "$amp_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$amp_probe/accept.result"; then
+        bad "layout refinement false-accept control did not fail closed: status=$amp_status"
+    fi
+
+    sed '0,/try testing\.expect(seen);/s//try testing.expect(!seen);/' "$PARSER" >"$amp_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$amp_probe/wrong.result" 2>&1
+    amp_status=$?
+    examined=$((examined + 1))
+    if [ "$amp_status" -ne 1 ] || [ ! -s "$amp_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL layout refinement equivalence oracle lost predicate: try testing.expect(seen);' "$amp_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL layout refinement does not consume the producer relation' "$amp_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$amp_probe/wrong.result"; then
+        bad "layout refinement wrong-error control did not fail closed: status=$amp_status"
+    fi
+    rm -rf -- "$amp_probe"
+fi
+
+catch_compare=$(grep -Eo '(==|!=) \.kw_catch\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$catch_compare" -ne 1 ]; then
+    bad "catch identity remains host-read or lost its producer oracle: count=$catch_compare"
+fi
+has "$ROOT/lib/compiler/parser.id" 'elseif kind == token.kindcatch' \
+    'parser.id lost the exact catch producer row'
+has "$ROOT/lib/compiler/parser.id" 'delimiter = 32' \
+    'parser.id lost the exact catch face'
+has "$ROOT/src/parser/projection.c" 'delimiter = 32;' \
+    'tracked projection lost the exact catch face'
+has "$ROOT/tools/node/dev/parser/artifact" 'failed += verify_delimiter("catch", 32);' \
+    'parser artifact lost the exact catch producer result'
+has "$PARSER" 'fn currentParserCatch(self: *Parser) ParseError!bool {' \
+    'Parser lost the catch face consumer'
+has "$PARSER" 'return (try self.currentParserFace()) == 32;' \
+    'Parser catch consumer selected the wrong producer face'
+has "$PARSER" 'while (try self.currentParserCatch()) {' \
+    'catch-clause parsing does not consume the producer face'
+catch_sweep=$(sed -n '/catch identity executes through whole-pack event/,/^}/p' "$PARSER")
+# `parser_events` is TWO lanes and every primary face lives in the SECOND one,
+# so an oracle that hands the reader a fabricated second word is not measuring
+# the producer at all: it reports the same answer whatever `event` decided.
+# `parserEventsForTest` is the only way a test obtains both lanes, the sweep
+# must run every generated row rather than a hand-picked pair, and it must
+# record the reader's REFUSAL at a trivia coordinate instead of skipping it.
+for predicate in 'kind == .kw_catch' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try consumer.currentParserCatch()' 'if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {' 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserCatch());' 'for (grammar_roles.rows, 0..) |row, index| {' 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$catch_sweep" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "catch equivalence oracle lost predicate: $predicate"
+    fi
+done
+
+# The CLASS, not the specimen. A specimen pin would have gone on passing while
+# the sweep it names failed in every `zig build unit-test` run, which is exactly
+# what happened: the gate ratcheted this oracle's text at 5 predicates while the
+# oracle itself reported `expected true, found false`. Refuse the shape that
+# made that possible ANYWHERE in the file -- a test that installs
+# `parser_events` from a literal pair whose decision word is `0` and then calls
+# a `currentParser*` reader. The lane-one readers (`infix_prec` and the event
+# bit tests) are NOT in the class: they never look at the decision word, so the
+# detector requires BOTH the fabricated pair and a face reader in the same test.
+fabricated_lane() {
+    awk '
+        /^test "/ { block = ""; inside = 1 }
+        inside { block = block $0 "\n" }
+        /^}$/ {
+            if (inside) {
+                if (index(block, "consumer.parser_events = &events;") > 0 &&
+                    index(block, "[_]i64{ event, 0 }") > 0 &&
+                    index(block, "currentParser") > 0) hits += 1
+                inside = 0
+            }
+        }
+        END { print hits + 0 }
+    ' "$1"
+}
+catch_fabricated=$(fabricated_lane "$PARSER")
+examined=$((examined + 1))
+if [ "$catch_fabricated" -ne 0 ]; then
+    bad "a parser face oracle reads a decision lane the producer never wrote: count=$catch_fabricated"
+fi
+
+# Positive control for the class detector: it is shown the retired shape and
+# the canonical shape, and must separate them. Without this the count above is
+# a zero with no positive control.
+lane_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate decision-lane scratch' >&2; exit 2; }
+cat >"$lane_probe/old.zig" <<'PROBE'
+test "parse: retired shape" {
+        var events = [_]i64{ event, 0 };
+        consumer.parser_events = &events;
+        try testing.expectEqual(expected, try consumer.currentParserCatch());
+}
+test "parse: lane one only" {
+        var events = [_]i64{ event, 0 };
+        consumer.parser_events = &events;
+        const refinement = try consumer.infix_prec();
+}
+PROBE
+cat >"$lane_probe/new.zig" <<'PROBE'
+test "parse: canonical shape" {
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        consumer.parser_events = &events;
+        try testing.expectEqual(expected, try consumer.currentParserCatch());
+}
+PROBE
+lane_old=$(fabricated_lane "$lane_probe/old.zig")
+lane_new=$(fabricated_lane "$lane_probe/new.zig")
+rm -rf -- "$lane_probe"
+examined=$((examined + 1))
+if [ "$lane_old" -ne 1 ]; then
+    bad "the fabricated decision-lane detector does not see the retired shape: count=$lane_old"
+fi
+examined=$((examined + 1))
+if [ "$lane_new" -ne 0 ]; then
+    bad "the fabricated decision-lane detector misreads the canonical shape: count=$lane_new"
+fi
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    catch_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate catch perturbation scratch' >&2; exit 2; }
+    sed '0,/== 32/s//== 14/' "$PARSER" >"$catch_probe/accept.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/accept.result" 2>&1
+    catch_status=$?
+    examined=$((examined + 1))
+    if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL Parser catch consumer selected the wrong producer face' "$catch_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$catch_probe/accept.result"; then
+        bad "catch false-accept control did not fail closed: status=$catch_status"
+    fi
+
+    sed '/catch identity executes through whole-pack event/,/^}/ s/try testing\.expect(rejected);/try testing.expect(!rejected);/' "$PARSER" >"$catch_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/wrong.result" 2>&1
+    catch_status=$?
+    examined=$((examined + 1))
+    if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL catch equivalence oracle lost predicate: try testing.expect(rejected);' "$catch_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL Parser catch consumer selected the wrong producer face' "$catch_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$catch_probe/wrong.result"; then
+        bad "catch wrong-error control did not fail closed: status=$catch_status"
+    fi
+
+    # The empty-evidence control. This plant keeps every predicate the gate
+    # pins -- the identity comparison, the reader call, all three
+    # non-vacuity expectations -- and changes ONLY where the decision word
+    # comes from, back to the fabricated pair the oracle shipped with. The
+    # predicate ratchet cannot see it; the class detector must.
+    sed '/catch identity executes through whole-pack event/,/^}/ s/var events = \[2\]i64{ 0, 0 };/var events = [_]i64{ event, 0 };/' \
+        "$PARSER" >"$catch_probe/lane.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/lane.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/lane.result" 2>&1
+    catch_status=$?
+    examined=$((examined + 1))
+    if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/lane.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL a parser face oracle reads a decision lane the producer never wrote' "$catch_probe/lane.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL catch equivalence oracle lost predicate' "$catch_probe/lane.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$catch_probe/lane.result"; then
+        bad "catch empty-evidence control did not fail closed: status=$catch_status"
+    fi
+    rm -rf -- "$catch_probe"
+fi
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))

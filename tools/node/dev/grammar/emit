@@ -26,7 +26,19 @@ selftest() {
   printf 'owner\n' >"$root/lib/compiler/token.id"
   printf 'old zig\n' >"$root/src/grammar_role_table.zig"
   printf 'old idol\n' >"$root/lib/token/grammarrole.id"
-  printf 'test {}\n' >"$root/src/grammar_roles.zig"
+  printf '%s\n' \
+    'const table = @import("grammar_role_table.zig");' \
+    '' \
+    'comptime {' \
+    '    if (table.slot_count != 3) @compileError("dense-table-slot-count");' \
+    '    if (table.identity_count != 2) @compileError("dense-table-identity-count");' \
+    '    if (table.kind_eof != 1) @compileError("dense-table-eof-index");' \
+    '    if (table.rows.len != table.slot_count) @compileError("dense-table-row-count");' \
+    '    if (table.rows[0].kind != table.TokenKind.name) @compileError("dense-table-row-zero");' \
+    '    if (table.rows[1].kind != table.TokenKind.eof) @compileError("dense-table-row-stale");' \
+    '}' \
+    '' \
+    'test {}' >"$root/src/grammar_roles.zig"
   cp "$root/src/grammar_role_table.zig" "$control/old.zig"
   cp "$root/lib/token/grammarrole.id" "$control/old.id"
   # The inner script's `$repo` resolves to `$root`, so the link
@@ -67,32 +79,25 @@ selftest() {
     fail 'stdin runtime changed the observed byte sequence'
 
   fake_program=$control/fake-program
-  # The fake "executable" is a C source file the script copies to the
-  # C-backend output path. When `cc` compiles and links it with the
-  # host shim, the resulting binary emits malformed Zig whose `.{ .kind
-  # = ., }, }` token fails `zig fmt --check`. The earlier fake used a
-  # shell script that copied itself as the output, which is the right
-  # shape for a native executable but the wrong shape for a C source
-  # file — `cc` reads the `#!` line as a preprocessor directive and
-  # bails before the link, and the error is "the C source did not link"
-  # instead of "the Zig projection is not syntactically valid". The
-  # gate's verdict text is fixed, so the fake has to be a VALID C
-  # program whose run-time output is malformed.
-  #
-  # Each fprintf below is one `%s` argument so the embedded `\n`
-  # stays inside the C string literal (a real newline would split
-  # the literal and leave the closing `"` orphaned). The earlier
-  # version used an empty `%s` between two halves to emit a real
-  # newline, which produced a C source where the string literal ran
-  # onto a second line and the compiler refused with "missing
-  # terminating " character". The single-argument version is correct.
   printf '%s\n' \
     '#include <stdio.h>' \
     'int main(void) {' \
     '  FILE *f = fopen("src/grammar_role_table.zig", "w");' \
-    '  if (f) { fprintf(f, "pub const rows = .{ .{ .kind = ., }, };\\n"); fclose(f); }' \
+    '  if (f) {' \
+    '    fputs("pub const TokenKind = enum(u8) { name = 0, eof = 1 };\n", f);' \
+    '    fputs("pub const RoleRow = struct { kind: ?TokenKind = null };\n", f);' \
+    '    fputs("pub const slot_count: usize = 3;\n", f);' \
+    '    fputs("pub const identity_count: usize = 2;\n", f);' \
+    '    fputs("pub const kind_eof: usize = 1;\n", f);' \
+    '    fputs("pub const rows = [slot_count]RoleRow{\n", f);' \
+    '    fputs("    .{ .kind = .name },\n", f);' \
+    '    fputs("    .{ .kind = null },\n", f);' \
+    '    fputs("    .{ .kind = null },\n", f);' \
+    '    fputs("};\n", f);' \
+    '    fclose(f);' \
+    '  }' \
     '  f = fopen("lib/token/grammarrole.id", "w");' \
-    '  if (f) { fprintf(f, "rolecount = 1\\n"); fclose(f); }' \
+    '  if (f) { fputs("rolecount = 2\n", f); fclose(f); }' \
     '  return 0;' \
     '}' >"$fake_program"
 
@@ -119,16 +124,16 @@ selftest() {
   chmod +x "$fake"
 
   if IDOL="$fake" "$root/tools/node/dev/grammar/emit" --write >"$control/out" 2>"$control/err"; then
-    printf 'grammar projection control: FAIL — malformed producer was admitted\n' >&2
+    printf 'grammar projection control: FAIL — wrong dense-table producer was admitted\n' >&2
     exit 1
   fi
   cmp -s "$root/src/grammar_role_table.zig" "$control/old.zig" ||
-    fail 'malformed producer changed the tracked Zig projection'
+    fail 'wrong dense-table producer changed the tracked Zig projection'
   cmp -s "$root/lib/token/grammarrole.id" "$control/old.id" ||
-    fail 'malformed producer changed the tracked Idol projection'
-  grep -q 'generated Zig projection is not syntactically valid' "$control/err" ||
-    fail "malformed producer did not reach the validation refusal: err was: $(cat "$control/err")"
-  printf 'grammar projection control: PASS — malformed successful producer changed no tracked bytes\n'
+    fail 'wrong dense-table producer changed the tracked Idol projection'
+  grep -q 'generated Zig projection does not satisfy its consumer' "$control/err" ||
+    fail "wrong dense-table producer did not reach the consumer refusal: err was: $(cat "$control/err")"
+  printf 'grammar projection control: PASS — wrong dense-table producer changed no tracked bytes\n'
 }
 
 mode=${1:---write}

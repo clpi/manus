@@ -29,6 +29,19 @@ pub fn lookup(kind: lexer.TokenKind) RoleRow {
     return rows[@backingInt(kind)];
 }
 
+comptime {
+    const info = @typeInfo(lexer.TokenKind).@"enum";
+    if (table.identity_count != info.field_names.len) @compileError("grammar-role-identity-count");
+    if (table.kind_eof != @as(usize, @intCast(@backingInt(lexer.TokenKind.eof)))) @compileError("grammar-role-eof-index");
+    if (rows.len != table.slot_count) @compileError("grammar-role-row-count");
+    for (info.field_values) |value| {
+        const kind: lexer.TokenKind = @fromBackingInt(@as(u8, @intCast(value)));
+        if (lookup(kind).kind == null or lookup(kind).kind.? != kind) @compileError("grammar-role-row-kind");
+    }
+    if (lookup(.lt).assoc != .nonassoc) @compileError("grammar-role-assoc");
+    if (lookup(.plus_assign).relation != lookup(.plus).relation) @compileError("grammar-role-update-relation");
+}
+
 pub fn canBeginExpression(kind: lexer.TokenKind) bool {
     return lookup(kind).begin_expr;
 }

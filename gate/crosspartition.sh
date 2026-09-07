@@ -573,6 +573,14 @@ run_subject() {
         printf 'compile reported success and produced no executable' >"$work/why"
         return 1
     fi
+    # `-s` REJECTS AN EMPTY RESULT BEFORE ANY PIN IS READ — the executable mirror
+    # of the dylib path's same check, for the same vacuity finding. A 0-byte file
+    # with execute bit runs and answers 0, so an absent symbol reads as "absent"
+    # and an absence pin passes vacuously; `-x` lets it through.
+    if [ ! -s "$dir/prog" ]; then
+        printf 'compile reported success and produced an empty executable' >"$work/why"
+        return 1
+    fi
     # A CRASH IS NOT AN ANSWER. 128+n is a signal, and reading one as an exit
     # status would let a segfaulting program match a numeric expectation.
     #

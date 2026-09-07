@@ -644,6 +644,10 @@ pub const Parser = struct {
         return (try self.currentParserFace()) == 31;
     }
 
+    fn currentParserCatch(self: *Parser) ParseError!bool {
+        return (try self.currentParserFace()) == 32;
+    }
+
     fn currentParserTableEntry(self: *Parser) ParseError!bool {
         const face = try self.currentParserFace();
         return face == 22 or face == 23;
@@ -4377,7 +4381,7 @@ pub const Parser = struct {
         var defers: std.ArrayList(ast.DeferStmt) = .empty;
 
         // Parse zero or more catch clauses
-        while ((try self.pk()).kind == .kw_catch) {
+        while (try self.currentParserCatch()) {
             const catch_loc = (try self.adv()).loc; // consume `catch`
 
             var binding: ?[]const u8 = null;
@@ -12046,16 +12050,78 @@ test "parse: production unary glue and update decisions execute through whole-pa
 
 test "parse: layout refinement consumes the producer relation" {
     var seen = false;
+    var rejected = false;
     for (grammar_roles.rows, 0..) |row, index| {
         const event = try parserEventForTest(@intCast(index), true);
         const triple = (event >> 23) & 0xFFFFFF;
         const band = triple != 0 and
-            @as(ast.BinOp, @fromBackingInt(@as(u8, @intCast(triple & 0xff)))) == .band;
+            @as(ast.BinOp, @fromBackingInt(@intCast(triple & 0xff))) == .band;
         const expected = if (row.kind) |kind| kind == .amp else false;
-        if (expected) seen = true;
+        if (expected) {
+            seen = true;
+            var tokens = [_]Token{.{ .kind = .amp, .loc = .{ .file = "amp.id", .line = 1, .col = 1 }, .text = "&" }};
+            var events = [_]i64{ event, 0 };
+            var lexer = Lexer.init("", "amp.id");
+            var consumer = Parser.init(&lexer, testing.allocator);
+            consumer.pack_tokens = &tokens;
+            consumer.parser_events = &events;
+            const refinement = try consumer.infix_prec() orelse
+                return error.LayoutRefinementRejectedBand;
+            if (refinement.op != .band) return error.LayoutRefinementWrongBand;
+        } else if (row.kind != null and row.kind.? == .plus) {
+            rejected = true;
+            var tokens = [_]Token{.{ .kind = .plus, .loc = .{ .file = "add.id", .line = 1, .col = 1 }, .text = "+" }};
+            var events = [_]i64{ event, 0 };
+            var lexer = Lexer.init("", "add.id");
+            var consumer = Parser.init(&lexer, testing.allocator);
+            consumer.pack_tokens = &tokens;
+            consumer.parser_events = &events;
+            const refinement = try consumer.infix_prec() orelse
+                return error.LayoutRefinementRejectedAdd;
+            if (refinement.op == .band) return error.LayoutRefinementAcceptedAdd;
+        }
         try testing.expectEqual(expected, band);
     }
     try testing.expect(seen);
+    try testing.expect(rejected);
+}
+
+// `parser_events` is two lanes and the primary face lives in the SECOND, so
+// both words must come from `idol_parser_event`; a fabricated decision answers
+// the same thing whatever the producer decided. Trivia is not a cursor
+// coordinate, so the reader refuses there rather than answering.
+test "parse: catch identity executes through whole-pack event" {
+    var seen = false;
+    var rejected = false;
+    var refused = false;
+    for (grammar_roles.rows, 0..) |row, index| {
+        const kind = row.kind orelse continue;
+        var facts = [3]i64{ 0, @intCast(index), 0 };
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        var tokens = [_]Token{.{
+            .kind = kind,
+            .loc = .{ .file = "catch.id", .line = 1, .col = 1 },
+            .text = row.spell,
+        }};
+        var lexer = Lexer.init("", "catch.id");
+        var consumer = Parser.init(&lexer, testing.allocator);
+        consumer.pack_tokens = &tokens;
+        consumer.parser_events = &events;
+        if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {
+            try testing.expectError(error.InvalidRecordCount, consumer.currentParserCatch());
+            refused = true;
+            continue;
+        }
+        const expected = kind == .kw_catch;
+        try testing.expectEqual(expected, try consumer.currentParserCatch());
+        if (expected) seen = true else rejected = true;
+    }
+    // Without these the sweep would pass on a face that admits nothing, on one
+    // that admits everything, or on a pack whose trivia was never reached.
+    try testing.expect(seen);
+    try testing.expect(rejected);
+    try testing.expect(refused);
 }
 
 test "parse: relation ABI ordinal decode refuses values outside generated enums" {
