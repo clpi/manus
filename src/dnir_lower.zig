@@ -828,10 +828,10 @@ fn moduleFieldWord(ctx: *const LowerCtx, base: []const u8, key: []const u8) ?str
     const relation = ctx.function orelse return null;
     const base_binding = ctx.graph.bindingNamedIn(relation, base) orelse return null;
     const base_node = ctx.graph.get(base_binding) orelse return null;
-    
+
     // Only use module storage when the binding is at module scope
     if (base_node.scope != ctx.graph.module_root) return null;
-    
+
     const gty = ctx.module_globals.types.get(key) orelse return null;
     const storage_key = ctx.module_globals.storageKey(key) orelse return null;
     return .{ gty, storage_key };
@@ -847,10 +847,10 @@ fn moduleFieldStorageBase(ctx: *const LowerCtx, name: []const u8) bool {
     const relation = ctx.function orelse return false;
     const binding = ctx.graph.bindingNamedIn(relation, name) orelse return false;
     const node = ctx.graph.get(binding) orelse return false;
-    
+
     // Only use module storage when the binding is at module scope
     if (node.scope != ctx.graph.module_root) return false;
-    
+
     var it = ctx.module_globals.types.keyIterator();
     while (it.next()) |k| {
         const key = k.*;
@@ -8553,6 +8553,80 @@ fn applicationNeedsGraphOccurrence(ctx: *const LowerCtx, expr: *const ast.Expr) 
     return !ctx.graph.bootstrapApplicationExpr(expr);
 }
 
+fn lowerRecordAlias(ctx: *LowerCtx, name: []const u8, expression: *const ast.Expr) Error!bool {
+    if (!ctx.require_graph_facts or ctx.graph.gateTransportModule() or expression.* != .name) return false;
+    const value = ctx.graph.valueByAst(expression) orelse return false;
+    const node = ctx.graph.get(value) orelse return false;
+    const descriptor = node.descriptor orelse return false;
+    if (descriptor != .table_type) return false;
+    const binding = node.scope orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-binding");
+    const target = ctx.graph.get(binding) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-binding");
+    if (target.kind != .local or target.scope != ctx.function or !std.mem.eql(u8, target.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-binding"), name))
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-binding");
+    const initialization = switch (ctx.graph.bindingInitialization(binding)) {
+        .known => |fact| fact,
+        .invalid, .unvisited => return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-initializer"),
+    };
+    if (initialization.value != value) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-initializer");
+    const shape = ctx.graph.descriptorShape(value, 0) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-shape");
+    const record = record: {
+        for (ctx.records) |candidate| {
+            if (candidate.semantic_shape == shape and checkedRecordResultSupported(candidate)) break :record candidate;
+        }
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-shape");
+    };
+    var current = binding;
+    var fact = initialization;
+    var remaining = ctx.graph.nodes.items.len;
+    while (remaining > 0) : (remaining -= 1) {
+        switch (ctx.graph.valueOrigin(fact.value)) {
+            .unknown => return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin"),
+            .none => break,
+            .one => |source| {
+                const source_node = ctx.graph.get(source) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin");
+                if (source_node.kind != .local or source_node.scope != target.scope or source == current)
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin");
+                const source_initialization = switch (ctx.graph.bindingInitialization(source)) {
+                    .known => |known| known,
+                    .invalid, .unvisited => return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin"),
+                };
+                if (source_initialization.place != initialization.place)
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place");
+                const source_value = ctx.graph.get(source_initialization.value) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin");
+                if (!descriptor.eql(source_value.descriptor orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-descriptor")))
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-descriptor");
+                if (ctx.graph.descriptorShape(source_initialization.value, 0) != shape)
+                    return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-shape");
+                fact = source_initialization;
+                current = source;
+            },
+        }
+    }
+    if (remaining == 0 or current == binding) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-origin");
+    const storage = ctx.graph.initializationPlace(current, fact.place) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place");
+    if (storage.shape != .record or storage.region != .function or storage.facts.mutation != .no or storage.facts.escape != .no or storage.facts.determinacy != .exact)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place");
+    switch (storage.bindCount()) {
+        .exact => |count| if (count != 1) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place"),
+        .bounded, .unknown => return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place"),
+    }
+    if (storage.init == null or ctx.graph.valueExpression(fact.value) != storage.init)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-place");
+    const source_name = ctx.graph.get(current).?.name orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+    const marker_slot = ctx.locals.get(source_name) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+    if (ctx.locals.contains(name)) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+    for (record.fields) |field| {
+        const source_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ source_name, field });
+        defer ctx.alloc.free(source_key);
+        const slot = ctx.locals.get(source_key) orelse return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+        if (slot < ctx.param_slots) return invalidGraphFacts(ctx.diagnostic, @src(), "record-alias-storage");
+        const target_key = try std.fmt.allocPrint(ctx.alloc, "{s}.{s}", .{ name, field });
+        try ctx.locals.put(ctx.alloc, target_key, slot);
+    }
+    try ctx.locals.put(ctx.alloc, try ctx.alloc.dupe(u8, name), marker_slot);
+    return true;
+}
+
 fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) Error!void {
     if (applicationNeedsGraphOccurrence(ctx, value) and !recordExportMapAssignable(ctx, value)) {
         return refuseMissingApplication(ctx, @src(), value);
@@ -8633,6 +8707,7 @@ fn lowerAssignTarget(ctx: *LowerCtx, name: []const u8, value: *const ast.Expr) E
         try lowerRecordLiteralAssign(ctx, name, value);
         return;
     }
+    if (try lowerRecordAlias(ctx, name, value)) return;
     const v = try lowerExprCons(ctx, value, .single);
     const f64_store = exprIsF64(ctx, value);
     const pointer_store = exprIsPointer(ctx, value);
@@ -11884,6 +11959,8 @@ fn checkedBindingI64(
         .invalid => return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer"),
         .known => |fact| fact,
     };
+    if (ctx.graph.get(binding).?.scope != ctx.graph.module_root)
+        return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-place");
     const p = ctx.graph.modulePlace(initialization.place) orelse
         return invalidGraphFacts(ctx.diagnostic, @src(), "binding-initializer-place");
     if (p.shape != .scalar or p.region != .module or p.init == null)
@@ -20700,7 +20777,6 @@ test "dnir_lower: scalar record initializers require exact value origin" {
     try std.testing.expectEqualStrings("record-field-initializer-origin", diagnostic.note().?);
 }
 
-
 test "dnir_lower: projected record arguments retain exact member proof" {
     const source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    read(2, item, 5)\nos.exit(probe(7))\n";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -20758,7 +20834,6 @@ test "dnir_lower: projected record arguments retain exact member proof" {
     }
 }
 
-
 test "dnir_lower: record parameter writes require shared residency" {
     const sources = [_][]const u8{
         "record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
@@ -20785,4 +20860,135 @@ test "dnir_lower: record parameter writes require shared residency" {
         try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
         try std.testing.expectEqualStrings("record-field-parameter-place-unproved", diagnostic.note().?);
     }
+}
+
+test "dnir_lower: fresh record aliases refuse invalidated sharing" {
+    const prefix = "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n";
+    const sources = [_][]const u8{
+        prefix ++ "    item = {code = 7}\n    read(copy)\n",
+        prefix ++ "    copy = {code = 7}\n    read(copy)\n",
+        prefix ++ "    item.code = 7\n    read(copy)\n",
+        prefix ++ "    copy.code = 7\n    read(copy)\n",
+        prefix ++ "    if true\n        item = {code = 7}\n    read(copy)\n",
+        prefix ++ "    other = {nested = copy}\n    read(copy)\n",
+        prefix ++ "    stdout:write(\"effect\")\n    read(copy)\n",
+        prefix ++ "    item: record = {code = 7}\n    read(copy)\n",
+        "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    item: record = {code = 7}\n    copy = item\n    read(copy)\n",
+    };
+    for (sources) |source| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lexer = @import("lexer.zig").Lexer.init(source, "record-alias-invalidation.id");
+        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = @import("sema.zig").Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        try std.testing.expectEqual(@as(u32, 0), checked.errors);
+        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-alias-invalidation.id");
+        var diagnostic: Diagnostic = .{};
+        const result = lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+        std.testing.expectError(error.GraphFactsInvalid, result) catch |err| {
+            std.debug.print("{s}\n", .{source});
+            return err;
+        };
+    }
+}
+
+test "dnir_lower: fresh record aliases require exact initialization edges" {
+    const source = "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n    next = copy\n    read(next)\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lexer = @import("lexer.zig").Lexer.init(source, "record-alias-proof.id");
+    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = @import("sema.zig").Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-alias-proof.id");
+    var diagnostic: Diagnostic = .{};
+    const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
+    defer dnir.deinitModule(alloc, lowered);
+    const relation = graph.findByNameOfKind("main", .func).?;
+    const item = graph.resolveBindingInScope(relation, "item").?;
+    const copy = graph.resolveBindingInScope(relation, "copy").?;
+    const next = graph.resolveBindingInScope(relation, "next").?;
+    const original = graph.bindingInitialization(item).known;
+    const alias = graph.bindingInitialization(copy).known;
+    var edge_index: ?usize = null;
+    for (graph.edges.items, 0..) |edge, index| {
+        if (edge.from == alias.value and edge.kind == .binding) edge_index = index;
+    }
+    const index = edge_index orelse return error.TestExpectedEqual;
+    const saved_edge = graph.edges.items[index];
+    const row = graph.binding_initialization_rows.get(copy).?;
+    const expression = graph.valueExpression(alias.value).?;
+    for (0..7) |damage| {
+        switch (damage) {
+            0 => graph.edges.items[index].kind = .provenance,
+            1 => graph.edges.items[index].to = copy,
+            2 => graph.binding_initializations.items[row].place = std.math.maxInt(u32),
+            3 => graph.binding_initializations.items[row].value = original.value,
+            4 => graph.nodes.items[alias.value].scope = item,
+            5 => graph.edges.items[index].to = next,
+            6 => try std.testing.expect(graph.value_by_ast.remove(@intFromPtr(expression))),
+            else => unreachable,
+        }
+        diagnostic.reset();
+        try std.testing.expectError(error.GraphFactsInvalid, lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic));
+        graph.edges.items[index] = saved_edge;
+        graph.binding_initializations.items[row] = alias;
+        graph.nodes.items[alias.value].scope = copy;
+        if (damage == 6) try graph.value_by_ast.put(alloc, @intFromPtr(expression), alias.value);
+    }
+}
+
+test "dnir_lower: fresh record aliases share exact physical field slots" {
+    const source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    copy = item\n    next = copy\n    read(2, next, 5)\nos.exit(probe(7))\n";
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const lowered = try lowerTestSourceWithGraph(alloc, source, "record-alias-residency.id", &graph);
+    defer dnir.deinitModule(alloc, lowered);
+    const target = graph.findByNameOfKind("read", .func).?;
+    const caller = graph.findByNameOfKind("probe", .func).?;
+    var calls: usize = 0;
+    var markers: usize = 0;
+    for (lowered.functions) |function| {
+        if (function.id != caller) continue;
+        for (function.blocks) |body| {
+            var field: ?u32 = null;
+            for (body.instrs, 0..) |instruction, index| {
+                if (instruction.op == .init_record) markers += 1;
+                if (instruction.op == .store_local and instruction.lhs == .local and instruction.lhs.local == 0) {
+                    try std.testing.expect(field == null);
+                    field = instruction.result.?;
+                }
+                if (instruction.op != .call_direct or instruction.target != target) continue;
+                const start = instruction.realization_start.?;
+                try std.testing.expectEqual(@as(usize, 3), index - start);
+                const staged = body.instrs[start + 1];
+                try std.testing.expectEqual(dnir.Op.mov_arg, staged.op);
+                try std.testing.expectEqualDeep(dnir.Value{ .local = field.? }, staged.lhs);
+                calls += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), calls);
+    try std.testing.expectEqual(@as(usize, 1), markers);
 }

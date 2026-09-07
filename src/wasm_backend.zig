@@ -1539,9 +1539,7 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
                     // answers it with `allocReg()` — an UNDEFINED register whose
                     // contents cannot be read, because the path is dead. Zero is
                     // the same nothing, said deterministically.
-                    if (want == .f64) try b.f64c(0)
-                    else if (want == .f32) try b.f32c(0)
-                    else try b.i64c(0);
+                    if (want == .f64) try b.f64c(0) else if (want == .f32) try b.f32c(0) else try b.i64c(0);
                 } else if (want == .i64) {
                     try pushValue(e, b, ins.lhs, .i64);
                     try emitNarrowFit(b, e.cur_ret);
@@ -4816,7 +4814,6 @@ test "wasm backend validates exact flat projection lineage without dense storage
     graph.application_presence.set(application);
 }
 
-
 test "wasm backend refuses disconnected record parameter writes" {
     const sources = [_][]const u8{
         "record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
@@ -4843,5 +4840,20 @@ test "wasm backend projects demanded record fields and preserves fresh writes" {
             std.debug.print("{s}\n", .{case.source});
             return err;
         };
+    }
+}
+
+test "wasm backend fresh record aliases share resident fields" {
+    const cases = [_]struct { source: []const u8, want: u8 }{
+        .{ .source = "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n    read(copy)\n", .want = 13 },
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    copy = item\n    next = copy\n    read(2, next, 5)\nos.exit(probe(7))\n", .want = 28 },
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    copy = item\n    next = copy\n    read(2, next, 5)\nos.exit(probe(13))\n", .want = 46 },
+    };
+    for (cases) |case| {
+        const actual = runTestSourceWasm(case.source) catch |err| {
+            std.debug.print("{s}\n", .{case.source});
+            return err;
+        };
+        try std.testing.expectEqual(case.want, actual);
     }
 }
