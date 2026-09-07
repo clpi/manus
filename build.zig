@@ -1,5 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const unit_test_filter = @import("./unit_test_filter.zig");
+const parseUnitTestFilter = unit_test_filter.parseUnitTestFilter;
 
 /// SH-03 production dispatch: Idol lexer regenerated from
 /// `lib/compiler/lexer.id`. Provides `duo_lexer_tokenize_full`.
@@ -411,7 +413,19 @@ pub fn build(b: *std.Build) void {
 
     // Zig unit tests (lexer, parser, AST, types, sema).
     // Run independently from the binary: `zig build unit-test`
+    const filter_request = b.option(
+        []const u8,
+        "test-filter",
+        "Compile-time unit-test name filter (Build/TestOptions.filters).",
+    );
+    const filter_decision = parseUnitTestFilter(filter_request);
+    const unit_test_filters: []const []const u8 = switch (filter_decision) {
+        .filter => |text| &.{text},
+        .default => &.{},
+        .malformed => |msg| @panic(msg),
+    };
     const unit_tests = b.addTest(.{
+        .filters = unit_test_filters,
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/tests.zig"),
             .target = target,
@@ -420,6 +434,9 @@ pub fn build(b: *std.Build) void {
     });
     linkProductionIdolFrontend(b, unit_tests.root_module);
     const run_unit_tests = b.addRunArtifact(unit_tests);
+    if (@hasDecl(std.Build.Step.Run, "addPassthruArgs")) {
+        run_unit_tests.addPassthruArgs();
+    }
     test_step.dependOn(&run_unit_tests.step);
     test_step.dependOn(&grammar_projection_cmd.step);
     const unit_test_step = b.step("unit-test", "Run Zig unit tests only");
