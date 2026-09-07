@@ -2760,6 +2760,20 @@ const Arm64Compiler = struct {
         }
     }
 
+    /// Does this `temps` name still stand for `id`'s claim on `reg`?
+    ///
+    /// The sweep above frees a float value register by owner record and leaves
+    /// the `temps` name alone, so a name outlives the claim it stood for; the
+    /// emission loop then writes `fp_reg_owner[r]` for whichever id took the
+    /// register next. A PRESENT owner that is not `id` is exactly that re-let.
+    /// An ABSENT owner is ordinary scratch — `releaseFpReg` returns above any
+    /// owned register — and every writer of `fp_reg_owner` is already confined
+    /// to the value band and skips homes, so neither needs restating here.
+    fn foreignFpName(self: *const Arm64Compiler, reg: u5, id: u32) bool {
+        const owner = self.fp_reg_owner[reg] orelse return false;
+        return owner != id;
+    }
+
     /// This register is a local's home for the rest of the function.
     fn markGpHome(self: *Arm64Compiler, reg: u5) void {
         if (reg < 9 or reg >= 29) return;
@@ -5934,8 +5948,20 @@ const Arm64Compiler = struct {
                 try self.emitFmovImmFp(d, n);
                 break :blk d;
             },
-            .local => |slot| temps.get(slot) orelse self.undefinedAt(@src(), "local", slot),
-            .temp => |t| temps.get(t) orelse self.undefinedAt(@src(), "temp", t),
+            // A STALE NAME IS NOT A VALUE — THE FLOAT FILE (GAP-148). The
+            // general arms fall through to `gp_stack_locals`, which
+            // `planGpStackLocals` keys for the general file only; here a name
+            // whose claim is gone gets the refusal an absent name gets.
+            .local => |slot| {
+                const r = temps.get(slot) orelse return self.undefinedAt(@src(), "local", slot);
+                if (self.foreignFpName(r, slot)) return self.undefinedAt(@src(), "local", slot);
+                return r;
+            },
+            .temp => |t| {
+                const r = temps.get(t) orelse return self.undefinedAt(@src(), "temp", t);
+                if (self.foreignFpName(r, t)) return self.undefinedAt(@src(), "temp", t);
+                return r;
+            },
             // An integer immediate in a float position. `(col - WIDTH / 2) *
             // 3.5 / WIDTH` folds `WIDTH / 2` to an i64 constant and then wants
             // it as a double; there is no fmov for an arbitrary integer, so it
@@ -23034,5 +23060,94 @@ test "a stale temp name is not a register" {
     try std.testing.expectEqual(
         abi_reg,
         try compiler.evalDnirValue(&temps, .{ .temp = abi_id }),
+    );
+}
+
+// A STALE NAME IS NOT A VALUE — THE FLOAT FILE (GAP-148).
+test "a float name another value owns is not a register" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+
+    // A name `sweepFpLive` left behind and `allocFpReg` has since re-let: the
+    // register carries `stranger`, and `temps` still calls it `stale_id`.
+    const stale_id: u32 = 4;
+    const stranger: u32 = 5;
+    const named: u5 = Arm64Compiler.fp_value_reg_base;
+    try temps.put(alloc, stale_id, named);
+    try compiler.markFpTemp(stale_id);
+    compiler.fp_reg_owner[named] = stranger;
+    compiler.used_fp_regs[named] = true;
+
+    const before = compiler.code.items.len;
+    try std.testing.expectError(
+        error.UndefinedName,
+        compiler.evalDnirValueFp(&temps, .{ .temp = stale_id }),
+    );
+    try std.testing.expectEqualStrings(
+        "temp 4 has no register",
+        diagnostic.note_buffer[0..diagnostic.note_len],
+    );
+    try std.testing.expectEqual(before, compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u32, stranger), compiler.fp_reg_owner[named]);
+    try std.testing.expect(compiler.used_fp_regs[named]);
+    try std.testing.expectEqual(@as(?u5, named), temps.get(stale_id));
+
+    // The `.local` arm reads the same map and has the same absent fallback.
+    const stale_slot: u32 = 8;
+    const slot_reg: u5 = Arm64Compiler.fp_value_reg_base + 1;
+    try temps.put(alloc, stale_slot, slot_reg);
+    try compiler.markFpTemp(stale_slot);
+    compiler.fp_reg_owner[slot_reg] = stranger;
+    compiler.used_fp_regs[slot_reg] = true;
+    try std.testing.expectError(
+        error.UndefinedName,
+        compiler.evalDnirValueFp(&temps, .{ .local = stale_slot }),
+    );
+    try std.testing.expectEqualStrings(
+        "local 8 has no register",
+        diagnostic.note_buffer[0..diagnostic.note_len],
+    );
+
+    // WRONG-ERROR CONTROL: the term is `fp_reg_owner` identity, not "a float
+    // read refuses".
+    const own_id: u32 = 6;
+    const own_reg: u5 = Arm64Compiler.fp_value_reg_base + 2;
+    try temps.put(alloc, own_id, own_reg);
+    try compiler.markFpTemp(own_id);
+    compiler.fp_reg_owner[own_reg] = own_id;
+    compiler.used_fp_regs[own_reg] = true;
+    try std.testing.expectEqual(
+        own_reg,
+        try compiler.evalDnirValueFp(&temps, .{ .temp = own_id }),
+    );
+
+    // FALSE-ACCEPT CONTROL: an ABSENT owner is ordinary scratch. `releaseFpReg`
+    // returns above any owned register, and a leaf parameter's home is d0..d7,
+    // which no owner record ever names.
+    const scratch_id: u32 = 9;
+    const scratch_reg: u5 = Arm64Compiler.fp_value_reg_base + 3;
+    try temps.put(alloc, scratch_id, scratch_reg);
+    try compiler.markFpTemp(scratch_id);
+    compiler.used_fp_regs[scratch_reg] = true;
+    try std.testing.expectEqual(@as(?u32, null), compiler.fp_reg_owner[scratch_reg]);
+    try std.testing.expectEqual(
+        scratch_reg,
+        try compiler.evalDnirValueFp(&temps, .{ .temp = scratch_id }),
     );
 }
