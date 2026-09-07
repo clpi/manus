@@ -1349,13 +1349,7 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
     defer reads.deinit(alloc);
     var ctx = WalkCtx{ .prog = &prog, .loop_reads = &reads };
 
-    const body: *const ast.Block = blk: {
-        for (mod.body.stmts) |*s| {
-            if (s.* == .func_decl) break :blk &s.func_decl.func.body;
-        }
-        break :blk &mod.body;
-    };
-    try walkBlock(&ctx, body);
+    try walkBlock(&ctx, &mod.body);
 
     // Effect presence is a REGION fact, so it is settled after the walk rather
     // than during it: a print on the last line makes recompute-vs-memoize
@@ -2482,6 +2476,30 @@ test "observation: §19 control — removing the ALIAS proof closes zero-copy an
     // than decorative.
     const facts = eqFacts(&runtime_base);
     try testing.expect(admit(&r_with, facts).admittedCount() > admit(&r_without, facts).admittedCount());
+}
+
+test "observation: DIAGNOSTIC — an effect in a sibling relation blocks effect-freedom" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    s(1) & 255
+        \\helper: i64 = ()
+        \\    print(1)
+        \\    0
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    const ev = prog.byName("s").?;
+    try testing.expect(ev.complete);
+    try testing.expectEqual(Tri.yes, ev.has_effect);
+
+    const r = prog.report("s", no_obligations).?;
+    try testing.expectEqual(Tri.yes, r.get(.effect_order).observed);
+    try testing.expectEqual(Tri.yes, r.get(.recompute_vs_memoize).observed);
+    try testing.expectEqual(Permit.blocked_observed, permits(&r, .memoization).permit);
 }
 
 test "observation: the sixteen classes are the gap's two lists, nine and seven" {
