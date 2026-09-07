@@ -1308,10 +1308,16 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
     // The wedge's programs are one `main` relation; walk it if present,
     // otherwise the file-scope body. `place.zig` records why a pass that only
     // walks `.func_decl` inherits the file-scope hole.
-    var census = blk: {
-        for (mod.body.stmts) |*s| {
-            if (s.* == .func_decl) break :blk try place.analyzeFunction(alloc, &s.func_decl.func);
+    var relations: u32 = 0;
+    var first: ?*const ast.FuncBody = null;
+    for (mod.body.stmts) |*s| {
+        if (s.* == .func_decl) {
+            relations += 1;
+            if (first == null) first = &s.func_decl.func;
         }
+    }
+    var census = blk: {
+        if (first) |f| break :blk try place.analyzeFunction(alloc, f);
         break :blk try place.analyzeModule(alloc, mod);
     };
     errdefer census.deinit();
@@ -1350,6 +1356,8 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
     var ctx = WalkCtx{ .prog = &prog, .loop_reads = &reads };
 
     try walkBlock(&ctx, &mod.body);
+
+    if (relations > 1) refuseRegion(&ctx);
 
     // Effect presence is a REGION fact, so it is settled after the walk rather
     // than during it: a print on the last line makes recompute-vs-memoize
@@ -2559,10 +2567,16 @@ test "observation: DIAGNOSTIC — a second relation refuses the region instead o
     try testing.expectEqual(Reason.evidence_incomplete, r.get(.effect_order).reason);
     try testing.expectEqual(Permit.blocked_unknown, permits(&r, .memoization).permit);
     const facts = eqFacts(&runtime_base);
-    try testing.expectEqual(@as(usize, 0), admit(&r, facts).admittedCount());
+    const adm = admit(&r, facts);
+    for (std.enums.values(eqspace.Family)) |f| {
+        if (adm.admits(f)) try testing.expectEqual(@as(usize, 0), familyFreedoms(f).len);
+    }
+    for (adm.blockedSlice()) |b| {
+        try testing.expectEqual(Permit.blocked_unknown, b.permit);
+    }
 }
 
-test "observation: DIAGNOSTIC — an effect in a sibling relation blocks effect-freedom" {
+test "observation: CONTROL — a pure sibling still refuses the region, so coverage not purity decides" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     var prog = try programOf(&arena,
@@ -2570,20 +2584,17 @@ test "observation: DIAGNOSTIC — an effect in a sibling relation blocks effect-
         \\    s = (1, 2, 3)
         \\    s(1) & 255
         \\helper: i64 = ()
-        \\    print(1)
         \\    0
         \\
     , ordinary_executable);
     defer prog.deinit();
 
     const ev = prog.byName("s").?;
-    try testing.expect(ev.complete);
-    try testing.expectEqual(Tri.yes, ev.has_effect);
+    try testing.expect(!ev.complete);
 
     const r = prog.report("s", no_obligations).?;
-    try testing.expectEqual(Tri.yes, r.get(.effect_order).observed);
-    try testing.expectEqual(Tri.yes, r.get(.recompute_vs_memoize).observed);
-    try testing.expectEqual(Permit.blocked_observed, permits(&r, .memoization).permit);
+    try testing.expectEqual(Tri.unknown, r.get(.effect_order).observed);
+    try testing.expectEqual(Permit.blocked_unknown, permits(&r, .memoization).permit);
 }
 
 test "observation: the sixteen classes are the gap's two lists, nine and seven" {
