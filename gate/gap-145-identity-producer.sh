@@ -7,12 +7,24 @@
 # Deletion history, the two named specimens, and why a call-graph census cannot
 # see a zero-consumer producer: gaps/GAP-145.md. Not repeated here.
 #
-# The gate refuses the CLASS (law.repair.class), so its predicate is a ROW —
-# a brace group carrying a source spelling beside a token identity — matched
-# after newlines are folded, at any depth, under any module name. Field order,
-# field name, line breaks, and directory depth are spelling, not shape. The
-# owner's own generated projection is admitted BY PATH; a copy of its rows
+# The gate refuses the CLASS (law.repair.class), so its predicate is a ROW
+# recognised by shape: a brace group carrying a text literal beside a `.kw_`
+# identity at its own nesting level. `;` and `=>` disqualify it, because they
+# are what separates a row from a BLOCK — a function body, a test, a switch
+# prong all name identities and hold strings, and reporting those reports the
+# ordinary consumers this tree is made of. A group enclosing a row is the list,
+# not a further row. Section 6 plants every shape this replaces, so the shapes
+# it refuses are enumerated by the controls that run, not here.
+#
+# The owner's generated projection is admitted BY PATH; a copy of its rows
 # anywhere else is a second producer.
+#
+# Two boundaries the row predicate does NOT cross, both blocks by that test. A
+# classifier answering from statements (`if (eql(s, "while")) return .kw_while;`)
+# is not reported. Neither is a row holding its identities one group down:
+# src/lexer_differential.zig pairs a `.source` string with an `.expected` token
+# STREAM, which is an expectation oracle for the owner rather than a second
+# answer about what a keyword is.
 #
 # Every detector is positive-controlled against planted shapes before any PASS,
 # and a run that is not bound to a real candidate tree is a FAIL, not a zero
@@ -52,12 +64,70 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# ── the row scanner ─────────────────────────────────────────────────────────
+#
+# Reads a list of unit paths and prints one line per unit, in list order: the
+# row count, or `?` when that unit's structure could not be established. A unit
+# whose braces do not balance after comments and literals are consumed is `?`,
+# never 0 — the scanner reports what it proved, not what it hopes.
+
+cat >"$scratch/row.awk" <<'ROWAWK'
+function enter() { depth++; q[depth] = 0; k[depth] = 0; sc[depth] = 0; ch[depth] = 0 }
+
+function leave(   qual) {
+    if (depth < 1) { bad = 1; return 0 }
+    qual = (q[depth] && k[depth] && !sc[depth] && !ch[depth])
+    if (qual) count++
+    if (depth > 1 && (qual || ch[depth])) ch[depth - 1] = 1
+    depth--
+    return 1
+}
+
+# One left-to-right pass. Comments and literals are consumed where they start,
+# so a brace, a quote or a `.kw_` inside either cannot reach the row state.
+function scan(line,   L, i, c, d) {
+    L = length(line)
+    for (i = 1; i <= L; i++) {
+        c = substr(line, i, 1)
+        if (c == "/") { if (substr(line, i + 1, 1) == "/") return }
+        else if (c == "\\") { if (substr(line, i + 1, 1) == "\\") { if (depth > 0) q[depth] = 1; return } }
+        else if (c == "\"" || c == "'") {
+            if (c == "\"" && depth > 0) q[depth] = 1
+            for (i++; i <= L; i++) {
+                d = substr(line, i, 1)
+                if (d == "\\") i++
+                else if (d == c) break
+            }
+        }
+        else if (c == "{") enter()
+        else if (c == "}") { if (!leave()) return }
+        else if (c == ";") { if (depth > 0) sc[depth] = 1 }
+        else if (c == "=") { if (substr(line, i + 1, 1) == ">" && depth > 0) sc[depth] = 1 }
+        else if (c == ".") {
+            if (substr(line, i, 4) == ".kw_" && substr(line, i + 4, 1) ~ /[a-z]/ && depth > 0) k[depth] = 1
+        }
+    }
+}
+
+BEGIN {
+    listfile = ARGV[1]
+    ARGV[1] = ""
+    while ((getline unit < listfile) > 0) {
+        count = 0; depth = 0; bad = 0; r = 0
+        while ((r = (getline line < unit)) > 0) scan(line)
+        close(unit)
+        if (r < 0 || bad || depth != 0) print "?"
+        else print count
+    }
+}
+ROWAWK
+
 # ── the walk ────────────────────────────────────────────────────────────────
 #
 # One implementation, used on the candidate tree and on every planted control,
 # so a control exercises the code the verdict comes from. Writes
-# `rows units owner` then the hit list. rows = -1 means the detector could not
-# produce a count for some unit: unknown, never clean.
+# `rows units owner` then the hit list. rows = -1 means the scanner did not
+# establish a count for some unit: unknown, never clean.
 
 walk() {
     walkroot=$1
@@ -67,6 +137,7 @@ walk() {
     walkowner=0
     walkhits=""
     find "$walkroot" -name '*.zig' 2>/dev/null | sort >"$walkout.units"
+    : >"$walkout.scanned"
     while IFS= read -r unit; do
         walkseen=$((walkseen + 1))
         rel=${unit#"$walkroot"/}
@@ -79,9 +150,19 @@ walk() {
             walkowner=1
             continue
         fi
-        n=$(tr '\n' ' ' <"$unit" | grep -oE '\.\{[^{}]*\}' | grep '"' | grep -c '\.kw_[a-z]')
-        case $n in
-            '' | *[!0-9]*)
+        printf '%s\n' "$unit" >>"$walkout.scanned"
+    done <"$walkout.units"
+
+    awk -f "$scratch/row.awk" "$walkout.scanned" >"$walkout.counts" 2>/dev/null
+
+    # Paired in list order. A short, absent or unparsable count file leaves
+    # units without a count, and an uncounted unit is unknown, never clean.
+    exec 7<"$walkout.scanned" 8<"$walkout.counts"
+    while IFS= read -r unit <&7; do
+        rel=${unit#"$walkroot"/}
+        IFS= read -r n <&8 || n=""
+        case ${n:-x} in
+            *[!0-9]*)
                 walkrows=-1
                 walkhits="$walkhits $rel(nocount)"
                 continue
@@ -93,7 +174,9 @@ walk() {
             fi
             walkhits="$walkhits $rel($n)"
         fi
-    done <"$walkout.units"
+    done
+    exec 7<&- 8<&-
+
     printf '%s %s %s\n%s\n' "$walkrows" "$walkseen" "$walkowner" "$walkhits" >"$walkout"
 }
 
@@ -159,7 +242,7 @@ hits=$(sed -n '2p' "$scratch/real")
 
 examined=$((examined + 1))
 if [ "$rows" -lt 0 ]; then
-    bad "the identity-row detector produced no count for:$hits"
+    bad "the row scanner established no count for:$hits"
 elif [ "$rows" -ne 0 ]; then
     bad "host spelling -> keyword identity rows outside the owner projection:$hits"
 fi
@@ -218,10 +301,11 @@ esac
 
 # ── 6. positive controls ────────────────────────────────────────────────────
 #
-# Sections 2, 3 and 5 all report zero on a clean tree. Plant, in a tree laid
-# out like the candidate, every shape that got through the retired predicate,
-# beside the shapes that must stay admitted, and require the walk to separate
-# them. The five false-accept variants each carry ONE row.
+# Sections 2, 3 and 5 all report zero on a clean tree. Plant, in a tree laid out
+# like the candidate, every shape that got through a predecessor of this
+# predicate, beside the shapes that must stay admitted, and require the walk to
+# separate them. Each planted violation carries ONE row except the owner copy,
+# which carries the two it copied.
 
 plant="$scratch/planted/src"
 mkdir -p "$plant/deep" || report
@@ -250,6 +334,15 @@ printf 'pub const keywords = .{ .{ "while", .kw_while } };\n' \
 printf 'pub const keywords = .{ .{ .text = "while", .kind = .kw_while } };\n' \
     >"$plant/deep/nested.zig"
 
+# inner: the row carries a nested descriptor group, which is what a predicate
+# that delimits a row with `[^{}]*` cannot match.
+printf 'pub const keywords = .{ .{ .text = "while", .kind = .kw_while, .flags = .{ .lua = true } } };\n' \
+    >"$plant/inner.zig"
+
+# typed: a named struct literal, so the row does not open with `.{`.
+printf 'pub const keywords = [_]Entry{ Entry{ .text = "while", .kind = .kw_while } };\n' \
+    >"$plant/typed.zig"
+
 # The owner projection's rows. Admitted at the owner's path...
 cat >"$plant/grammar_role_table.zig" <<'PROBE'
 pub const rows = [_]Row{
@@ -266,12 +359,37 @@ pub const rows = [_]Row{
 };
 PROBE
 
-# An ordinary consumer: names an identity, holds a string, authors neither.
+# The admitted side, which is most of this tree: blocks that name identities and
+# hold strings — a function body, a test, a switch — and an expectation row that
+# holds its identities one group down. A predicate that reports these reports
+# ordinary consumers, and a gate that fails on its own tree gets switched off.
 cat >"$plant/clean.zig" <<'PROBE'
 const wanted = lexer.TokenKind.kw_while;
 const note = "while";
+
 pub fn spellOf(t: lexer.TokenKind) []const u8 {
-    return table.rows[@intFromEnum(t)].spell;
+    return table.rows[@backingInt(t)].spell;
+}
+
+pub fn render(t: lexer.TokenKind) []const u8 {
+    return switch (t) {
+        .kw_while => "while",
+        else => "",
+    };
+}
+
+pub fn classify(s: []const u8) ?lexer.TokenKind {
+    if (eql(s, "while")) return .kw_while;
+    return null;
+}
+
+pub const cases = [_]Case{
+    .{ .id = "kw-while", .source = "while", .expected = &.{ .kw_while, .eof } },
+};
+
+test "lexes a keyword" {
+    var l = Lexer.init("while", "test");
+    try testing.expectEqual(TokenKind.kw_while, (try l.next()).kind);
 }
 PROBE
 
@@ -280,15 +398,15 @@ read prows pseen powner <"$scratch/plantedout"
 phits=$(sed -n '2p' "$scratch/plantedout")
 
 examined=$((examined + 1))
-if [ "$prows" -ne 7 ] || [ "$pseen" -ne 8 ] || [ "$powner" -ne 1 ]; then
-    bad "the identity-row detector is broken: rows=$prows (want 7) units=$pseen (want 8) owner=$powner (want 1) hits:$phits"
+if [ "$prows" -ne 9 ] || [ "$pseen" -ne 10 ] || [ "$powner" -ne 1 ]; then
+    bad "the row scanner is broken: rows=$prows (want 9) units=$pseen (want 10) owner=$powner (want 1) hits:$phits"
 fi
 
-for variant in splitrow reorder renamefield tuple deep/nested ownercopy; do
+for variant in splitrow reorder renamefield tuple deep/nested inner typed ownercopy; do
     examined=$((examined + 1))
     case $phits in
         *"src/$variant.zig("*) ;;
-        *) bad "src/$variant.zig is accepted by the identity-row detector" ;;
+        *) bad "src/$variant.zig is accepted by the row scanner" ;;
     esac
 done
 
@@ -296,7 +414,7 @@ for admitted in grammar_role_table clean; do
     examined=$((examined + 1))
     case $phits in
         *"src/$admitted.zig("*)
-            bad "src/$admitted.zig is reported by the identity-row detector, which refuses the admitted shape"
+            bad "src/$admitted.zig is reported by the row scanner, which refuses the admitted shape"
             ;;
         *) ;;
     esac
@@ -312,15 +430,25 @@ if [ "$eseen" -ne 0 ] || [ "$erows" -ne 0 ] || [ "$eowner" -ne 0 ]; then
     bad "the empty-scan control is broken: units=$eseen rows=$erows owner=$eowner"
 fi
 
-# A unit the detector cannot read must be unknown, not clean.
+# A unit the scanner cannot read, and a unit whose braces do not balance, are
+# both unknown rather than clean.
 mkdir -p "$scratch/unreadable/src" || report
 ln -s "$scratch/unreadable/src/absent" "$scratch/unreadable/src/dangling.zig" || report
+printf 'pub const keywords = .{ .{ .text = "while", .kind = .kw_while }\n' \
+    >"$scratch/unreadable/src/unbalanced.zig"
 walk "$scratch/unreadable" "$scratch/unreadout"
 read urows useen uowner <"$scratch/unreadout"
+uhits=$(sed -n '2p' "$scratch/unreadout")
 examined=$((examined + 1))
-if [ "$urows" -ne -1 ] || [ "$useen" -ne 1 ]; then
-    bad "a unit the detector cannot read is counted clean: rows=$urows units=$useen"
+if [ "$urows" -ne -1 ] || [ "$useen" -ne 2 ]; then
+    bad "a unit the scanner cannot establish is counted clean: rows=$urows units=$useen hits:$uhits"
 fi
+
+examined=$((examined + 1))
+case $uhits in
+    *"src/unbalanced.zig(nocount)"*) ;;
+    *) bad "an unbalanced unit did not reach the scanner as unknown: hits:$uhits" ;;
+esac
 
 # Section 5's census must follow the owner file it is handed, and refuse a file
 # that declares no span rather than returning a number.
