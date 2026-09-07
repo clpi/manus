@@ -1129,6 +1129,11 @@ if ! dylib_defines "$work/ctl.onlylib/only.dylib" | grep -q -- '_only__exported$
     printf 'crosspartition:   control N4 has no answer to check and decides entirely from this reader, so it would report a symbol it cannot see as a link line that was never given one.\n' >&2
     exit 3
 fi
+if dylib_defines "$work/ctl.onlylib/only.dylib" | grep -q -- "$str_unit_symbol\$"; then
+    printf 'crosspartition control P2: FAIL — a shared library that reaches nothing DEFINES %s; its link line carries a bootstrap unit nothing it links needs.\n' "$str_unit_symbol" >&2
+    printf 'crosspartition:   control N4 pins that same symbol PRESENT, so a link line that carries every unit would satisfy N4 without ever having read a need.\n' >&2
+    exit 1
+fi
 
 # ══ CONTROL N4 — the other artifact kind that links ════════════════════════
 # AFTER CONTROLS P AND P2, DELIBERATELY. Between them they establish that this
