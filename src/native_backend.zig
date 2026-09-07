@@ -4499,7 +4499,10 @@ const Arm64Compiler = struct {
                     try self.emitRestoreCallerRegs(save);
                     if (ins.result) |result| {
                         try self.markFpTemp(result);
-                        if (ins.application != null and !self.fp_abi_passthrough.contains(result)) {
+                        // KEEPING d0 IS `fp_abi_passthrough`'S ANSWER ALONE
+                        // (GAP-148). An absent application id is the bootstrap
+                        // foreign list, not a direct ABI consumer.
+                        if (!self.fp_abi_passthrough.contains(result)) {
                             const home = try self.allocFpReg();
                             try self.emitFmovReg(home, 0);
                             try temps.put(self.alloc, result, home);
@@ -22834,4 +22837,105 @@ test "a first store does not home a local in an ABI register no call preserves" 
     try std.testing.expectEqual(@as(?u5, null), temps.get(starved));
     try std.testing.expectEqual(@as(?u5, null), pinned.get(starved));
     try std.testing.expect(!compiler.fp_home_regs[0]);
+}
+
+// A CALL RESULT LEFT IN d0 IS DESTROYED BY THE NEXT CALL (GAP-148).
+//
+// The `.f64` call arm copied its result out of d0 only when
+// `ins.application != null`. The calls lowered without an application id are
+// exactly `native_ir.isBootstrapForeignCall` — `sqrt`, `sin`, `cos`, `fabs`,
+// `floor`, `ceil` — so `a:sqrt() + b:sqrt()` named the first result at d0, the
+// second call's own `fmov d0, <arg>` wrote over it, and the `fadd` read d0
+// twice. `fp_abi_passthrough` is the record that says when d0 may be kept.
+test "a bootstrap f64 call result leaves d0 before the next call overwrites it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    const first: u32 = 3;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .call_extern,
+        .result = first,
+        .callee = "sqrt",
+        .lhs = .{ .f64 = 2.0 },
+        .ty = .f64,
+    }, &branch_patches, null, 0);
+
+    // THE RESULT IS IN THE VALUE BAND, AND THE LAST INSTRUCTION IS THE MOVE
+    // THAT PUT IT THERE.
+    const home: u5 = Arm64Compiler.fp_value_reg_base;
+    try std.testing.expectEqual(@as(?u5, home), temps.get(first));
+    try std.testing.expect(!compiler.used_fp_regs[0]);
+    const tail = compiler.code.items.len - 4;
+    try std.testing.expectEqual(
+        0x1e604000 | @as(u32, home),
+        std.mem.readInt(u32, compiler.code.items[tail..][0..4], .little),
+    );
+
+    const second: u32 = 4;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .call_extern,
+        .result = second,
+        .callee = "sqrt",
+        .lhs = .{ .f64 = 3.0 },
+        .ty = .f64,
+    }, &branch_patches, null, 0);
+
+    // TWO LIVE RESULTS, TWO REGISTERS. The defect names both at d0.
+    try std.testing.expect(temps.get(first).? != temps.get(second).?);
+    try std.testing.expectEqual(@as(?u5, home), temps.get(first));
+
+    // WRONG ERROR: A GENUINE ABI PASSTHROUGH STILL KEEPS d0 AND TAKES NO
+    // REGISTER. The term is `fp_abi_passthrough`, not "a call always copies".
+    const through: u32 = 5;
+    try compiler.fp_abi_passthrough.put(alloc, through, {});
+    const before_through = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .call_extern,
+        .result = through,
+        .callee = "sqrt",
+        .lhs = .{ .f64 = 4.0 },
+        .ty = .f64,
+    }, &branch_patches, null, 0);
+    try std.testing.expectEqual(@as(?u5, 0), temps.get(through));
+    try std.testing.expect(compiler.used_fp_regs[0]);
+    try std.testing.expect(!compiler.used_fp_regs[Arm64Compiler.fp_value_reg_base + 2]);
+    try std.testing.expect(compiler.code.items.len > before_through);
+
+    // FALSE ACCEPT: A HOME OF ITS OWN COSTS A REGISTER, AND THE ANSWER WHEN THE
+    // BAND CANNOT PAY IS THE REFUSAL `allocFpReg` ALREADY GIVES — NEVER d0 AS A
+    // FALLBACK.
+    const starved: u32 = 6;
+    var full: u5 = Arm64Compiler.fp_value_reg_base;
+    while (full < Arm64Compiler.fp_value_reg_base + Arm64Compiler.fp_value_reg_count) : (full += 1) {
+        compiler.used_fp_regs[full] = true;
+    }
+    try std.testing.expectError(error.RegisterExhausted, compiler.compileDnirInstr(
+        &temps,
+        &pinned,
+        .{ .op = .call_extern, .result = starved, .callee = "sqrt", .ty = .f64 },
+        &branch_patches,
+        null,
+        0,
+    ));
+    try std.testing.expectEqual(@as(?u5, null), temps.get(starved));
 }
