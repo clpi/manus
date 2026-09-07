@@ -5987,8 +5987,20 @@ const Arm64Compiler = struct {
                 try self.emitFmovImmFp(d, n);
                 break :blk d;
             },
-            .local => |slot| temps.get(slot) orelse self.undefinedAt(@src(), "local", slot),
-            .temp => |t| temps.get(t) orelse self.undefinedAt(@src(), "temp", t),
+            // A STALE NAME IS NOT AN ARGUMENT (GAP-148). This read's one caller
+            // emits `fmov d<abi>, d<src>` into an outgoing argument register, so
+            // a name `sweepFpLive` left behind and `allocFpReg` re-let sends
+            // another value's double to the callee.
+            .local => |slot| {
+                const r = temps.get(slot) orelse return self.undefinedAt(@src(), "local", slot);
+                if (self.foreignFpName(r, slot)) return self.undefinedAt(@src(), "local", slot);
+                return r;
+            },
+            .temp => |t| {
+                const r = temps.get(t) orelse return self.undefinedAt(@src(), "temp", t);
+                if (self.foreignFpName(r, t)) return self.undefinedAt(@src(), "temp", t);
+                return r;
+            },
             else => self.refuse(@src()),
         };
     }
@@ -23149,5 +23161,106 @@ test "a float name another value owns is not a register" {
     try std.testing.expectEqual(
         scratch_reg,
         try compiler.evalDnirValueFp(&temps, .{ .temp = scratch_id }),
+    );
+}
+
+// A STALE NAME IS NOT AN ARGUMENT — THE FLOAT ABI STAGING READ (GAP-148).
+test "a float argument name another value owns is not a register" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+
+    // A name `sweepFpLive` left behind and `allocFpReg` has since re-let. The
+    // caller of this read emits `fmov d<abi>, d<answer>` into an outgoing
+    // argument register, so a stranger's double leaves the function.
+    const stale_id: u32 = 4;
+    const stranger: u32 = 5;
+    const named: u5 = Arm64Compiler.fp_value_reg_base;
+    try temps.put(alloc, stale_id, named);
+    try compiler.markFpTemp(stale_id);
+    compiler.fp_reg_owner[named] = stranger;
+    compiler.used_fp_regs[named] = true;
+
+    const before = compiler.code.items.len;
+    try std.testing.expectError(
+        error.UndefinedName,
+        compiler.evalDnirFpArg(&temps, .{ .temp = stale_id }),
+    );
+    try std.testing.expectEqualStrings(
+        "temp 4 has no register",
+        diagnostic.note_buffer[0..diagnostic.note_len],
+    );
+    try std.testing.expectEqual(before, compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u32, stranger), compiler.fp_reg_owner[named]);
+    try std.testing.expect(compiler.used_fp_regs[named]);
+    try std.testing.expectEqual(@as(?u5, named), temps.get(stale_id));
+
+    // The `.local` arm reads the same map and has the same absent fallback.
+    const stale_slot: u32 = 8;
+    const slot_reg: u5 = Arm64Compiler.fp_value_reg_base + 1;
+    try temps.put(alloc, stale_slot, slot_reg);
+    try compiler.markFpTemp(stale_slot);
+    compiler.fp_reg_owner[slot_reg] = stranger;
+    compiler.used_fp_regs[slot_reg] = true;
+    try std.testing.expectError(
+        error.UndefinedName,
+        compiler.evalDnirFpArg(&temps, .{ .local = stale_slot }),
+    );
+    try std.testing.expectEqualStrings(
+        "local 8 has no register",
+        diagnostic.note_buffer[0..diagnostic.note_len],
+    );
+
+    // WRONG-ERROR CONTROL: the term is `fp_reg_owner` identity, not "a float
+    // argument read refuses".
+    const own_id: u32 = 6;
+    const own_reg: u5 = Arm64Compiler.fp_value_reg_base + 2;
+    try temps.put(alloc, own_id, own_reg);
+    try compiler.markFpTemp(own_id);
+    compiler.fp_reg_owner[own_reg] = own_id;
+    compiler.used_fp_regs[own_reg] = true;
+    try std.testing.expectEqual(
+        own_reg,
+        try compiler.evalDnirFpArg(&temps, .{ .temp = own_id }),
+    );
+
+    // FALSE-ACCEPT CONTROL: an ABSENT owner is ordinary scratch —
+    // `releaseFpReg` returns above any owned register.
+    const scratch_id: u32 = 9;
+    const scratch_reg: u5 = Arm64Compiler.fp_value_reg_base + 3;
+    try temps.put(alloc, scratch_id, scratch_reg);
+    try compiler.markFpTemp(scratch_id);
+    compiler.used_fp_regs[scratch_reg] = true;
+    try std.testing.expectEqual(@as(?u32, null), compiler.fp_reg_owner[scratch_reg]);
+    try std.testing.expectEqual(
+        scratch_reg,
+        try compiler.evalDnirFpArg(&temps, .{ .temp = scratch_id }),
+    );
+
+    // FALSE-ACCEPT CONTROL: a leaf float parameter's home is d0..d7, below the
+    // value band, which no writer of `fp_reg_owner` reaches.
+    const param_id: u32 = 11;
+    const param_reg: u5 = 3;
+    try temps.put(alloc, param_id, param_reg);
+    try compiler.markFpTemp(param_id);
+    compiler.used_fp_regs[param_reg] = true;
+    try std.testing.expectEqual(
+        param_reg,
+        try compiler.evalDnirFpArg(&temps, .{ .local = param_id }),
     );
 }
