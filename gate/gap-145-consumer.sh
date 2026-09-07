@@ -4862,7 +4862,7 @@ fi
 
 # --- 11. `end` identity at a cursor coordinate ------------------------------
 #
-# Eleven consumers in seven functions still answered "is the token under the
+# Eleven consumers in eight functions still answered "is the token under the
 # cursor an `end`" from the generated host `TokenKind`, at a coordinate the
 # producer had already settled and `pk()` had already selected. `parser.id`
 # writes `ending = 1` under `kind == token.kindend` and NOTHING else assigns

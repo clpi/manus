@@ -12252,7 +12252,7 @@ test "parse: the written-end bit admits exactly the `end` identity" {
             refused = true;
             continue;
         }
-        const expected = kind == .kw_else;
+        const expected = kind == .kw_end;
         try testing.expectEqual(expected, try consumer.currentParserEnd());
         if (expected) seen = true else rejected = true;
     }
