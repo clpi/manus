@@ -2920,6 +2920,33 @@ pub const SemanticGraph = struct {
         }
     }
 
+    fn addOperandDescriptorShape(self: *SemanticGraph, entity: id, scope: id, descriptor: types.ResolvedType) !void {
+        if (descriptor != .table_type) return;
+        const span = (self.get(entity) orelse return error.InvalidDescriptorFact).span;
+        const exact = try self.addChild(scope, .{
+            .kind = .table_shape,
+            .span = span,
+            .descriptor = descriptor,
+            .shape_id = types.tableShapeIdentityHash(descriptor),
+            .knowledge = shapeKnowledge(descriptor.table_type.is_sealed),
+            .stage = .sema,
+            .descriptor_state = inferDescriptorState(descriptor.table_type.is_sealed),
+        });
+        try self.publishDescriptorRefEdges(exact, descriptor);
+        try self.publishTableShapeMembers(exact, span, descriptor);
+        const members = try self.membersOf(exact, self.alloc);
+        defer self.alloc.free(members);
+        for (members) |member| {
+            const nested = (self.get(member) orelse return error.InvalidDescriptorFact).descriptor orelse continue;
+            if (nested == .table_type) {
+                try self.addOperandDescriptorShape(member, scope, nested);
+            } else {
+                try self.addDescriptorShapeEdge(member, 0, scope, nested, null);
+            }
+        }
+        try self.addEdge(.{ .from = entity, .to = exact, .kind = .descriptor });
+    }
+
     fn addDescriptorShapeEdge(
         self: *SemanticGraph,
         entity: id,
@@ -6932,6 +6959,7 @@ pub const SemanticGraph = struct {
                     return error.MissingApplicationDescriptor;
                 subject_value = try self.addApplicationValue(call_id, subject, file, descriptor);
                 try self.noteOrigin(subject_value.?, subject, caller);
+                try self.addOperandDescriptorShape(subject_value.?, caller, descriptor);
             }
             const arguments = try self.alloc.alloc(id, fact.arguments.len);
             defer self.alloc.free(arguments);
@@ -6940,6 +6968,7 @@ pub const SemanticGraph = struct {
                     return error.MissingApplicationDescriptor;
                 arguments[i] = try self.addApplicationValue(call_id, argument, file, descriptor);
                 try self.noteOrigin(arguments[i], argument, caller);
+                try self.addOperandDescriptorShape(arguments[i], caller, descriptor);
             }
             const results = try self.alloc.alloc(id, result_descriptors.len);
             defer self.alloc.free(results);
@@ -13281,7 +13310,7 @@ test "sema: a home application does not poison later home constants in the same 
         \\    if token.grammarrole.roleliteral(k)
         \\        return true
         \\    k == token.kindeof
-        ;
+    ;
     var lex = Lexer.init(src, from);
     var parser = Parser.init(&lex, alloc);
     parser.idol_mode = true;
@@ -13585,4 +13614,123 @@ test "semantic_graph: injection cannot manufacture authority and refuses by name
         g.deriveWorld(os_world, &.{.{ .name = "env", .value = label }}, 999999),
     );
     try std.testing.expectEqual(@as(usize, 0), g.derived_worlds.items.len);
+}
+
+fn expectConstructorShapes(source: []const u8, expected: []const bool) !void {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lexer = Lexer.init(source, "constructor.id");
+    var parser = Parser.init(&lexer, alloc);
+    parser.idol_mode = true;
+    var module = try parser.parse_module();
+    var checked = sema.Sema.init(alloc);
+    defer checked.deinit();
+    checked.idol_mode = true;
+    try checked.check_module(&module);
+    try std.testing.expectEqual(@as(u32, 0), checked.errors);
+    var graph = SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "constructor.id");
+    const target = graph.findFunc("take") orelse return error.TestExpectedEqual;
+    var count: usize = 0;
+    for (graph.applications()) |application| {
+        if (graph.applicationRelation(application.application) != target) continue;
+        const subject = graph.applicationSubject(application.application) orelse return error.TestExpectedEqual;
+        try std.testing.expect(count < expected.len);
+        const shape = graph.descriptorShape(subject, 0);
+        try std.testing.expectEqual(expected[count], shape != null);
+        if (shape) |exact| {
+            const members = try graph.membersOf(exact, alloc);
+            try std.testing.expect(members.len > 0);
+            const descriptor = graph.get(subject).?.descriptor.?;
+            try std.testing.expect(descriptor == .table_type);
+            try std.testing.expectEqual(descriptor.table_type.fields.len, members.len);
+            for (members, descriptor.table_type.fields) |member, field| {
+                try std.testing.expectEqualStrings(field.name, graph.get(member).?.name.?);
+                try std.testing.expect(field.typ.eql(graph.get(member).?.descriptor.?));
+                if (field.typ == .table_type) {
+                    const nested = graph.descriptorShape(member, 0) orelse return error.TestExpectedEqual;
+                    const fields = try graph.membersOf(nested, alloc);
+                    try std.testing.expectEqual(field.typ.table_type.fields.len, fields.len);
+                    for (fields, field.typ.table_type.fields) |child, inner| {
+                        try std.testing.expectEqualStrings(inner.name, graph.get(child).?.name.?);
+                        try std.testing.expect(inner.typ.eql(graph.get(child).?.descriptor.?));
+                    }
+                }
+            }
+            try std.testing.expect(graph.valueOrigin(subject) == .one);
+        }
+        count += 1;
+    }
+    try std.testing.expectEqual(expected.len, count);
+}
+
+test "semantic_graph: constructor operands retain ordered heterogeneous fields" {
+    try expectConstructorShapes(
+        \\take = (value: any) value
+        \\item = {text = "ok", code = 7, flag = false, fraction = 1.5}
+        \\take(item)
+    , &.{true});
+}
+
+test "semantic_graph: constructor knowledge does not survive unproved effects" {
+    const prefix = "take = (value: any) value\n";
+    const cases = [_][]const u8{
+        "item = {code = 7}\npeer = item\npeer.code = \"changed\"\ntake(item)\n",
+        "item = {code = 7}\ncopy, item.code = item, \"changed\"\ntake(copy)\n",
+        "item = {code = 7}\npeer = item\ncopy, peer.code = item, \"changed\"\ntake(copy)\n",
+        "item = {code = 7}\nitem, item = {code = 13}, missing\ntake(item)\n",
+        "item = {code = 7}\nitem, item = {code = 13}\ntake(item)\n",
+        "item = {code = 7}\nitem = 13\ntake(item)\n",
+        "item = {code = 7}\nif true\n  item = {other = 13}\ntake(item)\n",
+        "item = {code = 7}\nitem[1] = 13\ntake(item)\n",
+    };
+    inline for (cases) |source| try expectConstructorShapes(prefix ++ source, &.{false});
+    try expectConstructorShapes(prefix ++ "item = {code = 7}\ntake(item)\ntake(item)\n", &.{ true, false });
+    try expectConstructorShapes(prefix ++ "item = {code = 7}\ntake(item)\nitem = {code = 13}\ntake(item)\n", &.{ true, true });
+}
+
+test "semantic_graph: unproved constructors retain unknown shape" {
+    const prefix = "take = (value: any) value\n";
+    const cases = [_][]const u8{
+        "item = {code = 7, code = 13}\ntake(item)\n",
+        "item = {code = 7, 13}\ntake(item)\n",
+        "item = {7, 13}\ntake(item)\n",
+        "item = {code = missing}\ntake(item)\n",
+        "item = {}\ntake(item)\n",
+    };
+    inline for (cases) |source| try expectConstructorShapes(prefix ++ source, &.{false});
+}
+
+test "semantic_graph: later argument effects invalidate earlier record operands" {
+    const prefix =
+        \\take = (value: any, rest: i64) value
+        \\change = (value: any): i64
+        \\  value.code = "changed"
+        \\  0
+        \\item = {code = 7}
+        \\
+    ;
+    try expectConstructorShapes(prefix ++ "take(item, change(item))\n", &.{false});
+    try expectConstructorShapes(prefix ++ "copy, status = item, change(item)\ntake(copy, status)\n", &.{false});
+}
+
+test "semantic_graph: explicit record annotations retain their contract" {
+    try expectConstructorShapes(
+        \\take = (value: any) value
+        \\item: {code: i64} = {code = 7}
+        \\take(item)
+        \\take(item)
+    , &.{ true, true });
+}
+
+test "semantic_graph: nested constructor fields have exact descriptor homes" {
+    try expectConstructorShapes(
+        \\take = (value: any) value
+        \\item = {context = {world = 7}, predecessor = 13}
+        \\take(item)
+    , &.{true});
 }

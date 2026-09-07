@@ -34,6 +34,7 @@ pub const SemaError = error{
 /// A symbol in the scope chain.
 pub const Symbol = struct {
     typ: RT,
+    inferred_at: ?u64 = null,
     is_const: bool,
     is_for_control: bool = false,
     is_global: bool = false,
@@ -461,6 +462,8 @@ const DiagnosticEvidence = enum {
 };
 
 pub const Sema = struct {
+    record_generation: u64 = 0,
+    constructor_fields: std.ArrayListUnmanaged([]types.FieldType) = .empty,
     alloc: Allocator,
     scope: Scope,
     type_map: TypeMap,
@@ -847,7 +850,12 @@ pub const Sema = struct {
 
     /// Knowledge lattice position for a lexical binding, if defined.
     pub fn symbolKnowledge(self: *const Sema, name: []const u8) semantic_algebra.KnowledgeLevel {
-        if (self.scope.lookup(name)) |sym| return sym.knowledge();
+        if (self.scope.lookup(name)) |sym| {
+            if (sym.inferred_at) |at| {
+                if (at != self.record_generation) return .unknown;
+            }
+            return sym.knowledge();
+        }
         if (self.module_bindings.get(name)) |sym| return sym.knowledge();
         return .unknown;
     }
@@ -1465,6 +1473,8 @@ pub const Sema = struct {
     }
 
     pub fn deinit(self: *Sema) void {
+        for (self.constructor_fields.items) |fields| self.alloc.free(fields);
+        self.constructor_fields.deinit(self.alloc);
         for (self.diagnostics.items) |diagnostic| self.alloc.free(diagnostic.message);
         self.diagnostics.deinit(self.alloc);
         self.scope.deinit();
@@ -2907,7 +2917,11 @@ pub const Sema = struct {
         while (it.next()) |entry| {
             if (isSeedGlobal(entry.key_ptr.*)) continue;
             const name = try self.alloc.dupe(u8, entry.key_ptr.*);
-            try self.module_bindings.put(self.alloc, name, entry.value_ptr.*);
+            var snapshot = entry.value_ptr.*;
+            if (snapshot.inferred_at) |at| {
+                if (at != self.record_generation) snapshot.typ = .any;
+            }
+            try self.module_bindings.put(self.alloc, name, snapshot);
         }
     }
 
@@ -3036,7 +3050,10 @@ pub const Sema = struct {
         return if (fb.ret_fallible) .inferred else fb.ret_type;
     }
 
-    fn check_return_value(self: *Sema, loc: ast.Loc, actual: RT) void {
+    fn check_return_value(self: *Sema, loc: ast.Loc, actual: RT, value: *Expr) void {
+        const before = self.errors;
+        self.check_demanded_pack_result(value);
+        if (self.errors != before) return;
         if (self.current_ret == .any or self.current_ret == .void or actual == .any) return;
         // B-12: under a declared failure contract the value position holds the
         // VALUE on success and `nil` on failure — `return nil, error.overflow`
@@ -3044,7 +3061,9 @@ pub const Sema = struct {
         // leb128 decoder uses. Only `nil` is admitted, and only when a failure
         // alternative was written; every other mismatch still reports.
         if (self.current_ret_fallible and actual == .nil) return;
-        if (!type_annotation_accepts_init(self.current_ret, actual)) {
+        if (!type_annotation_accepts_init(self.current_ret, actual) and
+            !self.constructorMeetsRecordDemand(self.current_ret, value))
+        {
             var want_buf: [128]u8 = undefined;
             var got_buf: [128]u8 = undefined;
             const want_name = self.current_ret.duo_name(&want_buf);
@@ -3082,10 +3101,7 @@ pub const Sema = struct {
         if (validate_implicit_return) {
             if (block_implicit_return_expr(blk)) |e| {
                 const actual = try self.check_expr(e);
-                self.check_return_value(e.loc(), actual);
-                // CALLABLE-DEMAND (gap[110]) — the result descriptor is the
-                // demand a bare tail pack meets.
-                self.check_demanded_pack_result(e);
+                self.check_return_value(e.loc(), actual, e);
             } else if (self.current_ret != .any and self.current_ret != .void and blk.stmts.len > 0) {
                 // A function body ending in an `if` with NO else has no value on
                 // the false path, and nothing downstream supplies one — the
@@ -3209,13 +3225,27 @@ pub const Sema = struct {
     }
 
     fn check_stmt(self: *Sema, stmt: *ast.Stmt) SemaError!void {
+        const boundary = switch (stmt.*) {
+            .if_stmt, .while_loop, .repeat_loop, .num_for, .gen_for, .func_decl, .try_stmt, .match_stmt => true,
+            else => false,
+        };
+        if (boundary) self.record_generation += 1;
+        defer if (boundary) {
+            self.record_generation += 1;
+        };
         switch (stmt.*) {
             .local_decl => |*ld| {
                 var init_types: std.ArrayList(RT) = .empty;
                 defer init_types.deinit(self.alloc);
+                var generations: std.ArrayList(u64) = .empty;
+                defer generations.deinit(self.alloc);
                 for (ld.inits) |init_expr| {
                     const t = try self.check_expr(init_expr);
                     try init_types.append(self.alloc, t);
+                    try generations.append(self.alloc, self.record_generation);
+                }
+                for (init_types.items, generations.items) |*descriptor, generation| {
+                    if (descriptor.* == .table_type and generation != self.record_generation) descriptor.* = .any;
                 }
                 for (ld.names, 0..) |*lname, i| {
                     var t: RT = if (i < init_types.items.len)
@@ -3230,14 +3260,17 @@ pub const Sema = struct {
                     // If annotated, use the annotation and enforce type match
                     if (lname.typ != .inferred) {
                         const ann = try self.resolve_type(lname.typ);
+                        const before = self.errors;
+                        if (i < ld.inits.len) self.check_demanded_pack(lname.typ, ld.inits[i]);
                         // Check type mismatch: if init type is known (not any/nil) and
                         // annotation is known (not any), they must match
                         if (i < init_types.items.len) {
                             const init_t = init_types.items[i];
                             const cdr_literal = i < ld.inits.len and
                                 nominal_accepts_literal(ann, ld.inits[i]);
-                            if (ann != .any and init_t != .any and init_t != .nil and
-                                !cdr_literal and !type_annotation_accepts_init(ann, init_t))
+                            if (self.errors == before and ann != .any and init_t != .any and init_t != .nil and
+                                !cdr_literal and !type_annotation_accepts_init(ann, init_t) and
+                                !(i < ld.inits.len and self.constructorMeetsRecordDemand(ann, ld.inits[i])))
                             {
                                 {
                                     var ann_buf: [128]u8 = undefined;
@@ -3276,11 +3309,6 @@ pub const Sema = struct {
                                 }
                             }
                         }
-                        // EXPECT-APPLY (gap[110]) — the annotation IS the
-                        // demand, so this is where the demanded pack's labels
-                        // meet the descriptor. After the mismatch checks above
-                        // so a genuine descriptor mismatch still reports as one.
-                        if (i < ld.inits.len) self.check_demanded_pack(lname.typ, ld.inits[i]);
                         // The bare-numeric-literal default `check_expr` recorded
                         // BEFORE this annotation was known is superseded HERE,
                         // after demand — the literal's recorded type becomes the
@@ -3305,6 +3333,7 @@ pub const Sema = struct {
                     try self.check_binding_attributes(lname, t, if (i < ld.inits.len) ld.inits[i] else null);
                     try self.scope.define(lname.ident, .{
                         .typ = t,
+                        .inferred_at = if (lname.typ == .inferred and t == .table_type) self.record_generation else null,
                         .is_const = is_const,
                         .is_close = is_close,
                         .deprecated_msg = get_deprecated_msg(lname.attributes),
@@ -3323,10 +3352,16 @@ pub const Sema = struct {
             },
             .const_decl => |*cd| {
                 var t = try self.check_expr(cd.val);
-                if (cd.typ != .inferred)
+                if (cd.typ != .inferred) {
                     t = try self.resolve_type(cd.typ);
+                    self.check_demanded_pack(cd.typ, cd.val);
+                }
                 try self.maybe_register_meta_concept(cd.ident, cd.val);
-                try self.scope.define(cd.ident, .{ .typ = t, .is_const = true });
+                try self.scope.define(cd.ident, .{
+                    .typ = t,
+                    .inferred_at = if (cd.typ == .inferred and t == .table_type) self.record_generation else null,
+                    .is_const = true,
+                });
             },
             .global_decl => |*gd| {
                 if (gd.star) {
@@ -3335,9 +3370,15 @@ pub const Sema = struct {
                 }
                 var init_types: std.ArrayList(RT) = .empty;
                 defer init_types.deinit(self.alloc);
+                var generations: std.ArrayList(u64) = .empty;
+                defer generations.deinit(self.alloc);
                 for (gd.inits) |init_expr| {
                     const t = try self.check_expr(init_expr);
                     try init_types.append(self.alloc, t);
+                    try generations.append(self.alloc, self.record_generation);
+                }
+                for (init_types.items, generations.items) |*descriptor, generation| {
+                    if (descriptor.* == .table_type and generation != self.record_generation) descriptor.* = .any;
                 }
                 for (gd.names, 0..) |*lname, i| {
                     var t: RT = if (i < init_types.items.len)
@@ -3370,6 +3411,7 @@ pub const Sema = struct {
                     }
                     try self.scope.define(lname.ident, .{
                         .typ = t,
+                        .inferred_at = if (lname.typ == .inferred and t == .table_type) self.record_generation else null,
                         .is_const = is_const,
                         .is_global = true,
                         .deprecated_msg = get_deprecated_msg(lname.attributes),
@@ -3380,7 +3422,24 @@ pub const Sema = struct {
                 }
             },
             .assign => |*as| {
-                for (as.values) |v| _ = try self.check_expr(v);
+                var generations: std.ArrayList(u64) = .empty;
+                defer generations.deinit(self.alloc);
+                for (as.values) |v| {
+                    _ = try self.check_expr(v);
+                    try generations.append(self.alloc, self.record_generation);
+                }
+                for (as.targets) |tgt| {
+                    switch (tgt.*) {
+                        .field, .index => self.record_generation += 1,
+                        .name => |n| if (self.scope.lookupPtr(n.ident)) |sym| {
+                            if (sym.inferred_at != null) {
+                                sym.typ = .any;
+                                sym.inferred_at = null;
+                            }
+                        },
+                        else => {},
+                    }
+                }
                 // Pre-track field types so target type-check sees the inferred types
                 for (as.targets, 0..) |tgt, i| {
                     if (tgt.* == .field and i < as.values.len) {
@@ -3434,8 +3493,25 @@ pub const Sema = struct {
                     // implicit local takes its value's descriptor — is right
                     // and is a much larger change than gap[087] needs; it is
                     // filed there rather than smuggled in under a case fix.
-                    if (tgt.* == .name and i < as.values.len) {
-                        const vt = self.type_map.get(as.values[i]) orelse RT.any;
+                    if (tgt.* == .name) {
+                        var vt = if (i < as.values.len) self.type_map.get(as.values[i]) orelse RT.any else RT.any;
+                        if (vt == .table_type and generations.items[i] != self.record_generation) vt = .any;
+                        if (vt == .table_type and self.idol_mode) {
+                            if (self.scope.lookupPtr(tgt.name.ident)) |sym| {
+                                if (sym.typ == .any or sym.inferred_at != null) {
+                                    sym.typ = vt;
+                                    sym.inferred_at = self.record_generation;
+                                }
+                            }
+                        }
+                        if (vt != .table_type) {
+                            if (self.scope.lookupPtr(tgt.name.ident)) |sym| {
+                                if (sym.inferred_at != null) {
+                                    sym.typ = vt;
+                                    sym.inferred_at = null;
+                                }
+                            }
+                        }
                         if (vt == .enum_type) {
                             if (self.scope.lookupPtr(tgt.name.ident)) |sym| {
                                 if (sym.typ == .any) sym.typ = vt;
@@ -3478,9 +3554,7 @@ pub const Sema = struct {
                     }
                 } else {
                     const actual = try self.check_expr(r.vals[0]);
-                    self.check_return_value(r.loc, actual);
-                    // CALLABLE-DEMAND (gap[110]) — same demand, written face.
-                    self.check_demanded_pack_result(r.vals[0]);
+                    self.check_return_value(r.loc, actual, r.vals[0]);
                     for (r.vals[1..]) |v| _ = try self.check_expr(v);
                 }
             },
@@ -3493,9 +3567,11 @@ pub const Sema = struct {
                 }
                 _ = try self.check_expr(is.cond);
                 try self.check_block(&is.then);
+                self.record_generation += 1;
                 for (is.elseifs) |*ei| {
                     _ = try self.check_expr(ei.cond);
                     try self.check_block(&ei.body);
+                    self.record_generation += 1;
                 }
                 if (is.else_body) |*eb| try self.check_block(eb);
             },
@@ -4446,7 +4522,33 @@ pub const Sema = struct {
         self.expr_depth += 1;
         defer self.expr_depth -= 1;
 
+        const boundary = expr.* == .if_expr or expr.* == .match_expr or expr.* == .func_expr;
+        if (boundary) self.record_generation += 1;
+        defer if (boundary) {
+            self.record_generation += 1;
+        };
+        const before = self.record_generation;
         const t = try self.check_expr_inner(expr);
+        switch (expr.*) {
+            .call, .method_call => {
+                if (before != self.record_generation) {
+                    if (self.applicationFact(expr)) |fact| {
+                        if (fact.subject) |subject| {
+                            if (self.exprDescriptor(subject)) |descriptor| {
+                                if (descriptor == .table_type) _ = try self.record(subject, .any);
+                            }
+                        }
+                        for (fact.arguments) |argument| {
+                            if (self.exprDescriptor(argument)) |descriptor| {
+                                if (descriptor == .table_type) _ = try self.record(argument, .any);
+                            }
+                        }
+                    }
+                }
+                self.record_generation += 1;
+            },
+            else => {},
+        }
         return self.record(expr, t);
     }
 
@@ -4540,9 +4642,58 @@ pub const Sema = struct {
     /// gap's own "Do not" places the diagnostic exactly there. The subject
     /// resolution and the label test mirror `check_descriptor_application`
     /// clause for clause so the two faces cannot drift apart.
+    fn constructorMeetsRecordDemand(self: *Sema, descriptor: RT, value: *const Expr) bool {
+        if (value.* != .table) return false;
+        var owned: ?[]types.FieldType = null;
+        defer if (owned) |fields| self.alloc.free(fields);
+        const fields = switch (descriptor) {
+            .table_type => |record_type| record_type.fields,
+            .@"struct" => |named| fields: {
+                const declaration = self.alias_defs.get(named.name) orelse return false;
+                if (declaration.type_params != null) return false;
+                if (declaration.parent) |parent| {
+                    if (!self.foreign_records.contains(parent)) return false;
+                }
+                for (declaration.extra_parents) |parent| {
+                    if (!self.foreign_records.contains(parent)) return false;
+                }
+                if (declaration.fields.len == 0 and
+                    (declaration.target == null or declaration.target.? != .record)) return false;
+                owned = self.mergedForeignAliasFields(declaration) catch return false;
+                break :fields owned.?;
+            },
+            else => return false,
+        };
+        if (fields.len == 0 and value.table.fields.len == 0) return true;
+        const actual = self.exprDescriptor(value) orelse return false;
+        if (actual != .table_type) return false;
+        if (fields.len != actual.table_type.fields.len) return false;
+        var supplied: std.StringHashMapUnmanaged(*const Expr) = .empty;
+        defer supplied.deinit(self.alloc);
+        for (value.table.fields) |field| {
+            if (field != .named or supplied.contains(field.named.key)) return false;
+            supplied.put(self.alloc, field.named.key, field.named.val) catch return false;
+        }
+        for (fields) |field| {
+            const input = supplied.get(field.name) orelse return false;
+            const found = self.exprDescriptor(input) orelse return false;
+            if (found == .any or found == .nil or found == .void) return false;
+            if (literalOutOfRange(field.typ, input) != null) return false;
+            if (field.typ == .any or type_annotation_accepts_init(field.typ, found)) continue;
+            if (numericDemandAcceptsLiteral(field.typ, input) or nominal_accepts_literal(field.typ, input)) continue;
+            if (self.constructorMeetsRecordDemand(field.typ, input)) continue;
+            return false;
+        }
+        return true;
+    }
+
     fn check_demanded_pack(self: *Sema, ann: ast.TypeExpr, rhs: *ast.Expr) void {
-        if (ann != .named) return;
-        self.check_demanded_pack_for(ann.named, rhs);
+        if (ann == .named) return self.check_demanded_pack_for(ann.named, rhs);
+        if (!self.idol_mode or ann != .record or rhs.* != .table) return;
+        const descriptor = self.resolve_type(ann) catch return;
+        if (!self.constructorMeetsRecordDemand(descriptor, rhs)) {
+            self.err(rhs.loc(), "record constructor does not satisfy the demanded field descriptors", .{});
+        }
     }
 
     /// CALLABLE-DEMAND (gap[110] rung 2) shares this producer: the binding's
@@ -4551,8 +4702,11 @@ pub const Sema = struct {
     /// the same sentence the binding and applied faces use. One label law,
     /// one producer (`law.fact.producer.one`).
     fn check_demanded_pack_result(self: *Sema, rhs: *ast.Expr) void {
-        if (self.current_ret != .@"struct") return;
-        self.check_demanded_pack_for(self.current_ret.@"struct".name, rhs);
+        if (self.current_ret == .@"struct") return self.check_demanded_pack_for(self.current_ret.@"struct".name, rhs);
+        if (!self.idol_mode or self.current_ret != .table_type or rhs.* != .table) return;
+        if (!self.constructorMeetsRecordDemand(self.current_ret, rhs)) {
+            self.err(rhs.loc(), "record constructor does not satisfy the demanded field descriptors", .{});
+        }
     }
 
     fn check_demanded_pack_for(self: *Sema, subject: []const u8, rhs: *ast.Expr) void {
@@ -4567,6 +4721,7 @@ pub const Sema = struct {
         const is_record = def.fields.len != 0 or
             (def.target != null and def.target.? == .record);
         if (!is_record) return;
+        const before = self.errors;
         for (rhs.table.fields) |tf| {
             if (tf != .named) continue;
             if (!AliasRegistry.hasfield(def, tf.named.key)) {
@@ -4576,6 +4731,9 @@ pub const Sema = struct {
                     .{ subject, tf.named.key },
                 );
             }
+        }
+        if (self.idol_mode and before == self.errors and !self.constructorMeetsRecordDemand(.{ .@"struct" = .{ .name = subject } }, rhs)) {
+            self.err(rhs.loc(), "record constructor does not satisfy descriptor '{s}'", .{subject});
         }
     }
 
@@ -4611,6 +4769,9 @@ pub const Sema = struct {
                     // Emit deprecation warning if symbol is @deprecated (Requirement 18.7)
                     if (sym.deprecated_msg) |msg| {
                         self.warn_msg(n.loc, "'{s}' is deprecated: {s}", .{ n.ident, msg });
+                    }
+                    if (sym.inferred_at) |at| {
+                        if (at != self.record_generation) return .any;
                     }
                     return sym.typ;
                 }
@@ -5399,7 +5560,25 @@ pub const Sema = struct {
                         },
                     }
                 }
-                return .any;
+                if (!self.idol_mode or t.fields.len == 0) return .any;
+                var fields: std.ArrayList(types.FieldType) = .empty;
+                defer fields.deinit(self.alloc);
+                var names: std.StringHashMapUnmanaged(void) = .empty;
+                defer names.deinit(self.alloc);
+                for (t.fields) |field| {
+                    if (field != .named) return .any;
+                    const named = field.named;
+                    if (names.contains(named.key)) return .any;
+                    try names.put(self.alloc, named.key, {});
+                    const descriptor = self.type_map.get(named.val) orelse return .any;
+                    if (descriptor == .any or descriptor == .nil or descriptor == .void) return .any;
+                    if (descriptor == .table_type and named.val.* != .table) return .any;
+                    try fields.append(self.alloc, .{ .name = named.key, .typ = descriptor });
+                }
+                const owned = try fields.toOwnedSlice(self.alloc);
+                errdefer self.alloc.free(owned);
+                try self.constructor_fields.append(self.alloc, owned);
+                return .{ .table_type = .{ .fields = owned } };
             },
             .list_comp => |lc| {
                 _ = try self.check_expr(lc.iter);
@@ -5436,6 +5615,7 @@ pub const Sema = struct {
             .if_expr => |ie| {
                 _ = try self.check_expr(ie.cond);
                 const then_t = try self.check_expr(ie.then_expr);
+                self.record_generation += 1;
                 const else_t = try self.check_expr(ie.else_expr);
                 if (then_t.eql(else_t)) return then_t;
                 return .any;
@@ -6603,6 +6783,7 @@ pub const Sema = struct {
         // Type-check each arm's pattern, guard, and body
         var has_wildcard = false;
         for (me.arms) |*arm| {
+            self.record_generation += 1;
             try self.scope.push();
             try self.check_pattern(&arm.pattern, scrutinee_type);
             if (arm.pattern == .wildcard) has_wildcard = true;
@@ -6632,7 +6813,7 @@ pub const Sema = struct {
                 if (b.typ) |type_expr| {
                     bind_type = try self.resolve_type(type_expr);
                 }
-                try self.scope.define(b.name, .{ .typ = bind_type, .is_const = true });
+                try self.scope.define(b.name, .{ .typ = bind_type, .is_const = true, .inferred_at = if (b.typ == null and bind_type == .table_type) self.record_generation else null });
             },
             .variant => |v| {
                 // Variant pattern: validate that the tag is a valid variant of the enum
@@ -17333,4 +17514,69 @@ test "sema: INT_MIN is a value under an i64 demand, and a diagnostic under a nar
     defer near_arena.deinit();
     const near = try runIdolSema("x: i64 = -9223372036854775807\n", &near_arena);
     try testing.expectEqual(@as(u32, 0), near.errors);
+}
+
+test "sema: constructor demands validate field descriptors on every source face" {
+    const cases = [_]struct { source: []const u8, valid: bool }{
+        .{ .source = "record: {code: i64}\nitem: record = {code = 7}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nitem: record = {code = \"wrong\"}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nitem: record = {}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nitem: record = {other = 7}\n", .valid = false },
+        .{ .source = "item: {code: i64} = {code = 13}\n", .valid = true },
+        .{ .source = "item: {code: i64} = {code = \"wrong\"}\n", .valid = false },
+        .{ .source = "item: {code: i64} = {}\n", .valid = false },
+        .{ .source = "item: {code: u8} = {code = 300}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake = (): record {code = 7}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake = (): record {code = \"wrong\"}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake = (): record {}\n", .valid = false },
+        .{ .source = "global item: {code: i64} = {code = \"wrong\"}\n", .valid = false },
+        .{ .source = "item: i64 = {code = 7}\n", .valid = false },
+    };
+    for (cases) |case| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lexer = Lexer.init(case.source, "constructor.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        try testing.expectEqual(case.valid, checked.errors == 0);
+    }
+}
+
+test "sema: constructor shape follows the selected alternative" {
+    const cases = [_]struct { source: []const u8, known: bool }{
+        .{ .source = "take = (value: any) value\nmatch {code = 7}\n  value =>\n    take(value)\n", .known = true },
+        .{ .source = "take = (value: any) value\nmatch {code = 7}\n  value =>\n    value.code = \"changed\"\n    take(value)\n", .known = false },
+        .{ .source = "take = (value: any) value\nitem = {code = 7}\nmatch choice\n  1 =>\n    item = {code = 13}\n  _ =>\n    take(item)\n", .known = false },
+        .{ .source = "take = (value: any) value\nitem = {code = 7}\nmatch choice\n  1 =>\n    item = {code = 13}\n    take(item)\n  _ =>\n    0\n", .known = true },
+    };
+    for (cases) |case| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lexer = Lexer.init(case.source, "constructor.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        try testing.expectEqual(@as(u32, 0), checked.errors);
+        try testing.expectEqual(@as(usize, 1), checked.applications.count());
+        var facts = checked.applications.valueIterator();
+        const subject = facts.next().?.subject orelse return error.TestUnexpectedResult;
+        const descriptor = checked.exprDescriptor(subject) orelse return error.TestUnexpectedResult;
+        try testing.expectEqual(case.known, descriptor == .table_type);
+        if (case.known) {
+            try testing.expectEqual(@as(usize, 1), descriptor.table_type.fields.len);
+            try testing.expectEqualStrings("code", descriptor.table_type.fields[0].name);
+            try testing.expect(descriptor.table_type.fields[0].typ == .i64);
+        } else try testing.expect(descriptor == .any);
+    }
 }
