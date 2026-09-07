@@ -141,6 +141,12 @@ var global_backend_explicit: bool = false;
 /// that could not be spelled made §11's central claim untestable here.
 var global_observer_demand: observer_demand.Demand = .{};
 
+/// The observation/attack world THIS invocation realizes into. One producer, so
+/// the `--observer` flag cannot reach one consumer and miss another.
+fn observedWorld() observation.World {
+    return global_observer_demand.world(observation.ordinary_executable);
+}
+
 fn env_value_truthy(value: []const u8) bool {
     if (value.len == 0) return false;
     if (std.ascii.eqlIgnoreCase(value, "0")) return false;
@@ -4947,6 +4953,7 @@ fn realizeReachedPartition(
     // view is saved here and restored by the caller's `defer`.
     var ps = try parse_and_check(alloc, io, source_path);
     var graph = semantic_graph.SemanticGraph.init(alloc);
+    graph.observation_world = observedWorld();
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, source_path);
 
@@ -6367,6 +6374,7 @@ fn do_compile(
         }
 
         var graph = semantic_graph.SemanticGraph.init(alloc);
+        graph.observation_world = observedWorld();
         defer graph.deinit();
         const root = try graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
 
@@ -6529,6 +6537,13 @@ fn do_compile(
     // called `.wasm`.
     if (std.mem.eql(u8, target, "wasm32-wasi") and !load_chunk and !lib_mode) {
         var wasm_graph = semantic_graph.SemanticGraph.init(alloc);
+        // THE SEAT `observedWorld` EXISTS TO STOP BEING MISSED, AND THIS ONE WAS.
+        // Every direct-native graph above took the observer demand and this one
+        // did not, so on a host with no direct-native realization `--observer`
+        // reached no realization at all: `gate/placefold/existence.sh` compiled
+        // the same table-and-loop probe under both worlds and got byte-identical
+        // artifacts.
+        wasm_graph.observation_world = observedWorld();
         defer wasm_graph.deinit();
         const wasm_root = try wasm_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
         // THE SAME DEMAND PRUNE THE DIRECT EXECUTABLE PATH APPLIES. The whole
@@ -6619,6 +6634,7 @@ fn do_compile(
         } else {
             if (native_backend.isNativeExecutableTarget(mt)) {
                 var direct_graph = semantic_graph.SemanticGraph.init(alloc);
+                direct_graph.observation_world = observedWorld();
                 defer direct_graph.deinit();
                 const direct_root = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
                 if (try selectProcessEntryOrReport(&ps.mod, &direct_graph, direct_root, entry_override)) |selected_entry| {
@@ -6795,7 +6811,7 @@ fn do_compile(
                     // same exit byte, and the observer never asked for a value.
                     switch (selected_entry) {
                         .relation => |relation| {
-                            _ = try obseq.applyToEntry(alloc, &ps.mod, &direct_graph, relation, global_observer_demand.world(observation.ordinary_executable));
+                            _ = try obseq.applyToEntry(alloc, &ps.mod, &direct_graph, relation, observedWorld());
                         },
                         // The physical root is the file-scope program. It is a
                         // distinct graph identity and has no relation-body
@@ -6984,6 +7000,7 @@ fn do_compile(
                 }
             } else if (native_backend.isNativeSharedTarget(mt)) {
                 var direct_graph = semantic_graph.SemanticGraph.init(alloc);
+                direct_graph.observation_world = observedWorld();
                 defer direct_graph.deinit();
                 _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
                 // TIER-0: an unobserved computation must not execute. The proof
@@ -7038,6 +7055,7 @@ fn do_compile(
                 return;
             } else {
                 var direct_graph = semantic_graph.SemanticGraph.init(alloc);
+                direct_graph.observation_world = observedWorld();
                 defer direct_graph.deinit();
                 _ = try direct_graph.liftModuleWithCheckedCalls(&ps.mod, &ps.sem, src_path);
                 // TIER-0: an unobserved computation must not execute. The proof

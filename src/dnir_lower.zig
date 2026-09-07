@@ -2556,6 +2556,16 @@ fn skipStaticAggregateBinding(ctx: *LowerCtx, binding_name: []const u8) Error!bo
         body.places.find(binding_name)
     else
         null;
+    // NO EXISTENCE PERMIT IS ASKED FOR HERE, AND ASKING FOR ONE WAS WRONG.
+    // Skipping the binding does not erase the place: `collectDenseTables`
+    // realizes the same contents as a static dense row, so the bytes move from
+    // an initializing store into the mapped image. `permits(.existence)` rules
+    // on whether a place may CEASE TO EXIST, which is a different question, and
+    // gating this on it refused a relocation for want of an erasure licence —
+    // measured as `dnir_lower: graph aggregate facts select one immutable
+    // nested layout` failing on `dense_tables.len`. The consumers that do erase
+    // are `foldAggregateAccess`, the single-step constant in
+    // `lowerAggregateAccess`, `absentModulePlace`, and the whole-relation fold.
     const site = (bound_place orelse return false).id;
     const aggregate = ctx.graph.boundAggregateAtPlace(owner, site) orelse return false;
     if (ctx.graph.aggregateProducer(aggregate) != null) return false;
@@ -4822,8 +4832,20 @@ fn lowerFunction(
     // that folded before; the new capability is confined to the branch where the
     // body does apply something, and that branch is gated on
     // `ApplicationFact.effect` through `graph_query.effectFreeCalleeClosure`.
+    //
+    // AND THE EXISTENCE PERMIT GOVERNS IT, because this fold is the widest
+    // erasure in the lowering: the body is replaced by its answer, so every
+    // place the relation binds ceases to exist at once. `foldAggregateAccess`
+    // erases one table; this erases all of them and the loop that read them.
+    // Gating only the narrow consumer left the wide one fail-open — measured,
+    // by the differential below refusing the fold in the debugger arm and this
+    // path folding the whole relation anyway, so the permit moved nothing.
+    //
+    // A relation with no graph identity has no censused body, so no ruling was
+    // produced for it and it is refused: unknown is not permission.
     var folded = false;
-    if (fd.func.params.len == 0 and !fd.func.vararg and fd.func.vararg_name == null) {
+    const body_erasable = if (id) |entity| graph.relationExistenceErasable(entity) else false;
+    if (body_erasable and fd.func.params.len == 0 and !fd.func.vararg and fd.func.vararg_name == null) {
         if (comptime_eval.foldRelationBody(alloc, graph, id, &fd.func)) |k| {
             ctx.instrs.clearRetainingCapacity();
             try ctx.emit(.{ .op = .ret, .lhs = .{ .i64 = k } });
@@ -10594,12 +10616,21 @@ fn lowerExpr(ctx: *LowerCtx, expr: *const ast.Expr) Error!dnir.Value {
 /// global is a NAME THAT IS TAKEN, and only a name nothing else has taken can
 /// still mean a place. Every existing resolution path therefore wins over this
 /// one, so no program that lowers today reaches it.
+///
+/// TWO PRODUCERS, TWO QUESTIONS, AND THEY ARE NOT THE SAME QUESTION.
+/// `place.residencyRefusal` answers whether the place's own facts leave it
+/// without a location. It is WORLD-BLIND — it cannot see a demanded debugger, a
+/// security adversary, a foreign boundary or an open world, and every one of
+/// those makes the existence of a place observable. `observation.permits(…,
+/// .existence)` is the authority on that half, and erasing a place without
+/// asking it is fail-open: the fold answered a question it had never put.
 fn absentModulePlace(ctx: *LowerCtx, name: []const u8) ?*const place.Place {
     if (ctx.graph.placeCount() == 0) return null;
     if (ctx.locals.contains(name)) return null;
     if (ctx.module_globals.has(name)) return null;
     const p = ctx.graph.placeNamed(name) orelse return null;
     if (place.residencyRefusal(p) != .none) return null;
+    if (ctx.graph.modulePlaceExistencePermit(p) != .permitted) return null;
     return p;
 }
 
@@ -19618,6 +19649,213 @@ test "dnir_lower: a runtime index into a determined table folds from graph facts
             dnir.Value{ .i64 = case.answer },
             relowered_main.blocks[0].instrs[0].lhs,
         );
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// THE EXISTENCE PERMIT GOVERNS THE FOLD — ONE PRODUCER, ONE CONSUMER, AND THE
+// PERTURBATION THAT SEPARATES THEM.
+//
+// `liftPlaces` and `liftBodies` publish `observation.permits(&report,
+// .existence)` per census place. The WHOLE-RELATION FOLD in `lowerFunction`
+// reads it: that fold replaces the body with its answer, so every place the
+// relation binds ceases to exist at once, which is the one freedom the ruling
+// governs and the widest erasure this lowering performs.
+//
+// THE NARROW AGGREGATE FOLDS ARE NOT ROUTED THROUGH IT, AND THAT IS MEASURED,
+// NOT OVERLOOKED. `foldAggregateAccess` and the single-step constant in
+// `lowerAggregateAccess` also erase a table. Gating them on this ruling deletes
+// the fold for every relation that takes an operand: `permits(.existence)`
+// answers `.blocked_unknown` there because `Evidence.crosses_boundary` is
+// `.unknown` for a parameter position, so `allocation_identity` cannot be ruled
+// free. Measured on `pick: i64 = (i: i64) / values = {10, 20, 30} / other =
+// {40, 50} / values[i] + other[1]`: both places carry `escape:no alias:no` and
+// still rule `.blocked_unknown`, and `wasm backend realizes graph flat
+// projection as exact dense data` goes from one dense table to two. That cost
+// is PRODUCER debt — GAP-170's open `Position.boundary_arg` item — not a
+// consumer ruling, so it is recorded there and the narrow folds keep the
+// authority they had.
+//
+// `skipStaticAggregateBinding` is not a reader either, for a different reason:
+// it relocates the contents into a static dense row rather than erasing them,
+// so `.existence` is not the freedom it takes.
+//
+// The arms below hold the source, the graph facts and the answer FIXED and move
+// only the world the ruling is produced under. What separates them is therefore
+// the permit and nothing else, which is the claim a shared-source differential
+// can make and a single run cannot.
+//
+//   ordinary          permitted          one `ret`, no dense table, no load
+//   debugger demanded blocked_observed   the table and its indexed load survive
+//   security world    blocked_observed   the table and its indexed load survive
+//   ruling deleted    blocked_unknown    the table and its indexed load survive
+//
+// The last arm is the one that decides whether this is a gate or a decoration:
+// it removes the FACT rather than supplying a refusing verdict, and requires
+// the consumer to refuse from absence. Unknown is not permission.
+//
+// THE FIRST ARM IS A FEATURE-USE CONTROL AND IT IS NOT OPTIONAL. A gate that
+// fails closed everywhere would satisfy every refusing arm here while deleting
+// the optimization outright; the first arm fails in exactly that case, so the
+// feature cannot vanish while this test stays green. Its constant is 22 against
+// a table whose every other slot reads 7 or 9, so a fold that is fast and wrong
+// fails on the value and not merely on the shape.
+test "dnir_lower: the existence permit, not the graph facts alone, admits the whole-relation fold" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const observation = @import("observation.zig");
+    const table_apply = @import("table_apply.zig");
+
+    const source =
+        \\main: i64 = ()
+        \\    t = (1, 7, 7, 7, 9, 7, 7, 7)
+        \\    s = 0
+        \\    i = 1
+        \\    while i <= 4
+        \\        s += t[i]
+        \\        i += 1
+        \\    s
+    ;
+    const answer: i64 = 22;
+
+    const Arm = struct {
+        name: []const u8,
+        world: observation.World,
+        /// Free and null every published ruling after the lift, so the consumer
+        /// meets absence rather than a refusal.
+        delete_ruling: bool,
+        permit: observation.Permit,
+        folds: bool,
+    };
+    const arms = [_]Arm{
+        .{
+            .name = "ordinary",
+            .world = observation.ordinary_executable,
+            .delete_ruling = false,
+            .permit = .permitted,
+            .folds = true,
+        },
+        .{
+            .name = "debugger",
+            .world = observation.ordinary_executable.with(.debugger_demanded),
+            .delete_ruling = false,
+            .permit = .blocked_observed,
+            .folds = false,
+        },
+        .{
+            .name = "security",
+            .world = observation.ordinary_executable.with(.security_adversary),
+            .delete_ruling = false,
+            .permit = .blocked_observed,
+            .folds = false,
+        },
+        .{
+            .name = "no-ruling",
+            .world = observation.ordinary_executable,
+            .delete_ruling = true,
+            .permit = .blocked_unknown,
+            .folds = false,
+        },
+    };
+
+    for (arms) |arm| {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var lexer = Lexer.init(source, arm.name);
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var module = try parser.parse_module();
+        var checked = Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        try checked.check_module(&module);
+        table_apply.normalizeModule(alloc, &module, &checked.type_map);
+
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        // The one seat the world is taken from. `main.zig` sets the same field
+        // from the same `--observer` demand, so this test rides the production
+        // wiring instead of a second path into the ruling.
+        graph.observation_world = arm.world;
+        _ = try graph.liftModuleWithCheckedCalls(&module, &checked, module.file);
+
+        var table: ?semantic_graph.id = null;
+        var row: usize = 0;
+        while (row < graph.aggregateCount()) : (row += 1) {
+            const aggregate_fact = graph.aggregateAt(row) orelse continue;
+            if (!graph.aggregateIsSoleImmutableBinding(aggregate_fact.aggregate)) continue;
+            try std.testing.expect(table == null);
+            table = aggregate_fact.aggregate;
+        }
+        const aggregate = table orelse return error.TestExpectedEqual;
+
+        // THE GRAPH FACTS ARE THE SAME IN EVERY ARM. Asserted, not assumed —
+        // a refusing arm that had lost the sole-immutable-binding fact or the
+        // contents would be refusing for a reason this test does not name, and
+        // the differential below would prove nothing about the permit.
+        const contents = graph.aggregate(aggregate) orelse return error.TestExpectedEqual;
+        try std.testing.expectEqual(place.Tri.yes, contents.contents_known);
+
+        if (arm.delete_ruling) {
+            for (graph.bodies.items) |*body| {
+                if (body.existence) |slice| alloc.free(slice);
+                body.existence = null;
+            }
+            if (graph.place_existence) |slice| alloc.free(slice);
+            graph.place_existence = null;
+        }
+
+        // THE RULING, READ WHERE IT WAS PUBLISHED. `aggregate` fixes which
+        // place is meant — the table's — and the body census the relation owns
+        // is the one the whole-relation fold consults, so the arm's expected
+        // permit is checked against that row and not against a second lookup
+        // path that could disagree with the consumer.
+        const owner = (graph.aggregate(aggregate) orelse return error.TestExpectedEqual).owner;
+        const table_place = graph.aggregatePlace(aggregate) orelse return error.TestExpectedEqual;
+        const body = graph.bodyOf(owner) orelse return error.TestExpectedEqual;
+        if (arm.delete_ruling) {
+            try std.testing.expect(body.existence == null);
+        } else {
+            const rulings = body.existence orelse return error.TestExpectedEqual;
+            try std.testing.expectEqual(arm.permit, rulings[table_place.id]);
+        }
+        try std.testing.expectEqual(arm.folds, graph.relationExistenceErasable(owner));
+
+        const lowered = try lowerModuleWithGraph(alloc, &module, &graph);
+        defer dnir.deinitModule(alloc, lowered);
+
+        var entry: ?dnir.Function = null;
+        for (lowered.functions) |function| {
+            if (std.mem.eql(u8, function.name, "main")) entry = function;
+        }
+        const main_fn = entry orelse return error.TestExpectedEqual;
+
+        var saw_load = false;
+        for (main_fn.blocks) |block| {
+            for (block.instrs) |instruction| {
+                if (instruction.op == .load_index) saw_load = true;
+            }
+        }
+
+        if (!arm.folds) {
+            // The place still exists and is still read. Refusing the fold is
+            // not the same as producing nothing, so the surviving indexed load
+            // is the evidence that the answer is still computed.
+            try std.testing.expect(!main_fn.folded_to_constant);
+            try std.testing.expect(saw_load);
+            continue;
+        }
+
+        try std.testing.expect(main_fn.folded_to_constant);
+        try std.testing.expect(!saw_load);
+        try std.testing.expectEqual(@as(usize, 1), main_fn.blocks.len);
+        try std.testing.expectEqual(@as(usize, 1), main_fn.blocks[0].instrs.len);
+        try std.testing.expectEqual(dnir.Op.ret, main_fn.blocks[0].instrs[0].op);
+        try std.testing.expectEqual(dnir.Value{ .i64 = answer }, main_fn.blocks[0].instrs[0].lhs);
+        try std.testing.expectEqual(@as(usize, 0), lowered.dense_tables.len);
     }
 }
 

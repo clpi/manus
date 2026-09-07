@@ -13,6 +13,7 @@ const types = @import("types.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
 const place = @import("place.zig");
+const observation = @import("observation.zig");
 const region = @import("region.zig");
 const subject_home = @import("subject_home.zig");
 const semantic_identity = @import("semantic_identity.zig");
@@ -1077,6 +1078,14 @@ pub const Body = struct {
     relation: id,
     places: place.Census,
     regions: region.Census,
+    /// `observation.permits(&report, .existence)` per row of `places`, indexed
+    /// by `place.Place.id`. Published by `liftBodies` from the SAME census this
+    /// struct holds, so the module census and this one each carry their own
+    /// ruling and neither is read through the other's index.
+    ///
+    /// `null` means no ruling was produced and is NOT permission
+    /// (`law.unknown.one`).
+    existence: ?[]observation.Permit = null,
 };
 
 pub const CallableOrigin = enum { idol, c };
@@ -1292,6 +1301,16 @@ pub const SemanticGraph = struct {
     /// Populated by `lower.collectStaticPlaces` after `selectModule` succeeds;
     /// null means no selection has been made (not "no static places").
     static_places: ?std.StringHashMapUnmanaged(void) = null,
+    /// `observation.permits(&report, .existence)` per census place, indexed by
+    /// `place.Place.id`. Published by `liftPlaces` from the SAME census
+    /// `places` holds; `null` means no ruling was produced and is NOT
+    /// permission (`law.unknown.one`).
+    place_existence: ?[]observation.Permit = null,
+    /// The observation/attack world realization is judged against. The default
+    /// is the world every other consumer in this compiler already states; the
+    /// `--observer` demand folds into it BEFORE the lift, because the ruling is
+    /// produced there and a world set afterwards would be read too late.
+    observation_world: observation.World = observation.ordinary_executable,
     /// §18's census and SOURCE-CONTROL-ONE's regions, PER RELATION.
     ///
     /// `places` above is the MODULE-scope census and `place.zig` states why it
@@ -1405,9 +1424,11 @@ pub const SemanticGraph = struct {
         self.value_by_ast.deinit(self.alloc);
         if (self.places) |*census| census.deinit();
         if (self.static_places) |*set| set.deinit(self.alloc);
+        if (self.place_existence) |slice| self.alloc.free(slice);
         for (self.bodies.items) |*body| {
             body.places.deinit();
             body.regions.deinit();
+            if (body.existence) |slice| self.alloc.free(slice);
         }
         self.bodies.deinit(self.alloc);
         self.worlds.deinit(self.alloc);
@@ -4284,6 +4305,62 @@ pub const SemanticGraph = struct {
         try self.requireOpen();
         if (self.places != null) return;
         self.places = try place.analyzeModule(self.alloc, mod);
+        // The residency fact says a place COULD have no location; whether
+        // erasing it is lawful is an observation question, and this is where
+        // the one census gets its one ruling.
+        //
+        // A CENSUS WITH NO ROWS STILL GETS A RULING — the empty one. `null` is
+        // reserved for "no ruling was produced", which every consumer refuses
+        // on; conflating it with "there was nothing to rule on" would make a
+        // place-free module indistinguishable from an unexamined one and
+        // delete the fold for the first. The empty census skips the walk
+        // because there is no row for the walk to annotate.
+        const census = &self.places.?;
+        self.place_existence = if (census.count() == 0)
+            try self.alloc.alloc(observation.Permit, 0)
+        else
+            try observation.existenceOverCensus(
+                self.alloc,
+                census,
+                mod,
+                self.observation_world,
+                .{},
+            );
+    }
+
+    /// Whether erasing this MODULE-CENSUS place's physical existence is
+    /// PERMITTED. Absence of a ruling answers `.blocked_unknown`: a consumer
+    /// that folds a place away must have been told it may, never merely not
+    /// told it may not.
+    ///
+    /// A relation-body place must NOT be passed here — its `id` indexes that
+    /// body's census, and this one would answer a different place's ruling.
+    /// Read `bodyOf(owner).existence` for those.
+    pub fn modulePlaceExistencePermit(
+        self: *const SemanticGraph,
+        p: *const place.Place,
+    ) observation.Permit {
+        const rulings = self.place_existence orelse return .blocked_unknown;
+        if (p.id >= rulings.len) return .blocked_unknown;
+        return rulings[p.id];
+    }
+
+    /// Whether EVERY place this relation's body binds may lawfully lose its
+    /// physical existence.
+    ///
+    /// `comptime.foldRelationBody` replaces the whole body with its answer, so
+    /// it erases all of them at once and cannot be licensed one row at a time.
+    /// One row that is not `.permitted` refuses the fold; so does a relation
+    /// with no ruling published, which is every relation `liftBodies` never
+    /// censused (`law.unknown.one` — an unexamined body is not an empty one).
+    /// A body with a ruling and no rows erases no place and is admitted.
+    pub fn relationExistenceErasable(self: *const SemanticGraph, relation: id) bool {
+        const body = self.bodyOf(relation) orelse return false;
+        const rulings = body.existence orelse return false;
+        for (rulings) |permit| {
+            if (permit != .permitted) return false;
+        }
+        return true;
     }
 
     /// The place a module-scope name denotes, or null when this graph was never
@@ -4408,10 +4485,27 @@ pub const SemanticGraph = struct {
             errdefer places.deinit();
             var regions = try region.analyzeFunction(self.alloc, &fd.func, self, relation);
             errdefer regions.deinit();
+            // THE RELATION-BODY HALF OF THE SAME RULING `liftPlaces` PUBLISHES.
+            // Without it every table a relation binds locally is out of extent,
+            // and a consumer that reads absence as refusal deletes the fold for
+            // exactly the programs that have one. The census differs; the
+            // question, the world and the producer do not.
+            const rulings: []observation.Permit = if (places.count() == 0)
+                try self.alloc.alloc(observation.Permit, 0)
+            else
+                try observation.existenceOverCensus(
+                    self.alloc,
+                    &places,
+                    mod,
+                    self.observation_world,
+                    .{},
+                );
+            errdefer self.alloc.free(rulings);
             try self.bodies.append(self.alloc, .{
                 .relation = relation,
                 .places = places,
                 .regions = regions,
+                .existence = rulings,
             });
         }
     }
