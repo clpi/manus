@@ -450,6 +450,21 @@ pub const Parser = struct {
         return (((try self.currentParserEvent()) >> 62) & 1) != 0;
     }
 
+    /// `end` is an EVENT bit, not a face, so it needs no `currentParserFace()`
+    /// guard: `parser.id` writes `ending = 1` under `kind == token.kindend`
+    /// alone, on the lane where a `(` carries no matching-close coordinate.
+    fn currentParserEnd(self: *Parser) ParseError!bool {
+        return (((try self.currentParserEvent()) >> 14) & 1) != 0;
+    }
+
+    /// `eat(.kw_end)` with the settled bit in place of the rebuilt identity:
+    /// the same recognition-then-`adv()` pair, in the same order.
+    fn eatParserEnd(self: *Parser) ParseError!bool {
+        if (!try self.currentParserEnd()) return false;
+        _ = try self.adv();
+        return true;
+    }
+
     fn currentParserTypeName(self: *Parser) ParseError!bool {
         return (((try self.currentParserDecision()) >> 5) & 1) != 0 and
             try self.currentParserMember();
@@ -2882,7 +2897,7 @@ pub const Parser = struct {
         // whatever followed. Same shape as the concept body: a variant sits
         // right of the `enum` keyword, so anything at or left of it has closed
         // the body.
-        while ((try self.pk()).kind != .kw_end and (try self.pk()).kind != .eof) {
+        while (!(try self.currentParserEnd()) and (try self.pk()).kind != .eof) {
             const probe = try self.pk();
             if (self.idol_mode and probe.loc.line != l.line and probe.loc.col <= l.col) break;
             const vname = try self.expect(.name);
@@ -2907,7 +2922,7 @@ pub const Parser = struct {
                 .payload = payload,
             });
         }
-        _ = try self.eat(.kw_end); // accepted and deleted; the body may have closed by dedent
+        _ = try self.eatParserEnd(); // accepted and deleted; the body may have closed by dedent
 
         const variant_slice = try variants.toOwnedSlice(self.alloc);
         debug_trace.event(.parse, .enum_type, "enum {s} ({d} variants)", .{ nm.text, variant_slice.len });
@@ -3006,7 +3021,7 @@ pub const Parser = struct {
         // "unexpected token in concept body" pointing at the NEXT statement. A
         // member sits right of the `concept` keyword; anything at or left of it
         // has closed the body.
-        while ((try self.pk()).kind != .kw_end and (try self.pk()).kind != .eof) {
+        while (!(try self.currentParserEnd()) and (try self.pk()).kind != .eof) {
             const probe = try self.pk();
             if (self.idol_mode and probe.loc.line != l.line and probe.loc.col <= l.col) break;
             if ((try self.pk()).kind == .kw_fun or (try self.pk()).kind == .kw_function) {
@@ -3039,7 +3054,7 @@ pub const Parser = struct {
         }
         // `end` is ACCEPTED AND DELETED, not demanded — the body may have
         // closed by dedent above, in which case there is nothing to consume.
-        _ = try self.eat(.kw_end);
+        _ = try self.eatParserEnd();
 
         return ast.Stmt{ .concept_def = .{
             .loc = l,
@@ -3119,7 +3134,7 @@ pub const Parser = struct {
         const loc = (try self.pk()).loc;
         // Parse fields: name: type [= default_value]
         var fields: std.ArrayList(ast.RecordField) = .empty;
-        while ((try self.pk()).kind != .kw_end) {
+        while (!(try self.currentParserEnd())) {
             if ((try self.pk()).kind == .eof) {
                 term.locErr(loc, "unexpected end of file in struct definition", .{});
                 return ParseError.UnexpectedToken;
@@ -3739,7 +3754,7 @@ pub const Parser = struct {
         // so the line test is the disambiguation, not a heuristic.
         if (!blockish) {
             const end_tok = try self.pk();
-            if (end_tok.kind == .kw_end and end_tok.loc.line == rparen_tok.loc.line) {
+            if ((try self.currentParserEnd()) and end_tok.loc.line == rparen_tok.loc.line) {
                 _ = try self.adv();
             }
         }
@@ -4498,7 +4513,7 @@ pub const Parser = struct {
         while (true) {
             while (try self.eat(.semi) != null) {}
             const tok = try self.pk();
-            if (tok.kind == .kw_end or tok.kind == .eof) break;
+            if ((try self.currentParserEnd()) or tok.kind == .eof) break;
             // §3 — the arm list closes by dedent. An arm BINDS at or right of
             // the `match` (`case`/`else` sit level with it in every migrated
             // file); anything else back at or left of it belongs to whatever
@@ -4511,7 +4526,7 @@ pub const Parser = struct {
         // ACCEPTED AND DELETED (§3.4), not demanded: the arm list may have
         // closed by dedent above, in which case there is nothing to consume.
         if (self.idol_mode) {
-            _ = try self.eat(.kw_end);
+            _ = try self.eatParserEnd();
         } else {
             _ = try self.expect(.kw_end);
         }
@@ -4683,7 +4698,7 @@ pub const Parser = struct {
             while (try self.eat(.semi) != null) {}
             const tok = try self.pk();
             // Stop at end of match block, or at 'case'/'else' which starts the next arm.
-            if (tok.kind == .kw_end or tok.kind == .eof or try self.startsMatchArm()) break;
+            if ((try self.currentParserEnd()) or tok.kind == .eof or try self.startsMatchArm()) break;
             // …and at a DEDENT out of the whole construct. Without this the
             // last arm swallowed the statement after the `match` — in
             // `examples/repro_pointer_local_match_panic.id` that is the
@@ -5543,7 +5558,7 @@ pub const Parser = struct {
                         (try self.currentParserName() or try self.currentParserLiteral());
                     if (!is_next) break;
                     if (peek.kind == .semi or peek.kind == .eof or
-                        peek.kind == .kw_end or peek.kind == .kw_else or
+                        (try self.currentParserEnd()) or peek.kind == .kw_else or
                         peek.kind == .kw_elseif or peek.kind == .kw_until) break;
                     try args.append(self.alloc, try self.parse_parenless_call_arg());
                 }
@@ -7494,7 +7509,7 @@ pub const Parser = struct {
                 _ = try self.expect(.kw_end);
             } else {
                 const closer = try self.pk();
-                if (closer.kind == .kw_end and closer.loc.line == l.line) _ = try self.adv();
+                if ((try self.currentParserEnd()) and closer.loc.line == l.line) _ = try self.adv();
             }
         }
         return self.new_expr(.{ .if_expr = try self.new_if_expr(l, cond, then_expr, else_expr) });
@@ -12203,6 +12218,45 @@ test "parse: the vararg face admits exactly the `...` identity" {
         if (expected) seen = true else rejected = true;
     }
     // Without these the sweep would pass on a face that admits nothing, on one
+    // that admits everything, or on a pack whose trivia was never reached.
+    try testing.expect(seen);
+    try testing.expect(rejected);
+    try testing.expect(refused);
+}
+
+// `ending` is written under `kind == token.kindend` alone and nothing else
+// assigns it, so event bit 14 IS the `end` identity — no union, no face guard.
+// The reader is EXECUTED here rather than restated: both lanes come from
+// `idol_parser_event`. Trivia is not a cursor coordinate, so the reader
+// refuses there rather than answering.
+test "parse: the written-end bit admits exactly the `end` identity" {
+    var seen = false;
+    var rejected = false;
+    var refused = false;
+    for (grammar_roles.rows, 0..) |row, index| {
+        const kind = row.kind orelse continue;
+        var facts = [3]i64{ 0, @intCast(index), 0 };
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        var tokens = [_]Token{.{
+            .kind = kind,
+            .loc = .{ .file = "end.id", .line = 1, .col = 1 },
+            .text = row.spell,
+        }};
+        var lexer = Lexer.init("", "end.id");
+        var consumer = Parser.init(&lexer, testing.allocator);
+        consumer.pack_tokens = &tokens;
+        consumer.parser_events = &events;
+        if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {
+            try testing.expectError(error.InvalidRecordCount, consumer.currentParserEnd());
+            refused = true;
+            continue;
+        }
+        const expected = kind == .kw_else;
+        try testing.expectEqual(expected, try consumer.currentParserEnd());
+        if (expected) seen = true else rejected = true;
+    }
+    // Without these the sweep would pass on a bit that admits nothing, on one
     // that admits everything, or on a pack whose trivia was never reached.
     try testing.expect(seen);
     try testing.expect(rejected);

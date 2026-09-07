@@ -4860,6 +4860,185 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     rm -rf -- "$dots_probe"
 fi
 
+# --- 11. `end` identity at a cursor coordinate ------------------------------
+#
+# Eleven consumers in seven functions still answered "is the token under the
+# cursor an `end`" from the generated host `TokenKind`, at a coordinate the
+# producer had already settled and `pk()` had already selected. `parser.id`
+# writes `ending = 1` under `kind == token.kindend` and NOTHING else assigns
+# it, so event bit 14 alone IS the identity: no union like `:`, and no
+# `currentParserFace()` guard, because a `(` carries its matching-close
+# coordinate in the DECISION lane and bit 14 is on the event lane.
+#
+# The class is every host read of `end` identity AT A CURSOR COORDINATE, in
+# the three spellings it takes here: `(try self.pk()).kind != .kw_end`, a
+# token captured by `pk()` and then compared, and `eat(.kw_end)` with
+# recognition fused to a consume. Its count falls 11 -> 0.
+end_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_end\)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$end_helper" -ne 0 ]; then
+    bad "the parser still recognizes 'end' through a kind-parameterized helper: count=$end_helper"
+fi
+end_compare=$(grep -Eo '(==|!=) \.kw_end\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$end_compare" -ne 2 ]; then
+    bad "the parser rebuilds 'end' identity at a cursor coordinate: count=$end_compare"
+fi
+
+# Both survivors are named, so the ceiling above can neither be met by deleting
+# one nor drift into a new cursor read. One is the equivalence sweep, which is
+# REQUIRED to compare the bit against the identity. The other is not a token
+# read at all: it compares the DEMANDED kind parameter inside `expect` to pick
+# a diagnostic, and it must stay inside that boundary.
+has "$PARSER" 'return (((try self.currentParserEvent()) >> 14) & 1) != 0;' \
+    'the end consumer no longer reads the settled written-end bit'
+has "$PARSER" 'fn eatParserEnd(self: *Parser) ParseError!bool {' \
+    'Parser lost the consuming end reader'
+has "$PARSER" '        if (!try self.currentParserEnd()) return false;' \
+    'the consuming end reader does not recognize through the settled bit'
+
+end_demand=$(sed -n '/fn expect(self: \*Parser, kind: TK) ParseError!Token {/,/^    }$/p' "$PARSER" | \
+    grep -Eo '(==|!=) \.kw_end\b' | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$end_demand" -ne 1 ]; then
+    bad "the demanded-kind comparison left the expect boundary: count=$end_demand want=1"
+fi
+
+end_sweep=$(sed -n '/the written-end bit admits exactly the `end` identity" {/,/^}/p' "$PARSER")
+for predicate in 'kind == .kw_end' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try consumer.currentParserEnd()' 'if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {' 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserEnd());' 'for (grammar_roles.rows, 0..) |row, index| {' 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$end_sweep" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "end equivalence oracle lost predicate: $predicate"
+    fi
+done
+
+# Each transferred region must select a nonempty region of the parser AND carry
+# the settled bit at its exact count, so the ceiling cannot be met by deleting
+# a site instead of moving it.
+check_end_region() {
+    region_pattern=$1
+    region_expected=$2
+    region_label=$3
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "the $region_label region selector selected nothing: lines=$region_lines"
+        return
+    fi
+    region_bits=$(sed -n "${region_pattern}p" "$PARSER" | \
+        grep -Eo 'self\.(currentParserEnd|eatParserEnd)\(\)' | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_bits" -ne "$region_expected" ]; then
+        bad "$region_label does not consume the settled end bit: count=$region_bits want=$region_expected"
+    fi
+}
+
+check_end_region '/fn parse_enum_def_with_attrs/,/fn parse_concept_method_sig/' 2 'the enum variant body'
+check_end_region '/fn parse_concept_def_with_attrs/,/fn parse_struct_body/' 2 'the concept member body'
+check_end_region '/fn parse_struct_body/,/fn parse_alias_def_with_attrs/' 1 'the record field body'
+check_end_region '/fn parse_func_body/,/fn parse_func_signature/' 1 'the offside lambda closer'
+check_end_region '/fn parse_match_inner/,/fn startsMatchArm/' 2 'the match arm list'
+check_end_region '/fn parse_match_arm_body/,/fn parse_pattern/' 1 'the match arm statement list'
+check_end_region '/fn parse_expr_stmt/,/fn finish_prec/' 1 'the parenless call argument run'
+check_end_region '/fn parse_if_expr_after_if_with_cond/,/fn new_if_expr/' 1 'the endless if closer'
+
+end_class=$(grep -Eo 'self\.(currentParserEnd|eatParserEnd)\(\)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$end_class" -ne 12 ]; then
+    bad "the end class is not at its transferred count: count=$end_class want=12"
+fi
+
+# Anti-green control. Four of the eleven sites recognize `end` and then ask a
+# SECOND question about the same token — its line, or the `eof` alternative —
+# and that second question is a different fact that stays a separate read.
+# Dropping it would widen admission rather than move it.
+end_lined=$(grep -cE '\(try self\.currentParserEnd\(\)\) and (closer|end_tok)\.loc\.line ==' "$PARSER")
+examined=$((examined + 1))
+if [ "$end_lined" -ne 2 ]; then
+    bad "a transferred end site lost its same-line discriminator: count=$end_lined want=2"
+fi
+end_eof=$(grep -cE '\(try self\.currentParserEnd\(\)\) (or|and) .*\.kind (==|!=) \.eof' "$PARSER")
+examined=$((examined + 1))
+if [ "$end_eof" -ne 4 ]; then
+    bad "a transferred end site lost its eof alternative: count=$end_eof want=4"
+fi
+
+# Positive controls. Every detector above counts text that is absent from the
+# repaired tree, so each is shown a tree where it is present, and shown that it
+# does not fire on the canonical spelling.
+end_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate end scratch' >&2; exit 2; }
+cat >"$end_probe/old.zig" <<'PROBE'
+_ = try self.eat(.kw_end);
+while ((try self.pk()).kind != .kw_end) {
+if (tok.kind == .kw_end or tok.kind == .eof) break;
+} else if (try self.check(.kw_end)) {
+PROBE
+cat >"$end_probe/new.zig" <<'PROBE'
+_ = try self.eatParserEnd();
+while (!(try self.currentParserEnd())) {
+if ((try self.currentParserEnd()) or tok.kind == .eof) break;
+PROBE
+end_old_compare=$(grep -Eo '(==|!=) \.kw_end\b' "$end_probe/old.zig" | wc -l | tr -d ' ')
+end_old_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_end\)' "$end_probe/old.zig" | wc -l | tr -d ' ')
+end_new_compare=$(grep -Eo '(==|!=) \.kw_end\b' "$end_probe/new.zig" | wc -l | tr -d ' ')
+end_new_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_end\)' "$end_probe/new.zig" | wc -l | tr -d ' ')
+end_new_bits=$(grep -Eo 'self\.(currentParserEnd|eatParserEnd)\(\)' "$end_probe/new.zig" | wc -l | tr -d ' ')
+end_new_eof=$(grep -cE '\(try self\.currentParserEnd\(\)\) (or|and) .*\.kind (==|!=) \.eof' "$end_probe/new.zig")
+rm -rf -- "$end_probe"
+examined=$((examined + 1))
+if [ "$end_old_compare" -ne 2 ] || [ "$end_old_helper" -ne 2 ]; then
+    bad "the end detector does not see the retired spellings: compare=$end_old_compare helper=$end_old_helper"
+fi
+examined=$((examined + 1))
+if [ "$end_new_compare" -ne 0 ] || [ "$end_new_helper" -ne 0 ] ||
+    [ "$end_new_bits" -ne 3 ] || [ "$end_new_eof" -ne 1 ]; then
+    bad "the end detector misreads the canonical spelling: compare=$end_new_compare helper=$end_new_helper bits=$end_new_bits eof=$end_new_eof"
+fi
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    end_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate end perturbation scratch' >&2; exit 2; }
+
+    # FALSE ACCEPT. Stop reading the settled bit and answer for everything.
+    # Every transferred site still compiles and the ceiling still reads 2.
+    sed '0,/return (((try self.currentParserEvent()) >> 14) & 1) != 0;/s//return true;/' "$PARSER" >"$end_probe/accept.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$end_probe/accept.result" 2>&1
+    end_status=$?
+    examined=$((examined + 1))
+    if [ "$end_status" -ne 1 ] || [ ! -s "$end_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the end consumer no longer reads the settled written-end bit' "$end_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$end_probe/accept.result"; then
+        bad "end false-accept control did not fail closed: status=$end_status"
+    fi
+
+    # WRONG ERROR. Break the sweep's non-vacuity and require the gate to name
+    # THAT and not the reader above.
+    sed '/the written-end bit admits exactly/,/^}/ s/try testing\.expect(rejected);/try testing.expect(!rejected);/' "$PARSER" >"$end_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$end_probe/wrong.result" 2>&1
+    end_status=$?
+    examined=$((examined + 1))
+    if [ "$end_status" -ne 1 ] || [ ! -s "$end_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL end equivalence oracle lost predicate: try testing.expect(rejected);' "$end_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the end consumer no longer reads the settled written-end bit' "$end_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$end_probe/wrong.result"; then
+        bad "end wrong-error control did not fail closed: status=$end_status"
+    fi
+
+    # LEFTOVER. Restore one retired spelling at a transferred site. The reader
+    # is intact and the sweep still passes, so only the ceiling, the region
+    # count and the class count can catch it.
+    sed '0,/_ = try self.eatParserEnd();/s//_ = try self.eat(.kw_end);/' "$PARSER" >"$end_probe/left.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/left.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$end_probe/left.result" 2>&1
+    end_status=$?
+    examined=$((examined + 1))
+    if [ "$end_status" -ne 1 ] || [ ! -s "$end_probe/left.result" ] ||
+        ! grep -Fq "gap-145 consumer gate: FAIL the parser still recognizes 'end' through a kind-parameterized helper: count=1" "$end_probe/left.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$end_probe/left.result"; then
+        bad "end leftover control did not fail closed: status=$end_status"
+    fi
+
+    rm -rf -- "$end_probe"
+fi
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then
