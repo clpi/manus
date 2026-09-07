@@ -7925,6 +7925,37 @@ const Arm64Compiler = struct {
         if (reg >= 29) return;
         if (reg == platform_reserved_reg) return;
         if (reg >= 9 and reg < 29 and self.gp_home_regs[reg]) return;
+        // A PIN IS A CLAIM, AND THIRTY CALL SITES WERE ASKING IT INSTEAD OF
+        // THIS ONE (GAP-148).
+        //
+        // `regIsPinned(pinned, r)` guards roughly thirty of the calls into this
+        // function and is absent from the rest — `.br`'s `releaseReg(cond)`,
+        // the record return's staging release, `store_global`'s address — and
+        // every absence is a claim given back for a register a map still names.
+        // `gp_home_regs` is not that map: it is empty below x9, so the LEAF
+        // parameter `compileDnirFunction` keeps in its incoming x0..x7 register
+        // reaches this body pinned, ownerless, and unflagged.
+        //
+        // That parameter's claim is the repair immediately above its own
+        // `pinned.put`: `allocRegExcluding` does not read `pinned`, so with
+        // x9..x28 busy it falls to x0..x7 and asks only `used_regs` — the
+        // measurement there is a loop that ran to signed overflow and answered
+        // independently of its argument. `claimReg(arg_reg)` bought that back,
+        // and `if c then ... else ...` on a parameter handed it straight to
+        // this line, which cleared `used_regs` and undid it.
+        //
+        // The term is the one `ensureRegLiveRemap` and `reclaimSpilledReg`
+        // already honour for the same register, asked by the third path that
+        // takes a register away from the map naming it. Behaviour at the
+        // guarded call sites is unchanged — they never reached this body with a
+        // pinned register — so what changes is only where the question lives.
+        // Under pressure a leaf that would have miscompiled now refuses.
+        //
+        // Not the closure — closure is authoritative `register`/`frame`
+        // assignment before emission, per this gap's record, under which a
+        // parameter's claim is carried by the assignment rather than restated
+        // by a map each caller has to remember to consult.
+        if (self.evalPinNames(reg)) return;
         if (self.gp_reg_owner[reg] != null) return;
         self.used_regs[reg] = false;
         if (reg < 9 and self.evalTempNames(reg)) return;
@@ -23263,4 +23294,111 @@ test "a float argument name another value owns is not a register" {
         param_reg,
         try compiler.evalDnirFpArg(&temps, .{ .local = param_id }),
     );
+}
+
+// GAP-148. THE THIRD PATH THAT TAKES A REGISTER AWAY FROM THE MAP NAMING IT.
+//
+// `ensureRegLiveRemap` and `reclaimSpilledReg` were each taught `evalPinNames`
+// for the same register this test builds: the LEAF parameter
+// `compileDnirFunction` keeps in its incoming x0..x7 register, pinned and never
+// a home. `releaseReg` is the third, and it was never asked — instead about
+// thirty of its call sites ask `regIsPinned` themselves and the rest do not,
+// so `.br`'s `releaseReg(cond)` on `if c then ... else ...` gave back the very
+// claim `claimReg(arg_reg)` exists to hold.
+//
+// What that claim buys is stated at the `pinned.put` site: `allocRegExcluding`
+// does not read `pinned`, so with x9..x28 busy it falls to x0..x7 and asks only
+// `used_regs`. The measurement there is a loop that ran to signed overflow and
+// answered independently of its argument. This test is that allocator scan,
+// run against a parameter a release has just been called on.
+//
+// Built directly rather than through a source program, like the reclaim,
+// reload, remap, release, home, store and argument-preserve tests around it:
+// the state is one the allocator passes through between a release and the next
+// allocation, not one a fixture names.
+test "a release does not give back the claim a pin holds" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // The leaf-parameter arm's state: the incoming register claimed, both maps
+    // naming it, no home flag, no owner record. `gp_home_regs` is empty below
+    // x9 and `gp_reg_owner` is never written there, so neither term this
+    // function already asks can see this register.
+    const arg_reg: u5 = 0;
+    const slot: u32 = 0;
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    try temps.put(alloc, slot, arg_reg);
+    try pinned.put(alloc, slot, arg_reg);
+    compiler.eval_pinned = &pinned;
+    compiler.eval_temps = &temps;
+    compiler.claimReg(arg_reg);
+    try std.testing.expect(!compiler.gp_home_regs[arg_reg]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.gp_reg_owner[arg_reg]);
+
+    // `.br` reads the condition out of the parameter and releases what it read.
+    const before = compiler.code.items.len;
+    compiler.releaseReg(try compiler.evalDnirValue(&temps, .{ .local = slot }));
+    try std.testing.expectEqual(before, compiler.code.items.len);
+    try std.testing.expect(compiler.used_regs[arg_reg]);
+
+    // THE ALLOCATOR IS THE OBSERVER. Fill x9..x28 so the second free scan
+    // reaches the ABI file, then ask for a register: it must not be the one the
+    // pin names, and the pin and the name must still agree with the read.
+    var busy: u5 = 9;
+    while (busy < 29) : (busy += 1) {
+        if (busy == Arm64Compiler.platform_reserved_reg) continue;
+        compiler.claimReg(busy);
+    }
+    const scratch = try compiler.allocReg();
+    try std.testing.expect(scratch != arg_reg);
+    try std.testing.expectEqual(@as(?u5, arg_reg), pinned.get(slot));
+    try std.testing.expectEqual(@as(?u5, arg_reg), temps.get(slot));
+    try std.testing.expectEqual(
+        arg_reg,
+        try compiler.evalDnirValue(&temps, .{ .local = slot }),
+    );
+
+    // THE TERM IS THE MAP, NOT THE BAND. An ordinary scratch register in the
+    // same file, named by nothing, is still released — releasing it is what
+    // keeps the pool from draining, and a term spelled `reg < 9` would hold it.
+    const plain: u5 = 6;
+    compiler.claimReg(plain);
+    compiler.releaseReg(plain);
+    try std.testing.expect(!compiler.used_regs[plain]);
+
+    // AND THE TERM IS READ, NOT ASSUMED. With no pin map there is no pin —
+    // `evalPinNames` is false outside a function body — so the same register
+    // releases, which is what every direct-construction caller sees.
+    compiler.claimReg(arg_reg);
+    compiler.eval_pinned = null;
+    compiler.releaseReg(arg_reg);
+    try std.testing.expect(!compiler.used_regs[arg_reg]);
+
+    // A PINNED REGISTER'S SPILL ENTRY IS ITS VALUE'S LAST LOCATION. The return
+    // stands above the removal, so the entry `ensureRegLiveRemap` reloads from
+    // survives a release and its slot is not handed to the next spill.
+    compiler.eval_pinned = &pinned;
+    compiler.stack_frame_bytes = 64;
+    const off: u16 = 8;
+    try compiler.spilled_regs.put(alloc, arg_reg, off);
+    compiler.used_regs[arg_reg] = false;
+    compiler.releaseReg(arg_reg);
+    try std.testing.expect(compiler.spilled_regs.contains(arg_reg));
+    try std.testing.expectEqual(@as(usize, 0), compiler.free_spill_slots.items.len);
 }
