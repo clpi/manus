@@ -100,6 +100,6 @@ done
 grep -q '^grammar projection entry: PASS' -- "$work/check.out" ||
   refuse "$emit --check exited 0 without the entry-selection verdict — the owner root was never exercised"
 
-printf 'grammar-projection: PASS — control refused a malformed producer; %s and %s regenerate byte-identically from %s\n' \
+printf 'grammar-projection: PASS — control refused a wrong dense-table producer; %s and %s regenerate byte-identically from %s\n' \
   "$zigout" "$idout" "$owner"
 exit 0
