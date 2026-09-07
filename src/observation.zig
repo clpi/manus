@@ -1530,6 +1530,10 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
                 // nothing to recognize and nothing to prove pure.
                 markEffectUnknown(ctx);
                 markBoundaryUnknown(ctx);
+                if (c.func.* == .field and isClockName(c.func.field.field)) {
+                    ctx.prog.world = ctx.prog.world.with(.clock_read);
+                    markEffect(ctx);
+                }
                 try walkExpr(ctx, c.func, .read);
             }
             for (c.args) |a| try walkExpr(ctx, a, arg_pos);
@@ -1538,6 +1542,7 @@ fn walkExpr(ctx: *WalkCtx, e: *const ast.Expr, pos: Position) anyerror!void {
             var arg_pos = pos;
             if (m.obj.* == .name and isEffectName(m.obj.name.ident)) {
                 markEffect(ctx);
+                if (isClockName(m.method)) ctx.prog.world = ctx.prog.world.with(.clock_read);
                 arg_pos = .effect_arg;
                 // `io:write(...)`, `stdout:write(...)` — E2/E3. The receiver is
                 // the world, not a place.
@@ -2453,6 +2458,60 @@ test "observation: a clock is a clock in either face, so the SCHEDULE freedom sh
     try testing.expectEqual(Tri.yes, r.get(.instruction_schedule).observed);
     try testing.expectEqual(Reason.duration_observed, r.get(.instruction_schedule).reason);
     try testing.expectEqual(Permit.blocked_observed, permits(&r, .schedule).permit);
+}
+
+test "observation: DIAGNOSTIC — a clock through an effect-named receiver shuts the SCHEDULE freedom" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    t = io:time()
+        \\    s(1) + t & 255
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    try testing.expect(prog.world.has(.clock_read));
+    const r = prog.report("s", no_obligations).?;
+    try testing.expectEqual(Tri.yes, r.get(.instruction_schedule).observed);
+    try testing.expectEqual(Permit.blocked_observed, permits(&r, .schedule).permit);
+}
+
+test "observation: DIAGNOSTIC — a clock through a field callee shuts the SCHEDULE freedom" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    t = io.clock()
+        \\    s(1) + t & 255
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    try testing.expect(prog.world.has(.clock_read));
+    const r = prog.report("s", no_obligations).?;
+    try testing.expectEqual(Tri.yes, r.get(.instruction_schedule).observed);
+    try testing.expectEqual(Permit.blocked_observed, permits(&r, .schedule).permit);
+}
+
+test "observation: CONTROL — an effect-named receiver without a clock method leaves the SCHEDULE freedom open" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var prog = try programOf(&arena,
+        \\main: i64 = ()
+        \\    s = (1, 2, 3)
+        \\    x = io:write(1)
+        \\    s(1) & 255
+        \\
+    , ordinary_executable);
+    defer prog.deinit();
+
+    try testing.expect(!prog.world.has(.clock_read));
+    const r = prog.report("s", no_obligations).?;
+    try testing.expectEqual(Tri.no, r.get(.instruction_schedule).observed);
+    try testing.expect(permits(&r, .schedule).ok());
 }
 
 test "observation: §19 control — removing the ALIAS proof closes zero-copy and layout" {
