@@ -595,6 +595,14 @@ pub const Parser = struct {
         return (try self.currentParserFace()) == 11;
     }
 
+    /// `eat(.dots)` with the settled face in place of the rebuilt identity:
+    /// the same recognition-then-`adv()` pair, in the same order.
+    fn eatParserVararg(self: *Parser) ParseError!bool {
+        if (!try self.currentParserVararg()) return false;
+        _ = try self.adv();
+        return true;
+    }
+
     fn currentParserFunction(self: *Parser) ParseError!bool {
         return (try self.currentParserFace()) == 12;
     }
@@ -3593,7 +3601,7 @@ pub const Parser = struct {
         var vararg = false;
         var vararg_name: ?[]const u8 = null;
         if (!(try self.check(.rparen))) {
-            if (try self.eat(.dots) != null) {
+            if (try self.eatParserVararg()) {
                 vararg = true;
                 if (try self.check(.name)) {
                     vararg_name = (try self.adv()).text;
@@ -3601,7 +3609,7 @@ pub const Parser = struct {
             } else {
                 try params.append(self.alloc, try self.parse_param());
                 while (try self.eat(.comma) != null) {
-                    if (try self.eat(.dots) != null) {
+                    if (try self.eatParserVararg()) {
                         vararg = true;
                         if (try self.check(.name)) {
                             vararg_name = (try self.adv()).text;
@@ -3767,7 +3775,7 @@ pub const Parser = struct {
         var vararg = false;
         var vararg_name: ?[]const u8 = null;
         if (!(try self.check(.rparen))) {
-            if (try self.eat(.dots) != null) {
+            if (try self.eatParserVararg()) {
                 vararg = true;
                 if (try self.check(.name)) {
                     vararg_name = (try self.adv()).text;
@@ -3775,7 +3783,7 @@ pub const Parser = struct {
             } else {
                 try params.append(self.alloc, try self.parse_param());
                 while (try self.eat(.comma) != null) {
-                    if (try self.eat(.dots) != null) {
+                    if (try self.eatParserVararg()) {
                         vararg = true;
                         if (try self.check(.name)) {
                             vararg_name = (try self.adv()).text;
@@ -12159,6 +12167,46 @@ test "parse: primitive, literal, and quoted identities execute through whole-pac
         try testing.expectEqual(row.literal_kind, ((event >> 18) & 1) != 0);
         try testing.expectEqual(row.quoted, ((event >> 19) & 1) != 0);
     }
+}
+
+// Face 11 is minted in the producer's mutually exclusive identity chain and
+// neither override that follows can reach it: face 23 is guarded by `[`, an
+// integer, a quoted literal or a name, and face 26 by `:`. So face 11 alone IS
+// the `...` identity, and the reader is EXECUTED here rather than restated —
+// both lanes come from `idol_parser_event`. Trivia is not a cursor coordinate,
+// so the reader refuses there rather than answering.
+test "parse: the vararg face admits exactly the `...` identity" {
+    var seen = false;
+    var rejected = false;
+    var refused = false;
+    for (grammar_roles.rows, 0..) |row, index| {
+        const kind = row.kind orelse continue;
+        var facts = [3]i64{ 0, @intCast(index), 0 };
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        var tokens = [_]Token{.{
+            .kind = kind,
+            .loc = .{ .file = "vararg.id", .line = 1, .col = 1 },
+            .text = row.spell,
+        }};
+        var lexer = Lexer.init("", "vararg.id");
+        var consumer = Parser.init(&lexer, testing.allocator);
+        consumer.pack_tokens = &tokens;
+        consumer.parser_events = &events;
+        if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {
+            try testing.expectError(error.InvalidRecordCount, consumer.currentParserVararg());
+            refused = true;
+            continue;
+        }
+        const expected = kind == .dots;
+        try testing.expectEqual(expected, try consumer.currentParserVararg());
+        if (expected) seen = true else rejected = true;
+    }
+    // Without these the sweep would pass on a face that admits nothing, on one
+    // that admits everything, or on a pack whose trivia was never reached.
+    try testing.expect(seen);
+    try testing.expect(rejected);
+    try testing.expect(refused);
 }
 
 test "parse: the group-opening face admits exactly the `(` identity" {

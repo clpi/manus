@@ -4704,6 +4704,162 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     rm -rf -- "$colon_probe"
 fi
 
+# ── §10 VARARG IDENTITY IS CONSUMED AS A CLASS ──────────────────────────────
+#
+# `lib/compiler/parser.id` settles `...` identity at ONE face: the arm
+# `elseif kind == token.kinddots / delimiter = 11` inside the mutually
+# exclusive identity chain. Neither override that follows it can reach 11 —
+# face 23 is guarded by `[`, an integer, a quoted literal or a name, and face
+# 26 by `:` — so face 11 alone IS the identity, and nothing has to be unioned
+# into the reader the way `:` needed 16 together with 26.
+#
+# That face governed exactly ONE consumer, the primary-expression vararg arm,
+# while four more across two functions still answered "is the token under the
+# cursor a `...`" for themselves, from the generated host TokenKind, at a
+# coordinate the producer had already settled and `pk()` had already selected.
+# The class is every host read of `...` identity AT A CURSOR COORDINATE. In
+# this file it takes exactly one spelling — `eat(.dots)`, recognition fused to
+# a consume — and its count falls 4 -> 0. There is no `expect(.dots)`: the
+# vararg marker is never demanded, so this class leaves no demand standing.
+dots_helper=$(grep -Eo 'self\.(check|eat)\(\.dots\)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$dots_helper" -ne 0 ]; then
+    bad "the parser still recognizes '...' through a kind-parameterized helper: count=$dots_helper"
+fi
+dots_compare=$(grep -Eo '(==|!=) \.dots\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$dots_compare" -ne 1 ]; then
+    bad "the parser rebuilds '...' identity at a cursor coordinate: count=$dots_compare"
+fi
+
+# The one surviving comparison is named, so the ceiling above can neither be
+# met by deleting it nor drift into a new cursor read: it is the equivalence
+# sweep, which is REQUIRED to compare the face against the identity.
+has "$PARSER" 'return (try self.currentParserFace()) == 11;' \
+    'the vararg consumer no longer reads the settled face'
+has "$PARSER" 'fn eatParserVararg(self: *Parser) ParseError!bool {' \
+    'Parser lost the consuming vararg face reader'
+has "$PARSER" '        if (!try self.currentParserVararg()) return false;' \
+    'the consuming vararg reader does not recognize through the settled face'
+
+dots_sweep=$(sed -n '/the vararg face admits exactly the `...` identity" {/,/^}/p' "$PARSER")
+for predicate in 'kind == .dots' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try consumer.currentParserVararg()' 'if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {' 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserVararg());' 'for (grammar_roles.rows, 0..) |row, index| {' 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$dots_sweep" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "vararg equivalence oracle lost predicate: $predicate"
+    fi
+done
+
+# Each transferred region must select a nonempty region of the parser AND carry
+# the settled face at its exact count. Both ranges are the ones §9 already
+# selects, so a rename that empties one is refused there as well as here.
+check_dots_region() {
+    region_pattern=$1
+    region_expected=$2
+    region_label=$3
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "the $region_label region selector selected nothing: lines=$region_lines"
+        return
+    fi
+    region_faces=$(sed -n "${region_pattern}p" "$PARSER" | \
+        grep -Eo 'self\.(currentParserVararg|eatParserVararg)\(\)' | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_faces" -ne "$region_expected" ]; then
+        bad "$region_label does not consume the settled vararg face: count=$region_faces want=$region_expected"
+    fi
+}
+
+check_dots_region '/fn parse_func_body/,/fn parse_func_signature/' 2 'the callable body parameter pack'
+check_dots_region '/fn parse_func_signature/,/fn parse_param/' 2 'the signature parameter pack'
+
+# Anti-green control. Recognizing `...` is only half of each transferred site:
+# the vararg NAME that may follow it is a separate identity and stays a
+# separate read. Deleting it would widen admission rather than move it, so the
+# composed pair is required at every one of the four sites.
+dots_sites=$(grep -cF 'if (try self.eatParserVararg()) {' "$PARSER")
+examined=$((examined + 1))
+if [ "$dots_sites" -ne 4 ]; then
+    bad "the vararg class is not at its transferred count: count=$dots_sites want=4"
+fi
+dots_named=$(grep -A2 -F 'if (try self.eatParserVararg()) {' "$PARSER" | grep -cF 'if (try self.check(.name)) {')
+examined=$((examined + 1))
+if [ "$dots_named" -ne 4 ]; then
+    bad "a transferred vararg site lost the following name read: count=$dots_named want=4"
+fi
+
+# Positive controls. Every detector above counts text that is absent from the
+# repaired tree, so each is shown a tree where it is present, and shown that it
+# does not fire on the canonical spelling.
+dots_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate vararg scratch' >&2; exit 2; }
+cat >"$dots_probe/old.zig" <<'PROBE'
+if (try self.eat(.dots) != null) {
+if ((try self.pk()).kind == .dots) {
+} else if (try self.check(.dots)) {
+PROBE
+cat >"$dots_probe/new.zig" <<'PROBE'
+if (try self.eatParserVararg()) {
+if (try self.currentParserVararg()) {
+PROBE
+dots_old_compare=$(grep -Eo '(==|!=) \.dots\b' "$dots_probe/old.zig" | wc -l | tr -d ' ')
+dots_old_helper=$(grep -Eo 'self\.(check|eat)\(\.dots\)' "$dots_probe/old.zig" | wc -l | tr -d ' ')
+dots_new_compare=$(grep -Eo '(==|!=) \.dots\b' "$dots_probe/new.zig" | wc -l | tr -d ' ')
+dots_new_helper=$(grep -Eo 'self\.(check|eat)\(\.dots\)' "$dots_probe/new.zig" | wc -l | tr -d ' ')
+dots_new_faces=$(grep -Eo 'self\.(currentParserVararg|eatParserVararg)\(\)' "$dots_probe/new.zig" | wc -l | tr -d ' ')
+rm -rf -- "$dots_probe"
+examined=$((examined + 1))
+if [ "$dots_old_compare" -ne 1 ] || [ "$dots_old_helper" -ne 2 ]; then
+    bad "the vararg detector does not see the retired spellings: compare=$dots_old_compare helper=$dots_old_helper"
+fi
+examined=$((examined + 1))
+if [ "$dots_new_compare" -ne 0 ] || [ "$dots_new_helper" -ne 0 ] || [ "$dots_new_faces" -ne 2 ]; then
+    bad "the vararg detector misreads the canonical spelling: compare=$dots_new_compare helper=$dots_new_helper faces=$dots_new_faces"
+fi
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    dots_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate vararg perturbation scratch' >&2; exit 2; }
+
+    # FALSE ACCEPT. Stop reading the settled face and answer for everything.
+    # Every transferred site still compiles and the ceiling still reads 0.
+    sed '0,/return (try self.currentParserFace()) == 11;/s//return true;/' "$PARSER" >"$dots_probe/accept.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$dots_probe/accept.result" 2>&1
+    dots_status=$?
+    examined=$((examined + 1))
+    if [ "$dots_status" -ne 1 ] || [ ! -s "$dots_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the vararg consumer no longer reads the settled face' "$dots_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$dots_probe/accept.result"; then
+        bad "vararg false-accept control did not fail closed: status=$dots_status"
+    fi
+
+    # WRONG ERROR. Break the sweep's non-vacuity and require the gate to name
+    # THAT and not the reader above.
+    sed '/the vararg face admits exactly/,/^}/ s/try testing\.expect(seen);/try testing.expect(!seen);/' "$PARSER" >"$dots_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$dots_probe/wrong.result" 2>&1
+    dots_status=$?
+    examined=$((examined + 1))
+    if [ "$dots_status" -ne 1 ] || [ ! -s "$dots_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL vararg equivalence oracle lost predicate: try testing.expect(seen);' "$dots_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the vararg consumer no longer reads the settled face' "$dots_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$dots_probe/wrong.result"; then
+        bad "vararg wrong-error control did not fail closed: status=$dots_status"
+    fi
+
+    # LEFTOVER. Restore one retired spelling at a transferred site. The reader
+    # is intact and the sweep still passes, so only the ceiling can catch it.
+    sed '0,/if (try self.eatParserVararg()) {/s//if (try self.eat(.dots) != null) {/' "$PARSER" >"$dots_probe/left.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/left.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$dots_probe/left.result" 2>&1
+    dots_status=$?
+    examined=$((examined + 1))
+    if [ "$dots_status" -ne 1 ] || [ ! -s "$dots_probe/left.result" ] ||
+        ! grep -Fq "gap-145 consumer gate: FAIL the parser still recognizes '...' through a kind-parameterized helper: count=1" "$dots_probe/left.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$dots_probe/left.result"; then
+        bad "vararg leftover control did not fail closed: status=$dots_status"
+    fi
+
+    rm -rf -- "$dots_probe"
+fi
+
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then
     examined=$((examined + 1))
     if ! sh "$ROOT/tools/parity/grammar" >/dev/null 2>&1; then
