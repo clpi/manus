@@ -4380,12 +4380,84 @@ has "$PARSER" 'return (try self.currentParserFace()) == 32;' \
 has "$PARSER" 'while (try self.currentParserCatch()) {' \
     'catch-clause parsing does not consume the producer face'
 catch_sweep=$(sed -n '/catch identity executes through whole-pack event/,/^}/p' "$PARSER")
-for predicate in 'kind == .kw_catch' 'kind.? == .kw_end' 'try consumer.currentParserCatch()' 'try testing.expect(seen);' 'try testing.expect(rejected);'; do
+# `parser_events` is TWO lanes and every primary face lives in the SECOND one,
+# so an oracle that hands the reader a fabricated second word is not measuring
+# the producer at all: it reports the same answer whatever `event` decided.
+# `parserEventsForTest` is the only way a test obtains both lanes, the sweep
+# must run every generated row rather than a hand-picked pair, and it must
+# record the reader's REFUSAL at a trivia coordinate instead of skipping it.
+for predicate in 'kind == .kw_catch' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try consumer.currentParserCatch()' 'if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {' 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserCatch());' 'for (grammar_roles.rows, 0..) |row, index| {' 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
     examined=$((examined + 1))
     if [ "$(printf '%s\n' "$catch_sweep" | grep -cF "$predicate")" -ne 1 ]; then
         bad "catch equivalence oracle lost predicate: $predicate"
     fi
 done
+
+# The CLASS, not the specimen. A specimen pin would have gone on passing while
+# the sweep it names failed in every `zig build unit-test` run, which is exactly
+# what happened: the gate ratcheted this oracle's text at 5 predicates while the
+# oracle itself reported `expected true, found false`. Refuse the shape that
+# made that possible ANYWHERE in the file -- a test that installs
+# `parser_events` from a literal pair whose decision word is `0` and then calls
+# a `currentParser*` reader. The lane-one readers (`infix_prec` and the event
+# bit tests) are NOT in the class: they never look at the decision word, so the
+# detector requires BOTH the fabricated pair and a face reader in the same test.
+fabricated_lane() {
+    awk '
+        /^test "/ { block = ""; inside = 1 }
+        inside { block = block $0 "\n" }
+        /^}$/ {
+            if (inside) {
+                if (index(block, "consumer.parser_events = &events;") > 0 &&
+                    index(block, "[_]i64{ event, 0 }") > 0 &&
+                    index(block, "currentParser") > 0) hits += 1
+                inside = 0
+            }
+        }
+        END { print hits + 0 }
+    ' "$1"
+}
+catch_fabricated=$(fabricated_lane "$PARSER")
+examined=$((examined + 1))
+if [ "$catch_fabricated" -ne 0 ]; then
+    bad "a parser face oracle reads a decision lane the producer never wrote: count=$catch_fabricated"
+fi
+
+# Positive control for the class detector: it is shown the retired shape and
+# the canonical shape, and must separate them. Without this the count above is
+# a zero with no positive control.
+lane_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate decision-lane scratch' >&2; exit 2; }
+cat >"$lane_probe/old.zig" <<'PROBE'
+test "parse: retired shape" {
+        var events = [_]i64{ event, 0 };
+        consumer.parser_events = &events;
+        try testing.expectEqual(expected, try consumer.currentParserCatch());
+}
+test "parse: lane one only" {
+        var events = [_]i64{ event, 0 };
+        consumer.parser_events = &events;
+        const refinement = try consumer.infix_prec();
+}
+PROBE
+cat >"$lane_probe/new.zig" <<'PROBE'
+test "parse: canonical shape" {
+        var events = [2]i64{ 0, 0 };
+        try parserEventsForTest(facts[0..], events[0..], true);
+        consumer.parser_events = &events;
+        try testing.expectEqual(expected, try consumer.currentParserCatch());
+}
+PROBE
+lane_old=$(fabricated_lane "$lane_probe/old.zig")
+lane_new=$(fabricated_lane "$lane_probe/new.zig")
+rm -rf -- "$lane_probe"
+examined=$((examined + 1))
+if [ "$lane_old" -ne 1 ]; then
+    bad "the fabricated decision-lane detector does not see the retired shape: count=$lane_old"
+fi
+examined=$((examined + 1))
+if [ "$lane_new" -ne 0 ]; then
+    bad "the fabricated decision-lane detector misreads the canonical shape: count=$lane_new"
+fi
 
 if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     catch_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate catch perturbation scratch' >&2; exit 2; }
@@ -4408,6 +4480,23 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
         grep -Fq 'gap-145 consumer gate: FAIL Parser catch consumer selected the wrong producer face' "$catch_probe/wrong.result" ||
         grep -Fq 'gap-145 consumer gate: PASS' "$catch_probe/wrong.result"; then
         bad "catch wrong-error control did not fail closed: status=$catch_status"
+    fi
+
+    # The empty-evidence control. This plant keeps every predicate the gate
+    # pins -- the identity comparison, the reader call, all three
+    # non-vacuity expectations -- and changes ONLY where the decision word
+    # comes from, back to the fabricated pair the oracle shipped with. The
+    # predicate ratchet cannot see it; the class detector must.
+    sed '/catch identity executes through whole-pack event/,/^}/ s/var events = \[2\]i64{ 0, 0 };/var events = [_]i64{ event, 0 };/' \
+        "$PARSER" >"$catch_probe/lane.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/lane.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/lane.result" 2>&1
+    catch_status=$?
+    examined=$((examined + 1))
+    if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/lane.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL a parser face oracle reads a decision lane the producer never wrote' "$catch_probe/lane.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL catch equivalence oracle lost predicate' "$catch_probe/lane.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$catch_probe/lane.result"; then
+        bad "catch empty-evidence control did not fail closed: status=$catch_status"
     fi
     rm -rf -- "$catch_probe"
 fi
