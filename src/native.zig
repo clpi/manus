@@ -1281,44 +1281,7 @@ const Arm64Compiler = struct {
     /// Stack slots for sealed record fields (f64 or i64): "c.pos" -> slot meta.
     fp_stack_slots: std.StringHashMapUnmanaged(StackSlot) = .empty,
     stack_frame_bytes: u16 = 0,
-    /// Bytes `sp` currently sits BELOW the frame `stack_frame_bytes` describes.
-    ///
-    /// A SPILL SLOT IS A FRAME COORDINATE AND `sp` IS NOT ALWAYS AT THE FRAME
-    /// (GAP-148).
-    ///
-    /// `spillReg`, `ensureRegLive` and `ensureRegLiveRemap` all reach a slot as
-    /// `stack_frame_bytes - off - 8`, which is the byte's distance from the top
-    /// of the frame — correct as a `[sp,#imm]` displacement exactly while `sp`
-    /// is at the frame base. Five windows move it and leave `stack_frame_bytes`
-    /// alone, because the move is undone before the frame ends: the caller-save
-    /// area, the variadic tail area, the pack-result park, `snprintf`'s x0
-    /// save, and `printf`'s stack argument. Permanent growth is the other kind
-    /// and already says so — the prologue, `assignRecordFromAbiRegs` and
-    /// `spillReg`'s own last-resort branch each add to `stack_frame_bytes` in
-    /// the same breath as the `sub`.
-    ///
-    /// Inside a window the two coordinates differ by exactly the displacement,
-    /// and nothing recorded it, so each window's safety was an argument in
-    /// prose — "the window between `sub sp` and `add sp` emits no reload" — that
-    /// no consumer could check and that two windows do not satisfy.
-    /// `emitMovReg(value_home, reg)` in the `print` lowering runs INSIDE the
-    /// caller-save window and is `ensureRegLive`; `snprintf`'s tail runs
-    /// `allocReg` inside its own 16-byte window and that is `spillReg` through
-    /// the cascade. Both address a slot `sp_temp_bytes` bytes above the one
-    /// they mean: the store lands over whatever the frame holds there and the
-    /// reload answers with it, in both directions, with no diagnostic — the
-    /// frame face of this gap's two-owner shape, reached through the stack
-    /// pointer rather than through the register file.
-    ///
-    /// Recording the displacement makes the correction the one thing the
-    /// offset computation reads, so a window is safe by construction instead of
-    /// by argument. `frameSlotOff` is that single reader and refuses above the
-    /// `[sp,#imm]` encoding rather than emitting a truncated displacement.
-    ///
-    /// Not the closure — closure is authoritative `register`/`frame` assignment
-    /// before emission, per this gap's record, under which a spilled value's
-    /// frame location is carried by the assignment rather than by two
-    /// coordinates a window has to keep in step by hand.
+    /// Bytes `sp` currently sits below the frame base `stack_frame_bytes` measures from.
     sp_temp_bytes: u16 = 0,
     /// x19–x28 belong to the caller. Saved under the locals/spill frame so
     /// `[sp,#off]` homes stay zero-based. Without this, `strip`'s `i += 1`
@@ -3076,12 +3039,12 @@ const Arm64Compiler = struct {
         const reg = try self.allocReg();
         // GP spill slots live in the prologue's bottom `sub sp` region; offsets
         // are assigned from sp upward (0, 8, 16, …), not from the frame top.
-        try self.emitLdrSp(reg, off);
+        try self.emitLdrFrame(reg, off);
         return reg;
     }
 
     fn storeGpStackLocal(self: *Arm64Compiler, off: u16, src: u5) Error!void {
-        try self.emitStrSp(src, off);
+        try self.emitStrFrame(src, off);
     }
 
     /// Free every GP temp register whose owner has no read left after `idx`.
@@ -3396,8 +3359,7 @@ const Arm64Compiler = struct {
                 }
             }
             if (record_frame > 0) {
-                try self.emitSubSp(record_frame);
-                self.stack_frame_bytes += record_frame;
+                try self.frameGrow(record_frame);
             }
         }
 
@@ -3478,8 +3440,7 @@ const Arm64Compiler = struct {
                 // covered, and nothing covered BOTH IN ONE RELATION. Below 33
                 // elements the table is a select chain — registers, not frame —
                 // so the corpus's tables never met the spill area.
-                try self.emitSubSp(slots_frame);
-                self.stack_frame_bytes += slots_frame;
+                try self.frameGrow(slots_frame);
                 // Every region reserved EARLIER is now that much further from
                 // `sp`. The record region is the only one, and it is rebased
                 // here for the same reason the table region is rebased below.
@@ -3567,8 +3528,7 @@ const Arm64Compiler = struct {
                 if (@as(u32, self.stack_frame_bytes) + frame > self.spill_frame_budget) {
                     return error.RegisterExhausted;
                 }
-                try self.emitSubSp(frame);
-                self.stack_frame_bytes += frame;
+                try self.frameGrow(frame);
                 // REBASE the memory-backed table regions.
                 //
                 // `slot_bases` was measured against the `sp` that existed before
@@ -3648,7 +3608,7 @@ const Arm64Compiler = struct {
                             try self.allocReg()
                         else
                             try self.allocHomeReg();
-                        try self.emitLdrSp(home, @intCast(off));
+                        try self.emitLdrFrame(home, @intCast(off));
                         _ = try self.emitNarrowFit(home, home, param_fit);
                         if (self.gpSlotUsesStack(slot)) {
                             const soff = try self.reserveGpStackLocal(slot);
@@ -4646,7 +4606,7 @@ const Arm64Compiler = struct {
                     // save area. `add x8, sp, #off` computed inside that window
                     // would name a slot in the save area instead of the buffer.
                     const indirect = try self.indirectResultBuffer(ins);
-                    if (indirect) |off| try self.emitAddSpImm(8, off);
+                    if (indirect) |off| try self.emitAddFrameImm(8, off);
                     if ((ins.pack_results.len > 0 and ins.op != .call_direct) or
                         ins.pack_results.len > dnir_lower.max_reg_record_fields or
                         (ins.pack_results.len > 0 and
@@ -5142,7 +5102,7 @@ const Arm64Compiler = struct {
                 if (self.fp_stack_slots.get(key)) |slot| {
                     if (slot.float) {
                         const d = try self.allocFpReg();
-                        try self.emitLdrSpFp(d, slot.off);
+                        try self.emitLdrFrameFp(d, slot.off);
                         if (ins.result) |t| try temps.put(self.alloc, t, d);
                         try self.markFpTemp(ins.result);
                     } else {
@@ -5396,7 +5356,7 @@ const Arm64Compiler = struct {
                 }
                 const off = self.slot_bases.get(t) orelse return self.refuse(@src());
                 const dst = try self.allocReg();
-                try self.emitAddSpImm(dst, off);
+                try self.emitAddFrameImm(dst, off);
                 try temps.put(self.alloc, t, dst);
             },
             .load_index, .store_index => |op| switch (ins.ty) {
@@ -6981,8 +6941,7 @@ const Arm64Compiler = struct {
     /// assignment before emission, per that gap's record.
     fn ensureRegLive(self: *Arm64Compiler, reg: u5) Error!void {
         if (self.spilled_regs.get(reg)) |off| {
-            const reload_off = try self.frameSlotOff(off);
-            try self.emitLdrSp(reg, reload_off);
+            try self.emitLdrFrame(reg, try self.frameSlotOff(off));
             _ = self.spilled_regs.remove(reg);
             try self.free_spill_slots.append(self.alloc, off);
             self.claimReg(reg);
@@ -7182,7 +7141,7 @@ const Arm64Compiler = struct {
             self.claimReg(reg);
             break :blk reg;
         };
-        try self.emitLdrSp(fresh, reload_off);
+        try self.emitLdrFrame(fresh, reload_off);
         // THE SLOT IS RELEASED BY WHOEVER REMOVES THE ENTRY, AND ONLY THEN.
         //
         // The removal is idempotent; a release is not. An unconditional append
@@ -7339,13 +7298,11 @@ const Arm64Compiler = struct {
                 self.fp_stack_slots.count() > 0) return error.RegisterExhausted;
             if (self.stack_frame_bytes + 16 > self.spill_frame_budget) return error.RegisterExhausted;
             const slot = self.stack_frame_bytes;
-            self.stack_frame_bytes += 16;
-            try self.emitSubSp(16);
+            try self.frameGrow(16);
             break :blk slot;
         };
         try self.ensureRegLive(victim);
-        const store_off = try self.frameSlotOff(off);
-        try self.emitStrSp(victim, store_off);
+        try self.emitStrFrame(victim, try self.frameSlotOff(off));
         try self.spilled_regs.put(self.alloc, victim, off);
         self.used_regs[victim] = false;
     }
@@ -7790,6 +7747,7 @@ const Arm64Compiler = struct {
     }
 
     fn restoreStackFrame(self: *Arm64Compiler) Error!void {
+        if (self.sp_temp_bytes != 0) return self.refuse(@src());
         if (self.stack_frame_bytes > 0) {
             try self.emitAddSp(self.stack_frame_bytes);
         }
@@ -7926,7 +7884,7 @@ const Arm64Compiler = struct {
     fn loadStackField(self: *Arm64Compiler, key: []const u8) Error!u5 {
         const slot = self.fp_stack_slots.get(key) orelse return self.undefinedKey(@src(), "fp stack slot", key);
         const reg = try self.allocReg();
-        try self.emitLdrSp(reg, slot.off);
+        try self.emitLdrFrame(reg, slot.off);
         return reg;
     }
 
@@ -8208,15 +8166,14 @@ const Arm64Compiler = struct {
         } else {
             const raw_frame: u16 = @intCast(n * 8);
             const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
-            try self.emitSubSp(frame);
-            self.stack_frame_bytes += frame;
+            try self.frameGrow(frame);
         }
 
         var i: usize = 0;
         while (i < n) : (i += 1) {
             const off: u16 = base_off + @as(u16, @intCast(i * 8));
             const abi_reg: u5 = @intCast(i);
-            try self.emitStrSp(abi_reg, off);
+            try self.emitStrFrame(abi_reg, off);
             if (already_reserved) continue;
             const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, desc.field_names[i] });
             try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = desc.field_kinds[i] == .f64 });
@@ -8228,14 +8185,13 @@ const Arm64Compiler = struct {
         if (n == 0 or n > 8) return self.refuse(@src());
         const raw_frame: u16 = @intCast(n * 8);
         const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
-        try self.emitSubSp(frame);
-        self.stack_frame_bytes += frame;
+        try self.frameGrow(frame);
         var i: usize = 0;
         while (i < n) : (i += 1) {
             const off: u16 = @intCast(i * 8);
             const abi_d: u5 = @intCast(i);
             self.used_fp_regs[abi_d] = true;
-            try self.emitStrSpFp(abi_d, off);
+            try self.emitStrFrameFp(abi_d, off);
             const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, desc.field_names[i] });
             try self.fp_locals.put(self.alloc, key, abi_d);
             try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = true });
@@ -9144,44 +9100,68 @@ const Arm64Compiler = struct {
         }
     }
 
-    /// Move `sp` for a window that ENDS before the frame does, and say so.
-    ///
-    /// The pair below is what separates a temporary displacement from permanent
-    /// frame growth. Growth adds to `stack_frame_bytes` and every frame
-    /// coordinate keeps its meaning; a window does not, so the displacement is
-    /// recorded here and `frameSlotOff` is the one place that spends it.
+    /// `sp` moves for a window that closes before the frame does; `frameGrow`
+    /// is the other kind and moves the frame base with it.
     fn emitSubSpTemp(self: *Arm64Compiler, bytes: u16) Error!void {
         try self.emitSubSp(bytes);
         self.sp_temp_bytes += bytes;
     }
 
     fn emitAddSpTemp(self: *Arm64Compiler, bytes: u16) Error!void {
+        if (bytes > self.sp_temp_bytes) return self.refuse(@src());
         try self.emitAddSp(bytes);
         self.sp_temp_bytes -= bytes;
     }
 
-    /// The `[sp,#imm]` displacement of the spill slot `off` names, from wherever
-    /// `sp` is standing now.
-    ///
-    /// `off` counts down from the top of the frame (`gateSpillBand` states that
-    /// coordinate and why), so the byte is `stack_frame_bytes - off - 8` above
-    /// the frame base and `sp_temp_bytes` more than that above `sp` inside a
-    /// window. Outside one the term is zero and this is the expression every
-    /// caller already wrote.
-    ///
-    /// REFUSES ABOVE THE ENCODING rather than emitting a truncated
-    /// displacement. `emitStrSp`/`emitLdrSp` place `offset / 8` in a 12-bit
-    /// unsigned field, so 32760 is the last addressable slot and anything above
-    /// it silently wraps into a different one — the same wrong answer this
-    /// correction exists to remove. `RegisterExhausted` is the refusal the
-    /// spill area already answers pressure with, and it is a bail while the
-    /// alternative is a wrong answer.
+    fn frameGrow(self: *Arm64Compiler, bytes: u16) Error!void {
+        if (self.sp_temp_bytes != 0) return self.refuse(@src());
+        try self.emitSubSp(bytes);
+        self.stack_frame_bytes += bytes;
+    }
+
+    /// The frame-base offset of the spill slot `off` names; `off` counts down
+    /// from the top of the frame, per `gateSpillBand`.
     fn frameSlotOff(self: *const Arm64Compiler, off: u16) Error!u16 {
-        const base: u32 = self.stack_frame_bytes;
-        if (@as(u32, off) + 8 > base) return error.RegisterExhausted;
-        const disp: u32 = base - off - 8 + self.sp_temp_bytes;
-        if (disp > 32760) return error.RegisterExhausted;
+        if (@as(u32, off) + 8 > @as(u32, self.stack_frame_bytes)) return error.RegisterExhausted;
+        return self.stack_frame_bytes - off - 8;
+    }
+
+    /// The sole reader of `sp_temp_bytes`: a frame-base offset as a `[sp,#imm]`
+    /// displacement from wherever `sp` is standing now.
+    fn frameDisp(self: *const Arm64Compiler, frame_off: u16) Error!u16 {
+        const disp: u32 = @as(u32, frame_off) + @as(u32, self.sp_temp_bytes);
+        if (disp > 65535) return error.RegisterExhausted;
         return @intCast(disp);
+    }
+
+    /// `emitStrSp`/`emitLdrSp` place `disp / 8` in a 12-bit unsigned field, so
+    /// 32760 is the last addressable byte and above it a displacement wraps into
+    /// a different slot; refuse instead.
+    fn frameScaledDisp(self: *const Arm64Compiler, frame_off: u16) Error!u16 {
+        const disp = try self.frameDisp(frame_off);
+        if (disp > 32760) return error.RegisterExhausted;
+        return disp;
+    }
+
+    fn emitStrFrame(self: *Arm64Compiler, reg: u5, frame_off: u16) Error!void {
+        try self.emitStrSp(reg, try self.frameScaledDisp(frame_off));
+    }
+
+    fn emitLdrFrame(self: *Arm64Compiler, reg: u5, frame_off: u16) Error!void {
+        try self.emitLdrSp(reg, try self.frameScaledDisp(frame_off));
+    }
+
+    fn emitStrFrameFp(self: *Arm64Compiler, dreg: u5, frame_off: u16) Error!void {
+        try self.emitStrSpFp(dreg, try self.frameScaledDisp(frame_off));
+    }
+
+    fn emitLdrFrameFp(self: *Arm64Compiler, dreg: u5, frame_off: u16) Error!void {
+        try self.emitLdrSpFp(dreg, try self.frameScaledDisp(frame_off));
+    }
+
+    /// `add` chains past its imm12, so this carries no scaled-encoding limit.
+    fn emitAddFrameImm(self: *Arm64Compiler, dst: u5, frame_off: u16) Error!void {
+        try self.emitAddSpImm(dst, try self.frameDisp(frame_off));
     }
 
     fn emitStrSp(self: *Arm64Compiler, reg: u5, offset: u16) Error!void {
@@ -20872,31 +20852,10 @@ test "the gate spill band stays inside the area the prologue reserved" {
     try std.testing.expectError(error.RegisterExhausted, compiler.spillReg(26));
 }
 
-// A SPILL SLOT IS A FRAME COORDINATE AND `sp` IS NOT ALWAYS AT THE FRAME
-// (GAP-148).
-//
-// `spillReg` and `ensureRegLive` reach a slot as `stack_frame_bytes - off - 8`,
-// which is the byte's distance from the top of the frame and a correct
-// `[sp,#imm]` displacement exactly while `sp` is at the frame base. Five windows
-// move it and leave `stack_frame_bytes` alone — the caller-save area, the
-// variadic tail area, the pack-result park, `snprintf`'s x0 save and `printf`'s
-// stack argument — and each one's safety was an argument in prose that no
-// consumer could check. Two windows do not satisfy it: `emitMovReg(value_home,
-// reg)` in the `print` lowering IS `ensureRegLive` and runs inside the
-// caller-save window, and `snprintf`'s tail runs `allocReg` inside its own
-// 16-byte window, which is `spillReg` through the cascade.
-//
-// The failure is that the store and the reload name DIFFERENT physical bytes
-// across a window boundary, which is what this test measures directly rather
-// than by restating either arithmetic. The store goes `sp_temp_bytes` bytes
-// below the slot the band handed out — over another spilled value here, over a
-// GP stack local for a slot nearer the bottom of the reservation — and the
-// reload after the window answers with whatever the slot still held. Two wrong
-// answers, both silent.
-//
-// Built directly rather than through a source program for the same reason as the
-// reclaim and reload tests: the state is one the call lowering passes through
-// between a `sub sp` and its `add sp`, not one a fixture names.
+fn spDisp(word: [4]u8) u16 {
+    return @intCast(((std.mem.readInt(u32, &word, .little) >> 10) & 0xfff) * 8);
+}
+
 test "a spill and its reload name one byte across a temporary sp window" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -20914,8 +20873,6 @@ test "a spill and its reload name one byte across a temporary sp window" {
     };
     defer compiler.deinit();
 
-    // Spills exist only under gate transport: `allocRegExcluding` refuses above
-    // its spill passes otherwise, so this whole area is untouched elsewhere.
     compiler.gate_transport = true;
     const gp_stack_bytes: u16 = 80;
     const spill_reserve: u16 = 256;
@@ -20924,62 +20881,85 @@ test "a spill and its reload name one byte across a temporary sp window" {
     compiler.gate_spill_base = band.base;
     compiler.gate_spill_end = band.end;
     compiler.gate_spill_cursor = band.base;
+    try compiler.gp_stack_locals.put(alloc, 3, 24);
 
-    // CO-LOCATED CONTROL, first: with `sp` at the frame the displacement is the
-    // expression every caller wrote before this correction, so no program that
-    // spills outside a window changes a byte.
-    const control_before = compiler.code.items.len;
+    // CONTROL, `sp` at the frame: the displacement is the expression every
+    // consumer wrote before the correction, so no program that stays out of a
+    // window changes a byte.
+    const control_at = compiler.code.items.len;
     try compiler.spillReg(9);
-    try std.testing.expectEqual(control_before + 4, compiler.code.items.len);
-    const control_word = std.mem.readInt(u32, compiler.code.items[control_before..][0..4], .little);
-    const control_addr: u16 = @intCast(((control_word >> 10) & 0xfff) * 8);
+    try std.testing.expectEqual(control_at + 4, compiler.code.items.len);
+    const control_addr = spDisp(compiler.code.items[control_at..][0..4].*);
     const control_off = compiler.spilled_regs.get(9).?;
     try std.testing.expectEqual(compiler.stack_frame_bytes - control_off - 8, control_addr);
 
-    // Now the window. `emitSaveCallerRegs` moves `sp` down by its save area and
-    // `emitPushVarargs` by the tail area; 32 stands for both, and neither adds
-    // to `stack_frame_bytes` because both are undone before the frame ends.
+    const local_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(24, 11);
+    const local_addr = spDisp(compiler.code.items[local_at..][0..4].*);
+    try std.testing.expectEqual(@as(u16, 24), local_addr);
+
+    // The window: `emitSaveCallerRegs`, `emitPushVarargs`, the pack park,
+    // `snprintf`'s x0 save and `printf`'s stack argument all move `sp` and leave
+    // `stack_frame_bytes` alone, because each is undone before the frame ends.
     const window: u16 = 32;
-    compiler.sp_temp_bytes = window;
-    const store_before = compiler.code.items.len;
+    try compiler.emitSubSpTemp(window);
+
+    const store_at = compiler.code.items.len;
     try compiler.spillReg(10);
-    try std.testing.expectEqual(store_before + 4, compiler.code.items.len);
-    const store_word = std.mem.readInt(u32, compiler.code.items[store_before..][0..4], .little);
+    try std.testing.expectEqual(store_at + 4, compiler.code.items.len);
+    const store_word = std.mem.readInt(u32, compiler.code.items[store_at..][0..4], .little);
     try std.testing.expectEqual(@as(u32, 10), store_word & 0x1f);
-    const store_addr: u16 = @intCast(((store_word >> 10) & 0xfff) * 8);
+    const store_addr = spDisp(compiler.code.items[store_at..][0..4].*);
     const slot_off = compiler.spilled_regs.get(10).?;
 
-    // The window closes — the `add sp` the call lowering always emits — and the
-    // value is read back.
-    compiler.sp_temp_bytes = 0;
-    const reload_before = compiler.code.items.len;
-    try compiler.ensureRegLive(10);
-    try std.testing.expectEqual(reload_before + 4, compiler.code.items.len);
-    const reload_word = std.mem.readInt(u32, compiler.code.items[reload_before..][0..4], .little);
-    try std.testing.expectEqual(@as(u32, 10), reload_word & 0x1f);
-    const reload_addr: u16 = @intCast(((reload_word >> 10) & 0xfff) * 8);
+    // The same frame byte, named from the window's `sp`: a GP stack local and a
+    // spill slot are one coordinate family and move together.
+    const local_in_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(24, 11);
+    try std.testing.expectEqual(local_addr + window, spDisp(compiler.code.items[local_in_at..][0..4].*));
 
-    // ONE BYTE, NAMED FROM TWO STACK POINTERS. `sp` was `window` bytes lower at
-    // the store, so the same byte is `window` bytes further away then; a
-    // displacement that ignores the window makes these two differ by exactly
-    // `window` and the reload answers with the slot's previous contents.
+    try compiler.emitAddSpTemp(window);
+
+    const reload_at = compiler.code.items.len;
+    try compiler.ensureRegLive(10);
+    try std.testing.expectEqual(reload_at + 4, compiler.code.items.len);
+    const reload_word = std.mem.readInt(u32, compiler.code.items[reload_at..][0..4], .little);
+    try std.testing.expectEqual(@as(u32, 10), reload_word & 0x1f);
+    const reload_addr = spDisp(compiler.code.items[reload_at..][0..4].*);
+
+    // ONE BYTE, NAMED FROM TWO STACK POINTERS. `sp` was `window` lower at the
+    // store, so the byte is `window` further from it there; a displacement that
+    // ignores the window makes these two differ by exactly `window` and the
+    // reload answers with the slot's previous contents.
     try std.testing.expectEqual(reload_addr, store_addr - window);
-    // And that byte is the slot the band handed out, above the locals and inside
-    // the reservation — the property `gateSpillBand` establishes and the window
-    // was silently spending.
     try std.testing.expectEqual(compiler.stack_frame_bytes - slot_off - 8, reload_addr);
     try std.testing.expect(reload_addr >= gp_stack_bytes);
     try std.testing.expect(reload_addr + 8 <= gp_stack_bytes + spill_reserve);
     try std.testing.expect(reload_addr != control_addr);
 
-    // ABOVE THE `[sp,#imm]` ENCODING THE CORRECTION REFUSES. `emitStrSp` and
-    // `emitLdrSp` place `offset / 8` in a twelve-bit field, so a window that
-    // pushes a live slot past 32760 has no displacement to emit and a truncated
-    // one is the wrong answer this correction removes.
+    // FAIL CLOSED, four ways. A displacement past the scaled `[sp,#imm]` field
+    // wraps into a different slot, so it refuses instead.
     compiler.sp_temp_bytes = 32760;
-    try std.testing.expectError(error.RegisterExhausted, compiler.frameSlotOff(slot_off));
+    try std.testing.expectError(error.RegisterExhausted, compiler.frameScaledDisp(reload_addr));
+    // `add` chains past its imm12 and carries no such limit.
+    _ = try compiler.frameDisp(reload_addr);
     compiler.sp_temp_bytes = 0;
-    _ = try compiler.frameSlotOff(slot_off);
+    _ = try compiler.frameScaledDisp(reload_addr);
+
+    // A close wider than the open would leave `sp` above the frame base with a
+    // wrapped residual describing it.
+    try compiler.emitSubSpTemp(16);
+    try std.testing.expectError(error.UnsupportedProgram, compiler.emitAddSpTemp(32));
+    try std.testing.expectEqual(@as(u16, 16), compiler.sp_temp_bytes);
+
+    // Permanent growth inside a window: the window's `add sp` restores the OLD
+    // base, so the reservation `stack_frame_bytes` then claims does not exist.
+    try std.testing.expectError(error.UnsupportedProgram, compiler.frameGrow(16));
+
+    // And the frame may not be torn down from inside one.
+    try std.testing.expectError(error.UnsupportedProgram, compiler.restoreStackFrame());
+    try compiler.emitAddSpTemp(16);
+    try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
 }
 
 // THE CALL'S ANSWER TOOK THE ONE REGISTER THE SPILL MAP WAS STILL DESCRIBING
