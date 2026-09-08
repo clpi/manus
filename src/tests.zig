@@ -67,6 +67,7 @@ test {
     _ = @import("native_ir.zig");
     _ = @import("graph/lower.zig");
     _ = @import("graph/column.zig");
+    _ = @import("graph/field.zig");
     _ = @import("module_names.zig");
     _ = @import("source_cursor.zig");
     _ = @import("lexer_differential.zig");
