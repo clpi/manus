@@ -133,14 +133,30 @@ edges="$tmp/edges.txt"
 : >"$edges"
 while IFS= read -r rel; do
     [ -f "$root/$rel" ] || continue
-    b=$(basename "$rel")
+    b=${rel#src/}
     if ! LC_ALL=C awk -v MF="$lmap" -v BASE="$b" '
-        BEGIN { while ((getline l < MF) > 0) { split(l, a, "\t"); layer[a[1]] = a[2] } }
+        function resolve(path, part, count, i, depth, result, segment) {
+            count = split(path, part, "/")
+            depth = 0
+            for (i = 1; i <= count; i++) {
+                if (part[i] == "." || part[i] == "") continue
+                if (part[i] == "..") {
+                    if (!depth) exit 3
+                    depth--
+                } else segment[++depth] = part[i]
+            }
+            result = segment[1]
+            for (i = 2; i <= depth; i++) result = result "/" segment[i]
+            return result
+        }
+        BEGIN { while ((getline l < MF) > 0) { split(l, a, "\t"); layer[a[1]] = a[2] }; home = BASE; sub(/[^\/]+$/, "", home) }
         {
             s = $0
-            while (match(s, /@import\("[A-Za-z0-9_]+\.zig"\)/)) {
+            while (match(s, /@import\("[A-Za-z0-9_.\/-]+\.zig"\)/)) {
                 m = substr(s, RSTART, RLENGTH)
                 gsub(/@import\("|"\)/, "", m)
+                if (substr(m, 1, 1) == "/") exit 3
+                m = resolve(home m)
                 if (m != BASE && (m in layer)) print layer[BASE] "\t" BASE "\t" layer[m] "\t" m
                 s = substr(s, RSTART + RLENGTH)
             }

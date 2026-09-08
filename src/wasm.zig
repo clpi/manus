@@ -70,8 +70,8 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const types = @import("types.zig");
 const dnir = @import("native_ir.zig");
-const dnir_lower = @import("dnir_lower.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const dnir_lower = @import("graph/lower.zig");
+const semantic_graph = @import("graph.zig");
 const realization_validate = @import("realization_validate.zig");
 
 const RT = types.ResolvedType;
@@ -441,6 +441,8 @@ const Helper = enum {
     fd_write, // import 0
     proc_exit, // import 1
     fd_read, //  import 2
+    args_sizes_get, // import 3
+    args_get, //      import 4
     strlen, //   (i64 ptr) -> i64
     write_bytes, // (i64 ptr, i64 len) -> ()
     write_cstr, // (i64 ptr) -> ()
@@ -460,11 +462,12 @@ const Helper = enum {
     str_at, //     (i64 s, i64 i) -> i64
     str_sub, //    (i64 s, i64 i, i64 j) -> i64
     str_to_i64, // (i64 s) -> i64
+    os_arg, //     (i64 i) -> i64            1-based argument, 0 when absent
     die, //        (i64 msg) -> ()           message to fd 2, then trap
 };
 
 const helper_count: u32 = @typeInfo(Helper).@"enum".field_names.len;
-const import_count: u32 = 3;
+const import_count: u32 = 5;
 
 fn helperIndex(h: Helper) u32 {
     return @backingInt(h);
@@ -523,6 +526,7 @@ const Emitter = struct {
     ty_fd_write: u32 = 0,
     ty_proc_exit: u32 = 0,
     ty_fd_read: u32 = 0,
+    ty_args: u32 = 0,
     func_index: std.StringHashMapUnmanaged(u32) = .empty,
     func_sig: std.StringHashMapUnmanaged(FuncSig) = .empty,
     /// `load_global` / `store_global` name -> offset from `globals_base`.
@@ -622,6 +626,27 @@ const Emitter = struct {
         self.field_local.deinit(self.alloc);
     }
 
+    fn cell(self: *Emitter, instruction: dnir.Instr) Error!bool {
+        if (instruction.record.len == 0) return false;
+        const record = dnir.findRecord(self.module, instruction.record) orelse return self.refuse("record-cell-descriptor");
+        if (record.fields.len != record.kinds.len or instruction.rhs != .i64 or instruction.rhs.i64 != 1)
+            return self.refuse("record-cell-layout");
+        var found = false;
+        for (record.fields, record.kinds, 0..) |field, kind, index| {
+            if (!std.mem.eql(u8, field, instruction.field)) continue;
+            if (found) return self.refuse("record-cell-field");
+            const descriptor: RT = switch (kind) {
+                .str => .str,
+                .f64 => .f64,
+                .i64 => if (index < record.widths.len) record.widths[index] orelse .i64 else .i64,
+            };
+            if (!descriptor.eql(instruction.ty)) return self.refuse("record-cell-carrier");
+            found = true;
+        }
+        if (!found) return self.refuse("record-cell-field");
+        return true;
+    }
+
     fn refuse(self: *Emitter, why: []const u8) Error {
         if (self.cur_op) |o| {
             var buf: [96]u8 = undefined;
@@ -710,6 +735,10 @@ fn computeSlotTypes(e: *Emitter, instrs: []const dnir.Instr, params: []const Slo
                     if (ins.ty == .f32 or valueIsF32(e, ins.lhs) or valueIsF32(e, ins.rhs)) {
                         try markF32(e, ins.result, &changed);
                     }
+                },
+                .load_index => if (ins.record.len != 0) {
+                    if (ins.ty == .f64) try markF64(e, ins.result, &changed);
+                    if (ins.ty == .f32) try markF32(e, ins.result, &changed);
                 },
                 .load_global => {
                     if (ins.ty == .f64) try markF64(e, ins.result, &changed);
@@ -865,6 +894,7 @@ pub fn emitFromDnir(
     e.ty_fd_write = try e.types.intern(&.{ vt_i32, vt_i32, vt_i32, vt_i32 }, &.{vt_i32});
     e.ty_proc_exit = try e.types.intern(&.{vt_i32}, &.{});
     e.ty_fd_read = try e.types.intern(&.{ vt_i32, vt_i32, vt_i32, vt_i32 }, &.{vt_i32});
+    e.ty_args = try e.types.intern(&.{ vt_i32, vt_i32 }, &.{vt_i32});
 
     const entry_name = entry orelse return e.refuse("no-entry-function");
 
@@ -1102,9 +1132,6 @@ fn emitFunctionBody(e: *Emitter, f: dnir.Function) Error![]u8 {
     e.cur_ret = f.ret;
     const sig = e.func_sig.get(f.name) orelse return e.refuse("missing-signature");
     e.cur_results = sig.results;
-    for (f.params) |p| {
-        if (p.record != null) return e.refuse("record-param");
-    }
 
     const instrs = try flatten(e, f);
     defer e.alloc.free(instrs);
@@ -1542,9 +1569,7 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
                     // answers it with `allocReg()` — an UNDEFINED register whose
                     // contents cannot be read, because the path is dead. Zero is
                     // the same nothing, said deterministically.
-                    if (want == .f64) try b.f64c(0)
-                    else if (want == .f32) try b.f32c(0)
-                    else try b.i64c(0);
+                    if (want == .f64) try b.f64c(0) else if (want == .f32) try b.f32c(0) else try b.i64c(0);
                 } else if (want == .i64) {
                     try pushValue(e, b, ins.lhs, .i64);
                     try emitNarrowFit(b, e.cur_ret);
@@ -1602,7 +1627,20 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
 
         .load_index => {
             const t = ins.result orelse return e.refuse("load-index-no-result");
+            const cell = try e.cell(ins);
             try emitIndexAddress(e, b, ins);
+            if (cell) {
+                switch (ins.ty) {
+                    .f64 => try b.mem(op_f64_load, 3, 0),
+                    .f32 => try b.mem(op_f32_load, 2, 0),
+                    else => {
+                        try b.mem(op_i64_load, 3, 0);
+                        try emitNarrowFit(b, ins.ty);
+                    },
+                }
+                try b.set(t);
+                return;
+            }
             switch (ins.ty) {
                 .i64 => try b.mem(op_i64_load, 3, 0),
                 .f64 => try b.mem(op_f64_load, 3, 0),
@@ -1613,7 +1651,26 @@ fn emitInstr(e: *Emitter, b: *Buf, ins: dnir.Instr, flat: Flat) Error!void {
         },
 
         .store_index => {
+            const cell = try e.cell(ins);
             try emitIndexAddress(e, b, ins);
+            if (cell) {
+                switch (ins.ty) {
+                    .f64 => {
+                        try pushValue(e, b, ins.third, .f64);
+                        try b.mem(op_f64_store, 3, 0);
+                    },
+                    .f32 => {
+                        try pushValue(e, b, ins.third, .f32);
+                        try b.mem(op_f32_store, 2, 0);
+                    },
+                    else => {
+                        try pushValue(e, b, ins.third, .i64);
+                        try emitNarrowFit(b, ins.ty);
+                        try b.mem(op_i64_store, 3, 0);
+                    },
+                }
+                return;
+            }
             try pushValue(e, b, ins.third, .i64);
             switch (ins.ty) {
                 .i64 => try b.mem(op_i64_store, 3, 0),
@@ -1739,7 +1796,7 @@ fn emitFrameRestore(e: *Emitter, b: *Buf) Error!void {
 /// `base + (index - 1) * width`, the one index origin both faces of a positional
 /// table share. Leaves an i32 address on the stack.
 fn emitIndexAddress(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
-    const scale: i32 = switch (ins.ty) {
+    const scale: i32 = if (ins.record.len != 0) 8 else switch (ins.ty) {
         .i64, .f64 => 8,
         .f32 => 4,
         else => 1,
@@ -2111,6 +2168,8 @@ fn wasmTailCallFusible(e: *const Emitter, ins: dnir.Instr, next: dnir.Instr) boo
     // see the difference and `emitNarrowFit` — which `.ret` emits and a
     // `return_call` cannot — is exactly what the difference costs.
     const g = wasmModuleFunction(e.module, ins.callee) orelse return false;
+    const pack = realization_validate.resultPackOf(e.module, g) orelse return false;
+    if (pack.record != null) return false;
     if (!std.meta.eql(g.ret, e.cur_ret)) return false;
     return true;
 }
@@ -2145,6 +2204,11 @@ fn emitWasmTailCall(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
 fn emitCallDirect(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
     const idx = e.func_index.get(ins.callee) orelse return e.refuse("call-target-unknown");
     const sig = e.func_sig.get(ins.callee) orelse return e.refuse("call-signature-unknown");
+    const function = wasmModuleFunction(e.module, ins.callee) orelse return e.refuse("call-target-unknown");
+    const pack = realization_validate.resultPackOf(e.module, function) orelse return e.refuse("result-pack-record-unknown");
+    if (pack.record) |record| {
+        if (!std.mem.eql(u8, ins.record, record.name)) return e.refuse("result-pack-call-record");
+    }
     try pushStagedArgs(e, b, ins, sig.params);
     clearStaged(e);
     try b.call(idx);
@@ -2152,11 +2216,7 @@ fn emitCallDirect(e: *Emitter, b: *Buf, ins: dnir.Instr) Error!void {
 }
 
 fn finishCallResult(e: *Emitter, b: *Buf, ins: dnir.Instr, results: []const SlotType) Error!void {
-    // A RECORD RESULT lands as several values, and they come off the stack in
-    // REVERSE declaration order — the last field is on top. Storing them
-    // forwards would transpose the record, which is the same defect the AArch64
-    // arm calls "a parallel move, not a sequential one".
-    if (results.len > 1) {
+    if (ins.record.len != 0) {
         const base = if (ins.field.len > 0) ins.field else "rec";
         // The call's record name and its member count are checked against the
         // CALLEE's declared pack by `realization_validate.resultPackShape`.
@@ -2168,6 +2228,10 @@ fn finishCallResult(e: *Emitter, b: *Buf, ins: dnir.Instr, results: []const Slot
         // `emitCallExtern` refuses a record-returning extern before it can
         // reach here at all.
         const rec = dnir.findRecord(e.module, ins.record) orelse return e.refuse("call-record-unknown");
+        if (ins.field.len == 0 and ins.result == null) {
+            for (results) |_| try b.op(op_drop);
+            return;
+        }
         var i: usize = rec.fields.len;
         while (i > 0) {
             i -= 1;
@@ -2184,6 +2248,7 @@ fn finishCallResult(e: *Emitter, b: *Buf, ins: dnir.Instr, results: []const Slot
         }
         return;
     }
+    if (results.len > 1) return e.refuse("call-record-unknown");
     if (ins.result) |t| {
         if (results.len == 0) return e.refuse("call-result-from-void");
         const want = slotTypeOf(e, t);
@@ -2227,6 +2292,7 @@ fn externSignature(callee: []const u8) ?ExternSig {
     if (std.mem.eql(u8, callee, "sqrt")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_sqrt };
     if (std.mem.eql(u8, callee, "fabs")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_abs };
     if (std.mem.eql(u8, callee, "floor")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_floor };
+    if (std.mem.eql(u8, callee, "idol_os_arg")) return .{ .params = one_i, .result = .i64, .helper = .os_arg };
     if (std.mem.eql(u8, callee, "idol_io_read_stdin")) return .{ .params = one_i, .result = .i64, .helper = .fd_read };
     if (std.mem.eql(u8, callee, "idol_io_read_line")) return .{ .params = one_i, .result = .i64, .helper = .fd_read };
     if (std.mem.eql(u8, callee, "ceil")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_ceil };
@@ -2479,11 +2545,16 @@ test "wasm backend refuses byte-sequence print without an extent carrier" {
 // `_start`
 // ---------------------------------------------------------------------------
 
+/// The first exit code WASI `proc_exit` refuses.
+const wasi_exit_ceiling: i64 = 126;
+
 fn emitStart(e: *Emitter, entry_index: u32, entry_result: ?SlotType) Error![]u8 {
     e.cur_name = "_start";
     var b = Buf{ .alloc = e.alloc };
     errdefer b.deinit();
-    try b.u32v(0); // no locals
+    try b.u32v(1);
+    try b.u32v(1);
+    try b.byte(vt_i64);
     try b.call(entry_index);
     if (entry_result) |r| {
         // The exit code IS the answer for this subset — every gate on the
@@ -2507,6 +2578,22 @@ fn emitStart(e: *Emitter, entry_index: u32, entry_result: ?SlotType) Error![]u8 
         // 104) failed to produce an answer at all.
         try b.i64c(0xff);
         try b.op(op_i64_and);
+        // ...AND THE OTHER HALF OF THAT BAND HAS NO REALIZATION HERE. WASI
+        // takes [0,126), so a program whose masked code is 126 or above — the
+        // ordinary result of returning -1 — reaches wasmtime as a REJECTED
+        // `proc_exit` and the process exits 1. Exit 1 is a code programs also
+        // ask for on purpose, so answering it here would report a wrong
+        // outcome that no consumer could tell from a real one. The realization
+        // says so instead.
+        try b.tee(0);
+        try b.i64c(wasi_exit_ceiling);
+        try b.op(op_i64_ge_s);
+        try b.byte(op_if);
+        try b.byte(bt_void);
+        try b.i64c(@intCast(try e.strings.intern("exit: code outside WASI [0,126) has no realization in this module")));
+        try b.call(helperIndex(.die));
+        try b.byte(op_end);
+        try b.get(0);
         try b.op(op_i32_wrap_i64);
     } else {
         try b.i32c(0);
@@ -2542,6 +2629,7 @@ fn emitHelpers(e: *Emitter) Error!void {
     try putHelper(e, .str_at, &.{ vt_i64, vt_i64 }, &.{vt_i64}, helperStrAt);
     try putHelper(e, .str_sub, &.{ vt_i64, vt_i64, vt_i64 }, &.{vt_i64}, helperStrSub);
     try putHelper(e, .str_to_i64, &.{vt_i64}, &.{vt_i64}, helperStrToI64);
+    try putHelper(e, .os_arg, &.{vt_i64}, &.{vt_i64}, helperOsArg);
     try putHelper(e, .die, &.{vt_i64}, &.{}, helperDie);
 }
 
@@ -2559,6 +2647,12 @@ const g_sn_cap: u32 = 4;
 /// Bytes read by the last `fd_read` call. Copied to the caller's result
 /// pointer before this helper returns.
 const g_inbuf_len: u32 = 5;
+/// The argument vector the WASI runtime handed this instance, materialized on
+/// first use: `g_argv` is the array of pointers and doubles as the initialized
+/// marker, `g_argc` its length. A failed probe leaves `g_argc` 0, so every
+/// index answers UNKNOWN rather than re-probing.
+const g_argv: u32 = 6;
+const g_argc: u32 = 7;
 /// Digit scratch for `sn_puti`, disjoint from the region `print_i64` writes
 /// backwards from the top of.
 const addr_snbuf: u32 = addr_numbuf;
@@ -3340,6 +3434,117 @@ fn skipSpace(b: *Buf, cur: u32, ch: u32) Error!void {
     try b.byte(op_end);
 }
 
+/// `idol_os_arg(i)` — the native runtime's rule, unchanged: 1-based, and an
+/// index outside the vector is UNKNOWN (0), never the empty string. WASI hands
+/// the vector over in two calls, so the first index materializes it and every
+/// later one reads the same pointers.
+fn helperOsArg(e: *Emitter, b: *Buf) Error!void {
+    _ = e;
+    const want: u32 = 0;
+    const scratch: u32 = 1;
+    const count: u32 = 2;
+    const vector: u32 = 3;
+
+    try b.u32v(1);
+    try b.u32v(3);
+    try b.byte(vt_i32);
+
+    try b.byte(op_global_get);
+    try b.u32v(g_argv);
+    try b.op(op_i32_eqz);
+    try b.byte(op_if);
+    try b.byte(bt_void);
+    {
+        try b.i64c(8);
+        try b.call(helperIndex(.malloc));
+        try b.op(op_i32_wrap_i64);
+        try b.tee(scratch);
+        try b.get(scratch);
+        try b.i32c(4);
+        try b.op(op_i32_add);
+        try b.call(helperIndex(.args_sizes_get));
+        try b.byte(op_if);
+        try b.byte(bt_void);
+        {
+            try b.get(scratch);
+            try b.byte(op_global_set);
+            try b.u32v(g_argv);
+            try b.i32c(0);
+            try b.byte(op_global_set);
+            try b.u32v(g_argc);
+        }
+        try b.byte(op_else);
+        {
+            try b.get(scratch);
+            try b.mem(op_i32_load, 2, 0);
+            try b.set(count);
+            try b.get(count);
+            try b.i32c(4);
+            try b.op(op_i32_mul);
+            try b.op(op_i64_extend_i32_u);
+            try b.call(helperIndex(.malloc));
+            try b.op(op_i32_wrap_i64);
+            try b.set(vector);
+            try b.get(scratch);
+            try b.mem(op_i32_load, 2, 4);
+            try b.op(op_i64_extend_i32_u);
+            try b.call(helperIndex(.malloc));
+            try b.op(op_i32_wrap_i64);
+            try b.set(scratch);
+            try b.get(vector);
+            try b.get(scratch);
+            try b.call(helperIndex(.args_get));
+            try b.byte(op_if);
+            try b.byte(bt_void);
+            {
+                try b.i32c(0);
+                try b.set(count);
+            }
+            try b.byte(op_end);
+            try b.get(vector);
+            try b.byte(op_global_set);
+            try b.u32v(g_argv);
+            try b.get(count);
+            try b.byte(op_global_set);
+            try b.u32v(g_argc);
+        }
+        try b.byte(op_end);
+    }
+    try b.byte(op_end);
+
+    try b.get(want);
+    try b.op(op_i32_wrap_i64);
+    try b.tee(scratch);
+    try b.i32c(1);
+    try b.op(op_i32_lt_s);
+    try b.byte(op_if);
+    try b.byte(bt_void);
+    {
+        try b.i64c(0);
+        try b.byte(op_return);
+    }
+    try b.byte(op_end);
+    try b.get(scratch);
+    try b.byte(op_global_get);
+    try b.u32v(g_argc);
+    try b.op(op_i32_ge_s);
+    try b.byte(op_if);
+    try b.byte(bt_void);
+    {
+        try b.i64c(0);
+        try b.byte(op_return);
+    }
+    try b.byte(op_end);
+    try b.byte(op_global_get);
+    try b.u32v(g_argv);
+    try b.get(scratch);
+    try b.i32c(4);
+    try b.op(op_i32_mul);
+    try b.op(op_i32_add);
+    try b.mem(op_i32_load, 2, 0);
+    try b.op(op_i64_extend_i32_u);
+}
+
 /// The native runtime's `strFatal`: the message and a newline on fd 2, then
 /// abort. `unreachable` is wasm's abort and exits 134, the same code
 /// `kill(getpid(), SIGABRT)` produces.
@@ -3939,7 +4144,7 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
     {
         var s = Buf{ .alloc = alloc };
         defer s.deinit();
-        try s.u32v(3);
+        try s.u32v(import_count);
         try s.name("wasi_snapshot_preview1");
         try s.name("fd_write");
         try s.byte(0x00);
@@ -3952,6 +4157,14 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
         try s.name("fd_read");
         try s.byte(0x00);
         try s.u32v(e.ty_fd_read);
+        try s.name("wasi_snapshot_preview1");
+        try s.name("args_sizes_get");
+        try s.byte(0x00);
+        try s.u32v(e.ty_args);
+        try s.name("wasi_snapshot_preview1");
+        try s.name("args_get");
+        try s.byte(0x00);
+        try s.u32v(e.ty_args);
         try section(&out, 2, s.items.items);
     }
 
@@ -3979,7 +4192,7 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
     {
         var s = Buf{ .alloc = alloc };
         defer s.deinit();
-        try s.u32v(6);
+        try s.u32v(8);
         try s.byte(vt_i32);
         try s.byte(0x01); // $__sp, mutable
         try s.i32c(@intCast(stack_top));
@@ -4002,6 +4215,14 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
         try s.byte(op_end);
         try s.byte(vt_i32);
         try s.byte(0x01); // $inbuf_len
+        try s.i32c(0);
+        try s.byte(op_end);
+        try s.byte(vt_i32);
+        try s.byte(0x01); // $argv
+        try s.i32c(0);
+        try s.byte(op_end);
+        try s.byte(vt_i32);
+        try s.byte(0x01); // $argc
         try s.i32c(0);
         try s.byte(op_end);
         try section(&out, 6, s.items.items);
@@ -4090,6 +4311,10 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
 }
 
 fn runTestSourceWasm(source: []const u8) !u8 {
+    return runTestSourceWasmArgs(source, &.{});
+}
+
+fn runTestSourceWasmArgs(source: []const u8, args: []const []const u8) !u8 {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -4117,8 +4342,12 @@ fn runTestSourceWasm(source: []const u8) !u8 {
         .sub_path = "branch.wasm",
         .data = bytes,
     });
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer argv.deinit(alloc);
+    try argv.appendSlice(alloc, &.{ "wasmtime", "run", "branch.wasm" });
+    try argv.appendSlice(alloc, args);
     const result = std.process.run(std.testing.allocator, std.testing.io, .{
-        .argv = &.{ "wasmtime", "run", "branch.wasm" },
+        .argv = argv.items,
         .cwd = .{ .dir = tmp.dir },
     }) catch |err| switch (err) {
         error.FileNotFound => return error.SkipZigTest,
@@ -4130,6 +4359,68 @@ fn runTestSourceWasm(source: []const u8) !u8 {
         .exited => |status| status,
         else => error.TestUnexpectedResult,
     };
+}
+
+test "the argument vector reaches the wasm guest, and an absent index stays unknown" {
+    const source =
+        \\main: i64 = ()
+        \\    os.args[1]:len()
+    ;
+    try std.testing.expectEqual(@as(u8, 7), try runTestSourceWasmArgs(source, &.{"abcdefg"}));
+    try std.testing.expectEqual(@as(u8, 2), try runTestSourceWasmArgs(source, &.{"ab"}));
+    try std.testing.expectEqual(@as(u8, 0), try runTestSourceWasmArgs(source, &.{}));
+}
+
+test "wasm backend consumes declared record parameter slots" {
+    const rows = [_]struct {
+        source: []const u8,
+        want: u8,
+    }{
+        .{
+            .source =
+            \\record: {code: i64}
+            \\read = (value: record): i64 value.code
+            \\main: i64 = ()
+            \\    item: record = {code = 7}
+            \\    read(item)
+            ,
+            .want = 7,
+        },
+        .{
+            .source =
+            \\record: {code: i64}
+            \\read = (value: record): i64 value.code
+            \\main: i64 = ()
+            \\    item: record = {code = 13}
+            \\    read(item)
+            ,
+            .want = 13,
+        },
+        .{
+            .source =
+            \\record: {other: i64, code: i64}
+            \\read = (prefix: i64, a: record, b: record, suffix: i64): i64 prefix + a.code * 3 + b.code - suffix
+            \\main: i64 = ()
+            \\    a: record = {code = 7, other = 91}
+            \\    b: record = {other = 83, code = 13}
+            \\    read(5, a, b, 5)
+            ,
+            .want = 34,
+        },
+        .{
+            .source =
+            \\record: {code: i64, name: str, value: i64}
+            \\read = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code - value.value + suffix
+            \\main: i64 = ()
+            \\    item: record = {code = 11, name = "x", value = 3}
+            \\    read(4, item, 0)
+            ,
+            .want = 12,
+        },
+    };
+    for (rows) |row| {
+        try std.testing.expectEqual(row.want, try runTestSourceWasm(row.source));
+    }
 }
 
 test "wasm backend preserves values from multi-statement conditional arms" {
@@ -4765,4 +5056,252 @@ test "wasm backend validates exact flat projection lineage without dense storage
     );
     try std.testing.expectEqualStrings("aggregate-access-facts", diagnostic.note().?);
     graph.application_presence.set(application);
+}
+
+test "wasm backend lowers graph-connected record parameter writes" {
+    const cases = [_]struct { source: []const u8, want: u8 }{
+        .{ .source = "record: {code: i64}\nalter = (left: record, right: record): i64\n    left.code = 13\n    right.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item, item) + item.code\nos.exit(probe(7))\n", .want = 26 },
+        .{ .source = "record: {code: i64}\nalter = (left: record, right: record): i64\n    left.code = 13\n    right.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    peer: record = {code = 17}\n    alter(item, peer) + item.code\nos.exit(probe(7))\n", .want = 30 },
+        .{
+            .source = "record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
+            .want = 26,
+        },
+        .{
+            .source = "record: {code: i64}\nfull: {extra: i64, code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nprobe = (code: i64): i64\n    item: full = {extra = 91, code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n",
+            .want = 26,
+        },
+        .{
+            .source = "record: {code: i64}\nfull: {extra: i64, code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\ntotal = (value: full): i64 value.extra + value.code\nprobe = (code: i64): i64\n    item: full = {extra = 91, code = code}\n    alter(item)\n    total(item)\nos.exit(probe(7))\n",
+            .want = 104,
+        },
+    };
+    for (cases) |case| {
+        try std.testing.expectEqual(case.want, try runTestSourceWasm(case.source));
+    }
+}
+
+test "wasm backend relays resident record operands" {
+    try std.testing.expectEqual(@as(u8, 26), try runTestSourceWasm("record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    alter(value)\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend relays an alias of a record parameter" {
+    try std.testing.expectEqual(@as(u8, 26), try runTestSourceWasm("record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    copy = value\n    alter(copy)\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend relay rebinding preserves the caller record" {
+    try std.testing.expectEqual(@as(u8, 20), try runTestSourceWasm("record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    value = {code = 19}\n    alter(value)\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend relay retains aliases across a parameter rebind" {
+    try std.testing.expectEqual(@as(u8, 45), try runTestSourceWasm("record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    copy = value\n    value = {code = 19}\n    alter(copy) + value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n"));
+    try std.testing.expectEqual(@as(u8, 20), try runTestSourceWasm("record: {code: i64}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n    value = {code = 19}\n    copy = value\n    alter(copy)\nprobe = (code: i64): i64\n    item: record = {code = code}\n    relay(item) + item.code\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend shared cells retain declared integer widths" {
+    const cases = [_]struct { descriptor: []const u8, value: []const u8, expected: []const u8 }{
+        .{ .descriptor = "u16", .value = "300", .expected = "300" },
+        .{ .descriptor = "i16", .value = "-300", .expected = "-300" },
+        .{ .descriptor = "u16", .value = "-1", .expected = "65535" },
+        .{ .descriptor = "i8", .value = "300", .expected = "44" },
+        .{ .descriptor = "i16", .value = "65535", .expected = "-1" },
+        .{ .descriptor = "u16", .value = "65536", .expected = "0" },
+    };
+    for (cases) |case| {
+        const source = try std.fmt.allocPrint(std.testing.allocator, "record: {{code: {s}}}\nalter = (value: record): i64\n    value.code = {s}\n    if value.code == {s}\n        return 30\n    4\nprobe = (code: i64): i64\n    item: record = {{code = 7}}\n    alter(item)\nos.exit(probe(7))\n", .{ case.descriptor, case.value, case.expected });
+        defer std.testing.allocator.free(source);
+        try std.testing.expectEqual(@as(u8, 30), try runTestSourceWasm(source));
+    }
+    try std.testing.expectEqual(@as(u8, 30), try runTestSourceWasm("record: {pad: i64, code: i16}\nalter = (value: record): i64\n    value.pad = 13\n    if value.code == -1\n        return 30\n    4\nprobe = (code: i64): i64\n    item: record = {pad = code, code = -1}\n    alter(item)\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend shared cells preserve text values" {
+    try std.testing.expectEqual(@as(u8, 37), try runTestSourceWasm("record: {text: str, code: i64}\nread = (text: str): i64\n    if text == \"sixsix\"\n        return 7\n    1\nalter = (value: record): i64\n    value.text = \"sixsix\"\n    if value.text == \"sixsix\"\n        return 30\n    4\nprobe = (code: i64): i64\n    item: record = {text = \"old\", code = code}\n    out = alter(item)\n    out + read(item.text)\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend shared text retains unproved conditional refusal" {
+    try std.testing.expectError(error.GraphFactsInvalid, runTestSourceWasm("record: {text: str, code: i64}\nalter = (value: record): i64\n    value.text = \"sixsix\"\n    if value.text == \"sixsix\"\n        return 30\n    4\nprobe = (code: i64): i64\n    item: record = {text = \"old\", code = code}\n    out = alter(item)\n    if item.text == \"sixsix\"\n        return out + 7\n    0\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend shared float records retain the existing refusal" {
+    try std.testing.expectError(error.GraphFactsInvalid, runTestSourceWasm("record: {code: f64}\nalter = (value: record): i64\n    value.code = 1.5\n    if value.code == 1.5\n        return 30\n    4\nprobe = (code: i64): i64\n    item: record = {code = 0.5}\n    alter(item)\nos.exit(probe(7))\n"));
+}
+
+test "wasm backend projects demanded record fields and preserves fresh writes" {
+    const cases = [_]struct { source: []const u8, want: u8 }{
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    read(2, item, 5)\nos.exit(probe(7))\n", .want = 28 },
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    read(2, item, 5)\nos.exit(probe(13))\n", .want = 46 },
+        .{ .source = "record: {code: i64}\nfull: {extra: i64, code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item: full = {code = code, extra = 19}\n    read(2, item, 5) + item.extra\nos.exit(probe(13))\n", .want = 65 },
+        .{ .source = "record: {code: i64}\nalter = (value: record): i64\n    value = {code = 13}\n    value.code = 17\n    value.code\nprobe = (code: i64): i64\n    item: record = {code = code}\n    alter(item) + item.code\nos.exit(probe(7))\n", .want = 24 },
+    };
+    for (cases) |case| {
+        const actual = runTestSourceWasm(case.source) catch |err| {
+            std.debug.print("{s}\n", .{case.source});
+            return err;
+        };
+        std.testing.expectEqual(case.want, actual) catch |err| {
+            std.debug.print("{s}\n", .{case.source});
+            return err;
+        };
+    }
+}
+
+test "wasm backend fresh record aliases share resident fields" {
+    const cases = [_]struct { source: []const u8, want: u8 }{
+        .{ .source = "record: {code: i64}\nread = (value: record): i64 value.code\nmain: i64 = ()\n    item = {code = 13}\n    copy = item\n    read(copy)\n", .want = 13 },
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    copy = item\n    next = copy\n    read(2, next, 5)\nos.exit(probe(7))\n", .want = 28 },
+        .{ .source = "record: {code: i64}\nread = (prefix: i64, value: record, suffix: i64): i64 prefix + value.code * 3 + suffix\nprobe = (code: i64): i64\n    item = {extra = 91, code = code}\n    copy = item\n    next = copy\n    read(2, next, 5)\nos.exit(probe(13))\n", .want = 46 },
+    };
+    for (cases) |case| {
+        const actual = runTestSourceWasm(case.source) catch |err| {
+            std.debug.print("{s}\n", .{case.source});
+            return err;
+        };
+        try std.testing.expectEqual(case.want, actual);
+    }
+}
+
+
+test "wasm backend shared cells retain byte indexing and refuse invalid descriptors" {
+    var diagnostic: Diagnostic = .{};
+    var emitter = Emitter{
+        .alloc = std.testing.allocator,
+        .diagnostic = &diagnostic,
+        .module = .{ .functions = &.{}, .globals = &.{}, .records = &.{.{ .name = "record", .fields = &.{"code"}, .kinds = &.{.i64}, .widths = &.{.u16} }} },
+        .types = .{ .alloc = std.testing.allocator },
+        .strings = .{ .alloc = std.testing.allocator },
+    };
+    defer emitter.deinit();
+    var buffer = Buf{ .alloc = std.testing.allocator };
+    defer buffer.deinit();
+    var instruction = dnir.Instr{ .op = .store_index, .lhs = .{ .i64 = 256 }, .rhs = .{ .i64 = 1 }, .third = .{ .i64 = 300 }, .ty = .u8 };
+    try emitInstr(&emitter, &buffer, instruction, .{ .instrs = &.{}, .leaders = &.{} });
+    try std.testing.expectEqualSlices(u8, &.{ op_i64_store8, 0, 0 }, buffer.items.items[buffer.items.items.len - 3 ..]);
+    instruction.record = "record";
+    instruction.field = "code";
+    instruction.ty = .u16;
+    buffer.items.clearRetainingCapacity();
+    try emitInstr(&emitter, &buffer, instruction, .{ .instrs = &.{}, .leaders = &.{} });
+    try std.testing.expectEqualSlices(u8, &.{ op_i64_store, 3, 0 }, buffer.items.items[buffer.items.items.len - 3 ..]);
+    const original = instruction;
+    for (0..4) |damage| {
+        switch (damage) {
+            0 => instruction.record = "absent",
+            1 => instruction.field = "absent",
+            2 => instruction.rhs = .{ .i64 = 2 },
+            3 => instruction.ty = .i64,
+            else => unreachable,
+        }
+        try std.testing.expectError(error.UnsupportedProgram, emitter.cell(instruction));
+        instruction = original;
+    }
+}
+
+test "wasm backend returns one record field to its caller" {
+    try std.testing.expectEqual(@as(u8, 41), try runTestSourceWasm(
+        \\record: {code: i64}
+        \\make: record = (text: str)
+        \\    item = text:byte(1)
+        \\    {code = item}
+        \\os.exit(make(")").code)
+    ));
+    try std.testing.expectEqual(@as(u8, 16), try runTestSourceWasm(
+        \\record: {code: i64}
+        \\make: record = (text: str)
+        \\    item = 7
+        \\    if text:byte(1) == 41
+        \\        return {code = item}
+        \\    {code = 9}
+        \\os.exit(make(")").code + make("x").code)
+    ));
+}
+
+test "wasm backend keeps scalar record and discarded results distinct" {
+    const row = [_]struct { source: []const u8, expected: u8 }{
+        .{ .source = "read: i64 = (value: i64) value\nos.exit(read(41))\n", .expected = 41 },
+        .{ .source = "record: {code: i64, other: i64}\nmake: record = (value: i64) {other = value + 3, code = value}\nprobe: i64 = (value: i64)\n    item: record = make(value)\n    item.code * 3 + item.other\nos.exit(probe(7))\n", .expected = 31 },
+        .{ .source = "record: {code: i64}\nmake: record = (value: i64)\n    os.exit(value)\n    {code = value}\nmake(37)\n", .expected = 37 },
+        .{ .source = "read: i64 = (value: i64)\n    os.exit(value)\n    value\nread(43)\n", .expected = 43 },
+        .{ .source = "record: {code: i64}\nmake: record = (value: i64) {code = value}\nmake(37)\nos.exit(43)\n", .expected = 43 },
+        .{ .source = "read: i64 = (value: i64) value\nread(37)\nos.exit(43)\n", .expected = 43 },
+        .{ .source = "record: {code: i64}\nmake: record = (value: i64) {code = value}\nprobe: i64 = (value: i64)\n    rec: record = make(value)\n    make(37)\n    rec.code\nos.exit(probe(7))\n", .expected = 7 },
+    };
+    for (row) |entry| try std.testing.expectEqual(entry.expected, try runTestSourceWasm(entry.source));
+}
+
+test "wasm backend refuses a changed record result identity" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    const lowered = try dnir_lower.lowerTestSourceWithGraph(
+        alloc,
+        "record: {code: i64}\nmake: record = (value: i64) {code = value}\nread: i64 = (value: i64) value\nos.exit(make(read(41)).code)\n",
+        "record.id",
+        &graph,
+    );
+    defer dnir.deinitModule(alloc, lowered);
+    var diagnostic: Diagnostic = .{};
+    const bytes = try emitFromDnir(alloc, lowered, "main", &diagnostic);
+    alloc.free(bytes);
+    var selected: ?*dnir.Instr = null;
+    var scalar: ?[]const u8 = null;
+    for (lowered.functions) |function| {
+        for (function.blocks) |block| {
+            for (@constCast(block.instrs)) |*instruction| {
+                if (instruction.op != .call_direct) continue;
+                if (instruction.record.len == 0) {
+                    const callee = wasmModuleFunction(lowered, instruction.callee) orelse return error.TestExpectedEqual;
+                    const pack = realization_validate.resultPackOf(lowered, callee) orelse return error.TestExpectedEqual;
+                    try std.testing.expect(pack.record == null and callee.ret == .i64);
+                    try std.testing.expect(scalar == null);
+                    scalar = instruction.callee;
+                    continue;
+                }
+                try std.testing.expect(selected == null);
+                selected = instruction;
+            }
+        }
+    }
+    const instruction = selected orelse return error.TestExpectedEqual;
+    const original = instruction.*;
+    defer instruction.* = original;
+    for ([_]struct { name: []const u8, expected: []const u8 }{
+        .{ .name = "absent", .expected = "result-pack-call-record" },
+        .{ .name = "", .expected = "call_direct/result-pack-call-record" },
+    }) |entry| {
+        instruction.record = entry.name;
+        diagnostic = .{};
+        try std.testing.expectError(error.UnsupportedProgram, emitFromDnir(alloc, lowered, "main", &diagnostic));
+        try std.testing.expectEqualStrings(entry.expected, diagnostic.note().?);
+    }
+    var emitter = Emitter{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .module = lowered,
+        .types = .{ .alloc = alloc },
+        .strings = .{ .alloc = alloc },
+        .cur_results = &.{.i64},
+        .wasm_tailcall = true,
+    };
+    defer emitter.deinit();
+    var call = original;
+    call.record = "";
+    call.field = "";
+    call.result = 0;
+    const tail = dnir.Instr{ .op = .ret, .lhs = .{ .temp = 0 } };
+    const row = [_]struct { name: []const u8, expected: bool }{
+        .{ .name = original.callee, .expected = false },
+        .{ .name = scalar orelse return error.TestExpectedEqual, .expected = true },
+    };
+    for (row) |entry| {
+        const function = wasmModuleFunction(lowered, entry.name) orelse return error.TestExpectedEqual;
+        try emitter.func_sig.put(alloc, entry.name, .{
+            .params = try paramSlotTypes(&emitter, function),
+            .results = try returnSlotTypes(&emitter, function),
+        });
+        emitter.cur_ret = function.ret;
+        call.callee = entry.name;
+        try std.testing.expectEqual(entry.expected, wasmTailCallFusible(&emitter, call, tail));
+    }
 }

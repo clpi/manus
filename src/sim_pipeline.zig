@@ -3,7 +3,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const sim = @import("sim.zig");
 const abi_specialize = @import("abi_specialize.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const semantic_graph = @import("graph.zig");
 const types = @import("types.zig");
 
 const ShapeIndex = struct {

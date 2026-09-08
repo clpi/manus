@@ -157,6 +157,9 @@ pub const Place = struct {
     bind_origin: BindOrigin,
     init: ?*const ast.Expr,
     facts: Facts = .{},
+    /// The `observation.permits(.existence)` ruling for this row, stamped by
+    /// the census's producer. Default is `unasked`, which refuses.
+    existence: Existence = .unasked,
     accesses: std.ArrayListUnmanaged(Access) = .empty,
 
     pub fn deinit(self: *Place, alloc: std.mem.Allocator) void {
@@ -209,6 +212,30 @@ pub const Place = struct {
     }
 };
 
+/// THE EXISTENCE FREEDOM, AS A CARRIED FACT (law §104, GAP-170 deletion
+/// condition 2). `observation.permits(report, .existence)` is the only
+/// producer; this enum is where its ruling reaches a census row so a
+/// realization consumer reads a decided fact rather than re-deriving one.
+///
+/// `unasked` is not `permitted`. A census nobody ran the observation walk over
+/// has no evidence, and no evidence is a refusal (`Tri`'s rule, applied to the
+/// ruling itself).
+pub const Existence = enum {
+    unasked,
+    permitted,
+    blocked_observed,
+    blocked_unknown,
+    blocked_hyperproperty,
+
+    pub fn ok(self: Existence) bool {
+        return self == .permitted;
+    }
+
+    pub fn name(self: Existence) []const u8 {
+        return @tagName(self);
+    }
+};
+
 pub const Refusal = enum {
     none,
     /// Retired: every region passes the same chain, so nothing earns this.
@@ -222,6 +249,10 @@ pub const Refusal = enum {
     escaped,
     indeterminate,
     runtime_index,
+    /// Every reason above is a PLACE fact and none of them asks whether an
+    /// observer can distinguish the place existing from it not existing. That
+    /// question has an owner and this is its answer arriving.
+    observed,
 };
 
 /// An aggregate may be physically absent only when every access is
@@ -241,6 +272,11 @@ pub fn residencyRefusal(p: *const Place) Refusal {
     if (p.facts.alias != .no) return .aliased;
     if (p.facts.escape != .no) return .escaped;
     if (p.facts.determinacy != .exact) return .indeterminate;
+    // LAST, so every refusal above keeps the reason it already published and a
+    // reader can tell a place fact from an observation ruling. Physical
+    // nonexistence is a realization freedom, and a freedom is taken only where
+    // its gate says so.
+    if (!p.existence.ok()) return .observed;
     return .none;
 }
 
@@ -1504,8 +1540,23 @@ test "place: a function-local aggregate earns absent on the same proof" {
     defer pure.deinit();
     const p = pure.byName("s").?;
     try testing.expectEqual(Region.function, p.region);
+    // THE PLACE CLAUSES ARE NOT THE WHOLE DECISION, and the default says
+    // so: `analyzeFunction` runs no observation walk, so the ruling is
+    // `unasked` and the residency chain refuses on it rather than reading
+    // silence as proof.
+    try testing.expectEqual(Existence.unasked, p.existence);
+    try testing.expectEqual(Refusal.observed, residencyRefusal(p));
+    // With the ruling supplied, the place clauses decide as they always
+    // did — which is what makes the clause above an added gate and not a
+    // replacement for them.
+    p.existence = .permitted;
     try testing.expectEqual(Refusal.none, residencyRefusal(p));
     try testing.expectEqual(Residency.absent, ruledResidency(p));
+    // AND A PERMIT IS NOT AN OVERRIDE. A place fact that refuses still refuses
+    // with the freedom granted.
+    p.facts.mutation = .yes;
+    try testing.expectEqual(Refusal.mutated, residencyRefusal(p));
+    p.facts.mutation = .no;
 
     var mutated = try censusOf(&arena,
         \\main: i64 = ()

@@ -477,6 +477,19 @@ pub fn build(b: *std.Build) void {
     const wasm_local_step = b.step("wasm-local", "Lua local-function ingest agrees with its .id spelling under the Wasm realization");
     wasm_local_step.dependOn(&wasm_local_cmd.step);
 
+    // `idol run` answers with the GUEST's outcome. The wasm branch used to
+    // return after writing the artifact, so every program it compiled on a
+    // host without a native backend reported the compile's status instead —
+    // exit 0 for a source whose whole body is `7`. Wasmtime is the external
+    // oracle here for the same reason it is above, so this stays an explicit
+    // step rather than joining the default gates.
+    const outcome_cmd = b.addSystemCommand(&.{ "sh", "gate/outcome.sh" });
+    outcome_cmd.setCwd(b.path("."));
+    outcome_cmd.setEnvironmentVariable("IDOL_BIN", "./zig-out/bin/idol");
+    outcome_cmd.step.dependOn(b.getInstallStep());
+    const outcome_step = b.step("outcome", "idol run reports the guest's exit, trap, cancel, or refuses to report one");
+    outcome_step.dependOn(&outcome_cmd.step);
+
     // C0 law.corpus.zero is the Idol owner; this is an authority-free physical
     // Git-status projection. The same shim guards commits and serialized
     // admission so empty, binary, renamed, case-varied, and untracked .id
@@ -1085,7 +1098,7 @@ pub fn build(b: *std.Build) void {
     // A ceiling nothing runs is not a ratchet: host `TokenKind` regressed
     // measurably while these were unwired, which is precisely the class the
     // gap opened this item for.
-    const gap145_cmd = b.addSystemCommand(&.{ "sh", "gate/gap-145-consumer.sh" });
+    const gap145_cmd = b.addSystemCommand(&.{ "sh", "gate/token/read.sh" });
     gap145_cmd.setCwd(b.path("."));
     gap145_cmd.step.dependOn(b.getInstallStep());
     const gap145_step = b.step("gap-145-consumer", "no consumer observes the collapsed quote/text/byte identity, and the editor grammar agrees with the token owner (GAP-145 O1/O5/O7)");
@@ -1326,7 +1339,7 @@ pub fn build(b: *std.Build) void {
 
     const native_backend_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/native_backend.zig"),
+            .root_source_file = b.path("src/native.zig"),
             .target = target,
             .optimize = optimize,
         }),

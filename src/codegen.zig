@@ -980,6 +980,7 @@ pub const CodeGen = struct {
                         .bool => |b| b,
                         .int => |i| i != 0,
                         .float => |f| f != 0.0,
+                        .decimal => |d| !d.isZero(),
                         .string => true,
                         .table => true,
                         .func => true,
@@ -1038,6 +1039,7 @@ pub const CodeGen = struct {
                     .bool => |b| b,
                     .int => |i| i != 0,
                     .float => |f| f != 0.0,
+                    .decimal => |d| !d.isZero(),
                     .string => true,
                     .table => true,
                     .func => true,
@@ -1052,6 +1054,7 @@ pub const CodeGen = struct {
                     .bool => |b| b,
                     .int => |i| i != 0,
                     .float => |f| f != 0.0,
+                    .decimal => |d| !d.isZero(),
                     .string => true,
                     .table => true,
                     .func => true,
@@ -2287,7 +2290,7 @@ pub const CodeGen = struct {
         return switch (value) {
             .bool => .bool,
             .int => .i64,
-            .float => .f64,
+            .float, .decimal => .f64,
             .string => .str,
             .nil, .table, .func, .unavailable => .any,
         };
@@ -3923,7 +3926,7 @@ pub const CodeGen = struct {
             // is silent: a table admitted here and unlowerable there falls
             // through to a read that emits a POINTER, nondeterministically,
             // exit 0. So ask the lowering what it can do.
-            if (@import("dnir_lower.zig").moduleConstTableKind(mod, name, value) != null) return false;
+            if (@import("graph/lower.zig").moduleConstTableKind(mod, name, value) != null) return false;
             if (!table_is_positional_int_blob(value) or module_has_keyed_write(mod, name)) return true;
             return false;
         }
@@ -5869,7 +5872,7 @@ pub const CodeGen = struct {
                         // backend. Same precheck/lowering drift as string.byte
                         // and the expression-if; `compileStageValue` is the one
                         // rule both sides now call.
-                        if (@import("dnir_lower.zig").compileStageValue(un.operand) != null) break :blk true;
+                        if (@import("graph/lower.zig").compileStageValue(un.operand) != null) break :blk true;
                         self.nativeDiagFail("compile-stage-absent");
                         break :blk false;
                     }
@@ -17087,7 +17090,7 @@ pub const CodeGen = struct {
                 if (self.comptime_bindings().get(expr.name.ident)) |cv| {
                     const wrap: ?[]const u8 = switch (cv) {
                         .int => "lua_val_from_int",
-                        .float => "lua_val_from_num",
+                        .float, .decimal => "lua_val_from_num",
                         .bool => "lua_val_from_bool",
                         else => null,
                     };
@@ -17441,6 +17444,10 @@ pub const CodeGen = struct {
                                 },
                                 .float => |v| {
                                     self.p("{d}", .{v});
+                                    return;
+                                },
+                                .decimal => |v| {
+                                    self.p("{d}", .{v.toFloat()});
                                     return;
                                 },
                                 .bool => |v| {
@@ -20260,6 +20267,11 @@ pub const CodeGen = struct {
                     const written = std.fmt.bufPrint(&buf, "{d}", .{v}) catch return null;
                     try out.appendSlice(self.alloc, written);
                 },
+                .decimal => |v| {
+                    var buf: [32]u8 = undefined;
+                    const written = std.fmt.bufPrint(&buf, "{d}", .{v.toFloat()}) catch return null;
+                    try out.appendSlice(self.alloc, written);
+                },
                 .bool => |v| try out.appendSlice(self.alloc, if (v) "true" else "false"),
                 .nil => try out.appendSlice(self.alloc, "nil"),
                 else => return null,
@@ -20358,6 +20370,7 @@ pub const CodeGen = struct {
             .bool => |v| if (as_lua_value) self.p("lua_val_from_bool({s})", .{if (v) "true" else "false"}) else self.p("{s}", .{if (v) "true" else "false"}),
             .int => |v| if (as_lua_value) self.p("lua_val_from_int({d})", .{v}) else self.p("{d}", .{v}),
             .float => |v| if (as_lua_value) self.p("lua_val_from_num({d})", .{v}) else self.p("{d}", .{v}),
+            .decimal => |v| if (as_lua_value) self.p("lua_val_from_num({d})", .{v.toFloat()}) else self.p("{d}", .{v.toFloat()}),
             .string => |v| {
                 if (as_lua_value) {
                     const hash = calc_lua_hash(v);

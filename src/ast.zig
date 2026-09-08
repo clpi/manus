@@ -2,6 +2,7 @@ const std = @import("std");
 pub const Loc = @import("lexer.zig").Loc;
 const types = @import("types.zig");
 const RT = types.ResolvedType;
+const decimal = @import("decimal.zig");
 
 /// §4.1 — the surface FACE an application was written through.
 ///
@@ -579,7 +580,12 @@ pub const Expr = union(enum) {
     true_lit: Loc,
     false_lit: Loc,
     int_lit: struct { loc: Loc, val: i64 },
-    float_lit: struct { loc: Loc, val: f64 },
+    /// `val` is the f64 REALIZATION of this spelling; `dec` is what the
+    /// spelling MEANS. `dec` is absent exactly when the carrier declined the
+    /// spelling (hex float, out-of-band exponent, more digits than it holds),
+    /// and a consumer that reads `val` in its absence is reading a realization
+    /// it has no exact fact for.
+    float_lit: struct { loc: Loc, val: f64, dec: ?decimal.Decimal = null },
     /// Quoted source or a host-fabricated byte sequence. `quote` is the
     /// producer identity (GAP-145); `.host` is not a source quote.
     quoted: struct { loc: Loc, val: []const u8, quote: Quote = .host },

@@ -40,6 +40,177 @@ here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 root=$(CDPATH='' cd -- "$here/.." && pwd)
 cd "$root" || { printf 'mcp: cannot enter root\n' >&2; exit 3; }
 
+if [ "${1-}" = --read ]; then
+    exec python3 - "$root" "${2-}" <<'PY'
+import hashlib, json, os, pathlib, selectors, shutil, signal, subprocess, sys, tempfile, time
+
+source = pathlib.Path(sys.argv[1])
+server = pathlib.Path(sys.argv[2]).resolve()
+if not server.is_file() or not os.access(server, os.X_OK):
+    raise SystemExit('mcp read: executable server required')
+examined = 0
+
+def check(value, name):
+    global examined
+    examined += 1
+    if not value:
+        raise AssertionError(name)
+
+def digest(root):
+    return {str(p.relative_to(root)): (hashlib.sha256(p.read_bytes()).hexdigest(), p.stat().st_mtime_ns)
+            for p in root.rglob('*') if p.is_file() and not p.is_symlink()}
+
+with tempfile.TemporaryDirectory(prefix='idol-mcp-', dir=os.environ.get('TMPDIR')) as directory:
+    base = pathlib.Path(directory)
+    root = base / 'source'
+    root.mkdir()
+    git = shutil.which('git')
+    def command(*arg):
+        return subprocess.check_output([git, '-C', str(root), *arg], stderr=subprocess.PIPE, text=True).strip()
+    command('init', '-q')
+    command('config', 'user.email', 'test@invalid')
+    command('config', 'user.name', 'test')
+    (root / 'fact').write_text('observed\n')
+    command('add', 'fact')
+    command('commit', '-qm', 'fixture')
+    command('remote', 'add', 'origin', 'git@github.com:clpi/idol.git')
+    head = command('rev-parse', 'HEAD')
+    before = digest(root)
+    bin = base / 'bin'
+    bin.mkdir()
+    wrapper = bin / 'git'
+    wrapper.write_text('#!' + sys.executable + '\n' + '''import os,pathlib,subprocess,sys,time
+if 'ls-remote' in sys.argv:
+ mode=os.environ['MODE']
+ if mode=='offline':
+  sys.stderr.write('private credential must not escape')
+  raise SystemExit(1)
+ if mode=='malformed':
+  print('invalid ref')
+  raise SystemExit()
+ if mode=='timeout':
+  child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'])
+  pathlib.Path(os.environ['CHILD']).write_text(str(child.pid))
+  time.sleep(30)
+ if mode=='changed':
+  pathlib.Path(os.environ['IDOL_ROOT'],'change').write_text('changed')
+ print(os.environ['PEER']+'\\trefs/heads/main')
+else:
+ os.execv(''' + repr(git) + ''',[''' + repr(git) + ''',*sys.argv[1:]])
+''')
+    wrapper.chmod(0o755)
+    env = dict(os.environ, PATH=str(bin) + os.pathsep + os.environ['PATH'],
+               IDOL_ROOT=str(root), IDOL_BIN=str(server), IDOL_MODE='read', MODE='current', PEER=head,
+               CHILD=str(base / 'child'), GIT_OPTIONAL_LOCKS='0')
+    def call(name='orient', change=None, missing=False, argument=None, cwd=source):
+        context = dict(env, **(change or {}))
+        if missing:
+            context.pop('IDOL_ROOT', None)
+        process = subprocess.Popen([str(server)], cwd=cwd, env=context,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, start_new_session=True)
+        select = selectors.DefaultSelector()
+        select.register(process.stdout, selectors.EVENT_READ)
+        def read():
+            if not select.select(12):
+                raise AssertionError('persistent stream response deadline')
+            return json.loads(process.stdout.readline())
+        try:
+            process.stdin.write(json.dumps({'jsonrpc':'2.0','id':1,'method':'initialize','params':{}}, separators=(',',':'))+'\n')
+            process.stdin.flush()
+            response = read()
+            check(response['id'] == 1 and response['result']['serverInfo']['name'] == 'idol', 'initialize before EOF')
+            process.stdin.write(json.dumps({'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':name,'arguments':argument or {}}}, separators=(',',':'))+'\n')
+            process.stdin.flush()
+            response = read()
+            check(response['id'] == 2 and response['jsonrpc'] == '2.0', 'actual tool response identity')
+            process.stdin.close()
+            check(process.wait(timeout=3) == 0, 'stream exits after EOF')
+            return response.get('result', response)
+        finally:
+            select.close()
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=3)
+            process.stdout.close()
+            process.stderr.close()
+    result = call('head')
+    check(result['isError'] is False and result['content'][0]['text'] == head, 'current head')
+    result = call('status')
+    check(result['isError'] is False and result['content'][0]['text'].startswith('## '), 'current status')
+    result = call()
+    fact = json.loads(result['content'][0]['text'])
+    check(result['isError'] is False and fact['head'] == head and fact['remote']['head'] == head
+          and fact['root'] == str(root) and fact['dirty'] == 0, 'current authority')
+    check(fact['artifact']['digest'] == hashlib.sha256(server.read_bytes()).hexdigest()
+          and fact['artifact']['source'] is None, 'artifact source remains unbound')
+    check(digest(root) == before, 'no target tracked untracked index or config writes')
+    result = call(change={'PEER':'0'*40})
+    fact = json.loads(result['content'][0]['text'])
+    check(result['isError'] is True and fact['state'] == 'stale' and fact['head'] == head
+          and fact['remote']['head'] == '0'*40, 'stale subject refused')
+    for name in ('head', 'status'):
+        result = call(name, {'PEER':'0'*40})
+        check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'stale', name + ' cannot skip freshness')
+    for mode in ('offline', 'malformed'):
+        result = call(change={'MODE':mode})
+        fact = json.loads(result['content'][0]['text'])
+        check(result['isError'] is True and fact['state'] == 'unavailable'
+              and fact['remote']['head'] is None and 'private credential' not in json.dumps(result), mode)
+    command('remote','set-url','origin','https://credential@foreign.invalid/private')
+    result = call()
+    check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'foreign'
+          and 'credential' not in json.dumps(result), 'foreign sanitized')
+    command('remote','set-url','origin','git@github.com:clpi/idol.git')
+    (root/'untracked').write_text('preserve')
+    dirty = digest(root)
+    result = call()
+    check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'dirty'
+          and digest(root) == dirty, 'dirty source preserved')
+    (root/'untracked').unlink()
+    result = call(change={'IDOL_MODE':'unknown'})
+    check(result['isError'] is True and json.loads(result['content'][0]['text'])['reason'] == 'mode', 'unknown mode refuses')
+    ordinary = call('head', {'IDOL_MODE':'','MODE':'offline'})
+    check('isError' not in ordinary and ordinary['content'][0]['text'] == subprocess.check_output([git,'-C',str(source),'rev-parse','HEAD'],text=True).strip(), 'ordinary candidate head unchanged')
+    private = base/'private'
+    doc = private/'tools'/'concept'/'doc.sh'
+    doc.parent.mkdir(parents=True)
+    doc.write_text('#!/bin/sh\nprintf touched > reached\nprintf "%s" "$1" > argument\nprintf "doc: FAIL fixture"\n')
+    doc.chmod(0o755)
+    argument = {'file':str(root/'fact'), 'name':'concept'}
+    for name, mode in (('concept','read'), ('head','read'), ('head','unknown')):
+        result = call(name, {'IDOL_MODE':mode}, argument=argument, cwd=private)
+        check(result['error']['code'] == -32000 and 'connection mode' in result['error']['message']
+              and not (private/'reached').exists(), name + ' cannot execute in ' + mode)
+    result = call('concept', {'IDOL_MODE':''}, argument=argument, cwd=private)
+    check(result['error']['code'] == -32000 and (private/'reached').read_text() == 'touched', 'ordinary concept path remains executable')
+    for subject in ("path with space.id", "quo'te.id", "' ;touch injected; $(touch injected) `touch injected` .id"):
+        result = call('concept', {'IDOL_MODE':''}, argument={'file':subject}, cwd=private)
+        check(result['error']['code'] == -32000 and (private/'argument').read_text() == subject
+              and not (private/'injected').exists(), 'exact single shell argument ' + subject)
+    result = call(missing=True)
+    check(result['isError'] is True and json.loads(result['content'][0]['text'])['root'] is None, 'explicit root required')
+    alias = base/'alias'
+    alias.symlink_to(root,target_is_directory=True)
+    result = call(change={'IDOL_ROOT':str(alias)})
+    check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'invalid', 'root alias refused')
+    result = call(change={'MODE':'changed'})
+    check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'changed', 'changing source refused')
+    (root/'change').unlink()
+    began = time.monotonic()
+    result = call(change={'MODE':'timeout'})
+    check(result['isError'] is True and json.loads(result['content'][0]['text'])['state'] == 'unavailable'
+          and time.monotonic()-began < 12, 'remote deadline bounded')
+    child = int((base/'child').read_text())
+    state = subprocess.run(['ps','-p',str(child),'-o','stat='],capture_output=True,text=True)
+    check(state.returncode != 0 or state.stdout.strip().startswith('Z'), 'timed out request descendants stopped')
+    final = digest(root)
+    result = call()
+    check(result['isError'] is False and digest(root) == final, 'failure cannot become cached authority or mutate source')
+print(json.dumps({'passed':examined,'failed':0,'skipped':0,'transport':'actual persistent MCP stdio','network':'offline controlled remote boundary'}))
+PY
+fi
+
 IDOL=${IDOL:-"$root/zig-out/bin/idol"}
 tool=$here/../tools/concept/tool.sh
 self=$here/$(basename -- "$0")

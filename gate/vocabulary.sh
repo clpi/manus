@@ -13,6 +13,20 @@
 # admitted-word list, never treats source spelling as identity, and never reads
 # NodeKind alone as semantic proof.
 #
+# A graph entity proves that the parser accepted a spelling. It does not prove
+# the spelling is a NAME. LAW-16 admits one irreducible lowercase word; a
+# spelling outside that class is FOREIGN EXACT BYTES, and the only fact that
+# makes those bytes meaningful is a real foreign binding carrying them --
+# `c` origin, `c_import` exposure, symbol byte-equal to the name. Measured on
+# this tree: `first_value` and `firstvalue` were both graph-proven for the same
+# file, which is admission by parser theater rather than by identity.
+#
+# Mashing is NOT decided here and cannot be: `strlen` carries no seam, so no
+# lexical test separates it from a word. What IS decided is that two byte-
+# different spellings are two identities. Nothing below folds, strips, or
+# normalizes a spelling, so neither `first_value` nor `firstvalue` can ever
+# inherit the other's witness.
+#
 # A refusal is SEMANTIC-VOCABULARY-BLOCKED: improve the fact producer and this
 # consumer. Do not edit a registry to make a word pass.
 
@@ -61,12 +75,17 @@ if [ "$selftest" -eq 1 ]; then
     descriptor="$tmp/descriptor.diff"
     outside="$tmp/outside.id"
     escape="$tmp/escape.diff"
+    # Three declarations that ALREADY EXIST in this tree, so each case is the
+    # real graph answering rather than a fixture agreeing with itself.
+    bound="$tmp/bound.diff"
+    aliased="$tmp/aliased.diff"
+    bytes="$tmp/bytes.diff"
     printf '%s\n' \
         'diff --git a/lib/compiler/parser.id b/lib/compiler/parser.id' \
         '--- a/lib/compiler/parser.id' \
         '+++ b/lib/compiler/parser.id' \
         '@@ -0,0 +1 @@' \
-        '+lead: bool = (kind: i64)' >"$positive"
+        '+eval: i64 = (src: str)' >"$positive"
     printf '%s\n' \
         'diff --git a/lib/compiler/parser.id b/lib/compiler/parser.id' \
         '--- a/lib/compiler/parser.id' \
@@ -80,14 +99,32 @@ if [ "$selftest" -eq 1 ]; then
         '@@ -0,0 +1 @@' \
         '+ghost: { value: i64 }' >"$descriptor"
     printf '%s\n' \
-        'lead: bool = (kind: i64)' \
-        '  kind == 0' >"$outside"
+        'eval: i64 = (src: str)' \
+        '  0' >"$outside"
+    printf '%s\n' \
+        'diff --git a/lib/sqlite.id b/lib/sqlite.id' \
+        '--- a/lib/sqlite.id' \
+        '+++ b/lib/sqlite.id' \
+        '@@ -0,0 +1 @@' \
+        '+sqlite3_open: int = (path: str, db: any)' >"$bound"
+    printf '%s\n' \
+        'diff --git a/vendor/mathc.id b/vendor/mathc.id' \
+        '--- a/vendor/mathc.id' \
+        '+++ b/vendor/mathc.id' \
+        '@@ -0,0 +1 @@' \
+        '+sin_c: f64 = (x: f64)' >"$aliased"
+    printf '%s\n' \
+        'diff --git a/lib/compiler/parser.id b/lib/compiler/parser.id' \
+        '--- a/lib/compiler/parser.id' \
+        '+++ b/lib/compiler/parser.id' \
+        '@@ -0,0 +1 @@' \
+        '+is_digit: i64 = (c: i64)' >"$bytes"
     printf '%s\n' \
         'diff --git a/lib/compiler/parser.id b/lib/compiler/parser.id' \
         '--- a/lib/compiler/parser.id' \
         "+++ $outside" \
         '@@ -0,0 +1 @@' \
-        '+lead: bool = (kind: i64)' >"$escape"
+        '+eval: i64 = (src: str)' >"$escape"
     IDOL="$idol" sh "$0" --diff "$positive" >/dev/null 2>&1 \
         || die "selftest: a real graph-proven relation was refused"
     if IDOL="$idol" sh "$0" --diff "$missing" >/dev/null 2>&1; then
@@ -102,7 +139,15 @@ if [ "$selftest" -eq 1 ]; then
     if IDOL="$idol" sh "$0" --diff "$escape" >/dev/null 2>&1; then
         die "selftest: a diff path outside the repository was admitted"
     fi
-    note "vocabulary selftest: PASS (real relation; missing relation; descriptor; missing compiler; path escape)"
+    IDOL="$idol" sh "$0" --diff "$bound" >/dev/null 2>&1 \
+        || die "selftest: a real foreign binding was refused its own exact bytes"
+    if IDOL="$idol" sh "$0" --diff "$aliased" >/dev/null 2>&1; then
+        die "selftest: foreign bytes were admitted against a different bound symbol"
+    fi
+    if IDOL="$idol" sh "$0" --diff "$bytes" >/dev/null 2>&1; then
+        die "selftest: foreign exact bytes were admitted on an Idol callable"
+    fi
+    note "vocabulary selftest: PASS (real relation; missing relation; descriptor; missing compiler; path escape; bound foreign bytes; aliased symbol; unbound foreign bytes)"
     exit 0
 fi
 
@@ -150,7 +195,7 @@ unproven = []
 
 
 def validate_graph(graph):
-    if graph.get("schema") != "idol.graph.v1" or graph.get("version") != 17:
+    if graph.get("schema") != "idol.graph.v1" or graph.get("version") != 18:
         raise ValueError("graph schema/version")
     law = graph.get("root_source_law")
     if not isinstance(law, dict):
@@ -170,6 +215,36 @@ def validate_graph(graph):
         raise ValueError("module root absent")
 
 
+NATIVE_WORD = re.compile(r"[a-z][a-z0-9]*")
+NATIVE_EXPOSURE = {"internal", "compat_export", "c_export"}
+
+
+def admits(name, linkage):
+    """Why this linkage cannot admit this exact spelling, or None when it can.
+
+    The asymmetry is the point. A native word is VOCABULARY and the symbol
+    behind it is REALIZATION, so `open` stays admissible in front of a
+    `sqlite3_open` import -- refusing that would push authors toward the
+    foreign spelling, which is the opposite of the law. Foreign bytes have no
+    such freedom: the one fact that makes them a name is a binding that IS
+    them, so a name aliasing a different symbol (`sin_c` over `sin`, live in
+    vendor/mathc.id) is refused with the repair named.
+    """
+    origin = linkage.get("origin")
+    exposure = linkage.get("exposure")
+    native = NATIVE_WORD.fullmatch(name) is not None
+    if origin == "idol" and exposure in NATIVE_EXPOSURE:
+        if native:
+            return None
+        return "foreign exact bytes on an Idol callable; LAW-16 admits one lowercase word, or bind the bytes"
+    if origin == "c" and exposure == "c_import":
+        symbol = linkage.get("symbol")
+        if native or symbol == name:
+            return None
+        return f"foreign spelling is not the bound symbol {symbol!r}; spell the bytes or spell a word"
+    return f"linkage {origin!r}/{exposure!r} is not an admitted callable boundary"
+
+
 def relation_witness(graph, name):
     validate_graph(graph)
     body_ids = {row.get("relation") for row in graph["bodies"]}
@@ -177,6 +252,7 @@ def relation_witness(graph, name):
     for row in graph["callable_linkages"]:
         links.setdefault(row.get("callable"), []).append(row)
     candidates = []
+    refused = []
     for node in graph["nodes"]:
         # Name selects the source occurrence for this gate only. Exact graph id,
         # body, linkage, root scope, and source law establish the witness.
@@ -189,10 +265,18 @@ def relation_witness(graph, name):
         if len(rows) != 1:
             continue
         linkage = rows[0]
-        if linkage.get("origin") != "idol" or linkage.get("exposure") not in {"internal", "compat_export", "c_export"}:
+        why = admits(name, linkage)
+        if why is not None:
+            refused.append(why)
             continue
         candidates.append(entity)
-    return candidates[0] if len(candidates) == 1 else None
+    if len(candidates) == 1:
+        return candidates[0], None
+    if candidates:
+        return None, "ambiguous root-scoped witness"
+    if refused:
+        return None, refused[0]
+    return None, "no unique root-scoped Idol linkage+body witness"
 
 
 def graph_for(file):
@@ -221,12 +305,12 @@ for kind, name, file in rows:
         continue
     try:
         graph = graph_for(file)
-        entity = relation_witness(graph, name)
+        entity, why = relation_witness(graph, name)
     except Exception as exc:
         unproven.append((kind, name, file, str(exc)))
         continue
     if entity is None:
-        unproven.append((kind, name, file, "no unique root-scoped Idol linkage+body witness"))
+        unproven.append((kind, name, file, why))
     else:
         proven.append((kind, name, file, entity, graph))
 
@@ -247,7 +331,7 @@ for label, damage in (
 ):
     damaged = deepcopy(graph)
     damage(damaged)
-    if relation_witness(damaged, name) is not None:
+    if relation_witness(damaged, name)[0] is not None:
         print(f"control failed: damaged {label} still witnesses {name}")
         raise SystemExit(1)
 damaged = deepcopy(graph)
@@ -269,15 +353,57 @@ else:
     print("control failed: damaged source-law cardinality was accepted")
     raise SystemExit(1)
 
+# IDENTITY CONTROLS over the same first witness. The four above prove a missing
+# semantic column loses the witness; these prove a spelling cannot borrow one.
+# `seam` and `mash` are two byte-different neighbours of the proven name, and
+# the pair is the counterexample this gate exists for: one carries foreign
+# bytes, the other does not, and neither is the other.
+seam = name + "_x"
+mash = seam.replace("_", "")
+
+
+def respell(g, spelling, **linkage):
+    out = deepcopy(g)
+    for node in out["nodes"]:
+        if node.get("id") == entity:
+            node["name"] = spelling
+    for row in out["callable_linkages"]:
+        if row.get("callable") == entity:
+            row.update(linkage)
+    return out
+
+
+renamed = respell(graph, seam)
+for borrower in (name, mash):
+    if relation_witness(renamed, borrower)[0] is not None:
+        print(f"control failed: {seam} witnessed the different identity {borrower}")
+        raise SystemExit(1)
+if relation_witness(renamed, seam)[0] is not None:
+    print(f"control failed: foreign exact bytes {seam} were admitted with no foreign binding")
+    raise SystemExit(1)
+bound = respell(graph, seam, origin="c", exposure="c_import", symbol=seam)
+if relation_witness(bound, seam)[0] is None:
+    print(f"control failed: a real foreign binding did not admit its own bytes {seam}")
+    raise SystemExit(1)
+for other in (name, mash):
+    if relation_witness(bound, other)[0] is not None:
+        print(f"control failed: the foreign binding for {seam} also witnessed {other}")
+        raise SystemExit(1)
+aliased = respell(graph, seam, origin="c", exposure="c_import", symbol=mash)
+if relation_witness(aliased, seam)[0] is not None:
+    print(f"control failed: foreign bytes {seam} were admitted against the symbol {mash}")
+    raise SystemExit(1)
+
 for kind, name, file, entity, _ in proven:
     print(f"graph-proven {kind:12} {name:28} {file} id={entity}")
 print("vocabulary graph controls: PASS (body, linkage, exposure, root scope, schema version, source law)")
+print("vocabulary identity controls: PASS (no normalization, foreign bytes need a binding, binding admits only its own bytes)")
 PY
     then
         cat "$witness" >&2
     else
         cat "$witness" >&2
-        die "SEMANTIC-VOCABULARY-BLOCKED: $n_new declaration(s); only exact graph-proven module relations are admitted. Cases, descriptors, bindings, missing/ambiguous linkage, missing body, and invalid source-law evidence remain refused."
+        die "SEMANTIC-VOCABULARY-BLOCKED: $n_new declaration(s); only exact graph-proven module relations are admitted. Cases, descriptors, bindings, missing/ambiguous linkage, missing body, invalid source-law evidence, and foreign exact bytes without a real foreign binding remain refused."
     fi
 fi
 

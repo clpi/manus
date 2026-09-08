@@ -748,31 +748,57 @@ compile_and_run() {
         printf 'parser artifact: FAIL — %s cursor/pack probe did not compile\n' "$label" >&2
         return 1
     fi
+    rm -f -- "$cursor_result"
     if ! "$cursor_executable" > "$cursor_result"; then
         printf 'parser artifact: FAIL — %s cursor/pack probe disagreed\n' "$label" >&2
         return 1
     fi
+    require_result "$label" "$cursor_result"
 }
+
+expected_cursor_result='typed=1 call=0 offside=1 condition=0 empty=1 nested=0 cursor-pack-cases=8 header-lane-cases=8 return-lane-cases=6 match-lane-cases=8 type-lane-cases=5 bare-lane-cases=5 layout-type-cases=8 declaration-lane-cases=14 delimiter-lane-cases=25 lead-slots=114 prefix-slots=114 relation-slots=114 statement-slots=114 event-cases=228 event-lead-cases=2 event-boundary-slots=114 boundary-opening-cases=7 admission-cases=228 member-slots=114 boundary-slots=114 boundary-closure-cases=48 boundary-clause-cases=686 layout-terminators=114 empty-terminators=114 failed=0'
+
+result() {
+    [ -s "$1" ] || return 1
+    line_count=$(wc -l < "$1" | tr -d ' ')
+    [ "$line_count" = 1 ] || return 1
+    IFS= read -r line < "$1" || return 1
+    [ "$line" = "$expected_cursor_result" ]
+}
+
+require_result() {
+    label=$1
+    path=$2
+    if result "$path"; then
+        return 0
+    fi
+    if [ ! -s "$path" ]; then
+        printf 'parser artifact: FAIL — %s cursor/pack result is absent or empty\n' "$label" >&2
+    else
+        printf 'parser artifact: FAIL — %s cursor/pack result is not the exact passing verdict\n' "$label" >&2
+        tr -d '\n' < "$path" >&2
+        printf '\n' >&2
+    fi
+    return 1
+}
+
+control_result="$work/control.cursor.result"
+wrong="$work/wrong.cursor.result"
+stale="$work/stale.cursor.result"
+empty="$work/empty.cursor.result"
+missing="$work/missing.cursor.result"
+printf '%s\n' "$expected_cursor_result" > "$control_result"
+printf '%s\n' "${expected_cursor_result% failed=0} failed=1" > "$wrong"
+printf '%s\n' 'typed=1 call=0 failed=0' > "$stale"
+: > "$empty"
+if ! result "$control_result" || result "$wrong" || result "$stale" || result "$empty" || result "$missing"; then
+    printf '%s\n' 'parser artifact: FAIL — cursor/pack result predicate accepted wrong, stale, empty, or missing evidence' >&2
+    status=1
+fi
 
 compile_and_run candidate "$candidate" || status=1
 compile_and_run tracked "$tracked" || status=1
-result() {
-    [ -s "$1" ]
-}
-empty="$work/empty.cursor.result"
-missing="$work/missing.cursor.result"
-: > "$empty"
-if result "$empty" || result "$missing"; then
-    printf '%s\n' 'parser artifact: FAIL — cursor/pack result predicate accepted empty or missing evidence' >&2
-    status=1
-fi
-if ! result "$work/candidate.cursor.result"; then
-    printf '%s\n' 'parser artifact: FAIL — generated cursor/pack result is absent or empty' >&2
-    status=1
-elif ! result "$work/tracked.cursor.result"; then
-    printf '%s\n' 'parser artifact: FAIL — tracked cursor/pack result is absent or empty' >&2
-    status=1
-else
+if [ "$status" -eq 0 ]; then
     if cmp -s "$work/candidate.cursor.result" "$work/tracked.cursor.result"; then
         printf 'parser artifact: %s\n' "$(tr -d '\n' < "$work/candidate.cursor.result")"
     else

@@ -260,7 +260,7 @@ spellings() {
   sed 's|//.*||' "$1" | grep -cE '\.div, \.idiv, \.mod *=>|tag == \.div' || true
 }
 
-for f in src/dnir_lower.zig src/native_backend.zig; do
+for f in src/graph/lower.zig src/native.zig; do
   subject "$f" || continue
   spelled=$(spellings "$f")
   asks=$(grep -c "$predicate" "$f" 2>/dev/null || true)

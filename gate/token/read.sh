@@ -1,5 +1,5 @@
 #!/bin/sh
-# gate/gap-145-consumer.sh — GAP-145: nothing may hold a second answer about
+# gate/token/read.sh — GAP-145: nothing may hold a second answer about
 # what a token IS.
 #
 # Three classes of observer, one runner:
@@ -22,12 +22,12 @@
 # reports a number that proves nothing (law.gate.protocol).
 set -u
 
-ROOT=${GAP145_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
+ROOT=${GAP145_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)}
 TYPES="$ROOT/src/types.zig"
 SEMA="$ROOT/src/sema.zig"
 CODEGEN="$ROOT/src/codegen.zig"
 AST="$ROOT/src/ast.zig"
-DNIR="$ROOT/src/dnir_lower.zig"
+DNIR="$ROOT/src/graph/lower.zig"
 PARSER=${GAP145_PARSER:-"$ROOT/src/parser.zig"}
 DISPATCH="$ROOT/src/lexer_dispatch.zig"
 LEXER_BRIDGE="$ROOT/src/lexer_bridge.zig"
@@ -62,6 +62,48 @@ forbid() {
     fi
 }
 
+plant() {
+    python3 - "$1" "$2" "$3" <<'PYTHON'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_bytes()
+old = sys.argv[2].encode()
+new = sys.argv[3].encode()
+if not old or old == new or old not in source:
+    sys.stderr.write("gap-145 consumer gate: absent or unchanged perturbation\n")
+    sys.exit(2)
+sys.stdout.buffer.write(source.replace(old, new, 1))
+PYTHON
+}
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    fixture=$(mktemp -d) || exit 2
+    printf 'before first first\nafter first\n' >"$fixture/source"
+    printf 'before second first\nafter first\n' >"$fixture/want"
+    plant "$fixture/source" first second >"$fixture/found"
+    status=$?
+    examined=$((examined + 1))
+    if [ "$status" -ne 0 ] || ! cmp -s "$fixture/found" "$fixture/want"; then
+        bad 'perturbation did not replace only the first occurrence'
+    fi
+    plant "$fixture/source" missing second >"$fixture/found" 2>"$fixture/error"
+    status=$?
+    examined=$((examined + 1))
+    if [ "$status" -ne 2 ] || [ -s "$fixture/found" ]; then
+        bad 'perturbation accepted an absent needle'
+    fi
+    printf 'first\r\nlast\000byte' >"$fixture/source"
+    printf 'second\r\nlast\000byte' >"$fixture/want"
+    plant "$fixture/source" first second >"$fixture/found"
+    status=$?
+    examined=$((examined + 1))
+    if [ "$status" -ne 0 ] || ! cmp -s "$fixture/found" "$fixture/want"; then
+        bad 'perturbation changed bytes outside the first occurrence'
+    fi
+    rm -rf -- "$fixture"
+fi
+
 # ── 1. quote identity reaches the consumers ─────────────────────────────────
 
 has "$AST" 'pub fn quotedLiteralIsByteSequence' \
@@ -73,14 +115,14 @@ has "$SEMA" 'types.quotedLiteralType(lit.quote)' \
 has "$CODEGEN" 'types.quotedLiteralType(lit.quote)' \
     'codegen.zig must recover quoted literal types via quotedLiteralType'
 has "$DNIR" 'types.quotedLiteralType(lit.quote)' \
-    'dnir_lower.zig must type quoted globals via quotedLiteralType'
+    'graph/lower.zig must type quoted globals via quotedLiteralType'
 
 forbid "$SEMA" '.quoted => .str,' \
     'sema.zig reintroduced bare `.quoted => .str` collapse'
 forbid "$CODEGEN" '.quoted => .str,' \
     'codegen.zig reintroduced bare `.quoted => .str` collapse'
 forbid "$DNIR" '.quoted => .str,' \
-    'dnir_lower.zig reintroduced bare `.quoted => .str` collapse'
+    'graph/lower.zig reintroduced bare `.quoted => .str` collapse'
 
 # ── 2. one producer of lexical identity ─────────────────────────────────────
 #
@@ -863,6 +905,26 @@ has "$PARSER" 'fn currentParserAnchor(self: *Parser) ParseError!bool {' \
     'parser.zig lost the macro/anchor primary consumer'
 has "$PARSER" 'if (try self.currentParserAnchor()) {' \
     'parse_simple_expr bypasses the settled macro/anchor primary face'
+has "$ROOT/lib/compiler/parser.id" 'if kind == token.kindat and index + 1 < count' \
+    'event lost the bare-anchor following-token decision'
+has "$ROOT/lib/compiler/parser.id" 'if following == token.kindrparen or following == token.kindcomma' \
+    'event lost the two bare-anchor closer faces'
+has "$ROOT/lib/compiler/parser.id" '(bare << 7)' \
+    'event lost lane-two bare-anchor bit 7'
+has "$PARSER" 'return (((try self.currentParserDecision()) >> 7) & 1) != 0;' \
+    'Parser bare-anchor reader no longer consumes lane-two bit 7'
+barewalk=$(sed -n '/fn at_is_bare_anchor/,/^    }/p' "$PARSER" | grep -cE 'saveState|restoreState|self\.(adv|pk)\(' || true)
+examined=$((examined + 1))
+if [ "$barewalk" -ne 0 ]; then
+    bad "Parser retained $barewalk bare-anchor host cursor decision(s)"
+fi
+baresweep=$(sed -n '/bare anchor decision executes through whole-pack event/,/^}/p' "$PARSER")
+for predicate in '.{ .at, .rparen }' '.{ .at, .comma }' '.{ .at, .name }' '.{ .at, .lbrace }' '.{ .at, .eof }' '.{ .at, .int_lit }' 'try consumer.at_is_bare_anchor()' 'error.TestExpectedEqual'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$baresweep" | grep -cF "$predicate")" -lt 1 ]; then
+        bad "bare-anchor exact-reader control lost predicate: $predicate"
+    fi
+done
 atarms=$(sed -n '/fn parse_simple_expr/,/fn at_anchor_case/p' "$PARSER" | grep -cF '.at => ' || true)
 examined=$((examined + 1))
 if [ "$atarms" -ne 0 ]; then
@@ -1212,6 +1274,8 @@ if [ "$bare_calls" -ne 0 ]; then
     bad "parser.zig retained $bare_calls bare-declaration scanner call(s)"
 fi
 bare_lane=$(grep -cF 'currentParserDecision()) >> 7' "$PARSER" || true)
+anchor=$(sed -n '/fn at_is_bare_anchor/,/^    }/p' "$PARSER" | grep -cF 'currentParserDecision()) >> 7' || true)
+bare_lane=$((bare_lane - anchor))
 examined=$((examined + 1))
 if [ "$bare_lane" -ne 2 ]; then
     bad "the two remaining bare-declaration consumers must select lane-two bit 7 (calls=$bare_lane)"
@@ -2613,13 +2677,67 @@ QUOTE_BLIND_CEILING=13
 # follows comptime.zig:451. Lower the ceiling as the remaining face-neutral
 # arms (span, truthy, emit, inert, carrier, test, name) are adjudicated away.
 
+corpus() (
+    root=$1
+    out=$2
+    if ! (cd "$root" && sh "$ROOT/gate/subject.sh" 'src/*.zig') >"$out.list"; then
+        printf '%s\n' 'gap-145 consumer gate: cannot enumerate quoted source' >&2
+        exit 2
+    fi
+    : >"$out" || exit 2
+    while IFS= read -r path; do
+        case "$path" in
+            src/*.zig) ;;
+            *) printf '%s\n' 'gap-145 consumer gate: invalid quoted source path' >&2; exit 2 ;;
+        esac
+        if [ ! -f "$root/$path" ] || [ ! -r "$root/$path" ] ||
+            ! cat "$root/$path" >>"$out" || ! printf '\n' >>"$out"; then
+            printf 'gap-145 consumer gate: cannot read quoted source %s\n' "$path" >&2
+            exit 2
+        fi
+    done <"$out.list"
+)
+
+quote=$(mktemp -d) || exit 2
+trap 'rm -rf -- "$quote"' 0
+corpus "$ROOT" "$quote/source" || exit 2
+printf '  quoted source subjects: %s\n' "$(wc -l <"$quote/source.list" | tr -d ' ')"
+
+mkdir -p "$quote/tree/src/branch" || exit 2
+printf '%s' '    .quoted => |s| graphTextConst(ctx.graph, expr),' >"$quote/tree/src/probe.zig" || exit 2
+printf '%s' '    .quoted => |s| blk: { _ = s.quote; break :blk .{ .str = s.val }; },' >"$quote/tree/src/branch/probe.zig" || exit 2
+(cd "$quote/tree" && git init -q && git add src) || exit 2
+printf '%s\n' \
+    '    .quoted => |s| blk: { _ = s.quote; break :blk .{ .str = s.val }; },' \
+    '    .quoted => |s| graphTextConst(ctx.graph, expr),' >"$quote/want" || exit 2
+corpus "$quote/tree" "$quote/found" 2>"$quote/error"
+status=$?
+examined=$((examined + 1))
+if [ "$status" -ne 0 ] || ! cmp -s "$quote/want" "$quote/found"; then
+    bad 'quoted source corpus lost a tracked root or nested subject'
+fi
+rm "$quote/tree/src/branch/probe.zig" || exit 2
+corpus "$quote/tree" "$quote/found" 2>"$quote/error"
+status=$?
+examined=$((examined + 1))
+if [ "$status" -ne 2 ] || ! grep -Fxq 'gap-145 consumer gate: cannot read quoted source src/branch/probe.zig' "$quote/error"; then
+    bad 'quoted source corpus accepted a missing tracked subject'
+fi
+(cd "$quote/tree" && git rm -q --cached -r src) || exit 2
+corpus "$quote/tree" "$quote/found" 2>"$quote/error"
+status=$?
+examined=$((examined + 1))
+if [ "$status" -ne 2 ] || ! grep -Fxq 'gap-145 consumer gate: cannot enumerate quoted source' "$quote/error"; then
+    bad 'quoted source corpus accepted an empty subject set'
+fi
+
 armregex='^[[:space:]]*(\.[a-z_, .]*)?\.quoted =>'
-arms=$(grep -hE "$armregex" "$ROOT"/src/*.zig | wc -l | tr -d ' ')
+arms=$(grep -hE "$armregex" "$quote/source" | wc -l | tr -d ' ')
 # `.quoted` CONTAINS `.quote`, so a naive `grep -c '\.quote'` matches every arm
 # and reports 0 blind ones. It did, on the first run of this check. `[^d]` is
 # what separates reading the fact from naming the node. Discards `_ = x.quote`
 # are STRIPPED before this count — see the block comment above.
-observing=$(grep -hE "$armregex" "$ROOT"/src/*.zig \
+observing=$(grep -hE "$armregex" "$quote/source" \
     | grep -vE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' \
     | grep -cE '\.quote[^d]|Quote|graphTextConst|graphByteSequenceConst')
 blind=$((arms - observing))
@@ -2667,7 +2785,7 @@ fi
 # face-neutral and should not mention the field at all. The only use of the
 # shape ever measured in this tree was census bait. Zero tolerance, positive
 # control below.
-baits=$(grep -hE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' "$ROOT"/src/*.zig | wc -l | tr -d ' ')
+baits=$(grep -hE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' "$quote/source" | wc -l | tr -d ' ')
 examined=$((examined + 1))
 if [ "$baits" -ne 0 ]; then
     bad "$baits .quoted arm(s) DISCARD the quote field ('_ = x.quote;') — a discard observes nothing; read the face or drop the mention"
@@ -2700,7 +2818,7 @@ fi
 #   test        inside a unit test, not a consumer decision
 DIVERGENT_QUOTE_ARMS=0
 
-divergent=$(grep -hE "$armregex" "$ROOT"/src/*.zig \
+divergent=$(grep -hE "$armregex" "$quote/source" \
     | grep -vE '_ = [A-Za-z_][A-Za-z0-9_]*\.quote;' \
     | grep -vE '\.quote[^d]|Quote|graphTextConst|graphByteSequenceConst' \
     | grep -vE '=> \|(\*?x\| x\.loc,|s\| s\.val,|x\| x\.val,|lit\| lit\.val,)|=> return true,|=> true,|=> \{\},|=> null,|\.str = s\.val \}, // both faces share this carrier|=> \|lit\| \.\{ \.named = lit\.val \},|=> non_numeric_out\.\* = true,|=> \|v\| \{$|=> \{$|=> \|s\| \.\{ \.string = s\.val \},|=> try self\.emit_c_string_literal\(expr\.quoted\.val\),|=> \|\*x\| if \(d\.kind == \.text\) \{$')
@@ -2817,7 +2935,7 @@ printf '  load-time image folds: 2, each observing the producer quote, 0 face-bl
 # that carried no face; the refusal that replaced it carries no text/byte claim.
 QUOTE_TAGTEST_CEILING=88
 
-tagtests=$(grep -h '== \.quoted\b' "$ROOT"/src/*.zig | wc -l | tr -d ' ')
+tagtests=$(grep -h '== \.quoted\b' "$quote/source" | wc -l | tr -d ' ')
 examined=$((examined + 1))
 
 # POSITIVE CONTROL ON THE COUNTER. The counter is the instrument; a ceiling
@@ -3901,7 +4019,6 @@ if [ "$consumed_after_advance" -ne 1 ]; then
     bad "the attribute-argument paren read is no longer after its advance: count=$consumed_after_advance"
 fi
 # (b) The sweep test is the equivalence oracle itself: it is required to
-#     compare the face against the identity, over every generated row.
 sweep_oracle=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
     grep -cF 'kind == .lparen' || true)
 examined=$((examined + 1))
@@ -3909,17 +4026,23 @@ if [ "$sweep_oracle" -ne 1 ]; then
     bad "the group-opening equivalence sweep lost its identity comparison: count=$sweep_oracle"
 fi
 sweep_bit=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF '>> 63) & 1' || true)
+    grep -cF 'try testing.expectEqual(expected, try consumer.currentParserCall());' || true)
 examined=$((examined + 1))
 if [ "$sweep_bit" -ne 1 ]; then
-    bad "the group-opening equivalence sweep does not read event bit 63: count=$sweep_bit"
+    bad "the group-opening equivalence sweep does not execute the reader: count=$sweep_bit"
 fi
-sweep_nonvacuous=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF 'try testing.expect(seen);' || true)
+refusal=$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | \
+    grep -cF 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserCall());' || true)
 examined=$((examined + 1))
-if [ "$sweep_nonvacuous" -ne 1 ]; then
-    bad "the group-opening equivalence sweep could pass on a face that admits nothing: count=$sweep_nonvacuous"
+if [ "$refusal" -ne 1 ]; then
+    bad "the group-opening equivalence sweep does not assert the reader's trivia refusal: count=$refusal"
 fi
+for predicate in 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(sed -n '/the group-opening face admits exactly/,/^}/p' "$PARSER" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "group-opening equivalence oracle lost predicate: $predicate"
+    fi
+done
 
 # Each transferred region must select a nonempty region of the parser AND
 # carry the settled face. A count of one cannot be luck if the region it is
@@ -4053,27 +4176,28 @@ if [ "$at_sweep_oracle" -ne 1 ]; then
     bad "the anchor equivalence sweep lost its identity comparison: count=$at_sweep_oracle"
 fi
 at_sweep_face=$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF 'face == 17' || true)
+    grep -cF 'try testing.expectEqual(expected, try consumer.currentParserAnchor());' || true)
 examined=$((examined + 1))
 if [ "$at_sweep_face" -ne 1 ]; then
-    bad "the anchor equivalence sweep does not read the settled face: count=$at_sweep_face"
+    bad "the anchor equivalence sweep does not execute the reader: count=$at_sweep_face"
 fi
 # A `(` carries a matching-close COORDINATE in the same lane-two field, and a
-# coordinate ranges over every face value including 17. The reader guards on
-# event bit 63; a sweep that skipped the guard would not be measuring the
-# reader.
+has "$PARSER" '        if (try self.currentParserCall()) return 0;' \
+    'currentParserFace lost the group-opening guard that keeps a matching-close coordinate out of the face'
+has "$PARSER" '        return (try self.currentParserFace()) == 17;' \
+    'the anchor consumer no longer reads the settled anchor face'
 at_sweep_guard=$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF '>> 63) & 1' || true)
+    grep -cF 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserAnchor());' || true)
 examined=$((examined + 1))
 if [ "$at_sweep_guard" -ne 1 ]; then
-    bad "the anchor equivalence sweep dropped the group-opening guard the reader carries: count=$at_sweep_guard"
+    bad "the anchor equivalence sweep does not assert the reader's trivia refusal: count=$at_sweep_guard"
 fi
-at_sweep_nonvacuous=$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF 'try testing.expect(seen);' || true)
-examined=$((examined + 1))
-if [ "$at_sweep_nonvacuous" -ne 1 ]; then
-    bad "the anchor equivalence sweep could pass on a face that admits nothing: count=$at_sweep_nonvacuous"
-fi
+for predicate in 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(sed -n '/the anchor face admits exactly/,/^}/p' "$PARSER" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "anchor equivalence oracle lost predicate: $predicate"
+    fi
+done
 
 # Each transferred region must select a nonempty region of the parser AND carry
 # the settled face at its exact count.
@@ -4194,36 +4318,27 @@ if [ "$dot_sweep_oracle" -ne 1 ]; then
     bad "the projection equivalence sweep lost its identity comparison: count=$dot_sweep_oracle"
 fi
 dot_sweep_face=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF 'face == 15' || true)
+    grep -cF 'try testing.expectEqual(expected, try consumer.currentParserField());' || true)
 examined=$((examined + 1))
 if [ "$dot_sweep_face" -ne 1 ]; then
-    bad "the projection equivalence sweep does not read the settled face: count=$dot_sweep_face"
+    bad "the projection equivalence sweep does not execute the reader: count=$dot_sweep_face"
 fi
-# A `(` carries a matching-close COORDINATE in the same lane-two field, and a
-# coordinate ranges over every face value including 15. The reader guards on
-# event bit 63; a sweep that skipped the guard would not be measuring the
-# reader.
+has "$PARSER" '        return (try self.currentParserFace()) == 15 and' \
+    'the projection consumer no longer reads the settled projection face'
+has "$PARSER" '            !try self.currentParserPrefix();' \
+    'the projection consumer lost the prefix discriminator at the same coordinate'
 dot_sweep_guard=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF '>> 63) & 1' || true)
+    grep -cF 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserField());' || true)
 examined=$((examined + 1))
 if [ "$dot_sweep_guard" -ne 1 ]; then
-    bad "the projection equivalence sweep dropped the group-opening guard the reader carries: count=$dot_sweep_guard"
+    bad "the projection equivalence sweep does not assert the reader's trivia refusal: count=$dot_sweep_guard"
 fi
-# The reader also refuses a prefix identity at that coordinate — the second
-# discriminator gate section above pins in `currentParserField` itself. A sweep
-# that mirrored only one of the two would not be measuring the reader either.
-dot_sweep_prefix=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF '>> 20) & 1' || true)
-examined=$((examined + 1))
-if [ "$dot_sweep_prefix" -ne 1 ]; then
-    bad "the projection equivalence sweep dropped the parenthesis-boundary discriminator the reader carries: count=$dot_sweep_prefix"
-fi
-dot_sweep_nonvacuous=$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | \
-    grep -cF 'try testing.expect(seen);' || true)
-examined=$((examined + 1))
-if [ "$dot_sweep_nonvacuous" -ne 1 ]; then
-    bad "the projection equivalence sweep could pass on a face that admits nothing: count=$dot_sweep_nonvacuous"
-fi
+for predicate in 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(sed -n '/the projection face admits exactly/,/^}/p' "$PARSER" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "projection equivalence oracle lost predicate: $predicate"
+    fi
+done
 
 # Each transferred region must select a nonempty region of the parser AND carry
 # the settled face at its exact count.
@@ -4257,7 +4372,7 @@ check_projection_region '/fn parse_macro_call_expr/,/fn parse_at_path_segment/' 
 # Anti-green controls. Each transferred site composed the projection answer
 # with a sibling fact of its own; deleting that sibling would widen admission
 # rather than move it, so every one is required to survive.
-has "$PARSER" 'and nxt.kind != .colon) return null;' \
+has "$PARSER" 'and !try self.currentParserColon()) return null;' \
     'the qualified assignment head lost its method-colon alternative'
 has "$PARSER" 'and self.glued_to_prev(try self.pk())) {' \
     'the chained projection walk lost its adjacency test'
@@ -4265,7 +4380,7 @@ has "$PARSER" 'if (op != .eq and op != .neq) return false;' \
     'the case-set element stance lost its equality gate'
 has "$PARSER" 'if (self.caseset_cases.count() == 0) return false;' \
     'the case-set element stance lost its declared-case gate'
-has "$PARSER" '} else if (try self.eat(.colon) != null) {' \
+has "$PARSER" '} else if (try self.eatParserColon()) {' \
     'the declared relation trie path lost its method-colon branch'
 examined=$((examined + 1))
 if [ "$(grep -cF 'const dot = try self.expect(.dot);' "$PARSER")" -lt 1 ]; then
@@ -4337,8 +4452,8 @@ rm -rf -- "$amp_probe"
 
 if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     amp_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate refinement perturbation scratch' >&2; exit 2; }
-    sed '0,/infix\.op == \.band/s//infix.op == .add/' "$PARSER" >"$amp_probe/accept.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$amp_probe/accept.result" 2>&1
+    plant "$PARSER" 'infix.op == .band' 'infix.op == .add' >"$amp_probe/accept.zig" || exit 2
+    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$amp_probe/accept.result" 2>&1
     amp_status=$?
     examined=$((examined + 1))
     if [ "$amp_status" -ne 1 ] || [ ! -s "$amp_probe/accept.result" ] ||
@@ -4347,8 +4462,8 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
         bad "layout refinement false-accept control did not fail closed: status=$amp_status"
     fi
 
-    sed '0,/try testing\.expect(seen);/s//try testing.expect(!seen);/' "$PARSER" >"$amp_probe/wrong.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$amp_probe/wrong.result" 2>&1
+    plant "$PARSER" 'try testing.expect(seen);' 'try testing.expect(!seen);' >"$amp_probe/wrong.zig" || exit 2
+    GAP145_PERTURB=1 GAP145_PARSER="$amp_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$amp_probe/wrong.result" 2>&1
     amp_status=$?
     examined=$((examined + 1))
     if [ "$amp_status" -ne 1 ] || [ ! -s "$amp_probe/wrong.result" ] ||
@@ -4461,8 +4576,8 @@ fi
 
 if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     catch_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate catch perturbation scratch' >&2; exit 2; }
-    sed '0,/== 32/s//== 14/' "$PARSER" >"$catch_probe/accept.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/accept.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/accept.result" 2>&1
+    plant "$PARSER" '== 32' '== 14' >"$catch_probe/accept.zig" || exit 2
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$catch_probe/accept.result" 2>&1
     catch_status=$?
     examined=$((examined + 1))
     if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/accept.result" ] ||
@@ -4472,7 +4587,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     fi
 
     sed '/catch identity executes through whole-pack event/,/^}/ s/try testing\.expect(rejected);/try testing.expect(!rejected);/' "$PARSER" >"$catch_probe/wrong.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/wrong.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/wrong.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$catch_probe/wrong.result" 2>&1
     catch_status=$?
     examined=$((examined + 1))
     if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/wrong.result" ] ||
@@ -4489,7 +4604,7 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
     # predicate ratchet cannot see it; the class detector must.
     sed '/catch identity executes through whole-pack event/,/^}/ s/var events = \[2\]i64{ 0, 0 };/var events = [_]i64{ event, 0 };/' \
         "$PARSER" >"$catch_probe/lane.zig"
-    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/lane.zig" sh "$ROOT/gate/gap-145-consumer.sh" >"$catch_probe/lane.result" 2>&1
+    GAP145_PERTURB=1 GAP145_PARSER="$catch_probe/lane.zig" sh "$ROOT/gate/token/read.sh" >"$catch_probe/lane.result" 2>&1
     catch_status=$?
     examined=$((examined + 1))
     if [ "$catch_status" -ne 1 ] || [ ! -s "$catch_probe/lane.result" ] ||
@@ -4499,6 +4614,886 @@ if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
         bad "catch empty-evidence control did not fail closed: status=$catch_status"
     fi
     rm -rf -- "$catch_probe"
+fi
+
+# ── §9 DESCRIPTOR-COLON IDENTITY IS CONSUMED AS A CLASS ─────────────────────
+#
+# `lib/compiler/parser.id` settles `:` identity for every coordinate in the
+# pack, in TWO faces: it writes face 16 at exactly `kind == token.kindcolon`
+# and then OVERRIDES it to face 26 at the one `:` whose applied descriptor
+# closes immediately before an `=`. Both arms are guarded by that same
+# identity and nothing else reaches either, so their union is the identity and
+# face 16 alone is NOT — `currentParserMethod()`, which reads 16 by itself, is
+# a different question and stays where it is.
+#
+# Sixteen parser consumers across fifteen functions still answered "is the
+# token under the cursor a `:`" for themselves, from the generated host
+# TokenKind, at a coordinate the producer had already settled and `pk()` had
+# already selected. The class is every host read of `:` identity AT A CURSOR
+# COORDINATE, in the three spellings it takes in this file:
+# `(try self.pk()).kind == .colon` and its negation, a token captured by
+# `pk()` and then compared (`nxt.kind == .colon`), and `eat(.colon)`. Its
+# count falls 16 -> 0. `expect(.colon)` is NOT in the class: it is a demand
+# that reports its own diagnostic, not a recognition read that returns an
+# answer.
+colon_check=$(grep -Fo 'self.check(.colon)' "$PARSER" | wc -l | tr -d ' ')
+colon_eat=$(grep -Fo 'self.eat(.colon)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$colon_check" -ne 0 ] || [ "$colon_eat" -ne 0 ]; then
+    bad "the parser still recognizes ':' through a kind-parameterized helper: check=$colon_check eat=$colon_eat"
+fi
+colon_compare=$(grep -Eo '(==|!=) \.colon\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$colon_compare" -ne 2 ]; then
+    bad "the parser rebuilds ':' identity at a cursor coordinate: count=$colon_compare"
+fi
+
+# The two surviving comparisons are named, so the ceiling above can neither be
+# met by deleting them nor drift into a new cursor read: they are the two
+# equivalence sweeps, each REQUIRED to compare the face against the identity.
+has "$PARSER" 'fn currentParserColon(self: *Parser) ParseError!bool {' \
+    'Parser lost the colon face consumer'
+has "$PARSER" 'return face == 16 or face == 26;' \
+    'the colon consumer dropped an arm of the settled identity'
+has "$PARSER" 'fn eatParserColon(self: *Parser) ParseError!bool {' \
+    'Parser lost the consuming colon face reader'
+has "$PARSER" '        if (!try self.currentParserColon()) return false;' \
+    'the consuming colon reader does not recognize through the settled face'
+
+colon_sweep=$(sed -n '/the colon face admits exactly the `:` identity" {/,/^}/p' "$PARSER")
+for predicate in 'kind == .colon' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try consumer.currentParserColon()' 'if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {' 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserColon());' 'for (grammar_roles.rows, 0..) |row, index| {' 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$colon_sweep" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "colon equivalence oracle lost predicate: $predicate"
+    fi
+done
+
+# A one-token pack fails the producer's `index + 2 < count` guard, so the sweep
+# above can only reach face 16. The override arm is a SECOND sweep over the
+# five-token shape that mints face 26, and it must prove three separate things:
+# the reader still answers at that coordinate, the ordinary face is GONE there
+# (so the 26 arm is load-bearing rather than decorative), and no identity other
+# than `:` reaches either face even in the shape that mints the override.
+colon_override=$(sed -n '/under the applied-descriptor override/,/^}/p' "$PARSER")
+for predicate in 'kind == .colon' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try testing.expectEqual(expected, try consumer.currentParserColon());' 'try testing.expectEqual(@as(i64, 26), face);' 'for (grammar_roles.rows, 0..) |row, index| {' 'const face: i64 = if (((events[0] >> 63) & 1) != 0) 0 else events[5] >> 13;' 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(override);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$colon_override" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "colon override oracle lost predicate: $predicate"
+    fi
+done
+# The override sweep is only an override sweep if its pack still SPELLS the
+# shape the producer keys face 26 on.
+for predicate in '@backingInt(TK.name)' '@backingInt(TK.lparen)' '@backingInt(TK.rparen)' '@backingInt(TK.assign)'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$colon_override" | grep -cF "$predicate")" -lt 1 ]; then
+        bad "the colon override oracle no longer spells the applied-descriptor shape: $predicate"
+    fi
+done
+
+# Each transferred region must select a nonempty region of the parser AND carry
+# the settled face at its exact count.
+check_colon_region() {
+    region_pattern=$1
+    region_expected=$2
+    region_label=$3
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "the $region_label region selector selected nothing: lines=$region_lines"
+        return
+    fi
+    region_faces=$(sed -n "${region_pattern}p" "$PARSER" | \
+        grep -Eo 'self\.(currentParserColon|eatParserColon)\(\)' | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_faces" -ne "$region_expected" ]; then
+        bad "$region_label does not consume the settled colon face: count=$region_faces want=$region_expected"
+    fi
+}
+
+check_colon_region '/fn parse_type_primary/,/fn maybe_type_ann/' 1 'the constrained type-parameter head'
+check_colon_region '/fn maybe_type_ann/,/fn parse_module/' 1 'the optional descriptor annotation'
+check_colon_region '/fn parseEnumPayloadField/,/fn parse_concept_method_sig/' 1 'the enum payload field name'
+check_colon_region '/fn parse_concept_method_sig/,/fn parse_concept_def_with_attrs/' 1 'the concept method result descriptor'
+check_colon_region '/fn parse_jai_type_def_with_attrs/,/fn parse_struct_body/' 1 'the attributed declaration head'
+check_colon_region '/fn parse_struct_body/,/fn parse_alias_def_with_attrs/' 1 'the struct field descriptor'
+check_colon_region '/fn parse_func_decl_after_first/,/fn scan_func_header_signal/' 1 'the declared relation trie path'
+check_colon_region '/fn parse_type_param/,/fn parse_func_body/' 1 'the generic parameter constraint'
+check_colon_region '/fn parse_func_body/,/fn parse_func_signature/' 1 'the callable result contract'
+check_colon_region '/fn parse_func_signature/,/fn parse_param/' 1 'the signature result descriptor'
+check_colon_region '/^    fn parse_for(self/,/fn parse_do/' 1 'the numeric-for head'
+check_colon_region '/fn parse_table_destr_pattern/,/fn stmt_from_table_destructure/' 1 'the table destructuring key'
+check_colon_region '/fn parse_descriptor_table/,/fn parse_array_destr_pattern/' 1 'the descriptor-table field'
+check_colon_region '/fn try_parse_qualified_func_assign/,/fn parse_label/' 2 'the qualified assignment head'
+check_colon_region '/fn parse_pack_body/,/fn finish_list_comp/' 1 'the pack field descriptor'
+
+# Anti-green controls. Each transferred site composed the colon answer with a
+# sibling fact of its own; deleting that sibling would widen admission rather
+# than move it, so every one is required to survive.
+has "$PARSER" 'if ((try self.pk()).loc.line == t.loc.line and try self.eatParserColon()) {' \
+    'the constrained type-parameter head lost its same-line test'
+has "$PARSER" 'const contract_here = (try self.pk()).loc.line == rparen_tok.loc.line;' \
+    'the callable result contract lost its same-line test'
+has "$PARSER" 'if (nxt.kind == .assign or try self.currentParserColon()) {' \
+    'the numeric-for head lost its assignment alternative'
+has "$PARSER" 'if (!(try self.currentParserField()) and !try self.currentParserColon()) return null;' \
+    'the qualified assignment head lost its projection alternative'
+has "$PARSER" 'if ((try self.pk()).loc.line != colon.loc.line) {' \
+    'the qualified assignment head lost its offside descriptor-home test'
+colon_arrow=$(grep -cF 'try self.eat(.arrow) != null or try self.eatParserColon()' "$PARSER")
+examined=$((examined + 1))
+if [ "$colon_arrow" -ne 3 ]; then
+    bad "a result-descriptor site lost its \`->\` alternative: count=$colon_arrow want=3"
+fi
+colon_demand=$(grep -cF 'self.expect(.colon)' "$PARSER")
+examined=$((examined + 1))
+if [ "$colon_demand" -ne 3 ]; then
+    bad "the \`:\` DEMAND face was deleted rather than left standing beside the settled recognition face: count=$colon_demand want=3"
+fi
+
+# Positive controls. Every detector above counts text that is absent from the
+# repaired tree, so each is shown a tree where it is present, and shown that it
+# does not fire on the canonical spelling.
+colon_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate colon scratch' >&2; exit 2; }
+cat >"$colon_probe/old.zig" <<'PROBE'
+if ((try self.pk()).kind != .colon) {
+if (nxt.kind == .assign or nxt.kind == .colon) {
+if (!(try self.currentParserField()) and nxt.kind != .colon) return null;
+} else if (try self.check(.colon)) {
+if (try self.eat(.colon) != null) return self.parse_type();
+if (try self.eat(.arrow) != null or try self.eat(.colon) != null) {
+PROBE
+cat >"$colon_probe/new.zig" <<'PROBE'
+if (!try self.currentParserColon()) {
+if (nxt.kind == .assign or try self.currentParserColon()) {
+if (!(try self.currentParserField()) and !try self.currentParserColon()) return null;
+} else if (try self.currentParserColon()) {
+if (try self.eatParserColon()) return self.parse_type();
+if (try self.eat(.arrow) != null or try self.eatParserColon()) {
+_ = try self.expect(.colon);
+PROBE
+colon_old_compare=$(grep -Eo '(==|!=) \.colon\b' "$colon_probe/old.zig" | wc -l | tr -d ' ')
+colon_old_check=$(grep -Fo 'self.check(.colon)' "$colon_probe/old.zig" | wc -l | tr -d ' ')
+colon_old_eat=$(grep -Fo 'self.eat(.colon)' "$colon_probe/old.zig" | wc -l | tr -d ' ')
+colon_new_compare=$(grep -Eo '(==|!=) \.colon\b' "$colon_probe/new.zig" | wc -l | tr -d ' ')
+colon_new_helper=$(grep -Eo 'self\.(check|eat)\(\.colon\)' "$colon_probe/new.zig" | wc -l | tr -d ' ')
+colon_new_faces=$(grep -Eo 'self\.(currentParserColon|eatParserColon)\(\)' "$colon_probe/new.zig" | wc -l | tr -d ' ')
+rm -rf -- "$colon_probe"
+examined=$((examined + 1))
+if [ "$colon_old_compare" -ne 3 ] || [ "$colon_old_check" -ne 1 ] || [ "$colon_old_eat" -ne 2 ]; then
+    bad "the colon detector does not see the retired spellings: compare=$colon_old_compare check=$colon_old_check eat=$colon_old_eat"
+fi
+examined=$((examined + 1))
+if [ "$colon_new_compare" -ne 0 ] || [ "$colon_new_helper" -ne 0 ] || [ "$colon_new_faces" -ne 6 ]; then
+    bad "the colon detector misreads the canonical spelling: compare=$colon_new_compare helper=$colon_new_helper faces=$colon_new_faces"
+fi
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    colon_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate colon perturbation scratch' >&2; exit 2; }
+
+    # FALSE ACCEPT. Drop the override arm. Every site still compiles and the
+    # ceiling still reads 0, but the reader now answers false at exactly the
+    # `:` the producer moved to face 26.
+    plant "$PARSER" 'return face == 16 or face == 26;' 'return face == 16;' >"$colon_probe/accept.zig" || exit 2
+    GAP145_PERTURB=1 GAP145_PARSER="$colon_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$colon_probe/accept.result" 2>&1
+    colon_status=$?
+    examined=$((examined + 1))
+    if [ "$colon_status" -ne 1 ] || [ ! -s "$colon_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the colon consumer dropped an arm of the settled identity' "$colon_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$colon_probe/accept.result"; then
+        bad "colon false-accept control did not fail closed: status=$colon_status"
+    fi
+
+    # WRONG ERROR. Break the override oracle's non-vacuity and require the gate
+    # to name THAT and not the arm above.
+    sed '/under the applied-descriptor override/,/^}/ s/try testing\.expect(override);/try testing.expect(!override);/' "$PARSER" >"$colon_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$colon_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$colon_probe/wrong.result" 2>&1
+    colon_status=$?
+    examined=$((examined + 1))
+    if [ "$colon_status" -ne 1 ] || [ ! -s "$colon_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL colon override oracle lost predicate: try testing.expect(override);' "$colon_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the colon consumer dropped an arm of the settled identity' "$colon_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$colon_probe/wrong.result"; then
+        bad "colon wrong-error control did not fail closed: status=$colon_status"
+    fi
+
+    rm -rf -- "$colon_probe"
+fi
+
+# ── §10 VARARG IDENTITY IS CONSUMED AS A CLASS ──────────────────────────────
+#
+# `lib/compiler/parser.id` settles `...` identity at ONE face: the arm
+# `elseif kind == token.kinddots / delimiter = 11` inside the mutually
+# exclusive identity chain. Neither override that follows it can reach 11 —
+# face 23 is guarded by `[`, an integer, a quoted literal or a name, and face
+# 26 by `:` — so face 11 alone IS the identity, and nothing has to be unioned
+# into the reader the way `:` needed 16 together with 26.
+#
+# That face governed exactly ONE consumer, the primary-expression vararg arm,
+# while four more across two functions still answered "is the token under the
+# cursor a `...`" for themselves, from the generated host TokenKind, at a
+# coordinate the producer had already settled and `pk()` had already selected.
+# The class is every host read of `...` identity AT A CURSOR COORDINATE. In
+# this file it takes exactly one spelling — `eat(.dots)`, recognition fused to
+# a consume — and its count falls 4 -> 0. There is no `expect(.dots)`: the
+# vararg marker is never demanded, so this class leaves no demand standing.
+dots_helper=$(grep -Eo 'self\.(check|eat)\(\.dots\)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$dots_helper" -ne 0 ]; then
+    bad "the parser still recognizes '...' through a kind-parameterized helper: count=$dots_helper"
+fi
+dots_compare=$(grep -Eo '(==|!=) \.dots\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$dots_compare" -ne 1 ]; then
+    bad "the parser rebuilds '...' identity at a cursor coordinate: count=$dots_compare"
+fi
+
+# The one surviving comparison is named, so the ceiling above can neither be
+# met by deleting it nor drift into a new cursor read: it is the equivalence
+# sweep, which is REQUIRED to compare the face against the identity.
+has "$PARSER" 'return (try self.currentParserFace()) == 11;' \
+    'the vararg consumer no longer reads the settled face'
+has "$PARSER" 'fn eatParserVararg(self: *Parser) ParseError!bool {' \
+    'Parser lost the consuming vararg face reader'
+has "$PARSER" '        if (!try self.currentParserVararg()) return false;' \
+    'the consuming vararg reader does not recognize through the settled face'
+
+dots_sweep=$(sed -n '/the vararg face admits exactly the `...` identity" {/,/^}/p' "$PARSER")
+for predicate in 'kind == .dots' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try consumer.currentParserVararg()' 'if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {' 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserVararg());' 'for (grammar_roles.rows, 0..) |row, index| {' 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$dots_sweep" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "vararg equivalence oracle lost predicate: $predicate"
+    fi
+done
+
+# Each transferred region must select a nonempty region of the parser AND carry
+# the settled face at its exact count. Both ranges are the ones §9 already
+# selects, so a rename that empties one is refused there as well as here.
+check_dots_region() {
+    region_pattern=$1
+    region_expected=$2
+    region_label=$3
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "the $region_label region selector selected nothing: lines=$region_lines"
+        return
+    fi
+    region_faces=$(sed -n "${region_pattern}p" "$PARSER" | \
+        grep -Eo 'self\.(currentParserVararg|eatParserVararg)\(\)' | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_faces" -ne "$region_expected" ]; then
+        bad "$region_label does not consume the settled vararg face: count=$region_faces want=$region_expected"
+    fi
+}
+
+check_dots_region '/fn parse_func_body/,/fn parse_func_signature/' 2 'the callable body parameter pack'
+check_dots_region '/fn parse_func_signature/,/fn parse_param/' 2 'the signature parameter pack'
+
+# Anti-green control. Recognizing `...` is only half of each transferred site:
+# the vararg NAME that may follow it is a separate identity and stays a
+# separate read. Deleting it would widen admission rather than move it, so the
+# composed pair is required at every one of the four sites.
+dots_sites=$(grep -cF 'if (try self.eatParserVararg()) {' "$PARSER")
+examined=$((examined + 1))
+if [ "$dots_sites" -ne 4 ]; then
+    bad "the vararg class is not at its transferred count: count=$dots_sites want=4"
+fi
+dots_named=$(grep -A2 -F 'if (try self.eatParserVararg()) {' "$PARSER" | grep -cF 'if (try self.check(.name)) {')
+examined=$((examined + 1))
+if [ "$dots_named" -ne 4 ]; then
+    bad "a transferred vararg site lost the following name read: count=$dots_named want=4"
+fi
+
+# Positive controls. Every detector above counts text that is absent from the
+# repaired tree, so each is shown a tree where it is present, and shown that it
+# does not fire on the canonical spelling.
+dots_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate vararg scratch' >&2; exit 2; }
+cat >"$dots_probe/old.zig" <<'PROBE'
+if (try self.eat(.dots) != null) {
+if ((try self.pk()).kind == .dots) {
+} else if (try self.check(.dots)) {
+PROBE
+cat >"$dots_probe/new.zig" <<'PROBE'
+if (try self.eatParserVararg()) {
+if (try self.currentParserVararg()) {
+PROBE
+dots_old_compare=$(grep -Eo '(==|!=) \.dots\b' "$dots_probe/old.zig" | wc -l | tr -d ' ')
+dots_old_helper=$(grep -Eo 'self\.(check|eat)\(\.dots\)' "$dots_probe/old.zig" | wc -l | tr -d ' ')
+dots_new_compare=$(grep -Eo '(==|!=) \.dots\b' "$dots_probe/new.zig" | wc -l | tr -d ' ')
+dots_new_helper=$(grep -Eo 'self\.(check|eat)\(\.dots\)' "$dots_probe/new.zig" | wc -l | tr -d ' ')
+dots_new_faces=$(grep -Eo 'self\.(currentParserVararg|eatParserVararg)\(\)' "$dots_probe/new.zig" | wc -l | tr -d ' ')
+rm -rf -- "$dots_probe"
+examined=$((examined + 1))
+if [ "$dots_old_compare" -ne 1 ] || [ "$dots_old_helper" -ne 2 ]; then
+    bad "the vararg detector does not see the retired spellings: compare=$dots_old_compare helper=$dots_old_helper"
+fi
+examined=$((examined + 1))
+if [ "$dots_new_compare" -ne 0 ] || [ "$dots_new_helper" -ne 0 ] || [ "$dots_new_faces" -ne 2 ]; then
+    bad "the vararg detector misreads the canonical spelling: compare=$dots_new_compare helper=$dots_new_helper faces=$dots_new_faces"
+fi
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    dots_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate vararg perturbation scratch' >&2; exit 2; }
+
+    # FALSE ACCEPT. Stop reading the settled face and answer for everything.
+    # Every transferred site still compiles and the ceiling still reads 0.
+    plant "$PARSER" 'return (try self.currentParserFace()) == 11;' 'return true;' >"$dots_probe/accept.zig" || exit 2
+    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$dots_probe/accept.result" 2>&1
+    dots_status=$?
+    examined=$((examined + 1))
+    if [ "$dots_status" -ne 1 ] || [ ! -s "$dots_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the vararg consumer no longer reads the settled face' "$dots_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$dots_probe/accept.result"; then
+        bad "vararg false-accept control did not fail closed: status=$dots_status"
+    fi
+
+    # WRONG ERROR. Break the sweep's non-vacuity and require the gate to name
+    # THAT and not the reader above.
+    sed '/the vararg face admits exactly/,/^}/ s/try testing\.expect(seen);/try testing.expect(!seen);/' "$PARSER" >"$dots_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$dots_probe/wrong.result" 2>&1
+    dots_status=$?
+    examined=$((examined + 1))
+    if [ "$dots_status" -ne 1 ] || [ ! -s "$dots_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL vararg equivalence oracle lost predicate: try testing.expect(seen);' "$dots_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the vararg consumer no longer reads the settled face' "$dots_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$dots_probe/wrong.result"; then
+        bad "vararg wrong-error control did not fail closed: status=$dots_status"
+    fi
+
+    # LEFTOVER. Restore one retired spelling at a transferred site. The reader
+    # is intact and the sweep still passes, so only the ceiling can catch it.
+    plant "$PARSER" 'if (try self.eatParserVararg()) {' 'if (try self.eat(.dots) != null) {' >"$dots_probe/left.zig" || exit 2
+    GAP145_PERTURB=1 GAP145_PARSER="$dots_probe/left.zig" sh "$ROOT/gate/token/read.sh" >"$dots_probe/left.result" 2>&1
+    dots_status=$?
+    examined=$((examined + 1))
+    if [ "$dots_status" -ne 1 ] || [ ! -s "$dots_probe/left.result" ] ||
+        ! grep -Fq "gap-145 consumer gate: FAIL the parser still recognizes '...' through a kind-parameterized helper: count=1" "$dots_probe/left.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$dots_probe/left.result"; then
+        bad "vararg leftover control did not fail closed: status=$dots_status"
+    fi
+
+    rm -rf -- "$dots_probe"
+fi
+
+# --- 11. `end` identity at a cursor coordinate ------------------------------
+#
+# Eleven consumers in eight functions still answered "is the token under the
+# cursor an `end`" from the generated host `TokenKind`, at a coordinate the
+# producer had already settled and `pk()` had already selected. `parser.id`
+# writes `ending = 1` under `kind == token.kindend` and NOTHING else assigns
+# it, so event bit 14 alone IS the identity: no union like `:`, and no
+# `currentParserFace()` guard, because a `(` carries its matching-close
+# coordinate in the DECISION lane and bit 14 is on the event lane.
+#
+# The class is every host read of `end` identity AT A CURSOR COORDINATE, in
+# the three spellings it takes here: `(try self.pk()).kind != .kw_end`, a
+# token captured by `pk()` and then compared, and `eat(.kw_end)` with
+# recognition fused to a consume. Its count falls 11 -> 0.
+end_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_end\)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$end_helper" -ne 0 ]; then
+    bad "the parser still recognizes 'end' through a kind-parameterized helper: count=$end_helper"
+fi
+end_compare=$(grep -Eo '(==|!=) \.kw_end\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$end_compare" -ne 2 ]; then
+    bad "the parser rebuilds 'end' identity at a cursor coordinate: count=$end_compare"
+fi
+
+# Both survivors are named, so the ceiling above can neither be met by deleting
+# one nor drift into a new cursor read. One is the equivalence sweep, which is
+# REQUIRED to compare the bit against the identity. The other is not a token
+# read at all: it compares the DEMANDED kind parameter inside `expect` to pick
+# a diagnostic, and it must stay inside that boundary.
+has "$PARSER" 'return (((try self.currentParserEvent()) >> 14) & 1) != 0;' \
+    'the end consumer no longer reads the settled written-end bit'
+has "$PARSER" 'fn eatParserEnd(self: *Parser) ParseError!bool {' \
+    'Parser lost the consuming end reader'
+has "$PARSER" '        if (!try self.currentParserEnd()) return false;' \
+    'the consuming end reader does not recognize through the settled bit'
+
+end_demand=$(sed -n '/fn expect(self: \*Parser, kind: TK) ParseError!Token {/,/^    }$/p' "$PARSER" | \
+    grep -Eo '(==|!=) \.kw_end\b' | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$end_demand" -ne 1 ]; then
+    bad "the demanded-kind comparison left the expect boundary: count=$end_demand want=1"
+fi
+
+end_sweep=$(sed -n '/the written-end bit admits exactly the `end` identity" {/,/^}/p' "$PARSER")
+for predicate in 'kind == .kw_end' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try consumer.currentParserEnd()' 'if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {' 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserEnd());' 'for (grammar_roles.rows, 0..) |row, index| {' 'try testing.expect(seen);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$end_sweep" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "end equivalence oracle lost predicate: $predicate"
+    fi
+done
+
+# Each transferred region must select a nonempty region of the parser AND carry
+# the settled bit at its exact count, so the ceiling cannot be met by deleting
+# a site instead of moving it.
+check_end_region() {
+    region_pattern=$1
+    region_expected=$2
+    region_label=$3
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "the $region_label region selector selected nothing: lines=$region_lines"
+        return
+    fi
+    region_bits=$(sed -n "${region_pattern}p" "$PARSER" | \
+        grep -Eo 'self\.(currentParserEnd|eatParserEnd)\(\)' | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_bits" -ne "$region_expected" ]; then
+        bad "$region_label does not consume the settled end bit: count=$region_bits want=$region_expected"
+    fi
+}
+
+check_end_region '/fn parse_enum_def_with_attrs/,/fn parse_concept_method_sig/' 2 'the enum variant body'
+check_end_region '/fn parse_concept_def_with_attrs/,/fn parse_struct_body/' 2 'the concept member body'
+check_end_region '/fn parse_struct_body/,/fn parse_alias_def_with_attrs/' 1 'the record field body'
+check_end_region '/fn parse_func_body/,/fn parse_func_signature/' 1 'the offside lambda closer'
+check_end_region '/fn parse_match_inner/,/fn startsMatchArm/' 2 'the match arm list'
+check_end_region '/fn parse_match_arm_body/,/fn parse_pattern/' 1 'the match arm statement list'
+check_end_region '/fn parse_expr_stmt/,/fn finish_prec/' 1 'the parenless call argument run'
+check_end_region '/fn parse_if_expr_after_if_with_cond/,/fn new_if_expr/' 1 'the endless if closer'
+
+end_class=$(grep -Eo 'self\.(currentParserEnd|eatParserEnd)\(\)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$end_class" -ne 12 ]; then
+    bad "the end class is not at its transferred count: count=$end_class want=12"
+fi
+
+# Anti-green control. Four of the eleven sites recognize `end` and then ask a
+# SECOND question about the same token — its line, or the `eof` alternative —
+# and that second question is a different fact that stays a separate read.
+# Dropping it would widen admission rather than move it.
+end_lined=$(grep -cE '\(try self\.currentParserEnd\(\)\) and (closer|end_tok)\.loc\.line ==' "$PARSER")
+examined=$((examined + 1))
+if [ "$end_lined" -ne 2 ]; then
+    bad "a transferred end site lost its same-line discriminator: count=$end_lined want=2"
+fi
+end_eof=$(grep -cE '\(try self\.currentParserEnd\(\)\) (or|and) .*\.kind (==|!=) \.eof' "$PARSER")
+examined=$((examined + 1))
+if [ "$end_eof" -ne 4 ]; then
+    bad "a transferred end site lost its eof alternative: count=$end_eof want=4"
+fi
+
+# Positive controls. Every detector above counts text that is absent from the
+# repaired tree, so each is shown a tree where it is present, and shown that it
+# does not fire on the canonical spelling.
+end_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate end scratch' >&2; exit 2; }
+cat >"$end_probe/old.zig" <<'PROBE'
+_ = try self.eat(.kw_end);
+while ((try self.pk()).kind != .kw_end) {
+if (tok.kind == .kw_end or tok.kind == .eof) break;
+} else if (try self.check(.kw_end)) {
+PROBE
+cat >"$end_probe/new.zig" <<'PROBE'
+_ = try self.eatParserEnd();
+while (!(try self.currentParserEnd())) {
+if ((try self.currentParserEnd()) or tok.kind == .eof) break;
+PROBE
+end_old_compare=$(grep -Eo '(==|!=) \.kw_end\b' "$end_probe/old.zig" | wc -l | tr -d ' ')
+end_old_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_end\)' "$end_probe/old.zig" | wc -l | tr -d ' ')
+end_new_compare=$(grep -Eo '(==|!=) \.kw_end\b' "$end_probe/new.zig" | wc -l | tr -d ' ')
+end_new_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_end\)' "$end_probe/new.zig" | wc -l | tr -d ' ')
+end_new_bits=$(grep -Eo 'self\.(currentParserEnd|eatParserEnd)\(\)' "$end_probe/new.zig" | wc -l | tr -d ' ')
+end_new_eof=$(grep -cE '\(try self\.currentParserEnd\(\)\) (or|and) .*\.kind (==|!=) \.eof' "$end_probe/new.zig")
+rm -rf -- "$end_probe"
+examined=$((examined + 1))
+if [ "$end_old_compare" -ne 2 ] || [ "$end_old_helper" -ne 2 ]; then
+    bad "the end detector does not see the retired spellings: compare=$end_old_compare helper=$end_old_helper"
+fi
+examined=$((examined + 1))
+if [ "$end_new_compare" -ne 0 ] || [ "$end_new_helper" -ne 0 ] ||
+    [ "$end_new_bits" -ne 3 ] || [ "$end_new_eof" -ne 1 ]; then
+    bad "the end detector misreads the canonical spelling: compare=$end_new_compare helper=$end_new_helper bits=$end_new_bits eof=$end_new_eof"
+fi
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    end_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate end perturbation scratch' >&2; exit 2; }
+
+    # FALSE ACCEPT. Stop reading the settled bit and answer for everything.
+    # Every transferred site still compiles and the ceiling still reads 2.
+    plant "$PARSER" 'return (((try self.currentParserEvent()) >> 14) & 1) != 0;' 'return true;' >"$end_probe/accept.zig" || exit 2
+    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$end_probe/accept.result" 2>&1
+    end_status=$?
+    examined=$((examined + 1))
+    if [ "$end_status" -ne 1 ] || [ ! -s "$end_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the end consumer no longer reads the settled written-end bit' "$end_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$end_probe/accept.result"; then
+        bad "end false-accept control did not fail closed: status=$end_status"
+    fi
+
+    # WRONG ERROR. Break the sweep's non-vacuity and require the gate to name
+    # THAT and not the reader above.
+    sed '/the written-end bit admits exactly/,/^}/ s/try testing\.expect(rejected);/try testing.expect(!rejected);/' "$PARSER" >"$end_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$end_probe/wrong.result" 2>&1
+    end_status=$?
+    examined=$((examined + 1))
+    if [ "$end_status" -ne 1 ] || [ ! -s "$end_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL end equivalence oracle lost predicate: try testing.expect(rejected);' "$end_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the end consumer no longer reads the settled written-end bit' "$end_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$end_probe/wrong.result"; then
+        bad "end wrong-error control did not fail closed: status=$end_status"
+    fi
+
+    # LEFTOVER. Restore one retired spelling at a transferred site. The reader
+    # is intact and the sweep still passes, so only the ceiling, the region
+    # count and the class count can catch it.
+    plant "$PARSER" '_ = try self.eatParserEnd();' '_ = try self.eat(.kw_end);' >"$end_probe/left.zig" || exit 2
+    GAP145_PERTURB=1 GAP145_PARSER="$end_probe/left.zig" sh "$ROOT/gate/token/read.sh" >"$end_probe/left.result" 2>&1
+    end_status=$?
+    examined=$((examined + 1))
+    if [ "$end_status" -ne 1 ] || [ ! -s "$end_probe/left.result" ] ||
+        ! grep -Fq "gap-145 consumer gate: FAIL the parser still recognizes 'end' through a kind-parameterized helper: count=1" "$end_probe/left.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$end_probe/left.result"; then
+        bad "end leftover control did not fail closed: status=$end_status"
+    fi
+
+    rm -rf -- "$end_probe"
+fi
+
+# --- 12. `else` / `elseif` identity at a cursor coordinate -------------------
+#
+# Four consumers in two functions still answered "is the token under the cursor
+# an `else` or an `elseif`" from the generated host `TokenKind`, at a
+# coordinate the producer had already settled and `pk()` had already selected.
+# `token.id`'s `branch()` row admits exactly those two identities and nothing
+# else, and `parser.id` writes 1 for `elseif` and 2 for `else` into event bits
+# 11..12, so those two bits ARE the branch identity: no union like `:`, and no
+# `currentParserFace()` guard, because a `(` carries its matching-close
+# coordinate in the DECISION lane while bits 11..12 are on the event lane.
+#
+# The class is every host read of `else` / `elseif` identity AT A CURSOR
+# COORDINATE, in the three spellings it takes here: a token captured by `pk()`
+# and then compared, `eat(.kw_elseif)` tested against null, and `eat(.kw_else)`
+# whose consumed token the caller still needs. Its count falls 4 -> 0.
+branch_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_(else|elseif)\)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$branch_helper" -ne 0 ]; then
+    bad "the parser still recognizes a branch through a kind-parameterized helper: count=$branch_helper"
+fi
+branch_else=$(grep -Eo '(==|!=) \.kw_else\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$branch_else" -ne 1 ]; then
+    bad "the parser rebuilds 'else' identity at a cursor coordinate: count=$branch_else"
+fi
+branch_elseif=$(grep -Eo '(==|!=) \.kw_elseif\b' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$branch_elseif" -ne 1 ]; then
+    bad "the parser rebuilds 'elseif' identity at a cursor coordinate: count=$branch_elseif"
+fi
+
+# The single survivor of each is the equivalence sweep, which is REQUIRED to
+# compare the face against the identity. Unlike `end` this class leaves no
+# demand standing beside it: there is no `expect(.kw_else)` and no
+# `expect(.kw_elseif)` anywhere in the file, so the ceilings above are 1 and 1
+# rather than 1 and 2.
+forbid "$PARSER" 'self.expect(.kw_else)' \
+    'a branch identity became a demand instead of a settled recognition'
+forbid "$PARSER" 'self.expect(.kw_elseif)' \
+    'a branch identity became a demand instead of a settled recognition'
+
+has "$PARSER" 'return @intCast(((try self.currentParserEvent()) >> 11) & 3);' \
+    'the branch consumer no longer reads the settled branch face'
+has "$PARSER" 'fn eatParserElseif(self: *Parser) ParseError!bool {' \
+    'Parser lost the consuming elseif reader'
+has "$PARSER" 'fn eatParserElse(self: *Parser) ParseError!?Token {' \
+    'Parser lost the consuming else reader'
+
+# THE DISCRIMINATOR FOR THIS CLASS. `branch()` is one row over two identities,
+# so a transfer that read "some branch" at both sites would admit `else` where
+# `elseif` was demanded and build the wrong node. Each consuming reader must
+# select its own ordinal, not merely a nonzero face.
+has "$PARSER" '        if ((try self.currentParserBranch()) != 1) return false;' \
+    'the consuming elseif reader no longer separates elseif from else'
+has "$PARSER" '        if ((try self.currentParserBranch()) != 2) return null;' \
+    'the consuming else reader no longer separates else from elseif'
+
+branch_sweep=$(sed -n '/the branch face admits exactly the `else` and `elseif` identities" {/,/^}/p' "$PARSER")
+for predicate in 'const expected: u2 = if (kind == .kw_elseif) 1 else if (kind == .kw_else) 2 else 0;' 'try parserEventsForTest(facts[0..], events[0..], true);' 'try consumer.currentParserBranch()' 'if (@as(i64, @backingInt(kind)) > @as(i64, @backingInt(TK.eof))) {' 'try testing.expectError(error.InvalidRecordCount, consumer.currentParserBranch());' 'for (grammar_roles.rows, 0..) |row, index| {' 'try testing.expect(saw_else);' 'try testing.expect(saw_elseif);' 'try testing.expect(rejected);' 'try testing.expect(refused);'; do
+    examined=$((examined + 1))
+    if [ "$(printf '%s\n' "$branch_sweep" | grep -cF "$predicate")" -ne 1 ]; then
+        bad "branch equivalence oracle lost predicate: $predicate"
+    fi
+done
+
+check_branch_region() {
+    region_pattern=$1
+    region_expected=$2
+    region_label=$3
+    region_lines=$(sed -n "${region_pattern}p" "$PARSER" | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_lines" -lt 4 ]; then
+        bad "the $region_label region selector selected nothing: lines=$region_lines"
+        return
+    fi
+    region_bits=$(sed -n "${region_pattern}p" "$PARSER" | \
+        grep -Eo 'self\.(currentParserBranch|eatParserElseif|eatParserElse)\(\)' | wc -l | tr -d ' ')
+    examined=$((examined + 1))
+    if [ "$region_bits" -ne "$region_expected" ]; then
+        bad "$region_label does not consume the settled branch face: count=$region_bits want=$region_expected"
+    fi
+}
+
+check_branch_region '/fn parse_expr_stmt/,/fn finish_prec/' 1 'the parenless call argument run'
+check_branch_region '/fn parse_if_expr_after_if_with_cond/,/fn new_if_expr/' 2 'the conditional alternative chain'
+
+branch_class=$(grep -Eo 'self\.(currentParserBranch|eatParserElseif|eatParserElse)\(\)' "$PARSER" | wc -l | tr -d ' ')
+examined=$((examined + 1))
+if [ "$branch_class" -ne 5 ]; then
+    bad "the branch class is not at its transferred count: count=$branch_class want=5"
+fi
+
+# Anti-green controls. The parenless-call site recognizes a branch and then
+# asks OTHER questions about the same coordinate — `semi`, `eof`, `end`,
+# `until` — and the `else` site asks a SECOND question about the token it
+# consumed: whether a `(` is glued to it. Those are different facts and stay
+# separate reads; dropping one would change admission rather than move it.
+branch_siblings=$(grep -cE '\(try self\.currentParserBranch\(\)\) != 0 or' "$PARSER")
+examined=$((examined + 1))
+if [ "$branch_siblings" -ne 1 ]; then
+    bad "the parenless branch read lost its disjunction: count=$branch_siblings want=1"
+fi
+has "$PARSER" '                        peek.kind == .kw_until) break;' \
+    'the parenless branch read lost the until alternative beside it'
+has "$PARSER" 'if (try self.eatParserElse()) |else_kw| {' \
+    'the else consumer stopped binding the token it consumed'
+has "$PARSER" '            if (self.glued_lparen(else_kw)) {' \
+    'the else consumer lost the adjacency question about the token it consumed'
+
+# Positive controls. Every detector above counts text absent from the repaired
+# tree, so each is shown a tree where it is present, and shown that it does not
+# fire on the canonical spelling.
+branch_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate branch scratch' >&2; exit 2; }
+cat >"$branch_probe/old.zig" <<'PROBE'
+if (peek.kind == .kw_else or peek.kind == .kw_elseif) break;
+if (try self.eat(.kw_elseif) != null) {
+if (try self.eat(.kw_else)) |else_kw| {
+PROBE
+cat >"$branch_probe/new.zig" <<'PROBE'
+if ((try self.currentParserBranch()) != 0 or peek.kind == .kw_until) break;
+if (try self.eatParserElseif()) {
+if (try self.eatParserElse()) |else_kw| {
+PROBE
+branch_old_else=$(grep -Eo '(==|!=) \.kw_else\b' "$branch_probe/old.zig" | wc -l | tr -d ' ')
+branch_old_elseif=$(grep -Eo '(==|!=) \.kw_elseif\b' "$branch_probe/old.zig" | wc -l | tr -d ' ')
+branch_old_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_(else|elseif)\)' "$branch_probe/old.zig" | wc -l | tr -d ' ')
+branch_new_else=$(grep -Eo '(==|!=) \.kw_else\b' "$branch_probe/new.zig" | wc -l | tr -d ' ')
+branch_new_elseif=$(grep -Eo '(==|!=) \.kw_elseif\b' "$branch_probe/new.zig" | wc -l | tr -d ' ')
+branch_new_helper=$(grep -Eo 'self\.(check|eat)\(\.kw_(else|elseif)\)' "$branch_probe/new.zig" | wc -l | tr -d ' ')
+branch_new_bits=$(grep -Eo 'self\.(currentParserBranch|eatParserElseif|eatParserElse)\(\)' "$branch_probe/new.zig" | wc -l | tr -d ' ')
+branch_new_siblings=$(grep -cE '\(try self\.currentParserBranch\(\)\) != 0 or' "$branch_probe/new.zig")
+rm -rf -- "$branch_probe"
+examined=$((examined + 1))
+if [ "$branch_old_else" -ne 1 ] || [ "$branch_old_elseif" -ne 1 ] || [ "$branch_old_helper" -ne 2 ]; then
+    bad "the branch detector does not see the retired spellings: else=$branch_old_else elseif=$branch_old_elseif helper=$branch_old_helper"
+fi
+examined=$((examined + 1))
+if [ "$branch_new_else" -ne 0 ] || [ "$branch_new_elseif" -ne 0 ] ||
+    [ "$branch_new_helper" -ne 0 ] || [ "$branch_new_bits" -ne 3 ] ||
+    [ "$branch_new_siblings" -ne 1 ]; then
+    bad "the branch detector misreads the canonical spelling: else=$branch_new_else elseif=$branch_new_elseif helper=$branch_new_helper bits=$branch_new_bits siblings=$branch_new_siblings"
+fi
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    branch_probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate branch perturbation scratch' >&2; exit 2; }
+
+    # FALSE ACCEPT. Stop reading the settled face and answer `else` for every
+    # coordinate. Every transferred site still compiles, every ceiling still
+    # reads 1, the class count still reads 5, and the oracle text is intact.
+    sed 's/return @intCast(((try self.currentParserEvent()) >> 11) & 3);/return 2;/' "$PARSER" >"$branch_probe/accept.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/accept.zig" sh "$ROOT/gate/token/read.sh" >"$branch_probe/accept.result" 2>&1
+    branch_status=$?
+    examined=$((examined + 1))
+    if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/accept.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the branch consumer no longer reads the settled branch face' "$branch_probe/accept.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$branch_probe/accept.result"; then
+        bad "branch false-accept control did not fail closed: status=$branch_status"
+    fi
+
+    # COLLAPSE. Keep reading the settled face but stop separating the two
+    # identities it carries, so `elseif` is consumed as `else`. Every ceiling,
+    # every region count and the oracle are intact; only the discriminator
+    # above can catch it.
+    sed 's/if ((try self.currentParserBranch()) != 2) return null;/if ((try self.currentParserBranch()) == 0) return null;/' "$PARSER" >"$branch_probe/collapse.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/collapse.zig" sh "$ROOT/gate/token/read.sh" >"$branch_probe/collapse.result" 2>&1
+    branch_status=$?
+    examined=$((examined + 1))
+    if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/collapse.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the consuming else reader no longer separates else from elseif' "$branch_probe/collapse.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the branch consumer no longer reads the settled branch face' "$branch_probe/collapse.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$branch_probe/collapse.result"; then
+        bad "branch collapse control did not fail closed: status=$branch_status"
+    fi
+
+    # WRONG ERROR. Break the sweep's non-vacuity and require the gate to name
+    # THAT and not either reader above.
+    sed '/the branch face admits exactly/,/^}/ s/try testing\.expect(rejected);/try testing.expect(!rejected);/' "$PARSER" >"$branch_probe/wrong.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/wrong.zig" sh "$ROOT/gate/token/read.sh" >"$branch_probe/wrong.result" 2>&1
+    branch_status=$?
+    examined=$((examined + 1))
+    if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/wrong.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL branch equivalence oracle lost predicate: try testing.expect(rejected);' "$branch_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the branch consumer no longer reads the settled branch face' "$branch_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the consuming else reader no longer separates else from elseif' "$branch_probe/wrong.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$branch_probe/wrong.result"; then
+        bad "branch wrong-error control did not fail closed: status=$branch_status"
+    fi
+
+    # LEFTOVER. Restore one retired spelling at a transferred site. Both
+    # readers and the oracle are intact, so only the helper ceiling, the region
+    # count and the class count can catch it.
+    sed 's/if (try self.eatParserElseif()) {/if (try self.eat(.kw_elseif) != null) {/' "$PARSER" >"$branch_probe/left.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$branch_probe/left.zig" sh "$ROOT/gate/token/read.sh" >"$branch_probe/left.result" 2>&1
+    branch_status=$?
+    examined=$((examined + 1))
+    if [ "$branch_status" -ne 1 ] || [ ! -s "$branch_probe/left.result" ] ||
+        ! grep -Fq "gap-145 consumer gate: FAIL the parser still recognizes a branch through a kind-parameterized helper: count=1" "$branch_probe/left.result" ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the branch class is not at its transferred count: count=4 want=5' "$branch_probe/left.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$branch_probe/left.result"; then
+        bad "branch leftover control did not fail closed: status=$branch_status"
+    fi
+
+    rm -rf -- "$branch_probe"
+fi
+
+blind() {
+    awk '
+        /^test "/ { block = $0 "\n"; inside = 1; next }
+        inside { block = block $0 "\n" }
+        /^}$/ {
+            if (inside) {
+                if ((index(block, "parserEventsForTest(") > 0 ||
+                     index(block, "parserEventForTest(") > 0 ||
+                     index(block, "parserDecisionForTest(") > 0) &&
+                    (index(block, "row.kind) |kind| kind == .") > 0 ||
+                     index(block, "const expected = kind == .") > 0 ||
+                     index(block, "(kind == .") > 0) &&
+                    index(block, "consumer.currentParser") == 0 &&
+                    index(block, "consumer.eatParser") == 0 &&
+                    index(block, "consumer.infix_prec") == 0) hits += 1
+                inside = 0
+            }
+        }
+        END { print hits + 0 }
+    ' "$1"
+}
+count=$(blind "$PARSER")
+examined=$((examined + 1))
+if [ "$count" -ne 0 ]; then
+    bad "a parser identity oracle answers without executing the reader it names: count=$count"
+fi
+
+for reader in currentParserCall currentParserAnchor currentParserField currentParserMember currentParserName; do
+    examined=$((examined + 1))
+    if [ "$(grep -cF "try consumer.$reader()" "$PARSER")" -lt 1 ]; then
+        bad "no identity oracle executes $reader"
+    fi
+done
+has "$PARSER" '    try testing.expect(!try consumer.currentParserName());' \
+    'the header-paren discriminator no longer executes the name reader at the `(` coordinate'
+has "$PARSER" '        try testing.expect(try consumer.currentParserName());' \
+    'the header-paren discriminator no longer executes the name reader at its name coordinates'
+has "$PARSER" '    consumer.pack_index = 1;' \
+    'the header-paren discriminator no longer positions the reader at the `(` coordinate'
+
+probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate blind-oracle scratch' >&2; exit 2; }
+cat >"$probe/old.zig" <<'PROBE'
+test "parse: retired blind identity oracle" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        const expected = if (row.kind) |kind| kind == .lparen else false;
+        try testing.expectEqual(expected, ((event >> 63) & 1) != 0);
+    }
+}
+PROBE
+cat >"$probe/new.zig" <<'PROBE'
+test "parse: canonical executed identity oracle" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const kind = row.kind orelse continue;
+        try parserEventsForTest(facts[0..], events[0..], true);
+        const expected = kind == .lparen;
+        try testing.expectEqual(expected, try consumer.currentParserCall());
+    }
+}
+PROBE
+cat >"$probe/property.zig" <<'PROBE'
+test "parse: production prefix decision executes through whole-pack event" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        try testing.expectEqual(row.prefix, ((event >> 20) & 1) != 0);
+    }
+}
+PROBE
+retired=$(blind "$probe/old.zig")
+executed=$(blind "$probe/new.zig")
+property=$(blind "$probe/property.zig")
+rm -rf -- "$probe"
+examined=$((examined + 1))
+if [ "$retired" -ne 1 ]; then
+    bad "the blind-oracle detector does not see the retired shape: count=$retired"
+fi
+examined=$((examined + 1))
+if [ "$executed" -ne 0 ]; then
+    bad "the blind-oracle detector misreads the canonical shape: count=$executed"
+fi
+examined=$((examined + 1))
+if [ "$property" -ne 0 ]; then
+    bad "the blind-oracle detector claims a producer-property test: count=$property"
+fi
+
+if [ "${GAP145_PERTURB:-0}" -eq 0 ]; then
+    probe=$(mktemp -d) || { echo 'gap-145 consumer gate: cannot allocate blind perturbation scratch' >&2; exit 2; }
+
+    {
+        cat "$PARSER"
+        cat <<'PLANT'
+
+test "parse: planted blind identity oracle" {
+    for (grammar_roles.rows, 0..) |row, index| {
+        const event = try parserEventForTest(@intCast(index), true);
+        const expected = if (row.kind) |kind| kind == .kw_do else false;
+        try testing.expectEqual(expected, ((event >> 63) & 1) != 0);
+    }
+}
+PLANT
+    } >"$probe/plant.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$probe/plant.zig" sh "$ROOT/gate/token/read.sh" >"$probe/plant.result" 2>&1
+    status=$?
+    examined=$((examined + 1))
+    if [ "$status" -ne 1 ] || [ ! -s "$probe/plant.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names: count=1' "$probe/plant.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$probe/plant.result"; then
+        bad "blind-oracle plant control did not fail closed: status=$status"
+    fi
+
+    sed 's/        try testing.expectEqual(expected, try consumer.currentParserAnchor());/        const face: i64 = if (((events[0] >> 63) \& 1) != 0) 0 else events[1] >> 13;\n        try testing.expectEqual(expected, face == 17);/;
+         s/            try testing.expectError(error.InvalidRecordCount, consumer.currentParserAnchor());/            refused = true;/' "$PARSER" >"$probe/mirror.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$probe/mirror.zig" sh "$ROOT/gate/token/read.sh" >"$probe/mirror.result" 2>&1
+    status=$?
+    examined=$((examined + 1))
+    if [ "$status" -ne 1 ] || [ ! -s "$probe/mirror.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names: count=1' "$probe/mirror.result" ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the anchor equivalence sweep does not execute the reader: count=0' "$probe/mirror.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL the projection equivalence sweep does not execute the reader' "$probe/mirror.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$probe/mirror.result"; then
+        bad "blind-oracle mirror control did not fail closed: status=$status"
+    fi
+
+    sed 's/        return (try self.currentParserFace()) == 17;/        return (try self.currentParserFace()) == 17 or (try self.currentParserFace()) == 18;/' "$PARSER" >"$probe/widen.zig"
+    GAP145_PERTURB=1 GAP145_PARSER="$probe/widen.zig" sh "$ROOT/gate/token/read.sh" >"$probe/widen.result" 2>&1
+    status=$?
+    examined=$((examined + 1))
+    if [ "$status" -ne 1 ] || [ ! -s "$probe/widen.result" ] ||
+        ! grep -Fq 'gap-145 consumer gate: FAIL the anchor consumer no longer reads the settled anchor face' "$probe/widen.result" ||
+        grep -Fq 'gap-145 consumer gate: FAIL a parser identity oracle answers without executing the reader it names' "$probe/widen.result" ||
+        grep -Fq 'gap-145 consumer gate: PASS' "$probe/widen.result"; then
+        bad "blind-oracle reader-widening control did not fail closed: status=$status"
+    fi
+
+    rm -rf -- "$probe"
 fi
 
 if [ -x "$ROOT/tools/parity/grammar" ] || [ -r "$ROOT/tools/parity/grammar" ]; then

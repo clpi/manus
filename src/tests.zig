@@ -30,7 +30,11 @@ test {
     _ = @import("meta_module.zig");
     _ = @import("transform_engine.zig");
     _ = @import("meta_dispatch.zig");
-    _ = @import("semantic_graph.zig");
+    _ = @import("graph.zig");
+    // The range lattice and the result derivations it consumes. Its tests never
+    // ran from here, so `derivationOf`'s admission table was unexercised by the
+    // aggregate that gates a merge.
+    _ = @import("range.zig");
     _ = @import("semantic_algebra.zig");
     _ = @import("sim.zig");
     _ = @import("c_frontend.zig");
@@ -61,12 +65,13 @@ test {
     _ = @import("graph_query.zig");
     _ = @import("region_graph.zig");
     _ = @import("native_ir.zig");
-    _ = @import("dnir_lower.zig");
+    _ = @import("graph/lower.zig");
     _ = @import("module_names.zig");
     _ = @import("source_cursor.zig");
     _ = @import("lexer_differential.zig");
     _ = @import("shell_session.zig");
     _ = @import("shell_host.zig");
+    _ = @import("run_outcome.zig");
     _ = @import("git_preservation.zig");
     _ = @import("proof_carrying.zig");
     _ = @import("token_classify_gen.zig");
@@ -82,7 +87,7 @@ test {
     _ = @import("ml_kernels.zig");
     _ = @import("jit.zig");
     _ = @import("c_backend.zig");
-    _ = @import("native_backend.zig");
+    _ = @import("native.zig");
     _ = @import("poison.zig");
     _ = @import("sovereign.zig");
     // `wasm_backend.zig` — 3,429 lines with ZERO IMPORTERS until this line.
@@ -98,7 +103,7 @@ test {
     // test`, which is what caught that adding `.idiv` to `native_ir.BinOpTag`
     // needed an arm here. Wiring it to a driver is a larger job and is NOT this;
     // this is the line that stops it decaying unnoticed in the meantime.
-    _ = @import("wasm_backend.zig");
+    _ = @import("wasm.zig");
     // The one semantic validator BOTH of the two lines above consume. It is
     // imported here in its own right and not left to reach the test runner
     // through them, because the point of the file is that it is not owned by
@@ -147,7 +152,7 @@ test {
 test "divisor obligation: IR and relation law agree" {
     const ast = @import("ast.zig");
     const dnir = @import("native_ir.zig");
-    const dnir_lower = @import("dnir_lower.zig");
+    const dnir_lower = @import("graph/lower.zig");
     const demand_projection = @import("demand_projection.zig");
 
     var carriers: usize = 0;

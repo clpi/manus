@@ -21,9 +21,9 @@ const term = @import("term.zig");
 const debug_trace = @import("debug_trace.zig");
 const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
-const native_backend = @import("native_backend.zig");
+const native_backend = @import("native.zig");
 const c_backend = @import("c_backend.zig");
-const wasm_backend = @import("wasm_backend.zig");
+const wasm_backend = @import("wasm.zig");
 const demand = @import("demand.zig");
 const obseq = @import("obseq.zig");
 const loop_closure = @import("loop_closure.zig");
@@ -68,12 +68,13 @@ const waist = struct {
 const backend_identity = @import("backend_identity.zig");
 const home_resolve = @import("home_resolve.zig");
 const scratch = @import("scratch.zig");
-const dnir_lower = @import("dnir_lower.zig");
+const run_outcome = @import("run_outcome.zig");
+const dnir_lower = @import("graph/lower.zig");
 const native_ir = @import("native_ir.zig");
 const measurement = @import("measurement.zig");
 const representation_manifest = @import("representation_manifest.zig");
 const target_model = @import("target_model.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const semantic_graph = @import("graph.zig");
 const table_apply = @import("table_apply.zig");
 const native_bootstrap = @import("native_bootstrap.zig");
 const subject_home = @import("subject_home.zig");
@@ -6227,6 +6228,66 @@ fn selectProcessEntryOrReport(
     };
 }
 
+/// THE ARTIFACT IS NOT THE OUTCOME. A wasm artifact needs a runner to become a
+/// guest, and the branch that emitted one used to return here — so `idol run`
+/// on this host reported the COMPILE's status for every program, and a source
+/// whose whole body is `7` answered 0. Compilation, artifact, and execution are
+/// three facts; this is where the third one is obtained, or refused by name.
+fn executeArtifact(
+    alloc: std.mem.Allocator,
+    io: Io,
+    out_path: []const u8,
+    carried: bool,
+) !noreturn {
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(alloc);
+    const runner: ?[]const u8 = if (carried)
+        run_outcome.runnerPath(alloc, io) orelse finishRun(.{ .unrun = .runner }, out_path)
+    else
+        null;
+    if (runner) |r| try argv.append(alloc, r);
+    try argv.append(alloc, out_path);
+    try argv.appendSlice(alloc, forwarded_program_args);
+
+    var child = try std.process.spawn(io, .{
+        .argv = argv.items,
+        .stdin = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    });
+    const completion = run_outcome.completionOf(try child.wait(io));
+    const outcome = if (runner) |r| blk: {
+        const artifact: run_outcome.Artifact = if (run_outcome.attributionNeeded(completion))
+            run_outcome.askArtifact(alloc, io, r, out_path)
+        else
+            .unquestioned;
+        break :blk run_outcome.hosted(completion, artifact);
+    } else run_outcome.direct(completion);
+    finishRun(outcome, out_path);
+}
+
+fn finishRun(outcome: run_outcome.Outcome, out_path: []const u8) noreturn {
+    reportOutcome(outcome, out_path);
+    std.process.exit(outcome.status());
+}
+
+fn reportOutcome(outcome: run_outcome.Outcome, out_path: []const u8) void {
+    const identity = outcome.identity() orelse return;
+    switch (outcome) {
+        .exit => {},
+        .trap => |sig| term.err("{s}: '{s}' trapped ({t}) — the guest ran and reached no exit code", .{ identity, out_path, sig }),
+        .cancel => |sig| term.err("{s}: '{s}' was cancelled ({t}) before it reached an exit code", .{ identity, out_path, sig }),
+        .unrun => |fault| switch (fault) {
+            .runner => {
+                term.err("{s}: '{s}' is a wasm artifact and no runner executed it, so no outcome of the program was observed", .{ identity, out_path });
+                term.hint("set WASMTIME_BIN, or put a wasm runner on PATH; a compiled artifact is not an execution outcome", .{});
+            },
+            .artifact => term.err("{s}: the runner rejected '{s}', so the program never became a guest", .{ identity, out_path }),
+            .unattributed => term.err("{s}: the runner of '{s}' completed in a way that names no outcome of the guest", .{ identity, out_path }),
+        },
+    }
+}
+
 fn do_compile(
     alloc: std.mem.Allocator,
     io: Io,
@@ -6282,23 +6343,7 @@ fn do_compile(
     if (cache_path) |cp| {
         if (buildCacheLoad(io, cp, out_path, alloc)) {
             if (term.build_report != .plain) term.ok("✓ {s} (cached)", .{out_path});
-            if (run_after) {
-                var run_args: std.ArrayList([]const u8) = .empty;
-                defer run_args.deinit(alloc);
-                try run_args.append(alloc, out_path);
-                try run_args.appendSlice(alloc, forwarded_program_args);
-                var run_child = try std.process.spawn(io, .{
-                    .argv = run_args.items,
-                    .stdin = .inherit,
-                    .stdout = .inherit,
-                    .stderr = .inherit,
-                });
-                switch (try run_child.wait(io)) {
-                    .exited => |code| std.process.exit(code),
-                    .signal => std.process.exit(128),
-                    else => std.process.exit(1),
-                }
-            }
+            if (run_after) try executeArtifact(alloc, io, out_path, false);
             return;
         }
     }
@@ -6563,7 +6608,8 @@ fn do_compile(
             const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
             term.buildPhaseDone("compile", total_ms, out_path);
         }
-        if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+        if (!run_after and !(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+        if (run_after) try executeArtifact(alloc, io, out_path, true);
         return;
     }
 
@@ -6949,27 +6995,7 @@ fn do_compile(
                         // this path too. (Placing it only at the tail made the
                         // cache silently inert for every native compile.)
                         if (cache_path) |cp| buildCacheStore(io, cp, out_path, alloc);
-                        if (run_after) {
-                            var run_args: std.ArrayList([]const u8) = .empty;
-                            try run_args.append(alloc, out_path);
-                            try run_args.appendSlice(alloc, forwarded_program_args);
-                            defer run_args.deinit(alloc);
-                            var run_child = try std.process.spawn(io, .{
-                                .argv = run_args.items,
-                                .stdin = .inherit,
-                                .stdout = .inherit,
-                                .stderr = .inherit,
-                            });
-                            const run_term = try run_child.wait(io);
-                            switch (run_term) {
-                                .exited => |code| std.process.exit(code),
-                                .signal => std.process.exit(128),
-                                else => {
-                                    term.print("program terminated abnormally", .{});
-                                    std.process.exit(1);
-                                },
-                            }
-                        }
+                        if (run_after) try executeArtifact(alloc, io, out_path, false);
                         return;
                     } else |e| {
                         // No object: put the program back the way the C emit
@@ -7436,30 +7462,12 @@ fn do_compile(
 
     if (cache_path) |cp| buildCacheStore(io, cp, out_path, alloc);
 
-    if (run_after and !is_wasm) {
-        if (test_mode) {
+    if (run_after) {
+        if (test_mode and !is_wasm) {
             const code = try run_pretty_test_runner(alloc, io, out_path, bench_mode);
             std.process.exit(code);
         }
-        var run_args: std.ArrayList([]const u8) = .empty;
-        try run_args.append(alloc, out_path);
-        try run_args.appendSlice(alloc, forwarded_program_args);
-        defer run_args.deinit(alloc);
-        var run_child = try std.process.spawn(io, .{
-            .argv = run_args.items,
-            .stdin = .inherit,
-            .stdout = .inherit,
-            .stderr = .inherit,
-        });
-        const run_term = try run_child.wait(io);
-        switch (run_term) {
-            .exited => |code| std.process.exit(code),
-            .signal => std.process.exit(128),
-            else => {
-                term.print("program terminated abnormally", .{});
-                std.process.exit(1);
-            },
-        }
+        try executeArtifact(alloc, io, out_path, is_wasm);
     }
 }
 

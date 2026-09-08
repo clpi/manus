@@ -1,10 +1,11 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const term = @import("term.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const semantic_graph = @import("graph.zig");
 const graph_query = @import("graph_query.zig");
 const types = @import("types.zig");
 const collection_relation = @import("collection_relation.zig");
+const decimal = @import("decimal.zig");
 
 pub const EvalError = error{
     OutOfMemory,
@@ -140,7 +141,12 @@ pub const Value = union(enum) {
     nil,
     bool: bool,
     int: i64,
+    /// The f64 REALIZATION of a number whose exact decimal meaning is not held.
     float: f64,
+    /// The exact decimal a source spelling names. It is a distinct carrier from
+    /// `.float` because `f64` cannot hold one tenth, so folding the two would
+    /// destroy the fact at the first binding.
+    decimal: decimal.Decimal,
     string: []const u8,
     table: []const TableEntry,
     func: Func,
@@ -198,7 +204,16 @@ pub const Value = union(enum) {
             .nil => other == .nil,
             .bool => |v| other == .bool and other.bool == v,
             .int => |v| other == .int and other.int == v,
-            .float => |v| other == .float and other.float == v,
+            .float => |v| switch (other) {
+                .float => |o| o == v,
+                .decimal => |o| o.toFloat() == v,
+                else => false,
+            },
+            .decimal => |v| switch (other) {
+                .decimal => |o| v.same(o),
+                .float => |o| v.toFloat() == o,
+                else => false,
+            },
             .string => |v| other == .string and std.mem.eql(u8, other.string, v),
             .table => |v| blk: {
                 if (other != .table) break :blk false;
@@ -435,7 +450,7 @@ pub const Evaluator = struct {
             .true_lit => .{ .bool = true },
             .false_lit => .{ .bool = false },
             .int_lit => |lit| .{ .int = lit.val },
-            .float_lit => |lit| .{ .float = lit.val },
+            .float_lit => |lit| if (lit.dec) |d| Value{ .decimal = d } else Value{ .float = lit.val },
             // GAP-145 `law.text.byte`: this `Value` has `nil/bool/int/float/
             // string/...` and NO member whose element descriptor is `byte`.
             // Folding a byte sequence into `.string` is the collapse the gap
@@ -606,7 +621,7 @@ pub const Evaluator = struct {
                 return .{ .string = switch (val) {
                     .nil, .unavailable => "nil",
                     .bool => "boolean",
-                    .int, .float => "number",
+                    .int, .float, .decimal => "number",
                     .string => "string",
                     .table => "table",
                     .func => "function",
@@ -617,6 +632,7 @@ pub const Evaluator = struct {
                 return switch (val) {
                     .int => val,
                     .float => val,
+                    .decimal => val,
                     else => error.UnsupportedExpression,
                 };
             }
@@ -634,6 +650,12 @@ pub const Evaluator = struct {
                     .float => blk: {
                         var buf: [30]u8 = undefined;
                         const written = std.fmt.bufPrint(&buf, "{d}", .{val.float}) catch "??";
+                        const owned = alloc.dupe(u8, written) catch return error.UnsupportedExpression;
+                        break :blk .{ .string = owned };
+                    },
+                    .decimal => blk: {
+                        var buf: [30]u8 = undefined;
+                        const written = std.fmt.bufPrint(&buf, "{d}", .{val.decimal.toFloat()}) catch "??";
                         const owned = alloc.dupe(u8, written) catch return error.UnsupportedExpression;
                         break :blk .{ .string = owned };
                     },
@@ -665,7 +687,7 @@ pub const Evaluator = struct {
                     .nil, .unavailable => "nil",
                     .bool => "bool",
                     .int => "i64",
-                    .float => "f64",
+                    .float, .decimal => "f64",
                     .string => "str",
                     .table => "table",
                     .func => "function",
@@ -677,7 +699,7 @@ pub const Evaluator = struct {
                     .nil, .unavailable => "nil",
                     .bool => "bool",
                     .int => "int64_t",
-                    .float => "double",
+                    .float, .decimal => "double",
                     .string => "const char*",
                     .table => "lua_Value",
                     .func => "lua_Value",
@@ -698,7 +720,7 @@ pub const Evaluator = struct {
                     .nil, .unavailable => "nil",
                     .bool => "bool",
                     .int => "i64",
-                    .float => "f64",
+                    .float, .decimal => "f64",
                     .string => "str",
                     .table => "table",
                     .func => "function",
@@ -1478,6 +1500,7 @@ pub const Evaluator = struct {
             .neg => switch (value) {
                 .int => |v| .{ .int = -v },
                 .float => |v| .{ .float = -v },
+                .decimal => |v| .{ .decimal = v.neg() },
                 else => error.UnsupportedOperator,
             },
             .bnot => switch (value) {
@@ -1855,6 +1878,60 @@ fn exprHasNoApplication(e: *const ast.Expr) bool {
     };
 }
 
+/// True when some spelling in this body names an exact decimal — a value the
+/// `f64` this body would otherwise lower to cannot hold. It is a question about
+/// the FACT the literal carries, never about how the literal is spelled: a
+/// spelling the carrier declined (hex float, an exponent outside its band) has
+/// no exact fact and answers false, because for it the ordinary lowering is
+/// still the only answer available.
+fn bodyCarriesExactDecimal(b: *const ast.Block) bool {
+    for (b.stmts) |st| if (stmtCarriesExactDecimal(&st)) return true;
+    if (b.tail_expr) |te| return exprCarriesExactDecimal(te);
+    return false;
+}
+
+fn stmtCarriesExactDecimal(st: *const ast.Stmt) bool {
+    return switch (st.*) {
+        .local_decl => |d| for (d.inits) |e| {
+            if (exprCarriesExactDecimal(e)) break true;
+        } else false,
+        .assign => |a| blk: {
+            for (a.values) |e| if (exprCarriesExactDecimal(e)) break :blk true;
+            break :blk false;
+        },
+        .while_loop => |w| exprCarriesExactDecimal(w.cond) or bodyCarriesExactDecimal(&w.body),
+        .num_for => |f| bodyCarriesExactDecimal(&f.body),
+        .do_block => |d| bodyCarriesExactDecimal(&d.body),
+        .if_stmt => |f| blk: {
+            if (exprCarriesExactDecimal(f.cond)) break :blk true;
+            if (bodyCarriesExactDecimal(&f.then)) break :blk true;
+            for (f.elseifs) |ei| {
+                if (exprCarriesExactDecimal(ei.cond)) break :blk true;
+                if (bodyCarriesExactDecimal(&ei.body)) break :blk true;
+            }
+            break :blk if (f.else_body) |eb| bodyCarriesExactDecimal(&eb) else false;
+        },
+        .ret => |r| for (r.vals) |e| {
+            if (exprCarriesExactDecimal(e)) break true;
+        } else false,
+        .expr_stmt => |e| exprCarriesExactDecimal(e.expr),
+        else => false,
+    };
+}
+
+fn exprCarriesExactDecimal(e: *const ast.Expr) bool {
+    return switch (e.*) {
+        .float_lit => |lit| lit.dec != null,
+        .binop => |b| exprCarriesExactDecimal(b.lhs) or exprCarriesExactDecimal(b.rhs),
+        .unop => |u| exprCarriesExactDecimal(u.operand),
+        .if_expr => |ie| exprCarriesExactDecimal(ie.cond) or
+            exprCarriesExactDecimal(ie.then_expr) or exprCarriesExactDecimal(ie.else_expr),
+        .index => |ix| exprCarriesExactDecimal(ix.obj) or exprCarriesExactDecimal(ix.key),
+        .field => |f| exprCarriesExactDecimal(f.obj),
+        else => false,
+    };
+}
+
 /// Whether this published computed projection can be answered from GRAPH FACTS
 /// ALONE, with no reference to the initializer expression.
 ///
@@ -2168,7 +2245,18 @@ pub fn foldRelationBody(
         // coalesces it into the return register, so `t = (1,2,3,4) ; t[2]` is
         // already at the two-instruction floor and folding it here would only
         // move which pass gets the credit.
-        if (!bodyHasLoop(&fb.body)) return constantAnswer(graph, &fb.body);
+        //
+        // THAT PREMISE FAILS FOR AN EXACT DECIMAL, and it fails by giving a
+        // DIFFERENT ANSWER rather than a slower one. Ordinary lowering commits
+        // `0.1` to the `f64` nearest it, and `f64` holds no tenth, so
+        // `a = 0.1 ; b = 0.2 ; a + b == 0.3` lowered to the machine answers
+        // about three roundings — measured 0 where the same body reached
+        // through a call answers 1. Where the body's answer rests on a fact the
+        // realization does not carry, the fact answers.
+        if (!bodyHasLoop(&fb.body)) {
+            if (constantAnswer(graph, &fb.body)) |k| return k;
+            if (!bodyCarriesExactDecimal(&fb.body)) return null;
+        }
         return runFold(fb, .{}, .{
             .step_limit = fold_step_limit,
             .alloc = scratch,
@@ -2239,7 +2327,7 @@ pub fn foldRelationBody(
                 .application_work = .{ .graph = graph, .sites = &.{} },
             }) catch continue;
             switch (value) {
-                .int, .float, .bool, .string => {},
+                .int, .float, .decimal, .bool, .string => {},
                 else => continue,
             }
             const slot = scope.getOrPut(scratch, name) catch return null;
@@ -2466,6 +2554,25 @@ fn numericAsFloat(value: Value) ?f64 {
     return switch (value) {
         .int => |v| @floatFromInt(v),
         .float => |v| v,
+        .decimal => |v| v.toFloat(),
+        else => null,
+    };
+}
+
+/// The exact decimal both operands name, when both name one. An `.int` names a
+/// decimal too, so `0.5 + 1` stays exact; a `.float` does not, because the
+/// spelling that produced it is gone.
+fn exactPair(left: Value, right: Value) ?struct { l: decimal.Decimal, r: decimal.Decimal } {
+    if (left != .decimal and right != .decimal) return null;
+    const l = exactDecimal(left) orelse return null;
+    const r = exactDecimal(right) orelse return null;
+    return .{ .l = l, .r = r };
+}
+
+fn exactDecimal(value: Value) ?decimal.Decimal {
+    return switch (value) {
+        .decimal => |v| v,
+        .int => |v| decimal.fromInt(v),
         else => null,
     };
 }
@@ -2547,6 +2654,24 @@ fn evalNumeric(op: ast.BinOp, left: Value, right: Value, native_integers: bool) 
         };
     }
 
+    // EXACT FIRST, AND ONLY WHERE IT IS EXACT. `+`, `-` and `*` are closed over
+    // decimals; `/` and `pow` are not (one third has no finite decimal), so they
+    // are not attempted here rather than answered approximately under an exact
+    // carrier's name. When the carrier declines an alignment it cannot hold, the
+    // f64 realization below answers exactly what it answered before this
+    // carrier existed — the exact fact only ever ADDS an answer.
+    if (op == .add or op == .sub or op == .mul) {
+        if (exactPair(left, right)) |pair| {
+            const exact = switch (op) {
+                .add => decimal.add(pair.l, pair.r),
+                .sub => decimal.sub(pair.l, pair.r),
+                .mul => decimal.mul(pair.l, pair.r),
+                else => unreachable,
+            };
+            if (exact) |value| return .{ .decimal = value };
+        }
+    }
+
     const l = numericAsFloat(left) orelse return error.UnsupportedOperator;
     const r = numericAsFloat(right) orelse return error.UnsupportedOperator;
     return switch (op) {
@@ -2573,6 +2698,21 @@ fn evalInteger(op: ast.BinOp, left: Value, right: Value) EvalError!Value {
 }
 
 fn evalComparison(op: ast.BinOp, left: Value, right: Value) EvalError!Value {
+    // EXACT FIRST, on the same terms as `+`, `-` and `*`. A carrier whose `==`
+    // is exact and whose `<=` is not answers `a + b == 0.3` TRUE and
+    // `a + b <= 0.3` FALSE for the same two values — the fact surviving one
+    // seam and dropping at the next, which is the whole defect class here.
+    if (exactPair(left, right)) |pair| {
+        if (decimal.compare(pair.l, pair.r)) |order| {
+            return .{ .bool = switch (op) {
+                .lt => order == .lt,
+                .gt => order == .gt,
+                .leq => order != .gt,
+                .geq => order != .lt,
+                else => unreachable,
+            } };
+        }
+    }
     if (numericAsFloat(left)) |l| {
         const r = numericAsFloat(right) orelse return error.UnsupportedOperator;
         return .{ .bool = switch (op) {
@@ -3200,6 +3340,59 @@ test "comptime eval: effect closure carries aggregate projection occurrence" {
 pub fn isMetaCombinatorHook(name: []const u8) bool {
     return std.mem.startsWith(u8, name, "__comptime") or std.mem.startsWith(u8, name, "__meta") or
         std.mem.startsWith(u8, name, "__derive");
+}
+
+test "comptime eval: exact decimal meaning survives bindings, a call and a return" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\function total(x: f64, y: f64): f64
+        \\  return x + y
+        \\end
+        \\local a = 0.1
+        \\local b = 0.2
+        \\local agrees = __constexpr(total(a, b) == 0.3)
+        \\local rounds = __constexpr(total(a, b) == 0.30000000000000004)
+        \\local ordered = __constexpr(total(a, b) == total(b, a))
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    const module = try parser.parse_module();
+
+    const func = &module.body.stmts[0].func_decl.func;
+    var scope: std.StringHashMapUnmanaged(Value) = .empty;
+    defer scope.deinit(alloc);
+    try scope.put(alloc, "total", try funcValue(func, .{}, .{ .alloc = alloc }));
+
+    const a = try eval(module.body.stmts[1].local_decl.inits[0]);
+    const b = try eval(module.body.stmts[2].local_decl.inits[0]);
+    try std.testing.expect(a == .decimal);
+    try std.testing.expect(b == .decimal);
+    try scope.put(alloc, "a", a);
+    try scope.put(alloc, "b", b);
+    const scopes = [_]std.StringHashMapUnmanaged(Value){scope};
+    const bindings = Bindings{ .scopes = &scopes };
+    const options = Options{ .alloc = alloc };
+
+    // The f64 realization of the same three spellings disagrees. That is the
+    // positive control: this test cannot pass by accident on the old carrier.
+    try std.testing.expect(numericAsFloat(a).? + numericAsFloat(b).? != 0.3);
+
+    try std.testing.expectEqual(
+        Value{ .bool = true },
+        try evalWithBindings(module.body.stmts[3].local_decl.inits[0], bindings, options),
+    );
+    try std.testing.expectEqual(
+        Value{ .bool = false },
+        try evalWithBindings(module.body.stmts[4].local_decl.inits[0], bindings, options),
+    );
+    try std.testing.expectEqual(
+        Value{ .bool = true },
+        try evalWithBindings(module.body.stmts[5].local_decl.inits[0], bindings, options),
+    );
 }
 
 test "isMetaCombinatorHook" {

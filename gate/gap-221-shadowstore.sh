@@ -106,19 +106,19 @@ idol=${IDOL_BIN:-"$root/zig-out/bin/idol"}
 # A text scan. It cannot prove the two stores agree; it can prove the retired
 # shape is not spelled here any more, which is all it claims.
 
-if grep -q "fn bodyDeclaresBinding" src/dnir_lower.zig; then
+if grep -q "fn bodyDeclaresBinding" src/graph/lower.zig; then
     fail "bodyDeclaresBinding still exists (deletion witness unmet)"
 fi
 
-if ! grep -q "bindingNamedIn" src/dnir_lower.zig; then
+if ! grep -q "bindingNamedIn" src/graph/lower.zig; then
     fail "bindingNamedIn not found (binding-identity approach missing)"
 fi
 
-if ! grep -q "moduleFieldWord.*struct { RT, \[\]const u8 }" src/dnir_lower.zig; then
+if ! grep -q "moduleFieldWord.*struct { RT, \[\]const u8 }" src/graph/lower.zig; then
     fail "moduleFieldWord does not return struct with type and storage key"
 fi
 
-if grep -A5 "moduleFieldWord" src/dnir_lower.zig | grep -q "ctx.module_globals.storageKey"; then
+if grep -A5 "moduleFieldWord" src/graph/lower.zig | grep -q "ctx.module_globals.storageKey"; then
     fail "ctx.module_globals.storageKey still used after moduleFieldWord (two-store shape persists)"
 fi
 

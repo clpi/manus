@@ -1,10 +1,10 @@
 # GAP-124 graph identity / edge closure proof - structural roles only.
 # Admission: idol check only (direct backend). Never --backend=c.
 
-graph = "src/semantic_graph.zig"
+graph = "src/graph.zig"
 query = "src/graph_query.zig"
 dispatch = "src/lexer_dispatch.zig"
-lower = "src/dnir_lower.zig"
+lower = "src/graph/lower.zig"
 snap = "src/knowledge_snapshot.zig"
 pipeline = "src/sim_pipeline.zig"
 tests = "src/tests.zig"
