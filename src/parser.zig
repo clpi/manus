@@ -12380,7 +12380,7 @@ test "parse: the anchor face admits exactly the `@` identity" {
 }
 
 test "parse: bare anchor decision executes through whole-pack event" {
-    const run = struct {
+    const proof = struct {
         fn check(source: [2]TK, shown: [2]TK, damage: bool, want: bool) !void {
             const one: i64 = @intCast(@as(u64, @backingInt(source[0])) |
                 (@as(u64, 1) << 8) |
@@ -12388,30 +12388,30 @@ test "parse: bare anchor decision executes through whole-pack event" {
             const two: i64 = @intCast(@as(u64, @backingInt(source[1])) |
                 (@as(u64, 1) << 8) |
                 (@as(u64, 2) << 36));
-            var facts = [_]i64{ 0, one, 0, two, 0 };
-            var events = [4]i64{ 0, 0, 0, 0 };
-            try parserEventsForTest(facts[0..], events[0..], true);
-            if (damage) events[2] &= ~(@as(i64, 1) << 7);
-            var tokens = [_]Token{
+            var fact = [_]i64{ 0, one, 0, two, 0 };
+            var event = [4]i64{ 0, 0, 0, 0 };
+            try parserEventsForTest(fact[0..], event[0..], true);
+            if (damage) event[2] &= ~(@as(i64, 1) << 7);
+            var token = [_]Token{
                 .{ .kind = shown[0], .loc = .{ .file = "anchor.id", .line = 1, .col = 1 }, .text = shown[0].spelling() },
                 .{ .kind = shown[1], .loc = .{ .file = "anchor.id", .line = 1, .col = 2 }, .text = shown[1].spelling() },
             };
             var lexer = Lexer.init("", "anchor.id");
             var consumer = Parser.init(&lexer, testing.allocator);
-            consumer.pack_tokens = &tokens;
-            consumer.parser_events = &events;
+            consumer.pack_tokens = &token;
+            consumer.parser_events = &event;
             try testing.expectEqual(want, try consumer.at_is_bare_anchor());
         }
-    }.check;
+    };
 
-    try run(.{ .at, .rparen }, .{ .at, .rparen }, false, true);
-    try run(.{ .at, .comma }, .{ .at, .comma }, false, true);
-    try run(.{ .at, .name }, .{ .at, .name }, false, false);
-    try run(.{ .at, .lbrace }, .{ .at, .lbrace }, false, false);
-    try run(.{ .at, .eof }, .{ .at, .eof }, false, false);
-    try run(.{ .at, .int_lit }, .{ .at, .int_lit }, false, false);
-    try testing.expectError(error.TestExpectedEqual, run(.{ .at, .rparen }, .{ .at, .rparen }, true, true));
-    try testing.expectError(error.TestExpectedEqual, run(.{ .at, .name }, .{ .at, .rparen }, false, true));
+    try proof.check(.{ .at, .rparen }, .{ .at, .rparen }, false, true);
+    try proof.check(.{ .at, .comma }, .{ .at, .comma }, false, true);
+    try proof.check(.{ .at, .name }, .{ .at, .name }, false, false);
+    try proof.check(.{ .at, .lbrace }, .{ .at, .lbrace }, false, false);
+    try proof.check(.{ .at, .eof }, .{ .at, .eof }, false, false);
+    try proof.check(.{ .at, .int_lit }, .{ .at, .int_lit }, false, false);
+    try testing.expectError(error.TestExpectedEqual, proof.check(.{ .at, .rparen }, .{ .at, .rparen }, true, true));
+    try testing.expectError(error.TestExpectedEqual, proof.check(.{ .at, .name }, .{ .at, .rparen }, false, true));
 }
 
 test "parse: bare anchor keeps construction coordinates and named macro behavior" {
@@ -12424,9 +12424,9 @@ test "parse: bare anchor keeps construction coordinates and named macro behavior
     try testing.expectEqual(@as(u32, 7), first.loc.col);
 
     const comma = try parseDuoSource("x = f(@, 1)", &arena);
-    const args = comma.body.stmts[0].assign.values[0].call.args;
-    try testing.expectEqual(@as(usize, 2), args.len);
-    try testing.expectEqualStrings("self", args[0].name.ident);
+    const arg = comma.body.stmts[0].assign.values[0].call.args;
+    try testing.expectEqual(@as(usize, 2), arg.len);
+    try testing.expectEqualStrings("self", arg[0].name.ident);
 
     const macro = try parseSource("@twice(21)", &arena);
     const expr = macro.body.tail_expr.?;
