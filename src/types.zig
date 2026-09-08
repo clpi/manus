@@ -260,27 +260,29 @@ pub fn enumShapeFromAst(ed: *const ast.EnumDef, alloc: std.mem.Allocator) !Resol
 // bootstrap debt `src/relation.zig` records against itself (`law.relation.debt`
 // — "string identities"). It is written down here at the moment the mechanism
 // becomes useful, because that is when the pressure to fossilize starts.
-var nominal_reprs: std.StringHashMapUnmanaged(ResolvedType) = .empty;
-var nominal_reprs_store: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var nominal: struct {
+    representations: std.StringHashMapUnmanaged(ResolvedType) = .empty,
+    store: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+} = .{};
 
 /// Land `name --realized-as--> repr`. Re-declaration REPLACES, so a later
 /// module's descriptor wins over an earlier one of the same name, matching
 /// `Relation.declare`.
 pub fn declareNominal(alloc: std.mem.Allocator, name: []const u8, repr: ResolvedType) !void {
     _ = alloc;
-    const store = nominal_reprs_store.allocator();
-    if (nominal_reprs.getPtr(name)) |slot| {
+    const store = nominal.store.allocator();
+    if (nominal.representations.getPtr(name)) |slot| {
         slot.* = repr;
         return;
     }
-    try nominal_reprs.put(store, try store.dupe(u8, name), repr);
+    try nominal.representations.put(store, try store.dupe(u8, name), repr);
 }
 
 /// The representation of a nominal descriptor NAME, or null when the name is
 /// not one. Null is the answer for every ordinary record descriptor, which is
 /// what keeps this from changing the meaning of existing `.@"struct"` types.
 pub fn nominalRepr(name: []const u8) ?ResolvedType {
-    return nominal_reprs.get(name);
+    return nominal.representations.get(name);
 }
 
 /// The representation behind a resolved type, when that type IS a nominal
@@ -289,7 +291,7 @@ pub fn nominalRepr(name: []const u8) ?ResolvedType {
 /// from both directions.
 pub fn nominalReprOf(t: ResolvedType) ?ResolvedType {
     return switch (t) {
-        .@"struct" => |s| nominal_reprs.get(s.name),
+        .@"struct" => |s| nominal.representations.get(s.name),
         else => null,
     };
 }
@@ -297,7 +299,7 @@ pub fn nominalReprOf(t: ResolvedType) ?ResolvedType {
 /// `feet` as a TYPE, when `feet` is a declared nominal descriptor. Used where a
 /// descriptor name arrives as text (a conversion target group, a `mem` level).
 pub fn nominalNamed(name: []const u8) ?ResolvedType {
-    if (nominal_reprs.get(name) == null) return null;
+    if (nominal.representations.get(name) == null) return null;
     return ResolvedType{ .@"struct" = .{ .name = name } };
 }
 
@@ -1221,7 +1223,7 @@ pub const ResolvedType = union(enum) {
             .v4i64 => .{ .domain = .integral, .width = 64, .lanes = 4, .signed = true, .format = .twos_complement, .overflow = .wrap, .rounding = .exact },
             .v8f32 => .{ .domain = .real, .width = 32, .lanes = 8, .signed = true, .format = .ieee754_binary, .overflow = .ieee754, .rounding = .nearest_even },
             .v8i32 => .{ .domain = .integral, .width = 32, .lanes = 8, .signed = true, .format = .twos_complement, .overflow = .wrap, .rounding = .exact },
-            .@"struct" => |s| if (nominal_reprs.get(s.name)) |repr| repr.numericFacts() else null,
+            .@"struct" => |s| if (nominal.representations.get(s.name)) |repr| repr.numericFacts() else null,
             else => null,
         };
     }
@@ -1816,7 +1818,7 @@ pub const ResolvedType = union(enum) {
                 // reaches the C emitter as a type of its own, so there is no
                 // wrapper struct to allocate, no tag to test and no boxed
                 // fallback to fall into.
-                if (nominal_reprs.get(s.name)) |nr| return nr.c_type(buf);
+                if (nominal.representations.get(s.name)) |nr| return nr.c_type(buf);
                 return std.fmt.bufPrint(buf, "duo_{s}", .{s.name}) catch s.name;
             },
             .array => |a| {
@@ -4237,8 +4239,8 @@ test "types: the field-cell face of the scalar roster is derived from the same f
     // `narrowFit` nominal test above already established.
     const alloc = std.heap.page_allocator;
     try declareNominal(alloc, "tick", .i32);
-    const nominal = nominalNamed("tick").?;
-    try testing.expectEqual(@as(?ScalarFieldCell, null), scalarFieldCell(nominal));
+    const descriptor = nominalNamed("tick").?;
+    try testing.expectEqual(@as(?ScalarFieldCell, null), scalarFieldCell(descriptor));
 
     // Planting a vector widening in `scalarFieldCell` (via `scalarRepr`) is
     // refused by the `lanes != 1` fact: no non-scalar cell is invented here.
@@ -4311,9 +4313,9 @@ test "types: the module-global-written narrow face is derived from the same fact
     // above already established.
     const alloc = std.heap.page_allocator;
     try declareNominal(alloc, "beat", .i32);
-    const nominal = nominalNamed("beat").?;
-    try testing.expect(nominal.narrowFit() != null); // representation is narrow
-    try testing.expect(!derivedNarrowGlobal(nominal)); // identity is withheld
+    const descriptor = nominalNamed("beat").?;
+    try testing.expect(descriptor.narrowFit() != null); // representation is narrow
+    try testing.expect(!derivedNarrowGlobal(descriptor)); // identity is withheld
 }
 
 test "types: the loop-counter fast-arm face is derived from the same facts" {
@@ -4460,11 +4462,11 @@ test "types: the boxing face of the scalar roster is derived from the same facts
     // same way. This is the one behavioural pin the derivation must match.
     const alloc = std.heap.page_allocator;
     try declareNominal(alloc, "beat", .i32);
-    const nominal = nominalNamed("beat").?;
-    try testing.expectEqual(@as(?LuaBoxClass, null), luaBoxClass(nominal));
+    const descriptor = nominalNamed("beat").?;
+    try testing.expectEqual(@as(?LuaBoxClass, null), luaBoxClass(descriptor));
     // Its PHYSICS still delegates, so withholding it here is an identity ruling
     // and not a claim that its representation has no box class.
-    try testing.expectEqual(@as(?LuaBoxClass, .int), luaBoxClass(nominalReprOf(nominal).?));
+    try testing.expectEqual(@as(?LuaBoxClass, .int), luaBoxClass(nominalReprOf(descriptor).?));
 
     // Planting a widening — treating a real as an integer box — is refused by
     // the `domain` fact: a real answers `.num`, never `.int`.
@@ -4574,11 +4576,11 @@ test "types: the coercion face of the scalar roster is derived from the same fac
     // nominal-over-`i32` (a `.struct` tag) fall to their else arm — refused.
     const alloc = std.heap.page_allocator;
     try declareNominal(alloc, "gain", .i32);
-    const nominal = nominalNamed("gain").?;
-    try testing.expect(!luaCoerceAccepts(nominal));
-    try testing.expect(luaCoerceClass(nominal) == null);
+    const descriptor = nominalNamed("gain").?;
+    try testing.expect(!luaCoerceAccepts(descriptor));
+    try testing.expect(luaCoerceClass(descriptor) == null);
     // Its PHYSICS still coerces, so withholding it here is an identity ruling.
-    try testing.expect(luaCoerceClass(nominalReprOf(nominal).?) != null);
+    try testing.expect(luaCoerceClass(nominalReprOf(descriptor).?) != null);
 }
 
 test "types: the boxed-call result-coercion face is derived from the same facts" {
@@ -4677,9 +4679,9 @@ test "types: the boxed-call result-coercion face is derived from the same facts"
     // to its else arm — no wrapper — while its representation still coerces.
     const alloc = std.heap.page_allocator;
     try declareNominal(alloc, "phase", .i32);
-    const nominal = nominalNamed("phase").?;
-    try testing.expect(luaCoerceClass(nominal) == null);
-    try testing.expect(luaCoerceClass(nominalReprOf(nominal).?) != null);
+    const descriptor = nominalNamed("phase").?;
+    try testing.expect(luaCoerceClass(descriptor) == null);
+    try testing.expect(luaCoerceClass(nominalReprOf(descriptor).?) != null);
 }
 
 test "types: the bare-numeric-literal default descriptor is derived from the same facts" {
@@ -4848,32 +4850,30 @@ test "inferCallShape: method call expression" {
 test "types: nominal store outlives a destroyed caller arena" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     const alloc = arena.allocator();
-    try declareNominal(alloc, "t69_farthing", .i32);
+    try declareNominal(alloc, "farthing", .i32);
     arena.deinit();
-    try testing.expectEqual(@as(?ResolvedType, .i32), nominalRepr("t69_farthing"));
-    try declareNominal(testing.allocator, "t69_farthing", .i64);
-    try testing.expectEqual(@as(?ResolvedType, .i64), nominalRepr("t69_farthing"));
-    try testing.expectEqual(@as(?ResolvedType, null), nominalRepr("t69_absent"));
+    try testing.expectEqual(@as(?ResolvedType, .i32), nominalRepr("farthing"));
+    try declareNominal(testing.allocator, "farthing", .i64);
+    try testing.expectEqual(@as(?ResolvedType, .i64), nominalRepr("farthing"));
+    try testing.expectEqual(@as(?ResolvedType, null), nominalRepr("absent"));
 }
 
 test "types: nominal store retains the declared name after the caller buffer mutates" {
-    var name_buf: [16]u8 = .{ 'f', 'a', 'r', 't', 'h', 'i', 'n', 'g', 'x', 0, 0, 0, 0, 0, 0, 0 };
-    try declareNominal(testing.allocator, name_buf[0..9], .i32);
-    for (&name_buf) |*b| b.* = '#';
-    try testing.expectEqual(@as(?ResolvedType, .i32), nominalRepr("farthingx"));
-    try testing.expectEqual(@as(?ResolvedType, null), nominalRepr("########"));
+    var name = "shilling".*;
+    try declareNominal(testing.allocator, &name, .i32);
+    for (&name) |*byte| byte.* = '#';
+    try testing.expectEqual(@as(?ResolvedType, .i32), nominalRepr("shilling"));
+    try testing.expectEqual(@as(?ResolvedType, null), nominalRepr(&name));
 }
 
 test "types: nominal store same-name replacement keeps the original key alive across a destroyed second arena" {
-    var arena1 = std.heap.ArenaAllocator.init(testing.allocator);
-    var arena2 = std.heap.ArenaAllocator.init(testing.allocator);
-    var buf1: [12]u8 = .{ 'f', 'a', 'r', 't', 'h', 'i', 'n', 'g', 'y', 0, 0, 0 };
-    try declareNominal(arena1.allocator(), buf1[0..9], .i32);
-    var buf2: [12]u8 = .{ 'f', 'a', 'r', 't', 'h', 'i', 'n', 'g', 'y', 0, 0, 0 };
-    try declareNominal(arena2.allocator(), buf2[0..9], .i64);
-    for (&buf2) |*b| b.* = '?';
-    arena2.deinit();
-    for (&buf1) |*b| b.* = '!';
-    arena1.deinit();
-    try testing.expectEqual(@as(?ResolvedType, .i64), nominalRepr("farthingy"));
+    var original = .{ .arena = std.heap.ArenaAllocator.init(testing.allocator), .name = "penny".* };
+    var replacement = .{ .arena = std.heap.ArenaAllocator.init(testing.allocator), .name = "penny".* };
+    try declareNominal(original.arena.allocator(), &original.name, .i32);
+    try declareNominal(replacement.arena.allocator(), &replacement.name, .i64);
+    for (&replacement.name) |*byte| byte.* = '?';
+    replacement.arena.deinit();
+    for (&original.name) |*byte| byte.* = '!';
+    original.arena.deinit();
+    try testing.expectEqual(@as(?ResolvedType, .i64), nominalRepr("penny"));
 }
