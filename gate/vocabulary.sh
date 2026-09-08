@@ -195,7 +195,7 @@ unproven = []
 
 
 def validate_graph(graph):
-    if graph.get("schema") != "idol.graph.v1" or graph.get("version") != 17:
+    if graph.get("schema") != "idol.graph.v1" or graph.get("version") != 18:
         raise ValueError("graph schema/version")
     law = graph.get("root_source_law")
     if not isinstance(law, dict):
