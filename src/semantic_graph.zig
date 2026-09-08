@@ -13,6 +13,7 @@ const types = @import("types.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
 const place = @import("place.zig");
+const observation = @import("observation.zig");
 const region = @import("region.zig");
 const subject_home = @import("subject_home.zig");
 const semantic_identity = @import("semantic_identity.zig");
@@ -4331,10 +4332,26 @@ pub const SemanticGraph = struct {
     /// §18's census, lifted ONCE. Idempotent: a second call is a no-op, so a
     /// caller that lifts a graph twice does not get two censuses and two sets
     /// of place identities.
+    ///
+    /// THE EXISTENCE RULING ARRIVES WITH THE CENSUS. `observation.permits(
+    /// report, .existence)` is the gate on physical nonexistence and
+    /// `place.residencyRefusal` — the only proof `dnir_lower.placeFold`
+    /// consulted — never asks it. Stamping the ruling here makes the census and
+    /// its ruling one artifact from one walk, so no consumer can hold a row
+    /// whose freedom was decided against a different program.
+    ///
+    /// The world is `ordinary_executable`, the same one `main.zig` selects for
+    /// `lower.collectStaticPlaces`; the walk adds the facts it DISCOVERS (a
+    /// clock read) on top of it.
     pub fn liftPlaces(self: *SemanticGraph, mod: *const ast.Module) !void {
         try self.requireOpen();
         if (self.places != null) return;
-        self.places = try place.analyzeModule(self.alloc, mod);
+        self.places = try observation.ruledModuleCensus(
+            self.alloc,
+            mod,
+            observation.ordinary_executable,
+            .{},
+        );
     }
 
     /// The place a module-scope name denotes, or null when this graph was never
@@ -8576,6 +8593,12 @@ pub const SemanticGraph = struct {
             try buf.appendSlice(alloc, @tagName(p.facts.residency));
             try buf.appendSlice(alloc, "\",\"origin\":\"");
             try buf.appendSlice(alloc, @tagName(p.facts.origin));
+            // THE OBSERVATION RULING, not a place fact — published beside them
+            // so a reader can reproduce `residencyRefusal` in full. Without it
+            // an export carries five clauses of a six-clause decision and a
+            // reader that stops at five reads a fold as admitted.
+            try buf.appendSlice(alloc, "\",\"existence\":\"");
+            try buf.appendSlice(alloc, p.existence.name());
             try buf.appendSlice(alloc, "\",\"extent\":");
             switch (p.facts.extent) {
                 .unknown => try buf.appendSlice(alloc, "\"unknown\""),
@@ -9211,6 +9234,15 @@ pub const SemanticGraph = struct {
         // from, so a reader can re-derive the answer without trusting it.
         // gaps/GAP-120.md. A v16 reader pointed at a v17 export sees a key it
         // did not expect, and that is the point.
+        //
+        // version 18: `places[]` rows gain `existence`. Version 17 published
+        // every PLACE fact `residencyRefusal` reads and none of the
+        // OBSERVATION ruling it now also reads, so a v17 reader reproducing the
+        // fold decision from the export answered `none` for a place whose
+        // existence freedom `observation.permits` had refused. GAP-170's
+        // deletion condition 2, published. A v17 reader pointed at a v18 export
+        // sees a key it did not expect, and that is the point.
+        //
         // `idol.graph.v1` is this graph's own identity: the `sim-v0` name was
         // SIM heritage on a payload that is the canonical semantic graph
         // (canonical.md §4 owns the edge law; law.schema.one wants a record
@@ -9218,7 +9250,7 @@ pub const SemanticGraph = struct {
         // and producer-one: one writer (semantic_graph.zig), one reader gate
         // (gate/vocabulary.sh). A reader pointed at a foreign schema string
         // must refuse, and that is the point.
-        try out.appendSlice(alloc, "{\"schema\":\"idol.graph.v1\",\"version\":17,\"file\":\"");
+        try out.appendSlice(alloc, "{\"schema\":\"idol.graph.v1\",\"version\":18,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
         try out.append(alloc, '"');
         switch (self.root_source_law_edition) {
@@ -10262,7 +10294,7 @@ test "semantic_graph: checked callable linkage is one id keyed fact" {
     try graph.writeJson(alloc, "linkage.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 17), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 18), parsed.value.object.get("version").?.integer);
     const exported = parsed.value.object.get("callable_linkages").?.array.items;
     try std.testing.expectEqual(@as(usize, 4), exported.len);
     try std.testing.expectEqual(@as(i64, external), exported[3].object.get("callable").?.integer);
@@ -10737,7 +10769,7 @@ test "semantic_graph: nested positional access owns aggregate member and result 
     try graph.writeJson(alloc, "aggregate-module.id", &json, null);
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc, json.items, .{});
     defer parsed.deinit();
-    try std.testing.expectEqual(@as(i64, 17), parsed.value.object.get("version").?.integer);
+    try std.testing.expectEqual(@as(i64, 18), parsed.value.object.get("version").?.integer);
     try std.testing.expectEqual(graph.aggregateCount(), parsed.value.object.get("aggregates").?.array.items.len);
     try std.testing.expectEqual(graph.exact_i64_facts.items.len, parsed.value.object.get("exact_i64").?.array.items.len);
     try std.testing.expectEqual(graph.source_quote_facts.items.len, parsed.value.object.get("source_quote").?.array.items.len);
@@ -11213,6 +11245,70 @@ test "semantic_graph: liftEnumShapes records enum variants" {
     try std.testing.expectEqual(@as(usize, 3), variants.len);
 }
 
+fn idolModule(alloc: std.mem.Allocator, src: []const u8) !ast.Module {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const held = try alloc.dupe(u8, src);
+    const lex = try alloc.create(Lexer);
+    lex.* = Lexer.init(held, "existence.id");
+    var parser = Parser.init(lex, alloc);
+    parser.idol_mode = true;
+    return try parser.parse_module();
+}
+
+test "semantic_graph: the lifted place census carries its existence ruling" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // PRODUCTION-USE CONTROL. `dnir_lower.absentModulePlace` reads exactly
+    // `place.residencyRefusal(graph.placeNamed(name))` and nothing else, so
+    // these two expressions ARE the fold's admission decision. If `liftPlaces`
+    // stops stamping, the row reads `unasked` and the first block fails; if the
+    // ruling stops reaching `residencyRefusal`, the second fails.
+    {
+        const module = try idolModule(alloc,
+            \\t = (10, 20, 30)
+            \\main: i64 = ()
+            \\    t[2]
+            \\
+        );
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        _ = try g.liftModuleFull(&module, "existence.id");
+        const p = g.placeNamed("t").?;
+        try std.testing.expectEqual(place.Existence.permitted, p.existence);
+        try std.testing.expectEqual(place.Refusal.none, place.residencyRefusal(p));
+    }
+
+    // THE INTENDED FAILING CASE, through the production lift. Every place fact
+    // is identical to the block above — unmutated, unaliased, non-escaping,
+    // exactly determined — and one applied relation the walk cannot prove
+    // boundary-local withdraws the existence freedom. This is the row the fold
+    // used to admit on a proof that never covered the question.
+    {
+        const module = try idolModule(alloc,
+            \\t = (10, 20, 30)
+            \\step: i64 = (x: i64)
+            \\    x + 1
+            \\main: i64 = ()
+            \\    step(1)
+            \\    t[2]
+            \\
+        );
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        _ = try g.liftModuleFull(&module, "existence-blocked.id");
+        const p = g.placeNamed("t").?;
+        try std.testing.expectEqual(place.Tri.no, p.facts.escape);
+        try std.testing.expectEqual(place.Tri.no, p.facts.mutation);
+        try std.testing.expectEqual(place.Tri.yes, p.facts.immutability);
+        try std.testing.expectEqual(place.Determinacy.exact, p.facts.determinacy);
+        try std.testing.expectEqual(place.Existence.blocked_unknown, p.existence);
+        try std.testing.expectEqual(place.Refusal.observed, place.residencyRefusal(p));
+    }
+}
+
 test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -11246,7 +11342,7 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Color\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"Red\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"storage_class\"") == null);
-    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":17") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"version\":18") != null);
     try std.testing.expectEqualStrings(
         "unknown",
         parsed.value.object.get("root_source_law").?.object.get("card").?.string,
@@ -12316,7 +12412,7 @@ test "semantic_graph: module mutation keeps binding identity and local shadow" {
     var json: std.ArrayListUnmanaged(u8) = .empty;
     defer json.deinit(alloc);
     try graph.writeJson(alloc, "module-mutation.id", &json, null);
-    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"version\":17") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json.items, "\"version\":18") != null);
     try std.testing.expect(std.mem.indexOf(u8, json.items, "\"mutations\":[{") != null);
 
     // THE CARDINALITY, AND THE THREE STATES THAT MUST NOT COLLAPSE. The

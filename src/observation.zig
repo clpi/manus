@@ -1302,9 +1302,34 @@ fn refuseRegion(ctx: *WalkCtx) void {
     }
 }
 
+/// WHICH CENSUS A REPORT IS ISSUED OVER. The walk is the same either way; the
+/// SUBJECT is not, and getting the two out of step is the coincidence-safety
+/// GAP-170's 2026-09-07 floor closed.
+pub const Scope = enum {
+    /// The first top-level relation's own places. `walkBlock` covers the whole
+    /// module, so a SIBLING relation contributes region facts to a census that
+    /// never saw its places — which is why `relations > 1` refuses here.
+    relation,
+    /// The module's places. Census region and walk region are the same module,
+    /// so a second relation is inside the subject rather than beside it and
+    /// nothing is refused for its existence. This is the census
+    /// `SemanticGraph.liftPlaces` publishes and realization's place consumers
+    /// read.
+    module,
+};
+
 /// Analyse one module for observation evidence. The place census comes from
 /// `place.zig` — this module does not re-derive places, it annotates them.
 pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Program {
+    return analyzeScoped(alloc, mod, w, .relation);
+}
+
+pub fn analyzeScoped(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    w: World,
+    scope: Scope,
+) !Program {
     // The wedge's programs are one `main` relation; walk it if present,
     // otherwise the file-scope body. `place.zig` records why a pass that only
     // walks `.func_decl` inherits the file-scope hole.
@@ -1316,9 +1341,12 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
             if (first == null) first = &s.func_decl.func;
         }
     }
-    var census = blk: {
-        if (first) |f| break :blk try place.analyzeFunction(alloc, f);
-        break :blk try place.analyzeModule(alloc, mod);
+    var census = switch (scope) {
+        .relation => blk: {
+            if (first) |f| break :blk try place.analyzeFunction(alloc, f);
+            break :blk try place.analyzeModule(alloc, mod);
+        },
+        .module => try place.analyzeModule(alloc, mod),
     };
     errdefer census.deinit();
 
@@ -1357,7 +1385,7 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
 
     try walkBlock(&ctx, &mod.body);
 
-    if (relations > 1) refuseRegion(&ctx);
+    if (scope == .relation and relations > 1) refuseRegion(&ctx);
 
     // Effect presence is a REGION fact, so it is settled after the walk rather
     // than during it: a print on the last line makes recompute-vs-memoize
@@ -1373,6 +1401,49 @@ pub fn analyze(alloc: std.mem.Allocator, mod: *const ast.Module, w: World) !Prog
     // makes `instruction_schedule` and `recompute_vs_memoize` observable — the
     // gap's "reading a clock is an effect" as a mechanism.
     return prog;
+}
+
+/// `permits`' ruling, in the vocabulary the census row carries. Names cross the
+/// seam, never ordinals (`law.magic.code.zero`), and the switch is exhaustive
+/// so a new `Permit` cannot silently arrive as permission.
+fn existenceOf(p: Permit) place.Existence {
+    return switch (p) {
+        .permitted => .permitted,
+        .blocked_observed => .blocked_observed,
+        .blocked_unknown => .blocked_unknown,
+        .blocked_hyperproperty => .blocked_hyperproperty,
+    };
+}
+
+/// THE MODULE PLACE CENSUS WITH ITS EXISTENCE RULING ALREADY ON IT — GAP-170
+/// deletion condition 2, at the one consumer the gap named.
+///
+/// `place.residencyRefusal` decides five PLACE facts and asks nothing about
+/// observers, so `dnir_lower.placeFold` took the `existence` freedom from a
+/// proof that does not cover it. This is the missing producer: one walk, one
+/// census, `permits(&report, .existence)` as the only gate, and the ruling
+/// travels ON the row so the consumer reads a decided fact.
+///
+/// Ownership transfers to the caller — the ruling and the census it rules are
+/// one artifact, and handing back a census whose rows were stamped from a
+/// different one is the two-producer defect this closes.
+pub fn ruledModuleCensus(
+    alloc: std.mem.Allocator,
+    mod: *const ast.Module,
+    w: World,
+    ob: Obligations,
+) !place.Census {
+    var prog = try analyzeScoped(alloc, mod, w, .module);
+    errdefer prog.deinit();
+    for (prog.census.places.items) |*p| {
+        // No evidence row is no evidence, and the default already refuses.
+        const ev = prog.evidenceFor(p.id) orelse continue;
+        const r = classifyAll(prog.world, ev, ob, .{ .place = p.id });
+        p.existence = existenceOf(permits(&r, .existence).permit);
+    }
+    // The census is handed on; only the evidence column is this call's.
+    prog.ev.deinit(alloc);
+    return prog.census;
 }
 
 fn walkBlock(ctx: *WalkCtx, b: *const ast.Block) anyerror!void {
@@ -1634,6 +1705,112 @@ fn programOf(arena: *std.heap.ArenaAllocator, src: []const u8, w: World) !Progra
 }
 
 const no_obligations = Obligations{};
+
+fn ruledOf(arena: *std.heap.ArenaAllocator, src: []const u8, w: World) !place.Census {
+    const alloc = arena.allocator();
+    const mod = try parseModule(alloc, src);
+    const held = try alloc.create(ast.Module);
+    held.* = mod;
+    return try ruledModuleCensus(alloc, held, w, no_obligations);
+}
+
+test "observation: the module census carries the existence ruling the fold takes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // FEATURE-USE CONTROL. The program `gate/callfold.sh` admits: one module
+    // collection, one relation, one determined projection. `permits` grants the
+    // freedom and `residencyRefusal` reaches `.none`, so the fold this whole
+    // seam gates keeps working. If the producer stops running, this row reads
+    // `unasked` and this control fails.
+    var folds = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\main: i64 = ()
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer folds.deinit();
+    const good = folds.byName("t").?;
+    try testing.expectEqual(place.Existence.permitted, good.existence);
+    try testing.expectEqual(place.Refusal.none, place.residencyRefusal(good));
+
+    // THE INTENDED FAILING CASE — the hole, exhibited. Every PLACE clause
+    // admits: unmutated, unaliased, non-escaping, exactly determined, bound
+    // once. The walk cannot prove the applied relation boundary-local, so
+    // `allocation_identity` reads `unknown` and the existence freedom is not
+    // granted. Before the ruling reached the row, `residencyRefusal` answered
+    // `.none` here and the fold answered the read as an immediate on evidence
+    // nobody had.
+    var opaque_call = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\step: i64 = (x: i64)
+        \\    x + 1
+        \\main: i64 = ()
+        \\    step(1)
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer opaque_call.deinit();
+    const blocked = opaque_call.byName("t").?;
+    try testing.expectEqual(Tri.no, blocked.facts.escape);
+    try testing.expectEqual(Tri.no, blocked.facts.mutation);
+    try testing.expectEqual(place.Determinacy.exact, blocked.facts.determinacy);
+    try testing.expectEqual(place.Existence.blocked_unknown, blocked.existence);
+    try testing.expectEqual(place.Refusal.observed, place.residencyRefusal(blocked));
+
+    // UNKNOWN IS NOT THE ONLY REFUSAL, and the two must not collapse: handing
+    // the collection to an effect CAPTURES its identity, which is observed
+    // rather than unproven.
+    var captured = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\main: i64 = ()
+        \\    print(t)
+        \\    t[2]
+        \\
+    , ordinary_executable);
+    defer captured.deinit();
+    try testing.expectEqual(place.Existence.blocked_observed, captured.byName("t").?.existence);
+
+    // A WORLD FACT MOVES IT AND NO PLACE FACT DID. Same source as the feature
+    // control, one world fact added: addresses are observable to an adversary,
+    // so the freedom is withdrawn. `residencyRefusal`'s five place clauses
+    // cannot see this and answered `.none` for both worlds.
+    var hostile = try ruledOf(&arena,
+        \\t = (10, 20, 30)
+        \\main: i64 = ()
+        \\    t[2]
+        \\
+    , ordinary_executable.with(.security_adversary));
+    defer hostile.deinit();
+    const seen = hostile.byName("t").?;
+    try testing.expectEqual(place.Existence.blocked_observed, seen.existence);
+    try testing.expectEqual(place.Refusal.observed, place.residencyRefusal(seen));
+}
+
+test "observation: module scope censuses the module a sibling relation refuses" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\t = (10, 20, 30)
+        \\other: i64 = ()
+        \\    1
+        \\main: i64 = ()
+        \\    t[2]
+        \\
+    ;
+
+    // `analyze` censuses the FIRST relation while the walk covers the module,
+    // so a sibling relation is evidence about places the census never saw and
+    // the region is refused. At MODULE scope census and walk are the same
+    // region, so the sibling is inside the subject and decides nothing.
+    var relation_scope = try programOf(&arena, src, ordinary_executable);
+    defer relation_scope.deinit();
+    try testing.expectEqual(@as(?Evidence, null), relation_scope.byName("t"));
+
+    var module_scope = try ruledOf(&arena, src, ordinary_executable);
+    defer module_scope.deinit();
+    try testing.expectEqual(place.Existence.permitted, module_scope.byName("t").?.existence);
+}
 
 /// The fact set a runtime-built membership place carries, copied from
 /// `eqspace.zig`'s own fixture so the two modules are talking about the same
