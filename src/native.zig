@@ -4688,16 +4688,14 @@ const Arm64Compiler = struct {
                         @intCast(std.mem.alignForward(usize, ins.pack_results.len * 8, 16))
                     else
                         0;
-                    // The park's reservation, read before the save window
-                    // opens so the slot exists whenever the arm below takes it
-                    // (GAP-148, `parkCallResult`). Mutually exclusive with
-                    // `pack_bytes`, which that arm requires to be zero.
-                    const park_bytes: u16 = if (pack_bytes == 0)
-                        self.parkReserve(ins.result != null)
+                    // The call result's location, assigned before the save
+                    // window opens (GAP-148, `parkOpen`). Mutually exclusive
+                    // with `pack_bytes`, which that arm requires to be zero.
+                    const park: Park = if (pack_bytes == 0)
+                        try self.parkOpen(ins.result != null)
                     else
-                        0;
+                        .{};
                     if (pack_bytes > 0) try self.emitSubSpTemp(pack_bytes);
-                    if (park_bytes > 0) try self.emitSubSpTemp(park_bytes);
                     const save = try self.emitSaveCallerRegs();
                     const vbytes = try self.emitPushVarargs();
                     try self.emitBl(ins.callee);
@@ -4761,27 +4759,25 @@ const Arm64Compiler = struct {
                             try self.emitMovRegRaw(dst, 0);
                             call_result = dst;
                         } else |_| {
-                            // Every allocatable register was live at save time.
-                            // Park the return in the slot reserved above the
-                            // save block; after restore it sits at [sp, #0].
-                            try self.parkCallResult(save, park_bytes);
+                            // Every allocatable register was live at save
+                            // time; the answer takes the location assigned it.
+                            try self.parkCallResult(park);
                         }
                     }
                     try self.emitRestoreCallerRegs(save);
                     if (pack_bytes > 0) try self.emitAddSpTemp(pack_bytes);
-                    if (park_bytes > 0) {
-                        // The slot stands at [sp, #0] now the save window has
-                        // closed, and the reservation is the only thing keeping
-                        // the byte this function's, so the read precedes the
-                        // close. A reservation exists only for a demanded
-                        // result and both register arms publish one, so an
-                        // unset `call_result` here is the parked one.
+                    if (park.bytes > 0) {
+                        // The assignment is the only thing keeping the byte
+                        // this function's, so the read precedes the close. A
+                        // park exists only for a demanded result and both
+                        // register arms publish one, so an unset `call_result`
+                        // here is the parked one.
                         if (call_result == null) {
                             const dst = try self.allocReg();
-                            try self.emitLdrSp(dst, 0);
+                            try self.emitLdrSp(dst, try self.parkDisp(park));
                             call_result = dst;
                         }
-                        try self.emitAddSpTemp(park_bytes);
+                        try self.parkClose(park);
                     }
                     try self.syncGateLocalTempsAfterCall(temps, pinned);
                     if (pack_bytes > 0) {
@@ -8996,19 +8992,45 @@ const Arm64Compiler = struct {
         return if (self.resultReg(null) == null) 16 else 0;
     }
 
-    /// Store the call's answer in the slot `parkReserve` claimed for it.
+    /// WHERE THE CALL'S ANSWER LIVES, assigned once before the call is emitted.
     ///
-    /// `park_bytes` is that claim. Without it there is no byte of this
-    /// function's to write and the store lands at `[sp, #save.stack_bytes]` —
-    /// the byte `sp` stood on before the save window opened, a FRAME coordinate
-    /// reached outside `frameDisp` and owned by whatever the prologue put
-    /// there: the GP stack local at frame offset 0, or with an empty frame the
-    /// callee-save slot for x19, or with neither the caller's own outgoing
-    /// word. Unknown ownership is not permission; `RegisterExhausted` is the
-    /// capacity answer `probeFunctionPlan` already steps its ladder down on.
-    fn parkCallResult(self: *Arm64Compiler, save: SaveSet, park_bytes: u16) Error!void {
-        if (park_bytes == 0) return error.RegisterExhausted;
-        try self.emitStrSp(0, save.stack_bytes);
+    /// `base` is `sp_temp_bytes` at the instant the slot became this
+    /// function's, so `parkDisp` recovers the slot's `[sp,#imm]` from wherever
+    /// `sp` is standing rather than from what any one window happens to be.
+    const Park = struct {
+        bytes: u16 = 0,
+        base: u16 = 0,
+    };
+
+    fn parkOpen(self: *Arm64Compiler, wants_result: bool) Error!Park {
+        const bytes = self.parkReserve(wants_result);
+        if (bytes == 0) return .{};
+        try self.emitSubSpTemp(bytes);
+        return .{ .bytes = bytes, .base = self.sp_temp_bytes };
+    }
+
+    /// The sole reader of a `Park`: `frameDisp` for the one value location the
+    /// frame does not name. An unreserved park has no byte of this function's
+    /// to read, and `sp` below `base` means the slot's window is gone.
+    fn parkDisp(self: *Arm64Compiler, park: Park) Error!u16 {
+        if (park.bytes == 0) return error.RegisterExhausted;
+        if (self.sp_temp_bytes < park.base) return self.refuse(@src());
+        return self.sp_temp_bytes - park.base;
+    }
+
+    /// Store the call's answer in the slot `parkOpen` assigned it.
+    fn parkCallResult(self: *Arm64Compiler, park: Park) Error!void {
+        try self.emitStrSp(0, try self.parkDisp(park));
+    }
+
+    /// Close the park's own window and no other. `emitAddSpTemp` governs the
+    /// WIDTH of a close; this governs its ORDER, because a close taken while a
+    /// later window is still open leaves `sp` inside the park and every
+    /// `frameDisp` after it wrong by that window.
+    fn parkClose(self: *Arm64Compiler, park: Park) Error!void {
+        if (park.bytes == 0) return;
+        if (self.sp_temp_bytes != park.base) return self.refuse(@src());
+        try self.emitAddSpTemp(park.bytes);
     }
 
     fn emitSaveCallerRegs(self: *Arm64Compiler) Error!SaveSet {
@@ -9211,8 +9233,10 @@ const Arm64Compiler = struct {
         return self.stack_frame_bytes - off - 8;
     }
 
-    /// The sole reader of `sp_temp_bytes`: a frame-base offset as a `[sp,#imm]`
-    /// displacement from wherever `sp` is standing now.
+    /// The sole reader of `sp_temp_bytes` for a FRAME coordinate: a frame-base
+    /// offset as a `[sp,#imm]` displacement from wherever `sp` is standing now.
+    /// `parkDisp` is the counterpart for the one value location the frame does
+    /// not name.
     fn frameDisp(self: *const Arm64Compiler, frame_off: u16) Error!u16 {
         const disp: u32 = @as(u32, frame_off) + @as(u32, self.sp_temp_bytes);
         if (disp > 65535) return error.RegisterExhausted;
@@ -21265,10 +21289,11 @@ test "a parked call result names the slot it reserved and not the frame's" {
     // the answer.
     var reg: u5 = 0;
     while (reg < 29) : (reg += 1) compiler.used_regs[reg] = true;
-    const park_bytes = compiler.parkReserve(true);
+    const park = try compiler.parkOpen(true);
+    const park_bytes = park.bytes;
     try std.testing.expectEqual(@as(u16, 16), park_bytes);
+    try std.testing.expectEqual(compiler.sp_temp_bytes, park.base);
 
-    try compiler.emitSubSpTemp(park_bytes);
     const save = try compiler.emitSaveCallerRegs();
     // The reservation answered before the save window existed what the
     // allocation answers after it.
@@ -21278,12 +21303,12 @@ test "a parked call result names the slot it reserved and not the frame's" {
     // have shipped the store.
     const at = compiler.code.items.len;
     const asm_at = compiler.asm_text.items.len;
-    try std.testing.expectError(error.RegisterExhausted, compiler.parkCallResult(save, 0));
+    try std.testing.expectError(error.RegisterExhausted, compiler.parkCallResult(.{}));
     try std.testing.expectEqual(at, compiler.code.items.len);
     try std.testing.expectEqual(asm_at, compiler.asm_text.items.len);
 
-    // A RESERVED PARK stores once, at the reservation.
-    try compiler.parkCallResult(save, park_bytes);
+    // A RESERVED PARK stores once, at the location it was assigned.
+    try compiler.parkCallResult(park);
     try std.testing.expectEqual(at + 4, compiler.code.items.len);
     const park_addr = spDisp(compiler.code.items[at..][0..4].*);
     try std.testing.expectEqual(save.stack_bytes, park_addr);
@@ -21313,9 +21338,105 @@ test "a parked call result names the slot it reserved and not the frame's" {
     try std.testing.expectEqual(park_bytes, spDisp(compiler.code.items[after_at..][0..4].*));
 
     // The close returns the frame to itself.
-    try compiler.emitAddSpTemp(park_bytes);
+    try compiler.parkClose(park);
     try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
     try std.testing.expectEqual(@as(u16, 0), try compiler.frameDisp(0));
+}
+
+// THE PARKED ANSWER'S DISPLACEMENT WAS TWO LITERALS, NOT A LOCATION (GAP-148).
+//
+// The store carried `save.stack_bytes` and the reload carried `0`. Neither
+// reads `sp_temp_bytes`, so both are correct only while the save window is the
+// ONLY thing between the assignment and the read — an assumption the block
+// already breaks twice, at `preserve_x0` and at the pack park, and one no
+// predicate stated. `parkDisp` is the park's `frameDisp`: the slot keeps the
+// coordinate it was assigned and every consumer measures from the `sp` it
+// actually stands on.
+test "a parked call result keeps its location under a window it did not open" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    // A resident that measures the park from OUTSIDE it, so the slot's true
+    // displacement is available without asking `parkDisp` for it.
+    compiler.stack_frame_bytes = 96;
+    try compiler.gp_stack_locals.put(alloc, 0, 0);
+
+    var reg: u5 = 0;
+    while (reg < 29) : (reg += 1) compiler.used_regs[reg] = true;
+
+    const park = try compiler.parkOpen(true);
+    try std.testing.expectEqual(@as(u16, 16), park.bytes);
+    const save = try compiler.emitSaveCallerRegs();
+
+    // CO-LOCATED CONTROL: with the save window alone between the assignment and
+    // the store, the location answers exactly the literal the store carried, so
+    // no program that opens no further window changes a byte.
+    try std.testing.expectEqual(save.stack_bytes, try compiler.parkDisp(park));
+
+    // A WINDOW IS NOT THE SAVE SET. One more open — the shape `emitPushVarargs`
+    // and `preserve_x0` already have — and the literal names a byte 32 below
+    // the slot while the location follows it.
+    try compiler.emitSubSpTemp(32);
+    try std.testing.expectEqual(save.stack_bytes + 32, try compiler.parkDisp(park));
+
+    // THE FAILING CONTROL FOR THE ENCODER-CLOSED PATH. The slot's displacement
+    // is measured here from the resident at frame offset 0 less the park's own
+    // width — `frameDisp`'s answer, not the park's — so the two spellings are
+    // compared against a third party. `save.stack_bytes` is the literal the
+    // store carried while the park was two literals; under this window it names
+    // a byte 32 inside the window rather than the slot, and the store that
+    // ships it writes the caller's byte and reads back the callee's saved
+    // register. This assertion is the one that fails on that spelling.
+    const probe_at = compiler.code.items.len;
+    try compiler.storeGpStackLocal(0, 9);
+    const slot_disp = spDisp(compiler.code.items[probe_at..][0..4].*) - park.bytes;
+    try std.testing.expectEqual(save.stack_bytes + 32, slot_disp);
+    try std.testing.expect(slot_disp != save.stack_bytes);
+
+    const store_at = compiler.code.items.len;
+    try compiler.parkCallResult(park);
+    try std.testing.expectEqual(slot_disp, spDisp(compiler.code.items[store_at..][0..4].*));
+
+    // AND THE CLOSE IS ORDERED, NOT ONLY SIZED. `emitAddSpTemp` admits this
+    // close on width alone; taking it here would leave `sp` 32 bytes inside the
+    // still-open window and every later `frameDisp` wrong by exactly that.
+    const at = compiler.code.items.len;
+    const asm_at = compiler.asm_text.items.len;
+    try std.testing.expectError(error.UnsupportedProgram, compiler.parkClose(park));
+    try std.testing.expectEqual(at, compiler.code.items.len);
+    try std.testing.expectEqual(asm_at, compiler.asm_text.items.len);
+    try std.testing.expectEqual(park.base + save.stack_bytes + 32, compiler.sp_temp_bytes);
+
+    try compiler.emitAddSpTemp(32);
+    try compiler.emitRestoreCallerRegs(save);
+    try std.testing.expectEqual(@as(u16, 0), try compiler.parkDisp(park));
+    try compiler.parkClose(park);
+    try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
+
+    // A CLOSED PARK IS NOT AN OPEN ONE. The slot is the caller's again, and
+    // `sp_temp_bytes - park.base` under a `u16` would wrap into a displacement
+    // that encodes.
+    try std.testing.expectError(error.UnsupportedProgram, compiler.parkDisp(park));
+
+    // AN UNASSIGNED PARK HAS NO BYTE AT ALL, and answers with the capacity
+    // error `probeFunctionPlan` steps its ladder down on rather than a refusal.
+    try std.testing.expectError(error.RegisterExhausted, compiler.parkDisp(.{}));
+    // The close of one is the no-op that lets the arm publish nothing.
+    try compiler.parkClose(.{});
+    try std.testing.expectEqual(@as(u16, 0), compiler.sp_temp_bytes);
 }
 
 test "the park reservation is the answer the save set will give" {
