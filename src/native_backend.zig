@@ -4169,7 +4169,8 @@ const Arm64Compiler = struct {
                         // GAP-148's record, under which a local's home is one
                         // fact the assignment carries rather than one the store
                         // reads off whichever register its operand came in.
-                        const home = pinned.get(slot) orelse temps.get(slot) orelse
+                        const kept = if (temps.get(slot)) |r| (if (!self.fp_home_regs[r] and !self.foreignFpName(r, slot)) r else null) else null;
+                        const home = pinned.get(slot) orelse kept orelse
                             if (self.fp_home_regs[d] or !fpValueReg(d)) try self.allocFpReg() else d;
                         // Claim the home BEFORE releasing the value register:
                         // on a local's first store they are the same register,
@@ -22852,6 +22853,130 @@ test "a first store does not home a local in another local's home" {
     try std.testing.expectEqual(@as(?u5, null), pinned.get(starved));
     try std.testing.expectEqual(@as(?u5, a_home), temps.get(a));
     try std.testing.expect(compiler.fp_home_regs[a_home]);
+}
+
+test "a stale destination name is not a home" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var f64_records: F64RecordMap = .empty;
+    var scal_records: ScalRecordMap = .empty;
+    var diagnostic: Diagnostic = .{};
+    var compiler = Arm64Compiler{
+        .alloc = alloc,
+        .diagnostic = &diagnostic,
+        .f64_records = &f64_records,
+        .scal_records = &scal_records,
+        .entry = null,
+    };
+    defer compiler.deinit();
+
+    var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer temps.deinit(alloc);
+    var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
+    defer pinned.deinit(alloc);
+    var branch_patches: std.ArrayList(Arm64Compiler.DnirBranchPatch) = .empty;
+    defer branch_patches.deinit(alloc);
+
+    const base = Arm64Compiler.fp_value_reg_base;
+    const h: u5 = base;
+    const h2: u5 = base + 1;
+    const t2: u32 = 5;
+    const u: u32 = 6;
+    const s: u32 = 7;
+    try compiler.markFpTemp(t2);
+    try temps.put(alloc, t2, h);
+    compiler.fp_reg_owner[h] = t2;
+    compiler.used_fp_regs[h] = true;
+    try compiler.markFpTemp(u);
+    try temps.put(alloc, u, h2);
+    compiler.fp_reg_owner[h2] = u;
+    compiler.used_fp_regs[h2] = true;
+    try compiler.markFpTemp(s);
+    try temps.put(alloc, s, h);
+
+    const before = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .store_local,
+        .result = s,
+        .lhs = .{ .temp = u },
+        .ty = .f64,
+    }, &branch_patches, null, 0);
+    try std.testing.expectEqual(before, compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u5, h2), temps.get(s));
+    try std.testing.expectEqual(@as(?u5, h2), pinned.get(s));
+    try std.testing.expect(compiler.fp_home_regs[h2]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.fp_reg_owner[h2]);
+    try std.testing.expectEqual(@as(?u5, h), temps.get(t2));
+    try std.testing.expectEqual(@as(?u32, t2), compiler.fp_reg_owner[h]);
+    try std.testing.expect(compiler.used_fp_regs[h]);
+    try std.testing.expect(!compiler.fp_home_regs[h]);
+
+    const h3: u5 = base + 2;
+    const d3: u5 = base + 3;
+    const a3: u32 = 11;
+    const v3: u32 = 12;
+    const s3: u32 = 13;
+    try compiler.markFpTemp(a3);
+    try temps.put(alloc, a3, h3);
+    try pinned.put(alloc, a3, h3);
+    compiler.markFpHome(h3);
+    try compiler.markFpTemp(v3);
+    try temps.put(alloc, v3, d3);
+    compiler.fp_reg_owner[d3] = v3;
+    compiler.used_fp_regs[d3] = true;
+    try compiler.markFpTemp(s3);
+    try temps.put(alloc, s3, h3);
+
+    const before3 = compiler.code.items.len;
+    try compiler.compileDnirInstr(&temps, &pinned, .{
+        .op = .store_local,
+        .result = s3,
+        .lhs = .{ .temp = v3 },
+        .ty = .f64,
+    }, &branch_patches, null, 0);
+    try std.testing.expectEqual(before3, compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u5, d3), temps.get(s3));
+    try std.testing.expectEqual(@as(?u5, d3), pinned.get(s3));
+    try std.testing.expect(compiler.fp_home_regs[d3]);
+    try std.testing.expectEqual(@as(?u32, null), compiler.fp_reg_owner[d3]);
+    try std.testing.expectEqual(@as(?u5, h3), temps.get(a3));
+    try std.testing.expectEqual(@as(?u5, h3), pinned.get(a3));
+    try std.testing.expect(compiler.fp_home_regs[h3]);
+
+    const a: u32 = 10;
+    const w: u32 = 9;
+    const t2b: u32 = 14;
+    const ha: u5 = base + 4;
+    const ht: u5 = base + 5;
+    try compiler.markFpTemp(a);
+    try temps.put(alloc, a, ha);
+    try pinned.put(alloc, a, ha);
+    compiler.markFpHome(ha);
+    try compiler.markFpTemp(t2b);
+    try temps.put(alloc, t2b, ht);
+    compiler.fp_reg_owner[ht] = t2b;
+    compiler.used_fp_regs[ht] = true;
+    try compiler.markFpTemp(w);
+    try temps.put(alloc, w, ht);
+    var full: u5 = base;
+    while (full < base + Arm64Compiler.fp_value_reg_count) : (full += 1) {
+        compiler.used_fp_regs[full] = true;
+    }
+    const at_full = compiler.code.items.len;
+    try std.testing.expectError(error.RegisterExhausted, compiler.compileDnirInstr(
+        &temps,
+        &pinned,
+        .{ .op = .store_local, .result = w, .lhs = .{ .local = a }, .ty = .f64 },
+        &branch_patches,
+        null,
+        0,
+    ));
+    try std.testing.expectEqual(at_full, compiler.code.items.len);
+    try std.testing.expectEqual(@as(?u5, ht), temps.get(w));
+    try std.testing.expect(!compiler.fp_home_regs[ht]);
+    try std.testing.expectEqual(@as(?u32, t2b), compiler.fp_reg_owner[ht]);
 }
 
 // A LOCAL'S HOME IS A REGISTER THE FUNCTION PRESERVES (GAP-148).
