@@ -452,12 +452,24 @@ esac
 
 # Section 5's census must follow the owner file it is handed, and refuse a file
 # that declares no span rather than returning a number.
-printf 'kindand = 4\nkindlet = 58\n' >"$scratch/driftowner.id"
+#
+# The planted span is sized off the projection, so the difference the control
+# needs is built rather than hoped for. A literal here separated the two only
+# while the tree happened not to carry that many keywords: at 55 the control
+# fired "broken" on a tree whose owner and projection agreed. When section 5
+# established no projection count the span is the smallest one a census can
+# have, which no row count it could have read is equal to.
+if [ "$projnum" -ge 0 ]; then
+    driftwant=$((projnum + 1))
+else
+    driftwant=1
+fi
+printf 'kindand = 4\nkindlet = %d\n' "$((4 + driftwant - 1))" >"$scratch/driftowner.id"
 : >"$scratch/spanless.id"
 examined=$((examined + 1))
 driftcount=$(census "$scratch/driftowner.id") || driftcount=""
-if [ "${driftcount:-none}" != 55 ] || [ "$projnum" -eq 55 ]; then
-    bad "the staleness control is broken: planted census=${driftcount:-none} (want 55), projection=$projnum not separated from it"
+if [ "${driftcount:-none}" != "$driftwant" ] || [ "$driftcount" -eq "$projnum" ]; then
+    bad "the staleness control is broken: planted census=${driftcount:-none} (want $driftwant), projection=$projnum"
 fi
 
 examined=$((examined + 1))
