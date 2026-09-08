@@ -175,7 +175,7 @@ else:
     private = base/'private'
     doc = private/'tools'/'concept'/'doc.sh'
     doc.parent.mkdir(parents=True)
-    doc.write_text('#!/bin/sh\nprintf touched > reached\nprintf "doc: FAIL fixture"\n')
+    doc.write_text('#!/bin/sh\nprintf touched > reached\nprintf "%s" "$1" > argument\nprintf "doc: FAIL fixture"\n')
     doc.chmod(0o755)
     arguments = {'file':str(root/'fact'), 'name':'concept'}
     for name, mode in (('concept','read'), ('head','read'), ('head','unknown')):
@@ -184,6 +184,10 @@ else:
               and not (private/'reached').exists(), name + ' cannot execute in ' + mode)
     result = call('concept', {'IDOL_MODE':''}, arguments=arguments, cwd=private)
     check(result['error']['code'] == -32000 and (private/'reached').read_text() == 'touched', 'ordinary concept path remains executable')
+    for subject in ("path with space.id", "quo'te.id", "' ;touch injected; $(touch injected) `touch injected` .id"):
+        result = call('concept', {'IDOL_MODE':''}, arguments={'file':subject}, cwd=private)
+        check(result['error']['code'] == -32000 and (private/'argument').read_text() == subject
+              and not (private/'injected').exists(), 'exact single shell argument ' + subject)
     result = call(missing=True)
     check(result['isError'] is True and json.loads(result['content'][0]['text'])['root'] is None, 'explicit root required')
     alias = base/'alias'
