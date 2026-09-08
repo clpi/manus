@@ -47,7 +47,7 @@ AST      meta_directives.zig
 AST      meta_module.zig
 
 SEMA     sema.zig
-SEMA     semantic_graph.zig
+SEMA     graph.zig
 SEMA     semantic_algebra.zig
 SEMA     semantic_identity.zig
 SEMA     subject_home.zig
@@ -111,15 +111,15 @@ BACKEND  ml_kernels.zig
 BACKEND  meta_codegen.zig
 BACKEND  meta_dispatch.zig
 BACKEND  lua_metamethod.zig
-BACKEND  native_backend.zig
+BACKEND  native.zig
 BACKEND  realization_validate.zig
-BACKEND  dnir_lower.zig
+BACKEND  graph/lower.zig
 BACKEND  dnir_hardware.zig
 BACKEND  native_bootstrap.zig
 BACKEND  native_barrier_checks.zig
 BACKEND  jit.zig
 BACKEND  c_layout_verify.zig
-BACKEND  wasm_backend.zig
+BACKEND  wasm.zig
 BACKEND  wasm_semantic.zig
 BACKEND  wasm_semantic_gen.zig
 BACKEND  wasm_decode_differential.zig

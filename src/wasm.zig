@@ -70,8 +70,8 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const types = @import("types.zig");
 const dnir = @import("native_ir.zig");
-const dnir_lower = @import("dnir_lower.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const dnir_lower = @import("graph/lower.zig");
+const semantic_graph = @import("graph.zig");
 const realization_validate = @import("realization_validate.zig");
 
 const RT = types.ResolvedType;

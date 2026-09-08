@@ -9,7 +9,7 @@
 set -u
 
 ROOT=${ARCHITECTURE_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
-DNIR="$ROOT/src/dnir_lower.zig"
+DNIR="$ROOT/src/graph/lower.zig"
 SEMA="$ROOT/src/sema.zig"
 MONOLITH="$ROOT/lib/compiler/monolith.id"
 INJECTION="$ROOT/.agents/ARCHITECTURE_INJECTION.md"
@@ -72,7 +72,7 @@ grep_file "$DNIR" 'readFile\(' 'NO-SOURCE-IO-BELOW-GRAPH: readFile forbidden in 
 grep_file "$DNIR" 'parseFile\(' 'NO-SOURCE-IO-BELOW-GRAPH: parseFile forbidden in dnir_lower'
 
 # DELIMITER-CLOSURE — graph must not treat () as [] projection
-grep_file "$ROOT/src/semantic_graph.zig" 'break :blk .{ .obj = c.func, .key = c.args[0] };' 'DELIMITER-CLOSURE: aggregateIndexSite must not accept .call'
+grep_file "$ROOT/src/graph.zig" 'break :blk .{ .obj = c.func, .key = c.args[0] };' 'DELIMITER-CLOSURE: aggregateIndexSite must not accept .call'
 
 # GRAPH-RECORD-RETURN-ONE — export map cannot bypass graph-required paths
 examined=$((examined + 1))
@@ -119,7 +119,7 @@ fi
 
 # GRAPH-ARG-EXACT producer hook must exist
 examined=$((examined + 1))
-if grep -Fq 'verifyCheckedApplicationOperandPacks' "$ROOT/src/semantic_graph.zig"; then
+if grep -Fq 'verifyCheckedApplicationOperandPacks' "$ROOT/src/graph.zig"; then
     ok 'GRAPH-ARG-EXACT: verifyCheckedApplicationOperandPacks present in graph lift'
 else
     bad 'GRAPH-ARG-EXACT: verifyCheckedApplicationOperandPacks missing from graph lift'
@@ -149,7 +149,7 @@ else
     bad 'POST-RESOLUTION-PATH-ZERO: sema must expose checked foreignModuleIntConstant occurrences and no peekForeignHome bypass'
 fi
 examined=$((examined + 1))
-if grep -Fq 'fn liftForeignConstantFieldSites' "$ROOT/src/semantic_graph.zig" && grep -Fq 'fn liftForeignModuleConstants' "$ROOT/src/semantic_graph.zig"; then
+if grep -Fq 'fn liftForeignConstantFieldSites' "$ROOT/src/graph.zig" && grep -Fq 'fn liftForeignModuleConstants' "$ROOT/src/graph.zig"; then
     ok 'POST-RESOLUTION-PATH-ZERO: graph lifts foreign module constants'
 else
     bad 'POST-RESOLUTION-PATH-ZERO: graph must publish foreign constant value facts'

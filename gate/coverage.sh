@@ -266,7 +266,7 @@ printf 'gate/coverage.sh: region shapes: %s refinement/alternative, %s recurrenc
 # and never counted as a consumer.
 # ---------------------------------------------------------------------------
 echo
-echo "== CONSUMERS (call sites outside src/semantic_graph.zig) =="
+echo "== CONSUMERS (call sites outside src/graph.zig) =="
 
 # Lines of `semantic_graph.zig` that belong to a `*Json` projection function,
 # by brace depth from the `fn ...Json(` header. Everything here is SERIALIZATION,
@@ -279,7 +279,7 @@ awk '
     depth += n - m
     if (depth <= 0 && /\}/) injson = 0
   }
-' src/semantic_graph.zig > "$work/jsonregion"
+' src/graph.zig > "$work/jsonregion"
 
 printf '%-22s %7s %7s %8s  %s\n' family external 'in-file' json readers
 
@@ -287,9 +287,9 @@ consumers() {
   fam=$1; shift
   pat=$(printf '%s\\(' "$1"); shift
   for r in "$@"; do pat="$pat|$(printf '%s\\(' "$r")"; done
-  hits=$(grep -rnE "\.($pat)" src --include='*.zig' 2>/dev/null | grep -v '^src/semantic_graph.zig:' || true)
+  hits=$(grep -rnE "\.($pat)" src --include='*.zig' 2>/dev/null | grep -v '^src/graph.zig:' || true)
   n=$(printf '%s' "$hits" | grep -c . || true)
-  own=$(grep -cE "\.($pat)" src/semantic_graph.zig 2>/dev/null || true)
+  own=$(grep -cE "\.($pat)" src/graph.zig 2>/dev/null || true)
   js=$(grep -cE "\.($pat)" "$work/jsonregion" 2>/dev/null || true)
   who=$(printf '%s' "$hits" | cut -d: -f1 | sed 's|^src/||;s|\.zig$||' | sort -u | tr '\n' ' ')
   if [ -z "$who" ]; then
@@ -334,7 +334,7 @@ regionwho=$(printf '%s' "$regionhits" | cut -d: -f1 | sed 's|^src/||;s|\.zig$||'
 [ -n "$regionwho" ] || regionwho='-- CONSUMER-ZERO --'
 printf '%-22s %7s %7s %8s  %s\n' region \
   "$(printf '%s' "$regionhits" | grep -c . || true)" \
-  "$(grep -cE '\.regions\b|region\.Census' src/semantic_graph.zig || true)" \
+  "$(grep -cE '\.regions\b|region\.Census' src/graph.zig || true)" \
   "$(grep -cE '\.regions\b|region\.Census' "$work/jsonregion" || true)" \
   "$regionwho"
 
@@ -370,7 +370,7 @@ awk '
     next
   }
   { print FILENAME ":" FNR ":" $0 }
-' src/semantic_graph.zig > "$work/production"
+' src/graph.zig > "$work/production"
 
 writers() {
   field=$1; pat=$2
@@ -378,7 +378,7 @@ writers() {
   # scored `PackFact.realization` as produced when every call to it is a test.
   all=$(grep -rnE "$pat" src --include='*.zig' 2>/dev/null | grep -v 'pub fn ' || true)
   n=$(printf '%s' "$all" | grep -c . || true)
-  outside=$(printf '%s' "$all" | grep -v '^src/semantic_graph.zig:' \
+  outside=$(printf '%s' "$all" | grep -v '^src/graph.zig:' \
     | grep -vE 'std\.testing|expectEqual' | grep -c . || true)
   inside=$(grep -E "$pat" "$work/production" 2>/dev/null | grep -vc 'pub fn ' || true)
   prod=$((outside + inside))

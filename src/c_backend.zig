@@ -5,7 +5,7 @@
 //! backend selection.
 const std = @import("std");
 const dnir = @import("native_ir.zig");
-const dnir_lower = @import("dnir_lower.zig");
+const dnir_lower = @import("graph/lower.zig");
 const types = @import("types.zig");
 
 const RT = types.ResolvedType;
@@ -1255,7 +1255,7 @@ test "C backend keeps a discarded f64 extern call emitted" {
 // answers 7 by value on the wasm realization — the refusal is a slice
 // boundary, not a semantic verdict.
 test "C backend resolves constant file-scope keyed table field access" {
-    const semantic_graph = @import("semantic_graph.zig");
+    const semantic_graph = @import("graph.zig");
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();

@@ -3926,7 +3926,7 @@ pub const CodeGen = struct {
             // is silent: a table admitted here and unlowerable there falls
             // through to a read that emits a POINTER, nondeterministically,
             // exit 0. So ask the lowering what it can do.
-            if (@import("dnir_lower.zig").moduleConstTableKind(mod, name, value) != null) return false;
+            if (@import("graph/lower.zig").moduleConstTableKind(mod, name, value) != null) return false;
             if (!table_is_positional_int_blob(value) or module_has_keyed_write(mod, name)) return true;
             return false;
         }
@@ -5872,7 +5872,7 @@ pub const CodeGen = struct {
                         // backend. Same precheck/lowering drift as string.byte
                         // and the expression-if; `compileStageValue` is the one
                         // rule both sides now call.
-                        if (@import("dnir_lower.zig").compileStageValue(un.operand) != null) break :blk true;
+                        if (@import("graph/lower.zig").compileStageValue(un.operand) != null) break :blk true;
                         self.nativeDiagFail("compile-stage-absent");
                         break :blk false;
                     }

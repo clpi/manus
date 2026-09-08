@@ -1311,7 +1311,7 @@ pub fn build(b: *std.Build) void {
 
     const native_backend_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/native_backend.zig"),
+            .root_source_file = b.path("src/native.zig"),
             .target = target,
             .optimize = optimize,
         }),
