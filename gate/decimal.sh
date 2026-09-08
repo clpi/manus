@@ -2,6 +2,7 @@
 set -u
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+python3 "$root/gate/outcome.py" "$root/gate/decimal.sh" || exit 1
 idol="${IDOL_BIN:-$root/zig-out/bin/idol}"
 [ -x "$idol" ] || { echo "decimal: compiler unavailable" >&2; exit 2; }
 limit=""
