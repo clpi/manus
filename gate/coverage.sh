@@ -160,10 +160,21 @@ lifted=0
 refused=0
 : > "$work/rows"
 : > "$work/lex"
+: > "$work/corpus.raw"
 for root in $corpus; do
-  [ -d "$root" ] || continue
-  find "$root" -name '*.id' -type f 2>/dev/null
-done | sort > "$work/corpus"
+  [ -d "$root" ] || {
+    printf 'coverage: corpus root %s does not resolve\n' "$root" >&2
+    exit 64
+  }
+  find "$root" -name '*.id' -type f >> "$work/corpus.raw" || {
+    printf 'coverage: enumeration under %s errored\n' "$root" >&2
+    exit 64
+  }
+done
+sort < "$work/corpus.raw" > "$work/corpus" || {
+  printf 'coverage: ordering the corpus failed\n' >&2
+  exit 64
+}
 
 while IFS= read -r src; do
   files=$((files + 1))
@@ -208,6 +219,19 @@ refine=$(sum 43 "$work/rows");     refinesub=$(sum 44 "$work/rows")
 recur=$(sum 45 "$work/rows");      recurcar=$(sum 46 "$work/rows")
 exits=$(sum 47 "$work/rows")
 lexquote=$(sum 1 "$work/lex");     lexint=$(sum 2 "$work/lex")
+
+if [ "$files" -eq 0 ]; then
+  printf 'coverage: enumerated ZERO .id file(s) under [%s]\n' "$corpus" >&2
+  exit 64
+fi
+if [ "$lifted" -eq 0 ]; then
+  printf 'coverage: %s corpus file(s) and NOT ONE lifted to a graph export\n' "$files" >&2
+  exit 64
+fi
+if [ "$cand" -eq 0 ]; then
+  printf 'coverage: fact_coverage reports ZERO application candidates\n' >&2
+  exit 64
+fi
 
 pct() {
   awk -v n="$1" -v d="$2" 'BEGIN { if (d + 0 == 0) printf "n/a"; else printf "%.1f%%", 100 * n / d }'
