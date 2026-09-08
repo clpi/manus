@@ -2000,6 +2000,11 @@ pub fn comptimeInterpolateHook(host: Host, template: []const u8, vars: comptime_
                                         const s = std.fmt.bufPrint(&num_buf, "{e}", .{f}) catch break;
                                         buf.appendSlice(alloc, s) catch return null;
                                     },
+                                    .decimal => |d| {
+                                        var num_buf: [32]u8 = undefined;
+                                        const s = std.fmt.bufPrint(&num_buf, "{e}", .{d.toFloat()}) catch break;
+                                        buf.appendSlice(alloc, s) catch return null;
+                                    },
                                     .bool => |b| buf.appendSlice(alloc, if (b) "true" else "false") catch return null,
                                     else => buf.appendSlice(alloc, "nil") catch return null,
                                 }

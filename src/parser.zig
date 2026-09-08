@@ -4,6 +4,7 @@ const Lexer = @import("lexer.zig").Lexer;
 const Token = @import("lexer.zig").Token;
 const TK = @import("lexer.zig").TokenKind;
 const ast = @import("ast.zig");
+const decimal = @import("decimal.zig");
 const types = @import("types.zig");
 const term = @import("term.zig");
 const meta_module = @import("meta_module.zig");
@@ -6438,7 +6439,11 @@ pub const Parser = struct {
         }
         if (try self.currentParserFloat()) {
             _ = try self.adv();
-            return self.new_expr(.{ .float_lit = .{ .loc = tok.loc, .val = tok.float_val } });
+            return self.new_expr(.{ .float_lit = .{
+                .loc = tok.loc,
+                .val = tok.float_val,
+                .dec = decimal.read(tok.text),
+            } });
         }
         if (try self.currentParserNil()) {
             _ = try self.adv();

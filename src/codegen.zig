@@ -980,6 +980,7 @@ pub const CodeGen = struct {
                         .bool => |b| b,
                         .int => |i| i != 0,
                         .float => |f| f != 0.0,
+                        .decimal => |d| !d.isZero(),
                         .string => true,
                         .table => true,
                         .func => true,
@@ -1038,6 +1039,7 @@ pub const CodeGen = struct {
                     .bool => |b| b,
                     .int => |i| i != 0,
                     .float => |f| f != 0.0,
+                    .decimal => |d| !d.isZero(),
                     .string => true,
                     .table => true,
                     .func => true,
@@ -1052,6 +1054,7 @@ pub const CodeGen = struct {
                     .bool => |b| b,
                     .int => |i| i != 0,
                     .float => |f| f != 0.0,
+                    .decimal => |d| !d.isZero(),
                     .string => true,
                     .table => true,
                     .func => true,
@@ -2287,7 +2290,7 @@ pub const CodeGen = struct {
         return switch (value) {
             .bool => .bool,
             .int => .i64,
-            .float => .f64,
+            .float, .decimal => .f64,
             .string => .str,
             .nil, .table, .func, .unavailable => .any,
         };
@@ -20358,6 +20361,7 @@ pub const CodeGen = struct {
             .bool => |v| if (as_lua_value) self.p("lua_val_from_bool({s})", .{if (v) "true" else "false"}) else self.p("{s}", .{if (v) "true" else "false"}),
             .int => |v| if (as_lua_value) self.p("lua_val_from_int({d})", .{v}) else self.p("{d}", .{v}),
             .float => |v| if (as_lua_value) self.p("lua_val_from_num({d})", .{v}) else self.p("{d}", .{v}),
+            .decimal => |v| if (as_lua_value) self.p("lua_val_from_num({d})", .{v.toFloat()}) else self.p("{d}", .{v.toFloat()}),
             .string => |v| {
                 if (as_lua_value) {
                     const hash = calc_lua_hash(v);
