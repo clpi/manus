@@ -6,7 +6,12 @@ import subprocess
 import sys
 import tempfile
 
-source = pathlib.Path(sys.argv[1]).read_text()
+if len(sys.argv) != 2:
+    raise SystemExit('usage: python3 gate/outcome.py <gate>')
+try:
+    source = pathlib.Path(sys.argv[1]).read_text()
+except (OSError, UnicodeError):
+    raise SystemExit('outcome: gate source unavailable; no controls executed')
 match = re.findall(r'^carrier\(\) \{.*?^\}', source, re.M | re.S)
 if len(match) != 1:
     raise SystemExit('carrier source was not resolved uniquely')
