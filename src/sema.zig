@@ -3235,12 +3235,28 @@ pub const Sema = struct {
         return false;
     }
 
+    fn retain(self: *Sema) void {
+        const before = self.generation;
+        self.generation += 1;
+        const frame = self.frame orelse return;
+        for (self.scope.maps.items[frame..]) |*map| {
+            var entry = map.valueIterator();
+            while (entry.next()) |symbol| {
+                if (symbol.is_global or symbol.inferred != before) continue;
+                if (symbol.typ.is_numeric() or symbol.typ == .bool or symbol.typ == .str)
+                    symbol.inferred = self.generation;
+            }
+        }
+    }
+
     fn check_stmt(self: *Sema, stmt: *ast.Stmt) SemaError!void {
         const boundary = switch (stmt.*) {
             .if_stmt, .while_loop, .repeat_loop, .num_for, .gen_for, .func_decl, .try_stmt, .match_stmt => true,
             else => false,
         };
-        if (boundary) self.generation += 1;
+        if (boundary) {
+            if (stmt.* == .if_stmt) self.retain() else self.generation += 1;
+        }
         defer if (boundary) {
             self.generation += 1;
         };
@@ -4434,13 +4450,7 @@ pub const Sema = struct {
         }
     }
 
-    fn methodCallResolved(
-        self: *Sema,
-        obj: *const ast.Expr,
-        method: []const u8,
-        args: []const *ast.Expr,
-        ot: RT,
-    ) bool {
+    fn declares(self: *const Sema, method: []const u8) bool {
         if (self.callable_defs.get(method)) |target| {
             if (target) |resolved| {
                 _ = resolved;
@@ -4459,6 +4469,31 @@ pub const Sema = struct {
                 if (std.mem.startsWith(u8, entry.key_ptr.*, prefix)) return true;
             }
         }
+        return false;
+    }
+
+    fn intrinsic(self: *const Sema, subject: *const ast.Expr, relation: []const u8, argument: []const *ast.Expr) ?RT {
+        if (self.userBinding("string") != null or self.home_aliases.contains("string")) return null;
+        const descriptor = self.exprDescriptor(subject) orelse return null;
+        if (descriptor != .str) return null;
+        const home = self.subjectHome(subject, relation, descriptor) orelse return null;
+        if (home != .string or !self.inhabitsWorld(home)) return null;
+        if (std.mem.eql(u8, relation, "len") and argument.len == 0) return .i64;
+        if (std.mem.eql(u8, relation, "byte") and argument.len == 1) {
+            const index = self.exprDescriptor(argument[0]) orelse return null;
+            if (index == .i64) return .i64;
+        }
+        return null;
+    }
+
+    fn methodCallResolved(
+        self: *Sema,
+        obj: *const ast.Expr,
+        method: []const u8,
+        args: []const *ast.Expr,
+        ot: RT,
+    ) bool {
+        if (self.declares(method)) return true;
         // CROSS-PROJECTION AT THE RECEIVER. `stdout` names no declaration and
         // conforms to no descriptor — `ResolvedType` has no stream type — so the
         // only fact that puts `stdout:write(x)` in reach is that the injected
@@ -4558,7 +4593,8 @@ pub const Sema = struct {
             self.generation += 1;
         };
         const before = self.generation;
-        const t = try self.check_expr_inner(expr);
+        var stable = false;
+        const t = try self.check_expr_inner(expr, &stable);
         switch (expr.*) {
             .call, .method_call => {
                 if (before != self.generation) {
@@ -4575,7 +4611,7 @@ pub const Sema = struct {
                         }
                     }
                 }
-                self.generation += 1;
+                if (stable) self.retain() else self.generation += 1;
             },
             else => {},
         }
@@ -4723,7 +4759,7 @@ pub const Sema = struct {
         }
     }
 
-    fn check_expr_inner(self: *Sema, expr: *ast.Expr) SemaError!RT {
+    fn check_expr_inner(self: *Sema, expr: *ast.Expr, stable: *bool) SemaError!RT {
         return switch (expr.*) {
             .nil => .nil,
             .true_lit, .false_lit => .bool,
@@ -5274,9 +5310,30 @@ pub const Sema = struct {
                         const fname = f.field;
                         if (std.mem.eql(u8, mod, "os") and std.mem.eql(u8, fname, "clock"))
                             return .f64;
+                        const builtin = builtin: {
+                            if (foreign_callee != null or self.worldSubject(f.obj) != .string) break :builtin false;
+                            if (self.home_loader != null) {
+                                if (self.foreign_homes.getPtr("string")) |cached| {
+                                    const home = cached.* orelse break :builtin false;
+                                    for (home.module.body.stmts) |*stmt| {
+                                        if (stmt.* == .func_decl and self.moduleLevelRelationNamed(&stmt.func_decl, fname))
+                                            break :builtin false;
+                                    }
+                                } else {
+                                    if (self.home_roots.contains("string")) break :builtin false;
+                                    const binding = self.authorRootBinding("string") orelse break :builtin false;
+                                    if (!binding.seeded) break :builtin false;
+                                }
+                            }
+                            break :builtin true;
+                        };
+                        if (builtin and c.args.len > 0) {
+                            if (self.intrinsic(c.args[0], fname, c.args[1..])) |result| {
+                                stable.* = true;
+                                return result;
+                            }
+                        }
                         if (std.mem.eql(u8, mod, "string")) {
-                            if (std.mem.eql(u8, fname, "len") or std.mem.eql(u8, fname, "byte"))
-                                return .i64;
                             if (std.mem.eql(u8, fname, "char") or std.mem.eql(u8, fname, "rep") or
                                 std.mem.eql(u8, fname, "sub") or std.mem.eql(u8, fname, "lower") or
                                 std.mem.eql(u8, fname, "upper") or std.mem.eql(u8, fname, "reverse"))
@@ -5492,6 +5549,12 @@ pub const Sema = struct {
                                     return declared;
                                 }
                             }
+                        }
+                    }
+                    if (self.userBinding(mc.method) == null and !self.declares(mc.method)) {
+                        if (self.intrinsic(mc.obj, mc.method, mc.args)) |result| {
+                            stable.* = true;
+                            return result;
                         }
                     }
                     return .any;
@@ -17639,6 +17702,106 @@ test "sema: implicit scalar occurrences satisfy only current constructor demands
         defer arena.deinit();
         var checked = try runIdolSema(entry.source, &arena);
         defer checked.deinit();
+        try testing.expectEqual(entry.valid, checked.errors == 0);
+    }
+}
+
+test "sema: scalar constructor evidence survives only checked branch entry" {
+    const row = [_]struct { source: []const u8, valid: bool }{
+        .{ .source = "record: {code: i64}\nread: i64 = () 17\nmake: record = ()\n    item = read()\n    if item > 0\n        return {code = item}\n    {code = 9}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = (value: i64)\n    item = value\n    if item > 0\n        if item < 9\n            return {code = item}\n    {code = 9}\n", .valid = true },
+        .{ .source = "record: {text: str, flag: bool}\nmake: record = (choice: bool)\n    text = \"kept\"\n    flag = choice\n    if flag\n        return {text = text, flag = flag}\n    {text = \"else\", flag = false}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        item = \"changed\"\n        return {code = item}\n    {code = 9}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    if choice\n        item = 13\n    else\n        return {code = item}\n    {code = 9}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (choice: bool)\n    item = 7\n    while choice\n        if choice\n            result: record = {code = item}\n        item = \"changed\"\n    {code = 9}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = ()\n    item = 7\n    touch: bool = ()\n        item = \"changed\"\n        true\n    item = 13\n    if touch()\n        return {code = item}\n    {code = 9}\n", .valid = false },
+        .{ .source = "record: {code: i64}\ntouch: i64 = () 0\nmake: record = ()\n    item = 7\n    touch()\n    if true\n        return {code = item}\n    {code = 9}\n", .valid = false },
+        .{ .source = "cell: {code: i64}\nrecord: {value: cell}\nmake: record = ()\n    item = {code = 7}\n    if true\n        return {value = item}\n    {value = {code = 9}}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nif true\n    item = 7\n    if true\n        result: record = {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nglobal item: any = nil\nmake: record = ()\n    item = 7\n    if true\n        return {code = item}\n    {code = 9}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = ()\n    item = 7\n    inner: record = ()\n        if true\n            return {code = item}\n        {code = 9}\n    {code = 9}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (value: i64)\n    item = value / 2\n    if true\n        return {code = item}\n    {code = 9}\n", .valid = false },
+    };
+    for (row) |entry| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        var checked = try runIdolSema(entry.source, &arena);
+        defer checked.deinit();
+        try testing.expectEqual(entry.valid, checked.errors == 0);
+    }
+}
+
+test "sema: scalar constructor evidence follows exact string intrinsics" {
+    const row = [_]struct { source: []const u8, valid: bool }{
+        .{ .source = "record: {code: i64}\nmake: record = (text: str)\n    item = 7\n    if text:byte(1) == 41\n        return {code = item}\n    {code = 9}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str)\n    item = 7\n    if text:len() > 0\n        return {code = item}\n    {code = 9}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str)\n    item = text:byte(1)\n    {code = item}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str)\n    item = text:len()\n    {code = item}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str)\n    item = 7\n    if string.byte(text, 1) == 41\n        return {code = item}\n    {code = 9}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str)\n    item = 7\n    if string.len(text) > 0\n        return {code = item}\n    {code = 9}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str)\n    item = string.byte(text, 1)\n    {code = item}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str)\n    item = string.len(text)\n    {code = item}\n", .valid = true },
+        .{ .source = "record: {code: i64}\nbyte: str = (text: str, index: i64) \"changed\"\nmake: record = (text: str)\n    item = text:byte(1)\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nbyte: i64 = (text: str, index: i64) 7\nmake: record = (text: str)\n    item = 7\n    text:byte(1)\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str, byte: any)\n    item = text:byte(1)\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str, string: any)\n    item = string.byte(text, 1)\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str, string: any)\n    item = text:byte(1)\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str, index: f64)\n    item = text:byte(index)\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (text: any)\n    item = text:len()\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str)\n    item = text:len(1)\n    {code = item}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str)\n    item = 7\n    touch: i64 = ()\n        item = \"changed\"\n        1\n    item = 13\n    if text:byte(touch()) == 41\n        return {code = item}\n    {code = 9}\n", .valid = false },
+        .{ .source = "record: {code: i64}\nmake: record = (text: str)\n    item = 7\n    touch: i64 = ()\n        item = \"changed\"\n        1\n    item = 13\n    if string.byte(text, touch()) == 41\n        return {code = item}\n    {code = 9}\n", .valid = false },
+        .{ .source = "cell: {code: i64}\nrecord: {value: cell}\nmake: record = (text: str)\n    item = {code = 7}\n    text:byte(1)\n    {value = item}\n", .valid = false },
+    };
+    for (row) |entry| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        var checked = try runIdolSema(entry.source, &arena);
+        defer checked.deinit();
+        try testing.expectEqual(entry.valid, checked.errors == 0);
+    }
+}
+
+test "sema: scalar constructor evidence rejects foreign string ambiguity" {
+    const row = [_]struct { source: []const u8, cached: bool, missing: bool = false, valid: bool }{
+        .{ .source = "other: i64 = () 0\n", .cached = false, .valid = true },
+        .{ .source = "", .cached = true, .missing = true, .valid = false },
+        .{ .source = "other: i64 = () 0\n", .cached = true, .valid = true },
+        .{ .source = "byte: str = (text: str, index: i64) \"changed\"\n", .cached = true, .valid = false },
+        .{ .source = "byte: str = (text: str, index: i64) \"first\"\nbyte: str = (text: str, index: i64) \"second\"\n", .cached = true, .valid = false },
+    };
+    for (row) |entry| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+        var lexer = Lexer.init(entry.source, "string.id");
+        var parser = Parser.init(&lexer, alloc);
+        parser.idol_mode = true;
+        var home = try parser.parse_module();
+        const Loader = struct {
+            module: ?*ast.Module,
+
+            fn load(raw: *anyopaque, spelling: []const u8) ?ForeignHome {
+                const self: *@This() = @ptrCast(@alignCast(raw));
+                if (!std.mem.eql(u8, spelling, "string")) return null;
+                return .{ .home = "string", .path = "string.id", .module = self.module orelse return null };
+            }
+        };
+        var loader = Loader{ .module = if (entry.missing) null else &home };
+        var source = Lexer.init("record: {code: i64}\nmake: record = (text: str)\n    item = string.byte(text, 1)\n    {code = item}\n", "primary.id");
+        var syntax = Parser.init(&source, alloc);
+        syntax.idol_mode = true;
+        var module = try syntax.parse_module();
+        var checked = Sema.init(alloc);
+        defer checked.deinit();
+        checked.idol_mode = true;
+        checked.source_path = try alloc.dupe(u8, "primary.id");
+        checked.home_loader = .{ .ctx = &loader, .load = Loader.load };
+        if (entry.cached) {
+            _ = checked.homeNamed("string");
+            try checked.home_roots.put(alloc, checked.foreign_homes.getKey("string").?, {});
+        }
+        try checked.check_module(&module);
         try testing.expectEqual(entry.valid, checked.errors == 0);
     }
 }
