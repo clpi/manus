@@ -72,7 +72,6 @@
     // A directory listed here means that all files within, recursively, are included.
     .paths = .{
         "build.zig",
-        "unit_test_filter.zig",
         "build.zig.zon",
         "src",
         // For example...

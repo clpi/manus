@@ -1,7 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const unit_test_filter = @import("./unit_test_filter.zig");
-const parseUnitTestFilter = unit_test_filter.parseUnitTestFilter;
 
 /// SH-03 production dispatch: Idol lexer regenerated from
 /// `lib/compiler/lexer.id`. Provides `duo_lexer_tokenize_full`.
@@ -413,19 +411,19 @@ pub fn build(b: *std.Build) void {
 
     // Zig unit tests (lexer, parser, AST, types, sema).
     // Run independently from the binary: `zig build unit-test`
-    const filter_request = b.option(
+    const filter = b.option(
         []const u8,
         "test-filter",
         "Compile-time unit-test name filter (Build/TestOptions.filters).",
     );
-    const filter_decision = parseUnitTestFilter(filter_request);
-    const unit_test_filters: []const []const u8 = switch (filter_decision) {
-        .filter => |text| &.{text},
-        .default => &.{},
-        .malformed => |msg| @panic(msg),
-    };
+    if (filter) |text| {
+        if (text.len == 0) @panic("-Dtest-filter requires a non-empty value");
+        for (text) |byte| {
+            if (std.ascii.isControl(byte) and byte != '\t') @panic("-Dtest-filter contains a control character");
+        }
+    }
     const unit_tests = b.addTest(.{
-        .filters = unit_test_filters,
+        .filters = if (filter) |text| &.{text} else &.{},
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/tests.zig"),
             .target = target,
@@ -433,21 +431,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
     linkProductionIdolFrontend(b, unit_tests.root_module);
-    const filter_tests = b.addTest(.{
-        .name = "unit-test-filter",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("unit_test_filter.zig"),
-            .target = b.graph.host,
-            .optimize = .ReleaseSafe,
-        }),
-    });
-    const run_filter_tests = b.addRunArtifact(filter_tests);
-    run_filter_tests.addPassthruArgs();
-    unit_tests.step.dependOn(&run_filter_tests.step);
-    const run_unit_tests = b.addRunArtifact(unit_tests);
-    if (@hasDecl(std.Build.Step.Run, "addPassthruArgs")) {
-        run_unit_tests.addPassthruArgs();
+    if (b.args) |arg| {
+        if (arg.len != 0) unit_tests.step.dependOn(&b.addFail("unit-test does not accept runtime arguments; use -Dtest-filter=<name>").step);
     }
+    const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
     test_step.dependOn(&grammar_projection_cmd.step);
     const unit_test_step = b.step("unit-test", "Run Zig unit tests only");
