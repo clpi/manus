@@ -11675,17 +11675,16 @@ test "semantic_graph: the lifted place census carries its existence ruling" {
 
     // THE INTENDED FAILING CASE, through the production lift. Every place fact
     // is identical to the block above — unmutated, unaliased, non-escaping,
-    // exactly determined — and one applied relation the walk cannot prove
-    // boundary-local withdraws the existence freedom. This is the row the fold
-    // used to admit on a proof that never covered the question.
+    // exactly determined — and `stdin:read()` names a relation this module does
+    // not declare, so no walk read its body and the existence freedom is not
+    // proven. This is the row the fold used to admit on a proof that never
+    // covered the question.
     {
         const module = try idolModule(alloc,
             \\t = (10, 20, 30)
-            \\step: i64 = (x: i64)
-            \\    x + 1
             \\main: i64 = ()
-            \\    step(1)
-            \\    t[2]
+            \\    x = stdin:read()
+            \\    t[2] + x
             \\
         );
         var g = SemanticGraph.init(alloc);
@@ -11698,6 +11697,29 @@ test "semantic_graph: the lifted place census carries its existence ruling" {
         try std.testing.expectEqual(place.Determinacy.exact, p.facts.determinacy);
         try std.testing.expectEqual(place.Existence.blocked_unknown, p.existence);
         try std.testing.expectEqual(place.Refusal.observed, place.residencyRefusal(p));
+    }
+
+    // APPLYING A RELATION IS NOT THE SAME QUESTION as applying an unread one.
+    // `step` is declared once at module scope and the observation walk descends
+    // into its body, so the call reaches nothing this report does not already
+    // carry and the freedom survives it. Rebinding the word withdraws it again:
+    // `src/observation.zig` holds the shadow control beside this one.
+    {
+        const module = try idolModule(alloc,
+            \\t = (10, 20, 30)
+            \\step: i64 = (x: i64)
+            \\    x + 1
+            \\main: i64 = ()
+            \\    step(1)
+            \\    t[2]
+            \\
+        );
+        var g = SemanticGraph.init(alloc);
+        defer g.deinit();
+        _ = try g.liftModuleFull(&module, "existence-walked.id");
+        const p = g.placeNamed("t").?;
+        try std.testing.expectEqual(place.Existence.permitted, p.existence);
+        try std.testing.expectEqual(place.Refusal.none, place.residencyRefusal(p));
     }
 }
 

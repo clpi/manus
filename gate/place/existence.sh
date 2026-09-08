@@ -17,10 +17,23 @@
 # `permits`*.
 #
 # The two are not the same question, and this gate's second probe is a program
-# where they DISAGREE: every place fact admits, and the walk cannot prove the
-# module's one applied relation boundary-local, so `allocation_identity` reads
-# `unknown` and the freedom is refused. Before the ruling reached the row, the
-# fold answered that read as an immediate on evidence nobody had.
+# where they DISAGREE: every place fact admits, and the applied relation is one
+# the walk never reads, so `allocation_identity` reads `unknown` and the freedom
+# is refused. Before the ruling reached the row, the fold answered that read as
+# an immediate on evidence nobody had.
+#
+# WHICH RELATIONS THE WALK READS IS ITSELF A FACT, and arm 6 is its controls.
+# `observation.walkStmt` descends into every module relation body, so applying
+# one reaches nothing the report does not already cover and the freedom stands;
+# a word another binding rebinds names no relation the walk can identify and the
+# freedom is withdrawn. GAP-245's floor measured what not knowing this cost: 46
+# module collections examined, zero `permitted`.
+#
+# AND THE FACE IS NOT THAT FACT, which is arm 7. `n:step()` and `step(n)` apply
+# ONE declaration — `idol graph` binds both sites to the same relation entity,
+# and an application of a word no module declares is UNRESOLVED under either
+# face — so a freedom that moves between the two spellings was decided by the
+# spelling. The face that lost it is the one `CLAUDE.md` teaches as canonical.
 #
 # ═══ WHY THE EXPORT AND NOT THE BACKEND ════════════════════════════════════
 #
@@ -31,7 +44,7 @@
 # The structural arm keeps that from becoming a spelling check: it requires the
 # clause to be IN `residencyRefusal` and the consumer to still route through it.
 #
-# ═══ THE FIVE ARMS ═════════════════════════════════════════════════════════
+# ═══ THE ARMS ══════════════════════════════════════════════════════════════
 #
 #   1  PUBLISHED           every module-collection row carries `existence`.
 #                          A missing key is a reader told nothing, never
@@ -52,6 +65,15 @@
 #   5  STRUCTURAL          `residencyRefusal` carries the `existence` clause and
 #                          `absentModulePlace` still routes through
 #                          `residencyRefusal`. Not found is a FAIL.
+#   6  WALKED RELATION     a module relation the walk descends into keeps the
+#                           freedom; the same program with the word rebound by a
+#                           parameter loses it. Equal answers mean the walk is
+#                           not reading the declaration at all.
+#   7  SUBJECT-FIRST FACE  `n:step()` and `step(n)` apply ONE relation, and the
+#                          export binds both to the same declaration. The two
+#                          faces must answer alike — and the rebound word must
+#                          still lose the freedom through this face too, or the
+#                          agreement was bought by permitting everything.
 set -u
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 idol="${IDOL_BIN:-$root/zig-out/bin/idol}"
@@ -74,14 +96,76 @@ main: i64 = ()
 ID
 
 # THE SAME PLACE, ONE APPLIED RELATION AWAY. Every place fact is identical;
-# the walk cannot prove `step` boundary-local, so nothing proves an observer
-# cannot distinguish `t` existing from `t` not existing.
+# `stdin:read()` names a relation this module does not declare, so no walk
+# read its body and nothing proves an observer cannot distinguish `t` existing
+# from `t` not existing.
 cat > "$probe/opaque.id" <<'ID'
+t = { 10, 20, 30 }
+main: i64 = ()
+    x = stdin:read()
+    t[2] + x
+ID
+
+# THE RELATION THE WALK READS. `step` is declared once at module scope and
+# `walkStmt` descends into it, so applying it reaches nothing outside the
+# region the report covers.
+cat > "$probe/walked.id" <<'ID'
 t = { 10, 20, 30 }
 step: i64 = (x: i64)
     x + 1
 main: i64 = ()
     step(1)
+    t[2]
+ID
+
+# THE SAME PROGRAM WITH THE WORD REBOUND. A parameter named `step` shadows the
+# declaration; which relation `step(1)` applies is unknown, and unknown is not
+# permission.
+cat > "$probe/shadow.id" <<'ID'
+t = { 10, 20, 30 }
+step: i64 = (x: i64)
+    x + 1
+main: i64 = (step: i64)
+    step(1)
+    t[2]
+ID
+
+# THE SAME RELATION, THE OTHER FACE. `n:step()` applies exactly what `step(n)`
+# applies — `idol graph` binds both sites to the `step` declaration — and it is
+# the face `CLAUDE.md` teaches as canonical. A freedom that depends on which
+# spelling the call was written with is a fact about the spelling.
+cat > "$probe/subject.id" <<'ID'
+t = { 10, 20, 30 }
+step: i64 = (x: i64)
+    x + 1
+main: i64 = ()
+    n = 1
+    n:step()
+    t[2]
+ID
+
+# THE SUBJECT-FIRST FACE WITH THE WORD REBOUND. The withdrawal has to travel
+# with the reading, or face symmetry was bought by permitting everything
+# written after a colon.
+cat > "$probe/subjshadow.id" <<'ID'
+t = { 10, 20, 30 }
+step: i64 = (x: i64)
+    x + 1
+main: i64 = (step: i64)
+    n = 1
+    n:step()
+    t[2]
+ID
+
+# THE INTRINSIC RELATION, UNCHANGED. No module here declares `push`, so the
+# walk read no body and the export publishes an UNRESOLVED application with no
+# relation. This probe holds the remaining reach limit still while arm 7 moves
+# the face, so a reading that admitted every method call could not pass.
+cat > "$probe/intrinsic.id" <<'ID'
+t = { 10, 20, 30 }
+main: i64 = ()
+    st = { 1 }
+    st:push(2)
     t[2]
 ID
 
@@ -103,7 +187,7 @@ main: i64 = ()
     t[2]
 ID
 
-for f in fold opaque capture write; do
+for f in fold opaque capture write walked shadow subject subjshadow intrinsic; do
   "$idol" graph "$probe/$f.id" > "$probe/$f.json" 2>/dev/null || {
     echo "existence: FAIL — idol graph did not emit for probe $f" >&2; exit 1; }
 done
@@ -171,7 +255,9 @@ def row(name):
     return rs[0]
 
 
-R = {n: row(n) for n in ("fold", "opaque", "capture", "write")}
+R = {n: row(n) for n in ("fold", "opaque", "capture", "write",
+                         "walked", "shadow", "subject", "subjshadow",
+                         "intrinsic")}
 if bad:
     print("existence: no subjects to examine")
     sys.exit(1)
@@ -259,6 +345,70 @@ if refusal(R["write"]) == "none":
          "place, and a granted existence freedom is not permission to overrule "
          "a place fact")
 
+# ── arm 6: WALKED RELATION ─────────────────────────────────────────────────
+for n in ("walked", "shadow"):
+    if places_only(R[n]) != "none":
+        fail(f"probe {n}: place clauses answered {places_only(R[n])!r}; this "
+             f"pair exists to hold every place fact equal to the folding "
+             f"program and move only which relation the walk read")
+if R["walked"]["existence"] != "permitted":
+    fail(f"applying a module relation the walk DESCENDS INTO answered "
+         f"existence={R['walked']['existence']!r}; its body is inside the "
+         f"region this report covers, so the call reaches nothing the report "
+         f"does not already carry and refusing it is the recognizer reach "
+         f"limit GAP-245's floor measured, not a proof")
+if refusal(R["walked"]) != "none":
+    fail(f"the walked-relation program's whole residency decision refused "
+         f"({refusal(R['walked'])})")
+if R["shadow"]["existence"] != "blocked_unknown":
+    fail(f"a parameter named `step` shadows the declaration and the program "
+         f"answered existence={R['shadow']['existence']!r}; the walk carries no "
+         f"scopes, so which relation `step(1)` applies is UNKNOWN and unknown "
+         f"is not permission")
+if R["walked"]["existence"] == R["shadow"]["existence"]:
+    fail(f"the walked and the rebound program both answered "
+         f"{R['walked']['existence']!r}; the walk is not reading the "
+         f"declaration at all and arm 6 decides nothing")
+
+# ── arm 7: SUBJECT-FIRST FACE ──────────────────────────────────────────────
+for n in ("subject", "subjshadow", "intrinsic"):
+    if places_only(R[n]) != "none":
+        fail(f"probe {n}: place clauses answered {places_only(R[n])!r}; this "
+             f"set exists to hold every place fact equal to the folding "
+             f"program and move only the face the relation is applied through")
+if R["subject"]["existence"] != R["walked"]["existence"]:
+    fail(f"`n:step()` answered existence={R['subject']['existence']!r} and "
+         f"`step(1)` answered {R['walked']['existence']!r} for the same "
+         f"declaration; the export binds both sites to that one relation, so a "
+         f"reading that differs between them is a fact about the SPELLING and "
+         f"the face this project teaches as canonical is the one it refuses")
+if R["subject"]["existence"] != "permitted":
+    fail(f"the subject-first program answered "
+         f"existence={R['subject']['existence']!r}; equal-and-refused is "
+         f"agreement bought by refusing both, and arm 7 decides nothing")
+if refusal(R["subject"]) != "none":
+    fail(f"the subject-first program's whole residency decision refused "
+         f"({refusal(R['subject'])})")
+if R["subjshadow"]["existence"] != "blocked_unknown":
+    fail(f"a parameter named `step` shadows the declaration and the "
+         f"subject-first program answered "
+         f"existence={R['subjshadow']['existence']!r}; the withdrawal has to "
+         f"travel with the reading or face symmetry was bought by permitting "
+         f"everything written after a colon")
+if R["subjshadow"]["existence"] != R["shadow"]["existence"]:
+    fail(f"the rebound word answered {R['subjshadow']['existence']!r} through "
+         f"the subject-first face and {R['shadow']['existence']!r} through the "
+         f"by-name face; one withdrawal, two answers")
+if R["intrinsic"]["existence"] != "blocked_unknown":
+    fail(f"`st:push(2)` answered existence={R['intrinsic']['existence']!r}; no "
+         f"module here declares `push`, the export publishes that site "
+         f"UNRESOLVED with no relation, and the walk read no body — admitting "
+         f"it would make arm 7 a rule that every method call is boundary-local")
+if R["subject"]["existence"] == R["intrinsic"]["existence"]:
+    fail(f"the declared and the intrinsic relation both answered "
+         f"{R['subject']['existence']!r} through the same face; arm 7 is "
+         f"reading the colon rather than the declaration")
+
 # ── arm 5: STRUCTURAL ──────────────────────────────────────────────────────
 st = dict(line.split(":", 1) for line in
           open(os.path.join(probe, "structure.txt")).read().split())
@@ -278,10 +428,15 @@ elif st.get("consumer") != "yes":
          "see")
 
 if bad:
-    print(f"existence: 4 probes, {bad} finding(s)")
+    print(f"existence: {len(R)} probes, {bad} finding(s)")
     sys.exit(1)
 print(f"existence: fold {R['fold']['existence']}/{refusal(R['fold'])}, "
       f"opaque {R['opaque']['existence']} (places {places_only(R['opaque'])}, "
       f"whole {refusal(R['opaque'])}), capture {R['capture']['existence']}, "
-      f"write {R['write']['existence']}/{refusal(R['write'])}")
+      f"write {R['write']['existence']}/{refusal(R['write'])}, "
+      f"walked {R['walked']['existence']}/{refusal(R['walked'])}, "
+      f"shadow {R['shadow']['existence']}, "
+      f"subject {R['subject']['existence']}/{refusal(R['subject'])}, "
+      f"subjshadow {R['subjshadow']['existence']}, "
+      f"intrinsic {R['intrinsic']['existence']}")
 PY
