@@ -68,6 +68,7 @@ const waist = struct {
 const backend_identity = @import("backend_identity.zig");
 const home_resolve = @import("home_resolve.zig");
 const scratch = @import("scratch.zig");
+const run_outcome = @import("run_outcome.zig");
 const dnir_lower = @import("dnir_lower.zig");
 const native_ir = @import("native_ir.zig");
 const measurement = @import("measurement.zig");
@@ -6227,57 +6228,64 @@ fn selectProcessEntryOrReport(
     };
 }
 
-fn executableExists(io: Io, path: []const u8) bool {
-    if (std.fs.path.isAbsolute(path)) return absPathExists(io, path);
-    Io.Dir.cwd().access(io, path, .{}) catch return false;
-    return true;
-}
+/// THE ARTIFACT IS NOT THE OUTCOME. A wasm artifact needs a runner to become a
+/// guest, and the branch that emitted one used to return here — so `idol run`
+/// on this host reported the COMPILE's status for every program, and a source
+/// whose whole body is `7` answered 0. Compilation, artifact, and execution are
+/// three facts; this is where the third one is obtained, or refused by name.
+fn executeArtifact(
+    alloc: std.mem.Allocator,
+    io: Io,
+    out_path: []const u8,
+    carried: bool,
+) !noreturn {
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(alloc);
+    const runner: ?[]const u8 = if (carried)
+        run_outcome.runnerPath(alloc, io) orelse finishRun(.{ .unrun = .runner }, out_path)
+    else
+        null;
+    if (runner) |r| try argv.append(alloc, r);
+    try argv.append(alloc, out_path);
+    try argv.appendSlice(alloc, forwarded_program_args);
 
-fn executeArtifact(alloc: std.mem.Allocator, io: Io, out_path: []const u8, wasm_hosted: bool) !noreturn {
-    var run_args: std.ArrayList([]const u8) = .empty;
-    defer run_args.deinit(alloc);
-    if (wasm_hosted) {
-        const runner = wasmRunnerPath(alloc, io) orelse {
-            term.err("RUN101: '{s}' is a wasm artifact this host cannot execute, so the program's exit code was never observed; set WASMTIME_BIN to a wasm runner. A compiled artifact is not an execution outcome.", .{out_path});
-            std.process.exit(2);
-        };
-        try run_args.append(alloc, runner);
-    }
-    try run_args.append(alloc, out_path);
-    try run_args.appendSlice(alloc, forwarded_program_args);
-    var run_child = try std.process.spawn(io, .{
-        .argv = run_args.items,
+    var child = try std.process.spawn(io, .{
+        .argv = argv.items,
         .stdin = .inherit,
         .stdout = .inherit,
         .stderr = .inherit,
     });
-    const run_term = try run_child.wait(io);
-    switch (run_term) {
-        .exited => |code| std.process.exit(code),
-        .signal => std.process.exit(128),
-        else => {
-            term.print("program terminated abnormally", .{});
-            std.process.exit(1);
-        },
-    }
+    const completion = run_outcome.completionOf(try child.wait(io));
+    const outcome = if (runner) |r| blk: {
+        const artifact: run_outcome.Artifact = if (run_outcome.attributionNeeded(completion))
+            run_outcome.askArtifact(alloc, io, r, out_path)
+        else
+            .unquestioned;
+        break :blk run_outcome.hosted(completion, artifact);
+    } else run_outcome.direct(completion);
+    finishRun(outcome, out_path);
 }
 
-fn wasmRunnerPath(alloc: std.mem.Allocator, io: Io) ?[]const u8 {
-    const declared: ?[]const u8 = if (std.c.getenv("WASMTIME_BIN")) |v| std.mem.span(v) else null;
-    const wanted = declared orelse "wasmtime";
-    if (wanted.len == 0) return null;
-    if (std.mem.indexOfScalar(u8, wanted, '/') != null) {
-        return if (executableExists(io, wanted)) wanted else null;
+fn finishRun(outcome: run_outcome.Outcome, out_path: []const u8) noreturn {
+    reportOutcome(outcome, out_path);
+    std.process.exit(outcome.status());
+}
+
+fn reportOutcome(outcome: run_outcome.Outcome, out_path: []const u8) void {
+    const identity = outcome.identity() orelse return;
+    switch (outcome) {
+        .exit => {},
+        .trap => |sig| term.err("{s}: '{s}' trapped ({t}) — the guest ran and reached no exit code", .{ identity, out_path, sig }),
+        .cancel => |sig| term.err("{s}: '{s}' was cancelled ({t}) before it reached an exit code", .{ identity, out_path, sig }),
+        .unrun => |fault| switch (fault) {
+            .runner => {
+                term.err("{s}: '{s}' is a wasm artifact and no runner executed it, so no outcome of the program was observed", .{ identity, out_path });
+                term.hint("set WASMTIME_BIN, or put a wasm runner on PATH; a compiled artifact is not an execution outcome", .{});
+            },
+            .artifact => term.err("{s}: the runner rejected '{s}', so the program never became a guest", .{ identity, out_path }),
+            .unattributed => term.err("{s}: the runner of '{s}' completed in a way that names no outcome of the guest", .{ identity, out_path }),
+        },
     }
-    const path_env = std.c.getenv("PATH") orelse return null;
-    var it = std.mem.splitScalar(u8, std.mem.span(path_env), ':');
-    while (it.next()) |dir| {
-        if (dir.len == 0) continue;
-        const candidate = pathJoin2(alloc, dir, wanted) catch return null;
-        if (executableExists(io, candidate)) return candidate;
-        alloc.free(candidate);
-    }
-    return null;
 }
 
 fn do_compile(

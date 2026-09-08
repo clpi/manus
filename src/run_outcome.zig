@@ -76,7 +76,7 @@ pub const runner_report_status: u8 = 1;
 fn signalStatus(sig: std.posix.SIG) u8 {
     const n = @intFromEnum(sig);
     if (n > 127) return 128;
-    return 128 +| @as(u8, @intCast(n));
+    return @as(u8, 128) +| @as(u8, @intCast(n));
 }
 
 fn trapping(sig: std.posix.SIG) bool {
