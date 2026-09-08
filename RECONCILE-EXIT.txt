@@ -1,0 +1,7 @@
+RECONCILE 2026-09-07T17:28:06-07:00
+Predecessor rescue git: 88aceb5e (= origin/rescue/claude-r16-exit-discrimination-pre-astra-20260907T170757PT)
+Candidate compiler sha256: 070f7b4604bc9d82af6de96163330536d8970f9e0f4b5cfdfbe2d5701e2ce6b3 (obs claude-candidate-2) — passed six real guest output/exit controls + missing-Wasmtime refusal; aggregate still 27 red.
+Successor preserved: e78cb78d4228ec717431ae386266e65ce5b44d5d → rescue/claude-r16-exit-discrimination-successor-df5d2c07-20260907T172804PT (started df5d2c07 without predecessor in prompt).
+Gate correction applied from observations/.../gate-review/candidate.patch (comments removed; force --backend=wasm --target=wasm32-wasi).
+CONTINUE: reuse prior main.zig/guest-exec fix + outcome fixtures/tests; do not restart from empty tip; missing-runner refuse alone is NOT done; real guest success/fail/trap/args/cancel required.
+Do NOT kill GAP-149 / vocabulary seats. Mac Hermes 330/331/5700 are separate owners — leave them.

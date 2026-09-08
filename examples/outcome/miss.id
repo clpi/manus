@@ -1,0 +1,7 @@
+main: i64 = ()
+    a = 3
+    b = 5
+    verdict = 7
+    if a + b == 9
+        verdict = 0
+    verdict

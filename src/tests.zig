@@ -67,6 +67,7 @@ test {
     _ = @import("lexer_differential.zig");
     _ = @import("shell_session.zig");
     _ = @import("shell_host.zig");
+    _ = @import("run_outcome.zig");
     _ = @import("git_preservation.zig");
     _ = @import("proof_carrying.zig");
     _ = @import("token_classify_gen.zig");

@@ -441,6 +441,8 @@ const Helper = enum {
     fd_write, // import 0
     proc_exit, // import 1
     fd_read, //  import 2
+    args_sizes_get, // import 3
+    args_get, //      import 4
     strlen, //   (i64 ptr) -> i64
     write_bytes, // (i64 ptr, i64 len) -> ()
     write_cstr, // (i64 ptr) -> ()
@@ -460,11 +462,12 @@ const Helper = enum {
     str_at, //     (i64 s, i64 i) -> i64
     str_sub, //    (i64 s, i64 i, i64 j) -> i64
     str_to_i64, // (i64 s) -> i64
+    os_arg, //     (i64 i) -> i64            1-based argument, 0 when absent
     die, //        (i64 msg) -> ()           message to fd 2, then trap
 };
 
 const helper_count: u32 = @typeInfo(Helper).@"enum".field_names.len;
-const import_count: u32 = 3;
+const import_count: u32 = 5;
 
 fn helperIndex(h: Helper) u32 {
     return @backingInt(h);
@@ -523,6 +526,7 @@ const Emitter = struct {
     ty_fd_write: u32 = 0,
     ty_proc_exit: u32 = 0,
     ty_fd_read: u32 = 0,
+    ty_args: u32 = 0,
     func_index: std.StringHashMapUnmanaged(u32) = .empty,
     func_sig: std.StringHashMapUnmanaged(FuncSig) = .empty,
     /// `load_global` / `store_global` name -> offset from `globals_base`.
@@ -865,6 +869,7 @@ pub fn emitFromDnir(
     e.ty_fd_write = try e.types.intern(&.{ vt_i32, vt_i32, vt_i32, vt_i32 }, &.{vt_i32});
     e.ty_proc_exit = try e.types.intern(&.{vt_i32}, &.{});
     e.ty_fd_read = try e.types.intern(&.{ vt_i32, vt_i32, vt_i32, vt_i32 }, &.{vt_i32});
+    e.ty_args = try e.types.intern(&.{ vt_i32, vt_i32 }, &.{vt_i32});
 
     const entry_name = entry orelse return e.refuse("no-entry-function");
 
@@ -2227,6 +2232,7 @@ fn externSignature(callee: []const u8) ?ExternSig {
     if (std.mem.eql(u8, callee, "sqrt")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_sqrt };
     if (std.mem.eql(u8, callee, "fabs")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_abs };
     if (std.mem.eql(u8, callee, "floor")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_floor };
+    if (std.mem.eql(u8, callee, "idol_os_arg")) return .{ .params = one_i, .result = .i64, .helper = .os_arg };
     if (std.mem.eql(u8, callee, "idol_io_read_stdin")) return .{ .params = one_i, .result = .i64, .helper = .fd_read };
     if (std.mem.eql(u8, callee, "idol_io_read_line")) return .{ .params = one_i, .result = .i64, .helper = .fd_read };
     if (std.mem.eql(u8, callee, "ceil")) return .{ .params = one_f, .result = .f64, .inline_op = op_f64_ceil };
@@ -2479,11 +2485,16 @@ test "wasm backend refuses byte-sequence print without an extent carrier" {
 // `_start`
 // ---------------------------------------------------------------------------
 
+/// The first exit code WASI `proc_exit` refuses.
+const wasi_exit_ceiling: i64 = 126;
+
 fn emitStart(e: *Emitter, entry_index: u32, entry_result: ?SlotType) Error![]u8 {
     e.cur_name = "_start";
     var b = Buf{ .alloc = e.alloc };
     errdefer b.deinit();
-    try b.u32v(0); // no locals
+    try b.u32v(1);
+    try b.u32v(1);
+    try b.byte(vt_i64);
     try b.call(entry_index);
     if (entry_result) |r| {
         // The exit code IS the answer for this subset — every gate on the
@@ -2507,6 +2518,22 @@ fn emitStart(e: *Emitter, entry_index: u32, entry_result: ?SlotType) Error![]u8 
         // 104) failed to produce an answer at all.
         try b.i64c(0xff);
         try b.op(op_i64_and);
+        // ...AND THE OTHER HALF OF THAT BAND HAS NO REALIZATION HERE. WASI
+        // takes [0,126), so a program whose masked code is 126 or above — the
+        // ordinary result of returning -1 — reaches wasmtime as a REJECTED
+        // `proc_exit` and the process exits 1. Exit 1 is a code programs also
+        // ask for on purpose, so answering it here would report a wrong
+        // outcome that no consumer could tell from a real one. The realization
+        // says so instead.
+        try b.tee(0);
+        try b.i64c(wasi_exit_ceiling);
+        try b.op(op_i64_ge_s);
+        try b.byte(op_if);
+        try b.byte(bt_void);
+        try b.i64c(@intCast(try e.strings.intern("exit: code outside WASI [0,126) has no realization in this module")));
+        try b.call(helperIndex(.die));
+        try b.byte(op_end);
+        try b.get(0);
         try b.op(op_i32_wrap_i64);
     } else {
         try b.i32c(0);
@@ -2542,6 +2569,7 @@ fn emitHelpers(e: *Emitter) Error!void {
     try putHelper(e, .str_at, &.{ vt_i64, vt_i64 }, &.{vt_i64}, helperStrAt);
     try putHelper(e, .str_sub, &.{ vt_i64, vt_i64, vt_i64 }, &.{vt_i64}, helperStrSub);
     try putHelper(e, .str_to_i64, &.{vt_i64}, &.{vt_i64}, helperStrToI64);
+    try putHelper(e, .os_arg, &.{vt_i64}, &.{vt_i64}, helperOsArg);
     try putHelper(e, .die, &.{vt_i64}, &.{}, helperDie);
 }
 
@@ -2559,6 +2587,12 @@ const g_sn_cap: u32 = 4;
 /// Bytes read by the last `fd_read` call. Copied to the caller's result
 /// pointer before this helper returns.
 const g_inbuf_len: u32 = 5;
+/// The argument vector the WASI runtime handed this instance, materialized on
+/// first use: `g_argv` is the array of pointers and doubles as the initialized
+/// marker, `g_argc` its length. A failed probe leaves `g_argc` 0, so every
+/// index answers UNKNOWN rather than re-probing.
+const g_argv: u32 = 6;
+const g_argc: u32 = 7;
 /// Digit scratch for `sn_puti`, disjoint from the region `print_i64` writes
 /// backwards from the top of.
 const addr_snbuf: u32 = addr_numbuf;
@@ -3340,6 +3374,117 @@ fn skipSpace(b: *Buf, cur: u32, ch: u32) Error!void {
     try b.byte(op_end);
 }
 
+/// `idol_os_arg(i)` — the native runtime's rule, unchanged: 1-based, and an
+/// index outside the vector is UNKNOWN (0), never the empty string. WASI hands
+/// the vector over in two calls, so the first index materializes it and every
+/// later one reads the same pointers.
+fn helperOsArg(e: *Emitter, b: *Buf) Error!void {
+    _ = e;
+    const want: u32 = 0;
+    const scratch: u32 = 1;
+    const count: u32 = 2;
+    const vector: u32 = 3;
+
+    try b.u32v(1);
+    try b.u32v(3);
+    try b.byte(vt_i32);
+
+    try b.byte(op_global_get);
+    try b.u32v(g_argv);
+    try b.op(op_i32_eqz);
+    try b.byte(op_if);
+    try b.byte(bt_void);
+    {
+        try b.i64c(8);
+        try b.call(helperIndex(.malloc));
+        try b.op(op_i32_wrap_i64);
+        try b.tee(scratch);
+        try b.get(scratch);
+        try b.i32c(4);
+        try b.op(op_i32_add);
+        try b.call(helperIndex(.args_sizes_get));
+        try b.byte(op_if);
+        try b.byte(bt_void);
+        {
+            try b.get(scratch);
+            try b.byte(op_global_set);
+            try b.u32v(g_argv);
+            try b.i32c(0);
+            try b.byte(op_global_set);
+            try b.u32v(g_argc);
+        }
+        try b.byte(op_else);
+        {
+            try b.get(scratch);
+            try b.mem(op_i32_load, 2, 0);
+            try b.set(count);
+            try b.get(count);
+            try b.i32c(4);
+            try b.op(op_i32_mul);
+            try b.op(op_i64_extend_i32_u);
+            try b.call(helperIndex(.malloc));
+            try b.op(op_i32_wrap_i64);
+            try b.set(vector);
+            try b.get(scratch);
+            try b.mem(op_i32_load, 2, 4);
+            try b.op(op_i64_extend_i32_u);
+            try b.call(helperIndex(.malloc));
+            try b.op(op_i32_wrap_i64);
+            try b.set(scratch);
+            try b.get(vector);
+            try b.get(scratch);
+            try b.call(helperIndex(.args_get));
+            try b.byte(op_if);
+            try b.byte(bt_void);
+            {
+                try b.i32c(0);
+                try b.set(count);
+            }
+            try b.byte(op_end);
+            try b.get(vector);
+            try b.byte(op_global_set);
+            try b.u32v(g_argv);
+            try b.get(count);
+            try b.byte(op_global_set);
+            try b.u32v(g_argc);
+        }
+        try b.byte(op_end);
+    }
+    try b.byte(op_end);
+
+    try b.get(want);
+    try b.op(op_i32_wrap_i64);
+    try b.tee(scratch);
+    try b.i32c(1);
+    try b.op(op_i32_lt_s);
+    try b.byte(op_if);
+    try b.byte(bt_void);
+    {
+        try b.i64c(0);
+        try b.byte(op_return);
+    }
+    try b.byte(op_end);
+    try b.get(scratch);
+    try b.byte(op_global_get);
+    try b.u32v(g_argc);
+    try b.op(op_i32_ge_s);
+    try b.byte(op_if);
+    try b.byte(bt_void);
+    {
+        try b.i64c(0);
+        try b.byte(op_return);
+    }
+    try b.byte(op_end);
+    try b.byte(op_global_get);
+    try b.u32v(g_argv);
+    try b.get(scratch);
+    try b.i32c(4);
+    try b.op(op_i32_mul);
+    try b.op(op_i32_add);
+    try b.mem(op_i32_load, 2, 0);
+    try b.op(op_i64_extend_i32_u);
+}
+
 /// The native runtime's `strFatal`: the message and a newline on fd 2, then
 /// abort. `unreachable` is wasm's abort and exits 134, the same code
 /// `kill(getpid(), SIGABRT)` produces.
@@ -3939,7 +4084,7 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
     {
         var s = Buf{ .alloc = alloc };
         defer s.deinit();
-        try s.u32v(3);
+        try s.u32v(import_count);
         try s.name("wasi_snapshot_preview1");
         try s.name("fd_write");
         try s.byte(0x00);
@@ -3952,6 +4097,14 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
         try s.name("fd_read");
         try s.byte(0x00);
         try s.u32v(e.ty_fd_read);
+        try s.name("wasi_snapshot_preview1");
+        try s.name("args_sizes_get");
+        try s.byte(0x00);
+        try s.u32v(e.ty_args);
+        try s.name("wasi_snapshot_preview1");
+        try s.name("args_get");
+        try s.byte(0x00);
+        try s.u32v(e.ty_args);
         try section(&out, 2, s.items.items);
     }
 
@@ -3979,7 +4132,7 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
     {
         var s = Buf{ .alloc = alloc };
         defer s.deinit();
-        try s.u32v(6);
+        try s.u32v(8);
         try s.byte(vt_i32);
         try s.byte(0x01); // $__sp, mutable
         try s.i32c(@intCast(stack_top));
@@ -4002,6 +4155,14 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
         try s.byte(op_end);
         try s.byte(vt_i32);
         try s.byte(0x01); // $inbuf_len
+        try s.i32c(0);
+        try s.byte(op_end);
+        try s.byte(vt_i32);
+        try s.byte(0x01); // $argv
+        try s.i32c(0);
+        try s.byte(op_end);
+        try s.byte(vt_i32);
+        try s.byte(0x01); // $argc
         try s.i32c(0);
         try s.byte(op_end);
         try section(&out, 6, s.items.items);
@@ -4090,6 +4251,10 @@ fn assemble(e: *Emitter, start_index: u32) Error![]u8 {
 }
 
 fn runTestSourceWasm(source: []const u8) !u8 {
+    return runTestSourceWasmArgs(source, &.{});
+}
+
+fn runTestSourceWasmArgs(source: []const u8, args: []const []const u8) !u8 {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -4117,8 +4282,12 @@ fn runTestSourceWasm(source: []const u8) !u8 {
         .sub_path = "branch.wasm",
         .data = bytes,
     });
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer argv.deinit(alloc);
+    try argv.appendSlice(alloc, &.{ "wasmtime", "run", "branch.wasm" });
+    try argv.appendSlice(alloc, args);
     const result = std.process.run(std.testing.allocator, std.testing.io, .{
-        .argv = &.{ "wasmtime", "run", "branch.wasm" },
+        .argv = argv.items,
         .cwd = .{ .dir = tmp.dir },
     }) catch |err| switch (err) {
         error.FileNotFound => return error.SkipZigTest,
@@ -4130,6 +4299,16 @@ fn runTestSourceWasm(source: []const u8) !u8 {
         .exited => |status| status,
         else => error.TestUnexpectedResult,
     };
+}
+
+test "the argument vector reaches the wasm guest, and an absent index stays unknown" {
+    const source =
+        \\main: i64 = ()
+        \\    os.args[1]:len()
+    ;
+    try std.testing.expectEqual(@as(u8, 7), try runTestSourceWasmArgs(source, &.{"abcdefg"}));
+    try std.testing.expectEqual(@as(u8, 2), try runTestSourceWasmArgs(source, &.{"ab"}));
+    try std.testing.expectEqual(@as(u8, 0), try runTestSourceWasmArgs(source, &.{}));
 }
 
 test "wasm backend preserves values from multi-statement conditional arms" {
