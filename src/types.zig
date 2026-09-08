@@ -4867,8 +4867,9 @@ test "types: nominal store retains the declared name after the caller buffer mut
 }
 
 test "types: nominal store same-name replacement keeps the original key alive across a destroyed second arena" {
-    var original = .{ .arena = std.heap.ArenaAllocator.init(testing.allocator), .name = "penny".* };
-    var replacement = .{ .arena = std.heap.ArenaAllocator.init(testing.allocator), .name = "penny".* };
+    const specimen = struct { arena: std.heap.ArenaAllocator, name: [5]u8 };
+    var original: specimen = .{ .arena = std.heap.ArenaAllocator.init(testing.allocator), .name = "penny".* };
+    var replacement: specimen = .{ .arena = std.heap.ArenaAllocator.init(testing.allocator), .name = "penny".* };
     try declareNominal(original.arena.allocator(), &original.name, .i32);
     try declareNominal(replacement.arena.allocator(), &replacement.name, .i64);
     for (&replacement.name) |*byte| byte.* = '?';
