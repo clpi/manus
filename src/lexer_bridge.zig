@@ -199,7 +199,40 @@ pub const SourceEntryError = error{
     /// Two published entries share a pattern, so one path would carry two
     /// corpus roles and iteration order would pick between them.
     AmbiguousSourceEntry,
+    /// The census publishes a role at a counted ordinal that the producer's own
+    /// fact relations answer no differently than they answer for no role at
+    /// all, so the entry qualifies nothing and law falls to physical form.
+    IndistinctSourceRole,
+    /// The host could not ask the role question: the producer admits a physical
+    /// form for the path it asks over, so a role that selects nothing would
+    /// answer that form's law and be indistinguishable from one that does.
+    UnaskableSourceRole,
 };
+
+/// The path the role question is asked over. Its physical form must be one the
+/// producer admits NOTHING for, which is what makes an answer readable: on such
+/// a path a role that selects no arm falls through to a producer naming no law,
+/// so any role that selects one answers differently, and any role that does not
+/// answers the same bytes as no role. The bind proves that property of the
+/// probe rather than assuming it — against a producer that admitted this form,
+/// every role would look distinct and the check would pass on nothing.
+const role_probe: [:0]const u8 = "sourcerole";
+
+/// Does asking with this role reach a different answer than asking with none?
+///
+/// `sourcefactlaw`/`sourcefactprovenance` recognize a fixed set of role names
+/// and fall through to physical form for every other. Fall-through is not a
+/// refusal the owner reports: it is the clean answer a path carrying no corpus
+/// role gets, byte for byte. So a census entry publishing a role those
+/// relations never learned counts, publishes, and binds — while the home it
+/// names selects law on suffix alone, which is exactly the substitution the
+/// entry census exists to stop, arriving through a census that passes it.
+fn distinguishesRole(census: SourceEntryCensus, role: [*:0]const u8) bool {
+    const law = std.mem.span(census.factlaw(role_probe.ptr, role));
+    const provenance = std.mem.span(census.factprovenance(role_probe.ptr, role));
+    return !std.mem.eql(u8, law, std.mem.span(census.factlaw(role_probe.ptr, ""))) or
+        !std.mem.eql(u8, provenance, std.mem.span(census.factprovenance(role_probe.ptr, "")));
+}
 
 /// The producer's published corpus-entry census, as the host consumes it.
 /// Ingress binds the real externs and the controls bind planted ones through
@@ -208,6 +241,12 @@ const SourceEntryCensus = struct {
     count: i64,
     role: @TypeOf(&sourceentryrole),
     pattern: @TypeOf(&sourceentrypattern),
+    /// The fact relations the published roles are proved answerable against,
+    /// and the form projection the probe is proved unadmitted by. Production
+    /// binds the producer's; a control overrides the one face it perturbs.
+    formlaw: @TypeOf(&sourcepathformlaw) = &sourcepathformlaw,
+    factlaw: @TypeOf(&sourcefactlaw) = &sourcefactlaw,
+    factprovenance: @TypeOf(&sourcefactprovenance) = &sourcefactprovenance,
 };
 
 /// The host holds the published patterns while it proves them distinct, so the
@@ -221,9 +260,9 @@ var source_entry_walks: usize = 0;
 var source_entry_count: i64 = 0;
 var source_entry_refusal: ?SourceEntryError = null;
 
-/// Prove the producer publishes a role and a distinct pattern at every ordinal
-/// its corpus-entry census counts, and that the census covers all of them,
-/// before any path selects a law. Returns the number of entries walked.
+/// Prove the producer publishes a distinguishing role and a distinct pattern at
+/// every ordinal its corpus-entry census counts, and that the census covers all
+/// of them, before any path selects a law. Returns the number of entries walked.
 ///
 /// `sourcepathrole` walks THIS census inside the producer and answers with the
 /// role of the longest matching pattern, or `""` when none matches. A census
@@ -239,6 +278,9 @@ fn bindSourceEntryCensus(census: SourceEntryCensus) SourceEntryError!i64 {
     if (census.count > source_entry_capacity) return SourceEntryError.UnestablishedSourceEntries;
     const count: usize = @intCast(census.count);
 
+    if (std.mem.span(census.formlaw(role_probe.ptr)).len != 0)
+        return SourceEntryError.UnaskableSourceRole;
+
     var seen: [source_entry_capacity][]const u8 = undefined;
     var i: usize = 0;
     while (i < count) : (i += 1) {
@@ -248,6 +290,10 @@ fn bindSourceEntryCensus(census: SourceEntryCensus) SourceEntryError!i64 {
         // walk returns it as a clean negative from a pattern that DID match.
         if (std.mem.span(census.role(ordinal)).len == 0)
             return SourceEntryError.UnestablishedSourceEntries;
+        // Publishing a role is not qualifying with one: the fact relations must
+        // also be able to answer differently for it than for none.
+        if (!distinguishesRole(census, census.role(ordinal)))
+            return SourceEntryError.IndistinctSourceRole;
         const pattern = std.mem.span(census.pattern(ordinal));
         // An empty pattern is not a home that matches nothing: the producer's
         // prefix comparison admits it against any path, so a hole in the table
@@ -767,6 +813,29 @@ fn repeatedSourceEntryPattern(i: i64) callconv(.c) [*:0]const u8 {
     return sourceentrypattern(i);
 }
 
+/// The first entry publishes a role spelled a way the producer's fact relations
+/// never learned. Nothing about the census is malformed: it counts, it publishes
+/// at every ordinal, its patterns are distinct.
+fn indistinctSourceEntryRole(i: i64) callconv(.c) [*:0]const u8 {
+    if (i == 1) return "compat";
+    return sourceentryrole(i);
+}
+
+/// The same, at the last entry: only a walk that reaches the end sees it.
+fn lastIndistinctSourceEntryRole(i: i64) callconv(.c) [*:0]const u8 {
+    if (i == sourceentrycount()) return "compat";
+    return sourceentryrole(i);
+}
+
+/// The producer admits a physical form for the path the role question is asked
+/// over. Every role then reaches that form's law where a role selecting nothing
+/// would too, so the question stops separating the two and the walk would pass
+/// a census of roles it proved nothing about.
+fn probeAdmittedFormLaw(path: [*:0]const u8) callconv(.c) [*:0]const u8 {
+    if (std.mem.eql(u8, std.mem.span(path), role_probe)) return "idol";
+    return sourcepathformlaw(path);
+}
+
 test "lexer bridge: the producer's corpus-entry census governs role selection" {
     const real: SourceEntryCensus = .{
         .count = sourceentrycount(),
@@ -858,6 +927,101 @@ test "lexer bridge: the producer's corpus-entry census governs role selection" {
     try std.testing.expectEqual(before + 1, source_entry_walks);
 }
 
+test "lexer bridge: a published role the fact relations cannot answer for is not a role" {
+    const real: SourceEntryCensus = .{
+        .count = sourceentrycount(),
+        .role = &sourceentryrole,
+        .pattern = &sourceentrypattern,
+    };
+    try std.testing.expect(real.count >= 2);
+
+    // THE FALSE ACCEPT this closes, executed on the real producer and a real
+    // corpus path. `compat` is not malformed evidence — it is a role spelled a
+    // way `sourcefactlaw` never learned, and the relations answer it with the
+    // physical-form law, byte for byte what they answer a path carrying NO
+    // role. The compatibility home disappears and nothing reports a boundary.
+    const home = "examples/lua/host.id";
+    try std.testing.expectEqualStrings("lua", std.mem.span(sourcefactlaw(home, sourcepathrole(home))));
+    try std.testing.expectEqualStrings("idol", std.mem.span(sourcefactlaw(home, "compat")));
+    try std.testing.expectEqualStrings(
+        std.mem.span(sourcefactlaw(home, "")),
+        std.mem.span(sourcefactlaw(home, "compat")),
+    );
+
+    // The question is asked over a path the producer admits no form for, which
+    // is the property that makes its answer readable. Assert it of the probe
+    // rather than of the spelling: a producer that admitted this form is the
+    // control below, and it must refuse rather than pass on nothing.
+    try std.testing.expectEqualStrings("", std.mem.span(sourcepathformlaw(role_probe.ptr)));
+    try std.testing.expect(!distinguishesRole(real, "compat"));
+
+    // Every role the real census publishes IS answerable, so the closure is a
+    // fact about published roles and not a refusal of the producer as it stands.
+    const before = source_entry_walks;
+    try std.testing.expectEqual(real.count, try bindSourceEntryCensus(real));
+    try std.testing.expectEqual(before + 1, source_entry_walks);
+    var ordinal: i64 = 1;
+    while (ordinal <= real.count) : (ordinal += 1) {
+        try std.testing.expect(distinguishesRole(real, sourceentryrole(ordinal)));
+    }
+
+    // Indistinct at both ends, so neither a walk that stops after the first
+    // entry nor one that checks only the last can pass. Separate identity from
+    // the roleless controls above: this census publishes a role everywhere.
+    try std.testing.expectError(SourceEntryError.IndistinctSourceRole, bindSourceEntryCensus(.{
+        .count = real.count,
+        .role = &indistinctSourceEntryRole,
+        .pattern = real.pattern,
+    }));
+    try std.testing.expectError(SourceEntryError.IndistinctSourceRole, bindSourceEntryCensus(.{
+        .count = real.count,
+        .role = &lastIndistinctSourceEntryRole,
+        .pattern = real.pattern,
+    }));
+
+    // A probe whose form the producer admits cannot separate a role that
+    // selects an arm from one that selects nothing, so the host refuses to ask
+    // rather than walking a census the question passes vacuously.
+    try std.testing.expectError(SourceEntryError.UnaskableSourceRole, bindSourceEntryCensus(.{
+        .count = real.count,
+        .role = real.role,
+        .pattern = real.pattern,
+        .formlaw = &probeAdmittedFormLaw,
+    }));
+
+    // ...and that refusal is not the walk answering: it precedes every ordinal,
+    // including the indistinct one the previous control caught.
+    try std.testing.expectError(SourceEntryError.UnaskableSourceRole, bindSourceEntryCensus(.{
+        .count = real.count,
+        .role = &indistinctSourceEntryRole,
+        .pattern = real.pattern,
+        .formlaw = &probeAdmittedFormLaw,
+    }));
+
+    // An unwalkable census is still unwalkable: the absent, non-numeric and
+    // short controls fail closed on their own identity BEFORE any role is
+    // asked about, so this closure never reports a pass one of them owns.
+    try std.testing.expectError(SourceEntryError.UnestablishedSourceEntries, bindSourceEntryCensus(.{
+        .count = 0,
+        .role = &indistinctSourceEntryRole,
+        .pattern = real.pattern,
+    }));
+    try std.testing.expectError(SourceEntryError.UnestablishedSourceEntries, bindSourceEntryCensus(.{
+        .count = -1,
+        .role = &indistinctSourceEntryRole,
+        .pattern = real.pattern,
+    }));
+    try std.testing.expectError(SourceEntryError.PartialSourceEntryCensus, bindSourceEntryCensus(.{
+        .count = real.count - 1,
+        .role = &lastIndistinctSourceEntryRole,
+        .pattern = real.pattern,
+    }));
+
+    // No refusal above walked. Without this the counts the ingress control
+    // separates on would be satisfied by a bind that counted its own refusals.
+    try std.testing.expectEqual(before + 1, source_entry_walks);
+}
+
 test "lexer bridge: ingress binds through the governed corpus-entry census" {
     const held_forms = source_form_count;
     const held_form_refusal = source_form_refusal;
@@ -895,6 +1059,17 @@ test "lexer bridge: ingress binds through the governed corpus-entry census" {
     try std.testing.expectEqual(SourceLaw.unknown, refused_home.law);
     try std.testing.expectEqual(SourceProvenance.unknown, refused_home.provenance);
     try std.testing.expectEqual(SourceProvenance.unknown, sourceFacts("vendor/opaque.id").provenance);
+
+    // A census the host walked but whose roles it could not prove answerable is
+    // held the same way. Without this the new refusal would bind as a value
+    // ingress never reads, and every path would keep selecting on a role the
+    // fact relations answer nothing for.
+    source_entry_count = 0;
+    source_entry_refusal = SourceEntryError.IndistinctSourceRole;
+    try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("examples/lua/host.id").law);
+    source_entry_count = 0;
+    source_entry_refusal = SourceEntryError.UnaskableSourceRole;
+    try std.testing.expectEqual(SourceLaw.unknown, sourceFacts("examples/lua/host.id").law);
 
     // The two censuses are separate facts: an establishable entry census does
     // not answer for an unestablishable form census, or the other way round.
