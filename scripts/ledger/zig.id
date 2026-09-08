@@ -71,7 +71,7 @@ control: i64 = ()
   if bucket("src/parser.zig") != "front"
     print("ledger/zig: fail control front")
     bad = bad + 1
-  if bucket("src/native_backend.zig") != "native"
+  if bucket("src/native.zig") != "native"
     print("ledger/zig: fail control native")
     bad = bad + 1
   if bucket("src/wasm_semantic.zig") != "wasm"

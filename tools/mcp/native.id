@@ -9,10 +9,6 @@
 #   - `find` results are used only as substring coordinates, inside a branch a
 #     `has` fact has already proved the field present — never compared to a
 #     not-found sentinel.
-# JSON literals are single-quoted byte sequences so real quotes survive the
-# GAP-145 lexer (double-quoted "\"" does not unescape). Tool stdout is
-# JSON-encoded by `jq -Rs .`; command substitution strips jq's trailing newline
-# so a response never embeds a raw newline that would break framing.
 #
 # concept arm (GAP-120): the served `concept` tool runs the produced graph
 # finding through `tools/concept/doc.sh` and answers the rendered verdict as
@@ -40,128 +36,99 @@ while true
     # The id value runs to the first `,` or, when id is the final member, to
     # the closing `}` — clients differ on member order (opencode serializes
     # id last, so a to-comma slice swallowed the `}` and broke framing).
-    idp: i64 = line:find('"id":', 1, 1)
-    ia: i64 = idp + 5
-    linelen: i64 = line:len()
-    tail: str = if line:has('"id":')
-        line:sub(ia, linelen)
+    position: i64 = line:find("\"id\":", 1, 1)
+    offset: i64 = position + 5
+    length: i64 = line:len()
+    tail: str = if line:has("\"id\":")
+        line:sub(offset, length)
     else
         ""
-    cma: i64 = tail:find(',', 1, 1)
-    taillen: i64 = tail:len()
-    idstr: str = if tail:has(',')
-        tail:sub(1, cma - 1)
+    comma: i64 = tail:find(",", 1, 1)
+    size: i64 = tail:len()
+    id: str = if tail:has(",")
+        tail:sub(1, comma - 1)
     else
-        tail:sub(1, taillen - 1)
+        tail:sub(1, size - 1)
 
-    # arguments.file extraction (concept arm): the value sits between the
-    # literal `"arguments":{"file":"` and the next `"` (closing of the JSON
-    # string). When `file` is absent the request cannot be a `concept` call
-    # with arguments — the branch below answers -32602 with the file never
-    # read. When `file` is present its raw bytes are sliced into `fval` and
-    # then shell-escaped by surrounding them with single quotes and turning
-    # any embedded `'` into the standard `'\''` close-quote / escaped-quote /
-    # reopen-quote sequence, which jq `@sh` would also produce. Realistic
-    # subject paths are filesystem-safe ASCII, but the escape is total — a
-    # path carrying a `'` survives because the shell rebuilds the same byte.
-    fap: i64 = line:find('"arguments":{"file":"', 1, 1)
-    fav: i64 = if line:has('"arguments":{"file":"')
-        fap + 20
+    field: i64 = line:find("\"arguments\":\{\"file\":\"", 1, 1)
+    start: i64 = if line:has("\"arguments\":\{\"file\":\"")
+        field + "\"arguments\":\{\"file\":\"":len()
     else
         0
-    fclosep: i64 = if fav > 0
-        line:find('"', fav, 1) - 1
+    finish: i64 = if start > 0
+        line:find("\"", start, 1) - 1
     else
         0
-    fval: str = if fav > 0
-        line:sub(fav, fclosep)
+    file: str = if start > 0
+        line:sub(start, finish)
     else
         ""
-    fesc: str = if fval:has("'")
-        "'" .. fval:gsub("'", "'\\''") .. "'"
-    else
-        "'" .. fval .. "'"
-
-    # The non-concept cmd cascade stays exactly as it was — `git status`,
-    # `git rev-parse`, `./tools/node/dev/orient` — and `concept_arg` is
-    # its own slot only consulted when the request names `concept`. The
-    # branch lives in `if/else` rather than chained into `cmd` so that the
-    # existing `tools/call` path for status/head/orient never visits
-    # `doc.sh`. A notification (no `"id":`) routes concept_arm to
-    # `notifications/message` below; the same `idstr` already gates it.
-    cmd: str = if line:has('"name":"status"')
-        "git status --short --branch"
-    else
-        if line:has('"name":"head"')
-            "git rev-parse HEAD"
+    argument: str = "'"
+    index: i64 = 1
+    while index <= file:len()
+        part: str = file:sub(index, index)
+        if part:has("'")
+            argument = "{argument}'\\''"
         else
-            if line:has('"name":"orient"')
-                "./tools/node/dev/orient"
-            else
-                "echo unknown tool"
+            argument = "{argument}{part}"
+        index += 1
+    argument = "{argument}'"
 
-    concept_arg: str = if line:has('"name":"concept"')
-        './tools/concept/doc.sh ' .. fesc
+    command: str = if line:has("\"name\":\"status\"")
+        "./tools/node/dev/orient --mcp status"
+    else
+        if line:has("\"name\":\"head\"")
+            "./tools/node/dev/orient --mcp head"
+        else
+            if line:has("\"name\":\"orient\"")
+                "./tools/node/dev/orient --mcp orient"
+            else
+                "./tools/node/dev/orient --mcp unknown"
+
+    action: str = if line:has("\"name\":\"concept\"")
+        "if test -n \"$\{IDOL_MODE-\}\"; then printf \"%s\" \"doc: FAIL connection mode forbids execution\"; else ./tools/concept/doc.sh {argument}; fi"
     else
         "true"
 
-    # The served `concept` arm runs `doc.sh` through `gatecap` so the
-    # captured stdout becomes the response text. A subject `doc.sh` refuses
-    # exits nonzero; command substitution captures stderr onto stdout
-    # (the `2>&1`), so the failed render becomes the response text rather
-    # than an empty result. The failure signal is the produced `doc: FAIL`
-    # marker `doc.sh` itself prints — a `has("doc: FAIL")` on the captured
-    # stdout is the produced refusal fact, not a sentinel comparison. When
-    # the request is NOT a `concept` call the captured stdout is empty and
-    # `concept_fail` is 0, so the existing tools/call branch fires.
-    concept_ok: str = gatecap('printf %s "$( ( ' .. concept_arg .. ' ) 2>&1 | jq -Rs . )"')
-    concept_fail: i64 = if line:has('"name":"concept"') and line:has('"arguments":{"file":"')
-        if concept_ok:has('doc: FAIL')
+    output: str = gatecap("printf %s \"$( ( {action} ) 2>&1 | jq -Rs . )\"")
+    failed: i64 = if line:has("\"name\":\"concept\"") and line:has("\"arguments\":\{\"file\":\"")
+        if output:has("doc: FAIL")
             1
         else
             0
     else
         0
 
-    # A concept request without `"id":` is a notification and MUST receive
-    # no reply — fall through to the notification branch below. Otherwise:
-    # the concept arm's outer branch fires only on a `concept` call with
-    # `arguments.file`; missing file answers -32602 with the file never
-    # read; failed render answers -32000 carrying the refusal text; a clean
-    # render answers the result text. Concept_ok is already JSON-encoded by
-    # `jq -Rs .` so embedding it directly into `result.content[0].text`
-    # produces a valid JSON object — the `text` value is a JSON string and
-    # `jq -Rs` produces exactly that shape.
-    is_concept_call: i64 = if line:has('"name":"concept"') and line:has('"arguments":{"file":"') and line:has('"id":')
+    called: i64 = if line:has("\"name\":\"concept\"") and line:has("\"arguments\":\{\"file\":\"") and line:has("\"id\":")
         1
     else
         0
 
-    resp: str = if is_concept_call
-        if concept_fail
-            '{"jsonrpc":"2.0","id":' .. idstr .. ',"error":{"code":-32000,"message":' .. concept_ok .. '}}'
+    resp: str = if called
+        if failed
+            "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"error\":\{\"code\":-32000,\"message\":{output}\}\}"
         else
-            '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":{"content":[{"type":"text","text":' .. concept_ok .. '}]}}'
+            "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\{\"content\":[\{\"type\":\"text\",\"text\":{output}\}]\}\}"
     else
-        if line:has('"name":"concept"') and line:has('"id":')
-            '{"jsonrpc":"2.0","id":' .. idstr .. ',"error":{"code":-32602,"message":"tool: invalid params: arguments.file is required"}}'
+        if line:has("\"name\":\"concept\"") and line:has("\"id\":")
+            "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"error\":\{\"code\":-32602,\"message\":\"tool: invalid params: arguments.file is required\"\}\}"
         else
-            if line:has('"method":"tools/call"') and line:has('"id":')
-                '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":{"content":[{"type":"text","text":' .. gatecap('printf %s "$( ( ' .. cmd .. ' ) 2>&1 | jq -Rs . )"') .. '}]}}'
+            if line:has("\"method\":\"tools/call\"") and line:has("\"id\":")
+                "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":{gatecap(command)}\}"
             else
-                if line:has('"method":"tools/list"')
-                    '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":{"tools":[{"name":"status","description":"git status --short --branch","inputSchema":{"type":"object","properties":{}}},{"name":"head","description":"current HEAD commit id","inputSchema":{"type":"object","properties":{}}},{"name":"orient","description":"Idol orientation snapshot","inputSchema":{"type":"object","properties":{}}},{"name":"concept","description":"render the produced concept verdict (REFUSED or HELD) for a subject .id file","inputSchema":{"type":"object","properties":{"file":{"type":"string"}}}}]}}'
+                if line:has("\"method\":\"tools/list\"")
+                    "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\{\"tools\":[\{\"name\":\"status\",\"description\":\"git status --short --branch\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"head\",\"description\":\"current HEAD commit id\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"orient\",\"description\":\"Idol orientation snapshot\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\}\}\},\{\"name\":\"concept\",\"description\":\"render the produced concept verdict (REFUSED or HELD) for a subject .id file\",\"inputSchema\":\{\"type\":\"object\",\"properties\":\{\"file\":\{\"type\":\"string\"\}\}\}\}]\}\}"
                 else
-                    if line:has('"method":"initialize"')
-                        '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"idol","version":"0.0.0"}}}'
+                    if line:has("\"method\":\"initialize\"")
+                        "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\{\"protocolVersion\":\"2024-11-05\",\"capabilities\":\{\"tools\":\{\"listChanged\":false\}\},\"serverInfo\":\{\"name\":\"idol\",\"version\":\"0.0.0\"\}\}\}"
                     else
-                        if line:has('"method":"ping"')
-                            '{"jsonrpc":"2.0","id":' .. idstr .. ',"result":{}}'
+                        if line:has("\"method\":\"ping\"")
+                            "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\{\}\}"
                         else
-                            if line:has('"id":')
-                                '{"jsonrpc":"2.0","id":' .. idstr .. ',"error":{"code":-32601,"message":"method not found"}}'
+                            if line:has("\"id\":")
+                                "\{\"jsonrpc\":\"2.0\",\"id\":{id},\"error\":\{\"code\":-32601,\"message\":\"method not found\"\}\}"
                             else
-                                '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"debug","logger":"idol","data":"ack"}}'
+                                "\{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":\{\"level\":\"debug\",\"logger\":\"idol\",\"data\":\"ack\"\}\}"
 
     # MCP stdio framing: one JSON object per LINE. The trailing newline is the
     # delimiter a line-oriented client reads on, and stdout:write is raw host

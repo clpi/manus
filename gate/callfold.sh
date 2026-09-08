@@ -69,7 +69,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 idol="${IDOL_BIN:-$root/zig-out/bin/idol}"
 [ -x "$idol" ] || { echo "callfold: no compiler at $idol" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "callfold: python3 absent" >&2; exit 2; }
-lower="$root/src/dnir_lower.zig"
+lower="$root/src/graph/lower.zig"
 [ -f "$lower" ] || { echo "callfold: no $lower" >&2; exit 2; }
 
 # THE PROBES ADMIT THROUGH THE DIRECT BACKEND FIRST. `s[2]` on a determined
@@ -264,7 +264,7 @@ if v["call"] != "refuse":
 # ── arm 5: STRUCTURAL — the arms `placeFold` actually dispatches on ────────
 arms = [a for a in open(os.path.join(probe, "arms.txt")).read().split() if a]
 if arms == ["NOFUNC"]:
-    fail("`fn placeFold` was not found in src/dnir_lower.zig; this gate's "
+    fail("`fn placeFold` was not found in src/graph/lower.zig; this gate's "
          "structural arm examined nothing")
 elif arms == ["NOARMS"]:
     fail("`placeFold` was found and no switch arm could be read out of it; "

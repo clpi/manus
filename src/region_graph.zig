@@ -11,7 +11,7 @@
 //! The field, the check and the error are deleted; see `dnir_hardware.Tier`.
 const std = @import("std");
 const dnir = @import("native_ir.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const semantic_graph = @import("graph.zig");
 
 pub const Dependency = struct {
     slot: u32,

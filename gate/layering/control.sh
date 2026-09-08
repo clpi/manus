@@ -28,10 +28,10 @@
 # substrate could not support the controls, so none of them ran.
 
 set -eu
-here=$(cd "$(dirname "$0")" && pwd)
+here=$(cd "$(dirname "$0")/.." && pwd)
 root=$(cd "$here/.." && pwd)
 gate="$here/layering.sh"
-self="$here/$(basename -- "$0")"
+self="$(cd "$(dirname "$0")" && pwd)/$(basename -- "$0")"
 
 refuse() {
     printf 'layering-controls: FAIL — %s\n' "$*" >&2
@@ -86,6 +86,30 @@ trap 'rm -rf "$tmp"' EXIT INT TERM
 pass=0; fail=0
 expect_fail() { l=$1; shift; if "$@" >"$tmp/o" 2>&1; then fail=$((fail+1)); printf 'POSITIVE CONTROL FAILED (accepted a violation): %s\n' "$l"; sed 's/^/      | /' "$tmp/o"; else pass=$((pass+1)); printf '  ok  reject: %s\n' "$l"; fi; }
 expect_pass() { l=$1; shift; if "$@" >"$tmp/o" 2>&1; then pass=$((pass+1)); printf '  ok  admit:  %s\n' "$l"; else fail=$((fail+1)); printf 'NEGATIVE CONTROL FAILED (rejected lawful input): %s\n' "$l"; sed 's/^/      | /' "$tmp/o"; fi; }
+
+
+expect() {
+    label=$1; wanted=$2; message=$3; edge=$4; shift 4
+    status=0
+    "$@" >"$tmp/o" 2>&1 || status=$?
+    if [ "$status" -eq "$wanted" ] && grep -Fq -- "$message" "$tmp/o" && grep -Fq -- "$edge" "$tmp/o"; then
+        pass=$((pass+1))
+        printf '  ok  decision: %s\n' "$label"
+    else
+        fail=$((fail+1))
+        printf 'CONTROL FAILED: %s (exit %s, expected %s)\n' "$label" "$status" "$wanted"
+        sed 's/^/      | /' "$tmp/o"
+    fi
+}
+
+branch() {
+    mkdir -p "$C/src/branch"
+    printf 'pub const value = 0;\n' >"$C/src/probe.zig"
+    printf 'pub const value = 0;\n' >"$C/src/branch/probe.zig"
+    printf 'const value = @import("probe.zig");\nconst parent = @import("../native_ir.zig");\n' >"$C/src/branch/read.zig"
+    printf 'SEMA probe.zig\nIR branch/probe.zig\nBACKEND branch/read.zig\n' >>"$C/gate/layers.manifest"
+    git -C "$C" add src/probe.zig src/branch/probe.zig src/branch/read.zig
+}
 
 # A clone gives a clean TRACKED source tree. The gate files under test are
 # copied in from the working tree afterwards, so the harness exercises the
@@ -152,6 +176,40 @@ C=$(mkclone)
 printf 'const std = @import("std");\nconst dnir = @import("native_ir.zig");\n' >>"$C/src/wasm_semantic.zig"
 expect_pass "lawful new edge: BACKEND -> IR (wasm_semantic.zig imports native_ir.zig)" \
     "$C/gate/layering.sh" --static-only
+rm -rf "$C"
+
+
+C=$(mkclone)
+branch
+expect "nested sibling and parent imports retain distinct same-basename modules" 0 \
+    "LAYERING OK" "L1 --" "$C/gate/layering.sh" --static-only
+printf '\nconst branch = @import("branch/probe.zig");\n' >>"$C/src/c_backend.zig"
+expect "root module reaches a nested IR module by its full relative path" 0 \
+    "LAYERING OK" "L1 --" "$C/gate/layering.sh" --static-only
+printf '\nconst local = @import("../branch/./probe.zig");\n' >>"$C/src/branch/read.zig"
+expect "dot and parent segments preserve the same nested module identity" 0 \
+    "LAYERING OK" "L1 --" "$C/gate/layering.sh" --static-only
+printf '\nconst parent = @import("../probe.zig");\n' >>"$C/src/branch/read.zig"
+expect "same basename in the parent directory is a distinct forbidden SEMA edge" 1 \
+    "the dependency direction was violated" "src/branch/read.zig" "$C/gate/layering.sh" --static-only
+rm -rf "$C"
+
+C=$(mkclone)
+branch
+printf '\nconst parent = @import("../probe.zig");\n' >>"$C/src/branch/read.zig"
+printf 'BACKEND\tbranch/read.zig\tSEMA\tprobe.zig\n' >>"$C/gate/layering.baseline"
+expect "an exact nested forbidden edge matches its full-path pin" 0 \
+    "LAYERING OK" "L1 --" "$C/gate/layering.sh" --static-only
+printf 'const value = @import("probe.zig");\n' >"$C/src/branch/read.zig"
+expect "disappeared nested edge requires an explicit baseline change" 1 \
+    "you paid debt down" "src/branch/read.zig (BACKEND) -> src/probe.zig (SEMA)" "$C/gate/layering.sh" --static-only
+rm -rf "$C"
+
+C=$(mkclone)
+branch
+printf '\nconst parent = @import("../../probe.zig");\n' >>"$C/src/branch/read.zig"
+expect "relative import cannot escape the classified source root" 1 \
+    "edge extraction aborted on src/branch/read.zig" "LAYERING BLOCKED" "$C/gate/layering.sh" --static-only
 rm -rf "$C"
 
 echo
@@ -316,7 +374,7 @@ expect_fail "two projections edited by hand, neither generator touched" \
 # expected count is NOT written down: it is recounted from the source on every
 # run, so adding or deleting a control needs no bookkeeping, while a control
 # that is commented out, short-circuited, or skipped past is fatal.
-declared=$(grep -cE '^expect_(fail|pass) "' -- "$self" || true)
+declared=$(grep -cE '^expect(_(fail|pass))? "' -- "$self" || true)
 ran=$((pass + fail))
 [ "${declared:-0}" -gt 0 ] ||
     refuse "could not recount the controls declared in $self"

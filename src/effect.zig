@@ -18,7 +18,7 @@ const std = @import("std");
 const optimization_outcome = @import("optimization_outcome.zig");
 const transform_engine = @import("transform_engine.zig");
 const assumption_guard = @import("assumption_guard.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const semantic_graph = @import("graph.zig");
 
 pub const SCHEMA_VERSION = "gap182-experiment-v1";
 

@@ -12,7 +12,7 @@
 //! entry points `comptime.zig` calls and the machinery they need.
 const std = @import("std");
 const ast = @import("ast.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const semantic_graph = @import("graph.zig");
 const collection_relation = @import("collection_relation.zig");
 
 // ─────────────────────────────────────────────────────────────────────────────

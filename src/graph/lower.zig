@@ -8,19 +8,19 @@
 //! Python/Lua-style mandatory `main()` or special entry typing — any eligible function
 //! lowers the same way; linker entry is `@export` / CLI target, not a magic name.
 const std = @import("std");
-const ast = @import("ast.zig");
+const ast = @import("../ast.zig");
 const Expr = ast.Expr;
-const types = @import("types.zig");
-const comptime_eval = @import("comptime.zig");
-const subject_home = @import("subject_home.zig");
-const dnir = @import("native_ir.zig");
-const dnir_hardware = @import("dnir_hardware.zig");
-const semantic_graph = @import("semantic_graph.zig");
-const place = @import("place.zig");
-const home_resolve = @import("home_resolve.zig");
-const tail_result_demand = @import("tail_result_demand.zig");
-const table_facts = @import("table_facts.zig");
-const collection_relation = @import("collection_relation.zig");
+const types = @import("../types.zig");
+const comptime_eval = @import("../comptime.zig");
+const subject_home = @import("../subject_home.zig");
+const dnir = @import("../native_ir.zig");
+const dnir_hardware = @import("../dnir_hardware.zig");
+const semantic_graph = @import("../graph.zig");
+const place = @import("../place.zig");
+const home_resolve = @import("../home_resolve.zig");
+const tail_result_demand = @import("../tail_result_demand.zig");
+const table_facts = @import("../table_facts.zig");
+const collection_relation = @import("../collection_relation.zig");
 const RT = types.ResolvedType;
 
 // DNIR only needs the machine class of a pointer. Its exact pointee descriptor
@@ -3198,10 +3198,10 @@ pub fn lowerTestSourceWithGraph(
     file: []const u8,
     graph: *semantic_graph.SemanticGraph,
 ) !dnir.Module {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
-    const table_apply = @import("table_apply.zig");
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
+    const table_apply = @import("../table_apply.zig");
 
     var lexer = Lexer.init(source, file);
     var parser = Parser.init(&lexer, alloc);
@@ -15355,8 +15355,8 @@ test "dnir_lower: hardware direct module" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "hardware_direct.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "hardware_direct.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15380,8 +15380,8 @@ test "dnir_lower: hardware popcount" {
         \\    return @popcount(47)
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "test.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "test.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15403,8 +15403,8 @@ test "dnir_lower: f64 record kernel" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "dnir_kernel.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "dnir_kernel.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15435,8 +15435,8 @@ test "dnir_lower: f64 kernel call with table literal" {
         \\    distance2({ x = 3.0, y = 4.0 })
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "f64_call.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "f64_call.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15469,8 +15469,8 @@ test "dnir_lower: the divisor sign reverses from DNIR to the graph fact" {
         \\    d: i64 = 10
         \\    n % d
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "divisor.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "divisor.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -15514,8 +15514,8 @@ test "dnir_lower: while loop" {
         \\    i
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "while.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "while.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15539,8 +15539,8 @@ test "dnir_lower: numeric for" {
         \\    sum
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "num_for.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "num_for.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15566,8 +15566,8 @@ test "dnir_lower: numeric-for step is graph-owned after AST poison" {
         \\    sum
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "num_for_step_graph.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "num_for_step_graph.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
     var step: ?*ast.Expr = null;
@@ -15612,8 +15612,8 @@ test "dnir_lower: vector reduction bound is graph-owned after AST poison" {
         \\    i
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "vector_bound_graph.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "vector_bound_graph.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
     var cond: ?*ast.Expr = null;
@@ -15658,8 +15658,8 @@ test "dnir_lower: f64 local in integer main" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "f64_local.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "f64_local.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15688,8 +15688,8 @@ test "dnir_lower: multi-arg f64 kernel" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "add2.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "add2.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15715,8 +15715,8 @@ test "dnir_lower: multi-arg i64 call_direct uses mov_arg" {
         \\    math.add(10, 20)
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "math_add_call.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "math_add_call.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15746,8 +15746,8 @@ test "dnir_lower: to(str)(n) stages the value as a variadic tail argument" {
         \\    return s:len()
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "to_str.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "to_str.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15791,8 +15791,8 @@ test "dnir_lower: a concat chain measures before it allocates" {
         \\    return s:len()
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "concat_measure.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "concat_measure.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15850,8 +15850,8 @@ test "dnir_lower: a determined concat chain allocates nothing" {
         \\    return s:len()
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "concat_determined.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "concat_determined.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15877,8 +15877,8 @@ test "dnir_lower: a local named io is the local, not the world descriptor" {
         \\    return io
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "world_shadow.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "world_shadow.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15906,8 +15906,8 @@ test "dnir_lower: io.stderr write projects the host stream" {
         \\    return 0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "io_stderr.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "io_stderr.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15936,8 +15936,8 @@ test "dnir_lower: io.stdout write projects the host stream" {
         \\    return 0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "io_stdout.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "io_stdout.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -15966,8 +15966,8 @@ test "dnir_lower: io.stderr close stays refused" {
         \\    return 0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "io_stderr_close.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "io_stderr_close.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
@@ -15983,8 +15983,8 @@ test "dnir_lower: io.stderr read stays refused" {
         \\    return 0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "io_stderr_read.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "io_stderr_read.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
@@ -16000,8 +16000,8 @@ test "dnir_lower: io.bogus write is not a projected stream" {
         \\    return 0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "io_bogus.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "io_bogus.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -16030,8 +16030,8 @@ test "dnir_lower: a bound io keeps io.stderr write off the world" {
         \\    return io
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "io_shadow_stderr.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "io_shadow_stderr.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -16057,8 +16057,8 @@ test "dnir_lower: to(str) declines a non-integer argument rather than mis-loweri
         \\    return s:len()
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "to_str_f64.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "to_str_f64.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     // `"%lld"` is a constant the emitter assumes; an f64 there printed the
@@ -16082,8 +16082,8 @@ test "dnir_lower: f64 kernel call with record variable" {
         \\    distance2(p)
         \\    0
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "record-variable.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "record-variable.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -16113,11 +16113,11 @@ test "dnir_lower: main returns f64 kernel tail" {
         \\main: f64 = ()
         \\    distance2(3.0, 4.0)
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "main-f64.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "main-f64.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&mod);
@@ -16159,11 +16159,11 @@ test "dnir_lower: pointer descriptors cross checked applications" {
         \\    mem.free(first)
         \\    answer + ignored
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "pointer-transport.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "pointer-transport.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -16232,11 +16232,11 @@ test "dnir_lower: graph result pack crosses one checked application" {
         \\    a, b = pair(40)
         \\    a + b
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "result-pack.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "result-pack.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -16306,11 +16306,11 @@ test "dnir_lower: checked module operand consumes graph binding edge" {
         \\main: i64 = ()
         \\    take(total)
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "module-operand.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "module-operand.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -16369,11 +16369,11 @@ test "dnir_lower: immutable module integer operand consumes binding initializer 
         \\readliteral: i64 = ()
         \\    take(7)
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "binding-initializer.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "binding-initializer.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -16526,11 +16526,11 @@ test "dnir_lower: interpolation consumes nested graph value descriptor" {
         \\t = t + 5
         \\stdout:write("{t}\\n")
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "module-interpolation.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "module-interpolation.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -16579,11 +16579,11 @@ test "dnir_lower: checked aggregate operand requires graph ABI facts" {
         \\    value = { x = 3.0, y = 4.0 }
         \\    distance(value)
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "aggregate-operand.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "aggregate-operand.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -16602,10 +16602,10 @@ test "dnir_lower: checked aggregate operand requires graph ABI facts" {
 }
 
 test "dnir_lower: graph aggregate facts select one immutable nested layout" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
-    const table_apply = @import("table_apply.zig");
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
+    const table_apply = @import("../table_apply.zig");
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -16772,10 +16772,10 @@ test "dnir_lower: graph aggregate facts select one immutable nested layout" {
 }
 
 test "dnir_lower: immutable flat projection consumes graph result and layout" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
-    const table_apply = @import("table_apply.zig");
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
+    const table_apply = @import("../table_apply.zig");
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -16864,10 +16864,10 @@ test "dnir_lower: immutable flat projection consumes graph result and layout" {
 }
 
 test "dnir_lower: nested aggregate constant bounds fail closed" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
-    const table_apply = @import("table_apply.zig");
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
+    const table_apply = @import("../table_apply.zig");
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -16909,11 +16909,11 @@ test "dnir_lower: checked one-result calls consume graph demand" {
         \\    kept + 1
         \\answer(40)
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "application-demand.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "application-demand.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -16997,10 +16997,10 @@ test "dnir_lower: checked one-result calls consume graph demand" {
 }
 
 test "dnir_lower: flat aggregate constant bounds fail closed" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
-    const table_apply = @import("table_apply.zig");
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
+    const table_apply = @import("../table_apply.zig");
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -17048,11 +17048,11 @@ test "dnir_lower: checked aggregate result consumes exact graph shape" {
         \\    value.x
         \\answer(1)
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "aggregate-result.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "aggregate-result.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -17130,8 +17130,8 @@ test "dnir_lower: no mandatory main — entry function lowers uniformly" {
         \\    42
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "run.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "run.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -17153,8 +17153,8 @@ test "dnir_lower: implicit f64 assign" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "implicit_f64.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "implicit_f64.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -17183,8 +17183,8 @@ test "dnir_lower: numeric for negative step" {
         \\    sum
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "neg_for.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "neg_for.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -17209,8 +17209,8 @@ test "dnir_lower: numeric for const step binding" {
         \\    sum
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "const_step.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "const_step.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -17230,8 +17230,8 @@ test "dnir_lower: ret zero" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "test.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "test.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -17255,8 +17255,8 @@ test "dnir_lower: f64 compare in integer main" {
         \\    end
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "f64_cmp.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "f64_cmp.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -17291,8 +17291,8 @@ test "dnir_lower: if elseif else chain" {
         \\    out
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "elseif.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "elseif.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -17316,8 +17316,8 @@ test "dnir_lower: numeric for runtime step parameter" {
         \\    s
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "runtime_step.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "runtime_step.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -17343,8 +17343,8 @@ test "dnir_lower: lowerModuleWithGraph matches lowerModule" {
         \\    42
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "test.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "test.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m_direct = try lowerModule(alloc, &mod);
@@ -17371,8 +17371,8 @@ test "dnir_lower: call census without application facts refuses" {
         \\main: i64 = (seed: i64)
         \\    observe(42)
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "missing-application.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "missing-application.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     const module = try parser.parse_module();
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -17401,8 +17401,8 @@ test "dnir_lower: uncensused condition call refuses in graph mode" {
         \\    else
         \\        0
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "condition-application.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "condition-application.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     const module = try parser.parse_module();
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -17436,8 +17436,8 @@ test "dnir_lower: diagnostics are isolated and reset by their own run" {
         \\main: i64 = (seed: i64)
         \\    observe(42)
     ;
-    var application_lexer = @import("lexer.zig").Lexer.init(application_source, "application-failure.id");
-    var application_parser = @import("parser.zig").Parser.init(&application_lexer, alloc);
+    var application_lexer = @import("../lexer.zig").Lexer.init(application_source, "application-failure.id");
+    var application_parser = @import("../parser.zig").Parser.init(&application_lexer, alloc);
     application_parser.idol_mode = true;
     const application_module = try application_parser.parse_module();
     var application_graph = semantic_graph.SemanticGraph.init(alloc);
@@ -17461,8 +17461,8 @@ test "dnir_lower: diagnostics are isolated and reset by their own run" {
         \\main: i64 = ()
         \\    unknown
     ;
-    var name_lexer = @import("lexer.zig").Lexer.init(name_source, "name-failure.id");
-    var name_parser = @import("parser.zig").Parser.init(&name_lexer, alloc);
+    var name_lexer = @import("../lexer.zig").Lexer.init(name_source, "name-failure.id");
+    var name_parser = @import("../parser.zig").Parser.init(&name_lexer, alloc);
     name_parser.idol_mode = true;
     const name_module = try name_parser.parse_module();
     var name_graph = semantic_graph.SemanticGraph.init(alloc);
@@ -17484,8 +17484,8 @@ test "dnir_lower: diagnostics are isolated and reset by their own run" {
         \\main: i64 = ()
         \\    0
     ;
-    var success_lexer = @import("lexer.zig").Lexer.init(success_source, "success.id");
-    var success_parser = @import("parser.zig").Parser.init(&success_lexer, alloc);
+    var success_lexer = @import("../lexer.zig").Lexer.init(success_source, "success.id");
+    var success_parser = @import("../parser.zig").Parser.init(&success_lexer, alloc);
     success_parser.idol_mode = true;
     const success_module = try success_parser.parse_module();
     var success_graph = semantic_graph.SemanticGraph.init(alloc);
@@ -17513,8 +17513,8 @@ test "dnir_lower: graph module ownership is transactional on allocation failure"
         \\second: i64 = ()
         \\    2
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "allocation.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, arena.allocator());
+    var lexer = @import("../lexer.zig").Lexer.init(source, "allocation.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, arena.allocator());
     parser.idol_mode = true;
     const module = try parser.parse_module();
     var graph = semantic_graph.SemanticGraph.init(arena.allocator());
@@ -17557,11 +17557,11 @@ test "dnir_lower: call result class comes from graph descriptor" {
     // test assert that an eliminated computation still happens, which is HPLS
     // §2 exactly: a true fact making the better realization fail. `seed` keeps
     // one length genuinely unknown, so the str path below is still measured.
-    var lex = @import("lexer.zig").Lexer.init(src, "result_query.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "result_query.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&mod);
@@ -17617,11 +17617,11 @@ test "dnir_lower: the module ENTRY carries a determined length too" {
         \\n = s:len()
         \\n
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "entry_len.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "entry_len.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&mod);
@@ -17679,11 +17679,11 @@ test "dnir_lower: a determined length is carried, an undetermined one is scanned
         \\operand: i64 = (s: str)
         \\    s:len()
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "carried_len.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "carried_len.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&mod);
@@ -17706,9 +17706,9 @@ test "dnir_lower: a determined length is carried, an undetermined one is scanned
 }
 
 test "dnir_lower: checked subject call retains semantic facts" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -17811,9 +17811,9 @@ test "dnir_lower: checked subject call retains semantic facts" {
 }
 
 test "dnir_lower: applications share relation without sharing occurrence id" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -17863,9 +17863,9 @@ test "dnir_lower: applications share relation without sharing occurrence id" {
 }
 
 test "dnir_lower: checked ordinary calls consume graph facts" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -17928,9 +17928,9 @@ test "dnir_lower: checked ordinary calls consume graph facts" {
 }
 
 test "dnir_lower: graph pack adjusts one result into several bindings" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -17986,9 +17986,9 @@ test "dnir_lower: graph pack adjusts one result into several bindings" {
 }
 
 test "dnir_lower: graph pack adjusts one result into several local declarations" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -18039,9 +18039,9 @@ test "dnir_lower: graph pack adjusts one result into several local declarations"
 }
 
 test "dnir_lower: checked multi-operand call retains ABI staging" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -18090,9 +18090,9 @@ test "dnir_lower: checked multi-operand call retains ABI staging" {
 }
 
 test "dnir_lower: checked scalar ABI boundaries retain staging" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -18143,9 +18143,9 @@ test "dnir_lower: checked scalar ABI boundaries retain staging" {
 }
 
 test "dnir_lower: checked f64 call derives ABI staging from descriptors" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -18200,8 +18200,8 @@ test "dnir_lower: bool result descriptor prevents integer interpolation" {
         \\render(): str
         \\    "ready=" .. ready()
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "bool_result_query.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "bool_result_query.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
 
@@ -18218,11 +18218,11 @@ test "dnir_lower: graph orders callees before callers" {
         \\main(): i64
         \\    distance2(3)
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "graph-order.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "graph-order.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&mod);
@@ -18254,11 +18254,11 @@ test "dnir_lower: checked ids use graph coordinates" {
         \\main: i64 = (seed: i64)
         \\    observe(42)
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "hash-free.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "hash-free.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&mod);
@@ -18293,8 +18293,8 @@ test "dnir_lower: graphless convenience returns no orphan handles" {
         \\main: i64 = (seed: i64)
         \\    observe(42)
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "graphless.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "graphless.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const module = try lowerModule(alloc, &mod);
@@ -18328,8 +18328,8 @@ test "dnir_lower: record-return tail and call assign emit init_record" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "rec.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "rec.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -18360,8 +18360,8 @@ test "dnir_lower: f64 record-return tail lowers ret_record" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "f64ret.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "f64ret.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -18393,8 +18393,8 @@ test "dnir_lower: f64 kernel inline table emits init_record" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "f64tbl.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "f64tbl.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -18423,8 +18423,8 @@ test "dnir_lower: discard call_stmt omits call result temp" {
         \\    1
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "discard.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "discard.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -18451,8 +18451,8 @@ test "dnir_lower: trailing compound assign returns assigned local" {
         \\    x *= 2
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "trail.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "trail.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -18482,8 +18482,8 @@ test "dnir_lower: dot static member exports module.method" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "static.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "static.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -18503,11 +18503,11 @@ test "dnir_lower: colon method compound field assign exports Type.method" {
     defer arena.deinit();
     const alloc = arena.allocator();
     const src = "Vec: { x: i32 }\nVec:xplus = (amt): i32\n    self.x += amt\nend";
-    var lex = @import("lexer.zig").Lexer.init(src, "method.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "method.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
-    var sema = @import("sema.zig").Sema.init(alloc);
+    var sema = @import("../sema.zig").Sema.init(alloc);
     try sema.check_module(&mod);
     try std.testing.expectEqual(@as(u32, 0), sema.errors);
     const m = try lowerModule(alloc, &mod);
@@ -18526,8 +18526,8 @@ test "dnir_lower: trailing compound field assign returns updated field slot" {
         \\    v.x += amt
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "field.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "field.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -18570,8 +18570,8 @@ test "dnir_lower: if binding assigns before branch" {
         \\    end
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "ifbind.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "ifbind.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -18612,8 +18612,8 @@ test "dnir_lower: ret_record carries every field in DESCRIPTOR order" {
         \\    0
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "retorder.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "retorder.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     const m = try lowerModule(alloc, &mod);
@@ -18646,8 +18646,8 @@ test "dnir_lower: a record parameter's fields ride the general-purpose argument 
     // Nine fields RETURNED: the x8 indirect-result convention covers it.
     {
         const src = wide ++ "mk(): big\n    return " ++ lit ++ "\nend\nmain(): i64\n    0\nend\n";
-        var lex = @import("lexer.zig").Lexer.init(src, "wideret.id");
-        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        var lex = @import("../lexer.zig").Lexer.init(src, "wideret.id");
+        var parser = @import("../parser.zig").Parser.init(&lex, alloc);
         parser.idol_mode = true;
         const mod = try parser.parse_module();
         const m = try lowerModule(alloc, &mod);
@@ -18664,8 +18664,8 @@ test "dnir_lower: a record parameter's fields ride the general-purpose argument 
     // predicate stood between the two ends.
     {
         const src = wide ++ "take(v: big): i64\n    return v.a\nend\nmain(): i64\n    0\nend\n";
-        var lex = @import("lexer.zig").Lexer.init(src, "wideparam.id");
-        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        var lex = @import("../lexer.zig").Lexer.init(src, "wideparam.id");
+        var parser = @import("../parser.zig").Parser.init(&lex, alloc);
         parser.idol_mode = true;
         const mod = try parser.parse_module();
         const m = try lowerModule(alloc, &mod);
@@ -18680,8 +18680,8 @@ test "dnir_lower: a record parameter's fields ride the general-purpose argument 
         const sixteen = "wide16: { a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, " ++
             "i: i64, j: i64, k: i64, l: i64, m: i64, n: i64, o: i64, p: i64 }\n";
         const src = sixteen ++ "take(v: wide16): i64\n    return v.p\nend\nmain(): i64\n    0\nend\n";
-        var lex = @import("lexer.zig").Lexer.init(src, "wide16param.id");
-        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        var lex = @import("../lexer.zig").Lexer.init(src, "wide16param.id");
+        var parser = @import("../parser.zig").Parser.init(&lex, alloc);
         parser.idol_mode = true;
         const mod = try parser.parse_module();
         const m = try lowerModule(alloc, &mod);
@@ -18696,8 +18696,8 @@ test "dnir_lower: a record parameter's fields ride the general-purpose argument 
         const seventeen = "wide17: { a: i64, b: i64, c: i64, d: i64, e: i64, f: i64, g: i64, h: i64, " ++
             "i: i64, j: i64, k: i64, l: i64, m: i64, n: i64, o: i64, p: i64, q: i64 }\n";
         const src = seventeen ++ "take(v: wide17): i64\n    return v.q\nend\nmain(): i64\n    0\nend\n";
-        var lex = @import("lexer.zig").Lexer.init(src, "wide17param.id");
-        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        var lex = @import("../lexer.zig").Lexer.init(src, "wide17param.id");
+        var parser = @import("../parser.zig").Parser.init(&lex, alloc);
         parser.idol_mode = true;
         const mod = try parser.parse_module();
         try std.testing.expectError(error.UnsupportedConstruct, lowerModule(alloc, &mod));
@@ -18778,8 +18778,8 @@ test "dnir_lower: inferred parameter keeps the shared carrier slot limit and uns
                 try parameters.appendSlice(alloc, parameter);
             }
             const source = try std.fmt.allocPrint(alloc, "take = ({s}) p0\n", .{parameters.items});
-            var lexer = @import("lexer.zig").Lexer.init(source, "parameter-budget.id");
-            var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+            var lexer = @import("../lexer.zig").Lexer.init(source, "parameter-budget.id");
+            var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
             parser.idol_mode = true;
             const module = try parser.parse_module();
             var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -18796,8 +18796,8 @@ test "dnir_lower: inferred parameter keeps the shared carrier slot limit and uns
     }
     for ([_][]const u8{ "?i64", "[i64]" }) |annotation| {
         const source = try std.fmt.allocPrint(alloc, "take = (value: {s}) value\n", .{annotation});
-        var lexer = @import("lexer.zig").Lexer.init(source, "parameter-refusal.id");
-        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        var lexer = @import("../lexer.zig").Lexer.init(source, "parameter-refusal.id");
+        var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
         parser.idol_mode = true;
         const module = try parser.parse_module();
         var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -18820,11 +18820,11 @@ test "dnir_lower: inferred parameter and explicit any refuse floating or unknown
                 "floating: f64 = (value: f64) value\nother: f64 = () floating(7.5)\n",
             .{annotation},
         );
-        var lexer = @import("lexer.zig").Lexer.init(source, "parameter-descriptor.id");
-        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        var lexer = @import("../lexer.zig").Lexer.init(source, "parameter-descriptor.id");
+        var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
         parser.idol_mode = true;
         var module = try parser.parse_module();
-        var checked = @import("sema.zig").Sema.init(alloc);
+        var checked = @import("../sema.zig").Sema.init(alloc);
         defer checked.deinit();
         checked.idol_mode = true;
         try checked.check_module(&module);
@@ -18889,8 +18889,8 @@ test "dnir_lower: runtime floor divisor preserves the integer zero trap" {
             \\floor: i64 = (n: i64, d: i64)
             \\    n // d
         ;
-        var lex = @import("lexer.zig").Lexer.init(src, "floorzero.id");
-        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        var lex = @import("../lexer.zig").Lexer.init(src, "floorzero.id");
+        var parser = @import("../parser.zig").Parser.init(&lex, alloc);
         parser.idol_mode = true;
         const mod = try parser.parse_module();
         const lowered = try lowerModule(alloc, &mod);
@@ -18917,8 +18917,8 @@ test "dnir_lower: runtime floor divisor preserves the integer zero trap" {
             \\half: i64 = (n: i64)
             \\    n // 2
         ;
-        var lex = @import("lexer.zig").Lexer.init(src, "half.id");
-        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        var lex = @import("../lexer.zig").Lexer.init(src, "half.id");
+        var parser = @import("../parser.zig").Parser.init(&lex, alloc);
         parser.idol_mode = true;
         const mod = try parser.parse_module();
         const lowered = try lowerModule(alloc, &mod);
@@ -18951,8 +18951,8 @@ test "dnir_lower: logical shift width does not license a negative floor divisor"
             \\    d: i64 = (x >> 1) + 1
             \\    1 // d
         ;
-        var lex = @import("lexer.zig").Lexer.init(src, "floor-shift-boundary.id");
-        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        var lex = @import("../lexer.zig").Lexer.init(src, "floor-shift-boundary.id");
+        var parser = @import("../parser.zig").Parser.init(&lex, alloc);
         parser.idol_mode = true;
         const mod = try parser.parse_module();
         const lowered = try lowerModule(alloc, &mod);
@@ -18976,8 +18976,8 @@ test "dnir_lower: logical shift width does not license a negative floor divisor"
             \\    d: i64 = (x % 100) + 1
             \\    1 // d
         ;
-        var lex = @import("lexer.zig").Lexer.init(src, "floor-positive-bound.id");
-        var parser = @import("parser.zig").Parser.init(&lex, alloc);
+        var lex = @import("../lexer.zig").Lexer.init(src, "floor-positive-bound.id");
+        var parser = @import("../parser.zig").Parser.init(&lex, alloc);
         parser.idol_mode = true;
         const mod = try parser.parse_module();
         const lowered = try lowerModule(alloc, &mod);
@@ -18997,7 +18997,7 @@ test "dnir_lower: a global byte-sequence literal keeps its element descriptor" {
     // producer quote identity, not from the fact that a quoted face was written.
     // A single-quoted literal is a byte sequence; collapsing it to `.str` makes
     // the global observe the retired unified string identity.
-    const loc = @import("lexer.zig").Loc{ .line = 1, .col = 1, .file = "quote.id" };
+    const loc = @import("../lexer.zig").Loc{ .line = 1, .col = 1, .file = "quote.id" };
 
     const bytes = Expr{ .quoted = .{ .loc = loc, .val = "ab", .quote = .bytes } };
     const bytes_ty = typeOfGlobal(.inferred, &bytes);
@@ -19019,11 +19019,11 @@ test "dnir_lower: checked quote classification fails closed on damaged graph des
         \\entry: str = ()
         \\    "left" .. "right"
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "quote-damage.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "quote-damage.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -19098,11 +19098,11 @@ test "dnir_lower: the quote face has ONE producer, and its reach is total over m
         \\    local inner = 'z'
         \\    t
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "quotewitness.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "quotewitness.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&mod);
@@ -19163,14 +19163,14 @@ test "dnir_lower: module positional integer tables require graph facts" {
         \\main: i64 = ()
         \\    0
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "module_const_table_graph.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "module_const_table_graph.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
 
     // Positive control: after the producer runs, the graph-backed verdict
     // recognizes the positional integer table.
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -19216,8 +19216,8 @@ const Gap204ConstIndex = struct {
 };
 
 fn gap204CollectConstIndex(alloc: std.mem.Allocator, src: []const u8) !Gap204ConstIndex {
-    var lex = @import("lexer.zig").Lexer.init(src, "gap204_const_index.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "gap204_const_index.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var mod = try parser.parse_module();
     var table: ?*const Expr = null;
@@ -19236,7 +19236,7 @@ fn gap204CollectConstIndex(alloc: std.mem.Allocator, src: []const u8) !Gap204Con
         table = gd.inits[0];
     }
     const bound = table orelse return error.Gap204StrsTableMissing;
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&mod);
@@ -19260,7 +19260,7 @@ fn gap204ConstIndexRead(
     consts: *const ModuleConsts,
     idx: i64,
 ) !dnir.Value {
-    const l: @import("source_cursor.zig").Loc = .{ .file = "gap204_const_index.id", .line = 1, .col = 1 };
+    const l: @import("../source_cursor.zig").Loc = .{ .file = "gap204_const_index.id", .line = 1, .col = 1 };
     var obj: Expr = .{ .name = .{ .loc = l, .ident = "strs" } };
     var key: Expr = .{ .int_lit = .{ .loc = l, .val = idx } };
     const read: Expr = .{ .index = .{ .loc = l, .obj = &obj, .key = &key } };
@@ -19409,8 +19409,8 @@ test "dnir_lower: a module const of INT_MIN lowers instead of crashing the compi
         \\    if floor < near return 0
         \\    1
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "floor.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "floor.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     const mod = try parser.parse_module();
     _ = try lowerModule(alloc, &mod);
@@ -19444,11 +19444,11 @@ test "dnir_lower: same-spelled local shadows module storage by binding" {
         \\    set()
         \\    ring
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "gap228-shadow.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "gap228-shadow.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -19516,11 +19516,11 @@ test "dnir_lower: a module write below a closed shadow block reaches the module 
         \\    deep()
         \\    ring
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "gap228-extent.id");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "gap228-extent.id");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -19564,11 +19564,11 @@ fn testLiftedGlobals(
     src: []const u8,
     file: []const u8,
 ) !ModuleGlobals {
-    var lex = @import("lexer.zig").Lexer.init(src, file);
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, file);
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     parser.idol_mode = true;
     mod.* = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(mod);
@@ -19665,10 +19665,10 @@ test "dnir_lower: a written module aggregate keeps its word and stays refused" {
 //     the member VALUE, so the source table is provenance and never the
 //     second authority on its own contents.
 test "dnir_lower: a runtime index into a determined table folds from graph facts" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    const Sema = @import("sema.zig").Sema;
-    const table_apply = @import("table_apply.zig");
+    const Lexer = @import("../lexer.zig").Lexer;
+    const Parser = @import("../parser.zig").Parser;
+    const Sema = @import("../sema.zig").Sema;
+    const table_apply = @import("../table_apply.zig");
 
     const Case = struct {
         name: []const u8,
@@ -19874,8 +19874,8 @@ test "dnir_lower: GAP-221 a module field base is unresolvable from a relation bo
         \\  return M.x
         \\end
     ;
-    var lex = @import("lexer.zig").Lexer.init(src, "gap221.lua");
-    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    var lex = @import("../lexer.zig").Lexer.init(src, "gap221.lua");
+    var parser = @import("../parser.zig").Parser.init(&lex, alloc);
     const module = try parser.parse_module();
 
     var graph = semantic_graph.SemanticGraph.init(alloc);
@@ -19955,7 +19955,7 @@ fn gap204DynRead(alloc: std.mem.Allocator, src: []const u8, static_plan: bool) !
         rig.graph.static_places = plans;
     }
 
-    const l: @import("source_cursor.zig").Loc = .{ .file = "gap204_dyn_index.id", .line = 1, .col = 1 };
+    const l: @import("../source_cursor.zig").Loc = .{ .file = "gap204_dyn_index.id", .line = 1, .col = 1 };
     var obj: Expr = .{ .name = .{ .loc = l, .ident = "strs" } };
     var key: Expr = .{ .name = .{ .loc = l, .ident = "i" } };
     const read: Expr = .{ .index = .{ .loc = l, .obj = &obj, .key = &key } };
@@ -20121,11 +20121,11 @@ test "dnir_lower: GAP-204 module lowering carries a positional text read into th
         \\    stdout:write(strs[i])
         \\    0
     ;
-    var lexer = @import("lexer.zig").Lexer.init(source, "gap204_module.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "gap204_module.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
@@ -20221,15 +20221,15 @@ test "dnir_lower: record carriers require the exact operand shape edge" {
     const alloc = arena.allocator();
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    var lexer = @import("lexer.zig").Lexer.init(source, "record-carrier-edge.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "record-carrier-edge.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
-    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    @import("../table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
     _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-carrier-edge.id");
     var diagnostic: Diagnostic = .{};
     const lowered = lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic) catch |err| {
@@ -20307,15 +20307,15 @@ test "dnir_lower: record writes require the exact value origin" {
     const alloc = arena.allocator();
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    var lexer = @import("lexer.zig").Lexer.init(source, "record-write-origin.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "record-write-origin.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
-    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    @import("../table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
     _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-write-origin.id");
     var diagnostic: Diagnostic = .{};
     const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
@@ -20399,15 +20399,15 @@ test "dnir_lower: scalar record initializers require exact value origin" {
     const alloc = arena.allocator();
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    var lexer = @import("lexer.zig").Lexer.init(source, "record-initializer-origin.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "record-initializer-origin.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
-    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    @import("../table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
     _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-initializer-origin.id");
     var diagnostic: Diagnostic = .{};
     const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
@@ -20463,16 +20463,16 @@ test "dnir_lower: projected record arguments retain exact member proof" {
     const alloc = arena.allocator();
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
-    var lexer = @import("lexer.zig").Lexer.init(source, "record-projection-proof.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "record-projection-proof.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
     try std.testing.expectEqual(@as(u32, 0), checked.errors);
-    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    @import("../table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
     _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-projection-proof.id");
     var diagnostic: Diagnostic = .{};
     const lowered = try lowerModuleWithGraphObserved(alloc, &module, &graph, &diagnostic);
@@ -20523,16 +20523,16 @@ test "dnir_lower: record parameter writes use shared residency" {
         const alloc = arena.allocator();
         var graph = semantic_graph.SemanticGraph.init(alloc);
         defer graph.deinit();
-        var lexer = @import("lexer.zig").Lexer.init(source, "record-parameter-mutation.id");
-        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        var lexer = @import("../lexer.zig").Lexer.init(source, "record-parameter-mutation.id");
+        var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
         parser.idol_mode = true;
         var module = try parser.parse_module();
-        var checked = @import("sema.zig").Sema.init(alloc);
+        var checked = @import("../sema.zig").Sema.init(alloc);
         defer checked.deinit();
         checked.idol_mode = true;
         try checked.check_module(&module);
         try std.testing.expectEqual(@as(u32, 0), checked.errors);
-        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        @import("../table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
         _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-parameter-mutation.id");
         const probe = graph.findFunc("probe").?;
         const item = graph.bindingNamedIn(probe, "item").?;
@@ -20596,16 +20596,16 @@ test "dnir_lower: fresh record aliases refuse invalidated sharing" {
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer arena.deinit();
         const alloc = arena.allocator();
-        var lexer = @import("lexer.zig").Lexer.init(source, "record-alias-invalidation.id");
-        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        var lexer = @import("../lexer.zig").Lexer.init(source, "record-alias-invalidation.id");
+        var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
         parser.idol_mode = true;
         var module = try parser.parse_module();
-        var checked = @import("sema.zig").Sema.init(alloc);
+        var checked = @import("../sema.zig").Sema.init(alloc);
         defer checked.deinit();
         checked.idol_mode = true;
         try checked.check_module(&module);
         try std.testing.expectEqual(@as(u32, 0), checked.errors);
-        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        @import("../table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
         var graph = semantic_graph.SemanticGraph.init(alloc);
         defer graph.deinit();
         _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-alias-invalidation.id");
@@ -20627,16 +20627,16 @@ test "dnir_lower: fresh record aliases require exact initialization edges" {
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer arena.deinit();
         const alloc = arena.allocator();
-        var lexer = @import("lexer.zig").Lexer.init(source, "record-alias-proof.id");
-        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        var lexer = @import("../lexer.zig").Lexer.init(source, "record-alias-proof.id");
+        var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
         parser.idol_mode = true;
         var module = try parser.parse_module();
-        var checked = @import("sema.zig").Sema.init(alloc);
+        var checked = @import("../sema.zig").Sema.init(alloc);
         defer checked.deinit();
         checked.idol_mode = true;
         try checked.check_module(&module);
         try std.testing.expectEqual(@as(u32, 0), checked.errors);
-        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        @import("../table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
         var graph = semantic_graph.SemanticGraph.init(alloc);
         defer graph.deinit();
         _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "record-alias-proof.id");
@@ -20723,16 +20723,16 @@ test "dnir_lower: relay aliases require exact parameter initializer facts" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lexer = @import("lexer.zig").Lexer.init(source, "relay.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "relay.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
     try std.testing.expectEqual(@as(u32, 0), checked.errors);
-    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    @import("../table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "relay.id");
@@ -20779,16 +20779,16 @@ test "dnir_lower: relay rebinding requires the checked constructor value" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var lexer = @import("lexer.zig").Lexer.init(source, "relay.id");
-    var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+    var lexer = @import("../lexer.zig").Lexer.init(source, "relay.id");
+    var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
     parser.idol_mode = true;
     var module = try parser.parse_module();
-    var checked = @import("sema.zig").Sema.init(alloc);
+    var checked = @import("../sema.zig").Sema.init(alloc);
     defer checked.deinit();
     checked.idol_mode = true;
     try checked.check_module(&module);
     try std.testing.expectEqual(@as(u32, 0), checked.errors);
-    @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+    @import("../table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
     var graph = semantic_graph.SemanticGraph.init(alloc);
     defer graph.deinit();
     _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "relay.id");
@@ -20827,16 +20827,16 @@ test "dnir_lower: relay aliases refuse target effects and conditional rebinding"
         defer arena.deinit();
         const alloc = arena.allocator();
         const source = try std.fmt.allocPrint(alloc, "record: {{code: i64}}\nalter = (value: record): i64\n    value.code = 13\n    value.code\nrelay = (value: record): i64\n{s}probe = (code: i64): i64\n    item: record = {{code = code}}\n    relay(item) + item.code\nos.exit(probe(7))\n", .{body});
-        var lexer = @import("lexer.zig").Lexer.init(source, "relay.id");
-        var parser = @import("parser.zig").Parser.init(&lexer, alloc);
+        var lexer = @import("../lexer.zig").Lexer.init(source, "relay.id");
+        var parser = @import("../parser.zig").Parser.init(&lexer, alloc);
         parser.idol_mode = true;
         var module = try parser.parse_module();
-        var checked = @import("sema.zig").Sema.init(alloc);
+        var checked = @import("../sema.zig").Sema.init(alloc);
         defer checked.deinit();
         checked.idol_mode = true;
         try checked.check_module(&module);
         try std.testing.expectEqual(@as(u32, 0), checked.errors);
-        @import("table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
+        @import("../table_apply.zig").normalizeModule(alloc, &module, &checked.type_map);
         var graph = semantic_graph.SemanticGraph.init(alloc);
         defer graph.deinit();
         _ = try graph.liftModuleWithCheckedCalls(&module, &checked, "relay.id");

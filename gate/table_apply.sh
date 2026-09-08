@@ -9,7 +9,7 @@ bad() { printf 'table_apply gate: FAIL %s\n' "$1"; fail=$((fail + 1)); }
 [ -r "$TABLE_APPLY" ] || { bad "missing $TABLE_APPLY"; exit 1; }
 grep -Fq 'pub fn normalizeModule' "$TABLE_APPLY" || bad 'table_apply.zig lost pub fn normalizeModule'
 
-for path in src/dnir_lower.zig src/native_backend.zig src/main.zig src/semantic_graph.zig; do
+for path in src/graph/lower.zig src/native.zig src/main.zig src/graph.zig; do
     file="$ROOT/$path"
     [ -r "$file" ] || { bad "missing $path"; continue; }
     grep -Fq 'table_apply.normalizeModule' "$file" || bad "$path does not call table_apply.normalizeModule"

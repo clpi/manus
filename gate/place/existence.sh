@@ -58,7 +58,7 @@ idol="${IDOL_BIN:-$root/zig-out/bin/idol}"
 [ -x "$idol" ] || { echo "existence: no compiler at $idol" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "existence: python3 absent" >&2; exit 2; }
 place="$root/src/place.zig"
-lower="$root/src/dnir_lower.zig"
+lower="$root/src/graph/lower.zig"
 [ -f "$place" ] || { echo "existence: no $place" >&2; exit 2; }
 [ -f "$lower" ] || { echo "existence: no $lower" >&2; exit 2; }
 
@@ -270,7 +270,7 @@ elif st.get("refusal") != "yes":
          "rows above carry reaches no consumer and the place clauses are the "
          "whole decision again")
 if st.get("consumer") == "MISSING":
-    fail("`fn absentModulePlace` was not found in src/dnir_lower.zig; this "
+    fail("`fn absentModulePlace` was not found in src/graph/lower.zig; this "
          "gate's structural arm examined nothing")
 elif st.get("consumer") != "yes":
     fail("`absentModulePlace` no longer routes through `residencyRefusal`, so "

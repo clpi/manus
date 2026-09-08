@@ -6,7 +6,7 @@ const std = @import("std");
 const effect = @import("effect.zig");
 const optimization_outcome = @import("optimization_outcome.zig");
 const sema = @import("sema.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const semantic_graph = @import("graph.zig");
 const ast = @import("ast.zig");
 
 pub const SCHEMA_VERSION = "assumption-guard-v0";

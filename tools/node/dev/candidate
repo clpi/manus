@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import signal
 import stat
@@ -375,6 +376,61 @@ def rename(repo, value, actual):
     return {row["from"] for row in declared}
 
 
+def binding(body):
+    def space(index):
+        while index < len(body):
+            if body[index] in b" \t\r\n":
+                index += 1
+            elif body.startswith(b"//", index):
+                end = body.find(b"\n", index)
+                index = len(body) if end < 0 else end + 1
+            else:
+                break
+        return index
+
+    def quoted(index):
+        quote = body[index]
+        index += 1
+        while index < len(body):
+            if body[index] in b"\r\n":
+                return index
+            if body[index] == 92:
+                index += 2
+            elif body[index] == quote:
+                return index
+            else:
+                index += 1
+        return len(body)
+
+    index = 0
+    while index < len(body):
+        if body.startswith((b"//", b"\\\\"), index):
+            end = body.find(b"\n", index)
+            index = len(body) if end < 0 else end + 1
+        elif body[index] in b"\"'":
+            index = quoted(index) + 1
+        elif body.startswith(b"@import", index) and (
+            index + 7 == len(body) or body[index + 7] not in b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+        ):
+            cursor = space(index + 7)
+            index += 7
+            if cursor >= len(body) or body[cursor] != 40:
+                continue
+            cursor = space(cursor + 1)
+            if cursor >= len(body) or body[cursor] != 34:
+                continue
+            end = quoted(cursor)
+            if end >= len(body) or body[end] != 34:
+                continue
+            close = space(end + 1)
+            if close >= len(body) or body[close] != 41:
+                continue
+            yield cursor + 1, end, body[cursor + 1:end]
+            index = close + 1
+        else:
+            index += 1
+
+
 def reference(repo, value, statuses):
     carriers = {}
     for row in value.get("rename", []):
@@ -389,18 +445,26 @@ def reference(repo, value, statuses):
         after = sourceblob(repo, value["head"], path)
         digest = sha(before)
         spans = []
+        token = list(binding(before)) if path.endswith(".zig") else []
         for old, new, expected in relations:
             if digest != expected:
                 refuse(f"candidate reference source digest mismatch: {path}")
             if any(source in new for source, _, _ in relations):
                 refuse(f"candidate reference mappings cascade: {path}")
+            source = posixpath.relpath(old, posixpath.dirname(path)).encode()
+            target = posixpath.relpath(new, posixpath.dirname(path)).encode()
             old, new = old.encode(), new.encode()
+            count = len(spans)
             index = before.find(old)
-            if index < 0:
-                refuse(f"candidate reference has no source occurrence: {path}")
             while index >= 0:
-                spans.append((index, index + len(old), new))
+                if not any(index < end and index + len(old) > start for start, end, _ in token):
+                    spans.append((index, index + len(old), new))
                 index = before.find(old, index + 1)
+            for start, end, literal in token:
+                if literal == source:
+                    spans.append((start, end, target))
+            if len(spans) == count:
+                refuse(f"candidate reference has no source occurrence: {path}")
         spans.sort()
         chunks = []
         cursor = 0
@@ -1613,7 +1677,10 @@ sys.stderr.write(f"✓ {{output}}{{suffix}}\\n")
         def prepare(repo):
             for index, (old, _) in enumerate(mapping):
                 (repo / old).parent.mkdir(parents=True, exist_ok=True)
-                (repo / old).write_text(f"printf '{index}\\n'\n", encoding="utf-8")
+                (repo / old).write_text(
+                    f"pub const value = {index};\n" if old.endswith(".zig") else f"printf '{index}\\n'\n",
+                    encoding="utf-8",
+                )
             if not absent:
                 (repo / carrier).parent.mkdir(parents=True, exist_ok=True)
                 (repo / carrier).write_text(payload, encoding="utf-8")
@@ -1745,6 +1812,115 @@ sys.stderr.write(f"✓ {{output}}{{suffix}}\\n")
         "reference occurrences overlap",
         mapping=(("gate/a", "gate/value.sh"), ("a/read.sh", "gate/text.sh")),
         before="gate/a/read.sh\n",
+    )
+
+    def importing(label, before, after, code=0, needle="candidate.structural=pass", **options):
+        rebinding(
+            "reference.import." + label,
+            code,
+            needle,
+            carrier=options.pop("carrier", "src/guide_note.zig"),
+            mapping=options.pop("mapping", (("src/probe.zig", "src/value.zig"),)),
+            before=before,
+            after=after,
+            **options,
+        )
+
+    importing("relative", 'const value = @import("probe.zig");\n', 'const value = @import("value.zig");\n')
+    importing(
+        "hierarchy",
+        'const value = @import("probe.zig");\n',
+        'const value = @import("graph/value.zig");\n',
+        mapping=(("src/probe.zig", "src/graph/value.zig"),),
+    )
+    importing(
+        "parent",
+        'const value = @import("../probe.zig");\n',
+        'const value = @import("../value.zig");\n',
+        carrier="src/scope/guide_note.zig",
+    )
+    importing(
+        "root",
+        'const value = @import("src/probe.zig");\n',
+        'const value = @import("src/value.zig");\n',
+        carrier="guide_note.zig",
+    )
+    importing(
+        "separate",
+        'const value = @import("probe.zig");\nconst other = @import("other/probe.zig");\n',
+        'const value = @import("value.zig");\nconst other = @import("other/probe.zig");\n',
+    )
+    importing(
+        "shared",
+        'const first = @import("probe.zig");\nconst second = @import("text.zig");\n',
+        'const first = @import("value.zig");\nconst second = @import("read.zig");\n',
+        mapping=(("src/probe.zig", "src/value.zig"), ("src/text.zig", "src/read.zig")),
+    )
+    importing(
+        "space",
+        'const value = @import // note\n ( // note\n "probe.zig" // note\n );\n',
+        'const value = @import // note\n ( // note\n "value.zig" // note\n );\n',
+    )
+    for label, data in (
+        ("comment", '// @import("probe.zig")\n'),
+        ("string", 'const text = "@import(\\"probe.zig\\")";\n'),
+        ("multiline", 'const text = \\\\@import("probe.zig")\n;\n'),
+        ("identifier", 'const @"@import(\\"probe.zig\\")" = 0;\n'),
+        ("builtin", 'const value = @importer("probe.zig");\n'),
+    ):
+        importing(
+            label,
+            data + 'const actual = @import("probe.zig");\n',
+            data + 'const actual = @import("value.zig");\n',
+        )
+        importing(
+            label + ".tamper",
+            data + 'const actual = @import("probe.zig");\n',
+            data.replace("probe.zig", "value.zig") + 'const actual = @import("value.zig");\n',
+            REJECT,
+            "changes outside declared rebinding",
+        )
+    for label, literal in (
+        ("scope", "other/probe.zig"),
+        ("absolute", "/src/probe.zig"),
+        ("repository", "src/probe.zig"),
+        ("spelling", "./probe.zig"),
+        ("escape", "pro\\x62e.zig"),
+    ):
+        importing(
+            label,
+            f'const value = @import("{literal}");\n',
+            'const value = @import("value.zig");\n',
+            REJECT,
+            "reference has no source occurrence",
+        )
+    importing(
+        "outside",
+        'const value = @import("probe.zig");\n',
+        'const value = @import("value.zig");\n',
+        REJECT,
+        "reference has no source occurrence",
+        carrier="docs/guide_note.md",
+    )
+    importing(
+        "covert",
+        'const value = @import("probe.zig");\nconst count = 7;\n',
+        'const value = @import("value.zig");\nconst count = 13;\n',
+        REJECT,
+        "changes outside declared rebinding",
+    )
+    importing(
+        "mixed",
+        'const value = @import("probe.zig");\nconst path = "src/probe.zig";\n',
+        'const value = @import("value.zig");\nconst path = "src/value.zig";\n',
+    )
+    importing(
+        "destination",
+        'const value = @import("probe.zig");\n',
+        'const value = @import("bad_name.zig");\n',
+        REJECT,
+        "candidate findings reported by gate/path.id",
+        mapping=(("src/probe.zig", "src/bad_name.zig"),),
     )
 
     expect(

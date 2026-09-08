@@ -55,7 +55,7 @@
 
 const std = @import("std");
 const ast = @import("ast.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const semantic_graph = @import("graph.zig");
 const semantic_identity = @import("semantic_identity.zig");
 
 /// The algebra, and only the algebra. A shape is NOT the source face that

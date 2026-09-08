@@ -20,7 +20,7 @@ graph: i64 = ()
   print("ledger/graph -- graph sovereignty")
   fail = 0
   query = "src/graph_query.zig":read()
-  sg = "src/semantic_graph.zig":read()
+  sg = "src/graph.zig":read()
   if not query:len() or not sg:len()
     print("  FAIL graph owner files missing")
     return 1

@@ -239,7 +239,7 @@ const observation = @import("observation.zig");
 const quotient_synth = @import("quotient_synth.zig");
 const recurrence = @import("recurrence.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
-const semantic_graph = @import("semantic_graph.zig");
+const semantic_graph = @import("graph.zig");
 const comptime_eval = @import("comptime.zig");
 const graph_query = @import("graph_query.zig");
 
